@@ -1810,7 +1810,8 @@
     },
     "editProfileDialog": {
       "nameRequired": "أدخل الاسم.",
-      "placement": "الموقع في المنظمة"
+      "placement": "الموقع في المنظمة",
+      "stepProfile": "الملف الشخصي"
     },
     "outOfOfficeDialog": {
       "hint": "خلال هذه الفترة، يُحوَّل العمل الذي يرسله سير العمل إلى هذا الشخص إلى البديل.",

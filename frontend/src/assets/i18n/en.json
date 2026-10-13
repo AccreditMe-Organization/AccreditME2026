@@ -1698,7 +1698,8 @@
     },
     "editProfileDialog": {
       "nameRequired": "Enter a name.",
-      "placement": "Placement"
+      "placement": "Placement",
+      "stepProfile": "Profile"
     },
     "outOfOfficeDialog": {
       "hint": "While these dates are set, work a workflow sends to this person goes to the cover person instead.",

@@ -7,6 +7,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { InlineCalendarComponent } from '../../../../shared/components/inline-calendar/inline-calendar.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { StepStripComponent, StepStripItem } from '../../../../shared/components/step-strip/step-strip.component';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -16,6 +17,11 @@ import { DueDateService } from '../../../tasks/services/due-date.service';
 import { IUserDto, UpdateUserProfileDto, UserService } from '../../services/user.service';
 import { CoverOption } from './out-of-office-dialog.component';
 import { DateView } from './date-view';
+
+const PLACEMENT_STEPS: readonly StepStripItem[] = [
+  { n: 1, key: 'userRecord.editProfileDialog.stepProfile' },
+  { n: 2, key: 'userRecord.editProfileDialog.placement' },
+];
 
 // Literal labels: a language's own name is written in that language.
 const LANGUAGE_OPTIONS = [
@@ -50,11 +56,16 @@ const LANGUAGE_OPTIONS = [
  * once (ACC-19); an administrator setting someone else's never changes what
  * the administrator sees.
  *
- * ## Density
+ * ## Density, and why it is stepped with placement (ACC-120's rule)
  *
- * Seven field blocks with placement, so compact (`check:dialog-density`), and
- * one density for both shapes — never mixed inside a dialog. Body heights are
- * measured in the browser pass and recorded on the PR.
+ * Seven field blocks with placement, so compact (`check:dialog-density`), one
+ * density for both shapes. MEASURED OVER THE CAP in the browser pass with
+ * every compaction already applied — compact density, the actions in the
+ * footer, the acting unit paired with its end date on one row: 511px of body
+ * in English and 526px in Arabic, against 420. So with placement it is two
+ * steps, on the seam the form already has: who the person is (name, language),
+ * then where they sit. Without placement it is the first step alone, and the
+ * strip renders nothing (below two steps). Final heights are on the PR.
  */
 @Component({
   selector: 'app-edit-profile-dialog',
@@ -68,6 +79,7 @@ const LANGUAGE_OPTIONS = [
     FieldComponent,
     InlineCalendarComponent,
     OverlaySelectComponent,
+    StepStripComponent,
   ],
   template: `
     <ng-template #bodyTpl>
@@ -86,70 +98,43 @@ const LANGUAGE_OPTIONS = [
         </div>
       } @else {
         <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col">
-          <am-field
-            [label]="'user.name' | translate"
-            [control]="form.controls.name"
-            inputId="ep-name"
-            [forceShowErrors]="showErrors()"
-            [errorMessages]="{ required: 'userRecord.editProfileDialog.nameRequired' }"
-          >
-            <input pInputText id="ep-name" formControlName="name" autocomplete="off" />
-          </am-field>
-
-          <am-field [label]="'user.language' | translate" [control]="form.controls.language" inputId="ep-language">
-            <app-overlay-select
-              formControlName="language"
-              [options]="languageOptions"
-              optionLabel="label"
-              optionValue="value"
-            />
-          </am-field>
-
-          @if (canEditPlacement()) {
-            <h3 class="am-ep-section" data-ep-placement>{{ 'userRecord.editProfileDialog.placement' | translate }}</h3>
-
-            <am-field [label]="'user.position' | translate" [control]="form.controls.positionId" inputId="ep-position">
-              <app-overlay-select
-                formControlName="positionId"
-                [options]="positionOptions()"
-                optionLabel="label"
-                optionValue="value"
-              />
-            </am-field>
-
+          @if (step() === 1) {
             <am-field
-              [label]="'user.primaryOrgUnit' | translate"
-              [control]="form.controls.primaryOrgUnitId"
-              inputId="ep-unit"
+              [label]="'user.name' | translate"
+              [control]="form.controls.name"
+              inputId="ep-name"
+              [forceShowErrors]="showErrors()"
+              [errorMessages]="{ required: 'userRecord.editProfileDialog.nameRequired' }"
             >
+              <input pInputText id="ep-name" formControlName="name" autocomplete="off" />
+            </am-field>
+
+            <am-field [label]="'user.language' | translate" [control]="form.controls.language" inputId="ep-language">
               <app-overlay-select
-                formControlName="primaryOrgUnitId"
-                [options]="unitOptions()"
+                formControlName="language"
+                [options]="languageOptions"
                 optionLabel="label"
                 optionValue="value"
-                optionGroupLabel="label"
-                optionGroupChildren="items"
               />
             </am-field>
+          } @else {
+            <div class="flex flex-col" data-ep-placement>
+              <am-field [label]="'user.position' | translate" [control]="form.controls.positionId" inputId="ep-position">
+                <app-overlay-select
+                  formControlName="positionId"
+                  [options]="positionOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                />
+              </am-field>
 
-            <am-field [label]="'user.manager' | translate" [control]="form.controls.managerId" inputId="ep-manager">
-              <app-overlay-select
-                formControlName="managerId"
-                [options]="managerOptions()"
-                optionLabel="name"
-                optionValue="id"
-                [itemTemplate]="personItemTpl"
-              />
-            </am-field>
-
-            <div class="am-ep-pair">
               <am-field
-                [label]="'user.actingOrgUnit' | translate"
-                [control]="form.controls.actingOrgUnitId"
-                inputId="ep-acting-unit"
+                [label]="'user.primaryOrgUnit' | translate"
+                [control]="form.controls.primaryOrgUnitId"
+                inputId="ep-unit"
               >
                 <app-overlay-select
-                  formControlName="actingOrgUnitId"
+                  formControlName="primaryOrgUnitId"
                   [options]="unitOptions()"
                   optionLabel="label"
                   optionValue="value"
@@ -157,33 +142,60 @@ const LANGUAGE_OPTIONS = [
                   optionGroupChildren="items"
                 />
               </am-field>
-              <am-field
-                [label]="'user.actingOrgUnitUntil' | translate"
-                [control]="form.controls.actingOrgUnitUntil"
-                inputId="ep-acting-until"
-              >
-                <div class="am-ep-date">
-                  <input
-                    pInputText
-                    dir="ltr"
-                    readonly
-                    id="ep-acting-until"
-                    class="am-ep-date__text"
-                    [value]="untilText()"
-                    [placeholder]="'task.request.chooseDate' | translate"
-                    (click)="dateView.openFor('until')"
-                    data-ep-until
-                  />
-                  <button
-                    type="button"
-                    class="am-ep-date__button"
-                    [attr.aria-label]="'task.request.chooseDate' | translate"
-                    (click)="dateView.openFor('until')"
-                  >
-                    <i class="pi pi-calendar" aria-hidden="true"></i>
-                  </button>
-                </div>
+
+              <am-field [label]="'user.manager' | translate" [control]="form.controls.managerId" inputId="ep-manager">
+                <app-overlay-select
+                  formControlName="managerId"
+                  [options]="managerOptions()"
+                  optionLabel="name"
+                  optionValue="id"
+                  [itemTemplate]="personItemTpl"
+                />
               </am-field>
+
+              <div class="am-ep-pair">
+                <am-field
+                  [label]="'user.actingOrgUnit' | translate"
+                  [control]="form.controls.actingOrgUnitId"
+                  inputId="ep-acting-unit"
+                >
+                  <app-overlay-select
+                    formControlName="actingOrgUnitId"
+                    [options]="unitOptions()"
+                    optionLabel="label"
+                    optionValue="value"
+                    optionGroupLabel="label"
+                    optionGroupChildren="items"
+                  />
+                </am-field>
+                <am-field
+                  [label]="'user.actingOrgUnitUntil' | translate"
+                  [control]="form.controls.actingOrgUnitUntil"
+                  inputId="ep-acting-until"
+                >
+                  <div class="am-ep-date">
+                    <input
+                      pInputText
+                      dir="ltr"
+                      readonly
+                      id="ep-acting-until"
+                      class="am-ep-date__text"
+                      [value]="untilText()"
+                      [placeholder]="'task.request.chooseDate' | translate"
+                      (click)="dateView.openFor('until')"
+                      data-ep-until
+                    />
+                    <button
+                      type="button"
+                      class="am-ep-date__button"
+                      [attr.aria-label]="'task.request.chooseDate' | translate"
+                      (click)="dateView.openFor('until')"
+                    >
+                      <i class="pi pi-calendar" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </am-field>
+              </div>
             </div>
           }
 
@@ -201,17 +213,36 @@ const LANGUAGE_OPTIONS = [
         </div>
       </ng-template>
     </ng-template>
+    <ng-template #stepsTpl>
+      <am-step-strip [steps]="steps()" [current]="step()" [ariaLabel]="'userRecord.editProfile' | translate" />
+    </ng-template>
     <ng-template #footerTpl>
       <div class="flex justify-end gap-3">
-        <p-button
-          [label]="'common.cancel' | translate"
-          severity="secondary"
-          [text]="true"
-          type="button"
-          [disabled]="saving()"
-          (onClick)="dialog.requestClose()"
-        />
-        <p-button type="button" [label]="'common.save' | translate" [loading]="saving()" (onClick)="submit()" data-ep-save />
+        @if (step() === 2) {
+          <p-button
+            [label]="'common.back' | translate"
+            severity="secondary"
+            [text]="true"
+            type="button"
+            [disabled]="saving()"
+            (onClick)="back()"
+            data-ep-back
+          />
+        } @else {
+          <p-button
+            [label]="'common.cancel' | translate"
+            severity="secondary"
+            [text]="true"
+            type="button"
+            [disabled]="saving()"
+            (onClick)="dialog.requestClose()"
+          />
+        }
+        @if (step() === 1 && canEditPlacement()) {
+          <p-button type="button" [label]="'common.next' | translate" (onClick)="next()" data-ep-next />
+        } @else {
+          <p-button type="button" [label]="'common.save' | translate" [loading]="saving()" (onClick)="submit()" data-ep-save />
+        }
       </div>
     </ng-template>
     <app-edit-dialog
@@ -220,6 +251,7 @@ const LANGUAGE_OPTIONS = [
       (visibleChange)="visibleChange.emit($event)"
       [header]="'userRecord.editProfile' | translate"
       [context]="user()?.name ?? ''"
+      [headerExtra]="stepsTpl"
       [content]="bodyTpl"
       [footer]="footerTpl"
       [dirty]="form.dirty"
@@ -230,14 +262,6 @@ const LANGUAGE_OPTIONS = [
   `,
   styles: [
     `
-      .am-ep-section {
-        margin: var(--am-space-4) 0 var(--am-space-8);
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--am-ink-500);
-      }
       .am-ep-pair {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -326,6 +350,8 @@ export class EditProfileDialogComponent {
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly showErrors = signal(false);
+  readonly step = signal<1 | 2>(1);
+  readonly steps = computed<readonly StepStripItem[]>(() => (this.canEditPlacement() ? PLACEMENT_STEPS : []));
   private readonly until = signal<Date | null>(null);
 
   readonly form = this.fb.group({
@@ -369,9 +395,25 @@ export class EditProfileDialogComponent {
         });
         this.error.set(null);
         this.showErrors.set(false);
+        this.step.set(1);
         this.dateView.close();
       });
     });
+  }
+
+  /** To placement — once the first step holds up. */
+  next(): void {
+    if (this.form.controls.name.invalid) {
+      this.showErrors.set(true);
+      return;
+    }
+    this.showErrors.set(false);
+    this.step.set(2);
+  }
+
+  back(): void {
+    this.dateView.close();
+    this.step.set(1);
   }
 
   onDayPicked(day: Date | null): void {
@@ -384,6 +426,8 @@ export class EditProfileDialogComponent {
     const user = this.user();
     if (!user || this.saving()) return;
     if (this.form.invalid) {
+      // The only required field is the name, on step one.
+      this.step.set(1);
       this.showErrors.set(true);
       return;
     }

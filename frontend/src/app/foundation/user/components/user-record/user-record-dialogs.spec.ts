@@ -168,9 +168,38 @@ describe('User record dialogs (ACC-120 slice 5)', () => {
       open('profile');
       expect(q('[data-ep-placement]')).toBeNull();
       expect(q('#ep-position')).toBeNull();
+      expect(q('[data-ep-next]')).toBeNull(); // one step: Save, not Next
+      expect(document.querySelectorAll('am-step-strip li').length).toBe(0);
+      expect(q('[data-ep-save]')).not.toBeNull();
       host.placement.set(true);
       fixture.detectChanges();
+      click('[data-ep-next]');
       expect(q('[data-ep-placement]')).not.toBeNull();
+      expect(q('#ep-name')).toBeNull(); // the second step replaces the first
+    });
+
+    // Measured over the 420px cap with placement (511 / 526), so it is stepped
+    // on its own seam: who the person is, then where they sit.
+    it('with placement: two steps, Next holds an empty name, Back returns, Save sends both', () => {
+      open('profile', (h) => h.placement.set(true));
+      expect(document.querySelectorAll('am-step-strip li').length).toBe(2);
+      expect(q('[data-ep-save]')).toBeNull();
+      type('#ep-name', '');
+      click('[data-ep-next]');
+      expect(q('[data-ep-placement]')).toBeNull();
+      expect(document.body.textContent).toContain('Enter a name.');
+
+      type('#ep-name', 'Dr. Yasser Al-Amri (edited)');
+      click('[data-ep-next]');
+      expect(q('[data-ep-placement]')).not.toBeNull();
+      click('[data-ep-back]');
+      expect((q<HTMLInputElement>('#ep-name'))!.value).toBe('Dr. Yasser Al-Amri (edited)');
+      click('[data-ep-next]');
+      click('[data-ep-save]');
+      const body = patchBody();
+      expect(body['name']).toBe('Dr. Yasser Al-Amri (edited)');
+      expect(body['positionId']).toBe('pos-senior');
+      expect(body['primaryOrgUnitId']).toBe('unit-im');
     });
 
     it('11 · Escape on unsaved edits asks first; on a clean form it simply closes', () => {
