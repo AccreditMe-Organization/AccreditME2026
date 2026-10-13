@@ -37,6 +37,7 @@ import { ManageRolesComponent } from '../../foundation/roles/components/manage-r
 import { RolePermissionMatrixComponent } from '../../foundation/roles/components/role-permission-matrix/role-permission-matrix.component';
 import { RoleListComponent } from '../../foundation/roles/components/role-list/role-list.component';
 import { UserListComponent } from '../../foundation/user/components/user-list/user-list.component';
+import { UserStatusActionsService } from '../../foundation/user/services/user-status-actions.service';
 import { InviteUserComponent } from '../../foundation/user/components/invite-user/invite-user.component';
 import { LookupValueListComponent } from '../../foundation/lookup/components/lookup-value-list/lookup-value-list.component';
 import { UserRoleAssignmentComponent } from '../../foundation/roles/components/user-role-assignment/user-role-assignment.component';
@@ -308,9 +309,12 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
     });
   });
 
+  // ACC-120 slice 5 — the message moved from UserListComponent into the
+  // service both the list and the user record page call.
   describe('user-list', () => {
     it('names roles in English in the reactivation message when they have no Arabic name', () => {
-      const c = build(UserListComponent);
+      build(UserListComponent);
+      const c = TestBed.inject(UserStatusActionsService);
       TestBed.inject(TranslateService).setTranslation(
         'ar',
         { user: { reactivateRoles: '{{roles}}', reactivateConfirm: '{{roles}}' } },
@@ -320,6 +324,7 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
         as({ id: 'u1', name: 'Hessa' }),
         [{ nameEn: 'Auditor', nameAr: 'مدقق' }, { nameEn: 'Records Officer', nameAr: null }],
         false,
+        { succeeded: () => undefined, failed: () => undefined },
       );
       expect(confirm).toHaveBeenCalled();
       expect(confirm.calls.mostRecent().args[0].message).toBe('مدقق, Records Officer');

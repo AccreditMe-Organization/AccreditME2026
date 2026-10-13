@@ -17,7 +17,6 @@ import {
   buildOrgUnitCascadeOptions,
 } from '../../../organization/services/org-unit.service';
 import { InviteUserComponent } from '../invite-user/invite-user.component';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { ManageRolesComponent } from '../../../roles/components/manage-roles/manage-roles.component';
 import {
@@ -30,8 +29,12 @@ import { StatusChipComponent } from '../../../../shared/components/status-chip/s
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
-import { RoleService, UserRoleGrantDto } from '../../../roles/services/role.service';
-import { LanguageService } from '../../../../core/services/language.service';
+import { AuthService } from '../../../../core/services/auth.service';
+import {
+  UserStatusAction,
+  UserStatusActionsService,
+  statusActionFor,
+} from '../../services/user-status-actions.service';
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
@@ -412,13 +415,11 @@ export class UserListComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
-  // ACC-83 — the reactivation confirmation names the roles the person returns
-  // holding, which means reading them before the dialog opens.
-  private readonly roleService = inject(RoleService);
-  private readonly languageService = inject(LanguageService);
   private readonly router = inject(Router);
   private readonly access = inject(NavigationAccessService);
   private readonly navigationAccess = inject(NavigationAccessService);
+  private readonly authService = inject(AuthService);
+  private readonly statusActions = inject(UserStatusActionsService);
 
   // ACC-118 — found by check:create-gating, not by the ticket's own list of
   // ten. Hidden, not disabled, same as every other page-header create action.
@@ -560,7 +561,7 @@ export class UserListComponent implements OnInit {
    * the menu never offers something that would come back 403 or 409:
    *   transfer    users:transfer, ACTIVE, and a current org unit to move from
    *               (transferUser() rejects anything else)
-   *   deactivate  users:deactivate, and not already INACTIVE
+   *   deactivate  users:deactivate, ACTIVE, and not the viewer's own row
    *
    * ACC-79 corrected ACC-78 here. ACC-78 left Transfer out as "filler" because
    * the profile page also has it, but the reference puts it in this menu, and
@@ -583,22 +584,13 @@ export class UserListComponent implements OnInit {
     ) {
       actions.push('transfer');
     }
-    // ACC-83 — THE STATUS SLOT, one action chosen by the row's status rather
-    // than Deactivate for everything that is not already INACTIVE.
-    //
-    // Deactivate was being offered to an INVITED user, where it is the wrong
-    // action and not a cosmetic mismatch: it ran the whole departure flow on
-    // someone who never arrived, including telling every admin they had left.
-    //
-    // Each is still gated on BOTH its permission and the status the backend
-    // accepts, so the menu never offers something that comes back 403 or 409.
-    if (user.status === 'ACTIVE' && this.access.hasPermission('users:deactivate')) {
-      actions.push('deactivate');
-    } else if (user.status === 'INACTIVE' && this.access.hasPermission('users:reactivate')) {
-      actions.push('reactivate');
-    } else if (user.status === 'INVITED' && this.access.hasPermission('users:invite')) {
-      actions.push('revokeInvitation');
-    }
+    // ACC-83 — THE STATUS SLOT, one action chosen by the row's status. The
+    // rule lives in statusActionFor(), shared with the user record page, so
+    // the two screens cannot disagree about it. It also leaves Deactivate off
+    // the viewer's OWN row (CC-88, A1): the backend allows it, and the first
+    // thing it does is end the caller's sessions.
+    const status = statusActionFor(user, (p) => this.access.hasPermission(p), this.authService.currentUser()?.id);
+    if (status) actions.push(status);
     return actions;
   }
 
@@ -746,150 +738,31 @@ export class UserListComponent implements OnInit {
     this.list().reload();
   }
 
-  // Per step-09 plan Section 12, Discussion 5: shows the user's name and a
-  // qualitative impact statement up front — the EXACT count of tasks affected
-  // is only known once the backend actually runs the departure flow (there is
-  // no preview endpoint), so the real counts are surfaced as an info message
-  // immediately after the action completes instead of guessed at in the
-  // confirmation copy.
+  // ACC-120 slice 5 — the three confirms moved to UserStatusActionsService,
+  // which the user record page calls too. What is left here is what the LIST
+  // does afterwards: say what happened, and refresh the rows and the counts.
   confirmDeactivate(user: IUserDto): void {
-    this.infoMessage.set(null);
-    this.confirmationService.confirm({
-      message: this.translate.instant('user.deactivateConfirm', { name: user.name }),
-      header: this.translate.instant('user.deactivate'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
-      accept: () => {
-        this.userService.deactivate(user.id).subscribe({
-          next: ({ reassignedCount, unassignedCount }) => {
-            this.infoMessage.set(
-              // Two counts, two plural forms: one rule cannot agree with both.
-              this.translate.instant('user.deactivateSummary', {
-                reassigned: this.format.count('user.tasksReassigned', reassignedCount),
-                flagged: this.format.count('user.tasksFlaggedUnassigned', unassignedCount),
-              }),
-            );
-            this.list().reload();
-            this.loadCounts();
-          },
-          error: (err: unknown) => {
-            this.error.set(extractErrorMessage(err, 'Deactivate failed'));
-          },
-        });
-      },
-    });
+    this.runStatusAction('deactivate', user);
   }
 
-  /**
-   * ACC-83 — reactivation says what COMES BACK, before the click.
-   *
-   * ACC-83 already required the confirmation to state what does not come back
-   * (reassigned tasks). The other half matters more: UserRole rows survive
-   * deactivation, so a reactivated person returns holding every direct role
-   * they had — possibly Organization Administrator. An administrator should see
-   * the authority they are about to restore while deciding, not discover it
-   * afterwards on the Roles screen.
-   *
-   * So the roles are fetched FIRST and the dialog waits for them. If that read
-   * is refused — a caller may hold users:reactivate without users:view, and
-   * GET /users/:id/roles needs the parent permission (ACC-101) — the dialog
-   * still opens and SAYS the roles could not be listed, rather than implying
-   * there are none. A blank where authority should be named is the worst of
-   * the three outcomes.
-   */
   confirmReactivate(user: IUserDto): void {
-    this.infoMessage.set(null);
-    this.error.set(null);
-    this.roleService.getUserRoles(user.id).subscribe({
-      next: (grants: UserRoleGrantDto[]) =>
-        this.openReactivateConfirm(
-          user,
-          grants.map((g) => g.role),
-          false,
-        ),
-      error: () => this.openReactivateConfirm(user, [], true),
-    });
+    this.runStatusAction('reactivate', user);
   }
 
-  private openReactivateConfirm(
-    user: IUserDto,
-    roles: { nameEn: string; nameAr: string | null }[],
-    rolesUnavailable: boolean,
-  ): void {
-    const roleLine = rolesUnavailable
-      ? this.translate.instant('user.reactivateRolesUnavailable')
-      : roles.length === 0
-        ? this.translate.instant('user.reactivateNoRoles')
-        : this.translate.instant('user.reactivateRoles', {
-            roles: roles
-              .map((r) => this.languageService.bilingual(r.nameEn, r.nameAr))
-              .join(', '),
-          });
-
-    this.confirmationService.confirm({
-      // ONE key, with the roles sentence passed INTO it.
-      //
-      // This was three translated pieces joined by a template literal, and
-      // check:confirm-translated refused it — correctly, and it caught the
-      // author of the scan. Word order and punctuation belong to the
-      // translation: an Arabic reader should not get an English paragraph
-      // shape with Arabic words in it.
-      message: this.translate.instant('user.reactivateConfirm', {
-        name: user.name,
-        roles: roleLine,
-      }),
-      header: this.translate.instant('user.reactivate'),
-      icon: 'pi pi-user-plus',
-      accept: () => {
-        this.userService.reactivate(user.id).subscribe({
-          next: ({ returnedTaskCount }) => {
-            this.infoMessage.set(
-              this.translate.instant('user.reactivateSummary', {
-                name: user.name,
-                tasks: this.format.count('user.tasksReturned', returnedTaskCount),
-              }),
-            );
-            this.list().reload();
-            this.loadCounts();
-          },
-          error: (err: unknown) => {
-            this.error.set(extractErrorMessage(err, 'Reactivate failed'));
-          },
-        });
-      },
-    });
-  }
-
-  /**
-   * ACC-83 — withdrawing an invitation, which is destructive in a way
-   * deactivation is not: the row goes, so the confirmation says so plainly and
-   * says the email becomes free again.
-   */
   confirmRevokeInvitation(user: IUserDto): void {
+    this.runStatusAction('revokeInvitation', user);
+  }
+
+  private runStatusAction(action: UserStatusAction, user: IUserDto): void {
     this.infoMessage.set(null);
     this.error.set(null);
-    this.confirmationService.confirm({
-      message: this.translate.instant('user.revokeInvitationConfirm', {
-        name: user.name,
-        email: user.email,
-      }),
-      header: this.translate.instant('user.revokeInvitation'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
-      accept: () => {
-        this.userService.revokeInvitation(user.id).subscribe({
-          next: () => {
-            this.infoMessage.set(
-              this.translate.instant('user.revokeInvitationSummary', { name: user.name }),
-            );
-            this.list().reload();
-            this.loadCounts();
-          },
-          error: (err: unknown) => {
-            this.error.set(extractErrorMessage(err, 'Revoke failed'));
-          },
-        });
+    this.statusActions.confirm(action, user, {
+      succeeded: (message) => {
+        this.infoMessage.set(message);
+        this.list().reload();
+        this.loadCounts();
       },
+      failed: (message) => this.error.set(message),
     });
   }
 }

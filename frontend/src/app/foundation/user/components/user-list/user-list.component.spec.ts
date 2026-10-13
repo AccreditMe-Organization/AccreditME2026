@@ -7,6 +7,11 @@ import { IUserDto, UserService } from '../../services/user.service';
 import { OrgPositionService } from '../../../org-position/services/org-position.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AuthService } from '../../../../core/services/auth.service';
+
+// The signed-in viewer — someone other than every user these specs list, so
+// the own-row rule (CC-88, A1) only applies where a test says so.
+let VIEWER_ID = 'cmtviewer0000ocp1notinlist';
 
 // ACC-79 — the row's More menu. Tested on rowActionsFor(), the one method both
 // the menu and the "…" button read, so a row can never show a button that
@@ -23,6 +28,9 @@ describe('UserListComponent row actions (ACC-79)', () => {
         { provide: UserService, useValue: {} },
         { provide: OrgPositionService, useValue: {} },
         { provide: OrgUnitService, useValue: {} },
+        // ACC-120 slice 5 — the list reads the viewer's id: no Deactivate on
+        // their own row.
+        { provide: AuthService, useValue: { currentUser: () => ({ id: VIEWER_ID }) } },
         {
           provide: NavigationAccessService,
           useValue: { hasPermission: (p: string) => permissions.includes(p) },
@@ -131,6 +139,19 @@ describe('UserListComponent row actions (ACC-79)', () => {
     expect(list.rowActionsFor(user({ primaryOrgUnitId: null }))).toEqual(['deactivate']);
   });
 
+  // CC-88, A1 — the record page hides it on your own record, and the list now
+  // agrees: deactivating yourself ends your own sessions first.
+  it("does not offer Deactivate on the viewer's OWN row", () => {
+    const own = user({});
+    VIEWER_ID = own.id;
+    try {
+      expect(create(ADMIN).rowActionsFor(own)).toEqual(['transfer']);
+    } finally {
+      VIEWER_ID = 'cmtviewer0000ocp1notinlist';
+    }
+    expect(create(ADMIN).rowActionsFor(own)).toEqual(['transfer', 'deactivate']);
+  });
+
   it('offers nothing to a user who can only view the list', () => {
     expect(create(['users:view']).rowActionsFor(user({}))).toEqual([]);
   });
@@ -165,6 +186,9 @@ describe('UserListComponent — Manage roles row action (ACC-120)', () => {
         { provide: UserService, useValue: {} },
         { provide: OrgPositionService, useValue: {} },
         { provide: OrgUnitService, useValue: {} },
+        // ACC-120 slice 5 — the list reads the viewer's id: no Deactivate on
+        // their own row.
+        { provide: AuthService, useValue: { currentUser: () => ({ id: VIEWER_ID }) } },
         {
           provide: NavigationAccessService,
           useValue: { hasPermission: (p: string) => permissions.includes(p) },

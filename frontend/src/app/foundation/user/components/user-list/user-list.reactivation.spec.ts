@@ -9,9 +9,14 @@ import { OrgPositionService } from '../../../org-position/services/org-position.
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { RoleService } from '../../../roles/services/role.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AuthService } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { pickBilingualName } from '../../../../shared/utils/bilingual-name.util';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
+
+// The signed-in viewer — someone other than every user these specs list, so
+// the own-row rule (CC-88, A1) only applies where a test says so.
+let VIEWER_ID = 'cmtviewer0000ocp1notinlist';
 
 /**
  * ACC-83 — what the reactivation confirmation SAYS, and the reserved message
@@ -66,6 +71,9 @@ describe('UserListComponent — reactivation confirmation (ACC-83)', () => {
                 : of((opts.roles ?? []).map((role) => ({ role }))),
           },
         },
+        // ACC-120 slice 5 — the list reads the viewer's id: no Deactivate on
+        // their own row.
+        { provide: AuthService, useValue: { currentUser: () => ({ id: VIEWER_ID }) } },
         {
           provide: NavigationAccessService,
           useValue: { hasPermission: () => true },
