@@ -1091,6 +1091,20 @@ describe('RoleService', () => {
       expect(state.held()).toEqual(['platform:admin', 'users:view']);
     });
 
+    it('inside a TENANT a held in-use platform key is kept, unticked or sent back', async () => {
+      // platform:admin is in use, so only the tenant platform rule keeps it —
+      // the R2 rule would not (the case above holds only platform:impersonate,
+      // which R2 keeps on its own).
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
+      const state = stageRolePermissions(['platform:admin', 'users:view']);
+
+      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+      expect(state.held()).toEqual(['platform:admin', 'users:view']);
+
+      await service.assignPermissions('role-1', { permissionKeys: ['platform:admin', 'tasks:view'] }, ORG_A, ACTOR);
+      expect(state.held()).toEqual(['platform:admin', 'tasks:view']);
+    });
+
     // ── F2: in the platform organisation, platform keys are ordinary keys ────
     it('in the PLATFORM organisation a ticked platform key is GRANTED, not silently dropped', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
