@@ -1814,7 +1814,10 @@
       "resultLabel": "نتيجة الذكاء الاصطناعي",
       "accept": "قبول",
       "edit": "تعديل",
-      "discard": "تجاهل"
+      "discard": "تجاهل",
+      "showAll": "عرض الكل",
+      "collapse": "طي",
+      "expand": "توسيع"
     }
   },
   "recordPanel": {

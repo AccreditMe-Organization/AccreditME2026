@@ -1698,7 +1698,10 @@
       "resultLabel": "AI result",
       "accept": "Accept",
       "edit": "Edit",
-      "discard": "Discard"
+      "discard": "Discard",
+      "showAll": "Show all",
+      "collapse": "Collapse",
+      "expand": "Expand"
     }
   },
   "recordPanel": {

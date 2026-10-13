@@ -23,6 +23,10 @@ import ar from '../../../../assets/i18n/ar.json';
         [cancellable]="cancellable()"
         [hasResult]="hasResult()"
         [resultTemplate]="body()"
+        [collapsible]="collapsible()"
+        [clamped]="clamped()"
+        collapseLabel="Collapse summary"
+        expandLabel="Expand summary"
         (trigger)="events.push('trigger')"
         (retry)="events.push('retry')"
         (cancel)="events.push('cancel')"
@@ -41,6 +45,8 @@ class HostComponent {
   readonly accept = signal(false);
   readonly cancellable = signal(false);
   readonly hasResult = signal(false);
+  readonly collapsible = signal(false);
+  readonly clamped = signal(false);
   readonly dir = signal<'ltr' | 'rtl'>('ltr');
   readonly bodyTpl = viewChild<TemplateRef<unknown>>('bodyTpl');
   readonly body = () => this.bodyTpl() ?? null;
@@ -197,5 +203,68 @@ describe('AiAssistComponent (ACC-198)', () => {
     host.refusal.set({ kind: 'unavailable', messageKey: 'ai.refusal.unavailable', params: {} });
     render();
     expect(el().querySelector('.result-body')).toBeNull();
+  });
+describe('collapsible and clamped (ACC-193, Q5) — opt-in', () => {
+    it('off by default: no fold control, no clamp, the whole result shown (the briefing is unchanged)', () => {
+      host.state.set('result');
+      render();
+      expect(el().querySelector('.am-ai__fold')).toBeNull();
+      expect(el().querySelector('.am-ai__body--clamped')).toBeNull();
+      expect(el().querySelector('.am-ai__show-all')).toBeNull();
+      expect(el().querySelector('.result-body')).not.toBeNull();
+    });
+
+    it('collapsible: ▴ on the tag line folds the result to that line, and ▾ opens it again, with its names and state', () => {
+      host.state.set('result');
+      host.collapsible.set(true);
+      render();
+      const fold = el().querySelector('.am-ai__fold') as HTMLButtonElement;
+      const body = el().querySelector('.am-ai__body') as HTMLElement;
+      expect(fold.getAttribute('aria-expanded')).toBe('true');
+      expect(fold.getAttribute('aria-label')).toBe('Collapse summary');
+      expect(fold.getAttribute('aria-controls')).toBe(body.id);
+      expect(fold.textContent?.trim()).toBe('▴');
+      expect(body.hidden).toBeFalse();
+
+      fold.click();
+      render();
+      expect(body.hidden).toBeTrue();
+      expect(fold.getAttribute('aria-expanded')).toBe('false');
+      expect(fold.getAttribute('aria-label')).toBe('Expand summary');
+      expect(fold.textContent?.trim()).toBe('▾');
+      // The tag line stays: the result folds TO it.
+      expect(el().querySelector('.am-ai__tag')?.textContent).toContain('Your briefing · made by AI');
+
+      fold.click();
+      render();
+      expect(body.hidden).toBeFalse();
+    });
+
+    it('clamped: opens at two lines with "Show all", which shows everything and goes away', () => {
+      host.state.set('result');
+      host.clamped.set(true);
+      render();
+      const body = el().querySelector('.am-ai__body') as HTMLElement;
+      expect(body.classList).toContain('am-ai__body--clamped');
+      const showAll = el().querySelector('.am-ai__show-all') as HTMLButtonElement;
+      expect(showAll.textContent?.trim()).toBe('Show all');
+      expect(showAll.getAttribute('aria-controls')).toBe(body.id);
+      showAll.click();
+      render();
+      expect(body.classList).not.toContain('am-ai__body--clamped');
+      expect(el().querySelector('.am-ai__show-all')).toBeNull();
+    });
+
+    it('the clamp is two lines of the body\'s own line height', () => {
+      host.state.set('result');
+      host.clamped.set(true);
+      render();
+      const body = el().querySelector('.am-ai__body') as HTMLElement;
+      const line = parseFloat(getComputedStyle(body).getPropertyValue('--am-type-body-line')) || 21;
+      // Non-vacuity: the line height is a real length, so "two lines" means something.
+      expect(line).toBeGreaterThan(0);
+      expect(getComputedStyle(body).overflow).toBe('hidden');
+      expect(parseFloat(getComputedStyle(body).maxHeight)).toBeCloseTo(line * 2, 0);
+    });
   });
 });
