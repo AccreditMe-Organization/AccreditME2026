@@ -202,7 +202,7 @@ Note for that day: **briefings saved before this fix keep their text.** The guar
 - [x] 0. `docs(plans)`: this plan (`c554ce4`)
 - [x] 1. `fix(ai-briefing)`: the prompt sends wording, not machine dates; the system-prompt rule; the guard; specs (`111fabc`)
 - [x] 2. `docs`: SYSTEM-REFERENCE §17.8, and this plan's progress (this commit)
-- [ ] STOP: lint, typecheck, unit tests, `test:db`, the `check:*` scans; report. Ahmad pushes and runs /ready-to-pr.
+- [x] STOP: lint, typecheck, unit tests, `test:db`, the `check:*` scans; report. Ahmad pushes and runs /ready-to-pr. (Done 13 Oct: backend 3,149 tests, isolation 182, `test:db` 12; frontend 1,526; every `check:*` 0.)
 - [ ] After the deploy (a later prompt): the live re-test in §5
 
 ---
