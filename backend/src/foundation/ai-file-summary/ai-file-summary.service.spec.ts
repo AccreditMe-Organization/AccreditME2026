@@ -262,6 +262,19 @@ describe('AiFileSummaryService.make (ACC-193)', () => {
     expect((argsOf(pdf.read)[1] as { deadline: number }).deadline).toBe(NOW.getTime() + 30_000);
   });
 
+  it.each([
+    [1, '1 page'],
+    [2, '2 pages'],
+  ])('ACC-224: a %i-page PDF\'s log description says "%s"', async (pages, words) => {
+    const { service, pdf, ai } = setup();
+    pdf.read.mockImplementation((_b: unknown, opts: { onPage: (n: number, t: string) => boolean }) => {
+      for (let n = 1; n <= pages; n++) opts.onPage(n, FILE_TEXT);
+      return Promise.resolve({ numPages: pages });
+    });
+    await service.make(PDF_FILE, ORG, ACTOR, 'en', NOW);
+    expect((argsOf(ai.run)[2] as { description: string }).description).toBe(`StoredFile file-2 summary · ${words}`);
+  });
+
   it('a gateway refusal passes through unchanged, and the claim is dropped', async () => {
     const { service, ai, prisma, tx } = setup();
     ai.run.mockRejectedValue(new AiRefusalException('AI_CREDITS_EXHAUSTED', { creditCost: 15, creditsRemaining: 2, renewsAt: '2026-10-21T00:00:00.000Z' }));
