@@ -2,8 +2,10 @@
 
 Linear: **ACC-198** (lane B for this build; High for the demo).
 Branch: `feature/ACC-198-morning-briefing`, from `origin/dev` at `6505a15`.
-Status: **PLAN — no code.** Decisions for Ahmad are in §11. Each has a
-recommendation marked **(recommended)**.
+Status: **APPROVED (`c1e29f0`), being built.** Ahmad decided D1–D12 as
+recommended and added D13 (13 Oct, §11). On 13 Oct he also confirmed that
+`ANTHROPIC_API_KEY` is set on Railway, so the live proof runs on the LIVE site
+after the deploy (§8).
 
 **Sources:**
 - the ticket, as updated on 12 Oct;
@@ -468,8 +470,9 @@ provider. **`check:worker-gate`** is unchanged: nothing is scheduled.
 - **My tasks:** `?task=` and `?request=` scroll, focus and highlight.
 
 **The live proof is a STOP 2 after the deploy**, because the table must not
-reach the shared database first. It runs from a local backend on the merged
-code, with workers off and the local key:
+reach the shared database first. **Changed 13 Oct (Ahmad): it runs on the LIVE
+site** (the deployed frontend and API), because the platform key is now set on
+Railway. It is still a separate prompt after the deploy:
 1. **Press in English, as al-nakheel's tenant admin** (page-side sign-in):
    - the briefing appears, with linked items;
    - exactly **5 credits** are used;
@@ -512,7 +515,7 @@ Railway service himself.**
 
 **Progress:**
 
-- [ ] 0. `docs(plans)`: this plan, and the drawing committed beside it
+- [x] 0. `docs(plans)`: this plan, and the drawing committed beside it (`c1e29f0`; decisions recorded in the next commit)
 - [ ] 1. `chore(prisma)`: migrate — the `AiBriefing` table (local throwaway Postgres; not the shared one)
 - [ ] 2. `feat(ai-briefing)`: gathering, prompt, claim, save, read (live done markers), endpoints; unit specs and the `test:db` claim spec
 - [ ] 3. `feat(shared)`: the `am-ai-assist` component and its specs
@@ -540,6 +543,27 @@ Railway service himself.**
 | **D10** | "No briefing is made on a weekend or holiday" | The admin chose to press | **Allow it any day**: "due today" still means the tenant's today **(recommended)** |
 | **D11** | Working state: "If it takes over 8 seconds, the card quietly disappears" | The admin is waiting for the result they asked for | **Keep the working card until the answer** (the provider times out at 120 s, then the failure refusal with Try again) **(recommended)** |
 | **D12** | Saved AI results stay visible when AI is later off (drawing Q1) | A saved briefing when the feature is later closed | **Shown on its day, marked as AI, with no button** **(recommended)**: the drawing's own rule for saved results |
+
+**Decided (Ahmad, 13 Oct): D1–D12 as recommended above.**
+
+**D13 (new, Ahmad, 13 Oct): "Focus on these first."**
+- **What the model may add:** besides the lead, up to **3 items to show first**,
+  each with a one-line reason in the user's language.
+- **How it picks:** ONLY by the item ids we sent it, returned in a structured
+  format (JSON).
+- **What our code does with the picks:**
+  - validates every id against the set it sent, and **drops any it doesn't
+    recognise**, along with duplicates and anything past the third;
+  - builds the item, its date and its link itself, exactly as for the groups;
+  - with no valid picks left, **does not show the section at all**.
+- **What the model never does:** write a title, a date or a link.
+- **The section** sits between the lead and the groups. Its items still appear
+  in their own groups below.
+- **The output limit:** `morning_briefing` goes from 3,000 to **4,000**
+  `max_tokens` in `ai.config.ts`. The visible answer is now JSON (the lead, plus
+  up to three reasons, about 250 tokens); thinking is billed against the same
+  limit (ACC-194 §7); and a truncated JSON answer would be unusable. The ceiling
+  costs nothing unless used: the credit price is flat (5).
 
 ---
 
