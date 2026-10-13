@@ -34,6 +34,7 @@ const MOCK_PERMISSION: IPermission = {
   module: 'documents',
   action: 'view',
   description: 'documents:view',
+  inUse: false,
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

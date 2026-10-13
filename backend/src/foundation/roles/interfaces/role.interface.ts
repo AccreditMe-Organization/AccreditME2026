@@ -38,5 +38,13 @@ export interface IRole {
   // save the server refuses. Counting raw assignments here would be worse than
   // not having it: the dialog would believe a deactivated user still covers the
   // tenant and would offer exactly the removal that locks everyone out.
+  //
+  // ACC-120 slice 5 (D8) — now ALSO on the detail response (getRoleById), for
+  // the permission matrix's "held by N users".
   activeHolderCount?: number;
+
+  // ACC-120 slice 5 (D8) — detail only: how many of those active holders hold
+  // the role THROUGH A HEAD POSITION (a UserRole row with a grantedVia* column),
+  // so the save confirmation can say so.
+  headPositionHolderCount?: number;
 }

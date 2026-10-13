@@ -28,6 +28,10 @@ import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
 import { WorkflowRefusalException } from './workflow-refusal';
+import {
+  assertKnownAndGrantable,
+  isPlatformPermission,
+} from '../roles/permission-grantability';
 
 @Injectable()
 export class WorkflowTemplateService {
@@ -538,6 +542,7 @@ export class WorkflowTemplateService {
       throw new ConflictException('A transition must connect two stages of the same template');
     }
     this.assertNoRetiredValidator(dto.validatorConfig);
+    await this.assertTransitionPermissionGrantable(dto.requiredPermission, organizationId);
 
     const transition = await this.prisma.workflowTransition.create({
       data: {
@@ -584,6 +589,12 @@ export class WorkflowTemplateService {
     });
     if (!transition) throw new NotFoundException('Workflow transition not found');
     this.assertNoRetiredValidator(dto.validatorConfig);
+    // Only a CHANGED key is checked. A transition already holding a key that
+    // could not be chosen today (a seeded forward reference) keeps it when any
+    // other field is edited, or when the editor sends the same key back.
+    if (dto.requiredPermission !== undefined && dto.requiredPermission !== transition.requiredPermission) {
+      await this.assertTransitionPermissionGrantable(dto.requiredPermission, organizationId);
+    }
 
     const updated = await this.prisma.workflowTransition.update({
       where: { id },
@@ -832,14 +843,44 @@ export class WorkflowTemplateService {
   // (organizationId: null) or a tenant-scoped row (custom value, or an
   // overrideLabel()-created override with its own id) — same "system OR
   // tenant" shape LookupService.getValues() itself resolves against.
+  // ACC-120 slice 5 (F1) — a transition may not REQUIRE a key no role can be
+  // given: that is a transition nobody can ever fire. So a key a person picks
+  // is refused, with the role save's own codes, when it is unknown
+  // (PERMISSION_UNKNOWN), a platform key inside a tenant
+  // (PLATFORM_PERMISSION_NOT_ALLOWED) or a key nothing checks yet
+  // (PERMISSION_NOT_IN_USE). No key (null or blank) is always allowed. The
+  // rule is permission-grantability.ts, the one the role save reads.
+  //
+  // This governs the EDITOR's writes only. seedTemplates() writes its
+  // transitions directly, forward references included, and is untouched.
+  private async assertTransitionPermissionGrantable(
+    key: string | null | undefined,
+    organizationId: string,
+  ): Promise<void> {
+    if (!key || key.trim() === '') return;
+    // The organisation is read only for a platform key, the one case where it
+    // changes the answer.
+    const isPlatformOrg = isPlatformPermission(key)
+      ? (
+          await this.prisma.organization.findUnique({
+            where: { id: organizationId },
+            select: { isPlatformOrg: true },
+          })
+        )?.isPlatformOrg === true
+      : false;
+    assertKnownAndGrantable([key], isPlatformOrg);
+  }
+
   // ACC-55 — resolves why a transition's requiredPermission may be
   // unsatisfiable. Unlike every validate*() method above this is NOT a
   // validator: it never throws and never blocks a write.
   //
   // It cannot be one. seedTemplates() writes 45 transitions carrying
   // permission strings for modules that do not exist yet (workflow.seed.ts:66-81
-  // declares them deliberate forward references), so rejecting unknown values
-  // would break tenant provisioning itself — not just an admin's edit.
+  // declares them deliberate forward references), and a transition that already
+  // holds one keeps it through an unrelated edit — so a saved value can still be
+  // unknown or ungranted. Since ACC-120 slice 5 a NEWLY chosen key is refused
+  // first (assertTransitionPermissionGrantable above); this reports on the rest.
   //
   // Returns null when the permission is genuinely satisfiable, or when none is
   // set at all (6 seeded transitions have no requiredPermission, which is a

@@ -298,23 +298,86 @@ elsewhere.**
 - **`createRole()`** — tenant admins can create entirely new,
   non-system roles (`isSystem: false`, `key: null`) with an arbitrary
   permission set from the moment of creation. No cap on how many custom
-  roles a tenant can create.
+  roles a tenant can create. **Since ACC-120 slice 5 the initial set obeys
+  the same two refusals as a save** (below): no `platform:*` key inside a
+  tenant (`PLATFORM_PERMISSION_NOT_ALLOWED`), and no key nothing checks yet
+  (`PERMISSION_NOT_IN_USE`). Both run before any write.
 - **`updateRole()`** — `nameEn`/`nameAr`/`description` only. Cannot
   change `key`, `isSystem`, or permissions (that's `assignPermissions()`
   below).
-- **`assignPermissions()`** — **fully replaces** a role's entire
-  permission set (`deleteMany` then `createMany`, not a merge/patch).
-  **No `isSystem` guard** — this can be called against any system-seeded
-  role (`QUALITY_MANAGER`, `AUDITOR`, even `TENANT_ADMIN`) exactly like
-  a custom one; the backend places no restriction on editing a system
-  role's permissions. The only restriction that exists is client-side
-  (`role-permission-matrix.component.ts`'s `HIGH_IMPACT_ROLE_KEYS`
-  warns on `TENANT_ADMIN`, hard-blocks navigating to the edit screen at
-  all for `PLATFORM_ADMIN`) — a determined API caller could still
-  reassign `PLATFORM_ADMIN`'s permissions directly. This confirms
-  **roles are genuinely tenant-customizable in both directions** —
-  new roles can be created, and any role's (including system roles')
-  permissions can be fully replaced.
+- **`assignPermissions()`** — `PATCH /roles/:id/permissions`. Rewritten in
+  ACC-120 slice 5; the earlier text here ("no `isSystem` guard … only
+  restriction is client-side") was already untrue after the root-role
+  freeze and is replaced rather than amended. In order:
+  1. The role is read by `id` AND `organizationId` — another tenant's role
+     is 404, before anything is locked or written.
+  2. **`TENANT_ADMIN` is refused** (409, unchanged — the root role's set is
+     frozen, see the Permission System section of CLAUDE.md).
+  3. **`PLATFORM_ADMIN` is refused the same way, in EVERY organisation**
+     (409 `PLATFORM_ROLE_NOT_EDITABLE`; CC-93 widened it from tenants
+     only). In the platform organisation it is what `PlatformGuard` reads,
+     and a save dropping `platform:admin` would leave nobody able to reach
+     the platform screens — the tenant-administrator invariant excludes the
+     platform organisation, so nothing else would stop it. Inside a tenant
+     it is seeded with `platform:admin` and `platform:impersonate`, inert
+     there because `PlatformGuard` also needs `isPlatformOrg`; those rows
+     are KEPT by design for now, and removing them is tracked on ACC-221.
+     Every other platform-org role is editable, platform keys included
+     (step 7).
+  4. Inside one transaction: **`SELECT … FOR UPDATE` on the Role row**,
+     scoped by `id` and `organizationId` (the `TaskService.lockTaskRow()`
+     shape), then the current set is read.
+  5. **`expectedPermissionKeys`** (optional in this release; the matrix
+     sends it from PR B on) is the set the editor loaded. If it differs
+     from the current set — compared as a SET, order and duplicates
+     ignored, and against the FULL set including kept keys — the save is
+     refused 409 `ROLE_PERMISSIONS_CHANGED` and nothing is written. With
+     the lock, two saves from one loaded set cannot both commit: the second
+     reads the first's result and is refused. Proved against a real
+     Postgres by `role-permission-save.db-spec.ts` (`npm run test:db`, CI
+     only — it refuses a non-local database).
+  6. Gaining a `platform:*` key inside a tenant is 400
+     `PLATFORM_PERMISSION_NOT_ALLOWED`; gaining a key on
+     `PERMISSIONS_NOT_YET_CHECKED` is 400 `PERMISSION_NOT_IN_USE`. Both
+     bodies carry `keys`.
+  7. **Kept keys:** not-yet-checked keys the role ALREADY holds, in every
+     organisation, and platform keys it already holds INSIDE A TENANT, are
+     kept whatever the request sends — the matrix never shows them, so
+     omitting them must not delete them. **In the platform organisation
+     platform keys are ordinary keys** (CC-92 F2): ticked is granted,
+     unticked is removed. Everything else is replaced exactly (`deleteMany`
+     then `createMany`, inside the lock). The rule is
+     `foundation/roles/permission-grantability.ts`, which the transition
+     writes also read (§2, `requiredPermission`).
+  8. **An empty list is allowed** — a role may grant nothing.
+  9. After commit, one audit row: `before.permissions`,
+     `after.permissions` (sorted), and `metadata.added` / `.removed`.
+  The codes and messages live in `role-permission-refusal.ts`.
+- **`PERMISSIONS_NOT_YET_CHECKED`** (`common/constants/permissions.ts`) —
+  the catalogue keys no code decides with today: no backend check, no
+  frontend gate, and no `requiredPermission` on a seeded transition of a
+  record type that exists. 38 of 74 at slice 5 (25 referenced nowhere, 13
+  only by the workflow seed's transitions for Meeting, Document, Audit and
+  Incident). `GET /roles/permissions` answers `inUse` per key from it.
+  `permissions-in-use.spec.ts` reads both packages' source and fails if a
+  listed key gains a check, or an unlisted key has none — **remove a key
+  from the list in the same change that starts checking it.**
+  `permission.seed.ts` flattens only exports named `*_PERMISSIONS`, so the
+  list is not seeded as keys.
+- **A workflow transition may not REQUIRE a key no role can be given**
+  (ACC-120 slice 5, CC-92 F1). `WorkflowTemplateService.addTransition()`, and
+  `updateTransition()` when `requiredPermission` CHANGES, refuse an unknown
+  key (400 `PERMISSION_UNKNOWN`), a platform key inside a tenant (400
+  `PLATFORM_PERMISSION_NOT_ALLOWED`) and a not-yet-checked key (400
+  `PERMISSION_NOT_IN_USE`), through the same `permission-grantability.ts`.
+  Null or blank is always allowed. A transition already holding such a key
+  keeps it through any other edit, or when the same key is sent back, and the
+  ACC-55 `permissionWarning` still reports it — **ACC-55's "report, never
+  reject" now applies only to keys a transition already holds.**
+  `seedTemplates()` writes transitions directly and is unaffected: measured
+  13 Oct, each tenant holds 38 transitions on not-yet-checked keys and 15 on
+  keys the catalogue does not have (`capa:*`, `incidents:manage`), all from
+  the seed. The editor's picker still offers every key until PR B filters it.
 - **`deactivateRole()` / `removeRoleFromUser()`** — both carry a
   **last-`TENANT_ADMIN` lockout guard**: deactivating the `TENANT_ADMIN`
   role while it has active assignments is blocked; removing a user's
@@ -361,6 +424,16 @@ elsewhere.**
     gets established and copied.
   - A role with no permissions reports `0`, not `undefined`, so a
     consumer can distinguish it from "not loaded".
+
+- **`getRoleById()`** also answers `activeHolderCount` and
+  `headPositionHolderCount` (ACC-120 slice 5): `UserRole` rows of ACTIVE
+  users in the organisation, and the subset granted through a head
+  position (`grantedViaHeadPositionId` or `…OrgUnitId` set). The matrix
+  uses them to say whom a save reaches.
+- **`assignRoleToUser()`** refuses `PLATFORM_ADMIN` outside the platform
+  organisation (400 `PLATFORM_ROLE_NOT_ASSIGNABLE`) — previously only the
+  list filter above kept it out of reach. Measured on dev at slice 5: no
+  tenant user holds it.
 
   This omission is what the bug was. Before ACC-74 the method returned
   neither field, and `role-list` bound to `permissions?.length` — so

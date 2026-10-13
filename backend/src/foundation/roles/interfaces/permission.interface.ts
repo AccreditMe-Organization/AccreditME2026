@@ -3,4 +3,8 @@ export interface IPermission {
   module: string;
   action: string;
   description: string | null;
+  // ACC-120 slice 5 (R2) — false for a key no code checks yet
+  // (PERMISSIONS_NOT_YET_CHECKED). A role cannot gain such a key, and keeps one
+  // it already holds.
+  inUse: boolean;
 }
