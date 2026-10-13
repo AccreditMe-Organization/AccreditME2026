@@ -24,12 +24,18 @@ export const RECORD_NAME_MAX = 255;
 /** Context, not the subject (Q2). */
 export const RECORD_PURPOSE_MAX = 500;
 
-/** One line beside "Use this title". */
-export const TITLE_CAP = 70;
-/** 2 + 3 + 2 lines in the suggestion card, which is what step 2's 420px budget holds (§2.1). */
-export const PURPOSE_CAP = 140;
-export const TODO_CAP = 200;
-export const DONE_CAP = 140;
+/**
+ * THE CAPS ARE THE CARD'S BUDGET, MEASURED (step-197 §15). Step 2 of New task
+ * holds eight lines of suggestion under the 420px cap: 2 + 3 + 2 for the parts
+ * and one for the title, in Arabic as in English, with room to spare on each
+ * line for wide words. 70 / 140 / 200 / 140 measured 410px in Arabic with no
+ * room at all. Raise one only with task-form.draft.layout.spec.ts beside it.
+ */
+/** One line in the card, above "Use this title". */
+export const TITLE_CAP = 60;
+export const PURPOSE_CAP = 120;
+export const TODO_CAP = 180;
+export const DONE_CAP = 120;
 
 export const OPEN_NOTE = '<<<NOTE';
 export const CLOSE_NOTE = 'NOTE>>>';

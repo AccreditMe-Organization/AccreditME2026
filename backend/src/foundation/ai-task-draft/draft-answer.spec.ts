@@ -47,7 +47,7 @@ describe('the prompt (ACC-197 §3)', () => {
   it('states the caps the parser enforces, read here rather than copied', () => {
     const prompt = draftSystemPrompt('en');
     for (const cap of [TITLE_CAP, PURPOSE_CAP, TODO_CAP, DONE_CAP]) expect(prompt).toContain(`at most ${cap} characters`);
-    expect([TITLE_CAP, PURPOSE_CAP, TODO_CAP, DONE_CAP]).toEqual([70, 140, 200, 140]);
+    expect([TITLE_CAP, PURPOSE_CAP, TODO_CAP, DONE_CAP]).toEqual([60, 120, 180, 120]);
   });
 
   it('sends the record, the title typed so far, and the note between its delimiters', () => {
