@@ -3542,6 +3542,105 @@ dialog is reused unchanged.
 - **AI log:** the workload hint's description no longer carries the chosen
   person's user id — "chosen 12 open, 0 overdue" (Q3).
 
+### 3.13 A record's Tasks panel and the All tasks list (ACC-229)
+
+A record's tasks, capped at five, and the full list behind "See all" — also
+`/tasks/all`, organisation-wide (Record Tasks Panel §1–§2). Plan, decisions
+and measurements: `backend/Plans/step-228-record-tasks-panel.md` (§2, §5c).
+
+**Who sees which tasks — `TaskRecordListService.scope()`, today's rule as a
+list.**
+
+| Mode | Gate | Rows |
+|---|---|---|
+| On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | with `tasks:view`: every task on it (`scope: 'all'`). Without (Q1): only the tasks the viewer **is or was on** — the My tasks rule (`scope: 'own'`). A creator who is on none of them sees none of them here, though each one's page admits them as its manager |
+| Organisation-wide (neither) | `tasks:view`, else 403 naming it | every task whose record type the viewer may see — `ObjectVisibilityService.viewableTypes()`, the same rules as `assertCanView`, failing closed: a type with no rule is never listed |
+
+Naming one of `sourceType`/`sourceId` without the other is a 400.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /tasks/record-panel?sourceType&sourceId` | `{ total, scope, rows }` — the first five of the order below; `total` is every task the viewer can see on the record |
+| `GET /tasks/record-list?…` | `{ items, total, matching, scope, facets, aroundIndex }` — 1 to 50 rows (`take`, `skip`); `facets` (the assignee and pool filter options, over the whole scope) on the first page only; `aroundIndex` is where `around=<taskId>` sits under the current sort and filters |
+
+Both are declared before `':id'`, with no `@Permissions` — the service
+decides, like the task page.
+
+**Order and filters are SQL** (one `$queryRaw` per read; every value bound,
+`t."organizationId"` first in every `WHERE`; only whitelisted words reach
+`Prisma.raw`). Every `ORDER BY` ends in `t.id`, so the order is total and Load
+more never repeats or skips a row.
+
+- **Default (`due`):** rank 0 open, 1 On hold, 2 closed; open and On hold by
+  `dueAt` (`NULLS LAST`, so overdue first and undated last), then the closed
+  by `COALESCE(completedAt, cancelledAt, updatedAt) DESC`. The panel takes
+  five of this.
+- **Other sorts:** created, updated, status (rank, then status, then due),
+  title (`lower(title)`), either way.
+- **Filters:** status (Assigned includes a row still stored as `OVERDUE`,
+  ACC-163); overdue — a flag, `dueAt < now()` and open and not On hold; an
+  active assignee; a pool (`POSITION:{unit}:{position}` or
+  `COMMITTEE_ROLE:{committee}:{role}`); required or optional (stage-entry
+  tasks only); due — this week ends at the close of the seventh day in the
+  TENANT's zone (`WorkingCalendarService.getEffectiveTimeZone`, ACC-94 D3),
+  later, or none; "Assigned to me"; search — `ILIKE` on the title, the Arabic
+  title and the active assignees' names, with `%`, `_` and `\` escaped.
+
+**Rows are read in batches, never one query per row.** One `findMany` for the
+page's tasks with assignees, evidence counts, pool labels and open requests;
+the viewer's cover (`creatorsCoveredBy`) and pools (`poolsOfUser`) once; one
+batched "is the record still in that step" for Completed workflow tasks; the
+record names (organisation-wide only). **Each row's `actions` is
+`taskActionsFor()`, the task page's function**, and
+`task-record-list.actions.db-spec.ts` requires every row's actions to equal
+that task's page, for a creator, a direct assignee, a pool member with and
+without `tasks:view`, and a reader holding `tasks:reassign`.
+
+**Frontend.**
+
+- **`RecordTasksPanelComponent`** (`app-record-tasks-panel`,
+  `foundation/tasks/components/record-tasks-panel/`): its own frame —
+  header 42/46, a body FIXED at 294px English / 328px Arabic with five 52/58
+  rows and, only above five, a 34/38 footer "Showing 5 of 16 · See all". It
+  never grows and never scrolls (measured in `record-tasks-panel.layout.spec.ts`
+  with 0, 3, 5 and 16 tasks). Inputs: the record, its name, `canCreate`, and a
+  sought task — among the five it is highlighted; otherwise the popup opens at
+  it. Not `RecordPanelComponent`: that body has a floor, not a height.
+- **`TaskListViewComponent`** (`app-task-list-view`): the toolbar (search,
+  Status, Overdue only, Assignee or pool, Required or optional, Due, Assigned
+  to me, Sort), chips with Clear all, a polite live count, the column header
+  sticky inside the ONLY scrolling element, Load more by 50, and the failure
+  states (list, Load more, a row's action). Opens on its defaults every time.
+  Below 760px the rows are two-line cards. Used in the popup and at
+  `/tasks/all`.
+- **`ListDialogComponent`** (`am-list-dialog`, `shared/components/list-dialog/`):
+  the shell for a LIST — 1040 × 760 or the window less 96, a full-screen sheet
+  below 760px; a header and the body template, rebuilt on every open; a layer
+  in `LayerStackService`, listening for Escape in the CAPTURE phase so an open
+  row menu inside it takes the first Escape; focus back to the opener.
+  EditDialog's 420px cap does not apply: it is a list, not a form.
+- **`RowMenuComponent`** (`am-row-menu`, `shared/components/row-menu/`): the ⋯
+  and its worded menu on the CDK menu (reposition scroll strategy), a layer
+  while open.
+- **`TaskActionHostComponent`** (`app-task-action-host`): runs a row's action.
+  One-step actions are called directly (Complete is confirmed first, as the
+  committee page always did); an action with a dialog reads the task page's
+  view first, then opens the same dialog the task page uses. A failure is
+  reported for its row only.
+- **`task-row-actions.ts`** places the server's actions — the primary as the
+  button, then the menu in groups: the viewer's own work, the creator's, then
+  View evidence (n) and Open task. Shared with the task page's labels.
+- **`task-row-text.ts`** words a row: the due label first and never cut ("⚠ 4
+  days overdue · 10 Oct 2026", "⏸ On hold to …", "✓ Completed …"), then who,
+  status and the one changing fact.
+- **`OverlaySelectComponent.ariaLabel`** — opt-in: a select with no visible
+  label (a toolbar filter) reads as a button named "Status: In progress".
+
+**Replaced:** the committee page's own Tasks panel, its seven inline icons and
+its client-side copies of the action rules (`committee-detail.tasks.spec.ts`,
+`task-due-summary.ts`). **ACC-217 is fixed by construction:** the panel's load
+state and an action's failure are separate signals.
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +
