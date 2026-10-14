@@ -9,9 +9,19 @@
 //      longer exists. A tab opened before a release asks for the old lazy
 //      chunk, and a rewrite of every path answered it with the HTML page,
 //      status 200, which the .js cache rule then marked immutable for a year.
-//      The import failed and the link did nothing. So a missing asset must be
-//      a 404: the rewrite's source is tested against sample asset paths (which
-//      it must NOT match) and sample routes (which it must).
+//      The import failed and the link did nothing. So the rewrite must not
+//      answer an asset path: its source is tested against sample asset paths
+//      (which it must NOT match) and sample routes (which it must). That is
+//      necessary and NOT sufficient — see rule 8.
+//   8. No framework preset (ACC-226): "framework" is exactly null. A preset
+//      adds routes of its own AFTER everything in vercel.json, and this check
+//      cannot see them. Vercel's Angular preset appends "/(.*)" → /index.html,
+//      so with "framework": "angular" a missing chunk was still answered with
+//      the page on production, although rule 1 passed. With null, the rewrite
+//      rule 1 tests is the only fallback, and a missing asset is a 404. The
+//      build needs nothing from the preset: the install command, build command
+//      and output directory are all stated in vercel.json (rule 6 pins the
+//      last).
 //   7. The page itself revalidates (ACC-223): a Cache-Control rule on the same
 //      source as the rewrite, with max-age=0 — and no long-lived cache rule may
 //      match a path the rewrite matches, or the page would be cached under it.
@@ -208,6 +218,16 @@ for (const [key, pattern] of Object.entries(required)) {
 const ignore = String(vercel.ignoreCommand ?? '');
 if (!/\$VERCEL_GIT_COMMIT_REF"?\s*!=\s*"?dev"?/.test(ignore)) {
   fail('5 only dev', `ignoreCommand "${ignore}" does not skip every branch but dev`);
+}
+
+// 8. No framework preset (ACC-226). `null` exactly: a missing key lets Vercel
+// detect Angular from package.json and apply the same preset.
+if (vercel.framework !== null) {
+  const found = 'framework' in vercel ? JSON.stringify(vercel.framework) : 'not set (Vercel would detect one)';
+  fail(
+    '8 no preset',
+    `"framework" must be exactly null, found ${found} — a framework preset adds routes of its own that this check cannot see (Angular's sends every unmatched path, missing assets included, to /index.html)`,
+  );
 }
 
 // 6. Output directory and Node version.
