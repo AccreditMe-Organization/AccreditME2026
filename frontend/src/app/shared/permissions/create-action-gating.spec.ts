@@ -160,6 +160,14 @@ const CASES: readonly Case[] = [
     component: TaskListComponent,
     permission: 'tasks:create',
     services: [TaskService],
+    // ACC-229 — the page hosts the All tasks list, whose read returns a page
+    // object, not an array: an empty one, so the list renders with no rows.
+    overrides: new Map<Type<unknown>, unknown>([
+      [
+        TaskService,
+        { getRecordList: () => of({ items: [], total: 0, matching: 0, scope: 'all', facets: null, aroundIndex: null }) },
+      ],
+    ]),
   },
   {
     page: 'workflow-stage-list',

@@ -206,6 +206,76 @@ export interface ITaskActionsDto {
   primary: TaskPrimaryAction | null;
 }
 
+// ACC-229 — one row of a record's Tasks panel and of the All tasks list:
+// what the row shows, and the viewer's actions on it (the task page's own
+// rules). A dialog opened from a row reads the task page's view first.
+export interface ITaskRecordRowDto {
+  id: string;
+  title: string;
+  titleAr: string | null;
+  status: string;
+  priority: string;
+  dueAt: string | null;
+  onHoldUntil: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  cancelledReason: string | null;
+  rejectedReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requiresEvidence: boolean;
+  requirement: 'REQUIRED' | 'OPTIONAL' | null;
+  sourceType: string;
+  sourceId: string;
+  /** On the organisation-wide list only. */
+  record: { type: string; id: string; nameEn: string | null; nameAr: string | null } | null;
+  assignees: { id: string; name: string; positionNameEn: string | null; positionNameAr: string | null }[];
+  pool: TaskPoolDto | null;
+  waitingInPool: boolean;
+  pickedByViewer: boolean;
+  openRequest: TaskOpenRequestDto | null;
+  evidenceCount: number;
+  createdBy: { id: string; name: string };
+  createdByWorkflow: boolean;
+  actions: ITaskActionsDto;
+}
+
+export interface ITaskRecordPanelDto {
+  total: number;
+  scope: 'all' | 'own';
+  rows: ITaskRecordRowDto[];
+}
+
+export interface ITaskRecordListDto {
+  items: ITaskRecordRowDto[];
+  total: number;
+  matching: number;
+  scope: 'all' | 'own';
+  facets: { people: { id: string; name: string }[]; pools: { key: string; pool: TaskPoolDto }[] } | null;
+  aroundIndex: number | null;
+}
+
+export type TaskRecordListSort = 'due' | 'created' | 'updated' | 'status' | 'title';
+export type TaskRecordListStatus = 'UNASSIGNED' | 'PENDING' | 'IN_PROGRESS' | 'ON_HOLD' | 'REJECTED' | 'COMPLETED' | 'CANCELLED';
+
+export interface TaskRecordListQuery {
+  sourceType?: string;
+  sourceId?: string;
+  q?: string;
+  status?: TaskRecordListStatus[];
+  overdue?: boolean;
+  assignee?: string;
+  pool?: string;
+  required?: 'REQUIRED' | 'OPTIONAL';
+  due?: 'THIS_WEEK' | 'LATER' | 'NONE';
+  mine?: boolean;
+  sort?: TaskRecordListSort;
+  dir?: 'asc' | 'desc';
+  take?: number;
+  skip?: number;
+  around?: string;
+}
+
 export interface ITaskPagePersonDto {
   id: string;
   name: string;
@@ -615,6 +685,26 @@ export class TaskService {
   getForSource(sourceType: string, sourceId: string): Observable<ITaskWithAssigneesDto[]> {
     const params = new HttpParams().set('sourceType', sourceType).set('sourceId', sourceId);
     return this.http.get<ITaskWithAssigneesDto[]>(this.base, { params });
+  }
+
+  // ACC-229 — a record's Tasks panel: the first five, and the total.
+  getRecordPanel(sourceType: string, sourceId: string): Observable<ITaskRecordPanelDto> {
+    const params = new HttpParams().set('sourceType', sourceType).set('sourceId', sourceId);
+    return this.http.get<ITaskRecordPanelDto>(`${this.base}/record-panel`, { params });
+  }
+
+  // ACC-229 — the All tasks list: on a record, or organisation-wide without one.
+  getRecordList(query: TaskRecordListQuery): Observable<ITaskRecordListDto> {
+    let params = new HttpParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === null || value === '' || value === false) continue;
+      if (Array.isArray(value)) {
+        if (value.length) params = params.set(key, value.join(','));
+      } else {
+        params = params.set(key, String(value));
+      }
+    }
+    return this.http.get<ITaskRecordListDto>(`${this.base}/record-list`, { params });
   }
 
   getUnassigned(): Observable<ITaskDto[]> {

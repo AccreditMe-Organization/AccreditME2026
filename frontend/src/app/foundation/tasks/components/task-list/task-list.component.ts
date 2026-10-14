@@ -1,11 +1,6 @@
-import { Component, OnInit, TemplateRef, ViewChild, computed, inject, input, signal } from '@angular/core';
-import { AmDateTimePipe } from '../../../../core/formatting';
+import { Component, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
-import { TableModule } from 'primeng/table';
-import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
-import { TaskService, ITaskWithAssigneesDto } from '../../services/task.service';
-import { taskStatusLabelKey, taskStatusSeverity } from '../../task-status';
 import { TaskFormComponent } from '../task-form/task-form.component';
 import { TaskFormFooterComponent } from '../task-form/task-form-footer.component';
 import { TaskFormStepsComponent } from '../task-form/task-form-steps.component';
@@ -17,31 +12,24 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 // <app-task-form> directly was already immune to ACC-29's pre-fill bug.
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
-import { TaskLinkComponent } from '../task-link/task-link.component';
+import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
 
-// The ROUTED, full-page task list, filtered by sourceType + sourceId.
+// The organisation's tasks, at /tasks/all (tasks:view).
 //
-// ACC-76 — this is no longer "the embeddable list meant to be dropped into a
-// module's detail page", which its header comment claimed from ACC-11 onward.
-// It never was: it renders its own page heading, h-full and
-// scrollHeight="flex", so embedded it fought its container for height and
-// brought a full table's type scale and column widths into a summary panel.
+// ACC-229 — this page never showed a task. It asked for a record's tasks
+// (getForSource) and, reached from the rail with no record, returned before
+// asking: every visit read "No tasks". It now hosts the All tasks list
+// organisation-wide — the same list a record's "See all" opens — which needs
+// no record: the server lists every task in the record types the viewer may
+// see (ObjectVisibilityService.viewableTypes), 50 at a time.
 //
-// An `embedded` mode was added and then removed the same ticket, once
-// Committee's Tasks panel was rebuilt to render its own rows on
-// RecordPanelComponent — a summary panel needs four facts, not a table's
-// column set, and equal panel heights in a row cannot survive one panel
-// bringing its own. Removed rather than left as dead configuration.
-//
-// A record page that wants a task summary should follow committee-detail's
-// shape: RecordPanelComponent plus its own rows, calling
-// TaskService.getForSource() directly. That also lets it reload after a
-// create, which this component could never be told to do.
+// A record page does not embed this page: it uses the record Tasks panel
+// (RecordTasksPanelComponent), whose "See all" opens the same list.
 @Component({
   selector: 'app-task-list',
   standalone: true,
-  imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskFormComponent, TaskFormFooterComponent,
-    TaskFormStepsComponent, EditDialogComponent, TaskLinkComponent],
+  imports: [PageHeaderComponent, TranslatePipe, ButtonModule, TaskFormComponent, TaskFormFooterComponent, TaskFormStepsComponent,
+    EditDialogComponent, TaskListViewComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'task.allTasks' | translate">
@@ -52,51 +40,7 @@ import { TaskLinkComponent } from '../task-link/task-link.component';
         </div>
       </app-page-header>
 
-      @if (error()) {
-        <p class="text-red-500">{{ error() | translate }}</p>
-      }
-
-      <p-table [value]="tasks()" [loading]="loading()" scrollable scrollHeight="flex" styleClass="w-full">
-        <ng-template pTemplate="header">
-          <tr>
-            <th style="width: 34%">{{ 'task.title' | translate }}</th>
-            <th style="width: 26%">{{ 'task.assignees' | translate }}</th>
-            <th style="width: 13%">{{ 'task.priority.title' | translate }}</th>
-            <th style="width: 14%">{{ 'task.dueDate' | translate }}</th>
-            <th style="width: 13%">{{ 'task.status.title' | translate }}</th>
-          </tr>
-        </ng-template>
-
-        <ng-template pTemplate="body" let-task>
-          <tr>
-            <td><am-task-link [taskId]="task.id" [title]="task.title" /></td>
-            <td>
-              <!-- ACC-58, absorbed into ACC-76: the first surface in the
-                   product that answers "who is this assigned to". -->
-              @if (task.assignees.length === 0) {
-                <span class="text-[var(--am-text-secondary)]">{{ 'task.unassigned' | translate }}</span>
-              } @else {
-                <div class="flex flex-col">
-                  @for (assignee of task.assignees; track assignee.userId) {
-                    <span>{{ assignee.userName }}</span>
-                  }
-                </div>
-              }
-            </td>
-            <td>{{ ('task.priority.' + task.priority.toLowerCase()) | translate }}</td>
-            <td>{{ task.dueAt | amDateTime }}</td>
-            <td>
-              <p-tag [value]="statusLabel(task) | translate" [severity]="statusSeverity(task)" />
-            </td>
-          </tr>
-        </ng-template>
-
-        <ng-template pTemplate="emptymessage">
-          <tr>
-            <td colspan="5" class="text-center py-8 text-[var(--am-text-secondary)]">{{ 'task.noTasks' | translate }}</td>
-          </tr>
-        </ng-template>
-      </p-table>
+      <app-task-list-view variant="page" />
     </div>
 
     <ng-template #formTpl>
@@ -139,14 +83,14 @@ import { TaskLinkComponent } from '../task-link/task-link.component';
     />
   `,
 })
-export class TaskListComponent implements OnInit {
+export class TaskListComponent {
   readonly formDirty = signal(false);
   readonly taskFormRef = signal<TaskFormComponent | null>(null);
 
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
-  private readonly taskService = inject(TaskService);
   private readonly navigationAccess = inject(NavigationAccessService);
+  private readonly list = viewChild(TaskListViewComponent);
 
   // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
   // cannot use it: a disabled button still announces an action that is not
@@ -156,27 +100,7 @@ export class TaskListComponent implements OnInit {
   // not hold it, so Haya loses this button — ACC-77's gap, not this gate's.
   readonly canCreate = computed(() => this.navigationAccess.hasPermission('tasks:create'));
 
-  readonly sourceType = input<string | null>(null);
-  readonly sourceId = input<string | null>(null);
-
-  readonly loading = signal(false);
-  readonly tasks = signal<ITaskWithAssigneesDto[]>([]);
-  readonly error = signal<string | null>(null);
   readonly formVisible = signal(false);
-
-  // ACC-163 — from the one status helper: Assigned for PENDING (and for a
-  // legacy OVERDUE row), and the new Rejected.
-  statusLabel(task: ITaskWithAssigneesDto): string {
-    return taskStatusLabelKey(task);
-  }
-
-  statusSeverity(task: ITaskWithAssigneesDto): ReturnType<typeof taskStatusSeverity> {
-    return taskStatusSeverity(task);
-  }
-
-  ngOnInit(): void {
-    this.loadTasks();
-  }
 
   onAdd(): void {
     this.formVisible.set(true);
@@ -184,24 +108,6 @@ export class TaskListComponent implements OnInit {
 
   onSaved(): void {
     this.formVisible.set(false);
-    this.loadTasks();
-  }
-
-  loadTasks(): void {
-    const type = this.sourceType();
-    const id = this.sourceId();
-    if (!type || !id) return;
-
-    this.loading.set(true);
-    this.taskService.getForSource(type, id).subscribe({
-      next: (tasks) => {
-        this.tasks.set(tasks);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('task.errorLoad');
-        this.loading.set(false);
-      },
-    });
+    this.list()?.reload();
   }
 }
