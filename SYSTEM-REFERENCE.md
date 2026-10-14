@@ -327,8 +327,13 @@ elsewhere.**
   4. Inside one transaction: **`SELECT … FOR UPDATE` on the Role row**,
      scoped by `id` and `organizationId` (the `TaskService.lockTaskRow()`
      shape), then the current set is read.
-  5. **`expectedPermissionKeys`** (optional in this release; the matrix
-     sends it from PR B on) is the set the editor loaded. If it differs
+  5. **`expectedPermissionKeys`** is the set the editor loaded, and is
+     REQUIRED since PR B: the DTO refuses a missing one with 400, and the
+     service refuses one that reaches it missing with 409
+     `ROLE_PERMISSIONS_CHANGED`, so a call that skips validation fails
+     closed. (It was optional for one release, so a tab left open across that
+     deploy kept saving. A tab left open across PR B's deploy gets the 400
+     until it is reloaded.) If it differs
      from the current set — compared as a SET, order and duplicates
      ignored, and against the FULL set including kept keys — the save is
      refused 409 `ROLE_PERMISSIONS_CHANGED` and nothing is written. With
@@ -353,6 +358,30 @@ elsewhere.**
   9. After commit, one audit row: `before.permissions`,
      `after.permissions` (sorted), and `metadata.added` / `.removed`.
   The codes and messages live in `role-permission-refusal.ts`.
+- **The permission matrix screen** (`/roles/:id/permissions`, ACC-120 slice
+  5 PR B; plan `backend/Plans/step-120-5-permission-matrix.md`).
+  - **Shown:** only `inUse` keys, and no `platform:*` inside a tenant
+    (`NavigationAccessService.isPlatformOrg`). Each row is labelled with a
+    sentence, never its key (`roles.matrix.sentence.<key>` in both i18n
+    files).
+  - **Placement:** ONE function, `permission-matrix/permission-columns.ts`
+    `placementOf()`, puts every key in one of six columns or makes it a
+    whole-row grant. Modules come in a fixed order (`MODULE_ORDER`).
+  - **The data model** (rows, the tri-state, marks, changes) is pure
+    functions in `permission-matrix.model.ts`.
+  - **A save sends the FULL set**, held hidden keys included, plus
+    `expectedPermissionKeys`. A 409 offers only "Reload role".
+  - **Read-only:** the root role, Platform Administrator, and any reader
+    without `roles:manage`.
+  - **Leaving with unsaved changes asks first.** This is
+    `permission-matrix/leave-guard.ts`, the app's first `canDeactivate`: a
+    screen implements `canLeave()`, plus its own `beforeunload`.
+  - **`check:permission-sentences`** reads the in-use keys from the backend
+    catalogue and fails on any key or module without English and Arabic
+    text. Add the sentence in the same change that takes a key off
+    `PERMISSIONS_NOT_YET_CHECKED`. `permissions-in-use.spec.ts` treats
+    `permission-columns.ts` as a declaring file: it places every key and
+    decides nothing.
 - **`PERMISSIONS_NOT_YET_CHECKED`** (`common/constants/permissions.ts`) —
   the catalogue keys no code decides with today: no backend check, no
   frontend gate, and no `requiredPermission` on a seeded transition of a
@@ -377,7 +406,21 @@ elsewhere.**
   `seedTemplates()` writes transitions directly and is unaffected: measured
   13 Oct, each tenant holds 38 transitions on not-yet-checked keys and 15 on
   keys the catalogue does not have (`capa:*`, `incidents:manage`), all from
-  the seed. The editor's picker still offers every key until PR B filters it.
+  the seed.
+  **The editor's picker offers only keys a transition may be given (PR B)**:
+  `inUse`, and no platform key inside a tenant
+  (`workflow-transition-editor.component.ts`, `offerable()`).
+  - The EDIT picker also shows the transition's OWN current key when it is not
+    offerable. It is selected, in a last group: "Can't be granted yet" when the
+    catalogue has the key, "Not a defined permission" when it does not. So an
+    unrelated edit sends it back unchanged (which F1 accepts), never blank.
+  - The ADD picker offers no such key.
+  - This replaced ACC-55's rule of registering every transition's unknown
+    value in both dialogs. Under F1 that would offer a key the server
+    refuses.
+  - The current key must be among the options: CDK's listbox throws
+    ("selected values that do not match any of its options") when it is
+    not.
 - **`deactivateRole()` / `removeRoleFromUser()`** — both carry a
   **last-`TENANT_ADMIN` lockout guard**: deactivating the `TENANT_ADMIN`
   role while it has active assignments is blocked; removing a user's
@@ -503,7 +546,7 @@ endpoint. Grepped for actual callers (not just the service definition):
 |---|---|---|
 | `listRoles()` | `GET /roles` | `committee-form`, `committee-detail`, `workflow-transition-editor`, `workflow-stage-form`, `user-role-assignment`, `role-list` |
 | `getRole()` | `GET /roles/:id` | `role-permission-matrix` |
-| `listAllPermissions()` | `GET /roles/permissions` | `role-permission-matrix` |
+| `listAllPermissions()` | `GET /roles/permissions` | `role-permission-matrix`, `workflow-transition-editor` |
 | `createRole()` | `POST /roles` | `role-form` |
 | `updateRole()` | `PATCH /roles/:id` | `role-form` |
 | `assignPermissions()` | `PATCH /roles/:id/permissions` | `role-permission-matrix` |

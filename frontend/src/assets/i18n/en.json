@@ -288,7 +288,6 @@
   "roles": {
     "activateRole": "Activate Role",
     "addRole": "New Role",
-    "adminRoleWarning": "Removing permissions from this role affects every user currently assigned to it.",
     "assignRole": "Assign Role",
     "assignedUsers": "Assigned Users",
     "confirmDeactivateRole": "Deactivate the role “{{name}}”? Everyone assigned to it loses its permissions immediately.",
@@ -297,14 +296,12 @@
     "deactivateRole": "Deactivate Role",
     "description": "Description",
     "editRole": "Edit Role",
-    "errorLoad": "Failed to load roles.",
     "isActive": "Active",
     "managePermissions": "Manage Permissions",
     "matrixReadOnly": "You can see what this role is allowed to do, but not change it. Changing it needs permission to manage roles.",
     "name": "Role",
     "nameAr": "Name (Arabic)",
     "nameEn": "Name (English)",
-    "noPermissions": "No permissions assigned.",
     "noRoles": "No roles found.",
     "permissionMatrix": "Permission Matrix",
     "permissions": "Permissions",
@@ -315,7 +312,147 @@
     "systemBadge": "System",
     "systemRoleKeyLocked": "This role's identifier cannot be changed. All other fields, including its permissions, may be edited for your organization.",
     "title": "Roles & Permissions",
-    "matrixFrozenRootRole": "This is your organization’s root role. Its permissions are fixed so that someone can always administer the organization. You can rename it, and you can give any permissions you like to other roles."
+    "matrixFrozenRootRole": "This is your organization’s root role. Its permissions are fixed so that someone can always administer the organization. You can rename it, and you can give any permissions you like to other roles.",
+    "matrix": {
+      "columnHeader": "Module / permission",
+      "col": {
+        "view": "View",
+        "create": "Create",
+        "edit": "Edit",
+        "delete": "Delete",
+        "approve": "Approve",
+        "audit": "Audit"
+      },
+      "subtitle": "Permissions",
+      "affects": "changing this affects them as soon as it's saved",
+      "reviewChanges": "Review changes…",
+      "legend": {
+        "grantedSaved": "granted, saved",
+        "grantedUnsaved": "granted, not saved yet",
+        "revokedUnsaved": "revoked, not saved yet",
+        "notApplicable": "not applicable to this permission",
+        "granted": "granted",
+        "notGranted": "not granted",
+        "some": "some granted"
+      },
+      "state": {
+        "granted": "granted",
+        "notGranted": "not granted",
+        "grantedUnsaved": "granted, not saved",
+        "revokedUnsaved": "revoked, not saved",
+        "some": "some granted",
+        "notApplicable": "not applicable"
+      },
+      "wholeModule": "Whole module",
+      "gridLabel": "Permissions of {{name}}",
+      "confirmTitle": "Save changes to {{name}}?",
+      "saveChanges": "Save changes",
+      "tryAgain": "Try again",
+      "reloadRole": "Reload role",
+      "failedTitle": "Nothing was saved",
+      "failedBody": "The save is all or nothing, so no one's access changed.",
+      "forbidden": "You no longer have permission to change roles. Nothing was saved.",
+      "conflict": "{{name}} was changed by someone else since you opened it. Nothing was saved.",
+      "leaveHeader": "Leave without saving?",
+      "leaveMessage": "Your unsaved changes to this role's permissions will be lost.",
+      "leave": "Leave",
+      "stay": "Stay",
+      "frozenPlatformRole": "This is the Platform Administrator role. Its permissions are fixed in every organization, so they can't be changed here.",
+      "loadFailed": "This role's permissions couldn't load.",
+      "noneShown": "No permissions to show.",
+      "module": {
+        "tenant": {
+          "name": "Organization settings",
+          "description": "The organization’s profile and how it is set up"
+        },
+        "org": {
+          "name": "Organization structure",
+          "description": "Units, their heads and the working calendar"
+        },
+        "users": {
+          "name": "Users",
+          "description": "Who may invite, transfer and deactivate people"
+        },
+        "roles": {
+          "name": "Roles",
+          "description": "Roles, and what each one allows"
+        },
+        "lookups": {
+          "name": "Lookups",
+          "description": "The values the product’s lists offer"
+        },
+        "workflows": {
+          "name": "Workflows",
+          "description": "How records move from stage to stage"
+        },
+        "tasks": {
+          "name": "Tasks",
+          "description": "Who may raise, assign and follow up work"
+        },
+        "committees": {
+          "name": "Committees",
+          "description": "Who may see, run and sign off committees"
+        },
+        "meetings": {
+          "name": "Meetings",
+          "description": "Committee meetings and the work they produce"
+        },
+        "platform": {
+          "name": "Platform",
+          "description": "Running AccreditMe itself"
+        },
+        "positions": {
+          "name": "Org positions",
+          "description": "The positions people hold"
+        },
+        "setup": {
+          "name": "Setup health",
+          "description": "Gaps in the organization’s setup that need fixing"
+        },
+        "admin": {
+          "name": "Administration",
+          "description": "Access to the Administration area"
+        }
+      },
+      "sentence": {
+        "tenant:view": "See the organization’s profile and settings",
+        "tenant:update": "Change the organization’s profile",
+        "tenant:manage_config": "Set up email, storage, deadlines and AI",
+        "tenant:bootstrap": "Load the organization’s starting setup",
+        "org:view": "See units and their heads",
+        "org:manage": "Change units, heads and the calendar",
+        "users:view": "See users and their records",
+        "users:invite": "Invite new users",
+        "users:manage": "Edit other people’s profiles and out-of-office",
+        "users:transfer": "Move someone to a new unit or position",
+        "users:deactivate": "Deactivate a user",
+        "users:reactivate": "Reactivate a deactivated user",
+        "roles:view": "See roles and what they allow",
+        "roles:manage": "Create, change and assign roles",
+        "lookups:view": "See lookup lists and their values",
+        "lookups:manage": "Add, rename and reorder lookup values",
+        "workflows:view": "See workflows, their stages and transitions",
+        "workflows:manage": "Change workflows and their stage tasks",
+        "tasks:view": "See every task in the organization",
+        "tasks:create": "Create tasks on records",
+        "tasks:reassign": "Reassign tasks and decide extensions",
+        "tasks:manage": "See and assign tasks nobody owns",
+        "committees:view": "Open a committee record and its members",
+        "committees:create": "Create a committee",
+        "committees:edit_details": "Edit name, purpose, quorum, frequency",
+        "committees:add_member": "Add members to a committee",
+        "committees:remove_member": "Remove members from a committee",
+        "committees:change_member_role": "Change a member’s role on a committee",
+        "committees:approve": "Approve terms and confirm a dissolution",
+        "committees:manage": "Submit, suspend, reactivate, dissolve",
+        "meetings:view": "See meetings and their tasks",
+        "platform:admin": "Run the AccreditMe platform",
+        "positions:view": "See the organization’s positions",
+        "positions:manage": "Add and change positions",
+        "setup:view": "See Setup health",
+        "admin:access": "Open the Administration area"
+      }
+    }
   },
   "workflow": {
     "actionCreateTask": "Create Task",
@@ -386,6 +523,7 @@
     "permissionListUnavailable": "The permission list could not be loaded. The current value is preserved, but new values cannot be chosen.",
     "permissionNoHolderWarning": "No active role in this organization holds this permission. The transition was saved, but nobody can trigger it until a role is granted it.",
     "permissionNotDefined": "Not a defined permission",
+    "permissionNotGrantable": "Can't be granted yet",
     "permissionUnknownWarning": "No permission with this name exists. The transition was saved, but unless this is a permission for a module that has not been built yet, nobody will be able to trigger it.",
     "requiredPermission": "Required Permission",
     "searchStages": "Search stages…",
@@ -1343,6 +1481,50 @@
       "permissions": {
         "one": "{{count}} permission",
         "other": "{{count}} permissions"
+      },
+      "heldBy": {
+        "one": "held by {{count}} user",
+        "other": "held by {{count}} users"
+      },
+      "unsaved": {
+        "one": "{{count}} change unsaved",
+        "other": "{{count}} changes unsaved"
+      },
+      "review": {
+        "one": "Review {{count}} change…",
+        "other": "Review {{count}} changes…"
+      },
+      "applies": {
+        "one": "Applies to {{count}} user as soon as it's saved.",
+        "other": "Applies to {{count}} users as soon as it's saved."
+      },
+      "headPosition": {
+        "one": "{{count}} of them holds this role through a head position.",
+        "other": "{{count}} of them hold this role through a head position."
+      },
+      "adding": {
+        "one": "Adding {{count}}",
+        "other": "Adding {{count}}"
+      },
+      "removing": {
+        "one": "Removing {{count}}",
+        "other": "Removing {{count}}"
+      },
+      "more": {
+        "one": "+ {{count}} more · ringed in the matrix",
+        "other": "+ {{count}} more · each is ringed in the matrix"
+      },
+      "saveN": {
+        "one": "Save {{count}} change",
+        "other": "Save {{count}} changes"
+      },
+      "saved": {
+        "one": "Saved · {{count}} change",
+        "other": "Saved · {{count}} changes"
+      },
+      "stillHere": {
+        "one": "Your {{count}} change is still here.",
+        "other": "Your {{count}} changes are still here."
       }
     },
     "committee": {

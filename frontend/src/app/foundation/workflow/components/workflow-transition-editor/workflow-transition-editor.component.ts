@@ -296,7 +296,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
               <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
               <app-overlay-select
                 formControlName="requiredPermission"
-                [options]="permissionGroups()"
+                [options]="addPermissionGroups()"
                 optionLabel="label"
                 optionValue="value"
                 optionGroupLabel="module"
@@ -423,7 +423,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
               <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
               <app-overlay-select
                 formControlName="requiredPermission"
-                [options]="permissionGroups()"
+                [options]="editPermissionGroups()"
                 optionLabel="label"
                 optionValue="value"
                 optionGroupLabel="module"
@@ -677,40 +677,52 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   readonly permissionsLoadFailed = signal(false);
   readonly editPermissionWarning = signal<TransitionPermissionWarning | null>(null);
 
-  // A transition may hold a permission that is not in the known list — 45
-  // seeded transitions across every tenant legitimately do (capa:investigate,
-  // capa:approve, capa:close, incidents:manage: deliberate forward references
-  // to unbuilt modules, workflow.seed.ts:66-81), and a typo looks identical.
-  // Either way the value MUST survive a round-trip through this dialog: it is
-  // shown as a real, selected option in its own group rather than silently
-  // dropped, so opening a transition and saving it unchanged cannot rewrite
-  // its permission.
+  // WHICH KEYS THE PICKER OFFERS (ACC-120 slice 5, F1 / PR B). Only keys a
+  // transition may be GIVEN: ones some code checks today (`inUse`, R2), and
+  // inside a tenant no platform key (R1). The server refuses the rest on create
+  // and on a changed key, so offering them was offering a refusal.
   //
-  // This is the ONLY way an unknown value can be present. There is
-  // deliberately no free-text escape hatch for entering a NEW one, and that
-  // asymmetry is the design, not a gap (live-verified, ACC-55 Test 4):
-  //   - existing unknown values stay fully editable, via this mechanism;
-  //   - new unknown values cannot be created through the UI at all.
-  // Allowing free entry and warning afterward would preserve the exact defect
-  // this ticket exists to fix, just behind an extra click. And adding a
-  // genuinely new forward reference means editing permissions.ts and
-  // workflow.seed.ts — not something a tenant admin does in a dialog.
-  private readonly extraPermissionValues = signal<string[]>([]);
+  // A transition may already HOLD a key outside that list: a key nothing
+  // checks yet (the seeded Document, Audit, Incident and Meeting transitions
+  // require 38 of them per tenant), or one with no Permission row at all, a
+  // forward reference such as capa:approve or a typo. Its OWN current key is
+  // therefore shown in the EDIT picker, selected, in a group of its own: "Can't
+  // be granted yet" when the catalogue knows the key, "Not a defined
+  // permission" when it does not. An unrelated edit sends it back unchanged
+  // (F1 keeps an unchanged key), never blanked.
+  //
+  // ONLY its own key. Before PR B every transition's unknown value was offered
+  // in every dialog, which would now let a person pick another transition's
+  // ungrantable key and be refused. The ADD picker offers no such key at all.
+  //
+  // There is still no free-text entry for a NEW unknown value (ACC-55, Test 4):
+  // a new forward reference is an edit to permissions.ts and workflow.seed.ts,
+  // not something a tenant admin does in a dialog.
+  readonly addPermissionGroups = computed<PermissionNode[]>(() => this.permissionNodes(null));
+  readonly editPermissionGroups = computed<PermissionNode[]>(() =>
+    this.permissionNodes(this.editingTransition()?.requiredPermission ?? null),
+  );
 
-  readonly permissionGroups = computed<PermissionNode[]>(() => {
-    // Establishes the dependency that instant() alone does not. The two
-    // labels below are resolved imperatively, so without reading a signal
-    // that changes on a language switch this computed would never
-    // re-evaluate — leaving "No permission required" and the not-defined
-    // heading stuck in the previous language for the rest of the session.
-    // TranslateService.currentLang is a real Signal (LanguageService relies
-    // on the same fact), so reading it here is enough.
+  /** A key a transition may be given: in use, and not a platform key inside a tenant. */
+  private offerable(p: PermissionDto): boolean {
+    if (!p.inUse) return false;
+    return !(p.module === 'platform' && !this.navigationAccess.isPlatformOrg());
+  }
+
+  private permissionNodes(current: string | null): PermissionNode[] {
+    // Establishes the dependency that instant() alone does not. The labels
+    // below are resolved imperatively, so without reading a signal that
+    // changes on a language switch this would never re-evaluate — leaving "No
+    // permission required" and the group headings stuck in the previous
+    // language for the rest of the session. TranslateService.currentLang is a
+    // real Signal (LanguageService relies on the same fact).
     this.translateService.currentLang();
 
     // Same Map<string, PermissionDto[]> shape role-permission-matrix already
     // uses, rather than a second grouping idiom for the same data.
     const byModule = new Map<string, PermissionNode[]>();
     for (const perm of this.allPermissions()) {
+      if (!this.offerable(perm)) continue;
       const key = `${perm.module}:${perm.action}`;
       const list = byModule.get(perm.module) ?? [];
       list.push({ value: key, label: key });
@@ -733,20 +745,20 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         })),
     ];
 
-    // Values with no matching Permission row get their own group, kept last
-    // and labelled as not-defined, so the configurer can see the value is
-    // unknown without the picker having to guess whether that is a deliberate
-    // forward reference or a typo.
-    const extras = this.extraPermissionValues();
-    if (extras.length > 0) {
+    // The transition's own current key, when it is not one of the offered
+    // ones: kept LAST, in its own group, so the configurer sees it is not a
+    // key they could choose today.
+    const offered = new Set([...byModule.values()].flat().map((n) => n.value));
+    if (current && !offered.has(current)) {
+      const known = this.allPermissions().some((p) => `${p.module}:${p.action}` === current);
       nodes.push({
-        value: `${GROUP_SENTINEL_PREFIX}__unknown__`,
-        module: this.translateService.instant('workflow.permissionNotDefined'),
-        permissions: extras.map((value) => ({ value, label: value })),
+        value: `${GROUP_SENTINEL_PREFIX}__current__`,
+        module: this.translateService.instant(known ? 'workflow.permissionNotGrantable' : 'workflow.permissionNotDefined'),
+        permissions: [{ value: current, label: current }],
       });
     }
     return nodes;
-  });
+  }
 
   // ── ACC-55: deferred parent notification ───────────────────────────────────
   // `changed` triggers workflow-stage-list's loadTemplate(), which replaces
@@ -790,16 +802,6 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   private onDialogClosed(): void {
     if (!this.refreshPending()) return;
     this.notifyParent();
-  }
-
-  // Registers a value so it round-trips even when it is not a known
-  // permission. No-op for a value already in the known list.
-  private trackExtraPermission(value: string | null): void {
-    if (!value) return;
-    const known = this.allPermissions().some((p) => `${p.module}:${p.action}` === value);
-    if (known) return;
-    if (this.extraPermissionValues().includes(value)) return;
-    this.extraPermissionValues.update((v) => [...v, value]);
   }
 
   // The form control holds '' for "no permission required"; the API needs
@@ -904,11 +906,6 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       next: (permissions) => {
         this.allPermissions.set(permissions);
         this.permissionsLoadFailed.set(false);
-        // Re-register every value already in use: this runs after the parent
-        // has supplied `transitions`, so a forward reference like
-        // capa:approve becomes selectable rather than being dropped the
-        // first time its dialog opens.
-        for (const t of this.transitions) this.trackExtraPermission(t.requiredPermission);
       },
       error: () => {
         this.allPermissions.set([]);
@@ -954,7 +951,6 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     // become a selectable option first, or the control would bind to a value
     // with no matching option and render blank — which then saves back as
     // "cleared", silently destroying a deliberate forward reference.
-    this.trackExtraPermission(transition.requiredPermission);
     this.editForm.reset({
       labelEn: transition.labelEn,
       labelAr: transition.labelAr,
@@ -1077,7 +1073,6 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
           // Dialog stays open so the warning is readable — and crucially the
           // parent is NOT notified yet (see notifyParent()).
           this.editingTransition.set(result.transition);
-          this.trackExtraPermission(result.transition.requiredPermission);
           this.refreshPending.set(true);
         }
       },

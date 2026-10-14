@@ -99,10 +99,20 @@ describe('Saving a role\'s permissions against a real database (ACC-120 slice 5)
   it("another organisation's role cannot be saved from this one, and is left untouched", async () => {
     const mine = await role();
     const theirs = await role();
-    await roles.assignPermissions(theirs.roleId, { permissionKeys: ['tasks:view'] }, theirs.organizationId, theirs.actorId);
+    await roles.assignPermissions(
+      theirs.roleId,
+      { permissionKeys: ['tasks:view'], expectedPermissionKeys: [] },
+      theirs.organizationId,
+      theirs.actorId,
+    );
 
     await expect(
-      roles.assignPermissions(theirs.roleId, { permissionKeys: [] }, mine.organizationId, mine.actorId),
+      roles.assignPermissions(
+        theirs.roleId,
+        { permissionKeys: [], expectedPermissionKeys: ['tasks:view'] },
+        mine.organizationId,
+        mine.actorId,
+      ),
     ).rejects.toThrow('Role not found');
 
     expect(await held(theirs.roleId)).toEqual(['tasks:view']);

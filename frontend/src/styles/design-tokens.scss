@@ -153,6 +153,13 @@
   --am-drawer-footer-height:  36px;
   --am-drawer-shadow-ltr: -16px 0 40px rgba(16, 24, 40, 0.24);
   --am-drawer-shadow-rtl:  16px 0 40px rgba(16, 24, 40, 0.24);
+  // ACC-120 slice 5 — the permission matrix's frozen first column. The shadow
+  // falls on its INNER edge, the one the scrolling cells pass beneath, which is
+  // right of the column in English and left of it in Arabic (Users and Roles
+  // 3a). box-shadow has no logical form, so the x-offset's sign is chosen by
+  // direction, like the drawer's.
+  --am-frozen-shadow-ltr:  6px 0 8px -6px rgba(16, 24, 40, 0.22);
+  --am-frozen-shadow-rtl: -6px 0 8px -6px rgba(16, 24, 40, 0.22);
 
   // ─── Type ──────────────────────────────────────────────────────────────
   // One family for both scripts: IBM Plex Sans Arabic carries a Latin set

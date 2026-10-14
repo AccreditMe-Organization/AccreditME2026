@@ -151,6 +151,15 @@ export class NavigationAccessService {
     return this._permissions().includes(permission);
   }
 
+  /**
+   * ACC-120 slice 5 — whether the signed-in organisation is the platform one,
+   * on its own. isPlatformAdmin() answers a different question (platform org
+   * AND platform:admin); the permission matrix needs only "is this a tenant",
+   * to hide platform keys inside one (D2). False until /tenant has loaded, or
+   * if it failed, which hides them: the safe direction.
+   */
+  readonly isPlatformOrg = computed(() => this._isPlatformOrg());
+
   // Whether the module is usable at all — FULL or READ_ONLY. This is the rail's
   // question: a read-only module is still fully present and readable.
   isModuleEnabled(moduleKey: string): boolean {

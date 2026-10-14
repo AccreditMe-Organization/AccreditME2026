@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { permissionGuard } from '../../core/guards/permission.guard';
+import { leaveGuard } from './permission-matrix/leave-guard';
 
 export const ROLES_ROUTES: Routes = [
   {
@@ -34,6 +35,10 @@ export const ROLES_ROUTES: Routes = [
   {
     path: ':id/permissions',
     canActivate: [permissionGuard],
+    // ACC-120 slice 5 (D11) — unsaved grid changes are not dropped by a click
+    // elsewhere: the matrix asks first. Its own beforeunload covers a reload or
+    // a closed tab.
+    canDeactivate: [leaveGuard],
     loadComponent: () =>
       import('./components/role-permission-matrix/role-permission-matrix.component').then(
         (m) => m.RolePermissionMatrixComponent,

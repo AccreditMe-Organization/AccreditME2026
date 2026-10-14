@@ -15,7 +15,11 @@ import { ALL_PERMISSIONS } from '../../foundation/roles/permission.seed';
  * So this reads the source, both packages, and fails either way.
  *
  * "Checked" means referenced outside the files that only DECLARE keys:
- * permissions.ts, the two role seeds, and specs. The workflow seed is a real
+ * permissions.ts, the two role seeds, specs, and the permission matrix's
+ * placement table (frontend permission-columns.ts, PR B). That table says
+ * which COLUMN a key is drawn in, for every catalogue key, so the layout is
+ * settled before a module ships; it decides nothing about who may act, so it
+ * neither puts a key in use nor keeps one alive. The workflow seed is a real
  * check for a record type that exists (Committee) and a forward reference for
  * the rest — which is exactly why it may mention an unused key, and why an
  * in-use key may rest on it (committees:manage and committees:approve do).
@@ -28,6 +32,8 @@ const DECLARES_ONLY = [
   /common[\\/]constants[\\/]permissions\.ts$/,
   /foundation[\\/]roles[\\/]role\.seed\.ts$/,
   /foundation[\\/]roles[\\/]permission\.seed\.ts$/,
+  // The matrix's column table names every catalogue key; it places, it does not check.
+  /foundation[\\/]roles[\\/]permission-matrix[\\/]permission-columns\.ts$/,
   /\.spec\.ts$/,
   /\.db-spec\.ts$/,
 ];
