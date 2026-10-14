@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { TASK_SOURCE_TYPES } from './create-task.dto';
 
 // ACC-167 — the assignment picker's queries.
 //
@@ -20,7 +21,21 @@ export class AssignmentPositionsQueryDto extends AssignmentQueryDto {
   orgUnitId!: string;
 }
 
-export class AssignmentHoldersQueryDto extends AssignmentQueryDto {
+// ACC-199 — the record the picker was opened from. With it, each person
+// carries their open and overdue tasks on that record, for a caller who can
+// see the record's task list; without it, none. Both, or neither.
+export class AssignmentRecordQueryDto extends AssignmentQueryDto {
+  @IsIn(TASK_SOURCE_TYPES)
+  @IsOptional()
+  sourceType?: (typeof TASK_SOURCE_TYPES)[number];
+
+  @IsString()
+  @IsNotEmpty()
+  @IsOptional()
+  sourceId?: string;
+}
+
+export class AssignmentHoldersQueryDto extends AssignmentRecordQueryDto {
   @IsString()
   @IsNotEmpty()
   orgUnitId!: string;
@@ -50,7 +65,7 @@ export class AssignmentCommitteeRolesQueryDto extends AssignmentQueryDto {
   catalogue?: boolean;
 }
 
-export class AssignmentCommitteeMembersQueryDto extends AssignmentQueryDto {
+export class AssignmentCommitteeMembersQueryDto extends AssignmentRecordQueryDto {
   @IsString()
   @IsNotEmpty()
   committeeId!: string;

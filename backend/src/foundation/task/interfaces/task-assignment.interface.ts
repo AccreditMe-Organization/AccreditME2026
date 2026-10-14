@@ -28,6 +28,39 @@ export interface IAssignableHolder {
   name: string;
   positionNameEn: string | null;
   positionNameAr: string | null;
+  /**
+   * ACC-199 — the person's open and overdue tasks ON THE RECORD the picker was
+   * opened from, and whether choosing them offers "✦ Suggest someone" (the
+   * threshold, decided here so the screen holds no copy of it). Null when no
+   * record was named, or the caller cannot see that record's task list: the
+   * picker still answers, only the counts are withheld.
+   */
+  workload: IHolderWorkload | null;
+}
+
+export interface IHolderWorkload {
+  openCount: number;
+  overdueCount: number;
+  canSuggest: boolean;
+}
+
+/** ACC-199 — the answer to "✦ Suggest someone". */
+export interface IWorkloadHint {
+  /** The AI log row, so a followed suggestion can be marked on the task's audit row. */
+  interactionId: string | null;
+  chosen: { userId: string; openCount: number; overdueCount: number };
+  suggestion: {
+    userId: string;
+    name: string;
+    positionNameEn: string | null;
+    positionNameAr: string | null;
+    openCount: number;
+    overdueCount: number;
+  };
+}
+
+export interface IWorkloadHintAvailability {
+  available: boolean;
 }
 
 export interface IAssignableCommitteeRole {
