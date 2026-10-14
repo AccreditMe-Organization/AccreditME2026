@@ -895,6 +895,24 @@
       "nothingToSuggest": "تعذّر على الذكاء الاصطناعي اقتراح شيء من هذا. أضف تفاصيل أكثر ثم حاول مرة أخرى.",
       "tooMany": "عدد كبير من الصياغات في دقيقة واحدة. انتظر لحظة ثم حاول مرة أخرى.",
       "settleFirst": "اقبل الاقتراح أو تجاهله أولًا."
+    },
+    "workload": {
+      "suggest": "اقتراح شخص آخر",
+      "suggesting": "جارٍ الاقتراح…",
+      "tag": "ذكاء اصطناعي",
+      "chosen": "تذهب إلى {{name}}: {{open}} {{record}}، منها {{overdue}}.",
+      "chosenNoOverdue": "تذهب إلى {{name}}: {{open}} {{record}}.",
+      "alternative": "لدى {{name}} ({{position}}) {{open}}.",
+      "alternativeNoPosition": "لدى {{name}} {{open}}.",
+      "record": {
+        "COMMITTEE": "في هذه اللجنة",
+        "MEETING": "في هذا الاجتماع",
+        "other": "في هذا السجل"
+      },
+      "assignInstead": "إسنادها إلى {{name}}",
+      "keep": "إبقاؤها مع {{name}}",
+      "noSuggestion": "لا يوجد هنا من هو أنسب بوضوح لتولّيها.",
+      "tooMany": "طلبات اقتراح كثيرة خلال دقيقة واحدة. انتظر قليلًا ثم حاول مرة أخرى."
     }
   },
   "auth": {
@@ -1405,6 +1423,38 @@
         "few": "{{count}} ملفات في المرة على الأكثر",
         "many": "{{count}} ملفًا في المرة على الأكثر",
         "other": "{{count}} ملف في المرة على الأكثر"
+      },
+      "workloadRowOpen": {
+        "zero": "{{count}} مفتوحة",
+        "one": "{{count}} مفتوحة",
+        "two": "{{count}} مفتوحة",
+        "few": "{{count}} مفتوحة",
+        "many": "{{count}} مفتوحة",
+        "other": "{{count}} مفتوحة"
+      },
+      "workloadRowOverdue": {
+        "zero": "{{count}} متأخرة",
+        "one": "{{count}} متأخرة",
+        "two": "{{count}} متأخرة",
+        "few": "{{count}} متأخرة",
+        "many": "{{count}} متأخرة",
+        "other": "{{count}} متأخرة"
+      },
+      "workloadOpenTasks": {
+        "zero": "لا مهام مفتوحة",
+        "one": "مهمة مفتوحة واحدة",
+        "two": "مهمتان مفتوحتان",
+        "few": "{{count}} مهام مفتوحة",
+        "many": "{{count}} مهمة مفتوحة",
+        "other": "{{count}} مهمة مفتوحة"
+      },
+      "workloadAltOpen": {
+        "zero": "لا مهام مفتوحة",
+        "one": "مهمة مفتوحة واحدة",
+        "two": "مهمتان مفتوحتان",
+        "few": "{{count}} مهام مفتوحة",
+        "many": "{{count}} مهمة مفتوحة",
+        "other": "{{count}} مهمة مفتوحة"
       }
     },
     "user": {
