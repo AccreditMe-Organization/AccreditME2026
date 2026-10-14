@@ -64,7 +64,9 @@ function people(withWorkload: boolean) {
 const HINT = {
   interactionId: 'log-7',
   chosen: { userId: 'chosen', openCount: 12, overdueCount: 13 },
-  suggestion: { userId: 'other', name: NAME_OTHER, positionNameEn: POSITION.en, positionNameAr: POSITION.ar, openCount: 14, overdueCount: 0 },
+  // The longest sentence: both clauses, "none overdue or due within 2 working days".
+  suggestion: { userId: 'other', name: NAME_OTHER, positionNameEn: POSITION.en, positionNameAr: POSITION.ar, openCount: 14, overdueCount: 0, dueSoonCount: 0 },
+  dueSoonSeen: true,
 };
 
 @Component({
@@ -208,6 +210,8 @@ describe('"✦ Suggest someone" — the 420px body cap, New task step 1 and Reas
 
     req.flush(HINT);
     await measure(`${label} · hint`, language, '.am-wh--ai');
+    // Non-vacuity: the longest sentence is the one measured.
+    expect(document.querySelector('.am-wh__text')!.textContent).toContain(language === 'ar' ? 'أو مستحق خلال' : 'none overdue or due within');
     // The line sits BELOW the Person field, never over it, in both layouts.
     const control = document.querySelector('.am-picker__person .am-overlay-select-trigger')!.getBoundingClientRect();
     const line = document.querySelector('app-task-workload-hint')!.getBoundingClientRect();

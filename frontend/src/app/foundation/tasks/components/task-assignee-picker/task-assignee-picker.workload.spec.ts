@@ -58,7 +58,17 @@ const PEOPLE = [
 const HINT = {
   interactionId: 'log-7',
   chosen: { userId: 'nora', openCount: 12, overdueCount: 3 },
-  suggestion: { userId: 'sara', name: 'Sara Al-Mutairi', positionNameEn: 'Quality Officer', positionNameAr: 'مسؤول الجودة', openCount: 4, overdueCount: 0 },
+  suggestion: {
+    userId: 'sara',
+    name: 'Sara Al-Mutairi',
+    positionNameEn: 'Quality Officer',
+    positionNameAr: 'مسؤول الجودة',
+    openCount: 4,
+    overdueCount: 0,
+    dueSoonCount: 1,
+  },
+  // Nora has work due soon; Sara has some too, so "nothing due soon" is not said.
+  dueSoonSeen: true,
 };
 
 describe('TaskAssigneePickerComponent — workload on the record and "Suggest someone" (ACC-199)', () => {
@@ -238,12 +248,12 @@ describe('TaskAssigneePickerComponent — workload on the record and "Suggest so
       press().flush(HINT);
       render();
       expect(text(el(), '.am-wh__text')).toBe(
-        '✦ AI · Goes to Nora Al-Otaibi, who has 12 open tasks on this committee, 3 overdue. Sara Al-Mutairi (Quality Officer) has 4 open.',
+        '✦ AI · Goes to Nora Al-Otaibi, who has 12 open tasks on this committee, 3 overdue. Sara Al-Mutairi (Quality Officer) has 4 open, none overdue.',
       );
-      expect(Array.from(el().querySelectorAll('.am-wh__action')).map((b) => b.textContent!.trim())).toEqual([
-        'Assign Sara Al-Mutairi instead',
-        'Keep Nora Al-Otaibi',
-      ]);
+      // Short on screen; the accessible name starts with those words and says who.
+      const actions = Array.from(el().querySelectorAll('.am-wh__action'));
+      expect(actions.map((b) => b.textContent!.trim())).toEqual(['Assign instead', 'Keep']);
+      expect(actions.map((b) => b.getAttribute('aria-label'))).toEqual(['Assign instead: Sara Al-Mutairi', 'Keep: Nora Al-Otaibi']);
       expect(el().querySelector('.am-wh--ai')).not.toBeNull();
     });
 
@@ -259,13 +269,37 @@ describe('TaskAssigneePickerComponent — workload on the record and "Suggest so
       press().flush(HINT);
       render();
       expect(text(el(), '.am-wh__text')).toBe(
-        '✦ ذكاء اصطناعي · تذهب إلى Nora Al-Otaibi: 12 مهمة مفتوحة في هذه اللجنة، منها 3 مهام متأخرة. لدى Sara Al-Mutairi (مسؤول الجودة) 4 مهام مفتوحة.',
+        '✦ ذكاء اصطناعي · تذهب إلى Nora Al-Otaibi: 12 مهمة مفتوحة في هذه اللجنة، منها 3 مهام متأخرة. لدى Sara Al-Mutairi (مسؤول الجودة) 4 مهام مفتوحة، ولا شيء متأخر.',
       );
-      expect(Array.from(el().querySelectorAll('.am-wh__action')).map((b) => b.textContent!.trim())).toEqual([
-        'إسنادها إلى Sara Al-Mutairi',
-        'إبقاؤها مع Nora Al-Otaibi',
-      ]);
+      const actions = Array.from(el().querySelectorAll('.am-wh__action'));
+      expect(actions.map((b) => b.textContent!.trim())).toEqual(['اعتماد الاقتراح', 'الإبقاء على الاختيار']);
+      expect(actions.map((b) => b.getAttribute('aria-label'))).toEqual(['اعتماد الاقتراح: Sara Al-Mutairi', 'الإبقاء على الاختيار: Nora Al-Otaibi']);
     });
+
+    // The other person's clause explains the pick by a number on screen.
+    const clauses: ReadonlyArray<readonly ['en' | 'ar', number, number, boolean, string]> = [
+      ['en', 2, 0, true, 'Sara Al-Mutairi (Quality Officer) has 4 open, nothing due within 2 working days.'],
+      ['en', 0, 0, true, 'Sara Al-Mutairi (Quality Officer) has 4 open, none overdue or due within 2 working days.'],
+      ['en', 0, 0, false, 'Sara Al-Mutairi (Quality Officer) has 4 open, none overdue.'],
+      ['en', 1, 2, true, 'Sara Al-Mutairi (Quality Officer) has 4 open.'],
+      ['ar', 0, 0, true, 'لدى Sara Al-Mutairi (مسؤول الجودة) 4 مهام مفتوحة، ولا شيء متأخر أو مستحق خلال يومي عمل.'],
+      ['ar', 2, 0, true, 'لدى Sara Al-Mutairi (مسؤول الجودة) 4 مهام مفتوحة، ولا شيء مستحق خلال يومي عمل.'],
+      ['ar', 1, 2, true, 'لدى Sara Al-Mutairi (مسؤول الجودة) 4 مهام مفتوحة.'],
+    ];
+    for (const [language, overdue, dueSoon, seen, expected] of clauses) {
+    it(`[${language}] overdue ${overdue}, due soon ${dueSoon}, due-soon seen ${seen} → "${expected}"`, () => {
+      const { group, el, render } = setup({ language });
+      choosePosition(group());
+      group().controls.userId.setValue('nora');
+      render();
+      availability().flush({ available: true });
+      render();
+      button(el(), '.am-wh__suggest').click();
+      press().flush({ ...HINT, suggestion: { ...HINT.suggestion, overdueCount: overdue, dueSoonCount: dueSoon }, dueSoonSeen: seen });
+      render();
+      expect(text(el(), '.am-wh__text').endsWith(expected)).withContext(text(el(), '.am-wh__text')).toBe(true);
+    });
+    }
 
     it('Assign … instead sets Person, tells the host, and offers nothing for the new person', () => {
       const { group, el, render, host } = setup();
@@ -304,7 +338,7 @@ describe('TaskAssigneePickerComponent — workload on the record and "Suggest so
       button(el(), '.am-wh__suggest').click();
       render();
       http.expectNone({ method: 'POST', url: `${API}/assignment/workload-hint` });
-      expect(text(el(), '.am-wh__text')).toContain('Sara Al-Mutairi (Quality Officer) has 4 open.');
+      expect(text(el(), '.am-wh__text')).toContain('Sara Al-Mutairi (Quality Officer) has 4 open, none overdue.');
     });
 
     it('the answer is kept for the DIALOG: the picker rebuilt (a step switch) still costs nothing', () => {
@@ -356,7 +390,7 @@ describe('TaskAssigneePickerComponent — workload on the record and "Suggest so
       expect(req.request.body.orgUnitId).toBeUndefined();
       req.flush({ ...HINT, suggestion: { ...HINT.suggestion, positionNameEn: null, positionNameAr: null } });
       render();
-      expect(text(el(), '.am-wh__text')).toContain('Sara Al-Mutairi has 4 open.');
+      expect(text(el(), '.am-wh__text')).toContain('Sara Al-Mutairi has 4 open, none overdue.');
     });
 
     describe('refusals, worded by code', () => {
