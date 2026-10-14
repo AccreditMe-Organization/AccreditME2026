@@ -8850,40 +8850,43 @@ results at runbook step 8, not assumed.
   a closed `Permissions-Policy`, COOP and CORP `same-origin`. Hashed JS, CSS and
   `media/` files are cached for a year; `assets/i18n` keeps Vercel's
   revalidate default.
-- **A missing asset is a 404, never the page — and it took TWO changes
-  (ACC-223, then ACC-226).** This entry first said ACC-223 alone did it. It
-  did not: measured on production on 14 Oct, after ACC-223 shipped,
-  `/chunk-DOESNOTEXIST.js` still answered 200 `text/html` with the year-long
-  `immutable` cache. The cause was `"framework": "angular"`: **Vercel's
-  Angular preset appends its own routes AFTER everything in vercel.json —
-  real files first, then `/(.*)` → `/index.html`** — so a path our rewrite
-  declined was still answered with the page. **ACC-226 sets
-  `"framework": null`**, which leaves our rewrite as the only fallback.
-  Nothing else came from the preset that the build needs: the install command,
-  build command and output directory are stated in vercel.json
-  (`backend/Plans/step-226-framework-null.md` lists every item).
-  `check:vercel-config` fails unless `framework` is exactly `null`, because a
-  preset's routes are invisible to it; a missing key fails too, since Vercel
-  would then detect Angular. The 404 exists only on Vercel, so it is proved by
-  the anonymous checks after a deploy (that plan's last section), never by a
-  local server reading vercel.json.
-  **The rewrite itself (ACC-223):** its
+- **A missing file is answered with the PAGE, 200, on production — and that
+  is accepted (Ahmad, 14 Oct, ACC-226).** Measured after ACC-226 shipped:
+  `/chunk-<missing>.js`, `/assets/<missing>.png`, `/<missing>.txt` and any
+  unknown path all answer 200 `text/html`, byte-identical to `/`. A missing
+  `.js` (or `.css`) also carries `Cache-Control: public, max-age=31536000,
+  immutable`, from the `"/(.*)\\.(js|css)"` header rule, which matches by path
+  before the file check. **This entry and ACC-223/ACC-226 first said a missing
+  asset is a 404. That was wrong on production both times.**
+  **Why: Vercel's static builder adds Angular's routes on its own.**
+  `@vercel/static-build` 21.0.0 (pinned by vercel 64.0.2) calls
+  `getFramework()`; with no framework configured it falls back to
+  `frameworkList` matched by dependency, finds `@angular/cli`, and appends
+  Angular's default routes — the file check, then `/(.*)` → `/index.html` —
+  after ours. Nothing in vercel.json's `rewrites` or `headers` can reach that
+  route, and a local server reading vercel.json cannot show it.
+  **`"framework": null` is kept, and does not stop that re-detection.** What it
+  does: the build settings (install, build, output directory) are the explicit
+  ones in vercel.json, and the dashboard's Angular preset stays out (the
+  project shows "Other"). `check:vercel-config` still fails unless it is
+  exactly `null`. The options considered and why none was taken:
+  `backend/Plans/step-226-framework-null.md`, "Outcome".
+  **The protection is the reload handler below**, not a 404: an HTML answer for
+  a chunk still fails as a module load, so the router's error handler catches
+  it and reloads once. A year-long cache on a missing chunk name is harmless
+  because a chunk's name is a hash of its content, and a missing hash never
+  comes back.
+  **The rewrite itself (ACC-223), still in place:** its
   source excludes `/assets/…`, `/media/…` and any path ending in a static file
   extension (js, mjs, css, map, json, fonts, images, wasm, txt); every route
-  still rewrites to `/index.html`. Before this the rewrite was `/(.*)`: a tab
-  opened before a release asked for an old lazy chunk, got the HTML page with
-  status 200, and the `.js` cache rule marked that HTML immutable for a year
-  under the chunk's address. **The page itself has an explicit
-  `Cache-Control: public, max-age=0, must-revalidate`** on the rewrite's own
-  source, so it never rests on a platform default. `check:vercel-config` reads
-  the rewrite's source as the regular expression Vercel matches (verified
-  against path-to-regexp v6 when written) and fails it if a sample asset path
-  is rewritten, a sample route is not, the page's cache rule is missing or not
-  zero, or any long-cache rule can reach a route.
-  **A known side effect, accepted (Ahmad, 14 Oct, ACC-226):** the year-long
-  cache rule matches by PATH, so the 404 for a missing chunk carries it too.
-  A chunk's name is a hash of its content, and a missing hash never comes
-  back; the header rule is not changed.
+  still rewrites to `/index.html`. On its own it would leave a missing asset
+  unmatched; on Vercel the builder's route above answers it instead. **The page
+  itself has an explicit `Cache-Control: public, max-age=0, must-revalidate`**
+  on the rewrite's own source, so it never rests on a platform default.
+  `check:vercel-config` reads the rewrite's source as the regular expression
+  Vercel matches (verified against path-to-regexp v6 when written) and fails it
+  if a sample asset path is rewritten, a sample route is not, the page's cache
+  rule is missing or not zero, or any long-cache rule can reach a route.
 - **The other half is in the app** (`core/navigation/stale-chunk-reload.ts`,
   wired by `app.config.ts` through `APP_ROUTER_FEATURES`): the router's
   navigation error handler. When a navigation fails because a lazy chunk or

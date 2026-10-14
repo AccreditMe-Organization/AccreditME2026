@@ -11,17 +11,20 @@
 //      status 200, which the .js cache rule then marked immutable for a year.
 //      The import failed and the link did nothing. So the rewrite must not
 //      answer an asset path: its source is tested against sample asset paths
-//      (which it must NOT match) and sample routes (which it must). That is
-//      necessary and NOT sufficient — see rule 8.
-//   8. No framework preset (ACC-226): "framework" is exactly null. A preset
-//      adds routes of its own AFTER everything in vercel.json, and this check
-//      cannot see them. Vercel's Angular preset appends "/(.*)" → /index.html,
-//      so with "framework": "angular" a missing chunk was still answered with
-//      the page on production, although rule 1 passed. With null, the rewrite
-//      rule 1 tests is the only fallback, and a missing asset is a 404. The
-//      build needs nothing from the preset: the install command, build command
-//      and output directory are all stated in vercel.json (rule 6 pins the
-//      last).
+//      (which it must NOT match) and sample routes (which it must). This does
+//      NOT make a missing asset a 404 on Vercel: the static builder appends
+//      Angular's own "/(.*)" → /index.html after it (see rule 8), so a missing
+//      file still gets the page, 200 — accepted (ACC-226). The protection is
+//      the router's reload handler (core/navigation/stale-chunk-reload.ts).
+//   8. Build settings are explicit (ACC-226): "framework" is exactly null, so
+//      the install command, build command and output directory are the ones
+//      stated in vercel.json (rule 6 pins the last) and the dashboard's
+//      Angular preset stays out. It does NOT make a missing asset a 404:
+//      @vercel/static-build re-detects Angular from package.json (getFramework()
+//      falls back to the framework list by dependency, @angular/cli) and
+//      appends Angular's default routes, ending "/(.*)" → /index.html, after
+//      everything in vercel.json. backend/Plans/step-226-framework-null.md,
+//      "Outcome", has the options and the decision.
 //   7. The page itself revalidates (ACC-223): a Cache-Control rule on the same
 //      source as the rewrite, with max-age=0 — and no long-lived cache rule may
 //      match a path the rewrite matches, or the page would be cached under it.
@@ -220,13 +223,14 @@ if (!/\$VERCEL_GIT_COMMIT_REF"?\s*!=\s*"?dev"?/.test(ignore)) {
   fail('5 only dev', `ignoreCommand "${ignore}" does not skip every branch but dev`);
 }
 
-// 8. No framework preset (ACC-226). `null` exactly: a missing key lets Vercel
-// detect Angular from package.json and apply the same preset.
+// 8. Build settings are explicit (ACC-226). `null` exactly: a missing key lets
+// Vercel detect Angular for the project and apply its preset. Null does not
+// stop the static builder's own re-detection (see the header).
 if (vercel.framework !== null) {
   const found = 'framework' in vercel ? JSON.stringify(vercel.framework) : 'not set (Vercel would detect one)';
   fail(
     '8 no preset',
-    `"framework" must be exactly null, found ${found} — a framework preset adds routes of its own that this check cannot see (Angular's sends every unmatched path, missing assets included, to /index.html)`,
+    `"framework" must be exactly null, found ${found} — null keeps the build settings the explicit ones in vercel.json and the dashboard's framework preset out (it does not make a missing asset a 404: the static builder re-detects Angular from package.json)`,
   );
 }
 
