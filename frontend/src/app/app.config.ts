@@ -15,6 +15,7 @@ import { AccreditMePreset } from './core/theme/accreditme-preset';
 import { providePluralAwareTranslateLoader } from './core/formatting/plural-catalog';
 import { provideDatePickerLocale } from './core/formatting/date-picker-locale';
 import { routes } from './app.routes';
+import { APP_ROUTER_FEATURES } from './core/navigation/stale-chunk-reload';
 
 // Exported (not inlined into provideAppInitializer below) so it can be unit
 // tested directly via TestBed.runInInjectionContext — proving the ORDERING
@@ -39,7 +40,9 @@ export function initializeSession(): Promise<void> {
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
-    provideRouter(routes),
+    // ACC-223 — with the navigation error handler that reloads ONCE when a lazy
+    // chunk from before a release is gone (core/navigation/stale-chunk-reload.ts).
+    provideRouter(routes, ...APP_ROUTER_FEATURES),
     provideHttpClient(withInterceptors([authInterceptor])),
     provideTranslateService({ lang: 'en' }),
     provideTranslateHttpLoader({ prefix: './assets/i18n/', suffix: '.json' }),

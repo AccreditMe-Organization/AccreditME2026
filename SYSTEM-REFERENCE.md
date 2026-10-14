@@ -8820,8 +8820,36 @@ results at runbook step 8, not assumed.
   script.
 - HSTS, `nosniff`, `X-Frame-Options: DENY`, `strict-origin-when-cross-origin`,
   a closed `Permissions-Policy`, COOP and CORP `same-origin`. Hashed JS, CSS and
-  `media/` files are cached for a year; `index.html` and `assets/i18n` keep
-  Vercel's revalidate default.
+  `media/` files are cached for a year; `assets/i18n` keeps Vercel's
+  revalidate default.
+- **A missing asset is a 404, never the page (ACC-223).** The SPA rewrite's
+  source excludes `/assets/…`, `/media/…` and any path ending in a static file
+  extension (js, mjs, css, map, json, fonts, images, wasm, txt); every route
+  still rewrites to `/index.html`. Before this the rewrite was `/(.*)`: a tab
+  opened before a release asked for an old lazy chunk, got the HTML page with
+  status 200, and the `.js` cache rule marked that HTML immutable for a year
+  under the chunk's address. **The page itself has an explicit
+  `Cache-Control: public, max-age=0, must-revalidate`** on the rewrite's own
+  source, so it never rests on a platform default. `check:vercel-config` reads
+  the rewrite's source as the regular expression Vercel matches (verified
+  against path-to-regexp v6 when written) and fails it if a sample asset path
+  is rewritten, a sample route is not, the page's cache rule is missing or not
+  zero, or any long-cache rule can reach a route.
+  **Open, not decided:** the year-long cache rule matches by PATH, so a 404
+  for a missing chunk may carry it too. That name is a content hash and comes
+  back only if a later build reproduces the identical chunk (a straight
+  revert). Not verified on Vercel itself — nothing was deployed to test this.
+- **The other half is in the app** (`core/navigation/stale-chunk-reload.ts`,
+  wired by `app.config.ts` through `APP_ROUTER_FEATURES`): the router's
+  navigation error handler. When a navigation fails because a lazy chunk or
+  any dynamic import could not be loaded, it makes ONE full page load of the
+  URL the person was going to; the fresh page brings the new bundle and its
+  chunk names. A `sessionStorage` marker (`am.staleChunkReloadAt`) records
+  when; a second chunk failure within 60 seconds does not reload again, and
+  if the marker cannot be written no reload is made at all — so it cannot
+  loop. Every other navigation error is untouched: the handler returns
+  nothing, and the router then emits `NavigationError` and rejects exactly as
+  it does with no handler.
 
 **Only `dev` builds on Vercel.** `ignoreCommand` skips every other branch, so
 there are no preview deployments. A preview could never sign in anyway: its

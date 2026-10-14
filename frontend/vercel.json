@@ -5,7 +5,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist/frontend/browser",
   "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" != \"dev\" ]",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "rewrites": [
+    {
+      "source": "/((?!assets/|media/|.*\\.(?:js|mjs|css|map|json|woff2?|ttf|otf|eot|png|jpe?g|gif|svg|webp|avif|ico|wasm|txt)$).*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -22,6 +27,10 @@
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
         { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" }
       ]
+    },
+    {
+      "source": "/((?!assets/|media/|.*\\.(?:js|mjs|css|map|json|woff2?|ttf|otf|eot|png|jpe?g|gif|svg|webp|avif|ico|wasm|txt)$).*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
     },
     {
       "source": "/(.*)\\.(js|css)",
