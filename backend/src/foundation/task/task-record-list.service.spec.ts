@@ -134,16 +134,22 @@ describe('TaskRecordListService', () => {
       expect(prisma.task.count).toHaveBeenCalledWith({ where: { organizationId: 'org-a', sourceType: 'COMMITTEE', sourceId: 'cmt-1' } });
     });
 
-    it('without tasks:view (Q1), only the tasks the viewer is or was on', async () => {
+    it('without tasks:view (Q1), only the tasks the viewer is or was on, or created', async () => {
       const { service, prisma } = setup();
       const result = await service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: COMMITTEE_ONLY });
       expect(result.scope).toBe('own');
       for (const s of sqlOf(prisma)) {
+        expect(s.text).toContain('t."createdById" = $');
         expect(s.text).toContain('o."userId" = $');
-        expect(s.values).toContain('u1');
+        expect(s.values.filter((v) => v === 'u1').length).toBe(2);
       }
       expect(prisma.task.count).toHaveBeenCalledWith({
-        where: { organizationId: 'org-a', sourceType: 'COMMITTEE', sourceId: 'cmt-1', assignees: { some: { userId: 'u1' } } },
+        where: {
+          organizationId: 'org-a',
+          sourceType: 'COMMITTEE',
+          sourceId: 'cmt-1',
+          OR: [{ createdById: 'u1' }, { assignees: { some: { userId: 'u1' } } }],
+        },
       });
     });
 

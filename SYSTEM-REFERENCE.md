@@ -3553,7 +3553,7 @@ list.**
 
 | Mode | Gate | Rows |
 |---|---|---|
-| On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | with `tasks:view`: every task on it (`scope: 'all'`). Without (Q1): only the tasks the viewer **is or was on** — the My tasks rule (`scope: 'own'`). A creator who is on none of them sees none of them here, though each one's page admits them as its manager |
+| On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | with `tasks:view`: every task on it (`scope: 'all'`). Without (Q1): only the tasks the viewer **is or was on, or created** (`scope: 'own'`, Ahmad, 14 Oct) — each one a task its page already admits them to, as an assignee (a) or as its manager (b) |
 | Organisation-wide (neither) | `tasks:view`, else 403 naming it | every task whose record type the viewer may see — `ObjectVisibilityService.viewableTypes()`, the same rules as `assertCanView`, failing closed: a type with no rule is never listed |
 
 Naming one of `sourceType`/`sourceId` without the other is a 400.

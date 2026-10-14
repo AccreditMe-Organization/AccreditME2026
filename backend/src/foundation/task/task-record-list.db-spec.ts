@@ -77,6 +77,11 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     await make('doneEarlier', { status: 'COMPLETED', completedAt: at(-2 * DAY) });
     // On a meeting with the SAME id: a different record.
     await make('meeting', { status: 'PENDING', dueAt: at(-9 * DAY) }, 'MEETING');
+    // One the viewer CREATED and is not on (Q1's own list includes it).
+    const mine = await prisma.task.create({
+      data: { organizationId: org, createdById: viewer, sourceType: 'COMMITTEE', sourceId: record, title: 'Task created', status: 'PENDING', dueAt: at(20 * DAY) },
+    });
+    id['created'] = mine.id;
 
     // The viewer is on "tomorrow" now, and WAS on "later".
     await prisma.taskAssignee.create({ data: { taskId: id['tomorrow']!, userId: viewer, assignedById: a.creator } });
@@ -96,26 +101,26 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     types = ['COMMITTEE'];
   });
 
-  const ORDER = ['overdue', 'tomorrow', 'later', 'undated', 'held', 'doneRecently', 'doneEarlier', 'cancelled'];
+  const ORDER = ['overdue', 'tomorrow', 'later', 'created', 'undated', 'held', 'doneRecently', 'doneEarlier', 'cancelled'];
   const keysOf = (items: { id: string }[]) => items.map((i) => Object.keys(id).find((k) => id[k] === i.id));
   const onRecord = { sourceType: 'COMMITTEE' as const, sourceId: record };
 
   it('orders open by soonest due (overdue first, undated last), then on hold, then the most recently closed', async () => {
     const list = await service.list(onRecord, org, { id: viewer, ...VIEW_ALL });
     expect(keysOf(list.items)).toEqual(ORDER);
-    expect(list.total).toBe(8);
-    expect(list.matching).toBe(8);
+    expect(list.total).toBe(9);
+    expect(list.matching).toBe(9);
   });
 
   it('the panel is the first five of that order, with the full total', async () => {
     const panel = await service.panel(onRecord, org, { id: viewer, ...VIEW_ALL });
     expect(keysOf(panel.rows)).toEqual(ORDER.slice(0, 5));
-    expect(panel.total).toBe(8);
+    expect(panel.total).toBe(9);
   });
 
   it('Load more pages through ONE order — no repeats, no gaps', async () => {
     const pages = [];
-    for (let skip = 0; skip < 8; skip += 3) {
+    for (let skip = 0; skip < 9; skip += 3) {
       pages.push(...(await service.list({ ...onRecord, take: 3, skip }, org, { id: viewer, ...VIEW_ALL })).items);
     }
     expect(keysOf(pages)).toEqual(ORDER);
@@ -123,7 +128,7 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
 
   it('finds a task\'s place under the current sort (the ?task= deep link)', async () => {
     const list = await service.list({ ...onRecord, take: 5, around: id['doneEarlier'] }, org, { id: viewer, ...VIEW_ALL });
-    expect(list.aroundIndex).toBe(6);
+    expect(list.aroundIndex).toBe(7);
   });
 
   it('should NOT return records belonging to a different tenant', async () => {
@@ -133,17 +138,18 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     expect(everywhere.items.map((i) => i.id)).not.toContain(id['foreign']);
   });
 
-  it('without tasks:view, only the tasks the viewer is or was on (Q1)', async () => {
+  it('without tasks:view, only the tasks the viewer is or was on, or created (Q1)', async () => {
     const list = await service.list(onRecord, org, { id: viewer, permissions: ['committees:view'] });
     expect(list.scope).toBe('own');
-    expect(keysOf(list.items)).toEqual(['tomorrow', 'later']);
-    expect(list.total).toBe(2);
+    // "tomorrow" they are on, "later" they were on, "created" they created.
+    expect(keysOf(list.items)).toEqual(['tomorrow', 'later', 'created']);
+    expect(list.total).toBe(3);
   });
 
   it('filters: overdue is a flag on open work, never on hold; Mine is the viewer now', async () => {
     const overdue = await service.list({ ...onRecord, overdue: true }, org, { id: viewer, ...VIEW_ALL });
     expect(keysOf(overdue.items)).toEqual(['overdue']);
-    expect(overdue.total).toBe(8);
+    expect(overdue.total).toBe(9);
     expect(overdue.matching).toBe(1);
     const mine = await service.list({ ...onRecord, mine: true }, org, { id: viewer, ...VIEW_ALL });
     expect(keysOf(mine.items)).toEqual(['tomorrow']);
@@ -163,7 +169,7 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     const none = await service.list({ ...onRecord, due: 'NONE' }, org, { id: viewer, ...VIEW_ALL });
     expect(keysOf(none.items)).toEqual(['undated', 'doneEarlier', 'cancelled']);
     const later = await service.list({ ...onRecord, due: 'LATER' }, org, { id: viewer, ...VIEW_ALL });
-    expect(keysOf(later.items)).toEqual(['later']);
+    expect(keysOf(later.items)).toEqual(['later', 'created']);
   });
 
   it('every sort is total: reversing the title sort reverses the list exactly', async () => {
@@ -175,7 +181,7 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
   it('organisation-wide lists only the record types the viewer may see', async () => {
     const committees = await service.list({}, org, { id: viewer, ...VIEW_ALL });
     expect(keysOf(committees.items)).not.toContain('meeting');
-    expect(committees.total).toBe(8);
+    expect(committees.total).toBe(9);
     types = ['COMMITTEE', 'MEETING'];
     const both = await service.list({}, org, { id: viewer, ...VIEW_ALL });
     expect(keysOf(both.items)[0]).toBe('meeting');

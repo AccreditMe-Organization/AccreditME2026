@@ -707,10 +707,16 @@ Load more by 50 — with each row naming its record. No Linear ticket was needed
    `task-actions.spec.ts` pins each flag against its endpoint's rule; the list
    reuses the same function, so what could drift is the facts, and that is
    what this spec checks.
-5. **Q1's own variant, measured:** it is the My tasks rule — the tasks the
-   viewer is or was ON. A creator without `tasks:view` therefore sees none of
-   the tasks they created on that panel (each one's page still admits them as
-   its manager). Pinned by spec, so it is a decision, not an accident.
+5. **Q1's own variant includes the tasks the viewer CREATED** (Ahmad, 14 Oct,
+   after the first build). §2.3 said "the tasks the viewer is or was on — the
+   My tasks rule", which left a creator without `tasks:view` seeing none of
+   the tasks they created on that panel. It is now the tasks they are or were
+   on, or created — every one a task whose page already admits them, as an
+   assignee (Q4 a) or as its manager (Q4 b), so it discloses nothing new.
+   Nothing else about the variant changed. Pinned in the unit spec (the
+   statement and the count), the record db-spec (a created task the viewer is
+   not on is listed) and the actions db-spec (a creator without `tasks:view`
+   sees all nine, with the page's own actions).
 6. **Status is a single-choice filter** (the server accepts several).
 7. **Complete from a row is confirmed first**, as the committee panel always
    did ("this finishes it for every assignee"); the task page's button is not.

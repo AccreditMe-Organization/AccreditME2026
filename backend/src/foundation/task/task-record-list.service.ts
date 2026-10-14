@@ -38,7 +38,8 @@ interface Scope {
  *   - On a record: the record must be visible (ObjectVisibilityService, ACC-101
  *     clause a — a 403 naming the permission, or 404, before any task is read).
  *     With tasks:view, every task on it; without (Q1), only the tasks the
- *     viewer is or was on — what My tasks already shows them.
+ *     viewer is or was on, or created — each one is a task the task page
+ *     already admits them to (as an assignee, or as its manager).
  *   - Organisation-wide: tasks:view, and only the record types the viewer may
  *     see (viewableTypes, fail closed) — GET /tasks/:id's rule, as a list.
  *
@@ -109,8 +110,9 @@ export class TaskRecordListService {
       const recordWhere: Prisma.TaskWhereInput = { organizationId, sourceType: dto.sourceType, sourceId: dto.sourceId };
       if (seesAll) return { sql: record, where: recordWhere, kind: 'all', orgWide: false };
       return {
-        sql: Prisma.sql`${record} AND EXISTS (SELECT 1 FROM "TaskAssignee" o WHERE o."taskId" = t.id AND o."userId" = ${viewer.id})`,
-        where: { ...recordWhere, assignees: { some: { userId: viewer.id } } },
+        sql: Prisma.sql`${record} AND (t."createdById" = ${viewer.id}
+          OR EXISTS (SELECT 1 FROM "TaskAssignee" o WHERE o."taskId" = t.id AND o."userId" = ${viewer.id}))`,
+        where: { ...recordWhere, OR: [{ createdById: viewer.id }, { assignees: { some: { userId: viewer.id } } }] },
         kind: 'own',
         orgWide: false,
       };

@@ -123,12 +123,18 @@ describe('A row\'s actions equal its task page\'s (ACC-229)', () => {
     expect(own.total).toBe(2);
   });
 
-  // Q1 as approved: the own variant is the My tasks rule — the tasks the viewer
-  // is or was ON. A creator without tasks:view therefore sees none of the tasks
-  // they created here, though each one's page admits them as its manager.
-  it('without tasks:view, a creator who is on none of them sees an empty own list (Q1)', async () => {
-    const own = await list.list({ sourceType: 'COMMITTEE', sourceId: record }, org, { id: people.creator, permissions: ['committees:view'] });
+  // Q1 (Ahmad, 14 Oct): the own variant is the tasks the viewer is or was ON,
+  // and the tasks they CREATED — every one a task the page admits them to. A
+  // creator on none of them still sees them all, with the actions the page
+  // gives a manager.
+  it("without tasks:view, a creator sees the tasks they created, with the page's actions (Q1)", async () => {
+    const v = { id: people.creator, permissions: ['committees:view'] };
+    const own = await list.list({ sourceType: 'COMMITTEE', sourceId: record }, org, v);
     expect(own.scope).toBe('own');
-    expect(own.total).toBe(0);
+    expect(own.total).toBe(9);
+    for (const row of own.items) {
+      const view = await page.view(row.id, org, v);
+      expect({ id: row.id, actions: row.actions }).toEqual({ id: row.id, actions: view.actions });
+    }
   });
 });

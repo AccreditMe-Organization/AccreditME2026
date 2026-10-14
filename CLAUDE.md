@@ -3763,8 +3763,8 @@ Briefly:
   then On hold, then the most recently closed. One order for everyone.
 - **WHO SEES WHICH TASKS IS TODAY'S RULE, AS A LIST.** On a record: the record
   first (ACC-101 clause a), then every task with `tasks:view`, or (Q1) only
-  the tasks the viewer is or was ON — the My tasks rule, so a creator without
-  `tasks:view` sees none of the tasks they created there. Organisation-wide
+  the tasks the viewer is or was ON, or CREATED (Ahmad, 14 Oct) — each one a
+  task its page already admits them to. Organisation-wide
   (`/tasks/all`): `tasks:view`, and only the record types the viewer may see
   (`ObjectVisibilityService.viewableTypes()`, fail closed).
 - **ORDER AND FILTERS ARE SQL; ROWS ARE READ IN BATCHES.** Every value bound,
