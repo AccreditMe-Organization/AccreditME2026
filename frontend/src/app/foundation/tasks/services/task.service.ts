@@ -181,6 +181,101 @@ export interface ITaskWithAssigneesDto extends ITaskListItemDto {
   cancelledBy: { id: string; name: string } | null;
 }
 
+// ACC-228 — what the viewer may do on one task, decided by the server from the
+// rules each action's endpoint applies (backend task-actions.ts). The page
+// shows exactly these; the server re-checks every one.
+export type TaskPrimaryAction = 'REVIEW_REQUEST' | 'PICK_UP' | 'START' | 'COMPLETE' | 'RESUME';
+
+export interface ITaskActionsDto {
+  start: boolean;
+  complete: boolean;
+  completeNeedsEvidence: boolean;
+  reject: boolean;
+  release: boolean;
+  pickUp: boolean;
+  requestMoreTime: boolean;
+  requestHold: boolean;
+  withdrawRequest: boolean;
+  reviewRequest: boolean;
+  resume: boolean;
+  addEvidence: boolean;
+  reassign: boolean;
+  edit: boolean;
+  cancel: boolean;
+  reopen: boolean;
+  primary: TaskPrimaryAction | null;
+}
+
+export interface ITaskPagePersonDto {
+  id: string;
+  name: string;
+  positionNameEn: string | null;
+  positionNameAr: string | null;
+  orgUnitNameEn: string | null;
+  orgUnitNameAr: string | null;
+}
+
+export interface ITaskPageAssigneeDto extends ITaskPagePersonDto {
+  pickedAt: string | null;
+  delegation: ResolvedDelegationDto | null;
+}
+
+// ACC-228 — GET /tasks/:id/view. `task` is a list row, so every task dialog
+// takes it unchanged. The record's name is present only when the viewer may
+// open the record.
+export interface ITaskPageViewDto {
+  task: ITaskListItemDto & { workflowInstanceStageId: string | null; isMandatory: boolean };
+  record: { type: string; id: string; canOpen: boolean; nameEn: string | null; nameAr: string | null };
+  stage: { nameEn: string; nameAr: string | null } | null;
+  assignees: ITaskPageAssigneeDto[];
+  poolMemberCount: number | null;
+  createdBy: ITaskPagePersonDto;
+  createdByWorkflow: boolean;
+  completedBy: { id: string; name: string } | null;
+  rejectedBy: { id: string; name: string } | null;
+  cancelledBy: { id: string; name: string } | null;
+  reopenedBy: { id: string; name: string } | null;
+  actions: ITaskActionsDto;
+}
+
+export type TaskHistoryKind =
+  | 'created'
+  | 'started'
+  | 'completed'
+  | 'rejected'
+  | 'reassigned'
+  | 'picked'
+  | 'released'
+  | 'edited'
+  | 'cancelled'
+  | 'cancelled_by_workflow'
+  | 'reopened'
+  | 'escalated'
+  | 'escalation_skipped'
+  | 'returned_to_pool'
+  | 'handed_on'
+  | 'stage_recovery'
+  | 'request_made'
+  | 'request_withdrawn'
+  | 'request_approved'
+  | 'request_declined'
+  | 'request_cancelled'
+  | 'hold_started'
+  | 'resumed'
+  | 'evidence_added'
+  | 'evidence_removed'
+  | 'changed';
+
+// ACC-228 — GET /tasks/:id/history, oldest first. Worded on screen by kind.
+export interface ITaskHistoryEventDto {
+  at: string;
+  actorName: string | null;
+  kind: TaskHistoryKind;
+  reason: string | null;
+  requestType: TaskRequestType | null;
+  evidenceType: string | null;
+}
+
 // ACC-163 — the statuses my-tasks can be filtered by. OVERDUE is not one of
 // them: overdue is a separate flag (Q8), combinable with any status.
 export type MyTaskStatusFilter = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -528,6 +623,16 @@ export class TaskService {
 
   getById(id: string): Observable<ITaskDto> {
     return this.http.get<ITaskDto>(`${this.base}/${id}`);
+  }
+
+  // ACC-228 — the task page. No permission: who may open a task is decided by
+  // the server from the task; everyone else gets the same not-found.
+  getPage(id: string): Observable<ITaskPageViewDto> {
+    return this.http.get<ITaskPageViewDto>(`${this.base}/${encodeURIComponent(id)}/view`);
+  }
+
+  getHistory(id: string): Observable<ITaskHistoryEventDto[]> {
+    return this.http.get<ITaskHistoryEventDto[]>(`${this.base}/${encodeURIComponent(id)}/history`);
   }
 
   create(dto: CreateTaskDto): Observable<ITaskDto> {

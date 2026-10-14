@@ -1,6 +1,8 @@
 import { Component, computed, effect, inject, input, untracked } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { catchError, interval, of, startWith, switchMap } from 'rxjs';
+import { NavigationEnd, Router, RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { catchError, filter, interval, map, of, startWith, switchMap } from 'rxjs';
+import { normalizePath } from '../../core/navigation/nav-location';
 import { SetupHealthService } from '../../foundation/setup-health/services/setup-health.service';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { MenuModule } from 'primeng/menu';
@@ -35,7 +37,6 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
   standalone: true,
   imports: [
     RouterLink,
-    RouterLinkActive,
     TranslatePipe,
     AmCountPipe,
     MenuModule,
@@ -94,13 +95,10 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
             @for (item of group.items; track item.key) {
               <a
                 [routerLink]="item.route"
-                routerLinkActive
-                #rla="routerLinkActive"
-                [routerLinkActiveOptions]="{ exact: needsExactMatch(item) }"
                 class="am-rail-item relative w-full flex items-center gap-[10px] px-[10px] py-[7px] mb-px rounded-md text-[13px] no-underline"
                 [class.justify-center]="collapsed()"
-                [class.am-rail-item--active]="rla.isActive"
-                [attr.aria-current]="rla.isActive ? 'page' : null"
+                [class.am-rail-item--active]="isActive(item)"
+                [attr.aria-current]="isActive(item) ? 'page' : null"
                 [attr.aria-label]="collapsed() ? collapsedLabel(item) : null"
                 [pTooltip]="collapsed() ? collapsedLabel(item) : ''"
                 tooltipPosition="right"
@@ -355,6 +353,32 @@ export class SidebarComponent {
     ...TENANT_NAV_GROUPS,
     ...PLATFORM_NAV_GROUPS,
   ].flatMap((group) => group.items.map((item) => item.route));
+
+  // ACC-228 — the current path, for items whose own pages sit below a route
+  // that needs an exact match (My tasks and /tasks/:id).
+  private readonly currentPath = toSignal(
+    this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+      map((event) => normalizePath(event.urlAfterRedirects)),
+    ),
+    { initialValue: normalizePath(this.router.url) },
+  );
+
+  /**
+   * ACC-228 — the rail decides "current" itself, from the path. It used
+   * RouterLinkActive, which REMOVES aria-current in a microtask after every
+   * check unless its own ariaCurrentWhenActive is set — after the template's
+   * binding had written it, and a binding never rewrites an unchanged value. So
+   * no rail item ever kept aria-current="page" (found by this ticket's spec).
+   * Same rule as before: the item's own route, or below it unless an exact
+   * match is needed, plus the item's declared own pages (alsoActiveFor).
+   */
+  isActive(item: NavItem): boolean {
+    const path = this.currentPath();
+    if (path === item.route) return true;
+    if (!this.needsExactMatch(item) && path.startsWith(item.route + '/')) return true;
+    return !!item.alsoActiveFor && item.alsoActiveFor.test(path);
+  }
 
   // Exact matching only where one item's route is a PREFIX of another's.
   // /tasks (My tasks) prefixes /tasks/unassigned, so a prefix match would light

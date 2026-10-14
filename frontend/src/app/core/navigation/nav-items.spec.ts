@@ -330,3 +330,16 @@ describe('nav-items (ACC-79)', () => {
     });
   });
 });
+
+// ACC-228 — My tasks is the rail item of a task's own page, and of nothing else
+// below /tasks: the two other task screens have items, or are not linked.
+describe('My tasks owns /tasks/:id (ACC-228)', () => {
+  const myTasks = TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === 'myTasks')!;
+
+  for (const path of ['/tasks/task-1', '/tasks/cmv7vd2lt000401tf9l6n6jg0']) {
+    it(`lights My tasks on ${path}`, () => expect(myTasks.alsoActiveFor!.test(path)).toBe(true));
+  }
+  for (const path of ['/tasks', '/tasks/all', '/tasks/unassigned', '/tasks/task-1/extra', '/tasksx/1', '/committees/abc']) {
+    it(`leaves ${path} alone`, () => expect(myTasks.alsoActiveFor!.test(path)).toBe(false));
+  }
+});

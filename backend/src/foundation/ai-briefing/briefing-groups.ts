@@ -130,7 +130,10 @@ export function buildBriefingGroups(sources: BriefingSources, zone: string, now:
       title: cap(req.task.title),
       requestType: req.type,
       requestedFor: iso(req.type === 'ON_HOLD' ? req.holdUntil : req.requestedDueAt),
-      link: { target: 'request', id: req.id },
+      // ACC-228 — the task page, where the decision is made (its Open
+      // request panel). Briefings saved before this keep 'request' links,
+      // which My tasks still honours.
+      link: { target: 'task', id: req.task.id },
     }),
   );
 

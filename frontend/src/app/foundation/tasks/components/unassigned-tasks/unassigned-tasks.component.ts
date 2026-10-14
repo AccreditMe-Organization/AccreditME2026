@@ -6,6 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { TaskService, ITaskDto } from '../../services/task.service';
 import { TaskReassignDialogComponent } from '../task-reassign-dialog/task-reassign-dialog.component';
+import { TaskLinkComponent } from '../task-link/task-link.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 
@@ -18,7 +19,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 @Component({
   selector: 'app-unassigned-tasks',
   standalone: true,
-  imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskReassignDialogComponent],
+  imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskReassignDialogComponent, TaskLinkComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
       <app-page-header
@@ -43,7 +44,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
         <ng-template pTemplate="body" let-task>
           <tr>
             <td><p-tag [value]="task.sourceType" severity="warn" /></td>
-            <td>{{ task.title }}</td>
+            <td><am-task-link [taskId]="task.id" [title]="task.title" /></td>
             <td>{{ task.createdAt | amDateTime }}</td>
             <td>
               <!-- ACC-123 — tasks:reassign, not tasks:manage. The ROUTE is

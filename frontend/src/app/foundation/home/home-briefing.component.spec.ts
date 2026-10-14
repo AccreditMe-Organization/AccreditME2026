@@ -132,7 +132,9 @@ describe('HomeBriefingComponent (ACC-198)', () => {
     expect(el().querySelector('.am-briefing__head--warn')!.textContent).toContain('Overdue');
 
     const links = Array.from(el().querySelectorAll('a.am-briefing__link')) as HTMLAnchorElement[];
-    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/tasks?task=task-1', '/tasks?task=task-1', '/tasks?task=task-2', '/tasks?request=req-1']);
+    // ACC-228 — a task opens its own page; a 'request' link (saved before
+    // ACC-228, with the request's id) still lands on My tasks' decision row.
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/tasks/task-1', '/tasks/task-1', '/tasks/task-2', '/tasks?request=req-1']);
     expect(el().querySelector('.am-briefing__link--plain')!.textContent).toContain('AI credits allocated');
     expect(el().querySelectorAll('.am-briefing__done')).toHaveSize(1);
     expect(text).toContain('More time to 20 Oct 2026');

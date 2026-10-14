@@ -51,6 +51,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { TaskLinkComponent } from '../../../tasks/components/task-link/task-link.component';
 
 /** ACC-174/177 — the task-row dialogs this page opens, one at a time. */
 type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
@@ -82,6 +83,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     CommitteeMemberFormComponent,
     WorkflowTransitionActionsComponent,
     EditDialogComponent,
+    TaskLinkComponent,
   ],
   template: `
     @if (error()) {
@@ -375,7 +377,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                   [class.am-task-row--sought]="soughtTaskId() === task.id"
                 >
                   <span class="min-w-0">
-                    <span class="block text-[13px] font-medium truncate">{{ task.title }}</span>
+                    <span class="block text-[13px] truncate"><am-task-link [taskId]="task.id" [title]="task.title" /></span>
                     <!-- Status shares the second line rather than taking a chip
                          or a fourth column: at the 320px panel floor in a
                          five-across row there is no width for either. It has to

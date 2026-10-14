@@ -6,6 +6,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { provideTranslateService } from '@ngx-translate/core';
 import { BreadcrumbComponent } from './breadcrumb.component';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
+import { BreadcrumbParentService } from '../../core/navigation/breadcrumb-parent.service';
 
 // Mirrors the real architecture: BreadcrumbComponent lives inside the SHELL's
 // own template (a template child, not a routed leaf), so its constructor runs
@@ -42,6 +43,7 @@ const routes: Routes = [
         children: [
           { path: '', component: StubLeafComponent },
           { path: 'unassigned', component: StubLeafComponent },
+          { path: ':id', component: StubLeafComponent },
         ],
       },
       {
@@ -157,6 +159,40 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
       { text: TENANT, url: '/home' },
       { labelKey: 'nav.groups.admin', url: null },
     ]);
+  });
+
+  // ACC-228 (Q11) — a task's parent is its record, named by the task page once
+  // it knows the viewer may open that record: the record's own ancestry, then
+  // the record. Still stops at the parent: the task is the H1, not a crumb.
+  describe('a task page (ACC-228)', () => {
+    it("reads as the record's ancestry, ending in the record, when the page names it", async () => {
+      configure({ permissions: ['committees:view'] });
+      TestBed.inject(BreadcrumbParentService).set('/tasks/task-1', '/committees/abc123', 'Infection Prevention & Control');
+      const { crumb } = await trailAt('/tasks/task-1');
+      expect(crumb.items()).toEqual([
+        { text: TENANT, url: '/home' },
+        { labelKey: 'nav.groups.quality', url: null },
+        { labelKey: 'nav.committees', url: '/committees' },
+        { text: 'Infection Prevention & Control', url: '/committees/abc123' },
+      ]);
+    });
+
+    it('falls back to My tasks when no record is named (the viewer may not open it)', async () => {
+      configure({ permissions: [] });
+      const { crumb } = await trailAt('/tasks/task-1');
+      expect(crumb.items()).toEqual([
+        { text: TENANT, url: '/home' },
+        { labelKey: 'nav.groups.work', url: null },
+        { labelKey: 'nav.myTasks', url: '/tasks' },
+      ]);
+    });
+
+    it("never carries one page's parent onto another page", async () => {
+      configure({ permissions: ['committees:view'] });
+      TestBed.inject(BreadcrumbParentService).set('/tasks/task-1', '/committees/abc123', 'Infection Prevention & Control');
+      const { crumb } = await trailAt('/tasks/task-2');
+      expect(crumb.items().some((i) => i.text === 'Infection Prevention & Control')).toBe(false);
+    });
   });
 
   // A user without users:view on their OWN profile must not be told they are in

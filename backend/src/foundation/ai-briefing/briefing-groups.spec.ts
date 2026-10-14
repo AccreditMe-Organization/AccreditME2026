@@ -69,8 +69,8 @@ describe('buildBriefingGroups (ACC-198)', () => {
     expect(groups.map((g) => g.kind)).toEqual(['decision', 'pool', 'notification']);
     const [decision, pool, notes] = groups;
     expect(decision!.items.map((i) => [i.key, i.link, i.requestedFor])).toEqual([
-      ['R1', { target: 'request', id: 'req1' }, '2026-10-20T00:00:00.000Z'],
-      ['R2', { target: 'request', id: 'req2' }, '2026-10-25T00:00:00.000Z'],
+      ['R1', { target: 'task', id: 'tk' }, '2026-10-20T00:00:00.000Z'],
+      ['R2', { target: 'task', id: 'tk2' }, '2026-10-25T00:00:00.000Z'],
     ]);
     expect(pool!.items[0]).toEqual(expect.objectContaining({ key: 'P1', link: { target: 'task', id: 'p1' } }));
     expect(notes!.items.map((i) => [i.key, i.id, i.link])).toEqual([

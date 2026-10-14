@@ -41,6 +41,7 @@ import { TaskEvidenceDialogComponent } from '../task-evidence-dialog/task-eviden
 import { TaskEditDialogComponent } from '../task-edit-dialog/task-edit-dialog.component';
 import { TaskCancelDialogComponent } from '../task-cancel-dialog/task-cancel-dialog.component';
 import { TaskReopenDialogComponent } from '../task-reopen-dialog/task-reopen-dialog.component';
+import { TaskLinkComponent } from '../task-link/task-link.component';
 
 // ACC-163 — "Overdue" is a filter, not a status (Q8): it asks the server for
 // open tasks past their due time, whatever their status. The other three are
@@ -120,6 +121,7 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
     TaskEditDialogComponent,
     TaskCancelDialogComponent,
     TaskReopenDialogComponent,
+    TaskLinkComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -142,7 +144,7 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
             </ng-template>
             <ng-template pTemplate="body" let-request>
               <tr [attr.data-request-row]="request.id" tabindex="-1" [class.am-row--sought]="soughtRequestId() === request.id">
-                <td>{{ request.task.title }}</td>
+                <td><am-task-link [taskId]="request.task.id" [title]="request.task.title" /></td>
                 <td>
                   <span class="block">{{ askedLine(request) }}</span>
                   <span class="block text-meta text-[var(--am-ink-500)]">
@@ -184,7 +186,7 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
               <tr [attr.data-task-row]="task.id" tabindex="-1" [class.am-row--sought]="soughtTaskId() === task.id">
                 <td><p-tag [value]="task.sourceType" severity="info" /></td>
                 <td>
-                  <span class="block">{{ task.title }}</span>
+                  <span class="block"><am-task-link [taskId]="task.id" [title]="task.title" /></span>
                   @if (task.pool) {
                     <span class="block text-meta text-[var(--am-ink-500)]">
                       {{ 'task.assign.assignedToPool' | translate: { pool: poolLabel(task.pool) } }}
@@ -250,7 +252,7 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
           <tr [attr.data-task-row]="task.id" tabindex="-1" [class.am-row--sought]="soughtTaskId() === task.id">
             <td><p-tag [value]="task.sourceType" severity="info" /></td>
             <td>
-              <span class="block">{{ task.title }}</span>
+              <span class="block"><am-task-link [taskId]="task.id" [title]="task.title" /></span>
               @if (task.pickedByMe && task.pool) {
                 <span class="block text-meta text-[var(--am-ink-500)]">
                   {{ 'task.pickedUp' | translate }} · {{ poolLabel(task.pool) }}

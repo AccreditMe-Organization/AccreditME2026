@@ -145,6 +145,16 @@ describe('MyTasksComponent — due dates (ACC-94)', () => {
   it('shows — for a task with no due date', () => {
     expect(dueCells(render({ zone: 'Asia/Riyadh', language: 'en', tasks: [task({ dueAt: null })] }))).toEqual(['—']);
   });
+
+  // ACC-228 — every task title is the way in to the task's own page.
+  it('links each title to the task page', () => {
+    const el = render({ zone: 'Asia/Riyadh', language: 'en', tasks: [task({}), task({ id: 'task-2', title: 'Second task' })] });
+    const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('tbody am-task-link a'));
+    expect(links.map((a) => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([
+      ['Submit terms of reference', '/tasks/task-1'],
+      ['Second task', '/tasks/task-2'],
+    ]);
+  });
 });
 
 // ACC-163 — the assignee's actions, the overdue flag and the evidence rule.

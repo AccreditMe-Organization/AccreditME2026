@@ -12,6 +12,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
 import { HomeBriefingComponent } from './home-briefing.component';
+import { TaskLinkComponent } from '../tasks/components/task-link/task-link.component';
 
 // HomeComponent — ACC-70. The post-login landing page.
 //
@@ -40,7 +41,7 @@ import { HomeBriefingComponent } from './home-briefing.component';
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [PageHeaderComponent, HomeBriefingComponent, AmDateTimePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent],
+  imports: [PageHeaderComponent, HomeBriefingComponent, AmDateTimePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent, TaskLinkComponent],
   template: `
     <div class="flex flex-col gap-6">
       <!-- ACC-79 — no purpose line. "Your open work and recent activity"
@@ -74,7 +75,7 @@ import { HomeBriefingComponent } from './home-briefing.component';
             </ng-template>
             <ng-template pTemplate="body" let-task>
               <tr>
-                <td>{{ task.title }}</td>
+                <td><am-task-link [taskId]="task.id" [title]="task.title" /></td>
                 <td>{{ task.dueAt | amDateTime }}</td>
                 <td>
                   <!-- ACC-163 — the status, and overdue as a flag beside it
