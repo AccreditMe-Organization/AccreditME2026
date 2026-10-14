@@ -2,9 +2,11 @@
 
 Plan written 13 Oct 2026 (CC-96). Branch `feature/ACC-223-stale-chunks`.
 
-**Correction (14 Oct): the 404 for a missing asset only took effect with
-ACC-226** (`backend/Plans/step-226-framework-null.md`). This ticket's rewrite
-was necessary and not sufficient; the reload handler (F4) was live from here.
+**Correction (14 Oct, ACC-226): a missing asset is NOT a 404 on production,
+and was not made one** — Vercel's static builder re-detects Angular from
+package.json and appends its own `/(.*)` → `/index.html`
+(`backend/Plans/step-226-framework-null.md`, "Outcome"). Accepted; the reload
+handler (F4) is the protection, and was live from here.
 
 ## The defect
 
@@ -32,9 +34,10 @@ a sidebar link to a screen not yet loaded does nothing, until a hard refresh.
   source excludes `/assets/…`, `/media/…` and any path ending in a static file
   extension (js, mjs, css, map, json, fonts, images, wasm). Every real route
   still rewrites to `/index.html`. **This was meant to make a missing asset a
-  404 and, on production, did not**: `"framework": "angular"` made Vercel's
-  Angular preset append its own `/(.*)` → `/index.html` after our rewrite, so
-  the page was still served. ACC-226 removes the preset.
+  404 and, on production, did not**: Vercel appends Angular's own `/(.*)` →
+  `/index.html` after our rewrite, so the page is still served. ACC-226 set
+  `"framework": null`, which did not change that: the static builder detects
+  Angular from package.json regardless. Accepted (ACC-226).
 - **F2 — the page itself revalidates.** An explicit header rule on the same
   non-asset paths: `Cache-Control: public, max-age=0, must-revalidate`, so
   `index.html` is never cached long, whatever the platform default is.
@@ -94,15 +97,16 @@ sidebar link clicked in the old tab.
   after this shipped: the made-up `/chunk-DOESNOTEXIST.js` still answered 200
   `text/html`, `immutable`, because of the Angular preset's catch-all, which
   no local server reading vercel.json can show. The reload handler was live
-  (its storage key is in the served main bundle), so the reported bug was
-  addressed by F4 alone until ACC-226.
+  (its storage key is in the served main bundle), so the reported bug is
+  addressed by F4 alone — still true after ACC-226.
 
 ## A known side effect, accepted (Ahmad, 14 Oct, ACC-226)
 
-The year-long cache rule for `.js` and `.css` matches by path, so the 404 for a
-missing chunk carries it too. This section first read "open, not decided". It
-is decided: accepted, and the header rule is not changed, because a chunk's
-name is a hash of its content and a missing hash never comes back.
+The year-long cache rule for `.js` and `.css` matches by path, so the answer
+for a missing chunk carries it too — on production that answer is the page,
+200, not a 404. This section first read "open, not decided". It is decided:
+accepted, and the header rule is not changed, because a chunk's name is a hash
+of its content and a missing hash never comes back.
 
 ## Tests
 
