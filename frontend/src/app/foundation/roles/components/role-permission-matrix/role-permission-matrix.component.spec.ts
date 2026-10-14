@@ -11,6 +11,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-120 slice 5, PR B — the permission matrix screen (plan sections A, C–G).
 //
@@ -51,6 +52,9 @@ interface Setup {
 }
 
 describe('RolePermissionMatrixComponent (ACC-120 slice 5, PR B)', () => {
+  // Two specs switch to Arabic, which flips <html dir>; this puts it back.
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<RolePermissionMatrixComponent>;
   let component: RolePermissionMatrixComponent;
   let assign: jasmine.Spy;
@@ -111,7 +115,6 @@ describe('RolePermissionMatrixComponent (ACC-120 slice 5, PR B)', () => {
 
   afterEach(() => {
     document.querySelectorAll('.p-dialog-mask, .p-dialog').forEach((n) => n.remove());
-    document.documentElement.dir = 'ltr';
   });
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
