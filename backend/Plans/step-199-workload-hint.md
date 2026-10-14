@@ -1,6 +1,6 @@
 # Step 199 — AI workload hint when assigning a task (ACC-199)
 
-**Status: APPROVED 14 Oct 2026 with Ahmad's changes (Q2, Q4, Q10, Q12). Building.**
+**Status: APPROVED 14 Oct 2026 with Ahmad's changes (Q2, Q4, Q10, Q12). BUILT — results in §17.**
 Branch: `feat/ACC-199-workload-hint`, from `origin/dev` at `74bab36`.
 
 Sources read:
@@ -334,11 +334,120 @@ Measured for this plan in the real dialog shell (a throwaway spec, deleted; no t
 ## 16. Progress
 
 - [x] Ahmad approves the plan (14 Oct, with changes to Q2, Q4, Q10, Q12)
-- [ ] Counts on the picker endpoints, with specs
-- [ ] The press: prompt, parse, service; the routes, DTO and rate tier
-- [ ] The audit marker on create and reassign
-- [ ] Frontend: row counts, the button and hint, New task and Reassign wiring, i18n
-- [ ] Layout spec in both languages; mutation checks
-- [ ] SYSTEM-REFERENCE and CLAUDE.md
-- [ ] The gate, then stop before pushing
-- [ ] After the merge: the price seed, then the live proof
+- [x] Counts on the picker endpoints, with specs
+- [x] The press: prompt, parse, service; the routes, DTO and rate tier
+- [x] The audit marker on create and reassign
+- [x] Frontend: row counts, the button and hint, New task and Reassign wiring, i18n
+- [x] Layout spec in both languages; mutation checks
+- [x] SYSTEM-REFERENCE and CLAUDE.md
+- [x] The gate, then stop before pushing
+- [ ] After the merge: the price seed (§8), then the live proof
+
+---
+
+## 17. Built — measurements, differences, real hints
+
+### 17.1 The 420 px cap
+
+Measured by `task-workload.layout.spec.ts` in the real dialog shell, with the real theme, font and translations, in both languages. Every request is answered by the test, so **no task is created**.
+
+The worst case uses:
+- the longest seeded names (Dr. Shaikha Al-Rumaithi, Prof. Adel Al-Mansoori);
+- the longest seeded position (Chief Executive Officer / نائب المدير العام);
+- two-digit counts with an overdue clause.
+
+Reassign is measured in its tallest state: a rejected task with a two-line reason, and the reason's required error showing. **Every state keeps at least one meta line (20 px) of room** (ACC-120). English / Arabic:
+
+| State | New task, step 1 | Reassign |
+|---|---|---|
+| Counts only (a person not past the threshold) | 317 / 328 | 356 / 351 |
+| "✦ Suggest someone" showing | 321 / 332 | 357 / 354 |
+| Working ("◌ Suggesting…") | 321 / 332 | 357 / 354 |
+| The hint | 359 / 374 | 393 / 394 |
+| Refusal: failed, with Try again | 339 / 352 | 375 / 374 |
+| Refusal: credits used up | 339 / 352 | 375 / 374 |
+
+- **Person rows:** 55 / 60 px in the test, exactly the same with counts as without, on a panel at least 360 px wide.
+- **The hint never sits over the Person field:** asserted in both dialogs.
+- **Reassign keeps the hint;** there was no need to fall back to counts only.
+
+### 17.2 Where the build differs from the plan
+
+1. **The Person list's panel is at least 360 px wide when the dialog has a record.** `OverlaySelectComponent` gained an opt-in `panelMinWidth` (null by default; every other select is unchanged). In New task the Person field is a third of the row, about 150 px, and the dropdown was as wide as its field. In that width, measured with an artificially long position, the counts made rows of 190 / 151 / 169 px against 130 without; at 360 px, with the seed's longest real position, they are equal.
+2. **In Reassign, the Person field gives up its own message slot while the hint line shows** (`message="none"`; a person can never be invalid). Without it the hint measured 414 / 415 px, five pixels under the cap, which ACC-120 does not count as a fit. The layout spec now requires a line of room in every state, and that rule is what fails if the slot is put back.
+3. **Availability is asked once per dialog, the first time a chosen person is past the threshold**, not when the dialog opens. Most dialogs never ask.
+4. **The answers are kept in `TaskWorkloadHintStore`, provided by the dialog (New task, Reassign), not in the picker.** New task destroys and rebuilds the picker on every step switch, so answers kept in the picker would have been paid for again. Reassign clears the store each time it opens, because that dialog outlives an opening.
+5. **The prompt says "JSON only" again on its last line.** Measured on real calls: with the instruction only in the system prompt, the model explained its weighing first in 3 of 6 answers (up to 430 output tokens). The answer always parsed, and 430 is well inside the 1,000-token limit; the closing line makes the answer `{"pick":"P2"}` (12 tokens) more often. The model still sometimes explains first (3 of 8 afterwards). That still works: the reader takes the text from the first `{` to the last `}`, so prose before the object is ignored as long as it contains no brace; one that does is refunded as unusable. The output limit stays at 1,000.
+6. **One `firstJsonObject()`**: the briefing, the summary and drafting each carried it word for word, and the hint would have been the fourth. It is now `foundation/ai/first-json-object.ts`. Byte-identical behaviour; their specs are unchanged.
+7. **The model's pick varies between close candidates.** In the drawing's case it chose Sara (4 open, 1 due soon) in some runs and Huda (6 open, nothing due soon, 2 on hold) in others. It never chose the person with overdue work. Both are defensible readings of the same weighting.
+
+### 17.3 Mutation checks
+
+Each broke one rule; each turned a named test red, and was reverted.
+
+| Mutation | Red in |
+|---|---|
+| Drop the threshold re-check on the press | `workload-hint.service.spec` |
+| Drop the tenant scope from the counts | `task-workload.spec` (incl. the isolation-named test) |
+| Drop the record filter from the counts | `task-workload.spec` |
+| Count ON_HOLD as overdue | `task-workload.spec` |
+| Send names to the model | `workload-hint.service.spec` |
+| Accept a label we never sent | `workload-hint-answer.spec` |
+| Trust the audit claim without the AI log | `task.pools.spec` (incl. the isolation-named test) |
+| Counts without `tasks:view` | `task-workload.service.spec` |
+| Out-of-office people counted in the comparison | `task-workload.service.spec` |
+| Counts and the button with no record | `task-assignee-picker.workload.spec` |
+| Call the model when AI is known available, without a press | `task-assignee-picker.workload.spec` |
+| The answer not kept: every press calls | `task-assignee-picker.workload.spec` |
+| The Person panel not widened | the layout spec (rows grow) |
+| Reassign's Person field keeps its message slot | the layout spec (under a line of room) |
+
+### 17.4 Real hints, from the local key
+
+Made by calling the provider directly with the real prompt and the real parser — no gateway, no database, so no organisation's credits. The setting is the drawing's case: Infection Control Committee, task priority HIGH, Nora chosen. The sentence is built exactly as the picker builds it, from `en.json` / `ar.json`.
+
+**What the model received** (labels shuffled per call):
+
+```
+The task: priority HIGH. Counts are for open tasks on this committee only.
+Currently chosen: P1 — open 12, overdue 3, due within 2 working days 2, high or critical 4, on hold 0.
+Others who could take it:
+P2 — open 5, overdue 2, due within 2 working days 2, high or critical 3, on hold 0.
+P3 — open 4, overdue 0, due within 2 working days 1, high or critical 0, on hold 0.
+P4 — open 6, overdue 0, due within 2 working days 0, high or critical 1, on hold 2.
+
+Reply with the JSON object only, and nothing else.
+```
+
+**English** (431 input tokens, 12 output; answer `{"pick":"P3"}`):
+
+> ✦ AI · Goes to Nora Al-Otaibi, who has 12 open tasks on this committee, 3 overdue. Sara Al-Mutairi (Quality Officer) has 4 open.
+> **Assign Sara Al-Mutairi instead** · **Keep Nora Al-Otaibi**
+
+**Arabic** (431 input tokens, 12 output; answer `{"pick":"P2"}` in that call's labelling):
+
+> ✦ ذكاء اصطناعي · تذهب إلى Nora Al-Otaibi: 12 مهمة مفتوحة في هذه اللجنة، منها 3 مهام متأخرة. لدى Sara Al-Mutairi (مسؤول الجودة) 4 مهام مفتوحة.
+> **إسنادها إلى Sara Al-Mutairi** · **إبقاؤها مع Nora Al-Otaibi**
+
+### 17.5 Every sentence, for Ahmad to read (Q12)
+
+| Key | English | Arabic |
+|---|---|---|
+| The button | ✦ Suggest someone | ✦ اقتراح شخص آخر |
+| Working | ◌ Suggesting… | ◌ جارٍ الاقتراح… |
+| The tag | ✦ AI · | ✦ ذكاء اصطناعي · |
+| Chosen, with overdue | Goes to {name}, who has {open} {record}, {overdue}. | تذهب إلى {name}: {open} {record}، منها {overdue}. |
+| Chosen, none overdue | Goes to {name}, who has {open} {record}. | تذهب إلى {name}: {open} {record}. |
+| The other person | {name} ({position}) has {open}. | لدى {name} ({position}) {open}. |
+| The other person, no position | {name} has {open}. | لدى {name} {open}. |
+| The record phrase | on this committee / on this meeting / on this record | في هذه اللجنة / في هذا الاجتماع / في هذا السجل |
+| Assign | Assign {name} instead | إسنادها إلى {name} |
+| Keep | Keep {name} | إبقاؤها مع {name} |
+| Nobody better placed | Nobody here is clearly better placed to take it. | لا يوجد هنا من هو أنسب بوضوح لتولّيها. |
+| Too many presses | That's a lot of suggestions in one minute. Wait a moment, then try again. | طلبات اقتراح كثيرة خلال دقيقة واحدة. انتظر قليلًا ثم حاول مرة أخرى. |
+| Row counts | 12 open · 3 overdue | 12 مفتوحة · 3 متأخرة |
+| {open} in the hint | 1 open task / 12 open tasks | مهمة مفتوحة واحدة / مهمتان مفتوحتان / 3 مهام مفتوحة / 12 مهمة مفتوحة |
+| {overdue} in the hint (existing key) | 3 overdue | مهمة متأخرة / مهمتان متأخرتان / 3 مهام متأخرة / 13 مهمة متأخرة |
+| {open} for the other person | 4 open | (as {open} in the hint) 4 مهام مفتوحة |
+
+The other refusals (AI off, credits used up with the renewal date, AI unavailable with Try again) are the shared `ai.refusal.*` sentences every AI feature uses.
