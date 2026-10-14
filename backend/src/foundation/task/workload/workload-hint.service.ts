@@ -122,7 +122,9 @@ export class WorkloadHintService {
         positionNameAr: suggested.holder.positionNameAr,
         openCount: suggested.workload.open,
         overdueCount: suggested.workload.overdue,
+        dueSoonCount: suggested.workload.dueSoon,
       },
+      dueSoonSeen: [chosen, ...others].some((p) => p.workload.dueSoon > 0),
     };
   }
 

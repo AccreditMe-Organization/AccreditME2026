@@ -56,7 +56,15 @@ export interface IWorkloadHint {
     positionNameAr: string | null;
     openCount: number;
     overdueCount: number;
+    /** Due within the next 2 working days: what the model weighed beside the open count. */
+    dueSoonCount: number;
   };
+  /**
+   * Anyone the model was shown had work due within the next 2 working days, so
+   * "none due soon" is a reason the pick can rest on — the screen says so when
+   * the suggested person has none.
+   */
+  dueSoonSeen: boolean;
 }
 
 export interface IWorkloadHintAvailability {

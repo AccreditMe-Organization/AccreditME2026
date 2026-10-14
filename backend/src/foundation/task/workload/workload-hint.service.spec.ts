@@ -110,11 +110,27 @@ describe('WorkloadHintService.suggest (ACC-199)', () => {
         positionNameAr: 'مسؤول الجودة',
         openCount: 4,
         overdueCount: 0,
+        dueSoonCount: 0,
       },
+      // Nobody here has work due soon (the fixture's tasks have no due date).
+      dueSoonSeen: false,
     });
     const [feature, context] = ai.run.mock.calls[0] as [string, unknown];
     expect(feature).toBe('workload_balancing');
     expect(context).toEqual({ organizationId: ORG, actorId: 'assigner' });
+  });
+
+  it('says whether the model saw work due soon, and the suggested person\'s own due-soon count, so the screen can explain the pick', async () => {
+    const { service, prisma } = setup();
+    const tomorrow = new Date(Date.now() + 86_400_000);
+    prisma.taskAssignee.findMany.mockResolvedValue([
+      ...Array.from({ length: 12 }, (_, i) => ({ userId: 'nora', task: { status: 'PENDING', dueAt: i < 2 ? tomorrow : null, priority: 'MEDIUM' } })),
+      ...Array.from({ length: 4 }, () => ({ userId: 'sara', task: { status: 'PENDING', dueAt: null, priority: 'MEDIUM' } })),
+      ...Array.from({ length: 7 }, () => ({ userId: 'khalid', task: { status: 'PENDING', dueAt: tomorrow, priority: 'MEDIUM' } })),
+    ]);
+    const hint = await service.suggest(VIEWER, ORG, DTO);
+    expect(hint.dueSoonSeen).toBe(true);
+    expect(hint.suggestion).toEqual(expect.objectContaining({ userId: 'sara', dueSoonCount: 0 }));
   });
 
   it('the model is told no name, no user id, no record id and no unit or position — only labels and counts', async () => {
