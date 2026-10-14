@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { Component } from '@angular/core';
 import { signal } from '@angular/core';
 import { provideTranslateService } from '@ngx-translate/core';
 import { SidebarComponent } from './sidebar.component';
@@ -240,5 +241,71 @@ describe('SidebarComponent (ACC-79)', () => {
         '7 open conditions',
       );
     });
+  });
+});
+
+// ACC-228 — a task's own page lights My tasks, which an exact match alone would
+// not (/tasks needs one, because /tasks/unassigned is another item's).
+describe('SidebarComponent — the task page lights My tasks (ACC-228)', () => {
+  @Component({ template: '', standalone: true })
+  class StubPageComponent {}
+
+  async function railAt(url: string): Promise<HTMLElement> {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SidebarComponent],
+      providers: [
+        provideRouter([{ path: '**', component: StubPageComponent }]),
+        provideTranslateService(),
+        {
+          provide: NavigationAccessService,
+          useValue: {
+            hasPermission: (p: string) => ['tasks:manage', ADMIN_ACCESS].includes(p),
+            isModuleEnabled: () => false,
+            isPlatformAdmin: () => false,
+            tenantName: signal('Al Nakheel').asReadonly(),
+          },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            currentUser: signal({ id: 'u1', email: 'x@y.test', name: 'Omar Haddad' }).asReadonly(),
+            displayPreferences: signal(null).asReadonly(),
+          },
+        },
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
+    });
+    await TestBed.inject(Router).navigateByUrl(url);
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const active = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll('a.am-rail-item--active')).map((a) => a.getAttribute('href'));
+
+  it('on /tasks/:id, My tasks is the current item', async () => {
+    const el = await railAt('/tasks/task-1');
+    expect(active(el)).toEqual(['/tasks']);
+    expect(el.querySelector('a[href="/tasks"]')!.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('on /tasks/unassigned, My tasks is NOT lit — Unassigned is', async () => {
+    const el = await railAt('/tasks/unassigned');
+    expect(active(el)).toEqual(['/tasks/unassigned']);
+  });
+
+  // The defect this ticket found: RouterLinkActive removed aria-current after
+  // the template wrote it, so no current rail item was ever announced as the
+  // current page. An ordinary section page, below its route.
+  it("announces the current item's page as the current page (aria-current kept)", async () => {
+    const el = await railAt('/tasks/unassigned');
+    expect(el.querySelector('a[href="/tasks/unassigned"]')!.getAttribute('aria-current')).toBe('page');
+    expect(el.querySelector('a[href="/tasks"]')!.getAttribute('aria-current')).toBeNull();
   });
 });

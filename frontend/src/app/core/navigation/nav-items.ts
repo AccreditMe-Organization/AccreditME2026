@@ -62,6 +62,11 @@ export interface NavItem {
   // readable; its write affordances are decided on the page, by
   // canWriteModule(). Both this AND requiredPermission must pass.
   moduleKey?: string;
+  // ACC-228 — paths BELOW this item's route that are this item's own pages,
+  // where an exact match is otherwise needed (a sibling item's route starts
+  // with this one's). /tasks/:id is My tasks' task page; /tasks/unassigned is
+  // not, so the pattern names the page, never a prefix.
+  alsoActiveFor?: RegExp;
 }
 
 export interface NavGroup {
@@ -105,6 +110,8 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         labelKey: 'nav.myTasks',
         icon: 'pi pi-check-square',
         route: '/tasks',
+        // A task's own page (/tasks/:id) — not /tasks/all or /tasks/unassigned.
+        alsoActiveFor: /^\/tasks\/(?!all$|unassigned$)[^/]+$/,
       },
     ],
   },
