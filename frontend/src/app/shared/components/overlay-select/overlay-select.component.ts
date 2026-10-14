@@ -227,7 +227,7 @@ function createManualScrollable(
         #listboxEl
         cdkListbox
         class="am-overlay-select-panel"
-        [style.width.px]="triggerWidth()"
+        [style.width.px]="panelWidth()"
         [cdkListboxMultiple]="multiple()"
         [cdkListboxValue]="listboxValue()"
         (cdkListboxValueChange)="onListboxChange($event)"
@@ -543,6 +543,17 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // matching (verified directly against listbox.mjs, not assumed).
   readonly itemTemplate = input<TemplateRef<{ $implicit: unknown }> | undefined>(undefined);
 
+  /**
+   * ACC-199 — opt-in: the open panel is at least this wide (px), even when its
+   * field is narrower. For rows that carry more than a label — New task's
+   * Person list, a third of the row wide, with counts at each row's end edge —
+   * so a row keeps its own lines instead of wrapping in a column. The panel
+   * stays aligned to the field's start edge and is pushed back into the
+   * viewport (withPush) if it would leave it. Null — the field's width, as
+   * always — by default.
+   */
+  readonly panelMinWidth = input<number | null>(null);
+
   readonly flattenedOptions = computed<FlattenedOption[]>(() => {
     const childrenField = this.optionGroupChildren();
     if (!childrenField) {
@@ -554,6 +565,7 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   readonly isOpen = signal(false);
   readonly disabled = signal(false);
   readonly triggerWidth = signal(0);
+  protected readonly panelWidth = computed(() => Math.max(this.triggerWidth(), this.panelMinWidth() ?? 0));
 
   value: unknown = null;
   private onChange: (value: unknown) => void = () => {};
