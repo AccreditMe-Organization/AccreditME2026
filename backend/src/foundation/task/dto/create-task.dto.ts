@@ -11,7 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { AssignTargetDto } from './assign-target.dto';
-import { TaskAiWorkloadHintDto } from './workload-hint.dto';
+import { TaskAiWorkloadHintDto } from './task-ai-workload-hint.dto';
 
 const DELEGATION_REASONS = ['ACTING_HEAD', 'OUT_OF_OFFICE_COVERAGE'] as const;
 
