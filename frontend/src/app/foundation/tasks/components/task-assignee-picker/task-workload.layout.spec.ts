@@ -43,6 +43,9 @@ import { TaskReassignDialogComponent, TaskRejection } from '../task-reassign-dia
 const API = environment.apiUrl;
 const CAP = 420;
 const FLOOR = 150;
+// ACC-120 — a fit with less than a line to spare is not a pass: one longer
+// name, one wider word, and it is over. Every state keeps a meta line of room.
+const HEADROOM = 20;
 const FAR = { dueAt: '2100-01-01T00:00:00.000Z', limitAt: '2100-01-01T00:00:00.000Z' };
 
 const NAME_CHOSEN = 'Dr. Shaikha Al-Rumaithi';
@@ -159,6 +162,9 @@ describe('"✦ Suggest someone" — the 420px body cap, New task step 1 and Reas
     measured.push(`${label} [${language}]: ${height}px`);
     expect(height).withContext(`${label} [${language}] is not laid out`).toBeGreaterThan(FLOOR);
     expect(height).withContext(`${label} [${language}] body ${height}px against the ${CAP}px cap`).toBeLessThanOrEqual(CAP);
+    expect(height)
+      .withContext(`${label} [${language}] body ${height}px leaves less than a line under the cap`)
+      .toBeLessThanOrEqual(CAP - HEADROOM);
     return height;
   }
 
