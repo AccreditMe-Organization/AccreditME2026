@@ -9,15 +9,20 @@ describe('AssignPermissionsDto (ACC-120 slice 5)', () => {
     (await validate(plainToInstance(AssignPermissionsDto, body))).map((e) => e.property);
 
   it('accepts an EMPTY list (D6): a role may grant nothing', async () => {
-    expect(await errorsFor({ permissionKeys: [] })).toEqual([]);
+    expect(await errorsFor({ permissionKeys: [], expectedPermissionKeys: [] })).toEqual([]);
   });
 
-  it('accepts a save with no expectedPermissionKeys — optional in this release', async () => {
-    expect(await errorsFor({ permissionKeys: ['tasks:view'] })).toEqual([]);
+  // PR B — required. A save that does not say what it loaded cannot be told
+  // apart from a stale one, so it is a 400 before the service is reached.
+  it('refuses a save with no expectedPermissionKeys', async () => {
+    expect(await errorsFor({ permissionKeys: ['tasks:view'] })).toEqual(['expectedPermissionKeys']);
   });
 
   it('accepts expectedPermissionKeys as a list of keys, empty included', async () => {
     expect(await errorsFor({ permissionKeys: ['tasks:view'], expectedPermissionKeys: [] })).toEqual([]);
+    expect(
+      await errorsFor({ permissionKeys: ['tasks:view'], expectedPermissionKeys: ['tasks:view'] }),
+    ).toEqual([]);
   });
 
   it('refuses expectedPermissionKeys that is not a list of strings', async () => {
@@ -28,6 +33,6 @@ describe('AssignPermissionsDto (ACC-120 slice 5)', () => {
   });
 
   it('still requires permissionKeys', async () => {
-    expect(await errorsFor({})).toEqual(['permissionKeys']);
+    expect(await errorsFor({ expectedPermissionKeys: [] })).toEqual(['permissionKeys']);
   });
 });

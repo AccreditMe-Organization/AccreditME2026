@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { RoleService } from './role.service';
+import { AssignPermissionsDto } from './dto/assign-permissions.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { ALL_PERMISSIONS } from './permission.seed';
@@ -676,7 +677,7 @@ describe('RoleService', () => {
 
       await service.assignPermissions(
         'role-1',
-        { permissionKeys: ['committees:view', 'committees:create'] },
+        { permissionKeys: ['committees:view', 'committees:create'], expectedPermissionKeys: [] },
         ORG_A,
         ACTOR,
       );
@@ -708,7 +709,7 @@ describe('RoleService', () => {
       await expect(
         service.assignPermissions(
           'role-1',
-          { permissionKeys: ['nonexistent:action'] },
+          { permissionKeys: ['nonexistent:action'], expectedPermissionKeys: [] },
           ORG_A,
           ACTOR,
         ),
@@ -948,7 +949,12 @@ describe('RoleService', () => {
         return result;
       });
 
-      await service.assignPermissions('role-1', { permissionKeys: ['committees:view'] }, ORG_A, ACTOR);
+      await service.assignPermissions(
+        'role-1',
+        { permissionKeys: ['committees:view'], expectedPermissionKeys: [] },
+        ORG_A,
+        ACTOR,
+      );
 
       expect(lockedInsideTransaction).toBe(true);
       const [strings, ...values] = mockPrisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
@@ -998,19 +1004,35 @@ describe('RoleService', () => {
       expect(mockAuditLog.log).toHaveBeenCalledTimes(1);
     });
 
-    it('without expectedPermissionKeys (an older page during the deploy) the save still goes through', async () => {
-      const state = stageRolePermissions(['committees:view', 'tasks:view']);
+    // PR B — required. The DTO refuses a missing set with 400 before this is
+    // reached; a caller that bypasses validation is refused here, writing
+    // nothing, because a save that does not say what it loaded cannot prove it
+    // is not stale.
+    it('without expectedPermissionKeys the save is refused 409 ROLE_PERMISSIONS_CHANGED, writing nothing', async () => {
+      // A role holding NOTHING: the case where only the presence check decides,
+      // because an absent set and an empty set would otherwise compare equal.
+      const state = stageRolePermissions([]);
 
-      await service.assignPermissions('role-1', { permissionKeys: ['lookups:view'] }, ORG_A, ACTOR);
+      const code = await codeOf(
+        service.assignPermissions(
+          'role-1',
+          { permissionKeys: ['lookups:view'] } as unknown as AssignPermissionsDto,
+          ORG_A,
+          ACTOR,
+        ),
+      );
 
-      expect(state.held()).toEqual(['lookups:view']);
+      expect(code).toBe('ROLE_PERMISSIONS_CHANGED');
+      expect(state.held()).toEqual([]);
+      expect(mockPrisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
 
     // ── D6: an empty set ──────────────────────────────────────────────────────
     it('accepts an EMPTY list for an ordinary role: every grant is removed', async () => {
       const state = stageRolePermissions(['committees:view', 'tasks:view']);
 
-      await service.assignPermissions('role-1', { permissionKeys: [] }, ORG_A, ACTOR);
+      await service.assignPermissions('role-1', { permissionKeys: [], expectedPermissionKeys: state.held() }, ORG_A, ACTOR);
 
       expect(state.held()).toEqual([]);
       expect(mockPrisma.rolePermission.createMany).not.toHaveBeenCalled();
@@ -1022,7 +1044,7 @@ describe('RoleService', () => {
 
       await service.assignPermissions(
         'role-1',
-        { permissionKeys: ['committees:view', 'lookups:view'] },
+        { permissionKeys: ['committees:view', 'lookups:view'], expectedPermissionKeys: ['committees:view', 'tasks:view'] },
         ORG_A,
         ACTOR,
       );
@@ -1045,7 +1067,7 @@ describe('RoleService', () => {
       const code = await codeOf(
         service.assignPermissions(
           'role-1',
-          { permissionKeys: ['committees:view', 'platform:admin'] },
+          { permissionKeys: ['committees:view', 'platform:admin'], expectedPermissionKeys: state.held() },
           ORG_A,
           ACTOR,
         ),
@@ -1073,7 +1095,12 @@ describe('RoleService', () => {
       stageRolePermissions(['platform:admin', 'platform:impersonate']);
 
       const code = await codeOf(
-        service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR),
+        service.assignPermissions(
+          'role-1',
+          { permissionKeys: ['users:view'], expectedPermissionKeys: ['platform:admin', 'platform:impersonate'] },
+          ORG_A,
+          ACTOR,
+        ),
       );
 
       expect(code).toBe('PLATFORM_ROLE_NOT_EDITABLE');
@@ -1089,7 +1116,12 @@ describe('RoleService', () => {
       const state = stageRolePermissions(['platform:admin']);
 
       const code = await codeOf(
-        service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR),
+        service.assignPermissions(
+          'role-1',
+          { permissionKeys: ['users:view'], expectedPermissionKeys: state.held() },
+          ORG_A,
+          ACTOR,
+        ),
       );
 
       expect(code).toBe('PLATFORM_ROLE_NOT_EDITABLE');
@@ -1105,10 +1137,20 @@ describe('RoleService', () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
       const state = stageRolePermissions(['platform:admin', 'users:view']);
 
-      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+      await service.assignPermissions(
+        'role-1',
+        { permissionKeys: ['users:view'], expectedPermissionKeys: state.held() },
+        ORG_A,
+        ACTOR,
+      );
       expect(state.held()).toEqual(['platform:admin', 'users:view']);
 
-      await service.assignPermissions('role-1', { permissionKeys: ['platform:admin', 'tasks:view'] }, ORG_A, ACTOR);
+      await service.assignPermissions(
+        'role-1',
+        { permissionKeys: ['platform:admin', 'tasks:view'], expectedPermissionKeys: state.held() },
+        ORG_A,
+        ACTOR,
+      );
       expect(state.held()).toEqual(['platform:admin', 'tasks:view']);
     });
 
@@ -1119,7 +1161,7 @@ describe('RoleService', () => {
 
       await service.assignPermissions(
         'role-1',
-        { permissionKeys: ['users:view', 'platform:admin'] },
+        { permissionKeys: ['users:view', 'platform:admin'], expectedPermissionKeys: state.held() },
         ORG_A,
         ACTOR,
       );
@@ -1131,7 +1173,12 @@ describe('RoleService', () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
       const state = stageRolePermissions(['platform:admin', 'platform:impersonate', 'users:view']);
 
-      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+      await service.assignPermissions(
+        'role-1',
+        { permissionKeys: ['users:view'], expectedPermissionKeys: state.held() },
+        ORG_A,
+        ACTOR,
+      );
 
       // platform:admin goes; platform:impersonate is not in use (R2), so it is
       // kept as held — the R2 rule is the same in every organisation.
@@ -1143,12 +1190,22 @@ describe('RoleService', () => {
       const state = stageRolePermissions(['documents:view', 'users:view']);
 
       // Held: kept although not sent.
-      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+      await service.assignPermissions(
+        'role-1',
+        { permissionKeys: ['users:view'], expectedPermissionKeys: state.held() },
+        ORG_A,
+        ACTOR,
+      );
       expect(state.held()).toEqual(['documents:view', 'users:view']);
 
       // Not held: refused.
       const code = await codeOf(
-        service.assignPermissions('role-1', { permissionKeys: ['users:view', 'kpi:verify'] }, ORG_A, ACTOR),
+        service.assignPermissions(
+          'role-1',
+          { permissionKeys: ['users:view', 'kpi:verify'], expectedPermissionKeys: state.held() },
+          ORG_A,
+          ACTOR,
+        ),
       );
       expect(code).toBe('PERMISSION_NOT_IN_USE');
     });
@@ -1171,7 +1228,7 @@ describe('RoleService', () => {
       const code = await codeOf(
         service.assignPermissions(
           'role-1',
-          { permissionKeys: ['committees:view', 'kpi:verify'] },
+          { permissionKeys: ['committees:view', 'kpi:verify'], expectedPermissionKeys: state.held() },
           ORG_A,
           ACTOR,
         ),
@@ -1197,7 +1254,12 @@ describe('RoleService', () => {
       // any more, but rows can predate the rule; they are kept, not rewritten.
       const state = stageRolePermissions(['committees:view', 'documents:view', 'platform:impersonate']);
 
-      await service.assignPermissions('role-1', { permissionKeys: ['tasks:view'] }, ORG_A, ACTOR);
+      await service.assignPermissions(
+        'role-1',
+        { permissionKeys: ['tasks:view'], expectedPermissionKeys: state.held() },
+        ORG_A,
+        ACTOR,
+      );
 
       expect(state.held()).toEqual(['documents:view', 'platform:impersonate', 'tasks:view']);
     });
@@ -1207,7 +1269,7 @@ describe('RoleService', () => {
 
       await service.assignPermissions(
         'role-1',
-        { permissionKeys: ['documents:view', 'tasks:view'] },
+        { permissionKeys: ['documents:view', 'tasks:view'], expectedPermissionKeys: state.held() },
         ORG_A,
         ACTOR,
       );
@@ -1242,7 +1304,7 @@ describe('RoleService', () => {
         stageRolePermissions(['committees:view']);
 
         await expect(
-          service.assignPermissions('role-1', { permissionKeys: [] }, ORG_B, ACTOR),
+          service.assignPermissions('role-1', { permissionKeys: [], expectedPermissionKeys: ['committees:view'] }, ORG_B, ACTOR),
         ).rejects.toThrow(NotFoundException);
         expect(mockPrisma.role.findFirst).toHaveBeenCalledWith({ where: { id: 'role-1', organizationId: ORG_B } });
         expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
@@ -1251,7 +1313,12 @@ describe('RoleService', () => {
         expect(mockAuditLog.log).not.toHaveBeenCalled();
 
         // And the lock, for a tenant's own role, carries that tenant.
-        await service.assignPermissions('role-1', { permissionKeys: [] }, ORG_A, ACTOR);
+        await service.assignPermissions(
+          'role-1',
+          { permissionKeys: [], expectedPermissionKeys: ['committees:view'] },
+          ORG_A,
+          ACTOR,
+        );
         const [, ...values] = mockPrisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
         expect(values).toEqual(['role-1', ORG_A]);
       },
@@ -1375,7 +1442,7 @@ describe('RoleService', () => {
       mockPrisma.role.findFirst.mockResolvedValue(adminRole);
 
       await expect(
-        service.assignPermissions('role-1', { permissionKeys: [] }, ORG_A, ACTOR),
+        service.assignPermissions('role-1', { permissionKeys: [], expectedPermissionKeys: [] }, ORG_A, ACTOR),
       ).rejects.toThrow(ConflictException);
       expect(mockPrisma.rolePermission.deleteMany).not.toHaveBeenCalled();
     });
@@ -1390,7 +1457,7 @@ describe('RoleService', () => {
       await expect(
         service.assignPermissions(
           'role-1',
-          { permissionKeys: ['users:view', 'roles:view'] },
+          { permissionKeys: ['users:view', 'roles:view'], expectedPermissionKeys: [] },
           ORG_A,
           ACTOR,
         ),
@@ -1426,7 +1493,7 @@ describe('RoleService', () => {
         makePermission({ id: 'perm-1', module: 'users', action: 'view' }),
       ]);
 
-      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+      await service.assignPermissions('role-1', { permissionKeys: ['users:view'], expectedPermissionKeys: [] }, ORG_A, ACTOR);
 
       expect(mockPrisma.rolePermission.deleteMany).toHaveBeenCalledWith({
         where: { roleId: 'role-1' },
@@ -1443,7 +1510,7 @@ describe('RoleService', () => {
         makePermission({ id: 'perm-1', module: 'users', action: 'view' }),
       ]);
 
-      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+      await service.assignPermissions('role-1', { permissionKeys: ['users:view'], expectedPermissionKeys: [] }, ORG_A, ACTOR);
 
       expect(mockPrisma.$transaction).toHaveBeenCalled();
     });

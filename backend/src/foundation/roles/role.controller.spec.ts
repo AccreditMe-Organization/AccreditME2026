@@ -163,7 +163,7 @@ describe('RoleController', () => {
 
   describe('assignPermissions', () => {
     it('delegates to roleService.assignPermissions with id, dto, tenantId, actorId', async () => {
-      const dto: AssignPermissionsDto = { permissionKeys: ['documents:view'] };
+      const dto: AssignPermissionsDto = { permissionKeys: ['documents:view'], expectedPermissionKeys: [] };
       const result = await controller.assignPermissions(ROLE_ID, dto, TENANT_ID, USER_ID);
       expect(service.assignPermissions).toHaveBeenCalledWith(ROLE_ID, dto, TENANT_ID, USER_ID);
       expect(result.id).toBe(ROLE_ID);
