@@ -39,12 +39,27 @@ const EXISTING: WorkflowTransitionDto = {
   kind: 'ADVANCE' as const,
 };
 
+// ACC-120 slice 5 (PR B) — inUse is what the picker filters on: the documents
+// keys are not checked by any code yet, and platform:admin is hidden inside a
+// tenant (the spec's NavigationAccessService is the real one: not the platform
+// organisation).
 const PERMISSIONS = [
-  { id: 'p1', module: 'committees', action: 'view', description: null },
-  { id: 'p2', module: 'committees', action: 'manage', description: null },
-  { id: 'p3', module: 'committees', action: 'approve', description: null },
-  { id: 'p4', module: 'documents', action: 'view', description: null },
+  { id: 'p1', module: 'committees', action: 'view', description: null, inUse: true },
+  { id: 'p2', module: 'committees', action: 'manage', description: null, inUse: true },
+  { id: 'p3', module: 'committees', action: 'approve', description: null, inUse: true },
+  { id: 'p4', module: 'documents', action: 'view', description: null, inUse: false },
+  { id: 'p5', module: 'documents', action: 'review', description: null, inUse: false },
+  { id: 'p6', module: 'platform', action: 'admin', description: null, inUse: true },
 ];
+
+/** A seeded Document Lifecycle-style transition: its key exists, but nothing checks it yet. */
+const NOT_GRANTABLE: WorkflowTransitionDto = {
+  ...EXISTING,
+  id: 'transition-doc',
+  labelEn: 'Send for Review',
+  labelAr: 'إرسال للمراجعة',
+  requiredPermission: 'documents:review',
+};
 
 const TRANSITIONS_URL = `${environment.apiUrl}/workflow-templates/transitions`;
 
@@ -394,6 +409,55 @@ describe('WorkflowTransitionEditorComponent (ACC-55)', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(document.querySelector('#edit-isApprovalPath')).not.toBeNull();
+  });
+
+  // ── ACC-120 slice 5 (F1, PR B) — which keys the picker offers ─────────────
+  describe('which keys the picker offers (part of ACC-120)', () => {
+    const texts = (rows: HTMLElement[]): string[] => rows.map((el) => el.textContent?.trim() ?? '');
+
+    it('offers only keys in use, and no platform key inside a tenant', () => {
+      fixture.componentRef.setInput('transitions', [EXISTING, NOT_GRANTABLE]);
+      component.openAdd();
+      fixture.detectChanges();
+
+      const offered = texts(openPermissionPicker());
+      expect(offered).toContain('committees:approve');
+      expect(offered).not.toContain('documents:view');
+      expect(offered).not.toContain('documents:review');
+      expect(offered).not.toContain('platform:admin');
+      // No heading for a module with nothing to offer.
+      expect(offered).not.toContain('documents');
+    });
+
+    it('shows the transition’s own ungrantable key as current, in its own group, on Edit only', () => {
+      fixture.componentRef.setInput('transitions', [EXISTING, NOT_GRANTABLE]);
+      component.openEdit(NOT_GRANTABLE);
+      fixture.detectChanges();
+
+      expect(component.editForm.controls.requiredPermission.value).toBe('documents:review');
+      const editRows = texts(openPermissionPicker());
+      expect(editRows).toContain('workflow.permissionNotGrantable');
+      expect(editRows).toContain('documents:review');
+      expect(editRows.indexOf('documents:review')).toBeGreaterThan(editRows.indexOf('workflow.permissionNotGrantable'));
+
+      // Another transition's ungrantable key is never offered to this one.
+      component.onEditDialogVisibleChange(false);
+      component.openEdit(EXISTING);
+      fixture.detectChanges();
+      expect(texts(openPermissionPicker())).not.toContain('documents:review');
+    });
+
+    it('an unrelated edit sends the ungrantable key back unchanged, never blanked', () => {
+      component.openEdit(NOT_GRANTABLE);
+      fixture.detectChanges();
+      component.editForm.controls.labelEn.setValue('Send for Review (renamed)');
+      component.onSubmitEdit();
+
+      const req = http.expectOne(`${TRANSITIONS_URL}/transition-doc`);
+      expect(req.request.body.requiredPermission).toBe('documents:review');
+      expect(req.request.body.labelEn).toBe('Send for Review (renamed)');
+      req.flush({ transition: NOT_GRANTABLE, permissionWarning: null });
+    });
   });
 
   it('the blank option clears the permission', () => {
