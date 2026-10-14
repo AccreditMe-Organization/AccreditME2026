@@ -9,6 +9,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { AssignTargetDto } from './assign-target.dto';
+import { TaskAiWorkloadHintDto } from './workload-hint.dto';
 
 // Every reassignment requires a documented reason — Absence and Departure
 // Management Pattern 2's audit-trail requirement.
@@ -32,4 +33,10 @@ export class ReassignTaskDto {
   @IsNotEmpty()
   @MaxLength(1000)
   reason!: string;
+
+  // ACC-199 — the person chosen came from "✦ Suggest someone" (Assign … instead).
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskAiWorkloadHintDto)
+  aiWorkloadHint?: TaskAiWorkloadHintDto;
 }

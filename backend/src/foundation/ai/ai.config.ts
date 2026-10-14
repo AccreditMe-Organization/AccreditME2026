@@ -27,7 +27,7 @@ export type { AiEffort };
 export type AiTier = 'STANDARD' | 'PREMIUM';
 
 /** Every feature that may call the model. A cost row alone is not enough. */
-export const AI_FEATURE_KEYS = ['task_description_drafting', 'document_summary', 'morning_briefing'] as const;
+export const AI_FEATURE_KEYS = ['task_description_drafting', 'document_summary', 'morning_briefing', 'workload_balancing'] as const;
 export type AiFeatureKey = (typeof AI_FEATURE_KEYS)[number];
 
 export interface AiFeatureCallConfig {
@@ -44,6 +44,9 @@ export const AI_FEATURES: Readonly<Record<AiFeatureKey, AiFeatureCallConfig>> = 
   // characters, a title, a record's name and 500 characters of its purpose.
   // draft-answer.spec.ts builds the worst case in Arabic and asserts it fits.
   task_description_drafting: { tier: 'STANDARD', effort: 'low', maxTokens: 2000, inputTokenCap: 3000 },
+  // ACC-199 — "✦ Suggest someone": counts in, one label out ({"pick":"P2"}). Low
+  // effort and a small output budget; the input is at most 16 labelled lines.
+  workload_balancing: { tier: 'STANDARD', effort: 'low', maxTokens: 1000, inputTokenCap: 1500 },
   document_summary: { tier: 'STANDARD', effort: 'medium', maxTokens: 4000, inputTokenCap: 30_000 },
   // ACC-198 (D13) — 4000, up from 3000: the answer is JSON (the lead plus up
   // to three focus picks with reasons), thinking counts against the same

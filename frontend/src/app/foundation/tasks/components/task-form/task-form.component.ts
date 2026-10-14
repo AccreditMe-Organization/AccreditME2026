@@ -77,6 +77,8 @@ import {
   createAssignGroup,
   toAssignTarget,
 } from '../task-assignee-picker/task-assignee-picker.component';
+import { TaskWorkloadHintStore } from '../task-assignee-picker/task-workload-hint.store';
+import { followedHint } from '../task-assignee-picker/followed-hint';
 import { TaskDraftStore } from './task-draft.store';
 import { TaskDraftTriggerComponent } from './task-draft-trigger.component';
 import { TaskDraftCardComponent } from './task-draft-card.component';
@@ -121,7 +123,9 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
   ],
   // ACC-197 — one draft state per dialog: it outlives the step switch and ends
   // with the form.
-  providers: [TaskDraftStore],
+  // ACC-199 — "✦ Suggest someone"'s answers, kept for the dialog: the picker
+  // is rebuilt on every step switch.
+  providers: [TaskDraftStore, TaskWorkloadHintStore],
   template: `
     <form id="taskForm" [formGroup]="form" (ngSubmit)="onSubmit()" class="am-task-form flex flex-col gap-4">
       @if (step() === 1) {
@@ -197,6 +201,8 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
               [sourceId]="lockedSourceId()"
               [committeeName]="lockedSourceLabel()"
               [forceShowErrors]="showAssignErrors()"
+              [priority]="workloadPriority()"
+              (hintFollowed)="workloadFollowed.set($event)"
               layout="row"
             />
           }
@@ -733,6 +739,10 @@ export class TaskFormComponent implements OnInit {
   // (it failed to load) nothing is blocked here; the server still refuses.
   private readonly preview = signal<SlaPreviewDto | null>(null);
   private readonly priority = signal<string>('MEDIUM');
+  /** ACC-199 — the priority "✦ Suggest someone" tells the model. */
+  readonly workloadPriority = computed(() => this.priority() as TaskPriority);
+  /** ACC-199 — "Assign … instead" was pressed: sent on Create while that person is still chosen. */
+  readonly workloadFollowed = signal<{ id: string; userId: string } | null>(null);
   /** Edit only: the due date was set by the person, not carried or recomputed. */
   private readonly dueTouched = signal(false);
 
@@ -1222,6 +1232,8 @@ export class TaskFormComponent implements OnInit {
     const assignTo = toAssignTarget(this.form.controls.assignTo, this.lockedSourceId());
     // ACC-197 — what the person took from an AI draft, for the audit row.
     const aiDraft = this.draft.claimFor(!!(value.description ?? '').trim());
+    // ACC-199 — the person chosen came from "✦ Suggest someone", and still is.
+    const aiWorkloadHint = followedHint(this.workloadFollowed(), assignTo);
     this.taskService
       .create({
         title: value.title!,
@@ -1233,6 +1245,7 @@ export class TaskFormComponent implements OnInit {
         ...(assignTo ? { assignTo } : {}),
         requiresEvidence: value.requiresEvidence ?? false,
         ...(aiDraft ? { aiDraft } : {}),
+        ...(aiWorkloadHint ? { aiWorkloadHint } : {}),
       })
       .subscribe({
         next: () => {

@@ -315,5 +315,7 @@ function toHolder(user: {
     name: user.name,
     positionNameEn: user.position?.nameEn ?? null,
     positionNameAr: user.position?.nameAr ?? null,
+    // ACC-199 — filled in by TaskWorkloadService when a visible record is named.
+    workload: null,
   };
 }

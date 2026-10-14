@@ -249,7 +249,15 @@ export class TaskService {
 
     const task = await this.insertPrepared(this.prisma, prepared, organizationId, actorId);
     const aiDraft = await this.verifiedAiDraft(dto.aiDraft, organizationId, actorId);
-    await this.announceCreated(task, prepared, organizationId, actorId, aiDraft ? { aiDraft } : undefined);
+    const aiWorkloadHint = await this.verifiedAiWorkloadHint(
+      dto.aiWorkloadHint,
+      dto.assignTo?.userId ?? null,
+      prepared.eligibleAssigneeIds,
+      organizationId,
+      actorId,
+    );
+    const marks = { ...(aiDraft ? { aiDraft } : {}), ...(aiWorkloadHint ? { aiWorkloadHint } : {}) };
+    await this.announceCreated(task, prepared, organizationId, actorId, Object.keys(marks).length ? marks : undefined);
     return task;
   }
 
@@ -363,6 +371,47 @@ export class TaskService {
       },
       include: { assignees: true },
     });
+  }
+
+  /**
+   * ACC-199 — "assigned on an AI suggestion", for the task's audit row (create
+   * or reassign). The dialog CLAIMS the person chosen came from "✦ Suggest
+   * someone"; this checks what it can: a successful workload_balancing call by
+   * this person, in this organisation, in the last 24 hours — and that the task
+   * really went to one named person directly. As with aiDraft, the call is
+   * verified and the rest is the dialog's claim. One that does not check out
+   * leaves the task unmarked, with one warning line: it never blocks the work.
+   */
+  private async verifiedAiWorkloadHint(
+    claim: { id: string } | undefined,
+    chosenUserId: string | null,
+    assignedUserIds: readonly string[],
+    organizationId: string,
+    actorId: string,
+  ): Promise<{ interactionId: string; suggestedUserId: string } | null> {
+    if (!claim) return null;
+    if (!chosenUserId || !assignedUserIds.includes(chosenUserId)) {
+      this.logger.warn(`An AI workload claim in org ${organizationId} names no person the task went to; not marked`);
+      return null;
+    }
+    try {
+      const call = await this.prisma.aiInteractionLog.findFirst({
+        where: {
+          id: claim.id,
+          organizationId,
+          actorId,
+          feature: 'workload_balancing',
+          success: true,
+          createdAt: { gte: new Date(Date.now() - AI_DRAFT_CLAIM_WINDOW_MS) },
+        },
+        select: { id: true },
+      });
+      if (call) return { interactionId: call.id, suggestedUserId: chosenUserId };
+      this.logger.warn(`Task assigned by ${actorId} in org ${organizationId} claimed an AI suggestion that does not check out; not marked`);
+    } catch (error) {
+      this.logger.warn(`Could not check an AI workload claim in org ${organizationId}: ${(error as Error).message}`);
+    }
+    return null;
   }
 
   /**
@@ -1437,6 +1486,13 @@ export class TaskService {
       return { existing, task, eligibleAssigneeIds, pooled, cancelled };
     });
 
+    const aiWorkloadHint = await this.verifiedAiWorkloadHint(
+      dto.aiWorkloadHint,
+      dto.assignTo?.userId ?? null,
+      eligibleAssigneeIds,
+      organizationId,
+      actorId,
+    );
     await this.auditLog.log({
       action: 'DELEGATE',
       objectType: 'Task',
@@ -1445,7 +1501,13 @@ export class TaskService {
       tenantId: organizationId,
       before: existing as unknown as Record<string, unknown>,
       after: task as unknown as Record<string, unknown>,
-      metadata: { reason: dto.reason, newAssigneeUserIds: eligibleAssigneeIds, pooled },
+      metadata: {
+        reason: dto.reason,
+        newAssigneeUserIds: eligibleAssigneeIds,
+        pooled,
+        // ACC-199 — the person came from "✦ Suggest someone" (verified).
+        ...(aiWorkloadHint ? { aiWorkloadHint } : {}),
+      },
     });
     await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
 

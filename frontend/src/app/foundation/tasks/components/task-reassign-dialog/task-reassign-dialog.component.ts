@@ -1,4 +1,4 @@
-import { Component, effect, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -6,12 +6,14 @@ import { InputTextModule } from 'primeng/inputtext';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { ITaskDto, TaskService } from '../../services/task.service';
+import { ITaskDto, TaskPriority, TaskService } from '../../services/task.service';
 import {
   TaskAssigneePickerComponent,
   createAssignGroup,
   toAssignTarget,
 } from '../task-assignee-picker/task-assignee-picker.component';
+import { TaskWorkloadHintStore } from '../task-assignee-picker/task-workload-hint.store';
+import { followedHint } from '../task-assignee-picker/followed-hint';
 
 /** What the dialog needs to say about a rejected task, when it is one. */
 export interface TaskRejection {
@@ -46,6 +48,8 @@ export interface TaskRejection {
 @Component({
   selector: 'app-task-reassign-dialog',
   standalone: true,
+  // ACC-199 — "✦ Suggest someone"'s answers, kept while the dialog is open.
+  providers: [TaskWorkloadHintStore],
   imports: [
     ReactiveFormsModule,
     TranslatePipe,
@@ -76,6 +80,8 @@ export interface TaskRejection {
             [sourceId]="t.sourceId"
             [committeeName]="committeeName()"
             [taskId]="t.id"
+            [priority]="taskPriority()"
+            (hintFollowed)="workloadFollowed.set($event)"
             [required]="true"
             [forceShowErrors]="showErrors()"
           />
@@ -152,6 +158,7 @@ export interface TaskRejection {
 export class TaskReassignDialogComponent {
   private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
+  private readonly hintStore = inject(TaskWorkloadHintStore);
 
   readonly visible = input.required<boolean>();
   readonly task = input<ITaskDto | null>(null);
@@ -166,6 +173,10 @@ export class TaskReassignDialogComponent {
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly showErrors = signal(false);
+  /** ACC-199 — the priority "✦ Suggest someone" tells the model. */
+  readonly taskPriority = computed(() => (this.task()?.priority ?? null) as TaskPriority | null);
+  /** ACC-199 — "Assign … instead" was pressed: sent on Reassign while that person is still chosen. */
+  readonly workloadFollowed = signal<{ id: string; userId: string } | null>(null);
 
   readonly form = this.fb.group({
     assignTo: createAssignGroup(true),
@@ -176,6 +187,9 @@ export class TaskReassignDialogComponent {
     effect(() => {
       if (!this.visible()) return;
       this.form.reset({ assignTo: { scope: null, target: null, userId: null }, reason: '' });
+      this.workloadFollowed.set(null);
+      // ACC-199 — this dialog outlives an opening; its answers were for another task.
+      this.hintStore.answers.set(new Map());
       this.error.set(null);
       this.showErrors.set(false);
     });
@@ -191,7 +205,10 @@ export class TaskReassignDialogComponent {
     }
     this.saving.set(true);
     this.error.set(null);
-    this.taskService.reassign(task.id, { assignTo, reason: this.form.getRawValue().reason!.trim() }).subscribe({
+    // ACC-199 — the person chosen came from "✦ Suggest someone", and still is.
+    const aiWorkloadHint = followedHint(this.workloadFollowed(), assignTo);
+    const dto = { assignTo, reason: this.form.getRawValue().reason!.trim(), ...(aiWorkloadHint ? { aiWorkloadHint } : {}) };
+    this.taskService.reassign(task.id, dto).subscribe({
       next: () => {
         this.saving.set(false);
         this.form.markAsPristine();

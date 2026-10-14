@@ -46,6 +46,12 @@ export const RATE_LIMITS = {
    * minute; a script can spend at most 20 credits a minute.
    */
   taskDraft: { limit: 10, ttl: MINUTE },
+  /**
+   * ACC-199 — "Suggest someone" in the assignee picker, per user. A press, at
+   * 1 credit, and the dialog keeps each answer per person, so a second press for
+   * the same person makes no request at all.
+   */
+  workloadHint: { limit: 20, ttl: MINUTE },
 } as const;
 
 /** The second named throttler: counts password-reset requests per email. */

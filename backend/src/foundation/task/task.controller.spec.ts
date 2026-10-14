@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
 import { TaskController } from './task.controller';
+import { TaskWorkloadService } from './workload/task-workload.service';
+import { WorkloadHintService } from './workload/workload-hint.service';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
@@ -102,6 +104,17 @@ describe('TaskController', () => {
     listCommitteeMembers: jest.Mock;
   };
 
+  // ACC-199 — the people lists go through the workload service (counts on
+  // the record); "Suggest someone" through the hint service.
+  const workload = {
+    listHolders: jest.fn().mockResolvedValue([]),
+    listCommitteeMembers: jest.fn().mockResolvedValue([]),
+  };
+  const workloadHint = {
+    availability: jest.fn().mockResolvedValue({ available: true }),
+    suggest: jest.fn().mockResolvedValue({}),
+  };
+
   // ACC-177 — file evidence, the evidence list, downloads and deletes.
   // ACC-197
   const drafts = {
@@ -166,6 +179,8 @@ describe('TaskController', () => {
         { provide: TaskRequestService, useValue: requests },
         { provide: TaskEvidenceService, useValue: evidence },
         { provide: TaskDraftService, useValue: drafts },
+        { provide: TaskWorkloadService, useValue: workload },
+        { provide: WorkloadHintService, useValue: workloadHint },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -465,7 +480,27 @@ describe('TaskController', () => {
     expect(assignment.listPositions).toHaveBeenCalledWith(viewer, TENANT_ID, 'u1', undefined);
 
     await controller.getAssignees({ orgUnitId: 'u1', positionId: 'p1' }, TENANT_ID, USER_ID, perms);
-    expect(assignment.listHolders).toHaveBeenCalledWith(viewer, TENANT_ID, 'u1', 'p1', undefined);
+    expect(workload.listHolders).toHaveBeenCalledWith(viewer, TENANT_ID, {
+      orgUnitId: 'u1',
+      positionId: 'p1',
+      taskId: undefined,
+      record: null,
+    });
+    // ACC-199 — a record named whole reaches the service; half a record is no record.
+    await controller.getAssignees(
+      { orgUnitId: 'u1', positionId: 'p1', sourceType: 'COMMITTEE', sourceId: 'c1' },
+      TENANT_ID,
+      USER_ID,
+      perms,
+    );
+    expect(workload.listHolders).toHaveBeenLastCalledWith(viewer, TENANT_ID, {
+      orgUnitId: 'u1',
+      positionId: 'p1',
+      taskId: undefined,
+      record: { sourceType: 'COMMITTEE', sourceId: 'c1' },
+    });
+    await controller.getAssignees({ orgUnitId: 'u1', positionId: 'p1', sourceType: 'COMMITTEE' }, TENANT_ID, USER_ID, perms);
+    expect(workload.listHolders).toHaveBeenLastCalledWith(viewer, TENANT_ID, expect.objectContaining({ record: null }));
 
     await controller.getAssignableCommitteeRoles({ committeeId: 'c1' }, TENANT_ID, USER_ID, perms);
     expect(assignment.listCommitteeRoles).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', undefined);
@@ -479,7 +514,12 @@ describe('TaskController', () => {
     expect(assignment.listCommitteeRoles).toHaveBeenCalledTimes(1);
 
     await controller.getCommitteeAssignees({ committeeId: 'c1', roleValueId: 'r1' }, TENANT_ID, USER_ID, perms);
-    expect(assignment.listCommitteeMembers).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', 'r1', undefined);
+    expect(workload.listCommitteeMembers).toHaveBeenCalledWith(viewer, TENANT_ID, {
+      committeeId: 'c1',
+      roleValueId: 'r1',
+      taskId: undefined,
+      record: null,
+    });
   });
 
   it('the request routes delegate with the caller, their permissions and the tenant', async () => {
