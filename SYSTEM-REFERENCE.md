@@ -8830,7 +8830,24 @@ results at runbook step 8, not assumed.
   a closed `Permissions-Policy`, COOP and CORP `same-origin`. Hashed JS, CSS and
   `media/` files are cached for a year; `assets/i18n` keeps Vercel's
   revalidate default.
-- **A missing asset is a 404, never the page (ACC-223).** The SPA rewrite's
+- **A missing asset is a 404, never the page — and it took TWO changes
+  (ACC-223, then ACC-226).** This entry first said ACC-223 alone did it. It
+  did not: measured on production on 14 Oct, after ACC-223 shipped,
+  `/chunk-DOESNOTEXIST.js` still answered 200 `text/html` with the year-long
+  `immutable` cache. The cause was `"framework": "angular"`: **Vercel's
+  Angular preset appends its own routes AFTER everything in vercel.json —
+  real files first, then `/(.*)` → `/index.html`** — so a path our rewrite
+  declined was still answered with the page. **ACC-226 sets
+  `"framework": null`**, which leaves our rewrite as the only fallback.
+  Nothing else came from the preset that the build needs: the install command,
+  build command and output directory are stated in vercel.json
+  (`backend/Plans/step-226-framework-null.md` lists every item).
+  `check:vercel-config` fails unless `framework` is exactly `null`, because a
+  preset's routes are invisible to it; a missing key fails too, since Vercel
+  would then detect Angular. The 404 exists only on Vercel, so it is proved by
+  the anonymous checks after a deploy (that plan's last section), never by a
+  local server reading vercel.json.
+  **The rewrite itself (ACC-223):** its
   source excludes `/assets/…`, `/media/…` and any path ending in a static file
   extension (js, mjs, css, map, json, fonts, images, wasm, txt); every route
   still rewrites to `/index.html`. Before this the rewrite was `/(.*)`: a tab
@@ -8843,10 +8860,10 @@ results at runbook step 8, not assumed.
   against path-to-regexp v6 when written) and fails it if a sample asset path
   is rewritten, a sample route is not, the page's cache rule is missing or not
   zero, or any long-cache rule can reach a route.
-  **Open, not decided:** the year-long cache rule matches by PATH, so a 404
-  for a missing chunk may carry it too. That name is a content hash and comes
-  back only if a later build reproduces the identical chunk (a straight
-  revert). Not verified on Vercel itself — nothing was deployed to test this.
+  **A known side effect, accepted (Ahmad, 14 Oct, ACC-226):** the year-long
+  cache rule matches by PATH, so the 404 for a missing chunk carries it too.
+  A chunk's name is a hash of its content, and a missing hash never comes
+  back; the header rule is not changed.
 - **The other half is in the app** (`core/navigation/stale-chunk-reload.ts`,
   wired by `app.config.ts` through `APP_ROUTER_FEATURES`): the router's
   navigation error handler. When a navigation fails because a lazy chunk or

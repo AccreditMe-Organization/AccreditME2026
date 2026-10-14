@@ -13,8 +13,9 @@ import { NavigationError, RouterFeatures, withNavigationErrorHandler } from '@an
  * When a navigation fails for that reason, ONE full page load of the URL the
  * person was going to: the fresh page brings the new bundle and its chunk
  * names, and they arrive where they meant to. (frontend/vercel.json is the
- * other half: a missing chunk is now a 404, not the HTML page cached for a year
- * under the chunk's address.)
+ * other half: a missing chunk is a 404, not the HTML page cached for a year
+ * under the chunk's address — true on Vercel only since ACC-226 removed the
+ * Angular framework preset, whose own catch-all route still served the page.)
  *
  * ## It can never loop
  *

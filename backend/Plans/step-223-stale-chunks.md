@@ -2,6 +2,10 @@
 
 Plan written 13 Oct 2026 (CC-96). Branch `feature/ACC-223-stale-chunks`.
 
+**Correction (14 Oct): the 404 for a missing asset only took effect with
+ACC-226** (`backend/Plans/step-226-framework-null.md`). This ticket's rewrite
+was necessary and not sufficient; the reload handler (F4) was live from here.
+
 ## The defect
 
 A tab opened before a release still runs the old `main` bundle, which asks for
@@ -26,8 +30,11 @@ a sidebar link to a screen not yet loaded does nothing, until a hard refresh.
 
 - **F1 — `vercel.json`: the SPA rewrite does not match asset requests.** Its
   source excludes `/assets/…`, `/media/…` and any path ending in a static file
-  extension (js, mjs, css, map, json, fonts, images, wasm). A missing asset is
-  a 404. Every real route still rewrites to `/index.html`.
+  extension (js, mjs, css, map, json, fonts, images, wasm). Every real route
+  still rewrites to `/index.html`. **This was meant to make a missing asset a
+  404 and, on production, did not**: `"framework": "angular"` made Vercel's
+  Angular preset append its own `/(.*)` → `/index.html` after our rewrite, so
+  the page was still served. ACC-226 removes the preset.
 - **F2 — the page itself revalidates.** An explicit header rule on the same
   non-asset paths: `Cache-Control: public, max-age=0, must-revalidate`, so
   `index.html` is never cached long, whatever the platform default is.
@@ -82,14 +89,20 @@ sidebar link clicked in the old tab.
   the backend holds a local session to that port. Nothing in the backend
   changed.
 - The trivial change was reverted. Nothing was deployed.
+- **The "404" in the table is what the LOCAL server gave.** It applied only
+  vercel.json's own rewrites and headers. Measured on production on 14 Oct,
+  after this shipped: the made-up `/chunk-DOESNOTEXIST.js` still answered 200
+  `text/html`, `immutable`, because of the Angular preset's catch-all, which
+  no local server reading vercel.json can show. The reload handler was live
+  (its storage key is in the served main bundle), so the reported bug was
+  addressed by F4 alone until ACC-226.
 
-## Open, not decided
+## A known side effect, accepted (Ahmad, 14 Oct, ACC-226)
 
-The year-long cache rule for `.js` and `.css` matches by path, so a 404 for a
-missing chunk may carry it too. That name is a content hash: it returns only if
-a later build reproduces the identical chunk (a straight revert), and only a
-browser that asked for it while it was missing would hold the 404. Not verified
-on Vercel itself, since nothing was deployed for this.
+The year-long cache rule for `.js` and `.css` matches by path, so the 404 for a
+missing chunk carries it too. This section first read "open, not decided". It
+is decided: accepted, and the header rule is not changed, because a chunk's
+name is a hash of its content and a missing hash never comes back.
 
 ## Tests
 
