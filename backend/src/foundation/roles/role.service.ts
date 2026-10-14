@@ -535,8 +535,8 @@ export class RoleService {
     // first to commit, then read what it wrote — which is what lets the
     // comparison below see it. Scoped by id AND organisation, like every query.
     //
-    // THE COMPARISON (D4). When the caller sends the set it loaded, the save
-    // goes ahead only if the role still holds exactly that set (as a SET, so
+    // THE COMPARISON (D4). The caller sends the set it loaded (required since
+    // PR B), and the save goes ahead only if the role still holds exactly that set (as a SET, so
     // order and duplicates do not matter). The FULL set: keys this save cannot
     // change still count, because they are still what the caller saw.
     //
@@ -559,8 +559,11 @@ export class RoleService {
       );
       before = [...current.keys()].sort();
 
+      // Required by the DTO; checked here as well so a caller that bypasses
+      // validation fails CLOSED. A save that does not say what it loaded
+      // cannot prove it is not stale.
       if (
-        dto.expectedPermissionKeys !== undefined &&
+        !Array.isArray(dto.expectedPermissionKeys) ||
         !sameSet(current.keys(), dto.expectedPermissionKeys)
       ) {
         throw new RolePermissionsChangedException();

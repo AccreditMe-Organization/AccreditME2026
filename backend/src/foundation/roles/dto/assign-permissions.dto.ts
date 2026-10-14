@@ -1,4 +1,4 @@
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsString } from 'class-validator';
 
 export class AssignPermissionsDto {
   // Full replacement set for the role — see Business Rules,
@@ -12,14 +12,15 @@ export class AssignPermissionsDto {
   @IsString({ each: true })
   permissionKeys!: string[];
 
-  // ACC-120 slice 5 (D4) — the set the caller LOADED. When sent, the save is
-  // refused with 409 ROLE_PERMISSIONS_CHANGED if the role's set is no longer
-  // exactly this one, so a stale page cannot overwrite someone else's save.
+  // ACC-120 slice 5 (D4) — the set the caller LOADED. The save is refused with
+  // 409 ROLE_PERMISSIONS_CHANGED if the role's set is no longer exactly this
+  // one, so a stale page cannot overwrite someone else's save.
   //
-  // OPTIONAL in this release only, so a matrix tab already open during the
-  // deploy keeps saving; the matrix rebuild sends it and makes it required.
-  @IsOptional()
+  // REQUIRED since the matrix rebuild (PR B), which sends it: a save that does
+  // not say what it saw cannot be told apart from a stale one, so a missing
+  // value is 400. It was optional for one release only, so a tab left open
+  // across that deploy kept saving. MAY BE EMPTY, for a role that held nothing.
   @IsArray()
   @IsString({ each: true })
-  expectedPermissionKeys?: string[];
+  expectedPermissionKeys!: string[];
 }
