@@ -17,6 +17,7 @@ import { AiTaskDraftModule } from '../ai-task-draft/ai-task-draft.module';
 import { AiModule } from '../ai/ai.module';
 import { TaskWorkloadService } from './workload/task-workload.service';
 import { WorkloadHintService } from './workload/workload-hint.service';
+import { TaskPageService } from './task-page.service';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
 // future functional modules that generate tasks will import TaskModule
@@ -67,6 +68,8 @@ import { WorkloadHintService } from './workload/workload-hint.service';
     TaskEvidenceService,
     TaskWorkloadService,
     WorkloadHintService,
+    // ACC-228 — the task page: who may open a task, its view and its history.
+    TaskPageService,
   ],
   exports: [TaskService, TaskRequestService],
 })

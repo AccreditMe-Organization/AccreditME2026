@@ -281,7 +281,10 @@ export class HomeBriefingComponent implements OnInit {
   linkOf(item: BriefingItemDto): { commands: string[]; query: Record<string, string> | null } | null {
     const link = item.link;
     if (!link) return null;
-    if (link.target === 'task') return { commands: ['/tasks'], query: { task: link.id } };
+    // ACC-228 — a task opens its own page. A 'request' link (briefings saved
+    // before ACC-228 carry the request's id, not the task's) still lands on
+    // My tasks' "Waiting for your decision" row.
+    if (link.target === 'task') return { commands: ['/tasks', link.id], query: null };
     if (link.target === 'request') return { commands: ['/tasks'], query: { request: link.id } };
     return { commands: ['/committees', link.id], query: null };
   }

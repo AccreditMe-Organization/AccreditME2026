@@ -102,6 +102,12 @@ describe('UnassignedTasksComponent (ACC-34)', () => {
     expect(component.tasks()).toEqual([UNASSIGNED_TASK]);
   });
 
+  // ACC-228 — the title opens the task's own page.
+  it('links the title to the task page', () => {
+    const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('tbody am-task-link a');
+    expect(link?.getAttribute('href')).toBe(`/tasks/${UNASSIGNED_TASK.id}`);
+  });
+
   // The picker is the dialog's own, and it loads on opening — not on page
   // load, when most viewers reassign nothing. ACC-167: it asks for the
   // assignment picker's units, for this task, never the tenant's user list.

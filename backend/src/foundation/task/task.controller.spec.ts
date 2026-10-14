@@ -8,6 +8,7 @@ import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskDraftService } from '../ai-task-draft/task-draft.service';
+import { TaskPageService } from './task-page.service';
 import { RATE_LIMITS } from '../../common/throttle/rate-limits';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
@@ -181,6 +182,7 @@ describe('TaskController', () => {
         { provide: TaskDraftService, useValue: drafts },
         { provide: TaskWorkloadService, useValue: workload },
         { provide: WorkloadHintService, useValue: workloadHint },
+        { provide: TaskPageService, useValue: { view: jest.fn(), history: jest.fn() } },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -314,6 +316,14 @@ describe('TaskController', () => {
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getById)).toEqual([
       TASKS_PERMISSIONS.VIEW,
     ]);
+  });
+
+  // ACC-228 — the task page is relationship-scoped (Q4): an assignee without
+  // tasks:view opens their own task, so no route permission may sit in front.
+  it('the task page routes carry no route permission', () => {
+    const reflector = new Reflector();
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getPage)).toBeUndefined();
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getHistory)).toBeUndefined();
   });
 
   // ACC-101 — both reads now forward the caller's permission set, which is what

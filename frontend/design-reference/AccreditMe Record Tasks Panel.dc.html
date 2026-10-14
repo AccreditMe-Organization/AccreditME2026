@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1480px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 14 Oct 2026 · The record's tasks panel, capped, with “See all” · on Compact List Panel, Task Screens §3, Committee record, Meeting Screens, Standards</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Record tasks panel</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 110ch; text-wrap: pretty;">One shared component every record page uses: a panel with at most five rows that never grows or scrolls, and an “All tasks” popup with search, filters and sort. Example: Infection Prevention &amp; Control Committee, 16 tasks: 10 open (7 Assigned, 3 In progress, 3 of them overdue), 1 on hold, 4 completed, 1 cancelled. Today is 14 Oct 2026.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="8"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div><div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div></div></sc-for>
+    </div>
+  </section>
+
+  <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="4">
+    <section id="{{ sec.id }}" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">{{ sec.n }}</span>
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{{ sec.title }}</h2>
+        <span style="font-size: 12.5px; color: #5A6779;">{{ sec.sub }}</span>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+        <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="3">
+          <div style="{{ it.outer }}">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ it.cap }}</div>
+
+            <sc-if value="{{ it.isRow }}" hint-placeholder-val="{{ false }}">
+              <div dir="{{ it.dir }}" style="{{ it.rowWrap }}">
+                <sc-for list="{{ it.panels }}" as="p" hint-placeholder-count="3">
+                  <div style="{{ p.frame }}">
+                    <div style="{{ p.headStyle }}">
+                      <span style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="{{ p.titleStyle }}">{{ p.title }}</span><span style="{{ p.countStyle }}">{{ p.count }}</span></span>
+                      <sc-if value="{{ p.newTask }}" hint-placeholder-val="{{ false }}"><a href="#s1" style="{{ p.newStyle }}">{{ p.newTask }}</a></sc-if>
+                    </div>
+                    <div style="{{ p.bodyStyle }}">
+                      <sc-for list="{{ p.rows }}" as="r" hint-placeholder-count="5">
+                        <div style="{{ r.style }}">
+                          <div style="{{ r.line1Style }}"><a href="#s2" style="{{ r.tStyle }}">{{ r.t }}</a><sc-if value="{{ r.tag }}" hint-placeholder-val="{{ false }}"><span style="{{ r.tagStyle }}">{{ r.tag }}</span></sc-if><span style="flex: 1 1 auto;"></span><sc-if value="{{ r.btn }}" hint-placeholder-val="{{ false }}"><button title="{{ r.btnTitle }}" aria-disabled="{{ r.btnOff }}" style="{{ r.btnStyle }}">{{ r.btn }}</button></sc-if><button aria-label="{{ r.menuAria }}" style="{{ r.menuStyle }}">⋯</button></div>
+                          <div style="{{ r.l2Style }}"><span title="{{ r.dueTitle }}" style="{{ r.dueStyle }}">{{ r.due }}</span><span style="{{ r.restStyle }}">{{ r.l2 }}</span></div>
+                        </div>
+                      </sc-for>
+                      <sc-if value="{{ p.filler }}" hint-placeholder-val="{{ false }}"><div style="{{ p.fillerStyle }}">{{ p.filler }}</div></sc-if>
+                      <sc-if value="{{ p.footer }}" hint-placeholder-val="{{ false }}"><div style="{{ p.footStyle }}"><span>{{ p.footer }}</span><a href="#s2" style="{{ p.seeStyle }}">{{ p.seeAll }}</a></div></sc-if>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ it.isPop }}" hint-placeholder-val="{{ false }}">
+              <div dir="{{ it.dir }}" style="{{ it.backdrop }}">
+                <div role="dialog" aria-label="{{ it.title }}" style="{{ it.frame }}">
+                  <div style="{{ it.headStyle }}">
+                    <span style="display: flex; align-items: center; gap: 8px; min-width: 0;"><span style="{{ it.titleStyle }}">{{ it.title }}</span><span style="{{ it.countStyle }}">{{ it.count }}</span></span>
+                    <span style="display: flex; align-items: center; gap: 12px;"><sc-if value="{{ it.newTask }}" hint-placeholder-val="{{ false }}"><button style="{{ it.newStyle }}">{{ it.newTask }}</button></sc-if><button aria-label="{{ it.closeAria }}" style="border: none; background: none; color: #5A6779; font-size: 14px;">✕</button></span>
+                  </div>
+                  <div style="{{ it.toolStyle }}">
+                    <span style="{{ it.searchStyle }}"><span aria-hidden="true">⌕</span><span style="{{ it.searchTextStyle }}">{{ it.search }}</span></span>
+                    <sc-for list="{{ it.filters }}" as="f" hint-placeholder-count="5"><span style="{{ f.style }}">{{ f.t }}</span></sc-for>
+                    <span style="{{ it.sortStyle }}">{{ it.sort }}</span>
+                  </div>
+                  <div style="{{ it.chipRowStyle }}">
+                    <sc-for list="{{ it.chips }}" as="c" hint-placeholder-count="2"><span style="{{ c.style }}">{{ c.t }}</span></sc-for>
+                    <span role="status" aria-live="polite" style="{{ it.liveStyle }}">{{ it.live }}</span>
+                  </div>
+                  <div style="{{ it.listStyle }}">
+                    <sc-if value="{{ it.hasHead }}" hint-placeholder-val="{{ true }}"><div style="{{ it.thStyle }}"><sc-for list="{{ it.th }}" as="h" hint-placeholder-count="7"><span style="{{ h.style }}">{{ h.l }}</span></sc-for></div></sc-if>
+                    <sc-for list="{{ it.rows }}" as="r" hint-placeholder-count="10">
+                      <div style="{{ r.style }}">
+                        <sc-for list="{{ r.cells }}" as="c" hint-placeholder-count="7">
+                          <span style="{{ c.style }}"><span style="display: flex; align-items: center; gap: 6px; min-width: 0;"><sc-if value="{{ c.link }}" hint-placeholder-val="{{ false }}"><a href="#s2" style="{{ c.vStyle }}">{{ c.v }}</a></sc-if><sc-if value="{{ c.plain }}" hint-placeholder-val="{{ true }}"><span title="{{ c.title }}" style="{{ c.vStyle }}">{{ c.v }}</span></sc-if><sc-if value="{{ c.tag }}" hint-placeholder-val="{{ false }}"><span style="{{ c.tagStyle }}">{{ c.tag }}</span></sc-if><sc-if value="{{ c.btn }}" hint-placeholder-val="{{ false }}"><button title="{{ c.btnTitle }}" style="{{ c.btnStyle }}">{{ c.btn }}</button></sc-if><sc-if value="{{ c.menu }}" hint-placeholder-val="{{ false }}"><button aria-label="{{ c.menu }}" style="{{ c.menuStyle }}">⋯</button></sc-if></span><sc-if value="{{ c.sub }}" hint-placeholder-val="{{ false }}"><span style="{{ c.subStyle }}">{{ c.sub }}</span></sc-if></span>
+                        </sc-for>
+                      </div>
+                    </sc-for>
+                    <sc-if value="{{ it.empty }}" hint-placeholder-val="{{ false }}"><div style="{{ it.emptyStyle }}"><div style="font-weight: 600;">{{ it.empty }}</div><div style="{{ it.emptySubStyle }}">{{ it.emptySub }}</div><button style="{{ it.emptyBtnStyle }}">{{ it.emptyBtn }}</button></div></sc-if>
+                    <sc-if value="{{ it.menuOpen }}" hint-placeholder-val="{{ false }}"><div role="menu" style="{{ it.menuBoxStyle }}"><sc-for list="{{ it.menuOpen }}" as="m" hint-placeholder-count="5"><div role="menuitem" style="{{ m.style }}">{{ m.t }}<sc-if value="{{ m.sub }}" hint-placeholder-val="{{ false }}"><span style="{{ m.subStyle }}">{{ m.sub }}</span></sc-if></div></sc-for></div></sc-if>
+                  </div>
+                  <div style="{{ it.footStyle }}"><span>{{ it.foot }}</span><sc-if value="{{ it.more }}" hint-placeholder-val="{{ false }}"><button style="{{ it.moreStyle }}">{{ it.more }}</button></sc-if></div>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ it.isMenu }}" hint-placeholder-val="{{ false }}">
+              <div dir="{{ it.dir }}" style="{{ it.menuWrap }}">
+                <div style="{{ it.rowBox }}">
+                  <div style="{{ it.row.style }}">
+                          <div style="{{ it.row.line1Style }}"><a href="#s2" style="{{ it.row.tStyle }}">{{ it.row.t }}</a><sc-if value="{{ it.row.tag }}" hint-placeholder-val="{{ false }}"><span style="{{ it.row.tagStyle }}">{{ it.row.tag }}</span></sc-if><span style="flex: 1 1 auto;"></span><sc-if value="{{ it.row.btn }}" hint-placeholder-val="{{ false }}"><button title="{{ it.row.btnTitle }}" aria-disabled="{{ it.row.btnOff }}" style="{{ it.row.btnStyle }}">{{ it.row.btn }}</button></sc-if><button aria-expanded="true" aria-label="{{ it.row.menuAria }}" style="{{ it.menuBtnStyle }}">⋯</button></div>
+                          <div style="{{ it.row.l2Style }}"><span title="{{ it.row.dueTitle }}" style="{{ it.row.dueStyle }}">{{ it.row.due }}</span><span style="{{ it.row.restStyle }}">{{ it.row.l2 }}</span></div>
+                        </div>
+                </div>
+                <div role="menu" aria-label="{{ it.row.menuAria }}" style="{{ it.menuStyle }}"><sc-for list="{{ it.menu }}" as="m" hint-placeholder-count="6"><div role="menuitem" style="{{ m.style }}">{{ m.t }}<sc-if value="{{ m.sub }}" hint-placeholder-val="{{ false }}"><span style="{{ m.subStyle }}">{{ m.sub }}</span></sc-if></div></sc-for></div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ it.note }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty; max-width: 1080px;">{{ it.note }}</div></sc-if>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 16px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div><sc-for list="{{ sec.notes }}" as="n" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for></div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes</div><sc-for list="{{ sec.outs }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for></div>
+      </div>
+    </section>
+  </sc-for>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Measurements · both languages</div>
+        <sc-for list="{{ measures }}" as="m" hint-placeholder-count="12"><div style="display: flex; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12px;"><span style="flex: 1 1 0; min-width: 0; font-weight: 500;">{{ m.d }}</span><span style="flex: none; width: 90px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.en }}</span><span style="flex: none; width: 90px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.ar }}</span></div></sc-for>
+        <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Columns: English, Arabic (px). Row: 7 + title line (EN 20, AR 22) + second line (EN 18, AR 22) + 7. Footer: 8 + 18 + 8 (AR 8 + 22 + 8).</div>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Changes to accepted screens</div>
+        <sc-for list="{{ changes }}" as="c" hint-placeholder-count="5"><div style="display: grid; grid-template-columns: minmax(0, 190px) 1fr; gap: 12px; padding: 6px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12.5px; font-weight: 600;">{{ c.s }}</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ c.w }}</span></div></sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px;">
+    <h2 style="margin: 0 0 12px; font-size: 20px; font-weight: 600;">Questions for the product owner</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="6"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for></div></sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = "font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const INK = { danger: "#B42318", warn: "#B54708", info: "#1F5480", muted: "#5A6779", ok: "#4A5568" };
+
+    // ---- the 16 tasks ----
+    const TASKS = [
+      { en: "Update isolation signage, Tower A", ar: "تحديث لافتات العزل، البرج A", tag: "Required", who: "Omar Haddad", whoAr: "عمر حداد", pos: "Infection Control Nurse", posAr: "ممرض مكافحة العدوى", st: "In progress", due: "8 Oct", od: 6, by: "Dr. Fahad Al-Anazi", upd: "11 Oct" },
+      { req: "more time asked to 20 Oct", reqAr: "طُلب تمديد حتى " + iso("20 Oct"), en: "Submit Q3 CLABSI data to the quality office", ar: "تسليم بيانات CLABSI للربع الثالث إلى مكتب الجودة", who: "Dr. Sara Al-Qahtani", whoAr: "د. سارة القحطاني", pos: "Intensivist", posAr: "طبيبة عناية مركزة", st: "Assigned", due: "10 Oct", od: 4, by: "Nora Al-Otaibi", upd: "1 Oct" },
+      { en: "Collect sharps-disposal audit forms, ward 6A", ar: "جمع نماذج تدقيق التخلص من الأدوات الحادة، جناح 6A", who: "Tariq Suleiman", whoAr: "طارق سليمان", pos: "Nursing", posAr: "التمريض", st: "Assigned", due: "12 Oct", od: 2, by: "Nora Al-Otaibi", upd: "3 Oct" },
+      { en: "Confirm infection control link nurses for each ward", ar: "تأكيد ممرضي الارتباط لمكافحة العدوى في كل جناح", who: "Mariam Al-Kandari", whoAr: "مريم الكندري", pos: "Nursing Quality Coordinator", posAr: "منسقة جودة التمريض", st: "In progress", due: "15 Oct", soon: "tomorrow", by: "Dr. Fahad Al-Anazi", upd: "13 Oct" },
+      { en: "Renew the terms of reference signatures", ar: "تجديد توقيعات الاختصاصات", tag: "Required", who: "Nora Al-Otaibi", whoAr: "نورة العتيبي", pos: "Secretary", posAr: "أمينة السر", st: "Assigned", due: "16 Oct", soon: "in 2 days", by: "Workflow · Active stage", upd: "2 Oct" },
+      { en: "Staff flu vaccination report", ar: "تقرير تطعيم الموظفين ضد الإنفلونزا", tag: "Optional", who: "Dana Chalabi", whoAr: "دانة الشلبي", pos: "Quality", posAr: "الجودة", st: "Assigned", due: "22 Oct", by: "Workflow · Active stage", upd: "2 Oct" },
+      { en: "Prepare the Q4 surveillance calendar", ar: "إعداد تقويم الترصد للربع الرابع", who: "Dana Chalabi", whoAr: "دانة الشلبي", pos: "Quality", posAr: "الجودة", st: "Assigned", due: "25 Oct", by: "Nora Al-Otaibi", upd: "5 Oct" },
+      { en: "Draft the annual IPC programme 2027", ar: "مسودة برنامج مكافحة العدوى السنوي 2027", who: "Nora Al-Otaibi", whoAr: "نورة العتيبي", pos: "Secretary", posAr: "أمينة السر", st: "In progress", due: "31 Oct", by: "Dr. Fahad Al-Anazi", upd: "12 Oct" },
+      { en: "Staff TB screening list", ar: "قائمة فحص السل للموظفين", who: "Khalid Al-Zahrani", whoAr: "خالد الزهراني", pos: "Occupational Health", posAr: "الصحة المهنية", st: "Assigned", due: "5 Nov", by: "Nora Al-Otaibi", upd: "6 Oct" },
+      { en: "Cleaning products review with Housekeeping", ar: "مراجعة مواد التنظيف مع خدمات النظافة", who: "Hessa Al-Mutairi", whoAr: "حصة المطيري", pos: "Housekeeping", posAr: "خدمات النظافة", st: "Assigned", due: "12 Nov", by: "Nora Al-Otaibi", upd: "7 Oct" },
+      { en: "Mattress integrity audit", ar: "تدقيق سلامة المراتب", who: "Omar Haddad", whoAr: "عمر حداد", pos: "Infection Control Nurse", posAr: "ممرض مكافحة العدوى", st: "On hold", due: "27 Oct", hold: "20 Oct", by: "Nora Al-Otaibi", upd: "9 Oct" },
+      { en: "Isolation cart restock, Tower B", ar: "إعادة تزويد عربة العزل، البرج B", who: "Tariq Suleiman", whoAr: "طارق سليمان", pos: "Nursing", posAr: "التمريض", st: "Completed", closed: "2 Oct", due: "3 Oct", by: "Nora Al-Otaibi", upd: "2 Oct" },
+      { en: "Q3 surveillance export", ar: "تصدير بيانات الترصد للربع الثالث", who: "Nora Al-Otaibi", whoAr: "نورة العتيبي", pos: "Secretary", posAr: "أمينة السر", st: "Cancelled", closed: "1 Oct", due: "5 Oct", by: "Nora Al-Otaibi", upd: "1 Oct", reason: "Duplicate task" },
+      { en: "CLABSI bundle audit, September", ar: "تدقيق حزمة CLABSI، سبتمبر", who: "Dr. Sara Al-Qahtani", whoAr: "د. سارة القحطاني", pos: "Intensivist", posAr: "طبيبة عناية مركزة", st: "Completed", closed: "28 Sep", due: "30 Sep", by: "Dr. Fahad Al-Anazi", upd: "28 Sep" },
+      { en: "Hand-hygiene week posters", ar: "ملصقات أسبوع نظافة اليدين", who: "Dana Chalabi", whoAr: "دانة الشلبي", pos: "Quality", posAr: "الجودة", st: "Completed", closed: "20 Sep", due: "21 Sep", by: "Nora Al-Otaibi", upd: "20 Sep" },
+      { en: "Circulate the August meeting's decisions", ar: "تعميم قرارات اجتماع أغسطس", who: "Nora Al-Otaibi", whoAr: "نورة العتيبي", pos: "Secretary", posAr: "أمينة السر", st: "Completed", closed: "30 Aug", due: "31 Aug", by: "Dr. Fahad Al-Anazi", upd: "30 Aug" }
+    ];
+    // the default viewer is Nora Al-Otaibi (Secretary): creator of most tasks, holds Manage tasks
+    const NEXT = { 1: "Review request", 4: "Start", 7: "Complete" };
+    const NEXT_AR = { "Review request": "مراجعة الطلب", "Start": "بدء", "Complete": "إكمال", "Resume": "استئناف", "Pick up": "استلام" };
+    TASKS.forEach((t, i) => { t.btn = NEXT[i] || null; });
+    const btnCss = (off, ar) => "flex: none; font-family: inherit; font-size: " + (ar ? 12.5 : 12) + "px; font-weight: 600; height: 26px; box-sizing: border-box; padding: 0 9px; border-radius: 5px; white-space: nowrap; " + (off ? "color: #5A6779; background: #EDF1F6; border: 1px solid #E2E8F0; cursor: not-allowed;" : "color: #1F5480; background: #fff; border: 1px solid #2E6FA3;");
+    const ST_AR = { "Assigned": "مُسندة", "In progress": "قيد التنفيذ", "On hold": "معلّقة", "Completed": "مكتملة", "Cancelled": "ملغاة" };
+    const TAG_AR = { Required: "مطلوبة", Optional: "اختيارية" };
+    const dueText = (t, ar) => {
+      if (t.od) return ar ? "⚠ متأخرة " + iso(t.od) + " أيام · " + iso(t.due) : "⚠ " + t.od + " days overdue · " + t.due;
+      if (t.st === "On hold") return ar ? "⏸ معلّقة حتى " + iso(t.hold) + " · تستحق " + iso(t.due) : "⏸ On hold to " + t.hold + " · due " + t.due;
+      if (t.st === "Completed") return ar ? "✓ اكتملت " + iso(t.closed) : "✓ Completed " + t.closed;
+      if (t.st === "Cancelled") return ar ? "ملغاة " + iso(t.closed) : "Cancelled " + t.closed;
+      if (t.soon === "tomorrow") return ar ? "تستحق غدًا · " + iso(t.due) : "Due tomorrow · " + t.due;
+      if (t.soon) return ar ? "تستحق بعد يومين · " + iso(t.due) : "Due " + t.soon + " · " + t.due;
+      return ar ? "تستحق " + iso(t.due) : "Due " + t.due;
+    };
+    const dueTone = (t) => t.od ? "danger" : t.st === "On hold" ? "info" : (t.st === "Completed" || t.st === "Cancelled") ? "muted" : "ok";
+
+    // ---- panel ----
+    const ROW = { en: 52, ar: 58 }, FOOT = { en: 34, ar: 38 }, HEAD = { en: 42, ar: 46 };
+    const panelRow = (t, ar, o) => {
+      o = o || {};
+      const tone = dueTone(t);
+      const rest = o.l2 || (ar ? (t.whoAr + " · " + ST_AR[t.st] + (t.req ? " · " + t.reqAr : "")) : (t.who + " · " + t.st + (t.req ? " · " + t.req : "")));
+      const restTone = o.l2Tone || (t.req ? "info" : null);
+      const b = o.btn === undefined ? t.btn : o.btn;
+      const due = o.due || dueText(t, ar);
+      const fs = ar ? 12.5 : 11.5;
+      return {
+        t: ar ? t.ar : t.en, tag: t.tag ? (ar ? TAG_AR[t.tag] : t.tag) : null,
+        due, dueTitle: due + " · " + rest, l2: " · " + rest,
+        btn: b ? (ar ? NEXT_AR[b] || b : b) : null, btnOff: o.btnOff ? "true" : "false", btnTitle: o.btnOff ? (ar ? "أضف دليلًا أولًا" : "Add evidence first") : "", btnStyle: btnCss(!!o.btnOff, ar),
+        menuAria: (ar ? "إجراءات " : "Actions for ") + (ar ? t.ar : t.en),
+        style: "display: flex; flex-direction: column; justify-content: center; height: " + (ar ? 58 : 52) + "px; box-sizing: border-box; padding: 4px 8px 4px 12px; border-block-end: 1px solid #F0F3F7;" + (o.hl ? " background: #E4EEF6; box-shadow: inset 3px 0 0 #2E6FA3;" : ""),
+        line1Style: "display: flex; align-items: center; gap: 6px; min-width: 0; height: 26px;",
+        tStyle: "flex: 0 1 auto; min-width: 0; font-size: " + (ar ? 14 : 13) + "px; line-height: " + (ar ? 22 : 20) + "px; font-weight: 500; text-decoration: none; color: #2D3748; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" + (t.st === "Cancelled" ? " text-decoration: line-through; color: #4A5568;" : ""),
+        tagStyle: "flex: none; font-size: " + (ar ? 11.5 : 10.5) + "px; font-weight: 600; border-radius: 4px; padding: 0 5px; line-height: 16px; " + (t.tag === "Required" ? "color: #1F5480; border: 1px solid #2E6FA3;" : "color: #4A5568; border: 1px dashed #8A94A6;"),
+        l2Style: "display: flex; min-width: 0; font-size: " + fs + "px; line-height: " + (ar ? 22 : 18) + "px; white-space: nowrap;",
+        dueStyle: "flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; color: " + INK[tone] + ";" + (tone === "danger" ? " font-weight: 600;" : ""),
+        restStyle: "flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: " + (restTone ? INK[restTone] + "; font-weight: 500" : "#5A6779") + ";",
+        menuStyle: "flex: none; width: 26px; height: 26px; border: 1px solid transparent; border-radius: 5px; background: none; color: #4A5568; font-size: 14px;"
+      };
+    };
+    const panel = (o) => {
+      const ar = !!o.ar, L = ar ? "ar" : "en";
+      const body = 5 * ROW[L] + FOOT[L];
+      return {
+        title: o.title, count: o.count, newTask: o.newTask || null,
+        rows: o.rows, footer: o.footer || null, seeAll: o.seeAll || "", filler: o.filler || null,
+        frame: "flex: 1 1 320px; min-width: min(100%, 320px); background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;" + (ar ? " " + AF : ""),
+        headStyle: "display: flex; align-items: center; justify-content: space-between; gap: 8px; height: " + HEAD[L] + "px; box-sizing: border-box; padding: 0 12px; border-block-end: 1px solid #E2E8F0;",
+        titleStyle: "font-size: " + (ar ? 14 : 13) + "px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+        countStyle: "flex: none; font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;",
+        newStyle: "flex: none; font-size: " + (ar ? 13.5 : 12.5) + "px; font-weight: 600; text-decoration: none; white-space: nowrap;",
+        bodyStyle: "display: flex; flex-direction: column; height: " + body + "px;",
+        fillerStyle: "flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 12px; font-size: " + (ar ? 12.5 : 11.5) + "px; color: #5A6779; text-align: center; text-wrap: pretty;",
+        footStyle: "margin-block-start: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: " + FOOT[L] + "px; box-sizing: border-box; padding: 0 12px; border-block-start: 1px solid #E2E8F0; background: #FBFCFD; font-size: " + (ar ? 12.5 : 12) + "px; color: #4A5568;",
+        seeStyle: "font-size: " + (ar ? 13.5 : 12.5) + "px; font-weight: 600; text-decoration: none; white-space: nowrap;"
+      };
+    };
+    const mock = (title, count, lines, ar) => {
+      const p = panel({ ar, title, count, newTask: ar ? "إضافة" : "Add", rows: [] });
+      p.rows = lines.map(l => ({ t: l[0], tag: null, due: "", dueTitle: "", l2: l[1], btn: null, btnOff: "false", btnTitle: "", btnStyle: "", menuAria: "Actions for " + l[0],
+        style: "display: flex; flex-direction: column; justify-content: center; height: " + (ar ? ROW.ar : ROW.en) + "px; box-sizing: border-box; padding: 4px 8px 4px 12px; border-block-end: 1px solid #F0F3F7;",
+        line1Style: "display: flex; align-items: center; gap: 6px; min-width: 0; height: 26px;",
+        tStyle: "flex: 0 1 auto; min-width: 0; font-size: " + (ar ? 14 : 13) + "px; font-weight: 500; text-decoration: none; color: #2D3748; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;", tagStyle: "",
+        l2Style: "display: flex; min-width: 0; font-size: " + (ar ? 12.5 : 11.5) + "px; line-height: " + (ar ? 22 : 18) + "px; white-space: nowrap;", dueStyle: "display: none;", restStyle: "flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #5A6779;",
+        menuStyle: "flex: none; width: 26px; height: 26px; border: none; background: none; color: #4A5568;" }));
+      p.footer = ar ? "يظهر " + iso("5") + " من " + iso(count) : "Showing 5 of " + count; p.seeAll = ar ? "عرض الكل" : "See all";
+      return p;
+    };
+    const open = TASKS.filter(t => t.st === "Assigned" || t.st === "In progress");
+    const top5 = open.slice(0, 5);
+    const rowWrap = (w) => "display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; width: " + w + "px; max-width: 100%;";
+    const tasksPanelEn = panel({ title: "Tasks", count: "16", newTask: "New task", rows: top5.map(t => panelRow(t, false)), footer: "Showing 5 of 16", seeAll: "See all" });
+    const tasksPanelAr = panel({ ar: 1, title: "المهام", count: "16", newTask: "مهمة جديدة", rows: top5.map(t => panelRow(t, true)), footer: "يظهر " + iso("5") + " من " + iso("16"), seeAll: "عرض الكل" });
+    const ownEn = panel({ title: "Your tasks on this committee", count: "2", rows: [panelRow(TASKS[0], false, { btn: "Complete", btnOff: 1, l2: "In progress · evidence required, none yet", l2Tone: "warn" }), panelRow(TASKS[10], false, { btn: "Resume" })], filler: "Only your own tasks on this committee. The committee has more tasks you can't see." });
+    const ownAr = panel({ ar: 1, title: "مهامك في هذه اللجنة", count: "2", rows: [panelRow(TASKS[0], true, { btn: "Complete", btnOff: 1, l2: "قيد التنفيذ · الدليل مطلوب ولم يُضف", l2Tone: "warn" }), panelRow(TASKS[10], true, { btn: "Resume" })], filler: "مهامك فقط في هذه اللجنة." });
+    const fewEn = panel({ title: "Tasks", count: "4", newTask: "New task", rows: [panelRow(TASKS[3], false), panelRow(TASKS[5], false), panelRow(TASKS[11], false), panelRow(TASKS[13], false)] });
+    const deepEn = panel({ title: "Tasks", count: "16", newTask: "New task", rows: top5.map((t, i) => panelRow(t, false, { hl: i === 1 })), footer: "Showing 5 of 16", seeAll: "See all" });
+    const emptyEn = panel({ title: "Tasks", count: "0", newTask: "New task", rows: [], filler: "No tasks yet. Tasks about this committee will be listed here." });
+    const loadEn = panel({ title: "Tasks", count: "—", newTask: "New task", rows: [0, 1, 2, 3, 4].map(() => ({ t: "\u00a0", tag: null, due: "\u00a0", dueTitle: "", l2: "", btn: null, btnOff: "false", btnTitle: "", btnStyle: "", menuAria: "Loading",
+        style: "display: flex; flex-direction: column; justify-content: center; gap: 8px; height: 52px; box-sizing: border-box; padding: 4px 12px; border-block-end: 1px solid #F0F3F7;",
+        line1Style: "display: flex; align-items: center; min-width: 0;", tStyle: "display: block; width: 70%; height: 12px; border-radius: 3px; background: #EDF1F6;", tagStyle: "",
+        l2Style: "display: flex;", dueStyle: "display: block; width: 45%; height: 10px; border-radius: 3px; background: #EDF1F6;", restStyle: "display: none;", menuStyle: "display: none;" })) });
+    const errEn = panel({ title: "Tasks", count: "—", newTask: "New task", rows: [], filler: "Couldn't load this committee's tasks. Retry" });
+
+    // meeting + standards
+    const MEET = [
+      { en: "Update hand-hygiene audit tool", ar: "تحديث أداة تدقيق نظافة اليدين", st: "In progress", due: "15 Oct", soon: "tomorrow", l2: "Dr. Huda Zahrani · In progress · more time asked · From item 2", l2Ar: "د. هدى الزهراني · قيد التنفيذ · طُلب تمديد · من البند " + iso("2"), tone: "info" },
+      { en: "Repair negative-pressure alarm, room 3", ar: "إصلاح إنذار الضغط السلبي، الغرفة 3", st: "Assigned", due: "15 Oct", soon: "tomorrow", l2: "Facilities Engineer, Facilities · Assigned · From item 4", l2Ar: "مهندس المرافق · مُسندة · من البند " + iso("4") },
+      { btn: "Pick up", en: "Re-audit wards 4B and 6A", ar: "إعادة تدقيق الجناحين 4B و6A", st: "Assigned", due: "30 Nov", l2: "Waiting for Infection Control Nurse · 3 can pick up · From item 2", l2Ar: "بانتظار ممرض مكافحة العدوى · " + iso("3") + " يمكنهم الاستلام · من البند " + iso("2"), tone: "info" }
+    ];
+    const meetEn = panel({ title: "Action items", count: "3", newTask: "New task", rows: MEET.map(m => panelRow(m, false, { l2: m.l2, l2Tone: m.tone, btn: m.btn || null })) });
+    const meetAr = panel({ ar: 1, title: "بنود العمل", count: "3", newTask: "مهمة جديدة", rows: MEET.map(m => panelRow(m, true, { l2: m.l2Ar, l2Tone: m.tone, btn: m.btn || null })) });
+    const STD = [
+      { en: "Renew: Pharmacy refrigerator calibration report", st: "Assigned", due: "31 Oct", l2: "Dr. Huda Zahrani · Assigned · created by Standards" },
+      { en: "Upload the 2026 calibration report", st: "Assigned", due: "15 Jan 2027", l2: "Omar Al-Fahad · Assigned · Request evidence" }
+    ];
+    const stdEn = panel({ title: "Tasks", count: "2", newTask: "Request evidence", rows: STD.map(m => panelRow(m, false, { l2: m.l2, btn: null })) });
+
+    // ---- popup ----
+    const COLS = [{ l: "Task", f: 300, min: 200 }, { l: "Status", w: 100 }, { l: "Assignee or pool", f: 190, min: 140 }, { l: "Due", w: 150 }, { l: "Created by", w: 130 }, { l: "Updated", w: 64 }, { l: "", w: 110 }, { l: "", w: 30 }];
+    const COLS_AR = [{ l: "المهمة", f: 300, min: 200 }, { l: "الحالة", w: 100 }, { l: "المُسند إليه أو المجموعة", f: 190, min: 140 }, { l: "الاستحقاق", w: 150 }, { l: "أنشأها", w: 130 }, { l: "آخر تحديث", w: 64 }, { l: "", w: 110 }, { l: "", w: 30 }];
+    const colCss = (c) => "flex: " + (c.f ? "1 1 " + c.f + "px" : "none") + "; " + (c.w ? "width: " + c.w + "px; " : "") + "min-width: " + (c.min || 0) + "px; display: flex; flex-direction: column;";
+    const MINW = 1032;
+    const popRow = (t, ar, cols, hl) => {
+      const fs = ar ? 14 : 13, ss = ar ? 12.5 : 11.5;
+      const tone = dueTone(t);
+      const v = (x, o) => Object.assign({ v: x, title: "", sub: null, link: false, plain: true, tag: null, menu: null, btn: null, btnTitle: "", btnStyle: "", tagStyle: "", menuStyle: "", subStyle: "font-size: " + ss + "px; color: #5A6779; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;", vStyle: "font-size: " + fs + "px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; unicode-bidi: isolate;" }, o || {});
+      const cells = [
+        v(ar ? t.ar : t.en, { link: true, plain: false, tag: t.tag ? (ar ? TAG_AR[t.tag] : t.tag) : null, sub: t.reason ? (ar ? "السبب: مهمة مكررة" : "Reason: " + t.reason) : null,
+          vStyle: "font-size: " + fs + "px; font-weight: 500; text-decoration: none; color: #2D3748; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;" + (t.st === "Cancelled" ? " text-decoration: line-through; color: #4A5568;" : ""),
+          tagStyle: "flex: none; font-size: " + (ar ? 11.5 : 10.5) + "px; font-weight: 600; border-radius: 4px; padding: 0 5px; line-height: 16px; " + (t.tag === "Required" ? "color: #1F5480; border: 1px solid #2E6FA3;" : "color: #4A5568; border: 1px dashed #8A94A6;") }),
+        v(ar ? ST_AR[t.st] : t.st, { vStyle: "font-size: " + fs + "px; white-space: nowrap; color: " + (t.st === "On hold" ? "#1F5480; font-weight: 500" : t.st === "In progress" ? "#2D3748; font-weight: 500" : "#4A5568") + ";" }),
+        v(ar ? t.whoAr : t.who, { sub: ar ? t.posAr : t.pos }),
+        (() => { const p = dueText(t, ar).split(" · "); const subs = [p.slice(1).join(" · "), t.req ? (ar ? t.reqAr : t.req[0].toUpperCase() + t.req.slice(1)) : ""].filter(Boolean).join(" · ");
+          return v(p[0], { sub: subs || null, title: dueText(t, ar), vStyle: "font-size: " + (fs - 0.5) + "px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; color: " + INK[tone] + ";" + (tone === "danger" ? " font-weight: 600;" : "") }); })(),
+        v(ar && t.by.indexOf("Workflow") === 0 ? "سير العمل · المرحلة النشطة" : t.by, { vStyle: "font-size: " + (fs - 0.5) + "px; color: #4A5568; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" }),
+        v(ar ? iso(t.upd) : t.upd, { vStyle: "font-size: " + (fs - 0.5) + "px; color: #4A5568; font-variant-numeric: tabular-nums; white-space: nowrap;" }),
+        v("", { plain: false, btn: t.btn ? (ar ? NEXT_AR[t.btn] : t.btn) : null, btnStyle: btnCss(false, ar) }),
+        v("", { plain: false, menu: (ar ? "إجراءات " : "Actions for ") + (ar ? t.ar : t.en), menuStyle: "width: 26px; height: 26px; border: 1px solid transparent; border-radius: 5px; background: none; color: #4A5568; font-size: 14px;" })
+      ];
+      cells.forEach((c, i) => { c.style = colCss(cols[i]); if (c.v === "" && !c.menu) c.plain = false; });
+      return { cells, style: "display: flex; gap: 12px; align-items: center; min-width: " + MINW + "px; height: " + (ar ? 58 : 52) + "px; box-sizing: border-box; padding: 0 12px; border-block-end: 1px solid #F0F3F7;" + (hl ? " background: #E4EEF6; box-shadow: inset 3px 0 0 #2E6FA3;" : "") };
+    };
+    const filt = (t, on, ar) => ({ t, style: "flex: none; display: inline-flex; align-items: center; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; font-size: " + (ar ? 13 : 12.5) + "px; white-space: nowrap; " + (on ? "color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3; font-weight: 600;" : "color: #2D3748; background: #fff; border: 1px solid #8A94A6;") });
+    const chip = (t, kind, ar) => ({ t, style: "display: inline-flex; align-items: center; font-size: " + (ar ? 12.5 : 12) + "px; border-radius: 999px; padding: 2px 10px; white-space: nowrap; " + (kind === "clear" ? "color: #2E6FA3; font-weight: 600; border: 1px solid transparent;" : "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; font-weight: 600;") });
+    const sorted = open.concat(TASKS.filter(t => t.st === "On hold"), TASKS.filter(t => t.st === "Completed" || t.st === "Cancelled"));
+    const popup = (o) => {
+      const ar = !!o.ar, ph = !!o.phone, cols = ar ? COLS_AR : COLS;
+      const W = ph ? 390 : 1040;
+      return Object.assign({ isPop: true, isRow: false, isMenu: false, dir: ar ? "rtl" : "ltr", hasHead: !ph, empty: null, emptySub: "", emptyBtn: "", more: null, menuOpen: null, note: o.note || null, newTask: o.newTask === undefined ? (ar ? "مهمة جديدة" : "New task") : o.newTask, closeAria: ar ? "إغلاق" : "Close" }, o, {
+        outer: "min-width: 0; flex: 0 1 " + (W + 48) + "px;",
+        backdrop: "padding: " + (ph ? "0" : "24px") + "; background: " + (ph ? "transparent" : "rgba(30,42,56,0.45)") + "; border-radius: 8px;" + (ar ? " " + AF : ""),
+        frame: "position: relative; width: 100%; max-width: " + W + "px; height: " + (ph ? 780 : 760) + "px; display: flex; flex-direction: column; background: #fff; border: 1px solid #CBD5E0; border-radius: " + (ph ? 18 : 8) + "px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden; margin-inline: auto;",
+        headStyle: "flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; height: " + (ph ? 56 : ar ? 68 : 64) + "px; box-sizing: border-box; padding: 0 " + (ph ? 14 : 20) + "px; border-block-end: 1px solid #E2E8F0;",
+        titleStyle: "font-size: " + (ph ? 15 : ar ? 17 : 16) + "px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;",
+        countStyle: "flex: none; font-size: 11.5px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums;",
+        newStyle: "font-family: inherit; font-size: " + (ar ? 13.5 : 13) + "px; font-weight: 600; color: #fff; background: #2E6FA3; border: 1px solid #1F5480; border-radius: 6px; padding: 6px 12px; white-space: nowrap;",
+        toolStyle: "flex: none; display: flex; flex-wrap: " + (ph ? "nowrap" : "wrap") + "; align-items: center; gap: 8px; min-height: " + (ar ? 56 : 52) + "px; box-sizing: border-box; padding: 10px " + (ph ? 14 : 20) + "px; border-block-end: 1px solid #F0F3F7;",
+        searchStyle: "flex: " + (ph ? "1 1 auto" : "0 1 260px") + "; min-width: 0; display: flex; align-items: center; gap: 6px; height: 32px; box-sizing: border-box; padding: 0 9px; border: 1px solid " + (o.searchOn ? "#2E6FA3" : "#8A94A6") + "; border-radius: 4px; font-size: " + (ar ? 13.5 : 12.5) + "px; color: #5A6779;" + (o.searchOn ? " box-shadow: 0 0 0 3px rgba(46,111,163,0.18);" : ""),
+        searchTextStyle: "flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: " + (o.searchOn ? "#2D3748" : "#8A94A6") + ";",
+        sortStyle: "flex: none; margin-inline-start: auto; display: inline-flex; align-items: center; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; font-size: " + (ar ? 13 : 12.5) + "px; white-space: nowrap;" + (ph ? " display: none;" : ""),
+        chipRowStyle: "flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: " + (ar ? 40 : 36) + "px; box-sizing: border-box; padding: 6px " + (ph ? 14 : 20) + "px; border-block-end: 1px solid #E2E8F0; background: #FBFCFD;",
+        liveStyle: "margin-inline-start: auto; font-size: " + (ar ? 12.5 : 12) + "px; color: #4A5568; font-variant-numeric: tabular-nums;",
+        thStyle: "position: sticky; top: 0; z-index: 1; display: flex; gap: 12px; align-items: center; min-width: " + MINW + "px; height: " + (ar ? 32 : 30) + "px; box-sizing: border-box; padding: 0 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;",
+        th: cols.map((c, i) => ({ l: c.l, style: colCss(c) +  " font-size: " + (ar ? 12 : 11) + "px; font-weight: 700; color: #5A6779;" + (ar ? "" : " letter-spacing: 0.05em; text-transform: uppercase;") })),
+        listStyle: "position: relative; flex: 1 1 auto; overflow: auto;",
+        emptyStyle: "padding: 40px 20px; text-align: center; font-size: " + (ar ? 14 : 13.5) + "px;",
+        emptySubStyle: "font-size: " + (ar ? 13 : 12.5) + "px; color: #5A6779; margin-block: 4px 10px; text-wrap: pretty;",
+        emptyBtnStyle: "font-family: inherit; font-size: 13px; color: #2D3748; background: #fff; border: 1px solid #5A6779; border-radius: 6px; padding: 5px 12px;",
+        menuBoxStyle: "position: absolute; top: " + (o.menuTop || 120) + "px; inset-inline-end: 44px; width: 220px; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); padding: 4px 0;",
+        footStyle: "flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: " + (ar ? 48 : 44) + "px; box-sizing: border-box; padding: 0 " + (ph ? 14 : 20) + "px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA; font-size: " + (ar ? 12.5 : 12) + "px; color: #4A5568;",
+        moreStyle: "font-family: inherit; font-size: 12.5px; font-weight: 600; color: #2E6FA3; background: #fff; border: 1px solid #8A94A6; border-radius: 6px; padding: 4px 11px;",
+        rows: (o.list || []).map((t, i) => o.phone ? phoneRow(t, ar, i === o.hl) : popRow(t, ar, cols, i === o.hl))
+      });
+    };
+    const phoneRow = (t, ar, hl) => {
+      const tone = dueTone(t);
+      const cell = (v, st) => ({ v, title: "", btn: null, btnTitle: "", btnStyle: "", sub: null, link: false, plain: true, tag: null, menu: null, tagStyle: "", menuStyle: "", subStyle: "", vStyle: st, style: "display: flex; flex-direction: column; min-width: 0;" });
+      const first = cell(ar ? t.ar : t.en, "font-size: " + (ar ? 14 : 13.5) + "px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" + (t.st === "Cancelled" ? " text-decoration: line-through;" : ""));
+      first.link = true; first.plain = false; first.tag = t.tag ? (ar ? TAG_AR[t.tag] : t.tag) : null;
+      first.tagStyle = "flex: none; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 0 5px; " + (t.tag === "Required" ? "color: #1F5480; border: 1px solid #2E6FA3;" : "color: #4A5568; border: 1px dashed #8A94A6;");
+      first.sub = (ar ? t.whoAr + " · " + ST_AR[t.st] : t.who + " · " + t.st);
+      first.subStyle = "font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;";
+      first.style = "flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column;";
+      const parts = dueText(t, ar).split(" · ");
+      const due = cell(parts[0], "font-size: " + (ar ? 12.5 : 12) + "px; white-space: nowrap; color: " + INK[tone] + ";" + (tone === "danger" ? " font-weight: 600;" : ""));
+      due.sub = parts[1] || null; due.subStyle = "font-size: " + (ar ? 12 : 11.5) + "px; color: #5A6779; white-space: nowrap; font-variant-numeric: tabular-nums;";
+      due.style = "flex: none; width: " + (t.btn ? 112 : 132) + "px; display: flex; flex-direction: column; align-items: flex-end; text-align: end; overflow: hidden;";
+      const bt = cell("", ""); bt.plain = false; bt.btn = t.btn ? (ar ? NEXT_AR[t.btn] : t.btn) : null; bt.btnStyle = btnCss(false, ar); bt.style = "flex: none;";
+      const m = cell("", ""); m.plain = false; m.menu = (ar ? "إجراءات " : "Actions for ") + (ar ? t.ar : t.en); m.menuStyle = "width: 32px; height: 32px; border: none; background: none; color: #4A5568; font-size: 16px;"; m.style = "flex: none;";
+      return { cells: t.btn ? [first, due, bt, m] : [first, due, m], style: "display: flex; gap: 8px; align-items: center; height: " + (ar ? 64 : 60) + "px; box-sizing: border-box; padding: 0 14px; border-block-end: 1px solid #F0F3F7;" + (hl ? " background: #E4EEF6; box-shadow: inset 3px 0 0 #2E6FA3;" : "") };
+    };
+    const filtersEn = (on) => [filt("Status ▾", on === "status"), filt("Overdue only", on === "overdue"), filt("Assignee or pool ▾", false), filt("Required or Optional ▾", false), filt("Due ▾", false), filt("Assigned to me", false)];
+    const filtersAr = [filt("الحالة ▾", false, 1), filt("المتأخرة فقط", false, 1), filt("المُسند إليه ▾", false, 1), filt("مطلوبة أو اختيارية ▾", false, 1), filt("الاستحقاق ▾", false, 1), filt("المُسندة إليّ", false, 1)];
+    const MI = (t, o, ar) => { o = o || {}; return { t, sub: o.sub || null, style: "padding: 7px 14px; font-size: " + (ar ? 13.5 : 13) + "px;" + (o.danger ? " color: #B42318;" : "") + (o.off ? " color: #5A6779;" : "") + (o.div ? " border-block-start: 1px solid #E2E8F0; margin-block-start: 4px; padding-block-start: 9px;" : "") + (o.first ? " background: #F2F7FB;" : ""), subStyle: "display: block; font-size: " + (ar ? 12 : 11.5) + "px; color: #5A6779;" }; };
+    const M_ASSIGNEE = (n, extra) => [MI("Add evidence…", { first: 1 }), MI("View evidence (" + n + ")"), MI("Request more time…"), MI("Request a hold…"), MI("Reject…", { sub: "Hand back with a reason" })].concat(extra || [], [MI("Open task")]);
+    const M_CREATOR = (n, o) => { o = o || {}; return [MI("Reassign…", { div: o.div, first: !o.div }), MI("Edit…"), o.stage ? null : MI("Cancel…", { danger: 1 }), o.reopen ? MI("Reopen…") : null, MI("View evidence (" + n + ")"), MI("Open task")].filter(Boolean); };
+    const MENU = M_CREATOR(0);
+    const deepIdx = sorted.indexOf(TASKS[13]);
+
+    const popAll = popup({ cap: "All tasks · English · default (sort: due date, open first)", title: "All tasks · Infection Prevention & Control Committee", count: "16", search: "Search task or assignee…", filters: filtersEn(), sort: "Sort: Due date ↑ · open first ▾", chips: [], live: "16 tasks", list: sorted, foot: "Showing all 16", menuOpen: MENU, menuTop: 96, note: "The ⋯ menu on row 2 is open: it is the CDK overlay with the reposition strategy (design system artboard 7), so scrolling the list moves it with its row instead of closing it. Actions are each viewer's own (Reassign and Cancel for the creator or Manage tasks; Add evidence for the assignee)." });
+    const popAr = popup({ ar: 1, cap: "Arabic · default", title: "كل المهام · لجنة الوقاية من العدوى ومكافحتها", count: "16", search: "ابحث في المهام أو المُسند إليهم…", filters: filtersAr, sort: "الترتيب: الاستحقاق ↑ · المفتوحة أولًا ▾", chips: [], live: iso("16") + " مهمة", list: sorted, foot: "يظهر الكل · " + iso("16") });
+    const popOverdue = popup({ cap: "Filtered · Overdue only · 3 results", title: "All tasks · Infection Prevention & Control Committee", count: "16", search: "Search task or assignee…", filters: filtersEn("overdue"), sort: "Sort: Due date ↑ · open first ▾", chips: [chip("Overdue only ✕"), chip("Clear all", "clear")], live: "3 tasks match", list: sorted.filter(t => t.od), foot: "3 of 16 match" });
+    const popNone = popup({ cap: "No results for a search", title: "All tasks · Infection Prevention & Control Committee", count: "16", search: "ventilator", searchOn: 1, filters: filtersEn(), sort: "Sort: Due date ↑ · open first ▾", chips: [chip("Search: ventilator ✕"), chip("Clear all", "clear")], live: "No tasks match", list: [], empty: "No tasks match “ventilator”", emptySub: "This committee has 16 tasks; none have “ventilator” in their title or assignee.", emptyBtn: "Clear search", foot: "0 of 16 match" });
+    const popDeep = popup({ cap: "Deep link · ?task= a completed task outside the five", title: "All tasks · Infection Prevention & Control Committee", count: "16", search: "Search task or assignee…", filters: filtersEn(), sort: "Sort: Due date ↑ · open first ▾", chips: [chip("Opened from a link · CLABSI bundle audit, September")], live: "16 tasks", list: sorted.slice(6), hl: deepIdx - 6, foot: "Showing all 16 · scrolled to the linked task", note: "The list is scrolled so the linked task sits in view (rows 7 to 16 shown). It carries the highlight until the user moves focus; the panel behind still shows its usual five." });
+    const popPhone = popup({ phone: 1, cap: "Phone · full-screen sheet · English", title: "All tasks · IPC Committee", count: "16", newTask: null, search: "Search task or assignee…", filters: [filt("Filters · 0", false)], sort: "", chips: [chip("Sort: Due date · open first ▾", "clear")], live: "16 tasks", list: sorted.slice(0, 10), foot: "Showing 10 of 16", more: "Load more" });
+    const popPhoneAr = popup({ phone: 1, ar: 1, cap: "Phone · Arabic", title: "كل المهام · لجنة مكافحة العدوى", count: "16", newTask: null, search: "ابحث…", filters: [filt("عوامل التصفية · " + iso("1"), true, 1)], sort: "", chips: [chip("المتأخرة فقط ✕", null, 1)], live: iso("3") + " مهام", list: sorted.filter(t => t.od), foot: iso("3") + " من " + iso("16") });
+
+    const MC = (cap, ar, row, menu, note) => ({ isMenu: true, isRow: false, isPop: false, cap, dir: ar ? "rtl" : "ltr", row, menu, note: note || null, outer: "min-width: 0; flex: 0 1 420px;",
+      menuWrap: "position: relative; width: 400px; max-width: 100%; height: " + (90 + menu.length * 34) + "px;" + (ar ? " " + AF : ""),
+      rowBox: "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;",
+      menuBtnStyle: "flex: none; width: 26px; height: 26px; border: 1px solid #2E6FA3; border-radius: 5px; background: #E4EEF6; color: #1F5480; font-size: 14px; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2E6FA3;",
+      menuStyle: "position: absolute; top: " + (ar ? 62 : 56) + "px; inset-inline-end: 6px; width: 240px; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); padding: 4px 0; z-index: 1;" });
+    const MEN = (t, o) => panelRow(t, false, o);
+    const menus = [
+      MC("Assignee · In progress · evidence required, none added", false, MEN(TASKS[0], { btn: "Complete", btnOff: 1, l2: "Omar Haddad · In progress · evidence required, none yet", l2Tone: "warn" }), M_ASSIGNEE(0), "Viewer: Omar Haddad. Complete is disabled with “Add evidence first” (its tooltip and accessible description); Add evidence is the first menu item."),
+      MC("Assignee · In progress · created the task too", false, MEN(TASKS[7], {}), M_ASSIGNEE(1).slice(0, 5).concat(M_CREATOR(1, { div: 1 })), "Viewer: Nora Al-Otaibi, who created it and is doing it: their assignee items first, a divider, then the creator's."),
+      MC("Pool member · not taken yet", false, panelRow(MEET[2], false, { l2: MEET[2].l2, l2Tone: "info", btn: "Pick up" }), [MI("Open task", { first: 1 })], "Viewer: Omar Haddad, an Infection Control Nurse. Once Omar picks it up, the menu is the assignee's plus Release (give it back to the pool)."),
+      MC("Creator · Manage tasks · a stage task", false, MEN(TASKS[5], { btn: null }), M_CREATOR(0, { stage: 1 }), "Viewer: Nora Al-Otaibi. Cancel isn't offered on stage or workflow tasks; on a person-created task it is. Reopen appears on completed tasks, creator only."),
+      MC("Decider · a request is waiting", false, MEN(TASKS[1], {}), M_CREATOR(0), "Viewer: Nora Al-Otaibi, who created it. Review request opens the app's review dialog (approve, or decline with a note)."),
+      MC("Reader · sees all tasks, no part in this one", false, MEN(TASKS[6], { btn: null }), [MI("View evidence (0)", { first: 1 }), MI("Open task")], "Viewer: Dr. Yousef Barakat, Advisor, with View all tasks."),
+      MC("Assignee · Arabic", true, panelRow(TASKS[0], true, { btn: "Complete", btnOff: 1, l2: "عمر حداد · قيد التنفيذ · الدليل مطلوب ولم يُضف", l2Tone: "warn" }), [MI("إضافة دليل…", { first: 1 }, 1), MI("عرض الأدلة (" + iso("0") + ")", {}, 1), MI("طلب تمديد…", {}, 1), MI("طلب تعليق…", {}, 1), MI("رفض…", { sub: "إعادتها مع ذكر السبب" }, 1), MI("فتح المهمة", {}, 1)], "The menu opens from the ⋯ at the row's inline end (left in Arabic) and aligns to it.")
+    ];
+    const R = (cap, dir, w, panels, note) => ({ isRow: true, isPop: false, isMenu: false, cap, dir, panels, note: note || null, outer: "min-width: 0; flex: 0 1 " + w + "px;", rowWrap: rowWrap(w) });
+    const mocksEn = [mock("Members", "9", [["Dr. Fahad Al-Anazi", "Chair · since 2024"], ["Nora Al-Otaibi", "Secretary · since 2024"], ["Omar Haddad", "Member · Infection Control Nurse"], ["Dr. Sara Al-Qahtani", "Member · Intensivist"], ["Dr. Huda Zahrani", "Member · Clinical Pharmacist"]], false), mock("Sub-committees", "6", [["Antimicrobial Stewardship", "Active · 7 members"], ["Outbreak Response", "Active · 5 members"], ["Hand Hygiene Working Group", "Active · 6 members"], ["Sterile Services Review", "Active · 4 members"], ["Isolation Practice Group", "Formation · 3 members"]], false)];
+
+    const MEMBERS = [["Dr. Fahad Al-Anazi", "Chair", "Jan 2024"], ["Nora Al-Otaibi", "Secretary", "Jan 2024"], ["Omar Haddad", "Member · Infection Control Nurse", "Jan 2024"], ["Dr. Sara Al-Qahtani", "Member · Intensivist", "Mar 2024"], ["Dr. Huda Zahrani", "Member · Clinical Pharmacist", "Mar 2024"], ["Dr. Yousef Barakat", "Advisor · Microbiology", "Jun 2024"], ["Tariq Suleiman", "Member · Nursing", "Sep 2024"], ["Dana Chalabi", "Member · Quality", "Jan 2025"], ["Hessa Al-Mutairi", "Member · Housekeeping", "May 2025"]];
+    const memCols = [{ l: "Member", f: 260 }, { l: "Seat", f: 240 }, { l: "Since", w: 100 }];
+    const popMembers = popup({ cap: "Members · See all · a plain list popup (search, no filters)", title: "All members · Infection Prevention & Control Committee", count: "9", newTask: "Add member", search: "Search members…", filters: [], sort: "Sort: Seat ▾", chips: [], live: "9 members", list: [], foot: "Showing all 9" });
+    popMembers.frame = popMembers.frame.replace("max-width: 1040px; height: 760px", "max-width: 720px; height: 560px");
+    popMembers.outer = "min-width: 0; flex: 0 1 768px;";
+    popMembers.th = memCols.map(c => ({ l: c.l, style: colCss(c) + " font-size: 11px; font-weight: 700; color: #5A6779; letter-spacing: 0.05em; text-transform: uppercase;" }));
+    popMembers.rows = MEMBERS.map(m => ({ style: "display: flex; gap: 12px; align-items: center; height: 44px; box-sizing: border-box; padding: 0 16px; border-block-end: 1px solid #F0F3F7;", cells: m.map((x, i) => ({ title: "", v: x, sub: null, link: i === 0, plain: i !== 0, tag: null, menu: null, btn: null, btnTitle: "", btnStyle: "", tagStyle: "", menuStyle: "", subStyle: "", vStyle: "font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" + (i === 0 ? " font-weight: 500; text-decoration: none;" : " color: #4A5568;"), style: colCss(memCols[i]) })) }));
+    const sections = [
+      { id: "s1", n: "1", title: "The panel", sub: "At most five rows, never scrolls, fixed body height. Infection Prevention & Control Committee record.", items: [
+          R("English · in a row of three panels (Committee record, 1172 content)", "ltr", 1172, [tasksPanelEn].concat(mocksEn), "Three panels at the same fixed body height (5 rows + footer = 294 px). The Members and Sub-committees panels are the Compact List Panel with the same cap. Order: the 3 overdue (most overdue first), then the 2 due soonest."),
+          R("Arabic · the Tasks panel", "rtl", 400, [tasksPanelAr], "Fixed body 328 px in Arabic (5 × 58 + 38)."),
+          R("Own-tasks variant · Omar Haddad, without View all tasks · no footer", "ltr", 400, [ownEn], "Wording unchanged. Count and rows cover only their own tasks; with 2 (≤ 5) there is no footer. The body keeps its fixed height so panels in the row stay equal."),
+          R("Own-tasks · Arabic", "rtl", 400, [ownAr]),
+          R("Five or fewer · 4 tasks · no footer", "ltr", 400, [fewEn], "Fewer than 5 open: the most recently closed fill the rest (2 open, then 2 completed)."),
+          R("Deep link · task among the five", "ltr", 400, [deepEn], "?task=… for a task in the five highlights it here, as today."),
+          R("Phone · English (390)", "ltr", 390, [panel({ title: "Tasks", count: "16", newTask: "New task", rows: top5.map(t => panelRow(t, false)), footer: "Showing 5 of 16", seeAll: "See all" })]),
+          R("Phone · Arabic (390)", "rtl", 390, [panel({ ar: 1, title: "المهام", count: "16", newTask: "مهمة جديدة", rows: top5.map(t => panelRow(t, true)), footer: "يظهر " + iso("5") + " من " + iso("16"), seeAll: "عرض الكل" })]),
+          R("Loading", "ltr", 400, [loadEn]), R("Empty", "ltr", 400, [emptyEn]), R("Error", "ltr", 400, [errEn])
+        ],
+        notes: [
+          { k: "What needs action beats newest created.", v: "People open a record to find what's late or due next. Newest-first buries the three overdue tasks under whatever was raised yesterday; due-order puts the work someone must act on in the five rows the panel has, and the rest is one click away." },
+          { k: "Order.", v: "Open tasks (Assigned, In progress, waiting to be picked up, unassigned, rejected) first: overdue at the top, most overdue first, then soonest due. On hold sorts after open (it can't be overdue). If fewer than 5 are open, the most recently closed fill the rest." },
+          { k: "The count is the total.", v: "“16” is every task the viewer can see on this record, never the 5 shown. The footer says “Showing 5 of 16 · See all” only when there are more than 5." },
+          { k: "Rows keep the accepted anatomy.", v: "Title, Required or Optional tag, status, assignee or pool, due in words (overdue with ⚠ and the count of days, not colour alone), and the ⋯ menu. Every row is one fixed height so five rows always measure the same." },
+          { k: "Narrow rows.", v: "Panels are at least 320 px wide; a row of three wraps when it can't give each that. Line 1 is the title and tags, with the button and ⋯ at its end. Line 2 starts with the due label (“⚠ 4 days overdue · Dr. Sara Al-Qahtani · Assigned”) and only its tail gets the ellipsis, so the due date is never cut. The popup and the phone sheet keep their own columns." },
+          { k: "Fixed body height.", v: "5 rows + footer = 294 px English, 328 px Arabic. With fewer rows the body keeps that height, so panels in a row stay equal; the empty space is quiet, with one line only for the own-tasks and empty states." },
+          { k: "Titles open the task page.", v: "The task title, in the panel and the popup, links to /tasks/:id, as does Open task in the menu. The task page is Task Screens §1; it is being built with this pattern." },
+          { k: "One next-step button, the rest in ⋯.", v: "Each row shows the viewer's main action as a small outlined button (Start, Complete, Resume, Pick up, Review request) between the due date and ⋯; it fits inside the fixed row height. Everything else is a worded item in the ⋯ menu. Rows where the viewer has no main action show no button. Section 4 lists every viewer." },
+          { k: "Only New task in the header.", v: "Search, sort and scope moved into the popup. The panel never scrolls and never grows." }
+        ],
+        outs: [{ k: "Loading", v: "Five skeleton rows at the row height; count “—”." }, { k: "Populated", v: "As drawn." }, { k: "Empty", v: "“No tasks yet. Tasks about this committee will be listed here.” with New task when allowed." }, { k: "Denied", v: "Without View all tasks: the own-tasks variant. Without access to the record: the panel isn't reached." }, { k: "Error", v: "“Couldn't load this committee's tasks. Retry” in the body; the rest of the record stands." }, { k: "Partial", v: "Doesn't apply: one request. Counts and rows come together." }] },
+      { id: "s2", n: "2", title: "The popup · All tasks", sub: "A new “List” dialog size: 1040 × 760 (or the window less 96). Header and toolbar fixed; only the list scrolls.", items: [popAll, popAr, popOverdue, popNone, popDeep, popPhone, popPhoneAr],
+        notes: [
+          { k: "A List size, not a form.", v: "1040 wide by 760 tall, or the window less 96 px each way when smaller. The 420 body cap is for form dialogs, where every field must be seen at once; a list is meant to scroll, so here only the list area scrolls and the header, toolbar, chip row and footer stay put." },
+          { k: "Toolbar.", v: "Search (title and assignee); Status (Unassigned, Assigned, In progress, On hold, Rejected, Completed, Cancelled); “Overdue only” as its own toggle because overdue is a flag; assignee or pool; Required or Optional; due (This week, Later, No due date); “Assigned to me”; sort by due date (default, open first), created, last updated, status or title, either way." },
+          { k: "Filter popups are safe.", v: "The toolbar doesn't scroll, so its selects are the shared overlay-select. Row menus inside the scrolling list use the CDK reposition strategy, never a raw PrimeNG popup." },
+          { k: "Active filters are chips.", v: "Each with ✕, plus Clear all. The result count sits at the end of the chip row and is a polite live region: “3 tasks match”." },
+          { k: "Same actions as the panel.", v: "The button column and the ⋯ menu follow the same per-viewer rule as the panel (section 4). Row 2 shows the decider's Review request with its menu open." },
+          { k: "Acting in place.", v: "Reassign, change due date, add evidence, cancel or reopen from ⋯ updates the row where it is; the panel behind refreshes when the popup closes." },
+          { k: "Narrower than 1032 px.", v: "When the dialog is narrower than its columns need (the window less 96 is under 1032), the list and its sticky header scroll sideways together. Task and Assignee keep at least 200 and 140 px, so tags never run into Status; nothing is hidden. Below 760 px the phone sheet is used instead." },
+          { k: "200 tasks stay fast.", v: "The first 50 load with the toolbar's filters applied on the server, then “Load more” adds 50. Chosen over virtual scrolling because every row is the same height already, focus and screen readers keep a real list, and highlighted deep links can load up to their page." },
+          { k: "Keyboard.", v: "Focus moves to the search field; Tab reaches filters, sort, rows and ⋯; Escape closes; focus returns to See all. A deep link focuses the highlighted row." },
+          { k: "Phone.", v: "A full-screen sheet: search, a Filters button with the active count (opening a filter sheet), the sort as a chip, and two-line rows with due on the end." }
+        ],
+        outs: [{ k: "Loading", v: "Toolbar ready at once; 10 skeleton rows; live region “Loading tasks”." }, { k: "Populated", v: "As drawn." }, { k: "Empty", v: "No results for a search or filters (drawn), with Clear. A record with no tasks never shows See all." }, { k: "Denied", v: "Without View all tasks the popup lists only the viewer's own tasks, titled “Your tasks on this committee”." }, { k: "Error", v: "List area: “Couldn't load tasks. Retry”; toolbar stays usable." }, { k: "Partial", v: "Load more fails: the loaded rows stay; the footer reads “Couldn't load more · Retry”." }] },
+      { id: "s4", n: "4", title: "Row actions, by who is looking", sub: "One next-step button, everything else in the worded ⋯ menu. The menu is the CDK overlay with the reposition strategy, so the panel's edge can't cut it off.", items: menus,
+        notes: [
+          { k: "Assignee.", v: "Assigned: Start. In progress: Complete, disabled with “Add evidence first” when evidence is required and none exists. On hold: Resume. Menu: Add evidence, View evidence (n), Request more time, Request a hold, Reject (hand back with a reason), Open task. A request waiting adds its line to the row and Withdraw request to the menu. A pool task the viewer took adds Release." },
+          { k: "Pool member, not taken.", v: "Pick up; the menu has Open task only." },
+          { k: "Creator or Manage tasks.", v: "Reassign, Edit (the app's edit dialog), Cancel (not on stage or workflow tasks), Reopen (completed, creator only), View evidence, Open task. When the creator is also the assignee, the assignee items come first, a divider, then these." },
+          { k: "Decider of a waiting request.", v: "Review request opens the app's review dialog." },
+          { k: "Reader.", v: "View evidence and Open task only; no button." },
+          { k: "Never colour alone.", v: "The disabled Complete is greyed and says why in its tooltip and accessible description; menu items are words, the danger item (Cancel) is also worded." }
+        ],
+        outs: [{ k: "Loading", v: "The button and ⋯ appear with the row; never before the viewer's role is known." }, { k: "Populated", v: "As drawn." }, { k: "Empty", v: "A menu always has Open task." }, { k: "Denied", v: "Actions the viewer can't take are absent, not disabled, except Complete waiting for evidence." }, { k: "Error", v: "A failed action leaves the row as it was with a message under it and Try again." }, { k: "Partial", v: "Doesn't apply." }] },
+      { id: "s3", n: "3", title: "One pattern everywhere", sub: "The same component on a meeting and on a Standards requirement.", items: [
+          R("Meeting · Action items · Infection Prevention & Control, 24 Sep 2026", "ltr", 400, [meetEn], "“From item n” joins the second line so the row height stays fixed. 3 items: no footer. With more than 5, See all opens “All action items · …”."),
+          R("Meeting · Arabic", "rtl", 400, [meetAr]),
+          R("Standards · MMU.3 ME 2 · its tasks", "ltr", 400, [stdEn], "The requirement's open tasks become the same panel: 2 tasks, no footer. The header action is Request evidence (a pre-filled New task)."),
+          Object.assign(popMembers, { note: "Members and Sub-committees use the same cap (question 6). Their See all opens this plain list: 720 × 560, search only, no filters, sort by seat, name or since. Sub-committees is the same with name, status and members." })
+        ],
+        notes: [{ k: "One shared component.", v: "Inputs: the record, its title for the popup, the header action (New task, Request evidence), whether the viewer may see all tasks, and an optional source line (From item n). Every record page passes these and nothing else." }, { k: "Meetings say action items.", v: "Panel title “Action items”, popup “All action items · Infection Prevention & Control, 24 Sep 2026”." }],
+        outs: [{ k: "All six", v: "As for the panel and popup above." }] }
+    ];
+
+    const measures = [
+      ["Panel header", "42", "46"], ["Panel row", "52", "58"], ["Panel footer", "34", "38"], ["Panel body · 5 rows + footer (fixed)", "294", "328"], ["Panel total", "336", "374"],
+      ["Popup · List size", "1040 × 760", "1040 × 760"], ["Popup header", "64", "68"], ["Popup toolbar", "52", "56"], ["Popup chip row", "36", "40"], ["Popup column header", "30", "32"], ["Popup footer", "44", "48"],
+      ["Popup list area at 760", "534 · 10 rows", "516 · 8 rows"], ["Phone sheet", "390 × full", "390 × full"], ["Phone row", "60", "64"]
+    ].map(m => ({ d: m[0], en: m[1], ar: m[2] }));
+
+    return {
+      decisions: [
+        { t: "1 · Five rows, never more", b: "The panel holds at most five rows, never scrolls and never grows, so the panels beneath stay where they are." },
+        { t: "2 · What needs action first", b: "Overdue at the top, then soonest due; recently closed only fill gaps. The five rows are the five most likely to need someone." },
+        { t: "3 · The count is the truth", b: "The header shows every task the viewer can see (16), and the footer says “Showing 5 of 16 · See all”." },
+        { t: "4 · The full list is a popup", b: "A new List dialog size, 1040 × 760, with search, filters, sort and chips fixed above a scrolling list." },
+        { t: "5 · Fixed height, equal panels", b: "5 rows + footer is a fixed body (294 EN, 328 AR), kept even when fewer rows show." },
+        { t: "6 · Same row, same menu", b: "Panel and popup rows share the anatomy and the ⋯ actions; acting in the popup updates the row in place." },
+        { t: "7 · Deep links land on the task", b: "In the five: highlighted in the panel. Outside it: the popup opens scrolled to it, highlighted." },
+        { t: "8 · One component", b: "Committee tasks, meeting action items and a requirement's tasks are the same panel and popup." }
+      ],
+      sections: [sections[0], sections[1], sections[3], sections[2]], measures,
+      changes: [
+        { s: "Record tasks panel · round 3", w: "Due date on the panel row's second line, Arabic stage label, caption wording." },
+        { s: "Record tasks panel · round 2", w: "Open task to the task page, per-viewer next-step button and menu matching the built actions, Members and Sub-committees question." },
+        { s: "Committee record · Members panel", w: "Capped at 5 rows with “Showing 5 of 9 · See all”, opening a plain list popup with search (question 6)." },
+        { s: "Committee record · Sub-committees panel", w: "Capped at 5 rows with “Showing 5 of 6 · See all”, opening the same plain list popup (question 6)." },
+        { s: "Compact List Panel · tasks variant", w: "Body no longer scrolls ~6 rows; capped at 5 fixed-height rows with a “Showing 5 of N · See all” footer opening the popup instead of a full page." },
+        { s: "Task Screens · §3 record's tasks panel", w: "Search, sort and scope move into the popup; the panel header keeps only New task. Ordering is overdue, then soonest due, then recently closed." },
+        { s: "Committee record · Tasks panel", w: "Uses the capped panel; the header count is the total; panels in the row share the fixed body height." },
+        { s: "Meeting page · Action items", w: "Same capped panel; “From item n” moves onto the second line so every row is one height. See all opens “All action items”." },
+        { s: "Standards requirement · open tasks", w: "Becomes the same panel (header action Request evidence); closed tasks fill gaps when fewer than 5 are open." }
+      ],
+      questions: [
+        { n: "Q1", q: "Rows in the panel", opts: ["5 (drawn default): keeps panels in a row short and equal.", "Up to 10: fewer clicks to See all, but the panel is twice as tall and pushes the panels below down again."] },
+        { n: "Q2", q: "“Open as a page” from the popup", opts: ["The popup is the only full view (drawn default): one place to maintain.", "Also offer the All tasks page filtered to this record, with a shareable address: useful for sending a list, costs a second view to keep in step."] },
+        { n: "Q3", q: "Does the popup remember the viewer's filters and sort?", opts: ["No: it opens on the default each time (drawn).", "Yes, per user and record type: fewer clicks, but a remembered filter can hide tasks people expect to see."] },
+        { n: "Q4", q: "Should the panel put the viewer's own tasks first when they hold View all tasks?", opts: ["No: one order for everyone, what needs action first (drawn).", "Yes: easier for assignees, but two people see different five on the same record."] },
+        { n: "Q6", q: "Cap Members and Sub-committees at 5 rows with See all too?", opts: ["Yes (drawn): See all opens a plain list popup with search, no filters. Panels in a row stay equal.", "No: they keep the accepted scrolling body, and only Tasks is capped."] },
+        { n: "Q5", q: "On hold tasks in the panel", opts: ["After open tasks, before closed ones (drawn): they can't be overdue but aren't finished.", "Treated as closed: only shown to fill gaps."] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

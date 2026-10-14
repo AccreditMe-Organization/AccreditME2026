@@ -3726,6 +3726,29 @@ SYSTEM-REFERENCE.md §17.11 (and §3.9, §10.7, §10.19). Plan and Ahmad's answe
 - **No migration.** The price row is seeded AFTER the deploy; the live proof
   follows it.
 
+## Key Architecture Decisions (ACC-228)
+
+The task page, `/tasks/:id`. Full mechanism: SYSTEM-REFERENCE.md §3.12. Plan and
+Ahmad's answers (14 Oct, Q1–Q13): `backend/Plans/step-228-record-tasks-panel.md`.
+Briefly:
+
+- **WHO MAY OPEN A TASK IS THE UNION OF WHAT THE APP ALREADY SHOWS THEM (Q4):**
+  anyone ever on it, whoever may manage it, a member of its pool while it
+  waits, whoever may decide its open request, or `tasks:view` AND the record.
+  Everyone else gets the identical 404. The routes carry no `@Permissions`, so
+  an assignee without `tasks:view` opens their own task. One place:
+  `TaskPageService.admit()`.
+- **WHAT A VIEWER MAY DO IS THE SERVER'S `actions`**, from `taskActionsFor()`:
+  each flag restates its endpoint's own refusal. Screens render the flags; they
+  do not re-derive the rules. ACC-229's record panel reuses them per row.
+- **A record's name is shown only to a viewer who may open the record**; the
+  type alone otherwise. The breadcrumb's parent follows the same rule.
+- **Every task title links to the page** (`am-task-link`), and the bell opens it
+  for every task notification.
+- **The evidence rule is broader than the task read**, and stays so until
+  ACC-231 (High) fixes it in the single file entitlement with the same 404.
+- **No migration.**
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

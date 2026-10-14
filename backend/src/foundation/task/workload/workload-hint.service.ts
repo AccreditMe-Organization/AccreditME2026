@@ -90,8 +90,10 @@ export class WorkloadHintService {
             chosen: { label: labelled.chosen.label, workload: chosen.workload },
             others: labelled.others.map((o) => ({ label: o.label, workload: o.item.workload })),
           }),
-          // Ids and counts only: never a name.
-          description: `workload hint · ${record.sourceType} ${record.sourceId} · ${dto.committeeId ? 'COMMITTEE_ROLE' : 'POSITION'} · ${others.length} eligible · chosen ${chosen.holder.id}`,
+          // The record's id and counts only: never a name, and never a
+          // person's id (ACC-228, Q3) — the chosen person is described by
+          // their own counts, which the model already sees under a label.
+          description: `workload hint · ${record.sourceType} ${record.sourceId} · ${dto.committeeId ? 'COMMITTEE_ROLE' : 'POSITION'} · ${others.length} eligible · chosen ${chosen.workload.open} open, ${chosen.workload.overdue} overdue`,
           accept: (content, truncated) => {
             if (truncated) return false;
             const parsed = parseHintAnswer(content, otherLabels);

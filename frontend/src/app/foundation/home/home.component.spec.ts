@@ -144,6 +144,13 @@ describe('HomeComponent', () => {
     expect(text()).not.toContain('Task 3');
   });
 
+  // ACC-228 — each task's title opens its own page.
+  it('links each open task title to the task page', () => {
+    setup({ tasks: [task('1', 'PENDING'), task('4', 'IN_PROGRESS')] });
+    const hrefs = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('am-task-link a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/tasks/1', '/tasks/4']);
+  });
+
   // ACC-163 (Q8) — overdue is a flag beside the status, not a status. With the
   // no-op loader the text is the KEY, so these assert which label was chosen.
   it('shows an Overdue badge beside the status of an open task past its due time', () => {

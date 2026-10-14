@@ -58,6 +58,8 @@ import { IMyTaskListItem, ITaskListItem } from './interfaces/task-list-item.inte
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence, ITaskEvidenceList, ITaskEvidenceView } from './interfaces/task-evidence.interface';
 import { TaskEvidenceService } from './task-evidence.service';
+import { TaskPageService } from './task-page.service';
+import { ITaskHistoryEvent, ITaskPageView } from './interfaces/task-page.interface';
 import { SingleFileUploadInterceptor } from '../file-storage/single-file-upload.interceptor';
 import { IFileDownload, IUploadedFile } from '../file-storage/interfaces/stored-file.interface';
 import { DraftTaskDto } from './dto/draft-task.dto';
@@ -77,6 +79,7 @@ export class TaskController {
     private readonly drafts: TaskDraftService,
     private readonly workload: TaskWorkloadService,
     private readonly workloadHint: WorkloadHintService,
+    private readonly page: TaskPageService,
   ) {}
 
   // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
@@ -335,6 +338,30 @@ export class TaskController {
     @CurrentUser() actorId: string,
   ): Promise<ITask> {
     return this.taskService.getByIdForViewer(id, tenantId, actorPermissions, actorId);
+  }
+
+  // ── ACC-228 — the task page (/tasks/:id) ───────────────────────────────
+  // No @Permissions, deliberately: an assignee without tasks:view must open
+  // their own task. Who may open it is Q4's union, decided by TaskPageService
+  // from the row; everyone else gets the identical 404.
+  @Get(':id/view')
+  getPage(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<ITaskPageView> {
+    return this.page.view(id, tenantId, viewer(userId, actorPermissions));
+  }
+
+  @Get(':id/history')
+  getHistory(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<ITaskHistoryEvent[]> {
+    return this.page.history(id, tenantId, viewer(userId, actorPermissions));
   }
 
   // ── ACC-174 — the creator's own actions ─────────────────────────────────

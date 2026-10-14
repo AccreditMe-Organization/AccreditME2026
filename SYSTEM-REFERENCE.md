@@ -3465,6 +3465,83 @@ it belongs to a workflow step, Reopen on a completed one — on My tasks and the
 record's task list, which also shows a cancelled task's reason and who
 cancelled it. The record's Reassign now reads `canManage` too.
 
+### 3.12 The task page, `/tasks/:id` (ACC-228)
+
+A task's own page (Task Screens §1). Plan, decisions and measurements:
+`backend/Plans/step-228-record-tasks-panel.md` (§1, and §4 for Q1–Q13).
+
+**Who may open a task — `TaskPageService.admit()`, Q4's union, and nothing
+more.** Every grant is something the app already shows that person elsewhere:
+
+| | Grant | Where they already see it |
+|---|---|---|
+| (a) | any `TaskAssignee` row for them — now or before | My tasks; the evidence rule |
+| (b) | `TaskService.mayManage()` | the creator's actions (ACC-174) |
+| (c) | a member of its pool, while it waits (no active assignee, a `PICKABLE_STATUSES` status) | Available |
+| (d) | a decider of its open request: `tasks:reassign` or `canActForCreator()` | Waiting for your decision |
+| (e) | `tasks:view` **and** the record (`ObjectVisibilityService.assertCanView`) | `GET /tasks/:id` |
+
+Anyone else gets the identical 404 — the same status and body as an id that
+does not exist — and a `warn` log line (ACC-101 clause b). The task is read
+first (scoped by `id` and `organizationId`), because none of this is knowable
+without it.
+
+**Routes — no `@Permissions`, deliberately.** An assignee without `tasks:view`
+(every `BASE_USER`) must open their own task. `GET /tasks/:id` keeps
+`tasks:view` and is unchanged; the frontend no longer has a caller for it.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /tasks/:id/view` | `ITaskPageView`: the task as a list row (`ITaskListItem`, so every task dialog takes it), the record (its name ONLY when the viewer may open it — `canOpen`), the stage that made it, active assignees with position and unit and the ACC-101 delegation qualifier, the pool's member count while it waits, the creator, who completed / rejected / cancelled / reopened it, and `actions` |
+| `GET /tasks/:id/history` | `ITaskHistoryEvent[]`, oldest first: the task's audit rows (`objectType 'Task'`), its requests' (`'TaskRequest'`) and its evidence's (`'TaskEvidence'`), three reads on the `(objectType, objectId)` index. Each row becomes a `kind` (`historyKind()`); an unknown event is `changed`. A `reason` only where a person typed one — never the engine's codes (`STAGE_EXIT`, …), and never the stored before/after |
+
+**`actions` — `taskActionsFor()` (`task-actions.ts`), a pure function.** Each
+flag restates the refusal of the endpoint it stands for (the comments name
+which), from facts gathered once: active assignee and whether by a pick, pool
+membership, the open request, `mayManage`, "may decide" (`tasks:reassign` or
+`canActForCreator`), stage-entry task and mandatory, an older workflow task,
+and for a Completed workflow task whether its record is still in that step.
+`primary` is the one next step: Review request, then Pick up, then Start /
+Complete (In progress) / Resume. Complete on an Assigned task is offered too
+(Q6) — the app allows it. ACC-229's record panel will read the same flags per
+row.
+
+**Frontend.** `TaskPageComponent` (`foundation/tasks/components/task-page/`):
+header (kicker, H1 28/34 English, 29/40 Arabic, status, overdue flag,
+priority, due), the action group (the primary button, up to two more, the rest
+in a worded ⋯ menu on `@angular/cdk/menu` — `CdkMenuTrigger`'s scroll strategy
+is reposition, read in `menu.mjs`), four relations as a `dl`, then Description
+and Evidence, and the Open request, how it ended, and History (its own request,
+on `RecordPanelComponent`'s outcome). A 404 renders "This task can't be
+opened" — identical for a missing task and a refused one. Every existing task
+dialog is reused unchanged.
+
+- **Breadcrumb (Q11):** `BreadcrumbParentService` — the page names its record
+  (only when `canOpen`) and the breadcrumb resolves that record's own section,
+  so the trail is "Committees / Infection Prevention & Control". Keyed by the
+  page's path, so it cannot leak onto another page. Otherwise the nav model's
+  own: "My work / My tasks".
+- **Rail:** `NavItem.alsoActiveFor` — My tasks lights on `/tasks/:id`, never on
+  `/tasks/all` or `/tasks/unassigned`. **The rail now decides "current" itself
+  (`isActive()`):** `RouterLinkActive` removed `aria-current` in a microtask
+  after every check unless its own `ariaCurrentWhenActive` was set, so no rail
+  item ever kept `aria-current="page"`. Found by this ticket's spec, fixed in
+  passing.
+- **Every task title links to the page** through `am-task-link`: My tasks (all
+  three lists), Unassigned, `/tasks/all`, the committee's Tasks panel, Home's My
+  tasks panel. The bell opens `/tasks/:id` for a notification with
+  `objectType 'Task'` — which every task notification carries, requests and
+  decisions included. A briefing's task item and (new briefings') decision item
+  link to the page; a decision item saved before ACC-228 carries a request id,
+  and still lands on My tasks' `?request=` row.
+- **Evidence:** the page hosts `TaskEvidenceListComponent` unchanged, so every
+  file opens in the in-app viewer. A viewer the page admits but the EVIDENCE
+  rule refuses (a pool member or a decider who cannot see the record) is told
+  "Evidence is shown to the people on this task." — not an error. That rule is
+  broader than the task read elsewhere: ACC-231 (High).
+- **AI log:** the workload hint's description no longer carries the chosen
+  person's user id — "chosen 12 open, 0 overdue" (Q3).
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +

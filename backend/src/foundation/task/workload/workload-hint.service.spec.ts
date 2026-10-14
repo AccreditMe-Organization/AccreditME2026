@@ -145,12 +145,13 @@ describe('WorkloadHintService.suggest (ACC-199)', () => {
     expect(prompt.match(/^P\d+ — /gm)).toHaveLength(2);
   });
 
-  it("the log's description is ids and counts only: no name", async () => {
+  it("the log's description is the record's id and counts only: no name, no person's id (ACC-228 Q3)", async () => {
     const { service, ai } = setup();
     await service.suggest(VIEWER, ORG, DTO);
     const { description } = requestOf(ai);
-    expect(description).toBe('workload hint · COMMITTEE cmt-1 · POSITION · 2 eligible · chosen nora');
+    expect(description).toBe('workload hint · COMMITTEE cmt-1 · POSITION · 2 eligible · chosen 12 open, 0 overdue');
     for (const name of Object.values(NAMES)) expect(description).not.toContain(name);
+    for (const userId of Object.keys(NAMES)) expect(description).not.toContain(userId);
   });
 
   describe('refused before the model is called — nothing is charged', () => {

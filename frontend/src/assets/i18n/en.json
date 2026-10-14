@@ -1020,7 +1020,8 @@
       "note": "Note",
       "loadError": "The evidence couldn't be loaded.",
       "removeMessageFile": "“{{name}}” will no longer count as evidence for this task. Your administrator can restore it from the recycle bin for 30 days.",
-      "viewFileNamed": "View “{{name}}”"
+      "viewFileNamed": "View “{{name}}”",
+      "notShown": "Evidence is shown to the people on this task."
     },
     "draft": {
       "trigger": "Draft with AI",
@@ -1701,6 +1702,12 @@
         "one": "· {{count}} credit",
         "other": "· {{count}} credits"
       }
+    },
+    "taskPage": {
+      "canPickUp": {
+        "one": "{{count}} can pick it up",
+        "other": "{{count}} can pick it up"
+      }
     }
   },
   "datePicker": {
@@ -2032,6 +2039,108 @@
       "toBeforeFrom": "The end date is before the start date.",
       "clearAll": "Clear all",
       "clearDate": "Clear {{label}}"
+    }
+  },
+  "taskPage": {
+    "kicker": "Task",
+    "loading": "Loading task",
+    "about": "About",
+    "with": "With",
+    "createdBy": "Created by",
+    "evidence": "Evidence",
+    "description": "Description",
+    "noDescription": "No description.",
+    "openRequest": "Open request",
+    "history": "History",
+    "historyEmpty": "Nothing has been recorded yet.",
+    "priority": "{{priority}} priority",
+    "due": "Due",
+    "noDue": "No due date",
+    "onHoldUntil": "On hold until {{date}}",
+    "waitingFor": "Waiting for {{pool}}",
+    "pickedUpOn": "picked up from the pool {{date}}",
+    "byHand": "{{date}}, by hand",
+    "byWorkflow": "by the workflow",
+    "byWorkflowStage": "by the workflow, when the record entered {{stage}}",
+    "evidenceRequired": "Required",
+    "evidenceNotRequired": "Not required",
+    "evidenceNone": "none yet",
+    "completeAvailable": "Complete is available",
+    "rejected": "Rejected",
+    "rejectedBy": "Rejected by {{name}} · {{when}}",
+    "cancelled": "Cancelled",
+    "cancelledBy": "Cancelled by {{name}} · {{when}}",
+    "cancelledByWorkflow": "Cancelled when the record moved on · {{when}}",
+    "completed": "Completed",
+    "completedBy": "Completed by {{name}} · {{when}}",
+    "reopened": "Reopened",
+    "reopenedBy": "Reopened by {{name}} · {{when}}",
+    "status": {
+      "waiting": "Waiting to be picked up"
+    },
+    "recordType": {
+      "COMMITTEE": "Committee",
+      "MEETING": "Meeting",
+      "OTHER": "Record"
+    },
+    "request": {
+      "extension": "More time, to {{date}}",
+      "hold": "Hold until {{date}}",
+      "ifApprovedExtension": "If approved, the due date moves to {{date}}.",
+      "ifApprovedHold": "If approved, the start and due dates move to {{date}}. The due date can't be changed while on hold.",
+      "askedBy": "Asked by {{name}} · {{when}}"
+    },
+    "action": {
+      "reviewRequest": "Review request",
+      "resume": "Resume",
+      "addEvidence": "Add evidence",
+      "edit": "Edit",
+      "reassign": "Reassign…",
+      "requestMoreTime": "Request more time…",
+      "requestHold": "Request a hold…",
+      "withdrawRequest": "Withdraw request",
+      "reject": "Reject…",
+      "release": "Release…",
+      "cancel": "Cancel task…",
+      "reopen": "Reopen…",
+      "moreFor": "More actions for “{{title}}”"
+    },
+    "notFound": {
+      "title": "This task can't be opened",
+      "body": "It may not exist, or it isn't yours to see. You can open a task you are on or created, one waiting in a pool you are in, one whose request you decide, or any task on a record whose tasks you can see.",
+      "back": "Go to My tasks"
+    },
+    "error": {
+      "title": "Couldn't load this task"
+    },
+    "event": {
+      "created": "Created",
+      "started": "Started",
+      "completed": "Completed",
+      "rejected": "Rejected",
+      "reassigned": "Reassigned",
+      "picked": "Picked up from the pool",
+      "released": "Released back to the pool",
+      "edited": "Edited",
+      "cancelled": "Cancelled",
+      "cancelled_by_workflow": "Cancelled when the record moved on",
+      "reopened": "Reopened",
+      "escalated": "Escalated",
+      "escalation_skipped": "Not escalated: there was nobody to escalate to",
+      "returned_to_pool": "Returned to the pool when the person holding it left",
+      "handed_on": "Left with the others on it when one person left",
+      "stage_recovery": "Assigned once someone could take it",
+      "request_made_extension": "More time requested",
+      "request_made_hold": "Hold requested",
+      "request_withdrawn": "Request withdrawn",
+      "request_approved": "Request approved",
+      "request_declined": "Request declined",
+      "request_cancelled": "Request cancelled",
+      "hold_started": "Put on hold",
+      "resumed": "Resumed",
+      "evidence_added": "Evidence added",
+      "evidence_removed": "Evidence removed",
+      "changed": "Changed"
     }
   }
 }

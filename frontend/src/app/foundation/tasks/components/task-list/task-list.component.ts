@@ -17,6 +17,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 // <app-task-form> directly was already immune to ACC-29's pre-fill bug.
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { TaskLinkComponent } from '../task-link/task-link.component';
 
 // The ROUTED, full-page task list, filtered by sourceType + sourceId.
 //
@@ -40,7 +41,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
   selector: 'app-task-list',
   standalone: true,
   imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskFormComponent, TaskFormFooterComponent,
-    TaskFormStepsComponent, EditDialogComponent],
+    TaskFormStepsComponent, EditDialogComponent, TaskLinkComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'task.allTasks' | translate">
@@ -68,7 +69,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
         <ng-template pTemplate="body" let-task>
           <tr>
-            <td>{{ task.title }}</td>
+            <td><am-task-link [taskId]="task.id" [title]="task.title" /></td>
             <td>
               <!-- ACC-58, absorbed into ACC-76: the first surface in the
                    product that answers "who is this assigned to". -->

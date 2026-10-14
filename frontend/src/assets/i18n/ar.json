@@ -1020,7 +1020,8 @@
       "note": "ملاحظة",
       "loadError": "تعذّر تحميل الأدلة.",
       "removeMessageFile": "لن يُحتسب «{{name}}» دليلًا على هذه المهمة بعد الآن. يستطيع مسؤول النظام استعادته من سلة المحذوفات خلال 30 يومًا.",
-      "viewFileNamed": "عرض «{{name}}»"
+      "viewFileNamed": "عرض «{{name}}»",
+      "notShown": "تُعرض الأدلة على المُسندة إليهم هذه المهمة."
     },
     "draft": {
       "trigger": "صياغة بالذكاء الاصطناعي",
@@ -1901,6 +1902,16 @@
         "many": "· {{count}} رصيدًا",
         "other": "· {{count}} رصيد"
       }
+    },
+    "taskPage": {
+      "canPickUp": {
+        "zero": "لا أحد يمكنه استلامها",
+        "one": "شخص واحد يمكنه استلامها",
+        "two": "شخصان يمكنهما استلامها",
+        "few": "{{count}} أشخاص يمكنهم استلامها",
+        "many": "{{count}} شخصًا يمكنهم استلامها",
+        "other": "{{count}} شخص يمكنهم استلامها"
+      }
     }
   },
   "datePicker": {
@@ -2232,6 +2243,108 @@
       "toBeforeFrom": "تاريخ الانتهاء قبل تاريخ البدء.",
       "clearAll": "مسح الكل",
       "clearDate": "مسح {{label}}"
+    }
+  },
+  "taskPage": {
+    "kicker": "مهمة",
+    "loading": "جارٍ تحميل المهمة",
+    "about": "بخصوص",
+    "with": "لدى",
+    "createdBy": "أنشأها",
+    "evidence": "الدليل",
+    "description": "الوصف",
+    "noDescription": "لا يوجد وصف.",
+    "openRequest": "طلب مفتوح",
+    "history": "السجل",
+    "historyEmpty": "لم يُسجَّل شيء بعد.",
+    "priority": "أولوية {{priority}}",
+    "due": "تستحق",
+    "noDue": "بلا تاريخ استحقاق",
+    "onHoldUntil": "معلّقة حتى {{date}}",
+    "waitingFor": "بانتظار {{pool}}",
+    "pickedUpOn": "استُلمت من المجموعة {{date}}",
+    "byHand": "{{date}}، يدويًا",
+    "byWorkflow": "بواسطة سير العمل",
+    "byWorkflowStage": "بواسطة سير العمل، عند دخول السجل مرحلة {{stage}}",
+    "evidenceRequired": "مطلوب",
+    "evidenceNotRequired": "غير مطلوب",
+    "evidenceNone": "لم يُضف شيء بعد",
+    "completeAvailable": "الإنجاز متاح",
+    "rejected": "مرفوضة",
+    "rejectedBy": "رفضها {{name}} · {{when}}",
+    "cancelled": "ملغاة",
+    "cancelledBy": "ألغاها {{name}} · {{when}}",
+    "cancelledByWorkflow": "أُلغيت عند انتقال السجل · {{when}}",
+    "completed": "مكتملة",
+    "completedBy": "أنجزها {{name}} · {{when}}",
+    "reopened": "أُعيد فتحها",
+    "reopenedBy": "أعاد فتحها {{name}} · {{when}}",
+    "status": {
+      "waiting": "بانتظار الاستلام"
+    },
+    "recordType": {
+      "COMMITTEE": "لجنة",
+      "MEETING": "اجتماع",
+      "OTHER": "سجل"
+    },
+    "request": {
+      "extension": "تمديد حتى {{date}}",
+      "hold": "تعليق حتى {{date}}",
+      "ifApprovedExtension": "عند الموافقة، يُنقل تاريخ الاستحقاق إلى {{date}}.",
+      "ifApprovedHold": "عند الموافقة، يُنقل تاريخا البدء والاستحقاق إلى {{date}}. لا يمكن تغيير تاريخ الاستحقاق أثناء التعليق.",
+      "askedBy": "طلبه {{name}} · {{when}}"
+    },
+    "action": {
+      "reviewRequest": "مراجعة الطلب",
+      "resume": "استئناف",
+      "addEvidence": "إضافة دليل",
+      "edit": "تعديل",
+      "reassign": "إعادة تعيين…",
+      "requestMoreTime": "طلب تمديد…",
+      "requestHold": "طلب تعليق…",
+      "withdrawRequest": "سحب الطلب",
+      "reject": "رفض…",
+      "release": "إرجاع…",
+      "cancel": "إلغاء المهمة…",
+      "reopen": "إعادة فتح…",
+      "moreFor": "إجراءات أخرى لـ «{{title}}»"
+    },
+    "notFound": {
+      "title": "لا يمكن فتح هذه المهمة",
+      "body": "قد لا تكون موجودة، أو أنها ليست من المهام التي يمكنك رؤيتها. يمكنك فتح مهمة أنت مُسند إليها أو أنشأتها، أو مهمة تنتظر في مجموعة أنت فيها، أو مهمة تبت في طلبها، أو أي مهمة في سجل يمكنك رؤية مهامه.",
+      "back": "الذهاب إلى مهامي"
+    },
+    "error": {
+      "title": "تعذّر تحميل هذه المهمة"
+    },
+    "event": {
+      "created": "أُنشئت",
+      "started": "بدأ العمل عليها",
+      "completed": "أُنجزت",
+      "rejected": "رُفضت",
+      "reassigned": "أُعيد تعيينها",
+      "picked": "استُلمت من المجموعة",
+      "released": "أُرجعت إلى المجموعة",
+      "edited": "عُدّلت",
+      "cancelled": "أُلغيت",
+      "cancelled_by_workflow": "أُلغيت عند انتقال السجل",
+      "reopened": "أُعيد فتحها",
+      "escalated": "صُعّدت",
+      "escalation_skipped": "لم تُصعَّد: لم يكن هناك من تُصعَّد إليه",
+      "returned_to_pool": "أُعيدت إلى المجموعة عند مغادرة من كان يستلمها",
+      "handed_on": "بقيت مع الآخرين عند مغادرة أحدهم",
+      "stage_recovery": "أُسندت عندما أصبح هناك من يستلمها",
+      "request_made_extension": "طُلب وقت إضافي",
+      "request_made_hold": "طُلب تعليق",
+      "request_withdrawn": "سُحب الطلب",
+      "request_approved": "وُوفق على الطلب",
+      "request_declined": "رُفض الطلب",
+      "request_cancelled": "أُلغي الطلب",
+      "hold_started": "عُلّقت",
+      "resumed": "استُؤنفت",
+      "evidence_added": "أُضيف دليل",
+      "evidence_removed": "أُزيل دليل",
+      "changed": "تغيّرت"
     }
   }
 }

@@ -27,6 +27,7 @@ import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskDraftService } from '../ai-task-draft/task-draft.service';
+import { TaskPageService } from './task-page.service';
 
 describe('Task routes — static paths are not swallowed by :id (ACC-167)', () => {
   let app: INestApplication<App>;
@@ -79,6 +80,11 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     availability: jest.fn().mockResolvedValue({ available: false }),
     suggest: jest.fn().mockResolvedValue({}),
   };
+  // ACC-228
+  const page = {
+    view: jest.fn().mockResolvedValue({}),
+    history: jest.fn().mockResolvedValue([]),
+  };
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -92,6 +98,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
         { provide: TaskDraftService, useValue: drafts },
         { provide: TaskWorkloadService, useValue: workload },
         { provide: WorkloadHintService, useValue: workloadHint },
+        { provide: TaskPageService, useValue: page },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -156,6 +163,20 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     expect(draft.status).toBe(403);
     expect(drafts.availability).not.toHaveBeenCalled();
     expect(drafts.draft).not.toHaveBeenCalled();
+    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
+  });
+
+  // ACC-228 — the task page carries NO route permission: an assignee without
+  // tasks:view must reach it (this caller holds nothing at all). The service
+  // decides Q4's union and answers the identical 404 to everyone else.
+  it.each([
+    ['/tasks/task-1/view', () => page.view],
+    ['/tasks/task-1/history', () => page.history],
+  ])('GET %s reaches the task page with no route permission', async (path, delegate) => {
+    const res = await request(app.getHttpServer()).get(path);
+
+    expect(res.status).toBe(200);
+    expect(delegate()).toHaveBeenCalledWith('task-1', 'org-a', { id: 'user-1', permissions: [] });
     expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
   });
 

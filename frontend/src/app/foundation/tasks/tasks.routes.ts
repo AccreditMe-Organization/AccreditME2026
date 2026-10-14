@@ -40,4 +40,16 @@ export const TASKS_ROUTES: Routes = [
         (m) => m.UnassignedTasksComponent,
       ),
   },
+  // ACC-228 — a task's own page. LAST, after every literal path, so 'all' and
+  // 'unassigned' are never read as task ids. Its own canActivate (ACC-79's
+  // rule for a child route); no ROUTE_PERMISSIONS entry, deliberately: who may
+  // open a task is a relationship the server decides from the task (Q4), and an
+  // assignee without tasks:view must reach their own. Everyone else gets the
+  // page's not-found state.
+  {
+    path: ':id',
+    canActivate: [permissionGuard],
+    loadComponent: () =>
+      import('./components/task-page/task-page.component').then((m) => m.TaskPageComponent),
+  },
 ];

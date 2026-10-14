@@ -5,6 +5,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { catchError, filter, map, of, startWith, switchMap } from 'rxjs';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { LANDING_ROUTE } from '../../core/navigation/landing-route';
+import { BreadcrumbParentService } from '../../core/navigation/breadcrumb-parent.service';
 import {
   normalizePath,
   resolveNavLocation,
@@ -84,6 +85,8 @@ const PLATFORM_LANDING = '/platform/tenants';
 export class BreadcrumbComponent {
   private readonly router = inject(Router);
   private readonly access = inject(NavigationAccessService);
+  // ACC-228 — a page whose parent is a record (the task page).
+  private readonly parents = inject(BreadcrumbParentService);
 
   private readonly currentUrl = signal('');
   private lastGood: BreadcrumbItem[] = [];
@@ -99,6 +102,7 @@ export class BreadcrumbComponent {
     this.access.tenantName();
     this.access.permissions();
     this.access.modules();
+    this.parents.current();
     try {
       this.lastGood = this.buildBreadcrumb(url);
     } catch (err: unknown) {
@@ -155,7 +159,11 @@ export class BreadcrumbComponent {
 
     if (onLanding) return trail;
 
-    const location = resolveNavLocation(path, this.access);
+    // ACC-228 — the page named its parent record: the trail is that record's
+    // own ancestry (its section, as on the record's page), then the record.
+    const parent = this.parents.current();
+    const recordParent = parent && parent.forPath === path ? parent : null;
+    const location = resolveNavLocation(recordParent ? recordParent.url : path, this.access);
     if (!location) return trail;
 
     // The platform shell has one group, labelled "Platform" — the same word as
@@ -169,6 +177,10 @@ export class BreadcrumbComponent {
         labelKey: location.item.labelKey,
         url: location.item.route,
       });
+    }
+
+    if (recordParent) {
+      trail.push({ text: recordParent.text, url: recordParent.url });
     }
 
     // Two crumbs must not lead to the same page. On the platform shell the
