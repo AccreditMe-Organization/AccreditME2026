@@ -895,6 +895,31 @@
       "nothingToSuggest": "AI couldn't suggest anything from this. Add more detail and try again.",
       "tooMany": "That's a lot of drafts in one minute. Wait a moment, then try again.",
       "settleFirst": "Accept or discard the suggestion first."
+    },
+    "workload": {
+      "suggest": "Suggest someone",
+      "suggesting": "Suggesting…",
+      "tag": "AI",
+      "chosen": "Goes to {{name}}, who has {{open}} {{record}}, {{overdue}}.",
+      "chosenNoOverdue": "Goes to {{name}}, who has {{open}} {{record}}.",
+      "alternative": "{{name}} ({{position}}) has {{open}}{{extra}}.",
+      "alternativeNoPosition": "{{name}} has {{open}}{{extra}}.",
+      "record": {
+        "COMMITTEE": "on this committee",
+        "MEETING": "on this meeting",
+        "other": "on this record"
+      },
+      "assignInstead": "Assign instead",
+      "keep": "Keep",
+      "noSuggestion": "Nobody here is clearly better placed to take it.",
+      "tooMany": "That's a lot of suggestions in one minute. Wait a moment, then try again.",
+      "extra": {
+        "noOverdue": ", none overdue",
+        "noDueSoon": ", nothing due within 2 working days",
+        "neither": ", none overdue or due within 2 working days"
+      },
+      "assignInsteadNamed": "Assign instead: {{name}}",
+      "keepNamed": "Keep: {{name}}"
     }
   },
   "auth": {
@@ -1361,6 +1386,22 @@
       "evidenceTooMany": {
         "one": "One file at a time",
         "other": "Up to {{count}} files at a time"
+      },
+      "workloadRowOpen": {
+        "one": "{{count}} open",
+        "other": "{{count}} open"
+      },
+      "workloadRowOverdue": {
+        "one": "{{count}} overdue",
+        "other": "{{count}} overdue"
+      },
+      "workloadOpenTasks": {
+        "one": "{{count}} open task",
+        "other": "{{count}} open tasks"
+      },
+      "workloadAltOpen": {
+        "one": "{{count}} open",
+        "other": "{{count}} open"
       }
     },
     "user": {

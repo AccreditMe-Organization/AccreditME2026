@@ -20,6 +20,8 @@ import { App } from 'supertest/types';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { TaskController } from './task.controller';
+import { TaskWorkloadService } from './workload/task-workload.service';
+import { WorkloadHintService } from './workload/workload-hint.service';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
@@ -68,6 +70,15 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     availability: jest.fn().mockResolvedValue({ available: true }),
     draft: jest.fn().mockResolvedValue({}),
   };
+  // ACC-199
+  const workload = {
+    listHolders: jest.fn().mockResolvedValue([]),
+    listCommitteeMembers: jest.fn().mockResolvedValue([]),
+  };
+  const workloadHint = {
+    availability: jest.fn().mockResolvedValue({ available: false }),
+    suggest: jest.fn().mockResolvedValue({}),
+  };
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -79,6 +90,8 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
         { provide: TaskEvidenceService, useValue: evidence },
         // ACC-197 — the draft routes need tasks:create; this caller holds nothing.
         { provide: TaskDraftService, useValue: drafts },
+        { provide: TaskWorkloadService, useValue: workload },
+        { provide: WorkloadHintService, useValue: workloadHint },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -117,8 +130,10 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     ['/tasks/assignment/units', () => assignment.listUnits],
     ['/tasks/assignment/positions?orgUnitId=u1', () => assignment.listPositions],
     ['/tasks/assignment/committee-roles?committeeId=c1', () => assignment.listCommitteeRoles],
-    ['/tasks/assignees/committee?committeeId=c1&roleValueId=r1', () => assignment.listCommitteeMembers],
-    ['/tasks/assignees?orgUnitId=u1&positionId=p1', () => assignment.listHolders],
+    ['/tasks/assignees/committee?committeeId=c1&roleValueId=r1', () => workload.listCommitteeMembers],
+    ['/tasks/assignees?orgUnitId=u1&positionId=p1', () => workload.listHolders],
+    // ACC-199 — no @Permissions, like every picker route: the service decides.
+    ['/tasks/assignment/workload-hint/availability', () => workloadHint.availability],
     ['/tasks/my-tasks', () => taskService.getMyTasks],
     // ACC-173
     ['/tasks/requests/awaiting-decision', () => requests.awaitingDecision],
@@ -145,15 +160,26 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
   });
 
   it('forwards the query parameters, so the handler reached is the one that reads them', async () => {
-    await request(app.getHttpServer()).get('/tasks/assignees?orgUnitId=u1&positionId=p1&taskId=t1');
+    await request(app.getHttpServer()).get('/tasks/assignees?orgUnitId=u1&positionId=p1&taskId=t1&sourceType=COMMITTEE&sourceId=c1');
 
-    expect(assignment.listHolders).toHaveBeenCalledWith(
-      { id: 'user-1', permissions: [] },
-      'org-a',
-      'u1',
-      'p1',
-      't1',
-    );
+    expect(workload.listHolders).toHaveBeenCalledWith({ id: 'user-1', permissions: [] }, 'org-a', {
+      orgUnitId: 'u1',
+      positionId: 'p1',
+      taskId: 't1',
+      record: { sourceType: 'COMMITTEE', sourceId: 'c1' },
+    });
+  });
+
+  // ACC-199 — the press reaches its own handler, not ':id'. No route
+  // permission: the service applies the picker's and the record's rules.
+  it('POST /tasks/assignment/workload-hint reaches its own handler with no route permission', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/tasks/assignment/workload-hint')
+      .send({ orgUnitId: 'u1', positionId: 'p1', chosenUserId: 'user-2', sourceType: 'COMMITTEE', sourceId: 'c1' });
+
+    expect(res.status).toBe(200);
+    expect(workloadHint.suggest).toHaveBeenCalledTimes(1);
+    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
   });
 
   it.each([

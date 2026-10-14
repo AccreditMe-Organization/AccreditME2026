@@ -46,7 +46,13 @@ import {
   IAssignableHolder,
   IAssignablePosition,
   IAssignableUnit,
+  IWorkloadHint,
+  IWorkloadHintAvailability,
 } from './interfaces/task-assignment.interface';
+import { WorkloadHintDto } from './dto/workload-hint.dto';
+import { TaskWorkloadService } from './workload/task-workload.service';
+import { WorkloadHintService } from './workload/workload-hint.service';
+import { IRecordRef } from './workload/task-workload';
 import { ITask } from './interfaces/task.interface';
 import { IMyTaskListItem, ITaskListItem } from './interfaces/task-list-item.interface';
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
@@ -69,6 +75,8 @@ export class TaskController {
     private readonly requests: TaskRequestService,
     private readonly evidence: TaskEvidenceService,
     private readonly drafts: TaskDraftService,
+    private readonly workload: TaskWorkloadService,
+    private readonly workloadHint: WorkloadHintService,
   ) {}
 
   // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
@@ -206,13 +214,13 @@ export class TaskController {
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IAssignableHolder[]> {
-    return this.assignment.listCommitteeMembers(
-      viewer(userId, permissions),
-      tenantId,
-      query.committeeId,
-      query.roleValueId,
-      query.taskId,
-    );
+    // ACC-199 — with the record named, each member carries their counts on it.
+    return this.workload.listCommitteeMembers(viewer(userId, permissions), tenantId, {
+      committeeId: query.committeeId,
+      roleValueId: query.roleValueId,
+      taskId: query.taskId,
+      record: recordOf(query),
+    });
   }
 
   @Get('assignees')
@@ -222,13 +230,39 @@ export class TaskController {
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IAssignableHolder[]> {
-    return this.assignment.listHolders(
-      viewer(userId, permissions),
-      tenantId,
-      query.orgUnitId,
-      query.positionId,
-      query.taskId,
-    );
+    // ACC-199 — with the record named, each holder carries their counts on it.
+    return this.workload.listHolders(viewer(userId, permissions), tenantId, {
+      orgUnitId: query.orgUnitId,
+      positionId: query.positionId,
+      taskId: query.taskId,
+      record: recordOf(query),
+    });
+  }
+
+  // ACC-199 — "✦ Suggest someone" in the assignee picker. No @Permissions, like
+  // every picker route: the service applies the record task list's rule
+  // (tasks:view and the record) and the picker's own (tasks:create, or
+  // reassigning this task). Static paths, before ':id'.
+  //
+  // Whether to show the button at all: AI is on and the feature is open to the
+  // organisation. Nothing about the balance.
+  @Get('assignment/workload-hint/availability')
+  getWorkloadHintAvailability(@CurrentTenant() tenantId: string): Promise<IWorkloadHintAvailability> {
+    return this.workloadHint.availability(tenantId);
+  }
+
+  // Nothing is stored; 1 credit through the AI gateway, refunded when nobody
+  // is suggested; twenty a minute per user (Q11).
+  @Post('assignment/workload-hint')
+  @HttpCode(HttpStatus.OK)
+  @perUser(RATE_LIMITS.workloadHint)
+  suggestWorkload(
+    @Body() dto: WorkloadHintDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IWorkloadHint> {
+    return this.workloadHint.suggest(viewer(userId, permissions), tenantId, dto);
   }
 
   // ACC-173 — "Waiting for your decision": pending extension and hold
@@ -628,4 +662,9 @@ export class TaskController {
 
 function viewer(id: string, permissions: string[]): AssignmentViewer {
   return { id, permissions };
+}
+
+// ACC-199 — the record a people query names, when it names one whole.
+function recordOf(query: { sourceType?: IRecordRef['sourceType']; sourceId?: string }): IRecordRef | null {
+  return query.sourceType && query.sourceId ? { sourceType: query.sourceType, sourceId: query.sourceId } : null;
 }

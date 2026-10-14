@@ -3181,6 +3181,14 @@ a committee task) states the server's outcome before Save. My tasks gains
   - Without the flag the picker still hides empty roles: a task to an empty
     pool reaches nobody.
 
+**Workload on the record (ACC-199).** The people lists (`GET
+/tasks/assignees`, `/tasks/assignees/committee`) take an optional `sourceType` +
+`sourceId`. With them, each person carries `workload: { openCount,
+overdueCount, canSuggest }` counted on THAT record only — for a caller who can
+see the record's task list (`tasks:view` and `ObjectVisibilityService`), else
+`null`, never an error. `TaskWorkloadService` (`task/workload/`) does it; the
+picker's own lists and rules are unchanged. §17.11 has "Suggest someone".
+
 ### 3.10 More time and holds — requests the creator decides (ACC-173)
 
 > **ACC-190:** an approved extension or hold on a MANDATORY stage-definition
@@ -5648,6 +5656,12 @@ trade-off, not a silent gap. Revisit only if a future field genuinely
 needs real filter-search on a long, growing list — typeahead alone was
 judged sufficient for this field's own bounded list.
 
+**`panelMinWidth` (ACC-199), opt-in, null by default.** The open panel is at
+least that wide even when its field is narrower, aligned to the field's start
+edge and pushed back into the viewport (`withPush`) when it would leave it.
+New task's Person list uses 360px when it shows counts: in a third of the row a
+name, its position and "12 open · 3 overdue" cannot share a row.
+
 ### 10.8 `RecordPanelComponent` — the Object-Detail Panel (ACC-76)
 
 `frontend/src/app/shared/components/record-panel/`. Committee's record
@@ -6825,6 +6839,12 @@ reference ("AccreditMe AI for Users"), and nothing about any one feature.
   (1.25rem), so it shares a field's label row without making it taller;
   `actionsExtra` is a host's own action (a `TemplateRef`) at the far end of
   Accept / Edit / Discard, and only with `accept`.
+- **The one deliberate exception (ACC-199, Q8):** the workload hint under the
+  assignee picker is `app-task-workload-hint`, not `am-ai-assist`. The drawing
+  makes it the outcome line's own text — no card, no tint, nothing to accept or
+  edit — and this component's stylesheet sits at its build budget. It keeps the
+  marks the pattern requires: the ✦ beside words, the "AI" words, and the
+  dashed inline-start rule.
 - **What it does NOT do:** price anything, call the gateway, decide who may
   press, or save anything. Those belong to the feature, so the pattern cannot
   drift into one feature's rules.
@@ -8513,7 +8533,7 @@ pinned by `rate-limits.spec.ts`.
 | piece | file | what it does |
 |---|---|---|
 | the numbers | `rate-limits.ts` | every limit, in one object |
-| the throttlers | `throttle.config.ts` | `default` (600/min per user, 300/min per address; `perAddress()` replaces it on the public auth routes, and `perUser()` tightens it on a signed-in one — `POST /tasks/draft`, 10/min, ACC-197) and `reset-email` (3/hour per organisation + email, only where `@LimitResetsPerEmail()` marks the route) |
+| the throttlers | `throttle.config.ts` | `default` (600/min per user, 300/min per address; `perAddress()` replaces it on the public auth routes, and `perUser()` tightens it on a signed-in one — `POST /tasks/draft`, 10/min, ACC-197; `POST /tasks/assignment/workload-hint`, 20/min, ACC-199) and `reset-email` (3/hour per organisation + email, only where `@LimitResetsPerEmail()` marks the route) |
 | who is counted | `throttle-identity.ts` | `user:<id>` for a verified session, `ip:<address>` otherwise, `email:<hash>` for password reset. Cached per request |
 | the refusal | `accreditme-throttler.guard.ts`, `rate-limited.exception.ts` | 429 `RATE_LIMITED` in the API's error shape, a standard `Retry-After`, one warning line |
 | the client address | `common/config/http.config.ts` | `trust proxy` + cookie parsing, shared by `main.ts` and the tests |
@@ -9811,3 +9831,106 @@ the task controller's).
   floating panel), so no wording can
   push the body over the cap; prose one eighth longer than the caps still fits
   with nothing scrolling.
+
+### 17.11 The workload hint — "✦ Suggest someone" (ACC-199)
+
+Plan, Ahmad's decisions (14 Oct: Q1–Q12, with his changes to Q2, Q4, Q10 and
+Q12) and the build's measurements: `backend/Plans/step-199-workload-hint.md`.
+Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
+(frontend).
+
+- **Two things, as drawn: counts (not AI) and a suggestion (AI).**
+- **Counts, on the RECORD only (Q4).**
+  - Each person row in New task's and Reassign's Person list shows "12 open ·
+    3 overdue" at its end edge.
+  - The counts are open tasks ON THE RECORD the dialog was opened from (the
+    committee or meeting): ACC-65's open on an active assignee row (ON_HOLD
+    included), ACC-173's overdue.
+  - Only for a caller who can see that record's task list (`tasks:view` and
+    the record); otherwise `workload: null` and the rows are as before. No
+    extra permission.
+  - With no record (New task from the Tasks page), and on a stage task
+    definition: no counts, no button.
+  - In Reassign the task itself is left out. A pool task nobody has picked up
+    counts for nobody.
+- **The threshold (Q3), decided on the server** (`canSuggest`, and again on
+  the press): the chosen person has 50% more open tasks AND at least 3 more
+  than the least-loaded other eligible person. Nobody out of office is counted
+  as the comparison (Q6), though they stay listed with counts.
+- **"✦ Suggest someone" (Q2).**
+  - It appears at the end of the outcome line only past the threshold, and
+    only when AI is available. Availability is asked once per dialog, the
+    first time a chosen person is past the threshold.
+  - **Choosing a person is never charged; only a press calls the model.** The
+    answer is kept per person (per target) for the dialog in
+    `TaskWorkloadHintStore`, provided by New task and Reassign, so a second
+    press costs nothing — including after New task rebuilds the picker on a
+    step switch. A failure is not kept, so Try again calls again.
+  - The answer is the drawn hint, "✦ AI · Goes to …, who has 12 open tasks on
+    this committee, 3 overdue. … has 4 open, none overdue.", with **Assign …
+    instead** (sets Person and tells the host) and **Keep …**.
+  - **The suggested person's sentence explains the pick by a number on
+    screen** (Ahmad, 14 Oct): ", none overdue" when they have none; ", nothing
+    due within 2 working days" when the model was shown work due soon
+    (`dueSoonSeen`) and they have none; both together as ", none overdue or
+    due within 2 working days". The server returns `suggestion.dueSoonCount`
+    and `dueSoonSeen` for it.
+  - **The buttons are name-free on screen** (Ahmad, 14 Oct): "Assign instead"
+    · "Keep" / «اعتماد الاقتراح» · «الإبقاء على الاختيار». Each one's
+    accessible name starts with those words and names the person — "Assign
+    instead: Huda Al-Harbi" (WCAG 2.5.3). With names on screen, Reassign's
+    longest hint measured 411 / 414px, under the cap but without a line of
+    room.
+- **The model picks; our code writes every word (Q1).**
+  - `POST /tasks/assignment/workload-hint` (`WorkloadHintService`): no
+    `@Permissions`, like every picker route.
+  - In order: the record's task list must be visible; then the picker's own
+    rule; a committee role only on its own record; the chosen person must be
+    eligible (400); the threshold again (`WORKLOAD_NO_SUGGESTION`, no call);
+    availability (`AI_NOT_ENABLED`); then `AiService.run('workload_balancing',
+    …)` with `accept`.
+  - The model receives opaque labels (P1…Pn, shuffled), the record's TYPE, the
+    task's priority, and per label: open, overdue, due within 2 working days
+    (`WorkingCalendarService`), high or critical, on hold. **No name, user id,
+    title, record name, unit or position.** At most 15 others, the least
+    loaded first.
+  - It answers `{"pick":"P2"}` or `{"pick":null}`. A null pick is refunded and
+    becomes `WORKLOAD_NO_SUGGESTION` ("Nobody here is clearly better placed to
+    take it."). A label we did not send, an empty, unreadable or cut-short
+    answer is refunded as `AI_PROVIDER_FAILED`.
+  - The log's description is ids and counts only: `workload hint · COMMITTEE
+    <id> · POSITION · 3 eligible · chosen <userId>`.
+- **Price (Q10):** `workload_balancing`, 1 credit, open to every organisation
+  with AI. Seeded like the other three: one entry in `AI_FEATURE_COST_SEED`,
+  then `npm run seed:ai-feature-costs` (dry run) and `-- --execute` AFTER the
+  deploy. Until the row exists, availability answers false and only the counts
+  show.
+- **Rate limit (Q11):** 20 presses a minute per user (`RATE_LIMITS.workloadHint`).
+- **Audit (Q9):** only a FOLLOWED suggestion is recorded.
+  - On the task's CREATE row (New task) or its reassign row: `metadata.
+    aiWorkloadHint = { interactionId, suggestedUserId }`.
+  - Recorded only when the AI log has a successful `workload_balancing` call by
+    this actor in this organisation within 24 hours, and the task went to one
+    named person.
+  - The dialog sends the claim only while that person is still the one chosen
+    (`followedHint()`).
+- **Arabic (Q12):** worded to need no gender (the platform stores none);
+  names as stored; positions through `LanguageService.bilingual()`; Latin
+  digits; counted strings as plural objects (`task.workloadRowOpen`,
+  `task.workloadRowOverdue`, `task.workloadOpenTasks`, `task.workloadAltOpen`,
+  and the existing `task.overdue`).
+- **The 420px cap, measured** (`task-workload.layout.spec.ts`, real shell, no
+  task created; every state keeps a line of room). English / Arabic:
+
+  | state | New task, step 1 | Reassign, tallest state |
+  |---|---|---|
+  | counts only | 317 / 328 | 356 / 351 |
+  | button showing, and working | 321 / 332 | 357 / 354 |
+  | the hint, its longest sentence | 377 / 394 | 393 / 394 |
+  | a refusal (failed with Try again; credits used up) | 339 / 352 | 375 / 374 |
+
+  - In Reassign the hint's actions follow its text, and the Person field gives
+    up its own message slot while the line shows: a person can never be
+    invalid.
+  - Person rows are equally tall with and without counts (55 / 60 in the
+    test), on a panel at least 360px wide (`panelMinWidth`).

@@ -103,6 +103,8 @@ const mockPrisma = {
   orgPosition: { findFirst: jest.fn() },
   committee: { findFirst: jest.fn() },
   lookupValue: { findFirst: jest.fn() },
+  // ACC-199 — the "assigned on an AI suggestion" claim is checked against the AI log.
+  aiInteractionLog: { findFirst: jest.fn() },
 };
 const mockQueryRaw = jest.fn();
 (mockPrisma as unknown as Record<string, unknown>)['$queryRaw'] = mockQueryRaw;
@@ -538,6 +540,90 @@ describe('TaskService — pools (ACC-167)', () => {
   });
 
   // ── reassign onto a pool ─────────────────────────────────────────────────
+  // ACC-199 (Q9) — only a FOLLOWED suggestion is recorded, on the task's own
+  // audit row, and only when the AI log has the call and the task really went
+  // to one named person.
+  describe('the AI workload marker (ACC-199)', () => {
+    const DTO = {
+      title: 'Collect the audit sample',
+      sourceType: 'COMMITTEE' as const,
+      sourceId: 'committee-1',
+      assignTo: { kind: 'POSITION' as const, orgUnitId: 'unit-1', positionId: 'pos-qo', userId: HOLDER_A },
+    };
+    const CLAIM = { id: 'log-7' };
+    const auditRow = (action: string) =>
+      (mockAuditLog.log.mock.calls as Array<[Record<string, unknown>]>).find((c) => c[0]['action'] === action)![0];
+
+    beforeEach(() => mockPrisma.aiInteractionLog.findFirst.mockResolvedValue({ id: 'log-7' }));
+
+    it('create: a claim that checks out marks the CREATE row with the call and the person suggested', async () => {
+      const before = Date.now();
+      await service.create({ ...DTO, aiWorkloadHint: CLAIM }, ORG_A, CREATOR);
+
+      expect(auditRow('CREATE')['metadata']).toEqual({ aiWorkloadHint: { interactionId: 'log-7', suggestedUserId: HOLDER_A } });
+      const { where } = (mockPrisma.aiInteractionLog.findFirst.mock.calls[0] as [{ where: Record<string, unknown> }])[0];
+      expect(where).toEqual({
+        id: 'log-7',
+        organizationId: ORG_A,
+        actorId: CREATOR,
+        feature: 'workload_balancing',
+        success: true,
+        createdAt: { gte: expect.any(Date) },
+      });
+      const since = (where['createdAt'] as { gte: Date }).gte.getTime();
+      expect(before - since).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 5);
+    });
+
+    it('a claim on a pool — nobody named — is not believed, and makes no lookup', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(poolTask());
+      const { userId: _none, ...pool } = DTO.assignTo;
+      await service.create({ ...DTO, assignTo: pool, aiWorkloadHint: CLAIM }, ORG_A, CREATOR);
+
+      expect(mockPrisma.aiInteractionLog.findFirst).not.toHaveBeenCalled();
+      expect(auditRow('CREATE')).not.toHaveProperty('metadata');
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // The id is another organisation's call (or another person's, or too
+      // old): the scoped lookup finds nothing, and the task is created unmarked.
+      mockPrisma.aiInteractionLog.findFirst.mockResolvedValue(null);
+      await expect(service.create({ ...DTO, aiWorkloadHint: CLAIM }, ORG_A, CREATOR)).resolves.toBeDefined();
+
+      expect(auditRow('CREATE')).not.toHaveProperty('metadata');
+      expect((mockPrisma.aiInteractionLog.findFirst.mock.calls[0] as [{ where: { organizationId: string } }])[0].where.organizationId).toBe(ORG_A);
+    });
+
+    it('a lookup that fails never fails the task: created, unmarked', async () => {
+      mockPrisma.aiInteractionLog.findFirst.mockRejectedValue(new Error('db down'));
+      await expect(service.create({ ...DTO, aiWorkloadHint: CLAIM }, ORG_A, CREATOR)).resolves.toBeDefined();
+      expect(auditRow('CREATE')).not.toHaveProperty('metadata');
+    });
+
+    it('no claim: no lookup, and the CREATE row exactly as before', async () => {
+      await service.create(DTO, ORG_A, CREATOR);
+      expect(mockPrisma.aiInteractionLog.findFirst).not.toHaveBeenCalled();
+      expect(auditRow('CREATE')).not.toHaveProperty('metadata');
+    });
+
+    it('reassign: a claim that checks out is added to the reassign row, beside the reason', async () => {
+      mockPrisma.task.findFirst
+        .mockResolvedValueOnce(poolTask({ status: 'REJECTED', assignees: [row(OUTSIDER, { pickedAt: null })] }))
+        .mockResolvedValue(poolTask());
+
+      await service.reassign(
+        'task-1',
+        { assignTo: DTO.assignTo, reason: 'Huda has room', aiWorkloadHint: CLAIM },
+        ORG_A,
+        CREATOR,
+        [],
+      );
+
+      expect(auditRow('DELEGATE')['metadata']).toEqual(
+        expect.objectContaining({ reason: 'Huda has room', aiWorkloadHint: { interactionId: 'log-7', suggestedUserId: HOLDER_A } }),
+      );
+    });
+  });
+
   describe('reassign onto a pool', () => {
     it('removes everyone, assigns nobody, sets the pool and restarts its clock, and tells the pool', async () => {
       // First read: the task as it stands. Later reads (the post-commit

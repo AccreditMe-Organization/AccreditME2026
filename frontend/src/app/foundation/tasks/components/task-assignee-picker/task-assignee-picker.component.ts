@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -9,14 +9,22 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { aiRefusal } from '../../../../core/ai/ai-refusal';
+import { refusalCode } from '../../../../core/http/refusal';
 import {
   AssignTargetDto,
   AssignableCommitteeRoleDto,
   AssignableHolderDto,
   AssignablePositionDto,
   AssignableUnitDto,
+  AssignRecordRef,
+  HolderWorkloadDto,
+  TaskPriority,
   TaskService,
+  WorkloadHintDto,
 } from '../../services/task.service';
+import { TaskWorkloadHintComponent, WorkloadHintState, WorkloadHintView } from './task-workload-hint.component';
+import { TaskWorkloadHintStore, WorkloadAnswer } from './task-workload-hint.store';
 
 /** The value the scope field holds for "this task's committee" rather than a unit. */
 export const COMMITTEE_SCOPE = '__committee__';
@@ -70,6 +78,16 @@ interface TargetOption {
   id: string;
   label: string;
   meta: string;
+  /** ACC-199 — a person's open tasks on the record ("12 open"), and overdue ("3 overdue"). */
+  open?: string;
+  overdue?: string;
+}
+
+/** ACC-199 — a press that failed: said, not kept, so it can be tried again. */
+interface WorkloadFailure {
+  key: string;
+  text: string;
+  retryable: boolean;
 }
 
 /**
@@ -119,11 +137,26 @@ interface TargetOption {
  * position when a record enters" — and still says when nobody holds it today.
  * The lists and the rules are the task picker's own; the server answers to
  * workflows:manage for this use (ACC-208, B4).
+ *
+ * ## Workload on the record, and "✦ Suggest someone" (ACC-199)
+ *
+ * When the dialog was opened from a record (the committee or meeting:
+ * `sourceType` + `sourceId`), each person row shows their open and overdue
+ * tasks ON THAT RECORD — for a caller who can see the record's task list; the
+ * server withholds them otherwise, and the rows are as before. Never on a stage
+ * task definition: nobody is given a task when one is saved.
+ *
+ * When the chosen person is past the server's threshold (`canSuggest`) and AI
+ * is available, "✦ Suggest someone" sits at the end of the outcome line. ONLY A
+ * PRESS calls the model (Ahmad, 14 Oct, Q2). The answer is kept per person for
+ * the dialog: pressing again for the same person shows it with no call. Assign
+ * … instead sets Person and tells the host (`hintFollowed`), which sends the
+ * claim on save; Keep … returns the plain outcome.
  */
 @Component({
   selector: 'app-task-assignee-picker',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, MessageModule, FieldComponent, OverlaySelectComponent],
+  imports: [ReactiveFormsModule, TranslatePipe, MessageModule, FieldComponent, OverlaySelectComponent, TaskWorkloadHintComponent],
   template: `
     @if (unavailable()) {
       <p-message severity="info" [text]="'task.assign.unavailable' | translate" />
@@ -172,7 +205,8 @@ interface TargetOption {
           class="am-picker__person"
           [label]="'task.assign.person' | translate"
           [control]="group().controls.userId"
-          [hint]="layout() === 'row' ? '' : outcome()"
+          [hint]="layout() === 'row' || workloadState() ? '' : outcome()"
+          [message]="layout() === 'stacked' && workloadState() ? 'none' : 'reserved'"
           [loading]="peopleLoading()"
         >
           <app-overlay-select
@@ -180,7 +214,8 @@ interface TargetOption {
             [options]="peopleOptions()"
             optionLabel="label"
             optionValue="id"
-            [itemTemplate]="metaItem"
+            [itemTemplate]="personItem"
+            [panelMinWidth]="record() ? personPanelMinWidth : null"
             [showClear]="true"
             [placeholder]="(target() ? 'task.assign.anyone' : 'task.assign.chooseTargetFirst') | translate"
           />
@@ -188,10 +223,46 @@ interface TargetOption {
       </div>
       <!-- In a row, a third of the width is no place for a sentence: the
            outcome spans the row beneath instead of being the person's hint. -->
-      @if (layout() === 'row' && outcome()) {
+      @if (workloadState(); as state) {
+        <!-- ACC-199 — the outcome line with "✦ Suggest someone", or its answer. -->
+        <app-task-workload-hint
+          class="am-picker__workload"
+          [state]="state"
+          [outcome]="outcome()"
+          [view]="hintView()"
+          [refusalText]="hintFailureText()"
+          [retryable]="hintRetryable()"
+          [inline]="layout() === 'stacked'"
+          (suggest)="suggestSomeone()"
+          (assign)="assignSuggested()"
+          (keep)="keepChosen()"
+        />
+      } @else if (layout() === 'row' && outcome()) {
         <p class="am-picker__outcome" aria-live="polite">{{ outcome() }}</p>
       }
     }
+
+    <!-- ACC-199 — a person: the name and position as metaItem draws them, and
+         at the row's end edge their open and overdue tasks on the record, on
+         one line, so the row is no taller. -->
+    <ng-template #personItem let-option>
+      <span class="am-picker__person-row">
+        <span class="flex flex-col min-w-0">
+          <span>{{ option.label }}</span>
+          @if (option.meta) {
+            <span class="text-meta text-[var(--am-ink-500)]">{{ option.meta }}</span>
+          }
+        </span>
+        @if (option.open) {
+          <span class="am-picker__counts">
+            {{ option.open }}
+            @if (option.overdue) {
+              · <span class="am-picker__overdue">{{ option.overdue }}</span>
+            }
+          </span>
+        }
+      </span>
+    </ng-template>
 
     <!-- A name with a second, quieter line: a position's holder count, a
          role's member count, a person's own position (two people can share
@@ -233,6 +304,32 @@ interface TargetOption {
         flex: 1 1 0;
         min-width: 0;
       }
+      /* ACC-199 — the counts share the row's end edge with the name, on one line. */
+      .am-picker__person-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--am-space-12);
+        width: 100%;
+      }
+      .am-picker__counts {
+        flex: none;
+        font-size: var(--am-type-meta-size);
+        line-height: var(--am-type-meta-line);
+        color: var(--am-ink-500);
+        white-space: nowrap;
+      }
+      .am-picker__overdue {
+        color: var(--am-warning-ink);
+        font-weight: 600;
+      }
+      /* In a row (New task) the line sits under the row, as the outcome did. In
+         Reassign it takes the place of the Person field's own message slot,
+         which it gives up (message="none": a person can never be invalid), so
+         the hint costs only its own lines. */
+      .am-picker__workload {
+        margin-block-start: var(--am-space-4);
+      }
       .am-picker__outcome {
         margin: 0;
         font-size: var(--am-type-meta-size);
@@ -264,6 +361,15 @@ export class TaskAssigneePickerComponent implements OnInit {
   readonly layout = input<'stacked' | 'row'>('stacked');
   /** 'task': one task, placed on save. 'stage-task': a stage's definition, placed at each entry (ACC-208). */
   readonly purpose = input<'task' | 'stage-task'>('task');
+  /** ACC-199 — the task's priority, for "✦ Suggest someone". */
+  readonly priority = input<TaskPriority | null>(null);
+
+  /**
+   * ACC-199 — "Assign … instead" was pressed: the suggestion's AI call and the
+   * person it named. The host sends it on save while that person is still the
+   * one chosen.
+   */
+  readonly hintFollowed = output<{ id: string; userId: string }>();
 
   private readonly units = signal<AssignableUnitDto[]>([]);
   private readonly positions = signal<AssignablePositionDto[]>([]);
@@ -280,6 +386,103 @@ export class TaskAssigneePickerComponent implements OnInit {
   private readonly userId = signal<string | null>(null);
 
   readonly isCommitteeScope = computed(() => this.scope() === COMMITTEE_SCOPE);
+
+  // ── ACC-199 — workload on the record, and "✦ Suggest someone" ─────────────
+
+  /** ACC-199 — the Person list is wide enough for a name, its position and the counts on one row each. */
+  readonly personPanelMinWidth = 360;
+
+  /** The record the dialog was opened from. None on a stage task definition. */
+  readonly record = computed<AssignRecordRef | null>(() => {
+    const sourceType = this.sourceType();
+    const sourceId = this.sourceId();
+    return this.purpose() === 'task' && sourceType && sourceId ? { sourceType, sourceId } : null;
+  });
+
+  /** The dialog's store when it provides one (New task, Reassign); else the picker's own. */
+  private readonly hintStore = inject(TaskWorkloadHintStore, { optional: true }) ?? new TaskWorkloadHintStore();
+  private readonly hintAvailable = computed(() => this.hintStore.available() === true);
+  private readonly answers = this.hintStore.answers;
+  /** The person whose answer is on screen (a press, or a press again). */
+  private readonly shownKey = signal<string | null>(null);
+  private readonly workingKey = signal<string | null>(null);
+  private readonly failure = signal<WorkloadFailure | null>(null);
+
+  /** One answer per person under one target: the counts, and the others, are that target's. */
+  private readonly chosenKey = computed(() => {
+    const target = this.target();
+    const userId = this.userId();
+    return target && userId ? `${target}|${userId}` : null;
+  });
+
+  readonly workloadState = computed<WorkloadHintState | null>(() => {
+    const key = this.chosenKey();
+    if (!key || !this.record()) return null;
+    if (this.workingKey() === key) return 'working';
+    if (this.shownKey() === key) return this.answers().get(key)?.kind === 'hint' ? 'shown' : 'refusal';
+    if (this.failure()?.key === key) return 'refusal';
+    const person = this.people().find((p) => p.id === this.userId());
+    return this.hintAvailable() && person?.workload?.canSuggest ? 'offer' : null;
+  });
+
+  readonly hintView = computed<WorkloadHintView | null>(() => {
+    const key = this.chosenKey();
+    const answer = key ? this.answers().get(key) : undefined;
+    if (answer?.kind !== 'hint') return null;
+    const { chosen, suggestion } = answer.hint;
+    const chosenName = this.people().find((p) => p.id === chosen.userId)?.name ?? '';
+    const record = this.recordPhrase();
+    const first = this.translate.instant(chosen.overdueCount > 0 ? 'task.workload.chosen' : 'task.workload.chosenNoOverdue', {
+      name: chosenName,
+      open: this.format.count('task.workloadOpenTasks', chosen.openCount),
+      record,
+      overdue: this.format.count('task.overdue', chosen.overdueCount),
+    });
+    const position = suggestion.positionNameEn ? this.language.bilingual(suggestion.positionNameEn, suggestion.positionNameAr) : '';
+    // A pick with more open tasks than someone else is always explained by a
+    // number on screen: "none overdue", and — when the model weighed work due
+    // soon — "nothing due within 2 working days".
+    const noOverdue = suggestion.overdueCount === 0;
+    const noDueSoon = answer.hint.dueSoonSeen && suggestion.dueSoonCount === 0;
+    const extraKey = noOverdue && noDueSoon ? 'neither' : noOverdue ? 'noOverdue' : noDueSoon ? 'noDueSoon' : null;
+    const second = this.translate.instant(position ? 'task.workload.alternative' : 'task.workload.alternativeNoPosition', {
+      name: suggestion.name,
+      position,
+      open: this.format.count('task.workloadAltOpen', suggestion.openCount),
+      extra: extraKey ? this.translate.instant(`task.workload.extra.${extraKey}`) : '',
+    });
+    return {
+      sentence: `${first} ${second}`,
+      // Short on screen (Ahmad, 14 Oct) — the sentence above names both people,
+      // and the named labels cost Reassign a line it does not have. The
+      // accessible name still says who, and starts with the visible words, so
+      // a voice user can say what they see (WCAG 2.5.3).
+      assignLabel: this.translate.instant('task.workload.assignInstead'),
+      assignAria: this.translate.instant('task.workload.assignInsteadNamed', { name: suggestion.name }),
+      keepLabel: this.translate.instant('task.workload.keep'),
+      keepAria: this.translate.instant('task.workload.keepNamed', { name: chosenName }),
+    };
+  });
+
+  readonly hintFailureText = computed(() => {
+    const key = this.chosenKey();
+    if (key && this.shownKey() === key && this.answers().get(key)?.kind === 'none') {
+      return this.translate.instant('task.workload.noSuggestion');
+    }
+    const failure = this.failure();
+    return failure && failure.key === key ? failure.text : '';
+  });
+
+  readonly hintRetryable = computed(() => {
+    const failure = this.failure();
+    return !!failure && failure.key === this.chosenKey() && failure.retryable;
+  });
+
+  private recordPhrase(): string {
+    const type = this.record()?.sourceType;
+    const key = type === 'COMMITTEE' || type === 'MEETING' ? `task.workload.record.${type}` : 'task.workload.record.other';
+    return this.translate.instant(key);
+  }
 
   // The committee route needs committees:view on the server (its member
   // roles name the committee's members), so it is offered only with it.
@@ -322,8 +525,18 @@ export class TaskAssigneePickerComponent implements OnInit {
       id: h.id,
       label: h.name,
       meta: h.positionNameEn ? this.language.bilingual(h.positionNameEn, h.positionNameAr) : '',
+      ...this.workloadCounts(h.workload),
     })),
   );
+
+  /** ACC-199 — "12 open · 3 overdue" for a person row; nothing when the server withheld the counts. */
+  private workloadCounts(workload: HolderWorkloadDto | null | undefined): Pick<TargetOption, 'open' | 'overdue'> {
+    if (!workload) return {};
+    return {
+      open: this.format.count('task.workloadRowOpen', workload.openCount),
+      ...(workload.overdueCount > 0 ? { overdue: this.format.count('task.workloadRowOverdue', workload.overdueCount) } : {}),
+    };
+  }
 
   /** What Save will do with the current choice — the server's rule, stated first. */
   readonly outcome = computed<string>(() => {
@@ -423,9 +636,113 @@ export class TaskAssigneePickerComponent implements OnInit {
       )
       .subscribe();
 
-    userId.valueChanges
-      .pipe(startWith(userId.value), takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => this.userId.set(value));
+    userId.valueChanges.pipe(startWith(userId.value), takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
+      this.userId.set(value);
+      // ACC-199 — an answer on screen belongs to the person it was for. It is
+      // kept: choosing them again offers the button, and a press shows it free.
+      this.shownKey.set(null);
+    });
+
+  }
+
+  /** ACC-199 — the chosen person is past the server's threshold. */
+  private readonly chosenCanSuggest = computed(
+    () => !!this.record() && !!this.people().find((p) => p.id === this.userId())?.workload?.canSuggest,
+  );
+  private availabilityAsked = false;
+
+  constructor() {
+    // ACC-199 — whether "✦ Suggest someone" can be offered at all: asked once
+    // per dialog, and only the first time it could matter — a chosen person
+    // past the threshold. Most choices never ask.
+    effect(() => {
+      if (!this.chosenCanSuggest() || this.hintStore.available() !== null || this.availabilityAsked) return;
+      this.availabilityAsked = true;
+      untracked(() =>
+        this.taskService
+          .getWorkloadHintAvailability()
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: ({ available }) => this.hintStore.available.set(available),
+            error: () => this.hintStore.available.set(false),
+          }),
+      );
+    });
+  }
+
+  /** ACC-199 — the press. A kept answer is shown again with no call. */
+  suggestSomeone(): void {
+    const key = this.chosenKey();
+    const record = this.record();
+    const scope = this.scope();
+    const target = this.target();
+    const chosenUserId = this.userId();
+    if (!key || !record || !scope || !target || !chosenUserId || this.workingKey()) return;
+    this.failure.set(null);
+    if (this.answers().has(key)) {
+      this.shownKey.set(key);
+      return;
+    }
+    const where =
+      scope === COMMITTEE_SCOPE ? { committeeId: record.sourceId, roleValueId: target } : { orgUnitId: scope, positionId: target };
+    this.workingKey.set(key);
+    this.taskService
+      .workloadHint({
+        ...where,
+        chosenUserId,
+        sourceType: record.sourceType,
+        sourceId: record.sourceId,
+        ...(this.priority() ? { priority: this.priority()! } : {}),
+        ...(this.taskId() ? { taskId: this.taskId() } : {}),
+      })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (hint) => {
+          this.keep(key, { kind: 'hint', hint });
+          this.workingKey.set(null);
+          if (this.chosenKey() === key) this.shownKey.set(key);
+        },
+        error: (err: unknown) => {
+          this.workingKey.set(null);
+          const code = refusalCode(err);
+          if (code === 'WORKLOAD_NO_SUGGESTION') {
+            // An answer — "nobody is clearly better placed" — kept like any other.
+            this.keep(key, { kind: 'none' });
+            if (this.chosenKey() === key) this.shownKey.set(key);
+            return;
+          }
+          if (code === 'RATE_LIMITED') {
+            this.failure.set({ key, text: this.translate.instant('task.workload.tooMany'), retryable: false });
+            return;
+          }
+          const refusal = aiRefusal(err, this.format);
+          this.failure.set({
+            key,
+            text: this.translate.instant(refusal?.messageKey ?? 'ai.refusal.unavailable', refusal?.params ?? {}),
+            retryable: !refusal || refusal.kind === 'unavailable',
+          });
+        },
+      });
+  }
+
+  /** ACC-199 — "Assign … instead": the suggested person becomes the choice. */
+  assignSuggested(): void {
+    const key = this.chosenKey();
+    const answer = key ? this.answers().get(key) : undefined;
+    if (answer?.kind !== 'hint') return;
+    const { suggestion, interactionId } = answer.hint;
+    this.group().controls.userId.setValue(suggestion.userId);
+    this.group().controls.userId.markAsDirty();
+    if (interactionId) this.hintFollowed.emit({ id: interactionId, userId: suggestion.userId });
+  }
+
+  /** ACC-199 — "Keep …": the plain outcome again; the answer stays kept. */
+  keepChosen(): void {
+    this.shownKey.set(null);
+  }
+
+  private keep(key: string, answer: WorkloadAnswer): void {
+    this.hintStore.keep(key, answer);
   }
 
   private loadTargets(scope: string | null): Observable<unknown> {
@@ -464,8 +781,8 @@ export class TaskAssigneePickerComponent implements OnInit {
     this.peopleLoading.set(true);
     const request =
       scope === COMMITTEE_SCOPE
-        ? this.taskService.getCommitteeAssignees(this.sourceId() ?? '', target, this.taskId())
-        : this.taskService.getAssignees(scope, target, this.taskId());
+        ? this.taskService.getCommitteeAssignees(this.sourceId() ?? '', target, this.taskId(), this.record())
+        : this.taskService.getAssignees(scope, target, this.taskId(), this.record());
     return request.pipe(
       tap((people) => {
         this.people.set(people);

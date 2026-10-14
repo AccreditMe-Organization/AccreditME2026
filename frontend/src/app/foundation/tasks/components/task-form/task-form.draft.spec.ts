@@ -511,6 +511,23 @@ describe('TaskFormComponent — Draft with AI (ACC-197)', () => {
       return create.request.body as Record<string, unknown>;
     };
 
+    // ACC-199 — "Assign … instead" in the picker: claimed on Create while that
+    // person is still the one chosen; dropped once someone else is.
+    it('an AI workload suggestion is claimed only while the person it named is still chosen', async () => {
+      await open();
+      const assign = component.form.controls.assignTo.controls;
+      assign.scope.setValue('unit-1');
+      assign.target.setValue('pos-qo');
+      assign.userId.setValue('sara');
+      component.workloadFollowed.set({ id: 'log-9', userId: 'sara' });
+      await pressCreate();
+      expect(created()['aiWorkloadHint']).toEqual({ id: 'log-9' });
+
+      assign.userId.setValue('khalid');
+      await pressCreate();
+      expect('aiWorkloadHint' in created()).toBe(false);
+    });
+
     it('nothing accepted, nothing claimed — even after a draft was made and discarded', async () => {
       await open();
       await showSuggestion();

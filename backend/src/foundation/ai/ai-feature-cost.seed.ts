@@ -31,6 +31,12 @@ export const AI_FEATURE_COST_SEED: readonly AiFeatureCostSeed[] = [
     description: 'AI morning briefing, on demand from a tenant admin, per run (ACC-198). al-nakheel only, for demos.',
     restrictedToSlug: 'al-nakheel',
   },
+  {
+    // ACC-199 (Q10) — open to every organisation with AI, like drafting.
+    featureKey: 'workload_balancing',
+    creditCost: 1,
+    description: 'AI suggests someone with capacity when a task\'s chosen person is overloaded on its record, on a press (ACC-199).',
+  },
 ];
 
 export type AiFeatureCostSeedAction =

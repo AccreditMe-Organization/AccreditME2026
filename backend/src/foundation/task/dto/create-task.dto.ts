@@ -11,6 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { AssignTargetDto } from './assign-target.dto';
+import { TaskAiWorkloadHintDto } from './workload-hint.dto';
 
 const DELEGATION_REASONS = ['ACTING_HEAD', 'OUT_OF_OFFICE_COVERAGE'] as const;
 
@@ -46,7 +47,7 @@ export const TASK_SOURCE_TYPES = [
   'COMMITTEE',
 ] as const;
 
-const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+export const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 
 // ACC-197 — the task was written with an AI draft the creator accepted in the
 // New task dialog. `id` is the draft's own id (POST /tasks/draft). It is a
@@ -150,4 +151,10 @@ export class CreateTaskDto {
   @ValidateNested()
   @Type(() => TaskAiDraftDto)
   aiDraft?: TaskAiDraftDto;
+
+  // ACC-199 — the person chosen came from "✦ Suggest someone" (Assign … instead).
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskAiWorkloadHintDto)
+  aiWorkloadHint?: TaskAiWorkloadHintDto;
 }

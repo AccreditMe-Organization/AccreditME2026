@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { IBriefingGroup, IBriefingItem, briefingItems } from './briefing-groups';
+import { firstJsonObject } from '../ai/first-json-object';
 
 /**
  * ACC-198 — what we send the model, and how we read what it sends back.
@@ -191,17 +192,6 @@ function trimLead(text: string): string {
   const cut = clean.slice(0, LEAD_CAP);
   const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('。'), cut.lastIndexOf('؟ '), cut.lastIndexOf('! '));
   return end > LEAD_CAP / 2 ? cut.slice(0, end + 1) : `${cut.trimEnd()}…`;
-}
-
-function firstJsonObject(text: string): unknown {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return undefined;
-  try {
-    return JSON.parse(text.slice(start, end + 1)) as unknown;
-  } catch {
-    return undefined;
-  }
 }
 
 /**

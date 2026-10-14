@@ -41,6 +41,13 @@ class ProbeController {
   draft(): { ok: true } {
     return { ok: true };
   }
+
+  /** ACC-199 — the tier POST /tasks/assignment/workload-hint carries. */
+  @Post('workload-hint')
+  @perUser(RATE_LIMITS.workloadHint)
+  workloadHint(): { ok: true } {
+    return { ok: true };
+  }
 }
 
 /** A session token signed exactly as TenantGuard verifies one (HS256). */
@@ -242,6 +249,25 @@ describe('rate limiting (ACC-129)', () => {
     // The same user's other routes keep their own counter.
     const probe = await request(server()).get('/api/v1/probe').set('X-Forwarded-For', '203.0.113.60').set('Cookie', userA);
     expect(probe.status).toBe(200);
+  });
+
+  // ACC-199 (Q11) — "Suggest someone": twenty a minute per USER, its own counter.
+  it('the workload-hint route refuses the twenty-first request in a minute, for that user only', async () => {
+    const userA = `access_token=${sessionFor('user-hint-a')}`;
+    const userB = `access_token=${sessionFor('user-hint-b')}`;
+    const press = (cookie: string) =>
+      request(server())
+        .post('/api/v1/probe/workload-hint')
+        .set('X-Forwarded-For', '203.0.113.61')
+        .set('Cookie', cookie);
+
+    const a = await times(RATE_LIMITS.workloadHint.limit, () => press(userA));
+    expect(a).toHaveLength(20);
+    expect(a.every((s) => s === 201)).toBe(true);
+    const refused = await press(userA);
+    expect(refused.status).toBe(429);
+    expect((refused.body as { code: string }).code).toBe('RATE_LIMITED');
+    expect((await press(userB)).status).toBe(201);
   });
 
   it('counts a forged session by address, so an invented token buys no fresh bucket', async () => {

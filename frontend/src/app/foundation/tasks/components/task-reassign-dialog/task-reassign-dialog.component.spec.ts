@@ -154,6 +154,32 @@ describe('TaskReassignDialogComponent (ACC-163, ACC-167)', () => {
     });
   });
 
+  // ACC-199 — "Assign … instead" was pressed: the claim goes with the save while
+  // that person is still the one chosen, and not once someone else is.
+  it('sends the AI suggestion claim only while the suggested person is still chosen', () => {
+    const { dialog } = setup();
+
+    choosePosition(dialog);
+    dialog.workloadFollowed.set({ id: 'log-7', userId: 'user-a' });
+    dialog.form.controls.assignTo.controls.userId.setValue('user-a');
+    dialog.form.controls.reason.setValue('Sarah has room');
+    dialog.submit();
+    const first = http.expectOne(REASSIGN_URL);
+    expect(first.request.body.aiWorkloadHint).toEqual({ id: 'log-7' });
+    first.flush({ ...TASK, status: 'PENDING' });
+  });
+
+  it('sends no AI suggestion claim when someone else was chosen after it', () => {
+    const { dialog } = setup();
+
+    choosePosition(dialog);
+    dialog.workloadFollowed.set({ id: 'log-7', userId: 'user-a' });
+    dialog.form.controls.assignTo.controls.userId.setValue('user-b');
+    dialog.form.controls.reason.setValue('Omar instead');
+    dialog.submit();
+    expect(http.expectOne(REASSIGN_URL).request.body).not.toEqual(jasmine.objectContaining({ aiWorkloadHint: jasmine.anything() }));
+  });
+
   // A reassignment has to name somewhere: a unit alone is not a target.
   it('does not submit without a unit, a position and a reason', () => {
     const { dialog } = setup();
