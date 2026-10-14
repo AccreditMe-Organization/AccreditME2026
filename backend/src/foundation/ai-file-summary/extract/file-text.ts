@@ -1,6 +1,7 @@
 import { parseCsv } from './csv';
 import { decodeText } from './text-decode';
 import { PdfTextExtractor } from './pdf-text-extractor';
+import { estimateTokens } from '../../ai/token-estimate';
 
 /**
  * ACC-193 — the text a summary reads, from the stored bytes, on the SERVER
@@ -34,15 +35,7 @@ export function summarizableKind(mimeType: string): SummarizableKind | null {
 
 export const COVERAGE_UNIT: Readonly<Record<SummarizableKind, CoverageUnit>> = { pdf: 'pages', csv: 'rows', txt: 'text' };
 
-/**
- * A deliberately HIGH estimate of tokens, with no call to anyone: UTF-8 bytes
- * ÷ 3. Latin runs about 4 characters a token, so this over-counts; Arabic is
- * 2 bytes a character, so it assumes 1.5 characters a token. The gateway logs
- * the provider's REAL input count, which shows the margin (§14.2).
- */
-export function estimateTokens(text: string): number {
-  return Math.ceil(Buffer.byteLength(text, 'utf8') / 3);
-}
+export { estimateTokens };
 
 /**
  * NFKC (folds the Arabic presentation forms PDFs often carry), control

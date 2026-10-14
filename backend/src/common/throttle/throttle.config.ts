@@ -61,6 +61,23 @@ export function throttlerOptions(): ThrottlerModuleOptions {
 }
 
 /**
+ * A signed-in route's own, tighter limit, counted per USER — the same identity
+ * the default uses (a request with no valid session is counted by address, and
+ * such a route refuses it anyway). ACC-197: POST /tasks/draft.
+ */
+export const perUser = (limit: {
+  limit: number;
+  ttl: number;
+}): MethodDecorator & ClassDecorator =>
+  Throttle({
+    default: {
+      limit: limit.limit,
+      ttl: limit.ttl,
+      getTracker: (req) => bySessionOrAddress(req as HttpRequest),
+    },
+  });
+
+/**
  * A public route's own limit, counted per ADDRESS — the auth routes, which a
  * person reaches before they have a session. Also marks the route as a public
  * auth route, which is what the client-address diagnostic logs.

@@ -61,9 +61,11 @@ async function refusal(promise: Promise<unknown>): Promise<AiRefusalException> {
 describe('AiService.run (ACC-194)', () => {
   it('prices, reserves, calls with the feature’s model, effort and limit, logs, and returns the answer', async () => {
     const { service, provider, credits, prisma } = setup();
+    // ACC-197 — the log row's id comes back, so a caller can prove the call later.
+    prisma.aiInteractionLog.create.mockResolvedValue({ id: 'log-1' });
     const result = await service.run('task_description_drafting', { organizationId: ORG, actorId: 'u1' }, request);
 
-    expect(result).toEqual({ content: 'A drafted description.', creditCost: 2, inputTokens: 120, outputTokens: 80, truncated: false });
+    expect(result).toEqual({ content: 'A drafted description.', interactionId: 'log-1', creditCost: 2, inputTokens: 120, outputTokens: 80, truncated: false });
     expect(credits.reserve).toHaveBeenCalledWith(ORG, 2, expect.any(Date));
     expect(provider.complete).toHaveBeenCalledWith({
       model: 'claude-sonnet-5-5',
@@ -221,7 +223,7 @@ describe('AiService.run (ACC-194)', () => {
     const { service, prisma } = setup();
     prisma.aiInteractionLog.create.mockRejectedValue(new Error('db down'));
     await expect(service.run('task_description_drafting', { organizationId: ORG }, request)).resolves.toEqual(
-      expect.objectContaining({ content: 'A drafted description.' }),
+      expect.objectContaining({ content: 'A drafted description.', interactionId: null }),
     );
   });
 

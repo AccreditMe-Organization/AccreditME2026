@@ -9,6 +9,7 @@ import ar from '../../../../../assets/i18n/ar.json';
 import { environment } from '../../../../../environments/environment';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { ITaskDto } from '../../services/task.service';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { TaskFormComponent } from './task-form.component';
 
 // ACC-174 — the SLA limit on New task, and Edit: New task's own form given a
@@ -43,6 +44,10 @@ const CALENDAR = {
 };
 
 describe('TaskFormComponent — the SLA limit and Edit (ACC-174)', () => {
+  // ACC-197 — the form now holds the draft store, which reads LanguageService,
+  // so the Arabic case here writes <html dir> like any Arabic session.
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<TaskFormComponent>;
   let component: TaskFormComponent;
   let http: HttpTestingController;
@@ -71,6 +76,8 @@ describe('TaskFormComponent — the SLA limit and Edit (ACC-174)', () => {
     http.match(`${environment.apiUrl}/working-calendar`).forEach((r) => r.flush(CALENDAR));
     http.match((r) => r.url.startsWith(`${environment.apiUrl}/working-calendar/holidays`)).forEach((r) => r.flush([]));
     http.expectOne(task ? `${API}/${task.id}/sla-preview` : `${API}/sla-preview`).flush(preview);
+    // ACC-197 — New task asks whether to show "Draft with AI"; Edit never does.
+    if (!task) http.expectOne(`${API}/draft/availability`).flush({ available: false });
     fixture.detectChanges();
   }
 

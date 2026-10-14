@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TENANT_PERMISSIONS } from '../../common/constants/permissions';
 import { AiService } from '../ai/ai.service';
 import { AiRefusalException, AiNotEnabledReason } from '../ai/ai-refusal';
-import { aiBalanceOf, openAiFeatures } from '../ai/ai-balance';
+import { aiFeatureAvailability } from '../ai/ai-availability';
 import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
 import { NotificationService } from '../notification/notification.service';
@@ -198,29 +198,10 @@ export class AiBriefingService {
     organizationId: string,
   ): Promise<{ available: boolean; reason?: AiNotEnabledReason; creditCost: number | null }> {
     if (!viewer.permissions.includes(TENANT_PERMISSIONS.MANAGE_CONFIG)) return { available: false, creditCost: null };
-    const [org, features] = await Promise.all([
-      this.prisma.organization.findFirst({
-        where: { id: organizationId },
-        select: {
-          aiMonthlyCredits: true,
-          aiPendingMonthlyCredits: true,
-          aiCreditsUsed: true,
-          aiCreditsPeriodStart: true,
-          aiCreditsRenewsAt: true,
-          bootstrappedAt: true,
-          createdAt: true,
-          settings: true,
-        },
-      }),
-      openAiFeatures(this.prisma, organizationId),
-    ]);
-    const feature = features.find((f) => f.key === BRIEFING_FEATURE);
-    if (!org || !feature) return { available: false, reason: 'FEATURE_NOT_AVAILABLE', creditCost: null };
-    const balance = aiBalanceOf(org);
-    if (!balance.enabled) {
-      return { available: false, reason: balance.monthlyCredits > 0 ? 'SWITCHED_OFF' : 'NO_ALLOWANCE', creditCost: feature.creditCost };
-    }
-    return { available: true, creditCost: feature.creditCost };
+    const availability = await aiFeatureAvailability(this.prisma, organizationId, BRIEFING_FEATURE);
+    return availability.available
+      ? { available: true, creditCost: availability.creditCost }
+      : { available: false, reason: availability.reason, creditCost: availability.creditCost };
   }
 
   /** The caller's own work, from the self-scoped services My tasks and the bell use. */

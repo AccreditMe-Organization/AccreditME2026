@@ -48,6 +48,12 @@ export class AiUnusableAnswerError extends Error {
 
 export interface AiRunResult {
   content: string;
+  /**
+   * ACC-197 — the id of this call's AiInteractionLog row, so a caller can later
+   * prove a result came from a real, charged call (the task's "drafted with AI"
+   * audit note). Null only when the log row could not be written.
+   */
+  interactionId: string | null;
   creditCost: number;
   inputTokens: number;
   outputTokens: number;
@@ -125,7 +131,7 @@ export class AiService {
       if (request.accept && !request.accept(answer.content, answer.truncated)) {
         throw new AiUnusableAnswerError(answer.content.length, answer.truncated, answer.inputTokens, answer.outputTokens);
       }
-      await this.log({
+      const interactionId = await this.log({
         organizationId,
         actorId,
         model: answer.model,
@@ -142,6 +148,7 @@ export class AiService {
       await this.noticeIfNothingCanRun(organizationId, reserved);
       return {
         content: answer.content,
+        interactionId,
         creditCost: price.creditCost,
         inputTokens: answer.inputTokens,
         outputTokens: answer.outputTokens,
@@ -234,7 +241,7 @@ export class AiService {
     }
   }
 
-  /** Writes the log row. A failure to log is reported and never fails the call. */
+  /** Writes the log row and returns its id. A failure to log is reported and never fails the call (null). */
   private async log(entry: {
     organizationId: string;
     actorId?: string;
@@ -248,9 +255,9 @@ export class AiService {
     tier: string;
     inputTokens: number | null;
     outputTokens: number | null;
-  }): Promise<void> {
+  }): Promise<string | null> {
     try {
-      await this.prisma.aiInteractionLog.create({
+      const row = await this.prisma.aiInteractionLog.create({
         data: {
           organizationId: entry.organizationId,
           actorId: entry.actorId ?? null,
@@ -267,8 +274,10 @@ export class AiService {
           outputTokens: entry.outputTokens,
         },
       });
+      return row?.id ?? null;
     } catch (error) {
       this.logger.error(`AiInteractionLog write failed for org ${entry.organizationId}: ${(error as Error).message}`);
+      return null;
     }
   }
 }

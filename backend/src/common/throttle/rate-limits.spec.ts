@@ -33,6 +33,8 @@ describe('rate limits (ACC-129)', () => {
       forgotPassword: { limit: 20, ttl: HOUR },
       forgotPasswordPerEmail: { limit: 3, ttl: HOUR },
       resetPassword: { limit: 20, ttl: HOUR },
+      // ACC-197 — per signed-in user.
+      taskDraft: { limit: 10, ttl: MINUTE },
     });
   });
 

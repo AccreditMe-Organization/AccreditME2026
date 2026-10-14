@@ -39,6 +39,13 @@ export const RATE_LIMITS = {
    */
   forgotPasswordPerEmail: { limit: 3, ttl: HOUR },
   resetPassword: { limit: 20, ttl: HOUR },
+  /**
+   * ACC-197 — POST /tasks/draft, per signed-in USER. The first AI call an
+   * ordinary user can repeat freely: at the default 600 a minute one account
+   * could spend 1,200 credits a minute. A person never reaches ten drafts a
+   * minute; a script can spend at most 20 credits a minute.
+   */
+  taskDraft: { limit: 10, ttl: MINUTE },
 } as const;
 
 /** The second named throttler: counts password-reset requests per email. */

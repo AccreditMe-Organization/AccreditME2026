@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
@@ -76,6 +77,10 @@ const NOT_OVERDUE_STATUSES = [...CLOSED_STATUSES, 'ON_HOLD'] as const;
 // ACC-167 — the pick-up clock is all-or-nothing: a task in its pool carries
 // all three, a task out of it carries none.
 const NO_POOL_CLOCK = { pooledAt: null, poolEscalateAt: null, poolEscalatedAt: null };
+
+// ACC-197 — how long after a draft was made its "drafted with AI" claim is
+// still believed at Create task. A dialog is not left open for a day.
+const AI_DRAFT_CLAIM_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // ACC-174 — a due date that moved forward re-arms escalation; one still in the
 // past keeps its stamps, so a breach that already escalated does not twice.
@@ -153,6 +158,8 @@ function splitListRow<T extends { _count: { evidence: number } } & PoolLabelRela
 
 @Injectable()
 export class TaskService {
+  private readonly logger = new Logger(TaskService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
@@ -241,8 +248,43 @@ export class TaskService {
     };
 
     const task = await this.insertPrepared(this.prisma, prepared, organizationId, actorId);
-    await this.announceCreated(task, prepared, organizationId, actorId);
+    const aiDraft = await this.verifiedAiDraft(dto.aiDraft, organizationId, actorId);
+    await this.announceCreated(task, prepared, organizationId, actorId, aiDraft ? { aiDraft } : undefined);
     return task;
+  }
+
+  /**
+   * ACC-197 — "drafted with AI", for the task's audit row. The dialog CLAIMS
+   * the creator accepted a draft; this checks the claim against the AI log: a
+   * successful task-drafting call, by this person, in this organisation, in
+   * the last 24 hours. A claim that does not check out — or a lookup that
+   * fails — leaves the task created and unmarked, with one warning line: a
+   * note about where the words came from must never block a task.
+   */
+  private async verifiedAiDraft(
+    claim: CreateTaskDto['aiDraft'],
+    organizationId: string,
+    actorId: string,
+  ): Promise<{ interactionId: string; description: boolean; title: boolean } | null> {
+    if (!claim || (!claim.description && !claim.title)) return null;
+    try {
+      const call = await this.prisma.aiInteractionLog.findFirst({
+        where: {
+          id: claim.id,
+          organizationId,
+          actorId,
+          feature: 'task_description_drafting',
+          success: true,
+          createdAt: { gte: new Date(Date.now() - AI_DRAFT_CLAIM_WINDOW_MS) },
+        },
+        select: { id: true },
+      });
+      if (call) return { interactionId: call.id, description: claim.description, title: claim.title };
+      this.logger.warn(`Task created by ${actorId} in org ${organizationId} claimed an AI draft that does not check out; not marked`);
+    } catch (error) {
+      this.logger.warn(`Could not check an AI draft claim in org ${organizationId}: ${(error as Error).message}`);
+    }
+    return null;
   }
 
   /**
@@ -332,6 +374,8 @@ export class TaskService {
     prepared: Pick<PreparedTask, 'eligibleAssigneeIds' | 'pooled'>,
     organizationId: string,
     actorId: string,
+    // ACC-197 — { aiDraft } when the creator accepted an AI draft (verified).
+    metadata?: Record<string, unknown>,
   ): Promise<void> {
     await this.auditLog.log({
       action: 'CREATE',
@@ -340,6 +384,7 @@ export class TaskService {
       actorId,
       tenantId: organizationId,
       after: task as unknown as Record<string, unknown>,
+      ...(metadata ? { metadata } : {}),
     });
 
     // ACC-82 — an UNASSIGNED task no longer notifies every Tenant Admin. It is a

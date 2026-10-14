@@ -284,3 +284,120 @@ describe('collapsible and clamped (ACC-193, Q5) — opt-in', () => {
     });
   });
 });
+
+// ── ACC-197 — the split: a trigger in one place, its result in another ─────
+
+@Component({
+  standalone: true,
+  imports: [AiAssistComponent],
+  template: `
+    <div class="label-row">
+      <am-ai-assist
+        class="trigger-half"
+        [state]="state()"
+        triggerLabel="Draft with AI"
+        [hideResult]="true"
+        [labelRow]="labelRow()"
+        [cancellable]="true"
+        [resultTemplate]="body()"
+        tag="AI suggestion"
+        workingText="Drafting…"
+        [refusal]="refusal()"
+      />
+    </div>
+    <am-ai-assist
+      class="result-half"
+      [state]="state()"
+      triggerLabel=""
+      [hideTrigger]="true"
+      [accept]="accept()"
+      [actionsExtra]="extra()"
+      [resultTemplate]="body()"
+      tag="AI suggestion"
+      workingText="Drafting…"
+      [refusal]="refusal()"
+    />
+    <ng-template #bodyTpl><p class="result-body">Check every dispenser.</p></ng-template>
+    <ng-template #extraTpl><button type="button" class="host-action" (click)="events.push('extra')">Use this title</button></ng-template>
+  `,
+})
+class SplitHostComponent {
+  readonly state = signal<AiAssistState>('idle');
+  readonly refusal = signal<AiRefusal | null>(null);
+  readonly labelRow = signal(false);
+  readonly accept = signal(true);
+  readonly withExtra = signal(false);
+  readonly bodyTpl = viewChild<TemplateRef<unknown>>('bodyTpl');
+  readonly extraTpl = viewChild<TemplateRef<unknown>>('extraTpl');
+  readonly body = () => this.bodyTpl() ?? null;
+  readonly extra = () => (this.withExtra() ? (this.extraTpl() ?? null) : null);
+  readonly events: string[] = [];
+}
+
+describe('the split — hideResult, labelRow, actionsExtra (ACC-197) — opt-in', () => {
+  let fixture: ComponentFixture<SplitHostComponent>;
+  let host: SplitHostComponent;
+  const el = () => fixture.nativeElement as HTMLElement;
+  const half = (name: 'trigger' | 'result') => el().querySelector(`.${name}-half`) as HTMLElement;
+  const render = () => {
+    fixture.detectChanges();
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [SplitHostComponent],
+      providers: [provideTranslateService({ lang: 'en' })],
+    }).compileComponents();
+    TestBed.inject(TranslateService).setTranslation('en', en);
+    fixture = TestBed.createComponent(SplitHostComponent);
+    host = fixture.componentInstance;
+    render();
+  });
+
+  it('hideResult: the trigger alone — no working line, no result, no refusal, and nothing announced twice', () => {
+    for (const state of ['working', 'result', 'refusal'] as const) {
+      host.refusal.set(state === 'refusal' ? { kind: 'unavailable', messageKey: 'ai.refusal.unavailable', params: {} } : null);
+      host.state.set(state);
+      render();
+      expect(half('trigger').querySelector('.am-ai__trigger')).withContext(state).not.toBeNull();
+      expect(half('trigger').querySelector('.am-ai__result, .am-ai__refusal, [aria-live]')).withContext(state).toBeNull();
+      expect(half('result').querySelector('.am-ai__trigger')).withContext(state).toBeNull();
+      expect(half('result').querySelector('.am-ai__result, .am-ai__refusal')).withContext(state).not.toBeNull();
+    }
+    // Exactly one live region for the pair.
+    expect(el().querySelectorAll('[aria-live]').length).toBe(1);
+  });
+
+  it('labelRow: the trigger, and Cancel beside it, are exactly one label line tall (1.25rem) — off by default', () => {
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const trigger = () => half('trigger').querySelector('.am-ai__trigger') as HTMLElement;
+    const natural = trigger().getBoundingClientRect().height;
+    expect(natural).withContext('off by default: the trigger keeps its own height').toBeGreaterThan(1.25 * rem);
+
+    host.labelRow.set(true);
+    host.state.set('working');
+    render();
+    expect(trigger().getBoundingClientRect().height).toBeCloseTo(1.25 * rem, 1);
+    const cancel = half('trigger').querySelector('.am-ai__trigger-row .am-ai__text-button') as HTMLElement;
+    expect(cancel.textContent).toContain('Cancel');
+    expect(cancel.getBoundingClientRect().height).toBeCloseTo(1.25 * rem, 1);
+  });
+
+  it("actionsExtra: the host's own action at the far end of Accept · Edit · Discard — and only with accept", () => {
+    host.state.set('result');
+    render();
+    const actions = () => Array.from(half('result').querySelectorAll('.am-ai__actions button')).map((b) => b.textContent!.trim());
+    expect(actions()).withContext('null by default').toEqual(['Accept', 'Edit', 'Discard']);
+
+    host.withExtra.set(true);
+    render();
+    expect(actions()).toEqual(['Accept', 'Edit', 'Discard', 'Use this title']);
+    (half('result').querySelector('.host-action') as HTMLButtonElement).click();
+    expect(host.events).toEqual(['extra']);
+
+    host.accept.set(false);
+    render();
+    expect(half('result').querySelector('.host-action')).toBeNull();
+  });
+});
