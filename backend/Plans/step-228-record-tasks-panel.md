@@ -1,6 +1,6 @@
 # Step 228 — The task page, the record Tasks panel, and capped record panels (ACC-228, ACC-229, ACC-230)
 
-**Status: PLAN — waiting for Ahmad's approval. Nothing is built.**
+**Status: APPROVED 14 Oct (Ahmad), with the recommended answers to Q1–Q13 except Q5 (§4). PR 1 is being built; PRs 2 and 3 wait until PR 1 is merged and proven live.**
 
 Lane B. Three PRs, in this order, one plan:
 
@@ -557,7 +557,15 @@ The members rows' avatar, name, seat and since must fit 52 / 58. Measured in the
 
 ---
 
-## 4. Open questions, each with a recommended answer
+## 4. Questions and decisions
+
+**Decided 14 Oct (Ahmad): every recommendation below is approved, except Q5.**
+
+**Q5 is decided differently:** the evidence rule is a bug, filed as **ACC-231** (lane B, High, Bug, related to ACC-228). The fix must change the single file entitlement — `assertCanSeeEvidence()` behind `fileForViewer()` — which download, the in-app viewer and the AI summary all use. It must keep the same 404. **It is not built in this work.** Until it is, the task page shows the evidence list through the existing rule, unchanged.
+
+**One consequence for PR 1.** A person admitted to the page only as a pool member (c) or a decider via `tasks:reassign` (d), who also cannot see the record, gets the evidence list's 404. The page then says that the evidence is shown to the people on the task; it never shows an error for it. The evidence count in the page's own view model still shows.
+
+The table keeps the recommendations as they were approved:
 
 | # | Question | Recommendation |
 |---|---|---|
@@ -565,7 +573,7 @@ The members rows' avatar, name, seat and since must fit 52 / 58. Measured in the
 | **Q2** | **Meetings and Standards have no page or module**, and Standards has no model. The panel is drawn on three record types. | Build the component generic (record, title, header action, title key, source line). Ship it on **committees only**. Meetings and Standards adopt it in their own tickets: they pass the inputs, and add one visibility-registry line for STANDARD. Nothing is built for pages that do not exist. |
 | **Q3** | "Keep the record id and the counts": the summary holds one count today ("n eligible"), not per-person counts. | Drop `chosen {userId}`; keep the record id and "n eligible"; **add the chosen person's counts as numbers** ("chosen 5 open, 0 overdue"). No other person is described. |
 | **Q4** | Who may open `/tasks/:id`? | The **union of today's exposures** (§1.2 a–e): on it now or before, may manage it, a pool member while open, a decider of its open request, or `tasks:view` + the record. Anyone else gets the identical 404. Nothing becomes visible that is not visible somewhere today. |
-| **Q5** | The **evidence rule is broader** than the task read: a committee viewer **without** `tasks:view` can list evidence today. | Leave it unchanged in this work, so behaviour doesn't move under a feature PR. I'd open a separate Bug ticket to decide whether evidence should require `tasks:view` like the task read. |
+| **Q5** | The **evidence rule is broader** than the task read: a committee viewer **without** `tasks:view` can list evidence today. | **Decided: a High bug, ACC-231**, fixed in the single file entitlement with the same 404. Not built here. |
 | **Q6** | The drawing gives an **Assigned** task only Start, but the app lets an assignee complete a task from Assigned today. | **Keep it: "Complete" in the ⋯ menu for Assigned**, with Start as the button — "exactly the actions the app applies today". The alternative is to require Start first, which is a behaviour change. |
 | **Q7** | `GET /tasks?sourceType&sourceId` (unpaged). | Keep it until nothing calls it; remove it in a later change. |
 | **Q8** | Home briefing **task** items go to My tasks highlighted today. | Send them to `/tasks/:id`. My tasks still honours `?task=` for older links. |
@@ -600,7 +608,7 @@ Each PR runs `/ready-to-pr`: both suites, tenant isolation, every `check:*`, `ng
 
 - [x] Tickets ACC-228, ACC-229, ACC-230 (lane B), chained 228 → 229 → 230
 - [x] Lane A check (§3.6)
-- [ ] Ahmad approves this plan, with answers to Q1–Q13
+- [x] Ahmad approves this plan (14 Oct): Q1–Q13 as recommended, except Q5 → ACC-231
 - [ ] PR 1
 - [ ] PR 2
 - [ ] PR 3
