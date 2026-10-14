@@ -902,17 +902,24 @@
       "tag": "ذكاء اصطناعي",
       "chosen": "تذهب إلى {{name}}: {{open}} {{record}}، منها {{overdue}}.",
       "chosenNoOverdue": "تذهب إلى {{name}}: {{open}} {{record}}.",
-      "alternative": "لدى {{name}} ({{position}}) {{open}}.",
-      "alternativeNoPosition": "لدى {{name}} {{open}}.",
+      "alternative": "لدى {{name}} ({{position}}) {{open}}{{extra}}.",
+      "alternativeNoPosition": "لدى {{name}} {{open}}{{extra}}.",
       "record": {
         "COMMITTEE": "في هذه اللجنة",
         "MEETING": "في هذا الاجتماع",
         "other": "في هذا السجل"
       },
-      "assignInstead": "إسنادها إلى {{name}}",
-      "keep": "إبقاؤها مع {{name}}",
+      "assignInstead": "اعتماد الاقتراح",
+      "keep": "الإبقاء على الاختيار",
       "noSuggestion": "لا يوجد هنا من هو أنسب بوضوح لتولّيها.",
-      "tooMany": "طلبات اقتراح كثيرة خلال دقيقة واحدة. انتظر قليلًا ثم حاول مرة أخرى."
+      "tooMany": "طلبات اقتراح كثيرة خلال دقيقة واحدة. انتظر قليلًا ثم حاول مرة أخرى.",
+      "extra": {
+        "noOverdue": "، ولا شيء متأخر",
+        "noDueSoon": "، ولا شيء مستحق خلال يومي عمل",
+        "neither": "، ولا شيء متأخر أو مستحق خلال يومي عمل"
+      },
+      "assignInsteadNamed": "اعتماد الاقتراح: {{name}}",
+      "keepNamed": "الإبقاء على الاختيار: {{name}}"
     }
   },
   "auth": {

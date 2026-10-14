@@ -439,15 +439,28 @@ export class TaskAssigneePickerComponent implements OnInit {
       overdue: this.format.count('task.overdue', chosen.overdueCount),
     });
     const position = suggestion.positionNameEn ? this.language.bilingual(suggestion.positionNameEn, suggestion.positionNameAr) : '';
+    // A pick with more open tasks than someone else is always explained by a
+    // number on screen: "none overdue", and — when the model weighed work due
+    // soon — "nothing due within 2 working days".
+    const noOverdue = suggestion.overdueCount === 0;
+    const noDueSoon = answer.hint.dueSoonSeen && suggestion.dueSoonCount === 0;
+    const extraKey = noOverdue && noDueSoon ? 'neither' : noOverdue ? 'noOverdue' : noDueSoon ? 'noDueSoon' : null;
     const second = this.translate.instant(position ? 'task.workload.alternative' : 'task.workload.alternativeNoPosition', {
       name: suggestion.name,
       position,
       open: this.format.count('task.workloadAltOpen', suggestion.openCount),
+      extra: extraKey ? this.translate.instant(`task.workload.extra.${extraKey}`) : '',
     });
     return {
       sentence: `${first} ${second}`,
-      assignLabel: this.translate.instant('task.workload.assignInstead', { name: suggestion.name }),
-      keepLabel: this.translate.instant('task.workload.keep', { name: chosenName }),
+      // Short on screen (Ahmad, 14 Oct) — the sentence above names both people,
+      // and the named labels cost Reassign a line it does not have. The
+      // accessible name still says who, and starts with the visible words, so
+      // a voice user can say what they see (WCAG 2.5.3).
+      assignLabel: this.translate.instant('task.workload.assignInstead'),
+      assignAria: this.translate.instant('task.workload.assignInsteadNamed', { name: suggestion.name }),
+      keepLabel: this.translate.instant('task.workload.keep'),
+      keepAria: this.translate.instant('task.workload.keepNamed', { name: chosenName }),
     };
   });
 

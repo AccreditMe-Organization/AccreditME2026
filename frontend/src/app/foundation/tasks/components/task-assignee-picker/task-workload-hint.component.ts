@@ -6,8 +6,12 @@ export type WorkloadHintState = 'offer' | 'working' | 'shown' | 'refusal';
 /** The sentence's parts, worded by the picker (names, counts, the record phrase). */
 export interface WorkloadHintView {
   sentence: string;
+  /** On screen: "Assign instead". */
   assignLabel: string;
+  /** Its accessible name, naming the person: "Assign instead: Huda Al-Harbi". */
+  assignAria: string;
   keepLabel: string;
+  keepAria: string;
 }
 
 /**
@@ -48,15 +52,23 @@ export interface WorkloadHintView {
               {{ v.sentence }}
               @if (inline()) {
                 <span class="am-wh__actions am-wh__actions--inline">
-                  <button type="button" class="am-wh__action" (click)="assign.emit()">{{ v.assignLabel }}</button>
-                  <button type="button" class="am-wh__action" (click)="keep.emit()">{{ v.keepLabel }}</button>
+                  <button type="button" class="am-wh__action" [attr.aria-label]="v.assignAria" (click)="assign.emit()">
+                    {{ v.assignLabel }}
+                  </button>
+                  <button type="button" class="am-wh__action" [attr.aria-label]="v.keepAria" (click)="keep.emit()">
+                    {{ v.keepLabel }}
+                  </button>
                 </span>
               }
             </p>
             @if (!inline()) {
               <div class="am-wh__actions">
-                <button type="button" class="am-wh__action" (click)="assign.emit()">{{ v.assignLabel }}</button>
-                <button type="button" class="am-wh__action" (click)="keep.emit()">{{ v.keepLabel }}</button>
+                <button type="button" class="am-wh__action" [attr.aria-label]="v.assignAria" (click)="assign.emit()">
+                  {{ v.assignLabel }}
+                </button>
+                <button type="button" class="am-wh__action" [attr.aria-label]="v.keepAria" (click)="keep.emit()">
+                  {{ v.keepLabel }}
+                </button>
               </div>
             }
           }

@@ -331,7 +331,11 @@ export interface WorkloadHintDto {
     positionNameAr: string | null;
     openCount: number;
     overdueCount: number;
+    /** Due within the next 2 working days. */
+    dueSoonCount: number;
   };
+  /** Someone the model was shown had work due soon: "nothing due soon" can explain the pick. */
+  dueSoonSeen: boolean;
 }
 
 export interface AssignableCommitteeRoleDto {

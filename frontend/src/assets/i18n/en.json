@@ -902,17 +902,24 @@
       "tag": "AI",
       "chosen": "Goes to {{name}}, who has {{open}} {{record}}, {{overdue}}.",
       "chosenNoOverdue": "Goes to {{name}}, who has {{open}} {{record}}.",
-      "alternative": "{{name}} ({{position}}) has {{open}}.",
-      "alternativeNoPosition": "{{name}} has {{open}}.",
+      "alternative": "{{name}} ({{position}}) has {{open}}{{extra}}.",
+      "alternativeNoPosition": "{{name}} has {{open}}{{extra}}.",
       "record": {
         "COMMITTEE": "on this committee",
         "MEETING": "on this meeting",
         "other": "on this record"
       },
-      "assignInstead": "Assign {{name}} instead",
-      "keep": "Keep {{name}}",
+      "assignInstead": "Assign instead",
+      "keep": "Keep",
       "noSuggestion": "Nobody here is clearly better placed to take it.",
-      "tooMany": "That's a lot of suggestions in one minute. Wait a moment, then try again."
+      "tooMany": "That's a lot of suggestions in one minute. Wait a moment, then try again.",
+      "extra": {
+        "noOverdue": ", none overdue",
+        "noDueSoon": ", nothing due within 2 working days",
+        "neither": ", none overdue or due within 2 working days"
+      },
+      "assignInsteadNamed": "Assign instead: {{name}}",
+      "keepNamed": "Keep: {{name}}"
     }
   },
   "auth": {
