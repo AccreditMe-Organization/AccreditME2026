@@ -25,6 +25,10 @@ export interface RoleDto {
   // the root role's row for its last active holder, so the dialog does not
   // offer a removal the server will refuse.
   activeHolderCount?: number;
+  // ACC-120 slice 5 (D8) — on getRole() too: ACTIVE holders, and how many of
+  // them hold it through a head position. The matrix's save confirmation reads
+  // both ("Applies to N users…", "M of them … head position").
+  headPositionHolderCount?: number;
 }
 
 export interface PermissionDto {
@@ -32,6 +36,9 @@ export interface PermissionDto {
   module: string;
   action: string;
   description: string | null;
+  // ACC-120 slice 5 (R2) — whether any code checks this key today. The matrix
+  // shows only keys in use; the server keeps the rest as the role holds them.
+  inUse: boolean;
 }
 
 /** Mirrors the backend's UserRoleGrantSource. */
@@ -106,8 +113,14 @@ export class RoleService {
     return this.http.patch<RoleDto>(`${this.base}/${id}`, dto);
   }
 
-  assignPermissions(id: string, permissionKeys: string[]): Observable<RoleDto> {
-    return this.http.patch<RoleDto>(`${this.base}/${id}/permissions`, { permissionKeys });
+  /**
+   * ACC-120 slice 5 (D4) — the full replacement set, and the set the page
+   * LOADED. The server refuses with 409 ROLE_PERMISSIONS_CHANGED if the role no
+   * longer holds exactly `expectedPermissionKeys`, so a stale page cannot
+   * overwrite a save made since. Required.
+   */
+  assignPermissions(id: string, permissionKeys: string[], expectedPermissionKeys: string[]): Observable<RoleDto> {
+    return this.http.patch<RoleDto>(`${this.base}/${id}/permissions`, { permissionKeys, expectedPermissionKeys });
   }
 
   deactivateRole(id: string): Observable<void> {
