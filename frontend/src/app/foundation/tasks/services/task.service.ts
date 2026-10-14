@@ -209,6 +209,8 @@ export interface CreateTaskDto {
   // ACC-197 — the creator accepted an AI draft in this dialog. The server
   // checks the claim against its AI log before marking the audit row.
   aiDraft?: { id: string; description: boolean; title: boolean };
+  // ACC-199 — the person chosen came from "✦ Suggest someone".
+  aiWorkloadHint?: { id: string };
 }
 
 // ACC-197 — "Draft with AI" on New task. Nothing is stored: the draft comes
@@ -253,6 +255,8 @@ export interface ReassignTaskDto {
   newAssigneeUserIds?: string[];
   assignTo?: AssignTargetDto;
   reason: string;
+  // ACC-199 — the person chosen came from "✦ Suggest someone".
+  aiWorkloadHint?: { id: string };
 }
 
 export interface ReleaseTaskDto {
@@ -283,6 +287,51 @@ export interface AssignableHolderDto {
   name: string;
   positionNameEn: string | null;
   positionNameAr: string | null;
+  /**
+   * ACC-199 — open and overdue tasks ON THE RECORD the picker was opened from,
+   * and whether choosing this person offers "✦ Suggest someone" (the server's
+   * threshold). Null — or absent — when no record was named, or the caller
+   * cannot see that record's task list.
+   */
+  workload?: HolderWorkloadDto | null;
+}
+
+export interface HolderWorkloadDto {
+  openCount: number;
+  overdueCount: number;
+  canSuggest: boolean;
+}
+
+/** ACC-199 — the record the picker was opened from. */
+export interface AssignRecordRef {
+  sourceType: string;
+  sourceId: string;
+}
+
+/** ACC-199 — "✦ Suggest someone", pressed. */
+export interface WorkloadHintRequestDto {
+  orgUnitId?: string;
+  positionId?: string;
+  committeeId?: string;
+  roleValueId?: string;
+  chosenUserId: string;
+  sourceType: string;
+  sourceId: string;
+  priority?: TaskPriority;
+  taskId?: string;
+}
+
+export interface WorkloadHintDto {
+  interactionId: string | null;
+  chosen: { userId: string; openCount: number; overdueCount: number };
+  suggestion: {
+    userId: string;
+    name: string;
+    positionNameEn: string | null;
+    positionNameAr: string | null;
+    openCount: number;
+    overdueCount: number;
+  };
 }
 
 export interface AssignableCommitteeRoleDto {
@@ -422,9 +471,10 @@ export class TaskService {
     });
   }
 
-  getAssignees(orgUnitId: string, positionId: string, taskId?: string): Observable<AssignableHolderDto[]> {
+  // ACC-199 — with the record named, each person carries their counts on it.
+  getAssignees(orgUnitId: string, positionId: string, taskId?: string, record?: AssignRecordRef | null): Observable<AssignableHolderDto[]> {
     return this.http.get<AssignableHolderDto[]>(`${this.base}/assignees`, {
-      params: withTask(new HttpParams().set('orgUnitId', orgUnitId).set('positionId', positionId), taskId),
+      params: withRecord(withTask(new HttpParams().set('orgUnitId', orgUnitId).set('positionId', positionId), taskId), record),
     });
   }
 
@@ -441,10 +491,25 @@ export class TaskService {
     return this.http.get<CommitteeRoleCatalogueDto[]>(`${this.base}/assignment/committee-roles`, { params });
   }
 
-  getCommitteeAssignees(committeeId: string, roleValueId: string, taskId?: string): Observable<AssignableHolderDto[]> {
+  getCommitteeAssignees(
+    committeeId: string,
+    roleValueId: string,
+    taskId?: string,
+    record?: AssignRecordRef | null,
+  ): Observable<AssignableHolderDto[]> {
     return this.http.get<AssignableHolderDto[]>(`${this.base}/assignees/committee`, {
-      params: withTask(new HttpParams().set('committeeId', committeeId).set('roleValueId', roleValueId), taskId),
+      params: withRecord(withTask(new HttpParams().set('committeeId', committeeId).set('roleValueId', roleValueId), taskId), record),
     });
+  }
+
+  // ACC-199 — whether to offer "✦ Suggest someone" at all.
+  getWorkloadHintAvailability(): Observable<{ available: boolean }> {
+    return this.http.get<{ available: boolean }>(`${this.base}/assignment/workload-hint/availability`);
+  }
+
+  // ACC-199 — a press. 1 credit; refunded when nobody is suggested.
+  workloadHint(dto: WorkloadHintRequestDto): Observable<WorkloadHintDto> {
+    return this.http.post<WorkloadHintDto>(`${this.base}/assignment/workload-hint`, dto);
   }
 
   // ACC-76 — the only list endpoint carrying assignees. Requires tasks:view.
@@ -595,4 +660,8 @@ export class TaskService {
 
 function withTask(params: HttpParams, taskId?: string): HttpParams {
   return taskId ? params.set('taskId', taskId) : params;
+}
+
+function withRecord(params: HttpParams, record?: AssignRecordRef | null): HttpParams {
+  return record ? params.set('sourceType', record.sourceType).set('sourceId', record.sourceId) : params;
 }
