@@ -604,11 +604,62 @@ The table keeps the recommendations as they were approved:
 
 Each PR runs `/ready-to-pr`: both suites, tenant isolation, every `check:*`, `ng build`, and the live proof after deploy.
 
+## 5b. PR 1 as built (14 Oct)
+
+### Heights, measured (`task-page.layout.spec.ts`, real theme, IBM Plex Sans Arabic, both languages)
+
+| Measure | English | Arabic |
+|---|---|---|
+| Title line (one line) | **34 px** at 28 px type | **40 px** at 29 px type |
+| Header block at 1240 | 77 px | 88 px |
+| Relations at 1240 | 4 in one row, 310 px each (≥ 220) | 4 in one row, 310 px each |
+| Columns at 1240 | side by side, 614 / 614 px (≥ 420) | side by side, 614 / 614 px |
+| Whole page at 1240 | 604 px | 658 px |
+| At 390, longest seeded title | title 136 px (wraps), header 228 px, page 1254 px | title 120 px, header 220 px, page 1312 px |
+| Sideways scroll at 390 | none (scrollWidth 390 / 390) | none (390 / 390) |
+
+### Where the build differs from the plan
+
+1. **The briefing's saved decision items keep their old link.** §1.3 said the
+   change reached saved briefings too. It does for TASK items (the link is
+   built on screen from a stored task id), but a saved DECISION item stores the
+   REQUEST's id, not the task's, so it keeps `/tasks?request=`, which My tasks
+   still honours. New briefings link decisions to the task page
+   (`briefing-groups.ts` now emits `{ target: 'task', id: req.task.id }`).
+2. **The rail no longer uses `RouterLinkActive`.** To light My tasks on
+   `/tasks/:id` (`NavItem.alsoActiveFor`), the rail decides "current" itself.
+   The spec for that found that `RouterLinkActive` removes `aria-current` after
+   the template sets it, so no rail item has ever kept `aria-current="page"`.
+   Fixed in passing, with a regression spec.
+3. **The evidence list gains a "not shown" state** for its 404 (decided in §4
+   with Q5): a pool member or a decider the page admits but the evidence rule
+   refuses reads "Evidence is shown to the people on this task.", not an error.
+4. **Not drawn data the server does not hold, left out rather than guessed:**
+   the header's "moved from 8 Oct · more time approved 3 Oct" (History says it),
+   and the request's "waiting for {decider}" (the decider is a rule, not a
+   stored person).
+5. **The page's H1 is its own, not `PageHeaderComponent`'s 22 px**, at the drawn
+   28/34 and 29/40; the tab title is registered with `registerPageName`.
+6. **`/tasks/all`'s title links exist but are unreachable**: that stopgap route
+   never loads rows (it has no record — CLAUDE.md, Open/Deferred Items).
+7. **The committee panel's title link is not covered by a rendering spec**: its
+   specs replace the template. It is covered by the live check, and PR 2
+   rebuilds the row with its own spec.
+
+### Mutation checks (each turned a spec red, then restored)
+
+| Mutation | Spec that went red |
+|---|---|
+| (e) without `tasks:view` | task-page.service — the record without tasks:view gets the 404 |
+| (c) without "still waiting" | task-page.service — not once someone has picked it up |
+| (a) removed | task-page.service — 6 specs |
+| a 404 rendered as an error | task-page.component — the identical not-found state |
+
 ## 6. Progress
 
 - [x] Tickets ACC-228, ACC-229, ACC-230 (lane B), chained 228 → 229 → 230
 - [x] Lane A check (§3.6)
 - [x] Ahmad approves this plan (14 Oct): Q1–Q13 as recommended, except Q5 → ACC-231
-- [ ] PR 1
+- [x] PR 1 built on `feature/ACC-228-task-page` (14 Oct) — §5b; waiting for /ready-to-pr
 - [ ] PR 2
 - [ ] PR 3
