@@ -1,8 +1,10 @@
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { AmDateTimePipe } from '../../../../core/formatting';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, of, startWith, switchMap } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
+import { RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { BadgeModule } from 'primeng/badge';
 import { PopoverModule, Popover } from 'primeng/popover';
@@ -14,7 +16,7 @@ const POLL_INTERVAL_MS = 30000;
 @Component({
   selector: 'app-notification-bell',
   standalone: true,
-  imports: [AmDateTimePipe, TranslatePipe, ButtonModule, BadgeModule, PopoverModule],
+  imports: [AmDateTimePipe, TranslatePipe, ButtonModule, BadgeModule, PopoverModule, RouterLink, NgTemplateOutlet],
   template: `
     <div class="relative inline-flex">
       <p-button
@@ -57,22 +59,51 @@ const POLL_INTERVAL_MS = 30000;
         } @else {
           <div class="flex flex-col gap-1 max-h-96 overflow-y-auto">
             @for (item of recent(); track item.id) {
-              <div
-                class="flex flex-col gap-0.5 p-2 rounded cursor-pointer hover:bg-surface-50"
-                [class.font-semibold]="item.status === 'UNREAD'"
-                (click)="onItemClick(item)"
-              >
-                <span class="text-sm">
-                  {{ isArabic() && item.titleAr ? item.titleAr : item.titleEn }}
-                </span>
-                <span class="text-xs text-surface-400">{{ item.createdAt | amDateTime }}</span>
-              </div>
+              <!-- ACC-228 — a task's notification opens the task's own page.
+                   A real link, so it is reachable by keyboard and opens in a
+                   new tab like any link; it still marks the item read. -->
+              @if (taskLink(item); as link) {
+                <a
+                  class="am-bell-item flex flex-col gap-0.5 p-2 rounded hover:bg-surface-50"
+                  [class.font-semibold]="item.status === 'UNREAD'"
+                  [routerLink]="link"
+                  (click)="onItemClick(item); panel.hide()"
+                >
+                  <ng-container *ngTemplateOutlet="itemText; context: { $implicit: item }" />
+                </a>
+              } @else {
+                <div
+                  class="flex flex-col gap-0.5 p-2 rounded cursor-pointer hover:bg-surface-50"
+                  [class.font-semibold]="item.status === 'UNREAD'"
+                  (click)="onItemClick(item)"
+                >
+                  <ng-container *ngTemplateOutlet="itemText; context: { $implicit: item }" />
+                </div>
+              }
             }
+            <ng-template #itemText let-item>
+              <span class="text-sm">
+                {{ isArabic() && item.titleAr ? item.titleAr : item.titleEn }}
+              </span>
+              <span class="text-xs text-surface-400">{{ item.createdAt | amDateTime }}</span>
+            </ng-template>
           </div>
         }
       </div>
     </p-popover>
   `,
+  styles: [
+    `
+      .am-bell-item {
+        color: inherit;
+        text-decoration: none;
+      }
+      .am-bell-item:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: -2px;
+      }
+    `,
+  ],
 })
 export class NotificationBellComponent implements OnInit {
   private readonly notificationService = inject(NotificationService);
@@ -117,6 +148,11 @@ export class NotificationBellComponent implements OnInit {
   onToggle(event: Event, panel: Popover): void {
     panel.toggle(event);
     this.loadRecent();
+  }
+
+  /** ACC-228 — every task notification carries the task (objectType 'Task'). */
+  taskLink(item: NotificationDto): string[] | null {
+    return item.objectType === 'Task' && item.objectId ? ['/tasks', item.objectId] : null;
   }
 
   onItemClick(item: NotificationDto): void {
