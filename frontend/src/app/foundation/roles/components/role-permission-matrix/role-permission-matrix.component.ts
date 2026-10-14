@@ -143,11 +143,12 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
             <div
               class="pm-grid"
               role="grid"
-              [attr.aria-label]="'roles.matrix.gridLabel' | translate: { name: roleName() }"
+              [attr.aria-label]="'roles.matrix.gridLabel' | translate: { name: nameInSentence() }"
               [attr.aria-readonly]="readOnly() ? 'true' : null"
               [attr.aria-rowcount]="rows().length + 1"
               [attr.aria-colcount]="cellCount"
               (keydown)="onGridKeydown($event)"
+              (focusin)="onGridFocusIn($event)"
             >
               <div role="row" class="pm-row pm-row--head" aria-rowindex="1">
                 <div role="columnheader" class="pm-frozen pm-head">{{ 'roles.matrix.columnHeader' | translate }}</div>
@@ -254,7 +255,7 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
 
     <app-permission-save-confirm
       [visible]="confirmOpen()"
-      [roleName]="roleName()"
+      [roleName]="nameInSentence()"
       [activeHolders]="activeHolders()"
       [headHolders]="headHolders()"
       [groups]="confirmGroups()"
@@ -356,25 +357,33 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
         display: flex;
         flex-direction: column;
       }
+      /* Type sizes from the drawings: English per 6a (13 / 11.5 / 12.5), Arabic
+         per 3a (14 / 12 / 14). Line heights are the same in both, so the row
+         geometry — 56 for a module, 44 for a permission — does not change
+         with the language. */
       .pm-module-name {
-        font-size: 14px;
+        font-size: 13px;
         line-height: 22px;
         font-weight: 600;
         color: var(--am-ink-900);
       }
       .pm-module-desc {
-        font-size: 12px;
+        font-size: 11.5px;
         line-height: 18px;
         color: var(--am-ink-500);
       }
       .pm-perm-name {
-        font-size: 14px;
+        font-size: 12.5px;
         line-height: 22px;
         color: var(--am-ink-900);
         padding-block-start: 1px;
       }
-      .pm-row:not(.pm-row--module) .pm-label-text {
-        padding-inline-start: 0;
+      .pm--rtl .pm-module-name,
+      .pm--rtl .pm-perm-name {
+        font-size: 14px;
+      }
+      .pm--rtl .pm-module-desc {
+        font-size: 12px;
       }
 
       /* Marks — 6a's own: a filled tick, an empty box, a success-ringed tick
@@ -566,6 +575,14 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
     const role = this.role();
     return role ? this.languageService.bilingual(role.nameEn, role.nameAr) : '';
   });
+
+  /**
+   * The name as it goes INTO a sentence: wrapped in Unicode isolates (FSI …
+   * PDI), so an English name inside an Arabic sentence keeps its own order. A
+   * bare "Matrix check (delete me)" between « » in Arabic otherwise renders
+   * with its brackets and guillemets on the wrong sides.
+   */
+  readonly nameInSentence = computed(() => `⁨${this.roleName()}⁩`);
 
   readonly activeHolders = computed(() => this.role()?.activeHolderCount ?? 0);
   readonly headHolders = computed(() => this.role()?.headPositionHolderCount ?? 0);
@@ -839,6 +856,20 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
     }
     event.preventDefault();
     this.moveFocus(next[0], next[1]);
+  }
+
+  /**
+   * Focus can arrive without an arrow key — Tab into the grid, a click on the
+   * glyph rather than the cell, a screen reader's own cursor. The roving stop
+   * follows wherever focus lands, so Space always acts on the cell that is
+   * actually focused, never on the last one the arrows reached.
+   */
+  onGridFocusIn(event: FocusEvent): void {
+    const at = (event.target as HTMLElement | null)?.closest('[data-pm-cell]')?.getAttribute('data-pm-cell');
+    if (!at) return;
+    const [r, c] = at.split(':').map(Number);
+    const [fr, fc] = this.focusAt();
+    if (r !== fr || c !== fc) this.focusAt.set([r, c]);
   }
 
   private moveFocus(r: number, cell: number): void {

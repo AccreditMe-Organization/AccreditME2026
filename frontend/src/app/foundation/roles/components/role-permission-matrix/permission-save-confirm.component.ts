@@ -206,6 +206,7 @@ export interface PermissionChangeGroup {
 })
 export class PermissionSaveConfirmComponent {
   readonly visible = input.required<boolean>();
+  /** The role's name as it goes into a sentence — already bidi-isolated by the matrix. */
   readonly roleName = input.required<string>();
   readonly activeHolders = input.required<number>();
   readonly headHolders = input.required<number>();

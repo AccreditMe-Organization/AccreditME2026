@@ -127,7 +127,9 @@ describe('RolePermissionMatrixComponent (ACC-120 slice 5, PR B)', () => {
     fixture.detectChanges();
   };
   const checkboxes = (): HTMLElement[] => Array.from(host().querySelectorAll('[role="checkbox"]'));
-  const dialogText = (): string => document.querySelector('[data-pm-confirm]')?.textContent ?? '';
+  // Bidi isolates are invisible; strip them where a test reads English prose.
+  const plain = (s: string | null | undefined): string => (s ?? '').replace(/[⁨⁩]/g, '');
+  const dialogText = (): string => plain(document.querySelector('[data-pm-confirm]')?.textContent);
   const buttonByAttr = (attr: string): HTMLButtonElement | null =>
     document.querySelector(`[${attr}] button`) as HTMLButtonElement | null;
 
@@ -166,6 +168,17 @@ describe('RolePermissionMatrixComponent (ACC-120 slice 5, PR B)', () => {
     expect(component.selected().has('committees:create')).toBeTrue();
     key(' ');
     expect(component.selected().has('committees:create')).toBeFalse();
+  });
+
+  // Found in the browser check: focus that arrives WITHOUT an arrow key (Tab,
+  // a script, a screen reader) left the roving stop behind, and Space toggled
+  // the first module instead of the focused cell.
+  it('Space acts on the cell that has focus, however focus got there', () => {
+    render();
+    cell(ROW.create, CELL.create).focus();
+    key(' ');
+    expect(component.selected().has('committees:create')).toBeTrue();
+    expect(component.changeCount()).toBe(1);
   });
 
   it('Shift+Space toggles the whole row: on a module row, the whole module', () => {
@@ -274,7 +287,7 @@ describe('RolePermissionMatrixComponent (ACC-120 slice 5, PR B)', () => {
     buttonByAttr('data-pm-save')!.click();
     fixture.detectChanges();
     expect(component.saveState()).toBe('conflict');
-    expect(document.querySelector('[data-pm-alert]')?.textContent).toContain(
+    expect(plain(document.querySelector('[data-pm-alert]')?.textContent)).toContain(
       'Quality Editor was changed by someone else since you opened it. Nothing was saved.',
     );
     expect(buttonByAttr('data-pm-save')).toBeNull();
@@ -283,6 +296,21 @@ describe('RolePermissionMatrixComponent (ACC-120 slice 5, PR B)', () => {
     fixture.detectChanges();
     expect(getRole).toHaveBeenCalledTimes(2);
     expect(component.changeCount()).toBe(0);
+  });
+
+  // Found in the browser check: an English name inside an Arabic sentence lost
+  // its order («Matrix check (delete me)» rendered with the brackets swapped).
+  it('isolates the role name inside an Arabic sentence', () => {
+    render({
+      assign: () =>
+        throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'ROLE_PERMISSIONS_CHANGED' } })),
+    });
+    TestBed.inject(TranslateService).use('ar');
+    fixture.detectChanges();
+    grantCreateAndOpen();
+    buttonByAttr('data-pm-save')!.click();
+    fixture.detectChanges();
+    expect(document.querySelector('[data-pm-alert]')?.textContent).toContain('«⁨محرر الجودة⁩»');
   });
 
   it('a 403 says the permission is gone, and drops Try again', () => {
