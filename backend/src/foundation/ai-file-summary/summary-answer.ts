@@ -1,5 +1,6 @@
 import { CoverageUnit, IFileText, SummarizableKind, estimateTokens } from './extract/file-text';
 import { cutAtBoundary } from '../ai/text-cut';
+import { firstJsonObject } from '../ai/first-json-object';
 
 /**
  * ACC-193 — what we send the model, and how we read what comes back.
@@ -75,17 +76,6 @@ export function textBudget(inputCap: number, language: SummaryLanguage, fileName
   const { before, after } = summaryFraming(fileName, kind, 'the header and 999999 of 999999 rows');
   const overhead = estimateTokens(summarySystemPrompt(language)) + estimateTokens(before) + estimateTokens(after);
   return Math.max(0, Math.floor((inputCap - overhead) * 0.9));
-}
-
-function firstJsonObject(text: string): unknown {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return undefined;
-  try {
-    return JSON.parse(text.slice(start, end + 1)) as unknown;
-  } catch {
-    return undefined;
-  }
 }
 
 /**

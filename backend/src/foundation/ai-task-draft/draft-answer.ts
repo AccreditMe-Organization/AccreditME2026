@@ -1,4 +1,5 @@
 import { cutAtBoundary } from '../ai/text-cut';
+import { firstJsonObject } from '../ai/first-json-object';
 
 /**
  * ACC-197 — what we send the model to draft a task, and how we read what comes
@@ -105,17 +106,6 @@ export type DraftParse =
   | { kind: 'insufficient' }
   /** Empty, not JSON, or a part missing. Refunded; "Try again". */
   | { kind: 'unusable' };
-
-function firstJsonObject(text: string): unknown {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return undefined;
-  try {
-    return JSON.parse(text.slice(start, end + 1)) as unknown;
-  } catch {
-    return undefined;
-  }
-}
 
 const sameTitle = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase();
 
