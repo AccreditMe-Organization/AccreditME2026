@@ -1146,6 +1146,8 @@ POST /auth/forgot-password         3 / hour per organisation + email
                                   AND 20 / hour per address
 POST /auth/reset-password         20 / hour per address
 POST /tasks/draft                 10 / min per signed-in USER (ACC-197)
+POST /tasks/assignment/workload-hint
+                                  20 / min per signed-in USER (ACC-199)
 GET  /health                      not limited — the only exemption
 ```
 
@@ -1199,9 +1201,10 @@ GET  /health                      not limited — the only exemption
 - **Not covered:** Better Auth's own rate limiter only runs for requests through
   its HTTP handler, and we call `auth.api.*` server-side — so this guard is the
   only limit. File upload now exists (ACC-177) and is covered by the global
-  per-user limit; there is no upload-specific tier. The one AI-specific tier is
-  `POST /tasks/draft` above (`perUser()`, ACC-197): a draft is the first AI
-  call an ordinary user can repeat. The summary and the briefing have none —
+  per-user limit; there is no upload-specific tier. The AI-specific tiers are
+  `POST /tasks/draft` (`perUser()`, ACC-197) — a draft is the first AI call an
+  ordinary user can repeat — and `POST /tasks/assignment/workload-hint`
+  (ACC-199). The summary and the briefing have none —
   each is made once per file or per press, behind a claim row.
 
 ### Account Lockout — REAL SINCE ACC-120 SLICE 9b, AND NOT THE SAME CONTROL
@@ -1741,11 +1744,12 @@ Platform Admin configures:
 
 AI credit costs per feature (platform admin adjustable):
 
-**Only three of these are rows, and they are seeded, not hand-set (ACC-194,
+**Only four of these are rows, and they are seeded, not hand-set (ACC-194,
 Ahmad, 12 Oct):** `task_description_drafting` 2, `document_summary` 15 (input
 capped at 30,000 tokens, ACC-193), `morning_briefing` 5 **per on-demand run**,
 restricted to al-nakheel for demos (a tenant admin presses a button, ACC-198 —
-never a schedule, never per user per day). They arrive through
+never a schedule, never per user per day), and `workload_balancing` 1, a press
+of "Suggest someone", open to every organisation with AI (ACC-199). They arrive through
 `npm run seed:ai-feature-costs` after the deploy, which never overwrites an
 edited row. Everything else below is a price list for features that do not
 exist; a feature is callable only when it is in `foundation/ai/ai.config.ts`
@@ -1754,6 +1758,7 @@ AND has a row.
 LIGHT (1-5 credits):
   task_title_suggestion: 1
   task_description_drafting: 2        ← seeded (ACC-194)
+  workload_balancing: 1               ← seeded (ACC-199), per press
   meeting_agenda_generation: 3
   standard_interpretation: 3
   severity_suggestion: 2
@@ -3682,6 +3687,37 @@ and Ahmad's answers (13 Oct, Q1–Q12 and the Create-task rule):
 - **`am-ai-assist` gained `hideResult`, `labelRow` and `actionsExtra`** —
   opt-in, default off: a trigger on a field's label row, its result elsewhere.
 - **No migration.** The live proof runs AFTER the deploy.
+
+## Key Architecture Decisions (ACC-199)
+
+The AI workload hint in the assignee picker. Full mechanism and measurements:
+SYSTEM-REFERENCE.md §17.11 (and §3.9, §10.7, §10.19). Plan and Ahmad's answers
+(14 Oct, Q1–Q12): `backend/Plans/step-199-workload-hint.md`. Briefly:
+
+- **COUNTS ARE NOT AI, AND THEY ARE THE RECORD'S.** "12 open · 3 overdue" in
+  each person row counts open tasks ON THE RECORD the dialog was opened from,
+  for a caller who can see that record's task list (`tasks:view` and the
+  record). Otherwise `workload` is null and the picker works as before. No
+  record (the Tasks page) or a stage task definition: no counts, no button.
+- **NEVER CHARGED ON CHOOSING A PERSON.** Past the threshold (50% more open
+  tasks and at least 3 more than the least loaded, out-of-office people left
+  out), with AI available, "✦ Suggest someone" appears; only a press calls the
+  model. The answer is kept per person for the dialog (`TaskWorkloadHintStore`,
+  provided by the dialog because New task rebuilds the picker). 1 credit
+  (`workload_balancing`); a null or unusable pick is refunded; 20 presses a
+  minute per user.
+- **THE MODEL PICKS A LABEL; OUR CODE WRITES EVERY WORD.** No name, user id,
+  title, record name, unit or position reaches the model: shuffled labels,
+  counts on the record, and the task's priority. The server recomputes
+  eligibility, counts and the threshold on every press.
+- **ONLY A FOLLOWED SUGGESTION IS RECORDED**, on the task's create or reassign
+  audit row, checked against the AI log (ACC-197's `aiDraft` shape).
+- **The hint is the one deliberate exception to `am-ai-assist`** (no card, the
+  outcome line's own text), and it keeps the AI marks.
+- **`OverlaySelectComponent` gained `panelMinWidth`**, opt-in, so the Person
+  list's rows keep their height with counts.
+- **No migration.** The price row is seeded AFTER the deploy; the live proof
+  follows it.
 
 ## Open / Deferred Items
 
