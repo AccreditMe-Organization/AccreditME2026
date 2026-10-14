@@ -281,11 +281,21 @@ Branch `feature/ACC-120-permission-matrix`, from dev at e9c7b3b.
 - **The Platform Administrator role is shown read-only.** Today the screen
   redirects it to `/roles`. C / D7 and R1c call for the drawn read-only state,
   with a frozen-set sentence of its own.
-- **The transition editor's picker (F1's PR B item) is NOT in this PR.** The
-  remote branch `feature/ACC-120-field-reveal` changes
-  `workflow-transition-editor.component.ts`, so CC-104 step 0 leaves the file
-  alone. That branch's two commits are already on dev as PR #123 (1a6103f),
-  so it looks like a leftover, but deleting it is Ahmad's call.
+- **The transition editor's picker (F1's PR B item) came second (CC-105).**
+  CC-104 step 0 stopped on the remote branch `feature/ACC-120-field-reveal`,
+  which changes `workflow-transition-editor.component.ts`. It is a leftover:
+  its one change to the file is already on dev from PR #123 (1a6103f), and the
+  branch is left as it is.
+  - The picker now offers only in-use keys, and no platform key inside a
+    tenant.
+  - Edit also shows the transition's OWN current key when it is not one of
+    those, in a last group: "Can't be granted yet" (in the catalogue) or "Not
+    a defined permission" (not in it). An unrelated edit sends it back
+    unchanged.
+  - This replaced ACC-55's rule of offering every transition's unknown value
+    in both dialogs. Under F1 that would let a person pick another
+    transition's ungrantable key and be refused.
+  - Add offers no such key at all.
 - **Module order (D3)** is this plan's table order: tenant, org, users, roles,
   lookups, workflows, tasks, committees, notifications, meetings, documents,
   standards, audits, incidents, billing, reports, positions, setup, kpi, admin,
