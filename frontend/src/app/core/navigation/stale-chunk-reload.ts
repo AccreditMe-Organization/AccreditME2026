@@ -12,10 +12,12 @@ import { NavigationError, RouterFeatures, withNavigationErrorHandler } from '@an
  *
  * When a navigation fails for that reason, ONE full page load of the URL the
  * person was going to: the fresh page brings the new bundle and its chunk
- * names, and they arrive where they meant to. (frontend/vercel.json is the
- * other half: a missing chunk is a 404, not the HTML page cached for a year
- * under the chunk's address — true on Vercel only since ACC-226 removed the
- * Angular framework preset, whose own catch-all route still served the page.)
+ * names, and they arrive where they meant to. This handler IS the protection.
+ * On Vercel a missing chunk is NOT a 404: the static builder re-detects Angular
+ * from package.json and appends its catch-all route, so the old chunk's address
+ * answers with the HTML page, 200, marked immutable by the .js cache rule. That
+ * is accepted (ACC-226); the import still fails as a module load, which is the
+ * failure this handler catches.
  *
  * ## It can never loop
  *
