@@ -523,6 +523,7 @@
     "permissionListUnavailable": "The permission list could not be loaded. The current value is preserved, but new values cannot be chosen.",
     "permissionNoHolderWarning": "No active role in this organization holds this permission. The transition was saved, but nobody can trigger it until a role is granted it.",
     "permissionNotDefined": "Not a defined permission",
+    "permissionNotGrantable": "Can't be granted yet",
     "permissionUnknownWarning": "No permission with this name exists. The transition was saved, but unless this is a permission for a module that has not been built yet, nobody will be able to trigger it.",
     "requiredPermission": "Required Permission",
     "searchStages": "Search stages…",
