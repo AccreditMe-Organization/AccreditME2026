@@ -9,7 +9,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { AssignTargetDto } from './assign-target.dto';
-import { TaskAiWorkloadHintDto } from './workload-hint.dto';
+import { TaskAiWorkloadHintDto } from './task-ai-workload-hint.dto';
 
 // Every reassignment requires a documented reason — Absence and Departure
 // Management Pattern 2's audit-trail requirement.
