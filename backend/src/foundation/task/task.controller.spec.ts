@@ -9,6 +9,7 @@ import { TaskRequestService } from './task-request.service';
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskDraftService } from '../ai-task-draft/task-draft.service';
 import { TaskPageService } from './task-page.service';
+import { TaskRecordListService } from './task-record-list.service';
 import { RATE_LIMITS } from '../../common/throttle/rate-limits';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
@@ -183,6 +184,7 @@ describe('TaskController', () => {
         { provide: TaskWorkloadService, useValue: workload },
         { provide: WorkloadHintService, useValue: workloadHint },
         { provide: TaskPageService, useValue: { view: jest.fn(), history: jest.fn() } },
+        { provide: TaskRecordListService, useValue: { panel: jest.fn(), list: jest.fn() } },
       ],
     })
       .overrideGuard(TenantGuard)
