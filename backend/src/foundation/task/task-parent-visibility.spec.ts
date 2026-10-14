@@ -46,6 +46,8 @@ import { TenantService } from '../tenant/tenant.service';
 import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { TaskController } from './task.controller';
+import { TaskWorkloadService } from './workload/task-workload.service';
+import { WorkloadHintService } from './workload/workload-hint.service';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { LookupService } from '../lookup/lookup.service';
@@ -126,6 +128,9 @@ describe('Child list gated by its parent (ACC-101)', () => {
         { provide: TaskEvidenceService, useValue: {} },
         // ACC-197 — the controller's draft routes; never reached here.
         { provide: TaskDraftService, useValue: {} },
+        // ACC-199 — the picker's people lists and "Suggest someone"; never reached here.
+        { provide: TaskWorkloadService, useValue: {} },
+        { provide: WorkloadHintService, useValue: {} },
         {
           provide: TaskAuthorityService,
           useValue: {
