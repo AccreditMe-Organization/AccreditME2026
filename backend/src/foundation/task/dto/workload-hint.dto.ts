@@ -49,13 +49,3 @@ export class WorkloadHintDto {
   @IsOptional()
   taskId?: string;
 }
-
-// ACC-199 — the task's "assigned on an AI suggestion" claim, on Create task and
-// Reassign. Only an id: the service checks it against the AI log and against
-// who the task really went to; a claim that does not check out is ignored,
-// never refused.
-export class TaskAiWorkloadHintDto {
-  @IsString()
-  @IsNotEmpty()
-  id!: string;
-}
