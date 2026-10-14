@@ -23,6 +23,8 @@ describe('the hint prompt (ACC-199)', () => {
         'Others who could take it:',
         'P1 — open 4, overdue 0, due within 2 working days 1, high or critical 0, on hold 0.',
         'P2 — open 7, overdue 1, due within 2 working days 0, high or critical 0, on hold 0.',
+        '',
+        'Reply with the JSON object only, and nothing else.',
       ].join('\n'),
     );
   });

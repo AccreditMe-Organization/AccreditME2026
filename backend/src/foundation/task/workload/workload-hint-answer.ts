@@ -39,7 +39,8 @@ export function hintSystemPrompt(): string {
     'Pick the ONE person from "Others who could take it" best placed to take this task now.',
     'Weigh overdue work most, then work due within 2 working days, then high or critical work, then the open count. Work on hold counts least.',
     'If nobody among the others is clearly better placed than the person currently chosen, pick nobody.',
-    'Answer with JSON only, exactly {"pick":"P1"} using a label from "Others", or {"pick":null}. No other text.',
+    'Reply with the JSON object ONLY: no explanation, no reasoning, no other words before or after it.',
+    'Exactly {"pick":"P1"} using a label from "Others", or {"pick":null}.',
   ].join('\n');
 }
 
@@ -55,6 +56,10 @@ export function hintPrompt(input: IHintPromptInput): string {
     `Currently chosen: ${line(input.chosen)}`,
     'Others who could take it:',
     ...input.others.map(line),
+    '',
+    // Said again last: without it the model often explains its weighing first,
+    // which costs output and risks the limit (measured 14 Oct: 3 of 6 runs).
+    'Reply with the JSON object only, and nothing else.',
   ].join('\n');
 }
 
