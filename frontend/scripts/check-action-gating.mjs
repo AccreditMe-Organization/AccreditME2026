@@ -121,6 +121,11 @@ const ALLOWLIST = new Map([
       'same question).',
   ],
   [
+    'shared/components/list-dialog/list-dialog.component.ts#pi-times',
+    'The list dialog\'s own ✕ (ACC-229), as EditDialog\'s: closing it changes ' +
+      'nothing, and it is the one exit that must always be available.',
+  ],
+  [
     'shared/components/overlay-select/overlay-select.component.ts#pi-times',
     'Clears the field, or removes one chip from a multi-select. Edits form ' +
       'state only — the permission belongs on the form\'s save, not on a picker.',
