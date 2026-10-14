@@ -322,12 +322,14 @@ Measured for this plan in the real dialog shell (a throwaway spec, deleted; no t
 | Q4 | Counts only for open tasks on the dialog's record, and only if the user can see that record's task list; no record → no counts, no button; the model gets these counts; the hint says "on this committee". |
 | Q5 | ACC-65's open, ACC-173's overdue; unpicked pool tasks count for nobody; Reassign leaves its own task out. |
 | Q6 | Out of office today: never suggested; still listed with counts. |
-| Q7 | Reassign too, with the actions inline; counts only if the hint cannot fit. |
+| Q7 | Reassign too, with the actions inline; counts only if the hint cannot fit. **Outcome: Reassign keeps the hint** — with the short buttons of Q13 it measures 393 / 394 px (§17.2, items 8 and 9). |
 | Q8 | A dedicated hint component carrying the AI marks; no card. |
 | Q9 | Only a followed suggestion is recorded, verified against the AI log. |
 | Q10 | `workload_balancing`, 1 credit, open to every organisation with AI, seeded after the deploy (§8). |
 | Q11 | 20 a minute per user. |
 | Q12 | Gender-free Arabic; every final sentence in the build report. |
+| Q13 (14 Oct) | The suggested person's sentence explains the pick: ", none overdue" / «، ولا شيء متأخر», and "nothing due within 2 working days" when the model weighed work due soon. |
+| Q14 (14 Oct) | Name-free buttons in both dialogs: "Assign instead" · "Keep" / «اعتماد الاقتراح» · «الإبقاء على الاختيار». Each button's accessible name still names the person. |
 
 ---
 
@@ -356,20 +358,20 @@ The worst case uses:
 - the longest seeded position (Chief Executive Officer / نائب المدير العام);
 - two-digit counts with an overdue clause.
 
-Reassign is measured in its tallest state: a rejected task with a two-line reason, and the reason's required error showing. **Every state keeps at least one meta line (20 px) of room** (ACC-120). English / Arabic:
+Reassign is measured in its tallest state: a rejected task with a two-line reason, and the reason's required error showing. **Every state keeps at least one meta line (20 px) of room** (ACC-120). The hint is measured with its longest sentence: both clauses of item 8. English / Arabic:
 
 | State | New task, step 1 | Reassign |
 |---|---|---|
 | Counts only (a person not past the threshold) | 317 / 328 | 356 / 351 |
 | "✦ Suggest someone" showing | 321 / 332 | 357 / 354 |
 | Working ("◌ Suggesting…") | 321 / 332 | 357 / 354 |
-| The hint | 359 / 374 | 393 / 394 |
+| The hint, its longest sentence | 377 / 394 | 393 / 394 |
 | Refusal: failed, with Try again | 339 / 352 | 375 / 374 |
 | Refusal: credits used up | 339 / 352 | 375 / 374 |
 
 - **Person rows:** 55 / 60 px in the test, exactly the same with counts as without, on a panel at least 360 px wide.
 - **The hint never sits over the Person field:** asserted in both dialogs.
-- **Reassign keeps the hint;** there was no need to fall back to counts only.
+- **Reassign keeps the hint** with the short buttons (item 9): 26 px of room in each language.
 
 ### 17.2 Where the build differs from the plan
 
@@ -380,6 +382,14 @@ Reassign is measured in its tallest state: a rejected task with a two-line reaso
 5. **The prompt says "JSON only" again on its last line.** Measured on real calls: with the instruction only in the system prompt, the model explained its weighing first in 3 of 6 answers (up to 430 output tokens). The answer always parsed, and 430 is well inside the 1,000-token limit; the closing line makes the answer `{"pick":"P2"}` (12 tokens) more often. The model still sometimes explains first (3 of 8 afterwards). That still works: the reader takes the text from the first `{` to the last `}`, so prose before the object is ignored as long as it contains no brace; one that does is refunded as unusable. The output limit stays at 1,000.
 6. **One `firstJsonObject()`**: the briefing, the summary and drafting each carried it word for word, and the hint would have been the fourth. It is now `foundation/ai/first-json-object.ts`. Byte-identical behaviour; their specs are unchanged.
 7. **The model's pick varies between close candidates.** In the drawing's case it chose Sara (4 open, 1 due soon) in some runs and Huda (6 open, nothing due soon, 2 on hold) in others. It never chose the person with overdue work. Both are defensible readings of the same weighting.
+8. **The suggested person's sentence explains the pick (Ahmad, 14 Oct).**
+   - **The wording:** ", none overdue" when they have none. ", nothing due within 2 working days" when the model was shown work due soon (anyone sent had some) and they have none. Both together read ", none overdue or due within 2 working days". So a pick with more open tasks than someone else always carries a number that explains it.
+   - **The server** returns `suggestion.dueSoonCount` and `dueSoonSeen` for it.
+   - **In Reassign it cost a line:** the longest sentence, with both people named on the inline buttons, measured **411 / 414 px**, under 420 but not 20 px under.
+9. **Name-free buttons, in both dialogs (Ahmad, 14 Oct, Q14).**
+   - On screen: "Assign instead" · "Keep" / «اعتماد الاقتراح» · «الإبقاء على الاختيار». The sentence just above names both people.
+   - With them, Reassign keeps the hint: **393 / 394 px**.
+   - **Each button's accessible name still names the person**, and it starts with the words on screen, so a voice-control user can say what they see (WCAG 2.5.3, Label in Name): "Assign instead: Huda Al-Harbi", "Keep: Nora Al-Otaibi" / «اعتماد الاقتراح: Huda Al-Harbi», «الإبقاء على الاختيار: Nora Al-Otaibi». Ahmad's example read "Assign Huda Al-Harbi instead"; that wording does not contain "Assign instead" as one phrase, which 2.5.3 asks for, so the name comes after a colon instead.
 
 ### 17.3 Mutation checks
 
@@ -419,15 +429,22 @@ P4 — open 6, overdue 0, due within 2 working days 0, high or critical 1, on ho
 Reply with the JSON object only, and nothing else.
 ```
 
-**English** (431 input tokens, 12 output; answer `{"pick":"P3"}`):
+With item 8's wording (431 input tokens and 12 output tokens each):
 
-> ✦ AI · Goes to Nora Al-Otaibi, who has 12 open tasks on this committee, 3 overdue. Sara Al-Mutairi (Quality Officer) has 4 open.
+**English, the model picking Huda:**
+
+> ✦ AI · Goes to Nora Al-Otaibi, who has 12 open tasks on this committee, 3 overdue. Huda Al-Harbi (Quality Officer) has 6 open, none overdue or due within 2 working days.
+> **Assign Huda Al-Harbi instead** · **Keep Nora Al-Otaibi**
+
+**English, the model picking Sara** (she has 1 due soon, so only "none overdue"):
+
+> ✦ AI · Goes to Nora Al-Otaibi, who has 12 open tasks on this committee, 3 overdue. Sara Al-Mutairi (Quality Officer) has 4 open, none overdue.
 > **Assign Sara Al-Mutairi instead** · **Keep Nora Al-Otaibi**
 
-**Arabic** (431 input tokens, 12 output; answer `{"pick":"P2"}` in that call's labelling):
+**Arabic, the model picking Huda:**
 
-> ✦ ذكاء اصطناعي · تذهب إلى Nora Al-Otaibi: 12 مهمة مفتوحة في هذه اللجنة، منها 3 مهام متأخرة. لدى Sara Al-Mutairi (مسؤول الجودة) 4 مهام مفتوحة.
-> **إسنادها إلى Sara Al-Mutairi** · **إبقاؤها مع Nora Al-Otaibi**
+> ✦ ذكاء اصطناعي · تذهب إلى Nora Al-Otaibi: 12 مهمة مفتوحة في هذه اللجنة، منها 3 مهام متأخرة. لدى Huda Al-Harbi (مسؤول الجودة) 6 مهام مفتوحة، ولا شيء متأخر أو مستحق خلال يومي عمل.
+> **إسنادها إلى Huda Al-Harbi** · **إبقاؤها مع Nora Al-Otaibi**
 
 ### 17.5 Every sentence, for Ahmad to read (Q12)
 
@@ -438,11 +455,16 @@ Reply with the JSON object only, and nothing else.
 | The tag | ✦ AI · | ✦ ذكاء اصطناعي · |
 | Chosen, with overdue | Goes to {name}, who has {open} {record}, {overdue}. | تذهب إلى {name}: {open} {record}، منها {overdue}. |
 | Chosen, none overdue | Goes to {name}, who has {open} {record}. | تذهب إلى {name}: {open} {record}. |
-| The other person | {name} ({position}) has {open}. | لدى {name} ({position}) {open}. |
-| The other person, no position | {name} has {open}. | لدى {name} {open}. |
+| The other person | {name} ({position}) has {open}{extra}. | لدى {name} ({position}) {open}{extra}. |
+| The other person, no position | {name} has {open}{extra}. | لدى {name} {open}{extra}. |
+| {extra}: none overdue | , none overdue | ، ولا شيء متأخر |
+| {extra}: nothing due soon | , nothing due within 2 working days | ، ولا شيء مستحق خلال يومي عمل |
+| {extra}: both | , none overdue or due within 2 working days | ، ولا شيء متأخر أو مستحق خلال يومي عمل |
 | The record phrase | on this committee / on this meeting / on this record | في هذه اللجنة / في هذا الاجتماع / في هذا السجل |
-| Assign | Assign {name} instead | إسنادها إلى {name} |
-| Keep | Keep {name} | إبقاؤها مع {name} |
+| Assign (on screen) | Assign instead | اعتماد الاقتراح |
+| Assign (accessible name) | Assign instead: {name} | اعتماد الاقتراح: {name} |
+| Keep (on screen) | Keep | الإبقاء على الاختيار |
+| Keep (accessible name) | Keep: {name} | الإبقاء على الاختيار: {name} |
 | Nobody better placed | Nobody here is clearly better placed to take it. | لا يوجد هنا من هو أنسب بوضوح لتولّيها. |
 | Too many presses | That's a lot of suggestions in one minute. Wait a moment, then try again. | طلبات اقتراح كثيرة خلال دقيقة واحدة. انتظر قليلًا ثم حاول مرة أخرى. |
 | Row counts | 12 open · 3 overdue | 12 مفتوحة · 3 متأخرة |

@@ -3710,6 +3710,13 @@ SYSTEM-REFERENCE.md §17.11 (and §3.9, §10.7, §10.19). Plan and Ahmad's answe
   title, record name, unit or position reaches the model: shuffled labels,
   counts on the record, and the task's priority. The server recomputes
   eligibility, counts and the threshold on every press.
+- **A PICK IS ALWAYS EXPLAINED BY A NUMBER ON SCREEN** (Ahmad, 14 Oct): the
+  suggested person's sentence adds ", none overdue" and, when the model was
+  shown work due soon, ", nothing due within 2 working days".
+- **NAME-FREE BUTTONS, NAMED ACCESSIBLE NAMES** (Ahmad, 14 Oct): "Assign
+  instead" · "Keep" on screen, so Reassign's tallest state keeps the hint with
+  a line of room (393 / 394px); each accessible name starts with those words
+  and names the person ("Assign instead: Huda Al-Harbi", WCAG 2.5.3).
 - **ONLY A FOLLOWED SUGGESTION IS RECORDED**, on the task's create or reassign
   audit row, checked against the AI log (ACC-197's `aiDraft` shape).
 - **The hint is the one deliberate exception to `am-ai-assist`** (no card, the

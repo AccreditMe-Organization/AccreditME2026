@@ -9867,8 +9867,20 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
     press costs nothing — including after New task rebuilds the picker on a
     step switch. A failure is not kept, so Try again calls again.
   - The answer is the drawn hint, "✦ AI · Goes to …, who has 12 open tasks on
-    this committee, 3 overdue. … has 4 open.", with **Assign … instead** (sets
-    Person and tells the host) and **Keep …**.
+    this committee, 3 overdue. … has 4 open, none overdue.", with **Assign …
+    instead** (sets Person and tells the host) and **Keep …**.
+  - **The suggested person's sentence explains the pick by a number on
+    screen** (Ahmad, 14 Oct): ", none overdue" when they have none; ", nothing
+    due within 2 working days" when the model was shown work due soon
+    (`dueSoonSeen`) and they have none; both together as ", none overdue or
+    due within 2 working days". The server returns `suggestion.dueSoonCount`
+    and `dueSoonSeen` for it.
+  - **The buttons are name-free on screen** (Ahmad, 14 Oct): "Assign instead"
+    · "Keep" / «اعتماد الاقتراح» · «الإبقاء على الاختيار». Each one's
+    accessible name starts with those words and names the person — "Assign
+    instead: Huda Al-Harbi" (WCAG 2.5.3). With names on screen, Reassign's
+    longest hint measured 411 / 414px, under the cap but without a line of
+    room.
 - **The model picks; our code writes every word (Q1).**
   - `POST /tasks/assignment/workload-hint` (`WorkloadHintService`): no
     `@Permissions`, like every picker route.
@@ -9914,11 +9926,11 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
   |---|---|---|
   | counts only | 317 / 328 | 356 / 351 |
   | button showing, and working | 321 / 332 | 357 / 354 |
-  | the hint | 359 / 374 | 393 / 394 |
+  | the hint, its longest sentence | 377 / 394 | 393 / 394 |
   | a refusal (failed with Try again; credits used up) | 339 / 352 | 375 / 374 |
 
   - In Reassign the hint's actions follow its text, and the Person field gives
     up its own message slot while the line shows: a person can never be
-    invalid. Without that, the hint was 414/415, five pixels under the cap.
+    invalid.
   - Person rows are equally tall with and without counts (55 / 60 in the
     test), on a panel at least 360px wide (`panelMinWidth`).
