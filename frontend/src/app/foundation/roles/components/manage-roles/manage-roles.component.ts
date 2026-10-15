@@ -23,7 +23,7 @@ import { OrgUnitService } from '../../../organization/services/org-unit.service'
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmCountPipe, AmNumberPipe, FormatService } from '../../../../core/formatting';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { manageRolesRefusalKey } from './manage-roles-refusal';
 
 /** One row of the direct-grants list: a tenant role, held or not, changed or not. */
 interface RoleRow {
@@ -35,6 +35,7 @@ interface RoleRow {
   grantedAt: string | null;
   /** Set once a per-role call has been attempted. */
   outcome: 'saved' | 'failed' | null;
+  /** A TRANSLATION KEY (manage-roles-refusal.ts), never the server's text. */
   failure: string | null;
 }
 
@@ -63,8 +64,8 @@ interface DerivedRow {
   template: `
     <div class="flex flex-col gap-3">
       @if (loadError()) {
-        <div class="flex flex-col items-start gap-2">
-          <p class="text-sm text-[var(--am-danger-600,#B42318)]">{{ loadError() }}</p>
+        <div class="flex flex-col items-start gap-2" role="alert" data-mr-load-error>
+          <p class="text-sm text-[var(--am-danger-ink)]">{{ loadError()! | translate }}</p>
           <p-button
             [label]="'common.retry' | translate"
             size="small"
@@ -180,6 +181,13 @@ interface DerivedRow {
                           {{ row.role.description }}
                         </span>
                       }
+                      <!-- ACC-120 slice 5b — the refusal, translated, on its own line:
+                           the right-hand column is no-wrap and holds only "Failed". -->
+                      @if (row.outcome === 'failed' && row.failure) {
+                        <span class="text-[11.5px] leading-[17px] text-[var(--am-danger-ink)]" data-mr-row-failure>
+                          {{ row.failure | translate }}
+                        </span>
+                      }
                     </label>
                   }
                   <span class="shrink-0 whitespace-nowrap text-[11.5px]" [class]="metaClass(row)">
@@ -201,7 +209,7 @@ interface DerivedRow {
         max-height: 232px;
       }
       .am-roles-row--changed {
-        background: var(--am-warning-50, #fffaeb);
+        background: var(--am-warning-bg);
       }
     `,
   ],
@@ -250,6 +258,7 @@ export class ManageRolesComponent implements OnInit {
 
   readonly loading = signal(false);
   readonly saving = signal(false);
+  /** A TRANSLATION KEY, translated at render (manage-roles-refusal.ts). */
   readonly loadError = signal<string | null>(null);
   readonly saveError = signal<string | null>(null);
 
@@ -335,7 +344,7 @@ export class ManageRolesComponent implements OnInit {
         this.loading.set(false);
       },
       error: (err: unknown) => {
-        this.loadError.set(extractErrorMessage(err, this.translate.instant('manageRoles.errorLoad')));
+        this.loadError.set(manageRolesRefusalKey(err, 'load'));
         this.loading.set(false);
       },
     });
@@ -440,7 +449,7 @@ export class ManageRolesComponent implements OnInit {
           of({
             id: row.role.id,
             ok: false,
-            message: extractErrorMessage(err, this.translate.instant('manageRoles.errorSaveRow')),
+            message: manageRolesRefusalKey(err, 'save'),
           }),
         ),
       ),
@@ -523,7 +532,8 @@ export class ManageRolesComponent implements OnInit {
 
   metaText(row: RoleRow): string {
     this.translate.currentLang();
-    if (row.outcome === 'failed') return row.failure ?? this.translate.instant('manageRoles.failed');
+    // The reason itself is on its own line under the role (see the template).
+    if (row.outcome === 'failed') return this.translate.instant('manageRoles.failed');
     if (row.outcome === 'saved') return this.translate.instant('manageRoles.savedMark');
     if (row.pending === 'add') return this.translate.instant('manageRoles.willBeGranted');
     if (row.pending === 'remove') return this.translate.instant('manageRoles.willBeRemoved');
@@ -536,9 +546,9 @@ export class ManageRolesComponent implements OnInit {
   }
 
   metaClass(row: RoleRow): string {
-    if (row.outcome === 'failed') return 'font-semibold text-[var(--am-danger-600,#B42318)]';
-    if (row.pending === 'add') return 'font-semibold text-[var(--am-warning-700,#B54708)]';
-    if (row.pending === 'remove') return 'font-semibold text-[var(--am-danger-600,#B42318)]';
+    if (row.outcome === 'failed') return 'font-semibold text-[var(--am-danger-ink)]';
+    if (row.pending === 'add') return 'font-semibold text-[var(--am-warning-ink)]';
+    if (row.pending === 'remove') return 'font-semibold text-[var(--am-danger-ink)]';
     return 'text-[var(--am-text-secondary)] [font-variant-numeric:tabular-nums]';
   }
 
