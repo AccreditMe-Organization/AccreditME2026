@@ -3786,6 +3786,46 @@ Briefly:
   action's failure are separate; a failure is said in its row.
 - **No migration.**
 
+## Key Architecture Decisions (ACC-230)
+
+The committee page's Members and Sub-committees panels are capped at five, with
+See all. Full mechanism: SYSTEM-REFERENCE.md §3.14. Plan, Ahmad's decisions (15
+Oct) and the measurements: `backend/Plans/step-228-record-tasks-panel.md` (§3,
+§5d). Briefly:
+
+- **EVERY CAPPED RECORD PANEL USES ONE FRAME, `am-capped-panel`.**
+  - It holds a header with the total and an actions slot, a body FIXED at 294 /
+    328 that never grows or scrolls, and the "Showing 5 of N · See all" footer
+    above five.
+  - Rows use its `am-cp-row` / `am-cp-l1` / `am-cp-l2` classes, so a row cannot
+    drift from the body.
+  - The Tasks panel moved onto it without moving a pixel (its layout spec still
+    measures the same).
+  - A future record page (Meetings, Documents) builds its capped panels on this
+    frame, never on a copy.
+- **A PLAIN LIST POPUP IS `am-list-dialog size="compact"` (720 × 560) WITH
+  `am-simple-list` INSIDE.** That gives search, sort, a live count and Load
+  more by 50, and no filters. The task list's toolbar is not reused for a list
+  that has nothing to filter.
+- **SEE ALL OPENS WITH FOCUS IN ITS SEARCH BOX — in `am-list-dialog`, for every
+  list popup.**
+  - PrimeNG's `focusOnShow` runs while the dialog is still animating in and
+    landed on the frame, so it is off.
+  - The shell focuses the search box once the dialog has finished opening, and
+    leaves focus alone if something inside already has it.
+- **Members are ordered by seat** (the `committee_member_role` lookup's order),
+  then by how long they have served. Each row's ⋯ holds Change role and
+  Remove, each only with its own permission. With neither, there is no ⋯.
+- **Small lists are searched and sorted in memory** after one read scoped by
+  organisation. A committee's members and children are few, and seat order is
+  a lookup order, not a column. Do not copy this to a list that can grow (tasks
+  stay in SQL).
+- **The shared footer keys are `record.seeAll` / `record.showing`.** A new
+  capped panel reuses them.
+- **"All Tasks" is in the rail** after My Tasks, gated on `tasks:view` by its
+  nav entry.
+- **No migration.**
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require
@@ -3931,7 +3971,9 @@ Briefly:
   make the misleading empty-list defect easier to find, not fix it.
   **RESOLVED (ACC-229)** — the empty list: `/tasks/all` now hosts the All
   tasks list organisation-wide (`tasks:view`, the record types the viewer
-  may see), 50 at a time. The "do not link it" warning no longer applies.
+  may see), 50 at a time. The "do not link it" warning no longer applies,
+  and ACC-230 linked it: "All Tasks" is a rail item after My Tasks, for
+  `tasks:view` holders.
   **The LIST half of this is now resolved (ACC-76)**: `TaskListComponent`
   gained a real `embedded` mode and lives inside Committee's detail page,
   which is the home its own original header comment always described.

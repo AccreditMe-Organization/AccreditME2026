@@ -939,8 +939,11 @@ the Administration group came back from `visibleNavGroups()`. The two agree
 today; naming the permission means the label cannot drift if the group's
 visibility rule changes.
 
-**`/tasks/all` was deliberately left on `tasks:view` alone** — a stopgap route
-with no nav item, not an Administration screen.
+**`/tasks/all` was deliberately left on `tasks:view` alone**, not an
+Administration screen. When this was written it was a stopgap route with no nav
+item. It became a real list in ACC-229, and a rail item in ACC-230: "All
+Tasks", in My work after My Tasks, gated on `tasks:view` by its nav entry
+(§3.13). `STANDALONE_ROUTE_PERMISSIONS` is now empty.
 
 **Backfill, and why its ordering differs from every earlier one.**
 `backfill-admin-access-permission.ts` grants `admin:access` to each existing
@@ -3609,13 +3612,17 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
 **Frontend.**
 
 - **`RecordTasksPanelComponent`** (`app-record-tasks-panel`,
-  `foundation/tasks/components/record-tasks-panel/`): its own frame —
-  header 42/46, a body FIXED at 294px English / 328px Arabic with five 52/58
-  rows and, only above five, a 34/38 footer "Showing 5 of 16 · See all". It
-  never grows and never scrolls (measured in `record-tasks-panel.layout.spec.ts`
-  with 0, 3, 5 and 16 tasks). Inputs: the record, its name, `canCreate`, and a
-  sought task — among the five it is highlighted; otherwise the popup opens at
-  it. Not `RecordPanelComponent`: that body has a floor, not a height.
+  `foundation/tasks/components/record-tasks-panel/`): header 42/46, a body
+  FIXED at 294px English / 328px Arabic with five 52/58 rows and, only above
+  five, a 34/38 footer "Showing 5 of 16 · See all".
+  - **It never grows and never scrolls.** Measured in
+    `record-tasks-panel.layout.spec.ts` with 0, 3, 5 and 16 tasks.
+  - **Inputs:** the record, its name, `canCreate`, and a sought task. Among the
+    five, the sought task is highlighted; otherwise the popup opens at it.
+  - **The frame** is `am-capped-panel` since ACC-230 (§3.14), moved onto it
+    without changing a pixel. Its footer reads `record.showing` /
+    `record.seeAll`; the old `recordTasks.*` pair is gone. Not
+    `RecordPanelComponent`, because that body has a floor, not a height.
 - **`TaskListViewComponent`** (`app-task-list-view`): the toolbar (search,
   Status, Overdue only, Assignee or pool, Required or optional, Due, Assigned
   to me, Sort), chips with Clear all, a polite live count, the column header
@@ -3623,12 +3630,22 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
   states (list, Load more, a row's action). Opens on its defaults every time.
   Below 760px the rows are two-line cards. Used in the popup and at
   `/tasks/all`.
-- **`ListDialogComponent`** (`am-list-dialog`, `shared/components/list-dialog/`):
-  the shell for a LIST — 1040 × 760 or the window less 96, a full-screen sheet
-  below 760px; a header and the body template, rebuilt on every open; a layer
-  in `LayerStackService`, listening for Escape in the CAPTURE phase so an open
-  row menu inside it takes the first Escape; focus back to the opener.
-  EditDialog's 420px cap does not apply: it is a list, not a form.
+- **`ListDialogComponent`** (`am-list-dialog`, `shared/components/list-dialog/`)
+  is the shell for a LIST. EditDialog's 420px cap does not apply, because it is
+  a list, not a form.
+  - **Size:** `size="list"` is 1040 × 760 (the default); `size="compact"`
+    (ACC-230) is 720 × 560. Either is capped to the window less 96px, and below
+    760px it becomes a full-screen sheet.
+  - **Body:** a header and the body template, rebuilt on every open.
+  - **Escape:** it is a layer in `LayerStackService`, listening for Escape in
+    the CAPTURE phase, so an open row menu inside it takes the first Escape.
+  - **Focus on open** (fixed in ACC-230, tagged ACC-229): `focusOnShow` is
+    off, because PrimeNG's own focus runs while the dialog is still animating
+    in and landed on the frame. `onShow` (after the animation) focuses the
+    body's `[autofocus]` or `input[type=search]`. Focus already inside the
+    dialog (a deep link's row) is left alone, and with no search box focus goes
+    to the frame.
+  - **Focus on close** goes back to the opener.
 - **`RowMenuComponent`** (`am-row-menu`, `shared/components/row-menu/`): the ⋯
   and its worded menu on the CDK menu (reposition scroll strategy), a layer
   while open.
@@ -3650,6 +3667,98 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
 its client-side copies of the action rules (`committee-detail.tasks.spec.ts`,
 `task-due-summary.ts`). **ACC-217 is fixed by construction:** the panel's load
 state and an action's failure are separate signals.
+
+**`/tasks/all` is in the rail** (ACC-230): "All Tasks" / «كل المهام»
+(`task.allTasks`), after My Tasks, shown to `tasks:view` holders. Its nav entry
+carries the permission, so the route guard derives from the same line.
+
+### 3.14 Capped record panels: Members and Sub-committees (ACC-230)
+
+A committee's Members and Sub-committees panels have the same shape as its
+Tasks panel: five rows in a fixed body, the total in the header, and "Showing 5
+of N · See all" opening the whole list in a popup. Plan, decisions and
+measurements: `backend/Plans/step-228-record-tasks-panel.md` (§3, §5d).
+
+**Endpoints**, `committees:view`, declared in `CommitteesController`; the logic
+is in `CommitteeListsService`:
+
+| Endpoint | Query | Returns |
+|---|---|---|
+| `GET /committees/:id/members/page` | `q` (≤ 120), `sort` `seat` \| `name` \| `since`, `dir`, `take` 1–50, `skip`, `lang` | `{ items: {id, userId, name, roleValueId, roleLabelEn, roleLabelAr, joinedAt}[], total, matching }` |
+| `GET /committees/:id/sub-committees` | `q`, `sort` `name` \| `status` \| `members`, `dir`, `take`, `skip`, `lang` | `{ items: {id, nameEn, nameAr, stageNameEn, stageNameAr, memberCount}[], total, matching }` |
+
+- **The committee is read first, by `{ id, organizationId }`.** Another
+  tenant's id, or a missing one, gets the identical 404.
+- **Active members and active children only.** `GET /committees/:id/members`
+  (the bare array) is unchanged for its other callers.
+- **Search and sort run in memory, after one scoped read.** A committee's lists
+  are small, and the seat order is the `committee_member_role` lookup's own
+  order (`LookupService.getValues`), which no column holds.
+  - Search is a case-insensitive substring of the name, so `%` and `_` are
+    literal.
+  - Seat order is the lookup order, then `joinedAt`, then `id`. Every sort ends
+    in `id`, so Load more never repeats a row.
+  - `lang` sorts names by the name the reader sees, with that language's
+    collation.
+  - Status sorts children with no stage last.
+- **`total`** is every row the list holds. **`matching`** is the rows the
+  search matches.
+- **The stage and member count** come from `committeeStagesAndCounts()`
+  (`committee-stage-counts.ts`), which the committees list also uses. That is
+  three queries for any number of committees.
+
+**Frontend.**
+
+- **`CappedPanelComponent`** (`am-capped-panel`,
+  `shared/components/capped-panel/`) is the frame all three panels use.
+  - **Parts:** a header (title, total, an `[amPanelActions]` slot); a body
+    FIXED at 294 / 328 that never grows or scrolls; and, only above
+    `CAPPED_PANEL_ROWS` (5), a 34 / 38 footer "Showing 5 of N · See all".
+  - **States:** loading (a skeleton), error (Try again) and empty.
+  - **Rows** use its unencapsulated classes: `li.am-cp-row` (52 / 58),
+    `am-cp-l1`, `am-cp-l2` and `am-cp-cut`. A panel's rows cannot drift from
+    its body's height.
+  - **Test ids:** `testIdPrefix` names the parts (`{prefix}-head`, `-body`,
+    `-count`, `-foot`, `-see-all`).
+- **`SimpleListComponent`** (`am-simple-list`,
+  `shared/components/simple-list/`) is the body of a plain list popup.
+  - **Toolbar:** search (`type=search`, so `am-list-dialog` focuses it) and a
+    sort (`OverlaySelectComponent`, `ariaLabel` `record.sortLabel`).
+  - **List:** a polite live count, the column header sticky inside the ONLY
+    scrolling element, and Load more by 50.
+  - **Failures:** list and Load more failures are shown in place.
+  - **Phone:** below 760px the rows become cards (60 / 64).
+  - **Inputs:** a `load(query)` function returning `{ items, total, matching }`,
+    the columns, a CSS grid and a row template.
+  - **Defaults:** it opens on its defaults every time (Q13).
+- **`CommitteeMembersPanelComponent`** (`app-committee-members-panel`):
+  - **Row:** initials, then the name, linked to `/users/:id` only for the
+    viewer's own id or for a viewer holding the route's permissions. Line 2 is
+    "{seat} · Since {date}".
+  - **Order:** by seat.
+  - **Add member** sits in the header (`canAddMember`).
+  - **Row menu:** each row's `am-row-menu` holds Change role
+    (`committees:change_member_role`) and Remove
+    (`committees:remove_member`), only those the viewer holds. A viewer with
+    neither gets no ⋯. Both open the page's existing dialog and confirm.
+    `reload()` re-reads the panel and an open popup.
+  - **Popup:** compact, with Member, Seat and Since columns; sorted by seat,
+    name or since.
+- **`CommitteeSubCommitteesPanelComponent`**
+  (`app-committee-sub-committees-panel`):
+  - **Row:** the child's name, linked, then "{stage} · n members" (the stage
+    only when there is one).
+  - **Order:** by name. There is no header action.
+  - **Popup:** compact, with Name, Status and Members columns.
+- **Replaced on the committee page:** the Members and Sub-committees
+  `RecordPanelComponent` blocks, their inline Change role and Remove icons, and
+  the page's filter of the whole committees list for children. With the
+  `ListRowDirective` rows gone, no NG0100 was measured on the page
+  (ACC-205 / ACC-153 stay open for the directive's other users).
+- **Measured** in `committee-panels.layout.spec.ts`, both languages:
+  - Panels at 0, 3, 5 and 12 rows: 294 / 328, rows 52 / 58, never overflowing.
+  - The popup body at 720 × 560: only the list scrolls, with rows at least 44.
+  - Phone cards: 60 / 64, nothing sideways.
 
 ## 4. Notification System
 
