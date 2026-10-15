@@ -28,6 +28,7 @@ import { TaskRequestService } from './task-request.service';
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskDraftService } from '../ai-task-draft/task-draft.service';
 import { TaskPageService } from './task-page.service';
+import { TaskRecordListService } from './task-record-list.service';
 
 describe('Task routes — static paths are not swallowed by :id (ACC-167)', () => {
   let app: INestApplication<App>;
@@ -85,6 +86,11 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     view: jest.fn().mockResolvedValue({}),
     history: jest.fn().mockResolvedValue([]),
   };
+  // ACC-229
+  const recordList = {
+    panel: jest.fn().mockResolvedValue({ total: 0, scope: 'own', rows: [] }),
+    list: jest.fn().mockResolvedValue({ items: [] }),
+  };
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -99,6 +105,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
         { provide: TaskWorkloadService, useValue: workload },
         { provide: WorkloadHintService, useValue: workloadHint },
         { provide: TaskPageService, useValue: page },
+        { provide: TaskRecordListService, useValue: recordList },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -144,6 +151,9 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     ['/tasks/my-tasks', () => taskService.getMyTasks],
     // ACC-173
     ['/tasks/requests/awaiting-decision', () => requests.awaitingDecision],
+    // ACC-229 — no @Permissions: the service decides from the record and the viewer.
+    ['/tasks/record-panel?sourceType=COMMITTEE&sourceId=c1', () => recordList.panel],
+    ['/tasks/record-list', () => recordList.list],
   ])('GET %s reaches its own handler', async (path, delegate) => {
     const res = await request(app.getHttpServer()).get(path);
 

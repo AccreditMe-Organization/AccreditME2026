@@ -47,6 +47,7 @@ import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { TaskController } from './task.controller';
 import { TaskPageService } from './task-page.service';
+import { TaskRecordListService } from './task-record-list.service';
 import { TaskWorkloadService } from './workload/task-workload.service';
 import { WorkloadHintService } from './workload/workload-hint.service';
 import { TaskService } from './task.service';
@@ -133,6 +134,7 @@ describe('Child list gated by its parent (ACC-101)', () => {
         { provide: TaskWorkloadService, useValue: {} },
         { provide: WorkloadHintService, useValue: {} },
         { provide: TaskPageService, useValue: {} },
+        { provide: TaskRecordListService, useValue: {} },
         {
           provide: TaskAuthorityService,
           useValue: {

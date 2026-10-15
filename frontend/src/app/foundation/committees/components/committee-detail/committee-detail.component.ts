@@ -1,4 +1,4 @@
-import { Component, DestroyRef, Injector, OnInit, TemplateRef, ViewChild, afterNextRender, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -12,18 +12,7 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
 import { TaskFormComponent } from '../../../tasks/components/task-form/task-form.component';
 import { TaskFormFooterComponent } from '../../../tasks/components/task-form/task-form-footer.component';
 import { TaskFormStepsComponent } from '../../../tasks/components/task-form/task-form-steps.component';
-import { TaskService, ITaskWithAssigneesDto } from '../../../tasks/services/task.service';
-import { isTaskOpen, taskStatusLabelKey } from '../../../tasks/task-status';
-import { taskPoolLabel } from '../../../tasks/task-pool-label';
-import {
-  TaskReassignDialogComponent,
-  TaskRejection,
-} from '../../../tasks/components/task-reassign-dialog/task-reassign-dialog.component';
-import { TaskEditDialogComponent } from '../../../tasks/components/task-edit-dialog/task-edit-dialog.component';
-import { TaskCancelDialogComponent } from '../../../tasks/components/task-cancel-dialog/task-cancel-dialog.component';
-import { TaskReopenDialogComponent } from '../../../tasks/components/task-reopen-dialog/task-reopen-dialog.component';
-import { TaskAddEvidenceDialogComponent } from '../../../tasks/components/task-add-evidence-dialog/task-add-evidence-dialog.component';
-import { TaskEvidenceDialogComponent } from '../../../tasks/components/task-evidence-dialog/task-evidence-dialog.component';
+import { RecordTasksPanelComponent } from '../../../tasks/components/record-tasks-panel/record-tasks-panel.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   CommitteeService,
@@ -44,14 +33,11 @@ import { WorkflowTransitionActionsComponent } from '../../../workflow/components
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
-import { AuthService } from '../../../../core/services/auth.service';
 import { AmDatePipe, FormatService } from '../../../../core/formatting';
-import { isTaskOverdue, taskDueSummary } from './task-due-summary';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
-import { TaskLinkComponent } from '../../../tasks/components/task-link/task-link.component';
 
 /** ACC-174/177 — the task-row dialogs this page opens, one at a time. */
 type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
@@ -72,18 +58,12 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     TaskFormComponent,
     TaskFormFooterComponent,
     TaskFormStepsComponent,
-    TaskReassignDialogComponent,
-    TaskEditDialogComponent,
-    TaskCancelDialogComponent,
-    TaskReopenDialogComponent,
-    TaskAddEvidenceDialogComponent,
-    TaskEvidenceDialogComponent,
+    RecordTasksPanelComponent,
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
     WorkflowTransitionActionsComponent,
     EditDialogComponent,
-    TaskLinkComponent,
   ],
   template: `
     @if (error()) {
@@ -336,183 +316,19 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
             }
           </app-record-panel>
 
-          <!-- Gated on tasks:view, which is what GET /tasks requires — a user
-               without it would get a 403 and an empty panel reading as "no
-               tasks" when the truth is "not yours to see".
-
-               ACC-76 — rendered HERE rather than by embedding
-               TaskListComponent. That component is a full routed page: it
-               brings its own p-table, its own type scale and its own column
-               widths, so embedded it sat at a different height from its four
-               siblings, in a larger font, scrolling horizontally while they
-               did not. A summary panel needs four facts — title, assignee, due
-               date, overdue — not a table's full column set. -->
-          @if (canViewTasks()) {
-            <app-record-panel
-              [heading]="'committee.tasks' | translate"
-              [count]="tasks().length"
-              [badge]="overdueBadge()"
-              [error]="tasksError()"
-              [loading]="tasksLoading()"
-              [isEmpty]="!tasksLoading() && tasks().length === 0"
-              [emptyTitle]="'task.noTasks' | translate"
-            >
-              @if (canCreateTasks()) {
-                <button
-                  panelActions
-                  type="button"
-                  class="text-[12.5px] text-[var(--am-blue-primary)] hover:underline"
-                  (click)="onAddTask()"
-                >
-                  {{ 'task.newTask' | translate }}
-                </button>
-              }
-              @for (task of tasks(); track task.id) {
-                <!-- ACC-208 (D2) — the target of a "Can't move yet" link:
-                     ?task=<id> scrolls here, focuses it and highlights it. -->
-                <div
-                  class="grid grid-cols-[1fr_auto] gap-2.5 items-center px-4 py-2 border-b border-[var(--am-border)]"
-                  [attr.data-task-row]="task.id"
-                  tabindex="-1"
-                  [class.am-task-row--sought]="soughtTaskId() === task.id"
-                >
-                  <span class="min-w-0">
-                    <span class="block text-[13px] truncate"><am-task-link [taskId]="task.id" [title]="task.title" /></span>
-                    <!-- Status shares the second line rather than taking a chip
-                         or a fourth column: at the 320px panel floor in a
-                         five-across row there is no width for either. It has to
-                         be here, though — dueSummary() deliberately drops the
-                         overdue colour for a COMPLETED task, so without status
-                         a finished task is indistinguishable from one merely
-                         not yet due. -->
-                    <span class="block text-[11.5px] text-[var(--am-text-secondary)] truncate">
-                      {{ assigneeSummary(task) }} ·
-                      {{ statusLabel(task) | translate }}
-                    </span>
-                    <!-- ACC-163 — a rejected task says who handed it back and
-                         why: that is what its creator acts on when they
-                         reassign it. Clamped to two lines at this panel's
-                         width; the whole reason is in the title attribute and
-                         in the reassign dialog. -->
-                    @if (task.status === 'REJECTED' && task.rejectedReason) {
-                      <span
-                        class="am-task-rejection text-[11.5px] text-[var(--am-warning-ink)]"
-                        [attr.title]="rejectionLine(task)"
-                      >
-                        {{ rejectionLine(task) }}
-                      </span>
-                    }
-                    <!-- ACC-174 — why the creator cancelled it, and who did.
-                         The engine's own cancellations carry no reason. -->
-                    @if (task.status === 'CANCELLED' && task.cancelledReason) {
-                      <span class="am-task-rejection text-[11.5px] text-[var(--am-ink-700)]" [attr.title]="cancelledLine(task)">
-                        {{ cancelledLine(task) }}
-                      </span>
-                    }
-                    <!-- ACC-173 — a hold, and a request waiting for a decision.
-                         Shown, not acted on here: deciders act in My tasks. -->
-                    @if (requestOrHoldLine(task); as line) {
-                      <span class="am-task-rejection text-[11.5px] text-[var(--am-ink-700)]" [attr.title]="line">
-                        {{ line }}
-                      </span>
-                    }
-                  </span>
-                  <span class="flex items-center gap-2 shrink-0">
-                    <!-- Overdue is the one thing worth colouring in a summary:
-                         it is the only state that demands action today.
-                         ACC-163 — drawn as a BADGE when overdue (Q8: a flag
-                         beside the status), using the due text itself as the
-                         badge's words, because this panel's 320px floor has
-                         no width for a separate chip. -->
-                    <span
-                      dir="ltr"
-                      style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
-                      class="text-[11.5px] font-medium whitespace-nowrap"
-                      [class.am-task-overdue-badge]="isOverdue(task)"
-                      [style.color]="isOverdue(task) ? null : 'var(--am-text-secondary)'"
-                    >
-                      {{ dueSummary(task) }}
-                    </span>
-                    <!-- ACC-163 — the creator (Q4) or a tasks:reassign holder.
-                         The server applies the same rule and refuses anyone
-                         else as not found. -->
-                    @if (canReassign(task)) {
-                      <am-icon-button
-                        icon="pi pi-user-edit"
-                        [label]="'task.reassignNamed' | translate: { title: task.title }"
-                        (activated)="openReassign(task)"
-                      />
-                    }
-                    <!-- ACC-174 — the creator's own actions, where the server
-                         says the viewer may manage the task (canManage). -->
-                    @if (canEditTask(task)) {
-                      <am-icon-button
-                        icon="pi pi-pencil"
-                        [label]="'task.edit.named' | translate: { title: task.title }"
-                        (activated)="openTaskAction(task, 'edit')"
-                      />
-                    }
-                    @if (canCancelTask(task)) {
-                      <am-icon-button
-                        icon="pi pi-ban"
-                        severity="danger"
-                        [label]="'task.cancelTask.named' | translate: { title: task.title }"
-                        (activated)="openTaskAction(task, 'cancel')"
-                      />
-                    }
-                    @if (canReopenTask(task)) {
-                      <am-icon-button
-                        icon="pi pi-refresh"
-                        [label]="'task.reopen.named' | translate: { title: task.title }"
-                        (activated)="openTaskAction(task, 'reopen')"
-                      />
-                    }
-                    <!-- ACC-177 — evidence, here as on My tasks: Add evidence
-                         for someone on the task while it is open (self-scoped,
-                         no permission, like Complete below), and the evidence
-                         itself wherever there is some. The server decides who
-                         may see it; anyone who can see this record can. -->
-                    @if (canAddEvidence(task)) {
-                      <am-icon-button
-                        icon="pi pi-paperclip"
-                        [label]="'task.evidence.addNamed' | translate: { title: task.title }"
-                        (activated)="openTaskAction(task, 'addEvidence')"
-                      />
-                    }
-                    @if (task.evidenceCount > 0) {
-                      <am-icon-button
-                        icon="pi pi-folder-open"
-                        [label]="'task.evidence.viewNamed' | translate: { title: task.title }"
-                        (activated)="openTaskAction(task, 'evidence')"
-                      />
-                    }
-                    <!-- Shown on rows the caller is actually assigned to, and
-                         on no others. NOT permission-gated: completing a task
-                         is self-scoped, so POST /tasks/:id/complete carries no
-                         @Permissions — the service 404s a non-assignee. Gating
-                         this on a permission would hide it from exactly the
-                         people entitled to use it: whoever the engine assigned
-                         the task to, whatever role they hold. -->
-                    <!-- ACC-163 — disabled while evidence is required and none
-                         has been added; the server refuses that too. ACC-177 —
-                         Add evidence sits beside it on this row as well. -->
-                    @if (canComplete(task)) {
-                      <am-icon-button
-                        icon="pi pi-check"
-                        severity="primary"
-                        [disabled]="needsEvidence(task)"
-                        [label]="
-                          (needsEvidence(task) ? 'task.completeNamedNeedsEvidence' : 'task.completeNamed')
-                            | translate: { title: task.title }
-                        "
-                        (activated)="onCompleteTask(task)"
-                      />
-                    }
-                  </span>
-                </div>
-              }
-            </app-record-panel>
-          }
+          <!-- ACC-229 — the record Tasks panel: at most five rows at a fixed
+               height, the total in the header, "See all" for the rest. Shown
+               to everyone who can see this committee: without tasks:view it is
+               "Your tasks on this committee" (Q1) — the server decides which
+               tasks, and which actions on each. -->
+          <app-record-tasks-panel
+            sourceType="COMMITTEE"
+            [sourceId]="committeeId"
+            [recordName]="committee() ? displayName(committee()!) : ''"
+            [canCreate]="canCreateTasks()"
+            [soughtTask]="soughtTask()"
+            (createRequested)="onAddTask()"
+          />
 
           <app-record-panel
             [heading]="'committee.subCommittees' | translate"
@@ -666,44 +482,6 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
       [footer]="taskFooterTpl"
     />
 
-    <app-task-reassign-dialog
-      [visible]="reassignVisible()"
-      (visibleChange)="reassignVisible.set($event)"
-      [task]="reassignTarget()"
-      [rejection]="reassignRejection()"
-      [committeeName]="committee() ? displayName(committee()!) : null"
-      (reassigned)="loadTasks()"
-    />
-    <app-task-edit-dialog
-      [visible]="taskAction() === 'edit'"
-      (visibleChange)="closeTaskAction($event)"
-      [task]="taskActionTarget()"
-      (edited)="loadTasks()"
-    />
-    <app-task-cancel-dialog
-      [visible]="taskAction() === 'cancel'"
-      (visibleChange)="closeTaskAction($event)"
-      [task]="taskActionTarget()"
-      (cancelledTask)="loadTasks()"
-    />
-    <app-task-reopen-dialog
-      [visible]="taskAction() === 'reopen'"
-      (visibleChange)="closeTaskAction($event)"
-      [task]="taskActionTarget()"
-      (reopened)="loadTasks()"
-    />
-    <app-task-add-evidence-dialog
-      [visible]="taskAction() === 'addEvidence'"
-      (visibleChange)="closeTaskAction($event)"
-      [task]="taskActionTarget()"
-      (added)="loadTasks()"
-    />
-    <app-task-evidence-dialog
-      [visible]="taskAction() === 'evidence'"
-      (visibleChange)="closeTaskAction($event)"
-      [task]="taskActionTarget()"
-      (changed)="loadTasks()"
-    />
 
     <ng-template #memberFormTpl>
       <app-committee-member-form
@@ -720,38 +498,6 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
       [content]="memberFormTpl"
     />
   `,
-  styles: [
-    `
-      /* ACC-163 — a rejected task's reason, at most two lines in a panel whose
-         floor is 320px. The full text is on the title attribute and in the
-         reassign dialog. */
-      .am-task-rejection {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        overflow-wrap: anywhere;
-      }
-      /* ACC-163 — overdue as a badge (Q8: a flag beside the status). The due
-         text is the badge's words, so it costs no width the panel lacks. */
-      /* ACC-208 (D2) — the row a "Can't move yet" link points at. */
-      .am-task-row--sought {
-        background: var(--am-primary-50);
-        box-shadow: inset 3px 0 0 var(--am-primary-600);
-      }
-      [data-task-row]:focus-visible {
-        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
-        outline-offset: -2px;
-      }
-      .am-task-overdue-badge {
-        color: var(--am-danger-ink);
-        background: var(--am-danger-bg);
-        border: 1px solid var(--am-danger-border);
-        border-radius: var(--am-radius-control);
-        padding: 1px 6px;
-      }
-    `,
-  ],
 })
 export class CommitteeDetailComponent implements OnInit {
   @ViewChild('committeeFormTpl', { read: TemplateRef, static: true }) committeeFormTpl!: TemplateRef<unknown>;
@@ -762,12 +508,10 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly lookupService = inject(LookupService);
   private readonly userService = inject(UserService);
   private readonly orgUnitService = inject(OrgUnitService);
-  private readonly taskService = inject(TaskService);
   private readonly workflowService = inject(WorkflowService);
   private readonly languageService = inject(LanguageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly navigationAccess = inject(NavigationAccessService);
-  private readonly authService = inject(AuthService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
 
@@ -806,59 +550,33 @@ export class CommitteeDetailComponent implements OnInit {
 
   readonly stageHistoryCount = signal<number | null>(null);
 
-  // ACC-76 — the Tasks panel owns its data directly rather than delegating to
-  // TaskListComponent, so it can reload after a create. The embedded list had
-  // no way to be told a task had been added.
-  readonly tasks = signal<ITaskWithAssigneesDto[]>([]);
-
   /**
-   * ACC-208 (Ahmad, 12 Oct, D2) — a "Can't move yet" link names a task by
-   * ?task=<id>, because there is no task page: its row here is scrolled to,
-   * focused and highlighted. Read from the query params as they CHANGE, not
-   * once (injectFixLinkParam reads once per load), because the link is
-   * followed from this same page. The parameter is then removed, so Back and
-   * a reload do not repeat it.
+   * ACC-208 (D2) — a "Can't move yet" link names a task by ?task=<id>. Read
+   * from the query params as they CHANGE (the link is followed from this same
+   * page), then removed so Back and a reload do not repeat it.
+   *
+   * ACC-229 — handed to the Tasks panel, which highlights the row when it is
+   * among its five and otherwise opens All tasks at it. A new object each
+   * time, so the same task linked twice is shown twice.
    */
-  readonly soughtTaskId = signal<string | null>(null);
-  private pendingTaskId: string | null = null;
+  readonly soughtTask = signal<{ id: string } | null>(null);
   private readonly router = inject(Router);
-  private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly tasksPanel = viewChild(RecordTasksPanelComponent);
 
   private watchSoughtTask(): void {
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const id = params.get('task');
       if (!id) return;
-      this.pendingTaskId = id;
+      this.soughtTask.set({ id });
       void this.router.navigate([], {
         relativeTo: this.route,
         queryParams: { task: null },
         queryParamsHandling: 'merge',
         replaceUrl: true,
       });
-      // A task the list does not hold yet (created by the move that was just
-      // refused) needs a fresh read; one it holds is shown at once.
-      if (this.tasks().some((t) => t.id === id)) this.showSoughtTask();
-      else if (this.canViewTasks()) this.loadTasks();
     });
   }
-
-  private showSoughtTask(): void {
-    const id = this.pendingTaskId;
-    if (!id || !this.tasks().some((t) => t.id === id)) return;
-    this.pendingTaskId = null;
-    this.soughtTaskId.set(id);
-    afterNextRender(
-      () => {
-        const row = document.querySelector<HTMLElement>(`[data-task-row="${id}"]`);
-        row?.scrollIntoView({ block: 'center' });
-        row?.focus({ preventScroll: true });
-      },
-      { injector: this.injector },
-    );
-  }
-  readonly tasksLoading = signal(false);
-  readonly tasksError = signal<string | null>(null);
   readonly taskFormVisible = signal(false);
   readonly taskFormDirty = signal(false);
   readonly taskFormRef = signal<TaskFormComponent | null>(null);
@@ -871,45 +589,6 @@ export class CommitteeDetailComponent implements OnInit {
       quorum: this.committee()?.quorumCount ?? 0,
     }),
   );
-
-  // Rendered as a chip beside the Tasks count. Null when nothing is overdue —
-  // an explicit "0 overdue" is noise on a panel that is already fine.
-  readonly overdueBadge = computed(() => {
-    const overdue = this.tasks().filter((t) => this.isOverdue(t)).length;
-    if (!overdue) return null;
-    return this.format.count('task.overdue', overdue);
-  });
-
-  // See task-due-summary.ts (ACC-94): "Overdue 5 hours" or the due date and time.
-  isOverdue(task: ITaskWithAssigneesDto): boolean {
-    return isTaskOverdue(task);
-  }
-
-  dueSummary(task: ITaskWithAssigneesDto): string {
-    return taskDueSummary(task, this.format, this.translate);
-  }
-
-  // Names come resolved from the backend (ACC-76), so this needs no user
-  // lookup. Beyond two, the names stop being readable in a summary row and a
-  // count says more.
-  //
-  // ACC-167 — a pool task nobody has picked up names its pool ("Assigned to
-  // Secretary, Infection Control Committee") until someone does; then it
-  // names that person like any other task.
-  assigneeSummary(task: ITaskWithAssigneesDto): string {
-    this.translate.currentLang();
-    if (task.assignees.length === 0 && task.pool && isTaskOpen(task) && task.status !== 'REJECTED') {
-      const pool = taskPoolLabel(
-        task.pool,
-        (en, ar) => this.languageService.bilingual(en, ar),
-        this.languageService.isArabic(),
-      );
-      return this.translate.instant('task.assign.assignedToPool', { pool });
-    }
-    if (task.assignees.length === 0) return this.translate.instant('task.unassigned');
-    if (task.assignees.length <= 2) return task.assignees.map((a) => a.userName).join(', ');
-    return this.format.count('task.assignees', task.assignees.length);
-  }
 
   // PANEL-LEVEL PERMISSION GATING. An action is shown only where the caller
   // holds the permission its endpoint requires, rather than shown and failing
@@ -929,10 +608,6 @@ export class CommitteeDetailComponent implements OnInit {
   readonly canChangeMemberRole = computed(() =>
     this.navigationAccess.hasPermission('committees:change_member_role'),
   );
-  // GET /tasks requires tasks:view. Without it the panel is hidden entirely
-  // rather than shown empty — an empty panel would read as "no tasks" when the
-  // truth is "not yours to see".
-  readonly canViewTasks = computed(() => this.navigationAccess.hasPermission('tasks:view'));
   // POST /tasks gates on tasks:create. The button now genuinely works — the
   // form has a real assignee picker as of ACC-76 — so showing it is correct
   // where it was not before.
@@ -953,7 +628,6 @@ export class CommitteeDetailComponent implements OnInit {
     this.loadMembers();
     this.loadMembershipEvents();
     this.loadCurrentStage();
-    if (this.canViewTasks()) this.loadTasks();
     this.watchSoughtTask();
   }
 
@@ -1086,162 +760,10 @@ export class CommitteeDetailComponent implements OnInit {
     this.taskFormVisible.set(true);
   }
 
-  // Assignee-ness ALONE, no permission check — POST /tasks/:id/complete is
-  // ungated as of ACC-76 because it is self-scoped, and TaskService.complete()
-  // 404s anyone who is not a currently-active assignee. A permission check
-  // here would hide the button from the people entitled to use it — the
-  // engine assigns work by role or position, not by any task permission, so
-  // being an assignee is the whole entitlement.
-  //
-  // `assignees` carries ACTIVE assignees only (removedAt: null), so someone
-  // whose assignment was completed by a colleague or reassigned away is
-  // correctly excluded without a second check.
-  canComplete(task: ITaskWithAssigneesDto): boolean {
-    // ACC-173 — a task on hold must be resumed first.
-    if (!isTaskOpen(task) || task.status === 'ON_HOLD') return false;
-    const me = this.authService.currentUser()?.id;
-    return !!me && task.assignees.some((a) => a.userId === me);
-  }
-
-  // ACC-177 — the same rule as adding a link always had: an active assignee,
-  // on a task that is not closed (a held task included). Self-scoped; the
-  // server refuses anyone else.
-  canAddEvidence(task: ITaskWithAssigneesDto): boolean {
-    if (!isTaskOpen(task)) return false;
-    const me = this.authService.currentUser()?.id;
-    return !!me && task.assignees.some((a) => a.userId === me);
-  }
-
-  // ACC-163 — evidence is required and none has been added.
-  needsEvidence(task: ITaskWithAssigneesDto): boolean {
-    return task.requiresEvidence && task.evidenceCount === 0;
-  }
-
-  statusLabel(task: ITaskWithAssigneesDto): string {
-    return taskStatusLabelKey(task);
-  }
-
-  // ACC-173 — "On hold until 25 Oct 2026", or the request waiting for a
-  // decision: "Sara asked for more time — to 20 Oct 2026, 13:00".
-  requestOrHoldLine(task: ITaskWithAssigneesDto): string | null {
-    if (task.status === 'ON_HOLD') {
-      return this.translate.instant('task.request.onHoldUntil', { date: this.format.date(task.onHoldUntil) });
-    }
-    const r = task.openRequest;
-    if (!r) return null;
-    return r.type === 'EXTENSION'
-      ? this.translate.instant('task.request.recordExtension', {
-          name: r.requestedByName,
-          date: this.format.dateTime(r.requestedDueAt),
-        })
-      : this.translate.instant('task.request.recordHold', { name: r.requestedByName, date: this.format.date(r.holdUntil) });
-  }
-
-  // "Rejected by Sarah: Not my unit". The rejecter's name is read live, so a
-  // renamed user reads correctly; null only if that account no longer exists.
-  rejectionLine(task: ITaskWithAssigneesDto): string {
-    return task.rejectedBy
-      ? this.translate.instant('task.rejectedByNamed', { name: task.rejectedBy.name, reason: task.rejectedReason })
-      : this.translate.instant('task.rejectedReasonOnly', { reason: task.rejectedReason });
-  }
-
-  // ACC-163 — the same rule the server applies: a tasks:reassign holder, or
-  // the task's own creator, on an open task. A rejected task comes back to its
-  // creator (Q4), who usually holds no task permission at all. Shown for any
-  // open task, not only rejected ones, because that is what the rule allows.
-  // ACC-174 — "the creator" now reads canManage, the server's answer, which
-  // also covers whoever acts for them (ACC-173's widening, until now missed
-  // here).
-  canReassign(task: ITaskWithAssigneesDto): boolean {
-    if (!isTaskOpen(task)) return false;
-    return this.navigationAccess.hasPermission('tasks:reassign') || task.canManage;
-  }
-
-  // ── ACC-174 — the creator's actions ───────────────────────────────────
-  // canManage is the server's answer to WHO; the status decides WHICH.
-  canEditTask(task: ITaskWithAssigneesDto): boolean {
-    return task.canManage && isTaskOpen(task);
-  }
-
-  /** Not a workflow step's task: those end with their step until CF-07. */
-  canCancelTask(task: ITaskWithAssigneesDto): boolean {
-    return this.canEditTask(task) && !task.sourceStageId && !task.workflowInstanceId;
-  }
-
-  canReopenTask(task: ITaskWithAssigneesDto): boolean {
-    return task.canManage && task.status === 'COMPLETED';
-  }
-
-  // "Cancelled by Yasser: The audit was postponed".
-  cancelledLine(task: ITaskWithAssigneesDto): string {
-    return task.cancelledBy
-      ? this.translate.instant('task.cancelTask.lineNamed', { name: task.cancelledBy.name, reason: task.cancelledReason })
-      : this.translate.instant('task.cancelTask.line', { reason: task.cancelledReason });
-  }
-
-  readonly taskAction = signal<TaskRowAction | null>(null);
-  readonly taskActionTarget = signal<ITaskWithAssigneesDto | null>(null);
-
-  openTaskAction(task: ITaskWithAssigneesDto, action: TaskRowAction): void {
-    this.taskActionTarget.set(task);
-    this.taskAction.set(action);
-  }
-
-  closeTaskAction(visible: boolean): void {
-    if (!visible) this.taskAction.set(null);
-  }
-
-  readonly reassignVisible = signal(false);
-  readonly reassignTarget = signal<ITaskWithAssigneesDto | null>(null);
-  readonly reassignRejection = computed<TaskRejection | null>(() => {
-    const task = this.reassignTarget();
-    if (!task || task.status !== 'REJECTED' || !task.rejectedReason) return null;
-    return { byName: task.rejectedBy?.name ?? null, reason: task.rejectedReason };
-  });
-
-  openReassign(task: ITaskWithAssigneesDto): void {
-    this.reassignTarget.set(task);
-    this.reassignVisible.set(true);
-  }
-
-  onCompleteTask(task: ITaskWithAssigneesDto): void {
-    // Confirmed first: ANY-assignee-completes semantics mean this finishes the
-    // task for every other assignee too, not just for the caller.
-    this.confirmationService.confirm({
-      message: this.translate.instant('task.confirmComplete', { title: task.title }),
-      header: this.translate.instant('common.confirm'),
-      icon: 'pi pi-check-circle',
-      accept: () => {
-        this.taskService.complete(task.id).subscribe({
-          next: () => this.loadTasks(),
-          error: (err: unknown) => this.tasksError.set(extractErrorMessage(err, 'task.errorAction')),
-        });
-      },
-    });
-  }
-
-  // The reload Ahmad's live pass found missing. Every panel that can be
-  // changed from this page reloads the data it changed — Members and
-  // Membership history already did (onMemberSaved above), Tasks could not,
-  // because the embedded TaskListComponent had no way to be told.
+  // ACC-229 — the panel reads its five again; All tasks too, if it is open.
   onTaskSaved(): void {
     this.taskFormVisible.set(false);
-    this.loadTasks();
-  }
-
-  loadTasks(): void {
-    this.tasksLoading.set(true);
-    this.taskService.getForSource('COMMITTEE', this.committeeId).subscribe({
-      next: (tasks) => {
-        this.tasks.set(tasks);
-        this.tasksLoading.set(false);
-        this.showSoughtTask();
-      },
-      error: () => {
-        this.tasksError.set('task.errorLoad');
-        this.tasksLoading.set(false);
-      },
-    });
+    this.tasksPanel()?.reload();
   }
 
   onRemoveMember(member: CommitteeMemberDto): void {

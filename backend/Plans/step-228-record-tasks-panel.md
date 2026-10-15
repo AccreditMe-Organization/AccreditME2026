@@ -655,11 +655,106 @@ Each PR runs `/ready-to-pr`: both suites, tenant isolation, every `check:*`, `ng
 | (a) removed | task-page.service — 6 specs |
 | a 404 rendered as an error | task-page.component — the identical not-found state |
 
+## 5c. PR 2 as built (14 Oct)
+
+### `/tasks/all` — included in this PR (assessed first, as asked)
+
+**Why it showed no rows:** `TaskListComponent` asked for ONE record's tasks
+(`getForSource(sourceType, sourceId)`), and the route supplies no record, so
+`loadTasks()` returned before it ever called the server. Every visit read "No
+tasks", whatever the data.
+
+**The change was small, so it is in this PR.** `GET /tasks/record-list` takes
+its record as optional: without one it lists the organisation's tasks, for
+`tasks:view` holders only, limited to the record types the viewer may see
+(`ObjectVisibilityService.viewableTypes()`, the same rules as `assertCanView`,
+failing closed). `/tasks/all` keeps its page header and New task and hosts the
+same `TaskListViewComponent` the popup uses — search, filters, sort, chips,
+Load more by 50 — with each row naming its record. No Linear ticket was needed.
+
+### Heights, measured (`record-tasks-panel.layout.spec.ts`, real theme, IBM Plex Sans Arabic)
+
+| Measure | English | Arabic |
+|---|---|---|
+| Panel header | **42** | **46** |
+| Panel body with 0, 3, 5 and 16 tasks | **294** every time, never overflows | **328** every time, never overflows |
+| Panel row (long title, long assignee, every row kind) | **52** | **58** |
+| Panel footer (16 tasks), flush with the body's bottom | **34** | **38** |
+| Due label | never cut (scrollWidth ≤ clientWidth) | never cut |
+| Popup body at 1040 × 760 (less the dialog's header, 64 / 68) | toolbar 109, chips 36, column header 30, **list 507**, footer 44 | toolbar 113, chips 36, column header 30, **list 495**, footer 48 |
+| Only the list scrolls; the column header stays put as it scrolls | yes | yes |
+| Phone rows at 390 (12 rows of every kind) | 60 | 64 |
+| Sideways scroll on a phone | none | none |
+
+### Where the build differs from the plan
+
+1. **The popup's toolbar is two rows, not one** (109 / 113 against the drawn
+   52 / 56). Search, five filters, two toggles and Sort do not fit 1008px in
+   the app's controls without cutting their labels; the list area is 507 / 495
+   against the drawn 534 / 516 — about half a row less. Measured and reported
+   rather than squeezed.
+2. **A list-dialog shell, `am-list-dialog`, not a "list size" on
+   EditDialogComponent.** EditDialog's 420 cap and its form behaviour (dirty
+   question, footer slot) are wrong for a list; a separate shell keeps both
+   rules intact. It listens for Escape in the CAPTURE phase, because the CDK
+   menu closes on Escape before the event bubbles (pinned by spec).
+3. **The panel draws its own frame**, not `RecordPanelComponent`'s: that
+   body has a floor, not a fixed height, and its header is a different height.
+4. **The actions contract (§2.8)** is a real-database spec that requires every
+   row's actions to equal the task page's, for a creator, a direct assignee, a
+   pool member with and without `tasks:view`, and a reader with
+   `tasks:reassign` (`task-record-list.actions.db-spec.ts`). PR 1's
+   `task-actions.spec.ts` pins each flag against its endpoint's rule; the list
+   reuses the same function, so what could drift is the facts, and that is
+   what this spec checks.
+5. **Q1's own variant includes the tasks the viewer CREATED** (Ahmad, 14 Oct,
+   after the first build). §2.3 said "the tasks the viewer is or was on — the
+   My tasks rule", which left a creator without `tasks:view` seeing none of
+   the tasks they created on that panel. It is now the tasks they are or were
+   on, or created — every one a task whose page already admits them, as an
+   assignee (Q4 a) or as its manager (Q4 b), so it discloses nothing new.
+   Nothing else about the variant changed. Pinned in the unit spec (the
+   statement and the count), the record db-spec (a created task the viewer is
+   not on is listed) and the actions db-spec (a creator without `tasks:view`
+   sees all nine, with the page's own actions).
+6. **Status is a single-choice filter** (the server accepts several).
+7. **Complete from a row is confirmed first**, as the committee panel always
+   did ("this finishes it for every assignee"); the task page's button is not.
+8. **No source line ("From item n")**: it belongs to meeting action items,
+   which have no page (Q2). The component takes it when meetings adopt it.
+9. **`OverlaySelectComponent` gained an opt-in `ariaLabel`**, because a
+   toolbar filter has no visible label: the trigger reads as a button named
+   "Status: In progress". Unset, nothing changes for its other consumers.
+10. **Removed**: the committee page's own task rows, seven inline icons and
+    their client-side rule copies (`committee-detail.tasks.spec.ts`,
+    `task-due-summary.ts` and its spec). `GET /tasks?sourceType&sourceId`
+    stays (Q7); the frontend no longer calls it from the committee page.
+
+### ACC-217 — fixed
+
+The committee panel set `tasksError` on an action's failure and never cleared
+it. The panel's load state and an action's failure are now separate signals:
+a failure is said in its own row with Try again, the panel re-reads itself and
+keeps its rows (`record-tasks-panel.component.spec.ts`, "an action that fails
+says so IN ITS ROW and never blanks the panel").
+
+### Mutation checks (each turned a spec red, then restored)
+
+| Mutation | Spec that went red |
+|---|---|
+| The panel body's fixed height removed | layout spec — the body is exactly 294px (3 cases) |
+| The popup's Escape listener moved to the bubble phase | list-dialog spec — Escape with the row menu open closes the MENU, not the popup |
+| On hold ranked before open, and the overdue filter's open/not-on-hold clause dropped | db-spec — 5 tests (order, panel five, Load more, deep link, overdue) |
+| The search escape of `%` `_` `\` removed | db-spec — a typed % is a percent sign |
+| The list told the viewer is never in a pool | actions db-spec — a pool member with tasks:view |
+| The organisation scoping dropped from the statement | unit spec — should NOT return records belonging to a different tenant |
+
 ## 6. Progress
 
 - [x] Tickets ACC-228, ACC-229, ACC-230 (lane B), chained 228 → 229 → 230
 - [x] Lane A check (§3.6)
 - [x] Ahmad approves this plan (14 Oct): Q1–Q13 as recommended, except Q5 → ACC-231
 - [x] PR 1 built on `feature/ACC-228-task-page` (14 Oct) — §5b; waiting for /ready-to-pr
-- [ ] PR 2
+- [x] PR 1 merged (`e9aaed7`, PR #178) and proven live
+- [x] PR 2 built on `feature/ACC-229-record-tasks-panel` (14 Oct) — §5c, with `/tasks/all` included; waiting for /ready-to-pr
 - [ ] PR 3

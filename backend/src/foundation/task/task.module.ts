@@ -18,6 +18,7 @@ import { AiModule } from '../ai/ai.module';
 import { TaskWorkloadService } from './workload/task-workload.service';
 import { WorkloadHintService } from './workload/workload-hint.service';
 import { TaskPageService } from './task-page.service';
+import { TaskRecordListService } from './task-record-list.service';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
 // future functional modules that generate tasks will import TaskModule
@@ -70,6 +71,8 @@ import { TaskPageService } from './task-page.service';
     WorkloadHintService,
     // ACC-228 — the task page: who may open a task, its view and its history.
     TaskPageService,
+    // ACC-229 — a record's Tasks panel and the All tasks list.
+    TaskRecordListService,
   ],
   exports: [TaskService, TaskRequestService],
 })

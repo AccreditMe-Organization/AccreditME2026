@@ -33,8 +33,12 @@ import { TaskReassignDialogComponent } from '../task-reassign-dialog/task-reassi
 import { TaskEditDialogComponent } from '../task-edit-dialog/task-edit-dialog.component';
 import { TaskCancelDialogComponent } from '../task-cancel-dialog/task-cancel-dialog.component';
 import { TaskReopenDialogComponent } from '../task-reopen-dialog/task-reopen-dialog.component';
+import { PRIMARY_ACTION_ID, TASK_ACTION_LABELS, TaskActionId } from '../../task-row-actions';
 
-type ActionId = Exclude<keyof ITaskActionsDto, 'primary' | 'completeNeedsEvidence'>;
+// ACC-229 — the labels and the main-action mapping are shared with the record
+// Tasks panel and the All tasks list (task-row-actions.ts); where each action
+// sits on THIS page is decided below.
+type ActionId = TaskActionId;
 
 interface PageAction {
   id: ActionId;
@@ -43,31 +47,8 @@ interface PageAction {
   disabled?: boolean;
 }
 
-const LABELS: Record<ActionId, string> = {
-  reviewRequest: 'taskPage.action.reviewRequest',
-  pickUp: 'task.pick',
-  start: 'task.start',
-  complete: 'task.complete',
-  resume: 'taskPage.action.resume',
-  addEvidence: 'taskPage.action.addEvidence',
-  edit: 'taskPage.action.edit',
-  reassign: 'taskPage.action.reassign',
-  requestMoreTime: 'taskPage.action.requestMoreTime',
-  requestHold: 'taskPage.action.requestHold',
-  withdrawRequest: 'taskPage.action.withdrawRequest',
-  reject: 'taskPage.action.reject',
-  release: 'taskPage.action.release',
-  cancel: 'taskPage.action.cancel',
-  reopen: 'taskPage.action.reopen',
-};
-
-const PRIMARY_ID: Record<NonNullable<ITaskActionsDto['primary']>, ActionId> = {
-  REVIEW_REQUEST: 'reviewRequest',
-  PICK_UP: 'pickUp',
-  START: 'start',
-  COMPLETE: 'complete',
-  RESUME: 'resume',
-};
+const LABELS = TASK_ACTION_LABELS;
+const PRIMARY_ID = PRIMARY_ACTION_ID;
 
 // Shown as buttons beside the main one, at most two, in this order.
 const SECONDARY_ORDER: ActionId[] = ['addEvidence', 'edit', 'reassign'];
