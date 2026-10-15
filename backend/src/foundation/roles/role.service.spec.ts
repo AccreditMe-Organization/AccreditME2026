@@ -1518,6 +1518,92 @@ describe('RoleService', () => {
 
   // ── removeRoleFromUser — admin lockout protection ────────────────────────────
 
+  // ACC-120 slice 5b — every assignment refusal carries a CODE, so Manage roles
+  // can say it in both languages without parsing the English message. Status
+  // and message are asserted too: the code is the only thing that changed.
+  describe('assignment refusals carry a code (ACC-120 slice 5b)', () => {
+    const refusal = async (p: Promise<unknown>): Promise<{ status?: number; code?: string; message?: string }> => {
+      try {
+        await p;
+        return {};
+      } catch (e) {
+        const ex = e as { getStatus?: () => number; getResponse?: () => { code?: string; message?: string } };
+        const body = ex.getResponse?.() ?? {};
+        return { status: ex.getStatus?.(), code: body.code, message: body.message };
+      }
+    };
+
+    it('add: an unknown role is 404 ROLE_NOT_FOUND', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+      expect(await refusal(service.assignRoleToUser('user-1', { roleId: 'nope' }, ORG_A, ACTOR))).toEqual({
+        status: 404,
+        code: 'ROLE_NOT_FOUND',
+        message: 'Role not found',
+      });
+    });
+
+    it('add: an unknown person is 404 USER_NOT_FOUND', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      expect(await refusal(service.assignRoleToUser('nobody', { roleId: 'role-1' }, ORG_A, ACTOR))).toEqual({
+        status: 404,
+        code: 'USER_NOT_FOUND',
+        message: 'User not found',
+      });
+    });
+
+    it('add: a role already held is 409 ROLE_ALREADY_HELD, creating nothing', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
+      expect(await refusal(service.assignRoleToUser('user-1', { roleId: 'role-1' }, ORG_A, ACTOR))).toEqual({
+        status: 409,
+        code: 'ROLE_ALREADY_HELD',
+        message: 'User is already assigned to this role',
+      });
+      expect(mockPrisma.userRole.create).not.toHaveBeenCalled();
+    });
+
+    it('remove: an unknown role is 404 ROLE_NOT_FOUND', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+      expect((await refusal(service.removeRoleFromUser('user-1', 'nope', ORG_A, ACTOR))).code).toBe('ROLE_NOT_FOUND');
+    });
+
+    it('remove: a role the person does not hold is 404 ROLE_ASSIGNMENT_NOT_FOUND', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.userRole.findFirst.mockResolvedValue(null);
+      expect(await refusal(service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR))).toEqual({
+        status: 404,
+        code: 'ROLE_ASSIGNMENT_NOT_FOUND',
+        message: 'Role assignment not found',
+      });
+    });
+
+    it('remove: a head-position grant is 409 ROLE_FROM_HEAD_POSITION, deleting nothing', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.userRole.findFirst.mockResolvedValue({
+        id: 'ur-1',
+        userId: 'user-1',
+        roleId: 'role-1',
+        grantedViaHeadPositionId: 'pos-1',
+        grantedViaHeadPositionOrgUnitId: null,
+      });
+      const r = await refusal(service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR));
+      expect(r.status).toBe(409);
+      expect(r.code).toBe('ROLE_FROM_HEAD_POSITION');
+      expect(mockPrisma.userRole.delete).not.toHaveBeenCalled();
+    });
+
+    it('remove: the root role from its last active holder is 409 LAST_ACTIVE_ADMINISTRATOR', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 1 });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
+      const r = await refusal(service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR));
+      expect(r.status).toBe(409);
+      expect(r.code).toBe('LAST_ACTIVE_ADMINISTRATOR');
+    });
+  });
+
   describe('removeRoleFromUser', () => {
     it('removes a non-last assignment and writes audit log', async () => {
       mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
