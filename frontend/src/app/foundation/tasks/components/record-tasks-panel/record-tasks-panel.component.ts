@@ -4,7 +4,7 @@ import { FormatService } from '../../../../core/formatting';
 import { ListDialogComponent } from '../../../../shared/components/list-dialog/list-dialog.component';
 import { RowMenuComponent } from '../../../../shared/components/row-menu/row-menu.component';
 import { ITaskRecordRowDto, TaskService } from '../../services/task.service';
-import { TaskRowActionId, taskRowActions } from '../../task-row-actions';
+import { TaskRowActionId, asRowAction, taskRowActions } from '../../task-row-actions';
 import { TaskRowText } from '../../task-row-text';
 import { TaskLinkComponent } from '../task-link/task-link.component';
 import { TaskActionFailure, TaskActionHostComponent } from '../task-action-host/task-action-host.component';
@@ -103,7 +103,7 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
                           {{ p.labelKey | translate }}
                         </button>
                       }
-                      <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, $any($event))" />
+                      <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, asRowAction($event))" />
                     </span>
                     <span class="am-rtp__l2">
                       @if (rowErrors()[r.row.id]; as message) {
@@ -231,6 +231,7 @@ export class RecordTasksPanelComponent {
   readonly popupAround = signal<string | null>(null);
   popupChanged = false;
 
+  protected readonly asRowAction = asRowAction;
   private readonly host = viewChild(TaskActionHostComponent);
   private readonly listView = viewChild(TaskListViewComponent);
   private lastAction: Record<string, TaskRowActionId> = {};

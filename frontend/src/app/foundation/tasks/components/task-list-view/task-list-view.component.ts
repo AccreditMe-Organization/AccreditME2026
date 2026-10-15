@@ -31,7 +31,7 @@ import {
   TaskRecordListStatus,
   TaskService,
 } from '../../services/task.service';
-import { TaskRowActionId, TaskRowActionModel, taskRowActions } from '../../task-row-actions';
+import { TaskRowActionId, TaskRowActionModel, asRowAction, taskRowActions } from '../../task-row-actions';
 import { TaskRowText } from '../../task-row-text';
 import { taskPoolLabel } from '../../task-pool-label';
 
@@ -97,7 +97,7 @@ interface ViewRow {
             #search
             type="search"
             [value]="qInput()"
-            (input)="onSearch($any($event.target).value)"
+            (input)="onSearch(search.value)"
             [attr.aria-label]="'taskList.searchLabel' | translate"
             [placeholder]="'taskList.searchPlaceholder' | translate"
             data-testid="task-list-search"
@@ -272,7 +272,7 @@ interface ViewRow {
                         {{ p.labelKey | translate }}
                       </button>
                     }
-                    <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, $any($event))" />
+                    <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, asRowAction($event))" />
                   </span>
                   @if (rowErrors()[r.row.id]; as message) {
                     <span class="basis-full [grid-column:1/-1] text-xs text-[var(--am-danger-ink)]" role="alert">
@@ -657,6 +657,7 @@ export class TaskListViewComponent {
     this.refreshRow(taskId);
   }
 
+  protected readonly asRowAction = asRowAction;
   private readonly host = viewChild(TaskActionHostComponent);
 
   /**

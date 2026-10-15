@@ -76,6 +76,15 @@ export interface TaskRowActionModel {
   menu: TaskRowAction[][];
 }
 
+/**
+ * A row menu emits the id of the item picked, as a string (it is shared, and
+ * knows nothing of tasks). Every item it holds came from taskRowActions(), so
+ * the id is always one of these — this narrows the type without an `any`.
+ */
+export function asRowAction(id: string): TaskRowActionId {
+  return id as TaskRowActionId;
+}
+
 /** One action, labelled as a row shows it. */
 export function taskRowAction(id: TaskActionId, actions: ITaskActionsDto): TaskRowAction {
   return {
