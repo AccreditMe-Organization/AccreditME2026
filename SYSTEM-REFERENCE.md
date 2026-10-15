@@ -477,6 +477,16 @@ elsewhere.**
   organisation (400 `PLATFORM_ROLE_NOT_ASSIGNABLE`) — previously only the
   list filter above kept it out of reach. Measured on dev at slice 5: no
   tenant user holds it.
+- **Every assignment refusal carries a `code`** (ACC-120 slice 5b,
+  `role-permission-refusal.ts`). Each exception subclasses the one it
+  replaced, with the same status and the same English message, so existing
+  callers and specs see no difference. `assignRoleToUser()`: 404
+  `ROLE_NOT_FOUND`, 404 `USER_NOT_FOUND`, 409 `ROLE_ALREADY_HELD`.
+  `removeRoleFromUser()`: 404 `ROLE_NOT_FOUND`, 404
+  `ROLE_ASSIGNMENT_NOT_FOUND`, 409 `ROLE_FROM_HEAD_POSITION`. The
+  tenant-administrator invariant throws 409 `LAST_ACTIVE_ADMINISTRATOR`, on
+  every path it guards. The frontend says each one from its code (§12.10),
+  never from the message.
 
   This omission is what the bug was. Before ACC-74 the method returned
   neither field, and `role-list` bound to `permissions?.length` — so
@@ -5292,6 +5302,20 @@ informational banner (e.g. impersonation) isn't rating anything, so
 borrowing a severity token for it was flagged during ACC-15 as its own
 category error and given its own name instead.
 
+**A token that does not exist fails CI** (ACC-120 slice 5b,
+`check:contrast`). The scan walks `src/` (specs excluded) and fails:
+- any `--am-*` token that is used but defined nowhere, unless the use
+  carries a non-colour fallback (an override hook such as
+  `var(--am-list-actions, 88px)`);
+- any `var(--am-…, <colour literal>)`, because a literal fallback is what
+  hid the missing tokens in the first place.
+
+An undefined custom property makes the whole declaration invalid, so the
+browser silently drops it. The rule caught three in Manage roles
+(`--am-danger-600`, `--am-warning-700`, `--am-warning-50`), two fallbacks
+in overlay-select, and, on its first merge with `dev`, the All tasks
+filter chip's `--am-primary-200`.
+
 ### 10.2 `StatusBadgeComponent` — Generic by Variant, Not by Fixed Enum
 
 `frontend/src/app/shared/components/status-badge/status-badge.component.ts`.
@@ -7899,6 +7923,23 @@ inline calendar replaces the fields, `date-view.ts`):
 
 **Not offered, because nothing serves it:** Resend invitation, password
 change, the Hijri display preference (ACC-98), sessions.
+
+**Manage roles says every refusal in its own words** (ACC-120 slice 5b).
+`manage-roles-refusal.ts` maps a refused load or a refused row from its
+code (§1.4), or from its status where it has none, to a translation key.
+The dialog stores the key and translates it at render time, so a language
+switch reaches it. **The server's `message` is never shown**: it is English,
+written for a log, and it used to reach Arabic sessions verbatim.
+- A load refused 403 has its own sentence naming the view permissions. The
+  design draws no such state, but someone holding `roles:manage` without
+  `users:view` reaches it (§1.9).
+- A save refused 403 shows the drawn sentence ("…Nothing was saved.").
+- Anything unnamed gets one translated fallback per phase.
+- A failed row's reason sits on its own line under the role name; the
+  status column keeps a short "Failed".
+
+**Known, not changed:** the pages hosting the dialog never show its
+partial-save line (some rows saved, some refused).
 
 ---
 
