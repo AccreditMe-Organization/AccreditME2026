@@ -9838,6 +9838,28 @@ the text blocks and times out at 120 s.
   (`{ key, creditCost }[]` open to this organisation — a tenant never sees who
   else a restricted feature is open to). The platform tenant detail returns the
   same balance without `features`.
+- **`usage` (ACC-120 slice 8)**, also on `GET /tenant` → `ai`: what this
+  period's credits went on, as `{ key, credits, calls }[]`, with the most
+  credits first (`aiUsageOf()` in `ai-balance.ts`).
+  - It is one `aiInteractionLog.groupBy` by feature, scoped by
+    `organizationId`, counting `success: true` and `creditCost > 0` from the
+    period the balance resolves to. So a due renewal that is not yet stored
+    reads as an empty new period.
+  - **It is evidence, not the balance.** The counter is what the gateway
+    enforces, and the two can disagree: a counter reset by hand leaves the log
+    as it was (al-nakheel on 15 Oct: 0 used, 166 credits logged; see
+    `backend/Plans/step-120-8-ai-credits.md`).
+  - So the AI credits screen (`ai-credits-view.ts`) caps the feature segments
+    at `creditsUsed`, in order, and draws one plain "Other" when the log adds
+    up to less. Its percentages are of the breakdown's own total.
+- **The AI credits screen** (`admin-settings/ai-settings`) has three states,
+  decided by the allocation and never by `enabled`:
+  - **none:** `monthlyCredits` 0; no meter and no zero;
+  - **spent:** credits left 0, with a paused chip in words;
+  - **normal:** credits left above 0.
+
+  Its request outcomes come from the shared request outcome, and a 403 has
+  its own sentence.
 - `frontend/src/app/core/ai/ai-refusal.ts` → `aiRefusal(err, format)`:
   `notEnabled`, `featureNotAvailable`, `creditsUsedUp` (`{{date}}`),
   `unavailable`; keys `ai.refusal.*` in EN and AR. First consumer: the
