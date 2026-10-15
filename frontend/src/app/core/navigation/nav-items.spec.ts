@@ -91,6 +91,22 @@ describe('nav-items (ACC-79)', () => {
     });
   });
 
+  // ACC-229 — All tasks sits beside My tasks, for tasks:view holders only.
+  describe('All tasks', () => {
+    it('shows after My tasks to a holder of tasks:view, and opens /tasks/all', () => {
+      const work = visibleNavGroups(access({ permissions: ['tasks:view'] })).find((g) => g.key === 'work');
+      expect(work?.items.map((i) => i.key)).toEqual(['home', 'myTasks', 'allTasks']);
+      expect(work?.items[2]).toEqual(jasmine.objectContaining({ route: '/tasks/all', labelKey: 'task.allTasks' }));
+    });
+
+    it('is absent without tasks:view', () => {
+      const items = visibleNavGroups(access({ permissions: ['tasks:create', 'tasks:reassign', 'committees:view'] })).flatMap((g) =>
+        g.items.map((i) => i.key),
+      );
+      expect(items).not.toContain('allTasks');
+    });
+  });
+
   describe('a user holding every tenant permission', () => {
     it('sees all three groups, with Administration last', () => {
       const groups = visibleNavGroups(
@@ -264,8 +280,8 @@ describe('nav-items (ACC-79)', () => {
     });
 
     it('still gates the task routes that are not self-scoped', () => {
-      // /tasks/all is a stopgap route with no nav item, not an Administration
-      // screen, so ACC-123 left it on tasks:view alone.
+      // /tasks/all is the All tasks rail item (ACC-229), not an Administration
+      // screen, so it is tasks:view alone — from the item now, not a standalone entry.
       expect(ROUTE_PERMISSIONS.get('tasks/all')).toEqual(['tasks:view']);
       expect(ROUTE_PERMISSIONS.get('tasks/unassigned')).toEqual([
         ADMIN_ACCESS,

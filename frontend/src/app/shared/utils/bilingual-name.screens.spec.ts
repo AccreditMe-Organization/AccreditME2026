@@ -24,6 +24,7 @@ import { TaskService } from '../../foundation/tasks/services/task.service';
 import { WorkflowService } from '../../foundation/workflow/services/workflow.service';
 import { WorkflowTemplateService } from '../../foundation/workflow/services/workflow-template.service';
 import { CommitteeDetailComponent } from '../../foundation/committees/components/committee-detail/committee-detail.component';
+import { CommitteeSubCommitteesPanelComponent } from '../../foundation/committees/components/committee-sub-committees-panel/committee-sub-committees-panel.component';
 import { CommitteeListComponent } from '../../foundation/committees/components/committee-list/committee-list.component';
 import { CommitteeFormComponent } from '../../foundation/committees/components/committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../../foundation/committees/components/committee-member-form/committee-member-form.component';
@@ -139,19 +140,21 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
     // THE `?? ''` BLANK. Before ACC-160 these returned '' in this case.
     it('names the stage in English rather than leaving it blank', () => {
       const c = build(CommitteeDetailComponent);
-      const sub = as<Parameters<typeof c.subCommitteeStage>[0]>({
-        id: 'c-1', currentStageNameEn: 'Active', currentStageNameAr: null,
-      });
-      expect(c.subCommitteeStage(sub)).toBe('Active');
-      c.allCommittees.set([sub]);
+      c.allCommittees.set([as({ id: 'c-1', currentStageNameEn: 'Active', currentStageNameAr: null })]);
       expect(c.currentStageName()).toBe('Active');
     });
 
-    it('still shows nothing when there is no stage at all', () => {
-      const c = build(CommitteeDetailComponent);
-      expect(
-        c.subCommitteeStage(as({ id: 'x', currentStageNameEn: null, currentStageNameAr: null })),
-      ).toBe('');
+    // ACC-230 — a sub-committee's stage is said by the Sub-committees panel now.
+    it('names a sub-committee and its stage in English when they have no Arabic', () => {
+      const p = build(CommitteeSubCommitteesPanelComponent, { committeeId: 'c-1', committeeName: 'Q' });
+      const sub = as<Parameters<typeof p.stage>[0]>({ id: 's-1', nameEn: 'Hand Hygiene', nameAr: null, stageNameEn: 'Active', stageNameAr: null, memberCount: 3 });
+      expect(p.name(sub)).toBe('Hand Hygiene');
+      expect(p.stage(sub)).toBe('Active');
+    });
+
+    it('still shows no stage when there is none at all', () => {
+      const p = build(CommitteeSubCommitteesPanelComponent, { committeeId: 'c-1', committeeName: 'Q' });
+      expect(p.stage(as({ id: 'x', nameEn: 'X', nameAr: null, stageNameEn: null, stageNameAr: null, memberCount: 0 }))).toBe('');
     });
   });
 

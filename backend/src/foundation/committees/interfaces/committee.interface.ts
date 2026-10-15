@@ -74,3 +74,35 @@ export interface ICommitteeMembershipEvent {
   approvedBy: string | null;
   createdAt: Date;
 }
+
+// ACC-230 — one row of the Members panel and its "See all" list: the member,
+// named, with the seat as the tenant names it (the committee_member_role
+// lookup, overrides applied). Active members only.
+export interface ICommitteeMemberRow {
+  id: string;
+  userId: string;
+  name: string;
+  roleValueId: string;
+  roleLabelEn: string | null;
+  roleLabelAr: string | null;
+  joinedAt: Date;
+}
+
+// ACC-230 — one row of the Sub-committees panel and its "See all" list.
+export interface ISubCommitteeRow {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+  // The live workflow stage, as listCommittees reads it; null with none.
+  stageNameEn: string | null;
+  stageNameAr: string | null;
+  memberCount: number;
+}
+
+export interface ICommitteePage<T> {
+  items: T[];
+  /** Every row there is (active members, or children), before the search. */
+  total: number;
+  /** The rows the search matches. */
+  matching: number;
+}

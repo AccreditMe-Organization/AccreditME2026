@@ -741,7 +741,43 @@
     "subCommittees": "اللجان الفرعية",
     "tasks": "المهام",
     "title": "اللجان",
-    "type": "نوع اللجنة"
+    "type": "نوع اللجنة",
+    "membersPopupTitle": "كل الأعضاء · {{committee}}",
+    "subCommitteesPopupTitle": "كل اللجان الفرعية · {{committee}}",
+    "closeMembersPopup": "إغلاق كل الأعضاء",
+    "closeSubCommitteesPopup": "إغلاق كل اللجان الفرعية",
+    "membersLoading": "جارٍ تحميل الأعضاء",
+    "membersError": "تعذّر تحميل الأعضاء.",
+    "subCommitteesLoading": "جارٍ تحميل اللجان الفرعية",
+    "subCommitteesError": "تعذّر تحميل اللجان الفرعية.",
+    "searchMembers": "البحث في الأعضاء",
+    "searchMembersPlaceholder": "ابحث بالاسم…",
+    "searchSubCommittees": "البحث في اللجان الفرعية",
+    "searchSubCommitteesPlaceholder": "ابحث بالاسم…",
+    "noMatch": "لا شيء يطابق «{{q}}»",
+    "sinceDate": "منذ {{date}}",
+    "memberActionsFor": "إجراءات {{name}}",
+    "changeRole": "تغيير الدور…",
+    "removeMember": "إزالة من اللجنة…",
+    "sort": {
+      "seat": "حسب المقعد",
+      "nameAsc": "الاسم أ–ي",
+      "nameDesc": "الاسم ي–أ",
+      "sinceAsc": "الأقدم عضويةً أولًا",
+      "sinceDesc": "الأحدث أولًا",
+      "status": "حسب الحالة",
+      "membersDesc": "الأكثر أعضاءً أولًا",
+      "membersAsc": "الأقل أعضاءً أولًا"
+    },
+    "col": {
+      "member": "العضو",
+      "seat": "المقعد",
+      "since": "منذ",
+      "name": "الاسم",
+      "status": "الحالة",
+      "members": "الأعضاء",
+      "actions": "الإجراءات"
+    }
   },
   "orgPosition": {
     "addPosition": "إضافة مسمى وظيفي",
@@ -1476,6 +1512,20 @@
     "lessThanMinute": "أقل من دقيقة",
     "shownInZone": "التواريخ بتوقيت {{zone}}"
   },
+  "record": {
+    "seeAll": "عرض الكل",
+    "showing": "يظهر {{shown}} من {{total}}",
+    "sortLabel": "الترتيب",
+    "loading": "جارٍ التحميل",
+    "listError": "تعذّر تحميل هذه القائمة.",
+    "clearSearch": "مسح البحث",
+    "loadMore": "تحميل المزيد",
+    "loadingMore": "جارٍ التحميل…",
+    "loadMoreFailed": "تعذّر تحميل المزيد",
+    "footAll": "يظهر الكل ({{total}})",
+    "footMatchOf": "{{matching}} من {{total}} مطابقة",
+    "footShowing": "يظهر {{shown}} من {{total}}"
+  },
   "recordTasks": {
     "title": "المهام",
     "ownTitle": "مهامك في هذه اللجنة",
@@ -1483,8 +1533,6 @@
     "error": "تعذّر تحميل هذه المهام.",
     "empty": "لا توجد مهام بعد. ستظهر هنا المهام المتعلقة بهذه اللجنة.",
     "ownEmpty": "ليست لديك مهام في هذه اللجنة.",
-    "showing": "يظهر {{shown}} من {{total}}",
-    "seeAll": "عرض الكل",
     "popupTitle": "كل المهام · {{record}}",
     "closePopup": "إغلاق كل المهام"
   },
@@ -1712,6 +1760,30 @@
         "few": "{{quorum}} من {{count}} أعضاء",
         "many": "{{quorum}} من {{count}} عضوًا",
         "other": "{{quorum}} من {{count}} عضو"
+      },
+      "membersMatch": {
+        "zero": "لا يوجد أعضاء مطابقون",
+        "one": "عضو واحد مطابق",
+        "two": "عضوان مطابقان",
+        "few": "{{count}} أعضاء مطابقين",
+        "many": "{{count}} عضوًا مطابقًا",
+        "other": "{{count}} عضو مطابق"
+      },
+      "subCommitteesCount": {
+        "zero": "لا توجد لجان فرعية",
+        "one": "لجنة فرعية واحدة",
+        "two": "لجنتان فرعيتان",
+        "few": "{{count}} لجان فرعية",
+        "many": "{{count}} لجنة فرعية",
+        "other": "{{count}} لجنة فرعية"
+      },
+      "subCommitteesMatch": {
+        "zero": "لا توجد لجان فرعية مطابقة",
+        "one": "لجنة فرعية واحدة مطابقة",
+        "two": "لجنتان فرعيتان مطابقتان",
+        "few": "{{count}} لجان فرعية مطابقة",
+        "many": "{{count}} لجنة فرعية مطابقة",
+        "other": "{{count}} لجنة فرعية مطابقة"
       }
     },
     "task": {

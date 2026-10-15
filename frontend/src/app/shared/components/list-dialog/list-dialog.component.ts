@@ -28,8 +28,10 @@ export const LIST_DIALOG_SHEET_BELOW_PX = 760;
  * scrolls — so it gets its own shell rather than a size that breaks the cap's
  * rule for every form:
  *
- * - **1040 × 760**, or the window less 96px each way; **below 760px wide, a
- *   full-screen sheet**.
+ * - **1040 × 760** (`size="list"`, the All tasks list) or **720 × 560**
+ *   (`size="compact"`, a plain list such as All members, ACC-230), either one
+ *   capped at the window less 96px each way; **below 760px wide, a full-screen
+ *   sheet**.
  * - A fixed header (the title and ✕) above the body template, which owns the
  *   rest of the height. The body decides what scrolls inside it; this shell
  *   never scrolls.
@@ -39,7 +41,8 @@ export const LIST_DIALOG_SHEET_BELOW_PX = 760;
  * - **Escape closes only the top layer** (LayerStackService), listened for in
  *   the CAPTURE phase: a row menu inside closes itself on Escape before the
  *   event bubbles, and would otherwise hand this dialog the same keypress.
- * - **Focus returns to whatever opened it** (the panel's "See all").
+ * - **Focus starts in the body's search box once the dialog has opened**, and
+ *   returns to whatever opened it (the panel's "See all").
  * - `role="dialog"`, `aria-modal`, named by its title.
  */
 @Component({
@@ -54,6 +57,7 @@ export const LIST_DIALOG_SHEET_BELOW_PX = 760;
       [closable]="false"
       [closeOnEscape]="false"
       [draggable]="false"
+      [focusOnShow]="false"
       [resizable]="false"
       [blockScroll]="true"
       [style]="frameStyle()"
@@ -130,6 +134,8 @@ export class ListDialogComponent {
   readonly closeLabel = input.required<string>();
   /** The list itself: rebuilt on every open. */
   readonly body = input.required<TemplateRef<unknown>>();
+  /** 1040 × 760 for a list with filters; 720 × 560 for a plain searchable one. */
+  readonly size = input<'list' | 'compact'>('list');
   /** Header buttons before the ✕ (New task). */
   readonly headerExtra = input<TemplateRef<unknown> | null>(null);
   /** Escape on the top layer, and the ✕. The host closes it. */
@@ -141,11 +147,11 @@ export class ListDialogComponent {
   readonly sheet = signal(false);
   /** The body exists only while open, so each open starts fresh. */
   readonly rendered = signal(false);
-  readonly frameStyle = computed(() =>
-    this.sheet()
-      ? { width: '100vw', height: '100vh', 'max-height': '100vh', margin: '0' }
-      : { width: 'min(1040px, calc(100vw - 96px))', height: 'min(760px, calc(100vh - 96px))', 'max-height': 'none' },
-  );
+  readonly frameStyle = computed(() => {
+    if (this.sheet()) return { width: '100vw', height: '100vh', 'max-height': '100vh', margin: '0' };
+    const [w, h] = this.size() === 'compact' ? [720, 560] : [1040, 760];
+    return { width: `min(${w}px, calc(100vw - 96px))`, height: `min(${h}px, calc(100vh - 96px))`, 'max-height': 'none' };
+  });
 
   private layerId: number | null = null;
   private opener: HTMLElement | null = null;
@@ -184,14 +190,28 @@ export class ListDialogComponent {
     destroyRef.onDestroy(() => this.release());
   }
 
+  /**
+   * Where focus goes once the dialog has FINISHED opening (PrimeNG's onShow
+   * fires after its enter animation). Before then the body exists but the
+   * dialog is not yet in the page, so a body that focuses itself on its first
+   * render focuses nothing — which is why, live, focus landed on the frame
+   * (ACC-229). So the shell decides, now:
+   *   1. something inside already has focus (a deep link's row): leave it;
+   *   2. else the body's search box (`[autofocus]`, else `input[type=search]`);
+   *   3. else the dialog itself, so its name is announced.
+   * PrimeNG's own focusOnShow is off: it would move focus to the first
+   * focusable element (the header's ✕) on a timer of its own.
+   */
   shown(): void {
-    // The body puts focus where it belongs (the search box); if it did not,
-    // focus the dialog so its name is announced.
     const frame = this.document.querySelector<HTMLElement>(`#${this.titleId}`)?.closest<HTMLElement>('[role=dialog]');
-    if (frame && !frame.contains(this.document.activeElement)) {
-      frame.setAttribute('tabindex', '-1');
-      frame.focus();
+    if (!frame || frame.contains(this.document.activeElement)) return;
+    const search = frame.querySelector<HTMLElement>('[autofocus], input[type="search"]');
+    if (search) {
+      search.focus();
+      return;
     }
+    frame.setAttribute('tabindex', '-1');
+    frame.focus();
   }
 
   hidden(): void {

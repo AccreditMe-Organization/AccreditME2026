@@ -51,6 +51,23 @@ function buildContext(handlerName: HandlerName, userPermissions: string[]): Exec
   } as unknown as ExecutionContext;
 }
 
+// ACC-230 — the two read lists carry committees:view, exactly as
+// GET /committees/:id/members does: the real guard, the real metadata.
+describe('CommitteesController — the Members and Sub-committees lists (ACC-230)', () => {
+  const guard = new PermissionGuard(new Reflector());
+  const ctx = (name: 'membersPage' | 'subCommittees', userPermissions: string[]) =>
+    ({
+      getHandler: () => (CommitteesController.prototype as unknown as Record<string, () => unknown>)[name],
+      getClass: () => CommitteesController,
+      switchToHttp: () => ({ getRequest: () => ({ userPermissions }) }),
+    }) as unknown as ExecutionContext;
+
+  it.each(['membersPage', 'subCommittees'] as const)('%s needs committees:view, and committees:view is enough', (name) => {
+    expect(() => guard.canActivate(ctx(name, ['tasks:view']))).toThrow(ForbiddenException);
+    expect(guard.canActivate(ctx(name, [COMMITTEES_PERMISSIONS.VIEW]))).toBe(true);
+  });
+});
+
 describe('CommitteesController permission wiring (ACC-28 correction — Retrospective Note 2)', () => {
   const guard = new PermissionGuard(new Reflector());
 
