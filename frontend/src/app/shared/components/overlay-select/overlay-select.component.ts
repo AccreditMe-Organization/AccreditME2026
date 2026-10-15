@@ -342,7 +342,7 @@ function createManualScrollable(
       }
 
       .am-overlay-select-trigger:hover {
-        border-color: var(--am-blue-light, #64b5d9);
+        border-color: var(--am-blue-light);
       }
 
       .am-overlay-select-trigger:focus,
@@ -432,7 +432,7 @@ function createManualScrollable(
          so keyboard navigation is visible even before a selection. */
       .am-overlay-select-option.cdk-option-active:not([aria-selected='true']) {
         background: var(--am-surface);
-        outline: 2px solid var(--am-blue-light, #64b5d9);
+        outline: 2px solid var(--am-blue-light);
         outline-offset: -2px;
       }
 
