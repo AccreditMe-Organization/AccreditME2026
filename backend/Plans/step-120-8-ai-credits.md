@@ -76,8 +76,7 @@ and for switched off. The allocation is what decides.
 
 ## The six request outcomes
 
-One request today (`GET /tenant`); a second one only if decision D2 adds a
-usage read.
+One request (`GET /tenant`). The usage read is part of its response.
 
 | Outcome | What it shows |
 |---|---|
@@ -86,7 +85,7 @@ usage read.
 | Empty, with a reason | The none state: "AI features aren't part of your plan", with its reason sentence. This is an empty state with a reason, never "0 of 0" |
 | Denied (403) | A sentence naming what is missing: "You can't see this organisation's AI credits. That needs permission to view the organisation's settings." No retry: retrying cannot change the answer |
 | Error, with retry | A translated error and Retry. Never the server's text |
-| Partial | Only if D2 adds a usage read. If the balance loads and the usage read fails, the meter shows used and left as one segment, and the breakdown shows its own error with Retry. The balance never waits on the breakdown |
+| Partial | No separate request can fail on its own: one response carries the balance and the usage. The partial case here is the log adding up to less than `used`. The rest is then one plain "Other" segment and row, and the breakdown says why |
 
 ## Decisions (Ahmad, 15 Oct, CC-109a)
 
