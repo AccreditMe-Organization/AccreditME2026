@@ -39,7 +39,8 @@ export const LIST_DIALOG_SHEET_BELOW_PX = 760;
  * - **Escape closes only the top layer** (LayerStackService), listened for in
  *   the CAPTURE phase: a row menu inside closes itself on Escape before the
  *   event bubbles, and would otherwise hand this dialog the same keypress.
- * - **Focus returns to whatever opened it** (the panel's "See all").
+ * - **Focus starts in the body's search box once the dialog has opened**, and
+ *   returns to whatever opened it (the panel's "See all").
  * - `role="dialog"`, `aria-modal`, named by its title.
  */
 @Component({
@@ -54,6 +55,7 @@ export const LIST_DIALOG_SHEET_BELOW_PX = 760;
       [closable]="false"
       [closeOnEscape]="false"
       [draggable]="false"
+      [focusOnShow]="false"
       [resizable]="false"
       [blockScroll]="true"
       [style]="frameStyle()"
@@ -184,14 +186,28 @@ export class ListDialogComponent {
     destroyRef.onDestroy(() => this.release());
   }
 
+  /**
+   * Where focus goes once the dialog has FINISHED opening (PrimeNG's onShow
+   * fires after its enter animation). Before then the body exists but the
+   * dialog is not yet in the page, so a body that focuses itself on its first
+   * render focuses nothing — which is why, live, focus landed on the frame
+   * (ACC-229). So the shell decides, now:
+   *   1. something inside already has focus (a deep link's row): leave it;
+   *   2. else the body's search box (`[autofocus]`, else `input[type=search]`);
+   *   3. else the dialog itself, so its name is announced.
+   * PrimeNG's own focusOnShow is off: it would move focus to the first
+   * focusable element (the header's ✕) on a timer of its own.
+   */
   shown(): void {
-    // The body puts focus where it belongs (the search box); if it did not,
-    // focus the dialog so its name is announced.
     const frame = this.document.querySelector<HTMLElement>(`#${this.titleId}`)?.closest<HTMLElement>('[role=dialog]');
-    if (frame && !frame.contains(this.document.activeElement)) {
-      frame.setAttribute('tabindex', '-1');
-      frame.focus();
+    if (!frame || frame.contains(this.document.activeElement)) return;
+    const search = frame.querySelector<HTMLElement>('[autofocus], input[type="search"]');
+    if (search) {
+      search.focus();
+      return;
     }
+    frame.setAttribute('tabindex', '-1');
+    frame.focus();
   }
 
   hidden(): void {

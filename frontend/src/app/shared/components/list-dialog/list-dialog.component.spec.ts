@@ -18,7 +18,7 @@ import { ListDialogComponent } from './list-dialog.component';
   template: `
     <button type="button" id="opener" (click)="open.set(true)">See all</button>
     <ng-template #body>
-      <input id="search" />
+      <input id="search" type="search" />
       <am-row-menu [groups]="[[{ id: 'open', label: 'Open task' }]]" label="Actions for Task 1" (picked)="picked = $event" />
     </ng-template>
     <am-list-dialog [visible]="open()" heading="All tasks · Quality" closeLabel="Close all tasks" [body]="body" (closeRequested)="closes = closes + 1; open.set(false)" />
@@ -86,6 +86,32 @@ describe('ListDialogComponent and the row menu inside it (ACC-229)', () => {
     escape(document.activeElement ?? document.body);
     await fixture.whenStable();
     expect(fixture.componentInstance.closes).toBe(1);
+  });
+
+  // ACC-229, found live: the list focused its search box on its first render,
+  // before the dialog was in the page, so nothing held focus once it opened and
+  // the shell fell back to its frame. The shell now focuses the search box
+  // itself, when the dialog has finished opening.
+  it('once open, focus is in the search box — not on the frame', async () => {
+    // PrimeNG says "shown" only after its own enter motion, so wait for that —
+    // up to two seconds — rather than for a guessed delay.
+    const dialog = fixture.debugElement.query((d) => d.componentInstance instanceof ListDialogComponent)!
+      .componentInstance as ListDialogComponent;
+    const shown = spyOn(dialog, 'shown').and.callThrough();
+    await openDialog();
+    for (let i = 0; i < 40 && shown.calls.count() === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    expect(shown).withContext('the dialog never finished opening').toHaveBeenCalled();
+    expect(document.activeElement?.id).withContext(`focus is on ${document.activeElement?.tagName}`).toBe('search');
+  });
+
+  it("focus the body already placed (a deep link's row) is left where it is", async () => {
+    await openDialog();
+    const trigger = document.querySelector<HTMLButtonElement>('[data-testid="row-menu-trigger"]')!;
+    trigger.focus();
+    const dialog = fixture.debugElement.query((d) => d.componentInstance instanceof ListDialogComponent)!
+      .componentInstance as ListDialogComponent;
+    dialog.shown();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('the body is rebuilt on every open, so it opens on its defaults', async () => {
