@@ -1,4 +1,4 @@
-import { aiBalanceOf, AiBalanceSource, IAiFeatureOpen, openAiFeatures } from '../ai/ai-balance';
+import { aiBalanceOf, AiBalanceSource, aiUsageOf, openAiFeatures } from '../ai/ai-balance';
 import {
   ConflictException,
   Inject,
@@ -81,7 +81,7 @@ export class TenantService {
   async findById(id: string): Promise<ITenant> {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
-    return this.mapToITenant(org, await openAiFeatures(this.prisma, id));
+    return this.mapToITenant(org, await this.aiOf(org));
   }
 
   // ACC-79 — what the shell needs to draw navigation, and nothing else.
@@ -149,7 +149,20 @@ export class TenantService {
       after: dto as Record<string, unknown>,
     });
 
-    return this.mapToITenant(updated, await openAiFeatures(this.prisma, id));
+    return this.mapToITenant(updated, await this.aiOf(updated));
+  }
+
+  // The AI block: the balance from the dedicated columns (ACC-194), the
+  // features open to the organisation, and what this period's credits went on
+  // (ACC-120 slice 8). Usage is read from the period the balance resolves to,
+  // so a renewal that is due but not yet stored reads as an empty period.
+  private async aiOf(org: AiBalanceSource & { id: string }): Promise<ITenant['ai']> {
+    const balance = aiBalanceOf(org);
+    const [features, usage] = await Promise.all([
+      openAiFeatures(this.prisma, org.id),
+      aiUsageOf(this.prisma, org.id, balance.periodStart),
+    ]);
+    return { ...balance, features, usage };
   }
 
   // Shared by findById/update — modules/ai (ACC-13) are the frontend
@@ -179,7 +192,7 @@ export class TenantService {
     settings: unknown;
     createdAt: Date;
     updatedAt: Date;
-  }, aiFeatures: IAiFeatureOpen[]): ITenant {
+  }, ai: ITenant['ai']): ITenant {
     const settings = (org.settings as { modules?: Record<string, boolean> } | null) ?? {};
 
     return {
@@ -207,7 +220,7 @@ export class TenantService {
       logo: org.logo,
       isPlatformOrg: org.isPlatformOrg,
       modules: settings.modules ?? {},
-      ai: { ...aiBalanceOf(org), features: aiFeatures },
+      ai,
       createdAt: org.createdAt,
       updatedAt: org.updatedAt,
     };
