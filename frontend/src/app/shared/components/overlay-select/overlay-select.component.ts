@@ -170,6 +170,10 @@ function createManualScrollable(
       [class.am-overlay-select-trigger-open]="isOpen()"
       [class.am-overlay-select-trigger-disabled]="disabled()"
       tabindex="0"
+      [attr.role]="ariaLabel() ? 'button' : null"
+      [attr.aria-haspopup]="ariaLabel() ? 'listbox' : null"
+      [attr.aria-expanded]="ariaLabel() ? isOpen() : null"
+      [attr.aria-label]="ariaLabel() ? (selectedLabel() ? ariaLabel() + ': ' + selectedLabel() : ariaLabel()) : null"
       (click)="toggle()"
       (keydown.enter)="toggle()"
       (keydown.space)="toggle(); $event.preventDefault()"
@@ -553,6 +557,14 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
    * always — by default.
    */
   readonly panelMinWidth = input<number | null>(null);
+
+  /**
+   * ACC-229 — opt-in: names a select that has no visible label of its own (a
+   * toolbar filter, "Status"). The trigger then reads as a button that opens a
+   * list, named "Status: In progress" once a value is chosen. Already
+   * translated. Unset — the field's own label names it, as always.
+   */
+  readonly ariaLabel = input<string | null>(null);
 
   readonly flattenedOptions = computed<FlattenedOption[]>(() => {
     const childrenField = this.optionGroupChildren();

@@ -1476,6 +1476,100 @@
     "lessThanMinute": "أقل من دقيقة",
     "shownInZone": "التواريخ بتوقيت {{zone}}"
   },
+  "recordTasks": {
+    "title": "المهام",
+    "ownTitle": "مهامك في هذه اللجنة",
+    "loading": "جارٍ تحميل المهام",
+    "error": "تعذّر تحميل هذه المهام.",
+    "empty": "لا توجد مهام بعد. ستظهر هنا المهام المتعلقة بهذه اللجنة.",
+    "ownEmpty": "ليست لديك مهام في هذه اللجنة.",
+    "showing": "يظهر {{shown}} من {{total}}",
+    "seeAll": "عرض الكل",
+    "popupTitle": "كل المهام · {{record}}",
+    "closePopup": "إغلاق كل المهام"
+  },
+  "taskActions": {
+    "viewEvidence": "عرض الأدلة ({{count}})",
+    "open": "فتح المهمة",
+    "rejectSub": "إعادتها مع ذكر السبب",
+    "moreActionsFor": "إجراءات «{{title}}»"
+  },
+  "taskList": {
+    "searchLabel": "البحث في المهام",
+    "searchPlaceholder": "ابحث عن مهمة أو مُسند إليه…",
+    "filter": {
+      "status": "الحالة",
+      "overdueOnly": "المتأخرة فقط",
+      "assignee": "المُسند إليه",
+      "required": "مطلوبة أو اختيارية",
+      "due": "الاستحقاق",
+      "dueThisWeek": "هذا الأسبوع",
+      "dueLater": "لاحقًا",
+      "dueNone": "بلا تاريخ استحقاق",
+      "mine": "المُسندة إليّ",
+      "people": "الأشخاص",
+      "pools": "المناصب والأدوار"
+    },
+    "sort": {
+      "label": "الترتيب",
+      "dueAsc": "تاريخ الاستحقاق ↑ · المفتوحة أولًا",
+      "dueDesc": "تاريخ الاستحقاق ↓ · المفتوحة أولًا",
+      "createdDesc": "الأحدث أولًا",
+      "createdAsc": "الأقدم أولًا",
+      "updatedDesc": "آخر تحديث",
+      "statusAsc": "الحالة",
+      "titleAsc": "العنوان أ–ي",
+      "titleDesc": "العنوان ي–أ"
+    },
+    "chip": {
+      "remove": "إزالة عامل التصفية: {{filter}}",
+      "clearAll": "مسح الكل",
+      "link": "مفتوحة من رابط · {{title}}",
+      "search": "البحث: {{value}}",
+      "status": "الحالة: {{value}}",
+      "who": "المُسند إليه: {{value}}",
+      "due": "الاستحقاق: {{value}}"
+    },
+    "col": {
+      "task": "المهمة",
+      "status": "الحالة",
+      "assignee": "المُسند إليه",
+      "due": "الاستحقاق",
+      "createdBy": "أنشأها",
+      "updated": "آخر تحديث",
+      "actions": "الإجراءات"
+    },
+    "error": "تعذّر تحميل المهام.",
+    "empty": "لا توجد مهام بعد.",
+    "noMatch": "لا توجد مهام تطابق عوامل التصفية هذه",
+    "noMatchSearch": "لا توجد مهام تطابق «{{q}}»",
+    "clearSearch": "مسح البحث",
+    "live": {
+      "loading": "جارٍ تحميل المهام",
+      "loadMore": "تحميل المزيد",
+      "loadingMore": "جارٍ التحميل…",
+      "loadMoreFailed": "تعذّر تحميل المزيد"
+    },
+    "foot": {
+      "matchOf": "{{matching}} من {{total}} مطابقة",
+      "all": "تظهر كل المهام ({{total}})",
+      "showing": "يظهر {{shown}} من {{total}}"
+    },
+    "tag": {
+      "required": "مطلوبة",
+      "optional": "اختيارية"
+    },
+    "due": {
+      "completedOn": "✓ اكتملت {{date}}",
+      "cancelledOn": "أُلغيت {{date}}",
+      "onHoldDue": "⏸ معلّقة حتى {{hold}} · تستحق {{date}}",
+      "onHold": "⏸ معلّقة حتى {{hold}}",
+      "none": "بلا تاريخ استحقاق",
+      "overdue": "⚠ متأخرة {{span}} · {{date}}",
+      "soon": "تستحق {{when}} · {{date}}",
+      "on": "تستحق {{date}}"
+    }
+  },
   "plural": {
     "role": {
       "permissions": {
@@ -1911,6 +2005,26 @@
         "few": "{{count}} أشخاص يمكنهم استلامها",
         "many": "{{count}} شخصًا يمكنهم استلامها",
         "other": "{{count}} شخص يمكنهم استلامها"
+      }
+    },
+    "taskList": {
+      "live": {
+        "match": {
+          "zero": "لا توجد مهام مطابقة",
+          "one": "مهمة واحدة مطابقة",
+          "two": "مهمتان مطابقتان",
+          "few": "{{count}} مهام مطابقة",
+          "many": "{{count}} مهمة مطابقة",
+          "other": "{{count}} مهمة مطابقة"
+        },
+        "total": {
+          "zero": "لا توجد مهام",
+          "one": "مهمة واحدة",
+          "two": "مهمتان",
+          "few": "{{count}} مهام",
+          "many": "{{count}} مهمة",
+          "other": "{{count}} مهمة"
+        }
       }
     }
   },

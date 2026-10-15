@@ -58,6 +58,17 @@ export class ObjectVisibilityService {
     },
   };
 
+  /**
+   * ACC-229 — the record types whose records this permission set may see, for
+   * an organisation-wide list. The same rules as assertCanView, and the same
+   * fail-closed shape: a type with no rule is never in the answer.
+   */
+  viewableTypes(viewerPermissions: readonly string[]): string[] {
+    return Object.entries(this.rules)
+      .filter(([, rule]) => viewerPermissions.includes(rule.permission))
+      .map(([type]) => type);
+  }
+
   // Throws unless the caller may see the parent. Returns nothing: every caller
   // uses it as a gate, and returning a boolean invites `if (canView)` branches
   // that forget the else.

@@ -199,6 +199,12 @@ describe('translation keys (ACC-78)', () => {
       'files.viewer.pdf.of': '"of 12" beside the page field — a position, no noun',
       'files.viewer.pdf.pageAria': '"Page 3 of 12" — a position, no noun after the total',
       'files.viewer.csv.cut': '"the first 500 rows of 2,140" — the noun is in {{rows}}, a plural object; the total takes none',
+      // ACC-229 — the record Tasks panel and the All tasks list.
+      'recordTasks.showing': '"Showing 5 of 16" — a position, no noun after the total',
+      'taskList.foot.showing': '"Showing 50 of 120" — a position, no noun after the total',
+      'taskList.foot.matchOf': '"3 of 16 match" — a position, no noun after the total',
+      'taskList.foot.all': '"Showing all 16" — no noun after the total (Arabic brackets it after "the tasks")',
+      'taskActions.viewEvidence': '"View evidence (2)" — a count in brackets after the noun, nothing to agree with',
     };
 
     // Time quantities never become plural objects: they go through the layer's

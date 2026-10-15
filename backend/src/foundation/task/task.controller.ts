@@ -59,6 +59,9 @@ import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence, ITaskEvidenceList, ITaskEvidenceView } from './interfaces/task-evidence.interface';
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskPageService } from './task-page.service';
+import { TaskRecordListService } from './task-record-list.service';
+import { RecordListQueryDto, RecordPanelQueryDto } from './dto/record-list-query.dto';
+import { ITaskRecordList, ITaskRecordPanel } from './interfaces/task-record-row.interface';
 import { ITaskHistoryEvent, ITaskPageView } from './interfaces/task-page.interface';
 import { SingleFileUploadInterceptor } from '../file-storage/single-file-upload.interceptor';
 import { IFileDownload, IUploadedFile } from '../file-storage/interfaces/stored-file.interface';
@@ -80,6 +83,7 @@ export class TaskController {
     private readonly workload: TaskWorkloadService,
     private readonly workloadHint: WorkloadHintService,
     private readonly page: TaskPageService,
+    private readonly recordList: TaskRecordListService,
   ) {}
 
   // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
@@ -279,6 +283,32 @@ export class TaskController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<ITaskRequestForDecision[]> {
     return this.requests.awaitingDecision({ id: userId, permissions }, tenantId);
+  }
+
+  // ── ACC-229 — a record's Tasks panel, and the All tasks list ────────────
+  // No @Permissions, deliberately, like the task page: who sees which tasks is
+  // decided by TaskRecordListService — the record's own visibility first
+  // (403 naming the permission, or 404), then tasks:view for every task on it
+  // or the viewer's own tasks without it; organisation-wide needs tasks:view.
+  // Declared before ':id', which would otherwise swallow both segments.
+  @Get('record-panel')
+  getRecordPanel(
+    @Query() query: RecordPanelQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<ITaskRecordPanel> {
+    return this.recordList.panel(query, tenantId, viewer(userId, actorPermissions));
+  }
+
+  @Get('record-list')
+  getRecordList(
+    @Query() query: RecordListQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<ITaskRecordList> {
+    return this.recordList.list(query, tenantId, viewer(userId, actorPermissions));
   }
 
   // Must be declared before ':id' — Nest matches routes in declaration order

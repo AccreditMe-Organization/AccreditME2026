@@ -1476,6 +1476,100 @@
     "lessThanMinute": "less than a minute",
     "shownInZone": "Dates shown in {{zone}}"
   },
+  "recordTasks": {
+    "title": "Tasks",
+    "ownTitle": "Your tasks on this committee",
+    "loading": "Loading tasks",
+    "error": "Couldn't load these tasks.",
+    "empty": "No tasks yet. Tasks about this committee will be listed here.",
+    "ownEmpty": "You have no tasks on this committee.",
+    "showing": "Showing {{shown}} of {{total}}",
+    "seeAll": "See all",
+    "popupTitle": "All tasks · {{record}}",
+    "closePopup": "Close all tasks"
+  },
+  "taskActions": {
+    "viewEvidence": "View evidence ({{count}})",
+    "open": "Open task",
+    "rejectSub": "Hand back with a reason",
+    "moreActionsFor": "Actions for “{{title}}”"
+  },
+  "taskList": {
+    "searchLabel": "Search tasks",
+    "searchPlaceholder": "Search task or assignee…",
+    "filter": {
+      "status": "Status",
+      "overdueOnly": "Overdue only",
+      "assignee": "Assignee or pool",
+      "required": "Required or optional",
+      "due": "Due",
+      "dueThisWeek": "This week",
+      "dueLater": "Later",
+      "dueNone": "No due date",
+      "mine": "Assigned to me",
+      "people": "People",
+      "pools": "Positions and roles"
+    },
+    "sort": {
+      "label": "Sort",
+      "dueAsc": "Due date ↑ · open first",
+      "dueDesc": "Due date ↓ · open first",
+      "createdDesc": "Newest first",
+      "createdAsc": "Oldest first",
+      "updatedDesc": "Recently updated",
+      "statusAsc": "Status",
+      "titleAsc": "Title A–Z",
+      "titleDesc": "Title Z–A"
+    },
+    "chip": {
+      "remove": "Remove filter: {{filter}}",
+      "clearAll": "Clear all",
+      "link": "Opened from a link · {{title}}",
+      "search": "Search: {{value}}",
+      "status": "Status: {{value}}",
+      "who": "Assignee: {{value}}",
+      "due": "Due: {{value}}"
+    },
+    "col": {
+      "task": "Task",
+      "status": "Status",
+      "assignee": "Assignee or pool",
+      "due": "Due",
+      "createdBy": "Created by",
+      "updated": "Updated",
+      "actions": "Actions"
+    },
+    "error": "Couldn't load tasks.",
+    "empty": "No tasks yet.",
+    "noMatch": "No tasks match these filters",
+    "noMatchSearch": "No tasks match “{{q}}”",
+    "clearSearch": "Clear search",
+    "live": {
+      "loading": "Loading tasks",
+      "loadMore": "Load more",
+      "loadingMore": "Loading…",
+      "loadMoreFailed": "Couldn't load more"
+    },
+    "foot": {
+      "matchOf": "{{matching}} of {{total}} match",
+      "all": "Showing all {{total}}",
+      "showing": "Showing {{shown}} of {{total}}"
+    },
+    "tag": {
+      "required": "Required",
+      "optional": "Optional"
+    },
+    "due": {
+      "completedOn": "✓ Completed {{date}}",
+      "cancelledOn": "Cancelled {{date}}",
+      "onHoldDue": "⏸ On hold to {{hold}} · due {{date}}",
+      "onHold": "⏸ On hold to {{hold}}",
+      "none": "No due date",
+      "overdue": "⚠ {{span}} overdue · {{date}}",
+      "soon": "Due {{when}} · {{date}}",
+      "on": "Due {{date}}"
+    }
+  },
   "plural": {
     "role": {
       "permissions": {
@@ -1707,6 +1801,18 @@
       "canPickUp": {
         "one": "{{count}} can pick it up",
         "other": "{{count}} can pick it up"
+      }
+    },
+    "taskList": {
+      "live": {
+        "match": {
+          "one": "{{count}} task matches",
+          "other": "{{count}} tasks match"
+        },
+        "total": {
+          "one": "{{count}} task",
+          "other": "{{count}} tasks"
+        }
       }
     }
   },

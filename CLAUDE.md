@@ -3749,6 +3749,43 @@ Briefly:
   ACC-231 (High) fixes it in the single file entitlement with the same 404.
 - **No migration.**
 
+## Key Architecture Decisions (ACC-229)
+
+A record's Tasks panel and the All tasks list. Full mechanism:
+SYSTEM-REFERENCE.md §3.13. Plan, Ahmad's answers (Q1–Q13) and the
+measurements: `backend/Plans/step-228-record-tasks-panel.md` (§2, §5c).
+Briefly:
+
+- **A RECORD'S TASKS ARE CAPPED AT FIVE, AT A FIXED HEIGHT** — 294px English,
+  328px Arabic, footer included — so panels in a row stay equal. The header
+  count is every task the viewer can see; "See all" opens the only full view.
+  Order is the server's: open by soonest due (overdue first, undated last),
+  then On hold, then the most recently closed. One order for everyone.
+- **WHO SEES WHICH TASKS IS TODAY'S RULE, AS A LIST.** On a record: the record
+  first (ACC-101 clause a), then every task with `tasks:view`, or (Q1) only
+  the tasks the viewer is or was ON, or CREATED (Ahmad, 14 Oct) — each one a
+  task its page already admits them to. Organisation-wide
+  (`/tasks/all`): `tasks:view`, and only the record types the viewer may see
+  (`ObjectVisibilityService.viewableTypes()`, fail closed).
+- **ORDER AND FILTERS ARE SQL; ROWS ARE READ IN BATCHES.** Every value bound,
+  `organizationId` in every `WHERE`, every order ending in the id, so Load more
+  never repeats or skips. "This week" is in the tenant's zone.
+- **A ROW'S ACTIONS ARE THE TASK PAGE'S** — `taskActionsFor()` from facts
+  gathered once per page, and a real-database spec requires them to equal the
+  page's for five kinds of viewer. One next step as a button, the rest in a
+  worded ⋯ menu (`am-row-menu`); an action the viewer cannot take is absent.
+- **A LIST DIALOG IS NOT A FORM DIALOG.** `am-list-dialog` is 1040 × 760 (a
+  full-screen sheet below 760px) and is exempt from the 420px cap, because a
+  list is the thing that scrolls. Its body is rebuilt on every open, so the
+  list never remembers filters (drawn Q3). It listens for Escape in the
+  CAPTURE phase: a CDK menu closes itself on Escape before the event bubbles,
+  and a bubble-phase dialog would close on that same keypress.
+- **`/tasks/all` WORKS.** It had never loaded a task (no record, so it returned
+  before asking); it now hosts the same list, organisation-wide.
+- **ACC-217 is fixed by construction:** the panel's own load error and an
+  action's failure are separate; a failure is said in its row.
+- **No migration.**
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require
@@ -3892,6 +3929,9 @@ Briefly:
   component's own guard clause returns early without ever querying.
   Do NOT add a nav link to `/tasks/all` as a quick fix — this would
   make the misleading empty-list defect easier to find, not fix it.
+  **RESOLVED (ACC-229)** — the empty list: `/tasks/all` now hosts the All
+  tasks list organisation-wide (`tasks:view`, the record types the viewer
+  may see), 50 at a time. The "do not link it" warning no longer applies.
   **The LIST half of this is now resolved (ACC-76)**: `TaskListComponent`
   gained a real `embedded` mode and lives inside Committee's detail page,
   which is the home its own original header comment always described.
