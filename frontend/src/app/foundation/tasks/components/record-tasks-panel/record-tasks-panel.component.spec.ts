@@ -77,7 +77,7 @@ describe('RecordTasksPanelComponent (ACC-229)', () => {
   const rowEls = () => Array.from(el.querySelectorAll<HTMLElement>('[data-task-row]'));
 
   it('loading: five skeleton rows and "—" for the count', () => {
-    expect(el.querySelectorAll('.am-rtp__skeleton').length).toBe(5);
+    expect(el.querySelectorAll('.am-cp__skeleton').length).toBe(5);
     expect(q('record-tasks-count')!.textContent!.trim()).toBe('—');
     flush({ total: 0, scope: 'all', rows: [] });
   });
@@ -173,7 +173,7 @@ describe('RecordTasksPanelComponent (ACC-229)', () => {
     rowEls()[0]!.querySelector<HTMLButtonElement>('[data-action="start"]')!.click();
     http.expectOne(`${API}/t1/start`).flush({});
     fixture.detectChanges();
-    expect(el.querySelectorAll('.am-rtp__skeleton').length).toBe(0);
+    expect(el.querySelectorAll('.am-cp__skeleton').length).toBe(0);
     flush({ total: 1, scope: 'all', rows: [recordRow('t1', { status: 'IN_PROGRESS' })] });
     expect(rowEls()[0]!.textContent).toContain('In progress');
   });
@@ -183,7 +183,7 @@ describe('RecordTasksPanelComponent (ACC-229)', () => {
       flush({ total: 8, scope: 'all', rows: rows(5) });
       fixture.componentInstance.sought.set({ id: 't2' });
       fixture.detectChanges();
-      expect(rowEls()[1]!.classList).toContain('am-rtp__row--sought');
+      expect(rowEls()[1]!.classList).toContain('am-cp-row--sought');
       http.expectNone((r) => r.url === `${API}/record-list`);
     });
 
@@ -203,7 +203,7 @@ describe('RecordTasksPanelComponent (ACC-229)', () => {
       fixture.componentInstance.sought.set({ id: 't3' });
       fixture.detectChanges();
       flush({ total: 5, scope: 'all', rows: rows(5) });
-      expect(rowEls()[2]!.classList).toContain('am-rtp__row--sought');
+      expect(rowEls()[2]!.classList).toContain('am-cp-row--sought');
     });
   });
 

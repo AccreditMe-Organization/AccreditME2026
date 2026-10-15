@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 
@@ -110,6 +110,42 @@ export interface RemoveCommitteeMemberDto {
   reason?: string;
 }
 
+// ACC-230 — a row of the Members panel and its See all list.
+export interface CommitteeMemberRowDto {
+  id: string;
+  userId: string;
+  name: string;
+  roleValueId: string;
+  roleLabelEn: string | null;
+  roleLabelAr: string | null;
+  joinedAt: string;
+}
+
+// ACC-230 — a row of the Sub-committees panel and its See all list.
+export interface SubCommitteeRowDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+  stageNameEn: string | null;
+  stageNameAr: string | null;
+  memberCount: number;
+}
+
+export interface CommitteePageDto<T> {
+  items: T[];
+  total: number;
+  matching: number;
+}
+
+export interface CommitteeListQuery {
+  q?: string;
+  sort?: string;
+  dir?: 'asc' | 'desc';
+  take?: number;
+  skip?: number;
+  lang?: 'en' | 'ar';
+}
+
 @Injectable({ providedIn: 'root' })
 export class CommitteeService {
   private readonly http = inject(HttpClient);
@@ -129,6 +165,15 @@ export class CommitteeService {
 
   update(id: string, dto: UpdateCommitteeDto): Observable<CommitteeDto> {
     return this.http.patch<CommitteeDto>(`${this.base}/${id}`, dto);
+  }
+
+  // ACC-230 — searched, sorted and paged on the server.
+  membersPage(committeeId: string, query: CommitteeListQuery): Observable<CommitteePageDto<CommitteeMemberRowDto>> {
+    return this.http.get<CommitteePageDto<CommitteeMemberRowDto>>(`${this.base}/${committeeId}/members/page`, { params: toParams(query) });
+  }
+
+  subCommittees(committeeId: string, query: CommitteeListQuery): Observable<CommitteePageDto<SubCommitteeRowDto>> {
+    return this.http.get<CommitteePageDto<SubCommitteeRowDto>>(`${this.base}/${committeeId}/sub-committees`, { params: toParams(query) });
   }
 
   listMembers(committeeId: string): Observable<CommitteeMemberDto[]> {
@@ -154,4 +199,12 @@ export class CommitteeService {
   removeMember(committeeId: string, memberId: string, dto: RemoveCommitteeMemberDto): Observable<void> {
     return this.http.delete<void>(`${this.base}/${committeeId}/members/${memberId}`, { body: dto });
   }
+}
+
+function toParams(query: CommitteeListQuery): HttpParams {
+  let params = new HttpParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== '') params = params.set(key, String(value));
+  }
+  return params;
 }

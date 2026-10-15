@@ -749,6 +749,153 @@ says so IN ITS ROW and never blanks the panel").
 | The list told the viewer is never in a pool | actions db-spec — a pool member with tasks:view |
 | The organisation scoping dropped from the statement | unit spec — should NOT return records belonging to a different tenant |
 
+## 5d. PR 3 as built (15 Oct)
+
+Built on `feature/ACC-230-members-subcommittees-cap` from `dev` at `ff3266f`.
+Before editing, the branch was checked against PR #180 (Manage roles, ACC-120,
+lane A, open). **The only files on both lists were `en.json` and `ar.json`.**
+Ahmad decided (15 Oct):
+- PR 3's keys go only inside their own sections: `committee.*`, a new top-level
+  `record` placed just before `recordTasks`, and `plural.committee`;
+- no key PR #180 changes is edited;
+- whichever PR merges second rebases, and a conflict in either file is reported
+  rather than resolved by hand.
+
+`task-list-view.component.ts` (and its `var(--am-primary-200)`) and
+`overlay-select.component.ts` are not touched.
+
+### Before PR 3: two changes asked for alongside it
+
+1. **See all opens with focus in its search box** (`[ACC-229]`, its own commit).
+   - **What was wrong.** Focus landed on the dialog frame, in both languages.
+     `p-dialog`'s `focusOnShow` focuses the first focusable element on a
+     `setTimeout` while the dialog is still animating in, and lands on the
+     frame.
+   - **The fix.** `am-list-dialog` now sets `[focusOnShow]="false"`. Its
+     `onShow`, which PrimeNG fires once the enter animation ends, focuses the
+     body's `[autofocus]` or `input[type=search]`. If focus is already inside
+     the dialog (a deep link's row), it is left where it is. With no search
+     box, focus goes to the frame.
+   - **Coverage.** Every list popup gets it. A spec fails on the old timing.
+     The live proof is below.
+2. **"All Tasks" in the rail beside My tasks**, for `tasks:view` holders only.
+   It is gated through the nav model like every other rail item, so the route
+   guard derives from the same line, and `STANDALONE_ROUTE_PERMISSIONS` is now
+   empty.
+   - **The label reuses `task.allTasks`.** The rail labels are Title Case ("My
+     Tasks", "Working Calendar"), so the label stays "All Tasks", and «كل
+     المهام» is already its Arabic. No translation changed.
+   - **Gating checks.** `check:action-gating` and `check:icon-labels` pass.
+
+### The four adjustments (agreed with Ahmad before building)
+
+1. **`am-list-dialog` gains a `size` input**: `list` (1040 × 760, the default,
+   PR 2's) or `compact` (720 × 560). Both are capped to the viewport less 96px.
+   The plan's 720 × 560 had no shell to open in.
+2. **A shared capped-panel frame, `am-capped-panel`**, taken from the Tasks
+   panel. It holds the header with its count and an actions slot, the fixed
+   body (294 / 328), the loading, error and empty states, and the "Showing 5 of
+   N · See all" footer. All three panels use it.
+   - **The Tasks panel moved onto it without moving a pixel.** Its layout spec
+     still measures 42 / 294 / 52 / 34 in English and 46 / 328 / 58 / 38 in
+     Arabic, at 0, 3, 5 and 16 tasks, with no overflow.
+   - **Shared row classes.** Rows use the frame's `am-cp-row` / `am-cp-l1` /
+     `am-cp-l2` / `am-cp-cut` classes, so a row cannot drift from its body's
+     height.
+   - **`testIdPrefix`** names each panel's parts.
+3. **Generic `record.seeAll` and `record.showing`.** The plan named them as
+   shared with PR 2, but PR 2 had shipped `recordTasks.seeAll` /
+   `recordTasks.showing`. The Tasks panel now reads the generic keys. The old
+   two were removed, because nothing else used them.
+4. **Both new endpoints were needed as written.** `GET /committees/:id/members`
+   (a bare array) stays for its other callers. The page used to filter the
+   whole committees list for sub-committees, and now reads only this
+   committee's children.
+
+### Other places the build differs from the plan
+
+5. **Search and sort run in the service, in memory**, not as an escaped
+   `ILIKE`. A committee's members and children are a small list, read once and
+   scoped by organisation. The seat order comes from the `committee_member_role`
+   lookup, which is not a column that SQL could order by. The search is a
+   case-insensitive substring of the name, so a typed `%` or `_` is literal by
+   construction (pinned).
+6. **The response adds `matching`** beside `total` (`{ items, total, matching }`),
+   so the popup's live count can say "3 of 9 match" without a second read.
+7. **An optional `lang` (`en` | `ar`)** sorts sub-committees by the name the
+   reader sees, using the language's collation. The alternative was sorting by
+   the English name in an Arabic session.
+8. **The popup body is a generic `am-simple-list`**, not a second
+   `TaskListViewComponent`. It has search, sort, a live count, a sticky column
+   header, Load more by 50, and phone cards below 760px. The task list's
+   filters and chips do not belong to these lists.
+9. **The popup toolbar is search plus sort**, one row, 61px.
+10. **Seat and since share line 2** ("Chair · Since 2 Mar 2026"). The avatar
+    is the row's initials, and the name links to `/users/:id` only for the
+    viewer's own id or for a viewer holding every permission that route needs.
+    Otherwise it is plain text.
+11. **Each row's ⋯ menu holds Change role and Remove, and only the ones the
+    viewer may use.** A viewer allowed neither gets no ⋯. Both items open
+    today's dialogs and confirms unchanged, through the page's own handlers,
+    and the panel re-reads itself afterwards.
+12. **The sub-committee status is the live workflow stage name**, from the same
+    read the committees list uses (`committeeStagesAndCounts()`, now shared).
+    A child with no stage shows only its member count.
+13. **The 420px cap and the 20px of room are untouched.** No form or dialog
+    body changed in this PR: Add member opens today's dialog, and the list
+    popups are `am-list-dialog`, whose body never scrolls (only the list does).
+
+### ACC-205 / ACC-153 (NG0100 from `ListRowDirective`)
+
+The Members rows no longer use `amListRow`, and the directive is not imported
+on the committee page. **Measured live in both languages: the console showed
+no NG0100.** The only errors were the 401s from `/auth/me` before sign-in.
+The directive still exists elsewhere, so the tickets stay open for its other
+consumers.
+
+### Heights, measured
+
+From `committee-panels.layout.spec.ts`, in the real theme with IBM Plex Sans
+Arabic:
+
+| Measure | English | Arabic |
+|---|---|---|
+| Members and Sub-committees header | **42** | **46** |
+| Body, 0 / 3 / 5 / 12 rows (long name, long seat) | **294** every time, never overflows | **328** every time, never overflows |
+| Row | **52** | **58** |
+| Footer (above 5), flush with the body's bottom | **34** | **38** |
+| See all body at 720 × 560 (less the dialog's header, 64 / 68) | toolbar 61, column header 30, **list 391**, footer 44 | toolbar 61, column header 30, **list 383**, footer 48 |
+| Only the list scrolls; rows at least 44 | yes, 44 | yes, 44 |
+| Phone cards at 390 | at least 60 | at least 64 |
+
+### Live proof
+
+Run in a real browser, using a helper outside the repo, on
+`al-nakheel.localhost:4201` against this branch's API.
+
+- **The Tasks panel and its popup** used real data.
+- **The Members and Sub-committees lists were answered by the helper** (nine
+  members, seven children). No al-nakheel committee has more than five members
+  or any sub-committee, and adding them to the shared database would leave
+  permanent history.
+
+| | English | Arabic |
+|---|---|---|
+| Rail | "All Tasks" after "My Tasks", `aria-current="page"` on `/tasks/all` | — |
+| Three panels side by side | head 42, body 294, rows 52, foot 34, no overflow | head 46, body 328, rows 58, foot 38, no overflow |
+| Tasks See all | 1040 × 760, focus in `task-list-search`, back to See all on Escape | the same |
+| Members See all | 720 × 560, focus in the search box, only the list scrolls, rows 44, back to See all | the same |
+| Sub-committees See all | 720 × 560, focus in the search box, rows 44, back to See all | the same |
+| Phone sheet (Members, 390 × 844) | full screen, focus in search, no column header, cards 60 (the long-name card 96), nothing sideways | cards 64 (the long-name card 73), nothing sideways |
+| Console | no errors after sign-in | no errors |
+
+### Mutation checks (each turned a spec red, then restored)
+
+| Mutation | Spec that went red |
+|---|---|
+| The focus fix removed (back to `focusOnShow`) | list-dialog spec — once open, focus is in the search box, not on the frame |
+| The frame body's fixed height (`block-size:294px`) removed | 6 failures across `record-tasks-panel.layout.spec.ts` and `committee-panels.layout.spec.ts` |
+
 ## 6. Progress
 
 - [x] Tickets ACC-228, ACC-229, ACC-230 (lane B), chained 228 → 229 → 230
@@ -757,4 +904,5 @@ says so IN ITS ROW and never blanks the panel").
 - [x] PR 1 built on `feature/ACC-228-task-page` (14 Oct) — §5b; waiting for /ready-to-pr
 - [x] PR 1 merged (`e9aaed7`, PR #178) and proven live
 - [x] PR 2 built on `feature/ACC-229-record-tasks-panel` (14 Oct) — §5c, with `/tasks/all` included; waiting for /ready-to-pr
-- [ ] PR 3
+- [x] PR 2 merged (`ff3266f`, PR #179) and proven live
+- [x] PR 3 built on `feature/ACC-230-members-subcommittees-cap` (15 Oct) — §5d, with the See all focus fix and the All Tasks rail item; waiting for /ready-to-pr

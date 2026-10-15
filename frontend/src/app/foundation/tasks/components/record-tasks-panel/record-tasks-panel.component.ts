@@ -2,6 +2,7 @@ import { Component, Injector, afterNextRender, computed, effect, inject, input, 
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { FormatService } from '../../../../core/formatting';
 import { ListDialogComponent } from '../../../../shared/components/list-dialog/list-dialog.component';
+import { CappedPanelComponent } from '../../../../shared/components/capped-panel/capped-panel.component';
 import { RowMenuComponent } from '../../../../shared/components/row-menu/row-menu.component';
 import { ITaskRecordRowDto, TaskService } from '../../services/task.service';
 import { TaskRowActionId, asRowAction, taskRowActions } from '../../task-row-actions';
@@ -9,9 +10,6 @@ import { TaskRowText } from '../../task-row-text';
 import { TaskLinkComponent } from '../task-link/task-link.component';
 import { TaskActionFailure, TaskActionHostComponent } from '../task-action-host/task-action-host.component';
 import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
-
-/** The panel shows at most this many rows; the popup is the only full view. */
-export const RECORD_TASKS_PANEL_ROWS = 5;
 
 type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
 
@@ -42,95 +40,65 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
 @Component({
   selector: 'app-record-tasks-panel',
   standalone: true,
-  imports: [TranslatePipe, ListDialogComponent, RowMenuComponent, TaskLinkComponent, TaskActionHostComponent, TaskListViewComponent],
+  imports: [TranslatePipe, CappedPanelComponent, ListDialogComponent, RowMenuComponent, TaskLinkComponent, TaskActionHostComponent, TaskListViewComponent],
   template: `
-    <section class="am-rtp" [attr.aria-labelledby]="headingId" data-testid="record-tasks-panel">
-      <header class="am-rtp__head" data-testid="record-tasks-head">
-        <h2 class="am-rtp__title" [id]="headingId">{{ panelTitle() }}</h2>
-        <span class="am-rtp__count" data-testid="record-tasks-count">{{ countText() }}</span>
-        <span class="flex-1"></span>
-        @if (canCreate()) {
-          <button type="button" class="am-rtp__new" (click)="createRequested.emit()" data-testid="record-tasks-new">
-            <i class="pi pi-plus" aria-hidden="true"></i>{{ 'task.newTask' | translate }}
-          </button>
-        }
-      </header>
-
-      <div class="am-rtp__body" data-testid="record-tasks-body" [attr.aria-busy]="state().kind === 'loading'">
-        @switch (state().kind) {
-          @case ('loading') {
-            <span class="sr-only" aria-live="polite">{{ 'recordTasks.loading' | translate }}</span>
-            @for (i of skeleton; track i) {
-              <div class="am-rtp__row am-rtp__skeleton" aria-hidden="true"><span></span><span></span></div>
+    <am-capped-panel
+      [heading]="panelTitle()"
+      [state]="state().kind"
+      [total]="total()"
+      [shown]="rows().length"
+      [loadingText]="'recordTasks.loading' | translate"
+      [errorText]="'recordTasks.error' | translate: { record: recordName() }"
+      [emptyText]="(scope() === 'own' ? 'recordTasks.ownEmpty' : 'recordTasks.empty') | translate"
+      testIdPrefix="record-tasks"
+      (retry)="load()"
+      (seeAll)="openPopup(null)"
+    >
+      @if (canCreate()) {
+        <button amPanelActions type="button" class="am-rtp__new" (click)="createRequested.emit()" data-testid="record-tasks-new">
+          <i class="pi pi-plus" aria-hidden="true"></i>{{ 'task.newTask' | translate }}
+        </button>
+      }
+      @for (r of rows(); track r.row.id) {
+        <li
+          class="am-cp-row"
+          [class.am-cp-row--sought]="highlightId() === r.row.id"
+          [attr.data-task-row]="r.row.id"
+          tabindex="-1"
+        >
+          <span class="am-cp-l1">
+            <span class="am-cp-cut"><am-task-link [taskId]="r.row.id" [title]="r.title" /></span>
+            @if (r.tagKey) {
+              <span class="am-rtp__tag">{{ r.tagKey | translate }}</span>
             }
-          }
-          @case ('error') {
-            <div class="am-rtp__state" role="alert" data-testid="record-tasks-error">
-              <p class="m-0">{{ 'recordTasks.error' | translate: { record: recordName() } }}</p>
-              <button type="button" class="am-rtp__link" (click)="load()">{{ 'list.retry' | translate }}</button>
-            </div>
-          }
-          @default {
-            @if (rows().length === 0) {
-              <p class="am-rtp__state" data-testid="record-tasks-empty">
-                {{ (scope() === 'own' ? 'recordTasks.ownEmpty' : 'recordTasks.empty') | translate }}
-              </p>
+            <span class="flex-1"></span>
+            @if (r.primary; as p) {
+              <button
+                type="button"
+                class="am-rtp__btn"
+                [disabled]="p.disabled || busyId() === r.row.id"
+                [attr.aria-label]="(p.labelKey | translate) + ' ' + r.title"
+                [attr.title]="p.disabled ? ('task.completeNeedsEvidence' | translate) : null"
+                [attr.data-action]="p.id"
+                (click)="act(r.row, p.id)"
+              >
+                {{ p.labelKey | translate }}
+              </button>
+            }
+            <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, asRowAction($event))" />
+          </span>
+          <span class="am-cp-l2">
+            @if (rowErrors()[r.row.id]; as message) {
+              <span class="am-cp-cut am-rtp__err" role="alert" [attr.title]="message">{{ message }}</span>
+              <button type="button" class="am-rtp__retry" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
             } @else {
-              <ul class="am-rtp__list" role="list">
-                @for (r of rows(); track r.row.id) {
-                  <li
-                    class="am-rtp__row"
-                    [class.am-rtp__row--sought]="highlightId() === r.row.id"
-                    [attr.data-task-row]="r.row.id"
-                    tabindex="-1"
-                  >
-                    <span class="am-rtp__l1">
-                      <span class="am-rtp__title-cell"><am-task-link [taskId]="r.row.id" [title]="r.title" /></span>
-                      @if (r.tagKey) {
-                        <span class="am-rtp__tag">{{ r.tagKey | translate }}</span>
-                      }
-                      <span class="flex-1"></span>
-                      @if (r.primary; as p) {
-                        <button
-                          type="button"
-                          class="am-rtp__btn"
-                          [disabled]="p.disabled || busyId() === r.row.id"
-                          [attr.aria-label]="(p.labelKey | translate) + ' ' + r.title"
-                          [attr.title]="p.disabled ? ('task.completeNeedsEvidence' | translate) : null"
-                          [attr.data-action]="p.id"
-                          (click)="act(r.row, p.id)"
-                        >
-                          {{ p.labelKey | translate }}
-                        </button>
-                      }
-                      <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, asRowAction($event))" />
-                    </span>
-                    <span class="am-rtp__l2">
-                      @if (rowErrors()[r.row.id]; as message) {
-                        <span class="am-rtp__err" role="alert" [attr.title]="message">{{ message }}</span>
-                        <button type="button" class="am-rtp__link am-rtp__link--small" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
-                      } @else {
-                        <span class="am-rtp__due" [attr.data-tone]="r.due.tone" [attr.title]="r.due.text">{{ r.due.text }}</span>
-                        <span class="am-rtp__tail" [attr.title]="r.tail">&nbsp;· {{ r.tail }}</span>
-                      }
-                    </span>
-                  </li>
-                }
-              </ul>
+              <span class="am-rtp__due" [attr.data-tone]="r.due.tone" [attr.title]="r.due.text">{{ r.due.text }}</span>
+              <span class="am-cp-cut" [attr.title]="r.tail">&nbsp;· {{ r.tail }}</span>
             }
-            @if (total() > rows().length) {
-              <div class="am-rtp__foot" data-testid="record-tasks-foot">
-                <span>{{ 'recordTasks.showing' | translate: { shown: format.number(rows().length), total: format.number(total()) } }}</span>
-                <span aria-hidden="true">·</span>
-                <button #seeAll type="button" class="am-rtp__link" (click)="openPopup(null)" data-testid="record-tasks-see-all">
-                  {{ 'recordTasks.seeAll' | translate }}
-                </button>
-              </div>
-            }
-          }
-        }
-      </div>
-    </section>
+          </span>
+        </li>
+      }
+    </am-capped-panel>
 
     <app-task-action-host (changed)="load(false)" (failed)="onFailed($event)" (busyChange)="busyId.set($event)" />
 
@@ -162,36 +130,14 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
   styles: [
     `
       :host{display:block;min-inline-size:0}
-      .am-rtp{background:var(--am-surface-raised);border:1px solid var(--am-border);border-radius:var(--am-radius-card);overflow:hidden}
-      .am-rtp__head{display:flex;align-items:center;gap:8px;block-size:42px;box-sizing:border-box;padding:0 12px 0 16px;border-block-end:1px solid var(--am-border)}
-      .am-rtp__title{margin:0;font-size:14px;line-height:20px;font-weight:600;color:var(--am-ink-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .am-rtp__count{flex:none;font-size:12px;font-weight:600;color:var(--am-ink-700);background:var(--am-surface);border:1px solid var(--am-border);border-radius:var(--am-radius-pill);padding:0 8px}
       .am-rtp__new{flex:none;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12.5px;font-weight:600;block-size:28px;padding:0 10px;color:var(--am-primary-700);background:var(--am-surface-raised);border:1px solid var(--am-control-border);border-radius:var(--am-radius-button);cursor:pointer}
-      .am-rtp__body{display:flex;flex-direction:column;block-size:294px;box-sizing:border-box;overflow:hidden}
-      .am-rtp__list{list-style:none;margin:0;padding:0}
-      .am-rtp__row{display:flex;flex-direction:column;justify-content:center;block-size:52px;box-sizing:border-box;padding:4px 12px 4px 16px;border-block-end:1px solid var(--am-border);min-inline-size:0}
-      .am-rtp__row--sought{background:var(--am-primary-50);box-shadow:inset 3px 0 0 var(--am-primary-600)}
-      .am-rtp__row:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:-2px}
-      .am-rtp__l1{display:flex;align-items:center;gap:6px;block-size:26px;min-inline-size:0;font-size:13px}
-      .am-rtp__title-cell{min-inline-size:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .am-rtp__tag{flex:none;font-size:11px;font-weight:600;padding:0 6px;border-radius:var(--am-radius-pill);background:var(--am-surface);border:1px solid var(--am-border);color:var(--am-ink-700)}
       .am-rtp__btn{flex:none;font:inherit;font-size:12px;font-weight:600;block-size:26px;padding:0 10px;color:var(--am-primary-700);background:var(--am-surface-raised);border:1px solid var(--am-primary-600);border-radius:var(--am-radius-button);cursor:pointer;white-space:nowrap}
       .am-rtp__btn:disabled{cursor:not-allowed;color:var(--am-ink-500);border-color:var(--am-border)}
-      .am-rtp__l2{display:flex;align-items:center;block-size:18px;line-height:18px;min-inline-size:0;font-size:11.5px;color:var(--am-ink-500)}
       .am-rtp__due{flex:none;white-space:nowrap}.am-rtp__due[data-tone=danger]{color:var(--am-danger-ink);font-weight:600}.am-rtp__due[data-tone=info]{color:var(--am-info-ink)}
-      .am-rtp__tail,.am-rtp__err{min-inline-size:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .am-rtp__err{color:var(--am-danger-ink);flex:0 1 auto;margin-inline-end:6px}
-      .am-rtp__foot{margin-block-start:auto;display:flex;align-items:center;gap:6px;block-size:34px;flex:none;padding:0 16px;border-block-start:1px solid var(--am-border);font-size:12px;color:var(--am-ink-700)}
-      .am-rtp__link{font:inherit;padding:0;border:0;background:none;color:var(--am-primary-700);font-weight:600;cursor:pointer}
-      .am-rtp__link--small{flex:none;font-size:11.5px}
-      .am-rtp__state{margin:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px;font-size:13px;color:var(--am-ink-700)}
-      .am-rtp__skeleton span{display:block;block-size:10px;border-radius:4px;background:var(--am-surface)}.am-rtp__skeleton span+span{margin-block-start:8px;inline-size:60%}
+      .am-rtp__retry{flex:none;font:inherit;font-size:11.5px;padding:0;border:0;background:none;color:var(--am-primary-700);font-weight:600;cursor:pointer}
       button:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
-      :host-context([dir=rtl]) .am-rtp__head{block-size:46px;padding:0 16px 0 12px}
-      :host-context([dir=rtl]) .am-rtp__body{block-size:328px}
-      :host-context([dir=rtl]) .am-rtp__row{block-size:58px;padding:4px 16px 4px 12px}
-      :host-context([dir=rtl]) .am-rtp__l2{block-size:22px;line-height:22px;font-size:12px}
-      :host-context([dir=rtl]) .am-rtp__foot{block-size:38px}
     `,
   ],
 })
@@ -215,9 +161,6 @@ export class RecordTasksPanelComponent {
   readonly soughtTask = input<{ id: string } | null>(null);
   readonly createRequested = output<void>();
 
-  private static nextId = 0;
-  protected readonly headingId = `am-rtp-heading-${++RecordTasksPanelComponent.nextId}`;
-  protected readonly skeleton = Array.from({ length: RECORD_TASKS_PANEL_ROWS }, (_, i) => i);
 
   readonly state = signal<PanelState>({ kind: 'loading' });
   readonly items = signal<ITaskRecordRowDto[]>([]);
@@ -266,7 +209,6 @@ export class RecordTasksPanelComponent {
     this.translate.currentLang();
     return this.translate.instant(this.scope() === 'own' ? 'recordTasks.ownTitle' : 'recordTasks.title');
   });
-  readonly countText = computed(() => (this.state().kind === 'ready' ? this.format.number(this.total()) : '—'));
   readonly popupTitle = computed(() => {
     this.translate.currentLang();
     return this.scope() === 'own'

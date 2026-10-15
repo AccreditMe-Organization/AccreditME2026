@@ -113,6 +113,17 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         // A task's own page (/tasks/:id) — not /tasks/all or /tasks/unassigned.
         alsoActiveFor: /^\/tasks\/(?!all$|unassigned$)[^/]+$/,
       },
+      // ACC-229 — the organisation's tasks: the All tasks list without a
+      // record, every task in the record types the viewer may see. Gated like
+      // its endpoint (GET /tasks/record-list with no record needs tasks:view),
+      // so the item, the route guard and the API agree.
+      {
+        key: 'allTasks',
+        labelKey: 'task.allTasks',
+        icon: 'pi pi-list',
+        route: '/tasks/all',
+        requiredPermission: 'tasks:view',
+      },
     ],
   },
   {
@@ -382,20 +393,14 @@ export function visibleNavGroups(access: NavAccess): NavGroup[] {
 
 // Permission-gated routes that have NO nav item. Without an entry here, such a
 // route would be the one gated screen the guard silently allowed through.
-export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> =
-  new Map([
-    // Must be explicit now that /tasks itself is ungated. permissionGuard walks
-    // UP from a route to its nearest mapped ancestor, but a child route with no
-    // canActivate never runs the guard at all. With 'tasks' unmapped, this child
-    // would have become reachable by anyone — and TaskListComponent can return
-    // ANY task in the tenant, not just the caller's. Deliberately has no nav
-    // item: CLAUDE.md records /tasks/all as a stopgap that must not be linked.
-    //
-    // ACC-123 deliberately leaves this one tasks:view alone. It is a stopgap
-    // route with no nav item, not an Administration screen, so requiring
-    // admin:access here would be inventing a rule the decision did not make.
-    ['tasks/all', ['tasks:view'] as readonly string[]],
-  ]);
+//
+// Empty since ACC-229: /tasks/all, the one entry, became a rail item ("All
+// tasks", tasks:view), so its permission now comes from the item like every
+// other. It was listed here while it was an unlinked stopgap that never loaded
+// a task. Its route still carries its own canActivate (tasks.routes.ts),
+// because /tasks itself is ungated and a child without one never runs the
+// guard.
+export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>();
 
 // Route path -> the permissions required to open it, ALL of which must be held.
 // Keyed by the route path WITHOUT its leading slash, matching how app.routes.ts

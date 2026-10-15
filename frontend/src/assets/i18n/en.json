@@ -741,7 +741,43 @@
     "subCommittees": "Sub-committees",
     "tasks": "Tasks",
     "title": "Committees",
-    "type": "Committee Type"
+    "type": "Committee Type",
+    "membersPopupTitle": "All members · {{committee}}",
+    "subCommitteesPopupTitle": "All sub-committees · {{committee}}",
+    "closeMembersPopup": "Close all members",
+    "closeSubCommitteesPopup": "Close all sub-committees",
+    "membersLoading": "Loading members",
+    "membersError": "Couldn't load the members.",
+    "subCommitteesLoading": "Loading sub-committees",
+    "subCommitteesError": "Couldn't load the sub-committees.",
+    "searchMembers": "Search members",
+    "searchMembersPlaceholder": "Search by name…",
+    "searchSubCommittees": "Search sub-committees",
+    "searchSubCommitteesPlaceholder": "Search by name…",
+    "noMatch": "Nothing matches “{{q}}”",
+    "sinceDate": "Since {{date}}",
+    "memberActionsFor": "Actions for {{name}}",
+    "changeRole": "Change role…",
+    "removeMember": "Remove from committee…",
+    "sort": {
+      "seat": "By seat",
+      "nameAsc": "Name A–Z",
+      "nameDesc": "Name Z–A",
+      "sinceAsc": "Longest-serving first",
+      "sinceDesc": "Newest first",
+      "status": "By status",
+      "membersDesc": "Most members first",
+      "membersAsc": "Fewest members first"
+    },
+    "col": {
+      "member": "Member",
+      "seat": "Seat",
+      "since": "Since",
+      "name": "Name",
+      "status": "Status",
+      "members": "Members",
+      "actions": "Actions"
+    }
   },
   "orgPosition": {
     "addPosition": "Add Position",
@@ -1476,6 +1512,20 @@
     "lessThanMinute": "less than a minute",
     "shownInZone": "Dates shown in {{zone}}"
   },
+  "record": {
+    "seeAll": "See all",
+    "showing": "Showing {{shown}} of {{total}}",
+    "sortLabel": "Sort",
+    "loading": "Loading",
+    "listError": "Couldn't load this list.",
+    "clearSearch": "Clear search",
+    "loadMore": "Load more",
+    "loadingMore": "Loading…",
+    "loadMoreFailed": "Couldn't load more",
+    "footAll": "Showing all {{total}}",
+    "footMatchOf": "{{matching}} of {{total}} match",
+    "footShowing": "Showing {{shown}} of {{total}}"
+  },
   "recordTasks": {
     "title": "Tasks",
     "ownTitle": "Your tasks on this committee",
@@ -1483,8 +1533,6 @@
     "error": "Couldn't load these tasks.",
     "empty": "No tasks yet. Tasks about this committee will be listed here.",
     "ownEmpty": "You have no tasks on this committee.",
-    "showing": "Showing {{shown}} of {{total}}",
-    "seeAll": "See all",
     "popupTitle": "All tasks · {{record}}",
     "closePopup": "Close all tasks"
   },
@@ -1629,6 +1677,18 @@
       "quorumOf": {
         "one": "{{quorum}} of {{count}} member",
         "other": "{{quorum}} of {{count}} members"
+      },
+      "membersMatch": {
+        "one": "{{count}} member matches",
+        "other": "{{count}} members match"
+      },
+      "subCommitteesCount": {
+        "one": "{{count}} sub-committee",
+        "other": "{{count}} sub-committees"
+      },
+      "subCommitteesMatch": {
+        "one": "{{count}} sub-committee matches",
+        "other": "{{count}} sub-committees match"
       }
     },
     "task": {

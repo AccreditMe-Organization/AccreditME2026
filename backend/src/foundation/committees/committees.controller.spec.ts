@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CommitteesController } from './committees.controller';
 import { CommitteesService } from './committees.service';
+import { CommitteeListsService } from './committee-lists.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { ICommittee, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
@@ -60,6 +61,7 @@ const MOCK_EVENT: ICommitteeMembershipEvent = {
 // enforcement coverage). This file only proves delegation.
 describe('CommitteesController', () => {
   let controller: CommitteesController;
+  let lists: { members: jest.Mock; subCommittees: jest.Mock };
   let service: {
     listCommittees: jest.Mock;
     getCommitteeById: jest.Mock;
@@ -85,9 +87,17 @@ describe('CommitteesController', () => {
       removeMember: jest.fn().mockResolvedValue(undefined),
     };
 
+    lists = {
+      members: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
+      subCommittees: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CommitteesController],
-      providers: [{ provide: CommitteesService, useValue: service }],
+      providers: [
+        { provide: CommitteesService, useValue: service },
+        { provide: CommitteeListsService, useValue: lists },
+      ],
     })
       .overrideGuard(TenantGuard)
       .useValue({ canActivate: () => true })
@@ -128,6 +138,19 @@ describe('CommitteesController', () => {
 
     expect(service.updateCommittee).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID);
     expect(result).toEqual(MOCK_COMMITTEE);
+  });
+
+  // ACC-230 — the two lists behind the Members and Sub-committees panels.
+  it('membersPage delegates to the lists service with the query and the tenant', async () => {
+    const query = { q: 'sara', sort: 'name' as const, take: 5 };
+    await controller.membersPage('committee-1', query, TENANT_ID);
+    expect(lists.members).toHaveBeenCalledWith('committee-1', query, TENANT_ID);
+  });
+
+  it('subCommittees delegates to the lists service with the query and the tenant', async () => {
+    const query = { sort: 'status' as const };
+    await controller.subCommittees('committee-1', query, TENANT_ID);
+    expect(lists.subCommittees).toHaveBeenCalledWith('committee-1', query, TENANT_ID);
   });
 
   it('listMembers delegates to the service', async () => {

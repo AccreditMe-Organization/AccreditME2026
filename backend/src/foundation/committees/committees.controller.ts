@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -11,7 +11,17 @@ import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
 import { ChangeCommitteeMemberRoleDto } from './dto/change-committee-member-role.dto';
 import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
-import { ICommittee, ICommitteeListItem, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
+import {
+  ICommittee,
+  ICommitteeListItem,
+  ICommitteeMember,
+  ICommitteeMemberRow,
+  ICommitteeMembershipEvent,
+  ICommitteePage,
+  ISubCommitteeRow,
+} from './interfaces/committee.interface';
+import { CommitteeListsService } from './committee-lists.service';
+import { CommitteeMembersPageQueryDto, SubCommitteesQueryDto } from './dto/committee-list-query.dto';
 
 // Lifecycle transitions (FORMATION -> ... -> DISSOLVED) go through the
 // already-generic WorkflowController (GET/POST /workflows/instances...),
@@ -20,7 +30,10 @@ import { ICommittee, ICommitteeListItem, ICommitteeMember, ICommitteeMembershipE
 @Controller('committees')
 @UseGuards(TenantGuard, PermissionGuard)
 export class CommitteesController {
-  constructor(private readonly committeesService: CommitteesService) {}
+  constructor(
+    private readonly committeesService: CommitteesService,
+    private readonly lists: CommitteeListsService,
+  ) {}
 
   @Get()
   @Permissions(COMMITTEES_PERMISSIONS.VIEW)
@@ -62,6 +75,29 @@ export class CommitteesController {
     @CurrentTenant() tenantId: string,
   ): Promise<ICommitteeMember[]> {
     return this.committeesService.listMembers(committeeId, tenantId);
+  }
+
+  // ACC-230 — the Members panel and its See all list: searched, sorted and
+  // paged on the server. The bare array above stays for its other callers.
+  @Get(':id/members/page')
+  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
+  membersPage(
+    @Param('id') committeeId: string,
+    @Query() query: CommitteeMembersPageQueryDto,
+    @CurrentTenant() tenantId: string,
+  ): Promise<ICommitteePage<ICommitteeMemberRow>> {
+    return this.lists.members(committeeId, query, tenantId);
+  }
+
+  // ACC-230 — the Sub-committees panel and its See all list.
+  @Get(':id/sub-committees')
+  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
+  subCommittees(
+    @Param('id') committeeId: string,
+    @Query() query: SubCommitteesQueryDto,
+    @CurrentTenant() tenantId: string,
+  ): Promise<ICommitteePage<ISubCommitteeRow>> {
+    return this.lists.subCommittees(committeeId, query, tenantId);
   }
 
   @Get(':id/membership-events')
