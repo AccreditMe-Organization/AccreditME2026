@@ -30,6 +30,11 @@ import {
 } from './tenant-administrator.invariant';
 import {
   PlatformRoleNotAssignableException,
+  RoleAlreadyHeldException,
+  RoleAssignmentNotFoundException,
+  RoleFromHeadPositionException,
+  RoleNotFoundException,
+  UserNotFoundForRoleException,
   PlatformRoleNotEditableException,
   RolePermissionsChangedException,
 } from './role-permission-refusal';
@@ -667,7 +672,7 @@ export class RoleService {
     const role = await this.prisma.role.findFirst({
       where: { id: dto.roleId, organizationId },
     });
-    if (!role) throw new NotFoundException('Role not found');
+    if (!role) throw new RoleNotFoundException();
 
     // ACC-120 slice 5 (R1) — the Platform Administrator role is seeded into
     // every organisation but is not something to hand out inside a tenant. The
@@ -684,13 +689,13 @@ export class RoleService {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, organizationId },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new UserNotFoundForRoleException();
 
     const existing = await this.prisma.userRole.findFirst({
       where: { userId, roleId: role.id },
     });
     if (existing) {
-      throw new ConflictException('User is already assigned to this role');
+      throw new RoleAlreadyHeldException();
     }
 
     await this.prisma.userRole.create({ data: { userId, roleId: role.id } });
@@ -714,12 +719,12 @@ export class RoleService {
     const role = await this.prisma.role.findFirst({
       where: { id: roleId, organizationId },
     });
-    if (!role) throw new NotFoundException('Role not found');
+    if (!role) throw new RoleNotFoundException();
 
     const assignment = await this.prisma.userRole.findFirst({
       where: { userId, roleId, user: { organizationId } },
     });
-    if (!assignment) throw new NotFoundException('Role assignment not found');
+    if (!assignment) throw new RoleAssignmentNotFoundException();
 
     // ACC-120 — a HEAD-POSITION-DERIVED grant is not removable by hand.
     //
@@ -736,10 +741,7 @@ export class RoleService {
     // is broken. Same sentence the dialog shows; the dialog is the courtesy and
     // this is the rule.
     if (assignment.grantedViaHeadPositionId || assignment.grantedViaHeadPositionOrgUnitId) {
-      throw new ConflictException(
-        "This role comes with the user's head position and cannot be removed here. " +
-          'End it by changing the head position itself.',
-      );
+      throw new RoleFromHeadPositionException();
     }
 
     // ACC-120 — was `userRole.count({ roleId }) <= 1`, counting rows rather

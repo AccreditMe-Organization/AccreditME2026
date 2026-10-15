@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 /**
  * ACC-120 slice 5 — the refusals a permission save or a role assignment can
@@ -17,6 +17,23 @@ export const PLATFORM_PERMISSION_NOT_ALLOWED = 'PLATFORM_PERMISSION_NOT_ALLOWED'
 export const PLATFORM_ROLE_NOT_ASSIGNABLE = 'PLATFORM_ROLE_NOT_ASSIGNABLE';
 /** A key no code checks yet cannot be granted (R2). */
 export const PERMISSION_NOT_IN_USE = 'PERMISSION_NOT_IN_USE';
+
+// ACC-120 slice 5b — the role-ASSIGNMENT refusals that carried only an English
+// message, so Manage roles could not say them in Arabic without parsing English.
+// Same status, same English message and same exception type as before; the
+// code is the only thing added, so every caller and spec reads them as before.
+/** The role is not in this organisation. */
+export const ROLE_NOT_FOUND = 'ROLE_NOT_FOUND';
+/** The person is not in this organisation. */
+export const USER_NOT_FOUND = 'USER_NOT_FOUND';
+/** The person already holds the role. */
+export const ROLE_ALREADY_HELD = 'ROLE_ALREADY_HELD';
+/** The person does not hold the role (any more). */
+export const ROLE_ASSIGNMENT_NOT_FOUND = 'ROLE_ASSIGNMENT_NOT_FOUND';
+/** The grant comes with a head position; it ends with the headship. */
+export const ROLE_FROM_HEAD_POSITION = 'ROLE_FROM_HEAD_POSITION';
+/** The change would leave the organisation with no active administrator (the ACC-120 invariant). */
+export const LAST_ACTIVE_ADMINISTRATOR = 'LAST_ACTIVE_ADMINISTRATOR';
 
 export class RolePermissionsChangedException extends ConflictException {
   constructor() {
@@ -86,6 +103,66 @@ export class PermissionUnknownException extends BadRequestException {
       error: 'Bad Request',
       code: PERMISSION_UNKNOWN,
       keys,
+    });
+  }
+}
+
+export class RoleNotFoundException extends NotFoundException {
+  constructor() {
+    super({ statusCode: 404, message: 'Role not found', error: 'Not Found', code: ROLE_NOT_FOUND });
+  }
+}
+
+export class UserNotFoundForRoleException extends NotFoundException {
+  constructor() {
+    super({ statusCode: 404, message: 'User not found', error: 'Not Found', code: USER_NOT_FOUND });
+  }
+}
+
+export class RoleAlreadyHeldException extends ConflictException {
+  constructor() {
+    super({
+      statusCode: 409,
+      message: 'User is already assigned to this role',
+      error: 'Conflict',
+      code: ROLE_ALREADY_HELD,
+    });
+  }
+}
+
+export class RoleAssignmentNotFoundException extends NotFoundException {
+  constructor() {
+    super({
+      statusCode: 404,
+      message: 'Role assignment not found',
+      error: 'Not Found',
+      code: ROLE_ASSIGNMENT_NOT_FOUND,
+    });
+  }
+}
+
+export class RoleFromHeadPositionException extends ConflictException {
+  constructor() {
+    super({
+      statusCode: 409,
+      message:
+        "This role comes with the user's head position and cannot be removed here. " +
+        'End it by changing the head position itself.',
+      error: 'Conflict',
+      code: ROLE_FROM_HEAD_POSITION,
+    });
+  }
+}
+
+export class LastActiveAdministratorException extends ConflictException {
+  constructor() {
+    super({
+      statusCode: 409,
+      message:
+        'This would leave the organization with no active administrator. ' +
+        'Give the Organization Administrator role to an active user first, then try again.',
+      error: 'Conflict',
+      code: LAST_ACTIVE_ADMINISTRATOR,
     });
   }
 }
