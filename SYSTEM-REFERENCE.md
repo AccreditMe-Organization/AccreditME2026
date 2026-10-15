@@ -3689,8 +3689,11 @@ is in `CommitteeListsService`:
 
 - **The committee is read first, by `{ id, organizationId }`.** Another
   tenant's id, or a missing one, gets the identical 404.
-- **Active members and active children only.** `GET /committees/:id/members`
-  (the bare array) is unchanged for its other callers.
+- **Active members only; every child.** Members are the active rows. Children
+  are every committee whose parent this is, deactivated ones included, which is
+  what the page showed when it filtered the committees list (that list does not
+  filter on `isActive`). `GET /committees/:id/members` (the bare array) is
+  unchanged for its other callers.
 - **Search and sort run in memory, after one scoped read.** A committee's lists
   are small, and the seat order is the `committee_member_role` lookup's own
   order (`LookupService.getValues`), which no column holds.
