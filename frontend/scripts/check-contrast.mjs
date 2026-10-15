@@ -24,9 +24,29 @@
 // Thresholds: 4.5 for text (1.4.3), 3.0 for control borders and other
 // non-text UI (1.4.11).
 //
+// ACC-120 slice 5b — and every --am-* token a component USES must EXIST.
+//
+// A colour is only as good as the token behind it, and a token that does not
+// exist cannot be checked at all. Manage roles used --am-danger-600,
+// --am-warning-700 and --am-warning-50 for months: none was ever defined, and
+// a literal fallback (`var(--am-danger-600, #B42318)`) painted the screen
+// anyway, so nothing looked wrong and nothing above could see it. Two rules,
+// over every .ts/.scss/.css/.html under src (specs excluded):
+//
+//   1. A var(--am-x) whose token is defined NOWHERE fails — unless the use
+//      carries a fallback that is NOT a colour. That shape is an optional
+//      override hook a screen may set (data-list's
+//      `var(--am-list-actions, 88px)`), not a missing token.
+//   2. A var(--am-x, <colour literal>) fails, defined or not. A component
+//      never carries a literal colour, and a colour fallback is exactly what
+//      hid the three above.
+//
+// "Defined" means a `--am-x:` declaration anywhere, an Angular
+// `[style.--am-x]` binding, or a `setProperty('--am-x', …)`.
+//
 // Run: npm run check:contrast        (CI: frontend job, beside check:formatting)
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -100,6 +120,55 @@ const resolve = (ref) => (ref.startsWith('#') ? ref : tokens.get(ref));
 const failures = [];
 const notices = [];
 const lines = [];
+
+// ── Token uses (ACC-120 slice 5b) ──────────────────────────────────────────
+const SRC = join(root, 'src');
+const COLOUR_LITERAL = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i;
+const sourceFiles = [];
+(function walk(dir) {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) walk(path);
+    else if (/\.(ts|scss|css|html)$/.test(name) && !name.endsWith('.spec.ts')) sourceFiles.push(path);
+  }
+})(SRC);
+const definedTokens = new Set();
+const tokenUses = [];
+for (const file of sourceFiles) {
+  const text = readFileSync(file, 'utf8');
+  for (const m of text.matchAll(/(--am-[a-z0-9-]+)\s*:/g)) definedTokens.add(m[1]);
+  for (const m of text.matchAll(/style\.(--am-[a-z0-9-]+)/g)) definedTokens.add(m[1]);
+  for (const m of text.matchAll(/setProperty\(\s*['"](--am-[a-z0-9-]+)/g)) definedTokens.add(m[1]);
+  // var(--am-x) or var(--am-x, fallback) — the fallback up to the closing paren.
+  for (const m of text.matchAll(/var\(\s*(--am-[a-z0-9-]+)\s*(?:,([^)]*))?\)/g)) {
+    const line = text.slice(0, m.index).split('\n').length;
+    tokenUses.push({ token: m[1], fallback: m[2]?.trim() ?? null, where: `${file.slice(SRC.length + 1)}:${line}` });
+  }
+}
+// NON-VACUITY: a walk that found nothing would pass both rules forever.
+if (sourceFiles.length < 100 || tokenUses.length < 50 || !definedTokens.has('--am-danger-ink')) {
+  failures.push(
+    `token scan read too little to mean anything (${sourceFiles.length} files, ${tokenUses.length} uses) — is src/ where it was?`,
+  );
+}
+let undefinedCount = 0;
+let colourFallbacks = 0;
+for (const use of tokenUses) {
+  const colourFallback = use.fallback !== null && COLOUR_LITERAL.test(use.fallback);
+  if (colourFallback) {
+    colourFallbacks++;
+    failures.push(`${use.where}: var(${use.token}, ${use.fallback}) carries a literal colour — use the token alone`);
+  }
+  if (!definedTokens.has(use.token) && (use.fallback === null || colourFallback)) {
+    undefinedCount++;
+    failures.push(`${use.where}: ${use.token} is used but defined nowhere — it is not a token`);
+  }
+}
+lines.push(
+  `  tokens  ${tokenUses.length} var(--am-*) uses in ${sourceFiles.length} files: ` +
+    `${undefinedCount} undefined, ${colourFallbacks} with a colour fallback`,
+);
+
 for (const pair of PAIRS) {
   const fg = resolve(pair.fg);
   const bg = resolve(pair.bg);
