@@ -21,11 +21,12 @@ import { ListDialogComponent } from './list-dialog.component';
       <input id="search" type="search" />
       <am-row-menu [groups]="[[{ id: 'open', label: 'Open task' }]]" label="Actions for Task 1" (picked)="picked = $event" />
     </ng-template>
-    <am-list-dialog [visible]="open()" heading="All tasks · Quality" closeLabel="Close all tasks" [body]="body" (closeRequested)="closes = closes + 1; open.set(false)" />
+    <am-list-dialog [visible]="open()" [size]="size()" heading="All tasks · Quality" closeLabel="Close all tasks" [body]="body" (closeRequested)="closes = closes + 1; open.set(false)" />
   `,
 })
 class HostComponent {
   readonly open = signal(false);
+  readonly size = signal<'list' | 'compact'>('list');
   closes = 0;
   picked = '';
 }
@@ -131,6 +132,12 @@ describe('ListDialogComponent and the row menu inside it (ACC-229)', () => {
     dialog.sheet.set(false);
     expect(dialog.frameStyle()).toEqual(
       jasmine.objectContaining({ width: 'min(1040px, calc(100vw - 96px))', height: 'min(760px, calc(100vh - 96px))' }),
+    );
+    // ACC-230 — the compact size, for a plain searchable list (All members).
+    fixture.componentInstance.size.set('compact');
+    fixture.detectChanges();
+    expect(dialog.frameStyle()).toEqual(
+      jasmine.objectContaining({ width: 'min(720px, calc(100vw - 96px))', height: 'min(560px, calc(100vh - 96px))' }),
     );
   });
 });
