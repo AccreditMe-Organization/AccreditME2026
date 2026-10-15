@@ -67,6 +67,8 @@ describe('TenantService', () => {
     workflowStageTaskDefinition: { findMany: jest.Mock };
     // ACC-194 — GET /tenant lists the AI features open to the organisation.
     aiFeatureCost: { findMany: jest.Mock };
+    // ACC-120 slice 8 — and what this period's credits went on.
+    aiInteractionLog: { groupBy: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
   let lookupService: { seedSystemData: jest.Mock };
@@ -83,6 +85,7 @@ describe('TenantService', () => {
         update: jest.fn(),
       },
       aiFeatureCost: { findMany: jest.fn().mockResolvedValue([]) },
+      aiInteractionLog: { groupBy: jest.fn().mockResolvedValue([]) },
       orgUnit: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(undefined),
@@ -145,8 +148,10 @@ describe('TenantService', () => {
       expect(result.ai).toEqual({
         enabled: false, monthlyCredits: 0, creditsUsed: 0, creditsRemaining: 0,
         resetDate: null, overageEnabled: false, pendingMonthlyCredits: null, periodStart: null,
-        features: [],
+        features: [], usage: [],
       });
+      // No period, so nothing to read usage from.
+      expect(prisma.aiInteractionLog.groupBy).not.toHaveBeenCalled();
     });
 
     it('derives modules from settings, and the AI balance from the columns — the old settings.ai counters are ignored (ACC-194)', async () => {
@@ -197,6 +202,83 @@ describe('TenantService', () => {
         { key: 'document_summary', creditCost: 15 },
         { key: 'task_description_drafting', creditCost: 2 },
       ]);
+    });
+
+    // ── AI usage this period (ACC-120 slice 8) ──────────────────────────────
+    const IN_PERIOD = {
+      ...ORG_A,
+      aiMonthlyCredits: 40,
+      aiCreditsUsed: 18,
+      aiCreditsPeriodStart: new Date('2026-09-21T04:39:49Z'),
+      aiCreditsRenewsAt: new Date('2099-10-21T00:00:00Z'),
+    };
+    const groupRow = (feature: string, credits: number | null, calls: number) => ({
+      feature,
+      _sum: { creditCost: credits },
+      _count: { _all: calls },
+    });
+
+    it('reads usage from successful, charged calls since the period began, most credits first', async () => {
+      prisma.organization.findUnique.mockResolvedValue(IN_PERIOD);
+      prisma.aiInteractionLog.groupBy.mockResolvedValue([
+        groupRow('task_description_drafting', 6, 3),
+        groupRow('document_summary', 15, 1),
+        groupRow('morning_briefing', 6, 2),
+      ]);
+
+      const { ai } = await service.findById('org-a');
+
+      expect(prisma.aiInteractionLog.groupBy).toHaveBeenCalledWith({
+        by: ['feature'],
+        where: {
+          organizationId: 'org-a',
+          success: true,
+          creditCost: { gt: 0 },
+          createdAt: { gte: new Date('2026-09-21T04:39:49Z') },
+        },
+        _sum: { creditCost: true },
+        _count: { _all: true },
+      });
+      // Ties on credits fall back to the key, so the order never shifts.
+      expect(ai.usage).toEqual([
+        { key: 'document_summary', credits: 15, calls: 1 },
+        { key: 'morning_briefing', credits: 6, calls: 2 },
+        { key: 'task_description_drafting', credits: 6, calls: 3 },
+      ]);
+    });
+
+    it('reads a due renewal not yet stored as the NEW period, so the old period\'s calls are not counted', async () => {
+      prisma.organization.findUnique.mockResolvedValue({
+        ...IN_PERIOD,
+        bootstrappedAt: new Date('2026-01-10T08:00:00Z'),
+        aiCreditsPeriodStart: new Date('2026-01-10T08:00:00Z'),
+        aiCreditsRenewsAt: new Date('2026-02-10T00:00:00Z'),
+      });
+
+      const { ai } = await service.findById('org-a');
+
+      const where = (prisma.aiInteractionLog.groupBy.mock.calls[0] as [{ where: { createdAt: { gte: Date } } }])[0].where;
+      expect(ai.periodStart).not.toBe('2026-01-10T08:00:00.000Z');
+      expect(where.createdAt.gte.toISOString()).toBe(ai.periodStart);
+    });
+
+    it('should NOT return records belonging to a different tenant — the AI usage read is scoped to the caller', async () => {
+      prisma.organization.findUnique.mockResolvedValue(IN_PERIOD);
+      prisma.aiInteractionLog.groupBy.mockImplementation(
+        ({ where }: { where: { organizationId: string } }) =>
+          Promise.resolve(
+            where.organizationId === 'org-a'
+              ? [groupRow('document_summary', 15, 1)]
+              : [groupRow('morning_briefing', 500, 100)],
+          ),
+      );
+
+      const { ai } = await service.findById('org-a');
+
+      expect(prisma.aiInteractionLog.groupBy).toHaveBeenCalledTimes(1);
+      const where = (prisma.aiInteractionLog.groupBy.mock.calls[0] as [{ where: { organizationId: string } }])[0].where;
+      expect(where.organizationId).toBe('org-a');
+      expect(ai.usage).toEqual([{ key: 'document_summary', credits: 15, calls: 1 }]);
     });
 
     it('throws NotFoundException when tenant does not exist', async () => {
