@@ -7,18 +7,19 @@ import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
-import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
-import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { TaskFormComponent } from '../../../tasks/components/task-form/task-form.component';
 import { TaskFormFooterComponent } from '../../../tasks/components/task-form/task-form-footer.component';
 import { TaskFormStepsComponent } from '../../../tasks/components/task-form/task-form-steps.component';
 import { RecordTasksPanelComponent } from '../../../tasks/components/record-tasks-panel/record-tasks-panel.component';
+import { CommitteeMembersPanelComponent } from '../committee-members-panel/committee-members-panel.component';
+import { CommitteeSubCommitteesPanelComponent } from '../committee-sub-committees-panel/committee-sub-committees-panel.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   CommitteeService,
   CommitteeDto,
   CommitteeListItemDto,
   CommitteeMemberDto,
+  CommitteeMemberRowDto,
   CommitteeMembershipEventDto,
 } from '../../services/committee.service';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
@@ -52,13 +53,13 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     TagModule,
     MessageModule,
     RecordPanelComponent,
-    ListRowDirective,
-    IconButtonComponent,
     RouterLink,
     TaskFormComponent,
     TaskFormFooterComponent,
     TaskFormStepsComponent,
     RecordTasksPanelComponent,
+    CommitteeMembersPanelComponent,
+    CommitteeSubCommitteesPanelComponent,
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
@@ -254,67 +255,19 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
              as a design that never considered it. -->
         <section class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))">
 
-          <app-record-panel
-            [heading]="'committee.members' | translate"
-            [count]="members().length"
-            [isEmpty]="!membersLoading() && members().length === 0"
-            [emptyTitle]="'committee.noMembers' | translate"
-            [loading]="membersLoading()"
-          >
-            @if (canAddMember()) {
-              <button
-                panelActions
-                type="button"
-                class="text-[12.5px] text-[var(--am-blue-primary)] hover:underline"
-                (click)="onAddMember()"
-              >
-                {{ 'committee.addMember' | translate }}
-              </button>
-            }
-            @for (member of members(); track member.id) {
-              <!-- ACC-111 — the row's keyboard contract: the panel is one tab
-                   stop, arrows move between members, and →/← reach this row's
-                   own actions, which are otherwise unreachable by keyboard. -->
-              <div
-                amListRow
-                [amListRowKey]="member.id"
-                class="grid grid-cols-[28px_1fr_auto] gap-2.5 items-center px-4 py-2"
-              >
-                <span
-                  class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold"
-                  style="background: color-mix(in srgb, var(--am-blue-primary) 12%, transparent);
-                         color: var(--am-blue-primary)"
-                >
-                  {{ initials(userName(member.userId)) }}
-                </span>
-                <span class="min-w-0">
-                  <span class="block text-[13px] font-medium truncate">{{ userName(member.userId) }}</span>
-                  <span class="block text-[11.5px] text-[var(--am-text-secondary)] truncate">
-                    {{ memberRoleLabel(member.roleValueId) }}
-                  </span>
-                </span>
-                <span class="flex items-center gap-1 shrink-0">
-                  <!-- The label names the MEMBER: a panel of nine otherwise
-                       gives a screen-reader user nine identical "Edit". -->
-                  @if (canChangeMemberRole()) {
-                    <am-icon-button
-                      icon="pi pi-pencil"
-                      [label]="'committee.changeRoleFor' | translate: { name: userName(member.userId) }"
-                      (activated)="onChangeMemberRole(member)"
-                    />
-                  }
-                  @if (canRemoveMember()) {
-                    <am-icon-button
-                      icon="pi pi-times"
-                      severity="danger"
-                      [label]="'committee.removeMemberNamed' | translate: { name: userName(member.userId) }"
-                      (activated)="onRemoveMember(member)"
-                    />
-                  }
-                </span>
-              </div>
-            }
-          </app-record-panel>
+          <!-- ACC-230 — Members, capped at five, ordered by seat; Change role and
+               Remove in a worded ⋯ menu (Q12), with the same permissions as
+               before. The page owns the dialogs. -->
+          <app-committee-members-panel
+            [committeeId]="committeeId"
+            [committeeName]="committee() ? displayName(committee()!) : ''"
+            [canAddMember]="canAddMember()"
+            [canChangeRole]="canChangeMemberRole()"
+            [canRemove]="canRemoveMember()"
+            (addRequested)="onAddMember()"
+            (changeRoleRequested)="onChangeMemberRoleRow($event)"
+            (removeRequested)="onRemoveMemberRow($event)"
+          />
 
           <!-- ACC-229 — the record Tasks panel: at most five rows at a fixed
                height, the total in the header, "See all" for the rest. Shown
@@ -330,38 +283,12 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
             (createRequested)="onAddTask()"
           />
 
-          <app-record-panel
-            [heading]="'committee.subCommittees' | translate"
-            [count]="subCommittees().length"
-            [isEmpty]="subCommittees().length === 0"
-            [emptyTitle]="'committee.noSubCommittees' | translate"
-          >
-            @for (sub of subCommittees(); track sub.id) {
-              <div
-                class="grid grid-cols-[1fr_auto] gap-2.5 items-center px-4 py-2.5 border-b border-[var(--am-border)]"
-              >
-                <span class="min-w-0">
-                  <a
-                    class="block text-[13px] font-medium truncate text-[var(--am-blue-primary)]"
-                    [routerLink]="['/committees', sub.id]"
-                  >
-                    {{ displayName(sub) }}
-                  </a>
-                  <span class="block text-[11.5px] text-[var(--am-text-secondary)] truncate">
-                    {{ subCommitteeMeta(sub) }}
-                  </span>
-                </span>
-                @if (subCommitteeStage(sub); as stage) {
-                  <span
-                    class="text-[11px] font-semibold whitespace-nowrap rounded px-1.5 py-0.5"
-                    style="background: var(--am-surface); color: var(--am-text-secondary)"
-                  >
-                    {{ stage }}
-                  </span>
-                }
-              </div>
-            }
-          </app-record-panel>
+          <!-- ACC-230 — Sub-committees, capped at five, read from this
+               committee's own children (no longer a filter of every committee). -->
+          <app-committee-sub-committees-panel
+            [committeeId]="committeeId"
+            [committeeName]="committee() ? displayName(committee()!) : ''"
+          />
 
           <!-- Four of the seven things a surveyor checks for a committee live
                here (module-designs.md:880-887): attendance, quorum
@@ -540,13 +467,6 @@ export class CommitteeDetailComponent implements OnInit {
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly currentInstance = signal<WorkflowInstanceDto | null>(null);
 
-  // ACC-76 — derived from listCommittees(), which this page already loaded
-  // for the parent-name lookup. No new request — and since ACC-76 that list
-  // carries each committee's member count and live stage, so the rows can say
-  // what a sub-committee IS without a query per row.
-  readonly subCommittees = computed(() =>
-    this.allCommittees().filter((c) => c.parentCommitteeId === this.committeeId),
-  );
 
   readonly stageHistoryCount = signal<number | null>(null);
 
@@ -563,6 +483,7 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly tasksPanel = viewChild(RecordTasksPanelComponent);
+  private readonly membersPanel = viewChild(CommitteeMembersPanelComponent);
 
   private watchSoughtTask(): void {
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
@@ -651,34 +572,14 @@ export class CommitteeDetailComponent implements OnInit {
     return this.users().find((u) => u.id === userId)?.name ?? userId;
   }
 
-  // Two letters from the name, for the member avatar. Takes the first letter
-  // of the first and last word so "Dr. Fahad Al-Anazi" reads DA rather than DF
-  // — an honorific is not an initial.
-  initials(name: string): string {
-    const words = name.replace(/^(Dr\.?|Prof\.?|Mr\.?|Ms\.?|Mrs\.?)\s+/i, '').trim().split(/\s+/);
-    const first = words[0]?.[0] ?? '';
-    const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? '') : '';
-    return (first + last).toUpperCase();
-  }
-
   // "6 members · Monthly" — both facts now come from listCommittees() itself
   // (ACC-76), so a sub-committee row costs no query of its own.
-  subCommitteeMeta(sub: CommitteeListItemDto): string {
-    this.translate.currentLang();
-    const members = this.format.count('committee.members', sub.memberCount);
-    const frequency = this.translate.instant(`committee.frequency.${sub.meetingFrequency.toLowerCase()}`);
-    return `${members} · ${frequency}`;
-  }
 
   // Tenant-editable stage name, by language, never `| translate`.
   //
   // ACC-160 — the `?? ''` this replaced hid a blank: in an Arabic session a
   // stage with no Arabic name yielded '', and the compiler could not see it.
   // currentStageNameEn is null only when there is no workflow instance at all.
-  subCommitteeStage(sub: CommitteeListItemDto): string {
-    const en = sub.currentStageNameEn;
-    return en ? this.languageService.bilingual(en, sub.currentStageNameAr) : '';
-  }
 
   // This committee's own live stage, from the same list the page already has.
   readonly currentStageName = computed(() => {
@@ -754,6 +655,33 @@ export class CommitteeDetailComponent implements OnInit {
     this.memberFormVisible.set(false);
     this.loadMembers();
     this.loadMembershipEvents();
+    this.membersPanel()?.reload();
+  }
+
+  // ACC-230 — the Members panel asks with its own row; the dialogs take the
+  // member as the page holds it (the full active list, loaded for the quorum
+  // line and the Add member form).
+  onChangeMemberRoleRow(row: CommitteeMemberRowDto): void {
+    this.onChangeMemberRole(this.memberFor(row));
+  }
+
+  onRemoveMemberRow(row: CommitteeMemberRowDto): void {
+    this.onRemoveMember(this.memberFor(row));
+  }
+
+  private memberFor(row: CommitteeMemberRowDto): CommitteeMemberDto {
+    return (
+      this.members().find((m) => m.id === row.id) ?? {
+        id: row.id,
+        organizationId: '',
+        committeeId: this.committeeId,
+        userId: row.userId,
+        roleValueId: row.roleValueId,
+        joinedAt: row.joinedAt,
+        leftAt: null,
+        isActive: true,
+      }
+    );
   }
 
   onAddTask(): void {
@@ -777,6 +705,7 @@ export class CommitteeDetailComponent implements OnInit {
           next: () => {
             this.loadMembers();
             this.loadMembershipEvents();
+            this.membersPanel()?.reload();
           },
           error: (err: unknown) =>
             this.error.set(extractErrorMessage(err, 'committee.errorAction')),
