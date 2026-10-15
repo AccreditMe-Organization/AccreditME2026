@@ -318,7 +318,7 @@ interface ViewRow {
       .am-tl__toggle,.am-tl__btn,.am-tl__chip,.am-tl__clear{font:inherit;font-size:12.5px;block-size:32px;padding:0 11px;border:1px solid var(--am-control-border);border-radius:var(--am-radius-button);background:var(--am-surface-raised);color:var(--am-ink-900);cursor:pointer;white-space:nowrap}
       .am-tl__toggle[aria-pressed=true]{border-color:var(--am-primary-600);background:var(--am-primary-100);color:var(--am-primary-700);font-weight:600}
       .am-tl__chips{flex:none;display:flex;align-items:center;gap:6px;min-block-size:36px;padding:2px 16px;border-block-end:1px solid var(--am-border)}
-      .am-tl__chip{block-size:24px;padding:0 9px;border-radius:var(--am-radius-pill);background:var(--am-primary-50);border-color:var(--am-primary-200)}
+      .am-tl__chip{block-size:24px;padding:0 9px;border-radius:var(--am-radius-pill);background:var(--am-primary-50);border-color:var(--am-primary-100)}
       .am-tl__clear{block-size:24px;border:0;background:none;color:var(--am-primary-700)}
       .am-tl__scroll{flex:1 1 auto;min-block-size:0;overflow:auto;position:relative}
       .am-tl__row{display:grid;grid-template-columns:minmax(200px,2.2fr) 104px minmax(140px,1.4fr) 168px 124px 96px auto;gap:10px;align-items:center;min-inline-size:1032px;box-sizing:border-box;padding:6px 16px;border-block-end:1px solid var(--am-border)}

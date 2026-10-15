@@ -1,4 +1,5 @@
-import { ConflictException, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
+import { LastActiveAdministratorException } from './role-permission-refusal';
 
 /**
  * ACC-120 — the tenant's root role, and the one invariant that protects it.
@@ -174,8 +175,7 @@ export async function assertTenantRetainsAnActiveAdministrator(
     return;
   }
 
-  throw new ConflictException(
-    'This would leave the organization with no active administrator. ' +
-      'Give the Organization Administrator role to an active user first, then try again.',
-  );
+  // ACC-120 slice 5b — the same 409 and message, now with a code
+  // (LAST_ACTIVE_ADMINISTRATOR) so a screen can say it in either language.
+  throw new LastActiveAdministratorException();
 }

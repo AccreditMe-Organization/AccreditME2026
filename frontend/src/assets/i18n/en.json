@@ -1889,7 +1889,19 @@
     "title": "Manage roles",
     "willBeGranted": "+ will be granted",
     "willBeRemoved": "− will be removed",
-    "lastAdministratorLocked": "The organization’s only active administrator. Give this role to someone else first, then you can remove it here."
+    "lastAdministratorLocked": "The organization’s only active administrator. Give this role to someone else first, then you can remove it here.",
+    "refusal": {
+      "loadForbidden": "You can't see this person's roles. That needs permission to view users and roles.",
+      "saveForbidden": "You no longer have permission to change roles. Nothing was saved.",
+      "platformRoleNotAssignable": "The Platform Administrator role can't be given inside an organization.",
+      "alreadyHeld": "They already hold this role. Reload to see it.",
+      "fromHeadPosition": "This role comes with their head position. End it by changing the head position.",
+      "lastAdministrator": "They're the organization's only active administrator. Give this role to someone else first.",
+      "roleNotFound": "This role no longer exists. Reload to see the current roles.",
+      "userNotFound": "This person is no longer in the organization.",
+      "assignmentNotFound": "They no longer hold this role. Reload to see the current roles.",
+      "rateLimited": "Too many changes at once. Wait a moment, then try again."
+    }
   },
   "files": {
     "sizeKb": "{{size}} KB",

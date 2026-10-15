@@ -1,4 +1,5 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { of, throwError } from 'rxjs';
 import { ManageRolesComponent } from './manage-roles.component';
@@ -52,15 +53,20 @@ describe('ManageRolesComponent (ACC-120)', () => {
     unitsFail?: boolean;
     grantsFail?: boolean;
     assignFails?: string[];
+    /** What a failing call throws (default: a bare Error). */
+    failWith?: unknown;
+    /** What a failing load throws (default: a bare Error). */
+    loadFailWith?: unknown;
   }
 
   function render(opts: Opts = {}): void {
     const failing = new Set(opts.assignFails ?? []);
+    const failure = (): unknown => opts.failWith ?? new Error('nope');
     assign = jasmine.createSpy('assign').and.callFake((_u: string, roleId: string) =>
-      failing.has(roleId) ? throwError(() => new Error('nope')) : of(undefined),
+      failing.has(roleId) ? throwError(failure) : of(undefined),
     );
     remove = jasmine.createSpy('remove').and.callFake((_u: string, roleId: string) =>
-      failing.has(roleId) ? throwError(() => new Error('nope')) : of(undefined),
+      failing.has(roleId) ? throwError(failure) : of(undefined),
     );
 
     TestBed.resetTestingModule();
@@ -73,7 +79,7 @@ describe('ManageRolesComponent (ACC-120)', () => {
           provide: RoleService,
           useValue: {
             getUserRoles: () =>
-              opts.grantsFail ? throwError(() => new Error('boom')) : of(opts.grants ?? []),
+              opts.grantsFail ? throwError(() => opts.loadFailWith ?? new Error('boom')) : of(opts.grants ?? []),
             listAllRoles: () => of(opts.roles ?? ROLES),
             assignRoleToUser: assign,
             removeRoleFromUser: remove,
@@ -412,5 +418,54 @@ describe('ManageRolesComponent (ACC-120)', () => {
 
       expect(component.changeCount()).toBe(1);
     });
+  });
+
+  // ── ACC-120 slice 5b — refusals are translated, never the server's text ───
+  // The TestBed loads no translations, so a sentence renders as its KEY: seeing
+  // the key proves the mapping ran, and the server's English is asserted absent.
+  const SERVER_TEXT = 'User is already assigned to this role';
+
+  it('a refused row shows the sentence for its code, and none of the server text', () => {
+    render({
+      assignFails: ['r2'],
+      failWith: new HttpErrorResponse({
+        status: 409,
+        error: { statusCode: 409, message: SERVER_TEXT, code: 'ROLE_ALREADY_HELD' },
+      }),
+    });
+    component.toggle(component.rows().find((r) => r.role.id === 'r2')!);
+    component.onSubmit();
+    fixture.detectChanges();
+
+    const failureLine = (fixture.nativeElement as HTMLElement).querySelector('[data-mr-row-failure]');
+    expect(failureLine?.textContent?.trim()).toBe('manageRoles.refusal.alreadyHeld');
+    expect(text()).not.toContain(SERVER_TEXT);
+  });
+
+  it('a refused row with no code we know shows the one fallback, still no server text', () => {
+    render({
+      assignFails: ['r2'],
+      failWith: new HttpErrorResponse({ status: 500, error: { statusCode: 500, message: 'Internal server error' } }),
+    });
+    component.toggle(component.rows().find((r) => r.role.id === 'r2')!);
+    component.onSubmit();
+    fixture.detectChanges();
+
+    expect(text()).toContain('manageRoles.errorSaveRow');
+    expect(text()).not.toContain('Internal server error');
+  });
+
+  it('a load refused 403 shows the drawn sentence instead of a generic error, and no server text', () => {
+    render({
+      grantsFail: true,
+      loadFailWith: new HttpErrorResponse({
+        status: 403,
+        error: { statusCode: 403, message: 'Required permission: users:view' },
+      }),
+    });
+    const alert = (fixture.nativeElement as HTMLElement).querySelector('[data-mr-load-error]');
+    expect(alert?.textContent).toContain('manageRoles.refusal.loadForbidden');
+    expect(text()).not.toContain('Required permission');
+    expect(text()).not.toContain('manageRoles.errorLoad');
   });
 });
