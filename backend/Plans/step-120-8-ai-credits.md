@@ -88,46 +88,66 @@ usage read.
 | Error, with retry | A translated error and Retry. Never the server's text |
 | Partial | Only if D2 adds a usage read. If the balance loads and the usage read fails, the meter shows used and left as one segment, and the breakdown shows its own error with Retry. The balance never waits on the breakdown |
 
-## Gaps, and the decision needed (STOP: nothing is built)
+## Decisions (Ahmad, 15 Oct, CC-109a)
 
-**G1. Per-feature usage is not returned.** This affects the meter's segments,
-the breakdown rows (name, count, percent) and "See each use". The data
-exists in `AiInteractionLog` (`feature`, `creditCost`, `success`,
-`createdAt`, `organizationId`, `schema.prisma:2021-2046`), but nothing reads
-it for a tenant.
-
-**Measured on dev, and it matters for the options:** al-nakheel's counter
-says 0 used this period, but its log holds 166 credits of successful calls
-in the same period (20 calls, 12–14 Oct). So a breakdown read from the log
-would not add up to the drawn "Used" number today. Something reset the
-counter without touching the log; the log is not wrong.
-
-- **Option A (recommended): a small read on the backend.**
-  - Add `usage: { key, credits, calls }[]` to the `GET /tenant` `ai` block:
-    one `aiInteractionLog.groupBy` by `feature`, filtered by the tenant's
+- **G1: Option A.** `GET /tenant`'s `ai` block gains
+  `usage: { key, credits, calls }[]`.
+  - It is one grouped query on `AiInteractionLog`, filtered by the tenant's
     `organizationId`, `success: true`, `creditCost > 0`, and `createdAt` at
-    or after `periodStart`. A tenant-isolation test goes with it.
-  - The meter segments are each feature's credits, clamped so that their sum
-    never passes `creditsUsed`. If the log sums to less than `used`, the
-    rest is one plain "Other" segment.
-  - Percentages are of the breakdown's own total.
-  - This keeps the drawing whole. The counter-versus-log disagreement above
-    is then visible on al-nakheel; the clamp keeps the meter honest.
-- **Option B: leave the breakdown out and record it.**
-  - The meter shows used and left as one segment, with no "What used them"
-    section.
-  - It is smaller, and changes nothing on the backend. The screen loses its
-    answer to "what did we spend it on".
-- **Either way:** "See each use" is left out, because no usage-log screen
-  exists, and "See plans with AI" is left out, because no tenant plans
-  screen exists. Both are recorded here.
+    or after `periodStart`. It has a tenant-isolation test.
+  - **The meter:** feature segments are capped so their sum never passes
+    `creditsUsed`. If the log adds up to less than `used`, the rest is one
+    plain "Other" segment.
+  - **The breakdown:** percentages are of its own total.
+  - **Partial outcome:** the read is part of the same response, so this
+    one cannot be partial.
+- **D1: the heading** is "This period's allowance" ("رصيد هذه الفترة"), with
+  the dates from `periodStart` to `resetDate`, both through `FormatService`.
+- **Left out, each recorded here:**
+  - "See each use": no usage-log screen exists.
+  - "See plans with AI": no tenant plans screen exists.
+  - The "Not active yet" banner: credits have been metered since ACC-194.
+  - The undrawn "AI switched off" state: nothing writes the switch yet.
 
-**D1. The heading "September allowance."** Periods are anchored to
-activation (ACC-194): al-nakheel's runs from 21 Sep to 21 Oct, so a period
-has no single month. Proposed: "This period's allowance", with the dates
-"21 Sep – 20 Oct" from `periodStart` and `resetDate`.
+## Why al-nakheel's counter read 0 with 166 credits logged (15 Oct, read only)
 
-**D2.** Follows from G1: if Option A, the partial outcome above applies.
+Every query was a SELECT. Nothing was written, and nothing is changed in this
+branch.
+
+- **The audit trail has ONE AI row for al-nakheel, ever:**
+  - `ai_allocation_changed` at 12 Oct 15:57:32Z, manual, 0 → 2000;
+  - no `ai_credits_renewed` row at all.
+  - The allocation set up the first period, and with it `aiCreditsUsed = 0`,
+    22 seconds before the first call.
+- **Twenty successful calls followed**, 12 Oct 15:57:54Z to 14 Oct 08:16:24Z:
+  - 166 credits in all, every one inside the current period;
+  - each one adds its cost through `ai-credit.service.ts:51`;
+  - so the counter should read 166.
+- **`Organization.updatedAt` is 14 Oct 08:18:05Z.**
+  - That is 1 min 41 s after the last call (a `workload_balancing` proof
+    call, ACC-199).
+  - The calls' raw `UPDATE` does not touch `updatedAt`, so this was a later
+    write through the Prisma client.
+  - No audit row exists at that time, and no application path writes
+    `aiCreditsUsed = 0` without one: renewal and allocation both audit.
+- **Cause:** a direct, unaudited write by a live-proof cleanup.
+  - The ACC-197 live proof ends with "8. Clean up, and reset al-nakheel's
+    used credits." (`step-197-task-drafting.md:369`).
+  - The same reset after ACC-199's proof calls fits the timestamp.
+  - It went around `AiAllocationService`, so the customer's own record has
+    no trace of it: the blind spot in CLAUDE.md's ACC-101 note on backfills.
+  - Which session ran it is not recorded anywhere this query can see.
+
+**A second finding, not fixed here: the stored renewal time does not match
+the rule.**
+- `aiCreditsRenewsAt` is 20 Oct 21:00Z. The rule (`ai-credit-period.ts`)
+  gives 21 Oct 00:00Z for an activation on 21 Sep.
+- The allocation ran at 15:57Z on 12 Oct, before ACC-194 merged (18:47Z), so
+  it probably ran from a branch with an earlier rule.
+- **Consequence:** the hourly job will renew al-nakheel at 20 Oct 21:00Z,
+  into a period that still starts on 21 Sep. Its counter goes to 0 three
+  hours early, and the audit row shows the same period start before and
+  after.
 
 ## The browser check, and what seeded data can reach
 
@@ -135,5 +155,5 @@ has no single month. Proposed: "This period's allowance", with the dates
 |---|---|
 | normal | yes: al-nakheel, 2,000 credits, 0 used |
 | none | yes: al-manara, 0 credits |
-| spent | **no**. No organisation has an allocation that is fully used. Reaching it would mean writing al-nakheel's counter on the shared database, which needs approval, so the state would be checked only in specs |
-| denied | no seeded persona: only `TENANT_ADMIN` reaches the page. Checked by browser interception, as in slice 5b |
+| spent | not with seeded data: faked in the browser (CC-109a), never written to the shared database |
+| denied | no seeded persona can reach it: faked in the browser, as in slice 5b |
