@@ -62,11 +62,12 @@ The design source is `AccreditMe Users and Roles.dc.html`, Manage roles panel A
 
 ## Where the code forces a departure
 
-**Five of the refusals carried no code**, only an English message. The
+**Six of the refusals carried no code** (five in `RoleService`, and the
+administrator invariant), only an English message. The
 frontend can't map a message to a sentence without parsing English, which is
 the habit this fixes.
 
-So the backend gains the five codes in bold above. Each is a subclass of the
+So the backend gains the six codes in bold above. Each is a subclass of the
 same exception (`NotFoundException` or `ConflictException`), with the same
 status and the same English message, plus a `code`. Every existing caller and
 spec sees the same type and text.
