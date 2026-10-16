@@ -776,7 +776,10 @@
       "name": "Name",
       "status": "Status",
       "members": "Members",
-      "actions": "Actions"
+      "actions": "Actions",
+      "type": "Type",
+      "parent": "Parent",
+      "stage": "Stage"
     },
     "refusal": {
       "ownParent": "A committee can't be its own parent committee.",
@@ -790,6 +793,51 @@
       "unitRequired": "Choose the unit that owns this committee.",
       "unitNotFound": "That unit doesn't exist or is no longer active. Choose another.",
       "saveFailed": "The committee couldn't be saved. Try again."
+    },
+    "status": {
+      "active": "Active",
+      "dissolving": "Being dissolved",
+      "inactive": "Inactive"
+    },
+    "list": {
+      "searchPlaceholder": "Search committees by name",
+      "empty": "No committees yet",
+      "emptyCreate": "Add the first one with Add Committee.",
+      "statusFilter": "Status",
+      "allStatuses": "All statuses",
+      "typeFilter": "Type",
+      "allTypes": "All types"
+    },
+    "memberForm": {
+      "person": "Person",
+      "personHint": "Anyone active in the organisation.",
+      "noOneToAdd": "Everyone active is already a member of this committee.",
+      "personRequired": "Choose who to add.",
+      "choosePerson": "Choose a person",
+      "pickerTitle": "Choose a person",
+      "closePicker": "Close the person list",
+      "searchPeople": "Search people",
+      "searchPeoplePlaceholder": "Search by name or email…",
+      "noPeople": "No active people in this organisation.",
+      "alreadyMember": "Already a member",
+      "col": {
+        "person": "Person",
+        "unit": "Unit",
+        "availability": "Availability"
+      },
+      "role": "Role on committee",
+      "roleRequired": "Choose their role on the committee.",
+      "joined": "Joined",
+      "joinedHint": "Today, unless they joined earlier.",
+      "joinedRequired": "Choose the day they joined.",
+      "joinedFuture": "The joined date can't be after today.",
+      "chooseDate": "Choose the joined date",
+      "backToForm": "Back to the form",
+      "reasonTooLong": "Use 2,000 characters or fewer.",
+      "errorAlreadyMember": "This person is already a member of this committee.",
+      "errorDenied": "You can't add members to this committee.",
+      "errorNotFound": "That person or role no longer exists. Choose again.",
+      "errorSave": "The member couldn't be added. Try again."
     }
   },
   "orgPosition": {
@@ -1731,6 +1779,14 @@
       "subCommitteesMatch": {
         "one": "{{count}} sub-committee matches",
         "other": "{{count}} sub-committees match"
+      },
+      "people": {
+        "one": "{{count}} person",
+        "other": "{{count}} people"
+      },
+      "peopleMatch": {
+        "one": "{{count}} person matches",
+        "other": "{{count}} people match"
       }
     },
     "task": {
