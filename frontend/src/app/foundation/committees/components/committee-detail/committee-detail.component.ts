@@ -39,6 +39,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { COMMITTEE_PANEL_GRID } from './committee-panel-grid';
 
 /** ACC-174/177 — the task-row dialogs this page opens, one at a time. */
 type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
@@ -253,7 +254,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
              checks that need Meetings and Documents are named here even while
              those modules do not exist, because a section that is absent reads
              as a design that never considered it. -->
-        <section class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))">
+        <section class="grid gap-3" [style.grid-template-columns]="panelGrid">
 
           <!-- ACC-230 — Members, capped at five, ordered by seat; Change role and
                Remove in a worded ⋯ menu (Q12), with the same permissions as
@@ -427,6 +428,9 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
   `,
 })
 export class CommitteeDetailComponent implements OnInit {
+  /** ACC-232 — never wider than the page; see committee-panel-grid.ts. */
+  protected readonly panelGrid = COMMITTEE_PANEL_GRID;
+
   @ViewChild('committeeFormTpl', { read: TemplateRef, static: true }) committeeFormTpl!: TemplateRef<unknown>;
   @ViewChild('memberFormTpl', { read: TemplateRef, static: true }) memberFormTpl!: TemplateRef<unknown>;
 
