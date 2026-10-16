@@ -3519,25 +3519,34 @@ cancelled it. The record's Reassign now reads `canManage` too.
 A task's own page (Task Screens §1). Plan, decisions and measurements:
 `backend/Plans/step-228-record-tasks-panel.md` (§1, and §4 for Q1–Q13).
 
-**Who may open a task — `TaskPageService.admit()`, Q4's union, and nothing
-more.** Every grant is something the app already shows that person elsewhere:
+**Who may open a task — `TaskAdmissionService.admit()`
+(`task-admission.service.ts`), Q4's union, and nothing more.** ACC-231 moved it
+out of `TaskPageService` unchanged, so the task's FILES follow the very same
+rule (§16.6); there is no second copy. Every grant is something the app
+already shows that person elsewhere:
 
 | | Grant | Where they already see it |
 |---|---|---|
-| (a) | any `TaskAssignee` row for them — now or before | My tasks; the evidence rule |
+| (a) | any `TaskAssignee` row for them — now or before | My tasks |
 | (b) | `TaskService.mayManage()` | the creator's actions (ACC-174) |
 | (c) | a member of its pool, while it waits (no active assignee, a `PICKABLE_STATUSES` status) | Available |
 | (d) | a decider of its open request: `tasks:reassign` or `canActForCreator()` | Waiting for your decision |
 | (e) | `tasks:view` **and** the record (`ObjectVisibilityService.assertCanView`) | `GET /tasks/:id` |
 
 Anyone else gets the identical 404 — the same status and body as an id that
-does not exist — and a `warn` log line (ACC-101 clause b). The task is read
-first (scoped by `id` and `organizationId`), because none of this is knowable
-without it.
+does not exist — and a `warn` log line naming the route (`task page`, `task
+history`, `task files`; ACC-101 clause b). The task is read first (scoped by
+`id` and `organizationId`), because none of this is knowable without it.
+`load(taskId, organizationId, viewer, route)` reads it with exactly what
+`admit()` needs, for a caller that has only the id. Access follows the task's
+state (Ahmad, 16 Oct): a pool member is out once someone picks the task up, a
+decider once the request is decided.
 
 **Routes — no `@Permissions`, deliberately.** An assignee without `tasks:view`
 (every `BASE_USER`) must open their own task. `GET /tasks/:id` keeps
-`tasks:view` and is unchanged; the frontend no longer has a caller for it.
+`tasks:view` and the record; the frontend has no caller for it, and since
+ACC-231 it no longer returns the task's evidence (Q1), so a task's files have
+exactly one reader.
 
 | Endpoint | Returns |
 |---|---|
@@ -3583,11 +3592,12 @@ dialog is reused unchanged.
   decisions included. A briefing's task item and (new briefings') decision item
   link to the page; a decision item saved before ACC-228 carries a request id,
   and still lands on My tasks' `?request=` row.
-- **Evidence:** the page hosts `TaskEvidenceListComponent` unchanged, so every
-  file opens in the in-app viewer. A viewer the page admits but the EVIDENCE
-  rule refuses (a pool member or a decider who cannot see the record) is told
-  "Evidence is shown to the people on this task." — not an error. That rule is
-  broader than the task read elsewhere: ACC-231 (High).
+- **Evidence:** the page hosts `TaskEvidenceListComponent`, so every file opens
+  in the in-app viewer. **Since ACC-231 the files admit exactly whoever the page
+  admits**, so the "Evidence is shown to the people on this task." note ACC-228
+  needed is gone, with its key. A 404 from the list (the task changed hands
+  mid-visit) is the list's own "The evidence couldn't be loaded.", never the
+  server's English.
 - **AI log:** the workload hint's description no longer carries the chosen
   person's user id — "chosen 12 open, 0 overdue" (Q3).
 
@@ -9654,13 +9664,34 @@ Download, and is never streamed through the API (D3;
 | Route | Who | Notes |
 |---|---|---|
 | `POST /tasks/:id/evidence/file` | an active assignee, task open or on hold | checked before any byte is stored, and again under the row lock; one audit row; the 90% check after commit |
-| `GET /tasks/:id/evidence` | anyone who is or was on the task, may manage it, or can see its record | `{ items, canAdd, closed }`; no storage key; deleted evidence never listed |
+| `GET /tasks/:id/evidence` | **exactly whoever may open the task's page** — `TaskAdmissionService` (§3.12), since ACC-231 | `{ items, canAdd, closed }`; no storage key; deleted evidence never listed |
 | `GET /tasks/:id/evidence/:evidenceId/download` | the same | checked BEFORE the evidence is read |
+| `GET /tasks/:id/evidence/:evidenceId/view` | the same | the in-app viewer's link (16.5.1) |
+| `GET` / `POST /tasks/:id/evidence/:evidenceId/summary` | the same | the AI summary (§17.9): whoever may view the file may summarise it |
 | `DELETE /tasks/:id/evidence/:evidenceId` | its uploader, still an active assignee, task open or on hold | every evidence type; soft delete; a FILE goes to the recycle bin with its bytes kept (16.11); 403 for a co-assignee, 409 on a closed task; one audit row (`recoverable` true for a file) |
 
 Everyone else, and every other organisation, gets the identical 404 "Task not
-found". `complete()`'s evidence check, the three list counts and
-`GET /tasks/:id` all exclude deleted evidence.
+found" — the same body for a real file, an invented one and another
+organisation's. A missing evidence id on a task the viewer IS admitted to is
+"Evidence not found". `complete()`'s evidence check and the list counts
+exclude deleted evidence.
+
+**ACC-231 — one rule for a task's files** (plan:
+`backend/Plans/step-231-task-files-access.md`, with the full inventory of every
+path that touches a task's files). Before it, the evidence rule was its own:
+anyone ever on the task, whoever may manage it, or anyone who could see the
+record WITHOUT `tasks:view`. So a committee viewer could read files on a task
+they could not open, while a pool member or a request's decider was refused
+files on a page they could open. Now `fileForViewer()` (download, view, both
+summary routes) and `list()` call `TaskAdmissionService.load()`. Decided with it
+(Ahmad, 16 Oct):
+- **The recycle bin stays outside the task rule.** It is the administrator's
+  storage tool (`tenant:manage_config`), and a deleted file can never be opened.
+- **An issued link keeps its 15 minutes.** A token for `files/stream`, or a
+  pre-signed URL, is minted only after the check and cannot be withdrawn.
+
+Proved per viewer kind on a real Postgres (`task-files-access.db-spec.ts`),
+all five routes each.
 
 ### 16.7 Settings (`tenant:manage_config`)
 

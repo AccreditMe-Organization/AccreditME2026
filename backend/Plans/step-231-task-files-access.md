@@ -4,7 +4,8 @@ Lane B, Bug, High. Branch `fix/ACC-231-task-files-follow-task-page` from `dev` a
 `23a5649`. Found while planning ACC-228 (`step-228-record-tasks-panel.md` §0.3,
 Q5), filed by Ahmad on 14 Oct.
 
-**Status: plan only, waiting for Ahmad (§6).** No code has changed.
+**Status: built (16 Oct), waiting for `/ready-to-pr`.** Ahmad decided all five
+questions on 16 Oct, as picked (§6). §8 records where the build differs.
 
 ## 1. The two rules today
 
@@ -179,7 +180,7 @@ So the "loses" rows reach only custom roles (Fahad's) and the cases with no
   and §16 (file evidence); CLAUDE.md ACC-228's entry ("the evidence rule is
   broader… until ACC-231") updated, and an ACC-231 entry.
 
-## 6. Questions for Ahmad (my pick first)
+## 6. Questions — DECIDED by Ahmad on 16 Oct, all five as picked
 
 - **Q1 — `GET /tasks/:id` returns evidence rows under its own rule, and the app
   never calls it.** Pick: **stop returning `evidence` there** and leave the route
@@ -206,11 +207,48 @@ So the "loses" rows reach only custom roles (Fahad's) and the cases with no
   decided. Pick: **exactly as the page** (no extra "was once admitted" clause).
   Anything else would be a second rule.
 
+- **Q1 → `GET /tasks/:id` no longer returns `evidence`.**
+- **Q2 → the recycle bin stays outside the task rule.**
+- **Q3 → the 15-minute link stays.**
+- **Q4 → the "Evidence is shown to the people on this task" note is removed**,
+  with its key.
+- **Q5 → access follows the task's state, exactly as the page does.**
+
 ## 7. Progress
 
 - [x] Branch, this plan, the path inventory (§2)
-- [ ] Ahmad answers §6
-- [ ] `TaskAdmissionService` (moved, not copied); the page and the files use it
-- [ ] Q1 / Q4 as decided
-- [ ] Specs, `test:db` per viewer kind, the isolation test, mutation checks
-- [ ] SYSTEM-REFERENCE and CLAUDE.md
+- [x] Ahmad answers §6 (16 Oct, all five as picked)
+- [x] `TaskAdmissionService` (moved, not copied); the page and the files use it
+- [x] Q1 / Q4 as decided
+- [x] Specs, `test:db` per viewer kind, the isolation test, mutation checks
+- [x] SYSTEM-REFERENCE and CLAUDE.md
+
+## 8. As built (16 Oct)
+
+### Where the build differs from the plan
+
+1. **The per-clause unit specs stayed in `task-page.service.spec.ts`** (§5 said
+   they would move to a `task-admission.service.spec.ts`). They now build the
+   real `TaskAdmissionService` and pass it to the page. The page's clauses are
+   therefore tested against the one shared rule, and the evidence spec builds
+   the same real service over its mocks. A separate copy of those tests would
+   have been a second place to keep in step.
+2. **Q4's 404 says the list's own sentence.** With the note gone, a 404 from the
+   evidence list shows "The evidence couldn't be loaded." (`task.evidence.loadError`),
+   never the server's English "Task not found", which the generic error path
+   would otherwise have shown. Other errors are unchanged.
+3. **`TaskPageService` now takes three dependencies** (Prisma, the delegation
+   labels, the admission service), down from five. The refusal log line names
+   the route: `task page`, `task history`, `task files`.
+4. **The acting head and the out-of-office delegate are proved through one
+   creator** who is both away and a unit head, with an ABSENCE appointment
+   on the unit.
+
+### Mutation checks (each turned specs red, then restored)
+
+| Mutation | Red |
+|---|---|
+| **M1:** the old evidence rule copied back into the evidence service (on it, may manage, or sees the record) | unit, 1 (the record-without-`tasks:view` 404); db-spec, 6: both "gains", all three "loses" (Fahad included) and the isolation test |
+| **M2:** the pool clause removed from the shared `admit()` | unit, the page's "(c) a member of its pool opens it"; db-spec, the files' "pool member while the task waits". One rule, both red. |
+| **M3:** the organisation scope removed from `load()` | unit, all four of the evidence service's isolation tests; db-spec, the named isolation test |
+| **M4:** the old "can see the record" clause brought back into `admit()` | unit, the evidence 404 and the page's "record without `tasks:view`"; db-spec, the Fahad case, the other two "loses" and the isolation test |
