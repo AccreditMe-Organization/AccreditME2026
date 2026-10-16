@@ -2123,6 +2123,11 @@ Prisma Studio.
   guessing at a fix. Revisit when a SECOND workflow-driven module
   needs stage-aware UI — do not pre-build a fix against only one
   data point.
+  **UPDATED (ACC-233): `WorkflowStage.key` exists now**, for the COMMITTEE
+  template only (the seed's keys, backfilled by position), because the
+  committee reference checks needed to recognise Dissolution Pending and
+  Dissolved. Other templates are still unkeyed; key one when a feature first
+  needs it, with a backfill. See Key Architecture Decisions (ACC-233).
 - **`WorkflowTransitionActionsComponent`**
   (`frontend/src/app/foundation/workflow/components/workflow-transition-actions/`,
   ACC-22) is the standard, reusable pattern for triggering workflow
@@ -3825,6 +3830,45 @@ Oct) and the measurements: `backend/Plans/step-228-record-tasks-panel.md` (§3,
 - **"All Tasks" is in the rail** after My Tasks, gated on `tasks:view` by its
   nav entry.
 - **No migration.**
+
+
+## Key Architecture Decisions (ACC-233)
+
+What a committee may point at: its parent, the committee it reports to, and its
+owning unit. Full mechanism: SYSTEM-REFERENCE.md §3.15 (the rules) and §2.16
+(stage keys). Plan, Ahmad's decisions (15 Oct) and the existing-data check:
+`backend/Plans/step-233-committee-reference-checks.md`. Briefly:
+
+- **A COMMITTEE CAN'T BE ITS OWN PARENT OR REPORTS-TO, CLOSE A LOOP, OR POINT
+  AT A DISSOLVING OR DISSOLVED COMMITTEE; ITS OWNING UNIT MUST BE ACTIVE.** Each
+  refusal is a 400 with its own code, said in the dialog from the code
+  (`committee.refusal.*`), never from the English message. The rules and codes
+  live in ONE file, `committee-reference-checks.ts`.
+- **ANOTHER ORGANISATION IS INDISTINGUISHABLE FROM NOTHING.** Every reference is
+  read with `{ id, organizationId }`; another organisation's committee or unit
+  gets the identical refusal an invented id does.
+- **ONE TRANSACTION, AND A PER-ORGANISATION HIERARCHY LOCK** for an update that
+  sets a parent or reports-to (`pg_advisory_xact_lock`, ACC-177's shape). Two
+  edits closing a loop lock different rows, so a row lock cannot stop them.
+  Proved against a real Postgres. A create takes no lock: nothing sits under a
+  new committee.
+- **ONLY A CHANGED VALUE IS CHECKED.** A committee whose parent has since begun
+  dissolving stays editable for its name.
+- **"DISSOLVING" IS A STAGE KEY, NEVER A NAME** (Ahmad, 15 Oct, who approved the
+  migration). `WorkflowStage.key` is nullable, unique within its workflow,
+  never shown or editable, and survives a rename. Every committee lifecycle
+  stage is keyed. New organisations get keys from the seed; existing ones from
+  `npm run backfill:acc233-committee-stage-keys`, which matches by POSITION
+  (confirmed by the first/final flags) and leaves anything it cannot match
+  null. A stage with no key is not dissolving, and is logged (ids only).
+- **AN OMITTED OWNING UNIT ON CREATE IS STILL THE ROOT** (ACC-135, unchanged).
+  Sending it empty, or `null` on update, is refused; it used to reach the
+  database and fail as a 500.
+- **The dialog leaves out what the server refuses** (itself, dissolving
+  committees by the server's `isDissolving`, anything leading back to it), and
+  a cleared parent or reports-to is now actually cleared on an edit.
+- **One additive migration** (`acc233_workflow_stage_key`). It and the backfill
+  run AFTER the deploy, dry run first.
 
 ## Open / Deferred Items
 

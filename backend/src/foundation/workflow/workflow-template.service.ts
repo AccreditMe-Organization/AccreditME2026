@@ -25,6 +25,7 @@ import { UpdateWorkflowTransitionDto } from './dto/update-workflow-transition.dt
 import { CreateWorkflowTransitionActionDto } from './dto/create-workflow-transition-action.dto';
 import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transition-action.dto';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
+import { KEYED_SEED_TEMPLATES } from './workflow-stage-keys';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
 import { WorkflowRefusalException } from './workflow-refusal';
@@ -94,12 +95,23 @@ export class WorkflowTemplateService {
 
       const stageIdByKey = new Map<string, string>();
 
+      // ACC-233 — the stages of a keyed template carry the seed's own key, so
+      // code can recognise them whatever the tenant later calls them. Found by
+      // key first: a stage renamed since would otherwise be created again.
+      const keyed = KEYED_SEED_TEMPLATES.has(seedWorkflow.objectType);
+
       for (const seedStage of seedWorkflow.stages) {
-        const existingStage = await this.prisma.workflowStage.findFirst({
-          where: { workflowTemplateId: template.id, nameEn: seedStage.nameEn },
-        });
+        const existingStage =
+          (keyed &&
+            (await this.prisma.workflowStage.findFirst({
+              where: { workflowTemplateId: template.id, key: seedStage.key },
+            }))) ||
+          (await this.prisma.workflowStage.findFirst({
+            where: { workflowTemplateId: template.id, nameEn: seedStage.nameEn },
+          }));
 
         const stageData = {
+          ...(keyed && { key: seedStage.key }),
           nameEn: seedStage.nameEn,
           nameAr: seedStage.nameAr,
           order: seedStage.order,

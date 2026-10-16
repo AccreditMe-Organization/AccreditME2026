@@ -1354,6 +1354,9 @@ model WorkflowStage {
   slaWorkingHours    Int?
   isInitial          Boolean                    @default(false)
   isFinal            Boolean                    @default(false)
+  // ACC-233 — the seed's stable key ("dissolution_pending"), unique within the
+  // workflow; null for a stage a tenant adds. Never shown or editable. §2.16.
+  key                String?
 
   approvalMode       WorkflowApprovalMode       @default(SINGLE)
   parallelThreshold  WorkflowParallelThreshold?
@@ -2351,6 +2354,39 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
 - the editable deadline field inside the stage row;
 - the drag handle with keyboard pick-up;
 - the "Holder unknown" partial state.
+
+### 2.16 Stage keys — recognising a seeded stage (ACC-233)
+
+**`WorkflowStage.key`** says what a SEEDED stage is, whatever the tenant calls it.
+Before it, nothing could: a stage's name and order are tenant-editable, and
+ACC-22 recorded that no screen could treat a stage semantically for that reason.
+Plan: `backend/Plans/step-233-committee-reference-checks.md` (§2.1, §4b).
+
+- **The value is the seed's own key** (`workflow.seed.ts`), unique within one
+  workflow (`@@unique([workflowTemplateId, key])`; Postgres lets the nulls
+  repeat). A stage a tenant adds has none.
+- **Never shown and never editable.** No DTO carries it, and the global
+  `ValidationPipe` (`whitelist: true`) strips it if sent. Renaming or reordering
+  a stage leaves it alone.
+- **Keyed templates: COMMITTEE only, today** (`KEYED_SEED_TEMPLATES`,
+  `foundation/workflow/workflow-stage-keys.ts`): `formation`, `terms_review`,
+  `active`, `suspended`, `dissolution_pending`, `dissolved`. A template is added
+  there when a feature first needs one of its stages, with a backfill for it.
+- **New organisations:** `seedDefaultWorkflows()` writes the key, and looks a
+  keyed stage up by key before name, so a renamed stage is found rather than
+  created again.
+- **Existing organisations:** `npm run backfill:acc233-committee-stage-keys`
+  (dry run by default, `--execute`, after the deploy). It matches by POSITION
+  (the seed's `order`), confirmed by the first/final flags. A stage it cannot
+  match is reported and left null, never guessed. One transaction and one audit
+  row per organisation, and customer organisations are refused.
+- **A null key means "not recognised"**, never "matches". Code reading a key
+  treats a stage with none as the safe answer and logs it (§3.15's dissolving
+  check).
+
+**Readers today:** the committee reference checks (§3.15) and the committees
+list's `currentStageKey` / `isDissolving`. The committee changes feature is the
+next.
 
 ---
 
@@ -3762,6 +3798,78 @@ is in `CommitteeListsService`:
   - Panels at 0, 3, 5 and 12 rows: 294 / 328, rows 52 / 58, never overflowing.
   - The popup body at 720 × 560: only the list scrolls, with rows at least 44.
   - Phone cards: 60 / 64, nothing sideways.
+
+
+### 3.15 What a committee may point at — parent, reports-to, owning unit (ACC-233)
+
+`createCommittee()` and `updateCommittee()` refuse a reference that would make
+the committee tree wrong. The rules and their codes live in ONE file,
+`foundation/committees/committee-reference-checks.ts`. Plan, Ahmad's decisions
+(15 Oct) and the existing-data check:
+`backend/Plans/step-233-committee-reference-checks.md`.
+
+| Rule | Refusal (400) | Code |
+|---|---|---|
+| Not itself | own parent / reports to itself | `COMMITTEE_OWN_PARENT`, `COMMITTEE_REPORTS_TO_ITSELF` |
+| No loops | under one of its own sub-committees / reporting to a committee that reports to it | `COMMITTEE_PARENT_LOOP`, `COMMITTEE_REPORTS_TO_LOOP` |
+| Not dissolving | a parent or reports-to whose current stage key is `dissolution_pending` or `dissolved` | `COMMITTEE_PARENT_DISSOLVING`, `COMMITTEE_REPORTS_TO_DISSOLVING` |
+| Owning unit | sent empty (`''`, or `null` on update) / missing, inactive or another organisation's | `COMMITTEE_UNIT_REQUIRED`, `COMMITTEE_UNIT_NOT_FOUND` |
+| Exists here | missing, or another organisation's | `COMMITTEE_PARENT_NOT_FOUND`, `COMMITTEE_REPORTS_TO_NOT_FOUND` |
+
+**Another organisation is indistinguishable from nothing.** Every reference is
+read with `{ id, organizationId }`, so another organisation's committee or unit
+gets exactly the refusal an invented id does, and no refusal names anything
+from it. These were 404s with English labels before ACC-233.
+
+**How each rule is checked:**
+- **Loops:** one recursive query walks UP from the proposed target along that
+  chain (parent and reports-to are walked separately), scoped by organisation.
+  It is a loop if the walk reaches the committee being edited. `UNION` drops a
+  committee already seen, so a loop already in the data ends the walk.
+- **Dissolving:** the target's newest COMMITTEE workflow instance is read
+  `FOR SHARE OF wi`, joined to its current stage's KEY (§2.16), never the name.
+  A stage with no key is not dissolving and logs one warning line (ids only).
+- **Only a value that CHANGES is checked** on update. The dialog sends every
+  field, and a committee whose parent has since begun dissolving, or whose unit
+  was since deactivated, must stay editable for its name.
+- **Clearing** a parent or reports-to (`null`, or `''` via `trimToNull`) is
+  always allowed.
+- **Create:** an omitted owning unit is still the root (ACC-135); `''` is
+  refused.
+
+**One transaction, and the hierarchy lock.** The checks and the write share one
+transaction:
+- **An update that sets a parent or reports-to** first takes
+  `pg_advisory_xact_lock(hashtext('committee-hierarchy:' || organizationId))`.
+  Two edits closing a loop between them (A under B, B under A) lock different
+  committee rows, so only an organisation-wide lock queues them; the second walk
+  sees the first edit. Proved against a real Postgres, ten rounds
+  (`committee-reference-checks.db-spec.ts`).
+- **A create takes no lock**: nothing sits under a new committee, so no loop
+  can pass through it.
+- **The dissolving read's `FOR SHARE`** makes a transition on the target (which
+  locks the instance row, ACC-190) wait for the save, and the save wait for a
+  transition already in flight.
+- **Audit and the new committee's workflow instance** happen after the
+  transaction, as before.
+
+**Frontend: the committee dialog** (`committee-form.component.ts`, and
+`foundation/committees/committee-references.ts`):
+- **The pickers leave out what the server would refuse:** the committee itself,
+  every committee whose `isDissolving` is true (computed on the server from the
+  key, so the frontend keeps no list of keys), and, when editing, every
+  committee whose chain leads back to this one. The saved value always stays in
+  its list.
+- **A refusal is said from its code under its field**
+  (`committee.refusal.*`, both languages), never from the English `message`.
+  The dialog stays open and keeps what was typed. A refusal with no field gets
+  one translated fallback.
+- **Clearing works on an edit:** a cleared parent or reports-to is sent as
+  `null`. It was sent as `undefined` ("leave it alone"), so clearing never did
+  anything.
+
+**Existing data (shared dev database, 15 Oct, read only):** 8 committees, none
+breaking any rule.
 
 ## 4. Notification System
 

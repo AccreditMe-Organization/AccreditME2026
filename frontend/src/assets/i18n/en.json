@@ -777,6 +777,19 @@
       "status": "Status",
       "members": "Members",
       "actions": "Actions"
+    },
+    "refusal": {
+      "ownParent": "A committee can't be its own parent committee.",
+      "parentLoop": "A committee can't sit under one of its own sub-committees.",
+      "parentDissolving": "A committee that is being dissolved, or has been, can't be a parent committee.",
+      "parentNotFound": "That parent committee doesn't exist. Choose another.",
+      "reportsToItself": "A committee can't report to itself.",
+      "reportsToLoop": "A committee can't report to a committee that reports to it.",
+      "reportsToDissolving": "A committee can't report to a committee that is being dissolved, or has been.",
+      "reportsToNotFound": "That committee doesn't exist. Choose another.",
+      "unitRequired": "Choose the unit that owns this committee.",
+      "unitNotFound": "That unit doesn't exist or is no longer active. Choose another.",
+      "saveFailed": "The committee couldn't be saved. Try again."
     }
   },
   "orgPosition": {
