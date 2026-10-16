@@ -6612,6 +6612,48 @@ dev data: in the dev build, `ng.getComponent(el).languageService.use('ar')` on
 any mounted component that injects `LanguageService`. It switches the session
 only. Switch back before moving on.
 
+#### The phone shell (ACC-232)
+
+Below **768px** viewport width (`SHELL_PHONE_BELOW_PX` in
+`app-shell.component.ts`, read by `matchMedia`), the rail never sits beside
+`<main>`. At 390px it used to load open at 260px and leave the page about
+100px wide. No design file draws a phone layout, so this reuses the rail
+unchanged: the same `SidebarComponent`, placed over the page.
+
+- **It starts closed** and opens over the page at its full 260px, below the
+  top bar, with a scrim (`--am-overlay-scrim`) behind it. The toggle stays
+  where it was, and it closes the rail again.
+- **It closes on:**
+  - choosing a link, even the page already open, which navigates nowhere;
+  - any navigation, including the user menu, whose panel sits outside it;
+  - the scrim;
+  - Escape, when it is the top layer (`LayerStackService`, so a dialog or
+    menu above it answers its own Escape first);
+  - the toggle.
+- **While it is open:** `<main>` is `inert` and focus moves into the rail.
+  When it closes, focus returns to the toggle.
+- **The toggle** says "Open navigation" or "Close navigation" on a phone,
+  and carries `aria-expanded` on its inner `<button>`. That attribute goes
+  through PrimeNG's pass-through (`[pt]`, bound by `[pBind]` in
+  `primeng-button.mjs`). On a desktop it is `null`, never absent: the
+  pass-through removes an attribute given null but keeps one it is no
+  longer given.
+- **In Arabic it opens from the right** (`inset-inline-start`).
+- **Crossing 768px either way leaves the rail closed:** nothing stays inert
+  on a desktop, and no layer is left on the stack.
+- **Above 768px nothing changed:** 260 open, 72 collapsed, the same toggle
+  and labels, and no `aria-expanded`.
+
+The committee page's panel grid is `COMMITTEE_PANEL_GRID`
+(`committee-panel-grid.ts`, `minmax(min(320px, 100%), 1fr)`), so a column is
+never wider than the page. Its layout spec reads the same constant.
+
+**Known, not changed:** two fixed-minimum grids still overflow below about
+370px, though they fit at 390:
+- the committee page's header grid, `minmax(340px, 1fr)`
+  (`committee-detail.component.ts:229`, which holds the stage indicator);
+- the user record's panel grid, `minmax(330px, 1fr)` (`user-record`).
+
 ---
 
 ### 10.13 `ListRowDirective` — the Table Row's Keyboard Contract (ACC-111)
