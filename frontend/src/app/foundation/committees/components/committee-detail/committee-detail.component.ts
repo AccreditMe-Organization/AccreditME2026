@@ -418,12 +418,14 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
         [activeMembers]="members()"
         (saved)="onMemberSaved()"
         (cancelled)="memberFormVisible.set(false)"
+        (dirtyChange)="memberFormDirty.set($event)"
       />
     </ng-template>
     <app-edit-dialog
       [(visible)]="memberFormVisible"
       [header]="(editingMember() ? 'committee.editMemberRole' : 'committee.addMember') | translate"
       [content]="memberFormTpl"
+      [dirty]="memberFormDirty()"
     />
   `,
 })
@@ -541,6 +543,7 @@ export class CommitteeDetailComponent implements OnInit {
 
   readonly formVisible = signal(false);
   readonly memberFormVisible = signal(false);
+  readonly memberFormDirty = signal(false);
   readonly editingMember = signal<CommitteeMemberDto | null>(null);
 
   ngOnInit(): void {
