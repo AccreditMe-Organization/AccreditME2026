@@ -6644,15 +6644,26 @@ unchanged: the same `SidebarComponent`, placed over the page.
 - **Above 768px nothing changed:** 260 open, 72 collapsed, the same toggle
   and labels, and no `aria-expanded`.
 
-The committee page's panel grid is `COMMITTEE_PANEL_GRID`
-(`committee-panel-grid.ts`, `minmax(min(320px, 100%), 1fr)`), so a column is
-never wider than the page. Its layout spec reads the same constant.
+**A record page's grid takes `minmax(min(Npx, 100%), 1fr)`, never a fixed
+minimum,** so a column is never wider than the page. Each value is a constant
+that the page reads, and so does the spec that measures it at 320px:
 
-**Known, not changed:** two fixed-minimum grids still overflow below about
-370px, though they fit at 390:
-- the committee page's header grid, `minmax(340px, 1fr)`
-  (`committee-detail.component.ts:229`, which holds the stage indicator);
-- the user record's panel grid, `minmax(330px, 1fr)` (`user-record`).
+| Grid | Constant | Minimum |
+|---|---|---|
+| The committee page's panels | `COMMITTEE_PANEL_GRID` (`committee-panel-grid.ts`) | 320 |
+| The committee page's header (the lifecycle stepper and its history) | `COMMITTEE_HEADER_GRID` (same file) | 340 |
+| The user record's panels | `USER_PANEL_GRID` (`user-panel-grid.ts`) | 330 |
+
+**Known, not changed** (swept at 390, 360 and 320 in both languages):
+- **The stepper bleeds into the padding.** The committee header's stepper
+  card spans two columns. When only one column fits (a page narrower than
+  692px, two columns and a gap), the span adds a second, empty track, so the card reaches one gap
+  (12px) past the grid. That lands in `<main>`'s 16px padding, so nothing
+  scrolls, but the card sits 12px off the right edge. The way out is to span
+  two only when two columns fit (a container query), which nobody has drawn.
+- **The org tree scrolls at 360 and 320.** On `/organization`, a unit's type
+  tag (`p-tag` in `app-org-unit-tree`) reaches past `<main>` by 5px at 360,
+  and by 13px (English) or 9px (Arabic) at 320. It fits at 390.
 
 ---
 
