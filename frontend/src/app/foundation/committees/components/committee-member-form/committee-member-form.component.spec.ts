@@ -320,6 +320,31 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
     expect(document.body.textContent).toContain('Everyone active is already a member of this committee.');
   });
 
+  // Measured on a 390px phone: the input's intrinsic width counted toward the
+  // Person and Joined rows' minimum and held the dialog at 395px. A row's
+  // narrowest is now its 36px button and the gap.
+  it('the Person and Joined rows can be as narrow as their button: nothing holds a phone dialog wide', () => {
+    setup();
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="member-add-form"] .am-member-pick'));
+    expect(rows.length).withContext('both picker rows rendered').toBe(2);
+    for (const row of rows) {
+      const button = row.querySelector('button')!.getBoundingClientRect();
+      expect(button.width).withContext('the button is drawn').toBeGreaterThan(30);
+      // What a dialog shrinks to is its content's MIN-CONTENT contribution:
+      // a box sized min-content around a copy of the row is exactly that
+      // (copied attributes keep the component's styles). min-width: 0 does
+      // not lower it; only the input's zero width does.
+      const box = document.createElement('div');
+      box.style.cssText = 'position: absolute; inline-size: min-content; visibility: hidden';
+      const copy = row.cloneNode(true) as HTMLElement;
+      box.appendChild(copy);
+      row.parentElement!.appendChild(box);
+      const narrowest = box.getBoundingClientRect().width;
+      box.remove();
+      expect(narrowest).withContext('the row at its narrowest').toBeLessThanOrEqual(button.width + 16);
+    }
+  });
+
   it('Change role is untouched: no person, no joined date, no field wrapper', () => {
     setup(member('u-huda'));
     expect(q('[data-testid="member-add-form"]')).toBeNull();

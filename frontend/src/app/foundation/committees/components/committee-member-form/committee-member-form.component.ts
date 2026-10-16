@@ -277,8 +277,12 @@ export function addMemberRefusal(err: unknown): string {
         gap: var(--am-space-8);
         align-items: center;
       }
+      /* A zero basis AND width: an input's intrinsic width (its size of 20)
+         otherwise counts toward the row's minimum, which held the dialog at
+         395px on a 390px phone. */
       .am-member-pick__text {
-        flex: 1 1 auto;
+        flex: 1 1 0;
+        inline-size: 0;
         min-width: 0;
         cursor: pointer;
       }
