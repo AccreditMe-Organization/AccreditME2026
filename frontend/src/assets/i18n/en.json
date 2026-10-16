@@ -1422,6 +1422,8 @@
     "navigation": "Main navigation",
     "collapseRail": "Collapse navigation",
     "expandRail": "Expand navigation",
+    "openNav": "Open navigation",
+    "closeNav": "Close navigation",
     "userMenu": "Account menu for {{name}}",
     "breadcrumb": "Breadcrumb",
     "interfaceLanguage": "Interface language"

@@ -1422,6 +1422,8 @@
     "navigation": "التنقل الرئيسي",
     "collapseRail": "طيّ الشريط",
     "expandRail": "توسيع الشريط",
+    "openNav": "فتح التنقل",
+    "closeNav": "إغلاق التنقل",
     "userMenu": "قائمة حساب {{name}}",
     "breadcrumb": "مسار التنقل",
     "interfaceLanguage": "لغة الواجهة"
