@@ -145,23 +145,18 @@ so ACC-230's lists are unchanged:
 - **Add member needs `committees:add_member`** (`committees.controller.ts:113`;
   `canAddMember` at `committee-detail.component.ts:530`).
 
-## STOP: one column has nothing behind it
+## Decisions (Ahmad, 16 Oct, CC-113a)
 
-"Next meeting" is not returned, and could not be: no meeting exists or can
-be made. The options:
-
-- **A (recommended): leave the column out until Meeting Management exists,
-  and record it here.**
-  - The table shows the six columns that have data.
-  - A column that reads "—" on every row tells a reader nothing, and at
-    390px it takes space the name needs.
-  - When meetings exist, the column is added together with the read that
-    feeds it.
-- **B: show the column, reading "—" for every row.** It keeps the drawing's
-  shape, but it displays a promise the product cannot keep yet.
-- **C: add a backend read now:** the earliest future `scheduledAt` per
-  committee, from the `Meeting` table, scoped by organisation. It is always
-  null today, and it builds against a scaffold that Meeting Management will
-  redesign.
-
-Nothing is built until this is decided.
+- **Next meeting: Option A.** The column is left out. It is added together
+  with the read that feeds it, once Meeting Management exists. The table has
+  six columns: name, type, parent, stage, status and members.
+- **The user picker: approved as planned.** It reuses the ACC-230 searchable
+  list (`am-simple-list` in `am-list-dialog size="compact"`), opened as its
+  own layer above the Add member dialog. The list gains two opt-in options,
+  both off by default: rows you can pick, and rows disabled with a reason
+  ("Already a member"). Every existing test of that list passes unedited.
+- **Rules for the picker:**
+  - Escape closes only the top layer.
+  - Focus returns to the field that opened the picker.
+  - Change role keeps working as it does today.
+  - `committee-detail.component.ts` gets at most a one-line change.
