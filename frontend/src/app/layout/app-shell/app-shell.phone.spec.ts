@@ -2,7 +2,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
+import { NavigationEnd, Router, provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
@@ -149,9 +149,12 @@ describe('AppShellComponent — the phone shell (ACC-232)', () => {
     await settle();
   }
 
-  it(`asks for exactly the ${SHELL_PHONE_BELOW_PX}px line`, async () => {
+  it('asks for exactly the 768px line', async () => {
     await render({ phone: true });
-    expect(queries).toContain(`(max-width: ${SHELL_PHONE_BELOW_PX - 0.02}px)`);
+    // The number itself, not the constant: a test reading the constant passes
+    // whatever the constant says.
+    expect(SHELL_PHONE_BELOW_PX).toBe(768);
+    expect(queries).toContain('(max-width: 767.98px)');
   });
 
   describe('on a phone', () => {
@@ -218,6 +221,26 @@ describe('AppShellComponent — the phone shell (ACC-232)', () => {
       await settle();
       expect(drawer()).toBeNull();
       expect(main().hasAttribute('inert')).toBe(false);
+    });
+
+    it('choosing the page already open closes it, though nothing navigates', async () => {
+      await render({ phone: true });
+      await open();
+      const link = drawer()!.querySelector<HTMLAnchorElement>('a[href]')!;
+      await TestBed.inject(Router).navigateByUrl(link.getAttribute('href')!);
+      await settle();
+      // The navigation closed it; open it again on the page that link names.
+      if (!drawer()) await open();
+      const navigations: unknown[] = [];
+      const sub = TestBed.inject(Router).events.subscribe((e) => {
+        if (e instanceof NavigationEnd) navigations.push(e);
+      });
+      drawer()!.querySelector<HTMLAnchorElement>(`a[href="${link.getAttribute('href')}"]`)!.click();
+      await settle();
+      sub.unsubscribe();
+      expect(navigations.length).withContext('the same page: no navigation to close it').toBe(0);
+      expect(drawer()).toBeNull();
+      expect(document.activeElement).toBe(toggle());
     });
 
     it('the toggle closes it again', async () => {
