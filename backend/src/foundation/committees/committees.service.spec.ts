@@ -774,6 +774,29 @@ describe('CommitteesService', () => {
       );
     });
 
+    // ACC-120 slice 4 — a new member's joinedAt is the day sent, as on a rejoin,
+    // and agrees with the JOINED event. It was always "now" before.
+    it('records the effective date as a new member’s joinedAt, the same as the JOINED event', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+      mockPrisma.committeeMember.findFirst.mockResolvedValue(null);
+      mockPrisma.committeeMember.create.mockResolvedValue(makeMember());
+
+      await service.addMember(
+        'committee-1',
+        { userId: 'user-1', roleValueId: 'chairman', effectiveDate: '2026-09-01T00:00:00.000Z' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      const joined = new Date('2026-09-01T00:00:00.000Z');
+      expect(mockPrisma.committeeMember.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ joinedAt: joined }) }),
+      );
+      expect(mockPrisma.committeeMembershipEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ effectiveDate: joined }) }),
+      );
+    });
+
     it("re-validates userId belongs to the caller's org (ACC-17 pattern)", async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.user.findFirst.mockResolvedValue(null);
