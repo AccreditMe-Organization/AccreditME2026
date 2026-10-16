@@ -20,6 +20,7 @@ import { SimpleListComponent } from '../../../../shared/components/simple-list/s
 import { CommitteeMembersPanelComponent } from './committee-members-panel.component';
 import { CommitteeSubCommitteesPanelComponent } from '../committee-sub-committees-panel/committee-sub-committees-panel.component';
 import { memberRow, subRow } from './committee-members-panel.component.spec';
+import { COMMITTEE_PANEL_GRID } from '../committee-detail/committee-panel-grid';
 
 // ACC-230 — the Members and Sub-committees panels, and the plain list behind
 // their See all, MEASURED in both languages, in the real theme and font:
@@ -43,13 +44,15 @@ const EXPECT = { en: { head: 42, body: 294, row: 52, foot: 34, dialogHead: 64 },
 @Component({
   standalone: true,
   imports: [CommitteeMembersPanelComponent, CommitteeSubCommitteesPanelComponent],
-  template: `<div class="grid gap-3" [style.width.px]="width()" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))">
+  template: `<div class="grid gap-3" [style.width.px]="width()" [style.grid-template-columns]="grid">
     <app-committee-members-panel committeeId="c-1" committeeName="Q" [canAddMember]="true" [canChangeRole]="true" [canRemove]="true" />
     <app-committee-sub-committees-panel committeeId="c-1" committeeName="Q" />
   </div>`,
 })
 class PanelsHost {
   readonly width = input(820);
+  /** The page's own grid, never a copy of it (ACC-232). */
+  protected readonly grid = COMMITTEE_PANEL_GRID;
 }
 
 @Component({
@@ -156,6 +159,29 @@ describe('Committee Members and Sub-committees — layout, measured (ACC-230)', 
           fixture.nativeElement.remove();
         });
       }
+
+      it('ACC-232: at 300px, narrower than a 320px column, both panels fit and nothing scrolls sideways', async () => {
+        configure(language);
+        const fixture = TestBed.createComponent(PanelsHost);
+        fixture.componentRef.setInput('width', 300);
+        fixture.autoDetectChanges(true);
+        document.body.appendChild(fixture.nativeElement);
+        http.expectOne((r) => r.url === `${API}/members/page`).flush({ items: [memberRow(1)], total: 1, matching: 1 });
+        http.expectOne((r) => r.url === `${API}/sub-committees`).flush({ items: [subRow(1)], total: 1, matching: 1 });
+        await settle(fixture);
+
+        const grid = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.grid')!;
+        const panels = Array.from(grid.children) as HTMLElement[];
+        // Non-vacuity: the host is laid out at 300, and both panels are drawn.
+        expect(grid.getBoundingClientRect().width).withContext('host not laid out at 300').toBe(300);
+        expect(panels.length).withContext('panels rendered').toBe(2);
+        for (const panel of panels) {
+          expect(panel.getBoundingClientRect().width).withContext('panel not laid out').toBeGreaterThan(0);
+          expect(panel.getBoundingClientRect().width).withContext('panel wider than the page').toBeLessThanOrEqual(300);
+        }
+        expect(grid.scrollWidth).withContext('sideways scroll at 300').toBeLessThanOrEqual(grid.clientWidth);
+        fixture.nativeElement.remove();
+      });
 
       it('the See all list at 720 × 560: only the list scrolls; rows at least 44', async () => {
         configure(language);
