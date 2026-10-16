@@ -50,10 +50,14 @@ export class CreateCommitteeDto {
 
   // Re-validated against the caller's org in CommitteeService before write
   // — a Committee row, same pattern as workflow-template.service.ts's
-  // validateCommitteeId() (ACC-22, closing the ACC-17 deferred gap).
+  // validateCommitteeId() (ACC-22, closing the ACC-17 deferred gap). Since
+  // ACC-233 also refused as itself, a loop, or a dissolving committee
+  // (committee-reference-checks.ts). Sent empty it is "no parent" (NULL),
+  // never '' written to the foreign key, where it failed as a 500.
+  @Transform(trimToNull)
   @IsString()
   @IsOptional()
-  parentCommitteeId?: string;
+  parentCommitteeId?: string | null;
 
   // Nullable, deliberately unpopulated until Document Management ships
   // (ACC-22 Pending Discussion #1) — accepted here for forward-compatibility
@@ -71,10 +75,12 @@ export class CreateCommitteeDto {
   // caller may leave it out; the committee still ends up owned.
   //
   // Re-validated against the caller's org in CommitteeService before write, the
-  // same way parentCommitteeId is.
+  // same way parentCommitteeId is, and since ACC-233 required to be ACTIVE.
+  // Deliberately NOT trimToNull: an empty value is a mistake to refuse
+  // (COMMITTEE_UNIT_REQUIRED), not an omission to default to the root.
   @IsString()
   @IsOptional()
-  orgUnitId?: string;
+  orgUnitId?: string | null;
 
   // ACC-135 — "reports to" is another committee, or nothing.
   //
@@ -86,7 +92,11 @@ export class CreateCommitteeDto {
   //
   // The owning unit above is a separate, always-present fact, not an alternative
   // to this one.
+  //
+  // ACC-233 — the same checks as the parent, along its own chain, and the same
+  // empty-is-none rule.
+  @Transform(trimToNull)
   @IsString()
   @IsOptional()
-  reportingToCommitteeId?: string;
+  reportingToCommitteeId?: string | null;
 }
