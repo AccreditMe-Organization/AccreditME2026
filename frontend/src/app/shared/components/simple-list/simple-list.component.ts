@@ -6,6 +6,7 @@ import {
   effect,
   inject,
   input,
+  output,
   signal,
   untracked,
 } from '@angular/core';
@@ -121,6 +122,34 @@ export interface SimpleListColumn {
                 }
               </div>
             }
+            @if (selectable()) {
+              <!-- Opt-in (ACC-120 slice 4, Add member's person picker): each row
+                   is ONE button that picks it. A row disabled with a reason stays
+                   in the list, focusable and announced as unavailable
+                   (aria-disabled, not disabled), with the reason as its last
+                   cell, so a searcher is never left wondering where someone went. -->
+              <ul class="am-sl__list" role="list">
+                @for (item of items(); track trackId(item)) {
+                  <li class="am-sl__pickitem" data-testid="simple-list-row">
+                    <button
+                      type="button"
+                      class="am-sl__row am-sl__item am-sl__pick"
+                      [class.am-sl__item--card]="phone()"
+                      [class.am-sl__pick--off]="!!reasonFor(item)"
+                      [style.grid-template-columns]="phone() ? null : grid()"
+                      [attr.aria-disabled]="reasonFor(item) ? 'true' : null"
+                      data-testid="simple-list-pick"
+                      (click)="pick(item)"
+                    >
+                      <ng-container [ngTemplateOutlet]="row()" [ngTemplateOutletContext]="{ $implicit: item, phone: phone() }" />
+                      @if (rowDisabled()) {
+                        <span class="am-sl__reason" data-testid="simple-list-reason">{{ reasonFor(item) }}</span>
+                      }
+                    </button>
+                  </li>
+                }
+              </ul>
+            } @else {
             <ul class="am-sl__list" role="list">
               @for (item of items(); track trackId(item)) {
                 <li
@@ -133,6 +162,7 @@ export interface SimpleListColumn {
                 </li>
               }
             </ul>
+            }
           }
         }
       </div>
@@ -174,6 +204,13 @@ export interface SimpleListColumn {
       .am-sl__btn{font:inherit;font-size:12.5px;block-size:30px;padding:0 11px;border:1px solid var(--am-control-border);border-radius:var(--am-radius-button);background:var(--am-surface-raised);color:var(--am-ink-900);cursor:pointer}
       .am-sl__btn:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
       .am-sl__foot{flex:none;display:flex;align-items:center;gap:8px;block-size:44px;padding:0 16px;border-block-start:1px solid var(--am-border);color:var(--am-ink-700);font-size:12.5px}
+      .am-sl__pickitem{display:block}
+      .am-sl__pick{inline-size:100%;margin:0;border-inline:0;border-block-start:0;background:none;font:inherit;color:inherit;text-align:start;cursor:pointer}
+      .am-sl__pick:hover{background:var(--am-surface)}
+      .am-sl__pick:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:calc(-1 * var(--am-focus-ring-width))}
+      .am-sl__pick--off{cursor:default;color:var(--am-ink-700)}
+      .am-sl__pick--off:hover{background:none}
+      .am-sl__reason{font-size:12px;color:var(--am-ink-700)}
       :host-context([dir=rtl]) .am-sl__foot{block-size:48px}
       :host-context([dir=rtl]) .am-sl__item--card{min-block-size:64px}
     `,
@@ -201,6 +238,19 @@ export class SimpleListComponent<T extends { id: string }> {
   readonly noMatchText = input('');
   /** The live count: (n, whether a search is on) → text, already translated. */
   readonly countText = input.required<(n: number, searching: boolean) => string>();
+  /**
+   * Opt-in, off by default (ACC-120 slice 4): each row is a button, and
+   * pressing it emits `picked`. Off, the rows are exactly ACC-230's.
+   */
+  readonly selectable = input(false);
+  /**
+   * Opt-in, with `selectable`: a row's reason it can't be picked, or null.
+   * Given, every row gets one more cell for the reason (empty when none), so
+   * `columns` and `grid` carry one more track for it.
+   */
+  readonly rowDisabled = input<((row: T) => string | null) | null>(null);
+  /** A pickable row was pressed (never one with a reason). */
+  readonly picked = output<T>();
 
   readonly qInput = signal('');
   readonly q = signal('');
@@ -258,6 +308,15 @@ export class SimpleListComponent<T extends { id: string }> {
 
   trackId(item: T): string {
     return item.id;
+  }
+
+  reasonFor(item: T): string | null {
+    return this.rowDisabled()?.(item) ?? null;
+  }
+
+  pick(item: T): void {
+    if (this.reasonFor(item)) return;
+    this.picked.emit(item);
   }
 
   onSearch(value: string): void {
