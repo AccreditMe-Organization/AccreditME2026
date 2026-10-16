@@ -1,11 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
-import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
-import { TaskService, TaskViewer } from './task.service';
-import { TaskAuthorityService } from './task-authority.service';
-import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, isPoolMember, poolTargetOf, resolvePoolMemberIds, toPoolView } from './task-pool';
+import { TaskViewer } from './task.service';
+import { TaskAdmissionService } from './task-admission.service';
+import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, poolTargetOf, resolvePoolMemberIds, toPoolView } from './task-pool';
 import { OPEN_REQUEST_INCLUDE, toOpenRequest } from './task-request-lifecycle';
 import { taskActionsFor } from './task-actions';
 import {
@@ -46,13 +44,11 @@ function toPerson(row: PersonRow): ITaskPagePerson {
  * ACC-228 — THE TASK PAGE (/tasks/:id): who may open it, what it shows, and
  * its history.
  *
- * WHO MAY OPEN A TASK (Q4, Ahmad 14 Oct) — the union of what the app already
- * shows each person somewhere, and nothing more:
- *   (a) anyone ever on it — an assignee now or before (My tasks, the evidence rule)
- *   (b) whoever may manage it — mayManage(), the one copy of that rule
- *   (c) a member of its pool while it waits to be picked up (Available)
- *   (d) whoever may decide its open request (Waiting for your decision)
- *   (e) tasks:view AND the record it is about (GET /tasks/:id, ACC-101)
+ * WHO MAY OPEN A TASK (Q4, Ahmad 14 Oct) is TaskAdmissionService.admit() —
+ * moved there in ACC-231 so the task's files follow the very same rule:
+ *   (a) anyone ever on it, (b) whoever may manage it, (c) a member of its pool
+ *   while it waits, (d) whoever may decide its open request, (e) tasks:view
+ *   AND the record it is about.
  * Everyone else gets the identical 404 — the same status and body as an id
  * that does not exist — and the refusal is a log line (ACC-101 clause b). The
  * task must be read to know any of this, so the read comes first, and a
@@ -63,14 +59,11 @@ function toPerson(row: PersonRow): ITaskPagePerson {
  */
 @Injectable()
 export class TaskPageService {
-  private readonly logger = new Logger(TaskPageService.name);
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly objectVisibility: ObjectVisibilityService,
     private readonly delegationLabels: DelegationLabelService,
-    private readonly tasks: TaskService,
-    private readonly authority: TaskAuthorityService,
+    // ACC-231 — the admission rule lives there, shared with the task's files.
+    private readonly admission: TaskAdmissionService,
   ) {}
 
   async view(id: string, organizationId: string, viewer: TaskViewer): Promise<ITaskPageView> {
@@ -88,7 +81,7 @@ export class TaskPageService {
         workflowInstanceStage: { select: { stage: { select: { nameEn: true, nameAr: true } } } },
       },
     });
-    const access = row ? await this.admit(row, viewer, organizationId) : null;
+    const access = row ? await this.admission.admit(row, viewer, organizationId, 'task page') : null;
     if (!row || !access) throw new NotFoundException(NOT_FOUND);
 
     const {
@@ -177,7 +170,7 @@ export class TaskPageService {
       where: { id, organizationId },
       include: { assignees: true, ...OPEN_REQUEST_INCLUDE, createdBy: { select: { status: true } } },
     });
-    if (!row || !(await this.admit(row, viewer, organizationId))) throw new NotFoundException(NOT_FOUND);
+    if (!row || !(await this.admission.admit(row, viewer, organizationId, 'task history'))) throw new NotFoundException(NOT_FOUND);
 
     const [requests, evidence] = await Promise.all([
       this.prisma.taskRequest.findMany({ where: { taskId: id, organizationId }, select: { id: true, type: true } }),
@@ -221,67 +214,6 @@ export class TaskPageService {
         evidenceType: r.objectType === 'TaskEvidence' ? (evidenceType.get(r.objectId ?? '') ?? null) : null,
       };
     });
-  }
-
-  /**
-   * Q4's union, cheapest checks first. Null means refused; the caller turns it
-   * into the identical 404. The facts it gathers are the ones the page's
-   * actions need too, so nothing is asked twice.
-   */
-  private async admit(
-    task: {
-      id: string;
-      sourceType: string;
-      sourceId: string;
-      status: string;
-      createdById: string;
-      createdBy: { status: string };
-      assignees: { userId: string; removedAt: Date | null }[];
-      requests: { requestedById: string }[];
-      assignedOrgUnitId: string | null;
-      assignedPositionId: string | null;
-      assignedCommitteeId: string | null;
-      assignedCommitteeRoleValueId: string | null;
-    },
-    viewer: TaskViewer,
-    organizationId: string,
-  ): Promise<{ mayManage: boolean; mayDecide: boolean; inPool: boolean; recordVisible: boolean } | null> {
-    const recordVisible = await this.canSeeRecord(task.sourceType, task.sourceId, organizationId, viewer);
-    const mayManage = await this.tasks.mayManage(task, viewer, organizationId);
-    const mayDecide =
-      viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
-      (await this.authority.canActForCreator(task.createdById, viewer.id, organizationId));
-    const target = poolTargetOf(task);
-    const inPool = !!target && (await isPoolMember(this.prisma, viewer.id, target, organizationId));
-
-    const everOnIt = task.assignees.some((a) => a.userId === viewer.id); // (a)
-    const waiting =
-      !task.assignees.some((a) => a.removedAt === null) && (PICKABLE_STATUSES as readonly string[]).includes(task.status);
-    const decider = task.requests.length > 0 && mayDecide; // (d)
-    const allowed =
-      everOnIt ||
-      mayManage || // (b)
-      (inPool && waiting) || // (c)
-      decider ||
-      (viewer.permissions.includes(TASKS_PERMISSIONS.VIEW) && recordVisible); // (e)
-
-    if (!allowed) {
-      // The response conceals this; the log must not (ACC-101's reasoning).
-      this.logger.warn(
-        `Task page refusal: viewer ${viewer.id} in org ${organizationId} was refused task ${task.id}; answered "${NOT_FOUND}".`,
-      );
-      return null;
-    }
-    return { mayManage, mayDecide, inPool, recordVisible };
-  }
-
-  private async canSeeRecord(type: string, id: string, organizationId: string, viewer: TaskViewer): Promise<boolean> {
-    try {
-      await this.objectVisibility.assertCanView(type, id, organizationId, viewer.permissions);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   /** The record's name only for a viewer who may open it; otherwise its type alone. */

@@ -1,10 +1,10 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { StoredFileService } from '../file-storage/stored-file.service';
 import { IFileDownload, IUploadedFile } from '../file-storage/interfaces/stored-file.interface';
 import { TaskService, TaskViewer } from './task.service';
+import { TaskAdmissionService } from './task-admission.service';
 import { ITaskEvidenceList, ITaskEvidenceView } from './interfaces/task-evidence.interface';
 import { AiFileSummaryService } from '../ai-file-summary/ai-file-summary.service';
 import { SummaryFileGoneError } from '../ai-file-summary/summary-refusal';
@@ -28,10 +28,13 @@ const EVIDENCE_INCLUDE = {
  *
  *   add a file     an active assignee, task open or on hold — the SAME
  *                  lockOpenForActiveAssignee() addEvidence() uses;
- *   list/download  anyone who may see the task's evidence: someone who is or
- *                  was on it, anyone who may manage it (mayManage()), or anyone
- *                  who can see the record it belongs to (ACC-101). Everyone
- *                  else, and every other organisation, gets the identical 404;
+ *   list/download  EXACTLY whoever may open the task's page — ACC-231: the one
+ *   view/summary   rule, TaskAdmissionService.admit(), never a copy. Before, a
+ *                  record viewer without tasks:view could read the files while
+ *                  a pool member or a request's decider could not. Everyone
+ *                  else, and every other organisation, gets the identical 404
+ *                  ("Task not found") for a real file, an invented one and
+ *                  another organisation's alike;
  *   delete         the person who added it, while still an active assignee and
  *                  the task open or on hold (Ahmad, 7 Oct). Evidence on a
  *                  closed task is the record of what proved the work and
@@ -52,7 +55,7 @@ export class TaskEvidenceService {
     private readonly prisma: PrismaService,
     private readonly tasks: TaskService,
     private readonly storedFiles: StoredFileService,
-    private readonly objectVisibility: ObjectVisibilityService,
+    private readonly admission: TaskAdmissionService,
     private readonly auditLog: AuditLogService,
     private readonly summaries: AiFileSummaryService,
   ) {}
@@ -255,26 +258,13 @@ export class TaskEvidenceService {
     });
   }
 
-  // Who may see a task's evidence. The task is read first because its parent
-  // is only knowable from the row (ACC-101 clause (b)): a refusal is the same
-  // 404 as a missing task, and is logged by the visibility service.
+  // ACC-231 — who may see a task's evidence is who may open its page: the
+  // shared admission rule. A missing task, another organisation's, and a
+  // refused viewer all end in this one 404, logged by the admission service.
   private async assertCanSeeEvidence(taskId: string, organizationId: string, viewer: TaskViewer) {
-    const task = await this.prisma.task.findFirst({
-      where: { id: taskId, organizationId },
-      include: { assignees: true, createdBy: { select: { status: true } } },
-    });
-    if (!task) throw new NotFoundException('Task not found');
-    if (task.assignees.some((a) => a.userId === viewer.id)) return task;
-    if (await this.tasks.mayManage(task, viewer, organizationId)) return task;
-    await this.objectVisibility.assertCanViewOrNotFound(
-      task.sourceType,
-      task.sourceId,
-      organizationId,
-      viewer.permissions,
-      'Task not found',
-      viewer.id,
-    );
-    return task;
+    const admitted = await this.admission.load(taskId, organizationId, viewer, 'task files');
+    if (!admitted) throw new NotFoundException('Task not found');
+    return admitted.task;
   }
 
   private view(

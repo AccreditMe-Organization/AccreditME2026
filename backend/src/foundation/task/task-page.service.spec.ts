@@ -1,5 +1,6 @@
 import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { TaskPageService, historyKind } from './task-page.service';
+import { TaskAdmissionService } from './task-admission.service';
 import { TaskService } from './task.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
@@ -98,12 +99,18 @@ describe('TaskPageService — the task page (ACC-228)', () => {
   const tasks = { mayManage: jest.fn().mockResolvedValue(false) };
   const authority = { canActForCreator: jest.fn().mockResolvedValue(false) };
 
-  const service = new TaskPageService(
+  // ACC-231 — the rule is TaskAdmissionService's, shared with the task's files;
+  // these specs exercise it through the page, unchanged.
+  const admission = new TaskAdmissionService(
     prisma as unknown as PrismaService,
     visibility as unknown as ObjectVisibilityService,
-    delegations as unknown as DelegationLabelService,
     tasks as unknown as TaskService,
     authority as unknown as TaskAuthorityService,
+  );
+  const service = new TaskPageService(
+    prisma as unknown as PrismaService,
+    delegations as unknown as DelegationLabelService,
+    admission,
   );
   const viewer = (id: string, permissions: string[] = []) => ({ id, permissions });
 

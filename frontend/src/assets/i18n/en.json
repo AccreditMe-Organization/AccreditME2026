@@ -1069,8 +1069,7 @@
       "note": "Note",
       "loadError": "The evidence couldn't be loaded.",
       "removeMessageFile": "“{{name}}” will no longer count as evidence for this task. Your administrator can restore it from the recycle bin for 30 days.",
-      "viewFileNamed": "View “{{name}}”",
-      "notShown": "Evidence is shown to the people on this task."
+      "viewFileNamed": "View “{{name}}”"
     },
     "draft": {
       "trigger": "Draft with AI",

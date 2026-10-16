@@ -1,6 +1,8 @@
 import { ConflictException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskService } from './task.service';
+import { TaskAdmissionService } from './task-admission.service';
+import { TaskAuthorityService } from './task-authority.service';
 import { StoredFileService } from '../file-storage/stored-file.service';
 import { StorageRefusalException } from '../file-storage/storage-refusal';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
@@ -24,6 +26,11 @@ const TASK = {
   createdById: 'creator-1',
   createdBy: { status: 'ACTIVE' },
   assignees: [{ userId: ASSIGNEE, removedAt: null }],
+  requests: [] as { requestedById: string }[],
+  assignedOrgUnitId: null,
+  assignedPositionId: null,
+  assignedCommitteeId: null,
+  assignedCommitteeRoleValueId: null,
 };
 
 const STORED = {
@@ -95,7 +102,16 @@ describe('TaskEvidenceService (ACC-177)', () => {
     afterUpload: jest.fn().mockResolvedValue(undefined),
     summary: (f: typeof STORED) => ({ id: f.id, name: f.originalName, mimeType: f.mimeType, sizeBytes: f.sizeBytes, uploadedAt: f.uploadedAt }),
   };
-  const visibility = { assertCanViewOrNotFound: jest.fn().mockRejectedValue(new NotFoundException('Task not found')) };
+  // ACC-231 — the files follow the task page's rule, so the real admission
+  // service runs here over these mocks. The record is visible only while
+  // `recordVisible` says so.
+  let recordVisible = false;
+  const visibility = {
+    assertCanView: jest.fn(async () => {
+      if (!recordVisible) throw new ForbiddenException('Required permission: committees:view');
+    }),
+  };
+  const authority = { canActForCreator: jest.fn().mockResolvedValue(false) };
   const auditLog = { log: jest.fn().mockResolvedValue(undefined) };
   const SUMMARY_VIEW = { available: true, inProgress: false, summary: null };
   const summaries = { read: jest.fn().mockResolvedValue(SUMMARY_VIEW), make: jest.fn().mockResolvedValue(SUMMARY_VIEW) };
@@ -103,7 +119,12 @@ describe('TaskEvidenceService (ACC-177)', () => {
     prisma as unknown as PrismaService,
     tasks as unknown as TaskService,
     storedFiles as unknown as StoredFileService,
-    visibility as unknown as ObjectVisibilityService,
+    new TaskAdmissionService(
+      prisma as unknown as PrismaService,
+      visibility as unknown as ObjectVisibilityService,
+      tasks as unknown as TaskService,
+      authority as unknown as TaskAuthorityService,
+    ),
     auditLog as unknown as AuditLogService,
     summaries as unknown as AiFileSummaryService,
   );
@@ -115,7 +136,9 @@ describe('TaskEvidenceService (ACC-177)', () => {
     prisma.taskEvidence.findFirst.mockResolvedValue(EVIDENCE);
     tasks.lockOpenForActiveAssignee.mockResolvedValue(TASK);
     tasks.mayManage.mockResolvedValue(false);
-    visibility.assertCanViewOrNotFound.mockRejectedValue(new NotFoundException('Task not found'));
+    recordVisible = false;
+    authority.canActForCreator.mockResolvedValue(false);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
 
   describe('addFile', () => {
@@ -202,13 +225,17 @@ describe('TaskEvidenceService (ACC-177)', () => {
     it('the creator, or anyone who may manage the task, sees it', async () => {
       tasks.mayManage.mockResolvedValue(true);
       await expect(service.list('task-1', ORG, viewer('creator-1'))).resolves.toEqual(expect.objectContaining({ canAdd: false }));
-      expect(visibility.assertCanViewOrNotFound).not.toHaveBeenCalled();
     });
 
-    it('anyone who can see the record it belongs to sees it', async () => {
-      visibility.assertCanViewOrNotFound.mockResolvedValue(undefined);
-      await expect(service.list('task-1', ORG, viewer(OTHER, ['committees:view']))).resolves.toBeDefined();
-      expect(visibility.assertCanViewOrNotFound).toHaveBeenCalledWith('COMMITTEE', 'committee-1', ORG, ['committees:view'], 'Task not found', OTHER);
+    it('ACC-231 — tasks:view AND the record sees it, as on the task page', async () => {
+      recordVisible = true;
+      await expect(service.list('task-1', ORG, viewer(OTHER, ['tasks:view', 'committees:view']))).resolves.toBeDefined();
+      expect(visibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'committee-1', ORG, ['tasks:view', 'committees:view']);
+    });
+
+    it('ACC-231 — seeing the record WITHOUT tasks:view no longer reaches the files: the identical 404', async () => {
+      recordVisible = true;
+      await expect(service.list('task-1', ORG, viewer(OTHER, ['committees:view']))).rejects.toThrow('Task not found');
     });
 
     it('anyone else gets the same 404 as a task that does not exist', async () => {
@@ -268,7 +295,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
     });
 
     it('whoever may view may summarise: a tasks:view holder who is not on the task', async () => {
-      visibility.assertCanViewOrNotFound.mockResolvedValue(undefined);
+      recordVisible = true;
       await expect(service.makeSummary('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']), 'en')).resolves.toBe(SUMMARY_VIEW);
     });
 
@@ -322,7 +349,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
     });
 
     it('whoever may download may view: the same rule admits a tasks:view holder who is not on the task', async () => {
-      visibility.assertCanViewOrNotFound.mockResolvedValue(undefined);
+      recordVisible = true;
       const download = await service.download('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']));
       const view = await service.openView('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']));
       expect(download.url).toBe('https://signed');

@@ -3752,6 +3752,8 @@ Briefly:
   for every task notification.
 - **The evidence rule is broader than the task read**, and stays so until
   ACC-231 (High) fixes it in the single file entitlement with the same 404.
+  **FIXED (ACC-231):** the task's files now admit exactly whoever the page
+  admits — one shared rule, `TaskAdmissionService` (see its entry).
 - **No migration.**
 
 ## Key Architecture Decisions (ACC-229)
@@ -3869,6 +3871,37 @@ owning unit. Full mechanism: SYSTEM-REFERENCE.md §3.15 (the rules) and §2.16
   a cleared parent or reports-to is now actually cleared on an edit.
 - **One additive migration** (`acc233_workflow_stage_key`). It and the backfill
   run AFTER the deploy, dry run first.
+
+## Key Architecture Decisions (ACC-231)
+
+A task's files follow the task page's rule. Full mechanism: SYSTEM-REFERENCE.md
+§3.12 (the rule) and §16.6 (file evidence). Plan, the full inventory of every
+path that touches a task's files, and Ahmad's answers (16 Oct, Q1–Q5):
+`backend/Plans/step-231-task-files-access.md`. Briefly:
+
+- **ONE ADMISSION RULE, `TaskAdmissionService.admit()`**, read by the task page
+  AND by every path to the task's files: the evidence list, download, the
+  in-app viewer and both AI summary routes. It was `TaskPageService`'s private
+  method, moved unchanged. **Never write a second copy**: a new path that shows a
+  task, or anything in it, calls `load()` / `admit()`.
+- **Who gains and who loses.** A pool member while the task waits, and a
+  request's decider while it is open, now reach the files of a page they could
+  already open. Someone who sees the record WITHOUT `tasks:view` (al-manara's
+  Fahad, `committees:view` only) no longer reaches files on a task they could
+  not open.
+- **The identical 404, "Task not found"**, for a real file, an invented one and
+  another organisation's.
+- **Access follows the task's state (Q5).** A pool member is out once the task
+  is picked up, a decider once the request is decided — as on the page.
+- **`GET /tasks/:id` no longer returns evidence (Q1)**, so a task's files have
+  exactly one reader.
+- **Left as they are, decided:**
+  - the recycle bin stays the administrator's storage tool, outside the task
+    rule (Q2);
+  - an issued link keeps its 15 minutes (Q3);
+  - the "Evidence is shown to the people on this task" note is gone, because
+    nothing can reach it (Q4).
+- **No migration.**
 
 ## Open / Deferred Items
 

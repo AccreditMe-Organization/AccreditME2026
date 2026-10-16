@@ -328,7 +328,7 @@ describe('TaskPageComponent — the task page (ACC-228)', () => {
       expect(el.querySelector('app-task-evidence-list a[download]')).toBeNull();
     });
 
-    it('a viewer the evidence rule refuses is told whose evidence it is — not shown an error', () => {
+    it('ACC-231 — a 404 from the evidence list is its ordinary load error, never the server text', () => {
       setup();
       http.expectOne(`${API}/task-1/view`).flush(pageView());
       http.expectOne(`${API}/task-1/history`).flush(HISTORY);
@@ -336,8 +336,11 @@ describe('TaskPageComponent — the task page (ACC-228)', () => {
       http.expectOne(`${API}/task-1/evidence`).flush({ message: 'Task not found' }, { status: 404, statusText: 'Not Found' });
       fixture.detectChanges();
       const list = (fixture.nativeElement as HTMLElement).querySelector('app-task-evidence-list')!;
-      expect(text(list)).toContain('Evidence is shown to the people on this task.');
-      expect(list.querySelector('[role="alert"]')).toBeNull();
+      // The files follow the page's own rule, so this happens only if the task
+      // changed hands mid-visit. The note ACC-228 needed here is gone.
+      expect(text(list)).not.toContain('Evidence is shown to the people on this task.');
+      expect(list.querySelector('[role="alert"]')?.textContent?.trim()).toBe("The evidence couldn't be loaded.");
+      expect(text(list)).not.toContain('Task not found');
     });
   });
 });
