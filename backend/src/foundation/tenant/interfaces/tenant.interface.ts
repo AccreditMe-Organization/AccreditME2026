@@ -1,4 +1,4 @@
-import { IAiBalance, IAiFeatureOpen } from '../../ai/ai-balance';
+import { IAiBalance, IAiFeatureOpen, IAiFeatureUsage } from '../../ai/ai-balance';
 import type { IMaskedEmailConfig } from '../email-config';
 export interface ITenant {
   id: string;
@@ -31,7 +31,9 @@ export interface ITenant {
   // Derived from Organization.settings — the frontend navigation's one-stop
   // source for "what am I licensed to see" (ACC-13). No dedicated endpoint.
   modules: Record<string, boolean>;
-  ai: IAiBalance & { features: IAiFeatureOpen[] }; // ACC-194 — from the AI columns, not settings.ai
+  // ACC-194 — from the AI columns, not settings.ai. `usage`: what this period's
+  // credits went on, per feature, from the AI log (ACC-120 slice 8).
+  ai: IAiBalance & { features: IAiFeatureOpen[]; usage: IAiFeatureUsage[] };
   createdAt: Date;
   updatedAt: Date;
 }

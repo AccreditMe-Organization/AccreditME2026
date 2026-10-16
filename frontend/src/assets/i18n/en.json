@@ -1618,6 +1618,33 @@
       "on": "Due {{date}}"
     }
   },
+  "aiCredits": {
+    "periodTitle": "This period's allowance",
+    "resets": "Resets",
+    "paused": "None left · AI is paused until {{date}}",
+    "used": "Used",
+    "left": "Left",
+    "breakdownTitle": "What used them",
+    "nothingUsed": "Nothing has used credits yet this period.",
+    "other": "Other",
+    "otherNote": "Other is credit use the AI log doesn't attribute to a feature.",
+    "feature": {
+      "document_summary": "Document summaries",
+      "morning_briefing": "Briefings on Home",
+      "task_description_drafting": "Task drafts",
+      "workload_balancing": "Assignee suggestions",
+      "unknown": "Another AI feature"
+    },
+    "plan": {
+      "STARTER": "Starter",
+      "PROFESSIONAL": "Professional",
+      "ENTERPRISE": "Enterprise"
+    },
+    "noneTitle": "AI features aren't part of your plan",
+    "noneBody": "Your organization has no AI allowance on its {{plan}} plan, so there's nothing to meter. That's not the same as having used it all. Document summaries, task drafts, briefings and assignee suggestions appear once AI is added.",
+    "denied": "You can't see this organization's AI credits. That needs permission to view the organization's settings.",
+    "errorLoad": "The AI credits couldn't be loaded."
+  },
   "plural": {
     "role": {
       "permissions": {
@@ -1873,6 +1900,20 @@
           "one": "{{count}} task",
           "other": "{{count}} tasks"
         }
+      }
+    },
+    "aiCredits": {
+      "leftOf": {
+        "one": "credit left of {{total}}",
+        "other": "credits left of {{total}}"
+      },
+      "meter": {
+        "one": "{{left}} of {{count}} credit left",
+        "other": "{{left}} of {{count}} credits left"
+      },
+      "row": {
+        "one": "{{name}}: {{count}} credit, {{percent}}",
+        "other": "{{name}}: {{count}} credits, {{percent}}"
       }
     }
   },

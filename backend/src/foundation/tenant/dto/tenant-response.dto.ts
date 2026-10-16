@@ -1,4 +1,4 @@
-import { IAiBalance, IAiFeatureOpen } from '../../ai/ai-balance';
+import { IAiBalance, IAiFeatureOpen, IAiFeatureUsage } from '../../ai/ai-balance';
 import { ITenant } from '../interfaces/tenant.interface';
 
 export class TenantResponseDto implements ITenant {
@@ -22,7 +22,7 @@ export class TenantResponseDto implements ITenant {
   logo!: string | null;
   isPlatformOrg!: boolean;
   modules!: Record<string, boolean>;
-  ai!: IAiBalance & { features: IAiFeatureOpen[] }; // ACC-194 — from the AI columns, not settings.ai
+  ai!: IAiBalance & { features: IAiFeatureOpen[]; usage: IAiFeatureUsage[] }; // ACC-194, usage ACC-120 slice 8
   createdAt!: Date;
   updatedAt!: Date;
 }

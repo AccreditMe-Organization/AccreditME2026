@@ -76,6 +76,43 @@ export function aiBalanceOf(org: AiBalanceSource, now: Date = new Date()): IAiBa
   };
 }
 
+/** What one feature took from the current period (ACC-120 slice 8). */
+export interface IAiFeatureUsage {
+  key: string;
+  credits: number;
+  calls: number;
+}
+
+/**
+ * What the current period's credits went on, per feature: the AI credits
+ * screen's meter and breakdown. Read from the AI log, not the counter: only
+ * successful, charged calls (a refunded call is logged at cost 0) since the
+ * period began. The counter and the log can disagree (a counter reset by hand
+ * leaves the log as it was), so the screen caps these at `creditsUsed` rather
+ * than trusting them to add up. One grouped query, scoped to the organisation.
+ */
+export async function aiUsageOf(
+  prisma: Pick<PrismaService, 'aiInteractionLog'>,
+  organizationId: string,
+  periodStart: string | null,
+): Promise<IAiFeatureUsage[]> {
+  if (!periodStart) return [];
+  const rows = await prisma.aiInteractionLog.groupBy({
+    by: ['feature'],
+    where: {
+      organizationId,
+      success: true,
+      creditCost: { gt: 0 },
+      createdAt: { gte: new Date(periodStart) },
+    },
+    _sum: { creditCost: true },
+    _count: { _all: true },
+  });
+  return rows
+    .map((r) => ({ key: r.feature, credits: r._sum.creditCost ?? 0, calls: r._count._all }))
+    .sort((a, b) => b.credits - a.credits || a.key.localeCompare(b.key));
+}
+
 /**
  * The priced features open to this organisation (D17): every feature the
  * gateway can call that is not restricted, or is restricted and lists it. A

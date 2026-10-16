@@ -17,8 +17,13 @@ export interface ITenant {
   logo: string | null;
   isPlatformOrg: boolean;
   modules: Record<string, boolean>;
-  ai: IAiBalance & { features: IAiFeatureOpen[] };
+  // ACC-120 slice 8 — the organisation's plan, which the AI credits screen
+  // names when there is no allowance. Always returned by GET /tenant.
+  plan: TenantPlan;
+  ai: IAiBalance & { features: IAiFeatureOpen[]; usage: IAiFeatureUsage[] };
 }
+
+export type TenantPlan = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
 
 /**
  * ACC-194 — an organisation's AI balance, from the dedicated AI columns. The
@@ -43,6 +48,18 @@ export interface IAiBalance {
 export interface IAiFeatureOpen {
   key: string;
   creditCost: number;
+}
+
+/**
+ * ACC-120 slice 8 — what one feature took from the current period, from the
+ * AI log: successful, charged calls since the period began, most credits
+ * first. It can disagree with `creditsUsed` (a counter reset by hand leaves
+ * the log as it was), so screens cap it rather than trusting it to add up.
+ */
+export interface IAiFeatureUsage {
+  key: string;
+  credits: number;
+  calls: number;
 }
 
 // ACC-181 — mirrors the backend's IMaskedEmailConfig
