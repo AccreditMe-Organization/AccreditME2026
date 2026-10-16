@@ -79,7 +79,7 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
   // The Arabic case switches <html> to rtl; put it back for the specs after.
   preserveDocumentLanguage();
 
-  function setup(perms: string[], rows: CommitteeListItemDto[] = ROWS, lang: 'en' | 'ar' = 'en'): void {
+  function setup(perms: string[], rows: CommitteeListItemDto[] = ROWS, lang: 'en' | 'ar' = 'en', phone = false): void {
     permissions = perms;
     TestBed.configureTestingModule({
       imports: [CommitteeListComponent],
@@ -98,6 +98,9 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     TestBed.inject(TranslateService).use(lang);
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(CommitteeListComponent);
+    // The test window is narrower than a desktop, so the layout is chosen
+    // here rather than left to the window: wide unless a case asks for phone.
+    fixture.componentInstance.phone.set(phone);
     el = fixture.nativeElement;
     fixture.detectChanges();
     http.expectOne(`${API}/lookups/categories/committee_type/values`).flush(TYPES);
@@ -242,6 +245,23 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     fixture.detectChanges();
     expect(el.textContent).toContain('No committees yet');
     expect(el.textContent).toContain('Add the first one with Add Committee.');
+  }));
+
+  it('on a phone: one name column carrying type, stage and a status that is not Active, the count, and the filters above', fakeAsync(() => {
+    setup(['committees:view'], ROWS, 'en', true);
+    flush();
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+    expect(c.columns().map((col) => col.key)).toEqual(['name', 'members']);
+    expect(cells('name').length).withContext('rows rendered').toBe(4);
+    for (const wide of ['type', 'parent', 'stage', 'status']) {
+      expect(cells(wide).length).withContext(`no ${wide} cell on a phone`).toBe(0);
+    }
+    expect(cells('meta')).toEqual(['— · Active · Inactive', 'Quality · Active · Being dissolved', 'Safety · —', 'Quality · Active']);
+    expect(cells('members')).toEqual(['4', '5', '2', '7']);
+    const phoneFilters = el.querySelector('[data-testid="committee-filters-phone"]');
+    expect(phoneFilters?.querySelectorAll('app-overlay-select').length).withContext('both filters above the list').toBe(2);
+    expect(el.querySelector('app-data-list [data-filter]')).withContext('none left in the toolbar').toBeNull();
   }));
 
   it('a row opens its committee', fakeAsync(() => {

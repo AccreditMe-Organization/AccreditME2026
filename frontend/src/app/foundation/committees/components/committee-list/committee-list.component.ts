@@ -1,4 +1,5 @@
-import { Component, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -23,6 +24,7 @@ import { ListRowDirective } from '../../../../shared/components/data-list/list-r
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { AmNumberPipe } from '../../../../core/formatting';
+import { SHELL_PHONE_BELOW_PX } from '../../../../layout/app-shell/app-shell.component';
 
 /** A committee's state as the list shows and filters it. */
 export type CommitteeListStatus = 'ACTIVE' | 'DISSOLVING' | 'INACTIVE';
@@ -49,6 +51,7 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
     PageHeaderComponent,
     TranslatePipe,
     FormsModule,
+    NgTemplateOutlet,
     ButtonModule,
     CommitteeFormComponent,
     EditDialogComponent,
@@ -68,6 +71,14 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
         </div>
       </app-page-header>
 
+      <!-- At ACC-232's phone width the toolbar has no room for two filters
+           beside the search, so they get their own row above the list. -->
+      @if (phone()) {
+        <div class="grid grid-cols-2 gap-2" data-testid="committee-filters-phone">
+          <ng-container [ngTemplateOutlet]="filtersTpl" />
+        </div>
+      }
+
       <div
         class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden flex flex-col min-h-0"
       >
@@ -85,33 +96,11 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
           persistKey="committees"
           [urlSync]="true"
         >
-          <div listFilters class="flex items-center gap-1.5 shrink-0">
-            <!-- Sized for the Arabic labels, the longer of the two. -->
-            <app-overlay-select
-              class="w-[170px]"
-              data-filter="status"
-              [options]="statusOptions()"
-              optionLabel="label"
-              optionValue="value"
-              [showClear]="true"
-              [ariaLabel]="'committee.list.statusFilter' | translate"
-              [placeholder]="'committee.list.allStatuses' | translate"
-              [ngModel]="list.filterValue('status')"
-              (ngModelChange)="list.setFilter('status', $event)"
-            />
-            <app-overlay-select
-              class="w-[190px]"
-              data-filter="type"
-              [options]="typeOptions()"
-              optionLabel="label"
-              optionValue="value"
-              [showClear]="true"
-              [ariaLabel]="'committee.list.typeFilter' | translate"
-              [placeholder]="'committee.list.allTypes' | translate"
-              [ngModel]="list.filterValue('typeValueId')"
-              (ngModelChange)="list.setFilter('typeValueId', $event)"
-            />
-          </div>
+          @if (!phone()) {
+            <div listFilters class="flex items-center gap-1.5 shrink-0">
+              <ng-container [ngTemplateOutlet]="filtersTpl" />
+            </div>
+          }
 
           <ng-template #listHeader let-h>
             @for (column of columns(); track column.key) {
@@ -152,19 +141,27 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
               (click)="onOpen(committee)"
             >
               @if (v('name')) {
-                <span class="text-[13px] font-medium truncate" data-cell="name">{{ displayName(committee) }}</span>
+                @if (phone()) {
+                  <!-- One column for what the wide list spreads over four. -->
+                  <span class="flex flex-col min-w-0">
+                    <span class="text-[13px] font-medium truncate" data-cell="name">{{ displayName(committee) }}</span>
+                    <span class="text-xs text-[var(--am-text-secondary)] truncate" data-cell="meta">{{ phoneMeta(committee) }}</span>
+                  </span>
+                } @else {
+                  <span class="text-[13px] font-medium truncate" data-cell="name">{{ displayName(committee) }}</span>
+                }
               }
-              @if (v('type')) {
+              @if (!phone() && v('type')) {
                 <span class="text-xs truncate" data-cell="type">{{ typeLabel(committee.typeValueId) }}</span>
               }
-              @if (v('parent')) {
+              @if (!phone() && v('parent')) {
                 <span class="text-xs truncate" data-cell="parent">{{ parentName(committee.parentCommitteeId) }}</span>
               }
-              @if (v('stage')) {
+              @if (!phone() && v('stage')) {
                 <!-- Tenant data: the stage's own names, never | translate. -->
                 <span class="text-xs truncate" data-cell="stage">{{ stageName(committee) }}</span>
               }
-              @if (v('status')) {
+              @if (!phone() && v('status')) {
                 <span class="text-xs" data-cell="status">
                   <app-status-chip
                     variant="user"
@@ -189,6 +186,36 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
       </div>
     </div>
 
+    <!-- The two filters, drawn in the toolbar or, on a phone, above the list.
+         Each fills its slot; on a wide screen the slot is sized for the Arabic
+         labels, the longer of the two. -->
+    <ng-template #filtersTpl>
+      <app-overlay-select
+        [class]="phone() ? 'min-w-0' : 'w-[170px]'"
+        data-filter="status"
+        [options]="statusOptions()"
+        optionLabel="label"
+        optionValue="value"
+        [showClear]="true"
+        [ariaLabel]="'committee.list.statusFilter' | translate"
+        [placeholder]="'committee.list.allStatuses' | translate"
+        [ngModel]="list.filterValue('status')"
+        (ngModelChange)="list.setFilter('status', $event)"
+      />
+      <app-overlay-select
+        [class]="phone() ? 'min-w-0' : 'w-[190px]'"
+        data-filter="type"
+        [options]="typeOptions()"
+        optionLabel="label"
+        optionValue="value"
+        [showClear]="true"
+        [ariaLabel]="'committee.list.typeFilter' | translate"
+        [placeholder]="'committee.list.allTypes' | translate"
+        [ngModel]="list.filterValue('typeValueId')"
+        (ngModelChange)="list.setFilter('typeValueId', $event)"
+      />
+    </ng-template>
+
     <ng-template #formTpl>
       <app-committee-form (saved)="onSaved()" (cancelled)="formVisible.set(false)" />
     </ng-template>
@@ -208,6 +235,7 @@ export class CommitteeListComponent {
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
   private readonly navigationAccess = inject(NavigationAccessService);
+  private readonly document = inject(DOCUMENT);
 
   // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
   // cannot use it: a disabled button still announces an action that is not
@@ -227,7 +255,17 @@ export class CommitteeListComponent {
   readonly filterNames = ['status', 'typeValueId'] as const;
   readonly trackById = (c: CommitteeListItemDto): string => c.id;
 
+  /** ACC-232's phone width: below it the list is one name column and a count. */
+  readonly phone = signal(false);
+
   constructor() {
+    const media = this.document.defaultView?.matchMedia?.(`(max-width: ${SHELL_PHONE_BELOW_PX - 0.02}px)`);
+    if (media) {
+      this.phone.set(media.matches);
+      const onChange = (e: MediaQueryListEvent): void => this.phone.set(e.matches);
+      media.addEventListener('change', onChange);
+      inject(DestroyRef).onDestroy(() => media.removeEventListener('change', onChange));
+    }
     // A failed lookup leaves every type as "—" (the plan's partial outcome),
     // never the raw id, and the list itself still loads.
     this.lookupService.getValues('committee_type').subscribe({
@@ -238,17 +276,26 @@ export class CommitteeListComponent {
 
   readonly columns = computed<DataListColumn[]>(() => {
     const lang = this.translate.currentLang();
+    const name: DataListColumn = {
+      key: 'name',
+      label: this.translate.instant('committee.col.name'),
+      // Sorts by the name being read. A committee with no Arabic name is
+      // SHOWN by its English one, and sorts last in an Arabic session
+      // (ACC-160), as /roles and /positions do.
+      sortBy: lang === 'ar' ? 'nameAr' : 'nameEn',
+      alwaysVisible: true,
+      width: 'minmax(0, 2fr)',
+    };
+    // On a phone, the name cell carries type, stage and any status that is
+    // not Active on its second line; only the member count keeps a column.
+    if (this.phone()) {
+      return [
+        { ...name, width: 'minmax(0, 1fr)' },
+        { key: 'members', label: this.translate.instant('committee.col.members'), sortBy: 'members', alwaysVisible: true, width: '72px' },
+      ];
+    }
     return [
-      {
-        key: 'name',
-        label: this.translate.instant('committee.col.name'),
-        // Sorts by the name being read. A committee with no Arabic name is
-        // SHOWN by its English one, and sorts last in an Arabic session
-        // (ACC-160), as /roles and /positions do.
-        sortBy: lang === 'ar' ? 'nameAr' : 'nameEn',
-        alwaysVisible: true,
-        width: 'minmax(0, 2fr)',
-      },
+      name,
       { key: 'type', label: this.translate.instant('committee.col.type'), sortBy: 'type', width: 'minmax(0, 1.2fr)' },
       { key: 'parent', label: this.translate.instant('committee.col.parent'), width: 'minmax(0, 1.2fr)' },
       { key: 'stage', label: this.translate.instant('committee.col.stage'), sortBy: 'stage', width: 'minmax(0, 1.2fr)' },
@@ -343,6 +390,14 @@ export class CommitteeListComponent {
   stageName(committee: CommitteeListItemDto): string {
     if (!committee.currentStageNameEn && !committee.currentStageNameAr) return '—';
     return this.languageService.bilingual(committee.currentStageNameEn ?? '', committee.currentStageNameAr) || '—';
+  }
+
+  /** The phone row's second line: type · stage, and the status unless Active. */
+  phoneMeta(committee: CommitteeListItemDto): string {
+    const parts = [this.typeLabel(committee.typeValueId), this.stageName(committee)];
+    const status = committeeListStatus(committee);
+    if (status !== 'ACTIVE') parts.push(this.translate.instant(`committee.status.${status.toLowerCase()}`));
+    return parts.join(' · ');
   }
 
   status(committee: CommitteeListItemDto): CommitteeListStatus {
