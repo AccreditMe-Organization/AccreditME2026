@@ -160,3 +160,28 @@ so ACC-230's lists are unchanged:
   - Focus returns to the field that opened the picker.
   - Change role keeps working as it does today.
   - `committee-detail.component.ts` gets at most a one-line change.
+
+## Built (16 Oct, CC-113a)
+
+What the build found that the plan did not say:
+- **A new member's joined date was never saved.** The plan said the server
+  stores `effectiveDate` as `joinedAt` (`committees.service.ts:248, 257`).
+  That was true only on a REJOIN (the update). The create left `joinedAt` at
+  its default, now, while the JOINED event recorded the date sent. The create
+  now sets it too, with a test.
+- **`committee-detail.component.ts` changed by three lines, not one.** The
+  form sits inside the page's dialog, so its dirty state reaches the dialog
+  through an output and a signal (ACC-96's shape, which task-form uses on the
+  same page). That takes the `(dirtyChange)` binding, the `[dirty]` binding and
+  the signal.
+- **The list needed a phone layout.** At 390px the six columns left the name
+  no width. Below the shell's phone width it is one name column (type · stage,
+  plus a status that is not Active) and the member count, and the filters move
+  above the list.
+- **Change role cannot save, and has not been able to.** Its form keeps
+  `userId` required, and that mode never sets it. Not changed here (Change
+  role keeps working "as it does today"); recorded in SYSTEM-REFERENCE §3.16.
+- **The simple list's sort box shows no label** until a sort is chosen. It is
+  the shared list's own behaviour, on every ACC-230 popup too. Not changed.
+- **The filtered empty** is the shared list's own "No matching results" with
+  Clear filters, not a committee-specific sentence.
