@@ -343,6 +343,27 @@ describe('WorkflowTemplateService', () => {
       expect(actionTypes).not.toContain('CREATE_TASK');
     });
 
+    // ACC-233 — the committee lifecycle's stages carry the seed's stable key; no
+    // other template's do yet (KEYED_SEED_TEMPLATES).
+    it("writes the seed key on every COMMITTEE stage, and on no other template's", async () => {
+      installFakeStore();
+
+      await service.seedDefaultWorkflows(ORG_A);
+
+      const created = mockPrisma.workflowStage.create.mock.calls.map(
+        ([arg]: [{ data: { nameEn: string; key?: string } }]) => arg.data,
+      );
+      const committeeSeed = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'COMMITTEE')!;
+      const keyed = created.filter((d: { key?: string }) => d.key !== undefined);
+      expect(keyed.map((d: { key?: string }) => d.key)).toEqual(committeeSeed.stages.map((st) => st.key));
+      expect(keyed.map((d: { nameEn: string }) => d.nameEn)).toEqual(committeeSeed.stages.map((st) => st.nameEn));
+      expect(created.length - keyed.length).toBe(totalStages - committeeSeed.stages.length);
+      // Looked up by key first, so a stage renamed since is found, not recreated.
+      expect(mockPrisma.workflowStage.findFirst).toHaveBeenCalledWith({
+        where: { workflowTemplateId: expect.any(String), key: 'dissolution_pending' },
+      });
+    });
+
     it('creates all 8 templates with correct stages, transitions, and actions for a fresh org', async () => {
       installFakeStore();
 

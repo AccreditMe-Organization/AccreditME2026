@@ -8,9 +8,11 @@ import { ButtonModule } from 'primeng/button';
 import {
   CommitteeService,
   CommitteeDto,
+  CommitteeListItemDto,
   CreateCommitteeDto,
   COMMITTEE_MEETING_FREQUENCIES,
 } from '../../services/committee.service';
+import { CommitteeRefusal, committeeRefusal, referenceOptions } from '../../committee-references';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 // ACC-135 — the owning unit's picker. RoleService is gone from this file: the
 // "reports to a role" option it served does not exist any more.
@@ -107,6 +109,9 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
           [placeholder]="'committee.selectOwningUnit' | translate"
         />
         <small class="text-[var(--am-text-secondary)]">{{ 'committee.owningUnitHint' | translate }}</small>
+        @if (refusal()?.field === 'orgUnitId') {
+          <small class="am-cf__refusal" role="alert" data-testid="refusal-orgUnitId">{{ refusal()!.key | translate }}</small>
+        }
       </div>
 
       <div class="flex flex-col gap-1">
@@ -119,6 +124,9 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
           [showClear]="true"
           [placeholder]="'committee.noneOption' | translate"
         />
+        @if (refusal()?.field === 'parentCommitteeId') {
+          <small class="am-cf__refusal" role="alert" data-testid="refusal-parentCommitteeId">{{ refusal()!.key | translate }}</small>
+        }
       </div>
 
       <div class="flex flex-col gap-1">
@@ -127,13 +135,20 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         </label>
         <app-overlay-select
           formControlName="reportingToCommitteeId"
-          [options]="parentCommitteeOptions()"
+          [options]="reportingToOptions()"
           optionLabel="label"
           optionValue="id"
           [showClear]="true"
           [placeholder]="'committee.noneOption' | translate"
         />
+        @if (refusal()?.field === 'reportingToCommitteeId') {
+          <small class="am-cf__refusal" role="alert" data-testid="refusal-reportingToCommitteeId">{{ refusal()!.key | translate }}</small>
+        }
       </div>
+
+      @if (refusal() && refusal()!.field === null) {
+        <p class="am-cf__refusal" role="alert" data-testid="refusal-form">{{ refusal()!.key | translate }}</p>
+      }
 
       <div class="flex justify-end gap-2 pt-2">
         <p-button
@@ -147,6 +162,14 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
       </div>
     </form>
   `,
+  styles: [
+    `
+      .am-cf__refusal {
+        color: var(--am-danger-ink);
+        font-size: 12.5px;
+      }
+    `,
+  ],
 })
 export class CommitteeFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
@@ -161,7 +184,12 @@ export class CommitteeFormComponent implements OnInit {
 
   readonly saving = signal(false);
   readonly committeeTypes = signal<LookupValueDto[]>([]);
-  readonly parentOptions = signal<CommitteeDto[]>([]);
+  readonly allCommittees = signal<CommitteeListItemDto[]>([]);
+  /**
+   * ACC-233 — a refused save, said under the field it is about. The dialog stays
+   * open and keeps what was typed; the next Save clears it.
+   */
+  readonly refusal = signal<CommitteeRefusal | null>(null);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
 
   // ACC-135 — no excludeId: a committee is not itself an org unit, so there is no
@@ -207,12 +235,20 @@ export class CommitteeFormComponent implements OnInit {
     })),
   );
 
-  readonly parentCommitteeOptions = computed(() =>
-    this.parentOptions().map((c) => ({
+  // ACC-233 — each picker leaves out what the server would refuse: the
+  // committee itself, a dissolving or dissolved committee, and (editing) any
+  // committee whose chain leads back to this one. The saved value stays.
+  readonly parentCommitteeOptions = computed(() => this.labelled('parent'));
+  readonly reportingToOptions = computed(() => this.labelled('reportsTo'));
+
+  private labelled(chain: 'parent' | 'reportsTo') {
+    const current = this.committee();
+    const saved = chain === 'parent' ? current?.parentCommitteeId : current?.reportingToCommitteeId;
+    return referenceOptions(this.allCommittees(), current?.id ?? null, chain, saved ?? null).map((c) => ({
       ...c,
       label: this.languageService.bilingual(c.nameEn, c.nameAr),
-    })),
-  );
+    }));
+  }
 
   constructor() {
     effect(() => {
@@ -242,10 +278,7 @@ export class CommitteeFormComponent implements OnInit {
       },
     });
     this.committeeService.listCommittees().subscribe({
-      next: (committees) => {
-        const currentId = this.committee()?.id;
-        this.parentOptions.set(currentId ? committees.filter((c) => c.id !== currentId) : committees);
-      },
+      next: (committees) => this.allCommittees.set(committees),
     });
   }
 
@@ -274,8 +307,10 @@ export class CommitteeFormComponent implements OnInit {
       return;
     }
     this.saving.set(true);
+    this.refusal.set(null);
 
     const value = this.form.getRawValue();
+    const current = this.committee();
     const dto: CreateCommitteeDto = {
       nameEn: value.nameEn!,
       nameAr: value.nameAr!,
@@ -283,12 +318,13 @@ export class CommitteeFormComponent implements OnInit {
       purpose: value.purpose || undefined,
       quorumCount: value.quorumCount ?? undefined,
       meetingFrequency: value.meetingFrequency as CreateCommitteeDto['meetingFrequency'],
-      parentCommitteeId: value.parentCommitteeId || undefined,
+      // ACC-233 — on an EDIT a cleared parent or reports-to is sent as null, which
+      // clears it. Undefined meant "leave it alone", so clearing never worked.
+      parentCommitteeId: value.parentCommitteeId || (current ? null : undefined),
       orgUnitId: value.orgUnitId || undefined,
-      reportingToCommitteeId: value.reportingToCommitteeId || undefined,
+      reportingToCommitteeId: value.reportingToCommitteeId || (current ? null : undefined),
     };
 
-    const current = this.committee();
     const request = current
       ? this.committeeService.update(current.id, dto)
       : this.committeeService.create(dto);
@@ -298,7 +334,10 @@ export class CommitteeFormComponent implements OnInit {
         this.saving.set(false);
         this.saved.emit();
       },
-      error: () => this.saving.set(false),
+      error: (err: unknown) => {
+        this.saving.set(false);
+        this.refusal.set(committeeRefusal(err));
+      },
     });
   }
 }

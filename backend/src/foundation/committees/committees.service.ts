@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertCommitteeReferences, CommitteeTx, lockCommitteeHierarchy } from './committee-reference-checks';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { CreateCommitteeDto } from './dto/create-committee.dto';
@@ -10,8 +12,18 @@ import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
 import { ICommittee, ICommitteeListItem, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
 
+/**
+ * ACC-233 — the value an update SETS, only when it differs from what is stored;
+ * undefined otherwise, which `assertCommitteeReferences()` does not check.
+ */
+function changed<T>(sent: T | undefined, stored: T): T | undefined {
+  return sent === undefined || sent === stored ? undefined : sent;
+}
+
 @Injectable()
 export class CommitteesService {
+  private readonly logger = new Logger(CommitteesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
@@ -45,6 +57,8 @@ export class CommitteesService {
         memberCount: fact?.memberCount ?? 0,
         currentStageNameEn: fact?.stageNameEn ?? null,
         currentStageNameAr: fact?.stageNameAr ?? null,
+        currentStageKey: fact?.stageKey ?? null,
+        isDissolving: fact?.isDissolving ?? false,
       };
     });
   }
@@ -57,39 +71,48 @@ export class CommitteesService {
     return committee;
   }
 
+  // ACC-233 — the reference checks and the write are ONE transaction. A create
+  // takes no hierarchy lock: the new committee has no sub-committees and nothing
+  // reports to it, so no loop can pass through it. The dissolving check still
+  // reads its target's workflow instance FOR SHARE.
   async createCommittee(
     dto: CreateCommitteeDto,
     organizationId: string,
     actorId: string,
   ): Promise<ICommittee> {
-    if (dto.parentCommitteeId) {
-      await this.validateCommitteeReference(dto.parentCommitteeId, organizationId, 'Parent committee');
-    }
-    if (dto.reportingToCommitteeId) {
-      await this.validateCommitteeReference(
-        dto.reportingToCommitteeId,
-        organizationId,
-        'Reporting-to committee',
+    const committee = await this.prisma.$transaction(async (tx) => {
+      await assertCommitteeReferences(
+        tx,
+        {
+          organizationId,
+          committeeId: null,
+          parentCommitteeId: dto.parentCommitteeId ?? undefined,
+          reportingToCommitteeId: dto.reportingToCommitteeId ?? undefined,
+          // Omitted (or null) is "the whole organisation" and resolves to the
+          // root below (ACC-135). '' is sent, and refused.
+          orgUnitId: dto.orgUnitId === null ? undefined : dto.orgUnitId,
+        },
+        this.logger,
       );
-    }
-    const orgUnitId = await this.resolveOwningOrgUnitId(dto.orgUnitId, organizationId);
+      const orgUnitId = dto.orgUnitId || (await this.resolveRootOrgUnitId(tx, organizationId));
 
-    const committee = await this.prisma.committee.create({
-      data: {
-        organizationId,
-        nameEn: dto.nameEn,
-        nameAr: dto.nameAr,
-        typeValueId: dto.typeValueId,
-        purpose: dto.purpose ?? null,
-        quorumCount: dto.quorumCount ?? 0,
-        meetingFrequency: dto.meetingFrequency ?? 'AS_NEEDED',
-        parentCommitteeId: dto.parentCommitteeId ?? null,
-        orgUnitId,
-        // Deliberately unpopulated — Document Management doesn't exist yet
-        // (ACC-22 Pending Discussion #1, resolved: option (a)).
-        termsOfReferenceDocumentId: dto.termsOfReferenceDocumentId ?? null,
-        reportingToCommitteeId: dto.reportingToCommitteeId ?? null,
-      },
+      return tx.committee.create({
+        data: {
+          organizationId,
+          nameEn: dto.nameEn,
+          nameAr: dto.nameAr,
+          typeValueId: dto.typeValueId,
+          purpose: dto.purpose ?? null,
+          quorumCount: dto.quorumCount ?? 0,
+          meetingFrequency: dto.meetingFrequency ?? 'AS_NEEDED',
+          parentCommitteeId: dto.parentCommitteeId ?? null,
+          orgUnitId,
+          // Deliberately unpopulated — Document Management doesn't exist yet
+          // (ACC-22 Pending Discussion #1, resolved: option (a)).
+          termsOfReferenceDocumentId: dto.termsOfReferenceDocumentId ?? null,
+          reportingToCommitteeId: dto.reportingToCommitteeId ?? null,
+        },
+      });
     });
 
     await this.auditLog.log({
@@ -116,44 +139,57 @@ export class CommitteesService {
     organizationId: string,
     actorId: string,
   ): Promise<ICommittee> {
-    const existing = await this.getCommitteeById(id, organizationId);
+    // ACC-233 — ONE transaction. An update that sets a parent or reports-to
+    // first takes the organisation's hierarchy lock, so two edits saved at the
+    // same moment cannot close a loop between them (lockCommitteeHierarchy()).
+    const touchesHierarchy = dto.parentCommitteeId !== undefined || dto.reportingToCommitteeId !== undefined;
 
-    if (dto.parentCommitteeId) {
-      await this.validateCommitteeReference(dto.parentCommitteeId, organizationId, 'Parent committee');
-    }
-    if (dto.reportingToCommitteeId) {
-      await this.validateCommitteeReference(
-        dto.reportingToCommitteeId,
-        organizationId,
-        'Reporting-to committee',
+    const { existing, committee } = await this.prisma.$transaction(async (tx) => {
+      if (touchesHierarchy) await lockCommitteeHierarchy(tx, organizationId);
+
+      const before = await tx.committee.findFirst({ where: { id, organizationId } });
+      if (!before) throw new NotFoundException('Committee not found');
+
+      // Only a value that CHANGES is checked. The dialog sends every field, and
+      // a committee whose parent has since begun dissolving (or whose unit was
+      // since deactivated) must still be editable for its name.
+      //
+      // An UPDATE validates but never defaults. Omitting the owning unit means
+      // "leave it alone", which is not create()'s "the whole organisation"; but
+      // SENDING it empty (or null) is refused, never written (ACC-233 rule 4 —
+      // it used to reach the database and fail there as a 500).
+      await assertCommitteeReferences(
+        tx,
+        {
+          organizationId,
+          committeeId: id,
+          parentCommitteeId: changed(dto.parentCommitteeId, before.parentCommitteeId),
+          reportingToCommitteeId: changed(dto.reportingToCommitteeId, before.reportingToCommitteeId),
+          orgUnitId: changed(dto.orgUnitId, before.orgUnitId),
+        },
+        this.logger,
       );
-    }
-    // An UPDATE validates but never defaults. Omitting the field means "leave it
-    // alone", which is not the same statement as create()'s "the whole
-    // organisation" — a committee that already has an owner must not silently
-    // acquire the root because a caller sent a partial body.
-    if (dto.orgUnitId) {
-      await this.validateOrgUnitReference(dto.orgUnitId, organizationId);
-    }
 
-    const committee = await this.prisma.committee.update({
-      where: { id },
-      data: {
-        ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
-        ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
-        ...(dto.typeValueId !== undefined && { typeValueId: dto.typeValueId }),
-        ...(dto.purpose !== undefined && { purpose: dto.purpose }),
-        ...(dto.quorumCount !== undefined && { quorumCount: dto.quorumCount }),
-        ...(dto.meetingFrequency !== undefined && { meetingFrequency: dto.meetingFrequency }),
-        ...(dto.parentCommitteeId !== undefined && { parentCommitteeId: dto.parentCommitteeId }),
-        ...(dto.orgUnitId !== undefined && { orgUnitId: dto.orgUnitId }),
-        ...(dto.termsOfReferenceDocumentId !== undefined && {
-          termsOfReferenceDocumentId: dto.termsOfReferenceDocumentId,
-        }),
-        ...(dto.reportingToCommitteeId !== undefined && {
-          reportingToCommitteeId: dto.reportingToCommitteeId,
-        }),
-      },
+      const updated = await tx.committee.update({
+        where: { id },
+        data: {
+          ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
+          ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
+          ...(dto.typeValueId !== undefined && { typeValueId: dto.typeValueId }),
+          ...(dto.purpose !== undefined && { purpose: dto.purpose }),
+          ...(dto.quorumCount !== undefined && { quorumCount: dto.quorumCount }),
+          ...(dto.meetingFrequency !== undefined && { meetingFrequency: dto.meetingFrequency }),
+          ...(dto.parentCommitteeId !== undefined && { parentCommitteeId: dto.parentCommitteeId }),
+          ...(dto.orgUnitId && { orgUnitId: dto.orgUnitId }),
+          ...(dto.termsOfReferenceDocumentId !== undefined && {
+            termsOfReferenceDocumentId: dto.termsOfReferenceDocumentId,
+          }),
+          ...(dto.reportingToCommitteeId !== undefined && {
+            reportingToCommitteeId: dto.reportingToCommitteeId,
+          }),
+        },
+      });
+      return { existing: before, committee: updated };
     });
 
     await this.auditLog.log({
@@ -359,43 +395,15 @@ export class CommitteesService {
     return member;
   }
 
-  // Two DISTINCT validation paths — parentCommitteeId/reportingToCommitteeId both
-  // resolve against the Committee model; orgUnitId resolves against OrgUnit.
-  // Never a single shared helper that only actually checks one.
-  //
-  // This note used to name reportingToRoleId as the second path (ACC-22 Pending
-  // Discussion #4). ACC-135 removed that field; the shape of the rule is
-  // unchanged, only which models it spans.
-  private async validateCommitteeReference(
-    committeeId: string,
-    organizationId: string,
-    label: string,
-  ): Promise<void> {
-    const committee = await this.prisma.committee.findFirst({
-      where: { id: committeeId, organizationId },
-    });
-    if (!committee) {
-      throw new NotFoundException(`${label} not found in this tenant`);
-    }
-  }
-
-  private async validateOrgUnitReference(orgUnitId: string, organizationId: string): Promise<void> {
-    const orgUnit = await this.prisma.orgUnit.findFirst({
-      where: { id: orgUnitId, organizationId },
-    });
-    if (!orgUnit) {
-      throw new NotFoundException('Owning org unit not found in this tenant');
-    }
-  }
-
   /**
-   * The owning unit for a NEW committee — ACC-135.
+   * The owning unit for a NEW committee that names none — ACC-135.
    *
-   * A caller who names a unit gets that unit, validated against their own tenant.
-   * A caller who names none is not saying "no owner"; they are saying "the whole
-   * organisation", and the root unit IS the organisation (ACC-141 fixed its type
-   * to `organization` to make exactly that explicit). So the absence resolves to
-   * the root rather than being stored.
+   * A caller who names a unit gets that unit, validated against their own
+   * tenant (and, since ACC-233, required to be active) by
+   * `assertCommitteeReferences()`. A caller who names none is not saying "no
+   * owner"; they are saying "the whole organisation", and the root unit IS the
+   * organisation (ACC-141 fixed its type to `organization` to make exactly that
+   * explicit). So the absence resolves to the root rather than being stored.
    *
    * ## This duplicates OrganizationService's own root definition, deliberately
    *
@@ -423,16 +431,8 @@ export class CommitteesService {
    * nothing blocks deactivating the root (ACC-152). Writing null instead would
    * put a committee into the state this ticket exists to remove.
    */
-  private async resolveOwningOrgUnitId(
-    requestedOrgUnitId: string | undefined,
-    organizationId: string,
-  ): Promise<string> {
-    if (requestedOrgUnitId) {
-      await this.validateOrgUnitReference(requestedOrgUnitId, organizationId);
-      return requestedOrgUnitId;
-    }
-
-    const roots = await this.prisma.orgUnit.findMany({
+  private async resolveRootOrgUnitId(tx: CommitteeTx, organizationId: string): Promise<string> {
+    const roots = await tx.orgUnit.findMany({
       where: { organizationId, parentId: null, isActive: true },
       select: { id: true, code: true },
       orderBy: { createdAt: 'asc' },

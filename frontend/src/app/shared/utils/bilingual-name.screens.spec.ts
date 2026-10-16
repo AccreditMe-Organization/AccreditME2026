@@ -176,7 +176,7 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
         as({ id: 't1', labelEn: 'Board', labelAr: 'مجلس' }),
         as({ id: 't2', labelEn: 'Taskforce', labelAr: null }),
       ]);
-      c.parentOptions.set([as({ id: 'c1', nameEn: 'Quality Committee', nameAr: null })]);
+      c.allCommittees.set([as({ id: 'c1', nameEn: 'Quality Committee', nameAr: null, isDissolving: false })]);
       expect(c.committeeTypeOptions().map((o) => o.label)).toEqual(['مجلس', 'Taskforce']);
       expect(c.parentCommitteeOptions()[0]!.label).toBe('Quality Committee');
     });

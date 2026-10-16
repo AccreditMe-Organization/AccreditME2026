@@ -1207,6 +1207,15 @@ model WorkflowStage {
   isInitial          Boolean @default(false)
   isFinal            Boolean @default(false)
 
+  // ACC-233 — what a SEEDED stage is, independent of what the tenant calls it
+  // ("dissolution_pending", the seed's own key). Code that must recognise a
+  // stage reads this, never a name or an order, both of which a tenant may
+  // change. Null for every stage a tenant adds. Never shown and never editable:
+  // no DTO carries it, the seed writes it (COMMITTEE template only, today) and
+  // `npm run backfill:acc233-committee-stage-keys` wrote it for existing
+  // organisations. Unique within one workflow; Postgres lets the nulls repeat.
+  key                String?
+
   approvalMode      WorkflowApprovalMode       @default(SINGLE)
   parallelThreshold WorkflowParallelThreshold?
   committeeId       String?
@@ -1253,6 +1262,7 @@ model WorkflowStage {
 
   taskDefinitions WorkflowStageTaskDefinition[] // ACC-190
 
+  @@unique([workflowTemplateId, key]) // ACC-233
   @@index([workflowTemplateId])
 }
 

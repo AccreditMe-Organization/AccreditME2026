@@ -1,9 +1,14 @@
 import { PrismaService } from '../../prisma/prisma.service';
+import { isDissolvingStageKey } from '../workflow/workflow-stage-keys';
 
 export interface CommitteeStageAndCount {
   memberCount: number;
   stageNameEn: string | null;
   stageNameAr: string | null;
+  /** ACC-233 — the current stage's key (`WorkflowStage.key`), null for a stage the tenant added. */
+  stageKey: string | null;
+  /** ACC-233 — whether that key says the committee is being dissolved, or has been. */
+  isDissolving: boolean;
 }
 
 /**
@@ -56,7 +61,7 @@ export async function committeeStagesAndCounts(
     stageIds.length > 0
       ? await prisma.workflowStage.findMany({
           where: { id: { in: stageIds } },
-          select: { id: true, nameEn: true, nameAr: true },
+          select: { id: true, nameEn: true, nameAr: true, key: true },
         })
       : [];
   const stageById = new Map(stages.map((s) => [s.id, s]));
@@ -68,6 +73,8 @@ export async function committeeStagesAndCounts(
       memberCount: countByCommitteeId.get(id) ?? 0,
       stageNameEn: stage?.nameEn ?? null,
       stageNameAr: stage?.nameAr ?? null,
+      stageKey: stage?.key ?? null,
+      isDissolving: isDissolvingStageKey(stage?.key),
     });
   }
   return result;

@@ -47,6 +47,11 @@ export interface ICommitteeListItem extends ICommittee {
   // `| translate` (SYSTEM-REFERENCE §9.3).
   currentStageNameEn: string | null;
   currentStageNameAr: string | null;
+  // ACC-233 — the current stage's stable key, and whether it says the committee
+  // is being dissolved or has been. The dialog's pickers leave those out; the
+  // server decides, so no screen keeps its own list of keys.
+  currentStageKey: string | null;
+  isDissolving: boolean;
 }
 
 export interface ICommitteeMember {

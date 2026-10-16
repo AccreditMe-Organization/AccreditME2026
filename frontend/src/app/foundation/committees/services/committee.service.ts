@@ -47,6 +47,12 @@ export interface CommitteeListItemDto extends CommitteeDto {
   // by isArabic() selection, never `| translate`.
   currentStageNameEn: string | null;
   currentStageNameAr: string | null;
+  // ACC-233 — the current stage's stable key (null for a stage the tenant added),
+  // and the SERVER's answer to "is it being dissolved, or has it been?". The
+  // dialog's pickers leave those committees out; no screen keeps its own list
+  // of keys.
+  currentStageKey: string | null;
+  isDissolving: boolean;
 }
 
 export interface CommitteeMemberDto {
@@ -80,14 +86,15 @@ export interface CreateCommitteeDto {
   purpose?: string;
   quorumCount?: number;
   meetingFrequency?: CommitteeMeetingFrequency;
-  parentCommitteeId?: string;
+  // ACC-233 — null clears it (an update); omitted leaves it alone.
+  parentCommitteeId?: string | null;
   // ACC-135 — OPTIONAL HERE, REQUIRED IN THE RECORD. Omitting it means "the whole
   // organisation", which the backend resolves to the tenant's root unit rather
   // than storing an absence. The form always sends one, so this stays optional
   // for the API's shape rather than for the form's convenience.
   orgUnitId?: string;
   termsOfReferenceDocumentId?: string;
-  reportingToCommitteeId?: string;
+  reportingToCommitteeId?: string | null;
 }
 
 export type UpdateCommitteeDto = Partial<CreateCommitteeDto>;
