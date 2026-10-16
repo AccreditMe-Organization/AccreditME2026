@@ -6720,6 +6720,59 @@ dev data: in the dev build, `ng.getComponent(el).languageService.use('ar')` on
 any mounted component that injects `LanguageService`. It switches the session
 only. Switch back before moving on.
 
+#### The phone shell (ACC-232)
+
+Below **768px** viewport width (`SHELL_PHONE_BELOW_PX` in
+`app-shell.component.ts`, read by `matchMedia`), the rail never sits beside
+`<main>`. At 390px it used to load open at 260px and leave the page about
+100px wide. No design file draws a phone layout, so this reuses the rail
+unchanged: the same `SidebarComponent`, placed over the page.
+
+- **It starts closed** and opens over the page at its full 260px, below the
+  top bar, with a scrim (`--am-overlay-scrim`) behind it. The toggle stays
+  where it was, and it closes the rail again.
+- **It closes on:**
+  - choosing a link, even the page already open, which navigates nowhere;
+  - any navigation, including the user menu, whose panel sits outside it;
+  - the scrim;
+  - Escape, when it is the top layer (`LayerStackService`, so a dialog or
+    menu above it answers its own Escape first);
+  - the toggle.
+- **While it is open:** `<main>` is `inert` and focus moves into the rail.
+  When it closes, focus returns to the toggle.
+- **The toggle** says "Open navigation" or "Close navigation" on a phone,
+  and carries `aria-expanded` on its inner `<button>`. That attribute goes
+  through PrimeNG's pass-through (`[pt]`, bound by `[pBind]` in
+  `primeng-button.mjs`). On a desktop it is `null`, never absent: the
+  pass-through removes an attribute given null but keeps one it is no
+  longer given.
+- **In Arabic it opens from the right** (`inset-inline-start`).
+- **Crossing 768px either way leaves the rail closed:** nothing stays inert
+  on a desktop, and no layer is left on the stack.
+- **Above 768px nothing changed:** 260 open, 72 collapsed, the same toggle
+  and labels, and no `aria-expanded`.
+
+**A record page's grid takes `minmax(min(Npx, 100%), 1fr)`, never a fixed
+minimum,** so a column is never wider than the page. Each value is a constant
+that the page reads, and so does the spec that measures it at 320px:
+
+| Grid | Constant | Minimum |
+|---|---|---|
+| The committee page's panels | `COMMITTEE_PANEL_GRID` (`committee-panel-grid.ts`) | 320 |
+| The committee page's header (the lifecycle stepper and its history) | `COMMITTEE_HEADER_GRID` (same file) | 340 |
+| The user record's panels | `USER_PANEL_GRID` (`user-panel-grid.ts`) | 330 |
+
+**Known, not changed** (swept at 390, 360 and 320 in both languages):
+- **The stepper bleeds into the padding.** The committee header's stepper
+  card spans two columns. When only one column fits (a page narrower than
+  692px, two columns and a gap), the span adds a second, empty track, so the card reaches one gap
+  (12px) past the grid. That lands in `<main>`'s 16px padding, so nothing
+  scrolls, but the card sits 12px off the right edge. The way out is to span
+  two only when two columns fit (a container query), which nobody has drawn.
+- **The org tree scrolls at 360 and 320.** On `/organization`, a unit's type
+  tag (`p-tag` in `app-org-unit-tree`) reaches past `<main>` by 5px at 360,
+  and by 13px (English) or 9px (Arabic) at 320. It fits at 390.
+
 ---
 
 ### 10.13 `ListRowDirective` — the Table Row's Keyboard Contract (ACC-111)

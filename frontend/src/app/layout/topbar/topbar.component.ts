@@ -1,4 +1,4 @@
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
@@ -38,21 +38,19 @@ import { LanguageToggleComponent } from '../language-toggle/language-toggle.comp
              accessible name — a screen reader announced it as just "button".
              Found in commit 7's browser pass, when the control could not be
              located by its name.
-             No aria-expanded: p-button offers no way to put it on the inner
-             element, and the label already changes with the state. -->
+             aria-expanded (ACC-232, phone only) reaches the inner element
+             through PrimeNG's pass-through: p-button binds ptm('root') onto it
+             ([pBind] in primeng-button.mjs). The desktop toggle is unchanged.
+             On both, the label changes with the state. -->
         <p-button
           icon="pi pi-bars"
           [text]="true"
           severity="secondary"
           size="small"
-          [ariaLabel]="
-            (collapsed() ? 'shell.expandRail' : 'shell.collapseRail')
-              | translate
-          "
-          [pTooltip]="
-            (collapsed() ? 'shell.expandRail' : 'shell.collapseRail')
-              | translate
-          "
+          data-rail-toggle
+          [pt]="togglePt()"
+          [ariaLabel]="toggleLabelKey() | translate"
+          [pTooltip]="toggleLabelKey() | translate"
           (onClick)="toggleSidebar.emit()"
         />
         <app-breadcrumb class="min-w-0" />
@@ -67,5 +65,23 @@ import { LanguageToggleComponent } from '../language-toggle/language-toggle.comp
 })
 export class TopbarComponent {
   readonly collapsed = input(false);
+  /** ACC-232 — the phone shell: the toggle opens and closes the rail over the page. */
+  readonly phone = input(false);
+  readonly railOpen = input(false);
   readonly toggleSidebar = output<void>();
+
+  readonly toggleLabelKey = computed(() => {
+    if (this.phone()) return this.railOpen() ? 'shell.closeNav' : 'shell.openNav';
+    return this.collapsed() ? 'shell.expandRail' : 'shell.collapseRail';
+  });
+
+  /**
+   * aria-expanded on the inner <button>, on a phone only. On a desktop it is
+   * null, never absent: PrimeNG's pass-through removes an attribute given null
+   * (primeng-bind.mjs) but leaves one it is no longer given, so a phone that
+   * crossed to a desktop would keep a stale aria-expanded.
+   */
+  readonly togglePt = computed(() => ({
+    root: { 'aria-expanded': this.phone() ? (this.railOpen() ? 'true' : 'false') : null },
+  }));
 }

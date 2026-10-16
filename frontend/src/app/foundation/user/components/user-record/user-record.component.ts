@@ -29,6 +29,7 @@ import { EditProfileDialogComponent } from './edit-profile-dialog.component';
 import { CoverOption, OutOfOfficeDialogComponent } from './out-of-office-dialog.component';
 import { TwoStepOffDialogComponent } from './two-step-off-dialog.component';
 import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
+import { USER_PANEL_GRID } from './user-panel-grid';
 
 /** One row of the Roles panel. */
 export interface RoleRow {
@@ -238,7 +239,7 @@ interface Fact {
           <p-message severity="error" [text]="message | translate" data-user-action-error />
         }
 
-        <div class="grid gap-3 grid-cols-[repeat(auto-fit,minmax(330px,1fr))]" data-user-panels>
+        <div class="grid gap-3" [style.grid-template-columns]="panelGrid" data-user-panels>
           @if (canViewRoles() && rolesHandle()) {
             <app-record-panel
               data-panel="roles"
@@ -412,6 +413,9 @@ interface Fact {
   `,
 })
 export class UserRecordComponent implements OnInit, OnDestroy {
+  /** ACC-232 — never wider than the page; see user-panel-grid.ts. */
+  protected readonly panelGrid = USER_PANEL_GRID;
+
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
