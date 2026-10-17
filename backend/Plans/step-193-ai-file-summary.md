@@ -425,7 +425,7 @@ On the LIVE site, signed in page-side (no password in any tool call):
 7. **al-manara's admin** (allocation 0) on one of their files: no Summarize button; `available: false`.
 8. **An Arabic PDF** (a short one made for the proof, if none exists on the tenant): summarised in the reader's language, the text read in logical order (R1 checked live).
 9. **A deleted file** (§14.3): delete the evidence of a file that has a summary. The `AiFileSummary` rows are gone at once (read-only check), and restoring it from the recycle bin shows Summarize again with no summary.
-10. **Clean-up:** al-nakheel's used credits back to 0, keeping the 2,000 allocation. The made summaries stay (they are what Ahmad will see), unless he says otherwise.
+10. **Clean-up:** the made summaries stay (they are what Ahmad will see), unless he says otherwise. The credits the proof used stay used: a live proof never hand-writes a credit counter (ACC-236).
 
 ---
 

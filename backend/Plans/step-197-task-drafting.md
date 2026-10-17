@@ -366,7 +366,7 @@ If Q4 is answered "show it on the task now", that would need a nullable column o
 5. The too-short message, with no log row.
 6. A user without `committees:view` gets 403 on the draft.
 7. al-manara shows no trigger.
-8. Clean up, and reset al-nakheel's used credits.
+8. Clean up. The credits the proof used stay used: a live proof never hand-writes a credit counter (ACC-236 — this step once reset al-nakheel's, with no audit row).
 
 ---
 

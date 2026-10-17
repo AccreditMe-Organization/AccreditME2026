@@ -484,7 +484,8 @@ Railway. It is still a separate prompt after the deploy:
 4. **al-manara's tenant admin:** Home has no card and no button (feature not
    open).
 5. **Restore:**
-   - al-nakheel's used credits back to 0, keeping its 2,000;
+   - the credits the proof used stay used: a live proof never hand-writes a
+     credit counter (ACC-236);
    - the two `AiBriefing` rows deleted, unless Ahmad wants one kept for the demo
      (the report will ask);
    - the log rows stay, as the record of real calls.

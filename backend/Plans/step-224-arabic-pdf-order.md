@@ -384,7 +384,7 @@ There is no frontend change, so the frontend suite is not part of this ticket's 
    - credits used (15), one text-free log row, one audit row with no text;
    - the **Arabic overview quoted** in full.
 4. **Quote the description line**, which now reads "· 1 page".
-5. **Clean up** as Ahmad directs: delete the test file, and reset al-nakheel's used credits to 0 keeping the 2,000 allocation, as in earlier proofs.
+5. **Clean up** as Ahmad directs: delete the test file. The credits the proof used stay used: a live proof never hand-writes a credit counter (ACC-236).
 
 ---
 
