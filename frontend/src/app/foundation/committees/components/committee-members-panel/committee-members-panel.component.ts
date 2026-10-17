@@ -98,7 +98,6 @@ type PanelState = 'loading' | 'error' | 'ready';
         [columns]="columns()"
         grid="minmax(200px,1.6fr) minmax(120px,1fr) 120px 32px"
         [row]="memberCells"
-        [sortOptions]="sortOptions()"
         defaultSort="seat:asc"
         [searchLabel]="'committee.searchMembers' | translate"
         [searchPlaceholder]="'committee.searchMembersPlaceholder' | translate"
@@ -153,21 +152,12 @@ export class CommitteeMembersPanelComponent {
 
   readonly columns = computed(() => {
     this.translate.currentLang();
+    // ACC-234 — every column the server sorts by is a header you press.
     return [
-      { label: this.translate.instant('committee.col.member') },
-      { label: this.translate.instant('committee.col.seat') },
-      { label: this.translate.instant('committee.col.since') },
+      { label: this.translate.instant('committee.col.member'), sort: 'name' },
+      { label: this.translate.instant('committee.col.seat'), sort: 'seat' },
+      { label: this.translate.instant('committee.col.since'), sort: 'since' },
       { label: '', srLabel: this.translate.instant('committee.col.actions') },
-    ];
-  });
-  readonly sortOptions = computed(() => {
-    this.translate.currentLang();
-    return [
-      { value: 'seat:asc', label: this.translate.instant('committee.sort.seat') },
-      { value: 'name:asc', label: this.translate.instant('committee.sort.nameAsc') },
-      { value: 'name:desc', label: this.translate.instant('committee.sort.nameDesc') },
-      { value: 'since:asc', label: this.translate.instant('committee.sort.sinceAsc') },
-      { value: 'since:desc', label: this.translate.instant('committee.sort.sinceDesc') },
     ];
   });
 

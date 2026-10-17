@@ -58,7 +58,6 @@ type PanelState = 'loading' | 'error' | 'ready';
         [columns]="columns()"
         grid="minmax(220px,1.8fr) minmax(120px,1fr) 120px"
         [row]="subCells"
-        [sortOptions]="sortOptions()"
         defaultSort="name:asc"
         [searchLabel]="'committee.searchSubCommittees' | translate"
         [searchPlaceholder]="'committee.searchSubCommitteesPlaceholder' | translate"
@@ -103,20 +102,11 @@ export class CommitteeSubCommitteesPanelComponent {
 
   readonly columns = computed(() => {
     this.translate.currentLang();
+    // ACC-234 — every column the server sorts by is a header you press.
     return [
-      { label: this.translate.instant('committee.col.name') },
-      { label: this.translate.instant('committee.col.status') },
-      { label: this.translate.instant('committee.col.members') },
-    ];
-  });
-  readonly sortOptions = computed(() => {
-    this.translate.currentLang();
-    return [
-      { value: 'name:asc', label: this.translate.instant('committee.sort.nameAsc') },
-      { value: 'name:desc', label: this.translate.instant('committee.sort.nameDesc') },
-      { value: 'status:asc', label: this.translate.instant('committee.sort.status') },
-      { value: 'members:desc', label: this.translate.instant('committee.sort.membersDesc') },
-      { value: 'members:asc', label: this.translate.instant('committee.sort.membersAsc') },
+      { label: this.translate.instant('committee.col.name'), sort: 'name' },
+      { label: this.translate.instant('committee.col.status'), sort: 'status' },
+      { label: this.translate.instant('committee.col.members'), sort: 'members' },
     ];
   });
 

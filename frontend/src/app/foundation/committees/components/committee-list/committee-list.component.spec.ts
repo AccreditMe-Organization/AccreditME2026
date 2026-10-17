@@ -272,4 +272,66 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     el.querySelector<HTMLElement>('[data-cell="name"]')!.click();
     expect(navigate).toHaveBeenCalledWith(['/committees', 'd']);
   }));
+
+  // ACC-234 — the list sorts by its column headers, through am-sort-header.
+  describe('sort by column header (ACC-234)', () => {
+    const headerRow = () => el.querySelector<HTMLElement>('app-data-list [role="row"]')!;
+    const sortHeader = (key: string) => headerRow().querySelector<HTMLElement>(`am-sort-header[data-sort-key="${key}"]`)!;
+    function press(key: string): void {
+      sortHeader(key).querySelector('button')!.click();
+      flush();
+      fixture.detectChanges();
+    }
+
+    it('Name, Type, Stage and Members are headers named "Sort by …"; Parent and Status stay text', fakeAsync(() => {
+      setup(['committees:view']);
+      flush();
+      fixture.detectChanges();
+      expect(headerRow()).withContext('the header row is laid out').not.toBeNull();
+      expect(Array.from(headerRow().querySelectorAll('am-sort-header')).map((h) => h.getAttribute('data-sort-key'))).toEqual(['name', 'type', 'stage', 'members']);
+      expect(Array.from(headerRow().querySelectorAll('am-sort-header button')).map((b) => b.getAttribute('aria-label'))).toEqual([
+        'Sort by Name',
+        'Sort by Type',
+        'Sort by Stage',
+        'Sort by Members',
+      ]);
+      const plain = Array.from(headerRow().querySelectorAll<HTMLElement>(':scope > span[role="columnheader"]')).map((s) => s.textContent!.trim());
+      expect(plain).toEqual(['Parent', 'Status']);
+      expect(headerRow().querySelectorAll('.pi-arrow-up, .pi-arrow-down').length).withContext('the old inline arrows are gone').toBe(0);
+    }));
+
+    it('each press sorts on the same field, ascending then descending; aria-sort and ▲/▼ follow', fakeAsync(() => {
+      setup(['committees:view']);
+      flush();
+      fixture.detectChanges();
+      press('members');
+      expect(cells('members')).toEqual(['2', '4', '5', '7']);
+      expect(sortHeader('members').getAttribute('aria-sort')).toBe('ascending');
+      expect(sortHeader('members').textContent).toContain('▲');
+      expect(headerRow().querySelectorAll('[aria-sort]').length).withContext('only the sorted column').toBe(1);
+      press('members');
+      expect(cells('members')).toEqual(['7', '5', '4', '2']);
+      expect(sortHeader('members').getAttribute('aria-sort')).toBe('descending');
+      expect(sortHeader('members').textContent).toContain('▼');
+      press('name');
+      expect(cells('name')).toEqual(['Board', 'Ethics', 'Infection Control', 'Pharmacy and Therapeutics']);
+      expect(sortHeader('name').getAttribute('aria-sort')).toBe('ascending');
+      expect(sortHeader('members').hasAttribute('aria-sort')).toBeFalse();
+      press('name');
+      expect(cells('name')).toEqual(['Pharmacy and Therapeutics', 'Infection Control', 'Ethics', 'Board']);
+      expect(sortHeader('name').getAttribute('aria-sort')).toBe('descending');
+      // The same fields as before: the header sends the column's own sortBy.
+      expect(fixture.componentInstance.columns().filter((c) => c.sortBy).map((c) => c.sortBy)).toEqual(['nameEn', 'type', 'stage', 'members']);
+    }));
+
+    it('Arabic: the accessible name is translated and the arrow follows the label', fakeAsync(() => {
+      setup(['committees:view'], ROWS, 'ar');
+      flush();
+      fixture.detectChanges();
+      press('members');
+      const button = sortHeader('members').querySelector('button')!;
+      expect(button.getAttribute('aria-label')).toBe('ترتيب حسب الأعضاء');
+      expect(Array.from(button.children).map((c) => c.textContent!.trim())).toEqual(['الأعضاء', '▲']);
+    }));
+  });
 });

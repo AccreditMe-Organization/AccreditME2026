@@ -14,6 +14,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { CommitteeMemberRowDto, SubCommitteeRowDto } from '../../services/committee.service';
 import { CommitteeMembersPanelComponent } from './committee-members-panel.component';
 import { CommitteeSubCommitteesPanelComponent } from '../committee-sub-committees-panel/committee-sub-committees-panel.component';
+import { SimpleListComponent } from '../../../../shared/components/simple-list/simple-list.component';
 
 // ACC-230 — the Members and Sub-committees panels (Record Tasks Panel §3) and
 // the plain list behind their "See all". Heights: committee-panels.layout.spec.
@@ -190,6 +191,7 @@ describe('Committee Members and Sub-committees panels (ACC-230)', () => {
         answer(subsReq(), page([]));
         q('committee-members-see-all')!.click();
         fixture.detectChanges();
+        desktop();
         return http.expectOne((r) => r.url === `${API}/members/page` && r.params.get('take') === '50');
       }
 
@@ -228,8 +230,78 @@ describe('Committee Members and Sub-committees panels (ACC-230)', () => {
         expect(document.querySelector('[data-testid="simple-list-empty"]')!.textContent).toContain('Nothing matches “ventilator”');
         expect(document.querySelector('[data-testid="simple-list-live"]')!.textContent).toContain('0 members match');
       }));
+
+      // ACC-234 — the popup sorts by its column headers, never a toolbar dropdown.
+      it('the toolbar has no Sort control; Member, Seat and Since are headers, the actions column is plain', () => {
+        setup();
+        answer(openPopup(), page([memberRow(1)], 60));
+        expect(document.querySelector('[data-testid="simple-list-sort"], [data-testid="simple-list-sort-menu"]')).toBeNull();
+        const cells = Array.from(document.querySelector('[data-testid="simple-list-head"]')!.children) as HTMLElement[];
+        expect(cells.map((c) => c.getAttribute('role'))).toEqual(['columnheader', 'columnheader', 'columnheader', 'columnheader']);
+        expect(cells.map((c) => c.getAttribute('data-sort-key'))).toEqual(['name', 'seat', 'since', null]);
+        expect(cells.map((c) => c.querySelector('button')?.getAttribute('aria-label') ?? null)).toEqual(['Sort by Member', 'Sort by Seat', 'Sort by Since', null]);
+        // The default (by seat) carries the arrow.
+        expect(sortHeader('seat').getAttribute('aria-sort')).toBe('ascending');
+        expect(sortHeader('seat').textContent).toContain('▲');
+      });
+
+      it('a phone (cards, no headers) keeps a compact sort menu with the headers\' sorts, both ways', () => {
+        setup();
+        answer(openPopup(), page([memberRow(1)], 60));
+        const simple = fixture.debugElement.query((d) => d.componentInstance instanceof SimpleListComponent)!
+          .componentInstance as SimpleListComponent<{ id: string }>;
+        simple.phone.set(true);
+        fixture.detectChanges();
+        expect(document.querySelector('[data-testid="simple-list-head"]')).toBeNull();
+        expect(document.querySelector('[data-testid="simple-list-sort-menu"]')).not.toBeNull();
+        expect(simple.phoneSortOptions().map((o) => o.label)).toEqual([
+          'Member, ascending',
+          'Member, descending',
+          'Seat, ascending',
+          'Seat, descending',
+          'Since, ascending',
+          'Since, descending',
+        ]);
+        simple.onPhoneSort('since:desc');
+        fixture.detectChanges();
+        const req = http.expectOne((r) => r.url === `${API}/members/page` && r.params.get('sort') === 'since' && r.params.get('dir') === 'desc');
+        answer(req, page([memberRow(1)], 60));
+      });
+
+      for (const key of ['name', 'seat', 'since']) {
+        it(`${key}: each press is a server request from the first page, keeping the search; aria-sort follows`, fakeAsync(() => {
+          setup();
+          answer(openPopup(), page(Array.from({ length: 50 }, (_, i) => memberRow(i + 1)), 60));
+          const input = document.querySelector<HTMLInputElement>('[data-testid="simple-list-search"]')!;
+          input.value = 'al';
+          input.dispatchEvent(new Event('input'));
+          tick(300);
+          fixture.detectChanges();
+          answer(http.expectOne((r) => r.url === `${API}/members/page` && r.params.get('q') === 'al'), page([memberRow(1)], 60, 1));
+          // Seat is already ascending, so its first press turns it round.
+          for (const dir of key === 'seat' ? ['desc', 'asc'] : ['asc', 'desc']) {
+            sortHeader(key).querySelector('button')!.click();
+            fixture.detectChanges();
+            const req = http.expectOne((r) => r.url === `${API}/members/page` && r.params.get('sort') === key && r.params.get('dir') === dir);
+            expect(req.request.params.get('skip')).toBe('0');
+            expect(req.request.params.get('q')).toBe('al');
+            const order = dir === 'asc' ? [7, 8, 9] : [9, 8, 7];
+            answer(req, page(order.map((i) => memberRow(i)), 60, 3));
+            expect(Array.from(document.querySelectorAll('[data-testid="simple-list-row"]')).map((r) => r.textContent!.match(/Member \d/)![0])).toEqual(order.map((i) => `Member ${i}`));
+            expect(sortHeader(key).getAttribute('aria-sort')).toBe(dir === 'asc' ? 'ascending' : 'descending');
+            expect(document.querySelectorAll('[data-testid="simple-list-head"] [aria-sort]').length).toBe(1);
+          }
+        }));
+      }
     });
   });
+
+  /** The popup's list in its desktop layout: Karma's window is narrower than the phone breakpoint. */
+  function desktop(): void {
+    (fixture.debugElement.query((d) => d.componentInstance instanceof SimpleListComponent)!.componentInstance as SimpleListComponent<{ id: string }>).phone.set(false);
+    fixture.detectChanges();
+  }
+  const sortHeader = (key: string) => document.querySelector<HTMLElement>(`[data-testid="simple-list-head"] am-sort-header[data-sort-key="${key}"]`)!;
 
   describe('Sub-committees', () => {
     it('says what each child is: its live stage and its member count; links it', () => {
@@ -257,5 +329,31 @@ describe('Committee Members and Sub-committees panels (ACC-230)', () => {
       answer(req, page(Array.from({ length: 7 }, (_, i) => subRow(i + 1))));
       expect(document.querySelector('[data-testid="list-dialog"] h2')!.textContent).toContain('All sub-committees · Infection Control');
     });
+
+    // ACC-234 — Name, Status and Members are headers you press.
+    for (const key of ['name', 'status', 'members']) {
+      it(`See all, ${key}: ascending then descending, each a server request; aria-sort follows; no Sort control`, () => {
+        setup();
+        answer(membersReq(), page([]));
+        answer(subsReq(), page([1, 2, 3, 4, 5].map((i) => subRow(i)), 7));
+        q('committee-subs-see-all')!.click();
+        fixture.detectChanges();
+        desktop();
+        answer(http.expectOne((r) => r.url === `${API}/sub-committees` && r.params.get('take') === '50'), page(Array.from({ length: 7 }, (_, i) => subRow(i + 1))));
+        expect(document.querySelector('[data-testid="simple-list-sort"], [data-testid="simple-list-sort-menu"]')).toBeNull();
+        expect(Array.from(document.querySelectorAll('[data-testid="simple-list-head"] am-sort-header')).map((h) => h.getAttribute('data-sort-key'))).toEqual(['name', 'status', 'members']);
+        for (const dir of key === 'name' ? ['desc', 'asc'] : ['asc', 'desc']) {
+          sortHeader(key).querySelector('button')!.click();
+          fixture.detectChanges();
+          const req = http.expectOne((r) => r.url === `${API}/sub-committees` && r.params.get('sort') === key && r.params.get('dir') === dir);
+          expect(req.request.params.get('skip')).toBe('0');
+          const order = dir === 'asc' ? [1, 2, 3] : [3, 2, 1];
+          answer(req, page(order.map((i) => subRow(i)), 7));
+          expect(Array.from(document.querySelectorAll('[data-testid="simple-list-row"]')).map((r) => r.textContent!.match(/Sub \d/)![0])).toEqual(order.map((i) => `Sub ${i}`));
+          expect(sortHeader(key).getAttribute('aria-sort')).toBe(dir === 'asc' ? 'ascending' : 'descending');
+          expect(sortHeader(key).textContent).toContain(dir === 'asc' ? '▲' : '▼');
+        }
+      });
+    }
   });
 });

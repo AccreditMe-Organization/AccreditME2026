@@ -31,10 +31,9 @@ const ROWS: Row[] = [
     @if (cellsTpl(); as tpl) {
       <am-simple-list
         [load]="load"
-        [columns]="[{ label: 'Name' }]"
+        [columns]="[{ label: 'Name', sort: 'name' }]"
         grid="1fr 120px"
         [row]="tpl"
-        [sortOptions]="[{ value: 'name:asc', label: 'A–Z' }]"
         defaultSort="name:asc"
         searchLabel="Search"
         [countText]="countText"

@@ -12,6 +12,7 @@ import { environment } from '../../../../../environments/environment';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
+import { SimpleListComponent } from '../../../../shared/components/simple-list/simple-list.component';
 import { CommitteeMemberDto } from '../../services/committee.service';
 import { CommitteeMemberFormComponent, addMemberRefusal } from './committee-member-form.component';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -171,6 +172,52 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
     expect(findForm().pickerOpen()).toBeFalse();
     expect(q<HTMLInputElement>('[data-testid="member-person"]')!.value).toBe('Mona Al-Zahrani');
     expect(fixture.componentInstance.dirty()).withContext('the dialog knows the form is dirty').toBeTrue();
+  }));
+
+  // ACC-234 — the picker sorts by its Person header, like every list; its
+  // pickable rows and its disabled-with-reason rows keep working.
+  it('the picker sorts by its Person header, ascending then descending; picking and the disabled row still work', fakeAsync(() => {
+    setup();
+    openPicker();
+    // The picker is in <body>; Karma's window is narrower than a desktop, so
+    // choose the desktop layout (the one with headers) here.
+    const ng = (window as unknown as { ng: { getComponent: (e: Element) => unknown } }).ng;
+    const list = ng.getComponent(document.querySelector('am-simple-list')!) as SimpleListComponent<{ id: string }>;
+    list.phone.set(false);
+    fixture.detectChanges();
+    const head = q<HTMLElement>('[data-testid="simple-list-head"]')!;
+    expect(head).withContext('the column header is drawn').not.toBeNull();
+    expect(Array.from(head.querySelectorAll('am-sort-header')).map((h) => h.getAttribute('data-sort-key'))).toEqual(['name']);
+    const person = head.querySelector<HTMLElement>('am-sort-header[data-sort-key="name"]')!;
+    expect(person.querySelector('button')!.getAttribute('aria-label')).toBe('Sort by Person');
+    expect(Array.from(head.querySelectorAll(':scope > span[role="columnheader"]')).map((s) => s.textContent!.trim())).toEqual(['Unit', 'Availability']);
+    expect(q('[data-testid="simple-list-sort"], [data-testid="simple-list-sort-menu"]')).withContext('no toolbar sort').toBeNull();
+    const names = () => pickRows().map((r) => r.textContent!.match(/(Huda|Khalid|Mona)/)![0]);
+    // Opens on name, ascending, with the arrow on Person.
+    expect(person.getAttribute('aria-sort')).toBe('ascending');
+    expect(person.textContent).toContain('▲');
+    expect(names()).toEqual(['Huda', 'Khalid', 'Mona']);
+    person.querySelector('button')!.click();
+    flush();
+    fixture.detectChanges();
+    expect(names()).toEqual(['Mona', 'Khalid', 'Huda']);
+    expect(person.getAttribute('aria-sort')).toBe('descending');
+    expect(person.textContent).toContain('▼');
+    person.querySelector('button')!.click();
+    flush();
+    fixture.detectChanges();
+    expect(names()).toEqual(['Huda', 'Khalid', 'Mona']);
+    expect(person.getAttribute('aria-sort')).toBe('ascending');
+    // Still a picker: the member stays disabled with its reason; anyone else picks.
+    const huda = pickRows().find((r) => r.textContent!.includes('Huda'))!;
+    expect(huda.getAttribute('aria-disabled')).toBe('true');
+    expect(huda.textContent).toContain('Already a member');
+    pickRows().find((r) => r.textContent!.includes('Mona'))!.click();
+    fixture.detectChanges();
+    flush();
+    fixture.detectChanges();
+    expect(findForm().pickerOpen()).toBeFalse();
+    expect(q<HTMLInputElement>('[data-testid="member-person"]')!.value).toBe('Mona Al-Zahrani');
   }));
 
   it('a disabled row cannot be picked', () => {

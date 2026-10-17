@@ -14,6 +14,7 @@ import {
   DataListColumn,
   DataListComponent,
 } from '../../../../shared/components/data-list/data-list.component';
+import { SortHeaderComponent } from '../../../../shared/components/sort-header/sort-header.component';
 import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
@@ -23,7 +24,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 @Component({
   selector: 'app-role-list',
   standalone: true,
-  imports: [PageHeaderComponent, 
+  imports: [SortHeaderComponent, PageHeaderComponent, 
     TranslatePipe,
     AmCountPipe,
     ButtonModule,
@@ -74,22 +75,14 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
             @for (column of columns(); track column.key) {
               @if (h.visible(column.key)) {
                 @if (column.sortBy) {
-                  <button
-                    type="button"
-                    class="flex items-center gap-1 text-start uppercase hover:text-[var(--am-blue-primary)]"
-                    (click)="h.sort(column.key)"
-                  >
-                    {{ column.label }}
-                    @if (h.sortBy === column.sortBy) {
-                      <i
-                        class="pi text-[9px]"
-                        [class.pi-arrow-up]="h.sortDir !== 'desc'"
-                        [class.pi-arrow-down]="h.sortDir === 'desc'"
-                      ></i>
-                    }
-                  </button>
+                  <am-sort-header
+                    [key]="column.key"
+                    [label]="column.label"
+                    [current]="h.sortBy === column.sortBy ? { key: column.key, dir: h.sortDir ?? 'asc' } : null"
+                    (sort)="h.sort($event)"
+                  />
                 } @else {
-                  <span>{{ column.label }}</span>
+                  <span role="columnheader">{{ column.label }}</span>
                 }
               }
             }

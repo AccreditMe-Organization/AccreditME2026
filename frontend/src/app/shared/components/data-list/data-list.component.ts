@@ -40,6 +40,7 @@ import {
   writePreferences,
 } from './data-list.persistence';
 import { PaginatorLatinDigits } from '../../../core/formatting/latin-digits';
+import { nextSort } from '../sort-header/sort-header.component';
 
 export interface DataListColumn {
   // Stable identity: the persisted hidden-column set and the header/row
@@ -312,6 +313,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
         <div
           class="sticky top-0 z-[1] grid items-center gap-3 px-3 py-2 border-b-2 border-[var(--am-border)] bg-[var(--am-surface)] text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)]"
           style="grid-template-columns: var(--am-list-cols)"
+          role="row"
         >
           <ng-container
             [ngTemplateOutlet]="headerTemplate()!"
@@ -859,12 +861,14 @@ export class DataListComponent<T> implements OnInit {
   onSortColumn(column: DataListColumn): void {
     if (!column.sortBy) return;
     this.sortMenuOpen.set(false);
+    const key = column.sortBy;
     this.query.update((q) => ({
       ...q,
-      sortBy: column.sortBy,
+      sortBy: key,
       // Clicking the already-sorted column reverses it, which is what a header
-      // is expected to do. A different column starts ascending.
-      sortDir: q.sortBy === column.sortBy && q.sortDir === 'asc' ? 'desc' : 'asc',
+      // is expected to do. A different column starts ascending. The rule is
+      // ACC-234's one copy, shared with every list that sorts by header.
+      sortDir: nextSort(q.sortBy && q.sortDir ? { key: q.sortBy, dir: q.sortDir } : null, key).dir,
       page: 1,
     }));
     this.setReplaced('list.announceSorted');

@@ -240,7 +240,6 @@ export function addMemberRefusal(err: unknown): string {
         [columns]="pickerColumns()"
         grid="minmax(0,1.5fr) minmax(0,1fr) minmax(110px,auto)"
         [row]="personCells"
-        [sortOptions]="pickerSortOptions()"
         defaultSort="name:asc"
         [searchLabel]="'committee.memberForm.searchPeople' | translate"
         [searchPlaceholder]="'committee.memberForm.searchPeoplePlaceholder' | translate"
@@ -408,18 +407,12 @@ export class CommitteeMemberFormComponent implements OnInit {
 
   readonly pickerColumns = computed(() => {
     this.translate.currentLang();
+    // ACC-234 — the picker sorts by its Person header, by name either way: the
+    // one sort loadPeople() honours. Unit has none, so it stays plain text.
     return [
-      { label: this.translate.instant('committee.memberForm.col.person') },
+      { label: this.translate.instant('committee.memberForm.col.person'), sort: 'name' },
       { label: this.translate.instant('committee.memberForm.col.unit') },
       { label: '', srLabel: this.translate.instant('committee.memberForm.col.availability') },
-    ];
-  });
-
-  readonly pickerSortOptions = computed(() => {
-    this.translate.currentLang();
-    return [
-      { value: 'name:asc', label: this.translate.instant('committee.sort.nameAsc') },
-      { value: 'name:desc', label: this.translate.instant('committee.sort.nameDesc') },
     ];
   });
 
