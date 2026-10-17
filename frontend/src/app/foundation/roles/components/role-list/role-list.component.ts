@@ -2,14 +2,15 @@ import { Component, TemplateRef, ViewChild, computed, inject, signal, viewChild 
 import { LanguageService } from '../../../../core/services/language.service';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonModule } from 'primeng/button';
-import { MenuModule } from 'primeng/menu';
-import { TooltipModule } from 'primeng/tooltip';
-import { ConfirmationService, MenuItem } from 'primeng/api';
+import { MessageModule } from 'primeng/message';
+import { ConfirmationService } from 'primeng/api';
 import { RoleService, RoleDto } from '../../services/role.service';
 import { RoleFormComponent } from '../role-form/role-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
+import { refusalCode } from '../../../../core/http/refusal';
 import {
   DataListColumn,
   DataListComponent,
@@ -28,8 +29,8 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
     TranslatePipe,
     AmCountPipe,
     ButtonModule,
-    MenuModule,
-    TooltipModule,
+    MessageModule,
+    RowMenuComponent,
     RoleFormComponent,
     EditDialogComponent,
     DataListComponent,
@@ -50,8 +51,16 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
         </div>
       </app-page-header>
 
-      @if (error()) {
-        <p class="text-red-500">{{ error() | translate }}</p>
+      <!-- A row action's failure, in the list's own error shape: the message
+           from its code, and Try again only when trying again could work. The
+           list's own load error and Retry belong to app-data-list. -->
+      @if (actionError(); as failure) {
+        <div class="flex items-center gap-2" data-testid="role-action-error">
+          <p-message severity="error" [text]="failure.key | translate" />
+          @if (failure.retry) {
+            <p-button size="small" [outlined]="true" [label]="'list.retry' | translate" (onClick)="retryAction()" />
+          }
+        </div>
       }
 
       <!-- ACC-78 - page mode. Bilingual names as a two-line cell, settling
@@ -99,7 +108,9 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                   <div class="flex items-center gap-2 min-w-0">
                     <span class="text-[13px] font-medium truncate">{{ role.nameEn }}</span>
                     @if (!role.isActive) {
-                      <app-status-chip variant="account" value="CANCELLED" />
+                      <!-- The inactive chip users already wear: "Inactive", not
+                           the account chip's "Cancelled". -->
+                      <app-status-chip variant="user" labelPrefix="user.status" value="INACTIVE" />
                     }
                   </div>
                   <!-- dir=rtl on the SPAN, not the block. On the block it
@@ -166,13 +177,12 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                     [text]="true"
                     (onClick)="openEdit(role)"
                   />
-                  <p-button
-                    icon="pi pi-ellipsis-h"
-                    size="small"
-                    [text]="true"
-                    [ariaLabel]="'list.more' | translate"
-                    [pTooltip]="'list.more' | translate"
-                    (onClick)="openRowMenu(role, $event)"
+                  <!-- am-row-menu: attached to the page body, under its ⋯ and
+                       aligned to its end, so it never widens the list. -->
+                  <am-row-menu
+                    [groups]="[menuFor(role)]"
+                    [label]="'list.actionsFor' | translate: { name: displayLabel(role) }"
+                    (picked)="pick(role, $event)"
                   />
                 </div>
               }
@@ -181,20 +191,48 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
         </app-data-list>
       </div>
 
-      <p-menu #rowMenu [model]="rowMenuItems()" [popup]="true" />
-
       <ng-template #formTpl>
+        <!-- Cancel goes through the dialog, so unsaved work gets the same
+             question Escape asks; the form's dirty state travels out to it. -->
         <app-role-form
           [role]="editingRole()"
           (saved)="onSaved($event)"
-          (cancelled)="showFormDialog.set(false)"
+          (dirtyChange)="formDirty.set($event)"
+          (ready)="roleFormRef.set($event)"
         />
       </ng-template>
+      <!-- Declared HERE, not inside the form: p-dialog collects its templates
+           at content init, so a footer arriving later never lands. Outside
+           the body, it is also what keeps an Arabic system role's Edit under
+           the 420 cap at 390px wide. -->
+      <ng-template #roleFooterTpl>
+        <div class="flex justify-end gap-3">
+          <p-button
+            [label]="'common.cancel' | translate"
+            severity="secondary"
+            [text]="true"
+            type="button"
+            [disabled]="!!roleFormRef()?.saving()"
+            (onClick)="roleDialog.requestClose()"
+          />
+          <p-button
+            type="button"
+            data-testid="role-save"
+            [label]="(editingRole() ? 'common.save' : 'common.add') | translate"
+            [loading]="!!roleFormRef()?.saving()"
+            [disabled]="!roleFormRef()"
+            (onClick)="roleFormRef()?.onSubmit()"
+          />
+        </div>
+      </ng-template>
       <app-edit-dialog
+        #roleDialog
+        [dirty]="formDirty()"
         [visible]="showFormDialog()"
         (visibleChange)="showFormDialog.set($event)"
         [header]="(editingRole() ? 'roles.editRole' : 'roles.addRole') | translate"
         [content]="formTpl"
+        [footer]="roleFooterTpl"
         width="520px"
       />
 
@@ -203,7 +241,6 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 })
 export class RoleListComponent {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
-  @ViewChild('rowMenu') rowMenu!: { toggle: (event: Event) => void };
 
   private readonly roleService = inject(RoleService);
   private readonly router = inject(Router);
@@ -227,9 +264,9 @@ export class RoleListComponent {
   // two jobs.
   readonly canManage = computed(() => this.navigationAccess.hasPermission('roles:manage'));
 
-  readonly error = signal<string | null>(null);
+  /** A row action that failed: what to say, and how to try it again if that could work. */
+  readonly actionError = signal<{ key: string; retry: (() => void) | null } | null>(null);
   readonly list = viewChild.required<DataListComponent<RoleDto>>('list');
-  readonly menuRole = signal<RoleDto | null>(null);
 
   // ACC-78 — the client-side PLATFORM_ADMIN filter is GONE, not moved. The
   // backend now excludes it in the WHERE clause, because a post-query filter
@@ -273,49 +310,39 @@ export class RoleListComponent {
     ];
   });
 
-  readonly rowMenuItems = computed<MenuItem[]>(() => {
-    this.translate.currentLang();
-    const role = this.menuRole();
-    if (!role) return [];
-
+  /** The row's ⋯ items: the same two the p-menu offered, in the same order. */
+  menuFor(role: RoleDto): RowMenuItem[] {
     return [
-      {
-        label: this.translate.instant('roles.managePermissions'),
-        icon: 'pi pi-lock',
-        command: () => this.openPermissions(role),
-      },
+      { id: 'permissions', label: this.translate.instant('roles.managePermissions') },
       role.isActive
-        ? {
-            label: this.translate.instant('roles.deactivateRole'),
-            icon: 'pi pi-ban',
-            command: () => this.onDeactivate(role),
-          }
-        : {
-            label: this.translate.instant('roles.activateRole'),
-            icon: 'pi pi-check',
-            command: () => this.onActivate(role),
-          },
+        ? { id: 'deactivate', label: this.translate.instant('roles.deactivateRole'), danger: true }
+        : { id: 'activate', label: this.translate.instant('roles.activateRole') },
     ];
-  });
+  }
 
-  openRowMenu(role: RoleDto, event: Event): void {
-    this.menuRole.set(role);
-    this.rowMenu.toggle(event);
+  pick(role: RoleDto, id: string): void {
+    if (id === 'permissions') this.openPermissions(role);
+    else if (id === 'deactivate') this.onDeactivate(role);
+    else if (id === 'activate') this.onActivate(role);
   }
 
   readonly showFormDialog = signal(false);
+  readonly formDirty = signal(false);
+  readonly roleFormRef = signal<RoleFormComponent | null>(null);
   readonly editingRole = signal<RoleDto | null>(null);
   private wasCreating = false;
 
   openAdd(): void {
     this.editingRole.set(null);
     this.wasCreating = true;
+    this.roleFormRef.set(null);
     this.showFormDialog.set(true);
   }
 
   openEdit(role: RoleDto): void {
     this.editingRole.set(role);
     this.wasCreating = false;
+    this.roleFormRef.set(null);
     this.showFormDialog.set(true);
   }
 
@@ -348,21 +375,47 @@ export class RoleListComponent {
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {
-        this.roleService.deactivateRole(role.id).subscribe({
-          next: () => this.list().reload(),
-          error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, 'Deactivate failed')),
-        });
+        this.runDeactivate(role);
       },
     });
   }
 
+  private runDeactivate(role: RoleDto): void {
+    this.actionError.set(null);
+    this.roleService.deactivateRole(role.id).subscribe({
+      next: () => this.list().reload(),
+      error: (err: unknown) => this.failed(err, 'roles.actionError.deactivate', () => this.runDeactivate(role)),
+    });
+  }
+
   onActivate(role: RoleDto): void {
+    this.actionError.set(null);
     this.roleService.activateRole(role.id).subscribe({
       next: () => this.list().reload(),
-      error: (err: unknown) =>
-        this.error.set(extractErrorMessage(err, 'Activate failed')),
+      error: (err: unknown) => this.failed(err, 'roles.actionError.activate', () => this.onActivate(role)),
     });
+  }
+
+  retryAction(): void {
+    this.actionError()?.retry?.();
+  }
+
+  /**
+   * A refusal is said from its code or status, never the server's text. Only
+   * a failure that trying again could fix offers Try again.
+   */
+  private failed(err: unknown, fallbackKey: string, retry: () => void): void {
+    const status = err instanceof HttpErrorResponse ? err.status : 0;
+    if (refusalCode(err) === 'LAST_ACTIVE_ADMINISTRATOR') {
+      this.actionError.set({ key: 'roles.refusal.lastAdministrator', retry: null });
+    } else if (status === 404) {
+      this.actionError.set({ key: 'roles.actionError.notFound', retry: null });
+      this.list().reload();
+    } else if (status === 403) {
+      this.actionError.set({ key: 'roles.actionError.forbidden', retry: null });
+    } else {
+      this.actionError.set({ key: fallbackKey, retry });
+    }
   }
 
 }

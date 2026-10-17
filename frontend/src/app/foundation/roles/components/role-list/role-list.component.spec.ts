@@ -69,7 +69,7 @@ describe('RoleListComponent row actions (ACC-123)', () => {
     });
 
     it('renders no row menu, so no Manage Permissions or Deactivate Role', () => {
-      expect(buttons(render(['roles:view']))).not.toContain('list.more');
+      expect(buttons(render(['roles:view']))).not.toContain('list.actionsFor');
     });
 
     it('reports canManage false', () => {
@@ -87,18 +87,17 @@ describe('RoleListComponent row actions (ACC-123)', () => {
     });
 
     it('still renders the row menu', () => {
-      expect(buttons(render(HELD))).toContain('list.more');
+      expect(buttons(render(HELD))).toContain('list.actionsFor');
     });
 
     it('offers both write actions in the menu', () => {
+      // ACC-235 — the row's am-row-menu items. Building them is not what gates
+      // them (the template's canManage() is), so they are the same two for any
+      // caller; the roles:view-only case above proves the ⋯ is absent there.
       const labels = render(HELD)
-        .componentInstance.rowMenuItems()
+        .componentInstance.menuFor(ROLE)
         .map((i) => i.label);
-      // menuRole() is unset until a row menu opens, so the model is empty here;
-      // what this pins is that building it is not what gates it — the template
-      // is. Asserted so a future "gate it in rowMenuItems instead" is a visible
-      // change.
-      expect(labels.length).toBe(0);
+      expect(labels).toEqual(['roles.managePermissions', 'roles.deactivateRole']);
     });
   });
 });
