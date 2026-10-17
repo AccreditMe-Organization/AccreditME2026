@@ -7,6 +7,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { MessageModule } from 'primeng/message';
 import { RoleService, RoleDto, CreateRoleDto, UpdateRoleDto } from '../../services/role.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { FieldComponent } from '../../../../shared/components/field/field.component';
 
 @Component({
   selector: 'app-role-form',
@@ -18,68 +19,76 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     InputTextModule,
     TextareaModule,
     MessageModule,
+    FieldComponent,
   ],
   template: `
-    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col">
 
       @if (role?.isSystem) {
         <p-message severity="info" [text]="'roles.systemRoleKeyLocked' | translate" />
       }
 
-      <div class="flex flex-col gap-1">
-        <label for="nameEn" class="font-medium text-sm">
-          {{ 'roles.nameEn' | translate }} <span class="text-red-500">*</span>
-        </label>
-        <input id="nameEn" pInputText formControlName="nameEn" />
-      </div>
+      <!-- ACC-235 — every field in am-field, so a submit shows its errors
+           under the field (the wrapper reads the form's own submitted). -->
+      <am-field
+        [label]="'roles.nameEn' | translate"
+        [control]="form.controls.nameEn"
+        inputId="nameEn"
+        [errorMessages]="{ required: 'roles.form.nameRequired', maxlength: 'roles.form.nameTooLong' }"
+        [forceShowErrors]="showErrors()"
+      >
+        <input id="nameEn" pInputText formControlName="nameEn" class="w-full" />
+      </am-field>
 
-      <div class="flex flex-col gap-1">
-        <label for="nameAr" class="font-medium text-sm">
-          {{ 'roles.nameAr' | translate }}
-        </label>
-        <input id="nameAr" pInputText dir="rtl" formControlName="nameAr" />
-      </div>
+      <am-field
+        [label]="'roles.nameAr' | translate"
+        [control]="form.controls.nameAr"
+        inputId="nameAr"
+        [errorMessages]="{ maxlength: 'roles.form.nameTooLong' }"
+        [forceShowErrors]="showErrors()"
+      >
+        <input id="nameAr" pInputText dir="rtl" formControlName="nameAr" class="w-full" />
+      </am-field>
 
-      <div class="flex flex-col gap-1">
-        <label for="description" class="font-medium text-sm">
-          {{ 'roles.description' | translate }}
-        </label>
-        <textarea id="description" pTextarea rows="3" formControlName="description"></textarea>
-      </div>
+      <am-field
+        [label]="'roles.description' | translate"
+        [control]="form.controls.description"
+        inputId="description"
+        [errorMessages]="{ maxlength: 'roles.form.descriptionTooLong' }"
+        [forceShowErrors]="showErrors()"
+      >
+        <textarea id="description" pTextarea rows="3" formControlName="description" class="w-full"></textarea>
+      </am-field>
 
       @if (saveError()) {
-        <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
+        <p class="text-meta text-[var(--am-danger-ink)] m-0 mb-2" role="alert" data-testid="role-save-error">{{ saveError() | translate }}</p>
       }
 
-      <div class="flex gap-3 justify-end">
-        <p-button
-          [label]="'common.cancel' | translate"
-          severity="secondary"
-          [text]="true"
-          type="button"
-          (onClick)="cancelled.emit()"
-        />
-        <p-button
-          type="submit"
-          [label]="(role ? 'common.save' : 'common.add') | translate"
-          [loading]="saving()"
-          [disabled]="form.invalid"
-        />
-      </div>
-
+      <!-- Cancel and Save live in the dialog's FOOTER (role-list), outside the
+           420px body: measured, an Arabic system role's Edit reached 420 and
+           scrolled at 390px wide with them inside. Enter in a field still
+           submits, through the form. -->
     </form>
   `,
 })
 export class RoleFormComponent implements OnInit {
   @Input() role: RoleDto | null = null;
   @Output() saved = new EventEmitter<RoleDto>();
-  @Output() cancelled = new EventEmitter<void>();
+  /**
+   * Hands this instance to the host, whose FOOTER drives it (Cancel, Save) —
+   * the shape invite-user uses. A footer Save is not a form submit, so it
+   * reveals the field errors through showErrors.
+   */
+  @Output() ready = new EventEmitter<RoleFormComponent>();
+  /** ACC-235 — the dialog's [dirty] lives on the dialog, so the state travels out (ACC-96). */
+  @Output() dirtyChange = new EventEmitter<boolean>();
 
   private readonly roleService = inject(RoleService);
   private readonly fb = inject(FormBuilder);
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
+  readonly showErrors = signal(false);
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(100)]],
@@ -99,10 +108,21 @@ export class RoleFormComponent implements OnInit {
         description: this.role.description ?? '',
       });
     }
+    // Each opening is a new form, so the host's dirty flag starts clean too.
+    this.dirtyChange.emit(false);
+    this.ready.emit(this);
+    this.form.valueChanges.subscribe(() => this.dirtyChange.emit(this.form.dirty));
   }
 
   onSubmit(): void {
-    if (this.form.invalid) return;
+    // Save stays enabled: a disabled Save says nothing about why, and the
+    // submit is what makes each field show its error.
+    if (this.form.invalid) {
+      this.showErrors.set(true);
+      this.form.markAllAsTouched();
+      return;
+    }
+    if (this.saving()) return;
     this.saving.set(true);
     this.saveError.set(null);
 
@@ -123,6 +143,8 @@ export class RoleFormComponent implements OnInit {
     request$.subscribe({
       next: (role) => {
         this.saving.set(false);
+        this.form.markAsPristine();
+        this.dirtyChange.emit(false);
         this.saved.emit(role);
       },
       error: (err: unknown) => {
