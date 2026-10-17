@@ -16,6 +16,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { Observable, Subscription } from 'rxjs';
 import { FormatService } from '../../../core/formatting';
 import { OverlaySelectComponent } from '../overlay-select/overlay-select.component';
+import { SortHeaderComponent, SortState, nextSort } from '../sort-header/sort-header.component';
 
 /** Below this window width the rows are cards (the phone sheet). */
 export const SIMPLE_LIST_PHONE_BELOW_PX = 760;
@@ -42,13 +43,23 @@ export interface SimpleListColumn {
   /** Already translated; empty for an actions column (named for screen readers by `srLabel`). */
   label: string;
   srLabel?: string;
+  /**
+   * ACC-234 — the server's sort key for this column. Given, the header is a
+   * button that sorts by it (`am-sort-header`); omitted, it is plain text,
+   * because a column off the endpoint's sort list cannot be sorted.
+   */
+  sort?: string;
 }
 
 /**
  * `am-simple-list` — a plain searchable list for an `am-list-dialog` (ACC-230:
- * All members, All sub-committees). Search and one sort, both on the server;
+ * All members, All sub-committees). Search and sort, both on the server;
  * Load more by 50; a polite live count. Nothing is remembered: it opens on
  * its defaults every time (the dialog rebuilds it).
+ *
+ * ACC-234 — it sorts by its column HEADERS (`am-sort-header`): a column with a
+ * `sort` key is a header you press, ascending then descending. There is no
+ * toolbar sort control, except on a phone, whose cards have no headers.
  *
  * The caller gives the read (`load`), the columns (`columns` + `grid`, a CSS
  * grid-template-columns) and each row's cells (`row`, a template whose cells
@@ -58,7 +69,7 @@ export interface SimpleListColumn {
 @Component({
   selector: 'am-simple-list',
   standalone: true,
-  imports: [FormsModule, NgTemplateOutlet, TranslatePipe, OverlaySelectComponent],
+  imports: [FormsModule, NgTemplateOutlet, TranslatePipe, OverlaySelectComponent, SortHeaderComponent],
   template: `
     <div class="am-sl" data-testid="simple-list">
       <div class="am-sl__toolbar" role="search">
@@ -74,14 +85,18 @@ export interface SimpleListColumn {
             data-testid="simple-list-search"
           />
         </span>
-        <app-overlay-select
-          class="am-sl__sort"
-          [options]="sortOptions()"
-          [ngModel]="sortValue()"
-          (ngModelChange)="sortValue.set($event ?? defaultSort())"
-          [ariaLabel]="'record.sortLabel' | translate"
-          data-testid="simple-list-sort"
-        />
+        @if (phone() && phoneSortOptions().length) {
+          <!-- ACC-234 — cards have no headers, so a phone keeps a compact sort
+               menu: the headers' own sorts, both directions. -->
+          <app-overlay-select
+            class="am-sl__sort"
+            [options]="phoneSortOptions()"
+            [ngModel]="current().key + ':' + current().dir"
+            (ngModelChange)="onPhoneSort($event)"
+            [ariaLabel]="'record.sortLabel' | translate"
+            data-testid="simple-list-sort-menu"
+          />
+        }
         <span class="am-sl__live" aria-live="polite" data-testid="simple-list-live">{{ liveText() }}</span>
       </div>
 
@@ -89,13 +104,17 @@ export interface SimpleListColumn {
         @if (!phone()) {
           <div class="am-sl__row am-sl__head" role="row" [style.grid-template-columns]="grid()" data-testid="simple-list-head">
             @for (c of columns(); track $index) {
-              <span role="columnheader">
-                @if (c.label) {
-                  {{ c.label }}
-                } @else if (c.srLabel) {
-                  <span class="sr-only">{{ c.srLabel }}</span>
-                }
-              </span>
+              @if (c.sort && c.label) {
+                <am-sort-header [key]="c.sort" [label]="c.label" [current]="current()" (sort)="sortBy($event)" />
+              } @else {
+                <span role="columnheader" class="am-sl__cut">
+                  @if (c.label) {
+                    {{ c.label }}
+                  } @else if (c.srLabel) {
+                    <span class="sr-only">{{ c.srLabel }}</span>
+                  }
+                </span>
+              }
             }
           </div>
         }
@@ -191,11 +210,13 @@ export interface SimpleListColumn {
       .am-sl__search{flex:1 1 200px;display:flex;align-items:center;gap:6px;block-size:32px;padding:0 10px;border:1px solid var(--am-control-border);border-radius:var(--am-radius-control)}
       .am-sl__search input{flex:1;min-inline-size:0;border:0;outline:0;font:inherit;background:none}
       .am-sl__search:focus-within{outline:var(--am-focus-ring-width) solid var(--am-focus-ring)}
-      .am-sl__sort{inline-size:200px}
+      .am-sl__sort{flex:none;max-inline-size:100%}
+      .am-sl__cut{min-inline-size:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .am-sl__live{font-size:12px;color:var(--am-ink-700)}
       .am-sl__scroll{flex:1 1 auto;min-block-size:0;overflow:auto}
       .am-sl__list{list-style:none;margin:0;padding:0}
       .am-sl__row{display:grid;gap:10px;align-items:center;min-block-size:44px;box-sizing:border-box;padding:4px 16px;border-block-end:1px solid var(--am-border)}
+      .am-sl__row>*{min-inline-size:0}
       .am-sl__head{position:sticky;inset-block-start:0;z-index:1;min-block-size:30px;padding-block:0;background:var(--am-surface);font-size:11.5px;font-weight:600;color:var(--am-ink-700)}
       .am-sl__item--card{display:flex;flex-wrap:wrap;gap:2px 8px;min-block-size:60px;padding-block:8px}
       .am-sl__item--card>:first-child{flex:1 1 100%;min-inline-size:0}
@@ -228,8 +249,7 @@ export class SimpleListComponent<T extends { id: string }> {
   readonly grid = input.required<string>();
   /** One row's cells: its direct children are the grid cells. Context: `$implicit` the row, `phone`. */
   readonly row = input.required<TemplateRef<{ $implicit: T; phone: boolean }>>();
-  readonly sortOptions = input.required<{ value: string; label: string }[]>();
-  /** The first sort, as `key:dir`. */
+  /** The first sort, as `key:dir`; its column's header shows the arrow. */
   readonly defaultSort = input.required<string>();
   readonly searchLabel = input.required<string>();
   readonly searchPlaceholder = input('');
@@ -254,7 +274,8 @@ export class SimpleListComponent<T extends { id: string }> {
 
   readonly qInput = signal('');
   readonly q = signal('');
-  readonly sortValue = signal('');
+  /** A sort a header (or the phone menu) chose; null is the default sort. */
+  readonly sort = signal<SortState | null>(null);
   readonly phase = signal<'loading' | 'ready' | 'error'>('loading');
   readonly more = signal<'idle' | 'loading' | 'failed'>('idle');
   readonly items = signal<T[]>([]);
@@ -266,9 +287,28 @@ export class SimpleListComponent<T extends { id: string }> {
   private request: Subscription | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** The sort in force: the one chosen, else the default. */
+  readonly current = computed<SortState>(() => {
+    const chosen = this.sort();
+    if (chosen) return chosen;
+    const [key, dir] = this.defaultSort().split(':');
+    return { key: key ?? '', dir: dir === 'desc' ? 'desc' : 'asc' };
+  });
+
   readonly query = computed(() => {
-    const [sort, dir] = (this.sortValue() || this.defaultSort()).split(':') as [string, 'asc' | 'desc'];
-    return { q: this.q() || undefined, sort, dir: dir ?? 'asc' };
+    const { key, dir } = this.current();
+    return { q: this.q() || undefined, sort: key, dir };
+  });
+
+  /** A phone's sort menu: each sortable column, ascending then descending. */
+  readonly phoneSortOptions = computed(() => {
+    this.translate.currentLang();
+    return this.columns()
+      .filter((c): c is SimpleListColumn & { sort: string } => !!c.sort && !!c.label)
+      .flatMap((c) => [
+        { value: `${c.sort}:asc`, label: this.translate.instant('list.sortAscending', { column: c.label }) },
+        { value: `${c.sort}:desc`, label: this.translate.instant('list.sortDescending', { column: c.label }) },
+      ]);
   });
 
   readonly liveText = computed(() => {
@@ -328,6 +368,17 @@ export class SimpleListComponent<T extends { id: string }> {
   clearSearch(): void {
     this.qInput.set('');
     this.q.set('');
+  }
+
+  /** A header pressed: the list reads again from the first page, keeping the search. */
+  sortBy(key: string): void {
+    this.sort.set(nextSort(this.current(), key));
+  }
+
+  /** A phone's sort menu, as `key:dir`; clearing it returns to the default. */
+  onPhoneSort(value: string | null): void {
+    const [key, dir] = (value ?? '').split(':');
+    this.sort.set(key && (dir === 'asc' || dir === 'desc') ? { key, dir } : null);
   }
 
   /** From the first page, keeping the search and the sort (after an action on a row). */
