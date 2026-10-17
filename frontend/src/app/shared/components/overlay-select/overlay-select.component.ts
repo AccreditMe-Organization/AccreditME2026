@@ -17,29 +17,16 @@ import { NG_VALUE_ACCESSOR, ControlValueAccessor } from '@angular/forms';
 import { Overlay, OverlayRef, ScrollStrategy } from '@angular/cdk/overlay';
 import { TemplatePortal } from '@angular/cdk/portal';
 import { CdkListbox, CdkOption, ListboxValueChangeEvent } from '@angular/cdk/listbox';
-import { CdkScrollable, ScrollDispatcher } from '@angular/cdk/scrolling';
+import { ScrollDispatcher } from '@angular/cdk/scrolling';
 import { TranslatePipe } from '@ngx-translate/core';
-import { Subject } from 'rxjs';
 import { assertOverlaySafe } from '../../overlay/overlay-guard';
 import { LayerStackService } from '../../overlay/layer-stack.service';
-
-// Minimal object satisfying ScrollDispatcher.register()/deregister()'s real
-// RUNTIME contract — verified directly against
-// @angular/cdk/fesm2022/scrolling.mjs: register()/deregister() only ever
-// call scrollable.elementScrolled(), keyed by object identity in a Map, so
-// a lightweight object works exactly as well as a real CdkScrollable
-// directive instance here. TypeScript's own .d.ts types register()'s
-// parameter as the concrete CdkScrollable class rather than a structural
-// interface, so `asScrollable()` below casts through it at the two call
-// sites — justified by the verified-minimal runtime contract above, not a
-// blind `any` escape hatch.
-interface ManualScrollable {
-  elementScrolled(): Subject<Event>;
-}
-
-function asScrollable(manual: ManualScrollable): CdkScrollable {
-  return manual as unknown as CdkScrollable;
-}
+import {
+  ManualScrollable,
+  asScrollable,
+  createManualScrollable,
+  findScrollableAncestors,
+} from '../../overlay/scrollable-ancestors';
 
 // ACC-42 Phase 1 — hierarchy mode. A flattened, depth-annotated row list
 // rendered inside the SAME single CdkListbox/Overlay already proven in
@@ -67,54 +54,6 @@ function flattenHierarchy(
       ...(isGroup ? flattenHierarchy(children!, childrenField, depth + 1) : []),
     ];
   });
-}
-
-const SCROLLABLE_OVERFLOW = /(auto|scroll)/;
-
-// Mirrors PrimeNG's own DomHandler.getScrollableParents() (primeng-dom.mjs)
-// exactly — same computed-style overflow/overflow-x/overflow-y check,
-// walking every ancestor. PrimeNG uses this list to bind its own
-// close-on-scroll listeners; here it's used to tell CDK's ScrollDispatcher
-// which real ancestors exist at all, since nothing does that automatically
-// (see the registration note on OverlaySelectComponent below).
-function findScrollableAncestors(element: HTMLElement): HTMLElement[] {
-  const ancestors: HTMLElement[] = [];
-  let parent = element.parentElement;
-  while (parent) {
-    const style = window.getComputedStyle(parent);
-    if (
-      SCROLLABLE_OVERFLOW.test(style.overflow) ||
-      SCROLLABLE_OVERFLOW.test(style.overflowX) ||
-      SCROLLABLE_OVERFLOW.test(style.overflowY)
-    ) {
-      ancestors.push(parent);
-    }
-    parent = parent.parentElement;
-  }
-  return ancestors;
-}
-
-function createManualScrollable(
-  element: HTMLElement,
-  ngZone: NgZone,
-): { scrollable: ManualScrollable; destroy: () => void } {
-  const elementScrolled = new Subject<Event>();
-  const listener = (event: Event) => elementScrolled.next(event);
-  // Matches CdkScrollable's own ngOnInit() pattern (scrolling.mjs) —
-  // registered outside the zone since RepositionScrollStrategy's own
-  // updatePosition() call is likewise unzoned (a direct inline-style DOM
-  // write, not template-bound, so it doesn't need change detection).
-  const removeListener = ngZone.runOutsideAngular(() => {
-    element.addEventListener('scroll', listener, { passive: true });
-    return () => element.removeEventListener('scroll', listener);
-  });
-  return {
-    scrollable: { elementScrolled: () => elementScrolled },
-    destroy: () => {
-      removeListener();
-      elementScrolled.complete();
-    },
-  };
 }
 
 // ACC-41 — permanent shared select component, replacing p-select for fields
