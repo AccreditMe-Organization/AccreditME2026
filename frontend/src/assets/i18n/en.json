@@ -759,16 +759,6 @@
     "memberActionsFor": "Actions for {{name}}",
     "changeRole": "Change role…",
     "removeMember": "Remove from committee…",
-    "sort": {
-      "seat": "By seat",
-      "nameAsc": "Name A–Z",
-      "nameDesc": "Name Z–A",
-      "sinceAsc": "Longest-serving first",
-      "sinceDesc": "Newest first",
-      "status": "By status",
-      "membersDesc": "Most members first",
-      "membersAsc": "Fewest members first"
-    },
     "col": {
       "member": "Member",
       "seat": "Seat",
@@ -1471,7 +1461,10 @@
     "moreFor": "More actions for {{name}}",
     "retry": "Try again",
     "denied": "You do not have permission to view this list.",
-    "staleAfterError": "Could not refresh — showing the previous results."
+    "staleAfterError": "Could not refresh — showing the previous results.",
+    "sortBy": "Sort by {{column}}",
+    "sortAscending": "{{column}}, ascending",
+    "sortDescending": "{{column}}, descending"
   },
   "shell": {
     "product": {
@@ -1621,15 +1614,7 @@
       "pools": "Positions and roles"
     },
     "sort": {
-      "label": "Sort",
-      "dueAsc": "Due date ↑ · open first",
-      "dueDesc": "Due date ↓ · open first",
-      "createdDesc": "Newest first",
-      "createdAsc": "Oldest first",
-      "updatedDesc": "Recently updated",
-      "statusAsc": "Status",
-      "titleAsc": "Title A–Z",
-      "titleDesc": "Title Z–A"
+      "label": "Sort"
     },
     "chip": {
       "remove": "Remove filter: {{filter}}",

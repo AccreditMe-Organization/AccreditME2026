@@ -759,16 +759,6 @@
     "memberActionsFor": "إجراءات {{name}}",
     "changeRole": "تغيير الدور…",
     "removeMember": "إزالة من اللجنة…",
-    "sort": {
-      "seat": "حسب المقعد",
-      "nameAsc": "الاسم أ–ي",
-      "nameDesc": "الاسم ي–أ",
-      "sinceAsc": "الأقدم عضويةً أولًا",
-      "sinceDesc": "الأحدث أولًا",
-      "status": "حسب الحالة",
-      "membersDesc": "الأكثر أعضاءً أولًا",
-      "membersAsc": "الأقل أعضاءً أولًا"
-    },
     "col": {
       "member": "العضو",
       "seat": "المقعد",
@@ -1471,7 +1461,10 @@
     "moreFor": "إجراءات إضافية لـ {{name}}",
     "retry": "أعد المحاولة",
     "denied": "ليس لديك إذن لعرض هذه القائمة.",
-    "staleAfterError": "تعذّر التحديث — تظهر النتائج السابقة."
+    "staleAfterError": "تعذّر التحديث — تظهر النتائج السابقة.",
+    "sortBy": "ترتيب حسب {{column}}",
+    "sortAscending": "{{column}}، تصاعديًا",
+    "sortDescending": "{{column}}، تنازليًا"
   },
   "shell": {
     "product": {
@@ -1621,15 +1614,7 @@
       "pools": "المناصب والأدوار"
     },
     "sort": {
-      "label": "الترتيب",
-      "dueAsc": "تاريخ الاستحقاق ↑ · المفتوحة أولًا",
-      "dueDesc": "تاريخ الاستحقاق ↓ · المفتوحة أولًا",
-      "createdDesc": "الأحدث أولًا",
-      "createdAsc": "الأقدم أولًا",
-      "updatedDesc": "آخر تحديث",
-      "statusAsc": "الحالة",
-      "titleAsc": "العنوان أ–ي",
-      "titleDesc": "العنوان ي–أ"
+      "label": "الترتيب"
     },
     "chip": {
       "remove": "إزالة عامل التصفية: {{filter}}",
