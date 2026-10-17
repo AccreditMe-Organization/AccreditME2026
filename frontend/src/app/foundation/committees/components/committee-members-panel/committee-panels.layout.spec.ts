@@ -64,10 +64,9 @@ class PanelsHost {
     <div class="flex flex-col" [style.width.px]="width()" [style.height.px]="height()">
       <am-simple-list
         [load]="load"
-        [columns]="[{ label: 'Member' }, { label: 'Seat' }, { label: 'Since' }, { label: '' }]"
+        [columns]="[{ label: 'Member', sort: 'name' }, { label: 'Seat', sort: 'seat' }, { label: 'Since', sort: 'since' }, { label: '' }]"
         grid="minmax(200px,1.6fr) minmax(120px,1fr) 120px 32px"
         [row]="cells"
-        [sortOptions]="[{ value: 'seat:asc', label: 'By seat' }]"
         defaultSort="seat:asc"
         searchLabel="Search members"
         [countText]="count"
