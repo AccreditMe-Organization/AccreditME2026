@@ -264,6 +264,10 @@ export class CommitteesService {
             userId: dto.userId,
             roleValueId: dto.roleValueId,
             isActive: true,
+            // The day they joined, as on a rejoin above (ACC-120 slice 4). Before
+            // this a new member's joinedAt was always "now", whatever date was
+            // sent, while the JOINED event recorded the date sent.
+            joinedAt: effectiveDate,
           },
         });
 

@@ -3780,6 +3780,17 @@ is in `CommitteeListsService`:
   - **Inputs:** a `load(query)` function returning `{ items, total, matching }`,
     the columns, a CSS grid and a row template.
   - **Defaults:** it opens on its defaults every time (Q13).
+  - **Picking (ACC-120 slice 4), opt-in and off by default:**
+    - `selectable`: each row is one button, and pressing it emits `picked`.
+    - `rowDisabled(row)` gives a reason the row can't be picked, or null.
+      Such a row stays in the list: it is `aria-disabled` (still focusable),
+      reads its reason in one more cell, and never emits. So `columns` and
+      `grid` carry one more track.
+    - Off, the rows are ACC-230's exactly. Add member's person picker is the
+      first user: "Already a member" (§3.16).
+  - **Known, not changed:** the sort box shows no label until a sort is
+    chosen, because it binds `sortValue()`, which starts empty, rather than
+    the default.
 - **`CommitteeMembersPanelComponent`** (`app-committee-members-panel`):
   - **Row:** initials, then the name, linked to `/users/:id` only for the
     viewer's own id or for a viewer holding the route's permissions. Line 2 is
@@ -3880,6 +3891,64 @@ transaction:
 
 **Existing data (shared dev database, 15 Oct, read only):** 8 committees, none
 breaking any rule.
+
+### 3.16 The committees list and Add member (ACC-120 slice 4)
+
+Plan and Ahmad's decisions (16 Oct): `backend/Plans/step-120-4-committees-list.md`.
+
+**The list (`/committees`, `CommitteeListComponent`)** is the shared list on
+the /roles template.
+- **Data:** one read of `GET /committees`, cached; search, sort and the two
+  filters run in memory. `clientSideSource` does not read `query.filters`, so
+  status and type narrow the rows before it does.
+- **Columns:** name, type, parent, stage, status and members. There is no Next
+  meeting column: nothing records a meeting yet (decision A).
+- **Sort:** by the name being read (an Arabic name sorts last when missing,
+  ACC-160), type, stage (none last) or members.
+- **Status:** Active, Being dissolved (active, with `isDissolving`) or
+  Inactive. A dissolved committee is inactive.
+- **Empty:** "No committees yet", with a line pointing to Add Committee for a
+  `committees:create` holder only. A search or filter with no result uses the
+  list's own "No matching results" and Clear filters.
+- **Phone, below `SHELL_PHONE_BELOW_PX`:** one name column whose second line
+  is type · stage, plus the status when it is not Active, and the member
+  count. The two filters move to their own row above the list.
+- **Add Committee** is hidden without `committees:create` and opens the
+  existing form unchanged.
+
+**Add member (`CommitteeMemberFormComponent`, add mode).** Change role is the
+same component with `member` set, and its markup is unchanged.
+- **Person:** a read-only field whose button opens `am-list-dialog
+  size="compact"` with `am-simple-list` (`selectable`, `rowDisabled`), as its
+  own layer above the dialog.
+  - Its rows are every active person (`listAllUsers({ status: 'ACTIVE' })`).
+  - A current member is disabled with "Already a member" rather than left out.
+  - Escape closes only the picker; focus returns to the button that opened it.
+- **Role on committee:** `OverlaySelectComponent` over
+  `committee_member_role`.
+- **Joined:** the shared inline calendar in a date view that replaces the form
+  (a layer, as in Reopen). It defaults to today and allows no later day.
+  Today is sent as nothing, so the server records now; an earlier day is sent
+  as `effectiveDate`, its start in the browser's zone (ACC-96 Part A).
+  **The server now stores it as a new member's `joinedAt`**, as it already did
+  on a rejoin; before this a new member always joined "now".
+- **Every field is in `am-field`.** A refusal is said from its status
+  (409 already a member, 403, 404, else a retry line), never the server text.
+- **Unsaved work:** the form reports `dirtyChange` to the page's dialog
+  `[dirty]` (ACC-96's shape), and Cancel goes through the dialog's
+  `requestClose()`, so it asks before discarding, as Escape does.
+- **Measured** (16 Oct, local, against the 420 cap):
+  - form body 368 (EN) / 390 (AR), the same with every error showing;
+  - the date view 271 / 275;
+  - at 390 wide the dialog is 390, with the same heights.
+  - Each picker row's input has a zero basis and zero width. Without that, its
+    intrinsic width held the phone dialog at 395.
+
+**Change role saves again (fixed in the same PR, Ahmad, 17 Oct).** Its form
+kept `userId` required, and that mode never sets it, so Save did nothing: no
+request, and the dialog stayed open. Found by trying it on 16 Oct; the code
+predated this slice. In Change role mode the person control is now disabled,
+so it is not validated, and a spec requires the request and the close.
 
 ## 4. Notification System
 
