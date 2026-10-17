@@ -3946,6 +3946,40 @@ SYSTEM-REFERENCE.md §10.20 (the header) and §3.13 / §3.14 (the lists). Briefl
   - a header with no `aria-sort`.
 - **No migration**, and no backend change.
 
+## Key Architecture Decisions (ACC-236)
+
+al-nakheel's used AI credits, restored from the AI log. Script:
+`backend/prisma/fix-acc236-ai-credits-used.ts`. Briefly:
+
+- **LIVE PROOFS NEVER HAND-WRITE CREDIT COUNTERS; CREDITS USED IN A PROOF
+  STAY USED.**
+  - Nothing in the app sets `aiCreditsUsed`. `AiAllocationService` renews it
+    and `AiCreditService` reserves and refunds it, and every one of those
+    writes is audited or logged.
+  - A hand reset is a write with no record. On 14 Oct a proof's clean-up set
+    al-nakheel's to 0, and the audit trail had nothing.
+  - Five plans carried that clean-up step (193, 197, 198, 220, 224). They now
+    say the opposite.
+- **The fix computes, never assumes:**
+  - **Used:** the sum of `creditCost` over the period's SUCCESSFUL
+    `AiInteractionLog` rows, from the stored start (inclusive) to the renewal
+    (exclusive), for that organisation only.
+  - **The period:** by `creditPeriodAt()`, the one rule.
+  - **Refuses:**
+    - a customer organisation;
+    - an organisation with no period yet;
+    - a stored start the rule does not produce;
+    - an ended period;
+    - a total above the allocation.
+- **Dry run by default.** `--execute` writes both values and ONE audit row
+  together, under the row lock (before, after, the reason; no person). A
+  re-run writes nothing. It runs after the merge, before the period's renewal.
+- **The columns are `timestamp without time zone`, holding UTC.** A reader
+  that parses them as local time (node-postgres's default in a +03 process)
+  shows every value 3 hours early. That is how al-nakheel's correct
+  `aiCreditsRenewsAt` (21 Oct 00:00Z) was read as 20 Oct 21:00Z. Read them
+  through Prisma, or with `::text`.
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

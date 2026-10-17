@@ -10228,6 +10228,27 @@ these columns.
   against the ephemeral Postgres; it fails without `DATABASE_URL` and refuses a
   non-local host. Removing the cap or the row lock turns it red (mutation-tested
   12 Oct).
+- **No path sets `aiCreditsUsed` by hand (ACC-236).** Reserve, refund, renewal
+  and allocation are the only writers, and live proofs never hand-write the
+  counter. The one correction so far (al-nakheel's, reset to 0 by hand on
+  14 Oct with no audit row) goes through `npm run fix:acc236-ai-credits-used --
+  <slug> [--execute]` (`backend/prisma/fix-acc236-ai-credits-used.ts`).
+  - **Used:** the period's successful `AiInteractionLog` `creditCost`, start
+    inclusive, renewal exclusive, by `creditPeriodAt()`.
+  - **Renews at:** the period's renewal, by the same rule.
+  - **Refuses:** customer organisations, an organisation with no period, a
+    stored start the rule does not produce, an ended period, and a total
+    above the allocation.
+  - **`--execute`:** writes both values and one audit row
+    (`ai_credits_used_restored`) under the row lock. A re-run writes nothing.
+  - **Proved** by `fix-acc236-ai-credits-used.db-spec.ts` (`test:db`) and its
+    unit spec. Moving either edge of the window (start-exclusive, or
+    renewal-inclusive) turns both red.
+- **These timestamps are `timestamp without time zone`, holding UTC.**
+  node-postgres's default parser reads them as LOCAL time, so a raw `pg` read in
+  a +03 process shows `2026-10-21 00:00:00` as `2026-10-20T21:00Z` (measured
+  17 Oct). Prisma's adapter reads them correctly. Read them through Prisma, or
+  as `::text`.
 
 ### 17.3 Credit periods and renewal
 
