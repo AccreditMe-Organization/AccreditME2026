@@ -452,6 +452,20 @@
         "setup:view": "See Setup health",
         "admin:access": "Open the Administration area"
       }
+    },
+    "actionError": {
+      "deactivate": "The role couldn't be deactivated. Try again.",
+      "activate": "The role couldn't be activated. Try again.",
+      "notFound": "That role no longer exists. The list has been refreshed.",
+      "forbidden": "You can't change roles any more. Ask your administrator."
+    },
+    "refusal": {
+      "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first."
+    },
+    "form": {
+      "nameRequired": "Enter the role's name in English.",
+      "nameTooLong": "Use 100 characters or fewer.",
+      "descriptionTooLong": "Use 500 characters or fewer."
     }
   },
   "workflow": {
@@ -1464,7 +1478,8 @@
     "staleAfterError": "Could not refresh — showing the previous results.",
     "sortBy": "Sort by {{column}}",
     "sortAscending": "{{column}}, ascending",
-    "sortDescending": "{{column}}, descending"
+    "sortDescending": "{{column}}, descending",
+    "actionsFor": "Actions for {{name}}"
   },
   "shell": {
     "product": {

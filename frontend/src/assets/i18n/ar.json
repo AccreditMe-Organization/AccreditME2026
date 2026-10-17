@@ -452,6 +452,20 @@
         "setup:view": "عرض سلامة الإعداد",
         "admin:access": "فتح قسم الإدارة"
       }
+    },
+    "actionError": {
+      "deactivate": "تعذّر إلغاء تفعيل الدور. حاول مرة أخرى.",
+      "activate": "تعذّر تفعيل الدور. حاول مرة أخرى.",
+      "notFound": "لم يعد هذا الدور موجودًا. تم تحديث القائمة.",
+      "forbidden": "لم يعد بإمكانك تعديل الأدوار. تواصل مع المسؤول."
+    },
+    "refusal": {
+      "lastAdministrator": "إلغاء تفعيل هذا الدور سيترك المنشأة دون مدير نشط. امنح دور مدير المنشأة لمستخدم نشط أولًا."
+    },
+    "form": {
+      "nameRequired": "أدخل اسم الدور بالإنجليزية.",
+      "nameTooLong": "استخدم 100 حرف أو أقل.",
+      "descriptionTooLong": "استخدم 500 حرف أو أقل."
     }
   },
   "workflow": {
@@ -1464,7 +1478,8 @@
     "staleAfterError": "تعذّر التحديث — تظهر النتائج السابقة.",
     "sortBy": "ترتيب حسب {{column}}",
     "sortAscending": "{{column}}، تصاعديًا",
-    "sortDescending": "{{column}}، تنازليًا"
+    "sortDescending": "{{column}}، تنازليًا",
+    "actionsFor": "إجراءات {{name}}"
   },
   "shell": {
     "product": {
