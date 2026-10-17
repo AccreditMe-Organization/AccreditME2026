@@ -178,9 +178,12 @@ What the build found that the plan did not say:
   no width. Below the shell's phone width it is one name column (type · stage,
   plus a status that is not Active) and the member count, and the filters move
   above the list.
-- **Change role cannot save, and has not been able to.** Its form keeps
-  `userId` required, and that mode never sets it. Not changed here (Change
-  role keeps working "as it does today"); recorded in SYSTEM-REFERENCE §3.16.
+- **Change role could not save, and had not been able to.** Its form kept
+  `userId` required, and that mode never sets it. Fixed in this PR on Ahmad's
+  decision (17 Oct, CC-114): the person control is disabled in that mode.
+  Recorded in SYSTEM-REFERENCE §3.16.
+- **The 3-line change to `committee-detail.component.ts` is approved**
+  (Ahmad, 17 Oct, CC-114).
 - **The simple list's sort box shows no label** until a sort is chosen. It is
   the shared list's own behaviour, on every ACC-230 popup too. Not changed.
 - **The filtered empty** is the shared list's own "No matching results" with

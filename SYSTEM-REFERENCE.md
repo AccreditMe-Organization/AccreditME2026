@@ -3934,10 +3934,11 @@ same component with `member` set, and its markup is unchanged.
   - Each picker row's input has a zero basis and zero width. Without that, its
     intrinsic width held the phone dialog at 395.
 
-**Known, not changed:** Change role cannot save. Its form keeps `userId`
-required, and that mode never sets it, so Save does nothing: no request, and
-the dialog stays open. Found by trying it on 16 Oct; the code predates this
-slice.
+**Change role saves again (fixed in the same PR, Ahmad, 17 Oct).** Its form
+kept `userId` required, and that mode never sets it, so Save did nothing: no
+request, and the dialog stayed open. Found by trying it on 16 Oct; the code
+predated this slice. In Change role mode the person control is now disabled,
+so it is not validated, and a spec requires the request and the close.
 
 ## 4. Notification System
 
