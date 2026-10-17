@@ -16,6 +16,7 @@ import {
   DataListColumn,
   DataListComponent,
 } from '../../../../shared/components/data-list/data-list.component';
+import { SortHeaderComponent } from '../../../../shared/components/sort-header/sort-header.component';
 import {
   DataListSource,
   clientSideSource,
@@ -48,6 +49,7 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
   selector: 'app-committee-list',
   standalone: true,
   imports: [
+    SortHeaderComponent,
     PageHeaderComponent,
     TranslatePipe,
     FormsModule,
@@ -106,23 +108,14 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
             @for (column of columns(); track column.key) {
               @if (h.visible(column.key)) {
                 @if (column.sortBy) {
-                  <button
-                    type="button"
-                    class="flex items-center gap-1 text-start uppercase hover:text-[var(--am-blue-primary)]"
-                    [class.text-[var(--am-blue-primary)]]="h.sortBy === column.sortBy"
-                    (click)="h.sort(column.key)"
-                  >
-                    {{ column.label }}
-                    @if (h.sortBy === column.sortBy) {
-                      <i
-                        class="pi text-[9px]"
-                        [class.pi-arrow-up]="h.sortDir !== 'desc'"
-                        [class.pi-arrow-down]="h.sortDir === 'desc'"
-                      ></i>
-                    }
-                  </button>
+                  <am-sort-header
+                    [key]="column.key"
+                    [label]="column.label"
+                    [current]="h.sortBy === column.sortBy ? { key: column.key, dir: h.sortDir ?? 'asc' } : null"
+                    (sort)="h.sort($event)"
+                  />
                 } @else {
-                  <span>{{ column.label }}</span>
+                  <span role="columnheader">{{ column.label }}</span>
                 }
               }
             }

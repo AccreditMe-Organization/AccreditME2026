@@ -3920,8 +3920,9 @@ SYSTEM-REFERENCE.md §10.20 (the header) and §3.13 / §3.14 (the lists). Briefl
     sorts, both ways.
   - `nextSort()` beside it is the ONE press rule. `app-data-list`,
     `am-simple-list` and the All tasks list use it.
-  - Do not draw a second sort button inline. The six `app-data-list` pages that
-    did were moved onto it.
+  - Do not draw a second sort button inline. The seven `app-data-list` pages
+    that did (six, then `/committees` once PR #186 reached `dev`) were moved
+    onto it, as was Add member's person picker.
 - **A LIST'S COLUMNS ARE DEFINED ONCE, AND NO TRACK MAY DEPEND ON ITS ROW'S
   CONTENT.**
   - The header and every row are separate grids reading one track list, so

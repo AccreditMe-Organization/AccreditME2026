@@ -3835,9 +3835,9 @@ is in `CommitteeListsService`:
       `grid` carry one more track.
     - Off, the rows are ACC-230's exactly. Add member's person picker is the
       first user: "Already a member" (§3.16).
-  - **Known, not changed:** the sort box shows no label until a sort is
-    chosen, because it binds `sortValue()`, which starts empty, rather than
-    the default.
+  - **Was:** the sort box showed no label until a sort was chosen. The box
+    is gone (ACC-234): the headers sort, and the default's column carries
+    the arrow from the start.
 - **`CommitteeMembersPanelComponent`** (`app-committee-members-panel`):
   - **Row:** initials, then the name, linked to `/users/:id` only for the
     viewer's own id or for a viewer holding the route's permissions. Line 2 is
@@ -3952,7 +3952,8 @@ the /roles template.
 - **Columns:** name, type, parent, stage, status and members. There is no Next
   meeting column: nothing records a meeting yet (decision A).
 - **Sort:** by the name being read (an Arabic name sorts last when missing,
-  ACC-160), type, stage (none last) or members.
+  ACC-160), type, stage (none last) or members. The sort comes from the
+  column headers (`am-sort-header`, §10.20, ACC-234).
 - **Status:** Active, Being dissolved (active, with `isDissolving`) or
   Inactive. A dissolved committee is inactive.
 - **Empty:** "No committees yet", with a line pointing to Add Committee for a
@@ -3971,6 +3972,8 @@ same component with `member` set, and its markup is unchanged.
   own layer above the dialog.
   - Its rows are every active person (`listAllUsers({ status: 'ACTIVE' })`).
   - A current member is disabled with "Already a member" rather than left out.
+  - It sorts by its Person header, by name, either way (ACC-234). There is no
+    sort box.
   - Escape closes only the picker; focus returns to the button that opened it.
 - **Role on committee:** `OverlaySelectComponent` over
   `committee_member_role`.
@@ -7531,11 +7534,18 @@ sorts uses it.
     menu (no headers) is unchanged.
   - `am-simple-list`: a column with `sort` is a header (§3.14).
   - The All tasks list (§3.13).
-  - Lane A's `/committees` list (PR #186, not in `dev` when this was written)
-    draws its sort button inline, as the pages above did, and should move onto
-    this when the two meet.
-- **Spec:** `task-list-view.sort.spec.ts` and the See all tests in
-  `committee-members-panel.component.spec.ts` press every sortable header
+  - The `/committees` list (ACC-120 slice 4, §3.16), moved off its inline
+    sort button after PR #186 reached `dev`. Name, Type, Stage and Members
+    are headers, on the same fields as before (`nameEn` / `nameAr` by
+    language, `type`, `stage`, `members`). Parent and Status stay text.
+  - Add member's person picker (§3.16), an `am-simple-list`. Its Person
+    column sorts by `name`, either way, which is the one sort its
+    `loadPeople()` honours. Unit and Availability stay text. Its `selectable`
+    rows and `rowDisabled` reasons are unchanged.
+- **Spec:** `task-list-view.sort.spec.ts`, the See all tests in
+  `committee-members-panel.component.spec.ts`, the "sort by column header"
+  tests in `committee-list.component.spec.ts` and the picker test in
+  `committee-member-form.component.spec.ts` press every sortable header
   both ways. Each test asserts the request, the order and `aria-sort`, and that
   no toolbar Sort control exists. Removing the host's `aria-sort` turned 12 of
   them red (mutation-checked).
