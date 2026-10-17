@@ -3635,7 +3635,10 @@ more never repeats or skips a row.
   by `COALESCE(completedAt, cancelledAt, updatedAt) DESC`. The panel takes
   five of this.
 - **Other sorts:** created, updated, status (rank, then status, then due),
-  title (`lower(title)`), either way.
+  title (`lower(title)`), either way. **The list sorts by its column headers
+  (ACC-234, §10.20):** Task (`title`), Status, Due and Updated. Assignee and
+  Created by have no server sort, and `created` orders by a date no column
+  shows, so it is offered nowhere on screen.
 - **Filters:** status (Assigned includes a row still stored as `OVERDUE`,
   ACC-163); overdue — a flag, `dueAt < now()` and open and not On hold; an
   active assignee; a pool (`POSITION:{unit}:{position}` or
@@ -3671,11 +3674,50 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
     `RecordPanelComponent`, because that body has a floor, not a height.
 - **`TaskListViewComponent`** (`app-task-list-view`): the toolbar (search,
   Status, Overdue only, Assignee or pool, Required or optional, Due, Assigned
-  to me, Sort), chips with Clear all, a polite live count, the column header
+  to me), chips with Clear all, a polite live count, the column header
   sticky inside the ONLY scrolling element, Load more by 50, and the failure
   states (list, Load more, a row's action). Opens on its defaults every time.
   Below 760px the rows are two-line cards. Used in the popup and at
   `/tasks/all`.
+  - **Sort (ACC-234):** by header (`am-sort-header`, §10.20). The toolbar
+    has no Sort control. It opens on `due` ascending, with ▲ on Due. A press
+    is part of the query, so the list reads again from the first page, keeping
+    the search, filters and chips. Phone cards get a compact sort menu with
+    the headers' sorts, both ways.
+  - **Columns, defined once (ACC-234).** The header and every row are separate
+    grids reading ONE track list, on `.am-tl__row`:
+    `minmax(170px,2.2fr) 96px minmax(120px,1.4fr) minmax(150px,1.2fr)
+    minmax(90px,1fr) 92px 150px`. That only lines up while NO track depends
+    on its row's content. The action track was `auto`, so a row with a
+    next-step button sized it wider than one without and every flexible
+    column shifted (seen live: Start rows out of line, headers off their
+    columns). It is a fixed 150px: the widest next step, "Review request", is
+    114px, plus the 4px gap and the 26px ⋯. The row minimum is 960px, so
+    `/tasks/all` at a 1280 window (a 971px list area) does not scroll
+    sideways.
+  - **No cell paints outside its track:** `min-inline-size: 0` on every
+    cell. A name or sub-line that does not fit ends in an ellipsis, with its
+    whole text as the tooltip. Its accessible name is its text, so it is
+    already whole.
+  - **Due is two parts**, split at the due text's first " · " (every two-part
+    due string is "relative · date" in both languages). They share a line
+    when they fit; otherwise the date goes to line 2. Nothing is `nowrap`.
+    Each part has a 1em start padding holding the "·", and the parts' box
+    starts 1em before the cell, which clips it, so the "·" shows only between
+    parts on one line. It is padding, not an inline "·", so a part that wraps
+    inside itself keeps every line in the cell (an inline one clipped
+    "✓ Completed 12 Oct 2026" by 13px). Due was `nowrap` in a fixed 168px
+    track, which is how "23 days overdue · 23 Sep 2026" painted into Created
+    by.
+  - **Toolbar filters are as wide as their labels** (`flex: none`). They were
+    fixed at 140 / 180px with an ellipsis label, which cut "Required or
+    optional". The toolbar wraps to more rows instead (three at 1280 in
+    English, two elsewhere).
+  - **Measured** in `task-list-view.layout.spec.ts`: the `/tasks/all` list
+    at 988, 1148 and 1628px (what 1280, 1440 and 1920 windows give it), and
+    the popup at 1040 × 760, in both languages. Header-to-cell
+    drift is 0.00px in every column, with no text outside its track, no
+    uncaptioned cut and no cut toolbar label.
 - **`ListDialogComponent`** (`am-list-dialog`, `shared/components/list-dialog/`)
   is the shell for a LIST. EditDialog's 420px cap does not apply, because it is
   a list, not a form.
@@ -3771,8 +3813,13 @@ is in `CommitteeListsService`:
     `-count`, `-foot`, `-see-all`).
 - **`SimpleListComponent`** (`am-simple-list`,
   `shared/components/simple-list/`) is the body of a plain list popup.
-  - **Toolbar:** search (`type=search`, so `am-list-dialog` focuses it) and a
-    sort (`OverlaySelectComponent`, `ariaLabel` `record.sortLabel`).
+  - **Toolbar:** search (`type=search`, so `am-list-dialog` focuses it). There
+    is no sort control (ACC-234). A column given a `sort` key is a header
+    you press (`am-sort-header`, §10.20). Columns without one stay text.
+    `defaultSort` (`key:dir`) is the first sort, and its column shows the
+    arrow. Phone cards keep a compact sort menu (`ariaLabel`
+    `record.sortLabel`) with each sortable column both ways. The
+    `sortOptions` input is gone.
   - **List:** a polite live count, the column header sticky inside the ONLY
     scrolling element, and Load more by 50.
   - **Failures:** list and Load more failures are shown in place.
@@ -3802,14 +3849,15 @@ is in `CommitteeListsService`:
     (`committees:remove_member`), only those the viewer holds. A viewer with
     neither gets no ⋯. Both open the page's existing dialog and confirm.
     `reload()` re-reads the panel and an open popup.
-  - **Popup:** compact, with Member, Seat and Since columns; sorted by seat,
-    name or since.
+  - **Popup:** compact, with Member, Seat and Since columns, each a header
+    sorting by `name`, `seat` or `since` (ACC-234). It opens on seat.
 - **`CommitteeSubCommitteesPanelComponent`**
   (`app-committee-sub-committees-panel`):
   - **Row:** the child's name, linked, then "{stage} · n members" (the stage
     only when there is one).
   - **Order:** by name. There is no header action.
-  - **Popup:** compact, with Name, Status and Members columns.
+  - **Popup:** compact, with Name, Status and Members columns, each a header
+    sorting by `name`, `status` or `members` (ACC-234). It opens on name.
 - **Replaced on the committee page:** the Members and Sub-committees
   `RecordPanelComponent` blocks, their inline Change role and Remove icons, and
   the page's filter of the whole committees list for children. With the
@@ -6323,7 +6371,8 @@ because they were arrived at the expensive way.
 
 **PAGE** — a real table: projected header row with click-to-sort, a
 `p-paginator` with rows-per-page, a projected filter slot, a column
-chooser.
+chooser. Every page draws its sortable headers with `am-sort-header`
+(§10.20, ACC-234), and the header row is `role="row"`.
 **PANEL** — the compact list for embedding in a record page: no header,
 no pager, and a toolbar only once the set is big enough to want one.
 
@@ -7444,6 +7493,52 @@ reference ("AccreditMe AI for Users"), and nothing about any one feature.
   press, or save anything. Those belong to the feature, so the pattern cannot
   drift into one feature's rules.
 - Tokens only, logical CSS properties throughout.
+
+### 10.20 `am-sort-header` — Lists Sort by Column Header (ACC-234)
+
+`shared/components/sort-header/sort-header.component.ts`. **Lists sort by
+clicking column headers, never by a toolbar sort dropdown, except on phone
+cards** (Ahmad, 17 Oct). It is the ONE header-sort control; every list that
+sorts uses it.
+
+- **The host IS the header cell.** It carries `role="columnheader"`, is the
+  grid item, and has `aria-sort` (`ascending` / `descending`) only while its
+  column is the sorted one. Inside it is a real `<button type="button">`, so
+  Tab reaches it and Enter or Space presses it.
+- **Accessible name:** `list.sortBy` ("Sort by {{column}}" / "ترتيب حسب
+  {{column}}"). It begins with the visible label (WCAG 2.5.3). The `title` is
+  the label, for a label cut with an ellipsis.
+- **Arrow:** ▲ ascending, ▼ descending, only on the sorted column, after the
+  label in reading order (left of it in Arabic). It is `aria-hidden`; screen
+  readers hear `aria-sort`. The sorted column's label takes `--am-primary-700`.
+- **Inputs:** `key` (the server's sort key), `label` (translated), `current`
+  (the list's `SortState { key, dir }`, or null). **Output:** `sort` emits
+  the key.
+- **`nextSort(current, key)`** is the one rule for a press: a new column
+  starts ascending, and the sorted column flips. `app-data-list`
+  (`onSortColumn`), `am-simple-list` and the All tasks list all use it.
+- **A column the server cannot sort by is not this component.** It stays a
+  plain `role="columnheader"` cell, because a header that offers to sort and
+  answers 400 is worse than one that doesn't offer (§10.10 rule 4).
+- **Phone cards** have no headers, so `am-simple-list` and the All tasks list
+  keep a compact sort menu (`OverlaySelectComponent`, `data-testid` `…-sort-menu`)
+  whose options are each header's sort both ways ("Due, ascending" —
+  `list.sortAscending` / `list.sortDescending`).
+- **Consumers:**
+  - `app-data-list` pages, through each page's `#listHeader` template: roles,
+    users, positions, lookup categories, lookup values, public holidays.
+    `app-data-list`'s header row is now `role="row"`. Its own panel-mode sort
+    menu (no headers) is unchanged.
+  - `am-simple-list`: a column with `sort` is a header (§3.14).
+  - The All tasks list (§3.13).
+  - Lane A's `/committees` list (PR #186, not in `dev` when this was written)
+    draws its sort button inline, as the pages above did, and should move onto
+    this when the two meet.
+- **Spec:** `task-list-view.sort.spec.ts` and the See all tests in
+  `committee-members-panel.component.spec.ts` press every sortable header
+  both ways. Each test asserts the request, the order and `aria-sort`, and that
+  no toolbar Sort control exists. Removing the host's `aria-sort` turned 12 of
+  them red (mutation-checked).
 
 ## 11. Known Cross-Cutting Gaps
 

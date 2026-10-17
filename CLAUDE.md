@@ -3811,8 +3811,8 @@ Oct) and the measurements: `backend/Plans/step-228-record-tasks-panel.md` (§3,
   - A future record page (Meetings, Documents) builds its capped panels on this
     frame, never on a copy.
 - **A PLAIN LIST POPUP IS `am-list-dialog size="compact"` (720 × 560) WITH
-  `am-simple-list` INSIDE.** That gives search, sort, a live count and Load
-  more by 50, and no filters. The task list's toolbar is not reused for a list
+  `am-simple-list` INSIDE.** That gives search, sort (by column header since
+  ACC-234), a live count and Load more by 50, and no filters. The task list's toolbar is not reused for a list
   that has nothing to filter.
 - **SEE ALL OPENS WITH FOCUS IN ITS SEARCH BOX — in `am-list-dialog`, for every
   list popup.**
@@ -3902,6 +3902,48 @@ path that touches a task's files, and Ahmad's answers (16 Oct, Q1–Q5):
   - the "Evidence is shown to the people on this task" note is gone, because
     nothing can reach it (Q4).
 - **No migration.**
+
+## Key Architecture Decisions (ACC-234)
+
+The All tasks list's columns, and sorting by column header. Full mechanism:
+SYSTEM-REFERENCE.md §10.20 (the header) and §3.13 / §3.14 (the lists). Briefly:
+
+- **LISTS SORT BY CLICKING COLUMN HEADERS, NEVER BY A TOOLBAR SORT DROPDOWN,
+  EXCEPT ON PHONE CARDS** (Ahmad, 17 Oct).
+  - A REQUIRED pattern. A column the server sorts by is an `am-sort-header`
+    (`shared/components/sort-header/`): the first press sorts ascending, the
+    next descending, and so on.
+  - The sorted column shows ▲ or ▼ and carries `aria-sort`. The button is
+    named "Sort by {column}".
+  - A column the server cannot sort by stays plain text.
+  - Phone cards have no headers, so they keep a compact sort menu with the same
+    sorts, both ways.
+  - `nextSort()` beside it is the ONE press rule. `app-data-list`,
+    `am-simple-list` and the All tasks list use it.
+  - Do not draw a second sort button inline. The six `app-data-list` pages that
+    did were moved onto it.
+- **A LIST'S COLUMNS ARE DEFINED ONCE, AND NO TRACK MAY DEPEND ON ITS ROW'S
+  CONTENT.**
+  - The header and every row are separate grids reading one track list, so
+    they line up only while every track is fixed or `fr` (never `auto`,
+    `min-content` or `max-content`).
+  - The All tasks list's action track was `auto`. A row with a Start button
+    sized it wider than a row without one, and every column after it shifted.
+    It is a fixed 150px now, the longest next step plus the ⋯.
+- **NO CELL PAINTS OUTSIDE ITS TRACK.**
+  - `min-inline-size: 0` on every cell.
+  - Nothing that can be long is `nowrap` without an ellipsis.
+  - A name cut with an ellipsis keeps its whole text in a tooltip.
+  - A two-part Due puts the date on line 2 when one line does not fit.
+- **A toolbar control is as wide as its label.** The toolbar wraps to another
+  row rather than cut "Required or optional".
+- **Measured, and mutation-checked.** `task-list-view.layout.spec.ts` covers
+  `/tasks/all` at 1280, 1440 and 1920 and the popup at 1040 × 760, in both
+  languages. Each of these turned it, or the sort specs, red:
+  - an `auto` action track;
+  - a `nowrap` Due;
+  - a header with no `aria-sort`.
+- **No migration**, and no backend change.
 
 ## Open / Deferred Items
 
