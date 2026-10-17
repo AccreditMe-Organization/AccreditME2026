@@ -674,8 +674,11 @@ export class TaskService {
   async getById(id: string, organizationId: string): Promise<ITask> {
     const task = await this.prisma.task.findFirst({
       where: { id, organizationId },
-      // ACC-177 — a deleted piece of evidence stays as the record, not as evidence.
-      include: { assignees: true, evidence: { where: { deletedAt: null } } },
+      // ACC-231 — no evidence here any more (Ahmad, 16 Oct, Q1). A task's files
+      // have ONE reader, TaskEvidenceService, behind the task page's own rule;
+      // this read is tasks:view + the record, a different rule, and no screen
+      // used its evidence.
+      include: { assignees: true },
     });
     if (!task) {
       throw new NotFoundException('Task not found');

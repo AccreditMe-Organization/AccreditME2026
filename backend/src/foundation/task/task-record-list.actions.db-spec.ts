@@ -20,6 +20,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { TaskService, TaskViewer } from './task.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskPageService } from './task-page.service';
+import { TaskAdmissionService } from './task-admission.service';
 import { TaskRecordListService } from './task-record-list.service';
 
 const url = process.env['DATABASE_URL'];
@@ -43,7 +44,7 @@ describe('A row\'s actions equal its task page\'s (ACC-229)', () => {
   } as unknown as ObjectVisibilityService;
   const labels = { resolveMany: () => Promise.resolve(new Map()), lookup: () => null } as unknown as DelegationLabelService;
   const calendar = { getEffectiveTimeZone: () => Promise.resolve('Asia/Riyadh') } as unknown as WorkingCalendarService;
-  const page = new TaskPageService(prisma, visibility, labels, tasks, authority);
+  const page = new TaskPageService(prisma, labels, new TaskAdmissionService(prisma, visibility, tasks, authority));
   const list = new TaskRecordListService(prisma, visibility, tasks, authority, calendar);
 
   let org = '';

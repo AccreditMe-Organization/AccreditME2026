@@ -52,11 +52,6 @@ import { ITaskEvidenceDto, ITaskEvidenceListDto, TaskService } from '../../servi
 
       @if (loading() && !loaded()) {
         <p class="am-evidence__note" aria-live="polite">{{ 'common.loading' | translate }}</p>
-      } @else if (notShown()) {
-        <!-- ACC-228 — the task page admits people the evidence rule does not
-             (a pool member, a decider): they are told whose it is, not shown
-             an error. -->
-        <p class="am-evidence__note">{{ 'task.evidence.notShown' | translate }}</p>
       } @else if (loadError()) {
         <p class="am-evidence__note text-[var(--am-danger-ink)]" role="alert">{{ loadError() }}</p>
       } @else if (!items().length) {
@@ -276,8 +271,6 @@ export class TaskEvidenceListComponent {
   readonly loading = signal(false);
   readonly loaded = signal(false);
   readonly loadError = signal<string | null>(null);
-  /** The evidence rule refused this viewer (404): not an error, a fact about who sees it. */
-  readonly notShown = signal(false);
   readonly actionError = signal<string | null>(null);
   readonly busyId = signal<string | null>(null);
   private readonly data = signal<ITaskEvidenceListDto | null>(null);
@@ -414,7 +407,6 @@ export class TaskEvidenceListComponent {
   private load(taskId: string): void {
     this.loading.set(true);
     this.loadError.set(null);
-    this.notShown.set(false);
     this.taskService.listEvidence(taskId).subscribe({
       next: (list) => {
         this.data.set(list);
@@ -424,8 +416,11 @@ export class TaskEvidenceListComponent {
       },
       error: (err: unknown) => {
         this.loading.set(false);
+        // ACC-231 — the files follow the task page's own rule, so a viewer the
+        // page admits is never refused here. A 404 means the task changed
+        // hands since the page loaded: the ordinary error, in our own words.
         if (err instanceof HttpErrorResponse && err.status === 404) {
-          this.notShown.set(true);
+          this.loadError.set(this.translate.instant('task.evidence.loadError'));
           return;
         }
         this.loadError.set(this.translate.instant(extractErrorMessage(err, 'task.evidence.loadError')));
