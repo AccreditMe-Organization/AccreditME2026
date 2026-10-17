@@ -2,10 +2,9 @@ import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal, vi
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
-import { MenuModule } from 'primeng/menu';
 import { TooltipModule } from 'primeng/tooltip';
 import { FormsModule } from '@angular/forms';
-import { ConfirmationService, MenuItem } from 'primeng/api';
+import { ConfirmationService } from 'primeng/api';
 import { UserService, IUserDto } from '../../services/user.service';
 import {
   OrgPositionService,
@@ -39,7 +38,7 @@ import {
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
-import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
+import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 
 export type RowAction =
   | 'manageRoles'
@@ -68,7 +67,6 @@ export type RowAction =
     AmDateTimePipe,
     TranslatePipe,
     ButtonModule,
-    MenuModule,
     TooltipModule,
     FormsModule,
     InviteUserComponent,
@@ -79,7 +77,7 @@ export type RowAction =
     OverlaySelectComponent,
     TransferUserWizardComponent,
     ListRowDirective,
-    IconButtonComponent,
+    RowMenuComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -261,11 +259,13 @@ export type RowAction =
                      on every row and open an empty box for an inactive user. -->
                 @if (rowActionsFor(user).length > 0) {
                   <!-- The label names the OBJECT: twenty rows otherwise give a
-                       screen-reader user twenty identical "More actions". -->
-                  <am-icon-button
-                    icon="pi pi-ellipsis-h"
-                    [label]="'list.moreFor' | translate: { name: user.name }"
-                    (activated)="openRowMenu(user, $event)"
+                       screen-reader user twenty identical "More actions".
+                       ACC-235 — am-row-menu, attached to the page body under
+                       its ⋯, so it never widens the list. -->
+                  <am-row-menu
+                    [groups]="[menuFor(user)]"
+                    [label]="'list.actionsFor' | translate: { name: user.name }"
+                    (picked)="pick(user, $event)"
                   />
                 }
               </div>
@@ -274,7 +274,6 @@ export type RowAction =
         </app-data-list>
       </div>
 
-      <p-menu #rowMenu [model]="rowMenuItems()" [popup]="true" />
     </div>
 
     <ng-template #inviteTpl>
@@ -401,7 +400,6 @@ export type RowAction =
 })
 export class UserListComponent implements OnInit {
   @ViewChild('inviteTpl', { read: TemplateRef, static: true }) inviteTpl!: TemplateRef<unknown>;
-  @ViewChild('rowMenu') rowMenu!: { toggle: (event: Event) => void };
 
   private readonly userService = inject(UserService);
   private readonly orgPositionService = inject(OrgPositionService);
@@ -457,7 +455,6 @@ export class UserListComponent implements OnInit {
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly statusCounts = signal<Record<string, number>>({});
-  readonly menuUser = signal<IUserDto | null>(null);
   // Resolves managerId to a name. Read through listAllUsers() rather than the
   // current page: a manager is very often not on the same page as their report.
   readonly allUsers = signal<IUserDto[]>([]);
@@ -589,44 +586,35 @@ export class UserListComponent implements OnInit {
     return actions;
   }
 
-  readonly rowMenuItems = computed<MenuItem[]>(() => {
-    this.translate.currentLang();
-    const user = this.menuUser();
-    if (!user) return [];
-
-    // ACC-83 — a lookup rather than a ternary chain. Three actions nested as
-    // ?: was already at its limit; five would be unreadable, and the next
-    // person adding one would be editing the shape rather than adding a row.
-    const items: Record<RowAction, MenuItem> = {
-      manageRoles: {
-        label: this.translate.instant('manageRoles.menuAction'),
-        icon: 'pi pi-id-card',
-        command: () => this.openManageRoles(user),
-      },
-      transfer: {
-        label: this.translate.instant('user.transfer.menuAction'),
-        icon: 'pi pi-arrow-right-arrow-left',
-        command: () => this.openTransfer(user),
-      },
-      deactivate: {
-        label: this.translate.instant('user.deactivate'),
-        icon: 'pi pi-user-minus',
-        command: () => this.confirmDeactivate(user),
-      },
-      reactivate: {
-        label: this.translate.instant('user.reactivate'),
-        icon: 'pi pi-user-plus',
-        command: () => this.confirmReactivate(user),
-      },
-      revokeInvitation: {
-        label: this.translate.instant('user.revokeInvitation'),
-        icon: 'pi pi-times-circle',
-        command: () => this.confirmRevokeInvitation(user),
-      },
+  /**
+   * The row's ⋯ items: the actions rowActionsFor() allows, in its order.
+   * ACC-83 — a lookup rather than a ternary chain, so the next action is a row.
+   */
+  menuFor(user: IUserDto): RowMenuItem[] {
+    const labels: Record<RowAction, { key: string; danger?: boolean }> = {
+      manageRoles: { key: 'manageRoles.menuAction' },
+      transfer: { key: 'user.transfer.menuAction' },
+      deactivate: { key: 'user.deactivate', danger: true },
+      reactivate: { key: 'user.reactivate' },
+      revokeInvitation: { key: 'user.revokeInvitation', danger: true },
     };
+    return this.rowActionsFor(user).map((action) => ({
+      id: action,
+      label: this.translate.instant(labels[action].key),
+      danger: labels[action].danger,
+    }));
+  }
 
-    return this.rowActionsFor(user).map((action) => items[action]);
-  });
+  pick(user: IUserDto, id: string): void {
+    const run: Record<RowAction, () => void> = {
+      manageRoles: () => this.openManageRoles(user),
+      transfer: () => this.openTransfer(user),
+      deactivate: () => this.confirmDeactivate(user),
+      reactivate: () => this.confirmReactivate(user),
+      revokeInvitation: () => this.confirmRevokeInvitation(user),
+    };
+    run[id as RowAction]?.();
+  }
 
   ngOnInit(): void {
     this.orgPositionService
@@ -715,11 +703,6 @@ export class UserListComponent implements OnInit {
 
   onView(user: IUserDto): void {
     void this.router.navigate(['/users', user.id]);
-  }
-
-  openRowMenu(user: IUserDto, event: Event): void {
-    this.menuUser.set(user);
-    this.rowMenu.toggle(event);
   }
 
   openTransfer(user: IUserDto): void {

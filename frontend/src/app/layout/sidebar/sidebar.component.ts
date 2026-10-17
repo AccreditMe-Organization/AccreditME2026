@@ -1,14 +1,17 @@
-import { Component, computed, effect, inject, input, untracked } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, untracked } from '@angular/core';
+import { Dir } from '@angular/cdk/bidi';
+import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
+import { ConnectedPosition } from '@angular/cdk/overlay';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { catchError, filter, interval, map, of, startWith, switchMap } from 'rxjs';
 import { normalizePath } from '../../core/navigation/nav-location';
 import { SetupHealthService } from '../../foundation/setup-health/services/setup-health.service';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { MenuModule } from 'primeng/menu';
 import { TooltipModule } from 'primeng/tooltip';
-import { MenuItem } from 'primeng/api';
 import { AuthService } from '../../core/services/auth.service';
+import { LanguageService } from '../../core/services/language.service';
+import { LayerStackService } from '../../shared/overlay/layer-stack.service';
 import { AmCountPipe, FormatService } from '../../core/formatting';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import {
@@ -39,8 +42,11 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
     RouterLink,
     TranslatePipe,
     AmCountPipe,
-    MenuModule,
     TooltipModule,
+    CdkMenu,
+    CdkMenuItem,
+    CdkMenuTrigger,
+    Dir,
   ],
   template: `
     <aside
@@ -145,6 +151,13 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
       <!-- The signed-in user, and the menu that used to live in the top bar. -->
       @if (authService.currentUser(); as user) {
         <div class="flex-none p-2 border-t border-[var(--am-rail-rule)]">
+          <!-- ACC-235 — a CDK menu, as am-row-menu: attached to the page body,
+               opening ABOVE its button and aligned to its start, inside a CDK
+               [dir] that follows the session's language. The p-menu popup it
+               replaces rendered inside the rail; on a 390px phone it covered
+               its own button in English and ran 78px off the screen in
+               Arabic. The trigger sets aria-haspopup itself. -->
+          <span class="contents" [dir]="language.isRtl() ? 'rtl' : 'ltr'">
           <button
             type="button"
             class="am-rail-item w-full flex items-center gap-[9px] px-2 py-[6px] rounded-[7px] text-start"
@@ -152,8 +165,11 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
             [attr.aria-label]="
               'shell.userMenu' | translate: { name: user.name }
             "
-            aria-haspopup="menu"
-            (click)="userMenu.toggle($event)"
+            data-testid="user-menu-trigger"
+            [cdkMenuTriggerFor]="userMenuTpl"
+            [cdkMenuPosition]="userMenuPositions"
+            (cdkMenuOpened)="userMenuOpened()"
+            (cdkMenuClosed)="userMenuClosed()"
           >
             <span
               class="w-[26px] h-[26px] flex-none rounded-full flex items-center justify-center text-[10.5px] font-semibold text-[var(--am-rail-brand)] bg-[var(--am-rail-avatar)]"
@@ -178,13 +194,54 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
               </span>
             }
           </button>
-          <p-menu #userMenu [model]="userMenuItems()" [popup]="true" />
+          </span>
+          <ng-template #userMenuTpl>
+            <div cdkMenu class="am-user-menu" data-testid="user-menu">
+              <button type="button" cdkMenuItem class="am-user-menu__item" data-action="profile" (cdkMenuItemTriggered)="openProfile()">
+                <i class="pi pi-user" aria-hidden="true"></i>{{ 'user.myProfile' | translate }}
+              </button>
+              <button type="button" cdkMenuItem class="am-user-menu__item" data-action="logout" (cdkMenuItemTriggered)="onLogout()">
+                <i class="pi pi-sign-out" aria-hidden="true"></i>{{ 'auth.logout' | translate }}
+              </button>
+            </div>
+          </ng-template>
         </div>
       }
     </aside>
   `,
   styles: [
     `
+      /* The user menu's panel: am-row-menu's panel, as a menu above a button. */
+      .am-user-menu {
+        min-inline-size: 200px;
+        padding: 4px 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--am-surface-raised);
+        border: 1px solid var(--am-border-strong);
+        border-radius: var(--am-radius-card);
+        box-shadow: var(--am-shadow-overlay);
+      }
+      .am-user-menu__item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font: inherit;
+        font-size: 13px;
+        text-align: start;
+        color: var(--am-ink-900);
+        background: none;
+        border: 0;
+        padding: 7px 14px;
+        cursor: pointer;
+      }
+      .am-user-menu__item:hover {
+        background: var(--am-primary-50);
+      }
+      .am-user-menu__item:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
       .am-rail-item {
         color: var(--am-rail-ink);
         background: transparent;
@@ -229,6 +286,15 @@ export class SidebarComponent {
   readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
+  protected readonly language = inject(LanguageService);
+  private readonly layers = inject(LayerStackService);
+  private userMenuLayer: number | null = null;
+
+  /** Above the button, aligned to its start; below it when there is no room. */
+  protected readonly userMenuPositions: ConnectedPosition[] = [
+    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
+    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
+  ];
   private readonly format = inject(FormatService);
 
   readonly collapsed = input(false);
@@ -241,6 +307,7 @@ export class SidebarComponent {
   );
 
   private readonly setupHealthService = inject(SetupHealthService);
+  private readonly cleanUpUserMenu = inject(DestroyRef).onDestroy(() => this.userMenuClosed());
 
   // ACC-82 — polls the Setup health counts only while the item is on the rail,
   // i.e. only for a user holding setup:view, so the rail never requests an
@@ -328,25 +395,25 @@ export class SidebarComponent {
     ).slice(0, 2);
   });
 
-  // Rebuilds on language change — TranslateService.currentLang is read as a
-  // signal, and MenuItem labels are plain strings rather than template-bound,
-  // so they need translate.instant() instead of the pipe (ACC-55).
-  readonly userMenuItems = computed<MenuItem[]>(() => {
-    void this.translate.currentLang();
+  /**
+   * The user menu is a layer while open, so Escape closes the menu and not the
+   * phone drawer it sits in (the drawer is a layer too, ACC-232).
+   */
+  userMenuOpened(): void {
+    if (this.userMenuLayer === null) this.userMenuLayer = this.layers.push();
+  }
+
+  userMenuClosed(): void {
+    if (this.userMenuLayer !== null) {
+      this.layers.remove(this.userMenuLayer);
+      this.userMenuLayer = null;
+    }
+  }
+
+  openProfile(): void {
     const user = this.authService.currentUser();
-    return [
-      {
-        label: this.translate.instant('user.myProfile'),
-        icon: 'pi pi-user',
-        command: () => user && void this.router.navigate(['/users', user.id]),
-      },
-      {
-        label: this.translate.instant('auth.logout'),
-        icon: 'pi pi-sign-out',
-        command: () => this.onLogout(),
-      },
-    ];
-  });
+    if (user) void this.router.navigate(['/users', user.id]);
+  }
 
   // Every route any nav item points at, across both shells.
   private readonly allRoutes = [

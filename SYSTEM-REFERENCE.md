@@ -3737,6 +3737,27 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
 - **`RowMenuComponent`** (`am-row-menu`, `shared/components/row-menu/`): the ⋯
   and its worded menu on the CDK menu (reposition scroll strategy), a layer
   while open.
+  - **The row ⋯ on every list (ACC-235).** /roles and /users moved onto it
+    from `<p-menu [popup]>`, which rendered inside `<main>` and widened the
+    page. The ⋯'s name is "Actions for {row}" (`list.actionsFor`).
+  - **It follows its row when a container scrolls (ACC-235).** The reposition
+    strategy only hears the document and what is registered with CDK's
+    `ScrollDispatcher`, and nothing registered `<main>` or a dialog body.
+    While open, the menu registers its trigger's scrollable ancestors with
+    `registerScrollableAncestors()` (`shared/overlay/scrollable-ancestors.ts`,
+    moved unchanged out of `OverlaySelectComponent`, which now imports it).
+    Before this, scrolling `<main>` 60px left the menu 60px from its row.
+  - **It aligns to its ⋯'s end in Arabic too (ACC-235).** CDK's root
+    `Directionality` reads the page direction once, at start-up, and never
+    follows a language switch, so an Arabic session placed the menu as if
+    left-to-right, 48–60px off its ⋯. The trigger sits in a CDK `[dir]` that
+    follows `LanguageService.isRtl()`, which is what the menu trigger reads.
+    Any other CDK overlay opened after a language switch has the same root
+    value; this fix is scoped to the menus.
+  - **The rail's user menu** (`SidebarComponent`) uses the same CDK menu and
+    `[dir]`, opening above its button, aligned to its start. Its `<p-menu
+    [popup]>` rendered inside the rail: on a 390px phone it covered its own
+    button in English and ran 78px off the screen in Arabic.
 - **`TaskActionHostComponent`** (`app-task-action-host`): runs a row's action.
   One-step actions are called directly (Complete is confirmed first, as the
   committee page always did); an action with a dialog reads the task page's
@@ -6017,6 +6038,9 @@ same computed-style `overflow`/`overflow-x`/`overflow-y` check) and
 registers a minimal object with `ScrollDispatcher.register()` for each
 real ancestor found, verified against `scrolling.mjs` to need only
 `.elementScrolled()` — deregistered on every detach path uniformly.
+**The helpers live in `shared/overlay/scrollable-ancestors.ts` since ACC-235**,
+moved unchanged, so `am-row-menu` uses the same mechanism (its
+`registerScrollableAncestors()` wraps them).
 Works identically for `EditDialogComponent`'s own scroll area and
 PrimeNG's internal `.p-dialog-content`, without touching either file.
 

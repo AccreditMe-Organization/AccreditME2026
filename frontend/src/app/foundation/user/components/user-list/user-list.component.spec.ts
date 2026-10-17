@@ -158,11 +158,25 @@ describe('UserListComponent row actions (ACC-79)', () => {
 
   it('builds the menu from the same actions, in the same order', () => {
     const list = create(ADMIN);
-    list.menuUser.set(user({}));
-    expect(list.rowMenuItems().map((i) => i.icon)).toEqual([
-      'pi pi-arrow-right-arrow-left',
-      'pi pi-user-minus',
-    ]);
+    // ACC-235 — the row's am-row-menu items, one per allowed action, in order.
+    expect(list.menuFor(user({})).map((i) => i.id)).toEqual(['transfer', 'deactivate']);
+  });
+
+  // ACC-235 — each item still does its own action.
+  it('each ⋯ item runs its own action for that row', () => {
+    const list = create(ADMIN);
+    const u = user({});
+    const calls: Record<string, jasmine.Spy> = {
+      manageRoles: spyOn(list, 'openManageRoles'),
+      transfer: spyOn(list, 'openTransfer'),
+      deactivate: spyOn(list, 'confirmDeactivate'),
+      reactivate: spyOn(list, 'confirmReactivate'),
+      revokeInvitation: spyOn(list, 'confirmRevokeInvitation'),
+    };
+    for (const [action, spy] of Object.entries(calls)) {
+      list.pick(u, action);
+      expect(spy).withContext(action).toHaveBeenCalledOnceWith(u);
+    }
   });
 });
 
