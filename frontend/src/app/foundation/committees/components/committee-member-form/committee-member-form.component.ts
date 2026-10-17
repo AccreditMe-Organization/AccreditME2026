@@ -462,6 +462,12 @@ export class CommitteeMemberFormComponent implements OnInit {
       const current = this.member();
       if (current) {
         this.form.patchValue({ roleValueId: current.roleValueId });
+        // Change role has no person to choose: the member IS the person. A
+        // required, never-set userId kept the form invalid, so Save did
+        // nothing at all (found 16 Oct). Disabled, it is not validated.
+        this.form.controls.userId.disable({ emitEvent: false });
+      } else {
+        this.form.controls.userId.enable({ emitEvent: false });
       }
     });
 

@@ -345,6 +345,24 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
     }
   });
 
+  it('Change role saves: its request goes out with the new role, and the dialog closes', fakeAsync(() => {
+    setup(member('u-huda'));
+    findForm().form.controls.roleValueId.setValue('role-secretary');
+    fixture.detectChanges();
+    const save = document.querySelector<HTMLButtonElement>('app-committee-member-form button[type="submit"]')!;
+    expect(save).withContext('Save rendered').not.toBeNull();
+    save.click();
+    fixture.detectChanges();
+    const req = http.expectOne(`${API}/committees/c-1/members/m-u-huda`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ roleValueId: 'role-secretary', reason: undefined });
+    req.flush(member('u-huda', { roleValueId: 'role-secretary' }));
+    fixture.detectChanges();
+    flush();
+    expect(fixture.componentInstance.savedCount).toBe(1);
+    expect(fixture.componentInstance.visible()).withContext('the dialog closed').toBeFalse();
+  }));
+
   it('Change role is untouched: no person, no joined date, no field wrapper', () => {
     setup(member('u-huda'));
     expect(q('[data-testid="member-add-form"]')).toBeNull();
