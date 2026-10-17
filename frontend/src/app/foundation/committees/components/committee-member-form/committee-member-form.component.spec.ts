@@ -341,7 +341,9 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
       row.parentElement!.appendChild(box);
       const narrowest = box.getBoundingClientRect().width;
       box.remove();
-      expect(narrowest).withContext('the row at its narrowest').toBeLessThanOrEqual(button.width + 16);
+      // The button, the 8px gap and the input's own padding and border (global
+      // input styles add those); the input's intrinsic width adds ~150px more.
+      expect(narrowest).withContext('the row at its narrowest').toBeLessThanOrEqual(button.width + 40);
     }
   });
 
