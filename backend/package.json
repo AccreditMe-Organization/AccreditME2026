@@ -42,6 +42,7 @@
     "backfill:acc174-task-sla-limit": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc174-task-sla-limit.ts",
     "backfill:acc190-stage-tasks": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc190-stage-tasks.ts",
     "backfill:acc233-committee-stage-keys": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc233-committee-stage-keys.ts",
+    "fix:acc236-ai-credits-used": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/fix-acc236-ai-credits-used.ts",
     "seed:ai-feature-costs": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/seed-ai-feature-costs.ts"
   },
   "dependencies": {

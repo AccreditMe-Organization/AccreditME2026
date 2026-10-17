@@ -179,7 +179,7 @@ On the LIVE site, al-nakheel, as its Organization Administrator, by the page-sid
    - 5 credits per run and one text-free log row per run, as before;
    - the stored lead and reasons hold no ISO date.
 4. **Railway logs for the two runs:** whether the guard acted. A guard firing on the live model means the prompt is still leaking somewhere and would be reported, not hidden.
-5. **Clean-up:** al-nakheel's used credits back to 0, keeping the 2,000 allocation.
+5. **Clean-up:** none for credits. The credits the proof used stay used: a live proof never hand-writes a credit counter (ACC-236).
 
 Note for that day: **briefings saved before this fix keep their text.** The guard runs when a briefing is made, not when it is read. Today's saved Arabic briefing expires at the end of the day in Riyadh (D3), so nothing needs cleaning.
 
