@@ -18,6 +18,19 @@
 // activates automatically via CSS logical properties the moment
 // <html dir="rtl"> is set, which is exactly what this effect does.
 //
+// ACC-237 — THE CDK DOES NEED IT, and it is written HERE, beside <html dir>, so
+// direction is still set in exactly one place. The CDK's root Directionality
+// reads <html dir> once, in its constructor (@angular/cdk 21.2.14,
+// _directionality-chunk.mjs:25-34), and nothing in the CDK updates it after
+// that; its `change` emitter is never fired by the root service itself. So
+// after a switch without a reload, every CDK overlay that positions by start /
+// end (the row menu, the rail's user menu, the overlay select, the task page's
+// menu) opened as if the page were still in the old direction. Its value is a
+// public WritableSignal (types/_bidi-module-chunk.d.ts:15), so the effect
+// below sets it and emits `change` — only when it actually changes, because
+// `change` means "it changed". This replaces ACC-235's per-trigger [dir]
+// wrappers.
+//
 // ACC-83 — BUT IT DOES NEED TRANSLATION CONFIG, and that sentence used to read
 // "PrimeNG needs no equivalent config", which over-read the direction finding
 // into a general one. PrimeNG ships its own English strings for text IT
@@ -37,6 +50,7 @@
 // twenty-third dialog. ConfirmDialog subscribes to config.translationObserver,
 // which setTranslation() notifies, so an open dialog follows a live switch.
 import { Injectable, effect, inject } from '@angular/core';
+import { Direction, Directionality } from '@angular/cdk/bidi';
 import { Observable } from 'rxjs';
 import { TranslateService } from '@ngx-translate/core';
 import { PrimeNG } from 'primeng/config';
@@ -49,6 +63,9 @@ const DEFAULT_LANGUAGE = 'en';
 export class LanguageService {
   private readonly translate = inject(TranslateService);
   private readonly primeng = inject(PrimeNG);
+  // The ROOT Directionality: this service is providedIn 'root', so this is the
+  // instance every overlay and every injector without a [dir] above it gets.
+  private readonly directionality = inject(Directionality);
 
   constructor() {
     // TranslateService.currentLang is a real Signal<Language | null>
@@ -59,8 +76,17 @@ export class LanguageService {
     // bindings update when this signal changes).
     effect(() => {
       const lang = this.translate.currentLang() ?? DEFAULT_LANGUAGE;
-      document.documentElement.dir = RTL_LANGUAGES.has(lang) ? 'rtl' : 'ltr';
+      const dir: Direction = RTL_LANGUAGES.has(lang) ? 'rtl' : 'ltr';
+      document.documentElement.dir = dir;
       document.documentElement.lang = lang;
+
+      // ACC-237 — the CDK's root Directionality, which never re-reads <html
+      // dir> (see the header). Menus pass this object to their overlay and read
+      // it live; the overlay select passes it too.
+      if (this.directionality.value !== dir) {
+        this.directionality.valueSignal.set(dir);
+        this.directionality.change.emit(dir);
+      }
 
       // ACC-83 — the strings PrimeNG renders ITSELF, in the same effect as the
       // direction, because they change for the same reason and must not be able
