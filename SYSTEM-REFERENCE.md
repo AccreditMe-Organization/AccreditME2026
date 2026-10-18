@@ -4072,6 +4072,19 @@ change request (ACC-239 / ACC-240, not built yet).
 - **The two permission sentences** (`roles.matrix.sentence`):
   - `committees:edit_details`: "Edit a committee in Formation and request changes after approval".
   - `committees:approve`: "Approve terms, changes and dissolutions".
+- **The quorum input is `[fluid]="true"` (ACC-243).** Without it PrimeNG's
+  number input kept its default width, 345px in a 251px column, and ran 94px
+  under Meeting Frequency. The pair's columns were already `minmax(0, 1fr)`.
+  Each cell and the inner input now have `min-inline-size: 0`, so a control's
+  own width never sizes its column.
+  - The layout spec measures every field's CONTROL box (inner input
+    included) on every tab, in both languages, at 1280 and 390, for Edit and
+    New committee: no overlap, at least the 12px form gap, nothing outside the
+    body.
+  - It reads boxes only once PrimeNG's opening scale animation has ended; read
+    mid-animation, the 12px gap measures 11.16.
+  - No other dialog has a number input in a two-column row (checked: Task SLA
+    settings' grid already fills its inputs; the rest are single-column).
 - **The dialog** is §10.21's tab strip plus `CommitteeFormComponent`, which now
   owns its whole dialog shell (Add and Edit use it alike). The rules are in its
   header comment: three tabs and one Save; Save never disabled; Reload on a
@@ -5997,6 +6010,19 @@ demonstrate a before/after difference — only a direct `WheelEvent`
 dispatched straight at the list container confirmed the handler is
 wired and computes the correct boundary condition. Real hardware
 mouse/trackpad verification is still open.
+
+**The ✕ sits on the title's own row (ACC-243).** It used to be the header's
+second column, centred on the whole heading. With a tab strip in the header
+(§10.21) that put it 36px below the title, and kept the strip out of its
+column, so the tab underline stopped 32px short of the header's right edge.
+- Now `.am-dialog__title-row` holds the title and the ✕, level.
+- The ✕'s negative block margins keep the row as tall as the title line, so
+  no dialog's header grew.
+- A context line, step strip or tab strip below the title gets the header's
+  full content width.
+- Pinned by `committee-form.layout.spec.ts`: the ✕ centre is within 1px of
+  the title's, and the strip spans the header's content box. Putting the old
+  header back turns both red.
 
 ### 10.6 `WorkflowTransitionActionsComponent` — the Generic Reuse Pattern
 
