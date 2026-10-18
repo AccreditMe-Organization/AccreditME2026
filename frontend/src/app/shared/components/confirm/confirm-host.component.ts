@@ -40,8 +40,8 @@ import { CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from './am-confirm.se
       }
       .am-confirm .${CONFIRM_DESTRUCTIVE_CLASS}.p-button:not(:disabled):hover,
       .am-confirm .${CONFIRM_DESTRUCTIVE_CLASS}.p-button:not(:disabled):active {
-        background: color-mix(in srgb, var(--am-danger-ink), black 15%);
-        border-color: color-mix(in srgb, var(--am-danger-ink), black 15%);
+        background: color-mix(in srgb, var(--am-danger-ink), var(--am-ink-900) 15%);
+        border-color: color-mix(in srgb, var(--am-danger-ink), var(--am-ink-900) 15%);
         color: var(--am-surface-raised);
       }
       .am-confirm .${CONFIRM_REJECT_CLASS}.p-button {
