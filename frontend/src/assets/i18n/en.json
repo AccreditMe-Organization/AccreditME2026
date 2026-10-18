@@ -867,6 +867,7 @@
       "errorSave": "The member couldn't be added. Try again."
     },
     "form": {
+      "notOffered": "no longer offered",
       "tabsLabel": "Committee details",
       "tab": {
         "identity": "Identity",

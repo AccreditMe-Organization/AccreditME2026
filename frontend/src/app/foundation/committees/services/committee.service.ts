@@ -53,6 +53,21 @@ export interface CommitteeListItemDto extends CommitteeDto {
   // of keys.
   currentStageKey: string | null;
   isDissolving: boolean;
+  /** ACC-246 — the committee's own type, with its label (see CommitteeTypeValueDto). */
+  typeValue: CommitteeTypeValueDto | null;
+}
+
+/**
+ * ACC-246 — a committee's own type as its read carries it, so the Edit dialog
+ * shows it before the type list arrives, and still shows one the organisation
+ * no longer offers (`offered: false`: deactivated or hidden).
+ */
+export interface CommitteeTypeValueDto {
+  id: string;
+  key: string;
+  labelEn: string;
+  labelAr: string | null;
+  offered: boolean;
 }
 
 // ACC-238 — a single committee as its record page reads it (GET /committees/:id):
@@ -62,6 +77,7 @@ export interface CommitteeListItemDto extends CommitteeDto {
 export interface CommitteeDetailDto extends CommitteeDto {
   currentStageKey: string | null;
   isDissolving: boolean;
+  typeValue: CommitteeTypeValueDto | null;
 }
 
 export interface CommitteeMemberDto {
