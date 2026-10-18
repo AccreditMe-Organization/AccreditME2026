@@ -1,4 +1,4 @@
-import { Component, DestroyRef, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal, viewChild } from '@angular/core';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -9,7 +9,6 @@ import { CommitteeService, CommitteeListItemDto } from '../../services/committee
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
-import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import {
@@ -56,7 +55,6 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
     NgTemplateOutlet,
     ButtonModule,
     CommitteeFormComponent,
-    EditDialogComponent,
     DataListComponent,
     ListRowDirective,
     StatusChipComponent,
@@ -209,19 +207,11 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
       />
     </ng-template>
 
-    <ng-template #formTpl>
-      <app-committee-form (saved)="onSaved()" (cancelled)="formVisible.set(false)" />
-    </ng-template>
-    <app-edit-dialog
-      [(visible)]="formVisible"
-      [header]="'committee.addCommittee' | translate"
-      [content]="formTpl"
-    />
+    <!-- ACC-238 — New committee uses the same three-tab dialog as Edit. -->
+    <app-committee-form [visible]="formVisible()" (visibleChange)="formVisible.set($event)" (saved)="onSaved()" />
   `,
 })
 export class CommitteeListComponent {
-  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
-
   private readonly committeeService = inject(CommitteeService);
   private readonly lookupService = inject(LookupService);
   private readonly languageService = inject(LanguageService);

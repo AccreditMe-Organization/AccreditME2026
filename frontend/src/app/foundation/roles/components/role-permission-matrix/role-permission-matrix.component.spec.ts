@@ -141,7 +141,7 @@ describe('RolePermissionMatrixComponent (ACC-120 slice 5, PR B)', () => {
   it('labels rows with sentences, never keys, and hides platform keys inside a tenant (D2, R4)', () => {
     render();
     const text = host().textContent ?? '';
-    expect(text).toContain('Approve terms and confirm a dissolution');
+    expect(text).toContain('Approve terms, changes and dissolutions');
     expect(text).not.toContain('committees:approve');
     expect(text).not.toContain('Run the AccreditMe platform');
     // Not in use: never shown, though the role holds it.
