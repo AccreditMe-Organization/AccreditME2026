@@ -4053,6 +4053,55 @@ ACC-248. Briefly:
 - **No production change.** Every clock the code reads (`new Date()`,
   `Date.now()`) is one the fake clocks control.
 
+## Key Architecture Decisions (ACC-239)
+
+Committee change requests, the backend (PR 2 of the committee changes plan).
+Full mechanism: SYSTEM-REFERENCE.md §3.18 (the requests) and §2.17 (the engine
+hook, protected templates, the quorum snapshot). Plan, Ahmad's answers (18 Oct)
+and the build's departures: `backend/Plans/step-238-committee-changes.md` §5,
+§10 and §12. Briefly:
+
+- **AN APPROVED COMMITTEE CHANGES THROUGH A REQUEST, AND ITS STATE IS ITS STAGE
+  KEY.** One person proposes and someone else with `committees:approve`
+  decides; the requester never decides their own. There is no status column:
+  the request has an instance on the seeded six-stage workflow (draft,
+  under_review, returned, approved, rejected, withdrawn), and every move is a
+  SYSTEM_AUTOMATIC transition the service fires after deciding who may make it.
+- **THE SIX STAGES ARE FIXED** (Ahmad, 18 Oct, Q15): rename them and set their
+  deadlines, nothing else. Any other reshaping, a second template, giving up
+  the default, deactivating it, and stage tasks on it are refused with 409
+  `WORKFLOW_TEMPLATE_PROTECTED` (`PROTECTED_TEMPLATES`). Only a CHANGED value is
+  refused. Added review stages are **ACC-245**.
+- **A MODULE'S WRITE RIDES THE ENGINE'S TRANSACTION**:
+  `triggerSystemTransition(…, { inTx })` runs it under the instance's row lock,
+  after the gate and before the move, so the two commit together. Only a
+  SYSTEM_AUTOMATIC transition takes one. `startInstance()` is split into
+  prepare / insert-in-a-transaction / finish, so a record and its instance can
+  be created together.
+- **ONE OPEN REQUEST PER COMMITTEE, drafts and returned ones included**:
+  create takes the committee's row lock, checks and writes in one transaction.
+  A request in a stage with no key counts as open.
+- **APPROVE IS ALL OR NOTHING, AND REFUSES DRIFT** (Q11). Lock order: the
+  request's instance, the committee's instance, the hierarchy lock (only if a
+  parent or Reports to changes), the committee row, the request row. A current
+  value that differs from the one stored at Submit is 409
+  `CHANGE_REQUEST_COMMITTEE_CHANGED`, nothing applied. Otherwise every value,
+  the ACC-233 reference checks and the "Revise the terms of reference" task
+  for the requester commit with the move; one Committee audit row names the
+  request.
+- **A COMMITTEE VOTE COUNTS AGAINST THE QUORUM SAVED WHEN ITS STAGE WAS
+  ENTERED** (`WorkflowInstanceStage.quorumCount`). An entry with none (made
+  before ACC-239) reads the live quorum. 0 open entries were affected.
+- **SEEDING ONE TEMPLATE USES THE BOOTSTRAP'S OWN CODE**
+  (`applyWorkflowSeed()`, `workflow-seed-apply.ts`). A backfill never re-runs
+  `seedDefaultWorkflows()`: that overwrites a tenant's edits to every template.
+- **Not built here:** the screens (ACC-240) and the API lock on direct edits
+  outside Formation (ACC-241, before the first customer).
+- **One additive migration** (`acc239_committee_change_request`). It, and then
+  `npm run backfill:acc239-change-request-workflow` (dry run first, then
+  `-- --execute`), run AFTER the deploy: the enum value must not reach the
+  shared database before the code that knows it.
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

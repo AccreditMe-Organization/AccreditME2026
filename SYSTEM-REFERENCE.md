@@ -2368,10 +2368,15 @@ Plan: `backend/Plans/step-233-committee-reference-checks.md` (§2.1, §4b).
 - **Never shown and never editable.** No DTO carries it, and the global
   `ValidationPipe` (`whitelist: true`) strips it if sent. Renaming or reordering
   a stage leaves it alone.
-- **Keyed templates: COMMITTEE only, today** (`KEYED_SEED_TEMPLATES`,
-  `foundation/workflow/workflow-stage-keys.ts`): `formation`, `terms_review`,
-  `active`, `suspended`, `dissolution_pending`, `dissolved`. A template is added
-  there when a feature first needs one of its stages, with a backfill for it.
+- **Keyed templates** (`KEYED_SEED_TEMPLATES`,
+  `foundation/workflow/workflow-stage-keys.ts`):
+  - COMMITTEE: `formation`, `terms_review`, `active`, `suspended`,
+    `dissolution_pending`, `dissolved`;
+  - COMMITTEE_CHANGE_REQUEST (ACC-239, §3.18): `draft`, `under_review`,
+    `returned`, `approved`, `rejected`, `withdrawn`, keyed by the seed from the
+    start, so it needed no key backfill.
+  A template is added there when a feature first needs one of its stages, with
+  a backfill for it.
 - **New organisations:** `seedDefaultWorkflows()` writes the key, and looks a
   keyed stage up by key before name, so a renamed stage is found rather than
   created again.
@@ -2384,9 +2389,51 @@ Plan: `backend/Plans/step-233-committee-reference-checks.md` (§2.1, §4b).
   treats a stage with none as the safe answer and logs it (§3.15's dissolving
   check).
 
-**Readers today:** the committee reference checks (§3.15) and the committees
-list's `currentStageKey` / `isDissolving`. The committee changes feature is the
-next.
+**Readers today:** the committee reference checks (§3.15), the committees
+list's `currentStageKey` / `isDissolving`, and committee change requests
+(§3.18), whose state IS their stage key.
+
+### 2.17 System moves with a module's write, protected templates, the quorum snapshot (ACC-239)
+
+Three engine changes made for committee change requests (§3.18).
+
+- **`triggerSystemTransition(instanceId, toStageKey, …, { inTx })`** fires the
+  SYSTEM_AUTOMATIC transition from the current stage to the stage with that
+  key. `inTx` is the engine's first caller-supplied write: it runs INSIDE the
+  stage-change transaction, under the instance's row lock, after the "still
+  open" check, the gate and the preconditions, before the move is written. The
+  module's write and the move commit together or not at all. Only a
+  SYSTEM_AUTOMATIC transition takes one. ACC-64 still holds: the engine emits
+  nothing; it lends the transaction.
+- **`startInstance()` is three parts**: `prepareInstanceStart()` (every read),
+  `insertInstanceStartInTx(tx, …)` and `finishInstanceStart()` (notices and
+  audit; `notifyInitialAssignee: false` skips the "assigned to you" notice). A
+  module that creates a record and its instance together runs the middle part
+  in its own transaction. `startInstance()` itself is unchanged for callers.
+- **Protected templates** (`PROTECTED_TEMPLATES`: COMMITTEE_CHANGE_REQUEST).
+  Code runs them, so their shape is fixed (Ahmad, 18 Oct, Q15). The editor and
+  the stage-task screen refuse, with 409 `WORKFLOW_TEMPLATE_PROTECTED` and the
+  refused edit in `edit`: a second template for the type (`CREATE_TEMPLATE`),
+  giving up or replacing its default (`REPLACE_DEFAULT`), deactivating it
+  (`DEACTIVATE`), changing a type to or from it (`CHANGE_TYPE`), adding or
+  removing a stage (`ADD_STAGE`, `REMOVE_STAGE`), changing a stage field other
+  than its names, description, SLA and escalation (`STAGE_FIELD`), any
+  transition or transition-action write (`TRANSITION`), and stage task
+  definitions (`STAGE_TASKS`). Only a CHANGED value is refused: forms re-send
+  the unchanged ones. The sentences are `PROTECTED_REFUSALS` in
+  `workflow-refusal.ts`; the frontend's key is `workflow.refusal.templateProtected`.
+  Added review stages are ACC-245.
+- **The quorum snapshot.** `WorkflowInstanceStage.quorumCount` is saved when a
+  record ENTERS a stage with `approvalMode: COMMITTEE` and a `committeeId`
+  (`quorumSnapshot()`, at start and on every move). `isApprovalThresholdMet()`
+  counts against the entry's snapshot, so a quorum changed while a vote is open
+  does not move it, and falls back to the live quorum for an entry made before
+  ACC-239 (null). On the shared database, 18 Oct: 0 committee-approval stages,
+  0 open entries in one. The fallback is kept, with its spec, regardless.
+- **Seeding** is `applyWorkflowSeed(db, organizationId, seeds)`
+  (`workflow-seed-apply.ts`), moved out of `seedDefaultWorkflows()` so a
+  backfill can write ONE template with exactly the bootstrap's code.
+  Re-applying every template would overwrite a tenant's own edits.
 
 ---
 
@@ -4037,7 +4084,7 @@ so it is not validated, and a spec requires the request and the close.
 PR 1 of the committee changes plan (`backend/Plans/step-238-committee-changes.md`,
 Ahmad's rules of 15 Oct and decisions of 18 Oct). A committee is edited directly
 only while it is FORMING; after approval its details change only through a
-change request (ACC-239 / ACC-240, not built yet).
+change request (§3.18; its screens are ACC-240).
 
 - **The record page's read carries the stage KEY.** `GET /committees/:id` is
   `CommitteesService.getCommitteeDetail()`: the row plus `currentStageKey` and
@@ -4117,6 +4164,87 @@ change request (ACC-239 / ACC-240, not built yet).
     sends every value unchanged throughout: it never cleared the type, and the
     column is NOT NULL.
   - `committee-form.choices.spec.ts`, mutation-checked against the old code.
+
+### 3.18 Committee change requests (ACC-239)
+
+PR 2 of the committee changes plan (`backend/Plans/step-238-committee-changes.md`
+§5 and §12; Ahmad's answers of 18 Oct). After approval, a committee's details
+change only through a request: one person proposes, someone else with
+`committees:approve` decides, and approval applies every value at once. The
+service is `foundation/committees/change-requests/committee-change-request.service.ts`;
+its screens are ACC-240, and the API lock on direct edits is ACC-241.
+
+- **The record** (`CommitteeChangeRequest`, organisation-scoped): a number per
+  committee (max + 1, under the committee's row lock), the requester, the
+  reason, `changes` (JSON: a key present is a field changing; nine fields, the
+  terms-of-reference link excluded), `fromValues` (the committee's values of
+  those fields at Submit), the return note and the rejection reason, who
+  decided and when, when it was applied, the terms task it created, and who
+  withdrew it.
+- **Its state is its stage key**, on the seeded six-stage
+  COMMITTEE_CHANGE_REQUEST workflow (§2.16, §2.17). There is no status column.
+  Open: `draft`, `under_review`, `returned`, or a stage with no key; closed:
+  `approved`, `rejected`, `withdrawn`, or a cancelled instance. Every move is a
+  SYSTEM_AUTOMATIC transition fired by the service, so the generic transitions
+  endpoint can never move a request.
+- **Who may do what** (every route needs `committees:view` at the guard; the
+  rest is decided in the service, because only the request says who raised it):
+  - Raise: `committees:edit_details`, and only for an ACTIVE or SUSPENDED
+    committee. Formation and Terms Review are `CHANGE_REQUEST_STAGE_NOT_ALLOWED`;
+    Dissolution Pending and Dissolved are `CHANGE_REQUEST_COMMITTEE_DISSOLVING`.
+  - Edit and submit a draft or a returned request: its requester, still holding
+    `committees:edit_details`.
+  - Withdraw: the requester at any open stage, or a `committees:approve` holder
+    for a draft or returned one. Never one under review by anyone else.
+  - Approve, Return (note required) and Reject (reason required):
+    `committees:approve`, never the requester (`CHANGE_REQUEST_OWN_DECISION`),
+    only under review. The approver sends no values.
+  - While the committee dissolves, an open request can only be rejected or
+    withdrawn.
+  - Each response carries the viewer's `actions` (edit, submit, withdraw,
+    approve, return, reject), computed by the same rules.
+- **One open request per committee, drafts included.** Create takes the
+  committee's row lock, checks for an open request and writes the request and
+  its instance, in one transaction. Proved by two creates at once, ten times.
+- **Submit** stores `fromValues` under the request's instance lock, with the
+  committee read FOR SHARE. A field whose value has since come to equal the
+  proposal is dropped; if none is left, `CHANGE_REQUEST_NO_CHANGES`.
+- **Approve, in ONE transaction** (the engine's, through `inTx`). Lock order:
+  the request's instance (the engine's), the committee's instance, the
+  hierarchy lock if a parent or Reports to changes, the committee row, the
+  request row. Then:
+  - **Drift (Q11):** any field whose current value differs from its stored
+    "from" value refuses with 409 `CHANGE_REQUEST_COMMITTEE_CHANGED` naming the
+    fields ("return it to the requester"). Nothing is applied.
+  - Otherwise the ACC-233 reference checks run (§3.15), every value is written,
+    and the task "Revise the terms of reference" is created on the committee
+    for the requester, through `TaskService.prepareRecordTask()` (before the
+    transaction) and `insertPrepared()` (inside it). After commit: one
+    `Committee` UPDATE audit row (metadata `changeRequestId`), the request's
+    APPROVE row, and the task's announcement.
+  - A failure anywhere leaves the committee, the request and the task as they
+    were (proved by failing the task write).
+- **Notices (Q1):** Submit tells every ACTIVE holder of `committees:approve`
+  but the requester; every decision tells the requester; withdrawing your own
+  request tells nobody. A notice opens the committee.
+- **Reads:** one request; the committee's list (searched by number or
+  requester, sorted by number, status or requested date, paged); its open
+  request (the banner); requests awaiting the viewer's decision; and the
+  preview for Request a change. The preview names the impact of each change,
+  including how many open committee votes keep the quorum they began with
+  (§2.17), and always the terms task approval will create.
+- **Refusals** are `change-request-refusal.ts`, each a code a screen says in
+  either language. Another organisation's request or committee is the
+  identical 404 an invented id gets.
+- **Existing organisations** get the workflow from
+  `npm run backfill:acc239-change-request-workflow` (dry run by default,
+  `--execute` after the deploy). It writes only this template, leaves an
+  organisation that has one alone, writes one audit row per organisation, and
+  refuses a customer organisation.
+- **Real-database spec:** `committee-change-request.db-spec.ts`, 31 tests.
+  Mutation-checked: dropping the create row lock, the "from" comparison, or the
+  self-approval refusal, or moving Approve's committee write outside the
+  transaction, each turns it red.
 
 ## 4. Notification System
 
