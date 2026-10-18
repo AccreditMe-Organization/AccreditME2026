@@ -113,16 +113,21 @@ One request (`GET /tenant`). The usage read is part of its response.
 Every query was a SELECT. Nothing was written, and nothing is changed in this
 branch.
 
+Times corrected 18 Oct: the first read went through node-postgres, which takes
+these zone-less UTC columns as local time (+03), so every time it printed was
+3 hours early (ACC-236). al-nakheel's renewal is 21 Oct 00:00Z, as the rule
+gives.
+
 - **The audit trail has ONE AI row for al-nakheel, ever:**
-  - `ai_allocation_changed` at 12 Oct 15:57:32Z, manual, 0 → 2000;
+  - `ai_allocation_changed` at 12 Oct 18:57:32Z, manual, 0 → 2000;
   - no `ai_credits_renewed` row at all.
   - The allocation set up the first period, and with it `aiCreditsUsed = 0`,
     22 seconds before the first call.
-- **Twenty successful calls followed**, 12 Oct 15:57:54Z to 14 Oct 08:16:24Z:
+- **Twenty successful calls followed**, 12 Oct 18:57:54Z to 14 Oct 11:16:24Z:
   - 166 credits in all, every one inside the current period;
   - each one adds its cost through `ai-credit.service.ts:51`;
   - so the counter should read 166.
-- **`Organization.updatedAt` is 14 Oct 08:18:05Z.**
+- **`Organization.updatedAt` is 14 Oct 11:18:05Z.**
   - That is 1 min 41 s after the last call (a `workload_balancing` proof
     call, ACC-199).
   - The calls' raw `UPDATE` does not touch `updatedAt`, so this was a later
@@ -136,17 +141,6 @@ branch.
   - It went around `AiAllocationService`, so the customer's own record has
     no trace of it: the blind spot in CLAUDE.md's ACC-101 note on backfills.
   - Which session ran it is not recorded anywhere this query can see.
-
-**A second finding, not fixed here: the stored renewal time does not match
-the rule.**
-- `aiCreditsRenewsAt` is 20 Oct 21:00Z. The rule (`ai-credit-period.ts`)
-  gives 21 Oct 00:00Z for an activation on 21 Sep.
-- The allocation ran at 15:57Z on 12 Oct, before ACC-194 merged (18:47Z), so
-  it probably ran from a branch with an earlier rule.
-- **Consequence:** the hourly job will renew al-nakheel at 20 Oct 21:00Z,
-  into a period that still starts on 21 Sep. Its counter goes to 0 three
-  hours early, and the audit row shows the same period start before and
-  after.
 
 ## The browser check, and what seeded data can reach
 

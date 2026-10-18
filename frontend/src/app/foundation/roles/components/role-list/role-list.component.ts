@@ -18,7 +18,7 @@ import { SortHeaderComponent } from '../../../../shared/components/sort-header/s
 import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
-import { AmCountPipe } from '../../../../core/formatting';
+import { AmCountPipe, FormatService } from '../../../../core/formatting';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
@@ -246,6 +246,7 @@ export class RoleListComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly amConfirm = inject(AmConfirmService);
+  private readonly format = inject(FormatService);
 
   private readonly translate = inject(TranslateService);
   private readonly languageService = inject(LanguageService);
@@ -371,12 +372,30 @@ export class RoleListComponent {
     const label = this.displayLabel(role);
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translate.instant('roles.confirmDeactivateRole', { name: label }),
-      header: this.translate.instant('common.confirm'),
+      message: this.deactivateMessage(role),
+      header: this.translate.instant('roles.deactivateHeader', { name: label }),
       acceptLabel: this.translate.instant('roles.deactivateRole'),
       accept: () => {
         this.runDeactivate(role);
       },
+    });
+  }
+
+  /**
+   * What deactivating does to the people holding the role, from the list's own
+   * activeHolderCount (no extra read). role.service.ts deactivateRole() only
+   * sets isActive false: assignments stay, and permissions resolve through
+   * active roles only, so holders lose it on their next request. Nobody holding
+   * it is said plainly, never as "0 people".
+   */
+  private deactivateMessage(role: RoleDto): string {
+    const holders = role.activeHolderCount;
+    if (holders === undefined || holders === null) {
+      return this.translate.instant('roles.confirmDeactivateRoleUnknown');
+    }
+    if (holders === 0) return this.translate.instant('roles.confirmDeactivateRoleNoHolders');
+    return this.translate.instant('roles.confirmDeactivateRole', {
+      holders: this.format.count('role.deactivateHolders', holders),
     });
   }
 

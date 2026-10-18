@@ -1119,8 +1119,12 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   onRemove(transition: WorkflowTransitionDto): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translate.instant('workflow.confirmRemoveTransition', { name: transition.labelEn }),
-      header: this.translate.instant('common.confirm'),
+      // workflow-template.service.ts removeTransition() deletes its actions,
+      // then the transition.
+      message: this.translate.instant('workflow.confirmRemoveTransition'),
+      header: this.translate.instant('workflow.confirmRemoveTransitionHeader', {
+        name: this.languageService.bilingual(transition.labelEn, transition.labelAr),
+      }),
       acceptLabel: this.translate.instant('confirm.removeTransition'),
       accept: () => {
         this.workflowTemplateService.removeTransition(transition.id).subscribe({

@@ -7704,14 +7704,32 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
   pushes a layer while the dialog is open and answers Escape itself
   (`closeOnEscape` off, top layer only).
 - **The 23 calls and their tones:** neutral for Complete task and Reactivate
-  user, destructive for the other 21. Headers and messages are unchanged in
-  this PR; their wording is PR 2.
+  user, destructive for the other 21.
+- **The words (slice 10, PR 2):** the header is the question and names what it
+  acts on; the message is the consequence. Never "Confirm", never Yes / No.
+  - **A consequence is what the server does**, read from the service the
+    action calls, not what it was assumed to do. Where the truth depends on the
+    record, the call picks the sentence from data it already has, with no new
+    read:
+    - a Head position (`isUnitHeadPosition`) says its holders stop counting as
+      Head;
+    - the default template (`isDefault`) says new records of its type can't
+      start;
+    - a role says how many people hold it (`activeHolderCount`, a plural with
+      six Arabic forms), and says plainly when nobody does.
+  - **Names follow the session's language** (`LanguageService.bilingual`).
+    A workflow action type is a word (`workflow.actionTypeName.*`), never the
+    enum; one with no translation reads "Unknown".
+  - **Not yet reworded:** Remove member and Complete task (lane B's files).
 - **Specs:**
   - `am-confirm.service.spec.ts`: tone to classes, colour and focus; required
     labels; layer push and pop on accept, Cancel and Escape; focus back,
     including the ⋯ fallback.
   - `confirm-over-dialog.spec.ts`: the Vacate Head case.
   - The Actions-dialog block in `workflow-transition-editor.component.spec.ts`.
+  - `confirm-wording.spec.ts`: every reworded confirm's header, message and
+    buttons from the real translation files, in both languages, and the Actions
+    dialog's trash button name.
   - Mutation-checked: ten mutations (no layer, focus, the danger class and ink, the text Cancel, focus return, the ⋯ fallback, the required label, and the Actions dialog's layer and its top-layer check) each turned at least one of these red.
 
 ## 11. Known Cross-Cutting Gaps

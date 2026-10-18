@@ -105,7 +105,7 @@
     "candidate": "Candidate",
     "assign": "Assign Head",
     "vacate": "Vacate Head",
-    "vacateConfirmMessage": "Vacate this unit's Head position? The unit will have no Head until a successor is assigned.",
+    "vacateConfirmMessage": "{{name}} no longer holds the Head position, and loses any role it gives them. {{unit}} has no Head until one is assigned.",
     "declareHandover": "Declare Handover",
     "successor": "Successor",
     "effectiveDate": "Effective Date",
@@ -115,11 +115,11 @@
     "handoverSummary": "Handover:",
     "completeNow": "Complete Now",
     "cancelHandover": "Cancel Handover",
-    "cancelHandoverConfirmMessage": "Cancel this handover? The incoming successor's position grant will be reverted; the current Head remains unaffected.",
+    "cancelHandoverConfirmMessage": "{{name}} no longer holds the Head position, and any role it gave them is removed. {{current}} stays the Head.",
     "actingHead": "Acting Head Coverage",
     "actingHeadCurrent": "Acting Head: {{name}}",
     "actingHeadClear": "Clear Acting Head",
-    "actingHeadClearConfirmMessage": "Clear this unit's Acting Head coverage?",
+    "actingHeadClearConfirmMessage": "The cover ends now, and the Acting Head loses any role it gave them. {{unit}} has no Head again, so work meant for its Head goes to the Head of the unit above it, if there is one.",
     "errorLoad": "Failed to load Head status.",
     "errorSave": "Failed to save changes.",
     "manageHeadNamed": "Manage Head — {{unit}}",
@@ -151,7 +151,10 @@
       "ctaOpen": "Cover with no end date",
       "backToDetails": "Back to details",
       "dateTypeHint": "Type a date, or pick one below."
-    }
+    },
+    "vacateHeader": "Vacate the Head of {{unit}}?",
+    "cancelHandoverHeader": "Cancel the handover to {{name}}?",
+    "actingHeadClearHeader": "End the Acting Head cover for {{unit}}?"
   },
   "lookup": {
     "actionHide": "Hide from this organization",
@@ -163,7 +166,7 @@
     "columnLabel": "Label",
     "columnStatus": "Status",
     "columnSystem": "Type",
-    "deleteConfirm": "Delete the value “{{name}}”? Records that already reference it keep it.",
+    "deleteConfirm": "It's no longer offered in lists. Records that already use it keep it.",
     "deleteFor": "Delete {{name}}",
     "editFor": "Edit {{name}}",
     "editValue": "Edit Value",
@@ -208,7 +211,8 @@
     "valueColumnLayer": "Layer",
     "valueColumnStatus": "Status",
     "valuesEyebrow": "Lookup values",
-    "valuesSearchPlaceholder": "Search values by label or key"
+    "valuesSearchPlaceholder": "Search values by label or key",
+    "deleteHeader": "Delete the value “{{name}}”?"
   },
   "workingCalendar": {
     "title": "Working Calendar",
@@ -290,7 +294,7 @@
     "addRole": "New Role",
     "assignRole": "Assign Role",
     "assignedUsers": "Assigned Users",
-    "confirmDeactivateRole": "Deactivate the role “{{name}}”? Everyone assigned to it loses its permissions immediately.",
+    "confirmDeactivateRole": "{{holders}} The role stays assigned, so reactivating it gives those permissions back.",
     "confirmRemoveAssignment": "Remove this role assignment?",
     "customBadge": "Custom",
     "deactivateRole": "Deactivate Role",
@@ -466,7 +470,10 @@
       "nameRequired": "Enter the role's name in English.",
       "nameTooLong": "Use 100 characters or fewer.",
       "descriptionTooLong": "Use 500 characters or fewer."
-    }
+    },
+    "deactivateHeader": "Deactivate the role “{{name}}”?",
+    "confirmDeactivateRoleNoHolders": "Nobody holds it now, so nobody loses anything. You can reactivate it later.",
+    "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
   },
   "workflow": {
     "actionCreateTask": "Create Task",
@@ -503,10 +510,10 @@
     "assigneeStrategy": "Assignee",
     "committee": "Committee",
     "committeePickerUnavailable": "Committee selection will be available after Committee Management module is configured.",
-    "confirmDeactivateTemplate": "Deactivate the template “{{name}}”?",
-    "confirmRemoveAction": "Remove this {{type}} action?",
-    "confirmRemoveStage": "Remove the stage “{{name}}”?",
-    "confirmRemoveTransition": "Remove the transition “{{name}}”?",
+    "confirmDeactivateTemplate": "Records already on it carry on, and new records keep starting on the default template.",
+    "confirmRemoveAction": "It's deleted, and no longer runs when this transition fires.",
+    "confirmRemoveStage": "It's deleted for good, with the tasks defined on it.",
+    "confirmRemoveTransition": "Records can no longer move this way, and its actions are deleted with it.",
     "deactivateTemplate": "Deactivate Template",
     "description": "Description",
     "editStage": "Edit Stage",
@@ -686,7 +693,22 @@
       "userNotInPosition": "That person no longer holds this position here. Choose again.",
       "onFinalStage": "A final stage can't create tasks: the record is complete when it arrives.",
       "committeeQuorumNotSet": "Set a quorum of at least 1 before submitting this committee for approval."
-    }
+    },
+    "confirmRemoveActionHeader": "Remove the “{{type}}” action?",
+    "removeActionNamed": "Remove the {{type}} action",
+    "actionTypeName": {
+      "SEND_NOTIFICATION": "Send notification",
+      "GENERATE_PDF": "Generate PDF",
+      "LOCK_DOCUMENT": "Lock document",
+      "LOG_AUDIT": "Log to the audit trail",
+      "WEBHOOK": "Webhook",
+      "CREATE_TASK": "Create task (retired)",
+      "unknown": "Unknown"
+    },
+    "confirmRemoveStageHeader": "Remove the stage “{{name}}”?",
+    "confirmDeactivateTemplateHeader": "Deactivate the template “{{name}}”?",
+    "confirmDeactivateDefaultTemplate": "Records already on it carry on. It's the default, so new records of its type can't start until another template is made the default.",
+    "confirmRemoveTransitionHeader": "Remove the transition “{{name}}”?"
   },
   "notification": {
     "title": "Notifications",
@@ -871,7 +893,7 @@
     "addPosition": "Add Position",
     "customBadge": "Custom",
     "deactivate": "Deactivate",
-    "deactivateConfirm": "Deactivate the position “{{name}}”? Nobody new can be given it, and anyone holding it keeps it.",
+    "deactivateConfirm": "Nobody new can be given it, and whoever holds it now keeps it.",
     "deactivateFor": "Deactivate {{name}}",
     "editFor": "Edit {{name}}",
     "editPosition": "Edit Position",
@@ -901,7 +923,9 @@
     "steps": "Steps",
     "systemBadge": "Default",
     "title": "Org Positions",
-    "vacantRoleWarning": "This position won't grant any role to its holder until you map one."
+    "vacantRoleWarning": "This position won't grant any role to its holder until you map one.",
+    "deactivateHeader": "Deactivate the position “{{name}}”?",
+    "deactivateConfirmHead": "Nobody new can be given it. Whoever holds it now keeps it, but no longer counts as the Head of their unit."
   },
   "task": {
     "title": "Title",
@@ -1258,7 +1282,7 @@
     "outOfOfficeTo": "To",
     "actingUser": "Acting User",
     "deactivate": "Deactivate",
-    "deactivateConfirm": "Deactivate {{name}}? Their sessions will be revoked immediately and their open tasks will be reassigned to their acting user or flagged for manual reassignment.\n\nThis can be undone: an administrator can reactivate them later, and they come back holding the roles they have now.",
+    "deactivateConfirm": "They're signed out at once and can't sign in. A task from a pool goes back to it, unless someone else is still on it. Their other tasks go to their acting user if they have one; otherwise a task nobody else is on is left unassigned for you to reassign.\n\nYou can reactivate them later, and they come back with the roles they have now.",
     "deactivateSummary": "{{reassigned}}, {{flagged}}.",
     "profileSaved": "Changes saved.",
     "noUsers": "No users found.",
@@ -1338,14 +1362,17 @@
     "inviteUnitHasNoHead": "This org unit has no Head or Acting Head. Assign one before inviting someone into it, or invite this person as its Head.",
     "inviteDenied": "You do not have permission to invite users.",
     "reactivate": "Reactivate",
-    "reactivateConfirm": "Reactivate {{name}}? They will be able to sign in again.\n\n{{roles}}\n\nTasks that were handed to someone else do not come back, but tasks that nobody picked up are returned to them.",
+    "reactivateConfirm": "They can sign in again, and take up one of your seats.\n\n{{roles}}\n\nTasks left unassigned when they left come back to them. Tasks that went to someone else, or back to a pool, stay where they are.",
     "reactivateRoles": "They come back holding: {{roles}}.",
     "reactivateNoRoles": "They come back holding no roles.",
     "reactivateRolesUnavailable": "Their roles cannot be listed here, because that needs permission to view users. They come back holding whatever roles they had.",
     "reactivateSummary": "{{name}} is active again — {{tasks}}.",
     "revokeInvitation": "Revoke invitation",
-    "revokeInvitationConfirm": "Revoke the invitation for {{name}} ({{email}})? The invitation stops working, the seat is freed, and the record is removed. You can invite this email again afterwards.",
-    "revokeInvitationSummary": "{{name}}'s invitation was revoked."
+    "revokeInvitationConfirm": "The invitation link stops working, the seat is freed, and the invitation is removed. You can invite {{email}} again.",
+    "revokeInvitationSummary": "{{name}}'s invitation was revoked.",
+    "deactivateHeader": "Deactivate {{name}}?",
+    "reactivateHeader": "Reactivate {{name}}?",
+    "revokeInvitationHeader": "Revoke {{name}}'s invitation?"
   },
   "platform": {
     "tenants": "Tenants",
@@ -1360,7 +1387,7 @@
     "adminEmail": "Admin Email",
     "suspend": "Suspend",
     "reactivate": "Reactivate",
-    "suspendConfirm": "Suspend {{name}}? Its users will be unable to sign in until reactivated.",
+    "suspendConfirm": "Its users are stopped on their next request and can't sign in, and its invitations stop working. Nothing is deleted, and reactivating it restores access.",
     "noTenants": "No tenants found.",
     "errorLoad": "Failed to load data.",
     "errorAction": "Failed to complete action.",
@@ -1406,7 +1433,8 @@
     "platformSettings": "Platform Settings",
     "announcement": "Platform-wide announcement banner, shown to every tenant.",
     "announcementMessage": "Announcement Message",
-    "announcementSeverity": "Severity"
+    "announcementSeverity": "Severity",
+    "suspendHeader": "Suspend {{name}}?"
   },
   "account": {
     "trial": "Trial",
@@ -1779,6 +1807,10 @@
       "stillHere": {
         "one": "Your {{count}} change is still here.",
         "other": "Your {{count}} changes are still here."
+      },
+      "deactivateHolders": {
+        "one": "{{count}} person holds it and loses its permissions now.",
+        "other": "{{count}} people hold it and lose its permissions now."
       }
     },
     "committee": {

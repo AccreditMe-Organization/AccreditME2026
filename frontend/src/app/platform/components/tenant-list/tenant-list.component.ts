@@ -124,8 +124,10 @@ export class TenantListComponent implements OnInit {
   onSuspend(tenant: IPlatformTenantSummary): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translateService.instant('platform.suspendConfirm', { name: tenant.name }),
-      header: this.translateService.instant('common.confirm'),
+      // platform-tenant.service.ts suspendTenant() sets SUSPENDED; the guard,
+      // sign-in, refresh and invitations all refuse a closed organisation.
+      message: this.translateService.instant('platform.suspendConfirm'),
+      header: this.translateService.instant('platform.suspendHeader', { name: tenant.name }),
       acceptLabel: this.translateService.instant('platform.suspend'),
       accept: () => {
         this.platformTenantService.suspendTenant(tenant.id).subscribe({

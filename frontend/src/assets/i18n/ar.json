@@ -105,7 +105,7 @@
     "candidate": "المرشح",
     "assign": "تعيين رئيس",
     "vacate": "إخلاء منصب الرئيس",
-    "vacateConfirmMessage": "هل تريد إخلاء منصب رئيس هذه الوحدة؟ ستبقى الوحدة بلا رئيس حتى يتم تعيين خلف.",
+    "vacateConfirmMessage": "لن يشغل {{name}} منصب الرئيس بعد الآن، وسيفقد أي دور يمنحه إياه. وتبقى {{unit}} بلا رئيس حتى يُعيَّن رئيس.",
     "declareHandover": "إعلان تسليم وتسلّم",
     "successor": "الخلف",
     "effectiveDate": "تاريخ السريان",
@@ -115,11 +115,11 @@
     "handoverSummary": "التسليم والتسلّم:",
     "completeNow": "إتمام الآن",
     "cancelHandover": "إلغاء التسليم والتسلّم",
-    "cancelHandoverConfirmMessage": "هل تريد إلغاء هذا التسليم والتسلّم؟ سيتم التراجع عن منح المنصب للخلف الوارد، ويبقى الرئيس الحالي دون تأثير.",
+    "cancelHandoverConfirmMessage": "لن يشغل {{name}} منصب الرئيس، ويُزال أي دور منحه إياه. ويبقى {{current}} الرئيس.",
     "actingHead": "تغطية الرئيس بالنيابة",
     "actingHeadCurrent": "الرئيس بالنيابة: {{name}}",
     "actingHeadClear": "إلغاء الرئيس بالنيابة",
-    "actingHeadClearConfirmMessage": "هل تريد إلغاء تغطية الرئيس بالنيابة لهذه الوحدة؟",
+    "actingHeadClearConfirmMessage": "تنتهي التغطية الآن، ويفقد الرئيس بالنيابة أي دور منحته إياه. وتعود {{unit}} بلا رئيس، فيذهب ما يخص رئيسها إلى رئيس الوحدة الأعلى منها إن وُجدت.",
     "errorLoad": "فشل تحميل حالة الرئاسة.",
     "errorSave": "فشل حفظ التغييرات.",
     "manageHeadNamed": "إدارة الرئاسة — {{unit}}",
@@ -151,7 +151,10 @@
       "ctaOpen": "تكليف بلا تاريخ انتهاء",
       "backToDetails": "رجوع إلى التفاصيل",
       "dateTypeHint": "اكتب تاريخًا، أو اختره من التقويم أدناه."
-    }
+    },
+    "vacateHeader": "إخلاء رئاسة {{unit}}؟",
+    "cancelHandoverHeader": "إلغاء التسليم إلى {{name}}؟",
+    "actingHeadClearHeader": "إنهاء تغطية الرئيس بالنيابة في {{unit}}؟"
   },
   "lookup": {
     "actionHide": "إخفاء من هذه المنظمة",
@@ -163,7 +166,7 @@
     "columnLabel": "التسمية",
     "columnStatus": "الحالة",
     "columnSystem": "النوع",
-    "deleteConfirm": "حذف القيمة «{{name}}»؟ السجلات التي تشير إليها بالفعل تبقى عليها.",
+    "deleteConfirm": "لن تُعرض في القوائم بعد الآن، والسجلات التي تستخدمها تبقى عليها.",
     "deleteFor": "حذف {{name}}",
     "editFor": "تعديل {{name}}",
     "editValue": "تعديل القيمة",
@@ -208,7 +211,8 @@
     "valueColumnLayer": "الطبقة",
     "valueColumnStatus": "الحالة",
     "valuesEyebrow": "قيم القائمة",
-    "valuesSearchPlaceholder": "ابحث في القيم بالمسمّى أو المفتاح"
+    "valuesSearchPlaceholder": "ابحث في القيم بالمسمّى أو المفتاح",
+    "deleteHeader": "حذف القيمة «{{name}}»؟"
   },
   "workingCalendar": {
     "title": "التقويم الرسمي",
@@ -290,7 +294,7 @@
     "addRole": "دور جديد",
     "assignRole": "إسناد دور",
     "assignedUsers": "المستخدمون المسندون",
-    "confirmDeactivateRole": "تعطيل الدور «{{name}}»؟ سيفقد كل من أُسند إليه صلاحياته فورًا.",
+    "confirmDeactivateRole": "{{holders}} ويبقى الدور مُسندًا كما هو، فإعادة تفعيله تعيد صلاحياته.",
     "confirmRemoveAssignment": "إزالة إسناد هذا الدور؟",
     "customBadge": "مخصص",
     "deactivateRole": "إلغاء تفعيل الدور",
@@ -466,7 +470,10 @@
       "nameRequired": "أدخل اسم الدور بالإنجليزية.",
       "nameTooLong": "استخدم 100 حرف أو أقل.",
       "descriptionTooLong": "استخدم 500 حرف أو أقل."
-    }
+    },
+    "deactivateHeader": "تعطيل الدور «{{name}}»؟",
+    "confirmDeactivateRoleNoHolders": "لا أحد يحمله الآن، فلن يفقد أحد شيئًا. ويمكنك إعادة تفعيله لاحقًا.",
+    "confirmDeactivateRoleUnknown": "يفقد كل من يحمله صلاحيات الدور الآن. ويبقى الدور مُسندًا كما هو، فإعادة تفعيله تعيدها."
   },
   "workflow": {
     "actionCreateTask": "إنشاء مهمة",
@@ -503,10 +510,10 @@
     "assigneeStrategy": "طريقة الإسناد",
     "committee": "اللجنة",
     "committeePickerUnavailable": "سيتوفر اختيار اللجنة بعد تفعيل وحدة إدارة اللجان.",
-    "confirmDeactivateTemplate": "تعطيل القالب «{{name}}»؟",
-    "confirmRemoveAction": "إزالة إجراء {{type}} هذا؟",
-    "confirmRemoveStage": "إزالة المرحلة «{{name}}»؟",
-    "confirmRemoveTransition": "إزالة الانتقال «{{name}}»؟",
+    "confirmDeactivateTemplate": "تستمر السجلات الموجودة عليه، وتبدأ السجلات الجديدة على القالب الافتراضي كالمعتاد.",
+    "confirmRemoveAction": "يُحذف، ولن يعمل بعد الآن عند تنفيذ هذا الانتقال.",
+    "confirmRemoveStage": "تُحذف نهائيًا مع المهام المعرَّفة عليها.",
+    "confirmRemoveTransition": "لن تتمكن السجلات من الانتقال بهذا المسار، وتُحذف إجراءاته معه.",
     "deactivateTemplate": "إلغاء تفعيل القالب",
     "description": "الوصف",
     "editStage": "تعديل المرحلة",
@@ -686,7 +693,22 @@
       "userNotInPosition": "لم يعد هذا الشخص يشغل هذا المنصب هنا. اختر من جديد.",
       "onFinalStage": "لا تُنشئ المرحلة النهائية مهامًا: يكتمل السجل لحظة وصوله إليها.",
       "committeeQuorumNotSet": "حدّد نصابًا لا يقل عن 1 قبل إرسال هذه اللجنة للاعتماد."
-    }
+    },
+    "confirmRemoveActionHeader": "إزالة إجراء «{{type}}»؟",
+    "removeActionNamed": "إزالة إجراء {{type}}",
+    "actionTypeName": {
+      "SEND_NOTIFICATION": "إرسال إشعار",
+      "GENERATE_PDF": "إنشاء ملف PDF",
+      "LOCK_DOCUMENT": "قفل المستند",
+      "LOG_AUDIT": "التسجيل في سجل التدقيق",
+      "WEBHOOK": "استدعاء ويب (Webhook)",
+      "CREATE_TASK": "إنشاء مهمة (متوقف)",
+      "unknown": "غير معروف"
+    },
+    "confirmRemoveStageHeader": "إزالة المرحلة «{{name}}»؟",
+    "confirmDeactivateTemplateHeader": "تعطيل القالب «{{name}}»؟",
+    "confirmDeactivateDefaultTemplate": "تستمر السجلات الموجودة عليه. ولأنه القالب الافتراضي، لن تبدأ سجلات جديدة من نوعه حتى يُعيَّن قالب آخر افتراضيًا.",
+    "confirmRemoveTransitionHeader": "إزالة الانتقال «{{name}}»؟"
   },
   "notification": {
     "title": "الإشعارات",
@@ -871,7 +893,7 @@
     "addPosition": "إضافة مسمى وظيفي",
     "customBadge": "مخصص",
     "deactivate": "إلغاء التفعيل",
-    "deactivateConfirm": "تعطيل المنصب «{{name}}»؟ لن يُمنح لأحد جديد، ومن يحمله الآن يبقى عليه.",
+    "deactivateConfirm": "لا يمكن منحه لأحد جديد، ومن يحمله الآن يبقى عليه.",
     "deactivateFor": "تعطيل {{name}}",
     "editFor": "تعديل {{name}}",
     "editPosition": "تعديل المسمى الوظيفي",
@@ -901,7 +923,9 @@
     "steps": "الخطوات",
     "systemBadge": "افتراضي",
     "title": "المسميات الوظيفية",
-    "vacantRoleWarning": "لن يمنح هذا المسمى أي دور لشاغله حتى تربطه بدور."
+    "vacantRoleWarning": "لن يمنح هذا المسمى أي دور لشاغله حتى تربطه بدور.",
+    "deactivateHeader": "تعطيل المنصب «{{name}}»؟",
+    "deactivateConfirmHead": "لا يمكن منحه لأحد جديد. ومن يحمله الآن يبقى عليه، لكنه لا يُعدّ بعد الآن رئيسًا لوحدته."
   },
   "task": {
     "title": "العنوان",
@@ -1258,7 +1282,7 @@
     "outOfOfficeTo": "إلى",
     "actingUser": "المستخدم البديل",
     "deactivate": "إلغاء التفعيل",
-    "deactivateConfirm": "إلغاء تنشيط {{name}}؟ ستُلغى جلساته فورًا، وستُعاد إسناد مهامه المفتوحة إلى من ينوب عنه أو تُعلَّم لإعادة الإسناد يدويًا.\n\nويمكن التراجع عن ذلك: بإمكان المسؤول إعادة تنشيطه لاحقًا، وسيعود وهو يحمل الأدوار التي لديه الآن.",
+    "deactivateConfirm": "تُنهى جلساته فورًا ولن يتمكن من تسجيل الدخول. تعود مهمة المجموعة إلى مجموعتها، ما لم يكن شخص آخر يعمل عليها. وتنتقل مهامه الأخرى إلى المستخدم البديل إن وُجد، وإلا تبقى المهمة التي لا يعمل عليها غيره بلا مُسنَد إليه لتعيد إسنادها.\n\nيمكنك إعادة تنشيطه لاحقًا، وسيعود بالأدوار التي لديه الآن.",
     "deactivateSummary": "{{reassigned}}، {{flagged}}.",
     "profileSaved": "تم حفظ التغييرات.",
     "noUsers": "لا يوجد مستخدمون.",
@@ -1338,14 +1362,17 @@
     "inviteUnitHasNoHead": "لا يوجد رئيس أو رئيس بالإنابة لهذه الوحدة التنظيمية. عيّن رئيسًا قبل دعوة أشخاص إليها، أو ادعُ هذا الشخص ليكون رئيسها.",
     "inviteDenied": "ليس لديك صلاحية دعوة المستخدمين.",
     "reactivate": "إعادة التنشيط",
-    "reactivateConfirm": "إعادة تنشيط {{name}}؟ سيتمكن من تسجيل الدخول مرة أخرى.\n\n{{roles}}\n\nالمهام التي أُسندت إلى شخص آخر لا تعود. أما المهام التي لم يتولّها أحد فتعود.",
+    "reactivateConfirm": "سيتمكن من تسجيل الدخول مجددًا، وسيشغل أحد مقاعدكم.\n\n{{roles}}\n\nتعود إليه المهام التي بقيت بلا مُسنَد إليه بعد مغادرته. أما المهام التي انتقلت إلى شخص آخر أو عادت إلى مجموعتها فتبقى حيث هي.",
     "reactivateRoles": "سيعود وهو يحمل: {{roles}}.",
     "reactivateNoRoles": "سيعود دون أي أدوار.",
     "reactivateRolesUnavailable": "لا يمكن عرض أدواره هنا لأن ذلك يتطلب صلاحية عرض المستخدمين. سيعود وهو يحمل الأدوار التي كانت لديه.",
     "reactivateSummary": "{{name}} نشط مرة أخرى — {{tasks}}.",
     "revokeInvitation": "إلغاء الدعوة",
-    "revokeInvitationConfirm": "إلغاء دعوة {{name}} ({{email}})؟ ستتوقف الدعوة عن العمل، وسيُحرَّر المقعد، وسيُحذف السجل. ويمكنك دعوة هذا البريد مرة أخرى لاحقًا.",
-    "revokeInvitationSummary": "تم إلغاء دعوة {{name}}."
+    "revokeInvitationConfirm": "يتوقف رابط الدعوة عن العمل، ويُحرَّر المقعد، وتُحذف الدعوة. ويمكنك دعوة {{email}} مجددًا.",
+    "revokeInvitationSummary": "تم إلغاء دعوة {{name}}.",
+    "deactivateHeader": "إلغاء تنشيط {{name}}؟",
+    "reactivateHeader": "إعادة تنشيط {{name}}؟",
+    "revokeInvitationHeader": "إلغاء دعوة {{name}}؟"
   },
   "platform": {
     "tenants": "المؤسسات",
@@ -1360,7 +1387,7 @@
     "adminEmail": "البريد الإلكتروني للمسؤول",
     "suspend": "إيقاف",
     "reactivate": "إعادة التفعيل",
-    "suspendConfirm": "إيقاف {{name}}؟ لن يتمكن مستخدموها من تسجيل الدخول حتى تتم إعادة التفعيل.",
+    "suspendConfirm": "يُوقَف مستخدموها عند طلبهم التالي ولا يمكنهم تسجيل الدخول، وتتوقف دعواتها عن العمل. لا يُحذف شيء، وإعادة تفعيلها تعيد الوصول.",
     "noTenants": "لا توجد مؤسسات.",
     "errorLoad": "فشل تحميل البيانات.",
     "errorAction": "فشل تنفيذ الإجراء.",
@@ -1406,7 +1433,8 @@
     "platformSettings": "إعدادات المنصة",
     "announcement": "شريط إعلان على مستوى المنصة، يظهر لجميع المؤسسات.",
     "announcementMessage": "نص الإعلان",
-    "announcementSeverity": "درجة الأهمية"
+    "announcementSeverity": "درجة الأهمية",
+    "suspendHeader": "إيقاف {{name}}؟"
   },
   "account": {
     "trial": "تجريبي",
@@ -1827,6 +1855,14 @@
         "few": "ما زالت تغييراتك الـ{{count}} هنا.",
         "many": "ما زالت تغييراتك الـ{{count}} هنا.",
         "other": "ما زالت تغييراتك الـ{{count}} هنا."
+      },
+      "deactivateHolders": {
+        "zero": "لا أحد يحمله الآن.",
+        "one": "يحمله شخص واحد سيفقد صلاحيات الدور الآن.",
+        "two": "يحمله شخصان سيفقدان صلاحيات الدور الآن.",
+        "few": "يحمله {{count}} أشخاص سيفقدون صلاحيات الدور الآن.",
+        "many": "يحمله {{count}} شخصًا سيفقدون صلاحيات الدور الآن.",
+        "other": "يحمله {{count}} شخص سيفقدون صلاحيات الدور الآن."
       }
     },
     "committee": {
