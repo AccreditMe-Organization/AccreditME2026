@@ -67,6 +67,7 @@ const ROW = (id: string, over: Partial<CommitteeListItemDto> = {}): CommitteeLis
   currentStageNameAr: 'التشكيل',
   currentStageKey: 'formation',
   isDissolving: false,
+  typeValue: null,
   ...over,
 });
 

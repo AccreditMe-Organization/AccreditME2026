@@ -45,6 +45,7 @@ const COMMITTEE = (stageKey: string | null): CommitteeDetailDto => ({
   updatedAt: '2026-10-01T00:00:00Z',
   currentStageKey: stageKey,
   isDissolving: stageKey === 'dissolution_pending' || stageKey === 'dissolved',
+  typeValue: null,
 });
 
 describe('CommitteeDetailComponent — the header by stage key (ACC-238)', () => {
