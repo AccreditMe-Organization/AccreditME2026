@@ -19,7 +19,9 @@ export type WorkflowRefusalCode =
   | 'TASK_SLA_EXCEEDS_STAGE_DEADLINES'
   | 'STAGE_TASKS_OPEN'
   | 'ACTION_TYPE_RETIRED'
-  | 'VALIDATOR_RETIRED';
+  | 'VALIDATOR_RETIRED'
+  // ACC-238 — a transition precondition (transition-preconditions.ts).
+  | 'COMMITTEE_QUORUM_NOT_SET';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -37,6 +39,7 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASKS_OPEN: HttpStatus.CONFLICT,
   ACTION_TYPE_RETIRED: HttpStatus.BAD_REQUEST,
   VALIDATOR_RETIRED: HttpStatus.BAD_REQUEST,
+  COMMITTEE_QUORUM_NOT_SET: HttpStatus.CONFLICT,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -55,6 +58,7 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   STAGE_TASKS_OPEN: 'Finish the required tasks of this stage before moving the record forward',
   ACTION_TYPE_RETIRED: 'Create task is no longer an action. Add tasks to the destination stage instead',
   VALIDATOR_RETIRED: "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves",
+  COMMITTEE_QUORUM_NOT_SET: 'Set a quorum of at least 1 before submitting this committee for approval',
 };
 
 export class WorkflowRefusalException extends HttpException {

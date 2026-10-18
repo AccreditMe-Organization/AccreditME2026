@@ -1905,6 +1905,73 @@ describe('WorkflowService', () => {
     });
   });
 
+  // ── A record's own preconditions (ACC-238) ──────────────────────────────────
+  // A committee leaves Formation only with a quorum of at least 1. Read by the
+  // stage KEY, checked early and again under the instance's lock.
+
+  describe('transition preconditions (ACC-238)', () => {
+    const FORMATION = { ...SINGLE_STAGE, key: 'formation' };
+    function arrange(quorumCount: number, opts: { kind?: 'ADVANCE' | 'RETURN' | 'EXIT'; fromKey?: string | null; objectType?: string } = {}) {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue({ ...BASE_INSTANCE, objectType: opts.objectType ?? 'COMMITTEE' });
+      mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve(
+          { 'stage-single': { ...FORMATION, key: opts.fromKey === undefined ? 'formation' : opts.fromKey }, 'stage-target': TARGET_STAGE }[where.id] ??
+            null,
+        ),
+      );
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ kind: opts.kind ?? 'ADVANCE' }));
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.task.findMany.mockResolvedValue([]);
+      mockPrisma.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+        Promise.resolve(strings.join('?').includes('"Committee"') ? [{ quorumCount }] : []),
+      );
+    }
+    const trigger = () => service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+    const committeeReads = () =>
+      mockPrisma.$queryRaw.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join('?').includes('"Committee"'));
+
+    it('refuses Submit for Approval out of Formation with quorum 0: 409 COMMITTEE_QUORUM_NOT_SET, nothing moved', async () => {
+      arrange(0);
+
+      const error = await trigger().catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(WorkflowRefusalException);
+      expect((error as WorkflowRefusalException).getResponse()).toMatchObject({ statusCode: 409, code: 'COMMITTEE_QUORUM_NOT_SET' });
+      expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+    });
+
+    it('moves the committee with quorum 1, reading the committee scoped by organisation, again inside the transaction', async () => {
+      arrange(1);
+
+      await trigger();
+
+      expect(mockPrisma.workflowInstance.update).toHaveBeenCalled();
+      // Early, then under the lock — and every read names the organisation.
+      expect(committeeReads()).toHaveLength(2);
+      for (const call of committeeReads()) {
+        expect(call.slice(1)).toEqual(['object-1', ORG_A]);
+        expect((call[0] as TemplateStringsArray).join('?')).toContain('FOR SHARE');
+      }
+    });
+
+    it('is decided by the stage key, never the name: a stage with no key is not checked', async () => {
+      arrange(0, { fromKey: null });
+      await trigger();
+      expect(mockPrisma.workflowInstance.update).toHaveBeenCalled();
+    });
+
+    it('never holds a RETURN or EXIT, nor another record type', async () => {
+      arrange(0, { kind: 'RETURN' });
+      await trigger();
+      arrange(0, { objectType: 'DOCUMENT' });
+      await trigger();
+      expect(committeeReads()).toHaveLength(0);
+      expect(mockPrisma.workflowInstance.update).toHaveBeenCalledTimes(2);
+    });
+  });
+
   // ── Stage entry creates the stage's tasks (ACC-190) ─────────────────────────
 
   describe('stage entry tasks (ACC-190)', () => {

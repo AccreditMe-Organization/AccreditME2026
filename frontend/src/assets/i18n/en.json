@@ -439,11 +439,11 @@
         "tasks:manage": "See and assign tasks nobody owns",
         "committees:view": "Open a committee record and its members",
         "committees:create": "Create a committee",
-        "committees:edit_details": "Edit name, purpose, quorum, frequency",
+        "committees:edit_details": "Edit a committee in Formation and request changes after approval",
         "committees:add_member": "Add members to a committee",
         "committees:remove_member": "Remove members from a committee",
         "committees:change_member_role": "Change a member’s role on a committee",
-        "committees:approve": "Approve terms and confirm a dissolution",
+        "committees:approve": "Approve terms, changes and dissolutions",
         "committees:manage": "Submit, suspend, reactivate, dissolve",
         "meetings:view": "See meetings and their tasks",
         "platform:admin": "Run the AccreditMe platform",
@@ -684,7 +684,8 @@
       "committeeNotFound": "That committee no longer exists. Choose another.",
       "roleNotFound": "That committee role no longer exists. Choose another.",
       "userNotInPosition": "That person no longer holds this position here. Choose again.",
-      "onFinalStage": "A final stage can't create tasks: the record is complete when it arrives."
+      "onFinalStage": "A final stage can't create tasks: the record is complete when it arrives.",
+      "committeeQuorumNotSet": "Set a quorum of at least 1 before submitting this committee for approval."
     }
   },
   "notification": {
@@ -796,7 +797,7 @@
       "reportsToNotFound": "That committee doesn't exist. Choose another.",
       "unitRequired": "Choose the unit that owns this committee.",
       "unitNotFound": "That unit doesn't exist or is no longer active. Choose another.",
-      "saveFailed": "The committee couldn't be saved. Try again."
+      "saveFailed": "Something went wrong, so nothing was saved."
     },
     "status": {
       "active": "Active",
@@ -842,7 +843,29 @@
       "errorDenied": "You can't add members to this committee.",
       "errorNotFound": "That person or role no longer exists. Choose again.",
       "errorSave": "The member couldn't be added. Try again."
-    }
+    },
+    "form": {
+      "tabsLabel": "Committee details",
+      "tab": {
+        "identity": "Identity",
+        "governance": "Governance",
+        "structure": "Structure"
+      },
+      "nameRequired": "Enter the committee's English name.",
+      "typeRequired": "Choose the committee's type.",
+      "quorumMin": "The quorum can't be less than 0.",
+      "quorumNotSet": "0 means not set yet",
+      "activeUnitsOnly": "Active units only",
+      "parentLeftOut": "Not listed: this committee, the committees under it, and those being dissolved.",
+      "reportsToLeftOut": "Not listed: this committee, the committees reporting to it, and those being dissolved.",
+      "leftOutNew": "Not listed: committees being dissolved, or dissolved.",
+      "reportsToFilledIn": "Filled in from Parent committee · you can change it",
+      "savedTogether": "Saved together · all three tabs",
+      "conflict": "{{name}} was changed by someone else since you opened it. Nothing was saved.",
+      "reload": "Reload",
+      "unreachable": "Nothing was saved: the server couldn't be reached."
+    },
+    "lockedTermsReview": "Locked while the terms are under review. Revise Terms to change it."
   },
   "orgPosition": {
     "addPosition": "Add Position",
@@ -1786,6 +1809,10 @@
       "peopleMatch": {
         "one": "{{count}} person matches",
         "other": "{{count}} people match"
+      },
+      "quorumHint": {
+        "one": "0 means not set yet · of {{count}} member",
+        "other": "0 means not set yet · of {{count}} members"
       }
     },
     "task": {
@@ -1856,6 +1883,10 @@
       "openConditions": {
         "one": "{{count}} open condition",
         "other": "{{count}} open conditions"
+      },
+      "tabProblems": {
+        "one": "{{count}} problem",
+        "other": "{{count}} problems"
       }
     },
     "setupHealth": {
