@@ -434,6 +434,25 @@ All are sent after commit with the stored-notice shape (`NotificationService.cre
 - **Attachments:** none on a change request; the in-app viewer rule has nothing to apply to.
 - **Refusals** are said from their code (`committee.changeRequest.refusal.*`), never from the English message.
 
+### 6.3 Checked against Design System artboard 14, "List patterns (17 Oct 2026)"
+
+The artboard was refreshed into `frontend/design-reference/` in `df857fc`. Each rule as it applies here:
+
+| Rule | What it says | Here |
+|---|---|---|
+| 1.1–1.5 | Sort by column header (`am-sort-header`): ▲/▼ on the sorted column only, the default sort's arrow shown on open, "Sort by {column}" with `aria-sort`, a column the server cannot sort is plain text | **See all** list: number, status and requested sort by header; fields and requester are plain text. Opens on requested ▼ |
+| 1.6 | Phone cards (below 768px): a compact sort menu with the same sorts, both ways; the only sort menu anywhere | See all's cards keep `am-simple-list`'s compact menu. **The shared components switch at 760, not 768** (Q19) |
+| 1.7 | A capped record panel has no sort; sorting lives in See all | The **Change requests panel** has no sort control. Its order is fixed: open first, then most recent |
+| 2.1–2.3 | Columns defined once, no content-sized track, no cell paints outside its track, an ellipsis plus tooltip on long text | One track list for the header and rows, no `auto`. The fields cell ("Quorum, Reports to, …") ends in an ellipsis with the full list as a tooltip. Pinned by a layout spec in both languages |
+| 2.2 | The action column is a fixed 150px | **No action column**: a row opens its request, and it has no next-step button or ⋯ (Q17) |
+| 3.1–3.7 | Row ⋯: under its own ⋯, end-aligned, a CDK layer, Escape returns focus, named "Actions for {row}", words not icons, opens above near the window's edge | No row ⋯ in the panel or the list (Q17). The header ⋯ the drawing places after "Request a change" does not exist on the committee page (Q16) |
+| 4.2 | A failed list load is the standard error state with Retry | The panel uses `am-capped-panel`'s error state. The banner's "Couldn't check for an open change request · Retry" is the same shape |
+| 5.1 | Every field reserves its message slot | Return's note and Reject's reason use `am-field`, as do the Request a change page's fields and the three-tab dialog |
+| 5.2 | Save stays enabled; pressing it fills each slot and moves focus to the first error | Return, Reject, Submit for review, Save as draft and the Edit dialog's Save are **never disabled for invalid input**. The Edit dialog also moves to the tab holding the first error. **The drawing disables Submit until a field changes and the reason is filled** (Q18) |
+| 5.3 | Cancel and Save sit in the footer | All dialogs: yes. The three-tab dialog's buttons move out of the body (§4.2) |
+| 5.4 | Escape or Cancel with unsaved changes asks: Keep editing · Discard | The dialogs pass `[dirty]`. The Request a change **page** asks the same on Cancel and on leaving, through a `canDeactivate` guard |
+| 5.5 | Error text comes from the code; Retry only when retrying could help (unreachable, timeout) | The stale save offers **Reload**, not Retry. A refusal (a reference rule, a stage, one open request, own decision) offers no Retry. **The drawing's Edit-dialog error state says "Try again" for any failed save** (Q18) |
+
 ## 7. ACC-241 — The API lock on direct edits (before the first customer)
 
 - **Location:** `CommitteesService.updateCommittee()`, inside the transaction, **after** the before-read and its 404 (`committees.service.ts:150–151`) and **before** `assertCommitteeReferences` (l.161). After PR 1, this is after the row lock and the `expectedUpdatedAt` comparison.
@@ -507,3 +526,23 @@ All are sent after commit with the stored-notice shape (`NotificationService.cre
 15. **Are the request workflow's stages fixed?**
     - Tenants could otherwise add stages to the request template in Workflow settings, which this feature cannot follow.
     - **Pick: rename and SLA only.** Adding or removing a stage or transition on a `COMMITTEE_CHANGE_REQUEST` template is refused (`WORKFLOW_TEMPLATE_FIXED`), as it is a system process.
+
+**From the artboard 14 check (§6.3):**
+
+16. **The header ⋯.**
+    - The Committee Changes drawing ends every header row with a ⋯; the committee page has none today.
+    - **Pick: add none.** Nothing would go in it: Edit and Request a change are buttons by the drawing's own reasoning, and the transitions are the workflow's. A ⋯ arrives with its first item, following rule 3.
+17. **Row actions in the Change requests panel and its See all list.**
+    - **Pick: none.** A row opens its request, and every action lives on the request page, where who may do what is decided. So there is no 150px action column and no row ⋯.
+    - If a row Withdraw is wanted, it goes in a worded ⋯ (rule 3), plus the fixed 150px column.
+18. **Disabled versus enabled buttons.** The Committee Changes drawing departs from artboard 14 in two places:
+    - **Submit on Request a change:**
+      - The drawing disables it "until a field changes and the reason is filled". Rule 5.2 says it stays enabled.
+      - **Pick: rule 5.2.** It stays enabled. Pressing it with nothing changed says "Change at least one field." above the form. A missing reason shows "Say why this change is needed." in its slot, with focus moved there.
+    - **The Edit dialog's failed save:**
+      - The drawing offers "Try again" for any failure. Rule 5.5 limits Retry to an unreachable server or a timeout.
+      - **Pick: rule 5.5.**
+    - **Kept from the drawing:** Save disabled *while the committee is still loading* (skeletons), because there is nothing to submit yet. That is a loading state, not invalid input.
+19. **The phone breakpoint.**
+    - Artboard 14 says card layouts start below 768px. `am-simple-list` and `am-list-dialog` switch at 760 (`LIST_DIALOG_SHEET_BELOW_PX`).
+    - **Pick: leave both components at 760 in these PRs**, and raise it as its own small fix: a shared constant moved in one place, with the layout specs that pin it re-measured. Changing it inside a committee feature would move every list in the app.
