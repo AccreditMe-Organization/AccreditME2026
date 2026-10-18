@@ -41,8 +41,9 @@
    - The locked line shows to holders of `committees:edit_details` only.
 4. **Active and Suspended:** no direct edit. Every field change goes through a change request, even an Arabic-name typo. The committee stays Active and keeps meeting while a request is open.
 5. **Request lifecycle:** Draft → Under review → Approved (applied) or Rejected.
-   - Return sends it back to Draft with a note.
+   - Return sends it to **Returned** with a note (its own keyed stage since Ahmad's Q15 decision, 18 Oct). The requester edits it there and submits it again.
    - Withdrawn ends it.
+   - A tenant may add review stages between Under review and Approved (Q15, as decided).
 6. **Dissolution Pending and Dissolved:** no edit and no new request. An open request can only be rejected or withdrawn.
 7. **Members:** outside all of this; membership events work as today.
 8. **One open request per committee:**
@@ -221,7 +222,7 @@ model CommitteeChangeRequest {
   requestedById  String
   reason         String              // "Why is this change needed?" — required
   changes        Json                // only the fields that change: { quorumCount: 6, reportingToCommitteeId: "…" }
-  baseline       Json                // those fields' values when the draft was last saved
+  fromValues     Json?               // Q11 (18 Oct): the "from" value of each changed field, stored at SUBMIT
   returnNote     String?             // the latest Return's note
   decisionNote   String?             // the Reject reason
   decidedById    String?
@@ -243,11 +244,15 @@ model CommitteeChangeRequest {
 model WorkflowInstanceStage { … quorumCount Int? }      // the snapshot
 ```
 
-- **There is no status column.** The state is the request's workflow instance's current stage key, which is one fact in one place (ACC-82's rule). "Open" means the key is `draft` or `under_review`.
+- **There is no status column.** The state is the request's workflow instance's current stage key, which is one fact in one place (ACC-82's rule).
+  - "Open" means the key is `draft`, `under_review` or `returned`, or the request sits in a stage a tenant added (no key), which counts as open AND under review (Q15, 18 Oct).
+  - Closed means `approved`, `rejected` or `withdrawn`.
+- **`fromValues` is written at submit, and at every resubmit** (Q11, 18 Oct): the committee's current value of each field the request changes, at that moment. Approval compares them (§5.5).
 - **`changes` is JSON, not a column per field.** Nine editable fields would be nine nullable columns, each with a second "was this sent" flag (`nameAr` can legitimately change to null).
   - A key present in the JSON means "changes to this value". It is validated by `CommitteeChangeDto`, which carries the same validators as `UpdateCommitteeDto` (`@Transform(trimToNull)` included), on save, on submit and again on apply.
   - The editable fields are: nameEn, nameAr, typeValueId, purpose, quorumCount, meetingFrequency, orgUnitId, parentCommitteeId, reportingToCommitteeId. Q6 asks about `termsOfReferenceDocumentId`.
 - **`number`** is max + 1 per committee, taken under the committee row lock that also guards "one open" (Q4).
+- **One open request per committee (Ahmad, 18 Oct): creating a request takes the committee row lock (`FOR UPDATE`), checks for an open request, and writes — all in ONE transaction.** There is no status column to put a unique index on, so the lock is what makes the check and the write atomic. A real-database spec sends two creates at once and requires exactly one to succeed.
 - **Why the migration is safe for the running code:** a new table, a nullable column and a new enum value. No running code selects the column, no row can hold the value until the new code seeds it, and the seed and backfill run AFTER the deploy (ACC-173's rule).
 
 ### 5.2 The workflow type
@@ -259,27 +264,40 @@ model WorkflowInstanceStage { … quorumCount Int? }      // the snapshot
   - `mapObjectTypeToTaskSourceType()`, which maps it to `COMMITTEE`, because tasks sit on the committee;
   - the `ObjectVisibilityService` rules: `committees:view`, and the parent committee must be visible. Without an entry the visibility check fails closed.
   - It is NOT in `RECORD_ROUTES`: no stage tasks are offered on it (Q10).
-- **The seeded template is keyed, and every transition is `SYSTEM_AUTOMATIC`:**
+- **The seeded template has SIX keyed stages** (Ahmad, 18 Oct, Q15):
 
   | Stage key | Order | Flags |
   |---|---|---|
   | `draft` | 10 | initial |
   | `under_review` | 20 | — |
+  | `returned` | 25 | — |
   | `approved` | 30 | final |
   | `rejected` | 40 | final |
   | `withdrawn` | 50 | final |
 
-  | Transition | From → to | Kind |
-  |---|---|---|
-  | Submit for review | draft → under_review | ADVANCE |
-  | Return for changes | under_review → draft | RETURN |
-  | Approve and apply | under_review → approved | ADVANCE |
-  | Reject | under_review → rejected | EXIT |
-  | Withdraw | draft → withdrawn | EXIT |
-  | Withdraw | under_review → withdrawn | EXIT |
+  | Transition | From → to | Kind | Trigger |
+  |---|---|---|---|
+  | Submit for review | draft → under_review | ADVANCE | SYSTEM_AUTOMATIC |
+  | Return for changes | under_review → returned | RETURN | SYSTEM_AUTOMATIC |
+  | Submit again | returned → under_review | ADVANCE | SYSTEM_AUTOMATIC |
+  | **Approve and apply** | under_review → approved | ADVANCE | SYSTEM_AUTOMATIC |
+  | **Reject** | under_review → rejected | EXIT | SYSTEM_AUTOMATIC |
+  | Withdraw | draft, under_review, returned → withdrawn | EXIT | SYSTEM_AUTOMATIC |
 
   - Because they are `SYSTEM_AUTOMATIC`, the generic `POST /workflows/instances/:id/transitions` already refuses them (`workflow.service.ts:468`). Nobody can move a request to Approved without applying it.
   - Transitions are found by their from and to stage keys; transitions have no key of their own.
+- **What a tenant may change (Q15, decided 18 Oct):**
+  - **May:** rename any stage, set SLAs, and add their own stages between Under review and Approved (a second review, say), each with its own approvers. An added stage has no key.
+  - **A request in an added stage counts as open and under review.**
+    - Approve, Return and Reject work from it as from `under_review`.
+    - In an added stage the approver must ALSO be in that stage's own approver pool (`resolveApproverPool()`), on top of `committees:approve`.
+    - Moving between `under_review` and an added stage uses the tenant's own transitions, through the generic endpoint, with their own permissions.
+  - **May not:**
+    - delete any of the six keyed stages;
+    - change or delete a transition INTO `approved` or `rejected` (the ones that apply or close the request), or add one that is not `SYSTEM_AUTOMATIC`;
+    - add a stage after a final stage.
+  - **The workflow editor refuses the forbidden edits** with code `WORKFLOW_TEMPLATE_PROTECTED` and a sentence naming why, e.g. "This stage is how a committee change request is applied, so it can't be deleted." The screen says it from the code.
+  - **A real-database spec proves each refusal**, and that an allowed edit (rename, SLA, an added stage with a transition into it) still saves.
 - **Build check:** `checkAndFlagUnassignedStage()` must not report `under_review` as "no eligible actor" merely because its transitions are system-fired. If it would, the type is excluded there, with a test.
 - **Seeding:**
   - New organisations: `seedDefaultWorkflows`, an idempotent upsert.
@@ -324,22 +342,23 @@ All of these are `@UseGuards(TenantGuard, PermissionGuard)`. Every query is scop
   - `CHANGE_REQUEST_COMMITTEE_DISSOLVING`: approve and return only.
   - `CHANGE_REQUEST_NOT_OPEN`.
   - `CHANGE_REQUEST_CHANGED`: a stale draft edit, compared on `expectedUpdatedAt`, the same shape as PR 1.
+  - `CHANGE_REQUEST_COMMITTEE_CHANGED` (Q11, 18 Oct): at approval, a current value differs from its stored "from" value. "The committee has changed since this request was submitted. Return it to the requester." Nothing is applied.
   - Plus every ACC-233 `COMMITTEE_*` reference refusal.
 - **Locks:**
-  - Create and submit take the committee row lock (`FOR UPDATE`), then check "one open".
+  - Create takes the committee row lock (`FOR UPDATE`), checks "one open" and writes the request, in ONE transaction (18 Oct). Submit and resubmit take the same lock while they store `fromValues`.
   - Every action locks the request row, then follows the engine's lock order: instance, then task.
 
 ### 5.5 Approve and apply, in one transaction
 
 **Before the transaction (reads only):**
 - Load the request and committee, scoped.
-- Check: `committees:approve`, not the requester, stage key `under_review`, the committee's key `active` or `suspended` and not dissolving.
+- Check: `committees:approve`, not the requester, the request under review (`under_review`, or an added stage, whose own approver pool the approver must be in), the committee's key `active` or `suspended` and not dissolving.
 - Prepare the terms task (title "Revise the terms of reference", EN/AR; sourceType COMMITTEE; assignee the requester; creator the approver; priority Medium; due date and limit from the priority SLA, as ACC-174 computes them).
 
 **Inside the stage-change transaction's `inTx`:**
 1. Take the hierarchy lock if parent or reports-to changes, then lock the committee row.
 2. Run `assertCommitteeReferences()` on the changed values (ACC-233). A refusal rolls everything back, and the approver sees the reason; the request stays Under review.
-3. Record `appliedFrom` from the committee's current values. The request's `baseline` is NOT required to match: with one open request and ACC-241's lock there is nothing else that writes, and during development a direct edit should not strand a request (Q11).
+3. **Compare every changed field's current value with its stored "from" value (Q11, decided 18 Oct).** Any difference refuses the whole approval with 409 `CHANGE_REQUEST_COMMITTEE_CHANGED`, telling the approver to return the request; nothing is applied, and the request stays under review. Otherwise record `appliedFrom` (equal to `fromValues`, kept for the record page's struck-through "Current").
 4. Write the committee.
 5. Insert the terms task, using the engine's `insertPrepared` path; `TaskService.create()` is not transaction-aware.
 6. Stamp `appliedAt`, `decidedById`, `decidedAt` and `termsTaskId` on the request.
@@ -461,6 +480,11 @@ The artboard was refreshed into `frontend/design-reference/` in `df857fc`. Each 
   - Any key other than `formation` is a 409 `COMMITTEE_EDIT_LOCKED`. A missing instance or key is also refused (fail closed), with a log line of ids only.
   - The dialog words it from the code.
 - **What it leaves alone:** the apply path in §5.5 writes the committee through its own code inside its own transaction, so the lock does not touch it. Membership is unaffected.
+- **Lock order — found while building ACC-238, and the thing to get right.**
+  - A transition locks the committee's workflow INSTANCE first, then reads the committee row FOR SHARE (ACC-238's quorum precondition). PR 1's edit locks the committee ROW (`FOR UPDATE`).
+  - If ACC-241 read the instance FOR SHARE after the row lock, an edit and a transition pressed together would each hold what the other waits for: a deadlock.
+  - So ACC-241 reads (and share-locks) the instance BEFORE taking the committee row lock: instance, then committee, the engine's order.
+  - A real-database spec presses an edit and Submit for Approval together, ten times, and requires both to finish.
 
 ## 8. Lane A overlap check (18 Oct)
 
@@ -514,8 +538,10 @@ The artboard was refreshed into `frontend/design-reference/` in `df857fc`. Each 
 11. **A committee changed directly after a request was drafted.**
     - This is only possible during development, before ACC-241.
     - **Pick: apply over the current values, record `appliedFrom`, and show the true "Current" values on the page.** The alternative, refusing because the baseline differs, strands requests in development for no benefit after ACC-241.
+    - **DECIDED DIFFERENTLY (Ahmad, 18 Oct):** store the "from" value of each changed field at submit; at approval, if any current value differs, refuse with a 409 telling the approver to return the request. Nothing is applied. Written into §5.1, §5.4 and §5.5.
 12. **The Arabic permission sentences** in §4.2 (7).
     - **Pick: mine, as written.** Ahmad to correct the wording if needed.
+    - **DECIDED (Ahmad, 18 Oct): they stay as written.**
 13. **Home "Awaiting my action".**
     - Home has no such section today: task-request decisions live on My tasks as "Waiting for your decision".
     - Should a new Home card list change requests only, or both kinds of decision?
@@ -526,6 +552,12 @@ The artboard was refreshed into `frontend/design-reference/` in `df857fc`. Each 
 15. **Are the request workflow's stages fixed?**
     - Tenants could otherwise add stages to the request template in Workflow settings, which this feature cannot follow.
     - **Pick: rename and SLA only.** Adding or removing a stage or transition on a `COMMITTEE_CHANGE_REQUEST` template is refused (`WORKFLOW_TEMPLATE_FIXED`), as it is a system process.
+    - **DECIDED DIFFERENTLY (Ahmad, 18 Oct):**
+      - Tenants may rename stages, set SLAs, and add their own stages between Under review and Approved, each with its own approvers.
+      - They may not delete the six keyed stages (draft, under_review, returned, approved, rejected, withdrawn) or change the system-fired Approve and Reject transitions.
+      - Added stages have no key; a request in one counts as open and under review.
+      - The editor refuses the forbidden edits with a clear sentence (`WORKFLOW_TEMPLATE_PROTECTED`), and a real-database spec proves each refusal.
+      - Written into §2 and §5.2.
 
 **From the artboard 14 check (§6.3):**
 
@@ -546,3 +578,80 @@ The artboard was refreshed into `frontend/design-reference/` in `df857fc`. Each 
 19. **The phone breakpoint.**
     - Artboard 14 says card layouts start below 768px. `am-simple-list` and `am-list-dialog` switch at 760 (`LIST_DIALOG_SHEET_BELOW_PX`).
     - **Pick: leave both components at 760 in these PRs**, and raise it as its own small fix: a shared constant moved in one place, with the layout specs that pin it re-measured. Changing it inside a committee feature would move every list in the app.
+    - **DECIDED (Ahmad, 18 Oct): as picked.** The fix is **ACC-242** (lane A, Low), "Shared lists switch to phone cards at 768 px, matching the shell". 760 is unchanged here.
+
+**Decisions (Ahmad, 18 Oct).**
+- Every pick in questions 1 to 19 is accepted, except where a question above says DECIDED DIFFERENTLY (Q11, Q15).
+- Q12 and Q19 are confirmed as picked.
+- Also decided the same day, for PR 2: one open request per committee is enforced by taking the committee row lock, checking for an open request and writing, all in one transaction (§5.1, §5.4).
+
+---
+
+## 11. Built — PR 1 (ACC-238), results and departures
+
+**Branch:** `feature/ACC-238-committee-formation-edit`, from
+`feature/committee-changes-plan` (this plan and the design references ride in
+the PR). `origin/dev` had not moved (`21a4f68`).
+
+### 11.1 Tab heights (measured, `committee-form.layout.spec.ts`)
+
+Real dialog shell, compact density, real theme, the tabs in the header, the
+actions in the footer. The drawing's committee with its longest values. **Cap
+420; every number keeps at least 20px of room.**
+
+| State | Tab | Panel EN | Panel AR | Body EN | Body AR |
+|---|---|---|---|---|---|
+| Edit | Identity | 266 | 280 | 286 | 301 |
+| Edit | Governance | 73 | 75 | 286 | 301 |
+| Edit | Structure | 220 | 226 | 286 | 301 |
+| Every error showing | Identity | 272 | 291 | 286 | 301 |
+| Every error showing | Governance | 75 | 78 | 286 | 301 |
+| Every error showing | Structure | 225 | 235 | 286 | 301 |
+| Reports to filled in | (as Edit) | 266 / 73 / 220 | 280 / 75 / 226 | 286 | 301 |
+| Someone else saved first | — | — | — | 286 → 286 | 301 → 301 |
+
+- **The body is one height on every tab** (the tallest panel plus the body's
+  own padding), so the footer does not move between tabs.
+- **The tightest room is 119px** (Arabic body, 301 of 420).
+- **The drawing's 349 / 374 included the 36 / 40px tabs and their 12px gap in
+  the body.** With the tabs in the header they cost nothing against the cap.
+
+### 11.2 Departures from the plan, each deliberate
+
+1. **The typeahead message "Not available: it sits under this committee." is
+   not built.**
+   - `OverlaySelectComponent` has no hook for a typed name that matches nothing
+     offered. Adding one is a change to a 28-consumer shared component, not to
+     this dialog.
+   - The quiet line under each picker says what is left out, in the field's own
+     hint slot. It is one sentence per mode (editing or adding), not the
+     drawing's per-committee counts.
+2. **The owning-unit hint is the drawing's "Active units only"**, replacing the
+   longer ACC-135 guidance line, which needed two lines at 560.
+3. **"Edit refused in every non-Formation stage" is a frontend spec rendering
+   the real committee page** (`committee-detail.header.spec.ts`), not a database
+   spec. The API does not refuse until ACC-241, so there is no server refusal to
+   prove yet. The real-database spec covers the stale save.
+4. **The quorum check is in this PR**, as §4.1 planned, although the build brief
+   did not list it.
+5. **`committee.refusal.saveFailed` no longer says "Try again"**, because the
+   footer offers no Retry for a failure that retrying cannot fix (Q18). It reads
+   "Something went wrong, so nothing was saved."
+6. **The meeting frequencies are offered in words.** The old form showed the raw
+   enum values (`AS_NEEDED`), a defect it shared with nothing else.
+7. **"Save disabled while loading" (Q18, kept from the drawing) has nothing to
+   apply to.** The dialog opens with the committee the page already holds, so
+   there is no loading state before Save.
+8. **The dialog's choices are read on every opening.** The old form was
+   recreated each time it opened. The new component is mounted with its page,
+   so loading at construction cost the list and the record page three requests
+   for a dialog nobody opened. The list spec caught it.
+9. **Found while building, for ACC-241:** the lock order (§7). A transition
+   locks the instance and then reads the committee FOR SHARE; ACC-241 must take
+   the instance before the committee row, or the two deadlock.
+
+### 11.3 Tickets
+
+- **ACC-242** (lane A, Low): "Shared lists switch to phone cards at 768 px,
+  matching the shell" (Q19).
+- **ACC-239's description** follows Q11, Q15 and the one-open rule as decided.
