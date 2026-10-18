@@ -11,7 +11,6 @@ import { TextareaModule } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
-import { ConfirmationService } from 'primeng/api';
 import {
   WorkflowTemplateService,
   WorkflowTransitionActionDto,
@@ -44,6 +43,7 @@ const ACTION_TYPES = [
   { label: 'WEBHOOK', value: 'WEBHOOK' },
 ];
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 @Component({
   selector: 'app-workflow-action-configurator',
   standalone: true,
@@ -222,7 +222,7 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly translate = inject(TranslateService);
   private readonly fb = inject(FormBuilder);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
 
   // ACC-123 — workflows:manage, what every transition-action endpoint carries.
@@ -287,11 +287,11 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
   }
 
   onRemove(action: WorkflowTransitionActionDto): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('workflow.confirmRemoveAction', { type: action.actionType }),
       header: this.translate.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('confirm.removeAction'),
       accept: () => {
         this.workflowTemplateService.removeTransitionAction(action.id).subscribe({
           next: () => this.changed.emit(),

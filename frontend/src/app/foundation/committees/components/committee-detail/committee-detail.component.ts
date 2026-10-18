@@ -5,7 +5,6 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
-import { ConfirmationService } from 'primeng/api';
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
 import { TaskFormComponent } from '../../../tasks/components/task-form/task-form.component';
 import { TaskFormFooterComponent } from '../../../tasks/components/task-form/task-form-footer.component';
@@ -40,6 +39,7 @@ import { CommitteeFormComponent } from '../committee-form/committee-form.compone
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { COMMITTEE_HEADER_GRID, COMMITTEE_PANEL_GRID } from './committee-panel-grid';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /** ACC-174/177 — the task-row dialogs this page opens, one at a time. */
 type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
@@ -444,7 +444,7 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly workflowService = inject(WorkflowService);
   private readonly languageService = inject(LanguageService);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
@@ -703,11 +703,11 @@ export class CommitteeDetailComponent implements OnInit {
   }
 
   onRemoveMember(member: CommitteeMemberDto): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('committee.confirmRemoveMember', { name: this.userName(member.userId) }),
       header: this.translate.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('common.remove'),
       accept: () => {
         this.committeeService.removeMember(this.committeeId, member.id, {}).subscribe({
           next: () => {

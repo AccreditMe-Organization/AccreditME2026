@@ -11,7 +11,6 @@ import { TextareaModule } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { RadioButtonModule } from 'primeng/radiobutton';
 import { MessageModule } from 'primeng/message';
-import { ConfirmationService } from 'primeng/api';
 import {
   WorkflowTemplateService,
   WorkflowStageDto,
@@ -79,6 +78,7 @@ const TRIGGER_CONDITIONS = [
   { label: 'ASSIGNEE_POOL', value: 'ASSIGNEE_POOL' },
 ];
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 // ACC-208 — literal keys, so the translation-keys spec sees each one.
 const KIND_LABEL_KEYS: Record<WorkflowTransitionKind, string> = {
   ADVANCE: 'workflow.kind.advance',
@@ -639,7 +639,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly roleService = inject(RoleService);
   private readonly fb = inject(FormBuilder);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly translate = inject(TranslateService);
 
@@ -1084,11 +1084,11 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   }
 
   onRemove(transition: WorkflowTransitionDto): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('workflow.confirmRemoveTransition', { name: transition.labelEn }),
       header: this.translate.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('confirm.removeTransition'),
       accept: () => {
         this.workflowTemplateService.removeTransition(transition.id).subscribe({
           next: () => this.changed.emit(),

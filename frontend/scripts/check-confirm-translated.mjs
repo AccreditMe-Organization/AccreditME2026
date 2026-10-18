@@ -70,12 +70,14 @@ function sourceFiles() {
 }
 
 /**
- * The argument object of each `.confirm({ … })`, matched by brace balance so a
- * nested object or a callback body cannot end the match early.
+ * The argument object of each `.confirm({ … })` or `.ask({ … })`, matched by
+ * brace balance so a nested object or a callback body cannot end the match
+ * early. ACC-120 slice 10 moved every confirm onto AmConfirmService.ask(), so
+ * reading only `.confirm(` would have silently stopped checking all of them.
  */
 function confirmCalls(source) {
   const calls = [];
-  const re = /\.confirm\s*\(\s*\{/g;
+  const re = /\.(?:confirm|ask)\s*\(\s*\{/g;
   let m;
   while ((m = re.exec(source)) !== null) {
     let depth = 1;
@@ -176,7 +178,7 @@ checkGlobalButtonDefaults();
 
 for (const file of sourceFiles()) {
   const source = readFileSync(file, 'utf8');
-  if (!source.includes('.confirm(')) continue;
+  if (!source.includes('.confirm(') && !source.includes('.ask(')) continue;
 
   for (const call of confirmCalls(source)) {
     for (const prop of HUMAN_PROPS) {
@@ -191,7 +193,7 @@ for (const file of sourceFiles()) {
       if (!quoted) continue; // a signal, a computed, a variable — not our business
 
       problems.push(
-        `${file}:${lineOf(source, call.index)} — confirm({ ${prop} }) is a raw string: ` +
+        `${file}:${lineOf(source, call.index)} — confirm/ask({ ${prop} }) is a raw string: ` +
           `${value.slice(0, 60)}${value.length > 60 ? '…' : ''}`,
       );
     }

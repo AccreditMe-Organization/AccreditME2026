@@ -14,7 +14,6 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { TagModule } from 'primeng/tag';
-import { ConfirmationService } from 'primeng/api';
 import {
   PublicHolidayDto,
   WorkingCalendarService,
@@ -35,6 +34,7 @@ import { InlineCalendarComponent } from '../../../../shared/components/inline-ca
 import { AmDatePipe, FormatService } from '../../../../core/formatting';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /**
  * Public holidays — ACC-120 slice 1, Templates Rev 6, Template 5's inline row
@@ -403,7 +403,7 @@ export class PublicHolidayListComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
-  private readonly confirmation = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
 
   private readonly list = viewChild<DataListComponent<PublicHolidayDto>>('list');
@@ -593,14 +593,13 @@ export class PublicHolidayListComponent implements OnInit {
    * says what happens to the calendar, not only what happens to the record.
    */
   confirmDelete(holiday: PublicHolidayDto): void {
-    this.confirmation.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       header: this.translate.instant('workingCalendar.deleteConfirmHeader'),
       message: this.translate.instant('workingCalendar.deleteConfirmMessage', {
         name: holiday.nameEn,
         date: this.format.date(holiday.date),
       }),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
       acceptLabel: this.translate.instant('workingCalendar.deleteConfirmAccept'),
       rejectLabel: this.translate.instant('common.cancel'),
       accept: () => {

@@ -4,11 +4,11 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
-import { ConfirmationService } from 'primeng/api';
 import { StatusBadgeComponent } from '../../../shared/components/status-badge/status-badge.component';
 import { PlatformTenantService, IPlatformTenantSummary } from '../../services/platform-tenant.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../core/services/navigation-access.service';
+import { AmConfirmService } from '../../../shared/components/confirm/am-confirm.service';
 
 @Component({
   selector: 'app-tenant-list',
@@ -88,7 +88,7 @@ import { NavigationAccessService } from '../../../core/services/navigation-acces
 })
 export class TenantListComponent implements OnInit {
   private readonly platformTenantService = inject(PlatformTenantService);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly translateService = inject(TranslateService);
   private readonly router = inject(Router);
   private readonly navigationAccess = inject(NavigationAccessService);
@@ -122,11 +122,11 @@ export class TenantListComponent implements OnInit {
   }
 
   onSuspend(tenant: IPlatformTenantSummary): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translateService.instant('platform.suspendConfirm', { name: tenant.name }),
       header: this.translateService.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translateService.instant('platform.suspend'),
       accept: () => {
         this.platformTenantService.suspendTenant(tenant.id).subscribe({
           next: () => this.load(),

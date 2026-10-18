@@ -13,7 +13,6 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { ConfirmationService } from 'primeng/api';
 import { OrgPositionService, IOrgPositionDto } from '../../services/org-position.service';
 import { PositionFormComponent } from '../position-form/position-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
@@ -32,6 +31,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmNumberPipe } from '../../../../core/formatting';
 import { StepStripComponent } from '../../../../shared/components/step-strip/step-strip.component';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /**
  * Org positions — ACC-120 slice 6, Template 1.
@@ -278,7 +278,7 @@ export class PositionListComponent {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly orgPositionService = inject(OrgPositionService);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly translate = inject(TranslateService);
 
@@ -420,11 +420,11 @@ export class PositionListComponent {
     // Arabic session got an English modal. Same class as the Working Calendar
     // labels CLAUDE.md already records; found by migrating the screen, not by a
     // scan, because no scan reads a ConfirmationService call.
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       header: this.translate.instant('common.confirm'),
       message: this.translate.instant('orgPosition.deactivateConfirm', { name: position.nameEn }),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('orgPosition.deactivate'),
       accept: () => {
         this.orgPositionService.deactivate(position.id).subscribe({
           next: () => this.loadPositions(),
