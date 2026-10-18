@@ -34,7 +34,9 @@ const appDir = join(root, 'src', 'app');
 // Measured on the branch that introduced this scan. See the header. Lowered
 // to 19 in ACC-120 slice 5, at the scan's own request: migrations had already
 // taken it 9 under, and deleting the old profile's role section took the 10th.
-const BASELINE = 19;
+// Lowered to 18 in ACC-120 slice 10: the workflow Actions dialog's trash
+// button now names the action it removes.
+const BASELINE = 18;
 
 // A TOOLTIP IS NOT A NAME. pTooltip is deliberately absent here: a tooltip is
 // unreachable to a screen reader and to a touch user, so a control carrying

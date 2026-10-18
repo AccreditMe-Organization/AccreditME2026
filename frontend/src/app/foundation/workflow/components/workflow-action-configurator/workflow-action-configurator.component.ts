@@ -129,6 +129,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
                   size="small"
                   severity="danger"
                   [pTooltip]="'common.remove' | translate"
+                  [ariaLabel]="'workflow.removeActionNamed' | translate: { type: actionTypeName(action.actionType) }"
                   (onClick)="onRemove(action)"
                 />
                 }
@@ -286,11 +287,23 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
     });
   }
 
+  /**
+   * An action type as a person reads it ("Send notification"), never the enum.
+   * A type with no translation (one added on the server first) reads
+   * "Unknown" rather than the raw key.
+   */
+  actionTypeName(type: string): string {
+    const key = `workflow.actionTypeName.${type}`;
+    const name = this.translate.instant(key);
+    return name === key ? this.translate.instant('workflow.actionTypeName.unknown') : name;
+  }
+
   onRemove(action: WorkflowTransitionActionDto): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translate.instant('workflow.confirmRemoveAction', { type: action.actionType }),
-      header: this.translate.instant('common.confirm'),
+      // workflow-template.service.ts removeTransitionAction() deletes the row.
+      message: this.translate.instant('workflow.confirmRemoveAction'),
+      header: this.translate.instant('workflow.confirmRemoveActionHeader', { type: this.actionTypeName(action.actionType) }),
       acceptLabel: this.translate.instant('confirm.removeAction'),
       accept: () => {
         this.workflowTemplateService.removeTransitionAction(action.id).subscribe({
