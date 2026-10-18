@@ -3747,17 +3747,27 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
     `registerScrollableAncestors()` (`shared/overlay/scrollable-ancestors.ts`,
     moved unchanged out of `OverlaySelectComponent`, which now imports it).
     Before this, scrolling `<main>` 60px left the menu 60px from its row.
-  - **It aligns to its ⋯'s end in Arabic too (ACC-235).** CDK's root
-    `Directionality` reads the page direction once, at start-up, and never
-    follows a language switch, so an Arabic session placed the menu as if
-    left-to-right, 48–60px off its ⋯. The trigger sits in a CDK `[dir]` that
-    follows `LanguageService.isRtl()`, which is what the menu trigger reads.
-    Any other CDK overlay opened after a language switch has the same root
-    value; this fix is scoped to the menus.
-  - **The rail's user menu** (`SidebarComponent`) uses the same CDK menu and
-    `[dir]`, opening above its button, aligned to its start. Its `<p-menu
-    [popup]>` rendered inside the rail: on a 390px phone it covered its own
-    button in English and ran 78px off the screen in Arabic.
+  - **It aligns to its ⋯'s end in either language, after a switch too
+    (ACC-235, made app-wide by ACC-237).** CDK's root `Directionality` reads
+    `<html dir>` once, when it is created, and nothing in the CDK updates it,
+    so an Arabic session once placed this menu as if left-to-right, 48–60px
+    off its ⋯. ACC-235 wrapped the trigger in a CDK `[dir]`; ACC-237 removed
+    that wrapper and fixed it for every CDK overlay at once:
+    `LanguageService`'s effect, the one place `<html dir>` is written, also
+    sets the root `Directionality`'s `valueSignal` and emits `change` when the
+    direction actually changes. The CDK menu trigger passes that object to its
+    overlay (`menu.mjs:704`), so the row menu, the rail's user menu and the
+    task page's ⋯ follow a switch with nothing of their own.
+  - **The rail's user menu** (`SidebarComponent`) uses the same CDK menu,
+    opening above its button, aligned to its start, and follows a switch
+    through the root `Directionality` (ACC-237; its `[dir]` wrapper is gone).
+    Its `<p-menu [popup]>` rendered inside the rail: on a 390px phone it
+    covered its own button in English and ran 78px off the screen in Arabic.
+  - **The overlay select follows a switch too (ACC-237).** It passes the
+    injected `Directionality` object as its overlay's `direction`, because its
+    `OverlayRef` is built once and reused: without one, `create()` stores the
+    value as a string (`_overlay-module-chunk.mjs:2083`), so its panel kept
+    the direction of the first open.
 - **`TaskActionHostComponent`** (`app-task-action-host`): runs a row's action.
   One-step actions are called directly (Complete is confirmed first, as the
   committee page always did); an action with a dialog reads the task page's
