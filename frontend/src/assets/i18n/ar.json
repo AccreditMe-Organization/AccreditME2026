@@ -2675,5 +2675,14 @@
       "evidence_removed": "أُزيل دليل",
       "changed": "تغيّرت"
     }
+  },
+  "confirm": {
+    "deleteValue": "حذف القيمة",
+    "keepHandover": "إبقاء التسليم والتسلّم",
+    "endCover": "إنهاء التغطية",
+    "removeAction": "إزالة الإجراء",
+    "removeStage": "إزالة المرحلة",
+    "deactivateTemplate": "تعطيل القالب",
+    "removeTransition": "إزالة الانتقال"
   }
 }
