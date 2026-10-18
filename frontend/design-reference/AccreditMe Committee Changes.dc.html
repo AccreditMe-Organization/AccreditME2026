@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1480px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 15 Oct 2026 · Editing a committee, and the committee change request · on Committee Record, Templates, Task Screens, Record Tasks Panel</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Committee changes</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 112ch; text-wrap: pretty;">A committee is edited directly only in Formation, read-only in Terms Review, changed through a change request with its own approval once Active or Suspended, and closed to change from Dissolution Pending. Members stay outside all of this. Stage names are tenant data and render as data. Example: Infection Prevention &amp; Control Committee (QMC-014), Change request 3 by Nora Al-Otaibi, reviewed by A. Al-Harbi.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="8"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div><div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div></div></sc-for>
+    </div>
+  </section>
+
+  <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="4">
+    <section id="{{ sec.id }}" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">{{ sec.n }}</span>
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{{ sec.title }}</h2>
+        <span style="font-size: 12.5px; color: #5A6779;">{{ sec.sub }}</span>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+        <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="3">
+          <div style="{{ it.outer }}">
+            <div dir="{{ it.dir }}" style="{{ it.capStyle }}">{{ it.cap }}</div>
+            <div dir="{{ it.dir }}" style="{{ it.frame }}">
+              <sc-if value="{{ it.isDialog }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ it.headStyle }}"><span style="min-width: 0;"><span style="{{ it.titleStyle }}">{{ it.title }}</span><span style="{{ it.ctxStyle }}">{{ it.ctx }}</span></span><button aria-label="{{ it.closeAria }}" style="border: none; background: none; color: #5A6779; font-size: 13px;">✕</button></div>
+              </sc-if>
+              <div style="{{ it.bodyStyle }}">
+                <sc-for list="{{ it.blocks }}" as="b" hint-placeholder-count="4">
+                  <div style="{{ b.wrap }}">
+                    <sc-if value="{{ b.isHead }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ b.crumbStyle }}">{{ b.crumb }}</div>
+                      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px;">
+                        <div style="min-width: 0; flex: 1 1 320px;">
+                          <div style="{{ b.eyebrowStyle }}">{{ b.eyebrow }}</div>
+                          <div style="{{ b.titleStyle }}">{{ b.title }}</div>
+                          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-block-start: 4px;"><sc-for list="{{ b.chips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}">{{ c.t }}</span></sc-for></div>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;"><sc-for list="{{ b.actions }}" as="a" hint-placeholder-count="2"><button style="{{ a.style }}">{{ a.label }}</button></sc-for></div>
+                      </div>
+                      <sc-if value="{{ b.steps }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-wrap: wrap; gap: 4px; margin-block-start: 8px;"><sc-for list="{{ b.steps }}" as="s" hint-placeholder-count="5"><span style="{{ s.style }}">{{ s.t }}</span></sc-for></div></sc-if>
+                    </sc-if>
+                    <sc-if value="{{ b.isTabs }}" hint-placeholder-val="{{ false }}"><div role="tablist" aria-label="{{ b.aria }}" style="{{ b.barStyle }}"><sc-for list="{{ b.tabs }}" as="t" hint-placeholder-count="3"><span role="tab" aria-selected="{{ t.sel }}" style="{{ t.style }}">{{ t.t }}</span></sc-for></div></sc-if>
+                    <sc-if value="{{ b.isGroup }}" hint-placeholder-val="{{ false }}"><div style="{{ b.style }}">{{ b.t }}</div></sc-if>
+                    <sc-if value="{{ b.isFields }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ b.grid }}">
+                        <sc-for list="{{ b.cols }}" as="c" hint-placeholder-count="2">
+                          <div style="min-width: 0;">
+                            <div style="{{ c.labStyle }}">{{ c.label }}<span style="{{ c.tagStyle }}">{{ c.tag }}</span><sc-if value="{{ c.mark }}" hint-placeholder-val="{{ false }}"><span style="{{ c.markStyle }}">{{ c.mark }}</span></sc-if></div>
+                            <div style="{{ c.box }}"><span dir="{{ c.vdir }}" style="{{ c.valStyle }}">{{ c.value }}</span><sc-if value="{{ c.action }}" hint-placeholder-val="{{ false }}"><span style="{{ c.actStyle }}">{{ c.action }}</span></sc-if></div>
+                            <div style="{{ c.helpStyle }}">{{ c.help }}</div>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ b.isArea }}" hint-placeholder-val="{{ false }}"><div style="{{ b.labStyle }}">{{ b.label }}<span style="font-weight: 400; color: #5A6779;">{{ b.tag }}</span></div><div style="{{ b.areaStyle }}">{{ b.text }}</div><div style="{{ b.helpStyle }}">{{ b.help }}</div></sc-if>
+                    <sc-if value="{{ b.isPairs }}" hint-placeholder-val="{{ false }}"><div style="{{ b.grid }}"><sc-for list="{{ b.pairs }}" as="p" hint-placeholder-count="3"><div style="min-width: 0;"><div style="{{ p.kStyle }}">{{ p.k }}</div><div dir="{{ p.dir }}" style="{{ p.vStyle }}">{{ p.v }}</div></div></sc-for></div></sc-if>
+                    <sc-if value="{{ b.isText }}" hint-placeholder-val="{{ false }}"><div style="{{ b.style }}">{{ b.text }}</div></sc-if>
+                    <sc-if value="{{ b.isBanner }}" hint-placeholder-val="{{ false }}"><div role="{{ b.role }}" style="{{ b.box }}"><div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px;"><span style="{{ b.tStyle }}">{{ b.t }}</span><sc-if value="{{ b.link }}" hint-placeholder-val="{{ false }}"><a href="#s4" style="{{ b.linkStyle }}">{{ b.link }}</a></sc-if></div><sc-if value="{{ b.b }}" hint-placeholder-val="{{ false }}"><div style="{{ b.bStyle }}">{{ b.b }}</div></sc-if></div></sc-if>
+                    <sc-if value="{{ b.isList }}" hint-placeholder-val="{{ false }}"><div style="{{ b.labStyle }}">{{ b.label }}</div><div style="display: flex; flex-direction: column; gap: 6px;"><sc-for list="{{ b.items }}" as="l" hint-placeholder-count="3"><div style="{{ l.style }}"><span style="{{ l.gStyle }}">{{ l.g }}</span><span style="min-width: 0;"><span style="{{ l.kStyle }}">{{ l.k }}</span><span style="{{ l.vStyle }}">{{ l.v }}</span></span></div></sc-for></div></sc-if>
+                    <sc-if value="{{ b.isTable }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ b.box }}">
+                        <sc-if value="{{ b.title }}" hint-placeholder-val="{{ false }}"><div style="{{ b.titleStyle }}"><span>{{ b.title }}</span><span style="{{ b.subStyle }}">{{ b.sub }}</span></div></sc-if>
+                        <div style="{{ b.headRow }}"><sc-for list="{{ b.head }}" as="h" hint-placeholder-count="3"><span style="{{ h.style }}">{{ h.l }}</span></sc-for></div>
+                        <sc-for list="{{ b.rows }}" as="r" hint-placeholder-count="3"><div style="{{ r.style }}"><sc-for list="{{ r.cells }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}"><span dir="{{ c.dir }}" style="{{ c.vStyle }}">{{ c.v }}</span><sc-if value="{{ c.sub }}" hint-placeholder-val="{{ false }}"><span style="{{ c.subStyle }}">{{ c.sub }}</span></sc-if></span></sc-for></div></sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ b.isLive }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ b.card }}">
+                        <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 18px 14px;">
+                          <div style="min-width: 0; flex: 1 1 280px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-block-end: 6px;"><span style="{{ b.kindStyle }}">{{ b.kind }}</span><span style="{{ b.codeStyle }}">{{ b.code }}</span></div>
+                            <div style="{{ b.nameStyle }}">{{ b.name }}</div>
+                            <sc-if value="{{ b.nameAlt }}" hint-placeholder-val="{{ false }}"><div dir="{{ b.altDir }}" style="{{ b.altStyle }}">{{ b.nameAlt }}</div></sc-if>
+                          </div>
+                          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <div style="{{ b.pillStyle }}"><span style="{{ b.dotStyle }}"></span><span style="{{ b.pillTextStyle }}">{{ b.stage }}</span></div>
+                            <sc-for list="{{ b.btns }}" as="x" hint-placeholder-count="3"><button style="{{ x.style }}">{{ x.label }}</button></sc-for>
+                          </div>
+                        </div>
+                        <sc-if value="{{ b.locked }}" hint-placeholder-val="{{ false }}"><div style="{{ b.lockedStyle }}">{{ b.locked }}</div></sc-if>
+                        <sc-if value="{{ b.facts }}" hint-placeholder-val="{{ false }}"><div style="{{ b.factsStyle }}"><sc-for list="{{ b.facts }}" as="fc" hint-placeholder-count="7"><div style="{{ fc.style }}"><div style="{{ fc.kStyle }}">{{ fc.k }}</div><div style="{{ fc.vStyle }}">{{ fc.v }}</div></div></sc-for></div></sc-if>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ b.isGrid }}" hint-placeholder-val="{{ false }}"><div style="{{ b.gridStyle }}"><sc-for list="{{ b.boxes }}" as="g" hint-placeholder-count="10"><div style="{{ g.style }}"><span style="{{ g.tStyle }}">{{ g.t }}</span><span style="{{ g.sStyle }}">{{ g.s }}</span></div></sc-for></div></sc-if>
+                    <sc-if value="{{ b.isPanels }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ b.rowStyle }}">
+                        <sc-for list="{{ b.panels }}" as="p" hint-placeholder-count="2">
+                          <div style="{{ p.frame }}">
+                            <div style="{{ p.headStyle }}"><span style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="{{ p.titleStyle }}">{{ p.title }}</span><span style="{{ p.countStyle }}">{{ p.count }}</span></span><sc-if value="{{ p.action }}" hint-placeholder-val="{{ false }}"><a href="#s3" style="{{ p.actStyle }}">{{ p.action }}</a></sc-if></div>
+                            <div style="{{ p.bodyStyle }}">
+                              <sc-for list="{{ p.rows }}" as="r" hint-placeholder-count="5"><div style="{{ r.style }}"><div style="{{ r.l1Style }}"><a href="#s4" style="{{ r.tStyle }}">{{ r.t }}</a><span style="{{ r.stStyle }}">{{ r.st }}</span></div><div style="{{ r.l2Style }}">{{ r.l2 }}</div></div></sc-for>
+                              <sc-if value="{{ p.filler }}" hint-placeholder-val="{{ false }}"><div style="{{ p.fillerStyle }}">{{ p.filler }}</div></sc-if>
+                              <sc-if value="{{ p.footer }}" hint-placeholder-val="{{ false }}"><div style="{{ p.footStyle }}"><span>{{ p.footer }}</span><a href="#s2" style="{{ p.seeStyle }}">{{ p.seeAll }}</a></div></sc-if>
+                            </div>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ it.hasFoot }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ it.footStyle }}">
+                  <sc-if value="{{ it.footMsg }}" hint-placeholder-val="{{ false }}"><div role="alert" style="{{ it.footMsgStyle }}"><span>{{ it.footMsg }}</span><button style="{{ it.footMsgBtnStyle }}">{{ it.footMsgBtn }}</button></div></sc-if>
+                  <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;"><span style="{{ it.footLeftStyle }}">{{ it.footLeft }}</span><span style="display: flex; flex-wrap: wrap; gap: 8px;"><sc-for list="{{ it.buttons }}" as="bt" hint-placeholder-count="2"><button style="{{ bt.style }}">{{ bt.label }}</button></sc-for></span></div>
+                </div>
+              </sc-if>
+            </div>
+            <sc-if value="{{ it.measure }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ it.measure }}</div></sc-if>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 16px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div><sc-for list="{{ sec.notes }}" as="n" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for></div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes</div><sc-for list="{{ sec.outs }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for></div>
+      </div>
+    </section>
+  </sc-for>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Every dialog body, both languages · cap 420</div>
+        <div style="display: flex; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #E2E8F0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6;"><span style="flex: 1 1 0;">Dialog</span><span style="flex: none; width: 110px;">Size</span><span style="flex: none; width: 46px; text-align: end;">EN</span><span style="flex: none; width: 46px; text-align: end;">AR</span></div>
+        <sc-for list="{{ measures }}" as="m" hint-placeholder-count="10"><div style="display: flex; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12px;"><span style="flex: 1 1 0; min-width: 0; font-weight: 500;">{{ m.d }}</span><span style="flex: none; width: 110px; color: #5A6779;">{{ m.s }}</span><span style="flex: none; width: 46px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.en }}</span><span style="flex: none; width: 46px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.ar }}</span></div></sc-for>
+        <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Standard density, the same constants as the Task and Meeting Screens: field block EN 79, AR 84; three-row textarea EN 119, AR 130; tab strip EN 36, AR 40; confirm sentence EN 21, AR 24 a line (about 52 Latin characters at 420, 72 at 560); a listed change row EN 22, AR 24; gaps 12.</div>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Changes to accepted screens</div>
+        <sc-for list="{{ changes }}" as="c" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: minmax(0, 190px) 1fr; gap: 12px; padding: 6px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12.5px; font-weight: 600;">{{ c.s }}</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ c.w }}</span></div></sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px;">
+    <h2 style="margin: 0 0 12px; font-size: 20px; font-weight: 600;">Questions for the product owner</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="8"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for></div></sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = "font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const INK = { danger: "#B42318", warn: "#B54708", info: "#1F5480", muted: "#5A6779", ok: "#067647", plain: "#2D3748" };
+    const FLAGS = { isHead: false, isTabs: false, isGroup: false, isFields: false, isArea: false, isPairs: false, isText: false, isBanner: false, isList: false, isTable: false, isPanels: false, isLive: false, isGrid: false };
+
+    const K = (ar) => {
+      const lab = ar ? 13 : 12, labLh = ar ? 20 : 18, val = ar ? 14 : 13, help = ar ? 12.5 : 11.5, helpLh = ar ? 20 : 17;
+      const W = (top) => "margin-block-start: " + (top || 0) + "px;";
+      const B = (o) => Object.assign({}, FLAGS, o);
+      const btn = (label, kind) => ({ label, style: "font-family: inherit; font-size: " + (ar ? 14 : 13) + "px; border-radius: 6px; padding: 6px 12px; white-space: nowrap; " + ({ primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;", secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;", text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;", danger: "background: #B42318; color: #fff; border: 1px solid #912018; font-weight: 600;", dangerOut: "background: #fff; color: #B42318; border: 1px solid #B42318; font-weight: 600;" })[kind] });
+      const chip = (t, tone) => ({ t, style: "display: inline-flex; align-items: center; font-size: " + (ar ? 12.5 : 12) + "px; white-space: nowrap; " + (tone === "stage" ? "font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 1px 8px;" : tone === "warn" ? "font-weight: 600; color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89; border-radius: 4px; padding: 1px 8px;" : tone === "danger" ? "font-weight: 600; color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA; border-radius: 4px; padding: 1px 8px;" : tone === "muted" ? "font-weight: 600; color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 8px;" : "color: #4A5568;") });
+      const steps = (list, at) => list.map((t, i) => ({ t: (i < at ? "✓ " : "") + t, style: "font-size: " + (ar ? 12.5 : 11.5) + "px; border-radius: 4px; padding: 2px 8px; white-space: nowrap; " + (i === at ? "font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3;" : i < at ? "color: #4A5568; background: #fff; border: 1px solid #CBD5E0;" : "color: #5A6779; background: #fff; border: 1px dashed #CBD5E0;") }));
+      return {
+        btn, chip, steps,
+        head: (o, top) => B({ isHead: true, wrap: W(top), crumb: o.crumb, eyebrow: o.eyebrow || "", title: o.title, chips: o.chips || [], actions: o.actions || [], steps: o.steps || null,
+          crumbStyle: "font-size: " + help + "px; color: #5A6779;", eyebrowStyle: ar ? "font-size: 12px; font-weight: 700; color: #5A6779;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779;",
+          titleStyle: "font-size: " + (o.small ? (ar ? 19 : 18) : (ar ? 25 : 24)) + "px; line-height: 1.25; font-weight: 600; text-wrap: pretty;" }),
+        tabs: (list, sel, aria, top) => B({ isTabs: true, wrap: W(top), aria, barStyle: "display: flex; gap: 0; height: " + (ar ? 40 : 36) + "px; box-sizing: border-box; border-block-end: 1px solid #E2E8F0;",
+          tabs: list.map((t, i) => ({ t, sel: i === sel ? "true" : "false", style: "display: flex; align-items: center; padding: 0 12px; font-size: " + (ar ? 14 : 13) + "px; white-space: nowrap; " + (i === sel ? "font-weight: 600; color: #1F5480; border-block-end: 2px solid #2E6FA3; margin-block-end: -1px;" : "color: #4A5568;") })) }),
+        group: (t, top) => B({ isGroup: true, wrap: W(top), t, style: ar ? "font-size: 13px; font-weight: 700; color: #4A5568; padding-block-end: 4px; border-block-end: 1px solid #F0F3F7;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; padding-block-end: 4px; border-block-end: 1px solid #F0F3F7;" }),
+        fields: (cols, top) => B({ isFields: true, wrap: W(top), grid: "display: grid; grid-template-columns: repeat(" + cols.length + ", minmax(0, 1fr)); gap: 12px;",
+          cols: cols.map(c => ({ label: c.label, tag: c.req ? (ar ? "· مطلوب" : "· required") : c.opt ? (ar ? "· اختياري" : "· optional") : "", mark: c.changed ? (ar ? "✎ تغيّر" : "✎ Changed") : null,
+            markStyle: "margin-inline-start: 4px; font-size: " + (ar ? 11.5 : 10.5) + "px; font-weight: 700; color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3; border-radius: 3px; padding: 0 5px;",
+            labStyle: "display: flex; align-items: center; gap: 4px; font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;", tagStyle: "font-weight: 400; color: #5A6779;",
+            box: "display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; " + (c.ro ? "background: #F4F7FA; border: 1px solid #E2E8F0;" : c.err ? "background: #fff; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);" : c.changed ? "background: #fff; border: 2px solid #2E6FA3;" : c.focus ? "background: #fff; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);" : "background: #fff; border: 1px solid #8A94A6;"),
+            value: c.value, vdir: c.ltr ? "ltr" : "auto", action: c.action || null,
+            valStyle: "flex: 1 1 auto; min-width: 0; font-size: " + val + "px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; unicode-bidi: isolate; color: " + (c.ph ? "#8A94A6" : "#2D3748") + ";" + (c.changed ? " font-weight: 600;" : ""),
+            actStyle: "flex: none; font-size: " + (val - 1) + "px; color: #5A6779;",
+            help: c.help || "", helpStyle: "font-size: " + help + "px; line-height: " + helpLh + "px; min-height: " + helpLh + "px; margin-block-start: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: " + (c.err ? "#B42318; font-weight: 500" : c.changed ? "#1F5480; font-weight: 500" : c.info ? "#1F5480" : "#5A6779") + ";" })) }),
+        area: (label, text, o, top) => { o = o || {}; return B({ isArea: true, wrap: W(top), label, tag: o.req ? (ar ? " · مطلوب" : " · required") : o.opt ? (ar ? " · اختياري" : " · optional") : "", text, help: o.help || "",
+          labStyle: "display: block; font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px;",
+          areaStyle: "box-sizing: border-box; height: " + (ar ? 82 : 76) + "px; border: 1px solid " + (o.focus ? "#2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18)" : "#8A94A6") + "; border-radius: 4px; padding: 8px 10px; font-size: " + val + "px; line-height: " + (ar ? 22 : 20) + "px; color: " + (o.ph ? "#8A94A6" : "#2D3748") + "; overflow: hidden; text-wrap: pretty;",
+          helpStyle: "font-size: " + help + "px; line-height: " + helpLh + "px; min-height: " + helpLh + "px; margin-block-start: 4px; color: #5A6779;" }); },
+        pairs: (list, n, top) => B({ isPairs: true, wrap: W(top), grid: "display: grid; grid-template-columns: repeat(" + (n || list.length) + ", minmax(0, 1fr)); gap: 10px 16px;",
+          pairs: list.map(p => ({ k: p[0], v: p[1], dir: p[2] ? "ltr" : "auto", kStyle: "font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #5A6779;", vStyle: "font-size: " + val + "px; line-height: " + (ar ? 22 : 20) + "px; font-weight: 500; text-align: start; unicode-bidi: isolate; text-wrap: pretty;" })) }),
+        text: (t, tone, top) => B({ isText: true, wrap: W(top), text: t, style: "font-size: " + (tone === "small" ? help : (ar ? 14.5 : 14)) + "px; line-height: " + (tone === "small" ? helpLh : (ar ? 24 : 21)) + "px; text-wrap: pretty; color: " + (tone === "small" || tone === "muted" ? "#5A6779" : tone === "info" ? "#1F5480; font-weight: 500" : "#2D3748") + ";" }),
+        banner: (tone, t, b, link, top) => B({ isBanner: true, wrap: W(top), t, b: b || null, link: link || null, role: tone === "danger" ? "alert" : "status",
+          box: "border-radius: 6px; padding: 9px 12px; " + ({ info: "background: #F2F7FB; border: 1px solid #C5DAEA;", warn: "background: #FFFAEB; border: 1px solid #FEDF89;", danger: "background: #FEF3F2; border: 1px solid #FECDCA;", ok: "background: #ECFDF3; border: 1px solid #ABEFC6;", muted: "background: #F4F7FA; border: 1px solid #E2E8F0;", quiet: "background: transparent; border: none; padding: 0;" })[tone],
+          tStyle: "font-size: " + (tone === "quiet" ? help : (ar ? 14 : 13)) + "px; font-weight: " + (tone === "quiet" ? 400 : 600) + "; color: " + ({ info: "#1F5480", warn: "#B54708", danger: "#B42318", ok: "#067647", muted: "#2D3748", quiet: "#5A6779" })[tone] + "; text-wrap: pretty;",
+          bStyle: "font-size: " + (ar ? 13.5 : 12.5) + "px; line-height: " + (ar ? 22 : 19) + "px; color: #2D3748; margin-block-start: 2px; text-wrap: pretty;", linkStyle: "font-size: " + (ar ? 13.5 : 12.5) + "px; font-weight: 600; text-decoration: none; white-space: nowrap;" }),
+        list: (label, items, top) => B({ isList: true, wrap: W(top), label, labStyle: "display: block; font-size: " + lab + "px; font-weight: 600; color: #4A5568; margin-block-end: 6px;",
+          items: items.map(x => ({ g: x[0], k: x[1], v: x[2], style: "display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: baseline;", gStyle: "font-size: 12px; color: #2E6FA3; font-weight: 700; text-align: center;", kStyle: "display: block; font-size: " + val + "px; font-weight: 600;", vStyle: "display: block; font-size: " + (val - 0.5) + "px; line-height: " + (ar ? 22 : 19) + "px; color: #4A5568; text-wrap: pretty;" })) }),
+        table: (o, top) => B({ isTable: true, wrap: W(top), title: o.title || null, sub: o.sub || "",
+          box: "border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden; background: #fff;",
+          titleStyle: "display: flex; justify-content: space-between; gap: 8px; padding: 8px 12px; border-block-end: 1px solid #E2E8F0; font-size: " + (ar ? 14 : 13) + "px; font-weight: 600;", subStyle: "font-size: " + help + "px; font-weight: 400; color: #5A6779;",
+          headRow: "display: flex; gap: 12px; padding: 6px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;",
+          head: o.cols.map(c => ({ l: c.l, style: (c.f ? "flex: 1 1 " + c.f + "px; min-width: 0;" : "flex: none; width: " + c.w + "px;") + " font-size: " + (ar ? 12 : 11) + "px; font-weight: 700; color: #5A6779;" + (ar ? "" : " letter-spacing: 0.05em; text-transform: uppercase;") })),
+          rows: o.rows.map(r => ({ style: "display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;" + (r.tint ? " background: " + r.tint + ";" : ""),
+            cells: r.c.map((c, i) => { const col = o.cols[i]; const x = typeof c === "string" ? { v: c } : c;
+              return { v: x.v, sub: x.sub || null, dir: x.ltr ? "ltr" : "auto", style: (col.f ? "flex: 1 1 " + col.f + "px; min-width: 0;" : "flex: none; width: " + col.w + "px;") + " display: flex; flex-direction: column;",
+                vStyle: "font-size: " + val + "px; text-wrap: pretty; unicode-bidi: isolate; text-align: start;" + (x.strike ? " text-decoration: line-through; color: #5A6779;" : "") + (x.bold ? " font-weight: 600;" : "") + (x.tone ? " color: " + INK[x.tone] + "; font-weight: 600;" : ""),
+                subStyle: "font-size: " + help + "px; color: #5A6779; text-wrap: pretty;" }; }) })) }),
+        panels: (list, w, top) => B({ isPanels: true, wrap: W(top), rowStyle: "display: flex; flex-wrap: wrap; gap: 12px; max-width: " + w + "px;", panels: list })
+      };
+    };
+    const E = K(false), A = K(true);
+
+    const frame = (ar, o) => {
+      const dlg = o.kind === "dialog";
+      return Object.assign({ isDialog: dlg, hasFoot: !!o.buttons, footMsg: null, footMsgBtn: "", footLeft: "", buttons: [], measure: null, title: "", ctx: "", closeAria: ar ? "إغلاق" : "Close" }, o, {
+        dir: ar ? "rtl" : "ltr",
+        outer: "min-width: 0; flex: 0 1 " + o.w + "px;",
+        capStyle: (ar ? AF + " font-size: 12px; font-weight: 700;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;") + " color: #5A6779; margin-block-end: 6px;",
+        frame: "width: 100%; max-width: " + o.w + "px; background: #fff; border: 1px solid " + (dlg ? "#CBD5E0" : "#E2E8F0") + "; border-radius: " + (o.phone ? 16 : 8) + "px; overflow: hidden;" + (dlg ? " box-shadow: 0 12px 28px rgba(16,24,40,0.14);" : "") + (ar ? " " + AF : ""),
+        headStyle: "display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 20px; border-block-end: 1px solid #E2E8F0;",
+        titleStyle: "display: block; font-size: " + (ar ? 17 : 16) + "px; line-height: 1.4; font-weight: 600;", ctxStyle: "display: block; font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+        bodyStyle: dlg ? "padding: 16px 20px;" : "padding: " + (o.phone ? "14px" : "16px 18px") + "; background: " + (o.bg || "#F4F7FA") + ";",
+        footStyle: "display: flex; flex-direction: column; gap: 8px; padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;",
+        footLeftStyle: "font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779;",
+        footMsgStyle: "display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: 6px; background: #FEF3F2; border: 1px solid #FECDCA; font-size: " + (ar ? 13 : 12.5) + "px; font-weight: 500; color: #B42318;",
+        footMsgBtnStyle: "font-family: inherit; font-size: 12.5px; font-weight: 600; color: #2D3748; background: #fff; border: 1px solid #5A6779; border-radius: 5px; padding: 3px 10px;"
+      });
+    };
+
+    // ---- record panels ----
+    const panel = (ar, o) => {
+      const rowH = ar ? 58 : 52, foot = ar ? 38 : 34;
+      return Object.assign({ action: null, filler: null, footer: null, seeAll: "" }, o, {
+        frame: "flex: 1 1 320px; min-width: min(100%, 320px); background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;",
+        headStyle: "display: flex; align-items: center; justify-content: space-between; gap: 8px; height: " + (ar ? 46 : 42) + "px; box-sizing: border-box; padding: 0 12px; border-block-end: 1px solid #E2E8F0;",
+        titleStyle: "font-size: " + (ar ? 14 : 13) + "px; font-weight: 600; white-space: nowrap;", countStyle: "flex: none; font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px;",
+        actStyle: "font-size: " + (ar ? 13.5 : 12.5) + "px; font-weight: 600; text-decoration: none; white-space: nowrap;",
+        bodyStyle: "display: flex; flex-direction: column; height: " + (5 * rowH + foot) + "px;",
+        fillerStyle: "flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 12px; font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779; text-align: center; text-wrap: pretty;",
+        footStyle: "margin-block-start: auto; display: flex; align-items: center; justify-content: space-between; height: " + foot + "px; box-sizing: border-box; padding: 0 12px; border-block-start: 1px solid #E2E8F0; background: #FBFCFD; font-size: " + (ar ? 12.5 : 12) + "px; color: #4A5568;",
+        seeStyle: "font-size: " + (ar ? 13.5 : 12.5) + "px; font-weight: 600; text-decoration: none;",
+        rows: (o.rows || []).map(r => ({ t: r[0], st: r[1], l2: r[2], style: "display: flex; flex-direction: column; justify-content: center; height: " + rowH + "px; box-sizing: border-box; padding: 4px 12px; border-block-end: 1px solid #F0F3F7;",
+          l1Style: "display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0;",
+          tStyle: "min-width: 0; font-size: " + (ar ? 14 : 13) + "px; font-weight: 500; text-decoration: none; color: #2D3748; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+          stStyle: "flex: none; font-size: " + (ar ? 12.5 : 12) + "px; white-space: nowrap; " + ({ open: "font-weight: 600; color: #1F5480;", draft: "font-weight: 500; color: #B54708;", ok: "color: #4A5568;", no: "font-weight: 500; color: #4A5568;" })[r[3]],
+          l2Style: "font-size: " + (ar ? 12.5 : 11.5) + "px; color: #5A6779; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" }))
+      });
+    };
+    // committee header pieces
+    const STAGES = ["Formation", "Terms Review", "Active", "Suspended", "Dissolution Pending", "Dissolved"];
+    const STAGES_AR = ["التشكيل", "مراجعة الاختصاصات", "نشطة", "معلّقة", "بانتظار الحل", "محلولة"];
+    const recHead = (ar, o) => (ar ? A : E).head({ crumb: ar ? "اللجان / " + o.name : "Committees / " + o.name, eyebrow: (ar ? "لجنة · " : "Committee · ") + o.code, title: o.name, small: o.small,
+      chips: [(ar ? A : E).chip(o.stage, "stage"), (ar ? A : E).chip(o.meta)], actions: o.actions || [], steps: (ar ? A : E).steps(ar ? STAGES_AR.filter((s, i) => i !== 3) : STAGES.filter((s, i) => i !== 3), o.at) });
+
+    const IPC = "Infection Prevention & Control Committee", IPC_AR = "لجنة مكافحة العدوى والوقاية منها", PX = "Patient Experience Committee";
+
+    // ---- 1 · Edit dialog ----
+    const TABS = ["Identity", "Governance", "Structure"], TABS_AR = ["الهوية", "الحوكمة", "الهيكل"];
+    const idEn = [
+      E.tabs(TABS, 0, "Committee details", 0),
+      E.fields([{ label: "Name (English)", req: 1, value: PX, focus: 1 }, { label: "Name (Arabic)", opt: 1, value: "لجنة تجربة المريض" }], 12),
+      E.fields([{ label: "Type", req: 1, value: "Standing committee", action: "▼" }], 12),
+      E.area("Purpose", "Oversees how patients and families experience care: complaints, surveys and service recovery, and reports what it finds.", {}, 12)
+    ];
+    const gvEn = [E.tabs(TABS, 1, "Committee details", 0), E.fields([{ label: "Quorum", value: "0", help: "0 means not set yet · of 7 members" }, { label: "Meeting frequency", value: "Monthly", action: "▼" }], 12)];
+    const stEn = [
+      E.tabs(TABS, 2, "Committee details", 0),
+      E.fields([{ label: "Owning unit", req: 1, value: "Al Nakheel Specialist Hospital", action: "▼", help: "Active units only" }], 12),
+      E.fields([{ label: "Parent committee", opt: 1, value: "Quality & Patient Safety Council", action: "▼", focus: 1 }], 12),
+      E.fields([{ label: "Reports to", opt: 1, value: "Quality & Patient Safety Council", action: "▼", help: "Filled in from Parent committee · you can change it", info: 1 }], 12)
+    ];
+    const idAr = [
+      A.tabs(TABS_AR, 0, "تفاصيل اللجنة", 0),
+      A.fields([{ label: "الاسم (بالإنجليزية)", req: 1, value: PX, ltr: 1 }, { label: "الاسم (بالعربية)", opt: 1, value: "لجنة تجربة المريض", focus: 1 }], 12),
+      A.fields([{ label: "النوع", req: 1, value: "لجنة دائمة", action: "▼" }], 12),
+      A.area("الغرض", "تشرف على تجربة المرضى وذويهم في الرعاية: الشكاوى والاستبيانات ومعالجة الخدمة، وترفع ما تجده.", {}, 12)
+    ];
+    const listEn = [
+      E.text("Reports to · the list as it opens (overlay-select, typeahead)", "small", 0),
+      E.table({ cols: [{ l: "Committee", f: 260 }, { l: "Stage", w: 120 }], rows: [
+        { c: ["Quality & Patient Safety Council", "Active"], tint: "#E4EEF6" }, { c: ["Medical Executive Committee", "Active"] }, { c: ["Nursing Quality Council", "Active"] }, { c: ["Pharmacy & Therapeutics Committee", "Active"] }, { c: ["Ethics Committee", "Suspended"] }
+      ] }, 6),
+      E.text("Not listed: this committee; its 2 sub-committees and the 1 below them; 1 committee in Dissolution Pending; 3 dissolved. Typing a name that's left out shows: “Not available: it sits under this committee.”", "small", 8)
+    ];
+    const D_EDIT = [
+      frame(false, { kind: "dialog", w: 560, cap: "Edit committee · Formation · Identity", title: "Edit committee", ctx: PX + " · QMC-021 · Formation", blocks: idEn, buttons: [E.btn("Cancel", "text"), E.btn("Save", "primary")], footLeft: "Saved together · all three tabs", measure: "Tabs 36 + 12 + names 79 + 12 + type 79 + 12 + purpose 119 = 349 of 420. Arabic 40 + 12 + 84 + 12 + 84 + 12 + 130 = 374." }),
+      frame(false, { kind: "dialog", w: 560, cap: "Governance", title: "Edit committee", ctx: PX + " · QMC-021 · Formation", blocks: gvEn, buttons: [E.btn("Cancel", "text"), E.btn("Save", "primary")], footLeft: "Saved together · all three tabs", measure: "Tabs 36 + 12 + 79 = 127. Arabic 40 + 12 + 84 = 136." }),
+      frame(false, { kind: "dialog", w: 560, cap: "Structure · Parent chosen, Reports to filled in", title: "Edit committee", ctx: PX + " · QMC-021 · Formation", blocks: stEn, buttons: [E.btn("Cancel", "text"), E.btn("Save", "primary")], footLeft: "Saved together · all three tabs", measure: "Tabs 36 + 12 + 3 × 79 + 2 × 12 = 309. Arabic 40 + 12 + 3 × 84 + 24 = 328." }),
+      frame(true, { kind: "dialog", w: 560, cap: "تعديل اللجنة · العربية · الهوية", title: "تعديل اللجنة", ctx: "لجنة تجربة المريض · QMC-021 · التشكيل", blocks: idAr, buttons: [A.btn("إلغاء", "text"), A.btn("حفظ", "primary")], footLeft: "تُحفظ التبويبات الثلاثة معًا", measure: "374 of 420." }),
+      frame(false, { kind: "dialog", w: 560, cap: "Someone else saved first", title: "Edit committee", ctx: PX + " · QMC-021 · Formation", blocks: idEn, footMsg: PX + " was changed by someone else since you opened it. Nothing was saved.", footMsgBtn: "Reload", buttons: [E.btn("Cancel", "text"), E.btn("Save", "primary")], footLeft: "", measure: "The refusal sits in the fixed footer, above the buttons, so the body stays 349. Reload replaces the form with the saved values and keeps the dialog open." }),
+      frame(false, { kind: "page", w: 420, cap: "The Reports to list · what's left out", bg: "#fff", blocks: listEn })
+    ];
+
+    // ---- 2 · only the new parts of the live committee record ----
+    const LV = { line: "oklch(0.9 0.006 250)", line2: "oklch(0.93 0.006 250)", head: "oklch(0.45 0.012 250)", muted: "oklch(0.55 0.012 250)", chip: "oklch(0.95 0.004 250)" };
+    const NEW = " outline: 2px dashed #F79009; outline-offset: 3px;";
+    const lbtn = (label, kind, isNew, ar) => ({ label, style: "font-family: inherit; font-size: " + (ar ? 14.5 : 14) + "px; border-radius: 6px; white-space: nowrap; " + (kind === "primary" ? "background: oklch(0.52 0.11 250); color: #fff; border: 1px solid oklch(0.47 0.11 250); padding: 8px 16px; font-weight: 600;" : kind === "menu" ? "background: #fff; color: oklch(0.4 0.01 250); border: 1px solid oklch(0.86 0.006 250); width: 34px; height: 34px; font-size: 16px;" : "background: #fff; color: oklch(0.3 0.01 250); border: 1px solid oklch(0.86 0.006 250); padding: 8px 14px; font-weight: 500;") + (isNew ? NEW : "") });
+    const PILL = { formation: ["0.96 0.02 250", "0.9 0.03 250", "0.52 0.11 250", "0.42 0.08 250"], review: ["0.97 0.04 80", "0.88 0.07 80", "0.62 0.13 70", "0.45 0.1 60"], active: ["0.96 0.03 165", "0.87 0.05 165", "0.52 0.11 165", "0.38 0.08 165"], suspended: ["0.96 0.01 250", "0.88 0.01 250", "0.55 0.02 250", "0.4 0.01 250"], dissolving: ["0.96 0.02 25", "0.88 0.05 25", "0.55 0.13 25", "0.42 0.1 25"] };
+    const live = (ar, o) => { const p = PILL[o.tone]; return Object.assign({}, FLAGS, { isLive: true, wrap: "",
+      card: "background: #fff; border: 1px solid " + LV.line + "; border-radius: 8px; overflow: hidden;",
+      kind: ar ? "لجنة" : "Committee", code: o.code, name: o.name, nameAlt: o.alt || null, altDir: ar ? "ltr" : "rtl", stage: o.stage, btns: o.btns,
+      kindStyle: "font-size: " + (ar ? 12 : 11) + "px; font-weight: 600;" + (ar ? "" : " letter-spacing: 0.08em; text-transform: uppercase;") + " color: oklch(0.52 0.11 250); background: oklch(0.96 0.02 250); border: 1px solid oklch(0.9 0.03 250); border-radius: 4px; padding: 2px 7px;",
+      codeStyle: "font-size: 12px; color: oklch(0.52 0.012 250); font-variant-numeric: tabular-nums; unicode-bidi: isolate;",
+      nameStyle: "font-size: " + (ar ? 25 : 24) + "px; font-weight: 600; line-height: 1.25;",
+      altStyle: "font-size: 16px; color: oklch(0.45 0.012 250); margin-block-start: 3px; text-align: start; unicode-bidi: isolate;" + (ar ? "" : " " + AF),
+      pillStyle: "display: flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px; background: oklch(" + p[0] + "); border: 1px solid oklch(" + p[1] + ");",
+      dotStyle: "width: 7px; height: 7px; border-radius: 50%; background: oklch(" + p[2] + ");", pillTextStyle: "font-size: " + (ar ? 13.5 : 13) + "px; font-weight: 600; color: oklch(" + p[3] + ");",
+      locked: o.locked || null, lockedStyle: "margin: 0 18px 12px; padding: 7px 10px; border-radius: 6px; background: oklch(0.97 0.004 250); font-size: " + (ar ? 13 : 12.5) + "px; color: oklch(0.42 0.012 250); width: fit-content;" + NEW,
+      facts: o.facts ? o.facts.map(fc => ({ k: fc[0], v: fc[1], style: "padding: 9px 16px; flex: 1 1 150px; min-width: 0; border-block-start: 1px solid " + LV.line2 + "; border-inline-end: 1px solid " + LV.line2 + ";" + (fc[2] ? " background: oklch(0.97 0.03 250);" : ""), kStyle: "font-size: " + (ar ? 12 : 11) + "px; font-weight: 600;" + (ar ? "" : " letter-spacing: 0.06em; text-transform: uppercase;") + " color: oklch(0.58 0.012 250); margin-block-end: 2px;", vStyle: "font-size: " + (ar ? 13.5 : 13) + "px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" })) : null,
+      factsStyle: "display: flex; flex-wrap: wrap; opacity: 0.6;" }); };
+    const ghost = (t, ar, h) => Object.assign({}, FLAGS, { isText: true, wrap: "margin-block-start: 10px;", text: t, style: "display: flex; align-items: center; height: " + (h || 40) + "px; padding: 0 14px; border: 1px solid " + LV.line + "; border-radius: 8px; background: #fff; opacity: 0.55; font-size: " + (ar ? 12.5 : 12) + "px; color: " + LV.muted + ";" });
+    const lbanner = (ar, t, b, link) => Object.assign((ar ? A : E).banner("info", t, b, link, 10), { box: "border-radius: 8px; padding: 10px 14px; background: oklch(0.97 0.02 250); border: 1px solid oklch(0.88 0.04 250);" + NEW, tStyle: "font-size: " + (ar ? 14 : 13.5) + "px; font-weight: 600; color: oklch(0.4 0.09 250); text-wrap: pretty;" });
+    const lpanel = (ar, o) => { const p = panel(ar, o);
+      p.frame = "flex: 1 1 320px; min-width: min(100%, 320px); background: #fff; border: 1px solid " + LV.line + "; border-radius: 8px; overflow: hidden;" + (o.isNew ? NEW : "");
+      p.headStyle = "display: flex; align-items: center; justify-content: space-between; gap: 10px; height: " + (ar ? 46 : 42) + "px; box-sizing: border-box; padding: 0 16px; border-block-end: 1px solid " + LV.line2 + ";";
+      p.titleStyle = "font-size: " + (ar ? 12.5 : 11) + "px; font-weight: 600;" + (ar ? "" : " letter-spacing: 0.08em; text-transform: uppercase;") + " color: " + LV.head + "; white-space: nowrap;";
+      p.countStyle = "flex: none; font-size: 11.5px; font-weight: 600; color: " + LV.head + "; background: " + LV.chip + "; border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;";
+      p.footStyle = p.footStyle.replace("#E2E8F0", LV.line2);
+      p.rows.forEach(r => { r.style = r.style.replace("padding: 4px 12px", "padding: 4px 16px"); });
+      return p; };
+    const FACTS = (alt) => [["Purpose", "Prevents and controls healthcare-associated infections across the hospital"], ["Type", "Standing · Clinical"], ["Parent committee", "Quality & Patient Safety Council"], ["Owning unit", "Al Nakheel Specialist Hospital"], ["Reports to", "Quality & Patient Safety Council"], ["Quorum", "5 of 9 members"], ["Meeting frequency", "Monthly"]];
+    const FACTS_PX = [["Purpose", "Oversees how patients and families experience care"], ["Type", "Standing · Clinical"], ["Parent committee", "Quality & Patient Safety Council"], ["Owning unit", "Al Nakheel Specialist Hospital"], ["Reports to", "Quality & Patient Safety Council"], ["Quorum", "Not set yet · 7 members"], ["Meeting frequency", "Monthly"]];
+    const crop = (ar, w, cap, blocks, phone) => frame(ar, { kind: "page", w, cap, phone, bg: "oklch(0.975 0.004 250)", blocks });
+    const ROWS3 = [["Change request 3 · Quorum, Reports to", "Under review", "Nora Al-Otaibi · submitted 15 Oct 2026", "open"], ["Change request 2 · Meeting frequency", "Rejected", "Nora Al-Otaibi · 1 Oct to 3 Oct 2026", "no"], ["Change request 1 · Arabic name", "✓ Applied", "Nora Al-Otaibi · 9 Sep 2026", "ok"]];
+    const ROWS3_AR = [["طلب التغيير " + iso("3") + " · النصاب، يرفع تقاريره إلى", "قيد المراجعة", "نورة العتيبي · قُدّم " + iso("15 Oct 2026"), "open"], ["طلب التغيير " + iso("2") + " · تكرار الاجتماعات", "مرفوض", "نورة العتيبي · " + iso("1 Oct") + " إلى " + iso("3 Oct 2026"), "no"], ["طلب التغيير " + iso("1") + " · الاسم بالعربية", "✓ طُبّق", "نورة العتيبي · " + iso("9 Sep 2026"), "ok"]];
+    const ROWS7 = [["Change request 7 · Owning unit", "Under review", "Laila Haddad · submitted 12 Oct 2026", "open"], ["Change request 6 · Quorum", "✓ Applied", "Laila Haddad · 2 Sep 2026", "ok"], ["Change request 5 · Purpose", "Withdrawn", "Laila Haddad · 20 Jul 2026", "no"], ["Change request 4 · Name, Arabic name", "✓ Applied", "Laila Haddad · 4 Jun 2026", "ok"], ["Change request 3 · Meeting frequency", "Rejected", "Laila Haddad · 11 May 2026", "no"]];
+    const BAN_EN = ["Change request 3 is under review: Quorum, Reports to", "Submitted by Nora Al-Otaibi on 15 Oct 2026 · with A. Al-Harbi. The committee stays Active and keeps meeting.", "View request"];
+    const BAN_AR = ["طلب التغيير " + iso("3") + " قيد المراجعة: النصاب، يرفع تقاريره إلى", "قدّمته نورة العتيبي في " + iso("15 Oct 2026") + " · لدى أ. الحربي. تبقى اللجنة نشطة وتواصل اجتماعاتها.", "عرض الطلب"];
+    const gridBox = (t, sub, span, kind) => ({ t, s: sub, style: "grid-column: span " + span + "; min-height: " + (kind === "slim" ? 34 : 64) + "px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 8px 12px; border-radius: 6px; " + (kind === "new" ? "background: #FFFAEB; border: 2px dashed #F79009;" : kind === "slim" ? "background: oklch(0.97 0.02 250); border: 2px dashed #F79009;" : "background: #fff; border: 1px solid " + LV.line + ";"), tStyle: "font-size: 12.5px; font-weight: 600; color: " + (kind ? "#B54708" : LV.head) + ";", sStyle: "font-size: 11.5px; color: " + LV.muted + ";" });
+    const R_ITEMS = [
+      crop(false, 1172, "a · Formation · Edit (new) after the transition button", [live(false, { tone: "formation", code: "QMC-021", name: PX, alt: "لجنة تجربة المريض", stage: "Formation", btns: [lbtn("Submit for Review", "primary"), lbtn("Edit", "secondary", 1), lbtn("⋯", "menu")], facts: FACTS_PX })]),
+      crop(false, 1172, "a · Terms Review · no Edit; the locked line (new) for committees:edit_details", [live(false, { tone: "review", code: "QMC-021", name: PX, alt: "لجنة تجربة المريض", stage: "Terms Review", btns: [lbtn("Approve Committee", "primary"), lbtn("Revise Terms", "secondary"), lbtn("⋯", "menu")], locked: "🔒 Locked while the terms are under review. Revise Terms to change it.", facts: FACTS_PX.map((x, i) => i === 5 ? ["Quorum", "4 of 7 members"] : x) })]),
+      crop(false, 1172, "a · Active, no open request · Request a change (new) beside the transition buttons", [live(false, { tone: "active", code: "QMC-014", name: IPC, alt: IPC_AR, stage: "Active", btns: [lbtn("Suspend Committee", "secondary"), lbtn("Start Dissolution", "secondary"), lbtn("Request a change", "secondary", 1), lbtn("⋯", "menu")], facts: FACTS() })]),
+      crop(false, 1172, "a · Suspended · the same Request a change", [live(false, { tone: "suspended", code: "QMC-014", name: IPC, alt: IPC_AR, stage: "Suspended", btns: [lbtn("Reactivate Committee", "primary"), lbtn("Request a change", "secondary", 1), lbtn("⋯", "menu")] })]),
+      crop(false, 1172, "a · Dissolution Pending · nothing new to edit or request", [live(false, { tone: "dissolving", code: "QMC-019", name: "Outbreak Response Task Force", stage: "Dissolution Pending", btns: [lbtn("Confirm Dissolution", "primary"), lbtn("Cancel Dissolution", "secondary"), lbtn("⋯", "menu")] })]),
+      crop(true, 900, "أ · العربية · نشطة دون طلب مفتوح", [live(true, { tone: "active", code: "QMC-014", name: IPC_AR, alt: IPC, stage: "نشطة", btns: [lbtn("تعليق اللجنة", "secondary", 0, 1), lbtn("بدء الحل", "secondary", 0, 1), lbtn("طلب تغيير", "secondary", 1, 1), lbtn("⋯", "menu", 0, 1)] })]),
+      crop(true, 900, "أ · العربية · مراجعة الاختصاصات، السطر المقفل", [live(true, { tone: "review", code: "QMC-021", name: "لجنة تجربة المريض", alt: PX, stage: "مراجعة الاختصاصات", btns: [lbtn("اعتماد اللجنة", "primary", 0, 1), lbtn("مراجعة الاختصاصات", "secondary", 0, 1), lbtn("⋯", "menu", 0, 1)], locked: "🔒 مقفلة أثناء مراجعة الاختصاصات. استخدم «مراجعة الاختصاصات» لتغييرها." })]),
+      crop(false, 1172, "b · The open-request banner (new), between the header card and the Lifecycle row", [live(false, { tone: "active", code: "QMC-014", name: IPC, alt: IPC_AR, stage: "Active", btns: [lbtn("Suspend Committee", "secondary"), lbtn("Start Dissolution", "secondary"), lbtn("⋯", "menu")] }), lbanner(false, BAN_EN[0], BAN_EN[1], BAN_EN[2]), ghost("Lifecycle · Stage history (unchanged)", false, 56)]),
+      crop(true, 900, "ب · العربية · لافتة الطلب المفتوح", [ghost("بطاقة الرأس · " + IPC_AR, true, 56), lbanner(true, BAN_AR[0], BAN_AR[1], BAN_AR[2]), ghost("دورة الحياة · سجل المراحل", true, 44)]),
+      crop(false, 390, "b · Phone (390)", [ghost("Header card", false, 44), lbanner(false, BAN_EN[0], "Nora Al-Otaibi · 15 Oct 2026 · with A. Al-Harbi", BAN_EN[2]), ghost("Lifecycle", false, 36)], 1),
+      crop(false, 420, "c · Change requests panel (new) · a request open", [E.panels([lpanel(false, { title: "Change requests", count: "3", rows: ROWS3, isNew: 1 })], 400, 0)]),
+      crop(false, 420, "c · no open request", [E.panels([lpanel(false, { title: "Change requests", count: "2", rows: ROWS3.slice(1), isNew: 1 })], 400, 0)]),
+      crop(false, 420, "c · more than 5 (Quality & Patient Safety Council, 7)", [E.panels([lpanel(false, { title: "Change requests", count: "7", rows: ROWS7, footer: "Showing 5 of 7", seeAll: "See all", isNew: 1 })], 400, 0)]),
+      crop(false, 420, "c · empty", [E.panels([lpanel(false, { title: "Change requests", count: "0", rows: [], filler: "No change requests yet. Changes to this committee's details after approval are listed here.", isNew: 1 })], 400, 0)]),
+      crop(true, 420, "ج · العربية", [A.panels([lpanel(true, { title: "طلبات التغيير", count: "3", rows: ROWS3_AR, isNew: 1 })], 400, 0)]),
+      crop(false, 390, "c · Phone (390)", [E.panels([lpanel(false, { title: "Change requests", count: "3", rows: ROWS3, isNew: 1 })], 362, 0)], 1),
+      crop(false, 760, "d · Where the panel goes in the live grid (1172, three columns)", [Object.assign({}, FLAGS, { isGrid: true, wrap: "", gridStyle: "display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;", boxes: [
+        gridBox("Header card", "name, stage, transitions, facts", 3), gridBox("Change request banner · new", "only while a request is open", 3, "slim"), gridBox("Lifecycle", "stepper", 2), gridBox("Stage history", "", 1),
+        gridBox("Members", "capped at 5", 1), gridBox("Tasks", "record tasks panel", 1), gridBox("Sub-committees", "capped at 5", 1),
+        gridBox("Meetings", "", 1), gridBox("Documents", "", 1), gridBox("Membership history", "", 1), gridBox("Change requests · new", "after Membership history", 1, "new")
+      ] }), E.text("Dashed orange = new. Every other panel is unchanged and keeps its place.", "small", 8)])
+    ];
+
+    // ---- 3 · Request a change page ----
+    const reqFields = (ar) => {
+      const X = ar ? A : E;
+      return ar ? [
+        X.group("الهوية", 0),
+        X.fields([{ label: "الاسم (بالإنجليزية)", value: IPC, ltr: 1, help: "الحالي" }, { label: "الاسم (بالعربية)", value: IPC_AR, help: "الحالي" }], 8),
+        X.group("الحوكمة", 12),
+        X.fields([{ label: "النصاب", value: "6", changed: 1, help: "كان " + iso("5") + " · من " + iso("9") + " أعضاء" }, { label: "تكرار الاجتماعات", value: "شهريًا", action: "▼", help: "الحالي" }], 8),
+        X.group("الهيكل", 12),
+        X.fields([{ label: "الوحدة المالكة", value: "مستشفى النخيل التخصصي", action: "▼", help: "الحالي" }, { label: "يرفع تقاريره إلى", value: "اللجنة التنفيذية الطبية", action: "▼", changed: 1, help: "كان: مجلس الجودة وسلامة المرضى" }], 8)
+      ] : [
+        X.group("Identity", 0),
+        X.fields([{ label: "Name (English)", req: 1, value: IPC, help: "Current" }, { label: "Name (Arabic)", opt: 1, value: IPC_AR, help: "Current" }], 8),
+        X.fields([{ label: "Type", value: "Standing committee", action: "▼", help: "Current" }, { label: "Purpose", value: "Prevents and controls healthcare-associated infections across the hospital…", help: "Current · opens a larger box" }], 12),
+        X.group("Governance", 16),
+        X.fields([{ label: "Quorum", value: "6", changed: 1, help: "was 5 · of 9 members" }, { label: "Meeting frequency", value: "Monthly", action: "▼", help: "Current" }], 8),
+        X.group("Structure", 16),
+        X.fields([{ label: "Owning unit", req: 1, value: "Al Nakheel Specialist Hospital", action: "▼", help: "Current" }, { label: "Parent committee", opt: 1, value: "None", ph: 1, action: "▼", help: "Current" }], 8),
+        X.fields([{ label: "Reports to", opt: 1, value: "Medical Executive Committee", action: "▼", changed: 1, help: "was Quality & Patient Safety Council" }], 12)
+      ];
+    };
+    const impactEn = E.list("What this change does (worked out as you edit)", [
+      ["#", "Quorum: 5 → 6", "Applies from approval, including committee approvals already in progress: Hand-hygiene policy approval (3 of 5 approvals so far) will need 6 approvals to pass."],
+      ["↗", "Reports to: Quality & Patient Safety Council → Medical Executive Committee", "It leaves the Quality & Patient Safety Council's reporting list and joins the Medical Executive Committee's."],
+      ["▤", "Terms of reference", "A revision task is created on approval, for Nora Al-Otaibi."]
+    ], 12);
+    const impactAr = A.list("أثر هذا التغيير (يُحسب أثناء التعديل)", [
+      ["#", "النصاب: " + iso("5") + " ← " + iso("6"), "يُطبَّق من الاعتماد، بما في ذلك اعتمادات اللجنة الجارية: اعتماد سياسة نظافة اليدين (" + iso("3") + " من " + iso("5") + " حتى الآن) سيحتاج " + iso("6") + "."],
+      ["↖", "يرفع تقاريره إلى: مجلس الجودة وسلامة المرضى ← اللجنة التنفيذية الطبية", "تخرج من قائمة تقارير مجلس الجودة وتنضم إلى قائمة اللجنة التنفيذية الطبية."],
+      ["▤", "الاختصاصات", "تُنشأ مهمة لمراجعتها عند الاعتماد، لنورة العتيبي."]
+    ], 12);
+    const REQ_ITEMS = [
+      frame(false, { kind: "page", w: 900, cap: "Request a change · a page · English", bg: "#fff", blocks: [
+        E.head({ crumb: "Committees / " + IPC + " / Request a change", eyebrow: "Change request · new", title: "Request a change", chips: [E.chip("Active · QMC-014"), E.chip("9 members")], small: 1 }, 0),
+        E.text("Change only what needs changing. Every value shown is current until you edit it.", "muted", 8)
+      ].concat(reqFields(false), [
+        E.banner("info", "Changing: Quorum, Reports to", "2 of 9 fields · marked ✎ Changed with a heavier border and “was …” under each.", null, 16),
+        E.area("Why is this change needed?", "Board resolution 14/2026 moves infection control under the Medical Executive Committee.", { req: 1 }, 12),
+        impactEn
+      ]), buttons: [E.btn("Cancel", "text"), E.btn("Save as draft", "secondary"), E.btn("Submit for review", "primary")], footLeft: "Goes to holders of committees:approve · A. Al-Harbi" }),
+      frame(true, { kind: "page", w: 760, cap: "طلب تغيير · العربية", bg: "#fff", blocks: [
+        A.head({ crumb: "اللجان / " + IPC_AR + " / طلب تغيير", eyebrow: "طلب تغيير · جديد", title: "طلب تغيير", chips: [A.chip("نشطة · QMC-014")], small: 1 }, 0)
+      ].concat(reqFields(true), [
+        A.banner("info", "يتغيّر: النصاب، يرفع تقاريره إلى", null, null, 16),
+        A.area("لماذا يلزم هذا التغيير؟", "قرار مجلس الإدارة 14/2026 ينقل مكافحة العدوى إلى اللجنة التنفيذية الطبية.", { req: 1 }, 12),
+        impactAr
+      ]), buttons: [A.btn("إلغاء", "text"), A.btn("حفظ كمسودة", "secondary"), A.btn("إرسال للمراجعة", "primary")] }),
+      frame(false, { kind: "page", w: 480, cap: "What the impact list says for each field", bg: "#fff", blocks: [
+        E.list("Shown only for the fields being changed", [
+          ["Aa", "Name", "Shown everywhere from approval. Approved minutes and documents keep the name they were issued under."],
+          ["#", "Quorum", "Applies from approval, including approvals in progress; each is named."],
+          ["◷", "Meeting frequency", "Lists the upcoming meetings of the recurring series to review (for example 3 meetings from 29 Oct 2026)."],
+          ["▣", "Owning unit", "Escalations and new stage tasks go to the new unit; open tasks keep their assignee."],
+          ["↗", "Parent or Reports to", "The committee moves in the other committee's sub-committees or reporting list."],
+          ["▤", "Every change", "Terms of reference: a revision task is created on approval."]
+        ], 0)
+      ] })
+    ];
+
+    // ---- 4 · request record ----
+    const cmp = (ar, extra) => (ar ? A : E).table({ title: ar ? "ما يتغيّر" : "What changes", sub: ar ? "الحقول المتغيرة فقط" : "Changed fields only", cols: ar ? [{ l: "الحقل", w: 130 }, { l: "الحالي", f: 200 }, { l: "المقترح", f: 200 }] : [{ l: "Field", w: 120 }, { l: "Current", f: 240 }, { l: "Proposed", f: 240 }], rows: ar ? [
+      { c: ["النصاب", { v: iso("5"), strike: !!extra }, { v: iso("6"), bold: 1 }] }, { c: ["يرفع تقاريره إلى", { v: "مجلس الجودة وسلامة المرضى", strike: !!extra }, { v: "اللجنة التنفيذية الطبية", bold: 1 }] }
+    ] : [
+      { c: ["Quorum", { v: "5", strike: !!extra }, { v: "6", bold: 1 }] }, { c: ["Reports to", { v: "Quality & Patient Safety Council", strike: !!extra }, { v: "Medical Executive Committee", bold: 1 }] }
+    ] }, 12);
+    const hist = (rows) => E.table({ title: "Stage history", cols: [{ l: "When", w: 140 }, { l: "Stage", w: 130 }, { l: "Who", f: 180 }, { l: "Note", f: 240 }], rows: rows.map(r => ({ c: r })) }, 12);
+    const RQ_STEPS = ["Draft", "Under review", "Approved"];
+    const rqHead = (stage, at, actions, chips) => E.head({ crumb: "Committees / " + IPC + " / Change requests", eyebrow: "Change request 3", title: "Change request 3 · " + IPC, small: 1, chips: [E.chip(stage, at === 2 ? "muted" : stage === "Rejected" || stage === "Withdrawn" ? "muted" : stage === "Draft" ? "warn" : "stage")].concat(chips || [E.chip("Requested by Nora Al-Otaibi · 15 Oct 2026")]), actions, steps: E.steps(RQ_STEPS, at) }, 0);
+    const reasonB = E.pairs([["Reason", "Board resolution 14/2026 moves infection control under the Medical Executive Committee."]], 1, 12);
+    const H_SUB = [["15 Oct 2026, 09:12", "Draft", "Nora Al-Otaibi", "Created"], ["15 Oct 2026, 09:20", "Under review", "Nora Al-Otaibi", "Submitted"]];
+    const RQ_ITEMS = [
+      frame(false, { kind: "page", w: 900, cap: "Under review · seen by the approver, A. Al-Harbi", blocks: [rqHead("Under review", 1, [E.btn("Reject…", "dangerOut"), E.btn("Return for changes…", "secondary"), E.btn("Approve…", "primary")]), cmp(false), reasonB, impactEn, hist(H_SUB)] }),
+      frame(false, { kind: "page", w: 900, cap: "Under review · seen by the requester, Nora Al-Otaibi", blocks: [rqHead("Under review", 1, [E.btn("Withdraw…", "secondary")]), cmp(false), E.text("With A. Al-Harbi since 15 Oct 2026, 09:20. You can withdraw it until it's decided.", "muted", 10)] }),
+      frame(false, { kind: "page", w: 900, cap: "Returned · back in Draft with the reviewer's note · requester", blocks: [rqHead("Draft", 0, [E.btn("Withdraw…", "text"), E.btn("Edit", "secondary"), E.btn("Submit for review", "primary")], [E.chip("Returned by A. Al-Harbi · 15 Oct 2026")]), E.banner("warn", "Returned for changes", "“Attach the board resolution.” · A. Al-Harbi, 15 Oct 2026, 11:04", null, 10), cmp(false), hist(H_SUB.concat([["15 Oct 2026, 11:04", "Draft", "A. Al-Harbi", "Returned · Attach the board resolution"]]))] }),
+      frame(false, { kind: "page", w: 900, cap: "Approved and applied · everyone", blocks: [rqHead("✓ Applied 15 Oct 2026", 2, [], [E.chip("Approved by A. Al-Harbi")]), E.banner("ok", "Applied 15 Oct 2026, 14:30", "The committee now shows quorum 6 and reports to the Medical Executive Committee. Task “Revise the terms of reference” was created for Nora Al-Otaibi.", null, 10), cmp(false, 1), hist(H_SUB.concat([["15 Oct 2026, 14:30", "Approved", "A. Al-Harbi", "Applied · 2 fields · task created"]]))] }),
+      frame(false, { kind: "page", w: 900, cap: "Rejected · Change request 2 (another example)", blocks: [E.head({ crumb: "Committees / " + IPC + " / Change requests", eyebrow: "Change request 2", title: "Change request 2 · " + IPC, small: 1, chips: [E.chip("Rejected", "muted"), E.chip("Requested by Nora Al-Otaibi · 1 Oct 2026")], actions: [], steps: E.steps(["Draft", "Under review", "Rejected"], 2) }, 0), E.banner("muted", "Rejected by A. Al-Harbi on 3 Oct 2026", "“Meeting monthly is a JCI expectation for this committee; keep Monthly.” Nothing was changed.", null, 10), E.table({ title: "What it asked to change", cols: [{ l: "Field", w: 120 }, { l: "Current", f: 240 }, { l: "Proposed", f: 240 }], rows: [{ c: ["Meeting frequency", "Monthly", "Quarterly"] }] }, 12)] }),
+      frame(false, { kind: "page", w: 900, cap: "The committee moved to Dissolution Pending while the request was open · approver", blocks: [rqHead("Under review", 1, [E.btn("Reject…", "dangerOut")]), E.banner("warn", "This committee is being dissolved, so these changes can't be applied.", "The request can only be rejected or withdrawn. Approve and Return for changes are absent.", null, 10), cmp(false)] }),
+      frame(true, { kind: "page", w: 760, cap: "العربية · قيد المراجعة · المعتمِد", blocks: [A.head({ crumb: "اللجان / " + IPC_AR + " / طلبات التغيير", eyebrow: "طلب التغيير " + iso("3"), title: "طلب التغيير " + iso("3") + " · " + IPC_AR, small: 1, chips: [A.chip("قيد المراجعة", "stage"), A.chip("قدّمته نورة العتيبي · " + iso("15 Oct 2026"))], actions: [A.btn("رفض…", "dangerOut"), A.btn("إعادة للتعديل…", "secondary"), A.btn("اعتماد…", "primary")], steps: A.steps(["مسودة", "قيد المراجعة", "معتمد"], 1) }, 0), cmp(true), A.pairs([["السبب", "قرار مجلس الإدارة 14/2026 ينقل مكافحة العدوى إلى اللجنة التنفيذية الطبية."]], 1, 12), impactAr] }),
+      frame(false, { kind: "page", w: 390, phone: 1, cap: "Phone · approver", blocks: [E.head({ crumb: "Change requests", eyebrow: "Change request 3", title: "Change request 3 · IPC Committee", small: 1, chips: [E.chip("Under review", "stage")], actions: [] }, 0), E.table({ cols: [{ l: "Field", w: 84 }, { l: "Current → Proposed", f: 200 }], rows: [{ c: ["Quorum", { v: "6", bold: 1, sub: "was 5" }] }, { c: ["Reports to", { v: "Medical Executive Committee", bold: 1, sub: "was Quality & Patient Safety Council" }] }] }, 12), reasonB, E.text("Approve…, Return for changes… and Reject… sit in a sticky bar at the bottom of the screen.", "small", 12)] })
+    ];
+
+    // ---- dialogs for 4 ----
+    const D_RQ = [
+      frame(false, { kind: "dialog", w: 420, cap: "Approve · Confirm 420", title: "Approve and apply these changes?", ctx: "Change request 3 · " + IPC, blocks: [E.list("", [["#", "Quorum: 5 → 6", ""], ["↗", "Reports to: Quality & Patient Safety Council → Medical Executive Committee", ""]], 0), E.text("A task to revise the terms of reference will be created for Nora Al-Otaibi.", null, 12)], buttons: [E.btn("Cancel", "text"), E.btn("Approve", "primary")], measure: "Two change rows 22 + 44 (the second wraps) + 6 + 12 + sentence 42 = 126. Arabic 24 + 48 + 6 + 12 + 48 = 138." }),
+      frame(true, { kind: "dialog", w: 420, cap: "اعتماد · العربية", title: "اعتماد هذه التغييرات وتطبيقها؟", ctx: "طلب التغيير " + iso("3") + " · " + IPC_AR, blocks: [A.list("", [["#", "النصاب: " + iso("5") + " ← " + iso("6"), ""], ["↖", "يرفع تقاريره إلى: مجلس الجودة وسلامة المرضى ← اللجنة التنفيذية الطبية", ""]], 0), A.text("ستُنشأ مهمة لمراجعة الاختصاصات لنورة العتيبي.", null, 12)], buttons: [A.btn("إلغاء", "text"), A.btn("اعتماد", "primary")], measure: "138 of 420. The arrow mirrors (←) so old reads before new in Arabic." }),
+      frame(false, { kind: "dialog", w: 420, cap: "Typo only · approved in one step · Change request 1", title: "Approve and apply this correction?", ctx: "Change request 1 · " + IPC, blocks: [E.list("", [["Aa", "Arabic name: «لجنة مكافحة العدوي والوقاية منها» → «لجنة مكافحة العدوى والوقاية منها»", ""]], 0), E.text("A task to revise the terms of reference will be created for Nora Al-Otaibi.", null, 12)], buttons: [E.btn("Cancel", "text"), E.btn("Approve", "primary")], measure: "One change row 44 + 12 + sentence 42 = 98. Arabic 48 + 12 + 48 = 108. One step: the approver opens it from Home and approves, without Return." }),
+      frame(false, { kind: "dialog", w: 560, cap: "Return for changes · Form 560", title: "Return for changes", ctx: "Change request 3 · back to Nora Al-Otaibi as a draft", blocks: [E.text("Nora Al-Otaibi can edit and resubmit it.", null, 0), E.area("Note", "Attach the board resolution.", { req: 1, focus: 1 }, 12)], buttons: [E.btn("Cancel", "text"), E.btn("Return", "primary")], measure: "Sentence 21 + 12 + textarea 119 = 152. Arabic 24 + 12 + 130 = 166." }),
+      frame(false, { kind: "dialog", w: 560, cap: "Reject · Form 560", title: "Reject change request 2", ctx: "Nothing is changed", blocks: [E.text("Nora Al-Otaibi is told, with your reason.", null, 0), E.area("Reason", "Meeting monthly is a JCI expectation for this committee; keep Monthly.", { req: 1 }, 12)], buttons: [E.btn("Cancel", "text"), E.btn("Reject", "danger")], measure: "Sentence 21 + 12 + textarea 119 = 152. Arabic 24 + 12 + 130 = 166." }),
+      frame(false, { kind: "dialog", w: 420, cap: "Withdraw · Confirm 420 · requester", title: "Withdraw change request 3?", ctx: IPC, blocks: [E.text("It ends here and nothing is changed. You can start a new request afterwards.", null, 0)], buttons: [E.btn("Keep it", "text"), E.btn("Withdraw", "danger")], measure: "Sentence 42 (2 lines). Arabic 48." })
+    ];
+
+    const sections = [
+      { id: "s1", n: "1", title: "Edit committee · Formation only", sub: "Form 560, three tabs so no tab scrolls; one Save for all three.", items: D_EDIT,
+        notes: [
+          { k: "How the nine fields fit.", v: "Nine fields in one column is 9 × 79 + gaps ≈ 810 px with the purpose box, nearly twice the 420 cap. Grouped by what they describe, Identity (names, type, purpose) is the tallest at 349 EN / 374 AR; Governance and Structure are shorter. Tabs, not steps: in Formation any field may be fixed in any order, and one Save covers all three." },
+          { k: "Tabs carry errors.", v: "A tab with a problem shows “⚠” and its count in the tab label, and Save moves to the first tab with an error, so a missing owning unit on Structure isn't hidden behind Identity." },
+          { k: "Reports to follows Parent.", v: "Choosing a Parent committee fills Reports to with the same committee, with the line “Filled in from Parent committee · you can change it”. Changing Parent again only updates Reports to if it still matched the old parent." },
+          { k: "Absent, not disabled.", v: "The lists leave out this committee, its sub-committees at any depth, and committees in Dissolution Pending or Dissolved. A greyed row would invite a click that can only fail; a quiet line under the list says what's left out and why, and typeahead on an excluded name says so." },
+          { k: "Quorum 0 means not set.", v: "Allowed in Formation, with “0 means not set yet · of 7 members” in its message slot. Submit for approval asks for at least 1 (question 2)." },
+          { k: "Someone else saved first.", v: "The second Save is refused in the fixed footer, as in the role matrix, with Reload; nothing the person typed is applied." }
+        ],
+        outs: [{ k: "Loading", v: "Fields as skeletons at their final heights; Save disabled until loaded." }, { k: "Populated", v: "As drawn." }, { k: "Empty", v: "A new committee opens with empty fields and Owning unit required." }, { k: "Denied", v: "Without committees:edit_details, Edit is absent." }, { k: "Error", v: "Save fails: the footer message says nothing was saved, with Try again; the values stay." }, { k: "Partial", v: "Doesn't apply: one save." }] },
+      { id: "s2", n: "2", title: "The committee record · only what's new", sub: "Crops of the live page (Committee Record, capped by the Record Tasks Panel). Dashed orange marks what's new; everything else is as built.", items: R_ITEMS,
+        notes: [
+          { k: "Only three things are new on the header card.", v: "Edit in Formation, Request a change in Active and Suspended, and the locked line in Terms Review. The stage badge and the workflow transition buttons are the live ones, with their tenant labels; Terms Review's Approve Committee and Revise Terms are exact, the other stages' labels are examples of what a tenant's workflow names them." },
+          { k: "Request a change sits after the transitions.", v: "In the header button row, before ⋯, as a secondary button. It's the only way to change details once Active, so it isn't hidden in ⋯; it comes after the transitions because moving the committee through its lifecycle stays the header's main job." },
+          { k: "The locked line sits under the title row.", v: "Inside the header card, for people with committees:edit_details only. It names the tenant's Revise Terms button as stored." },
+          { k: "The banner goes between the header card and the Lifecycle row.", v: "It's about the committee's details, which the header card's facts show, and it must be seen before anyone acts on those facts. It's absent when no request is open, so the page doesn't move for most visits." },
+          { k: "The panel goes last, after Membership history.", v: "The grid reads work (Members, Tasks, Sub-committees), then records (Meetings, Documents), then history (Membership history). A change request is the history of the committee's own details, so it belongs beside membership history. It starts a third row on its own at 1172, which keeps every existing panel where people know it; at two columns it lands beside Membership history." },
+          { k: "Live panel style.", v: "The same header, count chip, fixed body (5 rows) and “Showing 5 of N · See all” footer as Members, Tasks and Sub-committees. Rows are change requests only, newest first; Formation edits stay in the audit and the stage history." }
+        ],
+        outs: [{ k: "Loading", v: "The header card loads as today; Request a change appears once the open-request check returns, never before. The panel shows 5 skeleton rows." }, { k: "Populated", v: "As drawn, per stage." }, { k: "Empty", v: "Panel: “No change requests yet. Changes to this committee's details after approval are listed here.”" }, { k: "Denied", v: "Without committees:edit_details: no Edit, no Request a change and no locked line; the banner and panel still show." }, { k: "Error", v: "Panel error with Retry. If the open-request check fails, Request a change stays absent and the banner reads “Couldn't check for an open change request · Retry”." }, { k: "Partial", v: "If the open request's fields can't be read, the banner says “A change request is open · View request”." }] },
+      { id: "s3", n: "3", title: "Request a change · a page", sub: "A page, because it becomes the request's own record with history, and the impact list needs room.", items: REQ_ITEMS,
+        notes: [
+          { k: "A page, not a dialog.", v: "Every field with its current value, a reason, the impact list and two saves (draft, submit) would far pass 420; and the same layout becomes the request record after submitting, so people learn one screen." },
+          { k: "Changed fields are marked three ways.", v: "“✎ Changed” beside the label, a 2 px border, and “was …” in the message slot. The summary line “Changing: Quorum, Reports to” sits above the reason." },
+          { k: "Impact is computed, not written.", v: "Only fields being changed add a line; every change adds the terms of reference line. Approvals in progress are named, so the approver sees who is affected." },
+          { k: "Draft or submit.", v: "Save as draft keeps it with the requester (and counts as the one open request); Submit sends it to holders of committees:approve." },
+          { k: "Checks are the same as Edit.", v: "Parent and Reports to leave out this committee, its sub-committees and dissolving or dissolved ones; owning unit lists active units; quorum is a whole number of at least 1." }
+        ],
+        outs: [{ k: "Loading", v: "Current values as skeletons." }, { k: "Populated", v: "As drawn." }, { k: "Empty", v: "Submit is disabled until a field changes and the reason is filled, with the reason in words beside it." }, { k: "Denied", v: "Without committees:edit_details, or with a request already open, the page isn't reachable; a direct link lands on the open request." }, { k: "Error", v: "Submit fails: values stay, “Nothing was sent · Try again”." }, { k: "Partial", v: "If impact can't be computed, the list says “Impact couldn't be worked out · Retry”; submitting is still allowed." }] },
+      { id: "s4", n: "4", title: "The change request record", sub: "Draft → Under review → Approved (applied) or Rejected; Returned goes back to Draft; Withdrawn ends it.", items: RQ_ITEMS.concat(D_RQ),
+        notes: [
+          { k: "Only what changes.", v: "The comparison lists the changed fields only: Field, Current, Proposed. After approval Current is struck through and the banner says when it was applied." },
+          { k: "Actions follow the viewer.", v: "Requester in Draft: Edit, Submit, Withdraw. Requester under review: Withdraw. Approver under review: Approve, Return for changes (note), Reject (reason). Everyone else reads it. Absent, never disabled." },
+          { k: "Approving lists the changes in words.", v: "“Quorum: 5 → 6”, “Reports to: … → …”, then the task that will be created. All values apply together and are audited." },
+          { k: "A typo goes the same way.", v: "Change request 1 (Arabic name) shows that a one-word fix is one request and one Approve: no Return step, no extra screen." },
+          { k: "Dissolution blocks applying.", v: "If the committee moved to Dissolution Pending, a banner says the changes can't be applied; only Reject (approver) and Withdraw (requester) remain." },
+          { k: "Phone.", v: "Current → Proposed stacks in one column with “was …” under the new value; the approver's actions sit in a sticky bottom bar." }
+        ],
+        outs: [{ k: "Loading", v: "Header, comparison and history as skeletons." }, { k: "Populated", v: "As drawn per stage and viewer." }, { k: "Empty", v: "Doesn't apply: a request always changes at least one field." }, { k: "Denied", v: "Someone who can't open the committee gets the shared not-allowed page." }, { k: "Error", v: "Approve fails: “Nothing was applied · Try again”; the request stays Under review." }, { k: "Partial", v: "Applied but the task couldn't be created: the banner says so, with “Create task” for the approver." }] }
+    ];
+
+    return {
+      decisions: [
+        { t: "1 · Edit only in Formation", b: "A three-tab Edit dialog (Identity, Governance, Structure), each tab under the 420 cap, one Save." },
+        { t: "2 · Locked under review", b: "Terms Review shows no Edit and one quiet line pointing to Revise terms." },
+        { t: "3 · Change requests after approval", b: "Active and Suspended get “Request a change” in the header; it opens a page that becomes the request's record." },
+        { t: "4 · One open request", b: "While one is open, a banner names it and Request a change is absent; the committee keeps meeting." },
+        { t: "5 · Impact is worked out", b: "The page lists what each change does, naming approvals in progress and the terms of reference task." },
+        { t: "6 · Approve lists changes in words", b: "“Quorum: 5 → 6”; all values apply together, audited, and a revision task goes to the requester." },
+        { t: "7 · Absent, not disabled", b: "Excluded committees are left out of the lists, and actions a viewer can't take don't appear." },
+        { t: "8 · The capped panel again", b: "Change requests use the Record Tasks Panel pattern: 5 rows, the total as the count, See all." }
+      ],
+      sections,
+      measures: [
+        ["Edit · Identity", "560 · form", 349, 374], ["Edit · Governance", "560 · form", 127, 136], ["Edit · Structure", "560 · form", 309, 328], ["Edit · someone else saved (footer message)", "560 · form", 349, 374],
+        ["Approve", "420 · confirm", 126, 138], ["Approve · typo only", "420 · confirm", 98, 108], ["Return for changes", "560 · form", 152, 166], ["Reject", "560 · form", 152, 166], ["Withdraw", "420 · confirm", 42, 48], ["Request a change · record", "page", "—", "—"]
+      ].map(m => ({ d: m[0], s: m[1], en: String(m[2]), ar: String(m[3]) })),
+      changes: [
+        { s: "Committee changes · round 2", w: "Only the new parts of the committee record (header actions, locked line, banner, Change requests panel and its slot), example data aligned, requests renumbered." },
+        { s: "Committee Record · header actions", w: "Edit after the transition button in Formation; Request a change after the transition buttons in Active and Suspended (absent while a request is open); nothing new in Dissolution Pending and Dissolved." },
+        { s: "Committee Record · locked line", w: "In Terms Review, under the title row, for committees:edit_details only." },
+        { s: "Committee Record · banner", w: "The open-request banner between the header card and the Lifecycle row, only while a request is open." },
+        { s: "Committee Record · Change requests panel", w: "New panel in the live panel style, placed last in the grid after Membership history." },
+        { s: "Committee Record · Edit dialog", w: "Becomes the three-tab Edit dialog (Identity, Governance, Structure), offered in Formation only." },
+        { s: "Users and Roles · permission matrix", w: "committees:edit_details reads “Edit a committee in Formation and request changes after approval”; committees:approve reads “Approve terms, changes and dissolutions”." },
+        { s: "App shell · Home", w: "“Awaiting my action” gains change requests for holders of committees:approve, like the other approvals." }
+      ],
+      questions: [
+        { n: "Q1", q: "Prefill Reports to from the parent?", opts: ["Yes (drawn default), still changeable.", "Keep them independent: one more field to fill every time."] },
+        { n: "Q2", q: "Quorum at least 1 before Submit for approval in Formation?", opts: ["Yes (drawn default): Submit says “Set a quorum first”.", "No: a committee could reach Terms Review with no quorum."] },
+        { n: "Q3", q: "Quorum change and approvals in progress", opts: ["The new quorum applies to them (drawn default, no extra build); the impact list names them.", "They keep the old one: needs a quorum snapshot per approval."] },
+        { n: "Q4", q: "Who approves a change?", opts: ["Holders of committees:approve (drawn default).", "Also the committee's Chair: a second step, slower but closer to the committee."] },
+        { n: "Q5", q: "Can a person approve their own change request?", opts: ["No: the approver must not be the requester; with one approver in the tenant, the request waits.", "Yes, recorded as self-approved."] },
+        { n: "Q6", q: "May the approver adjust a proposed value before approving?", opts: ["No (drawn): Return for changes instead, so the request record shows what was asked.", "Yes: faster, but the record must show the approver's edit."] },
+        { n: "Q7", q: "Does a draft expire?", opts: ["No: it stays until submitted or withdrawn, blocking new requests.", "Yes, after 30 days it's withdrawn automatically and the requester is told."] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
