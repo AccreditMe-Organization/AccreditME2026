@@ -5,6 +5,7 @@ import {
   TaskSourceType,
   WorkflowInstance as PrismaWorkflowInstance,
   WorkflowStage as PrismaWorkflowStage,
+  WorkflowObjectType,
 } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -26,7 +27,8 @@ import {
 } from './interfaces/stage-task-definition.interface';
 import { RECORD_ROUTES } from './stage-task-record-routes';
 import { DueHours } from './stage-deadline-rule';
-import { WorkflowRefusalException } from './workflow-refusal';
+import { refuseProtected, WorkflowRefusalException } from './workflow-refusal';
+import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 
 const COMMITTEE_MEMBER_ROLE_CATEGORY = 'committee_member_role';
 
@@ -172,6 +174,9 @@ export class StageTaskDefinitionService {
     actorId: string,
   ): Promise<IStageTaskDefinitionSaved> {
     const stage = await this.loadStage(stageId, organizationId);
+    // ACC-239 — a protected template's stages take no tasks: a mandatory one
+    // would hold the moves the request itself makes.
+    if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType as WorkflowObjectType)) refuseProtected('STAGE_TASKS');
     const route = this.routeFrom(dto.assignKind, dto);
     await this.validate(stage, route, dto.priority, organizationId);
 
@@ -216,6 +221,7 @@ export class StageTaskDefinitionService {
   ): Promise<IStageTaskDefinitionSaved> {
     const existing = await this.loadDefinition(id, organizationId);
     const stage = await this.loadStage(existing.stageId, organizationId);
+    if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType as WorkflowObjectType)) refuseProtected('STAGE_TASKS');
 
     // A new kind brings its own route fields; otherwise the stored ones are
     // kept and only what was sent replaces them.

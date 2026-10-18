@@ -24,6 +24,7 @@ import {
   WorkflowInstance as PrismaWorkflowInstance,
   WorkflowInstanceStage as PrismaWorkflowInstanceStage,
   WorkflowStage as PrismaWorkflowStage,
+  WorkflowTemplate as PrismaWorkflowTemplate,
   WorkflowTransition as PrismaWorkflowTransition,
   WorkflowApproval as PrismaWorkflowApproval,
   WorkflowObjectType,
@@ -40,7 +41,24 @@ import { assertTransitionPreconditions } from './transition-preconditions';
 
 // The client inside this.prisma.$transaction(async (tx) => …) — read off
 // PrismaService, whose extended client has its own transaction type.
-type EngineTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
+export type EngineTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
+
+/** ACC-239 — startInstance()'s reads, done before any transaction. */
+export interface PreparedInstanceStart {
+  template: PrismaWorkflowTemplate;
+  initialStage: PrismaWorkflowStage;
+  enteredAt: Date;
+  slaDueAt: Date | null;
+  entryTasks: PreparedStageEntryTasks;
+  quorumCount: number | null;
+}
+
+/** ACC-239 — what insertInstanceStartInTx() wrote. */
+export interface StartedInstance {
+  instance: PrismaWorkflowInstance;
+  initialInstanceStage: PrismaWorkflowInstanceStage;
+  createdTasks: { task: ITask; prepared: PreparedTask }[];
+}
 
 // ACC-190 — a stage change is ONE transaction: the gate, the old entry's exit,
 // its open tasks cancelled, the new entry and its tasks, the instance moved.
@@ -104,6 +122,26 @@ export class WorkflowService {
     actorId: string,
     templateId?: string,
   ): Promise<IWorkflowInstance> {
+    const prepared = await this.prepareInstanceStart(objectType, objectId, organizationId, templateId);
+    const started = await this.prisma.$transaction(
+      (tx) => this.insertInstanceStartInTx(tx, prepared, objectId, organizationId, actorId),
+      STAGE_CHANGE_TX,
+    );
+    return this.finishInstanceStart(prepared, started, organizationId, actorId);
+  }
+
+  /**
+   * ACC-239 — startInstance() in three parts, so a module can write its record
+   * AND the record's workflow instance in ONE transaction of its own (the
+   * committee change request takes the committee's row lock, checks for an open
+   * request, and writes both). Every read happens here, before any transaction.
+   */
+  async prepareInstanceStart(
+    objectType: string,
+    objectId: string,
+    organizationId: string,
+    templateId?: string,
+  ): Promise<PreparedInstanceStart> {
     const template = templateId
       ? await this.prisma.workflowTemplate.findFirst({ where: { id: templateId, organizationId } })
       : await this.prisma.workflowTemplate.findFirst({
@@ -132,24 +170,51 @@ export class WorkflowService {
       enteredAt,
       organizationId,
     );
+    const quorumCount = await this.quorumSnapshot(initialStage, organizationId);
+    return { template, initialStage, enteredAt, slaDueAt, entryTasks, quorumCount };
+  }
 
-    const { instance, initialInstanceStage, createdTasks } = await this.prisma.$transaction(async (tx) => {
-      const instance = await tx.workflowInstance.create({
-        data: {
-          organizationId,
-          workflowTemplateId: template.id,
-          objectType: template.objectType,
-          objectId,
-          status: 'IN_PROGRESS',
-          currentStageId: initialStage.id,
-        },
-      });
-      const initialInstanceStage = await tx.workflowInstanceStage.create({
-        data: { workflowInstanceId: instance.id, stageId: initialStage.id, enteredAt, slaDueAt, actorId },
-      });
-      const createdTasks = await this.insertEntryTasks(tx, entryTasks, instance.id, initialInstanceStage.id, organizationId, actorId);
-      return { instance, initialInstanceStage, createdTasks };
-    }, STAGE_CHANGE_TX);
+  /** The instance, its first entry and that entry's tasks, on the caller's transaction. */
+  async insertInstanceStartInTx(
+    tx: EngineTx,
+    prepared: PreparedInstanceStart,
+    objectId: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<StartedInstance> {
+    const { template, initialStage, enteredAt, slaDueAt, entryTasks, quorumCount } = prepared;
+    const instance = await tx.workflowInstance.create({
+      data: {
+        organizationId,
+        workflowTemplateId: template.id,
+        objectType: template.objectType,
+        objectId,
+        status: 'IN_PROGRESS',
+        currentStageId: initialStage.id,
+      },
+    });
+    const initialInstanceStage = await tx.workflowInstanceStage.create({
+      data: { workflowInstanceId: instance.id, stageId: initialStage.id, enteredAt, slaDueAt, actorId, quorumCount },
+    });
+    const createdTasks = await this.insertEntryTasks(tx, entryTasks, instance.id, initialInstanceStage.id, organizationId, actorId);
+    return { instance, initialInstanceStage, createdTasks };
+  }
+
+  /**
+   * After commit: notices, flags and the audit row. `notifyInitialAssignee`
+   * false is for a record whose module tells the people concerned itself (the
+   * committee change request): the generic "New workflow assignment" notice
+   * would tell a requester about their own draft.
+   */
+  async finishInstanceStart(
+    prepared: PreparedInstanceStart,
+    started: StartedInstance,
+    organizationId: string,
+    actorId: string,
+    options: { notifyInitialAssignee?: boolean } = {},
+  ): Promise<IWorkflowInstance> {
+    const { initialStage, entryTasks } = prepared;
+    const { instance, initialInstanceStage, createdTasks } = started;
 
     // After commit: the notices and audit rows of the tasks just created.
     await this.announceEntryTasks(createdTasks, organizationId, actorId);
@@ -157,7 +222,9 @@ export class WorkflowService {
     // No WorkflowTransitionAction fires on stage entry (actions fire on
     // transitions, per the seed data design) — so the initial stage's
     // assignee is notified directly here, the one place nothing else would.
-    await this.resolveAndNotifyInitialAssignee(initialStage, instance, organizationId);
+    if (options.notifyInitialAssignee !== false) {
+      await this.resolveAndNotifyInitialAssignee(initialStage, instance, organizationId);
+    }
 
     // ACC-28 Section 2.5 — flag + notify Tenant Admins if this stage has an
     // outgoing ASSIGNEE_POOL transition nobody in the resolved pool could
@@ -787,6 +854,68 @@ export class WorkflowService {
     }
   }
 
+  /**
+   * ACC-239 — the move a MODULE makes on its own record: along the
+   * SYSTEM_AUTOMATIC transition from the record's current stage to the stage
+   * keyed `toStageKey`. A person never fires these through the generic
+   * endpoint (triggerTransition() refuses SYSTEM_AUTOMATIC); the module's own
+   * endpoint has already checked who may act.
+   *
+   * `inTx` is the engine's first caller-supplied write: it runs INSIDE the
+   * stage-change transaction, under the instance's row lock, after the "still
+   * open" check and the gate and before the move is written, so the module's
+   * write and the stage move commit together or not at all. ACC-64 still
+   * holds: the engine emits nothing of its own; the module decides what to
+   * write, the engine only lends the transaction. Only SYSTEM_AUTOMATIC
+   * transitions accept it.
+   */
+  async triggerSystemTransition(
+    instanceId: string,
+    toStageKey: string,
+    organizationId: string,
+    actorId: string,
+    options: { comment?: string; outcome?: 'APPROVED' | 'REJECTED' | 'SKIPPED'; inTx?: (tx: EngineTx) => Promise<void> } = {},
+  ): Promise<IWorkflowInstance> {
+    const instance = await this.prisma.workflowInstance.findFirst({ where: { id: instanceId, organizationId } });
+    if (!instance) throw new NotFoundException('Workflow instance not found');
+    if (!instance.currentStageId) throw new ConflictException('Workflow instance has no current stage');
+
+    const transition = await this.prisma.workflowTransition.findFirst({
+      where: {
+        fromStageId: instance.currentStageId,
+        triggerCondition: 'SYSTEM_AUTOMATIC',
+        toStage: { key: toStageKey, workflowTemplateId: instance.workflowTemplateId },
+      },
+    });
+    if (!transition) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'TRANSITION_NOT_AVAILABLE',
+        message: "This record can't make that move from the stage it is in now. Reload it and try again.",
+      });
+    }
+    const fromStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.fromStageId } });
+    if (!fromStage) throw new NotFoundException('Current stage not found');
+    const currentInstanceStage = await this.prisma.workflowInstanceStage.findFirst({
+      where: { workflowInstanceId: instance.id, stageId: instance.currentStageId, exitedAt: null },
+      orderBy: { enteredAt: 'desc' },
+    });
+    if (!currentInstanceStage) throw new ConflictException('No active stage entry found for this instance');
+
+    return this.performTransition(
+      instance,
+      currentInstanceStage,
+      transition,
+      organizationId,
+      actorId,
+      options.comment,
+      options.outcome ?? 'APPROVED',
+      fromStage,
+      { inTx: options.inTx },
+    );
+  }
+
   // `assumedVote` counts a vote not yet recorded, replacing any earlier one by
   // the same approver — how ACC-190 asks "would this vote decide it?".
   private async isApprovalThresholdMet(
@@ -815,10 +944,15 @@ export class WorkflowService {
       // committeeId that somehow referenced another tenant's Committee row
       // must never resolve here, defense-in-depth alongside the write-time
       // validation in workflow-template.service.ts's addStage/updateStage.
-      const committee = await this.prisma.committee.findFirst({
-        where: { id: fromStage.committeeId, organizationId },
-      });
-      if (!committee || approvals.length < committee.quorumCount) return false;
+      //
+      // ACC-239 — the quorum is the one saved when this entry began, so a
+      // quorum changed while the vote is open does not move it. An entry made
+      // before ACC-239 has none saved and keeps the live read.
+      const quorum =
+        currentInstanceStage.quorumCount ??
+        (await this.prisma.committee.findFirst({ where: { id: fromStage.committeeId, organizationId } }))?.quorumCount ??
+        null;
+      if (quorum === null || approvals.length < quorum) return false;
       return approvedCount > approvals.length / 2;
     }
 
@@ -847,6 +981,8 @@ export class WorkflowService {
     // maybeAdvanceAfterApproval()'s own stage parameter), so it's threaded
     // through rather than re-derived here.
     fromStage: PrismaWorkflowStage,
+    // ACC-239 — a module's write, inside this transaction (triggerSystemTransition()).
+    hook: { inTx?: (tx: EngineTx) => Promise<void> } = {},
   ): Promise<IWorkflowInstance> {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) throw new NotFoundException('Target stage not found');
@@ -869,6 +1005,8 @@ export class WorkflowService {
       stageId: currentInstanceStage.stageId,
       workflowInstanceStageId: currentInstanceStage.id,
     };
+    // ACC-239 — the quorum a committee-approval stage's vote will count against.
+    const quorumCount = await this.quorumSnapshot(toStage, organizationId);
 
     // ACC-190 — the stage change itself, all or nothing, under the instance's
     // row lock (the engine's first). Two people pressing at once can no longer
@@ -891,6 +1029,14 @@ export class WorkflowService {
       // the check and the move.
       await this.assertPreconditions(tx, instance, fromStage, transition.kind, organizationId);
 
+      // ACC-239 — the module's own write, under this same lock and transaction.
+      if (hook.inTx) {
+        if (transition.triggerCondition !== 'SYSTEM_AUTOMATIC') {
+          throw new Error('Only a SYSTEM_AUTOMATIC transition takes a write of its own');
+        }
+        await hook.inTx(tx);
+      }
+
       await tx.workflowInstanceStage.update({
         where: { id: currentInstanceStage.id },
         data: { exitedAt: enteredAt, outcome, ...(comment !== undefined && { comment }) },
@@ -912,6 +1058,7 @@ export class WorkflowService {
           actorId,
           delegationReason: delegationStamp?.delegationReason ?? null,
           delegationContextId: delegationStamp?.delegationContextId ?? null,
+          quorumCount,
         },
       });
 
@@ -987,6 +1134,20 @@ export class WorkflowService {
     for (const { task, prepared } of created) {
       await this.taskService.announceCreated(task, prepared, organizationId, actorId);
     }
+  }
+
+  /**
+   * ACC-239 — the quorum to save on an entry into a committee-approval stage:
+   * the stage's committee's quorum now. Null for any other stage. Read before
+   * the transaction, with every other read, scoped by organisation.
+   */
+  private async quorumSnapshot(stage: PrismaWorkflowStage, organizationId: string): Promise<number | null> {
+    if (stage.approvalMode !== 'COMMITTEE' || !stage.committeeId) return null;
+    const committee = await this.prisma.committee.findFirst({
+      where: { id: stage.committeeId, organizationId },
+      select: { quorumCount: true },
+    });
+    return committee?.quorumCount ?? null;
   }
 
   // ACC-238 — TRANSITION_PRECONDITIONS for this record's kind (a committee
@@ -1166,6 +1327,8 @@ export class WorkflowService {
       case 'MEETING':
         return 'MEETING';
       case 'COMMITTEE':
+      // ACC-239 — a change request's tasks sit on its committee.
+      case 'COMMITTEE_CHANGE_REQUEST':
         return 'COMMITTEE';
       default:
         return null;

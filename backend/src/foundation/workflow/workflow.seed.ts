@@ -60,7 +60,8 @@ export interface SeedWorkflow {
     | 'AUDIT'
     | 'CORRECTIVE_ACTION'
     | 'MEETING'
-    | 'COMMITTEE';
+    | 'COMMITTEE'
+    | 'COMMITTEE_CHANGE_REQUEST';
   nameEn: string;
   nameAr: string;
   stages: SeedStage[];
@@ -270,6 +271,40 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
       { fromStageKey: 'active', toStageKey: 'dissolution_pending', labelEn: 'Initiate Dissolution', labelAr: 'بدء إجراءات الحل', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'suspended', toStageKey: 'dissolution_pending', labelEn: 'Dissolve Committee', labelAr: 'حل اللجنة', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'dissolution_pending', toStageKey: 'dissolved', labelEn: 'Confirm Dissolution', labelAr: 'تأكيد الحل', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+    ],
+  },
+
+  // ── 7b. COMMITTEE_CHANGE_REQUEST (ACC-239) ──────────────────────────────────
+  // A change to an approved committee's details. EVERY transition is
+  // SYSTEM_AUTOMATIC: the generic transitions endpoint refuses them, so a
+  // request moves only through the change request endpoints — nobody can move
+  // one to Approved without the change being applied. Its shape is fixed
+  // (PROTECTED_TEMPLATES): tenants may rename the stages and set their
+  // deadlines. No SEND_NOTIFICATION action: the module tells the people
+  // concerned itself, in both languages. Every stage's assignee is SELF (the
+  // requester); the approvers are the holders of committees:approve, a rule the
+  // module checks, not a stage assignee.
+  {
+    objectType: 'COMMITTEE_CHANGE_REQUEST',
+    nameEn: 'Committee Change Request',
+    nameAr: 'طلب تغيير اللجنة',
+    stages: [
+      { key: 'draft', nameEn: 'Draft', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+      { key: 'under_review', nameEn: 'Under review', nameAr: 'قيد المراجعة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+      { key: 'returned', nameEn: 'Returned', nameAr: 'مُعاد', order: 25, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+      { key: 'approved', nameEn: 'Approved', nameAr: 'معتمد', order: 30, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+      { key: 'withdrawn', nameEn: 'Withdrawn', nameAr: 'مسحوب', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+    ],
+    transitions: [
+      { fromStageKey: 'draft', toStageKey: 'under_review', labelEn: 'Submit for review', labelAr: 'إرسال للمراجعة', triggerCondition: 'SYSTEM_AUTOMATIC', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'returned', toStageKey: 'under_review', labelEn: 'Submit again', labelAr: 'إعادة الإرسال', triggerCondition: 'SYSTEM_AUTOMATIC', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'under_review', toStageKey: 'approved', labelEn: 'Approve and apply', labelAr: 'اعتماد وتطبيق', triggerCondition: 'SYSTEM_AUTOMATIC', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'under_review', toStageKey: 'returned', labelEn: 'Return for changes', labelAr: 'إعادة للتعديل', triggerCondition: 'SYSTEM_AUTOMATIC', kind: 'RETURN', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'under_review', toStageKey: 'rejected', labelEn: 'Reject', labelAr: 'رفض', triggerCondition: 'SYSTEM_AUTOMATIC', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'draft', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', triggerCondition: 'SYSTEM_AUTOMATIC', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'under_review', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', triggerCondition: 'SYSTEM_AUTOMATIC', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'returned', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', triggerCondition: 'SYSTEM_AUTOMATIC', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
     ],
   },
 
