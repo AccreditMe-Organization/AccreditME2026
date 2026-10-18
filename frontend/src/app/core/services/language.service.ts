@@ -49,7 +49,7 @@
 // language is already applied and because a per-call fix cannot cover the
 // twenty-third dialog. ConfirmDialog subscribes to config.translationObserver,
 // which setTranslation() notifies, so an open dialog follows a live switch.
-import { Injectable, effect, inject } from '@angular/core';
+import { Injectable, effect, inject, untracked } from '@angular/core';
 import { Direction, Directionality } from '@angular/cdk/bidi';
 import { Observable } from 'rxjs';
 import { TranslateService } from '@ngx-translate/core';
@@ -82,11 +82,15 @@ export class LanguageService {
 
       // ACC-237 — the CDK's root Directionality, which never re-reads <html
       // dir> (see the header). Menus pass this object to their overlay and read
-      // it live; the overlay select passes it too.
-      if (this.directionality.value !== dir) {
-        this.directionality.valueSignal.set(dir);
-        this.directionality.change.emit(dir);
-      }
+      // it live; the overlay select passes it too. untracked: this effect writes
+      // that signal, so reading it tracked would make the effect depend on its
+      // own write and run a second time after every switch.
+      untracked(() => {
+        if (this.directionality.value !== dir) {
+          this.directionality.valueSignal.set(dir);
+          this.directionality.change.emit(dir);
+        }
+      });
 
       // ACC-83 — the strings PrimeNG renders ITSELF, in the same effect as the
       // direction, because they change for the same reason and must not be able
