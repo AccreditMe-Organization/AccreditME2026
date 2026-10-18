@@ -83,8 +83,11 @@ export class UserStatusActionsService {
   confirmDeactivate(user: IUserDto, result: UserStatusActionResult): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translate.instant('user.deactivateConfirm', { name: user.name }),
-      header: this.translate.instant('user.deactivate'),
+      // user.service.ts deactivate(): tokenVersion is bumped (sessions end on
+      // the next request), and task.service.ts reassignAllForUser() sends each
+      // task back to its pool, to the acting user, or to UNASSIGNED.
+      message: this.translate.instant('user.deactivateConfirm'),
+      header: this.translate.instant('user.deactivateHeader', { name: user.name }),
       acceptLabel: this.translate.instant('user.deactivate'),
       accept: () => {
         this.userService.deactivate(user.id).subscribe({
@@ -151,7 +154,7 @@ export class UserStatusActionsService {
         name: user.name,
         roles: roleLine,
       }),
-      header: this.translate.instant('user.reactivate'),
+      header: this.translate.instant('user.reactivateHeader', { name: user.name }),
       acceptLabel: this.translate.instant('user.reactivate'),
       accept: () => {
         this.userService.reactivate(user.id).subscribe({
@@ -180,7 +183,7 @@ export class UserStatusActionsService {
         name: user.name,
         email: user.email,
       }),
-      header: this.translate.instant('user.revokeInvitation'),
+      header: this.translate.instant('user.revokeInvitationHeader', { name: user.name }),
       acceptLabel: this.translate.instant('user.revokeInvitation'),
       accept: () => {
         this.userService.revokeInvitation(user.id).subscribe({

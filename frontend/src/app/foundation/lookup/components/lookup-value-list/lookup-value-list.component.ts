@@ -581,8 +581,10 @@ export class LookupValueListComponent implements OnInit {
   onDelete(val: LookupValueDto): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      header: this.translate.instant('common.confirm'),
-      message: this.translate.instant('lookup.deleteConfirm', { name: this.effectiveLabel(val) }),
+      header: this.translate.instant('lookup.deleteHeader', { name: this.effectiveLabel(val) }),
+      // lookup.service.ts removeValue(): isActive false, so it leaves the lists
+      // and every record already pointing at it keeps it.
+      message: this.translate.instant('lookup.deleteConfirm'),
       acceptLabel: this.translate.instant('confirm.deleteValue'),
       accept: () => {
         this.lookupService.removeValue(val.id).subscribe({

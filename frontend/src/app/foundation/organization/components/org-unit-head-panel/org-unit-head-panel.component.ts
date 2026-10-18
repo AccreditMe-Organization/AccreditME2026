@@ -358,10 +358,17 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   }
 
   onVacate(): void {
+    // Vacate is offered only with a holder and no handover (the template's
+    // last branch), so holders[0] is the Head being vacated. Its name comes
+    // from the server's status, not from this unit's user list.
+    const unit = this.unitName();
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translateService.instant('orgUnitHead.vacateConfirmMessage'),
-      header: this.translateService.instant('common.confirm'),
+      message: this.translateService.instant('orgUnitHead.vacateConfirmMessage', {
+        name: this.status()?.holders[0]?.name ?? '—',
+        unit,
+      }),
+      header: this.translateService.instant('orgUnitHead.vacateHeader', { unit }),
       acceptLabel: this.translateService.instant('orgUnitHead.vacate'),
       accept: () => {
         this.acting.set(true);
@@ -423,10 +430,19 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   }
 
   onCancelHandover(): void {
+    // Both the incoming and the outgoing holder are in status.holders while a
+    // handover is open: the incoming one is pendingHeadUserId.
+    const s = this.status();
+    const holderNamed = (id: string | null | undefined): string =>
+      s?.holders.find((h) => h.id === id)?.name ?? '—';
+    const incoming = holderNamed(s?.pendingHeadUserId);
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translateService.instant('orgUnitHead.cancelHandoverConfirmMessage'),
-      header: this.translateService.instant('common.confirm'),
+      message: this.translateService.instant('orgUnitHead.cancelHandoverConfirmMessage', {
+        name: incoming,
+        current: holderNamed(this.outgoingHolderId()),
+      }),
+      header: this.translateService.instant('orgUnitHead.cancelHandoverHeader', { name: incoming }),
       acceptLabel: this.translateService.instant('orgUnitHead.cancelHandover'),
       rejectLabel: this.translateService.instant('confirm.keepHandover'),
       accept: () => {
@@ -454,10 +470,15 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   }
 
   onClearActingHead(): void {
+    // End cover is offered only in the vacant branch (no holder), so ending it
+    // leaves the unit with no Head: resolveActingHeadForOrgUnit() then walks up
+    // to the unit above it. Named by the unit, because the Acting Head may sit
+    // in another unit and holderName() only knows this one's people.
+    const unit = this.unitName();
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translateService.instant('orgUnitHead.actingHeadClearConfirmMessage'),
-      header: this.translateService.instant('common.confirm'),
+      message: this.translateService.instant('orgUnitHead.actingHeadClearConfirmMessage', { unit }),
+      header: this.translateService.instant('orgUnitHead.actingHeadClearHeader', { unit }),
       acceptLabel: this.translateService.instant('confirm.endCover'),
       accept: () => {
         this.acting.set(true);

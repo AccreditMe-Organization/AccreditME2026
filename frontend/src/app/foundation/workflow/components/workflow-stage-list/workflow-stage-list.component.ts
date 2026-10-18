@@ -416,8 +416,12 @@ export class WorkflowStageListComponent implements OnInit {
   onRemove(stage: WorkflowStageDto): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translate.instant('workflow.confirmRemoveStage', { name: stage.nameEn }),
-      header: this.translate.instant('common.confirm'),
+      // workflow-template.service.ts removeStage(): a hard delete; its task
+      // definitions cascade with it (schema: onDelete Cascade).
+      message: this.translate.instant('workflow.confirmRemoveStage'),
+      header: this.translate.instant('workflow.confirmRemoveStageHeader', {
+        name: this.languageService.bilingual(stage.nameEn, stage.nameAr),
+      }),
       acceptLabel: this.translate.instant('confirm.removeStage'),
       accept: () => {
         this.workflowTemplateService.removeStage(stage.id).subscribe({

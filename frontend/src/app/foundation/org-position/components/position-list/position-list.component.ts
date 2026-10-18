@@ -32,6 +32,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { AmNumberPipe } from '../../../../core/formatting';
 import { StepStripComponent } from '../../../../shared/components/step-strip/step-strip.component';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
+import { LanguageService } from '../../../../core/services/language.service';
 
 /**
  * Org positions — ACC-120 slice 6, Template 1.
@@ -279,6 +280,7 @@ export class PositionListComponent {
 
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly amConfirm = inject(AmConfirmService);
+  private readonly languageService = inject(LanguageService);
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly translate = inject(TranslateService);
 
@@ -422,8 +424,14 @@ export class PositionListComponent {
     // scan, because no scan reads a ConfirmationService call.
     this.amConfirm.ask({
       tone: 'destructive',
-      header: this.translate.instant('common.confirm'),
-      message: this.translate.instant('orgPosition.deactivateConfirm', { name: position.nameEn }),
+      header: this.translate.instant('orgPosition.deactivateHeader', {
+        name: this.languageService.bilingual(position.nameEn, position.nameAr),
+      }),
+      // Holders keep positionId; a head position's holders stop counting as
+      // Head (resolveActingHeadForOrgUnit reads position.isActive).
+      message: this.translate.instant(
+        position.isUnitHeadPosition ? 'orgPosition.deactivateConfirmHead' : 'orgPosition.deactivateConfirm',
+      ),
       acceptLabel: this.translate.instant('orgPosition.deactivate'),
       accept: () => {
         this.orgPositionService.deactivate(position.id).subscribe({

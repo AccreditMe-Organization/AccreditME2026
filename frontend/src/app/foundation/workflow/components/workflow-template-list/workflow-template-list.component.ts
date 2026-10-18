@@ -10,6 +10,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
+import { LanguageService } from '../../../../core/services/language.service';
 
 @Component({
   selector: 'app-workflow-template-list',
@@ -113,6 +114,7 @@ export class WorkflowTemplateListComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly amConfirm = inject(AmConfirmService);
+  private readonly languageService = inject(LanguageService);
   private readonly navigationAccess = inject(NavigationAccessService);
 
   // ACC-123 — workflows:manage, the permission both write endpoints carry
@@ -147,8 +149,15 @@ export class WorkflowTemplateListComponent implements OnInit {
     event.stopPropagation();
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translate.instant('workflow.confirmDeactivateTemplate', { name: template.nameEn }),
-      header: this.translate.instant('common.confirm'),
+      // workflow.service.ts startInstance() starts new records only on the
+      // active DEFAULT template; transitions never check isActive, so records
+      // already on it carry on.
+      message: this.translate.instant(
+        template.isDefault ? 'workflow.confirmDeactivateDefaultTemplate' : 'workflow.confirmDeactivateTemplate',
+      ),
+      header: this.translate.instant('workflow.confirmDeactivateTemplateHeader', {
+        name: this.languageService.bilingual(template.nameEn, template.nameAr),
+      }),
       acceptLabel: this.translate.instant('confirm.deactivateTemplate'),
       accept: () => {
         this.workflowTemplateService.deactivateTemplate(template.id).subscribe({
