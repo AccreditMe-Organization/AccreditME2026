@@ -7720,8 +7720,7 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
   - **Names follow the session's language** (`LanguageService.bilingual`).
     A workflow action type is a word (`workflow.actionTypeName.*`), never the
     enum; one with no translation reads "Unknown".
-  - **Not yet reworded:** Remove member, Complete task and Remove evidence
-    (lane B's files).
+  - **Not yet reworded:** Remove member and Complete task (lane B's files).
 - **Specs:**
   - `am-confirm.service.spec.ts`: tone to classes, colour and focus; required
     labels; layer push and pop on accept, Cancel and Escape; focus back,
