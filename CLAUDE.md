@@ -3980,6 +3980,45 @@ al-nakheel's used AI credits, restored from the AI log. Script:
   `aiCreditsRenewsAt` (21 Oct 00:00Z) was read as 20 Oct 21:00Z. Read them
   through Prisma, or with `::text`.
 
+## Key Architecture Decisions (ACC-238)
+
+A committee is edited directly in Formation only, in a three-tab dialog. PR 1 of
+the committee changes plan. Full mechanism: SYSTEM-REFERENCE.md §3.17 (the
+rules) and §10.21 (the tab strip). Plan, Ahmad's rules (15 Oct) and decisions
+(18 Oct, Q1–Q19), and the measurements: `backend/Plans/step-238-committee-changes.md`.
+Briefly:
+
+- **WHAT A COMMITTEE PAGE OFFERS IS DECIDED BY THE STAGE KEY, NEVER THE NAME.**
+  - `GET /committees/:id` returns `currentStageKey` and `isDissolving`.
+  - `committeeHeaderOffers()` (`committee-stage.ts`) is the one rule: Edit in
+    `formation`, and the locked line in `terms_review` for holders of
+    `committees:edit_details`.
+  - **The API still accepts a direct edit in any stage until ACC-241.** That
+    ticket must take the instance lock BEFORE the committee row lock (plan §7),
+    or an edit and a transition can deadlock.
+- **A STALE SAVE IS REFUSED UNDER THE ROW LOCK.**
+  - The dialog sends `expectedUpdatedAt`. `updateCommittee()` locks the
+    committee row and compares, giving 409 `COMMITTEE_CHANGED` with nothing
+    written. The dialog then offers Reload, never Retry.
+  - Proved against a real Postgres, and mutation-checked.
+- **`TRANSITION_PRECONDITIONS` IS WHERE A RECORD'S OWN TRANSITION RULE GOES**
+  (`foundation/workflow/transition-preconditions.ts`).
+  - It is per record type, FAIL OPEN, and reads the record, never a permission.
+  - It runs early and again inside the stage-change transaction.
+  - Its first entry: a committee leaves Formation only with a quorum of at least
+    1 (`COMMITTEE_QUORUM_NOT_SET`).
+- **A TABBED DIALOG IS `am-tab-strip` IN THE HEADER**, with every panel in one
+  grid cell, so the body holds the tallest tab. Tabs are for groups filled in
+  any order under one Save; steps (`am-step-strip`) are for an order.
+- **SAVE IS NEVER DISABLED FOR AN INVALID FORM** (Design System artboard 14,
+  rule 5.2). It reveals every error, marks each tab "⚠ n", and moves to the
+  first tab with one. Retry shows only when the server could not be reached or
+  timed out (rule 5.5).
+- **A DIALOG THAT LIVES ON A PAGE LOADS ITS CHOICES WHEN IT OPENS**, never at
+  construction. `CommitteeFormComponent` owns its shell and sits on the list
+  and the record page whether or not it is open.
+- **No migration.**
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

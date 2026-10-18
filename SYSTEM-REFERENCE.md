@@ -4022,6 +4022,64 @@ request, and the dialog stayed open. Found by trying it on 16 Oct; the code
 predated this slice. In Change role mode the person control is now disabled,
 so it is not validated, and a spec requires the request and the close.
 
+### 3.17 Editing a committee in Formation (ACC-238)
+
+PR 1 of the committee changes plan (`backend/Plans/step-238-committee-changes.md`,
+Ahmad's rules of 15 Oct and decisions of 18 Oct). A committee is edited directly
+only while it is FORMING; after approval its details change only through a
+change request (ACC-239 / ACC-240, not built yet).
+
+- **The record page's read carries the stage KEY.** `GET /committees/:id` is
+  `CommitteesService.getCommitteeDetail()`: the row plus `currentStageKey` and
+  `isDissolving`, from the same `committeeStagesAndCounts()` the list rows read,
+  so the two cannot disagree. Internal callers keep `getCommitteeById()`.
+- **What the header offers, by key** (`frontend/.../committees/committee-stage.ts`,
+  `committeeHeaderOffers()`):
+  - `formation`: Edit, with `committees:edit_details`.
+  - `terms_review`: no Edit; the locked line "Locked while the terms are under
+    review. Revise Terms to change it." for holders of `committees:edit_details`.
+    Revise Terms is the seeded RETURN transition (terms_review → formation,
+    `committees:manage`).
+  - Any other key, or none: nothing new. The transition buttons stay as the
+    live workflow renders them.
+  - The page reads the committee again after every transition, because the key
+    just changed.
+  - **The API does NOT refuse a direct edit outside Formation yet.** That is
+    ACC-241, required before the first customer (plan §7, which also fixes its
+    lock order).
+- **The stale save.** The dialog sends `expectedUpdatedAt`, the `updatedAt` it
+  loaded. `updateCommittee()` takes the committee's row lock (`FOR UPDATE`,
+  scoped by organisation, after the hierarchy lock when there is one) and
+  compares. A difference is 409 `COMMITTEE_CHANGED`
+  (`committee-edit-refusal.ts`), with nothing written. Omitted, the save is not
+  compared, for callers other than the dialog.
+  - Proved against a real Postgres (`committee-stale-save.db-spec.ts`): two
+    saves from one loaded dialog (the second refused, the row and the audit
+    count unchanged), and two pressed at once, ten times (exactly one commits).
+  - Mutation-checked: dropping the comparison turns 2 database tests and
+    1 unit test red; dropping the row lock turns the concurrent test red.
+- **Quorum before Submit for Approval.** A committee leaves `formation` by an
+  ADVANCE only with `quorumCount` of at least 1: 409
+  `COMMITTEE_QUORUM_NOT_SET`, said by the transition buttons from its code.
+  - It is the first entry in `TRANSITION_PRECONDITIONS`
+    (`backend/src/foundation/workflow/transition-preconditions.ts`): per record
+    type, FAIL OPEN, reading the record and never a permission.
+  - The engine runs it early (before a deciding vote is recorded) and again
+    inside the stage-change transaction, reading the committee FOR SHARE: the
+    authoritative check.
+- **The ACC-233 refusals read as the dialog does.** `COMMITTEE_OWN_PARENT` and
+  `COMMITTEE_PARENT_DISSOLVING` now say "parent committee".
+- **The two permission sentences** (`roles.matrix.sentence`):
+  - `committees:edit_details`: "Edit a committee in Formation and request changes after approval".
+  - `committees:approve`: "Approve terms, changes and dissolutions".
+- **The dialog** is §10.21's tab strip plus `CommitteeFormComponent`, which now
+  owns its whole dialog shell (Add and Edit use it alike). The rules are in its
+  header comment: three tabs and one Save; Save never disabled; Reload on a
+  stale save; Retry only when the server could not be reached; Reports to
+  follows Parent. Its pickers' choices are read on every opening, never at
+  construction, because the dialog sits on the list and the record page whether
+  or not it is open.
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +
@@ -7574,7 +7632,32 @@ sorts uses it.
   no toolbar Sort control exists. Removing the host's `aria-sort` turned 12 of
   them red (mutation-checked).
 
-### 10.21 `AmConfirmService.ask()` — the One Confirm (ACC-120 slice 10)
+### 10.21 `am-tab-strip` — a Tabbed Dialog (ACC-238)
+
+`shared/components/tab-strip/`. The first tab pattern in the app, for a dialog
+whose groups of fields are filled in ANY order and saved by one Save. A
+stepped dialog (`am-step-strip`) is the other shape, for an order with Next and
+Back.
+
+- **In the dialog header** (`headerExtra`), like the step strip, so it costs
+  nothing against the 420px body cap and does not change between tabs.
+- **A WAI-ARIA tablist:** each tab is a `role="tab"` button with
+  `aria-selected` and `aria-controls` (`{idPrefix}-panel-{id}`). One tab stop
+  (roving tabindex). The arrows move and select in reading order (in Arabic the
+  left arrow is next), and Home and End go to the ends.
+- **A tab with problems** shows "⚠ n" and says the count to a screen reader
+  (`plural.shell.tabProblems`).
+- **Nothing renders below two tabs.**
+- **The caller renders the panels.** The committee dialog puts every panel in
+  ONE grid cell with the others `visibility: hidden`, so the body holds the
+  tallest tab and the footer never moves. A hidden panel is out of the tab
+  order and the accessibility tree.
+- **Specs:** `tab-strip.component.spec.ts` (ARIA, keys both ways, the error
+  mark in both languages), and `committee-form.layout.spec.ts` (the heights).
+  Switching hidden panels to `display: none` turns the layout spec red
+  (mutation-checked).
+
+### 10.22 `AmConfirmService.ask()` — the One Confirm (ACC-120 slice 10)
 
 `shared/components/confirm/am-confirm.service.ts`, rendered by
 `am-confirm-host` (`confirm-host.component.ts`), which the app shell holds

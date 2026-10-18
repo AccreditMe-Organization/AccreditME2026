@@ -9,8 +9,15 @@ import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
 import { ChangeCommitteeMemberRoleDto } from './dto/change-committee-member-role.dto';
 import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
-import { ICommittee, ICommitteeListItem, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
+import {
+  ICommittee,
+  ICommitteeDetail,
+  ICommitteeListItem,
+  ICommitteeMember,
+  ICommitteeMembershipEvent,
+} from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
+import { CommitteeChangedException } from './committee-edit-refusal';
 
 /**
  * ACC-233 — the value an update SETS, only when it differs from what is stored;
@@ -69,6 +76,21 @@ export class CommitteesService {
       throw new NotFoundException('Committee not found');
     }
     return committee;
+  }
+
+  // ACC-238 — the record page's read: the committee plus its current stage KEY
+  // and whether that key says it is dissolving, so the page decides what to
+  // offer (Edit in Formation, the locked line in Terms Review) by key, never by
+  // a stage name. Read by the same helper as the list rows, so the two agree.
+  // Internal callers keep getCommitteeById(), which costs one query.
+  async getCommitteeDetail(id: string, organizationId: string): Promise<ICommitteeDetail> {
+    const committee = await this.getCommitteeById(id, organizationId);
+    const fact = (await committeeStagesAndCounts(this.prisma, organizationId, [committee.id])).get(committee.id);
+    return {
+      ...committee,
+      currentStageKey: fact?.stageKey ?? null,
+      isDissolving: fact?.isDissolving ?? false,
+    };
   }
 
   // ACC-233 — the reference checks and the write are ONE transaction. A create
@@ -147,8 +169,20 @@ export class CommitteesService {
     const { existing, committee } = await this.prisma.$transaction(async (tx) => {
       if (touchesHierarchy) await lockCommitteeHierarchy(tx, organizationId);
 
+      // ACC-238 — the committee's row lock, after the hierarchy lock (always in
+      // that order), so two saves of one committee queue here and the second
+      // reads the first's `updatedAt`. Scoped by organisation: another
+      // organisation's id locks nothing and gets the same 404 as a missing one.
+      await tx.$queryRaw`SELECT id FROM "Committee" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
+
       const before = await tx.committee.findFirst({ where: { id, organizationId } });
       if (!before) throw new NotFoundException('Committee not found');
+
+      // ACC-238 — the stale save. The dialog sends the `updatedAt` it loaded;
+      // a committee changed since then is refused, and nothing is written.
+      if (dto.expectedUpdatedAt !== undefined && new Date(dto.expectedUpdatedAt).getTime() !== before.updatedAt.getTime()) {
+        throw new CommitteeChangedException();
+      }
 
       // Only a value that CHANGES is checked. The dialog sends every field, and
       // a committee whose parent has since begun dissolving (or whose unit was

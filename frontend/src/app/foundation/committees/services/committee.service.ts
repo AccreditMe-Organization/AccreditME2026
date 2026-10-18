@@ -55,6 +55,15 @@ export interface CommitteeListItemDto extends CommitteeDto {
   isDissolving: boolean;
 }
 
+// ACC-238 — a single committee as its record page reads it (GET /committees/:id):
+// the row plus its current stage key and whether that key says it is
+// dissolving. The page offers Edit, the locked line and the rest by KEY, never by
+// a stage name. Separate from CommitteeDto for CommitteeListItemDto's reason.
+export interface CommitteeDetailDto extends CommitteeDto {
+  currentStageKey: string | null;
+  isDissolving: boolean;
+}
+
 export interface CommitteeMemberDto {
   id: string;
   organizationId: string;
@@ -97,7 +106,11 @@ export interface CreateCommitteeDto {
   reportingToCommitteeId?: string | null;
 }
 
-export type UpdateCommitteeDto = Partial<CreateCommitteeDto>;
+export type UpdateCommitteeDto = Partial<CreateCommitteeDto> & {
+  // ACC-238 — the committee's updatedAt as the dialog loaded it. A committee
+  // changed since is refused with 409 COMMITTEE_CHANGED and nothing is saved.
+  expectedUpdatedAt?: string;
+};
 
 export interface AddCommitteeMemberDto {
   userId: string;
@@ -162,8 +175,8 @@ export class CommitteeService {
     return this.http.get<CommitteeListItemDto[]>(this.base);
   }
 
-  getById(id: string): Observable<CommitteeDto> {
-    return this.http.get<CommitteeDto>(`${this.base}/${id}`);
+  getById(id: string): Observable<CommitteeDetailDto> {
+    return this.http.get<CommitteeDetailDto>(`${this.base}/${id}`);
   }
 
   create(dto: CreateCommitteeDto): Observable<CommitteeDto> {

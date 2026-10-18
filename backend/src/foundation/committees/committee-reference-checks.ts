@@ -17,11 +17,11 @@ import { isDissolvingStageKey } from '../workflow/workflow-stage-keys';
  * `lockCommitteeHierarchy()`, so the walk and the write see the same tree.
  */
 export const COMMITTEE_REFUSALS = {
-  COMMITTEE_OWN_PARENT: "A committee can't be its own parent.",
+  COMMITTEE_OWN_PARENT: "A committee can't be its own parent committee.",
   COMMITTEE_REPORTS_TO_ITSELF: "A committee can't report to itself.",
   COMMITTEE_PARENT_LOOP: "A committee can't sit under one of its own sub-committees.",
   COMMITTEE_REPORTS_TO_LOOP: "A committee can't report to a committee that reports to it.",
-  COMMITTEE_PARENT_DISSOLVING: "A committee that is being dissolved, or has been, can't be a parent.",
+  COMMITTEE_PARENT_DISSOLVING: "A committee that is being dissolved, or has been, can't be a parent committee.",
   COMMITTEE_REPORTS_TO_DISSOLVING: "A committee can't report to a committee that is being dissolved, or has been.",
   COMMITTEE_PARENT_NOT_FOUND: "That parent committee doesn't exist.",
   COMMITTEE_REPORTS_TO_NOT_FOUND: "That committee doesn't exist.",

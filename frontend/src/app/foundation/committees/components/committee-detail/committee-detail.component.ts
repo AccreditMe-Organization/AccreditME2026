@@ -15,6 +15,7 @@ import { CommitteeSubCommitteesPanelComponent } from '../committee-sub-committee
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   CommitteeService,
+  CommitteeDetailDto,
   CommitteeDto,
   CommitteeListItemDto,
   CommitteeMemberDto,
@@ -40,6 +41,7 @@ import { CommitteeMemberFormComponent } from '../committee-member-form/committee
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { COMMITTEE_HEADER_GRID, COMMITTEE_PANEL_GRID } from './committee-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
+import { committeeHeaderOffers } from '../../committee-stage';
 
 /** ACC-174/177 — the task-row dialogs this page opens, one at a time. */
 type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
@@ -144,17 +146,30 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                   (transitioned)="onWorkflowTransitioned($event)"
                 />
               }
-              @if (canEdit()) {
+              <!-- ACC-238 — Edit in Formation only, decided by the stage KEY
+                   (committee-stage.ts), after the transition buttons. canEdit()
+                   is the endpoint's own permission (committees:edit_details),
+                   read here as well so the gate is visible where it applies. -->
+              @if (canEdit() && offers().edit) {
                 <p-button
                   [label]="'common.edit' | translate"
                   icon="pi pi-pencil"
                   size="small"
                   [outlined]="true"
                   (onClick)="onEdit()"
+                  data-testid="committee-edit"
                 />
               }
             </div>
           </div>
+          @if (offers().lockedLine) {
+            <!-- ACC-238 — Terms Review: read-only. Said to the people who
+                 could edit in Formation, so a missing Edit is explained. -->
+            <p class="am-cd__locked" data-testid="committee-locked-line">
+              <i class="pi pi-lock" aria-hidden="true"></i>
+              {{ 'committee.lockedTermsReview' | translate }}
+            </p>
+          }
 
           <!-- Dense fact strip, replacing the four stat cards. Six short values
                do not need six bordered boxes; they need to be readable in one
@@ -354,15 +369,6 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
       </div>
     }
 
-    <ng-template #committeeFormTpl>
-      @if (committee(); as c) {
-        <app-committee-form
-          [committee]="c"
-          (saved)="onCommitteeSaved()"
-          (cancelled)="formVisible.set(false)"
-        />
-      }
-    </ng-template>
     <!-- Declared HERE, not inside the form: p-dialog collects pTemplate
          children at content init, so a footer arriving later never lands. -->
     <!-- The step strip belongs to the HEADER, beside the title and the
@@ -375,10 +381,13 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     <ng-template #taskFooterTpl>
       <app-task-form-footer [form]="taskFormRef()" />
     </ng-template>
-    <app-edit-dialog
-      [(visible)]="formVisible"
-      [header]="'committee.editCommittee' | translate"
-      [content]="committeeFormTpl"
+    <!-- ACC-238 — the three-tab Edit dialog owns its own dialog shell. -->
+    <app-committee-form
+      [visible]="formVisible()"
+      (visibleChange)="formVisible.set($event)"
+      [committee]="committee()"
+      (saved)="onCommitteeSaved()"
+      (reloaded)="committee.set($event)"
     />
 
     <ng-template #taskFormTpl>
@@ -428,13 +437,25 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
       [dirty]="memberFormDirty()"
     />
   `,
+  styles: [
+    `
+      .am-cd__locked {
+        display: flex;
+        align-items: center;
+        gap: var(--am-space-8);
+        margin: 0;
+        padding: 0 18px var(--am-space-12);
+        font-size: var(--am-type-meta-size);
+        color: var(--am-ink-500);
+      }
+    `,
+  ],
 })
 export class CommitteeDetailComponent implements OnInit {
   /** ACC-232 — never wider than the page; see committee-panel-grid.ts. */
   protected readonly panelGrid = COMMITTEE_PANEL_GRID;
   protected readonly headerGrid = COMMITTEE_HEADER_GRID;
 
-  @ViewChild('committeeFormTpl', { read: TemplateRef, static: true }) committeeFormTpl!: TemplateRef<unknown>;
   @ViewChild('memberFormTpl', { read: TemplateRef, static: true }) memberFormTpl!: TemplateRef<unknown>;
 
   private readonly route = inject(ActivatedRoute);
@@ -451,7 +472,7 @@ export class CommitteeDetailComponent implements OnInit {
 
   readonly committeeId = this.route.snapshot.paramMap.get('id')!;
 
-  readonly committee = signal<CommitteeDto | null>(null);
+  readonly committee = signal<CommitteeDetailDto | null>(null);
 
   constructor() {
     // ACC-79 — the browser tab names the committee. This page's H1 lives in its
@@ -529,6 +550,8 @@ export class CommitteeDetailComponent implements OnInit {
   // never computed at runtime, so checking the specific string here is correct
   // and not a narrowing.
   readonly canEdit = computed(() => this.navigationAccess.hasPermission('committees:edit_details'));
+  // ACC-238 — Edit and the Terms Review locked line, by the committee's stage KEY.
+  readonly offers = computed(() => committeeHeaderOffers(this.committee()?.currentStageKey, this.canEdit()));
   readonly canAddMember = computed(() => this.navigationAccess.hasPermission('committees:add_member'));
   readonly canRemoveMember = computed(() =>
     this.navigationAccess.hasPermission('committees:remove_member'),
@@ -642,7 +665,6 @@ export class CommitteeDetailComponent implements OnInit {
   }
 
   onCommitteeSaved(): void {
-    this.formVisible.set(false);
     this.loadCommittee();
     // The committee's own row in allCommittees() is now stale — its name feeds
     // any sibling's parent lookup, and its stage feeds the header pill.
@@ -762,6 +784,9 @@ export class CommitteeDetailComponent implements OnInit {
   // redundant re-fetch of the instance itself.
   onWorkflowTransitioned(instance: WorkflowInstanceDto): void {
     this.setCurrentInstance(instance);
+    // ACC-238 — the stage KEY decides Edit and the locked line, and it just
+    // changed: read the committee again.
+    this.loadCommittee();
     // ACC-76 — the SECOND instance of the stale-panel bug Ahmad found on the
     // stage timeline, in a different place. The header's stage pill reads
     // currentStageName(), which derives from allCommittees() — loaded once in

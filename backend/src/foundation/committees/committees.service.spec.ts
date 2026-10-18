@@ -283,6 +283,42 @@ describe('CommitteesService', () => {
     });
   });
 
+  // ── getCommitteeDetail (ACC-238) ─────────────────────────────────────────────
+
+  describe('getCommitteeDetail', () => {
+    it("adds the current stage's key and whether it is dissolving, read through the list helper", async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+      mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
+      mockPrisma.workflowInstance.findMany.mockResolvedValue([{ objectId: 'committee-1', currentStageId: 'stage-dp' }]);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { id: 'stage-dp', nameEn: 'Dissolution Pending', nameAr: null, key: 'dissolution_pending' },
+      ]);
+
+      const result = await service.getCommitteeDetail('committee-1', ORG_A);
+
+      expect(result).toMatchObject({ id: 'committee-1', currentStageKey: 'dissolution_pending', isDissolving: true });
+      expect(mockPrisma.workflowInstance.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, objectType: 'COMMITTEE' }) }),
+      );
+    });
+
+    it('a committee with no workflow instance has no key and is not dissolving', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+      mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
+      mockPrisma.workflowInstance.findMany.mockResolvedValue([]);
+
+      expect(await service.getCommitteeDetail('committee-1', ORG_A)).toMatchObject({ currentStageKey: null, isDissolving: false });
+    });
+
+    itEnforcesTenantIsolation('getCommitteeDetail committee read', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(service.getCommitteeDetail('committee-1', ORG_B)).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({ where: { id: 'committee-1', organizationId: ORG_B } });
+      expect(mockPrisma.workflowInstance.findMany).not.toHaveBeenCalled();
+    });
+  });
+
   // ── getCommitteeById ─────────────────────────────────────────────────────────
 
   describe('getCommitteeById', () => {
@@ -643,6 +679,61 @@ describe('CommitteesService', () => {
       await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR);
 
       expect(lockCalls()).toHaveLength(0);
+    });
+
+    // ── ACC-238 — the stale save ──────────────────────────────────────────────
+
+    const rowLockCalls = () =>
+      mockPrisma.$queryRaw.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join('?').includes('FOR UPDATE'));
+    const LOADED = new Date('2026-10-18T09:00:00.123Z');
+
+    it("locks the committee's row, scoped by organisation, before reading it", async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ updatedAt: LOADED }));
+      mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
+
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR);
+
+      expect(rowLockCalls()).toHaveLength(1);
+      expect(rowLockCalls()[0]!.slice(1)).toEqual(['committee-1', ORG_A]);
+      const rowLockOrder = mockPrisma.$queryRaw.mock.invocationCallOrder[mockPrisma.$queryRaw.mock.calls.indexOf(rowLockCalls()[0]!)]!;
+      expect(rowLockOrder).toBeLessThan(mockPrisma.committee.findFirst.mock.invocationCallOrder[0]!);
+    });
+
+    it('saves when the committee is unchanged since it was loaded', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ updatedAt: LOADED }));
+      mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
+
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.committee.update).toHaveBeenCalledWith(expect.objectContaining({ data: { nameEn: 'Renamed' } }));
+    });
+
+    it('refuses with 409 COMMITTEE_CHANGED when it changed since, and writes nothing', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ updatedAt: new Date('2026-10-18T09:05:00.000Z') }));
+
+      await expect(
+        service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_A, ACTOR),
+      ).rejects.toMatchObject({ code: 'COMMITTEE_CHANGED', status: 409 });
+
+      expect(mockPrisma.committee.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('a save without expectedUpdatedAt is not compared (callers other than the dialog)', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ updatedAt: new Date('2026-10-18T09:05:00.000Z') }));
+      mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
+
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.committee.update).toHaveBeenCalled();
+    });
+
+    it('another organisation gets the same 404 as a missing committee, before any comparison', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_B, ACTOR),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('an UNCHANGED parent is not checked again — a committee under a dissolving parent can still be renamed', async () => {
