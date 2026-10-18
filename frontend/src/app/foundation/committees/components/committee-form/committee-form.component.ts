@@ -223,7 +223,11 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
               [forceShowErrors]="showErrors()"
               [errorMessages]="errorKeys('quorumCount', { min: 'committee.form.quorumMin' })"
             >
-              <p-inputNumber inputId="cf-quorum" formControlName="quorumCount" [min]="0" [showButtons]="true" />
+              <!-- ACC-243 — fluid: the host fills its column and the input fills
+                   the host, with the spinner buttons inside it. Without it the
+                   input kept PrimeNG's default width (345px) in a 251px column
+                   and ran under Meeting Frequency. -->
+              <p-inputNumber inputId="cf-quorum" formControlName="quorumCount" [min]="0" [showButtons]="true" [fluid]="true" />
             </am-field>
             <am-field
               data-cf-field="meetingFrequency"
@@ -393,10 +397,24 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
       .am-cf__panel--off {
         visibility: hidden;
       }
+      /* Two columns that can shrink, with the forms' pair gap (edit profile's
+         am-ep-pair). Each cell, and the number input inside it, may shrink to
+         its column: a control's own width never decides the column's
+         (ACC-243). */
       .am-cf__pair {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: var(--am-space-12);
+      }
+      .am-cf__pair > * {
+        min-inline-size: 0;
+      }
+      /* The input is inside PrimeNG's own template, so it is reached with
+         ::ng-deep, scoped under this form's pair. */
+      .am-cf__pair ::ng-deep .p-inputnumber,
+      .am-cf__pair ::ng-deep .p-inputnumber-input {
+        inline-size: 100%;
+        min-inline-size: 0;
       }
       .am-cf__foot {
         display: flex;
