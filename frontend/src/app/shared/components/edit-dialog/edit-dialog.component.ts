@@ -98,9 +98,27 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
            dialog still on screen. Found in a browser; the specs passed either
            way, because they assert on the host's flag and the confirm, and
            PrimeNG's internal state is neither. -->
+      <!-- ACC-243 — the ✕ sits on the TITLE's own row, so it is level with the
+           title in every dialog, however much the header holds below it (a
+           context line, a step strip, a tab strip). It used to be the header's
+           second column, centred on the whole heading: with a tab strip in the
+           header that put it 36px below the title, and kept the strip out of
+           its column, so the tab underline stopped short of the right edge. -->
       <ng-template pTemplate="header">
         <div class="am-dialog__heading">
-          <span class="p-dialog-title">{{ header() }}</span>
+          <div class="am-dialog__title-row">
+            <span class="p-dialog-title">{{ header() }}</span>
+            @if (!saving()) {
+              <button
+                type="button"
+                class="am-dialog__close"
+                [attr.aria-label]="'common.close' | translate"
+                (click)="requestClose()"
+              >
+                <i class="pi pi-times" aria-hidden="true"></i>
+              </button>
+            }
+          </div>
           @if (context()) {
             <span class="am-dialog__context">{{ context() }}</span>
           }
@@ -108,16 +126,6 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
             <ng-container *ngTemplateOutlet="extra; injector: injector" />
           }
         </div>
-        @if (!saving()) {
-          <button
-            type="button"
-            class="am-dialog__close"
-            [attr.aria-label]="'common.close' | translate"
-            (click)="requestClose()"
-          >
-            <i class="pi pi-times" aria-hidden="true"></i>
-          </button>
-        }
       </ng-template>
 
       @if (visible()) {
@@ -192,6 +200,24 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
         gap: 2px;
         min-inline-size: 0;
         flex: 1 1 auto;
+      }
+
+      /* The title and the ✕, level. The ✕'s negative block margins keep the
+         row as tall as the title line, so no header grew when it moved here
+         (ACC-243): the 32px target overhangs the line equally above and
+         below, centred on it. */
+      .am-dialog__title-row {
+        display: flex;
+        align-items: center;
+        gap: var(--am-space-12);
+        min-inline-size: 0;
+      }
+      .am-dialog__title-row .p-dialog-title {
+        flex: 1 1 auto;
+        min-inline-size: 0;
+      }
+      .am-dialog__title-row .am-dialog__close {
+        margin-block: -6px;
       }
 
       /* 32px, above the 24px WCAG 2.5.8 floor, and the same size PrimeNG's own

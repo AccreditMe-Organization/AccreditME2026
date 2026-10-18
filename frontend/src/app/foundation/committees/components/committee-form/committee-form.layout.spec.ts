@@ -35,6 +35,12 @@ import { CommitteeFormComponent, CommitteeFormTab } from './committee-form.compo
 
 const CAP = 420;
 const ROOM = 20;
+/** The forms' pair gap (--am-space-12): the least room between two columns (ACC-243). */
+const GAP = 12;
+/** Sub-pixel layout leaves 11.9999 for a 12px gap; the defect this guards against measured -82. */
+const SUBPIXEL = 0.1;
+/** The dialog's width at 1280 (its own 560, untouched) and on a 390px phone, where it is the screen's width. */
+const WIDTHS = [1280, 390] as const;
 const FLOOR = 60;
 const TABS: readonly CommitteeFormTab[] = ['identity', 'governance', 'structure'];
 
@@ -87,7 +93,11 @@ describe('CommitteeForm — three tabs against the 420px body cap (ACC-238)', ()
   let fixture: ComponentFixture<CommitteeFormComponent>;
   const measured: string[] = [];
 
-  async function open(language: 'en' | 'ar', update = () => of(EDITING) as never): Promise<CommitteeFormComponent> {
+  async function open(
+    language: 'en' | 'ar',
+    update = () => of(EDITING) as never,
+    editing: CommitteeDetailDto | null = EDITING,
+  ): Promise<CommitteeFormComponent> {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [CommitteeFormComponent],
@@ -111,7 +121,7 @@ describe('CommitteeForm — three tabs against the 420px body cap (ACC-238)', ()
     TestBed.inject(TranslateService).use(language);
     document.documentElement.dir = TestBed.inject(LanguageService).isRtl() ? 'rtl' : 'ltr';
     fixture = TestBed.createComponent(CommitteeFormComponent);
-    fixture.componentRef.setInput('committee', EDITING);
+    fixture.componentRef.setInput('committee', editing);
     fixture.componentRef.setInput('visible', true);
     await settle();
     return fixture.componentInstance;
@@ -160,6 +170,82 @@ describe('CommitteeForm — three tabs against the 420px body cap (ACC-238)', ()
     expect(new Set(TABS.map((t) => h[t].body)).size).withContext(`${label} [${language}] one body height for all tabs`).toBe(1);
   }
 
+  /**
+   * ACC-243 — at 390 the dialog is the screen's width (PrimeNG's own
+   * breakpoint), measured live. A Karma window cannot be 390 wide, so the
+   * dialog is given that width; at 1280 it keeps its own 560.
+   */
+  async function atWidth(width: (typeof WIDTHS)[number]): Promise<void> {
+    if (width === 390) document.querySelector<HTMLElement>('.p-dialog')!.style.width = '390px';
+    await settle();
+    await dialogStill();
+  }
+
+  /**
+   * Boxes are read only once the dialog has stopped animating. PrimeNG opens it
+   * with a scale transform, and a box read mid-way is that much smaller: the
+   * 12px gap read as 11.16 (scale 0.93) before this wait. Heights are read with
+   * scrollHeight, which a transform does not change.
+   */
+  async function dialogStill(): Promise<void> {
+    const dialog = document.querySelector<HTMLElement>('.p-dialog')!;
+    for (let i = 0; i < 100; i++) {
+      // Its drawn width equals its laid-out width once no scale applies (a
+      // resting transform may remain, so the transform itself is not read).
+      if (Math.abs(dialog.getBoundingClientRect().width - dialog.offsetWidth) <= 0.01) return;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    fail('the dialog never stopped animating');
+  }
+
+  /**
+   * Each visible field's CONTROL box: the union of the control area and every
+   * control inside it — the inner input included. The field wrapper alone
+   * cannot see the defect ACC-243 fixed: the wrapper fitted its column while
+   * PrimeNG's number input inside it ran 94px out of it.
+   */
+  function controlBoxes(tab: CommitteeFormTab): { name: string; l: number; r: number; t: number; b: number }[] {
+    return Array.from(panel(tab).querySelectorAll<HTMLElement>('[data-cf-field]')).map((field) => {
+      const parts = [field.querySelector('.am-field__control'), ...Array.from(field.querySelectorAll('.am-field__control input, .am-field__control textarea, .am-field__control .p-inputnumber, .am-field__control .am-overlay-select-trigger'))]
+        .filter((el): el is Element => !!el)
+        .map((el) => el.getBoundingClientRect());
+      return {
+        name: field.getAttribute('data-cf-field')!,
+        l: Math.min(...parts.map((r) => r.left)),
+        r: Math.max(...parts.map((r) => r.right)),
+        t: Math.min(...parts.map((r) => r.top)),
+        b: Math.max(...parts.map((r) => r.bottom)),
+      };
+    });
+  }
+
+  /** No two fields' boxes overlap; two side by side keep at least the form gap; nothing leaves the body. */
+  function assertNoOverlap(label: string, tab: CommitteeFormTab): number[] {
+    const boxes = controlBoxes(tab);
+    expect(boxes.length).withContext(`${label} ${tab}: fields found`).toBeGreaterThan(0);
+    for (const box of boxes) expect(box.r - box.l).withContext(`${label} ${tab} ${box.name} is laid out`).toBeGreaterThan(40);
+    const gaps: number[] = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!;
+        const b = boxes[j]!;
+        const sameRow = a.t < b.b && b.t < a.b;
+        if (!sameRow) continue;
+        const gap = Math.max(b.l - a.r, a.l - b.r);
+        gaps.push(Math.round(gap));
+        expect(gap).withContext(`${label} ${tab}: ${a.name} and ${b.name} ${gap < 0 ? 'overlap' : 'gap'} ${Math.round(gap)}px`).toBeGreaterThanOrEqual(GAP - SUBPIXEL);
+      }
+    }
+    const b = body();
+    const inner = b.getBoundingClientRect();
+    for (const box of boxes) {
+      expect(box.l).withContext(`${label} ${tab} ${box.name} starts inside the body`).toBeGreaterThanOrEqual(Math.floor(inner.left));
+      expect(box.r).withContext(`${label} ${tab} ${box.name} ends inside the body`).toBeLessThanOrEqual(Math.ceil(inner.right));
+    }
+    expect(b.scrollWidth).withContext(`${label} ${tab}: no sideways scroll`).toBeLessThanOrEqual(b.clientWidth);
+    return gaps;
+  }
+
   afterAll(() => {
     // The numbers recorded in step-238-committee-changes.md §11.
     console.log(`ACC-238 measurements\n${measured.join('\n')}`);
@@ -187,6 +273,52 @@ describe('CommitteeForm — three tabs against the 420px body cap (ACC-238)', ()
         await settle();
         expect(f.reportsToPrefilled()).toBe(true);
         assertFits('reports-to filled in', language, await heights(f));
+      });
+
+      // ACC-243 — the two-column rows, on every tab, at both widths, for Edit
+      // and for New committee (the same tabs). Heights are asserted again at
+      // each width: the body never scrolls, holds one height, keeps its room.
+      for (const width of WIDTHS) {
+        for (const mode of ['edit', 'new'] as const) {
+          it(`${mode} at ${width}: no two fields overlap, columns keep the form gap, and every tab still fits`, async () => {
+            const f = await open(language, undefined, mode === 'edit' ? EDITING : null);
+            await atWidth(width);
+            const sideBySide: string[] = [];
+            for (const tab of TABS) {
+              f.tab.set(tab);
+              await settle();
+              const gaps = assertNoOverlap(`${mode} ${width}`, tab);
+              if (gaps.length) sideBySide.push(`${tab} ${gaps.join('/')}px`);
+            }
+            // Non-vacuity: Identity (the names) and Governance (quorum and
+            // frequency) each have a row of two, so the gap rule was exercised.
+                    expect(sideBySide.length).withContext(`${mode} ${width} [${language}] side-by-side rows measured`).toBe(2);
+            measured.push(`${mode} at ${width} [${language}] column gaps: ${sideBySide.join(', ')}`);
+            const h = await heights(f);
+            assertFits(`${mode} at ${width}`, language, h);
+          });
+        }
+      }
+
+      // ACC-243 — the ✕ is level with the title, and the tab underline spans
+      // the header's full content width (it used to stop where the ✕'s
+      // column began, and the ✕ sat 36px below the title).
+      it('the ✕ is level with the title, and the tab strip spans the header', async () => {
+        await open(language);
+        await dialogStill();
+        const header = document.querySelector<HTMLElement>('.p-dialog-header')!;
+        const cs = getComputedStyle(header);
+        const h = header.getBoundingClientRect();
+        const contentLeft = h.left + parseFloat(cs.paddingLeft);
+        const contentRight = h.right - parseFloat(cs.paddingRight);
+        const title = document.querySelector('.p-dialog-title')!.getBoundingClientRect();
+        const close = document.querySelector('.am-dialog__close')!.getBoundingClientRect();
+        const strip = document.querySelector('[role="tablist"]')!.getBoundingClientRect();
+        expect(title.height).withContext('the title is laid out').toBeGreaterThan(10);
+        expect(Math.abs((close.top + close.bottom) / 2 - (title.top + title.bottom) / 2)).withContext('✕ centre against title centre').toBeLessThanOrEqual(1);
+        expect(Math.abs(strip.left - contentLeft)).withContext('strip starts at the header content edge').toBeLessThanOrEqual(1);
+        expect(Math.abs(strip.right - contentRight)).withContext('strip ends at the header content edge').toBeLessThanOrEqual(1);
+        measured.push(`header [${language}]: title centre ${((title.top + title.bottom) / 2).toFixed(1)}, ✕ centre ${((close.top + close.bottom) / 2).toFixed(1)}; strip ${strip.left.toFixed(0)}–${strip.right.toFixed(0)} of ${contentLeft.toFixed(0)}–${contentRight.toFixed(0)}`);
       });
 
       it('someone else saved first: the footer line does not grow the body', async () => {
