@@ -1,7 +1,6 @@
 import { Component, computed, inject, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslateService } from '@ngx-translate/core';
-import { ConfirmationService } from 'primeng/api';
 import { Observable } from 'rxjs';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -17,6 +16,7 @@ import { TaskEditDialogComponent } from '../task-edit-dialog/task-edit-dialog.co
 import { TaskCancelDialogComponent } from '../task-cancel-dialog/task-cancel-dialog.component';
 import { TaskReopenDialogComponent } from '../task-reopen-dialog/task-reopen-dialog.component';
 import { TaskEvidenceDialogComponent } from '../task-evidence-dialog/task-evidence-dialog.component';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 type DialogId = 'addEvidence' | 'evidence' | 'reject' | 'release' | 'request' | 'decision' | 'reassign' | 'edit' | 'cancel' | 'reopen';
 
@@ -91,7 +91,7 @@ export class TaskActionHostComponent {
   private readonly tasks = inject(TaskService);
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
-  private readonly confirmation = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly router = inject(Router);
 
   /** The task an action finished on (refresh that row, or the list). */
@@ -141,10 +141,11 @@ export class TaskActionHostComponent {
         if (row.actions.completeNeedsEvidence) return;
         // Confirmed first, as the committee page always did: completing
         // finishes the task for every other assignee on it too.
-        this.confirmation.confirm({
+        this.amConfirm.ask({
+          tone: 'neutral',
           message: this.translate.instant('task.confirmComplete', { title: this.titleOf(row) }),
           header: this.translate.instant('common.confirm'),
-          icon: 'pi pi-check-circle',
+          acceptLabel: this.translate.instant('task.complete'),
           accept: () => this.call(row.id, this.tasks.complete(row.id)),
         });
         return;

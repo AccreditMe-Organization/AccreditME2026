@@ -5,11 +5,11 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { ConfirmationService } from 'primeng/api';
 import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 @Component({
   selector: 'app-workflow-template-list',
@@ -112,7 +112,7 @@ export class WorkflowTemplateListComponent implements OnInit {
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
 
   // ACC-123 — workflows:manage, the permission both write endpoints carry
@@ -145,11 +145,11 @@ export class WorkflowTemplateListComponent implements OnInit {
 
   onDeactivate(template: WorkflowTemplateDto, event: Event): void {
     event.stopPropagation();
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('workflow.confirmDeactivateTemplate', { name: template.nameEn }),
       header: this.translate.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('confirm.deactivateTemplate'),
       accept: () => {
         this.workflowTemplateService.deactivateTemplate(template.id).subscribe({
           next: () => this.loadTemplates(),

@@ -22,6 +22,7 @@ import { WorkflowTransitionEditorComponent } from './workflow-transition-editor.
 import { WorkflowTransitionDto } from '../../services/workflow-template.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { pickBilingualName } from '../../../../shared/utils/bilingual-name.util';
+import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 
 const EXISTING: WorkflowTransitionDto = {
   id: 'transition-1',
@@ -549,5 +550,84 @@ describe('WorkflowTransitionEditorComponent — trigger role in the table (ACC-8
     ]);
     expect(rowText(el)[0]).not.toContain('Auditor');
     expect(rowText(el)[1]).not.toContain('Auditor');
+  });
+});
+
+// ACC-120 slice 10 — the Actions dialog is a raw p-dialog, so it registers on
+// the layer stack itself and answers Escape only while it is the top layer.
+// Before this it was on no stack: PrimeNG's own Escape went by z-index, and
+// once Remove action's confirm returned focus to the trash button, that
+// button's tooltip held the top z-index and Escape no longer closed the dialog.
+describe('WorkflowTransitionEditorComponent — the Actions dialog is a layer (ACC-120 slice 10)', () => {
+  let fixture: ComponentFixture<WorkflowTransitionEditorComponent>;
+  let component: WorkflowTransitionEditorComponent;
+  let layers: LayerStackService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [WorkflowTransitionEditorComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        ConfirmationService,
+      ],
+    });
+    fixture = TestBed.createComponent(WorkflowTransitionEditorComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('stageId', 'stage-1');
+    fixture.componentRef.setInput('transitions', [EXISTING]);
+    fixture.componentRef.setInput('availableStages', []);
+    layers = TestBed.inject(LayerStackService);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.match(() => true).forEach((r) => r.flush([]));
+  });
+
+  afterEach(() => {
+    document.querySelectorAll('.p-dialog, .p-dialog-mask').forEach((n) => n.remove());
+  });
+
+  const escape = (): void => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+  };
+
+  it('holds a layer while open, and releases it on close', () => {
+    expect(layers.depth()).withContext('nothing open yet').toBe(0);
+    component.openActions(EXISTING);
+    fixture.detectChanges();
+    expect(component.showActionsDialog()).toBeTrue();
+    expect(layers.depth()).toBe(1);
+
+    component.showActionsDialog.set(false);
+    fixture.detectChanges();
+    expect(layers.depth()).toBe(0);
+  });
+
+  it('one Escape closes it while it is the top layer', () => {
+    component.openActions(EXISTING);
+    fixture.detectChanges();
+    escape();
+    expect(component.showActionsDialog()).toBeFalse();
+    expect(layers.depth()).toBe(0);
+  });
+
+  it('Escape leaves it open while a layer above it (a confirm) owns Escape', () => {
+    component.openActions(EXISTING);
+    fixture.detectChanges();
+    const confirmLayer = layers.push();
+    escape();
+    expect(component.showActionsDialog()).withContext('the confirm owns this Escape').toBeTrue();
+
+    layers.remove(confirmLayer);
+    escape();
+    expect(component.showActionsDialog()).withContext('and the next one closes the dialog').toBeFalse();
+  });
+
+  it('ignores Escape while closed', () => {
+    const spy = spyOn(component.showActionsDialog, 'set').and.callThrough();
+    escape();
+    expect(spy).not.toHaveBeenCalled();
   });
 });

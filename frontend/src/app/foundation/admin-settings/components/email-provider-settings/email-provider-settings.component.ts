@@ -3,7 +3,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { ConfirmationService } from 'primeng/api';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
@@ -12,6 +11,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { SecretFieldComponent } from '../../../../shared/components/secret-field/secret-field.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /*
  * ACC-181 — the email provider screen, to "AccreditMe Settings Screens"
@@ -267,7 +267,7 @@ const isolate = (text: string) => `\u2068${text}\u2069`;
 export class EmailProviderSettingsComponent implements OnInit {
   private readonly tenantService = inject(TenantService);
   private readonly translate = inject(TranslateService);
-  private readonly confirmation = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly isolate = isolate;
@@ -420,13 +420,12 @@ export class EmailProviderSettingsComponent implements OnInit {
 
   disconnect(): void {
     const name = this.translate.instant(`emailSettings.providerName.${this.stored()?.provider ?? this.provider()}`);
-    this.confirmation.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       header: this.translate.instant('emailSettings.disconnectConfirmHeader', { provider: name }),
       message: this.translate.instant('emailSettings.disconnectConfirmMessage'),
       acceptLabel: this.translate.instant('emailSettings.disconnect'),
       rejectLabel: this.translate.instant('common.cancel'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
       accept: () => {
         this.disconnecting.set(true);
         this.tenantService.disconnectEmailConfig().subscribe({

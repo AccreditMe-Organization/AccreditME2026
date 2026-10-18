@@ -3,7 +3,6 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
-import { ConfirmationService } from 'primeng/api';
 import { map } from 'rxjs';
 import { AuthService } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
@@ -30,6 +29,7 @@ import { CoverOption, OutOfOfficeDialogComponent } from './out-of-office-dialog.
 import { TwoStepOffDialogComponent } from './two-step-off-dialog.component';
 import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
 import { USER_PANEL_GRID } from './user-panel-grid';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /** One row of the Roles panel. */
 export interface RoleRow {
@@ -427,7 +427,7 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly statusActions = inject(UserStatusActionsService);
 
   readonly userId = this.route.snapshot.paramMap.get('id')!;
@@ -716,12 +716,12 @@ export class UserRecordComponent implements OnInit, OnDestroy {
       form.onSubmit();
       return;
     }
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       header: this.translate.instant('manageRoles.confirmNoRolesTitle', { name: this.user()?.name ?? '' }),
       message: this.translate.instant('manageRoles.confirmNoRolesBody'),
       acceptLabel: this.translate.instant('manageRoles.confirmNoRolesAccept'),
       rejectLabel: this.translate.instant('common.cancel'),
-      acceptButtonStyleClass: 'p-button-danger',
       accept: () => form.onSubmit(),
     });
   }

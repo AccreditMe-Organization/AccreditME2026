@@ -16,7 +16,6 @@ import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { InputTextModule } from 'primeng/inputtext';
-import { ConfirmationService } from 'primeng/api';
 import { LookupService, LookupCategoryDto, LookupValueDto } from '../../services/lookup.service';
 import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
@@ -36,6 +35,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /**
  * Lookup values — ACC-120 slice 6, Template 1.
@@ -377,7 +377,7 @@ export class LookupValueListComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly languageService = inject(LanguageService);
   private readonly navigationAccess = inject(NavigationAccessService);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly translate = inject(TranslateService);
   private readonly fb = inject(FormBuilder);
 
@@ -579,11 +579,11 @@ export class LookupValueListComponent implements OnInit {
    * rather than asking an abstract "are you sure".
    */
   onDelete(val: LookupValueDto): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       header: this.translate.instant('common.confirm'),
       message: this.translate.instant('lookup.deleteConfirm', { name: this.effectiveLabel(val) }),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('confirm.deleteValue'),
       accept: () => {
         this.lookupService.removeValue(val.id).subscribe({
           next: () => this.loadValues(),

@@ -4,7 +4,6 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { NgClass } from '@angular/common';
 import { forkJoin } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { ConfirmationService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
@@ -38,6 +37,7 @@ import {
   triState,
 } from '../../permission-matrix/permission-matrix.model';
 import { LeaveGuarded } from '../../permission-matrix/leave-guard';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 // ACC-120 — the tenant's ROOT ROLE, frozen server-side (assignPermissions
 // refuses it), and the Platform Administrator role, frozen in every
@@ -518,7 +518,7 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
-  private readonly confirmation = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -942,13 +942,12 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   canLeave(): boolean | Promise<boolean> {
     if (this.readOnly() || this.changeCount() === 0) return true;
     return new Promise<boolean>((resolve) => {
-      this.confirmation.confirm({
+      this.amConfirm.ask({
+        tone: 'destructive',
         header: this.translate.instant('roles.matrix.leaveHeader'),
         message: this.translate.instant('roles.matrix.leaveMessage'),
         acceptLabel: this.translate.instant('roles.matrix.leave'),
         rejectLabel: this.translate.instant('roles.matrix.stay'),
-        acceptButtonProps: { severity: 'danger' },
-        rejectButtonProps: { severity: 'secondary', outlined: true },
         accept: () => resolve(true),
         reject: () => resolve(false),
       });

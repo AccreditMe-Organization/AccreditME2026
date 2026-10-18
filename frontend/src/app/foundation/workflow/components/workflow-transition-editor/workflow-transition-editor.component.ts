@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, Input, Output, EventEmitter, OnInit, OnChanges, TemplateRef, ViewChild, computed, effect, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -11,7 +11,6 @@ import { TextareaModule } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
 import { RadioButtonModule } from 'primeng/radiobutton';
 import { MessageModule } from 'primeng/message';
-import { ConfirmationService } from 'primeng/api';
 import {
   WorkflowTemplateService,
   WorkflowStageDto,
@@ -79,6 +78,8 @@ const TRIGGER_CONDITIONS = [
   { label: 'ASSIGNEE_POOL', value: 'ASSIGNEE_POOL' },
 ];
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
+import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 // ACC-208 — literal keys, so the translation-keys spec sees each one.
 const KIND_LABEL_KEYS: Record<WorkflowTransitionKind, string> = {
   ADVANCE: 'workflow.kind.advance',
@@ -525,6 +526,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
         (visibleChange)="showActionsDialog.set($event)"
         [header]="'workflow.actions' | translate"
         [modal]="true"
+        [closeOnEscape]="false"
         [style]="{ width: '560px' }"
       >
         @if (actionsTransition(); as transition) {
@@ -639,7 +641,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly roleService = inject(RoleService);
   private readonly fb = inject(FormBuilder);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly translate = inject(TranslateService);
 
@@ -887,6 +889,37 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     validatorConfig: [''],
   });
 
+  // ACC-120 slice 10 — the Actions dialog is a raw p-dialog, so it is put on
+  // the layer stack here and answers Escape itself (closeOnEscape is off).
+  // PrimeNG's own Escape closes a dialog only while it holds the highest
+  // z-index, and a tooltip takes that: once Remove action's confirm returned
+  // focus to the trash button, its tooltip showed and Escape stopped closing
+  // this dialog at all. Registered here, before any confirm opens, so a confirm
+  // above it is still the top layer when this runs and only the confirm closes.
+  private actionsLayerId: number | null = null;
+
+  constructor() {
+    const layers = inject(LayerStackService);
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || this.actionsLayerId === null || !layers.isTop(this.actionsLayerId)) return;
+      event.stopPropagation();
+      this.showActionsDialog.set(false);
+    };
+    document.addEventListener('keydown', onKeydown);
+    effect(() => {
+      if (this.showActionsDialog()) {
+        if (this.actionsLayerId === null) this.actionsLayerId = layers.push();
+      } else if (this.actionsLayerId !== null) {
+        layers.remove(this.actionsLayerId);
+        this.actionsLayerId = null;
+      }
+    });
+    inject(DestroyRef).onDestroy(() => {
+      document.removeEventListener('keydown', onKeydown);
+      if (this.actionsLayerId !== null) layers.remove(this.actionsLayerId);
+    });
+  }
+
   ngOnInit(): void {
     this.roleService.listAllRoles().subscribe({ next: (roles) => this.roles.set(roles) });
     this.loadPermissions();
@@ -1084,11 +1117,11 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   }
 
   onRemove(transition: WorkflowTransitionDto): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('workflow.confirmRemoveTransition', { name: transition.labelEn }),
       header: this.translate.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('confirm.removeTransition'),
       accept: () => {
         this.workflowTemplateService.removeTransition(transition.id).subscribe({
           next: () => this.changed.emit(),

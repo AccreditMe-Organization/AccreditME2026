@@ -1,11 +1,11 @@
 import { Injectable, inject } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
-import { ConfirmationService } from 'primeng/api';
 import { FormatService } from '../../../core/formatting';
 import { LanguageService } from '../../../core/services/language.service';
 import { extractErrorMessage } from '../../../shared/utils/http-error.util';
 import { RoleService, UserRoleGrantDto } from '../../roles/services/role.service';
 import { IUserDto, UserService } from './user.service';
+import { AmConfirmService } from '../../../shared/components/confirm/am-confirm.service';
 
 /**
  * ACC-120 slice 5 — the three status actions, written ONCE for both screens
@@ -56,7 +56,7 @@ export interface UserStatusActionResult {
 
 @Injectable({ providedIn: 'root' })
 export class UserStatusActionsService {
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly userService = inject(UserService);
   private readonly roleService = inject(RoleService);
   private readonly translate = inject(TranslateService);
@@ -81,11 +81,11 @@ export class UserStatusActionsService {
   // immediately after the action completes instead of guessed at in the
   // confirmation copy.
   confirmDeactivate(user: IUserDto, result: UserStatusActionResult): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('user.deactivateConfirm', { name: user.name }),
       header: this.translate.instant('user.deactivate'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('user.deactivate'),
       accept: () => {
         this.userService.deactivate(user.id).subscribe({
           next: ({ reassignedCount, unassignedCount }) =>
@@ -143,7 +143,8 @@ export class UserStatusActionsService {
             roles: roles.map((r) => this.languageService.bilingual(r.nameEn, r.nameAr)).join(', '),
           });
 
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'neutral',
       // ONE key, with the roles sentence passed INTO it: word order and
       // punctuation belong to the translation (check:confirm-translated).
       message: this.translate.instant('user.reactivateConfirm', {
@@ -151,7 +152,7 @@ export class UserStatusActionsService {
         roles: roleLine,
       }),
       header: this.translate.instant('user.reactivate'),
-      icon: 'pi pi-user-plus',
+      acceptLabel: this.translate.instant('user.reactivate'),
       accept: () => {
         this.userService.reactivate(user.id).subscribe({
           next: ({ returnedTaskCount }) =>
@@ -173,14 +174,14 @@ export class UserStatusActionsService {
    * says the email becomes free again.
    */
   confirmRevokeInvitation(user: IUserDto, result: UserStatusActionResult): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('user.revokeInvitationConfirm', {
         name: user.name,
         email: user.email,
       }),
       header: this.translate.instant('user.revokeInvitation'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('user.revokeInvitation'),
       accept: () => {
         this.userService.revokeInvitation(user.id).subscribe({
           next: () =>

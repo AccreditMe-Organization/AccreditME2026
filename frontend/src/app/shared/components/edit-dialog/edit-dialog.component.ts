@@ -16,11 +16,12 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { Dialog, DialogModule } from 'primeng/dialog';
-import { ConfirmationService, PrimeTemplate } from 'primeng/api';
+import { PrimeTemplate } from 'primeng/api';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LayerStackService } from '../../overlay/layer-stack.service';
 import { ListFocusService } from '../data-list/list-focus.service';
 import { DIALOG_DENSITY, DialogDensity } from './dialog-density';
+import { AmConfirmService } from '../confirm/am-confirm.service';
 
 /**
  * The three dialog sizes (ACC-111, artboard 7). A size is a KIND of dialog,
@@ -396,7 +397,7 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
 
   private readonly layers = inject(LayerStackService);
   private readonly listFocus = inject(ListFocusService);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly translate = inject(TranslateService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -603,23 +604,18 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
       return;
     }
 
-    // The confirm is a layer of ours too. PrimeNG's own dialog decides Escape
-    // by comparing z-indexes rather than by consuming the event, so without
-    // this the confirm would close AND this handler would run again.
-    const confirmLayer = this.layers.push();
-    const release = (): void => this.layers.remove(confirmLayer);
-
-    this.confirmationService.confirm({
+    // The confirm is a layer of its own (AmConfirmService.ask() pushes one for
+    // every confirm), so this dialog's capture-phase Escape handler stands
+    // aside while it is open: PrimeNG decides Escape by z-index rather than by
+    // consuming the event, and without the layer the confirm would close AND
+    // this handler would run again.
+    this.amConfirm.ask({
+      tone: 'destructive',
       header: this.translate.instant('dialog.discardHeader'),
       message: this.translate.instant('dialog.discardMessage'),
       acceptLabel: this.translate.instant('dialog.discard'),
       rejectLabel: this.translate.instant('dialog.keepEditing'),
-      acceptButtonStyleClass: 'p-button-danger',
-      accept: () => {
-        release();
-        this.visibleChange.emit(false);
-      },
-      reject: release,
+      accept: () => this.visibleChange.emit(false),
     });
   }
 

@@ -17,6 +17,8 @@
     "check:action-gating:selftest": "node scripts/check-action-gating.selftest.mjs",
     "check:field-control": "node scripts/check-field-control.mjs",
     "check:confirm-translated": "node scripts/check-confirm-translated.mjs",
+    "check:confirm-through-helper": "node scripts/check-confirm-through-helper.mjs",
+    "check:confirm-through-helper:selftest": "node scripts/check-confirm-through-helper.selftest.mjs",
     "check:reserved-slugs": "node scripts/check-reserved-slugs.mjs",
     "check:vercel-config": "node scripts/check-vercel-config.mjs",
     "check:permission-sentences": "node scripts/check-permission-sentences.mjs",

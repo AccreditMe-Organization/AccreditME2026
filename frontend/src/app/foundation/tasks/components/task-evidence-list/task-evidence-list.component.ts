@@ -1,7 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { ConfirmationService } from 'primeng/api';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { FilesService } from '../../../../shared/files/files.service';
@@ -9,6 +8,7 @@ import { FileViewerService } from '../../../../shared/files/viewer/file-viewer.s
 import { IViewableFile } from '../../../../shared/files/viewer/file-viewer.model';
 import { FormatService } from '../../../../core/formatting';
 import { ITaskEvidenceDto, ITaskEvidenceListDto, TaskService } from '../../services/task.service';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /**
  * A task's evidence — ACC-177, the drawing's Evidence panel (Task Screens §1,
@@ -251,7 +251,7 @@ export class TaskEvidenceListComponent {
   private readonly files = inject(FilesService);
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
-  private readonly confirmation = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly viewer = inject(FileViewerService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -374,7 +374,8 @@ export class TaskEvidenceListComponent {
   }
 
   confirmRemove(item: ITaskEvidenceDto): void {
-    this.confirmation.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       header: this.translate.instant('task.evidence.removeTitle'),
       // A file goes to the recycle bin for 30 days; a link or a reference is gone.
       message: this.translate.instant(item.file ? 'task.evidence.removeMessageFile' : 'task.evidence.removeMessage', {
@@ -382,8 +383,6 @@ export class TaskEvidenceListComponent {
       }),
       acceptLabel: this.translate.instant('task.evidence.removeConfirm'),
       rejectLabel: this.translate.instant('task.evidence.keep'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
       accept: () => this.remove(item),
     });
   }

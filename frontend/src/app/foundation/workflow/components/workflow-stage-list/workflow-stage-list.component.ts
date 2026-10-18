@@ -3,7 +3,6 @@ import { ActivatedRoute } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
-import { ConfirmationService } from 'primeng/api';
 import {
   WorkflowTemplateService,
   WorkflowTemplateDto,
@@ -26,6 +25,7 @@ import {
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 @Component({
   selector: 'app-workflow-stage-list',
@@ -274,7 +274,7 @@ export class WorkflowStageListComponent implements OnInit {
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly route = inject(ActivatedRoute);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
 
   readonly loading = signal(false);
   readonly reordering = signal(false);
@@ -414,11 +414,11 @@ export class WorkflowStageListComponent implements OnInit {
   }
 
   onRemove(stage: WorkflowStageDto): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('workflow.confirmRemoveStage', { name: stage.nameEn }),
       header: this.translate.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('confirm.removeStage'),
       accept: () => {
         this.workflowTemplateService.removeStage(stage.id).subscribe({
           next: () => this.loadTemplate(),

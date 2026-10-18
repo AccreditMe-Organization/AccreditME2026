@@ -4,7 +4,6 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import { FormsModule } from '@angular/forms';
-import { ConfirmationService } from 'primeng/api';
 import { UserService, IUserDto } from '../../services/user.service';
 import {
   OrgPositionService,
@@ -39,6 +38,7 @@ import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-us
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 export type RowAction =
   | 'manageRoles'
@@ -404,7 +404,7 @@ export class UserListComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly orgUnitService = inject(OrgUnitService);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly router = inject(Router);
@@ -684,14 +684,14 @@ export class UserListComponent implements OnInit {
       form.onSubmit();
       return;
     }
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       header: this.translate.instant('manageRoles.confirmNoRolesTitle', {
         name: this.rolesUser()?.name ?? '',
       }),
       message: this.translate.instant('manageRoles.confirmNoRolesBody'),
       acceptLabel: this.translate.instant('manageRoles.confirmNoRolesAccept'),
       rejectLabel: this.translate.instant('common.cancel'),
-      acceptButtonStyleClass: 'p-button-danger',
       accept: () => form.onSubmit(),
     });
   }

@@ -5,7 +5,6 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
-import { ConfirmationService } from 'primeng/api';
 import { RoleService, RoleDto } from '../../services/role.service';
 import { RoleFormComponent } from '../role-form/role-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
@@ -21,6 +20,7 @@ import { StatusChipComponent } from '../../../../shared/components/status-chip/s
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { AmCountPipe } from '../../../../core/formatting';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 @Component({
   selector: 'app-role-list',
@@ -245,7 +245,7 @@ export class RoleListComponent {
   private readonly roleService = inject(RoleService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
 
   private readonly translate = inject(TranslateService);
   private readonly languageService = inject(LanguageService);
@@ -369,11 +369,11 @@ export class RoleListComponent {
 
   onDeactivate(role: RoleDto): void {
     const label = this.displayLabel(role);
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translate.instant('roles.confirmDeactivateRole', { name: label }),
       header: this.translate.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translate.instant('roles.deactivateRole'),
       accept: () => {
         this.runDeactivate(role);
       },

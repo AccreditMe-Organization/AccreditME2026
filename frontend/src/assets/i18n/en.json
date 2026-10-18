@@ -2462,5 +2462,14 @@
       "evidence_removed": "Evidence removed",
       "changed": "Changed"
     }
+  },
+  "confirm": {
+    "deleteValue": "Delete value",
+    "keepHandover": "Keep handover",
+    "endCover": "End cover",
+    "removeAction": "Remove action",
+    "removeStage": "Remove stage",
+    "deactivateTemplate": "Deactivate template",
+    "removeTransition": "Remove transition"
   }
 }

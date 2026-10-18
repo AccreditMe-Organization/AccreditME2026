@@ -25,7 +25,6 @@ import { FormatService } from '../../../../core/formatting';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { TagModule } from 'primeng/tag';
-import { ConfirmationService } from 'primeng/api';
 import {
   OrgUnitHeadService,
   IOrgUnitHeadStatus,
@@ -34,6 +33,7 @@ import { OrgPositionService, IOrgPositionDto } from '../../../org-position/servi
 import { UserService } from '../../../user/services/user.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { AmDatePipe } from '../../../../core/formatting';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 // ACC-40 Section 2.2/2.3 — this panel renders purely from
 // OrgUnitHeadService.getHeadStatus()'s LIVE derivation (holders,
@@ -278,7 +278,7 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   private readonly orgUnitHeadService = inject(OrgUnitHeadService);
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly userService = inject(UserService);
-  private readonly confirmationService = inject(ConfirmationService);
+  private readonly amConfirm = inject(AmConfirmService);
   private readonly translateService = inject(TranslateService);
 
   readonly loading = signal(false);
@@ -358,11 +358,11 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   }
 
   onVacate(): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translateService.instant('orgUnitHead.vacateConfirmMessage'),
       header: this.translateService.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translateService.instant('orgUnitHead.vacate'),
       accept: () => {
         this.acting.set(true);
         this.error.set(null);
@@ -423,11 +423,12 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   }
 
   onCancelHandover(): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translateService.instant('orgUnitHead.cancelHandoverConfirmMessage'),
       header: this.translateService.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translateService.instant('orgUnitHead.cancelHandover'),
+      rejectLabel: this.translateService.instant('confirm.keepHandover'),
       accept: () => {
         this.acting.set(true);
         this.error.set(null);
@@ -453,11 +454,11 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   }
 
   onClearActingHead(): void {
-    this.confirmationService.confirm({
+    this.amConfirm.ask({
+      tone: 'destructive',
       message: this.translateService.instant('orgUnitHead.actingHeadClearConfirmMessage'),
       header: this.translateService.instant('common.confirm'),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: { severity: 'danger' },
+      acceptLabel: this.translateService.instant('confirm.endCover'),
       accept: () => {
         this.acting.set(true);
         this.error.set(null);
