@@ -13,6 +13,7 @@ import { ChangeCommitteeMemberRoleDto } from './dto/change-committee-member-role
 import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
 import {
   ICommittee,
+  ICommitteeDetail,
   ICommitteeListItem,
   ICommitteeMember,
   ICommitteeMemberRow,
@@ -43,8 +44,8 @@ export class CommitteesController {
 
   @Get(':id')
   @Permissions(COMMITTEES_PERMISSIONS.VIEW)
-  getCommitteeById(@Param('id') id: string, @CurrentTenant() tenantId: string): Promise<ICommittee> {
-    return this.committeesService.getCommitteeById(id, tenantId);
+  getCommitteeById(@Param('id') id: string, @CurrentTenant() tenantId: string): Promise<ICommitteeDetail> {
+    return this.committeesService.getCommitteeDetail(id, tenantId);
   }
 
   @Post()

@@ -64,7 +64,7 @@ describe('CommitteesController', () => {
   let lists: { members: jest.Mock; subCommittees: jest.Mock };
   let service: {
     listCommittees: jest.Mock;
-    getCommitteeById: jest.Mock;
+    getCommitteeDetail: jest.Mock;
     createCommittee: jest.Mock;
     updateCommittee: jest.Mock;
     listMembers: jest.Mock;
@@ -77,7 +77,7 @@ describe('CommitteesController', () => {
   beforeEach(async () => {
     service = {
       listCommittees: jest.fn().mockResolvedValue([MOCK_COMMITTEE]),
-      getCommitteeById: jest.fn().mockResolvedValue(MOCK_COMMITTEE),
+      getCommitteeDetail: jest.fn().mockResolvedValue(MOCK_COMMITTEE),
       createCommittee: jest.fn().mockResolvedValue(MOCK_COMMITTEE),
       updateCommittee: jest.fn().mockResolvedValue(MOCK_COMMITTEE),
       listMembers: jest.fn().mockResolvedValue([MOCK_MEMBER]),
@@ -117,10 +117,11 @@ describe('CommitteesController', () => {
     expect(result).toEqual([MOCK_COMMITTEE]);
   });
 
-  it('getCommitteeById delegates to the service', async () => {
+  // ACC-238 — the record page's read carries the stage key, from getCommitteeDetail().
+  it("getCommitteeById delegates to the service's detail read", async () => {
     const result = await controller.getCommitteeById('committee-1', TENANT_ID);
 
-    expect(service.getCommitteeById).toHaveBeenCalledWith('committee-1', TENANT_ID);
+    expect(service.getCommitteeDetail).toHaveBeenCalledWith('committee-1', TENANT_ID);
     expect(result).toEqual(MOCK_COMMITTEE);
   });
 

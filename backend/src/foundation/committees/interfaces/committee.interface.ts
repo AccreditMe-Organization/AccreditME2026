@@ -54,6 +54,15 @@ export interface ICommitteeListItem extends ICommittee {
   isDissolving: boolean;
 }
 
+// ACC-238 — a single committee as its record page reads it: the row plus its
+// current stage key and whether that key says it is dissolving, from the same
+// helper as the list rows. Separate from ICommittee for ICommitteeListItem's
+// reason: an optional field filled by one endpoint is a trap.
+export interface ICommitteeDetail extends ICommittee {
+  currentStageKey: string | null;
+  isDissolving: boolean;
+}
+
 export interface ICommitteeMember {
   id: string;
   organizationId: string;
