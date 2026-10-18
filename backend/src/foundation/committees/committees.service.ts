@@ -17,6 +17,7 @@ import {
   ICommitteeMembershipEvent,
 } from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
+import { committeeTypeValues } from './committee-type-values';
 import { CommitteeChangedException } from './committee-edit-refusal';
 
 /**
@@ -56,7 +57,10 @@ export class CommitteesService {
 
     // ACC-230 — the counts and stages are read by the one helper the
     // Sub-committees list also reads, so the two cannot disagree.
-    const facts = await committeeStagesAndCounts(this.prisma, organizationId, committees.map((c) => c.id));
+    const [facts, types] = await Promise.all([
+      committeeStagesAndCounts(this.prisma, organizationId, committees.map((c) => c.id)),
+      committeeTypeValues(this.prisma, organizationId, committees.map((c) => c.typeValueId)),
+    ]);
     return committees.map((committee) => {
       const fact = facts.get(committee.id);
       return {
@@ -66,6 +70,7 @@ export class CommitteesService {
         currentStageNameAr: fact?.stageNameAr ?? null,
         currentStageKey: fact?.stageKey ?? null,
         isDissolving: fact?.isDissolving ?? false,
+        typeValue: types.get(committee.typeValueId) ?? null,
       };
     });
   }
@@ -85,11 +90,16 @@ export class CommitteesService {
   // Internal callers keep getCommitteeById(), which costs one query.
   async getCommitteeDetail(id: string, organizationId: string): Promise<ICommitteeDetail> {
     const committee = await this.getCommitteeById(id, organizationId);
-    const fact = (await committeeStagesAndCounts(this.prisma, organizationId, [committee.id])).get(committee.id);
+    const [facts, types] = await Promise.all([
+      committeeStagesAndCounts(this.prisma, organizationId, [committee.id]),
+      committeeTypeValues(this.prisma, organizationId, [committee.typeValueId]),
+    ]);
+    const fact = facts.get(committee.id);
     return {
       ...committee,
       currentStageKey: fact?.stageKey ?? null,
       isDissolving: fact?.isDissolving ?? false,
+      typeValue: types.get(committee.typeValueId) ?? null,
     };
   }
 
