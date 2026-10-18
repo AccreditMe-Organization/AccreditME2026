@@ -7574,6 +7574,63 @@ sorts uses it.
   no toolbar Sort control exists. Removing the host's `aria-sort` turned 12 of
   them red (mutation-checked).
 
+### 10.21 `AmConfirmService.ask()` — the One Confirm (ACC-120 slice 10)
+
+`shared/components/confirm/am-confirm.service.ts`, rendered by
+`am-confirm-host` (`confirm-host.component.ts`), which the app shell holds
+once. **Every confirmation goes through `ask()`.** `npm run
+check:confirm-through-helper` fails a `ConfirmationService.confirm(`
+anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
+
+- **The call:** `ask({ tone, header, message, acceptLabel, rejectLabel?,
+  accept, reject?, opener? })`. `acceptLabel` is REQUIRED and is the action's
+  verb ("Deactivate role", "Vacate Head"), never Yes. A blank `acceptLabel`,
+  `header` or `message` throws before anything opens. `rejectLabel` defaults
+  to Cancel. `reject` runs for Cancel, ×, and Escape alike.
+- **`tone` decides the buttons and the focus, and nothing else may.** No call
+  passes button classes, props or an icon.
+  - `destructive`: the action is filled `--am-danger-ink` (#B42318) with white
+    text, 6.57:1, pinned in `check:contrast`. PrimeNG's own danger red is
+    #EF4444, which fails AA with white. **Cancel has focus.**
+  - `neutral`: the action is filled primary and **has focus**.
+  - Cancel is always a text button, so the safe choice never looks like the
+    main one.
+  - PrimeNG's `defaultFocus` does nothing in v21 (it looks for classes the
+    buttons don't carry, and nothing calls it), and its dialog focuses the first
+    footer button. So `ask()` moves focus once, the first time focus enters
+    the confirm.
+- **Width:** `--am-dialog-confirm` (420px), capped at `calc(100vw - 32px)`, so
+  358 at 390. Before this, the width followed the message: 275–805px, and
+  edge to edge on a phone.
+- **Every confirm is a LAYER** (`LayerStackService`) while open. So one Escape
+  closes the confirm and never the dialog under it. Before this, only
+  edit-dialog's discard confirm pushed one, and an Escape on Vacate Head
+  closed the confirm AND the Head panel. `EditDialogComponent.requestClose()`
+  no longer pushes its own.
+- **Focus goes back on close**, to the element that had it when `ask()` ran,
+  or to `opener` if given. PrimeNG restores nothing; focus used to fall to
+  `<body>`. An opener inside a row menu (`[role=menu][id]`), which is gone
+  once the menu closes, resolves to the row's ⋯ through the trigger's
+  `aria-controls`. Focus is moved back only if nothing else took it, so an
+  accept that focuses something keeps that.
+- **A raw `p-dialog` that opens a confirm must be on the layer stack too.**
+  The one case is the transition editor's Actions dialog (Remove action).
+  PrimeNG's own Escape closes a dialog only while it holds the highest
+  z-index, and a tooltip takes that. Once focus returned to the trash button,
+  its tooltip showed and Escape no longer closed the dialog. The editor now
+  pushes a layer while the dialog is open and answers Escape itself
+  (`closeOnEscape` off, top layer only).
+- **The 23 calls and their tones:** neutral for Complete task and Reactivate
+  user, destructive for the other 21. Headers and messages are unchanged in
+  this PR; their wording is PR 2.
+- **Specs:**
+  - `am-confirm.service.spec.ts`: tone to classes, colour and focus; required
+    labels; layer push and pop on accept, Cancel and Escape; focus back,
+    including the ⋯ fallback.
+  - `confirm-over-dialog.spec.ts`: the Vacate Head case.
+  - The Actions-dialog block in `workflow-transition-editor.component.spec.ts`.
+  - Mutation-checked: ten mutations (no layer, focus, the danger class and ink, the text Cancel, focus return, the ⋯ fallback, the required label, and the Actions dialog's layer and its top-layer check) each turned at least one of these red.
+
 ## 11. Known Cross-Cutting Gaps
 
 **✅ Complete — built incrementally as each of Sections 1–10 above was
