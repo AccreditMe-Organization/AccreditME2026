@@ -1,9 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, NgZone, inject, input, output } from '@angular/core';
-import { Dir } from '@angular/cdk/bidi';
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { ConnectedPosition } from '@angular/cdk/overlay';
 import { ScrollDispatcher } from '@angular/cdk/scrolling';
-import { LanguageService } from '../../../core/services/language.service';
 import { LayerStackService } from '../../overlay/layer-stack.service';
 import { registerScrollableAncestors } from '../../overlay/scrollable-ancestors';
 
@@ -40,10 +38,12 @@ const POSITIONS: ConnectedPosition[] = [
  *   as OverlaySelectComponent does (shared/overlay/scrollable-ancestors.ts).
  *   Before this, scrolling <main> 60px left the menu 60px from its row.
  * - THE DIRECTION. CDK's root Directionality reads the page's direction once,
- *   at start-up, and never follows a language switch, so an Arabic session
- *   aligned the menu as if left-to-right and pushed it 48-60px off its ⋯. The
- *   trigger sits in a CDK [dir] that follows the session's language, which is
- *   what the menu trigger reads.
+ *   at start-up, and never followed a language switch, so an Arabic session
+ *   aligned the menu as if left-to-right and pushed it 48-60px off its ⋯.
+ *   ACC-235 wrapped this trigger in a CDK [dir]; ACC-237 replaced that with the
+ *   app-level fix: LanguageService keeps the ROOT Directionality current, and
+ *   the menu trigger passes that object to its overlay (cdk menu.mjs:704), so
+ *   every CDK menu follows a switch with nothing here.
  *
  * It is a LAYER while open (LayerStackService), so Escape closes the menu and
  * never the dialog or popup it sits in. The CDK menu handles the arrow keys,
@@ -56,10 +56,9 @@ const POSITIONS: ConnectedPosition[] = [
 @Component({
   selector: 'am-row-menu',
   standalone: true,
-  imports: [CdkMenu, CdkMenuItem, CdkMenuTrigger, Dir],
+  imports: [CdkMenu, CdkMenuItem, CdkMenuTrigger],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <span class="am-row-menu__dir" [dir]="language.isRtl() ? 'rtl' : 'ltr'">
     <button
       type="button"
       class="am-row-menu__trigger"
@@ -73,7 +72,6 @@ const POSITIONS: ConnectedPosition[] = [
     >
       <i class="pi pi-ellipsis-h" aria-hidden="true"></i>
     </button>
-    </span>
     <ng-template #menu>
       <div cdkMenu class="am-row-menu" data-testid="row-menu">
         @for (group of groups(); track $index; let first = $first) {
@@ -103,7 +101,6 @@ const POSITIONS: ConnectedPosition[] = [
   styles: [
     `
       :host{display:inline-flex;flex:none}
-      .am-row-menu__dir{display:contents}
       .am-row-menu__trigger{inline-size:26px;block-size:26px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:var(--am-radius-control);background:none;color:var(--am-ink-700);cursor:pointer}
       .am-row-menu__trigger:hover{background:var(--am-primary-50)}
       .am-row-menu__trigger:focus-visible,.am-row-menu__item:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
@@ -122,7 +119,6 @@ export class RowMenuComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly scrollDispatcher = inject(ScrollDispatcher);
   private readonly ngZone = inject(NgZone);
-  protected readonly language = inject(LanguageService);
   private unregisterScroll: (() => void) | null = null;
 
   readonly groups = input.required<RowMenuItem[][]>();
