@@ -4102,6 +4102,21 @@ change request (ACC-239 / ACC-240, not built yet).
   follows Parent. Its pickers' choices are read on every opening, never at
   construction, because the dialog sits on the list and the record page whether
   or not it is open.
+- **The dialog shows the committee's own values the moment it opens (ACC-246).**
+  Its type picker used to show its placeholder until its own `committee_type`
+  list arrived (half a second live; several seconds on a slow connection), and
+  opening it meanwhile gave an empty list over a value it did not contain.
+  - The committee's read (`GET /committees/:id`, and each list row) carries
+    `typeValue` — its own type's id, key and labels as `getValues()` labels it,
+    and `offered` (`committee-type-values.ts`). The picker shows it at once; a
+    type the organisation has since deactivated or hidden shows marked "no
+    longer offered", and is offered to no other committee. An owning unit since
+    deactivated is shown the same way.
+  - Owning unit, Parent and Reports to keep their value and read "Loading…",
+    disabled, until their own list arrives (a failed list releases them). Save
+    sends every value unchanged throughout: it never cleared the type, and the
+    column is NOT NULL.
+  - `committee-form.choices.spec.ts`, mutation-checked against the old code.
 
 ## 4. Notification System
 
