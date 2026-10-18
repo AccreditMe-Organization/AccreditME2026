@@ -15,8 +15,7 @@ import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 import { LayerStackService } from '../../shared/overlay/layer-stack.service';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { ConfirmDialogCloseLabel } from '../../shared/directives/confirm-dialog-close-label.directive';
+import { ConfirmHostComponent } from '../../shared/components/confirm/confirm-host.component';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { ImpersonationBannerComponent } from '../impersonation-banner/impersonation-banner.component';
@@ -51,8 +50,7 @@ export const SHELL_PHONE_BELOW_PX = 768;
   standalone: true,
   imports: [
     RouterOutlet,
-    ConfirmDialogModule,
-    ConfirmDialogCloseLabel,
+    ConfirmHostComponent,
     TopbarComponent,
     SidebarComponent,
     ImpersonationBannerComponent,
@@ -113,17 +111,11 @@ export const SHELL_PHONE_BELOW_PX = 768;
       </div>
     </div>
 
-    <!-- ACC-83 — the confirmation dialog's own chrome, fixed in the one place
-         it is declared.
-         amCloseLabel names the × button. PrimeNG's closeAriaLabel input does
-         NOT work here: ConfirmDialog accepts it and never forwards it to the
-         p-dialog it renders (verified against its inline template), and
-         closable: false would remove the button but also disable Escape. The
-         directive's header has the full reasoning.
-         The accept and reject labels need nothing here — LanguageService sets
-         PrimeNG's own accept/reject translations, so all 22 confirmations in
-         the app get them without passing anything. -->
-    <p-confirmDialog amCloseLabel />
+    <!-- ACC-120 slice 10 — the app's one confirmation dialog. Every confirm
+         goes through AmConfirmService.ask(), which sets its tone, verb, layer
+         and focus; the host owns the 420 width and the button styles, and
+         still carries amCloseLabel for the × (ACC-83). -->
+    <am-confirm-host />
   `,
   // ACC-38 — the same scroll-chaining bug ACC-36 fixed for
   // EditDialogComponent's own scroll area is not dialog-specific: this

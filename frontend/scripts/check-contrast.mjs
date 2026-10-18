@@ -68,6 +68,7 @@ const PAIRS = [
   { fg: 'surface-raised', bg: 'primary-600', min: TEXT, must: 'pass', use: 'primary button' },
   { fg: 'primary-600', bg: 'surface-raised', min: TEXT, must: 'pass', use: 'link' },
   { fg: 'danger-ink', bg: 'danger-bg', min: TEXT, must: 'pass', use: 'danger chip' },
+  { fg: 'surface-raised', bg: 'danger-ink', min: TEXT, must: 'pass', use: 'destructive confirm button (ACC-120 slice 10)' },
   { fg: 'warning-ink', bg: 'warning-bg', min: TEXT, must: 'pass', use: 'warning chip' },
   { fg: 'success-ink', bg: 'success-bg', min: TEXT, must: 'pass', use: 'success chip' },
   { fg: 'accent-500', bg: 'surface-raised', min: TEXT, must: 'fail', use: 'brand accent as text — never' },
