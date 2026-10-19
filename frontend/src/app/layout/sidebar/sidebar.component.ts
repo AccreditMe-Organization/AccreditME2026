@@ -1,5 +1,4 @@
 import { Component, DestroyRef, computed, effect, inject, input, untracked } from '@angular/core';
-import { Dir } from '@angular/cdk/bidi';
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { ConnectedPosition } from '@angular/cdk/overlay';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
@@ -10,7 +9,6 @@ import { SetupHealthService } from '../../foundation/setup-health/services/setup
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TooltipModule } from 'primeng/tooltip';
 import { AuthService } from '../../core/services/auth.service';
-import { LanguageService } from '../../core/services/language.service';
 import { LayerStackService } from '../../shared/overlay/layer-stack.service';
 import { AmCountPipe, FormatService } from '../../core/formatting';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
@@ -46,7 +44,6 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
     CdkMenu,
     CdkMenuItem,
     CdkMenuTrigger,
-    Dir,
   ],
   template: `
     <aside
@@ -152,12 +149,13 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
       @if (authService.currentUser(); as user) {
         <div class="flex-none p-2 border-t border-[var(--am-rail-rule)]">
           <!-- ACC-235 — a CDK menu, as am-row-menu: attached to the page body,
-               opening ABOVE its button and aligned to its start, inside a CDK
-               [dir] that follows the session's language. The p-menu popup it
-               replaces rendered inside the rail; on a 390px phone it covered
-               its own button in English and ran 78px off the screen in
-               Arabic. The trigger sets aria-haspopup itself. -->
-          <span class="contents" [dir]="language.isRtl() ? 'rtl' : 'ltr'">
+               opening ABOVE its button and aligned to its start. It follows a
+               language switch through the ROOT Directionality, which
+               LanguageService keeps current (ACC-237); the [dir] wrapper that
+               did this here is gone. The p-menu popup it replaces rendered
+               inside the rail; on a 390px phone it covered its own button in
+               English and ran 78px off the screen in Arabic. The trigger sets
+               aria-haspopup itself. -->
           <button
             type="button"
             class="am-rail-item w-full flex items-center gap-[9px] px-2 py-[6px] rounded-[7px] text-start"
@@ -194,7 +192,6 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
               </span>
             }
           </button>
-          </span>
           <ng-template #userMenuTpl>
             <div cdkMenu class="am-user-menu" data-testid="user-menu">
               <button type="button" cdkMenuItem class="am-user-menu__item" data-action="profile" (cdkMenuItemTriggered)="openProfile()">
@@ -286,7 +283,6 @@ export class SidebarComponent {
   readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
-  protected readonly language = inject(LanguageService);
   private readonly layers = inject(LayerStackService);
   private userMenuLayer: number | null = null;
 

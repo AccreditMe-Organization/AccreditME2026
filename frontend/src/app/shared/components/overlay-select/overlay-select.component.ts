@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { NG_VALUE_ACCESSOR, ControlValueAccessor } from '@angular/forms';
+import { Directionality } from '@angular/cdk/bidi';
 import { Overlay, OverlayRef, ScrollStrategy } from '@angular/cdk/overlay';
 import { TemplatePortal } from '@angular/cdk/portal';
 import { CdkListbox, CdkOption, ListboxValueChangeEvent } from '@angular/cdk/listbox';
@@ -392,6 +393,8 @@ function flattenHierarchy(
 })
 export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   private readonly overlay = inject(Overlay);
+  // The nearest [dir], else the root one LanguageService keeps current (ACC-237).
+  private readonly directionality = inject(Directionality);
   private readonly viewContainerRef = inject(ViewContainerRef);
   private readonly scrollDispatcher = inject(ScrollDispatcher);
   private readonly layers = inject(LayerStackService);
@@ -646,12 +649,20 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
       // scroll-dismiss fault this component was built to escape.
       assertOverlaySafe(this.triggerRef.nativeElement, scrollStrategy, 'OverlaySelectComponent');
 
+      // ACC-237 — the Directionality OBJECT, not its value. Given no direction,
+      // create() stores directionality.value as a string at creation
+      // (_overlay-module-chunk.mjs:2083), and this OverlayRef is reused for
+      // every open, so a language switch never reached it. With the object,
+      // getDirection() reads it live (:930-936), positioning asks on every
+      // apply (:1705), and each open's attach() rewrites the pane's dir
+      // (:783, :948-950).
       this.overlayRef = this.overlay.create({
         positionStrategy,
         scrollStrategy,
         hasBackdrop: true,
         backdropClass: 'cdk-overlay-transparent-backdrop',
         panelClass: 'am-overlay-select-overlay-panel',
+        direction: this.directionality,
       });
 
       this.overlayRef.backdropClick().subscribe(() => this.close());
