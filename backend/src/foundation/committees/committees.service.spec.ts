@@ -87,6 +87,13 @@ const mockPrisma = {
   workflowStage: {
     findMany: jest.fn(),
   },
+  // ACC-246 — the committee reads carry their own type's label.
+  lookupCategory: {
+    findFirst: jest.fn(),
+  },
+  lookupValue: {
+    findMany: jest.fn(),
+  },
   user: {
     findFirst: jest.fn(),
   },
@@ -111,6 +118,8 @@ describe('CommitteesService', () => {
     mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
     mockPrisma.workflowInstance.findMany.mockResolvedValue([]);
     mockPrisma.workflowStage.findMany.mockResolvedValue([]);
+    mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-committee-type' });
+    mockPrisma.lookupValue.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

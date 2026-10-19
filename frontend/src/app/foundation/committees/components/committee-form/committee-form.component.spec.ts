@@ -42,6 +42,7 @@ const committee = (id: string, over: Partial<CommitteeListItemDto> = {}): Commit
   currentStageNameAr: null,
   currentStageKey: 'formation',
   isDissolving: false,
+  typeValue: null,
   ...over,
 });
 

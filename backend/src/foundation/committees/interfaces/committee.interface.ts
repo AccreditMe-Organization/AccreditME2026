@@ -52,6 +52,10 @@ export interface ICommitteeListItem extends ICommittee {
   // server decides, so no screen keeps its own list of keys.
   currentStageKey: string | null;
   isDissolving: boolean;
+  // ACC-246 — the committee's own type, with its label: the Edit dialog shows
+  // it at once, and still shows one no longer offered. Null for an id that is
+  // no committee type in this organisation.
+  typeValue: ICommitteeTypeValue | null;
 }
 
 // ACC-238 — a single committee as its record page reads it: the row plus its
@@ -61,6 +65,17 @@ export interface ICommitteeListItem extends ICommittee {
 export interface ICommitteeDetail extends ICommittee {
   currentStageKey: string | null;
   isDissolving: boolean;
+  typeValue: ICommitteeTypeValue | null;
+}
+
+/** ACC-246 — see committee-type-values.ts. */
+export interface ICommitteeTypeValue {
+  id: string;
+  key: string;
+  labelEn: string;
+  labelAr: string | null;
+  /** Whether the type picker still offers it as a choice. */
+  offered: boolean;
 }
 
 export interface ICommitteeMember {

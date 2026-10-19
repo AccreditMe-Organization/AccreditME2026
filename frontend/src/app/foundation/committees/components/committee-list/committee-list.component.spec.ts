@@ -46,6 +46,7 @@ function committee(id: string, over: Partial<CommitteeListItemDto> = {}): Commit
     currentStageNameAr: 'نشطة',
     currentStageKey: 'active',
     isDissolving: false,
+    typeValue: null,
     ...over,
   };
 }

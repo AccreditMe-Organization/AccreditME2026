@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, ElementRef, WritableSignal, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -13,6 +13,7 @@ import {
   CommitteeDetailDto,
   CommitteeDto,
   CommitteeListItemDto,
+  CommitteeTypeValueDto,
   CreateCommitteeDto,
   UpdateCommitteeDto,
   COMMITTEE_MEETING_FREQUENCIES,
@@ -22,7 +23,9 @@ import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.s
 import {
   OrgUnitService,
   OrgUnitDto,
+  OrgUnitCascadeOption,
   buildOrgUnitCascadeOptions,
+  orgUnitDisplayName,
 } from '../../../organization/services/org-unit.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { refusalCode } from '../../../../core/http/refusal';
@@ -187,7 +190,7 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
               [options]="committeeTypeOptions()"
               optionLabel="label"
               optionValue="id"
-              [placeholder]="'committee.selectType' | translate"
+              [placeholder]="(typesReady() ? 'committee.selectType' : 'common.loading') | translate"
             />
           </am-field>
 
@@ -273,7 +276,7 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
               optionValue="value"
               optionGroupLabel="label"
               optionGroupChildren="items"
-              [placeholder]="'committee.selectOwningUnit' | translate"
+              [placeholder]="(unitsLoaded() ? 'committee.selectOwningUnit' : 'common.loading') | translate"
             />
           </am-field>
 
@@ -292,7 +295,7 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
               optionLabel="label"
               optionValue="id"
               [showClear]="true"
-              [placeholder]="'committee.noneOption' | translate"
+              [placeholder]="(committeesLoaded() ? 'committee.noneOption' : 'common.loading') | translate"
             />
           </am-field>
 
@@ -311,7 +314,7 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
               optionLabel="label"
               optionValue="id"
               [showClear]="true"
-              [placeholder]="'committee.noneOption' | translate"
+              [placeholder]="(committeesLoaded() ? 'committee.noneOption' : 'common.loading') | translate"
             />
           </am-field>
         </div>
@@ -475,6 +478,22 @@ export class CommitteeFormComponent {
   readonly committeeTypes = signal<LookupValueDto[]>([]);
   readonly allCommittees = signal<CommitteeListItemDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
+
+  /**
+   * ACC-246 — what each picker's list has done since this opening. Until a
+   * list arrives its picker says "Loading…" and cannot be opened, so it never
+   * shows a saved value as empty (Parent and Reports to read "None"), and never
+   * opens an empty list on a value it does not contain (the CDK's "Listbox has
+   * selected values that do not match any of its options"). The VALUE is kept
+   * throughout: a Save while loading sends it unchanged.
+   */
+  readonly typesLoaded = signal(false);
+  readonly unitsLoaded = signal(false);
+  readonly committeesLoaded = signal(false);
+  /** The committee's own type, from its read: shown before the list arrives, and when the list leaves it out. */
+  private readonly heldType = signal<CommitteeTypeValueDto | null>(null);
+  /** The type picker can show the saved type, or has its list. */
+  readonly typesReady = computed(() => this.typesLoaded() || this.heldType() !== null);
   /** True while fill() loads saved values, which must not move Reports to. */
   private filling = false;
   /** Bumped by every form change, so tab error counts recompute. */
@@ -504,9 +523,25 @@ export class CommitteeFormComponent {
   });
 
   // ACC-160 — options carry a RESOLVED label, recomputed on a language switch.
-  readonly committeeTypeOptions = computed(() =>
-    this.committeeTypes().map((v) => ({ ...v, label: this.languageService.bilingual(v.labelEn, v.labelAr) })),
-  );
+  //
+  // ACC-246 — plus the committee's OWN type when the list does not hold it:
+  // before the list has arrived, and when the organisation no longer offers it
+  // (deactivated or hidden, which getValues() leaves out). Then it is marked,
+  // and offered to no other committee: ACC-137's split, as the org-unit form
+  // applies it to a unit's type.
+  readonly committeeTypeOptions = computed(() => {
+    this.translate.currentLang();
+    const options: { id: string; label: string }[] = this.committeeTypes().map((v) => ({
+      ...v,
+      label: this.languageService.bilingual(v.labelEn, v.labelAr),
+    }));
+    const held = this.heldType();
+    if (held && held.id === this.loaded()?.typeValueId && !options.some((o) => o.id === held.id)) {
+      const label = this.languageService.bilingual(held.labelEn, held.labelAr);
+      options.push({ id: held.id, label: held.offered ? label : `${label} (${this.translate.instant('committee.form.notOffered')})` });
+    }
+    return options;
+  });
 
   // The frequencies in words — the raw enum values were shown before ACC-238.
   readonly frequencyOptions = computed(() => {
@@ -517,7 +552,20 @@ export class CommitteeFormComponent {
     }));
   });
 
-  readonly orgUnitCascadeOptions = computed(() => buildOrgUnitCascadeOptions(this.orgUnits(), null, null));
+  // ACC-246 — the tree offers active units only. A committee whose own unit has
+  // since been deactivated (or sits under one that has) still shows it, marked,
+  // rather than the placeholder; no other committee is offered it.
+  readonly orgUnitCascadeOptions = computed(() => {
+    this.translate.currentLang();
+    const tree: OrgUnitCascadeOption[] = buildOrgUnitCascadeOptions(this.orgUnits(), null, null);
+    const savedId = this.loaded()?.orgUnitId ?? null;
+    const has = (nodes: OrgUnitCascadeOption[]): boolean => nodes.some((n) => n.value === savedId || has(n.items ?? []));
+    const saved = savedId ? this.orgUnits().find((u) => u.id === savedId) : undefined;
+    if (saved && !has(tree)) {
+      tree.push({ label: `${orgUnitDisplayName(saved)} (${this.translate.instant('committee.form.notOffered')})`, value: saved.id });
+    }
+    return tree;
+  });
 
   // ACC-233 — each picker leaves out what the server would refuse.
   readonly parentCommitteeOptions = computed(() => this.labelled('parent'));
@@ -590,14 +638,45 @@ export class CommitteeFormComponent {
    * leave out what is true NOW (a committee that began dissolving since).
    */
   private loadChoices(): void {
-    this.lookupService.getValues('committee_type').subscribe({ next: (values) => this.committeeTypes.set(values) });
+    const c = this.form.controls;
+    // ACC-246 — each picker waits for its own list, and a failed list releases
+    // it (an empty list then, never "Loading…" for ever).
+    this.waitFor(this.typesLoaded, this.heldType() ? [] : [c.typeValueId]);
+    this.waitFor(this.unitsLoaded, [c.orgUnitId]);
+    this.waitFor(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]);
+    this.lookupService.getValues('committee_type').subscribe({
+      next: (values) => {
+        this.committeeTypes.set(values);
+        this.release(this.typesLoaded, [c.typeValueId]);
+      },
+      error: () => this.release(this.typesLoaded, [c.typeValueId]),
+    });
     this.orgUnitService.getFlat().subscribe({
       next: (units) => {
         this.orgUnits.set(units);
+        this.release(this.unitsLoaded, [c.orgUnitId]);
         this.prefillRootUnit(units);
       },
+      error: () => this.release(this.unitsLoaded, [c.orgUnitId]),
     });
-    this.committeeService.listCommittees().subscribe({ next: (committees) => this.allCommittees.set(committees) });
+    this.committeeService.listCommittees().subscribe({
+      next: (committees) => {
+        this.allCommittees.set(committees);
+        this.release(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]);
+      },
+      error: () => this.release(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]),
+    });
+  }
+
+  /** Until its list arrives a picker is disabled: it keeps its value and cannot open. */
+  private waitFor(loaded: WritableSignal<boolean>, controls: AbstractControl[]): void {
+    loaded.set(false);
+    for (const control of controls) control.disable({ emitEvent: false });
+  }
+
+  private release(loaded: WritableSignal<boolean>, controls: AbstractControl[]): void {
+    loaded.set(true);
+    for (const control of controls) control.enable({ emitEvent: false });
   }
 
   /** The error keys for one field: its own validators, and a server refusal about it. */
@@ -615,8 +694,9 @@ export class CommitteeFormComponent {
     }));
   }
 
-  private open(committee: CommitteeDto | null): void {
+  private open(committee: CommitteeDto | CommitteeDetailDto | null): void {
     this.loaded.set(committee);
+    this.heldType.set(committee && 'typeValue' in committee ? committee.typeValue : null);
     this.fill(committee);
     this.tab.set('identity');
     this.showErrors.set(false);
