@@ -170,7 +170,10 @@
       "ctaUntil": "Cover until {{date}}",
       "ctaOpen": "Cover with no end date",
       "backToDetails": "Back to details",
-      "dateTypeHint": "Type a date, or pick one below."
+      "dateTypeHint": "Type a date, or pick one below.",
+      "stripVacantSince": "Vacant since {{date}}",
+      "stripVacantNoRecord": "Vacant · no head recorded",
+      "restartWarning": "This starts a new 90-day period. The cover that ended on {{date}} won't count towards it."
     },
     "vacateHeader": "Vacate the Head of {{unit}}?",
     "cancelHandoverHeader": "Cancel the handover to {{name}}?",
@@ -2075,6 +2078,12 @@
         "one": "Moves {{unit}} and its {{count}} sub-unit",
         "other": "Moves {{unit}} and its {{count}} sub-units"
       }
+    },
+    "headship": {
+      "daysBefore": {
+        "one": "{{count}} day",
+        "other": "{{count}} days"
+      }
     }
   },
   "datePicker": {
@@ -2530,5 +2539,128 @@
     "removeStage": "Remove stage",
     "deactivateTemplate": "Deactivate template",
     "removeTransition": "Remove transition"
+  },
+  "headship": {
+    "title": "Headship",
+    "titleNamed": "Headship of {{unit}}",
+    "loading": "Loading the headship…",
+    "loadFailed": "Couldn't load the headship.",
+    "saveFailed": "Couldn't save the change.",
+    "pill": {
+      "twoHeads": "⇆ Two heads until {{date}}",
+      "atRisk": "▲ At risk from {{date}}"
+    },
+    "head": {
+      "label": "Head",
+      "none": "No head",
+      "assigned": "Head assigned",
+      "noneRecorded": "No head recorded",
+      "vacatedBy": "Vacated {{date}} by {{name}}",
+      "vacated": "Vacated {{date}}",
+      "since": "Since {{date}}",
+      "sinceUnknown": "Start date not recorded",
+      "accessUntil": "Head access until {{date}}",
+      "awayCovered": "Away · covered",
+      "awayLeaves": "Away · leaves {{date}}"
+    },
+    "cover": {
+      "label": "Acting head",
+      "arranged": "Cover arranged",
+      "coveringFor": "Covering for {{name}}",
+      "coveringVacancy": "Covering the vacancy",
+      "theHead": "the head",
+      "range": "{{from}} – {{to}}",
+      "sinceOpen": "since {{from}} · no end date",
+      "startsOpen": "starts {{from}} · no end date",
+      "startsRange": "starts {{from}} · until {{to}}",
+      "noEndDate": "no end date",
+      "barFrom": "from {{date}}",
+      "barFlag": "▲ flagged {{date}} if still open"
+    },
+    "incoming": {
+      "label": "Also head · incoming",
+      "accessSince": "Head access since {{date}}",
+      "accessSinceUnknown": "Head access start not recorded",
+      "soleFrom": "sole head from {{date}}"
+    },
+    "action": {
+      "appointHead": "Appoint head",
+      "appointSuccessor": "Appoint successor",
+      "startNewHeadToday": "Start new head today",
+      "withdrawAppointment": "Withdraw appointment",
+      "vacate": "Vacate",
+      "arrangeCover": "Arrange cover",
+      "endCover": "End cover"
+    },
+    "appoint": {
+      "title": "Appoint head of {{unit}}",
+      "noHead": "{{unit}} has no head",
+      "head": "Head",
+      "position": "Position",
+      "personPlaceholder": "Choose a person from this unit",
+      "nobody": "Nobody in this unit can be chosen",
+      "positionPlaceholder": "Choose a head position",
+      "onlyPosition": "The only position that confers headship",
+      "from": "From",
+      "fromNow": "Now, when you save",
+      "fromHint": "Today, {{date}} — a start date can't be set yet",
+      "submit": "Appoint now",
+      "noPosition": "No position confers headship — flag one in Org positions",
+      "flagOne": "Open Org positions",
+      "positionsUnavailable": "Head positions couldn't be read, so a head can't be appointed here"
+    },
+    "successor": {
+      "title": "Appoint the next head of {{unit}}",
+      "accessWarning": "Head access starts when you save, not on the date below",
+      "replaces": "Replaces",
+      "nextHead": "Next head",
+      "since": "since {{date}}",
+      "sinceUnknown": "start date not recorded",
+      "until": "until {{date}}",
+      "soleFrom": "Sole head from",
+      "dateHint": "The day the new head becomes sole head",
+      "dateHintChosen": "Until then both are head · {{name}}'s access ends {{date}}",
+      "dateRequired": "Choose the day they become sole head",
+      "datePast": "Choose today or a later day",
+      "showCalendar": "Show calendar",
+      "backToDetails": "Back to details",
+      "dateTypeHint": "Type a date, or pick one below",
+      "note": "Note for the record · optional",
+      "notePlaceholder": "e.g. Retires 30 Sep; approved by the Medical Director",
+      "submit": "Give head access now"
+    },
+    "confirm": {
+      "theHead": "the head",
+      "theCurrentHead": "the current head",
+      "theIncomingHead": "the incoming head",
+      "theActingHead": "the acting head",
+      "vacate": {
+        "header": "Record that {{name}} has left {{unit}}?",
+        "message": "{{unit}} will have no head from now, and {{name}} loses any role the head position gave them. Their headship ends today in the history.",
+        "coverContinues": "{{name}}'s cover continues.",
+        "accept": "Record departure"
+      },
+      "startToday": {
+        "header": "Make {{name}} head of {{unit}} today?",
+        "message": "{{incoming}} already has head access. This ends {{outgoing}}'s today, {{early}} before the planned {{date}}, and makes {{incoming}} sole head.",
+        "messageUndated": "{{incoming}} already has head access. This ends {{outgoing}}'s today and makes {{incoming}} sole head.",
+        "coverContinues": "{{name}}'s cover continues until it is ended.",
+        "accept": "Make head today"
+      },
+      "withdraw": {
+        "header": "Withdraw {{name}}'s appointment from {{date}}?",
+        "headerUndated": "Withdraw {{name}}'s appointment?",
+        "message": "{{incoming}} loses the head access they have had since {{date}}, and any role it gave them. Work routed to them as head goes back to {{outgoing}}. Any note recorded with the appointment stays in the history.",
+        "messageUndated": "{{incoming}} loses their head access, and any role it gave them. Work routed to them as head goes back to {{outgoing}}. Any note recorded with the appointment stays in the history.",
+        "accept": "Cancel appointment",
+        "keep": "Keep appointment"
+      },
+      "endCover": {
+        "header": "End {{name}}'s cover of {{unit}}?",
+        "messageAbsence": "The cover ends now, and {{name}} loses any role it gave them. {{head}} is still recorded as the head.",
+        "messageVacancy": "The cover ends now, and {{name}} loses any role it gave them. {{unit}} is left with no head and no cover, so work meant for its head goes to the head of the unit above it, if there is one.",
+        "accept": "End cover"
+      }
+    }
   }
 }
