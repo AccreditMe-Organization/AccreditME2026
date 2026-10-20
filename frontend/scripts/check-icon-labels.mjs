@@ -36,7 +36,10 @@ const appDir = join(root, 'src', 'app');
 // taken it 9 under, and deleting the old profile's role section took the 10th.
 // Lowered to 18 in ACC-120 slice 10: the workflow Actions dialog's trash
 // button now names the action it removes.
-const BASELINE = 18;
+// Lowered to 14 in ACC-120 slice 11 (PR C): the org tree's four row icon
+// buttons (three of them unnamed) became one worded row menu. 17 counted before
+// it, one under the old baseline already.
+const BASELINE = 14;
 
 // A TOOLTIP IS NOT A NAME. pTooltip is deliberately absent here: a tooltip is
 // unreachable to a screen reader and to a touch user, so a control carrying
