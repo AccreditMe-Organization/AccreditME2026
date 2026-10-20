@@ -181,9 +181,11 @@ function flattenHierarchy(
             cdkOption
             [cdkOption]="getOptionValue(flat.node)"
             [cdkOptionTypeaheadLabel]="getOptionLabel(flat.node, flat.isGroup)"
-            [cdkOptionDisabled]="flat.isGroup && !groupsSelectable()"
+            [cdkOptionDisabled]="(flat.isGroup && !groupsSelectable()) || isUnavailable(flat.node)"
+            [attr.aria-label]="unavailableName(flat.node, flat.isGroup)"
             class="am-overlay-select-option"
             [class.am-overlay-select-group-header]="flat.isGroup && !groupsSelectable()"
+            [class.am-overlay-select-option-unavailable]="isUnavailable(flat.node)"
             [style.paddingInlineStart.rem]="0.75 + flat.depth * 1"
           >
             @if (itemTemplate(); as tpl) {
@@ -363,6 +365,17 @@ function flattenHierarchy(
         background: transparent;
       }
 
+      /* ACC-120 slice 11 — an option shown but not choosable (optionDisabled):
+         greyed, no pointer, no hover. CdkOption blocks the click and the
+         keyboard; the reason is in the option's accessible name. */
+      .am-overlay-select-option.am-overlay-select-option-unavailable {
+        cursor: default;
+        color: var(--am-ink-500);
+      }
+      .am-overlay-select-option.am-overlay-select-option-unavailable:hover {
+        background: transparent;
+      }
+
       /* aria-selected is managed by CdkOption itself — style off the real
          attribute rather than a separately-recomputed class, so the
          highlight can never drift out of sync with CDK's own state. */
@@ -452,6 +465,36 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // and guards selection on `!option.disabled` (verified in
   // @angular/cdk/listbox source, not assumed).
   readonly groupsSelectable = input<boolean>(true);
+
+  /**
+   * ACC-120 slice 11 — an option can be SHOWN and not CHOSEN, as PrimeNG's own
+   * `optionDisabled` works: the name of a boolean field on the option. Opt-in;
+   * unset, every option behaves exactly as before. Disabled through
+   * `cdkOptionDisabled`, like a group heading above, so pointer and keyboard
+   * both skip it.
+   *
+   * `optionDisabledReason` names a string field saying WHY; it is appended to
+   * the option's accessible name ("Pharmacy, a sub-unit of this unit"), so a
+   * screen reader hears the reason a sighted reader infers from the grey.
+   */
+  readonly optionDisabled = input<string | undefined>(undefined);
+  readonly optionDisabledReason = input<string | undefined>(undefined);
+
+  isUnavailable(opt: unknown): boolean {
+    const field = this.optionDisabled();
+    if (!field || opt === null || typeof opt !== 'object') return false;
+    return (opt as Record<string, unknown>)[field] === true;
+  }
+
+  unavailableName(opt: unknown, isGroup: boolean): string | null {
+    if (!this.isUnavailable(opt)) return null;
+    const reasonField = this.optionDisabledReason();
+    const reason = reasonField ? (opt as Record<string, unknown>)[reasonField] : undefined;
+    const label = this.getOptionLabel(opt, isGroup);
+    // The Arabic comma in a right-to-left session, as the sentence is read.
+    const comma = this.directionality.value === 'rtl' ? '، ' : ', ';
+    return typeof reason === 'string' && reason ? `${label}${comma}${reason}` : label;
+  }
 
   /**
    * ACC-96 — multi-select, off by default so all 28 existing consumers are
