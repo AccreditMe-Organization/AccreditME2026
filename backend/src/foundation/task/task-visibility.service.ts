@@ -33,6 +33,14 @@ export class TaskVisibilityService {
     return !!rows[0]?.ok;
   }
 
+  /** How many of the organisation's tasks the rule admits — the backfill's before / after report. */
+  async countVisible(ctx: TaskVisibilityContext): Promise<number> {
+    const rows = await this.prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT count(*)::bigint AS n FROM "Task" t
+        WHERE t."organizationId" = ${ctx.organizationId} AND ${taskVisibleSql(ctx)}`;
+    return Number(rows[0]?.n ?? 0);
+  }
+
   seesWholeRecord(ctx: TaskVisibilityContext, sourceType: string, sourceId: string): Promise<boolean> {
     return seesWholeRecord(this.prisma, ctx, sourceType, sourceId);
   }
