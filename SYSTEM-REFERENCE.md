@@ -5102,15 +5102,49 @@ arranged" where a name would go. `getHeadStatus()`'s internal callers
 
 `backend/src/foundation/organization/unit-headship.ts`, one file that lane B's
 ACC-244 builds on. A new reader of "who is head" or "who covers" uses these
-rather than writing another copy. Both are scoped by organisation AND unit.
+rather than writing another copy. Every read is scoped by organisation AND unit.
+
+**The two rules are helpers (ACC-120 slice 11, PR B)**, and every reader builds
+from them:
+
+- **`headHolderWhere(): Prisma.UserWhereInput`**: `status: 'ACTIVE'` and a
+  position with `isUnitHeadPosition` and `isActive` (D13).
+- **`runningActingCoverWhere(now: Date): Prisma.OrgUnitHeadAssignmentWhereInput`**:
+  `kind: 'ACTING'`, `endedAt` null, `validFrom <= now`, `validTo` null or after
+  now.
+
+**Batched reads, one query each, grouped by unit** (PR B):
+
+- **`findCurrentHeadHoldersForUnits(prisma, organizationId, orgUnitIds: string[])`**
+  → `Map<unitId, HeadHolderInUnit[]>`. Each row: `id`, `name`, `positionId`,
+  `primaryOrgUnitId`, and `position {nameEn, nameAr}`. A unit with no holder is
+  absent.
+- **`findRunningActingCoversForUnits(prisma, organizationId, orgUnitIds: string[], now = new Date())`**
+  → `Map<unitId, RunningActingCoverInUnit>`. This is `RunningActingCover` plus
+  `orgUnitId` and the cover's own `userPrimaryOrgUnitId`. Newest period first,
+  the first per unit wins.
+
+**The single-unit reads call the batched ones** and return exactly what they
+did:
 
 - **`findCurrentHeadHolders(prisma: Pick<PrismaService, 'user'>, organizationId, orgUnitId)`**:
-  ACTIVE users whose `primaryOrgUnitId` is the unit and whose position has
-  `isUnitHeadPosition` and `isActive`. Zero, one, or TWO while a successor is
-  pending: do not assume one head.
+  zero, one, or TWO holders while a successor is pending. Do not assume one
+  head.
 - **`findRunningActingCover(prisma: Pick<PrismaService, 'orgUnitHeadAssignment'>, organizationId, orgUnitId, now = new Date())`**:
-  the ACTING period in force: `endedAt` null, `validFrom <= now`, `validTo`
-  null or after now, newest first. Never the cached `actingHeadUserId`.
+  the period in force, or null. Never the cached `actingHeadUserId`.
+
+With one id, the batched reads send an equality rather than `in`, so a
+single-unit read sends the `where` it always did. The holder query now also
+selects `primaryOrgUnitId`, and the cover is read with `findMany`.
+
+**Copies of the holder rule outside this file:**
+- Using the helper: `OrganizationService.resolveActingHeadForOrgUnit()` and
+  `refreshOrgUnitHeadVacancy()`.
+- Still inline: `sla-monitor.processor.ts`.
+- Inline and WITHOUT `position.isActive`: the write paths in
+  `org-unit-head.service.ts` and `org-position.service.ts`,
+  `hasDirectOrActingHead()`, `workflow.service.ts` and
+  `task-authority.service.ts`. Recorded, not changed.
 
 `task-authority.service.ts` still has its own absence-cover window; ACC-133
 did not change it.
@@ -5428,8 +5462,15 @@ model OrgUnit {
   this entry previously said only direct self-parenting was refused**,
   and a move under a descendant detached the branch from the root.
 - **`deactivate()`** — idempotent, and returns the type resolved (both
-  returns, ACC-120 slice 11). Blocker list is a real
-  `ConflictException` carrying a structured `blockers: string[]`.
+  returns, ACC-120 slice 11).
+  - **The refusal is coded (ACC-120 slice 11, PR B):** 409
+    `OrgUnitHasDependenciesRefusal` (`org-unit-refusals.ts`), `{ statusCode,
+    error, code: 'ORG_UNIT_HAS_DEPENDENCIES', message, blockers: [{ code:
+    'ACTIVE_CHILDREN' | 'ACTIVE_USERS' | 'ACTIVE_COMMITTEES', count }] }`.
+  - Every blocker found is listed, in that order.
+  - `message` stays in English for clients that read only it; the tree does,
+    today.
+  - `blockers` used to be English strings (`string[]`).
   **THREE checks are live, and three remain TODO-commented:**
   - live: **active child units**, **active users assigned to the unit**
     (`User.primaryOrgUnitId` + `status: 'ACTIVE'`), and **active
@@ -5512,7 +5553,9 @@ static check can only confirm the schema itself doesn't enforce it.
 ### 7.5 Permission Model
 
 ```
-org:view    — OrganizationController: getTree, listFlat, findById
+org:view    — OrganizationController: getTree, listFlat, findById,
+              structure, chart, summary (ACC-120 slice 11; what each shows
+              inside also follows users:view, committees:view, setup:view — 7.8)
 org:manage  — OrganizationController: create, update, deactivate
 ```
 
@@ -5535,6 +5578,9 @@ section.
 | `create()` | `POST /organization/units` | `org-unit-form.component.ts:234` |
 | `update()` | `PATCH /organization/units/:id` | `org-unit-form.component.ts:233` |
 | `deactivate()` | `POST /organization/units/:id/deactivate` | `org-unit-tree.component.ts:170` |
+| `getStructure()` | `GET /organization/units/structure` | none yet: the tree, PR C (7.8) |
+| `getChart()` | `GET /organization/units/chart` | none yet: the chart, PR E |
+| `getSummary()` | `GET /organization/units/:id/summary` | none yet: the unit record, PR D |
 
 ### 7.7 The Add / Edit unit dialog (ACC-120 slice 11)
 
@@ -5589,6 +5635,104 @@ Drawing: `AccreditMe Organization Structure.dc.html` L377-394, L631-638. Plan:
   update leaves the stored order alone. Ordering is ACC-138's.
 - **`isCodeLocked`** renders read-only if it is ever set, and nothing tests it:
   nothing sets it (7.3).
+
+### 7.8 The read model: structure, chart and summary (ACC-120 slice 11, PR B)
+
+`org-structure.service.ts` (`OrgStructureService`), apart from
+`OrganizationService`, which owns the writes. The tree (PR C), the chart (PR E)
+and the unit record (PR D) all read it, so "who is head", the headcount and the
+type mean the same thing on all three. Interfaces:
+`interfaces/org-structure.interface.ts`. Plan:
+`backend/Plans/step-120-11-organisation.md` (§2, and "PR B as built").
+
+**Three `org:view` routes, declared ABOVE `:id`.** Otherwise `structure` and
+`chart` would be read as unit ids; a controller spec pins the order.
+
+| Route | Returns |
+|---|---|
+| `GET /organization/units/structure?includeInactive=` | `{ nodes, asOf }`: every ACTIVE unit, parents first, siblings by `sortOrder` then `nameEn`. Inactive units only for `org:manage` AND `includeInactive=true`; otherwise the flag is ignored |
+| `GET /organization/units/chart?rootId=&depth=` | `{ root: { id, path[] }, depth, nodes[] (+ depth), asOf }`. The window from `rootId`, or the top unit (the active unit with no parent). `depth` defaults to 4 and is capped at 4, never refused. No inactive unit, ever (D6). A foreign, unknown or inactive `rootId` is the identical 404 "Org unit not found" |
+| `GET /organization/units/:id/summary` | `{ unit (node + description, createdAt, updatedAt), path, positions[], people[], committees { count, items }, asOf }`. An inactive unit is returned, marked inactive, as `GET …/:id` returns it. Another organisation's id is the identical 404 |
+
+**Each node:**
+- `id`, `parentId`, both names, `code`;
+- `type`: both labels, override-resolved (D5);
+- `sortOrder`, `isActive`;
+- `childCount`: ACTIVE direct children, those below the chart's cut-off
+  included;
+- `heads[]`;
+- `acting`;
+- `headcount`: ACTIVE people whose primary unit this is;
+- `committees { count }`: ACTIVE committees owned;
+- `attention`.
+
+- **Heads** come from `findCurrentHeadHoldersForUnits()` (5.15.2).
+  - `role` is `incoming` for `OrgUnit.pendingHeadUserId`, otherwise
+    `substantive`.
+  - `countedHere` is always true: the holder rule requires the unit to be
+    their primary unit.
+  - The plan's "from OrgUnitHeadAssignment" didn't match the code.
+    Substantive headship is derived from the position.
+- **`acting`** comes from `findRunningActingCoversForUnits()`, never from
+  `OrgUnit.actingHeadUserId`.
+  - `countedHere` is whether the cover's own primary unit is this one: an
+    acting head may come from anywhere.
+- **`attention`** is the highest open unit condition: `ORG_UNIT_WITHOUT_HEAD`,
+  `ORG_UNIT_WITHOUT_TYPE` or `ACTING_HEAD_OPEN_ENDED`.
+  - `BLOCKS_WORK` beats `AT_RISK`, then the oldest wins, as
+    `{ code, severity, since, openCount }`.
+- **Summary `positions[]`** are the positions the unit's ACTIVE people hold
+  (`OrgPosition` has no unit). Ordered by grade high to low, then the most
+  people, then the name.
+- **Summary `committees.items`** carry the stage, from
+  `committeeStagesAndCounts()`.
+
+**WHAT A CALLER SEES (D7, Ahmad).** Ids, dates and reasons are never withheld.
+
+| Data | Needs | Without it |
+|---|---|---|
+| Person names (heads, covers, people) | `users:view` | `null` |
+| Committee items | `committees:view` | `items: null`, and the count still shown. The items aren't even read |
+| `attention` | `setup:view` | the property is ABSENT, not null, and conditions aren't read |
+| Position titles, headcounts, committee counts | `org:view` | (shown to every `org:view` holder) |
+
+**The cost doesn't grow with the tree.** The tenant's units are read once and
+walked in memory. Everything else is one query per kind of fact over every unit
+in the response:
+- units 1;
+- types 2;
+- heads 1, plus 1 for the position relation;
+- covers 1, plus 1 for the user relation;
+- headcount 1;
+- committee counts 1;
+- attention 1, only for `setup:view`.
+
+The summary adds its people (1, plus the position relation) and, for
+`committees:view`, its committees and their stages.
+
+Measured locally on al-nakheel (21 units), as Hessa:
+- 16 queries per call: 6 are `TenantGuard`'s, 10 are the read model's;
+- `structure` 13.1 KB, `chart` from the top 13.5 KB, `summary` 1.7 KB;
+- 1.2–2.1 s from a Gulf client to the Frankfurt database. That's ACC-60's
+  local cost; a deployed instance sits beside the database.
+
+**Every walk keeps a visited set:** the chart window, the root path and the
+tree order. `update()` refuses a parent inside the unit's own subtree since
+PR A, but rows written before that, or written directly, may still form a
+loop. In `structure`, units reachable only through a loop come last, once
+each.
+
+**Specs:**
+- `org-structure.service.spec.ts`: an in-memory database that EVALUATES each
+  `where`, on a 7-level fixture. It covers the depth cut, `childCount` below
+  it, re-rooting's path, inactive children, the loop, `countedHere`, D7 per
+  permission, and one tenant-isolation test per query.
+- `org-structure.db-spec.ts`: the same tree on a real Postgres
+  (`npm run test:db`), created and torn down.
+- Every `organizationId` mutation-checked red in both.
+
+`buildTypeResolver` moved to `org-unit-type-resolver.ts`
+(`buildOrgUnitTypeResolver`), unchanged, and both services import it.
 
 `getFlat()` is the most widely reused endpoint found in this document
 so far — six distinct components across three different modules
