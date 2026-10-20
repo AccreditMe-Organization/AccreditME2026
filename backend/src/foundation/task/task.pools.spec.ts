@@ -14,6 +14,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { useFixedClock } from '../../common/testing/fixed-clock';
 
 // ACC-167 — pools: a task assigned to a position in a unit (or a committee
 // role) with nobody on it until a member picks it up. Who is in the pool is
@@ -557,8 +558,14 @@ describe('TaskService — pools (ACC-167)', () => {
     beforeEach(() => mockPrisma.aiInteractionLog.findFirst.mockResolvedValue({ id: 'log-7' }));
 
     it('create: a claim that checks out marks the CREATE row with the call and the person suggested', async () => {
-      const before = Date.now();
-      await service.create({ ...DTO, aiWorkloadHint: CLAIM }, ORG_A, CREATOR);
+      // ACC-248 — a fixed clock, so the window is exact however slow the run.
+      const NOW = new Date('2026-10-20T09:00:00.000Z');
+      useFixedClock(NOW);
+      try {
+        await service.create({ ...DTO, aiWorkloadHint: CLAIM }, ORG_A, CREATOR);
+      } finally {
+        jest.useRealTimers();
+      }
 
       expect(auditRow('CREATE')['metadata']).toEqual({ aiWorkloadHint: { interactionId: 'log-7', suggestedUserId: HOLDER_A } });
       const { where } = (mockPrisma.aiInteractionLog.findFirst.mock.calls[0] as [{ where: Record<string, unknown> }])[0];
@@ -571,7 +578,7 @@ describe('TaskService — pools (ACC-167)', () => {
         createdAt: { gte: expect.any(Date) },
       });
       const since = (where['createdAt'] as { gte: Date }).gte.getTime();
-      expect(before - since).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 5);
+      expect(since).toBe(NOW.getTime() - 24 * 60 * 60 * 1000);
     });
 
     it('a claim on a pool — nobody named — is not believed, and makes no lookup', async () => {

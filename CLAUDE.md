@@ -4019,6 +4019,40 @@ Briefly:
   and the record page whether or not it is open.
 - **No migration.**
 
+
+## Key Architecture Decisions (ACC-248)
+
+Timing assertions that failed when a run was slow, or once a date had passed.
+The full list of what was searched, fixed and left (each with its reason) is on
+ACC-248. Briefly:
+
+- **A RED CI RUN ON A MERGE SKIPS THE BACKEND DEPLOY, AND RAILWAY DOES NOT
+  RETRY IT.** Railway waits for CI (`checkSuites: true`). ACC-246's merge was
+  skipped by a flaky spec and deployed by hand. A skipped merge that carries a
+  migration leaves the migration unapplied. So a flaky test is a deploy
+  defect, not noise.
+- **A TEST THAT COMPARES WITH "NOW" FIXES THE CLOCK, PER TEST.**
+  - Backend: `useFixedClock(at)` (`backend/src/common/testing/fixed-clock.ts`),
+    with `jest.useRealTimers()` after. It fakes ONLY `Date`, so promises and
+    real delays still run.
+  - Frontend: `jasmine.clock().install()` and `mockDate(at)` in a
+    `beforeEach`, `uninstall()` in an `afterEach`.
+  - Never `const NOW = new Date()` at file level compared with the clock the
+    code reads later (Setup health read "51 minutes ago" for 50, 75 s into the
+    suite). Never a fixed date that the real clock will overtake, against code
+    that reads the real clock (`task-authority.service.spec.ts` failed from
+    20 Oct onward).
+  - Then assert exactly. Never a millisecond tolerance against real time.
+- **A WAIT FOR SOMETHING THAT RUNS ON CSS TIME COUNTS TURNS, NOT
+  MILLISECONDS.** PrimeNG's dialog motion runs on the real clock, and a loaded
+  machine stretched it past a 2 s wall-clock budget. Holding motion at zero is
+  NOT the fix: PrimeNG then focuses a confirm before its buttons exist.
+- **Proved by simulated late runs** (a real delay before the clock is read, a
+  file loaded "61 s early", an event-loop stall), old failing and new passing,
+  then both suites run at the same time, three times.
+- **No production change.** Every clock the code reads (`new Date()`,
+  `Date.now()`) is one the fake clocks control.
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

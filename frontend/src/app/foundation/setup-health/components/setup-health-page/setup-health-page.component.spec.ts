@@ -20,7 +20,12 @@ import { SetupHealthPageComponent } from './setup-health-page.component';
 // ACC-82 — Setup health page (SYSTEM-REFERENCE §13.9). Since ACC-94 against
 // the real en.json and ar.json, so every assertion is text a user sees.
 
-const NOW = new Date();
+// ACC-248 — a fixed instant, and the browser's clock held at it for every test
+// below (jasmine.clock().mockDate), so "Checked 50 minutes ago" stays 50 however
+// late in the run the test happens. It used to be `new Date()` taken when this
+// file loaded, compared with the real clock when each test rendered: ~75 s into
+// the suite, a late test read one minute more.
+const NOW = new Date('2026-10-20T09:00:00.000Z');
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
 const minutesAgo = (m: number) => new Date(NOW.getTime() - m * 60 * 1000).toISOString();
 
@@ -82,9 +87,12 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
   beforeEach(() => {
     permissions = new Set(ALL_FIX_PERMISSIONS);
     arabic = false;
+    jasmine.clock().install();
+    jasmine.clock().mockDate(NOW);
   });
 
   afterEach(() => TestBed.inject(HttpTestingController).verify());
+  afterEach(() => jasmine.clock().uninstall());
 
   it('groups by type, orders groups by their most severe row, and gives each group that severity', () => {
     const page = render({

@@ -71,10 +71,14 @@ describe('a confirm over an edit dialog — the Vacate Head case (ACC-120 slice 
   const confirmEl = (): Element | null => document.querySelector('.p-confirmdialog');
   const panelContent = (): Element | null => document.getElementById('vacate');
 
-  async function until(condition: () => boolean, what: string, ms = 2000): Promise<void> {
-    const start = Date.now();
-    while (!condition()) {
-      if (Date.now() - start > ms) throw new Error(`timed out waiting for ${what}`);
+  // ACC-248 — bounded by polling TURNS, not by the wall clock. What this waits
+  // for (PrimeNG's enter and leave motion, then focus) runs on CSS time, and
+  // a loaded machine stretched it past the old 2 s budget: "timed out waiting
+  // for the confirm to open" (20 Oct). Counting turns still catches a hang,
+  // but a slow machine is no longer mistaken for one.
+  async function until(condition: () => boolean, what: string, turns = 100): Promise<void> {
+    for (let turn = 0; !condition(); turn++) {
+      if (turn >= turns) throw new Error(`timed out waiting for ${what}`);
       fixture.detectChanges();
       await new Promise((r) => setTimeout(r, 20));
     }
