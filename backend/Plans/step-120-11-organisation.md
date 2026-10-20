@@ -682,3 +682,24 @@ Branch `feature/ACC-120-11b-org-read-model`, from `dev` at `f351e74`.
 - 1.2–2.1 s each, from a Gulf client to Frankfurt (ACC-60).
 
 **Every seeded `org:view` persona also holds `users:view`:** Hessa, Yasser (quality manager), Noura (read-only admin) and Nasser (viewer). So names-withheld isn't visible live; the specs prove it. `attention` was absent for Yasser and Nasser, who lack `setup:view`.
+
+### PR C as built (CC-131, 20 Oct)
+
+Branch `feature/ACC-120-11c-org-tree`, from `dev` at `6d315ce` (PR B merged). Frontend only.
+
+**The tree reads `GET /organization/units/structure`** (PR B), once, with `includeInactive=true` for `org:manage` so Show deactivated is a client-side switch.
+
+**The headship items need the unit's real status.** `deriveHeadshipState()` takes the panel's `GET …/:id/head` response, and the structure node lacks two facts it reads: a scheduled cover, and the cached `actingHeadUserId`. Derived from the node, the menu could offer Arrange cover or End cover where the server refuses. So opening a row's ⋯ reads that unit's head status (the panel's own read), and the Headship group shows once it arrives.
+
+**One copy of the dialogs and confirms:**
+- The panel's action machinery moves, unchanged, into `am-headship-actions`: the three dialogs, the four confirms, people and positions.
+- The panel and the tree both host it.
+
+**`am-row-menu` gains two opt-in options:** `groupLabels` and `openedChange`.
+
+**Deviations from the drawing, and why:**
+- **The read-only §6 has no ⋯ column,** because its name opens the record. That arrives with PR D, so a read-only viewer gets a ⋯ holding only Headship details, which replaces the crown.
+- **Attention follows the response:** it shows only when the response carries it (`setup:view`). §6 drops it for every read-only viewer.
+- **The Type filter** draws one chip per type, each removable (`OverlaySelectComponent` multiple, ACC-96). The drawing has a single "Type: … ✕" chip.
+- **The Tree tab is a one-tab tablist.** `am-tab-strip` renders nothing below two tabs; PR E adds Chart.
+- **Left out:** Open unit (PR D), Show on chart (PR E), Move up/down (ACC-138). The blockers' links are plain text until their targets exist.
