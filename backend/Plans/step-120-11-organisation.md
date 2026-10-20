@@ -703,3 +703,22 @@ Branch `feature/ACC-120-11c-org-tree`, from `dev` at `6d315ce` (PR B merged). Fr
 - **The Type filter** draws one chip per type, each removable (`OverlaySelectComponent` multiple, ACC-96). The drawing has a single "Type: … ✕" chip.
 - **The Tree tab is a one-tab tablist.** `am-tab-strip` renders nothing below two tabs; PR E adds Chart.
 - **Left out:** Open unit (PR D), Show on chart (PR E), Move up/down (ACC-138). The blockers' links are plain text until their targets exist.
+
+**Built and measured (PR C):**
+- **Layout spec (`org-unit-tree.layout.spec.ts`), EN and AR:**
+  - 988 / 900px of content: all six columns.
+  - 899 / 358 / 328px: Type and People dropped. At 358 and 328 the Attention column folds under the name.
+  - No sideways scroll at any width, every ⋯ inside its row, and names wrapped. At 328 the longest name is 168px tall in English and 144px in Arabic.
+  - The blockers dialog at five blockers: 249px English, 257px Arabic, of 420.
+- **Browser, local, as Hessa (EN and AR, at 1280, 390 and 360):**
+  - No sideways overflow at any width.
+  - Type and People drop at 898px of content (viewport 1190).
+  - The six states, intercepted, each offered exactly its actions, and every dialog and confirm was opened and cancelled.
+  - The refused Deactivate was intercepted.
+  - As Noura (read-only): Headship details only, and the panel showed no actions.
+  - Writes that reached the server: 0.
+- **Found while measuring, and fixed:**
+  - the ⋯ overflowed its 40px column by 2px;
+  - the 900px rule measured the bordered card, not the component;
+  - a 120px Attention column left Unit a few characters wide on a phone, so below 600px it moves under the name.
+- **Not changed (ACC-133's copy):** Arabic Arrange cover reads "ترتيب تغطية" in the menu and the panel, and "ترتيب تكليف" in its dialog title.
