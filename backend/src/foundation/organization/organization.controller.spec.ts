@@ -6,6 +6,8 @@ import { PermissionGuard } from '../../common/guards/permission.guard';
 import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
 import { IOrgUnit } from './interfaces/org-unit.interface';
+import { OrgStructureService } from './org-structure.service';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,7 @@ describe('OrganizationController', () => {
     update:     jest.Mock;
     deactivate: jest.Mock;
   };
+  let structure: { structure: jest.Mock; chart: jest.Mock; summary: jest.Mock };
 
   beforeEach(async () => {
     service = {
@@ -54,9 +57,18 @@ describe('OrganizationController', () => {
       deactivate: jest.fn().mockResolvedValue({ ...MOCK_UNIT, isActive: false }),
     };
 
+    structure = {
+      structure: jest.fn().mockResolvedValue({ nodes: [], asOf: new Date() }),
+      chart: jest.fn().mockResolvedValue({ root: { id: UNIT_ID, path: [] }, depth: 4, nodes: [], asOf: new Date() }),
+      summary: jest.fn().mockResolvedValue({ unit: { id: UNIT_ID } }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrganizationController],
-      providers: [{ provide: OrganizationService, useValue: service }],
+      providers: [
+        { provide: OrganizationService, useValue: service },
+        { provide: OrgStructureService, useValue: structure },
+      ],
     })
       .overrideGuard(TenantGuard)
       .useValue({ canActivate: () => true })
@@ -87,6 +99,43 @@ describe('OrganizationController', () => {
       const result = await controller.listFlat(TENANT_ID);
       expect(service.listFlat).toHaveBeenCalledWith(TENANT_ID);
       expect(result).toHaveLength(1);
+    });
+  });
+
+  // ── the read model (ACC-120 slice 11) ─────────────────────────────────────
+
+  describe('structure, chart and summary', () => {
+    const PERMS = ['org:view', 'users:view'];
+
+    it('structure passes the tenant, the caller’s permissions and includeInactive', async () => {
+      await controller.structure({ includeInactive: true }, TENANT_ID, PERMS);
+      expect(structure.structure).toHaveBeenCalledWith(TENANT_ID, PERMS, { includeInactive: true });
+    });
+
+    it('chart passes rootId and depth', async () => {
+      await controller.chart({ rootId: UNIT_ID, depth: 3 }, TENANT_ID, PERMS);
+      expect(structure.chart).toHaveBeenCalledWith(TENANT_ID, PERMS, { rootId: UNIT_ID, depth: 3 });
+    });
+
+    it('summary passes the unit id', async () => {
+      await controller.summary(UNIT_ID, TENANT_ID, PERMS);
+      expect(structure.summary).toHaveBeenCalledWith(TENANT_ID, PERMS, UNIT_ID);
+    });
+
+    it('all three need org:view', () => {
+      for (const handler of ['structure', 'chart', 'summary'] as const) {
+        expect(Reflect.getMetadata(PERMISSIONS_KEY, OrganizationController.prototype[handler])).toEqual(['org:view']);
+      }
+    });
+
+    // Express matches routes in declaration order: below ':id', 'structure'
+    // and 'chart' would be read as unit ids and answer 404.
+    it('are declared above :id', () => {
+      const order = Object.getOwnPropertyNames(OrganizationController.prototype);
+      for (const handler of ['structure', 'chart', 'summary']) {
+        expect(order.indexOf(handler)).toBeGreaterThan(-1);
+        expect(order.indexOf(handler)).toBeLessThan(order.indexOf('findById'));
+      }
     });
   });
 
