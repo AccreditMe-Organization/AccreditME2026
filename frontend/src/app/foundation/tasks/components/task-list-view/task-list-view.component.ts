@@ -391,7 +391,7 @@ export class TaskListViewComponent {
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
 
-  /** A record's tasks; both absent means the organisation's (tasks:view). */
+  /** A record's tasks; both absent means the organisation's (View all tasks, ACC-244). */
   readonly sourceType = input<string | null>(null);
   readonly sourceId = input<string | null>(null);
   /** A task to open at (a deep link): the list loads to it and highlights it. */

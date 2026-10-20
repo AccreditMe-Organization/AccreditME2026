@@ -116,7 +116,7 @@ interface WorkloadFailure {
  * ## No users:view
  *
  * Every list comes from the task picker endpoints, which answer to
- * tasks:create — or, given `taskId`, to whoever may reassign that task. This
+ * Create tasks (ACC-244) — or, given `taskId`, to whoever may reassign that task. This
  * is what closes ACC-166: a creator who cannot list the tenant's users can
  * still choose who gets their task. The people shown are only a position's
  * holders or a role's members, with their name and position — nothing else.
@@ -353,7 +353,7 @@ export class TaskAssigneePickerComponent implements OnInit {
   readonly sourceId = input<string | null>(null);
   /** Shown for the committee option; a generic label when the host has none. */
   readonly committeeName = input<string | null>(null);
-  /** The task being reassigned — how its creator reaches the picker without tasks:create. */
+  /** The task being reassigned — how its creator reaches the picker without Create tasks. */
   readonly taskId = input<string | undefined>(undefined);
   readonly required = input(false);
   readonly forceShowErrors = input(false);

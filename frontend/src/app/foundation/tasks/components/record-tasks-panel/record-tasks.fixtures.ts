@@ -66,7 +66,8 @@ export function listPage(items: ITaskRecordRowDto[], over: Partial<ITaskRecordLi
     total: items.length,
     matching: items.length,
     scope: 'all',
-    facets: { people: [{ id: 'u-1', name: 'Dr. Sara Al-Qahtani' }], pools: [] },
+    view: 'record',
+    facets: { people: [{ id: 'u-1', name: 'Dr. Sara Al-Qahtani' }], pools: [], recordTypes: ['COMMITTEE'], units: [] },
     aroundIndex: null,
     ...over,
   };

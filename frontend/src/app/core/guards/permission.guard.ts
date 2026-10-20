@@ -28,7 +28,7 @@ export const permissionGuard: CanActivateFn = (route) => {
   //
   // Both simpler options are wrong in a way that matters:
   //   - routeConfig.path alone yields 'unassigned' for /tasks/unassigned,
-  //     which is not a key in the map, so the stricter tasks:manage entry
+  //     which is not a key in the map, so the stricter Unassigned entry
   //     would be silently skipped.
   //   - the resolved URL yields '/committees/abc123', which matches nothing,
   //     so a deep child would be treated as unmapped and allowed.

@@ -9,13 +9,10 @@ import { permissionGuard } from '../../core/guards/permission.guard';
 // Every child that is NOT self-scoped therefore needs its OWN guard. A child
 // without canActivate never runs the guard at all, and inheriting from the
 // parent no longer protects anything:
-//   - 'all'        -> tasks:view   (can return any task in the tenant)
-//   - 'unassigned' -> tasks:manage (administrative triage view)
-//
-// This also retires a quirk ACC-70 recorded here: while the parent required
-// tasks:view, that was an implicit prerequisite for 'unassigned' too, which
-// could have excluded a custom role holding tasks:manage alone. It no longer
-// is — each child now requires exactly its own permission.
+//   - 'all'        -> committees:view_all_tasks (View all tasks, ACC-244)
+//   - 'unassigned' -> committees:manage_tasks   (Manage tasks, ACC-244)
+// Each from its nav item. Committees are the only record type with task keys;
+// lane A's slice 3 replaces both with saved views of one /tasks list.
 export const TASKS_ROUTES: Routes = [
   {
     path: '',
@@ -43,9 +40,9 @@ export const TASKS_ROUTES: Routes = [
   // ACC-228 — a task's own page. LAST, after every literal path, so 'all' and
   // 'unassigned' are never read as task ids. Its own canActivate (ACC-79's
   // rule for a child route); no ROUTE_PERMISSIONS entry, deliberately: who may
-  // open a task is a relationship the server decides from the task (Q4), and an
-  // assignee without tasks:view must reach their own. Everyone else gets the
-  // page's not-found state.
+  // open a task is the server's task visibility rule (ACC-244), and an assignee
+  // with no task key must reach their own. Everyone else gets the page's
+  // not-found state.
   {
     path: ':id',
     canActivate: [permissionGuard],

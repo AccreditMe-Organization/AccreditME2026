@@ -14,7 +14,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
 
-// The organisation's tasks, at /tasks/all (tasks:view).
+// The organisation's tasks, at /tasks/all (View all tasks, ACC-244).
 //
 // ACC-229 — this page never showed a task. It asked for a record's tasks
 // (getForSource) and, reached from the rail with no record, returned before
@@ -96,9 +96,9 @@ export class TaskListComponent {
   // cannot use it: a disabled button still announces an action that is not
   // theirs. Same mechanism as committee-detail.component.ts's canEdit /
   // canAddMember, deliberately rather than a second one.
-  // POST /tasks enforces tasks:create (task.controller.ts). QUALITY_OFFICER does
-  // not hold it, so Haya loses this button — ACC-77's gap, not this gate's.
-  readonly canCreate = computed(() => this.navigationAccess.hasPermission('tasks:create'));
+  // POST /tasks enforces Create tasks on the record's type (task.service.ts).
+  // ACC-244 — Create tasks on committees, the only record type with task keys.
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('committees:create_tasks'));
 
   readonly formVisible = signal(false);
 

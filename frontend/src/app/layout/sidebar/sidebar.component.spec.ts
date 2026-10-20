@@ -260,7 +260,7 @@ describe('SidebarComponent — the task page lights My tasks (ACC-228)', () => {
         {
           provide: NavigationAccessService,
           useValue: {
-            hasPermission: (p: string) => ['tasks:manage', ADMIN_ACCESS].includes(p),
+            hasPermission: (p: string) => ['committees:manage_tasks', ADMIN_ACCESS].includes(p),
             isModuleEnabled: () => false,
             isPlatformAdmin: () => false,
             tenantName: signal('Al Nakheel').asReadonly(),

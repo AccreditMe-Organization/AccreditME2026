@@ -153,7 +153,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
   // Longest route wins: '/tasks' is a prefix of '/tasks/unassigned', but the
   // unassigned view belongs to Administration, not to My work.
   it('resolves /tasks/unassigned to Administration, not to My tasks', async () => {
-    configure({ permissions: [ADMIN_ACCESS, 'tasks:manage'] });
+    configure({ permissions: [ADMIN_ACCESS, 'committees:manage_tasks'] });
     const { crumb } = await trailAt('/tasks/unassigned');
     expect(crumb.items()).toEqual([
       { text: TENANT, url: '/home' },

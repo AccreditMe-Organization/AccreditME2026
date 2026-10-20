@@ -25,7 +25,8 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
  *   soonest due (overdue first), then On hold, then the most recently closed.
  * - **The header count is every task the viewer can see**, never the five.
  *   "Showing 5 of 16 · See all" opens the popup, the only full view.
- * - **A viewer who may see the record but not its tasks** (no tasks:view) sees
+ * - **A viewer who may see the record but not all its tasks** (no View all
+ *   tasks on the type, no unit scope over it — ACC-244) sees
  *   "Your tasks on this committee": only the tasks they are or were on (Q1).
  * - **Each row has one next step and a worded ⋯ menu**, exactly the actions
  *   the server says this viewer may take. An action's failure is said in its
@@ -152,7 +153,7 @@ export class RecordTasksPanelComponent {
   readonly sourceId = input.required<string>();
   /** The record's name, for the popup's title and the error line. */
   readonly recordName = input.required<string>();
-  /** tasks:create — New task in the header and in the popup. */
+  /** Create tasks on the record's type (ACC-244) — New task in the header and in the popup. */
   readonly canCreate = input(false);
   /**
    * A task named by a link (?task=): highlighted here, or opened in the popup.
