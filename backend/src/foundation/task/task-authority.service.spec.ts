@@ -128,12 +128,6 @@ describe('TaskAuthorityService (ACC-173)', () => {
   });
 
   describe('decisionRecipients', () => {
-    // decisionRecipients() reads the clock itself, so the clock is pinned to the
-    // fixture's NOW: against the real one, the BEFORE–AFTER cover window ended on
-    // 20 Oct 2026 and the delegate dropped out of the answer.
-    beforeEach(() => jest.useFakeTimers({ now: NOW }));
-    afterEach(() => jest.useRealTimers());
-
     it('is the active creator and whoever covers them now — never the requester', async () => {
       prisma.user.findFirst.mockResolvedValue(
         creatorRow({
