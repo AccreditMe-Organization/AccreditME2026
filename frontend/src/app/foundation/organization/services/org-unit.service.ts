@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 
@@ -77,6 +77,127 @@ export interface UpdateOrgUnitDto {
   sortOrder?: number;
 }
 
+// ── ACC-120 slice 11: the read model (GET units/structure, units/chart,
+// units/:id/summary). Mirrors backend interfaces/org-structure.interface.ts —
+// kept in step by hand, as above.
+//
+// What a caller sees (D7): person names need users:view (else null), committee
+// items need committees:view (else counts only), `attention` needs setup:view
+// (else ABSENT). Titles and headcounts are for every org:view holder.
+
+export interface OrgStructureHeadDto {
+  userId: string;
+  name: string | null;
+  positionId: string | null;
+  positionNameEn: string | null;
+  positionNameAr: string | null;
+  /** `incoming`: the pending successor, who already holds head access. */
+  role: 'substantive' | 'incoming';
+  countedHere: boolean;
+}
+
+export interface OrgStructureActingDto {
+  userId: string;
+  name: string | null;
+  reason: 'VACANCY' | 'ABSENCE' | null;
+  validFrom: string;
+  validTo: string | null;
+  /** False when the cover's own primary unit is elsewhere. */
+  countedHere: boolean;
+}
+
+export interface OrgUnitAttentionDto {
+  code: 'ORG_UNIT_WITHOUT_HEAD' | 'ORG_UNIT_WITHOUT_TYPE' | 'ACTING_HEAD_OPEN_ENDED';
+  severity: 'BLOCKS_WORK' | 'AT_RISK';
+  since: string;
+  openCount: number;
+}
+
+export interface OrgStructureNodeDto {
+  id: string;
+  parentId: string | null;
+  nameEn: string;
+  nameAr: string | null;
+  code: string;
+  type: OrgUnitTypeDto | null;
+  sortOrder: number;
+  isActive: boolean;
+  /** ACTIVE direct children, including any below a chart's cut-off. */
+  childCount: number;
+  heads: OrgStructureHeadDto[];
+  acting: OrgStructureActingDto | null;
+  headcount: number;
+  committees: { count: number };
+  /** Present only for setup:view; null there when nothing is open. */
+  attention?: OrgUnitAttentionDto | null;
+}
+
+export interface OrgUnitPathItemDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+}
+
+export interface OrgStructureResponseDto {
+  nodes: OrgStructureNodeDto[];
+  asOf: string;
+}
+
+export interface OrgChartNodeDto extends OrgStructureNodeDto {
+  /** 0 for the window's root, up to depth - 1. */
+  depth: number;
+}
+
+export interface OrgChartResponseDto {
+  root: { id: string; path: OrgUnitPathItemDto[] };
+  depth: number;
+  nodes: OrgChartNodeDto[];
+  asOf: string;
+}
+
+export interface OrgUnitPositionInUseDto {
+  positionId: string;
+  nameEn: string;
+  nameAr: string | null;
+  grade: number;
+  isUnitHeadPosition: boolean;
+  count: number;
+}
+
+export interface OrgUnitPersonDto {
+  userId: string;
+  name: string | null;
+  positionId: string | null;
+  positionNameEn: string | null;
+  positionNameAr: string | null;
+  isHead: boolean;
+}
+
+export interface OrgUnitCommitteeItemDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+  stageNameEn: string | null;
+  stageNameAr: string | null;
+  stageKey: string | null;
+}
+
+export interface OrgUnitSummaryDto {
+  unit: OrgStructureNodeDto & { description: string | null; createdAt: string; updatedAt: string };
+  path: OrgUnitPathItemDto[];
+  positions: OrgUnitPositionInUseDto[];
+  people: OrgUnitPersonDto[];
+  committees: { count: number; items: OrgUnitCommitteeItemDto[] | null };
+  asOf: string;
+}
+
+/** ACC-120 slice 11 — deactivate's refusal (409), said from its codes. */
+export interface OrgUnitDependenciesRefusalDto {
+  code: 'ORG_UNIT_HAS_DEPENDENCIES';
+  message: string;
+  blockers: Array<{ code: 'ACTIVE_CHILDREN' | 'ACTIVE_USERS' | 'ACTIVE_COMMITTEES'; count: number }>;
+}
+
 export function orgUnitDisplayName(unit: { nameEn: string; nameAr: string | null }): string {
   return unit.nameAr ? `${unit.nameEn} (${unit.nameAr})` : unit.nameEn;
 }
@@ -140,6 +261,25 @@ export class OrgUnitService {
 
   deactivate(id: string): Observable<OrgUnitDto> {
     return this.http.post<OrgUnitDto>(`${this.base}/${id}/deactivate`, {});
+  }
+
+  /** ACC-120 slice 11 — every active unit; inactive too for org:manage, when asked. */
+  getStructure(options: { includeInactive?: boolean } = {}): Observable<OrgStructureResponseDto> {
+    const params = options.includeInactive ? new HttpParams().set('includeInactive', 'true') : undefined;
+    return this.http.get<OrgStructureResponseDto>(`${this.base}/structure`, { params });
+  }
+
+  /** ACC-120 slice 11 — the chart's window: from rootId (or the top unit), at most 4 levels. */
+  getChart(options: { rootId?: string; depth?: number } = {}): Observable<OrgChartResponseDto> {
+    let params = new HttpParams();
+    if (options.rootId) params = params.set('rootId', options.rootId);
+    if (options.depth !== undefined) params = params.set('depth', String(options.depth));
+    return this.http.get<OrgChartResponseDto>(`${this.base}/chart`, { params });
+  }
+
+  /** ACC-120 slice 11 — one unit for its record page and the chart's side panel. */
+  getSummary(id: string): Observable<OrgUnitSummaryDto> {
+    return this.http.get<OrgUnitSummaryDto>(`${this.base}/${id}/summary`);
   }
 }
 
