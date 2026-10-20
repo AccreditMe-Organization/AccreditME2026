@@ -5,8 +5,8 @@ import { TASK_SOURCE_TYPES } from './create-task.dto';
 // ACC-167 — the assignment picker's queries.
 //
 // `taskId` is how someone who may not CREATE tasks still reaches the picker:
-// they are reassigning that task, as its creator or a tasks:reassign holder.
-// Without it, the caller needs tasks:create.
+// they are reassigning that task, as its creator or a Manage tasks holder on
+// its type (ACC-244). Without it, the caller needs Create tasks on some type.
 
 export class AssignmentQueryDto {
   @IsOptional()

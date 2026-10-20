@@ -36,21 +36,22 @@ export interface ResolvedPlacement extends PoolPlacement {
  *
  * ## Who may use the picker
  *
- * A tasks:create holder, or — for one task, named by `taskId` — anyone allowed
- * to reassign it: its creator, or a tasks:reassign holder. This replaces the
+ * A holder of Create tasks on any record type (ACC-244), or — for one task,
+ * named by `taskId` — anyone allowed to reassign it: its creator, whoever acts
+ * for them, or a holder of Manage tasks on its type. This replaces the
  * users:view dependency ACC-163 recorded: a creator who cannot list the
  * tenant's users can still choose who gets their task. The committee variants
  * also need committees:view, because the request names the committee and
  * lists its members (ACC-101 clause (a): refused before anything is read).
  *
  * Refusals follow ACC-101's two clauses. With no taskId the request names no
- * record, so a caller without tasks:create gets a 403 naming it. With a taskId
+ * record, so a caller without Create tasks gets a 403 naming the keys. With a taskId
  * the entitlement is only knowable from the row, so a caller who is neither
  * its creator nor a reassigner gets the identical 404.
  *
  * ACC-208 (Ahmad, 12 Oct, Q1) — workflows:manage also opens the picker, with no
  * taskId: configuring where a stage's tasks go is choosing a target, the same
- * data tasks:create chooses from. A taskId still means "reassigning THIS
+ * data Create tasks chooses from. A taskId still means "reassigning THIS
  * task", which workflows:manage does not grant.
  */
 @Injectable()

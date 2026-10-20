@@ -50,7 +50,7 @@ const REQUEST_STATUS_PHRASE: Record<string, string> = {
  *   ask        an active assignee of an Assigned or In-progress task
  *   withdraw   the person who asked
  *   decide     the creator, anyone acting for them (canActForCreator), or a
- *              tasks:reassign holder — never the person who asked
+ *              Manage tasks holder on the type (ACC-244) — never the person who asked
  *   resume     an active assignee, or anyone who may decide
  * Everyone else gets the identical 404, checked before any 409.
  *
