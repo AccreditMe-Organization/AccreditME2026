@@ -425,7 +425,9 @@ export class OrganizationService {
       after: this.toInterface(unit) as unknown as Record<string, unknown>,
     });
 
-    return this.toInterface(unit);
+    // ACC-120 slice 11 — resolved like the GETs, so the dialog's caller gets the
+    // type it just chose rather than null.
+    return this.toInterface(unit, await this.buildTypeResolver(organizationId));
   }
 
   /**
@@ -590,7 +592,7 @@ export class OrganizationService {
     if (!unit) throw new NotFoundException('Org unit not found');
 
     // Idempotent — already inactive
-    if (!unit.isActive) return this.toInterface(unit);
+    if (!unit.isActive) return this.toInterface(unit, await this.buildTypeResolver(organizationId));
 
     const blockers: string[] = [];
 
@@ -663,7 +665,7 @@ export class OrganizationService {
       after: this.toInterface(updated) as unknown as Record<string, unknown>,
     });
 
-    return this.toInterface(updated);
+    return this.toInterface(updated, await this.buildTypeResolver(organizationId));
   }
 
   // Used by TenantService.bootstrap() to seed the root org unit without injecting this service
