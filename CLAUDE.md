@@ -998,6 +998,11 @@ User departure triggers bulk-reassignment flow:
 - **Every migration is EXPAND-THEN-CONTRACT** — mandatory since ACC-127,
   see Key Architecture Decisions (ACC-127) below for why a rule that used
   to be advice is now a requirement
+- **A backfill or seed script run from a developer machine against the shared
+  database passes an explicit transaction timeout** (`{ maxWait: 10_000,
+  timeout: 60_000 }`, the scripts' `BACKFILL_TX`): Prisma's default 5 seconds
+  runs out over the network, and the transaction rolls back (ACC-190 on 10 Oct,
+  ACC-244 on 20 Oct)
 
 ### TypeScript Rules
 - Always strict mode — zero any types without explicit documented justification
