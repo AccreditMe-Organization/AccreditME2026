@@ -29,6 +29,8 @@ const BASE_TEMPLATE = {
 const BASE_STAGE = {
   id: 'stage-1',
   workflowTemplateId: 'template-1',
+  // ACC-239 — the protected-template check reads the stage's template type.
+  workflowTemplate: { objectType: 'DOCUMENT' },
   nameEn: 'Drafting',
   nameAr: 'مسودة',
   description: null as string | null,
@@ -50,6 +52,7 @@ const BASE_STAGE = {
 
 const BASE_TRANSITION = {
   id: 'transition-1',
+  fromStage: { workflowTemplate: { objectType: 'DOCUMENT' } },
   fromStageId: 'stage-1',
   toStageId: 'stage-2',
   labelEn: 'Submit for Review',
@@ -67,6 +70,7 @@ const BASE_TRANSITION = {
 
 const BASE_ACTION = {
   id: 'action-1',
+  workflowTransition: { fromStage: { workflowTemplate: { objectType: 'DOCUMENT' } } },
   workflowTransitionId: 'transition-1',
   actionType: 'CREATE_TASK',
   order: 10,
@@ -336,8 +340,9 @@ describe('WorkflowTemplateService', () => {
       await service.seedDefaultWorkflows(ORG_A);
 
       const created = mockPrisma.workflowTransition.create.mock.calls.map(([arg]: [{ data: { kind: string } }]) => arg.data.kind);
-      expect(created.filter((k: string) => k === 'RETURN')).toHaveLength(14);
-      expect(created.filter((k: string) => k === 'EXIT')).toHaveLength(8);
+      // ACC-190's 14 and 8, plus ACC-239's change request: one return, four exits.
+      expect(created.filter((k: string) => k === 'RETURN')).toHaveLength(15);
+      expect(created.filter((k: string) => k === 'EXIT')).toHaveLength(12);
       expect(created.every((k: string) => ['ADVANCE', 'RETURN', 'EXIT'].includes(k))).toBe(true);
       const actionTypes = mockPrisma.workflowTransitionAction.create.mock.calls.map(([arg]: [{ data: { actionType: string } }]) => arg.data.actionType);
       expect(actionTypes).not.toContain('CREATE_TASK');
@@ -345,7 +350,7 @@ describe('WorkflowTemplateService', () => {
 
     // ACC-233 — the committee lifecycle's stages carry the seed's stable key; no
     // other template's do yet (KEYED_SEED_TEMPLATES).
-    it("writes the seed key on every COMMITTEE stage, and on no other template's", async () => {
+    it("writes the seed key on every COMMITTEE and COMMITTEE_CHANGE_REQUEST stage, and on no other template's", async () => {
       installFakeStore();
 
       await service.seedDefaultWorkflows(ORG_A);
@@ -353,11 +358,13 @@ describe('WorkflowTemplateService', () => {
       const created = mockPrisma.workflowStage.create.mock.calls.map(
         ([arg]: [{ data: { nameEn: string; key?: string } }]) => arg.data,
       );
-      const committeeSeed = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'COMMITTEE')!;
+      // ACC-233 keyed the committee lifecycle; ACC-239 the change request's six stages.
+      const keyedSeeds = SYSTEM_WORKFLOW_SEED.filter((w) => w.objectType === 'COMMITTEE' || w.objectType === 'COMMITTEE_CHANGE_REQUEST');
+      const keyedStages = keyedSeeds.flatMap((w) => w.stages);
       const keyed = created.filter((d: { key?: string }) => d.key !== undefined);
-      expect(keyed.map((d: { key?: string }) => d.key)).toEqual(committeeSeed.stages.map((st) => st.key));
-      expect(keyed.map((d: { nameEn: string }) => d.nameEn)).toEqual(committeeSeed.stages.map((st) => st.nameEn));
-      expect(created.length - keyed.length).toBe(totalStages - committeeSeed.stages.length);
+      expect(keyed.map((d: { key?: string }) => d.key)).toEqual(keyedStages.map((st) => st.key));
+      expect(keyed.map((d: { nameEn: string }) => d.nameEn)).toEqual(keyedStages.map((st) => st.nameEn));
+      expect(created.length - keyed.length).toBe(totalStages - keyedStages.length);
       // Looked up by key first, so a stage renamed since is found, not recreated.
       expect(mockPrisma.workflowStage.findFirst).toHaveBeenCalledWith({
         where: { workflowTemplateId: expect.any(String), key: 'dissolution_pending' },
@@ -1896,11 +1903,13 @@ describe('WorkflowTemplateService', () => {
       expect(transitions.flatMap((t) => t.actions.map((a) => a.actionType as string))).not.toContain('CREATE_TASK');
     });
 
-    it('marks 14 returns and 8 exits, and leaves every other transition an ADVANCE', () => {
+    // ACC-239 added one return (Return for changes) and four exits (Reject, and
+    // Withdraw from each of the three open stages) to ACC-190's 14 and 8.
+    it('marks 15 returns and 12 exits, and leaves every other transition an ADVANCE', () => {
       const kinds = transitions.map((t) => t.kind ?? 'ADVANCE');
-      expect(kinds.filter((k) => k === 'RETURN')).toHaveLength(14);
-      expect(kinds.filter((k) => k === 'EXIT')).toHaveLength(8);
-      expect(kinds.filter((k) => k === 'ADVANCE')).toHaveLength(transitions.length - 22);
+      expect(kinds.filter((k) => k === 'RETURN')).toHaveLength(15);
+      expect(kinds.filter((k) => k === 'EXIT')).toHaveLength(12);
+      expect(kinds.filter((k) => k === 'ADVANCE')).toHaveLength(transitions.length - 27);
     });
 
     it.each([
@@ -1910,6 +1919,10 @@ describe('WorkflowTemplateService', () => {
       ['INCIDENT', 'reported', 'cancelled', 'EXIT'],
       // Order cannot be trusted: Reactivate goes to a LOWER order and is an advance.
       ['COMMITTEE', 'suspended', 'active', 'ADVANCE'],
+      ['COMMITTEE_CHANGE_REQUEST', 'under_review', 'returned', 'RETURN'],
+      ['COMMITTEE_CHANGE_REQUEST', 'under_review', 'rejected', 'EXIT'],
+      ['COMMITTEE_CHANGE_REQUEST', 'draft', 'withdrawn', 'EXIT'],
+      ['COMMITTEE_CHANGE_REQUEST', 'under_review', 'approved', 'ADVANCE'],
     ])('%s %s → %s is %s', (objectType, from, to, kind) => {
       const t = transitions.find((x) => x.objectType === objectType && x.fromStageKey === from && x.toStageKey === to);
       expect(t?.kind ?? 'ADVANCE').toBe(kind);

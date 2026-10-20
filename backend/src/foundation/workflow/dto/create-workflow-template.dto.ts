@@ -11,6 +11,9 @@ const WORKFLOW_OBJECT_TYPES = [
   'CORRECTIVE_ACTION',
   'MEETING',
   'COMMITTEE',
+  // ACC-239 — listed so the type is known; creating a second template for it is
+  // refused (PROTECTED_TEMPLATES).
+  'COMMITTEE_CHANGE_REQUEST',
 ] as const;
 
 export class CreateWorkflowTemplateDto {

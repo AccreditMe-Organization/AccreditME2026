@@ -48,6 +48,16 @@ export class ObjectVisibilityService {
           select: { id: true },
         }),
     },
+    // ACC-239 — a change request is part of its committee's record: seeing it
+    // takes what seeing the committee takes.
+    COMMITTEE_CHANGE_REQUEST: {
+      permission: COMMITTEES_PERMISSIONS.VIEW,
+      exists: (id, organizationId) =>
+        this.prisma.committeeChangeRequest.findFirst({
+          where: { id, organizationId },
+          select: { id: true },
+        }),
+    },
     MEETING: {
       permission: MEETINGS_PERMISSIONS.VIEW,
       exists: (id, organizationId) =>

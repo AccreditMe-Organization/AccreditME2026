@@ -21,7 +21,9 @@ export type WorkflowRefusalCode =
   | 'ACTION_TYPE_RETIRED'
   | 'VALIDATOR_RETIRED'
   // ACC-238 — a transition precondition (transition-preconditions.ts).
-  | 'COMMITTEE_QUORUM_NOT_SET';
+  | 'COMMITTEE_QUORUM_NOT_SET'
+  // ACC-239 — an edit to a template whose shape code relies on (PROTECTED_TEMPLATES).
+  | 'WORKFLOW_TEMPLATE_PROTECTED';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -40,6 +42,7 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   ACTION_TYPE_RETIRED: HttpStatus.BAD_REQUEST,
   VALIDATOR_RETIRED: HttpStatus.BAD_REQUEST,
   COMMITTEE_QUORUM_NOT_SET: HttpStatus.CONFLICT,
+  WORKFLOW_TEMPLATE_PROTECTED: HttpStatus.CONFLICT,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -59,6 +62,8 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   ACTION_TYPE_RETIRED: 'Create task is no longer an action. Add tasks to the destination stage instead',
   VALIDATOR_RETIRED: "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves",
   COMMITTEE_QUORUM_NOT_SET: 'Set a quorum of at least 1 before submitting this committee for approval',
+  WORKFLOW_TEMPLATE_PROTECTED:
+    'The committee change request workflow is fixed: its stages can be renamed and given deadlines, and nothing else changed',
 };
 
 export class WorkflowRefusalException extends HttpException {
@@ -82,4 +87,31 @@ export class WorkflowRefusalException extends HttpException {
       status,
     );
   }
+}
+
+/**
+ * ACC-239 — what a tenant tried to do to a protected template, and the sentence
+ * that says why it can't (Ahmad, 18 Oct, Q15: the committee change request's
+ * six keyed stages are fixed; rename them and set their deadlines). Added
+ * review stages are ACC-245.
+ */
+const PROTECTED_REFUSALS = {
+  CREATE_TEMPLATE:
+    'There is already a committee change request workflow, and there can be only one. Rename its stages or set their deadlines instead.',
+  REPLACE_DEFAULT: 'The committee change request workflow cannot be replaced by another workflow.',
+  DEACTIVATE: 'The committee change request workflow cannot be switched off: changes to approved committees depend on it.',
+  CHANGE_TYPE: 'A workflow cannot be changed to or from the committee change request type.',
+  ADD_STAGE: 'Stages cannot be added to the committee change request workflow. You can rename its stages and set their deadlines.',
+  REMOVE_STAGE: 'This stage is part of how a committee change request is decided, so it cannot be deleted.',
+  STAGE_FIELD:
+    "In the committee change request workflow only a stage's names, description and deadline can be changed.",
+  TRANSITION:
+    'The moves of a committee change request are fixed, so they cannot be added, changed or removed.',
+  STAGE_TASKS:
+    "Tasks cannot be added to the committee change request workflow's stages: its moves are made by the request itself.",
+} as const;
+export type ProtectedEdit = keyof typeof PROTECTED_REFUSALS;
+
+export function refuseProtected(edit: ProtectedEdit): never {
+  throw new WorkflowRefusalException('WORKFLOW_TEMPLATE_PROTECTED', { message: PROTECTED_REFUSALS[edit], edit });
 }

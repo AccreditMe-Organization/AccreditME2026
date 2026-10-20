@@ -28,7 +28,9 @@ export type WorkflowRefusalCode =
   | 'ACTION_TYPE_RETIRED'
   | 'VALIDATOR_RETIRED'
   // ACC-238 — a committee leaves Formation only with a quorum of at least 1.
-  | 'COMMITTEE_QUORUM_NOT_SET';
+  | 'COMMITTEE_QUORUM_NOT_SET'
+  // ACC-239 — the committee change request workflow's shape is fixed.
+  | 'WORKFLOW_TEMPLATE_PROTECTED';
 
 /**
  * The refusals whose words need nothing but the code. Literal keys, so the
@@ -46,6 +48,7 @@ const PLAIN_REFUSAL_KEYS: Partial<Record<WorkflowRefusalCode, string>> = {
   STAGE_TASK_ON_FINAL_STAGE: 'workflow.refusal.onFinalStage',
   STAGE_TASK_ORDER_MISMATCH: 'workflow.stageTasks.orderChanged',
   COMMITTEE_QUORUM_NOT_SET: 'workflow.refusal.committeeQuorumNotSet',
+  WORKFLOW_TEMPLATE_PROTECTED: 'workflow.refusal.templateProtected',
 };
 
 /** The translation key for a refusal that needs only its code, or null. */

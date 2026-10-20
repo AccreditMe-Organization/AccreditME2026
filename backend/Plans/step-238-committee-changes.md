@@ -43,7 +43,7 @@
 5. **Request lifecycle:** Draft → Under review → Approved (applied) or Rejected.
    - Return sends it to **Returned** with a note (its own keyed stage since Ahmad's Q15 decision, 18 Oct). The requester edits it there and submits it again.
    - Withdrawn ends it.
-   - A tenant may add review stages between Under review and Approved (Q15, as decided).
+   - The six stages are fixed: a tenant renames them and sets their deadlines, nothing else (Q15, as decided 18 Oct). Added review stages are ACC-245.
 6. **Dissolution Pending and Dissolved:** no edit and no new request. An open request can only be rejected or withdrawn.
 7. **Members:** outside all of this; membership events work as today.
 8. **One open request per committee:**
@@ -245,7 +245,7 @@ model WorkflowInstanceStage { … quorumCount Int? }      // the snapshot
 ```
 
 - **There is no status column.** The state is the request's workflow instance's current stage key, which is one fact in one place (ACC-82's rule).
-  - "Open" means the key is `draft`, `under_review` or `returned`, or the request sits in a stage a tenant added (no key), which counts as open AND under review (Q15, 18 Oct).
+  - "Open" means the key is `draft`, `under_review` or `returned`, or the request sits in a stage with no key, which counts as open (fail safe; no such stage can be added since Q15 was decided, 18 Oct).
   - Closed means `approved`, `rejected` or `withdrawn`.
 - **`fromValues` is written at submit, and at every resubmit** (Q11, 18 Oct): the committee's current value of each field the request changes, at that moment. Approval compares them (§5.5).
 - **`changes` is JSON, not a column per field.** Nine editable fields would be nine nullable columns, each with a second "was this sent" flag (`nameAr` can legitimately change to null).
@@ -287,17 +287,11 @@ model WorkflowInstanceStage { … quorumCount Int? }      // the snapshot
   - Because they are `SYSTEM_AUTOMATIC`, the generic `POST /workflows/instances/:id/transitions` already refuses them (`workflow.service.ts:468`). Nobody can move a request to Approved without applying it.
   - Transitions are found by their from and to stage keys; transitions have no key of their own.
 - **What a tenant may change (Q15, decided 18 Oct):**
-  - **May:** rename any stage, set SLAs, and add their own stages between Under review and Approved (a second review, say), each with its own approvers. An added stage has no key.
-  - **A request in an added stage counts as open and under review.**
-    - Approve, Return and Reject work from it as from `under_review`.
-    - In an added stage the approver must ALSO be in that stage's own approver pool (`resolveApproverPool()`), on top of `committees:approve`.
-    - Moving between `under_review` and an added stage uses the tenant's own transitions, through the generic endpoint, with their own permissions.
-  - **May not:**
-    - delete any of the six keyed stages;
-    - change or delete a transition INTO `approved` or `rejected` (the ones that apply or close the request), or add one that is not `SYSTEM_AUTOMATIC`;
-    - add a stage after a final stage.
-  - **The workflow editor refuses the forbidden edits** with code `WORKFLOW_TEMPLATE_PROTECTED` and a sentence naming why, e.g. "This stage is how a committee change request is applied, so it can't be deleted." The screen says it from the code.
-  - **A real-database spec proves each refusal**, and that an allowed edit (rename, SLA, an added stage with a transition into it) still saves.
+  - **May:** rename any of the six stages, describe them, and set their deadlines (SLA and escalation).
+  - **May not:** add or delete a stage, add, change or remove a transition or its actions, add tasks to a stage, create a second template for the type, give up its default, deactivate it, or change a template's type to or from it.
+  - **The workflow editor refuses each** with code `WORKFLOW_TEMPLATE_PROTECTED`, the refused edit named in `edit`, and a sentence saying why. Only a value that CHANGES is refused, because a form re-sends the unchanged ones.
+  - **A real-database spec proves each refusal**, and that a rename and a deadline still save.
+  - Added review stages between Under review and Approved are the follow-up **ACC-245** (Feature, lane B, Medium), "Committee change requests: tenants can add review stages between Under review and Approved".
 - **Build check:** `checkAndFlagUnassignedStage()` must not report `under_review` as "no eligible actor" merely because its transitions are system-fired. If it would, the type is excluded there, with a test.
 - **Seeding:**
   - New organisations: `seedDefaultWorkflows`, an idempotent upsert.
@@ -552,11 +546,10 @@ The artboard was refreshed into `frontend/design-reference/` in `df857fc`. Each 
 15. **Are the request workflow's stages fixed?**
     - Tenants could otherwise add stages to the request template in Workflow settings, which this feature cannot follow.
     - **Pick: rename and SLA only.** Adding or removing a stage or transition on a `COMMITTEE_CHANGE_REQUEST` template is refused (`WORKFLOW_TEMPLATE_FIXED`), as it is a system process.
-    - **DECIDED DIFFERENTLY (Ahmad, 18 Oct):**
-      - Tenants may rename stages, set SLAs, and add their own stages between Under review and Approved, each with its own approvers.
-      - They may not delete the six keyed stages (draft, under_review, returned, approved, rejected, withdrawn) or change the system-fired Approve and Reject transitions.
-      - Added stages have no key; a request in one counts as open and under review.
-      - The editor refuses the forbidden edits with a clear sentence (`WORKFLOW_TEMPLATE_PROTECTED`), and a real-database spec proves each refusal.
+    - **DECIDED (Ahmad, 18 Oct), after the build found a hole in the first answer:**
+      - The first answer let tenants add their own stages between Under review and Approved. Such a stage could never be reached: the fixed, system-fired Approve leaves `under_review`, so it would skip any stage added after it.
+      - **The six keyed stages are fixed: rename them and set their SLAs, nothing else.** Adding or deleting a stage, or changing a transition, is refused with a clear sentence (`WORKFLOW_TEMPLATE_PROTECTED`). So are creating a second template for the type, changing its default and deactivating the seeded one.
+      - Added review stages are the follow-up **ACC-245** (Feature, lane B, Medium), "Committee change requests: tenants can add review stages between Under review and Approved".
       - Written into §2 and §5.2.
 
 **From the artboard 14 check (§6.3):**
@@ -655,3 +648,52 @@ actions in the footer. The drawing's committee with its longest values. **Cap
 - **ACC-242** (lane A, Low): "Shared lists switch to phone cards at 768 px,
   matching the shell" (Q19).
 - **ACC-239's description** follows Q11, Q15 and the one-open rule as decided.
+
+---
+
+## 12. Built — PR 2 (ACC-239), results and departures
+
+### 12.1 What it is
+
+- **Migration** `20261018171818_acc239_committee_change_request` (additive): the `COMMITTEE_CHANGE_REQUEST` value, the `CommitteeChangeRequest` table, and `WorkflowInstanceStage.quorumCount`.
+- **The service:** `committees/change-requests/committee-change-request.service.ts`. Its routes:
+
+  | Route | Who |
+  |---|---|
+  | `GET  /committees/:id/change-requests` | committees:view. The panel and See all: `q` (a number, or the requester's name), `sort` number / status / requested, `dir`, `take`, `skip`; answers `{ items, total, matching }` |
+  | `GET  /committees/:id/change-requests/open` | committees:view. The banner: `{ request }`, or null |
+  | `POST /committees/:id/change-requests/preview` | committees:view. The impact lines for Request a change |
+  | `POST /committees/:id/change-requests` | committees:edit_details. A draft; `submit: true` submits it too |
+  | `GET  /committee-change-requests/awaiting-decision` | committees:approve. Under review, and not raised by the viewer |
+  | `GET  /committee-change-requests/:id` | committees:view, with the viewer's `actions` |
+  | `PATCH /committee-change-requests/:id` | the requester, with committees:edit_details; draft or returned; takes `expectedUpdatedAt` |
+  | `POST /committee-change-requests/:id/submit` | the requester, with committees:edit_details |
+  | `POST /committee-change-requests/:id/withdraw` | the requester at any open stage, or a committees:approve holder for a draft or returned request |
+  | `POST /committee-change-requests/:id/approve` | committees:approve, never the requester |
+  | `POST /committee-change-requests/:id/return` | the same; `note` required |
+  | `POST /committee-change-requests/:id/reject` | the same; `reason` required. Allowed while the committee dissolves |
+
+  Every route needs committees:view at the guard. The rest is the service's, because only the request says who raised it. Another organisation's request or committee gets the identical 404 an invented id gets.
+- **The engine:** `startInstance()` is now prepare, insert inside a transaction, then finish, so a request and its instance commit together. `triggerSystemTransition()` fires a SYSTEM_AUTOMATIC move by its destination key, with the module's write (`inTx`) inside the stage-change transaction.
+- **The quorum snapshot:** saved on every entry into a committee-approval stage, at start and on every move. The vote counts against it, and falls back to the live quorum for an entry made before ACC-239. Open entries in such stages on the shared database when measured (18 Oct): **0**.
+- **Seeding:** the seed writer moved to `workflow-seed-apply.ts`. A new organisation's bootstrap and `npm run backfill:acc239-change-request-workflow` both use it; the backfill writes ONLY the new template.
+
+### 12.2 Departures from the plan, each deliberate
+
+1. **The backfill is `backfill:acc239-change-request-workflow`**, the name the brief gave, not §5.2's longer one.
+2. **Tasks cannot be added to the fixed stages either** (`edit: STAGE_TASKS`). A mandatory one would hold the moves the request itself makes. The brief's list did not name it; it is the same rule.
+3. **Submit re-reads the proposal against the committee**, under the locks. A value that has since come to equal the proposal is dropped, and if nothing is left the answer is `CHANGE_REQUEST_NO_CHANGES`. The "from" values cover the fields that still change.
+4. **Withdraw and Submit re-check the stage inside the engine's lock.** The engine picks the transition from the stage it reads first. Without the re-check, an approver allowed to withdraw a draft could withdraw a request submitted a moment earlier.
+5. **A notice opens the committee** (`objectType COMMITTEE`), where the request's banner will be: the bell has no route for a request yet (PR 3).
+6. **A request's committee type is not checked against the lookup**, exactly as a direct edit does not check it today.
+7. **Only the stage form says this refusal from its code**, in both languages.
+8. **The stage rules moved into one policy map** (`change-request-policy.ts`, keyed by stage key), so the step that makes stage permissions configurable swaps them in one place. No endpoint changed what it allows or refuses. One `actions` flag changed to match its endpoint: `edit` used to be false whenever the committee was not Active or Suspended, while the edit endpoint refused only a dissolving committee. The flag now says what the endpoint does. That state is reachable only for a request left open while its committee stands in a stage with no key, since no seeded transition takes an Active committee back to Formation. The editor's other screens still show the server's English sentence; PR 3 or ACC-245 can carry the code to them.
+
+### 12.3 Mutation checks (each turned `committee-change-request.db-spec.ts` red)
+
+| Mutation | Red spec |
+|---|---|
+| Create without the committee row lock | two creates pressed at the same moment |
+| Approve without the "from" comparison | DRIFT (Q11) |
+| The requester may approve | the requester can never decide their own request |
+| Approve's committee write outside the transaction | all or nothing; applies every value |

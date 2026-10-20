@@ -36,9 +36,10 @@ function client(transitions: unknown[], tasks: unknown[] = []) {
 }
 
 describe('backfill-acc190-stage-tasks — the plan (ACC-190)', () => {
-  it('knows the 26 seeded CREATE_TASK transitions and the 22 seeded RETURN/EXIT transitions, by stage NAME', () => {
+  // 22 at ACC-190; ACC-239's change request workflow added five (one return, four exits).
+  it('knows the 26 seeded CREATE_TASK transitions and the 27 seeded RETURN/EXIT transitions, by stage NAME', () => {
     expect(CREATE_TASK_PAIRS).toHaveLength(26);
-    expect(KIND_PAIRS).toHaveLength(22);
+    expect(KIND_PAIRS).toHaveLength(27);
     expect(CREATE_TASK_PAIRS).toContainEqual({ objectType: 'COMMITTEE', fromName: 'Formation', toName: 'Terms Review' });
     expect(KIND_PAIRS).toContainEqual(expect.objectContaining({ objectType: 'COMMITTEE', fromName: 'Terms Review', toName: 'Formation', kind: 'RETURN' }));
   });

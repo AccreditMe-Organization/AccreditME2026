@@ -715,7 +715,8 @@
       "roleNotFound": "That committee role no longer exists. Choose another.",
       "userNotInPosition": "That person no longer holds this position here. Choose again.",
       "onFinalStage": "A final stage can't create tasks: the record is complete when it arrives.",
-      "committeeQuorumNotSet": "Set a quorum of at least 1 before submitting this committee for approval."
+      "committeeQuorumNotSet": "Set a quorum of at least 1 before submitting this committee for approval.",
+      "templateProtected": "The committee change request workflow is fixed: you can rename its stages and set their deadlines, and nothing else."
     },
     "confirmRemoveActionHeader": "Remove the “{{type}}” action?",
     "removeActionNamed": "Remove the {{type}} action",
