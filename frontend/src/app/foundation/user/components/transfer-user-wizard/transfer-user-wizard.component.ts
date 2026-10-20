@@ -588,7 +588,11 @@ export class TransferUserWizardComponent implements OnInit {
         const holder = status.holders[0];
         if (holder) {
           this.derivedManagerText.set(
-            this.translate.instant('user.transfer.derivedManager', { name: holder.name, unit: parentUnitName }),
+            // ACC-133 / D7 — the name is null for a caller without users:view.
+            this.translate.instant('user.transfer.derivedManager', {
+              name: holder.name ?? this.translate.instant('headship.head.assigned'),
+              unit: parentUnitName,
+            }),
           );
         } else if (status.actingHeadUserId) {
           this.userService.getById(status.actingHeadUserId).subscribe({
