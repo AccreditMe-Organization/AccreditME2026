@@ -1,8 +1,7 @@
 # ACC-133 — the six-state Headship panel (plan)
 
-**Status: STOPPED before building (20 Oct 2026).** The panel as ACC-133 specifies
-it needs data that no endpoint returns. A backend change is needed; CC-127 says
-to stop and say why. The decision is Ahmad's.
+**Status: building (CC-127a, 20 Oct 2026).** The stop below was answered: option
+A, in this same PR, with the D7 names rule applied to this panel.
 
 Spec: ACC-133's description in Linear. Drawing:
 `frontend/design-reference/AccreditMe Head Management.dc.html` (25 Sep).
@@ -126,3 +125,33 @@ is empty. Nothing for this ticket to lower.
   empty-ledger renderings, the view without `org:manage`, and layout specs for
   both dialogs. Then mutation checks, the full suites, the browser check with
   intercepted states, and SYSTEM-REFERENCE.md.
+
+## 7. Decisions (CC-127a, Ahmad, 20 Oct)
+
+- **Option A, in this PR.** `GET /organization/units/:id/head` is extended
+  additively: same route, same `org:view` gate, no migration, no new write. Every
+  existing field is kept for older callers.
+- **D7 applies to this panel.** Person names in the response only when the caller
+  holds `users:view`, otherwise null. The panel shows "Head assigned" / "Cover
+  arranged" where a name would go. Position titles show to every `org:view`
+  holder.
+- **D13 moves here from PR B:** the holder query gains `position.isActive: true`.
+- **The running-cover read is one exported helper in its own file**,
+  `backend/src/foundation/organization/running-acting-cover.ts`
+  (`findRunningActingCover()`), because lane B's ACC-244 reuses it.
+  `task-authority.service.ts` is not changed in this PR.
+- **Never reconstruct from AuditLog.** Where the ledger has no row, the field is
+  null and the panel says what is not recorded.
+
+### Added while building, and why
+
+- **`scheduledCover`.** The cached `actingHeadUserId` is written when a cover is
+  ARRANGED, even one starting later, and cleared only by End cover. So a cover
+  scheduled ahead is not "in force" by the requested window, yet Arrange cover
+  refuses while it exists and End cover accepts. The panel treats a scheduled
+  cover as "covered", so no state offers an action its endpoint refuses.
+- **Dialog C's position is always read-only.** `DeclareHandoverDto` takes no
+  position: the successor receives the outgoing head's position
+  (`declareHandover()`). The drawing's select for two or more positions would
+  offer a choice the server ignores. Appoint head (dialog A) does take one, so the
+  three configurations apply there.
