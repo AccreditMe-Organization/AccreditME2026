@@ -3820,6 +3820,13 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
     While open, the menu registers its trigger's scrollable ancestors with
     `registerScrollableAncestors()` (`shared/overlay/scrollable-ancestors.ts`,
     moved unchanged out of `OverlaySelectComponent`, which now imports it).
+  - **Two opt-in options (ACC-120 slice 11, PR C):**
+    - `groupLabels`: a heading per group, by index. It's never an item, so the
+      CDK keys skip it.
+    - `openedChange`: emitted on open and close, so a caller can read what its
+      items depend on. The org tree reads the unit's headship then.
+
+    A menu without either renders as before.
     Before this, scrolling `<main>` 60px left the menu 60px from its row.
   - **It aligns to its ⋯'s end in either language, after a switch too
     (ACC-235, made app-wide by ACC-237).** CDK's root `Directionality` reads
@@ -5231,6 +5238,16 @@ Measured in `headship-dialogs.layout.spec.ts` (EN / AR, 1280 and 390, the long
 real position name): Appoint head 265–279; Appoint successor 347–368 EN and
 365–406 AR, 55 spare in Arabic at 1280.
 
+**ONE COPY OF THE DIALOGS AND CONFIRMS: `am-headship-actions`** (ACC-120 slice
+11, PR C). `components/headship-actions/` holds the three dialogs, the four
+confirms (Vacate, Start new head today, Withdraw appointment, End cover), the
+unit's people and the head-conferring positions they need, and `run(action)` /
+`blockedReason(action)`. It was moved, unchanged, out of the panel. The panel
+hosts it, and the org tree's row menu (7.9) hosts it too, so a headship item in
+the tree opens exactly what the panel's button opens. It is rendered whether or
+not the status has arrived, so the people and positions are read as soon as it
+exists, as the panel did; only for `org:manage`.
+
 ---
 
 ## 6. Lookup System
@@ -5572,13 +5589,13 @@ section.
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `getTree()` | `GET /organization/units` | `org-unit-tree.component.ts:179` |
+| `getTree()` | `GET /organization/units` | **none since ACC-120 slice 11 PR C**: the tree reads `getStructure()` (7.9) |
 | `getFlat()` | `GET /organization/units/flat` | `position-list`, `position-form`, `invite-user`, `org-unit-form`, `user-list`, `user-profile` |
 | — (`findById()`) | `GET /organization/units/:id` | **not wrapped in the frontend service at all** |
 | `create()` | `POST /organization/units` | `org-unit-form.component.ts:234` |
 | `update()` | `PATCH /organization/units/:id` | `org-unit-form.component.ts:233` |
 | `deactivate()` | `POST /organization/units/:id/deactivate` | `org-unit-tree.component.ts:170` |
-| `getStructure()` | `GET /organization/units/structure` | none yet: the tree, PR C (7.8) |
+| `getStructure()` | `GET /organization/units/structure` | `org-unit-tree.component.ts` (7.9) |
 | `getChart()` | `GET /organization/units/chart` | none yet: the chart, PR E |
 | `getSummary()` | `GET /organization/units/:id/summary` | none yet: the unit record, PR D |
 
@@ -5733,6 +5750,111 @@ each.
 
 `buildTypeResolver` moved to `org-unit-type-resolver.ts`
 (`buildOrgUnitTypeResolver`), unchanged, and both services import it.
+
+### 7.9 The tree, `/organization` (ACC-120 slice 11, PR C)
+
+`components/org-unit-tree/`, rebuilt to the drawing (`AccreditMe Organization
+Structure.dc.html` §1, OS L40-148, L498-540). The rules it filters by are pure
+functions in `org-tree-model.ts`.
+
+**What it reads:**
+- `GET …/structure` (7.8), with `includeInactive=true` for `org:manage`, so
+  Show deactivated is a client-side switch.
+- `GET …/flat`, the records the Add / Edit dialog edits.
+- A unit's `GET …/:id/head` when its row menu opens.
+
+**Header:**
+- The title with "N units · N levels" beside it (active units; levels counted
+  from 1).
+- Add unit, for `org:manage`.
+- A Tree tab, kept in `?view=`. It's one tab until PR E adds Chart.
+
+**Toolbar:**
+- **Search** reads either name and the code, in any letter case.
+  - Matches are tinted. Their ancestors stay as dimmed context, and unmatched
+    siblings go.
+  - "N units match · shown with M ancestors".
+- **Type filter:** `OverlaySelectComponent` with `multiple`, one chip per value.
+  - Its options are the types units hold (retired ones included), then
+    "(No type)".
+  - It combines with search.
+- **Show deactivated:** `org:manage` only. A deactivated unit shows a grey dot
+  and "Deactivated", and has no menu.
+- **Expand all / Collapse all.** Disabled while a search or filter narrows the
+  tree; then every path to a match is open.
+
+**Columns: Unit · Type · Head · People · Attention · ⋯.**
+- **No column sorts and no `aria-sort`.** Order is the structure's:
+  sortOrder, then name (OS L531).
+- **Below 900px of the COMPONENT's own width** (a `ResizeObserver` on its host,
+  never the viewport), Type and People are dropped.
+- **Below 600px (a phone)** the Attention chip moves under the name and Head
+  widens. The drawing has no phone; at 328px a 120px Attention column left Unit
+  a few characters wide.
+- **Unit:** the reader's language on top, the other below at meta size in its
+  own direction (`unicode-bidi: isolate`). Plain text until PR D's record page
+  exists.
+- **Type:** one line, cut with an ellipsis, the whole label in its `title`.
+  "No type" is muted; "· retired" follows a retired type.
+- **Head:** the head, then one meta line:
+  - the position;
+  - "+ incoming {name}" while a successor is pending;
+  - "Away · {name} covering" for an absence cover;
+  - for a vacancy cover, the cover named, with "Acting".
+
+  "No head" is muted, and the cell never carries colour. Names withheld (no
+  `users:view`) read "Head assigned" and "Cover arranged".
+- **Attention:** shown only when the response carries it (`setup:view`).
+  - It's the highest condition: "▲ No head", "▲ No type", "▲ At risk {date}".
+  - `BLOCKS_WORK` is drawn in danger colours, `AT_RISK` in warning colours.
+  - Its accessible name says the severity.
+
+**Expand state (D9):**
+- Collapsed to level 2 by default: the top level open, its children closed.
+- The open ids are kept in `localStorage` under `am.orgTree.expanded.{userId}`.
+- Every read and write is in `try`/`catch`, so the page works without storage.
+
+**The row menu:** `am-row-menu` "Actions for {unit}", for active units.
+- **With `org:manage`:**
+  - **Unit:** Add sub-unit, Edit.
+  - **Headship** (a group heading): the actions `deriveHeadshipState()` gives
+    for the unit's own head status, in the panel's words, run through
+    `am-headship-actions` (5.15.5).
+  - **View:** Headship details, which opens the panel.
+  - **Deactivate.**
+- **Why the head status is read when the menu opens:**
+  - The structure node lacks the scheduled cover and the cached
+    `actingHeadUserId`, so state derived from it could offer an action the
+    server refuses.
+  - The group says "Loading headship…" until the read returns, or "Couldn't
+    load the headship".
+  - Appoint head with no head-conferring position is disabled, with the
+    panel's reason as its second line.
+- **Without `org:manage`** (OS §6, read-only): the menu holds Headship details
+  only.
+  - No head status is read; it replaces the old crown button.
+  - Add unit and Show deactivated are absent.
+- **Left out:** Open unit (PR D), Show on chart (PR E), Move up/down
+  (ACC-138).
+
+**Deactivate:**
+- An `AmConfirmService` destructive confirm: "Deactivate {unit}?", "It
+  disappears from pickers, the chart and new assignments. Its history stays.
+  This can't be undone here…".
+- PR B's coded refusal (`ORG_UNIT_HAS_DEPENDENCIES`) opens
+  `am-org-unit-blockers-dialog`: one 44px row per blocker, with its count, its
+  sentence (a plural object per code) and where to fix it.
+- "Where to fix it" is plain text until those destinations take a filter.
+- Any other failure is said above the tree.
+
+**Tests:**
+- `org-unit-tree.component.spec.ts` covers the toolbar, all six menu states,
+  the read-only menu, the expand state with and without storage, and
+  Deactivate.
+- `org-tree-model.spec.ts` covers the filter rules.
+- `org-unit-tree.layout.spec.ts` measures EN and AR at 988, 358, 328, 900 and
+  899px of content: the columns, no sideways scroll, the ⋯ inside its row,
+  names wrapped, and the blockers dialog at five blockers under the 420 cap.
 
 `getFlat()` is the most widely reused endpoint found in this document
 so far — six distinct components across three different modules
@@ -7389,8 +7511,10 @@ Per-navigation `switchMap`/`catchError` isolation is kept (ACC-14).
 
 `shared/components/page-header/`. Inputs are already-translated strings:
 `title` (required), `eyebrow`, `purpose`, `tabTitle`. Actions are projected
-(`<div pageActions>`). Every routed page except Committee's record uses it;
-Committee's identity card keeps its own H1.
+(`<div pageActions>`), and so, optionally, is one fact beside the title on its
+baseline (`<span pageMeta>`, ACC-120 slice 11: the tree's "21 units · 4
+levels"). Every routed page except Committee's record uses it; Committee's
+identity card keeps its own H1.
 
 - **Eyebrow**: not on section pages — the reference puts the group there,
   which the breadcrumb already shows. Child pages use it for the kind of page
