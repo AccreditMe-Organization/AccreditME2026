@@ -632,6 +632,108 @@ describe('OrganizationService', () => {
     });
   });
 
+  // ── the resolved type on create and deactivate (ACC-120 slice 11) ───────────
+
+  describe('create and deactivate return the resolved type, like the GETs (ACC-120 slice 11)', () => {
+    it('create() returns typeValue resolved, not null', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+      mockPrisma.orgUnit.create.mockResolvedValue(makeUnit({ typeValueId: 'lv-dept' }));
+      const result = await service.create(ORG_A, { nameEn: 'Intensive Care Unit', code: 'ICU', typeValueId: 'lv-dept' }, 'actor-1');
+      expect(result.typeValue).toEqual(expect.objectContaining({ id: 'lv-dept', labelEn: 'Department', labelAr: 'قسم', isRetired: false }));
+    });
+
+    it('deactivate() returns typeValue resolved, not null', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ typeValueId: 'lv-dept' }));
+      mockPrisma.orgUnit.count.mockResolvedValue(0);
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.update.mockResolvedValue(makeUnit({ typeValueId: 'lv-dept', isActive: false }));
+      const result = await service.deactivate('unit-1', ORG_A, 'actor-1');
+      expect(result.typeValue).toEqual(expect.objectContaining({ id: 'lv-dept', labelEn: 'Department' }));
+    });
+
+    it('deactivate() of an already inactive unit returns typeValue resolved too', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ typeValueId: 'lv-dept', isActive: false }));
+      const result = await service.deactivate('unit-1', ORG_A, 'actor-1');
+      expect(result.typeValue).toEqual(expect.objectContaining({ id: 'lv-dept' }));
+    });
+  });
+
+  // ── a parent inside the unit's own subtree (ACC-120 slice 11) ────────────────
+
+  describe("a parent inside the unit's own subtree is refused (ACC-120 slice 11)", () => {
+    // root ─ unit-1 ─ child ─ grandchild
+    //      └ sibling
+    // plus, in ANOTHER organisation, b-hop whose parent is unit-1.
+    const ROWS = [
+      makeUnit({ id: 'root', parentId: null, code: 'ROOT' }),
+      makeUnit({ id: 'unit-1', parentId: 'root', code: 'ICU' }),
+      makeUnit({ id: 'child', parentId: 'unit-1', code: 'CHILD' }),
+      makeUnit({ id: 'grandchild', parentId: 'child', code: 'GRAND' }),
+      makeUnit({ id: 'sibling', parentId: 'root', code: 'SIB' }),
+      makeUnit({ id: 'b-hop', parentId: 'unit-1', organizationId: ORG_B, code: 'BHOP' }),
+    ];
+
+    beforeEach(() => {
+      // A tenant-aware table: a row is found only by its id AND its organisation.
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: { where: { id?: string; organizationId?: string } }) =>
+        Promise.resolve(
+          ROWS.find((r) => r.id === where.id && (where.organizationId === undefined || r.organizationId === where.organizationId)) ??
+            null,
+        ),
+      );
+      mockPrisma.orgUnit.update.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({ ...ROWS[1], ...data }),
+      );
+    });
+
+    const refusal = async (parentId: string) => {
+      try {
+        await service.update('unit-1', ORG_A, { parentId }, 'actor-1');
+      } catch (error) {
+        return error as ConflictException;
+      }
+      throw new Error(`moving unit-1 under ${parentId} was not refused`);
+    };
+
+    for (const [label, parentId] of [
+      ['itself', 'unit-1'],
+      ['its child', 'child'],
+      ['its grandchild', 'grandchild'],
+    ] as const) {
+      it(`refuses ${label} as the parent, with ORG_UNIT_PARENT_CYCLE`, async () => {
+        const error = await refusal(parentId);
+        expect(error).toBeInstanceOf(ConflictException);
+        expect(error.getResponse()).toEqual(
+          expect.objectContaining({ statusCode: 409, code: 'ORG_UNIT_PARENT_CYCLE' }),
+        );
+        expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+      });
+    }
+
+    it('allows a unit outside its subtree (a sibling), and saves the move', async () => {
+      await service.update('unit-1', ORG_A, { parentId: 'sibling' }, 'actor-1');
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ parentId: 'sibling' }) }),
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // The proposed parent's own parent is an id that exists only in ORG_B, and
+      // that row's parent is unit-1. A walk that read ORG_B's row would wrongly
+      // find unit-1 and refuse; scoped to ORG_A, the walk ends there and the
+      // move is allowed.
+      ROWS.push(makeUnit({ id: 'via-b', parentId: 'b-hop', code: 'VIAB' }));
+      try {
+        await service.update('unit-1', ORG_A, { parentId: 'via-b' }, 'actor-1');
+        expect(mockPrisma.orgUnit.update).toHaveBeenCalled();
+        const walked = mockPrisma.orgUnit.findFirst.mock.calls.map(([args]) => (args as { where: { organizationId?: string } }).where);
+        expect(walked.every((w) => w.organizationId === ORG_A)).toBe(true);
+      } finally {
+        ROWS.pop();
+      }
+    });
+  });
+
   // ── deactivate ────────────────────────────────────────────────────────────────
 
   describe('deactivate', () => {
