@@ -5,16 +5,22 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { TaskService } from './task.service';
 import { TaskAuthorityService } from './task-authority.service';
+import { TaskVisibilityService } from './task-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 
-// ACC-229 — who sees which tasks on a record's panel and the All tasks list.
-// The order and the filters are proved on real rows in
-// task-record-list.db-spec.ts; this file pins the access rule and the scoping
-// every query carries.
+// ACC-229 / ACC-244 — a record's panel and the organisation-wide views. Who
+// sees which tasks is THE task visibility rule (task-visibility.ts): its
+// meaning is proved on real rows in task-visibility.db-spec.ts, the order and
+// filters in task-record-list.db-spec.ts. This file pins what the list does
+// with the rule: refusals before any read, the rule in every statement, every
+// statement and read scoped by organisation, and the views' own refusals.
+//
+// The REAL TaskVisibilityService runs here, over the mocked Prisma below.
 
 const RECORD = { sourceType: 'COMMITTEE' as const, sourceId: 'cmt-1' };
-const VIEW_ALL = ['tasks:view', 'committees:view'];
+const VIEW_ALL = ['committees:view_all_tasks', 'committees:view'];
 const COMMITTEE_ONLY = ['committees:view'];
+const MANAGER = ['committees:manage_tasks', 'committees:view'];
 
 function task(id: string, over: Record<string, unknown> = {}) {
   return {
@@ -61,22 +67,28 @@ function statement(call: unknown[]): Prisma.Sql {
   return Prisma.sql(strings, ...values);
 }
 
-function setup(opts: { ids?: string[]; rows?: ReturnType<typeof task>[]; refuse?: Error; types?: string[] } = {}) {
+function setup(opts: { ids?: string[]; rows?: ReturnType<typeof task>[]; refuse?: Error; headOf?: string | null } = {}) {
   const ids = opts.ids ?? ['t2', 't1'];
   const prisma = {
     $queryRaw: jest.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = Prisma.sql(strings, ...values).sql;
+      if (sql.includes('WITH RECURSIVE')) return Promise.resolve(opts.headOf ? [{ id: opts.headOf }] : []);
+      if (sql.includes('AS hit')) return Promise.resolve([{ hit: true }]);
       if (sql.includes('COUNT(*)')) return Promise.resolve([{ n: BigInt(ids.length) }]);
       if (sql.includes('ROW_NUMBER')) return Promise.resolve([{ rn: BigInt(1) }]);
+      if (sql.includes('DISTINCT')) return Promise.resolve([]);
+      if (sql.includes('"OrgUnit" ou')) return Promise.resolve([]);
       return Promise.resolve(ids.map((id) => ({ id })));
     }),
-    task: {
-      count: jest.fn().mockResolvedValue(7),
-      findMany: jest.fn().mockResolvedValue(opts.rows ?? ids.map((id) => task(id)).reverse()),
+    task: { findMany: jest.fn().mockResolvedValue(opts.rows ?? ids.map((id) => task(id)).reverse()) },
+    user: {
+      findFirst: jest.fn(async ({ where }: { where: { position?: unknown } }) =>
+        // findUnitHeadedBy asks with the holder rule; poolTargetsOfUser without.
+        where.position ? (opts.headOf ? { primaryOrgUnitId: opts.headOf } : null) : { positionId: null, primaryOrgUnitId: null },
+      ),
     },
-    taskAssignee: { findMany: jest.fn().mockResolvedValue([]) },
-    user: { findFirst: jest.fn().mockResolvedValue({ positionId: null, primaryOrgUnitId: null }) },
     committeeMember: { findMany: jest.fn().mockResolvedValue([]) },
+    orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
     committee: { findMany: jest.fn().mockResolvedValue([{ id: 'cmt-1', nameEn: 'Quality', nameAr: null }]) },
     meeting: { findMany: jest.fn().mockResolvedValue([]) },
     workflowInstanceStage: { findMany: jest.fn().mockResolvedValue([]) },
@@ -84,108 +96,124 @@ function setup(opts: { ids?: string[]; rows?: ReturnType<typeof task>[]; refuse?
   };
   const objectVisibility = {
     assertCanView: opts.refuse ? jest.fn().mockRejectedValue(opts.refuse) : jest.fn().mockResolvedValue(undefined),
-    viewableTypes: jest.fn().mockReturnValue(opts.types ?? ['COMMITTEE']),
   };
   const tasks = { mayManage: jest.fn().mockResolvedValue(false) };
   const authority = { creatorsCoveredBy: jest.fn().mockResolvedValue([]) };
   const calendar = { getEffectiveTimeZone: jest.fn().mockResolvedValue('Asia/Riyadh') };
+  const visibility = new TaskVisibilityService(prisma as unknown as PrismaService, authority as unknown as TaskAuthorityService);
   const service = new TaskRecordListService(
     prisma as unknown as PrismaService,
     objectVisibility as unknown as ObjectVisibilityService,
     tasks as unknown as TaskService,
-    authority as unknown as TaskAuthorityService,
+    visibility,
     calendar as unknown as WorkingCalendarService,
   );
   return { service, prisma, objectVisibility, tasks, authority, calendar };
 }
 
-const sqlOf = (prisma: ReturnType<typeof setup>['prisma']) => prisma.$queryRaw.mock.calls.map((c) => statement(c));
+const sqlOf = (prisma: ReturnType<typeof setup>['prisma']) =>
+  prisma.$queryRaw.mock.calls.map((c) => statement(c)).filter((s) => s.text.includes('FROM "Task" t'));
 
 describe('TaskRecordListService', () => {
   describe('on a record', () => {
     it('checks the record BEFORE reading any task, and a refusal reads nothing', async () => {
       const { service, prisma, objectVisibility } = setup({ refuse: new ForbiddenException('Required permission: committees:view') });
-      await expect(service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: ['tasks:view'] })).rejects.toThrow(
+      await expect(service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: ['committees:view_all_tasks'] })).rejects.toThrow(
         'Required permission: committees:view',
       );
-      expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-a', ['tasks:view']);
+      expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-a', ['committees:view_all_tasks']);
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
-      expect(prisma.task.count).not.toHaveBeenCalled();
     });
 
-    it('refuses a record type without a record, and a record without a type', async () => {
+    it('refuses a record type without a record, a record without a type, and a view on a record', async () => {
       const { service, prisma } = setup();
-      await expect(service.list({ sourceType: 'COMMITTEE' }, 'org-a', { id: 'u1', permissions: VIEW_ALL })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      await expect(service.list({ sourceId: 'cmt-1' }, 'org-a', { id: 'u1', permissions: VIEW_ALL })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      const viewer = { id: 'u1', permissions: VIEW_ALL };
+      await expect(service.list({ sourceType: 'COMMITTEE' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.list({ sourceId: 'cmt-1' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.list({ ...RECORD, view: 'all' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
-    it('with tasks:view, every task on the record', async () => {
+    it('with View all tasks on the type: scope all, and every statement carries the rule', async () => {
       const { service, prisma } = setup();
       const result = await service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
       expect(result.scope).toBe('all');
-      const page = sqlOf(prisma)[0]!;
-      expect(page.text).toContain('"sourceType"::text = $');
-      expect(page.text).not.toContain('o."userId"');
-      expect(prisma.task.count).toHaveBeenCalledWith({ where: { organizationId: 'org-a', sourceType: 'COMMITTEE', sourceId: 'cmt-1' } });
+      expect(result.view).toBe('record');
+      for (const s of sqlOf(prisma)) {
+        expect(s.text).toContain('t."sourceType"::text = $');
+        // The rule's relationship and View all clauses, bound, not interpolated.
+        expect(s.text).toContain('t."createdById" = ANY(');
+        expect(s.values).toEqual(expect.arrayContaining([['COMMITTEE']]));
+      }
     });
 
-    it('without tasks:view (Q1), only the tasks the viewer is or was on, or created', async () => {
+    it('without View all tasks: scope own, and the rule still decides each row (no View all clause)', async () => {
       const { service, prisma } = setup();
       const result = await service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: COMMITTEE_ONLY });
       expect(result.scope).toBe('own');
       for (const s of sqlOf(prisma)) {
-        expect(s.text).toContain('t."createdById" = $');
-        expect(s.text).toContain('o."userId" = $');
-        expect(s.values.filter((v) => v === 'u1').length).toBe(2);
+        expect(s.text).toContain('t."createdById" = ANY(');
+        expect(s.text).toContain('va."userId" = $');
+        expect(s.values).not.toEqual(expect.arrayContaining([['COMMITTEE']]));
       }
-      expect(prisma.task.count).toHaveBeenCalledWith({
-        where: {
-          organizationId: 'org-a',
-          sourceType: 'COMMITTEE',
-          sourceId: 'cmt-1',
-          OR: [{ createdById: 'u1' }, { assignees: { some: { userId: 'u1' } } }],
-        },
-      });
     });
 
-    it('the panel asks for five and carries no filter options', async () => {
+    it('a head whose unit owns the record: scope all, through unit scope', async () => {
+      const { service } = setup({ headOf: 'unit-q' });
+      const result = await service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: COMMITTEE_ONLY });
+      expect(result.scope).toBe('all');
+    });
+
+    it('the panel asks for five, carries no filter options, and says whether New task is open', async () => {
       const { service, prisma } = setup();
       const panel = await service.panel({ ...RECORD }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
-      expect(panel.total).toBe(7);
+      expect(panel.total).toBe(2);
       expect(sqlOf(prisma)[0]!.values).toContain(5);
-      expect(prisma.taskAssignee.findMany).not.toHaveBeenCalled();
+      expect(panel.canCreate).toBe(false);
+      const creator = await service.panel({ ...RECORD }, 'org-a', { id: 'u1', permissions: ['committees:view', 'committees:create_tasks'] });
+      expect(creator.canCreate).toBe(true);
     });
   });
 
-  describe('organisation-wide (All tasks)', () => {
-    it('needs tasks:view — 403 naming it, and nothing read', async () => {
+  describe('organisation-wide views', () => {
+    it.each([
+      ['all', COMMITTEE_ONLY, 'Required permission: committees:view_all_tasks'],
+      ['all', ['committees:view_all_tasks'], 'Required permission: committees:view_all_tasks'], // rule 1: the record type first
+      ['unassigned', COMMITTEE_ONLY, 'Required permission: committees:manage_tasks'],
+      ['unit', COMMITTEE_ONLY, 'Required permission: unit headship or committees:view_unit_tasks'],
+    ] as const)('%s without a way in — 403 naming the keys, and no task read', async (view, permissions, message) => {
       const { service, prisma } = setup();
-      await expect(service.list({}, 'org-a', { id: 'u1', permissions: COMMITTEE_ONLY })).rejects.toThrow(
-        'Required permission: tasks:view',
-      );
-      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      await expect(service.list({ view }, 'org-a', { id: 'u1', permissions: [...permissions] })).rejects.toThrow(message);
+      expect(sqlOf(prisma)).toEqual([]);
     });
 
-    it('lists only the record types the viewer may see, and names each task\'s record', async () => {
-      const { service, prisma, objectVisibility } = setup({ ids: ['t1'] });
+    it('All tasks (the default view) lists the types View all tasks is held on, and names each task\'s record', async () => {
+      const { service, prisma } = setup({ ids: ['t1'] });
       const result = await service.list({}, 'org-a', { id: 'u1', permissions: VIEW_ALL });
-      expect(objectVisibility.viewableTypes).toHaveBeenCalledWith(VIEW_ALL);
+      expect(result.view).toBe('all');
       const page = sqlOf(prisma)[0]!;
-      expect(page.text).toContain('"sourceType"::text IN ($');
-      expect(page.values).toContain('COMMITTEE');
+      expect(page.text).toContain('t."sourceType"::text = ANY(');
+      expect(page.values).toEqual(expect.arrayContaining([['COMMITTEE']]));
       expect(result.items[0]!.record).toEqual({ type: 'COMMITTEE', id: 'cmt-1', nameEn: 'Quality', nameAr: null });
     });
 
-    it('a viewer who may see no record type gets no tasks (fail closed)', async () => {
-      const { service, prisma } = setup({ types: [], ids: [] });
-      await service.list({}, 'org-a', { id: 'u1', permissions: ['tasks:view'] });
-      expect(sqlOf(prisma)[0]!.text).toContain('AND FALSE');
-      expect(prisma.task.count).toHaveBeenCalledWith({ where: { organizationId: 'org-a', id: { in: [] } } });
+    it('Unassigned lists the unowned tasks on the managed types, ANDed with the rule', async () => {
+      const { service, prisma } = setup({ ids: [] });
+      const result = await service.list({ view: 'unassigned' }, 'org-a', { id: 'u1', permissions: MANAGER });
+      expect(result.view).toBe('unassigned');
+      const page = sqlOf(prisma)[0]!;
+      expect(page.text).toContain(`t.status::text = 'UNASSIGNED'`);
+      expect(page.text).toContain('t."createdById" = ANY(');
+    });
+
+    it('Unit tasks for a head: the unit scope clause over the record\'s owning unit, and the unit facet', async () => {
+      const { service, prisma } = setup({ headOf: 'unit-q', ids: [] });
+      const result = await service.list({ view: 'unit' }, 'org-a', { id: 'u1', permissions: COMMITTEE_ONLY });
+      expect(result.view).toBe('unit');
+      const page = sqlOf(prisma)[0]!;
+      expect(page.text).toContain('oc."orgUnitId"');
+      expect(page.values).toEqual(expect.arrayContaining([['unit-q']]));
+      expect(result.facets).toEqual(expect.objectContaining({ units: [] }));
     });
   });
 
@@ -201,12 +229,21 @@ describe('TaskRecordListService', () => {
     });
 
     it('reads the viewer\'s cover and pools once per page, never per row', async () => {
-      const { service, authority, prisma, tasks } = setup({ ids: ['t1', 't2', 't3'] });
+      const { service, authority, tasks } = setup({ ids: ['t1', 't2', 't3'] });
       await service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
       expect(authority.creatorsCoveredBy).toHaveBeenCalledTimes(1);
-      expect(prisma.user.findFirst).toHaveBeenCalledTimes(1);
       // mayManage gets the covered set, so it reads nothing itself.
       for (const call of tasks.mayManage.mock.calls) expect((call[3] as { covered: Set<string> }).covered.has('u1')).toBe(true);
+    });
+
+    it('a Manage tasks holder on the type may decide a request on a row', async () => {
+      const asked = task('t1', {
+        assignees: [{ userId: 'a1', removedAt: null, pickedAt: null, user: { id: 'a1', name: 'A', position: null } }],
+        requests: [{ id: 'r1', type: 'EXTENSION', requestedDueAt: new Date(), holdUntil: null, requestedById: 'a1', reason: 'x', createdAt: new Date(), requestedBy: { name: 'A' } }],
+      });
+      const { service } = setup({ ids: ['t1'], rows: [asked] });
+      const result = await service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: MANAGER });
+      expect(result.items[0]!.actions.reviewRequest).toBe(true);
     });
   });
 
@@ -220,8 +257,7 @@ describe('TaskRecordListService', () => {
     it('Assigned includes a row still stored as OVERDUE (ACC-163)', async () => {
       const { service, prisma } = setup();
       await service.list({ ...RECORD, status: ['PENDING'] }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
-      const values = sqlOf(prisma)[0]!.values;
-      expect(values).toEqual(expect.arrayContaining(['PENDING', 'OVERDUE']));
+      expect(sqlOf(prisma)[0]!.values).toEqual(expect.arrayContaining(['PENDING', 'OVERDUE']));
     });
 
     it('"This week" ends at the close of the seventh day in the TENANT\'s zone', async () => {
@@ -233,12 +269,19 @@ describe('TaskRecordListService', () => {
       expect(weekEnd.toISOString()).toMatch(/T20:59:59\.999Z$/);
     });
 
+    it('the Record type and Unit filters bind their values', async () => {
+      const { service, prisma } = setup();
+      await service.list({ recordType: 'COMMITTEE', unit: 'unit-x' }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
+      const page = sqlOf(prisma)[0]!;
+      expect(page.values).toEqual(expect.arrayContaining(['COMMITTEE', 'unit-x']));
+    });
+
     it('refuses a pool it cannot read', async () => {
       const { service, prisma } = setup();
       await expect(service.list({ ...RECORD, pool: 'ROLE:x:y' }, 'org-a', { id: 'u1', permissions: VIEW_ALL })).rejects.toBeInstanceOf(
         BadRequestException,
       );
-      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(sqlOf(prisma)).toEqual([]);
     });
   });
 
@@ -249,13 +292,14 @@ describe('TaskRecordListService', () => {
     await service.list({ ...RECORD, around: 't1' }, 'org-b', { id: 'u1', permissions: VIEW_ALL });
     expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-b', VIEW_ALL);
     const statements = sqlOf(prisma);
-    expect(statements).toHaveLength(3);
+    expect(statements.length).toBeGreaterThanOrEqual(4);
     for (const s of statements) {
       expect(s.text).toContain('t."organizationId" = $1');
       expect(s.values[0]).toBe('org-b');
     }
-    expect(prisma.task.count.mock.calls[0]![0].where.organizationId).toBe('org-b');
     expect(prisma.task.findMany.mock.calls[0]![0].where.organizationId).toBe('org-b');
-    expect(prisma.taskAssignee.findMany.mock.calls[0]![0].where.task.organizationId).toBe('org-b');
+    for (const call of prisma.user.findFirst.mock.calls as unknown as [{ where: { organizationId: string } }][]) {
+      expect(call[0].where.organizationId).toBe('org-b');
+    }
   });
 });

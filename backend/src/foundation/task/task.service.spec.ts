@@ -26,7 +26,7 @@ const ORG_B = 'org-b-id';
 // tests below are about RESOLUTION, and a viewer entitled to neither now sees
 // no label at all. The entitlement rules themselves are tested in
 // delegation-label.service.spec.ts and at the route.
-const VIEWER_PERMISSIONS = ['tasks:view', 'committees:view', 'org:view', 'users:view'];
+const VIEWER_PERMISSIONS = ['committees:view_all_tasks', 'committees:view', 'org:view', 'users:view'];
 // ACC-101 — who is reading, for the delegation-label entitlement check.
 const VIEWER_ID = 'viewer-id';
 const ACTOR = 'actor-id';
@@ -1118,8 +1118,10 @@ describe('TaskService', () => {
 
   describe('reassign', () => {
     const DTO = { newAssigneeUserIds: [USER_B], reason: 'Ahmad is on leave' };
-    const HOLDER = ['tasks:reassign'];
-    // Neither the creator nor a holder of tasks:reassign.
+    // ACC-244 — Manage tasks on the task's record type (committees), with the
+    // record type visible: where tasks:reassign was.
+    const HOLDER = ['committees:view', 'committees:manage_tasks'];
+    // Neither the creator nor a holder of Manage tasks.
     const OUTSIDER = 'outsider-id';
 
     beforeEach(() => {
@@ -1127,8 +1129,8 @@ describe('TaskService', () => {
       mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'PENDING' });
     });
 
-    it('lets a tasks:reassign holder reassign, creating the new assignee row', async () => {
-      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+    it('lets a Manage tasks holder on the type reassign, creating the new assignee row', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, sourceType: 'COMMITTEE' });
 
       await service.reassign('task-1', DTO, ORG_A, OUTSIDER, HOLDER);
 
@@ -1137,9 +1139,15 @@ describe('TaskService', () => {
       });
     });
 
+    // ACC-244 — Manage tasks counts only on the type it is held on.
+    it('refuses Manage tasks on committees for a task on another record type', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK); // a DOCUMENT task
+      await expect(service.reassign('task-1', DTO, ORG_A, OUTSIDER, HOLDER)).rejects.toThrow('Task not found');
+    });
+
     // ACC-163 (Q4) — a rejected task comes back to its creator, who reassigns
-    // it without holding tasks:reassign.
-    it("lets the task's creator reassign without tasks:reassign", async () => {
+    // it without holding Manage tasks.
+    it("lets the task's creator reassign without Manage tasks", async () => {
       mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK); // createdById: ACTOR
 
       await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
@@ -1439,134 +1447,6 @@ describe('TaskService', () => {
     });
   });
 
-  describe('getForSource', () => {
-    // Same near-miss title fix as getMyTasks() above (ACC-33 item 1).
-    it('should NOT return records belonging to a different tenant', async () => {
-      mockPrisma.task.findMany.mockImplementation(({ where }) =>
-        Promise.resolve(where.organizationId === ORG_A ? [BASE_TASK] : []),
-      );
-
-      const result = await service.getForSource('DOCUMENT', 'doc-1', ORG_B, VIEWER_PERMISSIONS, VIEWER_ID);
-
-      expect(result).toHaveLength(0);
-    });
-
-    // ACC-76 — the populated path. Before this ticket no list endpoint
-    // returned assignees at all, so nothing here ever exercised it: the
-    // isolation test above only ever asserted the EMPTY result.
-    it('returns each assignee with a resolved user name', async () => {
-      mockPrisma.task.findMany.mockResolvedValue([
-        {
-          ...BASE_TASK,
-          assignees: [
-            { ...BASE_TASK.assignees[0], user: { id: USER_A, name: 'Sarah' } },
-          ],
-        },
-      ]);
-
-      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
-
-      expect(result[0]!.assignees).toEqual([
-        { userId: USER_A, userName: 'Sarah', delegation: null },
-      ]);
-    });
-
-    // ACC-163 — the record list names who rejected a task, and both lists
-    // carry the evidence count.
-    it('returns the evidence count and who rejected the task', async () => {
-      mockPrisma.task.findMany.mockResolvedValue([
-        {
-          ...BASE_TASK,
-          status: 'REJECTED',
-          assignees: [],
-          rejectedBy: { id: USER_A, name: 'Sarah' },
-          _count: { evidence: 3 },
-        },
-      ]);
-
-      const [task] = await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
-
-      expect(task!.evidenceCount).toBe(3);
-      expect(task!.rejectedBy).toEqual({ id: USER_A, name: 'Sarah' });
-      expect(task).not.toHaveProperty('_count');
-      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          include: expect.objectContaining({
-            rejectedBy: { select: { id: true, name: true } },
-            // ACC-177 — the count excludes deleted evidence.
-            _count: { select: { evidence: { where: { deletedAt: null } } } },
-          }),
-        }),
-      );
-    });
-
-    // complete() stamps removedAt rather than deleting, so without this
-    // filter a completed task would list everyone ever assigned to it as
-    // though they still were.
-    it('asks the database for active assignees only', async () => {
-      mockPrisma.task.findMany.mockResolvedValue([]);
-
-      await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
-
-      const args = mockPrisma.task.findMany.mock.calls[0]![0];
-      expect(args.include.assignees.where).toEqual({ removedAt: null });
-    });
-
-    // ACC-40 §2.6.3's stamp, surfaced for the first time. The qualifier is
-    // what lets a page read "Sarah — Acting Head of Cardiology" rather than
-    // implying Sarah holds the position outright.
-    it('resolves an ACTING_HEAD assignee to its org unit', async () => {
-      mockPrisma.orgUnit.findMany.mockResolvedValue([
-        { id: 'unit-cardiology', nameEn: 'Cardiology', nameAr: 'القلب' },
-      ]);
-      mockPrisma.task.findMany.mockResolvedValue([
-        {
-          ...BASE_TASK,
-          assignees: [
-            {
-              ...BASE_TASK.assignees[0],
-              delegationReason: 'ACTING_HEAD',
-              delegationContextId: 'unit-cardiology',
-              user: { id: USER_A, name: 'Sarah' },
-            },
-          ],
-        },
-      ]);
-
-      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
-
-      expect(result[0]!.assignees[0]!.delegation).toEqual({
-        reason: 'ACTING_HEAD',
-        contextId: 'unit-cardiology',
-        contextLabelEn: 'Cardiology',
-        contextLabelAr: 'القلب',
-      });
-    });
-
-    // One resolve call for the whole page, not one per task — at ~110ms per
-    // round trip the difference is visible to a user.
-    it('resolves delegation labels once across every task on the page', async () => {
-      mockPrisma.orgUnit.findMany.mockResolvedValue([
-        { id: 'unit-cardiology', nameEn: 'Cardiology', nameAr: null },
-      ]);
-      const stampedAssignee = {
-        ...BASE_TASK.assignees[0],
-        delegationReason: 'ACTING_HEAD',
-        delegationContextId: 'unit-cardiology',
-        user: { id: USER_A, name: 'Sarah' },
-      };
-      mockPrisma.task.findMany.mockResolvedValue([
-        { ...BASE_TASK, id: 'task-1', assignees: [stampedAssignee] },
-        { ...BASE_TASK, id: 'task-2', assignees: [stampedAssignee] },
-        { ...BASE_TASK, id: 'task-3', assignees: [stampedAssignee] },
-      ]);
-
-      await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
-
-      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledTimes(1);
-    });
-  });
-
   describe('listUnassigned (ACC-34)', () => {
     // Two queries since ACC-167: UNASSIGNED tasks, and tasks waiting in a pool
     // (status IN [...]) — each answered by its own shape of where-clause.
@@ -1576,16 +1456,20 @@ describe('TaskService', () => {
           where.status === 'UNASSIGNED' ? unassigned : where.id ? byId : waitingInPool,
         ),
       );
+    // ACC-244 — Manage tasks on committees, with committees visible: Unassigned
+    // is theirs, limited to committee tasks.
+    const MANAGER = { id: 'manager', permissions: ['committees:view', 'committees:manage_tasks'] };
+    const ON_COMMITTEE = { sourceType: 'COMMITTEE', sourceId: 'c-1' };
 
-    it('returns only status: UNASSIGNED tasks, tenant-wide, when no pool is stranded', async () => {
-      const unassignedTask = { ...BASE_TASK, status: 'UNASSIGNED', assignees: [] };
+    it('returns only status: UNASSIGNED tasks on the managed types, when no pool is stranded', async () => {
+      const unassignedTask = { ...BASE_TASK, ...ON_COMMITTEE, status: 'UNASSIGNED', assignees: [] };
       answerTaskQueries([unassignedTask], []);
 
-      const result = await service.listUnassigned(ORG_A);
+      const result = await service.listUnassigned(ORG_A, MANAGER);
 
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { organizationId: ORG_A, status: 'UNASSIGNED' },
+          where: { organizationId: ORG_A, status: 'UNASSIGNED', sourceType: { in: ['COMMITTEE'] } },
         }),
       );
       expect(result).toEqual([unassignedTask]);
@@ -1594,12 +1478,12 @@ describe('TaskService', () => {
     // ACC-167 — a pool nobody is in is work nobody can pick up, exactly as an
     // UNASSIGNED task is; Setup health's Fix opens it on this screen.
     it('also lists an open pool task whose pool nobody is in, and not one whose pool is staffed', async () => {
-      const stranded = { ...BASE_TASK, id: 'task-empty', assignedOrgUnitId: 'u1', assignedPositionId: 'p-empty' };
-      const staffed = { ...BASE_TASK, id: 'task-staffed', assignedOrgUnitId: 'u1', assignedPositionId: 'p-held' };
+      const stranded = { ...BASE_TASK, ...ON_COMMITTEE, id: 'task-empty', assignedOrgUnitId: 'u1', assignedPositionId: 'p-empty' };
+      const staffed = { ...BASE_TASK, ...ON_COMMITTEE, id: 'task-staffed', assignedOrgUnitId: 'u1', assignedPositionId: 'p-held' };
       answerTaskQueries([], [stranded, staffed], [stranded]);
       mockPrisma.user.findMany.mockResolvedValue([{ positionId: 'p-held', primaryOrgUnitId: 'u1' }]);
 
-      const result = await service.listUnassigned(ORG_A);
+      const result = await service.listUnassigned(ORG_A, MANAGER);
 
       expect(result.map((t) => t.id)).toEqual(['task-empty']);
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
@@ -1607,22 +1491,41 @@ describe('TaskService', () => {
       );
     });
 
+    it('leaves out a stranded pool task on a record type the viewer does not manage', async () => {
+      const otherType = { ...BASE_TASK, id: 'task-doc', sourceType: 'DOCUMENT', assignedOrgUnitId: 'u1', assignedPositionId: 'p-empty' };
+      answerTaskQueries([], [otherType], [otherType]);
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      await expect(service.listUnassigned(ORG_A, MANAGER)).resolves.toEqual([]);
+    });
+
+    it('refuses a caller without Manage tasks on any type, naming the keys, before any read', async () => {
+      await expect(service.listUnassigned(ORG_A, { id: 'u', permissions: ['committees:view'] })).rejects.toThrow(
+        'Required permission: committees:manage_tasks',
+      );
+      // Manage tasks without the record type's own view permission is no way in (rule 1).
+      await expect(service.listUnassigned(ORG_A, { id: 'u', permissions: ['committees:manage_tasks'] })).rejects.toThrow(
+        'Required permission: committees:manage_tasks',
+      );
+      expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+    });
+
     it('is not scoped to the calling user — no assignees filter applied', async () => {
       answerTaskQueries([], []);
 
-      await service.listUnassigned(ORG_A);
+      await service.listUnassigned(ORG_A, MANAGER);
 
       const call = mockPrisma.task.findMany.mock.calls[0][0];
       expect(call.where).not.toHaveProperty('assignees');
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
-      const unassignedTask = { ...BASE_TASK, status: 'UNASSIGNED', assignees: [] };
+      const unassignedTask = { ...BASE_TASK, ...ON_COMMITTEE, status: 'UNASSIGNED', assignees: [] };
       mockPrisma.task.findMany.mockImplementation(({ where }) =>
         Promise.resolve(where.organizationId === ORG_A && where.status === 'UNASSIGNED' ? [unassignedTask] : []),
       );
 
-      const result = await service.listUnassigned(ORG_B);
+      const result = await service.listUnassigned(ORG_B, MANAGER);
 
       expect(result).toHaveLength(0);
     });

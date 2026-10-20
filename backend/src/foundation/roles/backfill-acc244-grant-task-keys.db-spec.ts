@@ -15,7 +15,11 @@ import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../../../generated/prisma/client';
-import { COMMITTEE_TASKS_PERMISSIONS, TASKS_PERMISSIONS, COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEE_TASKS_PERMISSIONS, COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
+
+// Literals: the flat task keys were retired in ACC-244 PR 2; this script ran
+// against the roles that held them.
+const TASKS_PERMISSIONS = { VIEW: 'tasks:view', CREATE: 'tasks:create', REASSIGN: 'tasks:reassign', MANAGE: 'tasks:manage' } as const;
 import { applyGrants, BACKFILL_TX, planGrants, SCRIPT_NAME } from '../../../prisma/backfill-acc244-grant-task-keys';
 
 const url = process.env['DATABASE_URL'];

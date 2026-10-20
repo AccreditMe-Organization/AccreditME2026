@@ -175,22 +175,38 @@ export async function poolsOfUser(
   userId: string,
   organizationId: string,
 ): Promise<Prisma.TaskWhereInput[]> {
+  return (await poolTargetsOfUser(client, userId, organizationId)).map((t) =>
+    t.kind === 'POSITION'
+      ? { assignedOrgUnitId: t.orgUnitId, assignedPositionId: t.positionId }
+      : { assignedCommitteeId: t.committeeId, assignedCommitteeRoleValueId: t.roleValueId },
+  );
+}
+
+/**
+ * The same pools as poolsOfUser, as targets — what the task visibility rule
+ * (ACC-244) binds into SQL. One membership rule, two shapes.
+ */
+export async function poolTargetsOfUser(
+  client: PoolClient,
+  userId: string,
+  organizationId: string,
+): Promise<PoolTarget[]> {
   const me = await client.user.findFirst({
     where: { id: userId, organizationId, status: 'ACTIVE' },
     select: { positionId: true, primaryOrgUnitId: true },
   });
   if (!me) return [];
 
-  const pools: Prisma.TaskWhereInput[] = [];
+  const pools: PoolTarget[] = [];
   if (me.positionId && me.primaryOrgUnitId) {
-    pools.push({ assignedOrgUnitId: me.primaryOrgUnitId, assignedPositionId: me.positionId });
+    pools.push({ kind: 'POSITION', orgUnitId: me.primaryOrgUnitId, positionId: me.positionId });
   }
   const memberships = await client.committeeMember.findMany({
     where: { organizationId, userId, isActive: true },
     select: { committeeId: true, roleValueId: true },
   });
   for (const m of memberships) {
-    pools.push({ assignedCommitteeId: m.committeeId, assignedCommitteeRoleValueId: m.roleValueId });
+    pools.push({ kind: 'COMMITTEE_ROLE', committeeId: m.committeeId, roleValueId: m.roleValueId });
   }
   return pools;
 }

@@ -49,11 +49,17 @@ export interface ITaskRecordPanel {
   /** 'own' when the viewer may see the record but not all its tasks (Q1). */
   scope: 'all' | 'own';
   rows: ITaskRecordRow[];
+  /** ACC-244 — may the viewer create a task on this record (Create tasks on its type)? */
+  canCreate: boolean;
 }
 
 export interface ITaskRecordListFacets {
   people: { id: string; name: string }[];
   pools: { key: string; pool: ITaskPoolView }[];
+  /** ACC-244 — the record types present in this view, for the Record type filter. */
+  recordTypes: string[];
+  /** ACC-244 — the unit view only: the owning units present, for the Unit filter. */
+  units: { id: string; nameEn: string; nameAr: string | null }[];
 }
 
 export interface ITaskRecordList {
@@ -63,6 +69,8 @@ export interface ITaskRecordList {
   /** The tasks the filters match. */
   matching: number;
   scope: 'all' | 'own';
+  /** ACC-244 — which list this is: one record's tasks, or an organisation-wide view. */
+  view: 'record' | 'all' | 'unit' | 'unassigned';
   /** Only on the first page: the assignee and pool filter options. */
   facets: ITaskRecordListFacets | null;
   /** Where `around` sits (0-based) under this sort and these filters; null when absent or not matched. */

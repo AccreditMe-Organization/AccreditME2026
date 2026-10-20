@@ -38,7 +38,8 @@ import 'dotenv/config';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
-import { TASKS_PERMISSIONS } from '../src/common/constants/permissions';
+// A literal: TASKS_PERMISSIONS was retired in ACC-244, after this ran.
+const TASKS_VIEW = 'tasks:view';
 
 const BASE_USER_KEY = 'BASE_USER';
 
@@ -48,11 +49,11 @@ async function main(): Promise<void> {
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
   try {
-    const [module, action] = TASKS_PERMISSIONS.VIEW.split(':') as [string, string];
+    const [module, action] = TASKS_VIEW.split(':') as [string, string];
 
     const permission = await prisma.permission.findFirst({ where: { module, action } });
     if (!permission) {
-      console.log(`Permission ${TASKS_PERMISSIONS.VIEW} is not in the catalog; nothing to do.`);
+      console.log(`Permission ${TASKS_VIEW} is not in the catalog; nothing to do.`);
       return;
     }
 
@@ -94,7 +95,7 @@ async function main(): Promise<void> {
     for (const t of targets) {
       console.log(
         `  ${t.orgSlug.padEnd(14)} role '${t.roleName}' (${BASE_USER_KEY})  ` +
-          `permission ${TASKS_PERMISSIONS.VIEW}  — held by ${t.holders} user(s)`,
+          `permission ${TASKS_VIEW}  — held by ${t.holders} user(s)`,
       );
     }
     if (targets.length === 0) {

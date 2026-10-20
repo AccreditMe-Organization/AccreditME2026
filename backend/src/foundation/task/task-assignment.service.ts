@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { COMMITTEES_PERMISSIONS, TASKS_PERMISSIONS, WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEES_PERMISSIONS, WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
+import { holdsTaskKey, taskKeysOf, typesHolding } from './task-record-types';
 import { LookupService } from '../lookup/lookup.service';
 import { AssignTargetDto } from './dto/assign-target.dto';
 import {
@@ -61,20 +62,22 @@ export class TaskAssignmentService {
   ) {}
 
   async assertMayAssign(viewer: AssignmentViewer, organizationId: string, taskId?: string): Promise<void> {
-    if (viewer.permissions.includes(TASKS_PERMISSIONS.CREATE)) return;
+    // ACC-244 — Create tasks on any record type replaces the flat tasks:create.
+    if (typesHolding(viewer.permissions, 'CREATE').length > 0) return;
     if (!taskId && viewer.permissions.includes(WORKFLOWS_PERMISSIONS.MANAGE)) return;
     if (!taskId) {
-      throw new ForbiddenException(`Required permission: ${TASKS_PERMISSIONS.CREATE}`);
+      throw new ForbiddenException(`Required permission: ${taskKeysOf('CREATE').join(' or ')}`);
     }
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, organizationId },
-      select: { createdById: true },
+      select: { createdById: true, sourceType: true },
     });
     // ACC-173 — "may reassign this task" is canActForCreator(): the creator
-    // or whoever covers them now — the same rule reassign() applies.
+    // or whoever covers them now — the same rule reassign() applies. ACC-244 —
+    // or Manage tasks on the task's record type, where tasks:reassign was.
     const entitled =
       !!task &&
-      (viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
+      (holdsTaskKey(viewer.permissions, task.sourceType, 'MANAGE') ||
         (await this.authority.canActForCreator(task.createdById, viewer.id, organizationId)));
     if (!entitled) throw new NotFoundException('Task not found');
   }

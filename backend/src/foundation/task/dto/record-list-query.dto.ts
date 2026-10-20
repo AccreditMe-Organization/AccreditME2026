@@ -16,6 +16,9 @@ export type RecordListSort = (typeof RECORD_LIST_SORTS)[number];
 
 export const RECORD_LIST_DUE = ['THIS_WEEK', 'LATER', 'NONE'] as const;
 export const RECORD_LIST_REQUIRED = ['REQUIRED', 'OPTIONAL'] as const;
+/** ACC-244 — the organisation-wide saved views (no record named). */
+export const RECORD_LIST_VIEWS = ['all', 'unit', 'unassigned'] as const;
+export type RecordListView = (typeof RECORD_LIST_VIEWS)[number];
 const SOURCE_TYPES = [
   'MEETING',
   'DOCUMENT',
@@ -44,7 +47,10 @@ export class RecordPanelQueryDto {
 }
 
 export class RecordListQueryDto {
-  /** Both or neither. Neither means the whole organisation (All tasks, tasks:view). */
+  /**
+   * Both or neither. Neither means an organisation-wide view (`view`, All tasks
+   * when omitted); both means that record's tasks, and `view` is refused.
+   */
   @IsOptional()
   @IsIn(SOURCE_TYPES)
   sourceType?: (typeof SOURCE_TYPES)[number];
@@ -53,6 +59,26 @@ export class RecordListQueryDto {
   @IsString()
   @MaxLength(64)
   sourceId?: string;
+
+  /**
+   * ACC-244 — with no record: `all` (View all tasks, the types it is held on),
+   * `unit` (unit scope: the records owned by the viewer's unit and below) or
+   * `unassigned` (Manage tasks: no actionable owner, the types managed).
+   */
+  @IsOptional()
+  @IsIn(RECORD_LIST_VIEWS)
+  view?: RecordListView;
+
+  /** ACC-244 — a record-type filter for the organisation-wide views. */
+  @IsOptional()
+  @IsIn(SOURCE_TYPES)
+  recordType?: (typeof SOURCE_TYPES)[number];
+
+  /** ACC-244 — the unit view's Unit filter: tasks on records owned by this unit (one in scope). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  unit?: string;
 
   /** Title, Arabic title, or an active assignee's name. */
   @IsOptional()

@@ -2,6 +2,25 @@ import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nest
 import { PrismaService } from '../../prisma/prisma.service';
 import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../constants/permissions';
 
+/**
+ * ACC-244 — the permission that lets a caller see records of each type: the
+ * record rule's first half, as data. The rules below read it, and so does the
+ * task visibility rule (task-record-types.ts), so "may see this record type" is
+ * written once. A type missing here is refused everywhere (fail closed).
+ */
+export const RECORD_VIEW_PERMISSION: Readonly<Record<string, string>> = {
+  COMMITTEE: COMMITTEES_PERMISSIONS.VIEW,
+  COMMITTEE_CHANGE_REQUEST: COMMITTEES_PERMISSIONS.VIEW,
+  MEETING: MEETINGS_PERMISSIONS.VIEW,
+};
+
+/** The record types this permission set may see. Pure: no read. */
+export function recordTypesVisibleTo(permissions: readonly string[]): string[] {
+  return Object.entries(RECORD_VIEW_PERMISSION)
+    .filter(([, permission]) => permissions.includes(permission))
+    .map(([type]) => type);
+}
+
 // ACC-101 — "may this caller see this PARENT record?", asked before returning
 // anything scoped to it.
 //
@@ -41,7 +60,7 @@ export class ObjectVisibilityService {
   // than a silent disclosure.
   private readonly rules: Record<string, ParentRule> = {
     COMMITTEE: {
-      permission: COMMITTEES_PERMISSIONS.VIEW,
+      permission: RECORD_VIEW_PERMISSION['COMMITTEE']!,
       exists: (id, organizationId) =>
         this.prisma.committee.findFirst({
           where: { id, organizationId },
@@ -51,7 +70,7 @@ export class ObjectVisibilityService {
     // ACC-239 — a change request is part of its committee's record: seeing it
     // takes what seeing the committee takes.
     COMMITTEE_CHANGE_REQUEST: {
-      permission: COMMITTEES_PERMISSIONS.VIEW,
+      permission: RECORD_VIEW_PERMISSION['COMMITTEE_CHANGE_REQUEST']!,
       exists: (id, organizationId) =>
         this.prisma.committeeChangeRequest.findFirst({
           where: { id, organizationId },
@@ -59,7 +78,7 @@ export class ObjectVisibilityService {
         }),
     },
     MEETING: {
-      permission: MEETINGS_PERMISSIONS.VIEW,
+      permission: RECORD_VIEW_PERMISSION['MEETING']!,
       exists: (id, organizationId) =>
         this.prisma.meeting.findFirst({
           where: { id, organizationId },

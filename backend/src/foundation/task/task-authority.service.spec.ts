@@ -162,7 +162,7 @@ describe('TaskAuthorityService (ACC-173)', () => {
         Promise.resolve(where.id.in.map((id) => ({ id }))),
       );
 
-      const ids = await service.decisionRecipients('creator', 'requester', ORG_A, NOW);
+      const ids = await service.decisionRecipients('creator', 'requester', ORG_A, 'COMMITTEE', NOW);
 
       expect(ids.sort()).toEqual(['acting', 'creator', 'delegate']);
       expect(prisma.userRole.findMany).not.toHaveBeenCalled();
@@ -176,37 +176,52 @@ describe('TaskAuthorityService (ACC-173)', () => {
       prisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(where.id.in.map((id) => ({ id }))),
       );
-      expect((await service.decisionRecipients('creator', 'requester', ORG_A, NOW)).sort()).toEqual(['creator']);
+      expect((await service.decisionRecipients('creator', 'requester', ORG_A, 'COMMITTEE', NOW)).sort()).toEqual(['creator']);
     });
 
-    it('is the tasks:reassign holders when the creator is no longer ACTIVE', async () => {
+    // ACC-244 — Manage tasks on the task's record type, where tasks:reassign
+    // was, AND the record type's own view permission (rule 1): both keys.
+    it('is the Manage tasks holders on the type who can see its records, when the creator is no longer ACTIVE', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ status: 'INACTIVE' }));
-      prisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }, { userId: 'admin-2' }, { userId: 'requester' }]);
+      prisma.userRole.findMany.mockImplementation(
+        ({ where }: { where: { role: { rolePermissions: { some: { permission: { module: string; action: string } } } } } }) => {
+          const key = `${where.role.rolePermissions.some.permission.module}:${where.role.rolePermissions.some.permission.action}`;
+          const holders: Record<string, string[]> = {
+            'committees:manage_tasks': ['admin-1', 'admin-2', 'requester', 'cannot-see'],
+            'committees:view': ['admin-1', 'admin-2', 'requester'],
+          };
+          return Promise.resolve((holders[key] ?? []).map((userId) => ({ userId })));
+        },
+      );
       prisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(where.id.in.map((id) => ({ id }))),
       );
 
-      const ids = await service.decisionRecipients('creator', 'requester', ORG_A);
+      const ids = await service.decisionRecipients('creator', 'requester', ORG_A, 'COMMITTEE');
 
       expect(ids.sort()).toEqual(['admin-1', 'admin-2']);
-      expect(prisma.userRole.findMany).toHaveBeenCalledWith({
-        where: {
-          user: { organizationId: ORG_A, status: 'ACTIVE' },
-          role: {
-            organizationId: ORG_A,
-            isActive: true,
-            rolePermissions: { some: { permission: { module: 'tasks', action: 'reassign' } } },
+      for (const [module, action] of [['committees', 'manage_tasks'], ['committees', 'view']]) {
+        expect(prisma.userRole.findMany).toHaveBeenCalledWith({
+          where: {
+            user: { organizationId: ORG_A, status: 'ACTIVE' },
+            role: { organizationId: ORG_A, isActive: true, rolePermissions: { some: { permission: { module, action } } } },
           },
-        },
-        select: { userId: true },
-      });
+          select: { userId: true },
+        });
+      }
+    });
+
+    it('is nobody for a departed creator\'s task on a record type with no task keys', async () => {
+      prisma.user.findFirst.mockResolvedValue(creatorRow({ status: 'INACTIVE' }));
+      await expect(service.decisionRecipients('creator', 'requester', ORG_A, 'DOCUMENT')).resolves.toEqual([]);
+      expect(prisma.userRole.findMany).not.toHaveBeenCalled();
     });
 
     it('drops anyone who is not ACTIVE', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ actingUserId: 'delegate', outOfOfficeFrom: BEFORE, outOfOfficeTo: AFTER }));
       prisma.user.findMany.mockResolvedValue([{ id: 'creator' }]);
 
-      await expect(service.decisionRecipients('creator', 'requester', ORG_A)).resolves.toEqual(['creator']);
+      await expect(service.decisionRecipients('creator', 'requester', ORG_A, 'COMMITTEE')).resolves.toEqual(['creator']);
       expect(prisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, status: 'ACTIVE' }) }),
       );
@@ -215,7 +230,7 @@ describe('TaskAuthorityService (ACC-173)', () => {
     itEnforcesTenantIsolation('decisionRecipients', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
       prisma.userRole.findMany.mockResolvedValue([]);
-      await service.decisionRecipients('creator', 'requester', ORG_B);
+      await service.decisionRecipients('creator', 'requester', ORG_B, 'COMMITTEE');
       expect(prisma.user.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'creator', organizationId: ORG_B } }),
       );

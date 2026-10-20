@@ -17,7 +17,6 @@ import {
   ROLES_PERMISSIONS,
   SETUP_PERMISSIONS,
   STANDARDS_PERMISSIONS,
-  TASKS_PERMISSIONS,
   TENANT_PERMISSIONS,
   USERS_PERMISSIONS,
   WORKFLOWS_PERMISSIONS,
@@ -53,28 +52,18 @@ describe('SYSTEM_ROLE_SEED — BASE_USER holds exactly its baseline set (ACC-101
   });
 
   // Named separately from the set above, because the REASON matters more than
-  // the fact: tasks:view gates the tenant-wide task reads, not a user's own
-  // work. my-tasks is ungated and self-scoped, so this costs a staff member
-  // nothing they actually use.
-  it('does NOT hold tasks:view, which gates tenant-wide task reads rather than a user\'s own', () => {
-    expect(permissionsOf('BASE_USER')).not.toContain(TASKS_PERMISSIONS.VIEW);
+  // the fact: a person's own work needs no key at all (a relationship always
+  // counts, ACC-244), so the baseline role holds no task key of any kind.
+  it('holds no task key: a staff member\'s own work needs none', () => {
+    expect(permissionsOf('BASE_USER').filter((p) => p.startsWith('tasks:') || p.endsWith('_tasks'))).toEqual([]);
   });
 
-  // The roles that keep it, so a removal here is deliberate rather than
-  // collateral: an administrative or cross-cutting reader, never the baseline.
-  it.each([
-    'TENANT_ADMIN',
-    'QUALITY_MANAGER',
-    'QUALITY_OFFICER',
-    'AUDITOR',
-    'VIEWER',
-    'READ_ONLY_ADMIN',
-  ])(
-    'keeps tasks:view on %s',
-    (key) => {
-      expect(permissionsOf(key)).toContain(TASKS_PERMISSIONS.VIEW);
-    },
-  );
+  // ACC-244 — the flat task keys are retired: no system role holds one, and
+  // the catalogue has none (the in-use spec counts it).
+  it('no system role holds a flat tasks:* key any more', () => {
+    for (const role of SYSTEM_ROLE_SEED) expect(role.permissions.filter((p) => p.startsWith('tasks:'))).toEqual([]);
+    expect(ALL_PERMISSIONS.filter((p) => p.module === 'tasks')).toEqual([]);
+  });
 });
 
 describe('SYSTEM_ROLE_SEED — setup:view (ACC-82)', () => {
@@ -146,7 +135,6 @@ describe('SYSTEM_ROLE_SEED — admin:access (ACC-123)', () => {
     ['QUALITY_MANAGER', 'org:view'],
     ['QUALITY_MANAGER', 'lookups:view'],
     ['QUALITY_MANAGER', 'workflows:view'],
-    ['QUALITY_OFFICER', 'tasks:manage'],
   ])('%s keeps %s but still cannot administer', (key, permission) => {
     expect(permissionsOf(key)).toContain(permission);
     expect(permissionsOf(key)).not.toContain(ADMIN_PERMISSIONS.ACCESS);
@@ -195,7 +183,6 @@ describe('SYSTEM_ROLE_SEED — READ_ONLY_ADMIN (ACC-123)', () => {
     ROLES_PERMISSIONS.VIEW,
     SETUP_PERMISSIONS.VIEW,
     STANDARDS_PERMISSIONS.VIEW,
-    TASKS_PERMISSIONS.VIEW,
     TENANT_PERMISSIONS.VIEW,
     USERS_PERMISSIONS.VIEW,
     WORKFLOWS_PERMISSIONS.VIEW,
@@ -205,8 +192,8 @@ describe('SYSTEM_ROLE_SEED — READ_ONLY_ADMIN (ACC-123)', () => {
     expect(SYSTEM_ROLE_SEED.some((r) => r.key === 'READ_ONLY_ADMIN')).toBe(true);
   });
 
-  it('holds exactly admin:access plus the 23 view permissions, and nothing else', () => {
-    expect(EXPECTED).toHaveLength(24);
+  it('holds exactly admin:access plus the 22 view permissions, and nothing else', () => {
+    expect(EXPECTED).toHaveLength(23);
     expect([...permissionsOf('READ_ONLY_ADMIN')].sort()).toEqual([...EXPECTED].sort());
   });
 

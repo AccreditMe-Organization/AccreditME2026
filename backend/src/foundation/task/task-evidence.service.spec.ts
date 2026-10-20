@@ -2,7 +2,8 @@ import { ConflictException, ForbiddenException, Logger, NotFoundException } from
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskService } from './task.service';
 import { TaskAdmissionService } from './task-admission.service';
-import { TaskAuthorityService } from './task-authority.service';
+import { TaskVisibilityService } from './task-visibility.service';
+import type { TaskVisibilityContext } from './task-visibility';
 import { StoredFileService } from '../file-storage/stored-file.service';
 import { StorageRefusalException } from '../file-storage/storage-refusal';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
@@ -111,7 +112,16 @@ describe('TaskEvidenceService (ACC-177)', () => {
       if (!recordVisible) throw new ForbiddenException('Required permission: committees:view');
     }),
   };
-  const authority = { canActForCreator: jest.fn().mockResolvedValue(false) };
+  // ACC-244 — whether a viewer may open the task (and so its files) is the
+  // shared task visibility rule, proven on real rows in task-visibility.db-spec
+  // and task-files-access.db-spec. Here it is a stand-in admitting exactly the
+  // viewers in `admitted`, so this spec checks that every file path asks it and
+  // answers the identical 404 when it says no.
+  let admitted = new Set<string>();
+  const rule = {
+    contextFor: jest.fn(async (v: { id: string }) => ({ viewerId: v.id, coveredCreatorIds: [v.id], pools: [] }) as unknown as TaskVisibilityContext),
+    isVisible: jest.fn(async (ctx: TaskVisibilityContext) => admitted.has(ctx.viewerId)),
+  };
   const auditLog = { log: jest.fn().mockResolvedValue(undefined) };
   const SUMMARY_VIEW = { available: true, inProgress: false, summary: null };
   const summaries = { read: jest.fn().mockResolvedValue(SUMMARY_VIEW), make: jest.fn().mockResolvedValue(SUMMARY_VIEW) };
@@ -123,7 +133,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
       prisma as unknown as PrismaService,
       visibility as unknown as ObjectVisibilityService,
       tasks as unknown as TaskService,
-      authority as unknown as TaskAuthorityService,
+      rule as unknown as TaskVisibilityService,
     ),
     auditLog as unknown as AuditLogService,
     summaries as unknown as AiFileSummaryService,
@@ -137,7 +147,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
     tasks.lockOpenForActiveAssignee.mockResolvedValue(TASK);
     tasks.mayManage.mockResolvedValue(false);
     recordVisible = false;
-    authority.canActForCreator.mockResolvedValue(false);
+    admitted = new Set([ASSIGNEE]);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
 
@@ -216,6 +226,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
     });
 
     it('a co-assignee sees it but cannot delete what someone else added', async () => {
+      admitted.add(OTHER);
       prisma.task.findFirst.mockResolvedValue({ ...TASK, assignees: [...TASK.assignees, { userId: OTHER, removedAt: null }] });
       const list = await service.list('task-1', ORG, viewer(OTHER));
       expect(list.canAdd).toBe(true);
@@ -223,17 +234,20 @@ describe('TaskEvidenceService (ACC-177)', () => {
     });
 
     it('the creator, or anyone who may manage the task, sees it', async () => {
+      admitted.add('creator-1');
       tasks.mayManage.mockResolvedValue(true);
       await expect(service.list('task-1', ORG, viewer('creator-1'))).resolves.toEqual(expect.objectContaining({ canAdd: false }));
     });
 
-    it('ACC-231 — tasks:view AND the record sees it, as on the task page', async () => {
+    it('ACC-231 / ACC-244 — whoever the page\'s rule admits sees it (View all tasks and the record, say)', async () => {
       recordVisible = true;
-      await expect(service.list('task-1', ORG, viewer(OTHER, ['tasks:view', 'committees:view']))).resolves.toBeDefined();
-      expect(visibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'committee-1', ORG, ['tasks:view', 'committees:view']);
+      admitted.add(OTHER);
+      const perms = ['committees:view_all_tasks', 'committees:view'];
+      await expect(service.list('task-1', ORG, viewer(OTHER, perms))).resolves.toBeDefined();
+      expect(rule.isVisible).toHaveBeenCalledWith(expect.objectContaining({ viewerId: OTHER }), 'task-1');
     });
 
-    it('ACC-231 — seeing the record WITHOUT tasks:view no longer reaches the files: the identical 404', async () => {
+    it('ACC-231 — seeing the record is not enough when the rule says no: the identical 404', async () => {
       recordVisible = true;
       await expect(service.list('task-1', ORG, viewer(OTHER, ['committees:view']))).rejects.toThrow('Task not found');
     });
@@ -294,9 +308,12 @@ describe('TaskEvidenceService (ACC-177)', () => {
       });
     });
 
-    it('whoever may view may summarise: a tasks:view holder who is not on the task', async () => {
+    it('whoever may view may summarise: someone the rule admits who is not on the task', async () => {
       recordVisible = true;
-      await expect(service.makeSummary('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']), 'en')).resolves.toBe(SUMMARY_VIEW);
+      admitted.add(OTHER);
+      await expect(
+        service.makeSummary('task-1', 'ev-1', ORG, viewer(OTHER, ['committees:view_all_tasks', 'committees:view']), 'en'),
+      ).resolves.toBe(SUMMARY_VIEW);
     });
 
     it('anyone who may not view gets the IDENTICAL 404 the viewer gives, for read and make, before any summary work', async () => {
@@ -348,10 +365,12 @@ describe('TaskEvidenceService (ACC-177)', () => {
       expect(storedFiles.openDownload).not.toHaveBeenCalled();
     });
 
-    it('whoever may download may view: the same rule admits a tasks:view holder who is not on the task', async () => {
+    it('whoever may download may view: the same rule admits someone who is not on the task', async () => {
       recordVisible = true;
-      const download = await service.download('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']));
-      const view = await service.openView('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']));
+      admitted.add(OTHER);
+      const perms = ['committees:view_all_tasks', 'committees:view'];
+      const download = await service.download('task-1', 'ev-1', ORG, viewer(OTHER, perms));
+      const view = await service.openView('task-1', 'ev-1', ORG, viewer(OTHER, perms));
       expect(download.url).toBe('https://signed');
       expect(view.url).toBe('https://signed-view');
     });

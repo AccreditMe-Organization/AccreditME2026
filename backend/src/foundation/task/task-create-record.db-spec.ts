@@ -76,7 +76,7 @@ describe('POST /tasks checks the record first, on a real database (ACC-244)', ()
   });
 
   const dto = (sourceId: string) => ({ title: 'Collect the minutes', sourceType: 'COMMITTEE', sourceId }) as CreateTaskDto;
-  const seesCommittees = (): TaskViewer => ({ id: creatorA, permissions: ['tasks:create', 'committees:view'] });
+  const seesCommittees = (): TaskViewer => ({ id: creatorA, permissions: ['committees:create_tasks', 'committees:view'] });
 
   async function refusal(p: Promise<unknown>): Promise<string> {
     try {
@@ -101,7 +101,7 @@ describe('POST /tasks checks the record first, on a real database (ACC-244)', ()
   });
 
   it('a committee the caller may not see: 403 naming committees:view, no task', async () => {
-    const viewer: TaskViewer = { id: creatorA, permissions: ['tasks:create'] };
+    const viewer: TaskViewer = { id: creatorA, permissions: ['committees:create_tasks'] };
     expect(await refusal(createForViewer(dto(committeeA), A, viewer))).toMatch(/^403 .*Required permission: committees:view/);
     // The same answer for an invented id: the refusal never depended on the row.
     expect(await refusal(createForViewer(dto(randomUUID()), A, viewer))).toBe(await refusal(createForViewer(dto(committeeA), A, viewer)));

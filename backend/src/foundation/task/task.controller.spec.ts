@@ -14,7 +14,6 @@ import { RATE_LIMITS } from '../../common/throttle/rate-limits';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
-import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
 import { ITask } from './interfaces/task.interface';
 
 const TENANT_ID = 'tenant-test';
@@ -77,9 +76,6 @@ describe('TaskController', () => {
   let controller: TaskController;
   let service: {
     getMyTasks: jest.Mock;
-    getForSource: jest.Mock;
-    getById: jest.Mock;
-    getByIdForViewer: jest.Mock;
     create: jest.Mock;
     createForViewer: jest.Mock;
     complete: jest.Mock;
@@ -154,9 +150,6 @@ describe('TaskController', () => {
     };
     service = {
       getMyTasks: jest.fn().mockResolvedValue([MOCK_TASK]),
-      getForSource: jest.fn().mockResolvedValue([MOCK_TASK]),
-      getById: jest.fn().mockResolvedValue(MOCK_TASK),
-      getByIdForViewer: jest.fn().mockResolvedValue(MOCK_TASK),
       create: jest.fn().mockResolvedValue(MOCK_TASK),
       createForViewer: jest.fn().mockResolvedValue(MOCK_TASK),
       complete: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'COMPLETED' }),
@@ -285,10 +278,12 @@ describe('TaskController', () => {
 
   // ACC-197 — "Draft with AI" is gated like creating a task, both routes.
   describe('task drafting (ACC-197)', () => {
-    it('both draft routes require tasks:create', () => {
+    // ACC-244 — Create tasks is per record type, so the service decides
+    // (assertMayCreateTasks); no route permission sits in front.
+    it('neither draft route carries a route permission: the service checks Create tasks', () => {
       const reflector = new Reflector();
-      expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getDraftAvailability)).toEqual([TASKS_PERMISSIONS.CREATE]);
-      expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.draft)).toEqual([TASKS_PERMISSIONS.CREATE]);
+      expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getDraftAvailability)).toBeUndefined();
+      expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.draft)).toBeUndefined();
     });
 
     it('POST /tasks/draft carries its own per-user limit: ten a minute (Q3)', () => {
@@ -298,9 +293,9 @@ describe('TaskController', () => {
       expect(RATE_LIMITS.taskDraft).toEqual({ limit: 10, ttl: 60_000 });
     });
 
-    it("availability is asked for the caller’s own organisation", async () => {
-      await expect(controller.getDraftAvailability('org-a')).resolves.toEqual({ available: true });
-      expect(drafts.availability).toHaveBeenCalledWith('org-a');
+    it("availability is asked for the caller’s own organisation, with their permissions", async () => {
+      await expect(controller.getDraftAvailability('org-a', ['committees:create_tasks'])).resolves.toEqual({ available: true });
+      expect(drafts.availability).toHaveBeenCalledWith('org-a', ['committees:create_tasks']);
     });
 
     it('draft forwards the caller, their permissions and their organisation — never one from the body', async () => {
@@ -310,16 +305,21 @@ describe('TaskController', () => {
     });
   });
 
-  it('the non-self-scoped task endpoints remain permission-gated', () => {
-    const reflector = new Reflector();
+  // ACC-244 (Q10) — the two legacy reads are gone: a record's tasks are the
+  // record list, one task is its page.
+  it('GET /tasks?sourceType= and GET /tasks/:id no longer exist', () => {
+    const proto = TaskController.prototype as unknown as Record<string, unknown>;
+    expect(proto['getForSource']).toBeUndefined();
+    expect(proto['getById']).toBeUndefined();
+  });
 
-    // getForSource() and getById() can return ANY task in the tenant.
-    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getForSource)).toEqual([
-      TASKS_PERMISSIONS.VIEW,
-    ]);
-    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getById)).toEqual([
-      TASKS_PERMISSIONS.VIEW,
-    ]);
+  // ACC-244 — Create, Unassigned and the SLA preview are decided per record
+  // type in the services, so none carries a route permission any more.
+  it('create, Unassigned and the SLA preview carry no route permission', () => {
+    const reflector = new Reflector();
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.create)).toBeUndefined();
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getUnassigned)).toBeUndefined();
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getSlaPreview)).toBeUndefined();
   });
 
   // ACC-228 — the task page is relationship-scoped (Q4): an assignee without
@@ -328,30 +328,6 @@ describe('TaskController', () => {
     const reflector = new Reflector();
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getPage)).toBeUndefined();
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getHistory)).toBeUndefined();
-  });
-
-  // ACC-101 — both reads now forward the caller's permission set, which is what
-  // lets the service refuse a caller who cannot see the parent record. These
-  // assert the FORWARDING; the refusal itself is proven at the route in
-  // task-parent-visibility.spec.ts.
-  it('getForSource delegates to the service, forwarding the caller permissions', async () => {
-    const result = await controller.getForSource(TENANT_ID, 'DOCUMENT', 'doc-1', VIEWER_PERMISSIONS, USER_ID);
-
-    expect(service.getForSource).toHaveBeenCalledWith(
-      'DOCUMENT',
-      'doc-1',
-      TENANT_ID,
-      VIEWER_PERMISSIONS,
-      USER_ID,
-    );
-    expect(result).toEqual([MOCK_TASK]);
-  });
-
-  it('getById delegates to the viewer-aware read, forwarding the caller permissions', async () => {
-    const result = await controller.getById('task-1', TENANT_ID, VIEWER_PERMISSIONS, USER_ID);
-
-    expect(service.getByIdForViewer).toHaveBeenCalledWith('task-1', TENANT_ID, VIEWER_PERMISSIONS, USER_ID);
-    expect(result).toEqual(MOCK_TASK);
   });
 
   // ACC-244 — the route takes the record-checking path, never the trusted one.
@@ -436,10 +412,10 @@ describe('TaskController', () => {
     expect(evidence.makeSummary).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS }, 'en');
   });
 
-  it('getUnassigned delegates to the service with the current tenant', async () => {
-    const result = await controller.getUnassigned(TENANT_ID);
+  it('getUnassigned delegates to the service with the current tenant and the caller', async () => {
+    const result = await controller.getUnassigned(TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
 
-    expect(service.listUnassigned).toHaveBeenCalledWith(TENANT_ID);
+    expect(service.listUnassigned).toHaveBeenCalledWith(TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
     expect(result).toEqual([{ ...MOCK_TASK, status: 'UNASSIGNED' }]);
   });
 
@@ -564,11 +540,6 @@ describe('TaskController', () => {
 
   // ACC-174 — New task's preview names no task, so it is gated like creating
   // one: clause (a), a 403 naming the permission.
-  it('the New task SLA preview requires tasks:create', () => {
-    const reflector = new Reflector();
-    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getSlaPreview)).toEqual(['tasks:create']);
-  });
-
   it("the creator's routes delegate with the caller, their permissions and the tenant", async () => {
     const perms = ['tasks:reassign'];
     const viewer = { id: USER_ID, permissions: perms };
@@ -588,7 +559,7 @@ describe('TaskController', () => {
     await controller.getTaskSlaPreview('task-1', TENANT_ID, USER_ID, perms, 'true');
     expect(service.slaPreviewForTask).toHaveBeenLastCalledWith('task-1', viewer, TENANT_ID, true);
 
-    await controller.getSlaPreview(TENANT_ID);
-    expect(service.slaPreview).toHaveBeenCalledWith(TENANT_ID);
+    await controller.getSlaPreview(TENANT_ID, perms);
+    expect(service.slaPreview).toHaveBeenCalledWith(TENANT_ID, perms);
   });
 });

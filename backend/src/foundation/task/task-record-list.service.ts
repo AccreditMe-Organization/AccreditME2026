@@ -2,12 +2,13 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
-import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
-import { Prisma, TaskSourceType } from '../../../generated/prisma/client';
+import { Prisma } from '../../../generated/prisma/client';
 import { TaskService, TaskViewer } from './task.service';
-import { TaskAuthorityService } from './task-authority.service';
-import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, poolTargetOf, poolsOfUser, toPoolView } from './task-pool';
+import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, poolTargetOf, toPoolView } from './task-pool';
+import { holdsTaskKey, taskKeysOf, TASK_RECORD_TYPES } from './task-record-types';
+import { TaskVisibilityService } from './task-visibility.service';
+import { taskVisibleSql, TaskVisibilityContext, unassignedSql, unitScopeSql, viewAllSql } from './task-visibility';
 import { OPEN_REQUEST_INCLUDE, toOpenRequest } from './task-request-lifecycle';
 import { taskActionsFor } from './task-actions';
 import { RecordListQueryDto, RecordListSort, RecordPanelQueryDto } from './dto/record-list-query.dto';
@@ -24,24 +25,28 @@ const RANK = Prisma.raw(
 
 interface Scope {
   sql: Prisma.Sql;
-  where: Prisma.TaskWhereInput;
   kind: 'all' | 'own';
-  /** Organisation-wide (All tasks): rows say which record they belong to. */
+  view: 'record' | 'all' | 'unit' | 'unassigned';
+  /** Organisation-wide: rows say which record they belong to. */
   orgWide: boolean;
+  ctx: TaskVisibilityContext;
 }
 
 /**
  * ACC-229 — A RECORD'S TASKS, and the organisation's: the panel's five, and
  * the All tasks list behind "See all" and at /tasks/all.
  *
- * WHO SEES WHAT is today's rule, unchanged (plan §2.3):
+ * WHO SEES WHAT is THE task visibility rule (ACC-244, task-visibility.ts),
+ * the same condition the task page asks for one row:
  *   - On a record: the record must be visible (ObjectVisibilityService, ACC-101
- *     clause a — a 403 naming the permission, or 404, before any task is read).
- *     With tasks:view, every task on it; without (Q1), only the tasks the
- *     viewer is or was on, or created — each one is a task the task page
- *     already admits them to (as an assignee, or as its manager).
- *   - Organisation-wide: tasks:view, and only the record types the viewer may
- *     see (viewableTypes, fail closed) — GET /tasks/:id's rule, as a list.
+ *     clause a — a 403 naming the permission, or 404, before any task is read),
+ *     then the tasks on it the rule admits. `scope` says 'all' when the viewer
+ *     sees every task on it (View all tasks on its type, or unit scope over it).
+ *   - Organisation-wide, a saved view (`view`): All tasks (View all tasks, the
+ *     types held), Unit tasks (unit scope), Unassigned (Manage tasks, no
+ *     actionable owner). Each is also ANDed with the rule itself, so a view can
+ *     never show what the page would refuse. A view the viewer has no way into
+ *     is 403 naming the keys.
  *
  * ORDER AND FILTERS ARE SQL, every value a bound parameter and organizationId
  * in every WHERE, so the panel's five are the five most likely to need someone
@@ -55,13 +60,20 @@ export class TaskRecordListService {
     private readonly prisma: PrismaService,
     private readonly objectVisibility: ObjectVisibilityService,
     private readonly tasks: TaskService,
-    private readonly authority: TaskAuthorityService,
+    private readonly visibility: TaskVisibilityService,
     private readonly calendar: WorkingCalendarService,
   ) {}
 
   async panel(dto: RecordPanelQueryDto, organizationId: string, viewer: TaskViewer): Promise<ITaskRecordPanel> {
     const list = await this.run({ sourceType: dto.sourceType, sourceId: dto.sourceId, take: 5 }, organizationId, viewer, false);
-    return { total: list.total, scope: list.scope, rows: list.items };
+    // ACC-244 — New task on the record's own panel: Create tasks on its type
+    // (the record is visible: run() refused it otherwise).
+    return {
+      total: list.total,
+      scope: list.scope,
+      rows: list.items,
+      canCreate: holdsTaskKey(viewer.permissions, dto.sourceType, 'CREATE'),
+    };
   }
 
   list(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer): Promise<ITaskRecordList> {
@@ -76,22 +88,26 @@ export class TaskRecordListService {
     const take = dto.take ?? PAGE;
     const skip = dto.skip ?? 0;
 
-    const [idRows, matchingRows, total, aroundRows] = await Promise.all([
+    const scoped = Prisma.sql`t."organizationId" = ${organizationId} ${scope.sql}`;
+    const [idRows, matchingRows, totalRows, aroundRows] = await Promise.all([
       this.prisma.$queryRaw<{ id: string }[]>`SELECT t.id FROM "Task" t WHERE ${where} ORDER BY ${order} LIMIT ${take} OFFSET ${skip}`,
       this.prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*)::bigint AS n FROM "Task" t WHERE ${where}`,
-      this.prisma.task.count({ where: scope.where }),
+      // Every task the viewer can see here before the toolbar's filters — the
+      // same scope as the rows, in SQL like them (ACC-244).
+      this.prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*)::bigint AS n FROM "Task" t WHERE ${scoped}`,
       dto.around
         ? this.prisma.$queryRaw<{ rn: bigint }[]>`SELECT s.rn FROM (SELECT t.id, ROW_NUMBER() OVER (ORDER BY ${order}) - 1 AS rn FROM "Task" t WHERE ${where}) s WHERE s.id = ${dto.around}`
         : Promise.resolve([]),
     ]);
 
-    const items = await this.rows(idRows.map((r) => r.id), organizationId, viewer, scope.orgWide);
+    const items = await this.rows(idRows.map((r) => r.id), organizationId, viewer, scope);
     return {
       items,
-      total,
+      total: Number(totalRows[0]?.n ?? 0),
       matching: Number(matchingRows[0]?.n ?? 0),
       scope: scope.kind,
-      facets: withFacets && skip === 0 ? await this.facets(scope.where) : null,
+      view: scope.view,
+      facets: withFacets && skip === 0 ? await this.facets(scoped, scope) : null,
       aroundIndex: aroundRows.length ? Number(aroundRows[0]!.rn) : null,
     };
   }
@@ -99,34 +115,45 @@ export class TaskRecordListService {
   // ── Who sees which tasks ──────────────────────────────────────────────
 
   private async scope(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer): Promise<Scope> {
-    const seesAll = viewer.permissions.includes(TASKS_PERMISSIONS.VIEW);
     if (!!dto.sourceType !== !!dto.sourceId) {
       throw new BadRequestException('Name both the record type and the record, or neither');
     }
     if (dto.sourceType && dto.sourceId) {
+      if (dto.view) throw new BadRequestException('A view is for the organisation-wide list, not one record');
       // ACC-101 clause a: the request names the parent, so it is checked first.
       await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions);
-      const record = Prisma.sql`AND t."sourceType"::text = ${dto.sourceType} AND t."sourceId" = ${dto.sourceId}`;
-      const recordWhere: Prisma.TaskWhereInput = { organizationId, sourceType: dto.sourceType, sourceId: dto.sourceId };
-      if (seesAll) return { sql: record, where: recordWhere, kind: 'all', orgWide: false };
+      const ctx = await this.visibility.contextFor(viewer, organizationId);
+      const seesAll = await this.visibility.seesWholeRecord(ctx, dto.sourceType, dto.sourceId);
       return {
-        sql: Prisma.sql`${record} AND (t."createdById" = ${viewer.id}
-          OR EXISTS (SELECT 1 FROM "TaskAssignee" o WHERE o."taskId" = t.id AND o."userId" = ${viewer.id}))`,
-        where: { ...recordWhere, OR: [{ createdById: viewer.id }, { assignees: { some: { userId: viewer.id } } }] },
-        kind: 'own',
+        sql: Prisma.sql`AND t."sourceType"::text = ${dto.sourceType} AND t."sourceId" = ${dto.sourceId} AND ${taskVisibleSql(ctx)}`,
+        kind: seesAll ? 'all' : 'own',
+        view: 'record',
         orgWide: false,
+        ctx,
       };
     }
-    if (!seesAll) throw new ForbiddenException(`Required permission: ${TASKS_PERMISSIONS.VIEW}`);
-    const types = this.objectVisibility.viewableTypes(viewer.permissions);
-    if (types.length === 0) {
-      return { sql: Prisma.sql`AND FALSE`, where: { organizationId, id: { in: [] } }, kind: 'all', orgWide: true };
+    const ctx = await this.visibility.contextFor(viewer, organizationId);
+    const view = dto.view ?? 'all';
+    const viewSql =
+      view === 'all'
+        ? ctx.viewAllTypes.length ? viewAllSql(ctx) : null
+        : view === 'unit'
+          ? ctx.unitScope.length ? unitScopeSql(ctx) : null
+          : ctx.manageTypes.length ? unassignedSql(ctx) : null;
+    if (!viewSql) {
+      // Decided from the viewer alone, before any task is read.
+      const keys =
+        view === 'all' ? taskKeysOf('VIEW_ALL') : view === 'unassigned' ? taskKeysOf('MANAGE') : ['unit headship', ...taskKeysOf('VIEW_UNIT')];
+      throw new ForbiddenException(`Required permission: ${keys.join(' or ')}`);
     }
     return {
-      sql: Prisma.sql`AND t."sourceType"::text IN (${Prisma.join(types)})`,
-      where: { organizationId, sourceType: { in: types as TaskSourceType[] } },
+      // The view's own condition AND the rule: a view never lists a task the
+      // task page would refuse.
+      sql: Prisma.sql`AND ${viewSql} AND ${taskVisibleSql(ctx)}`,
       kind: 'all',
+      view,
       orgWide: true,
+      ctx,
     };
   }
 
@@ -142,6 +169,15 @@ export class TaskRecordListService {
     if (dto.overdue) {
       // A flag, not a status (ACC-163): open, not on hold, its due time passed.
       parts.push(Prisma.sql`t."dueAt" < now() AND t.status::text NOT IN ('COMPLETED','CANCELLED','ON_HOLD')`);
+    }
+    if (dto.recordType) parts.push(Prisma.sql`t."sourceType"::text = ${dto.recordType}`);
+    if (dto.unit) {
+      // The record's owning unit, for the types that have one. A unit outside
+      // the viewer's scope matches nothing: the view's own condition still holds.
+      const owned = Object.entries(TASK_RECORD_TYPES)
+        .filter(([, e]) => !!e.ownerUnitSql)
+        .map(([type, e]) => Prisma.sql`(t."sourceType"::text = ${type} AND ${e.ownerUnitSql!} = ${dto.unit})`);
+      parts.push(owned.length ? Prisma.sql`(${Prisma.join(owned, ' OR ')})` : Prisma.sql`FALSE`);
     }
     if (dto.assignee) parts.push(activeAssignee(dto.assignee));
     if (dto.mine) parts.push(activeAssignee(viewer.id));
@@ -173,7 +209,8 @@ export class TaskRecordListService {
 
   // ── The rows ──────────────────────────────────────────────────────────
 
-  private async rows(ids: string[], organizationId: string, viewer: TaskViewer, orgWide: boolean): Promise<ITaskRecordRow[]> {
+  private async rows(ids: string[], organizationId: string, viewer: TaskViewer, scope: Scope): Promise<ITaskRecordRow[]> {
+    const orgWide = scope.orgWide;
     if (ids.length === 0) return [];
     const found = await this.prisma.task.findMany({
       where: { id: { in: ids }, organizationId },
@@ -190,10 +227,10 @@ export class TaskRecordListService {
     const byId = new Map(found.map((t) => [t.id, t]));
     const ordered = ids.map((id) => byId.get(id)).filter((t): t is NonNullable<typeof t> => !!t);
 
-    // Read once per page, never per row.
-    const covered = new Set([viewer.id, ...(await this.authority.creatorsCoveredBy(viewer.id, organizationId))]);
-    const reassigner = viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN);
-    const pools = await poolsOfUser(this.prisma, viewer.id, organizationId);
+    // Read once per page, never per row: the visibility context already holds
+    // who the viewer acts for and which pools they are in.
+    const covered = new Set(scope.ctx.coveredCreatorIds);
+    const pools = scope.ctx.pools;
     const stillInStep = await this.stillInStep(ordered, organizationId);
     const records = orgWide ? await this.recordNames(ordered, organizationId) : null;
 
@@ -208,9 +245,12 @@ export class TaskRecordListService {
       const inPool =
         !!target &&
         pools.some((p) =>
-          target.kind === 'POSITION'
-            ? p.assignedOrgUnitId === target.orgUnitId && p.assignedPositionId === target.positionId
-            : p.assignedCommitteeId === target.committeeId && p.assignedCommitteeRoleValueId === target.roleValueId,
+          p.kind === 'POSITION' && target.kind === 'POSITION'
+            ? p.orgUnitId === target.orgUnitId && p.positionId === target.positionId
+            : p.kind === 'COMMITTEE_ROLE' &&
+              target.kind === 'COMMITTEE_ROLE' &&
+              p.committeeId === target.committeeId &&
+              p.roleValueId === target.roleValueId,
         );
       result.push({
         id: task.id,
@@ -256,7 +296,7 @@ export class TaskRecordListService {
           viewerInPool: inPool,
           openRequest,
           mayManage,
-          mayDecide: reassigner || covered.has(task.createdById),
+          mayDecide: holdsTaskKey(viewer.permissions, task.sourceType, 'MANAGE') || covered.has(task.createdById),
           stageEntryTask: !!task.workflowInstanceStageId,
           isMandatory: task.isMandatory,
           legacyWorkflowTask: !task.workflowInstanceStageId && !!(task.sourceStageId || task.workflowInstanceId),
@@ -322,28 +362,47 @@ export class TaskRecordListService {
     return map;
   }
 
-  /** The assignee and pool filters' options, over the whole scope — not the current filters. */
-  private async facets(where: Prisma.TaskWhereInput): Promise<ITaskRecordListFacets> {
-    const [people, pooled] = await Promise.all([
-      this.prisma.taskAssignee.findMany({
-        where: { removedAt: null, task: where },
-        distinct: ['userId'],
-        select: { user: { select: { id: true, name: true } } },
-        take: 200,
-      }),
-      this.prisma.task.findMany({
-        where: { ...where, OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }] },
-        distinct: ['assignedOrgUnitId', 'assignedPositionId', 'assignedCommitteeId', 'assignedCommitteeRoleValueId'],
-        select: {
-          assignedOrgUnitId: true,
-          assignedPositionId: true,
-          assignedCommitteeId: true,
-          assignedCommitteeRoleValueId: true,
-          ...POOL_LABEL_INCLUDE,
-        },
-        take: 100,
-      }),
+  /**
+   * The filters' options, over the whole scope — not the current filters. In
+   * SQL like the rows (ACC-244): the people on tasks in scope, the pools, the
+   * record types present and, for the unit view, the owning units present.
+   */
+  private async facets(scoped: Prisma.Sql, scope: Scope): Promise<ITaskRecordListFacets> {
+    const ownerUnit = Object.entries(TASK_RECORD_TYPES)
+      .filter(([, e]) => !!e.ownerUnitSql)
+      .map(([type, e]) => Prisma.sql`WHEN t."sourceType"::text = ${type} THEN ${e.ownerUnitSql!}`);
+    const [people, poolReps, types, units] = await Promise.all([
+      this.prisma.$queryRaw<{ id: string; name: string }[]>`
+        SELECT DISTINCT u.id, u.name FROM "Task" t
+          JOIN "TaskAssignee" a ON a."taskId" = t.id AND a."removedAt" IS NULL
+          JOIN "User" u ON u.id = a."userId" AND u."organizationId" = t."organizationId"
+         WHERE ${scoped} LIMIT 200`,
+      this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT DISTINCT ON (t."assignedOrgUnitId", t."assignedPositionId", t."assignedCommitteeId", t."assignedCommitteeRoleValueId") t.id
+          FROM "Task" t
+         WHERE ${scoped} AND (t."assignedPositionId" IS NOT NULL OR t."assignedCommitteeId" IS NOT NULL)
+         LIMIT 100`,
+      this.prisma.$queryRaw<{ type: string }[]>`SELECT DISTINCT t."sourceType"::text AS type FROM "Task" t WHERE ${scoped}`,
+      scope.view === 'unit' && ownerUnit.length
+        ? this.prisma.$queryRaw<{ id: string; nameEn: string; nameAr: string | null }[]>`
+            SELECT ou.id, ou."nameEn", ou."nameAr" FROM "OrgUnit" ou
+             WHERE ou."organizationId" = ${scope.ctx.organizationId}
+               AND ou.id IN (SELECT CASE ${Prisma.join(ownerUnit, ' ')} END FROM "Task" t WHERE ${scoped})
+             ORDER BY ou."nameEn"`
+        : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
     ]);
+    const pooled = poolReps.length
+      ? await this.prisma.task.findMany({
+          where: { id: { in: poolReps.map((r) => r.id) }, organizationId: scope.ctx.organizationId },
+          select: {
+            assignedOrgUnitId: true,
+            assignedPositionId: true,
+            assignedCommitteeId: true,
+            assignedCommitteeRoleValueId: true,
+            ...POOL_LABEL_INCLUDE,
+          },
+        })
+      : [];
     const pools: ITaskRecordListFacets['pools'] = [];
     for (const row of pooled) {
       const target = poolTargetOf(row);
@@ -352,8 +411,10 @@ export class TaskRecordListService {
       pools.push({ key: poolKey(target), pool: view });
     }
     return {
-      people: people.map((p) => p.user).sort((a, b) => a.name.localeCompare(b.name)),
+      people: [...people].sort((a, b) => a.name.localeCompare(b.name)),
       pools,
+      recordTypes: types.map((t) => t.type).sort(),
+      units,
     };
   }
 }

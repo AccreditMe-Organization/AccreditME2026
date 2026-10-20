@@ -46,7 +46,7 @@ import 'dotenv/config';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
-import { COMMITTEE_TASKS_PERMISSIONS, TASKS_PERMISSIONS } from '../src/common/constants/permissions';
+import { COMMITTEE_TASKS_PERMISSIONS } from '../src/common/constants/permissions';
 import { SYSTEM_ROLE_SEED } from '../src/foundation/roles/role.seed';
 import { HOSPITAL_FIXTURE } from './seed/fixtures/hospital.fixture';
 import { UNIVERSITY_FIXTURE } from './seed/fixtures/university.fixture';
@@ -58,10 +58,11 @@ const NEW_KEYS: readonly string[] = Object.values(COMMITTEE_TASKS_PERMISSIONS);
 
 /** Each new key, and the flat key a role must hold today to be given it. */
 export const REPLACES: Readonly<Record<string, string>> = {
-  [COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL]: TASKS_PERMISSIONS.VIEW,
-  [COMMITTEE_TASKS_PERMISSIONS.CREATE]: TASKS_PERMISSIONS.CREATE,
-  [COMMITTEE_TASKS_PERMISSIONS.MANAGE]: TASKS_PERMISSIONS.REASSIGN,
-  [COMMITTEE_TASKS_PERMISSIONS.VIEW_UNIT]: TASKS_PERMISSIONS.VIEW,
+  // Literals: the flat keys were retired in ACC-244 PR 2, after this ran.
+  [COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL]: 'tasks:view',
+  [COMMITTEE_TASKS_PERMISSIONS.CREATE]: 'tasks:create',
+  [COMMITTEE_TASKS_PERMISSIONS.MANAGE]: 'tasks:reassign',
+  [COMMITTEE_TASKS_PERMISSIONS.VIEW_UNIT]: 'tasks:view',
 };
 
 /** The seeded share of the new keys, per system role key. */

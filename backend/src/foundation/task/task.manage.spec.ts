@@ -35,7 +35,9 @@ const plusHours = (d: Date, h: number) => new Date(d.getTime() + h * HOUR);
 const creator = { id: CREATOR, permissions: [] as string[] };
 const delegate = { id: DELEGATE, permissions: [] as string[] };
 const outsider = { id: OUTSIDER, permissions: [] as string[] };
-const admin = { id: ADMIN, permissions: ['tasks:reassign'] };
+// ACC-244 — Manage tasks on committees (the fixtures' record type), with
+// committees visible: where tasks:reassign was.
+const admin = { id: ADMIN, permissions: ['committees:view', 'committees:manage_tasks'] };
 
 const row = (userId: string, overrides: Record<string, unknown> = {}) => ({
   id: `ta-${userId}`,
@@ -323,12 +325,23 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
       expect(mockAuthority.canActForCreator).toHaveBeenCalledWith(CREATOR, DELEGATE, ORG_A, mockPrisma);
     });
 
-    it('lets a tasks:reassign holder manage it only while the creator is no longer ACTIVE', async () => {
+    it('lets a Manage tasks holder on the type manage it only while the creator is no longer ACTIVE', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ name: 'Yasser', status: 'ACTIVE' });
       expect(await captureError(service.update('task-1', { title: 'x' }, admin, ORG_A))).toBeInstanceOf(NotFoundException);
 
       mockPrisma.task.findFirst.mockResolvedValue(task({ createdBy: { status: 'INACTIVE' } }));
       await expect(service.update('task-1', { title: 'x' }, admin, ORG_A)).resolves.toBeDefined();
+    });
+
+    it('does not let Manage tasks on committees manage a departed creator\'s task on another record type', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(task({ sourceType: 'DOCUMENT', createdBy: { status: 'INACTIVE' } }));
+      expect(await captureError(service.update('task-1', { title: 'x' }, admin, ORG_A))).toBeInstanceOf(NotFoundException);
+    });
+
+    it('does not let Manage tasks count without the record type\'s own view permission (rule 1)', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(task({ createdBy: { status: 'INACTIVE' } }));
+      const blind = { id: ADMIN, permissions: ['committees:manage_tasks'] };
+      expect(await captureError(service.update('task-1', { title: 'x' }, blind, ORG_A))).toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -758,7 +771,7 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
     it.each([
       ['the creator', creator, [true, false, false]],
       ['whoever acts for the creator', delegate, [true, false, false]],
-      ['a tasks:reassign holder — only where the creator is gone', admin, [false, false, true]],
+      ['a Manage tasks holder on the type — only where the creator is gone', admin, [false, false, true]],
       ['anyone else', outsider, [false, true, false]],
     ])('on My tasks, for %s', async (_who, viewer, expected) => {
       const result = await service.getMyTasks(viewer.id, ORG_A, {}, viewer.permissions);
@@ -766,13 +779,6 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
       // Decided once for the page, not once per row.
       expect(mockAuthority.creatorsCoveredBy).toHaveBeenCalledTimes(1);
       expect(mockAuthority.canActForCreator).not.toHaveBeenCalled();
-    });
-
-    it("on the record's list, with who cancelled a cancelled task", async () => {
-      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A, ['committees:view'], DELEGATE);
-      expect(result.map((r) => r.canManage)).toEqual([true, false, false]);
-      expect(result[0]).toHaveProperty('cancelledBy', null);
-      expect(mockAuthority.creatorsCoveredBy).toHaveBeenCalledTimes(1);
     });
   });
 

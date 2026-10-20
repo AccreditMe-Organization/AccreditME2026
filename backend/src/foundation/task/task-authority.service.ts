@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
+import { RECORD_VIEW_PERMISSION } from '../../common/services/object-visibility.service';
+import { taskKeyOf } from './task-record-types';
 import { findRunningActingCover, findUnitsCoveredBy } from '../organization/unit-headship';
 
 // The client inside this.prisma.$transaction(…), or the service itself.
@@ -30,9 +31,10 @@ type AuthorityClient = Pick<PrismaService, 'user' | 'orgUnitHeadAssignment' | 'u
  * period rows: the creator is ACTIVE, holds a unit-head position, and that
  * unit is their primary unit.
  *
- * `tasks:reassign` is NOT part of this rule. Each caller adds it where it
- * applies: reassign and deciding admit a holder outright; notifications and
- * the decider inbox reach holders only when the creator is no longer ACTIVE.
+ * Manage tasks on the task's record type (ACC-244, where tasks:reassign was)
+ * is NOT part of this rule. Each caller adds it where it applies: reassign and
+ * deciding admit a holder outright; notifications and the decider inbox reach
+ * holders only when the creator is no longer ACTIVE.
  */
 @Injectable()
 export class TaskAuthorityService {
@@ -70,13 +72,15 @@ export class TaskAuthorityService {
   /**
    * Everyone who may decide a request on this task and should be TOLD about
    * it: the creator and whoever covers them now — or, when the creator is no
-   * longer ACTIVE, the tenant's tasks:reassign holders. Never the requester.
-   * ACTIVE users only.
+   * longer ACTIVE, the holders of Manage tasks on the task's record type who
+   * can see records of that type (ACC-244). Never the requester. ACTIVE users
+   * only.
    */
   async decisionRecipients(
     createdById: string,
     requesterId: string,
     organizationId: string,
+    sourceType: string,
     now: Date = new Date(),
   ): Promise<string[]> {
     const creator = await this.prisma.user.findFirst({
@@ -101,7 +105,7 @@ export class TaskAuthorityService {
         if (cover?.reason === 'ABSENCE') candidates.push(cover.userId);
       }
     } else {
-      candidates = await this.reassignHolderIds(organizationId);
+      candidates = await this.manageHolderIds(organizationId, sourceType);
     }
 
     const unique = [...new Set(candidates)].filter((id) => id !== requesterId);
@@ -145,16 +149,26 @@ export class TaskAuthorityService {
     return [...new Set([...outOfOffice.map((u) => u.id), ...heads.map((u) => u.id)])];
   }
 
-  private async reassignHolderIds(organizationId: string): Promise<string[]> {
-    const [module, action] = TASKS_PERMISSIONS.REASSIGN.split(':') as [string, string];
-    const rows = await this.prisma.userRole.findMany({
-      where: {
-        user: { organizationId, status: 'ACTIVE' },
-        role: { organizationId, isActive: true, rolePermissions: { some: { permission: { module, action } } } },
-      },
-      select: { userId: true },
-    });
-    return rows.map((r) => r.userId);
+  // ACTIVE holders of BOTH keys, each through any active role of theirs:
+  // Manage tasks on the type, and the record type's own view permission — the
+  // pair holdsTaskKey() requires (rule 1). Unknown type: nobody.
+  private async manageHolderIds(organizationId: string, sourceType: string): Promise<string[]> {
+    const manageKey = taskKeyOf(sourceType, 'MANAGE');
+    const viewKey = RECORD_VIEW_PERMISSION[sourceType];
+    if (!manageKey || !viewKey) return [];
+    const holdersOf = async (key: string) => {
+      const [module, action] = key.split(':') as [string, string];
+      const rows = await this.prisma.userRole.findMany({
+        where: {
+          user: { organizationId, status: 'ACTIVE' },
+          role: { organizationId, isActive: true, rolePermissions: { some: { permission: { module, action } } } },
+        },
+        select: { userId: true },
+      });
+      return new Set(rows.map((r) => r.userId));
+    };
+    const [manage, view] = await Promise.all([holdersOf(manageKey), holdersOf(viewKey)]);
+    return [...manage].filter((id) => view.has(id));
   }
 }
 

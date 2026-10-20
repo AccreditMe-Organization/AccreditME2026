@@ -16,7 +16,7 @@ const ACTOR = 'user-1';
 const COMMITTEE = 'committee-1';
 const NOTE = 'follow up hand rub stock ward 6A';
 const SECRET_NAME = 'Infection Control Committee';
-const VIEWER = { id: ACTOR, permissions: ['tasks:create', 'committees:view'] };
+const VIEWER = { id: ACTOR, permissions: ['committees:create_tasks', 'committees:view'] };
 
 const GOOD = JSON.stringify({
   title: 'Restock and check hand rub on ward 6A',
@@ -152,7 +152,7 @@ describe('TaskDraftService.draft (ACC-197)', () => {
     it('a viewer who cannot see the record → 403 naming the permission, BEFORE the record is read', async () => {
       const { service, ai, prisma } = setup();
       const error = await service
-        .draft({ id: ACTOR, permissions: ['tasks:create'] }, ORG, { note: NOTE, language: 'en', sourceType: 'COMMITTEE', sourceId: COMMITTEE })
+        .draft({ id: ACTOR, permissions: ['committees:create_tasks'] }, ORG, { note: NOTE, language: 'en', sourceType: 'COMMITTEE', sourceId: COMMITTEE })
         .catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ForbiddenException);
       expect((error as ForbiddenException).message).toBe('Required permission: committees:view');
@@ -237,8 +237,15 @@ describe('TaskDraftService.draft (ACC-197)', () => {
 describe('TaskDraftService.availability (ACC-197)', () => {
   it('true when AI is on and the feature is open; false otherwise — and nothing else is told', async () => {
     const { service, prisma } = setup();
-    await expect(service.availability(ORG)).resolves.toEqual({ available: true });
+    await expect(service.availability(ORG, VIEWER.permissions)).resolves.toEqual({ available: true });
     prisma.organization.findFirst.mockResolvedValue({ ...orgRow, aiMonthlyCredits: 0 });
-    await expect(service.availability(ORG)).resolves.toEqual({ available: false });
+    await expect(service.availability(ORG, VIEWER.permissions)).resolves.toEqual({ available: false });
+  });
+
+  // ACC-244 — gated like New task: Create tasks on at least one record type.
+  it('refuses a caller without Create tasks on any type, naming the key, before anything is read', async () => {
+    const { service, prisma } = setup();
+    await expect(service.availability(ORG, ['committees:view'])).rejects.toThrow('Required permission: committees:create_tasks');
+    expect(prisma.organization.findFirst).not.toHaveBeenCalled();
   });
 });
