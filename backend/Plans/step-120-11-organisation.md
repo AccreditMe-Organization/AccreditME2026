@@ -632,3 +632,33 @@ Each is titled "… — part of ACC-120", and each merges on its own. **The orde
 - **Compact density**, declared on the shell: `check:dialog-density` counts six field blocks, past artboard 13's five. The drawing's "four blocks, standard density" (OS L636) counted rows. Bodies: 380 English, 394 Arabic, at 1280 and at 390. Drawing the helper at 390 still fails the 410 gate in Arabic at compact, so the phone rule stays.
 - Found in the browser check: Edit opened before the units list arrived (seconds, from Frankfurt) showed the parent's placeholder and an empty picker. The parent field now shows `am-field`'s spinner until the list arrives.
 - Found in the full suite: `task-authority.service.spec.ts` (decisionRecipients) read the real clock against a cover window ending 20 Oct 2026, and failed from that day. Its clock is pinned to the fixture's `NOW`; nothing else in it changed.
+
+### PR B as built (CC-129, 20 Oct)
+
+Branch `feature/ACC-120-11b-org-read-model`, from `dev` at `f351e74`.
+
+**Changed since this plan was written:**
+- **D13 shipped in ACC-133.** `getHeadStatus` already counts only active head positions, so PR B leaves it alone.
+- **ACC-133 created `unit-headship.ts`** (`findCurrentHeadHolders`, `findRunningActingCover`), and lane B's ACC-244 builds on it. Both signatures stay as they are.
+
+**What PR B adds to `unit-headship.ts`:**
+- `headHolderWhere()` and `runningActingCoverWhere(now)`: the two filters, so every reader builds from them.
+- `findCurrentHeadHoldersForUnits()` and `findRunningActingCoversForUnits()`: one query each, grouped by unit.
+- The two single-unit functions now call the batched ones and return exactly what they did. With one id, the batched functions send an equality rather than `in`, so a single-unit read's `where` is unchanged.
+
+**The read model:** `org-structure.service.ts`, with three `org:view` GETs above `:id`:
+- `units/structure`
+- `units/chart`
+- `units/:id/summary`
+
+`buildTypeResolver` moves to `org-unit-type-resolver.ts`, shared with `organization.service.ts`.
+
+**Visibility (D7):**
+- Person names only with `users:view`.
+- Committee items only with `committees:view`; counts for everyone.
+- `attention` only with `setup:view`, and absent otherwise.
+- Position titles and headcount for every `org:view` holder.
+
+**Deactivate:** refuses with `ORG_UNIT_HAS_DEPENDENCIES` and coded blockers. `message` is kept for old clients.
+
+**No migration. No screen change.**
