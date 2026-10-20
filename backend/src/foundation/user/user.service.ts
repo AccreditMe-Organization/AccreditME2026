@@ -349,10 +349,17 @@ export class UserService {
       organizationId,
     );
 
+    // ACC-133 — the head read now carries more per holder (start date,
+    // position titles); this response keeps exactly its own three fields.
+    // Names are included here: this is an internal read on the transfer
+    // endpoint's behalf, which users:transfer gates.
+    const destinationHead = headStatus.holders[0] ?? null;
     return {
       hasActiveDirectReports,
       availablePositions,
-      currentDestinationHead: headStatus.holders[0] ?? null,
+      currentDestinationHead: destinationHead
+        ? { id: destinationHead.id, name: destinationHead.name ?? '', positionId: destinationHead.positionId }
+        : null,
     };
   }
 

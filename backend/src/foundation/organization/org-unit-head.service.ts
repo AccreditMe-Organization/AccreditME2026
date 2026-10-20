@@ -15,6 +15,17 @@ import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
 import { AssignActingHeadDto } from './dto/assign-acting-head.dto';
 import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
+import { findRunningActingCover } from './running-acting-cover';
+
+/** ACC-133 — how far back an ended cover still earns the "new 90-day period" warning. */
+const RECENT_COVER_DAYS = 7;
+/**
+ * ACC-133 — the newest head events read for the panel. Every line it shows is
+ * about the most recent events, so a unit with a longer history only loses
+ * "since" for a holder whose start is older than this many events, and then
+ * says "not recorded" rather than a wrong date.
+ */
+const HEAD_EVENTS_READ = 200;
 
 // ACC-40 Section 2.3 — Deliberate Handover. A handover is not a change to
 // a separately-stored "who is Head" fact — it is a declared, temporary,
@@ -58,24 +69,161 @@ export class OrgUnitHeadService {
   // Section 2.2's own live derivation query, never the cached
   // isHeadVacant field — that stays inert until Phase 6 wires
   // refreshOrgUnitHeadVacancy() against it.
-  async getHeadStatus(orgUnitId: string, organizationId: string): Promise<IOrgUnitHeadStatus> {
+  //
+  // ACC-133 — extended for the Headship panel: when each holder became head,
+  // the last vacancy, when a pending successor's access began, the cover in
+  // force, a scheduled cover, and covers that ended in the last 7 days. Read
+  // from the ledger and the period table only, never from AuditLog; null where
+  // the ledger has no row.
+  //
+  // `includeNames` is the D7 rule: the HTTP route passes whether the caller
+  // holds users:view, and every person name is null when they do not.
+  // Internal callers (UserService's transfer paths) keep the default, because
+  // they act on the system's behalf and their own endpoints are gated
+  // separately.
+  async getHeadStatus(
+    orgUnitId: string,
+    organizationId: string,
+    options: { includeNames: boolean } = { includeNames: true },
+  ): Promise<IOrgUnitHeadStatus> {
     const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - RECENT_COVER_DAYS * 24 * 60 * 60 * 1000);
+    const named = (name: string | null | undefined): string | null =>
+      options.includeNames ? (name ?? null) : null;
 
-    const holders = await this.prisma.user.findMany({
+    // D13 — position.isActive: a deactivated head position confers nothing.
+    const holderRows = await this.prisma.user.findMany({
       where: {
         organizationId,
         primaryOrgUnitId: orgUnitId,
         status: 'ACTIVE',
-        position: { isUnitHeadPosition: true },
+        position: { isUnitHeadPosition: true, isActive: true },
       },
-      select: { id: true, name: true, positionId: true },
+      select: {
+        id: true,
+        name: true,
+        positionId: true,
+        position: { select: { nameEn: true, nameAr: true } },
+      },
     });
 
+    // The ledger, newest first. Only the actions that start or end headship.
+    const events = await this.prisma.orgUnitHeadEvent.findMany({
+      where: {
+        organizationId,
+        orgUnitId,
+        action: { in: ['ASSIGNED', 'HANDOVER_COMPLETED', 'HANDOVER_DECLARED', 'VACATED'] },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: HEAD_EVENTS_READ,
+      select: { userId: true, action: true, effectiveDate: true, createdAt: true, approvedBy: true },
+    });
+
+    const pendingDeclaration = orgUnit.pendingHeadUserId
+      ? events.find((e) => e.action === 'HANDOVER_DECLARED' && e.userId === orgUnit.pendingHeadUserId)
+      : undefined;
+    const pendingHeadAccessSince = pendingDeclaration?.createdAt ?? null;
+
+    // When a holder became head here. The latest event that made them head is
+    // the answer UNLESS something later ended or superseded that headship:
+    // their own VACATED, or another person ASSIGNED or completed as head (then
+    // this person was the outgoing head). In that case they are head again by
+    // a path that wrote no event, and the true answer is "not recorded".
+    const headSince = (userId: string): Date | null => {
+      if (userId === orgUnit.pendingHeadUserId) return pendingHeadAccessSince;
+      const index = events.findIndex(
+        (e) => e.userId === userId && (e.action === 'ASSIGNED' || e.action === 'HANDOVER_COMPLETED'),
+      );
+      if (index < 0) return null;
+      const superseded = events
+        .slice(0, index)
+        .some(
+          (e) =>
+            (e.action === 'VACATED' && e.userId === userId) ||
+            ((e.action === 'ASSIGNED' || e.action === 'HANDOVER_COMPLETED') && e.userId !== userId),
+        );
+      return superseded ? null : events[index]!.effectiveDate;
+    };
+
+    const vacated = events.find((e) => e.action === 'VACATED');
+    let vacatedByName: string | null = null;
+    if (vacated?.approvedBy && options.includeNames) {
+      const actor = await this.prisma.user.findFirst({
+        where: { id: vacated.approvedBy, organizationId },
+        select: { name: true },
+      });
+      vacatedByName = actor?.name ?? null;
+    }
+
+    const running = await findRunningActingCover(this.prisma, organizationId, orgUnitId, now);
+
+    // A cover that has not started yet, and covers whose period ended in the
+    // last 7 days. One read for both.
+    const otherCovers = await this.prisma.orgUnitHeadAssignment.findMany({
+      where: {
+        organizationId,
+        orgUnitId,
+        kind: 'ACTING',
+        OR: [{ endedAt: null, validFrom: { gt: now } }, { validTo: { gt: sevenDaysAgo, lte: now } }],
+      },
+      orderBy: { validFrom: 'asc' },
+      select: {
+        userId: true,
+        reason: true,
+        validFrom: true,
+        validTo: true,
+        endedAt: true,
+        user: { select: { name: true } },
+      },
+    });
+    const scheduled = otherCovers.find((c) => c.endedAt === null && c.validFrom > now) ?? null;
+    const recentlyEnded = otherCovers
+      .filter((c) => c.validTo !== null && c.validTo > sevenDaysAgo && c.validTo <= now)
+      .sort((a, b) => b.validTo!.getTime() - a.validTo!.getTime());
+
     return {
-      holders,
+      holders: holderRows.map((h) => ({
+        id: h.id,
+        name: named(h.name),
+        positionId: h.positionId,
+        positionNameEn: h.position?.nameEn ?? null,
+        positionNameAr: h.position?.nameAr ?? null,
+        headSince: headSince(h.id),
+      })),
       pendingHeadUserId: orgUnit.pendingHeadUserId,
       headHandoverEffectiveDate: orgUnit.headHandoverEffectiveDate,
       actingHeadUserId: orgUnit.actingHeadUserId,
+      lastVacancy: vacated
+        ? {
+            at: vacated.effectiveDate,
+            by: vacated.approvedBy ? { userId: vacated.approvedBy, name: vacatedByName } : null,
+          }
+        : null,
+      pendingHeadAccessSince,
+      cover: running
+        ? {
+            userId: running.userId,
+            name: named(running.userName),
+            reason: running.reason,
+            validFrom: running.validFrom,
+            validTo: running.validTo,
+          }
+        : null,
+      scheduledCover: scheduled
+        ? {
+            userId: scheduled.userId,
+            name: named(scheduled.user.name),
+            reason: scheduled.reason,
+            validFrom: scheduled.validFrom,
+            validTo: scheduled.validTo,
+          }
+        : null,
+      recentlyEndedCovers: recentlyEnded.map((c) => ({
+        userId: c.userId,
+        name: named(c.user.name),
+        endedAt: c.validTo!,
+      })),
     };
   }
 
