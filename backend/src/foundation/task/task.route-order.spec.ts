@@ -89,6 +89,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
   const recordList = {
     panel: jest.fn().mockResolvedValue({ total: 0, scope: 'own', rows: [] }),
     list: jest.fn().mockResolvedValue({ items: [] }),
+    views: jest.fn().mockResolvedValue({ mine: true, all: null, unassigned: null, unit: null, create: { types: [] } }),
   };
 
   beforeAll(async () => {
@@ -154,6 +155,8 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     // ACC-229 — no @Permissions: the service decides from the record and the viewer.
     ['/tasks/record-panel?sourceType=COMMITTEE&sourceId=c1', () => recordList.panel],
     ['/tasks/record-list', () => recordList.list],
+    // ACC-244 — self-scoped, no @Permissions.
+    ['/tasks/views', () => recordList.views],
   ])('GET %s reaches its own handler', async (path, delegate) => {
     const res = await request(app.getHttpServer()).get(path);
 

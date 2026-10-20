@@ -22,12 +22,18 @@ import { RECORD_VIEW_PERMISSION } from '../../common/services/object-visibility.
  * `ownerUnitSql` is the record's owning unit as a SQL expression over the task
  * row `t`, for unit scope; null for a type with no owning unit (unit scope then
  * never applies to it). Its read is scoped by organisation like every other.
+ *
+ * `recordInOrgSql` says the task's record exists in the task's own
+ * organisation. Every PERMISSION-based way to a task requires it (rule 1: a
+ * record that is not this organisation's is not visible here); relationships
+ * do not (Q1).
  */
 export type TaskKeyKind = 'VIEW_ALL' | 'CREATE' | 'MANAGE' | 'VIEW_UNIT';
 
 export interface TaskRecordType {
   keys: Readonly<Record<TaskKeyKind, string>>;
   ownerUnitSql: Prisma.Sql | null;
+  recordInOrgSql: Prisma.Sql;
 }
 
 export const TASK_RECORD_TYPES: Readonly<Record<string, TaskRecordType>> = {
@@ -40,6 +46,7 @@ export const TASK_RECORD_TYPES: Readonly<Record<string, TaskRecordType>> = {
       VIEW_UNIT: COMMITTEE_TASKS_PERMISSIONS.VIEW_UNIT,
     },
     ownerUnitSql: Prisma.sql`(SELECT oc."orgUnitId" FROM "Committee" oc WHERE oc.id = t."sourceId" AND oc."organizationId" = t."organizationId")`,
+    recordInOrgSql: Prisma.sql`EXISTS (SELECT 1 FROM "Committee" rc WHERE rc.id = t."sourceId" AND rc."organizationId" = t."organizationId")`,
   },
 };
 

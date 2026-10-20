@@ -76,3 +76,27 @@ export interface ITaskRecordList {
   /** Where `around` sits (0-based) under this sort and these filters; null when absent or not matched. */
   aroundIndex: number | null;
 }
+
+/**
+ * ACC-244 — GET /tasks/views: which saved views of the one /tasks list this
+ * viewer gets, and on which record types. The screen renders from this and
+ * never re-derives a permission rule.
+ */
+export interface ITaskViews {
+  /** My tasks: always. */
+  mine: true;
+  /** All tasks: View all tasks on at least one record type, with the record visible. */
+  all: { types: string[] } | null;
+  /** Unassigned: Manage tasks on at least one record type, with the record visible. */
+  unassigned: { types: string[] } | null;
+  /**
+   * Unit tasks: the units whose records' tasks the viewer sees, sub-units
+   * included (only the roots are listed), and how each is reached.
+   */
+  unit: {
+    types: string[];
+    units: { id: string; nameEn: string; nameAr: string | null; via: 'HEAD' | 'ACTING' | 'PERMISSION' }[];
+  } | null;
+  /** New task: Create tasks on these record types. */
+  create: { types: string[] };
+}

@@ -141,9 +141,10 @@ describe('TaskRecordListService', () => {
       expect(result.view).toBe('record');
       for (const s of sqlOf(prisma)) {
         expect(s.text).toContain('t."sourceType"::text = $');
-        // The rule's relationship and View all clauses, bound, not interpolated.
+        // The rule's relationship clause, and View all on committees — whose
+        // record must be this organisation's (rc."organizationId").
         expect(s.text).toContain('t."createdById" = ANY(');
-        expect(s.values).toEqual(expect.arrayContaining([['COMMITTEE']]));
+        expect(s.text).toContain('rc."organizationId" = t."organizationId"');
       }
     });
 
@@ -154,7 +155,7 @@ describe('TaskRecordListService', () => {
       for (const s of sqlOf(prisma)) {
         expect(s.text).toContain('t."createdById" = ANY(');
         expect(s.text).toContain('va."userId" = $');
-        expect(s.values).not.toEqual(expect.arrayContaining([['COMMITTEE']]));
+        expect(s.text).not.toContain('rc."organizationId"');
       }
     });
 
@@ -192,8 +193,8 @@ describe('TaskRecordListService', () => {
       const result = await service.list({}, 'org-a', { id: 'u1', permissions: VIEW_ALL });
       expect(result.view).toBe('all');
       const page = sqlOf(prisma)[0]!;
-      expect(page.text).toContain('t."sourceType"::text = ANY(');
-      expect(page.values).toEqual(expect.arrayContaining([['COMMITTEE']]));
+      expect(page.text).toContain('rc."organizationId" = t."organizationId"');
+      expect(page.values).toContain('COMMITTEE');
       expect(result.items[0]!.record).toEqual({ type: 'COMMITTEE', id: 'cmt-1', nameEn: 'Quality', nameAr: null });
     });
 

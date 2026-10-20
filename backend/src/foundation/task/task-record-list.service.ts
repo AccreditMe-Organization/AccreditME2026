@@ -12,7 +12,7 @@ import { taskVisibleSql, TaskVisibilityContext, unassignedSql, unitScopeSql, vie
 import { OPEN_REQUEST_INCLUDE, toOpenRequest } from './task-request-lifecycle';
 import { taskActionsFor } from './task-actions';
 import { RecordListQueryDto, RecordListSort, RecordPanelQueryDto } from './dto/record-list-query.dto';
-import { ITaskRecordList, ITaskRecordListFacets, ITaskRecordPanel, ITaskRecordRow } from './interfaces/task-record-row.interface';
+import { ITaskRecordList, ITaskRecordListFacets, ITaskRecordPanel, ITaskRecordRow, ITaskViews } from './interfaces/task-record-row.interface';
 
 const PAGE = 50;
 
@@ -78,6 +78,35 @@ export class TaskRecordListService {
 
   list(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer): Promise<ITaskRecordList> {
     return this.run(dto, organizationId, viewer, true);
+  }
+
+  /**
+   * ACC-244 — which saved views this viewer gets: the same context the lists
+   * filter with, so a view offered here is never one its list refuses.
+   * Self-scoped: it describes the caller and reads no task.
+   */
+  async views(organizationId: string, viewer: TaskViewer): Promise<ITaskViews> {
+    const ctx = await this.visibility.contextFor(viewer, organizationId);
+    const rootIds = [...new Set(ctx.unitRoots.map((r) => r.orgUnitId))];
+    const names = rootIds.length
+      ? await this.prisma.orgUnit.findMany({
+          where: { id: { in: rootIds }, organizationId },
+          select: { id: true, nameEn: true, nameAr: true },
+        })
+      : [];
+    const byId = new Map(names.map((n) => [n.id, n]));
+    const unitTypes = [...new Set(ctx.unitScope.map((s) => s.type))];
+    const units = ctx.unitRoots
+      .filter((r) => byId.has(r.orgUnitId))
+      .map((r) => ({ ...byId.get(r.orgUnitId)!, via: r.via }))
+      .sort((a, b) => a.nameEn.localeCompare(b.nameEn));
+    return {
+      mine: true,
+      all: ctx.viewAllTypes.length ? { types: ctx.viewAllTypes } : null,
+      unassigned: ctx.manageTypes.length ? { types: ctx.manageTypes } : null,
+      unit: unitTypes.length && units.length ? { types: unitTypes, units } : null,
+      create: { types: ctx.createTypes },
+    };
   }
 
   private async run(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer, withFacets: boolean): Promise<ITaskRecordList> {

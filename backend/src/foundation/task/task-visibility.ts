@@ -119,6 +119,17 @@ export async function buildTaskVisibilityContext(
 
 const sqlArray = (values: readonly string[]) => Prisma.sql`${[...values]}::text[]`;
 
+/**
+ * "The task is on a record of one of these types, and that record is this
+ * organisation's" — the shape every permission-based clause takes (rule 1).
+ */
+function onRecordsOf(types: readonly string[]): Prisma.Sql {
+  const parts = types
+    .filter((type) => !!TASK_RECORD_TYPES[type])
+    .map((type) => Prisma.sql`(t."sourceType"::text = ${type} AND ${TASK_RECORD_TYPES[type]!.recordInOrgSql})`);
+  return parts.length ? Prisma.sql`(${Prisma.join(parts, ' OR ')})` : Prisma.sql`FALSE`;
+}
+
 /** Has a pool and nobody active on it, in a status a pick can take. */
 export const WAITING_IN_POOL_SQL = Prisma.sql`(t.status::text IN ('PENDING','OVERDUE','UNASSIGNED')
   AND (t."assignedPositionId" IS NOT NULL OR t."assignedCommitteeId" IS NOT NULL)
@@ -170,11 +181,9 @@ export function taskVisibleSql(ctx: TaskVisibilityContext): Prisma.Sql {
   ];
   const pool = poolMatchSql(ctx.pools);
   if (pool) parts.push(Prisma.sql`(${WAITING_IN_POOL_SQL} AND ${pool})`);
-  if (ctx.viewAllTypes.length) parts.push(Prisma.sql`t."sourceType"::text = ANY(${sqlArray(ctx.viewAllTypes)})`);
+  if (ctx.viewAllTypes.length) parts.push(onRecordsOf(ctx.viewAllTypes));
   if (ctx.manageTypes.length) {
-    parts.push(
-      Prisma.sql`(t."sourceType"::text = ANY(${sqlArray(ctx.manageTypes)}) AND (${OPEN_REQUEST_SQL} OR ${CREATOR_GONE_SQL} OR ${UNOWNED_SQL}))`,
-    );
+    parts.push(Prisma.sql`(${onRecordsOf(ctx.manageTypes)} AND (${OPEN_REQUEST_SQL} OR ${CREATOR_GONE_SQL} OR ${UNOWNED_SQL}))`);
   }
   if (ctx.unitScope.length) parts.push(unitScopeSql(ctx));
   return Prisma.sql`(${Prisma.join(parts, ' OR ')})`;
@@ -182,14 +191,12 @@ export function taskVisibleSql(ctx: TaskVisibilityContext): Prisma.Sql {
 
 /** The Unassigned view's own condition: unowned, on a type the viewer manages. FALSE without Manage. */
 export function unassignedSql(ctx: TaskVisibilityContext): Prisma.Sql {
-  return ctx.manageTypes.length
-    ? Prisma.sql`(t."sourceType"::text = ANY(${sqlArray(ctx.manageTypes)}) AND ${UNOWNED_SQL})`
-    : Prisma.sql`FALSE`;
+  return ctx.manageTypes.length ? Prisma.sql`(${onRecordsOf(ctx.manageTypes)} AND ${UNOWNED_SQL})` : Prisma.sql`FALSE`;
 }
 
 /** The All tasks view's own condition: the types the viewer holds View all tasks on. */
 export function viewAllSql(ctx: TaskVisibilityContext): Prisma.Sql {
-  return ctx.viewAllTypes.length ? Prisma.sql`t."sourceType"::text = ANY(${sqlArray(ctx.viewAllTypes)})` : Prisma.sql`FALSE`;
+  return ctx.viewAllTypes.length ? onRecordsOf(ctx.viewAllTypes) : Prisma.sql`FALSE`;
 }
 
 /** Does unit scope reach this record? For a record's panel and the picker counts. */

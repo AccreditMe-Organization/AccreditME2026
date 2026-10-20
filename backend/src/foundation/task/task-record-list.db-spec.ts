@@ -59,6 +59,10 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     const a = await newOrg();
     org = a.org;
     viewer = a.viewer;
+    // ACC-244 — key-based access needs the record to be this organisation's,
+    // so the tasks' committee is real.
+    const owner = await prisma.orgUnit.create({ data: { organizationId: org, nameEn: 'Quality', code: `Q${record.slice(-4)}`.toUpperCase() } });
+    await prisma.committee.create({ data: { id: record, organizationId: org, nameEn: 'Quality Committee', typeValueId: 'type', orgUnitId: owner.id } });
     const make = async (key: string, data: Record<string, unknown>, sourceType: 'COMMITTEE' | 'MEETING' = 'COMMITTEE') => {
       const t = await prisma.task.create({
         data: { organizationId: org, createdById: a.creator, sourceType, sourceId: record, title: `Task ${key}`, ...data },

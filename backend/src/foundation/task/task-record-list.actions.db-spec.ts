@@ -56,6 +56,9 @@ describe('A row\'s actions equal its task page\'s (ACC-229)', () => {
     const slug = `acc229a-${randomUUID().slice(0, 8)}`;
     org = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } })).id;
     const unit = await prisma.orgUnit.create({ data: { organizationId: org, nameEn: 'Facilities', code: `F${slug.slice(-4)}` } });
+    // ACC-244 — key-based access needs the record to be this organisation's,
+    // so the tasks' committee is real.
+    await prisma.committee.create({ data: { id: record, organizationId: org, nameEn: 'Facilities Committee', typeValueId: 'type', orgUnitId: unit.id } });
     const position = await prisma.orgPosition.create({ data: { organizationId: org, nameEn: 'Engineer', grade: 3 } });
     const user = async (key: string, extra: Record<string, unknown> = {}) =>
       (await prisma.user.create({ data: { organizationId: org, email: `${slug}-${key}@example.test`, name: key, status: 'ACTIVE', ...extra } })).id;

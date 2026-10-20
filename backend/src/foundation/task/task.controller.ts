@@ -60,7 +60,7 @@ import { TaskEvidenceService } from './task-evidence.service';
 import { TaskPageService } from './task-page.service';
 import { TaskRecordListService } from './task-record-list.service';
 import { RecordListQueryDto, RecordPanelQueryDto } from './dto/record-list-query.dto';
-import { ITaskRecordList, ITaskRecordPanel } from './interfaces/task-record-row.interface';
+import { ITaskRecordList, ITaskRecordPanel, ITaskViews } from './interfaces/task-record-row.interface';
 import { ITaskHistoryEvent, ITaskPageView } from './interfaces/task-page.interface';
 import { SingleFileUploadInterceptor } from '../file-storage/single-file-upload.interceptor';
 import { IFileDownload, IUploadedFile } from '../file-storage/interfaces/stored-file.interface';
@@ -306,6 +306,18 @@ export class TaskController {
     @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<ITaskRecordPanel> {
     return this.recordList.panel(query, tenantId, viewer(userId, actorPermissions));
+  }
+
+  // ACC-244 — which saved views of the one /tasks list the caller gets (My
+  // tasks, All tasks, Unassigned, Unit tasks) and New task's record types.
+  // Self-scoped, so no @Permissions; static, so declared before ':id'.
+  @Get('views')
+  getViews(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITaskViews> {
+    return this.recordList.views(tenantId, viewer(userId, permissions));
   }
 
   @Get('record-list')
