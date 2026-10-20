@@ -140,13 +140,40 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
         [unit]="editingUnit()"
         [parentId]="newUnitParentId()"
         (saved)="onFormSaved()"
-        (cancelled)="formVisible.set(false)"
+        (cancelled)="unitDialog.requestClose()"
+        (ready)="unitFormRef.set($event)"
+        (dirtyChange)="unitFormDirty.set($event)"
       />
     </ng-template>
+    <!-- The actions live in the dialog footer, not the form body: that is what
+         keeps the body under the 420 cap. Cancel goes through requestClose(),
+         the one place the unsaved-work question is asked. -->
+    <ng-template #unitFooterTpl>
+      <div class="flex justify-end gap-2">
+        <p-button
+          [label]="'common.cancel' | translate"
+          severity="secondary"
+          [text]="true"
+          (onClick)="unitDialog.requestClose()"
+          [disabled]="!!unitFormRef()?.saving()"
+        />
+        <p-button
+          [label]="(unitFormRef()?.submitLabelKey() ?? 'common.save') | translate"
+          [loading]="!!unitFormRef()?.saving()"
+          [disabled]="!unitFormRef() || !!unitFormRef()?.saving()"
+          (onClick)="unitFormRef()!.onSubmit()"
+          data-testid="org-unit-submit"
+        />
+      </div>
+    </ng-template>
     <app-edit-dialog
+      #unitDialog
       [(visible)]="formVisible"
-      [header]="(editingUnit() ? 'organization.editUnit' : 'organization.addUnit') | translate"
+      [header]="unitDialogHeader()"
       [content]="formTpl"
+      [footer]="unitFooterTpl"
+      density="compact"
+      [dirty]="unitFormDirty()"
     />
 
     <ng-template #headPanelTpl>
@@ -189,6 +216,30 @@ export class OrgUnitTreeComponent implements OnInit {
   readonly formVisible = signal(false);
   readonly editingUnit = signal<OrgUnitDto | null>(null);
   readonly newUnitParentId = signal<string | null>(null);
+  /** The unit "Add sub-unit" was pressed on, so the title can name it. */
+  private readonly newUnitParent = signal<OrgUnitDto | null>(null);
+  readonly unitFormRef = signal<OrgUnitFormComponent | null>(null);
+  readonly unitFormDirty = signal(false);
+
+  /**
+   * The three titles (OS L634): "Add unit", "Add sub-unit to Pharmacy",
+   * "Edit Pharmacy". Tenant names through bilingual() (ACC-160).
+   */
+  readonly unitDialogHeader = computed(() => {
+    const editing = this.editingUnit();
+    if (editing) {
+      return this.translate.instant('organization.editUnitNamed', {
+        unit: this.languageService.bilingual(editing.nameEn, editing.nameAr),
+      });
+    }
+    const parent = this.newUnitParent();
+    if (parent) {
+      return this.translate.instant('organization.addSubUnitTo', {
+        parent: this.languageService.bilingual(parent.nameEn, parent.nameAr),
+      });
+    }
+    return this.translate.instant('organization.addUnit');
+  });
 
   readonly headPanelVisible = signal(false);
   readonly managingHeadUnitId = signal<string | null>(null);
@@ -237,22 +288,29 @@ export class OrgUnitTreeComponent implements OnInit {
   onAdd(): void {
     this.editingUnit.set(null);
     this.newUnitParentId.set(null);
+    this.newUnitParent.set(null);
+    this.unitFormDirty.set(false);
     this.formVisible.set(true);
   }
 
   onAddChild(parent: OrgUnitDto): void {
     this.editingUnit.set(null);
     this.newUnitParentId.set(parent.id);
+    this.newUnitParent.set(parent);
+    this.unitFormDirty.set(false);
     this.formVisible.set(true);
   }
 
   onEdit(unit: OrgUnitDto): void {
     this.editingUnit.set(unit);
     this.newUnitParentId.set(null);
+    this.newUnitParent.set(null);
+    this.unitFormDirty.set(false);
     this.formVisible.set(true);
   }
 
   onFormSaved(): void {
+    this.unitFormDirty.set(false);
     this.formVisible.set(false);
     this.loadTree();
   }
