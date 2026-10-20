@@ -233,7 +233,7 @@ export const SUCCESSOR_NOTE_MAX = 500;
       }
       .am-asd__strip-label {
         flex: none;
-        min-inline-size: 72px;
+        min-inline-size: calc(var(--am-space-40) + var(--am-space-32));
         font-size: var(--am-type-micro-size);
         font-weight: 700;
         letter-spacing: 0.05em;

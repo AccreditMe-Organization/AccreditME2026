@@ -254,10 +254,10 @@ interface PanelRow {
       }
       .am-hs__track-run {
         flex: 3 1 0;
-        height: 6px;
+        height: var(--am-space-6);
         background: var(--am-primary-600);
-        border-start-start-radius: 3px;
-        border-end-start-radius: 3px;
+        border-start-start-radius: var(--am-radius-control);
+        border-end-start-radius: var(--am-radius-control);
       }
       .am-hs__track-open {
         flex: 2 1 0;
@@ -265,8 +265,8 @@ interface PanelRow {
       }
       .am-hs__track-flag {
         flex: none;
-        width: 2px;
-        height: 14px;
+        width: var(--am-space-2);
+        height: var(--am-space-16);
         background: var(--am-warning-ink);
       }
       .am-hs__track-after {
