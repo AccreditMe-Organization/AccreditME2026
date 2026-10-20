@@ -662,3 +662,23 @@ Branch `feature/ACC-120-11b-org-read-model`, from `dev` at `f351e74`.
 **Deactivate:** refuses with `ORG_UNIT_HAS_DEPENDENCIES` and coded blockers. `message` is kept for old clients.
 
 **No migration. No screen change.**
+
+**Built differently from §2, and why:**
+- **`countedHere` for a head is always true**, as §2 said. The holder rule requires the unit to be their primary unit, so there's nothing else to compute. Covers carry the real comparison, through the cover's own `primaryOrgUnitId`.
+- **The query count is 10, not 8–10 as costed.** Prisma loads the holder's position and the cover's user as separate queries (one each, not per unit). Per call: `TenantGuard` 6, the read model 10.
+- **`attention` is `{ code, severity, since, openCount }`.** §2 drew `{ code, severity, flagDate? }`. `since` is the condition's `openedAt`. `openCount` is there for the record page's "+ N more".
+- **`summary` returns an inactive unit**, marked inactive, as `GET …/:id` already does, so the record page can show its deactivated state.
+- **Committee items are ACTIVE committees**, the same set the count and deactivate's blocker use.
+- **Spec changes the batching forced, mechanism only:**
+  - two exact-`select` pins gained `primaryOrgUnitId`;
+  - the cover tests mock `findMany`, not `findFirst`;
+  - one isolation test now loops over the cover's `findMany` call and asserts the call exists, where it had looped over `findFirst` calls, of which there are now none.
+
+  No assertion about results changed.
+
+**Measured (step 8), locally against al-nakheel (21 units), read-only:**
+- 16 queries per call (15 without `setup:view`); the summary 19 (18).
+- `structure` 13.1 KB, `chart` from the top 13.5 KB (21 nodes), re-rooted at Microbiology Unit 1.2 KB, Pharmacy Section's summary 1.7 KB.
+- 1.2–2.1 s each, from a Gulf client to Frankfurt (ACC-60).
+
+**Every seeded `org:view` persona also holds `users:view`:** Hessa, Yasser (quality manager), Noura (read-only admin) and Nasser (viewer). So names-withheld isn't visible live; the specs prove it. `attention` was absent for Yasser and Nasser, who lack `setup:view`.
