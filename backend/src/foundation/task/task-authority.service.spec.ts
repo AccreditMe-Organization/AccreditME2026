@@ -30,7 +30,7 @@ const creatorRow = (overrides: Record<string, unknown> = {}) => ({
 describe('TaskAuthorityService (ACC-173)', () => {
   const prisma = {
     user: { findFirst: jest.fn(), findMany: jest.fn() },
-    orgUnitHeadAssignment: { findFirst: jest.fn(), findMany: jest.fn() },
+    orgUnitHeadAssignment: { findMany: jest.fn() },
     userRole: { findMany: jest.fn() },
     orgUnit: { findFirst: jest.fn() },
   };
@@ -39,11 +39,30 @@ describe('TaskAuthorityService (ACC-173)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useFixedClock(NOW);
-    prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(null);
     prisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
   });
 
   afterEach(() => jest.useRealTimers());
+
+  // The cover IN FORCE on a unit is read by unit-headship's batched reader
+  // (findRunningActingCoversForUnits, findMany by orgUnitId); a person's own
+  // covers by findUnitsCoveredBy (findMany by userId). This answers the first
+  // with `rows` and leaves the second empty, so a test reads one source only.
+  function unitCovers(rows: { userId: string; reason: 'ABSENCE' | 'VACANCY'; [k: string]: unknown }[]): void {
+    prisma.orgUnitHeadAssignment.findMany.mockImplementation(({ where }: { where: { orgUnitId?: string } }) =>
+      Promise.resolve(
+        where.orgUnitId === undefined
+          ? []
+          : rows.map((r) => ({
+              orgUnitId: where.orgUnitId,
+              validFrom: BEFORE,
+              validTo: null,
+              ...r,
+              user: { name: r.userId, primaryOrgUnitId: null },
+            })),
+      ),
+    );
+  }
 
   describe('canActForCreator', () => {
     it('admits the creator without reading anything', async () => {
@@ -92,10 +111,10 @@ describe('TaskAuthorityService (ACC-173)', () => {
 
     it('admits the acting head covering an ABSENCE of the unit the creator heads, read from the period table', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ position: { isUnitHeadPosition: true } }));
-      prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(cover('acting', 'ABSENCE'));
+      unitCovers([cover('acting', 'ABSENCE')]);
 
       await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(true);
-      expect(prisma.orgUnitHeadAssignment.findFirst).toHaveBeenCalledWith(
+      expect(prisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
             organizationId: ORG_A,
@@ -113,21 +132,21 @@ describe('TaskAuthorityService (ACC-173)', () => {
 
     it('refuses the cover holder when the cover is for a VACANCY, and an ABSENCE cover held by someone else', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ position: { isUnitHeadPosition: true } }));
-      prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(cover('acting', 'VACANCY'));
+      unitCovers([cover('acting', 'VACANCY')]);
       await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(false);
-      prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(cover('someone-else', 'ABSENCE'));
+      unitCovers([cover('someone-else', 'ABSENCE')]);
       await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(false);
     });
 
     it('does not look for an acting head when the creator heads no unit', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow());
       await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(false);
-      expect(prisma.orgUnitHeadAssignment.findFirst).not.toHaveBeenCalled();
+      expect(prisma.orgUnitHeadAssignment.findMany).not.toHaveBeenCalled();
     });
 
     it('refuses an acting head when no ABSENCE appointment is in force (future, ended, vacancy)', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ position: { isUnitHeadPosition: true } }));
-      prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(null);
+      unitCovers([]);
       await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(false);
     });
 
@@ -155,9 +174,7 @@ describe('TaskAuthorityService (ACC-173)', () => {
           position: { isUnitHeadPosition: true },
         }),
       );
-      prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue({
-        id: 'p', userId: 'acting', reason: 'ABSENCE', validFrom: BEFORE, validTo: null, user: { name: 'Acting' },
-      });
+      unitCovers([{ id: 'p', userId: 'acting', reason: 'ABSENCE' }]);
       prisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(where.id.in.map((id) => ({ id }))),
       );
@@ -170,9 +187,7 @@ describe('TaskAuthorityService (ACC-173)', () => {
 
     it('never names the requester, even when they are the acting head', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ position: { isUnitHeadPosition: true } }));
-      prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue({
-        id: 'p', userId: 'requester', reason: 'ABSENCE', validFrom: BEFORE, validTo: null, user: { name: 'R' },
-      });
+      unitCovers([{ id: 'p', userId: 'requester', reason: 'ABSENCE' }]);
       prisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(where.id.in.map((id) => ({ id }))),
       );

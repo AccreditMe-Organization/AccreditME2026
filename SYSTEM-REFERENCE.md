@@ -5292,12 +5292,9 @@ selects `primaryOrgUnitId`, and the cover is read with `findMany`.
   `hasDirectOrActingHead()`, `workflow.service.ts` and
   `task-authority.service.ts`. Recorded, not changed.
 
-**ACC-244 extracted the two where-clauses and added the reverse lookups**:
+**ACC-244 adds the reverse lookups and the sub-unit walk**, built on the same
+two helpers:
 
-- **`headHolderWhere()`** and **`runningActingCoverWhere(now)`** — the two
-  conditions above, as Prisma where-inputs, so a batched reader builds on the
-  same text. `findCurrentHeadHolders` and `findRunningActingCover` use them,
-  with unchanged signatures and behaviour.
 - **`findUnitHeadedBy(prisma, organizationId, userId)`** — the unit the user
   heads now by the holder rule, or null.
 - **`findUnitsCoveredBy(prisma, organizationId, userId, now, reason?)`** — the
