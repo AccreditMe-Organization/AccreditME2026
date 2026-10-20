@@ -1,6 +1,6 @@
 # ACC-244 — task permissions per record type, plus unit scope (plan)
 
-**Status: PLAN, answered by Ahmad on 20 Oct (§10). PR 1 in progress.** Branch
+**Status: PLAN, answered by Ahmad on 20 Oct (§10). PR 1 built (§9); the shared headship work moved to PR 2.** Branch
 `feature/ACC-244-task-permissions`, cut from `origin/dev` at `8fa444e`.
 Every database read behind this plan was read-only (`BEGIN READ ONLY`, then
 `ROLLBACK`). Nothing was granted, revoked or written.
@@ -547,21 +547,41 @@ added blind.
 
 **Three PRs, expand then contract:**
 
-1. **PR 1, expand. No behaviour change.**
-   - `unit-headship.ts` and `org-unit-tree.ts`, with `task-authority`
-     refactored onto them;
-   - `COMMITTEE_TASK_PERMISSIONS`, the registry, and the seed grants for new
-     tenants (old keys kept beside the new ones);
-   - `backfill:acc244-task-permissions-grant`: dry run first, then
-     `--execute` after the deploy. It upserts the catalogue rows and grants
-     §5.2's new keys to existing system roles, with the audit trail.
+1. **PR 1, expand. AS SHIPPED (20 Oct): the keys, the create check and the
+   grant script.**
+   - `COMMITTEE_TASKS_PERMISSIONS` (the four keys) and the seed grants for new
+     organisations, the old flat keys kept beside them. The four keys sit on
+     `PERMISSIONS_NOT_YET_CHECKED` (ACC-120's R2): the matrix hides them and
+     the API refuses to grant them by hand until PR 2 reads them. Their English
+     and Arabic sentences are in place.
+   - **The create check:** `POST /tasks` calls `createForViewer()`, which
+     requires the record to exist in the caller's organisation and be visible
+     to them (403 naming the permission, or the identical 404), before
+     `create()`. It still reads `tasks:create`.
+   - `backfill:acc244-grant-task-keys`: dry run first, then `-- --execute`
+     after the deploy. It upserts the catalogue rows and grants §5.2's keys to
+     existing system roles, only where the role holds the flat key the new one
+     replaces; one audit row per grant; revokes nothing; idempotent.
 
-   Old code ignores the new keys, so this is safe at any point. ACC-133
-   rebases onto this PR.
-2. **PR 2, switch.**
-   - `TaskVisibilityService` and every path in §1 onto it;
-   - Create checks the record; `GET /tasks/views`; `view=` on the list;
+   Nothing reads the new keys, so this is safe at any point.
+2. **PR 2, switch.** It STARTS with the shared headship work, after ACC-133
+   merges (moved from PR 1 on 20 Oct, because ACC-133 creates the file):
+   - rebase onto ACC-133 and, in its `unit-headship.ts`, reuse
+     `findCurrentHeadHolders` and `findRunningActingCover` as they are; add the
+     reverse (the units a user heads or covers now, from the same rules) and
+     the sub-unit query (§3.4);
+   - move `task-authority.service.ts` onto `findRunningActingCover` with no
+     change in behaviour, always passing an explicit `now`;
+   - the headship specs (head, acting head inside, before and after its
+     period, an inactive position, a handover with two holders, sub-units) and
+     the §8 mutations that apply to them.
+
+   Then the switch itself:
+   - the registry (§3.1), `TaskVisibilityService` and every path in §1 onto it;
+   - Create on the record's type replaces `tasks:create` (the record check is
+     already in place from PR 1); `GET /tasks/views`; `view=` on the list;
      `canCreate` on the panel;
+   - the four keys off `PERMISSIONS_NOT_YET_CHECKED`;
    - the two caller-less legacy routes removed (Q10);
    - the §1.3 frontend key swaps;
    - the old constants removed.
@@ -595,7 +615,8 @@ SYSTEM-REFERENCE.md (§3.12, §3.13, §5) and CLAUDE.md are updated in PR 2.
 
 **Changes to the plan these answers and the PR 1 brief make:**
 
-- **Shared headship (§3.3) is ACC-133's file.** Lane A's ACC-133 merges first
+- **Shared headship (§3.3) is ACC-133's file, and the work is the start of
+  PR 2** (moved from PR 1, 20 Oct). Lane A's ACC-133 merges first
   and creates `foundation/organization/unit-headship.ts` with
   `findCurrentHeadHolders(prisma, organizationId, orgUnitId)` and
   `findRunningActingCover(prisma, organizationId, orgUnitId, now)`. ACC-244
