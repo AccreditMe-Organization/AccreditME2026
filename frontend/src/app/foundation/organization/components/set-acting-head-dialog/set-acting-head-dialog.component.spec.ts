@@ -45,13 +45,17 @@ const VACANT: IOrgUnitHeadStatus = {
   pendingHeadUserId: null,
   headHandoverEffectiveDate: null,
   actingHeadUserId: null,
+  // ACC-133 — the extended head read.
+  lastVacancy: null, pendingHeadAccessSince: null, cover: null, scheduledCover: null, recentlyEndedCovers: [],
 };
 
 const HELD: IOrgUnitHeadStatus = {
-  holders: [{ id: 'u-fahad', name: 'Dr. Fahad Al-Anazi', positionId: 'pos-director' }],
+  holders: [{ id: 'u-fahad', name: 'Dr. Fahad Al-Anazi', positionId: 'pos-director', positionNameEn: 'Director', positionNameAr: null, headSince: null }],
   pendingHeadUserId: null,
   headHandoverEffectiveDate: null,
   actingHeadUserId: null,
+  // ACC-133 — the extended head read.
+  lastVacancy: null, pendingHeadAccessSince: null, cover: null, scheduledCover: null, recentlyEndedCovers: [],
 };
 
 function setup(status: IOrgUnitHeadStatus): {
@@ -339,6 +343,49 @@ describe('SetActingHeadDialogComponent (ACC-120 slice 2)', () => {
 
       expect(dialog.dirty()).toBeFalse();
       expect(dialog.ctaKey()).toBe('orgUnitHead.cover.ctaOpen');
+    });
+  });
+
+  // ── ACC-133 ──────────────────────────────────────────────────────────────
+  describe('the Vacancy strip reads the ledger (ACC-133)', () => {
+    it('with no VACATED event, it says no head is recorded, never a made-up date', () => {
+      const { dialog } = setup(VACANT);
+      expect(dialog.stripValue()).toBe('orgUnitHead.cover.stripVacantNoRecord');
+    });
+
+    it('with one, it says since when', () => {
+      const { dialog } = setup({ ...VACANT, lastVacancy: { at: '2026-09-01T12:00:00.000Z', by: null } });
+      expect(dialog.stripValue()).toBe('orgUnitHead.cover.stripVacantSince');
+    });
+
+    it('with the head name withheld (no users:view), "Head assigned" stands in', () => {
+      const { dialog } = setup({ ...HELD, holders: [{ ...HELD.holders[0]!, name: null }] });
+      expect(dialog.stripValue()).toBe('headship.head.assigned');
+    });
+  });
+
+  describe('a cover for someone whose cover ended in the last 7 days (ACC-133)', () => {
+    const RECENT: IOrgUnitHeadStatus = {
+      ...VACANT,
+      recentlyEndedCovers: [{ userId: 'u-huda', name: 'Dr. Huda Zahrani', endedAt: '2026-10-18T12:00:00.000Z' }],
+    };
+
+    it('warns that it starts a new 90-day period, naming when the last one ended', () => {
+      const { fixture, dialog } = setup(RECENT);
+      dialog.form.controls.userId.setValue('u-huda');
+      fixture.detectChanges();
+      expect(dialog.restartWarning()).toBeTruthy();
+      expect(document.querySelector('[data-testid="cover-restart-warning"]')?.textContent).toContain(
+        'orgUnitHead.cover.restartWarning',
+      );
+    });
+
+    it('says nothing for anyone else', () => {
+      const { fixture, dialog } = setup(RECENT);
+      dialog.form.controls.userId.setValue('u-fahad');
+      fixture.detectChanges();
+      expect(dialog.restartWarning()).toBeNull();
+      expect(document.querySelector('[data-testid="cover-restart-warning"]')).toBeNull();
     });
   });
 });

@@ -225,6 +225,13 @@ import {
           />
         </am-field>
 
+        @if (restartWarning(); as endedOn) {
+          <p class="am-cover-restart" role="status" data-testid="cover-restart-warning">
+            <span aria-hidden="true">▲</span>
+            {{ 'orgUnitHead.cover.restartWarning' | translate: { date: endedOn } }}
+          </p>
+        }
+
         <!-- The range. "From" sits at the inline start, so its position is set
              by dir and never by left or right; each date is isolated LTR so
              "25 Sep 2026" stays whole in an RTL line. No arrow between them —
@@ -341,6 +348,14 @@ import {
   `,
   styles: [
     `
+      /* ACC-133 — the 7-day "starts a new 90-day period" warning. */
+      .am-cover-restart {
+        margin: 0 0 var(--am-space-12);
+        font-size: var(--am-type-meta-size);
+        line-height: var(--am-type-meta-line);
+        color: var(--am-warning-ink);
+      }
+
       /* THE DATE VIEW — 8px gaps, not the form's 12, because the design's own
          fits table budgets it that way: back link 26 + date field 79 + 8 +
          calendar 258 = 371 against the 420 cap. With the 8px under the back
@@ -632,12 +647,30 @@ export class SetActingHeadDialogComponent {
   );
 
   readonly stripValue = computed(() => {
-    if (this.actingReason() === 'ABSENCE') return this.coveredHead()?.name ?? '';
-    // NOT "vacant since <date>". OrgUnitHeadEvent only covers units that have
-    // had an event since ACC-40, so there is no true "since" for most units,
-    // and the design is explicit that a fallback states what is NOT recorded
-    // rather than inventing a date.
-    return this.translate.instant('orgUnitHead.cover.stripVacant');
+    if (this.actingReason() === 'ABSENCE') {
+      // ACC-133 / D7 — the name is withheld from a viewer without users:view.
+      return this.coveredHead()?.name ?? this.translate.instant('headship.head.assigned');
+    }
+    // ACC-133 — "Vacant since <date>" only where the ledger holds the VACATED
+    // event. OrgUnitHeadEvent covers only units with an event since ACC-40, so
+    // the fallback states what is NOT recorded rather than inventing a date.
+    const vacancy = this.status().lastVacancy;
+    return vacancy
+      ? this.translate.instant('orgUnitHead.cover.stripVacantSince', { date: this.format.date(vacancy.at) })
+      : this.translate.instant('orgUnitHead.cover.stripVacantNoRecord');
+  });
+
+  /**
+   * ACC-133 — the interim warning for a known gap. A cover's end date cannot be
+   * moved (only clear exists), so extending one means ending and recreating it,
+   * which restarts the 90-day Setup health clock. When the person chosen had a
+   * cover here that ended in the last 7 days, say so before it happens.
+   */
+  readonly restartWarning = computed(() => {
+    const id = this.chosenUserId();
+    if (!id) return null;
+    const ended = this.status().recentlyEndedCovers.find((c) => c.userId === id);
+    return ended ? this.format.date(ended.endedAt) : null;
   });
 
   readonly stripMeta = computed(() =>
