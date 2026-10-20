@@ -621,4 +621,14 @@ Each is titled "… — part of ACC-120", and each merges on its own. **The orde
 - **D15:** as recommended (the side panel drops below the chart at 390).
 - **D16:** the readings are confirmed.
 - **D17:** confirmed.
-- **D1, D2, D7:** awaiting Ahmad.
+- **D1:** `org:view` holders without `admin:access` get a read-only page outside Administration (option B with B1, a separate path). It is built as PR F, after C, D and E.
+- **D2:** build ACC-133 now, as its own PR titled "[ACC-133] …", after PR A and before C and D.
+- **D7:** head names show only to viewers with `users:view`, and committee names only with `committees:view`; anyone else sees "Head assigned" and counts. Position titles show to every `org:view` holder.
+
+### PR A, phone width (CC-125a)
+
+- At the shell's phone breakpoint (`SHELL_PHONE_BELOW_PX`, 768, `app-shell.component.ts`), the Code helper is visually hidden (`sr-only`) and stays in `aria-describedby`; the counter stays. Beside its counter the helper wrapped in the half-width column and took the Arabic body to 425 at 390. Splitting the dialog into steps was not needed.
+- The Code input no longer carries a native `maxlength`, which dropped an 11th character silently. A refused character (an underscore, an 11th character) goes in and the rule shows as the error at once, at every width.
+- **Compact density**, declared on the shell: `check:dialog-density` counts six field blocks, past artboard 13's five. The drawing's "four blocks, standard density" (OS L636) counted rows. Bodies: 380 English, 394 Arabic, at 1280 and at 390. Drawing the helper at 390 still fails the 410 gate in Arabic at compact, so the phone rule stays.
+- Found in the browser check: Edit opened before the units list arrived (seconds, from Frankfurt) showed the parent's placeholder and an empty picker. The parent field now shows `am-field`'s spinner until the list arrives.
+- Found in the full suite: `task-authority.service.spec.ts` (decisionRecipients) read the real clock against a cover window ending 20 Oct 2026, and failed from that day. Its clock is pinned to the fixture's `NOW`; nothing else in it changed.
