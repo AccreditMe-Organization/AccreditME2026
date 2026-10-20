@@ -1,9 +1,47 @@
 import type { PrismaService } from '../../prisma/prisma.service';
 
 /**
- * ACC-133 — the acting cover IN FORCE on a unit right now, read from the period
- * table (`OrgUnitHeadAssignment`), never from the cached
- * `OrgUnit.actingHeadUserId`.
+ * ACC-133 — the two questions every reader of a unit's headship asks, answered
+ * one way, in one file. Lane B's ACC-244 builds on these; a new reader of
+ * "who is head" or "who covers" uses them rather than writing a third copy.
+ *
+ * Both are scoped by organisation AND unit, always.
+ */
+
+/**
+ * The unit's current head holders: ACTIVE users whose primary unit is this one
+ * and whose position confers headship and is itself active.
+ *
+ * Usually zero or one; TWO while a successor is pending, because
+ * `declareHandover()` grants the incoming person the position at once. Do not
+ * assume one head: during that window both hold it.
+ *
+ * `position.isActive` (D13): a deactivated head position confers nothing.
+ */
+export function findCurrentHeadHolders(
+  prisma: Pick<PrismaService, 'user'>,
+  organizationId: string,
+  orgUnitId: string,
+) {
+  return prisma.user.findMany({
+    where: {
+      organizationId,
+      primaryOrgUnitId: orgUnitId,
+      status: 'ACTIVE',
+      position: { isUnitHeadPosition: true, isActive: true },
+    },
+    select: {
+      id: true,
+      name: true,
+      positionId: true,
+      position: { select: { nameEn: true, nameAr: true } },
+    },
+  });
+}
+
+/**
+ * The acting cover IN FORCE on the unit right now, read from the period table
+ * (`OrgUnitHeadAssignment`), never from the cached `OrgUnit.actingHeadUserId`.
  *
  * In force means: an ACTING period that nobody has ended (`endedAt` null), that
  * has started (`validFrom <= now`), and that has not lapsed on its own date
@@ -16,9 +54,8 @@ import type { PrismaService } from '../../prisma/prisma.service';
  * A cover that lapsed on its own end date leaves it set. So the cache answers
  * "was a cover arranged and not ended by hand", which is a different question.
  *
- * One exported helper so every reader asks the same question the same way
- * (ACC-244 reuses it). Scoped by organisation AND unit, always. The newest
- * period wins if, against the overlap refusal, two are ever in force at once.
+ * The newest period wins if, against the overlap refusal, two are ever in force
+ * at once.
  */
 export interface RunningActingCover {
   id: string;

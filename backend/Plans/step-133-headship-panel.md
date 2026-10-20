@@ -136,9 +136,10 @@ is empty. Nothing for this ticket to lower.
   arranged" where a name would go. Position titles show to every `org:view`
   holder.
 - **D13 moves here from PR B:** the holder query gains `position.isActive: true`.
-- **The running-cover read is one exported helper in its own file**,
-  `backend/src/foundation/organization/running-acting-cover.ts`
-  (`findRunningActingCover()`), because lane B's ACC-244 reuses it.
+- **The headship reads live in one shared file**,
+  `backend/src/foundation/organization/unit-headship.ts` (CC-127b), because lane
+  B's ACC-244 builds on it: `findCurrentHeadHolders()` and
+  `findRunningActingCover()`.
   `task-authority.service.ts` is not changed in this PR.
 - **Never reconstruct from AuditLog.** Where the ledger has no row, the field is
   null and the panel says what is not recorded.
@@ -155,3 +156,14 @@ is empty. Nothing for this ticket to lower.
   (`declareHandover()`). The drawing's select for two or more positions would
   offer a choice the server ignores. Appoint head (dialog A) does take one, so the
   three configurations apply there.
+
+## 8. Decisions (CC-127b, Ahmad, 20 Oct)
+
+- **Dialog C loses its read-only Position block.** It measured 434 (EN) and 454
+  (AR) at 1280, over the 420 cap. The Replaces strip already names the position,
+  and `POST /handover` takes none. C stays compact.
+- **The compact field gaps are ACC-251**, not this PR: `am-field` adds its 4px
+  flex gap on top of compact's 2px margins, so every compact field is 79 where
+  artboard 13 draws 71. Not touched here.
+- **`running-acting-cover.ts` became `unit-headship.ts`**, exporting
+  `findCurrentHeadHolders()` and `findRunningActingCover()`.

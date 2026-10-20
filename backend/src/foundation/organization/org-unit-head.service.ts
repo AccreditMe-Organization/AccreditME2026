@@ -15,7 +15,7 @@ import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
 import { AssignActingHeadDto } from './dto/assign-acting-head.dto';
 import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
-import { findRunningActingCover } from './running-acting-cover';
+import { findCurrentHeadHolders, findRunningActingCover } from './unit-headship';
 
 /** ACC-133 — how far back an ended cover still earns the "new 90-day period" warning. */
 const RECENT_COVER_DAYS = 7;
@@ -92,21 +92,8 @@ export class OrgUnitHeadService {
     const named = (name: string | null | undefined): string | null =>
       options.includeNames ? (name ?? null) : null;
 
-    // D13 — position.isActive: a deactivated head position confers nothing.
-    const holderRows = await this.prisma.user.findMany({
-      where: {
-        organizationId,
-        primaryOrgUnitId: orgUnitId,
-        status: 'ACTIVE',
-        position: { isUnitHeadPosition: true, isActive: true },
-      },
-      select: {
-        id: true,
-        name: true,
-        positionId: true,
-        position: { select: { nameEn: true, nameAr: true } },
-      },
-    });
+    // D13 — findCurrentHeadHolders() counts only ACTIVE head positions.
+    const holderRows = await findCurrentHeadHolders(this.prisma, organizationId, orgUnitId);
 
     // The ledger, newest first. Only the actions that start or end headship.
     const events = await this.prisma.orgUnitHeadEvent.findMany({
