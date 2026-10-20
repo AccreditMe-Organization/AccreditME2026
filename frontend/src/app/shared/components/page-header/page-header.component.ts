@@ -52,11 +52,17 @@ import { registerPageName } from '../../../core/services/document-title.service'
             {{ eyebrow() }}
           </div>
         }
-        <h1
-          class="m-0 text-[22px] font-semibold tracking-[-0.01em] text-pretty text-[var(--am-text-primary)]"
-        >
-          {{ title() }}
-        </h1>
+        <!-- ACC-120 slice 11 — an optional fact beside the title, on its
+             baseline ("21 units · 4 levels"). Opt-in: with nothing projected
+             the title renders as before. -->
+        <div class="flex flex-wrap items-baseline gap-x-(--am-space-12)">
+          <h1
+            class="m-0 text-[22px] font-semibold tracking-[-0.01em] text-pretty text-[var(--am-text-primary)]"
+          >
+            {{ title() }}
+          </h1>
+          <ng-content select="[pageMeta]" />
+        </div>
         @if (purpose()) {
           <p
             class="mt-[3px] mb-0 max-w-[92ch] text-[12.5px] text-pretty text-[var(--am-text-secondary)]"
