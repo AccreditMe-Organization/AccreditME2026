@@ -10,12 +10,8 @@ import { IOrgUnit, IOrgUnitType } from './interfaces/org-unit.interface';
 import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
 import { OrgUnitParentCycleRefusal } from './org-unit-refusals';
-
-// ACC-137 — the lookup category a unit's type comes from. Seeded as a SYSTEM
-// category (organizationId null) and extensible, so a tenant may add its own
-// values beside the six shipped ones — the seed already does, with `ward` for
-// the hospital and `faculty`/`school`/`program`/`deanship` for the university.
-const ORG_UNIT_TYPE_CATEGORY = 'org_unit_type';
+import { ORG_UNIT_TYPE_CATEGORY, buildOrgUnitTypeResolver } from './org-unit-type-resolver';
+import { headHolderWhere } from './unit-headship';
 
 // ACC-141 - the type reserved for the ROOT unit, and for nothing else.
 //
@@ -39,7 +35,7 @@ export class OrganizationService {
     // ACC-137 — ONE resolver for the whole tree, not one lookup per unit. A
     // per-unit join would be a query per node on a hierarchy with no depth
     // limit; the type vocabulary is a handful of rows either way.
-    const types = await this.buildTypeResolver(organizationId);
+    const types = await buildOrgUnitTypeResolver(this.prisma, organizationId);
     return this.buildTree(all, null, types);
   }
 
@@ -48,7 +44,7 @@ export class OrganizationService {
       where: { organizationId },
       orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
     });
-    const types = await this.buildTypeResolver(organizationId);
+    const types = await buildOrgUnitTypeResolver(this.prisma, organizationId);
     return units.map((u) => this.toInterface(u, types));
   }
 
@@ -57,7 +53,7 @@ export class OrganizationService {
       where: { id, organizationId },
     });
     if (!unit) throw new NotFoundException('Org unit not found');
-    const types = await this.buildTypeResolver(organizationId);
+    const types = await buildOrgUnitTypeResolver(this.prisma, organizationId);
     return this.toInterface(unit, types);
   }
 
@@ -99,8 +95,7 @@ export class OrganizationService {
         where: {
           organizationId,
           primaryOrgUnitId: current,
-          status: 'ACTIVE',
-          position: { isUnitHeadPosition: true, isActive: true },
+          ...headHolderWhere(),
         },
         select: { id: true },
       });
@@ -145,8 +140,7 @@ export class OrganizationService {
       where: {
         organizationId,
         primaryOrgUnitId: orgUnitId,
-        status: 'ACTIVE',
-        position: { isUnitHeadPosition: true, isActive: true },
+        ...headHolderWhere(),
       },
     });
 
@@ -257,74 +251,6 @@ export class OrganizationService {
   }
 
   /**
-   * The org_unit_type values visible to a tenant, by value id — ACC-137.
-   *
-   * ## Why this is not `LookupService.getValues()`
-   *
-   * `getValues()` is the SELECTION list: it drops hidden values and inactive
-   * ones, which is right for a picker and wrong here. A unit that already holds
-   * a value the admin has since hidden must keep rendering its type, marked as
-   * retired — an acceptance criterion, and the alternative is a type silently
-   * vanishing from a column because someone tidied the Lookups page, which reads
-   * as data loss.
-   *
-   * So this resolves the same TWO LAYERS by the same rules, and keeps what
-   * `getValues()` discards:
-   *
-   *   - a SYSTEM value (organizationId null) is visible to every tenant;
-   *   - a tenant row with the same key OVERRIDES its labels, and the id stays
-   *     the SYSTEM row's, which is why the foreign key works for both layers;
-   *   - a tenant row with a different key is that tenant's own value;
-   *   - hidden or deactivated marks `isRetired` instead of removing the entry.
-   *
-   * One query per read, not per unit — the caller resolves the whole tree from
-   * this map.
-   */
-  private async buildTypeResolver(
-    organizationId: string,
-  ): Promise<Map<string, IOrgUnitType>> {
-    const category = await this.prisma.lookupCategory.findFirst({
-      where: { key: ORG_UNIT_TYPE_CATEGORY, organizationId: null },
-      select: { id: true },
-    });
-    if (!category) return new Map();
-
-    const rows = await this.prisma.lookupValue.findMany({
-      where: {
-        categoryId: category.id,
-        OR: [{ organizationId: null }, { organizationId }],
-      },
-    });
-
-    const tenantByKey = new Map(
-      rows.filter((r) => r.organizationId === organizationId).map((r) => [r.key, r]),
-    );
-
-    const resolved = new Map<string, IOrgUnitType>();
-    for (const row of rows) {
-      if (row.organizationId === null) {
-        const override = tenantByKey.get(row.key);
-        resolved.set(row.id, {
-          id: row.id,
-          key: row.key,
-          labelEn: override?.labelOverrideEn ?? row.labelEn,
-          labelAr: override?.labelOverrideAr ?? row.labelAr,
-          isRetired: !row.isActive || (override ? override.isHidden || !override.isActive : false),
-        });
-      } else {
-        resolved.set(row.id, {
-          id: row.id,
-          key: row.key,
-          labelEn: row.labelOverrideEn ?? row.labelEn,
-          labelAr: row.labelOverrideAr ?? row.labelAr,
-          isRetired: !row.isActive || row.isHidden,
-        });
-      }
-    }
-    return resolved;
-  }
-
-  /**
    * Validate a `typeValueId` for WRITING, and return the value — ACC-137.
    *
    * Stricter than the read resolver on purpose: a retired value still RENDERS on
@@ -341,7 +267,7 @@ export class OrganizationService {
     typeValueId: string,
     organizationId: string,
   ): Promise<IOrgUnitType> {
-    const resolver = await this.buildTypeResolver(organizationId);
+    const resolver = await buildOrgUnitTypeResolver(this.prisma, organizationId);
     const value = resolver.get(typeValueId);
 
     if (!value || value.isRetired) {
@@ -427,7 +353,7 @@ export class OrganizationService {
 
     // ACC-120 slice 11 — resolved like the GETs, so the dialog's caller gets the
     // type it just chose rather than null.
-    return this.toInterface(unit, await this.buildTypeResolver(organizationId));
+    return this.toInterface(unit, await buildOrgUnitTypeResolver(this.prisma, organizationId));
   }
 
   /**
@@ -550,7 +476,7 @@ export class OrganizationService {
       }
     }
 
-    const types = await this.buildTypeResolver(organizationId);
+    const types = await buildOrgUnitTypeResolver(this.prisma, organizationId);
     const before = this.toInterface(unit, types);
 
     const updated = await this.prisma.orgUnit.update({
@@ -592,7 +518,7 @@ export class OrganizationService {
     if (!unit) throw new NotFoundException('Org unit not found');
 
     // Idempotent — already inactive
-    if (!unit.isActive) return this.toInterface(unit, await this.buildTypeResolver(organizationId));
+    if (!unit.isActive) return this.toInterface(unit, await buildOrgUnitTypeResolver(this.prisma, organizationId));
 
     const blockers: string[] = [];
 
@@ -665,7 +591,7 @@ export class OrganizationService {
       after: this.toInterface(updated) as unknown as Record<string, unknown>,
     });
 
-    return this.toInterface(updated, await this.buildTypeResolver(organizationId));
+    return this.toInterface(updated, await buildOrgUnitTypeResolver(this.prisma, organizationId));
   }
 
   // Used by TenantService.bootstrap() to seed the root org unit without injecting this service
