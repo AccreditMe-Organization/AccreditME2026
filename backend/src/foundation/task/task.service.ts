@@ -186,6 +186,26 @@ export class TaskService {
     private readonly sla: TaskSlaService,
   ) {}
 
+  /**
+   * ACC-244 — POST /tasks. A task is about a record (no standalone tasks), so
+   * the record must EXIST in the caller's organisation and be one the caller
+   * may SEE, before anything else is read or written. Until this, create()
+   * accepted any sourceId at all: an invented id, or another organisation's
+   * committee, made a task about nothing the caller's organisation holds.
+   *
+   * ACC-101 clause (a): the request names the record, so the check comes first
+   * and answers like every other named-record read: 403 naming the permission
+   * for a record type the caller may not see (decided before any read, so it is
+   * the same for a real record and an invented one), and the identical 404 for
+   * an id that is not this organisation's, whether invented or another
+   * organisation's. A record type with no visibility rule is refused (fail
+   * closed): no record of it exists yet to hold a task.
+   */
+  async createForViewer(dto: CreateTaskDto, organizationId: string, viewer: TaskViewer): Promise<ITask> {
+    await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions);
+    return this.create(dto, organizationId, viewer.id);
+  }
+
   // ACC-167 — a task goes to named people (assigneeUserIds, the engine's path
   // and every task before this ticket), or to a TARGET: a position in a unit
   // or a committee role, chosen through `assignTo`, which lands it with named
@@ -201,6 +221,10 @@ export class TaskService {
   // SLA raising the limit through slaExtendedTo, for CREATE_TASK) is gone with
   // CREATE_TASK: a stage task now comes from a definition, through
   // prepareStageEntryTask(), with its own priority SLA counted from stage entry.
+  //
+  // ACC-244 — the HTTP route calls createForViewer(), which checks the record
+  // first. This stays the trusted path, for specs and for any caller acting on
+  // its own behalf (ACC-101's getById() / getByIdForViewer() line).
   async create(dto: CreateTaskDto, organizationId: string, actorId: string): Promise<ITask> {
     if (dto.assignTo && dto.assigneeUserIds?.length) {
       throw new BadRequestException('Choose either who the task goes to or named people, not both');
