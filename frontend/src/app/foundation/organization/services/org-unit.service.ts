@@ -94,6 +94,10 @@ export interface OrgUnitCascadeOption {
   label: string;
   value: string;
   items?: OrgUnitCascadeOption[];
+  /** ACC-120 slice 11 — shown but not choosable (the parent picker). */
+  unavailable?: boolean;
+  /** Why, appended to the option's accessible name. */
+  unavailableReason?: string;
 }
 
 export function buildOrgUnitCascadeOptions(
@@ -137,4 +141,45 @@ export class OrgUnitService {
   deactivate(id: string): Observable<OrgUnitDto> {
     return this.http.post<OrgUnitDto>(`${this.base}/${id}/deactivate`, {});
   }
+}
+
+/**
+ * ACC-120 slice 11 — the Add / Edit unit dialog's parent options.
+ *
+ * Unlike buildOrgUnitCascadeOptions(), which REMOVES the unit being edited and
+ * so its whole branch, this keeps the full active tree and marks the unit and
+ * everything below it unavailable, each with its reason (OS L637): a reader
+ * sees where the unit sits and why those choices are greyed. The server refuses
+ * the same set with ORG_UNIT_PARENT_CYCLE regardless.
+ *
+ * `label` decides each option's text, so the caller can follow the session's
+ * language (LanguageService.bilingual) rather than "English (Arabic)".
+ */
+export function buildOrgUnitParentOptions(
+  all: OrgUnitDto[],
+  movingId: string | null,
+  label: (unit: OrgUnitDto) => string,
+  reasons: { self: string; descendant: string },
+  parentId: string | null = null,
+  insideMoving = false,
+): OrgUnitCascadeOption[] {
+  return all
+    .filter((u) => u.parentId === parentId && u.isActive)
+    .map((u) => {
+      const isSelf = u.id === movingId;
+      const blocked = insideMoving || isSelf;
+      const items = buildOrgUnitParentOptions(all, movingId, label, reasons, u.id, blocked);
+      return {
+        label: label(u),
+        value: u.id,
+        ...(items.length ? { items } : {}),
+        ...(blocked ? { unavailable: true, unavailableReason: isSelf ? reasons.self : reasons.descendant } : {}),
+      };
+    });
+}
+
+/** ACC-120 slice 11 — every unit below `id`, at any depth: what a move takes with it. */
+export function countDescendants(all: OrgUnitDto[], id: string): number {
+  const children = all.filter((u) => u.parentId === id);
+  return children.reduce((n, child) => n + 1 + countDescendants(all, child.id), 0);
 }
