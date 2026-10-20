@@ -264,9 +264,10 @@ export const ORG_UNIT_DESCRIPTION_WARN = 900;
       }
       /* The code reads left to right inside a right-to-left field, so its text
          starts where am-field draws the error's "!" (the field's inline end,
-         the left). Room is kept there, or the glyph covers the first letter. */
+         the left). Room is kept there, or the glyph covers the first letter.
+         Inline-start is the box's own start, and the box is always ltr. */
       .am-ouf__code--rtl {
-        padding-left: calc(var(--am-space-8) + 1.25em);
+        padding-inline-start: var(--am-space-24);
       }
       .am-ouf__description {
         resize: vertical;
