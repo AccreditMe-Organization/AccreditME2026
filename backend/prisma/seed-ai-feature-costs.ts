@@ -48,6 +48,10 @@ async function main(): Promise<void> {
     }
 
     const platform = await prisma.organization.findFirst({ where: { isPlatformOrg: true }, select: { id: true } });
+    // Two writes per new feature, each a round trip: a fresh database is eight.
+    // Prisma's default 5-second timeout is not enough from a developer machine
+    // (backfill-acc244's grant run rolled back at 5.4 s on 20 Oct), so this
+    // passes the backfills' explicit limit. Still one transaction.
     await prisma.$transaction(async (tx) => {
       for (const a of creates) {
         if (a.kind !== 'create') continue;
@@ -73,7 +77,7 @@ async function main(): Promise<void> {
           });
         }
       }
-    });
+    }, { maxWait: 10_000, timeout: 60_000 });
     console.log(`Created ${creates.length} row(s).${platform ? '' : ' No platform organisation found, so no audit rows were written.'}`);
   } finally {
     await prisma.$disconnect();

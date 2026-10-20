@@ -71,6 +71,14 @@ export const SEEDED_KEYS: ReadonlyMap<string, readonly string[]> = new Map(
 
 const FIXTURE_SLUGS = new Set([HOSPITAL_FIXTURE.slug, UNIVERSITY_FIXTURE.slug]);
 
+// The transaction is four catalogue upserts plus two writes per grant, each a
+// round trip to the database: about 80 for today's 39 grants. Prisma's default
+// 5-second timeout is not enough from a developer machine: on 20 Oct the first
+// --execute against the shared database ran 5.4 seconds and rolled back,
+// writing nothing. Same values as backfill-acc239's BACKFILL_TX. It stays ONE
+// all-or-nothing transaction.
+export const BACKFILL_TX = { maxWait: 10_000, timeout: 60_000 } as const;
+
 export interface PlannedGrant {
   organizationId: string;
   slug: string;
@@ -203,7 +211,7 @@ export async function applyGrants(prisma: Client, plan: GrantPlan): Promise<numb
       written++;
     }
     return written;
-  });
+  }, BACKFILL_TX);
 }
 
 function report(plan: GrantPlan, execute: boolean): void {

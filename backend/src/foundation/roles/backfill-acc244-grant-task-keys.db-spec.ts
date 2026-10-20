@@ -16,7 +16,7 @@ import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../../../generated/prisma/client';
 import { COMMITTEE_TASKS_PERMISSIONS, TASKS_PERMISSIONS, COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
-import { applyGrants, planGrants, SCRIPT_NAME } from '../../../prisma/backfill-acc244-grant-task-keys';
+import { applyGrants, BACKFILL_TX, planGrants, SCRIPT_NAME } from '../../../prisma/backfill-acc244-grant-task-keys';
 
 const url = process.env['DATABASE_URL'];
 if (!url) {
@@ -105,7 +105,14 @@ describe('backfill:acc244-grant-task-keys, on a real database (ACC-244)', () => 
     expect(plan.alreadyHeld).toBe(1);
 
     const auditBefore = await prisma.auditLog.count({ where: { organizationId: { in: [A, B] } } });
+    // ONE transaction, with the explicit limit: Prisma's default 5 seconds
+    // rolled the first shared-database run back (20 Oct).
+    const tx = jest.spyOn(prisma, '$transaction');
     expect(await applyGrants(prisma, plan)).toBe(13);
+    expect(tx).toHaveBeenCalledTimes(1);
+    expect(tx).toHaveBeenCalledWith(expect.any(Function), BACKFILL_TX);
+    expect(BACKFILL_TX.timeout).toBeGreaterThanOrEqual(60_000);
+    tx.mockRestore();
 
     // One audit row per grant, naming the new row, in the role's own organisation.
     const audits = await prisma.auditLog.findMany({ where: { organizationId: { in: [A, B] } }, orderBy: { createdAt: 'asc' } });
