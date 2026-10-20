@@ -6,6 +6,7 @@ import { provideRouter } from '@angular/router';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { environment } from '../../../../../environments/environment';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { pickBilingualName } from '../../../../shared/utils/bilingual-name.util';
 import { OrgUnitDto } from '../../services/org-unit.service';
 import { OrgUnitTreeComponent } from './org-unit-tree.component';
@@ -21,7 +22,7 @@ describe('OrgUnitTreeComponent — head panel title (ACC-82)', () => {
     children: [],
   } as unknown as OrgUnitDto;
 
-  function create(arabic: boolean): OrgUnitTreeComponent {
+  function create(arabic: boolean, canManage = true): OrgUnitTreeComponent {
     TestBed.configureTestingModule({
       imports: [OrgUnitTreeComponent],
       providers: [
@@ -37,9 +38,12 @@ describe('OrgUnitTreeComponent — head panel title (ACC-82)', () => {
             bilingual: (en: string, ar: string | null | undefined) => pickBilingualName(en, ar, arabic),
           },
         },
+        // ACC-133 — the panel's title depends on whether the viewer may change it.
+        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => canManage && p === 'org:manage' } },
       ],
     });
     TestBed.inject(TranslateService).setTranslation('en', {
+      headship: { title: 'Headship', titleNamed: 'Headship of {{unit}}' },
       orgUnitHead: { manageHead: 'Manage Head', manageHeadNamed: 'Manage Head — {{unit}}' },
       organization: { addUnit: 'Add unit', addSubUnitTo: 'Add sub-unit to {{parent}}', editUnitNamed: 'Edit {{unit}}' },
     });
@@ -66,6 +70,16 @@ describe('OrgUnitTreeComponent — head panel title (ACC-82)', () => {
     tree.onManageHead(UNIT);
 
     expect(tree.headPanelHeader()).toBe('Manage Head — الأشعة');
+  });
+
+  // ACC-133 — the panel is a read for every viewer; a viewer who cannot change
+  // the headship is not "managing" it.
+  it('titles it "Headship of …" for a viewer without org:manage', () => {
+    const tree = create(false, false);
+
+    tree.onManageHead(UNIT);
+
+    expect(tree.headPanelHeader()).toBe('Headship of Radiology');
   });
 });
 

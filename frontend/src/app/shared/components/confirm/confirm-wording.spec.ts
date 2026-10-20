@@ -14,7 +14,7 @@ import { preserveDocumentLanguage } from '../../../../testing/document-language'
 import { AmConfirmOptions, AmConfirmService } from './am-confirm.service';
 import { LookupValueListComponent } from '../../../foundation/lookup/components/lookup-value-list/lookup-value-list.component';
 import { PositionListComponent } from '../../../foundation/org-position/components/position-list/position-list.component';
-import { OrgUnitHeadPanelComponent } from '../../../foundation/organization/components/org-unit-head-panel/org-unit-head-panel.component';
+import { HeadshipPanelComponent } from '../../../foundation/organization/components/headship-panel/headship-panel.component';
 import { RoleListComponent } from '../../../foundation/roles/components/role-list/role-list.component';
 import { UserStatusActionsService } from '../../../foundation/user/services/user-status-actions.service';
 import { WorkflowActionConfiguratorComponent } from '../../../foundation/workflow/components/workflow-action-configurator/workflow-action-configurator.component';
@@ -132,78 +132,104 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
     );
   });
 
-  // ── #5, #6, #7 the Head panel ───────────────────────────────────────────────
-  function headPanel(lang: Lang, status: unknown): OrgUnitHeadPanelComponent {
-    const panel = create(OrgUnitHeadPanelComponent, {
+  // ── #5, #6, #7 the Headship panel (ACC-133) ─────────────────────────────────
+  // The old head panel's three confirms moved here with ACC-133's names
+  // (Record departure, Withdraw appointment, End cover) and a fourth, Start new
+  // head today. The consequence lines keep what ACC-120 slice 10 verified
+  // against the server: the role the position or the cover gave is removed, and
+  // a vacant unit's work goes to the unit above.
+  const EMPTY = {
+    pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: null, lastVacancy: null,
+    pendingHeadAccessSince: null, cover: null, scheduledCover: null, recentlyEndedCovers: [],
+  };
+  const holder = (id: string, name: string) => ({ id, name, positionId: 'pos', positionNameEn: 'Head', positionNameAr: null, headSince: null });
+  function headPanel(lang: Lang, status: unknown): HeadshipPanelComponent {
+    const panel = create(HeadshipPanelComponent, {
       orgUnitId: 'u1',
       unitName: lang === 'en' ? 'Cardiology' : 'أمراض القلب',
     });
-    panel.status.set(status as never);
+    panel.status.set({ ...EMPTY, ...(status as object) } as never);
     return panel;
   }
 
-  both('#5 Vacate Head names the unit and the Head', (lang) => {
-    headPanel(lang, {
-      holders: [{ id: 'h1', name: 'Sara Ali', positionId: 'pos' }],
-      pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: null,
-    }).onVacate();
+  both('#5 Vacate records the departure, naming the unit and the head', (lang) => {
+    headPanel(lang, { holders: [holder('h1', 'Sara Ali')] }).run('vacate');
     expect(said()).toEqual(
       lang === 'en'
         ? {
-            header: 'Vacate the Head of Cardiology?',
-            message: 'Sara Ali no longer holds the Head position, and loses any role it gives them. Cardiology has no Head until one is assigned.',
-            accept: 'Vacate Head',
+            header: 'Record that Sara Ali has left Cardiology?',
+            message: 'Cardiology will have no head from now, and Sara Ali loses any role the head position gave them. Their headship ends today in the history.',
+            accept: 'Record departure',
           }
         : {
-            header: 'إخلاء رئاسة أمراض القلب؟',
-            message: 'لن يشغل Sara Ali منصب الرئيس بعد الآن، وسيفقد أي دور يمنحه إياه. وتبقى أمراض القلب بلا رئيس حتى يُعيَّن رئيس.',
-            accept: 'إخلاء منصب الرئيس',
+            header: 'تسجيل مغادرة Sara Ali لأمراض القلب؟',
+            message: 'لن يكون لأمراض القلب رئيس من الآن، ويفقد Sara Ali أي دور منحه إياه منصب الرئاسة. وتنتهي هذه الرئاسة اليوم في السجل.',
+            accept: 'تسجيل المغادرة',
           },
     );
   });
 
-  both('#6 Cancel handover names both people, and Cancel reads Keep handover', (lang) => {
+  both('#6 Withdraw appointment names both people, and Cancel reads Keep appointment', (lang) => {
     headPanel(lang, {
-      holders: [
-        { id: 'h1', name: 'Sara Ali', positionId: 'pos' },
-        { id: 'h2', name: 'Omar Saleh', positionId: 'pos' },
-      ],
-      pendingHeadUserId: 'h2', headHandoverEffectiveDate: '2026-10-20', actingHeadUserId: null,
-    }).onCancelHandover();
+      holders: [holder('h1', 'Sara Ali'), holder('h2', 'Omar Saleh')],
+      pendingHeadUserId: 'h2',
+    }).run('withdrawAppointment');
     expect(said()).toEqual(
       lang === 'en'
         ? {
-            header: 'Cancel the handover to Omar Saleh?',
-            message: 'Omar Saleh no longer holds the Head position, and any role it gave them is removed. Sara Ali stays the Head.',
-            accept: 'Cancel Handover',
-            reject: 'Keep handover',
+            header: "Withdraw Omar Saleh's appointment?",
+            message: 'Omar Saleh loses their head access, and any role it gave them. Work routed to them as head goes back to Sara Ali. Any note recorded with the appointment stays in the history.',
+            accept: 'Cancel appointment',
+            reject: 'Keep appointment',
           }
         : {
-            header: 'إلغاء التسليم إلى Omar Saleh؟',
-            message: 'لن يشغل Omar Saleh منصب الرئيس، ويُزال أي دور منحه إياه. ويبقى Sara Ali الرئيس.',
-            accept: 'إلغاء التسليم والتسلّم',
-            reject: 'إبقاء التسليم والتسلّم',
+            header: 'سحب تعيين Omar Saleh؟',
+            message: 'يفقد Omar Saleh صلاحيات الرئاسة، وأي دور منحته إياه. ويعود ما وُجّه إليه بصفة الرئيس إلى Sara Ali. وتبقى أي ملاحظة سُجّلت مع التعيين في السجل.',
+            accept: 'إلغاء التعيين',
+            reject: 'إبقاء التعيين',
           },
     );
   });
 
-  both('#7 End cover says the unit has no Head and where its work goes', (lang) => {
+  both('#7 End cover on a vacancy says the unit has no head and where its work goes', (lang) => {
     headPanel(lang, {
-      holders: [], pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: 'x1',
-    }).onClearActingHead();
+      holders: [],
+      cover: { userId: 'x1', name: 'Tariq Haddad', reason: 'VACANCY', validFrom: '2026-10-01T12:00:00.000Z', validTo: null },
+      actingHeadUserId: 'x1',
+    }).run('endCover');
     expect(said()).toEqual(
       lang === 'en'
         ? {
-            header: 'End the Acting Head cover for Cardiology?',
+            header: "End Tariq Haddad's cover of Cardiology?",
             message:
-              'The cover ends now, and the Acting Head loses any role it gave them. Cardiology has no Head again, so work meant for its Head goes to the Head of the unit above it, if there is one.',
+              'The cover ends now, and Tariq Haddad loses any role it gave them. Cardiology is left with no head and no cover, so work meant for its head goes to the head of the unit above it, if there is one.',
             accept: 'End cover',
           }
         : {
-            header: 'إنهاء تغطية الرئيس بالنيابة في أمراض القلب؟',
+            header: 'إنهاء تغطية Tariq Haddad لأمراض القلب؟',
             message:
-              'تنتهي التغطية الآن، ويفقد الرئيس بالنيابة أي دور منحته إياه. وتعود أمراض القلب بلا رئيس، فيذهب ما يخص رئيسها إلى رئيس الوحدة الأعلى منها إن وُجدت.',
+              'تنتهي التغطية الآن، ويفقد Tariq Haddad أي دور منحته إياه. وتبقى أمراض القلب بلا رئيس ولا تغطية، فيذهب ما يخص رئيسها إلى رئيس الوحدة الأعلى منها إن وُجدت.',
             accept: 'إنهاء التغطية',
+          },
+    );
+  });
+
+  both('#7b Start new head today says the successor already has head access', (lang) => {
+    headPanel(lang, {
+      holders: [holder('h1', 'Sara Ali'), holder('h2', 'Omar Saleh')],
+      pendingHeadUserId: 'h2',
+    }).run('startNewHeadToday');
+    expect(said()).toEqual(
+      lang === 'en'
+        ? {
+            header: 'Make Omar Saleh head of Cardiology today?',
+            message: "Omar Saleh already has head access. This ends Sara Ali's today and makes Omar Saleh sole head.",
+            accept: 'Make head today',
+          }
+        : {
+            header: 'جعل Omar Saleh رئيسًا لأمراض القلب اليوم؟',
+            message: 'لدى Omar Saleh صلاحيات الرئاسة بالفعل. وهذا ينهي صلاحيات Sara Ali اليوم، ويجعل Omar Saleh رئيسًا منفردًا.',
+            accept: 'بدء الرئاسة اليوم',
           },
     );
   });

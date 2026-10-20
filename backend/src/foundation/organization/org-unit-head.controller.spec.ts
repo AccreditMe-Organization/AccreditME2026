@@ -51,8 +51,14 @@ describe('OrgUnitHeadController', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('getHeadStatus delegates to the service with tenant', async () => {
-    await controller.getHeadStatus(UNIT_ID, TENANT_ID);
-    expect(service.getHeadStatus).toHaveBeenCalledWith(UNIT_ID, TENANT_ID);
+    await controller.getHeadStatus(UNIT_ID, TENANT_ID, ['org:view', 'users:view']);
+    expect(service.getHeadStatus).toHaveBeenCalledWith(UNIT_ID, TENANT_ID, { includeNames: true });
+  });
+
+  // ACC-133 / D7 — person names only for a caller who may see people.
+  it('getHeadStatus asks for no names when the caller lacks users:view', async () => {
+    await controller.getHeadStatus(UNIT_ID, TENANT_ID, ['org:view', 'org:manage']);
+    expect(service.getHeadStatus).toHaveBeenCalledWith(UNIT_ID, TENANT_ID, { includeNames: false });
   });
 
   it('assignHead delegates to the service with tenant and actor', async () => {

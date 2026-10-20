@@ -2,9 +2,10 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } f
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
-import { ORG_PERMISSIONS } from '../../common/constants/permissions';
+import { ORG_PERMISSIONS, USERS_PERMISSIONS } from '../../common/constants/permissions';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { OrgUnitHeadService } from './org-unit-head.service';
 import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
@@ -26,13 +27,20 @@ export class OrgUnitHeadController {
 
   // Read — gated by org:view, not org:manage, matching this controller's
   // own org:manage/org:view split for the write actions below.
+  //
+  // ACC-133 / D7 — person names only for a caller who may see people
+  // (users:view). Everyone with org:view gets the rest: ids, dates, reasons
+  // and position titles.
   @Get()
   @Permissions(ORG_PERMISSIONS.VIEW)
   getHeadStatus(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<IOrgUnitHeadStatus> {
-    return this.orgUnitHeadService.getHeadStatus(id, tenantId);
+    return this.orgUnitHeadService.getHeadStatus(id, tenantId, {
+      includeNames: permissions.includes(USERS_PERMISSIONS.VIEW),
+    });
   }
 
   @Post('assign')

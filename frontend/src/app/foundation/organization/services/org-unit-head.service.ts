@@ -7,11 +7,40 @@ import { environment } from '../../../../environments/environment';
 // two during a declared handover), never a cached fact. actingHeadUserId
 // (Phase 11) IS the cache field itself — the one real source of truth for
 // who's covering, unlike "holders" above.
+//
+// ACC-133 — extended for the Headship panel (the backend interface carries the
+// full contract). Every person `name` is null unless the caller holds
+// users:view (D7): the panel then says "Head assigned" / "Cover arranged".
+// Dates are ISO strings. A null date means the ledger has no row, and the
+// panel says what is NOT recorded rather than inventing one.
+export interface IOrgUnitHeadHolder {
+  id: string;
+  name: string | null;
+  positionId: string | null;
+  positionNameEn: string | null;
+  positionNameAr: string | null;
+  headSince: string | null;
+}
+
+export interface IOrgUnitHeadCover {
+  userId: string;
+  name: string | null;
+  reason: OrgUnitActingReason | null;
+  validFrom: string;
+  validTo: string | null;
+}
+
 export interface IOrgUnitHeadStatus {
-  holders: { id: string; name: string; positionId: string | null }[];
+  holders: IOrgUnitHeadHolder[];
   pendingHeadUserId: string | null;
   headHandoverEffectiveDate: string | null;
+  /** The cached column, kept for older callers. The panel reads `cover`. */
   actingHeadUserId: string | null;
+  lastVacancy: { at: string; by: { userId: string; name: string | null } | null } | null;
+  pendingHeadAccessSince: string | null;
+  cover: IOrgUnitHeadCover | null;
+  scheduledCover: IOrgUnitHeadCover | null;
+  recentlyEndedCovers: { userId: string; name: string | null; endedAt: string }[];
 }
 
 export interface AssignHeadDto {

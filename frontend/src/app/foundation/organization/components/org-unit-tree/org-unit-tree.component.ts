@@ -7,7 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/org-unit.service';
 import { OrgUnitFormComponent } from '../org-unit-form/org-unit-form.component';
-import { OrgUnitHeadPanelComponent } from '../org-unit-head-panel/org-unit-head-panel.component';
+import { HeadshipPanelComponent } from '../headship-panel/headship-panel.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
@@ -25,7 +25,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
     TagModule,
     TooltipModule,
     OrgUnitFormComponent,
-    OrgUnitHeadPanelComponent,
+    HeadshipPanelComponent,
     EditDialogComponent,
   ],
   template: `
@@ -98,17 +98,6 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                 [pTooltip]="'common.edit' | translate"
               />
               <p-button
-                icon="pi pi-crown"
-                [text]="true"
-                size="small"
-                [disabled]="!rowData.isActive"
-                [pTooltip]="
-                  (rowData.isActive ? 'orgUnitHead.manageHead' : 'organization.unitInactive')
-                    | translate
-                "
-                (onClick)="onManageHead(rowData)"
-              />
-              <p-button
                 icon="pi pi-ban"
                 [text]="true"
                 size="small"
@@ -121,6 +110,24 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                 (onClick)="onDeactivate(rowData)"
               />
               }
+              <!-- ACC-133 — the headship panel is a READ for every viewer of this
+                   page (GET .../head is org:view); its actions are what
+                   org:manage gates, inside the panel. So the button shows for
+                   everyone, named for what it opens. -->
+              <p-button
+                icon="pi pi-crown"
+                [text]="true"
+                size="small"
+                [disabled]="!rowData.isActive"
+                [attr.aria-label]="(canManage() ? 'orgUnitHead.manageHead' : 'headship.title') | translate"
+                [pTooltip]="
+                  (rowData.isActive
+                    ? (canManage() ? 'orgUnitHead.manageHead' : 'headship.title')
+                    : 'organization.unitInactive'
+                  ) | translate
+                "
+                (onClick)="onManageHead(rowData)"
+              />
             </div>
           </td>
         </tr>
@@ -178,7 +185,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
     <ng-template #headPanelTpl>
       @if (managingHeadUnitId(); as unitId) {
-        <app-org-unit-head-panel
+        <am-headship-panel
           [orgUnitId]="unitId"
           [unitName]="managingHeadUnitName()"
           (saved)="onHeadPanelSaved()"
@@ -260,6 +267,10 @@ export class OrgUnitTreeComponent implements OnInit {
 
   readonly headPanelHeader = computed(() => {
     const name = this.managingHeadUnitName();
+    // A viewer who cannot change the headship is not "managing" it.
+    if (!this.canManage()) {
+      return name ? this.translate.instant('headship.titleNamed', { unit: name }) : this.translate.instant('headship.title');
+    }
     if (!name) return this.translate.instant('orgUnitHead.manageHead');
     return this.translate.instant('orgUnitHead.manageHeadNamed', { unit: name });
   });

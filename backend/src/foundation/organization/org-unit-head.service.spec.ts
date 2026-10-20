@@ -27,8 +27,8 @@ const mockPrisma = {
   orgUnit: { findFirst: jest.fn(), update: jest.fn() },
   orgPosition: { findFirst: jest.fn() },
   user: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
-  orgUnitHeadEvent: { create: jest.fn(), findFirst: jest.fn() },
-  orgUnitHeadAssignment: { findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
+  orgUnitHeadEvent: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+  orgUnitHeadAssignment: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
 };
 const mockAuditLog = { log: jest.fn() };
 const mockUserService = {
@@ -59,6 +59,10 @@ describe('OrgUnitHeadService', () => {
     jest.clearAllMocks();
     mockPrisma.orgUnitHeadEvent.create.mockResolvedValue({});
     mockPrisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(null);
+    // ACC-133 — getHeadStatus()'s ledger and period reads; empty unless a test
+    // says otherwise.
+    mockPrisma.orgUnitHeadEvent.findMany.mockResolvedValue([]);
+    mockPrisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
     mockPrisma.orgUnitHeadAssignment.create.mockResolvedValue({});
     mockPrisma.orgUnitHeadAssignment.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.orgUnit.update.mockResolvedValue({});
@@ -109,9 +113,14 @@ describe('OrgUnitHeadService', () => {
           organizationId: ORG_A,
           primaryOrgUnitId: UNIT_1,
           status: 'ACTIVE',
-          position: { isUnitHeadPosition: true },
+          position: { isUnitHeadPosition: true, isActive: true },
         },
-        select: { id: true, name: true, positionId: true },
+        select: {
+          id: true,
+          name: true,
+          positionId: true,
+          position: { select: { nameEn: true, nameAr: true } },
+        },
       });
       expect(result.holders).toHaveLength(2); // both holders during an open handover
       expect(result.pendingHeadUserId).toBe(INCOMING_SUCCESSOR.id);
@@ -181,6 +190,293 @@ describe('OrgUnitHeadService', () => {
   });
 
   // ── declareHandover ───────────────────────────────────────────────────────
+
+  // ── getHeadStatus — the Headship panel's reads (ACC-133) ────────────────
+
+  describe('getHeadStatus — the Headship panel reads (ACC-133)', () => {
+    const NOW = new Date('2026-10-20T09:00:00.000Z');
+    const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+
+    interface FakeEvent {
+      organizationId: string;
+      orgUnitId: string;
+      userId: string;
+      action: string;
+      effectiveDate: Date;
+      createdAt: Date;
+      approvedBy: string | null;
+      id: string;
+    }
+    interface FakeCover {
+      organizationId: string;
+      orgUnitId: string;
+      userId: string;
+      kind: 'ACTING';
+      reason: 'VACANCY' | 'ABSENCE';
+      validFrom: Date;
+      validTo: Date | null;
+      endedAt: Date | null;
+      user: { name: string };
+      id: string;
+    }
+
+    let events: FakeEvent[];
+    let covers: FakeCover[];
+    const people: Record<string, { name: string; organizationId: string }> = {
+      'nora-admin': { name: 'Nora Al-Otaibi', organizationId: ORG_A },
+      'b-admin': { name: 'Other Org Admin', organizationId: ORG_B },
+    };
+
+    const ev = (over: Partial<FakeEvent>): FakeEvent => ({
+      organizationId: ORG_A,
+      orgUnitId: UNIT_1,
+      userId: OUTGOING_HOLDER.id,
+      action: 'ASSIGNED',
+      effectiveDate: day('2024-03-03'),
+      createdAt: day('2024-03-03'),
+      approvedBy: 'nora-admin',
+      id: `ev-${Math.random()}`,
+      ...over,
+    });
+    const cv = (over: Partial<FakeCover>): FakeCover => ({
+      organizationId: ORG_A,
+      orgUnitId: UNIT_1,
+      userId: ACTING_USER.id,
+      kind: 'ACTING',
+      reason: 'ABSENCE',
+      validFrom: day('2026-10-01'),
+      validTo: null,
+      endedAt: null,
+      user: { name: 'Dr. Tariq Suleiman' },
+      id: `cv-${Math.random()}`,
+      ...over,
+    });
+
+    type Where = Record<string, unknown> & { organizationId?: string; orgUnitId?: string };
+    const inScope = (row: { organizationId: string; orgUnitId: string }, where: Where) =>
+      row.organizationId === where.organizationId && row.orgUnitId === where.orgUnitId;
+    const time = (d: Date | null) => (d ? d.getTime() : null);
+    // A small evaluator for the period predicates getHeadStatus() and
+    // findRunningActingCover() send, so the fakes behave like the database.
+    const matchesCover = (c: FakeCover, where: Where): boolean => {
+      if (!inScope(c, where) || c.kind !== where['kind']) return false;
+      const clause = (w: Record<string, unknown>): boolean =>
+        Object.entries(w).every(([k, v]) => {
+          if (k === 'organizationId' || k === 'orgUnitId' || k === 'kind') return true;
+          if (k === 'OR') return (v as Record<string, unknown>[]).some(clause);
+          const field = time((c as unknown as Record<string, Date | null>)[k] ?? null);
+          if (v === null) return field === null;
+          const op = v as { gt?: Date; lte?: Date };
+          if (field === null) return false;
+          if (op.gt && !(field > op.gt.getTime())) return false;
+          if (op.lte && !(field <= op.lte.getTime())) return false;
+          return true;
+        });
+      return clause(where);
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: NOW });
+      events = [];
+      covers = [];
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: OUTGOING_HOLDER.id, name: 'Dr. Fahad Al-Anazi', positionId: HEAD_POSITION_ID, position: { nameEn: 'Director', nameAr: 'مدير' } },
+      ]);
+      mockPrisma.orgUnitHeadEvent.findMany.mockImplementation(({ where }: { where: Where & { action: { in: string[] } } }) =>
+        Promise.resolve(
+          events
+            .filter((e) => inScope(e, where) && where.action.in.includes(e.action))
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
+        ),
+      );
+      mockPrisma.orgUnitHeadAssignment.findFirst.mockImplementation(({ where }: { where: Where }) =>
+        Promise.resolve(
+          covers.filter((c) => matchesCover(c, where)).sort((a, b) => b.validFrom.getTime() - a.validFrom.getTime())[0] ?? null,
+        ),
+      );
+      mockPrisma.orgUnitHeadAssignment.findMany.mockImplementation(({ where }: { where: Where }) =>
+        Promise.resolve(covers.filter((c) => matchesCover(c, where))),
+      );
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) => {
+        const person = people[where.id];
+        return Promise.resolve(person && person.organizationId === where.organizationId ? { name: person.name } : null);
+      });
+    });
+    afterEach(() => jest.useRealTimers());
+
+    // ── D13 ──
+    it('counts only ACTIVE head positions as conferring headship (D13)', async () => {
+      await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ position: { isUnitHeadPosition: true, isActive: true } }),
+        }),
+      );
+    });
+
+    // ── when a holder became head ──
+    it("a holder's start is the latest ASSIGNED or HANDOVER_COMPLETED event about them here", async () => {
+      events.push(ev({ action: 'ASSIGNED', effectiveDate: day('2024-03-03'), createdAt: day('2024-03-03') }));
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.holders[0]).toEqual(
+        expect.objectContaining({ positionNameEn: 'Director', positionNameAr: 'مدير', headSince: day('2024-03-03') }),
+      );
+    });
+
+    it('with no event, the start is null ("Start date not recorded")', async () => {
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.holders[0]!.headSince).toBeNull();
+    });
+
+    it('a start a later event superseded is null, never the stale date', async () => {
+      events.push(ev({ action: 'ASSIGNED', effectiveDate: day('2024-03-03'), createdAt: day('2024-03-03') }));
+      events.push(ev({ action: 'VACATED', effectiveDate: day('2025-01-10'), createdAt: day('2025-01-10') }));
+      expect((await service.getHeadStatus(UNIT_1, ORG_A)).holders[0]!.headSince).toBeNull();
+
+      events = [
+        ev({ action: 'ASSIGNED', effectiveDate: day('2024-03-03'), createdAt: day('2024-03-03') }),
+        ev({ userId: 'someone-else', action: 'HANDOVER_COMPLETED', effectiveDate: day('2025-02-01'), createdAt: day('2025-02-01') }),
+      ];
+      expect((await service.getHeadStatus(UNIT_1, ORG_A)).holders[0]!.headSince).toBeNull();
+    });
+
+    it("a pending successor's access began at declaration, not on the effective date", async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({
+        ...BASE_ORG_UNIT,
+        pendingHeadUserId: INCOMING_SUCCESSOR.id,
+        headHandoverEffectiveDate: day('2026-11-01'),
+      });
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: OUTGOING_HOLDER.id, name: 'Dr. Fahad', positionId: HEAD_POSITION_ID, position: { nameEn: 'Director', nameAr: null } },
+        { id: INCOMING_SUCCESSOR.id, name: 'Dr. Huda', positionId: HEAD_POSITION_ID, position: { nameEn: 'Director', nameAr: null } },
+      ]);
+      events.push(
+        ev({ userId: INCOMING_SUCCESSOR.id, action: 'HANDOVER_DECLARED', effectiveDate: day('2026-11-01'), createdAt: day('2026-10-15') }),
+      );
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.pendingHeadAccessSince).toEqual(day('2026-10-15'));
+      expect(result.holders.find((h) => h.id === INCOMING_SUCCESSOR.id)!.headSince).toEqual(day('2026-10-15'));
+    });
+
+    // ── the last vacancy ──
+    it('the last vacancy is the latest VACATED event, with who recorded it', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      events.push(ev({ action: 'VACATED', effectiveDate: day('2026-09-01'), createdAt: day('2026-09-01'), approvedBy: 'nora-admin' }));
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.lastVacancy).toEqual({ at: day('2026-09-01'), by: { userId: 'nora-admin', name: 'Nora Al-Otaibi' } });
+    });
+
+    it('no VACATED event: no last vacancy ("No head recorded")', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      expect((await service.getHeadStatus(UNIT_1, ORG_A)).lastVacancy).toBeNull();
+    });
+
+    // ── the cover, from the period table ──
+    it('the cover in force comes from the period table, never from the cached column', async () => {
+      // The cache says someone covers; no period is in force (it lapsed).
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+      covers.push(cv({ validFrom: day('2026-09-01'), validTo: day('2026-10-10') }));
+      const lapsed = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(lapsed.cover).toBeNull();
+      expect(lapsed.actingHeadUserId).toBe(ACTING_USER.id); // kept for old callers
+
+      covers = [cv({ validFrom: day('2026-10-01'), validTo: null })];
+      const running = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(running.cover).toEqual({
+        userId: ACTING_USER.id,
+        name: 'Dr. Tariq Suleiman',
+        reason: 'ABSENCE',
+        validFrom: day('2026-10-01'),
+        validTo: null,
+      });
+    });
+
+    it('a cover that has not started is the scheduled cover, not the running one', async () => {
+      covers.push(cv({ validFrom: day('2026-11-01'), validTo: day('2026-12-01') }));
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.cover).toBeNull();
+      expect(result.scheduledCover).toEqual(expect.objectContaining({ validFrom: day('2026-11-01') }));
+    });
+
+    it('covers whose period ended in the last 7 days are listed, newest first; older ones are not', async () => {
+      covers.push(
+        cv({ userId: 'a', validFrom: day('2026-08-01'), validTo: day('2026-10-15'), endedAt: day('2026-10-15') }),
+        cv({ userId: 'b', validFrom: day('2026-08-01'), validTo: day('2026-10-18') }),
+        cv({ userId: 'c', validFrom: day('2026-08-01'), validTo: day('2026-10-05') }),
+      );
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.recentlyEndedCovers.map((c) => c.userId)).toEqual(['b', 'a']);
+      expect(result.recentlyEndedCovers[0]!.endedAt).toEqual(day('2026-10-18'));
+    });
+
+    // ── names (D7) ──
+    it('names are null without users:view, and present with it', async () => {
+      events.push(ev({ action: 'ASSIGNED' }));
+      events.push(ev({ userId: 'gone', action: 'VACATED', effectiveDate: day('2023-01-01'), createdAt: day('2023-01-01') }));
+      covers.push(cv({ validFrom: day('2026-10-01') }), cv({ userId: 'x', validFrom: day('2026-08-01'), validTo: day('2026-10-18') }));
+
+      const hidden = await service.getHeadStatus(UNIT_1, ORG_A, { includeNames: false });
+      expect(hidden.holders[0]!.name).toBeNull();
+      expect(hidden.cover!.name).toBeNull();
+      expect(hidden.recentlyEndedCovers[0]!.name).toBeNull();
+      expect(hidden.lastVacancy!.by).toEqual({ userId: 'nora-admin', name: null });
+      // Titles and dates are not withheld.
+      expect(hidden.holders[0]!.positionNameEn).toBe('Director');
+      expect(hidden.cover!.validFrom).toEqual(day('2026-10-01'));
+      // And no name is even looked up.
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+
+      const shown = await service.getHeadStatus(UNIT_1, ORG_A, { includeNames: true });
+      expect(shown.holders[0]!.name).toBe('Dr. Fahad Al-Anazi');
+      expect(shown.cover!.name).toBe('Dr. Tariq Suleiman');
+      expect(shown.recentlyEndedCovers[0]!.name).toBe('Dr. Tariq Suleiman');
+      expect(shown.lastVacancy!.by!.name).toBe('Nora Al-Otaibi');
+    });
+
+    // ── tenant isolation, one per new read ──
+    itEnforcesTenantIsolation('getHeadStatus: the head ledger', async () => {
+      events.push(ev({ organizationId: ORG_B, action: 'ASSIGNED', effectiveDate: day('2020-01-01') }));
+      events.push(ev({ organizationId: ORG_B, action: 'VACATED', effectiveDate: day('2021-01-01') }));
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.holders[0]!.headSince).toBeNull();
+      expect(result.lastVacancy).toBeNull();
+      for (const [args] of mockPrisma.orgUnitHeadEvent.findMany.mock.calls) {
+        expect((args as { where: Where }).where).toEqual(expect.objectContaining({ organizationId: ORG_A, orgUnitId: UNIT_1 }));
+      }
+    });
+
+    itEnforcesTenantIsolation('getHeadStatus: the cover in force (findRunningActingCover)', async () => {
+      covers.push(cv({ organizationId: ORG_B, validFrom: day('2026-10-01') }));
+      expect((await service.getHeadStatus(UNIT_1, ORG_A)).cover).toBeNull();
+      for (const [args] of mockPrisma.orgUnitHeadAssignment.findFirst.mock.calls) {
+        expect((args as { where: Where }).where).toEqual(expect.objectContaining({ organizationId: ORG_A, orgUnitId: UNIT_1 }));
+      }
+    });
+
+    itEnforcesTenantIsolation('getHeadStatus: scheduled and recently ended covers', async () => {
+      covers.push(
+        cv({ organizationId: ORG_B, validFrom: day('2026-11-01') }),
+        cv({ organizationId: ORG_B, validFrom: day('2026-08-01'), validTo: day('2026-10-18') }),
+      );
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.scheduledCover).toBeNull();
+      expect(result.recentlyEndedCovers).toEqual([]);
+      for (const [args] of mockPrisma.orgUnitHeadAssignment.findMany.mock.calls) {
+        expect((args as { where: Where }).where).toEqual(expect.objectContaining({ organizationId: ORG_A, orgUnitId: UNIT_1 }));
+      }
+    });
+
+    itEnforcesTenantIsolation('getHeadStatus: the vacancy actor name', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      events.push(ev({ action: 'VACATED', effectiveDate: day('2026-09-01'), approvedBy: 'b-admin' }));
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+      expect(result.lastVacancy!.by).toEqual({ userId: 'b-admin', name: null });
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'b-admin', organizationId: ORG_A } }),
+      );
+    });
+  });
 
   describe('declareHandover', () => {
     it('throws NotFoundException when the org unit does not exist in this tenant', async () => {

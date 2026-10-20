@@ -170,7 +170,10 @@
       "ctaUntil": "تكليف حتى {{date}}",
       "ctaOpen": "تكليف بلا تاريخ انتهاء",
       "backToDetails": "رجوع إلى التفاصيل",
-      "dateTypeHint": "اكتب تاريخًا، أو اختره من التقويم أدناه."
+      "dateTypeHint": "اكتب تاريخًا، أو اختره من التقويم أدناه.",
+      "stripVacantSince": "شاغر منذ {{date}}",
+      "stripVacantNoRecord": "شاغر · لا يوجد رئيس مسجّل",
+      "restartWarning": "هذا يبدأ فترة جديدة مدتها 90 يومًا، ولن تُحتسب ضمنها التغطية التي انتهت في {{date}}."
     },
     "vacateHeader": "إخلاء رئاسة {{unit}}؟",
     "cancelHandoverHeader": "إلغاء التسليم إلى {{name}}؟",
@@ -2340,6 +2343,16 @@
         "many": "ينقل {{unit}} و{{count}} وحدة فرعية تابعة لها",
         "other": "ينقل {{unit}} و{{count}} وحدة فرعية تابعة لها"
       }
+    },
+    "headship": {
+      "daysBefore": {
+        "zero": "{{count}} يوم",
+        "one": "يوم واحد",
+        "two": "يومين",
+        "few": "{{count}} أيام",
+        "many": "{{count}} يومًا",
+        "other": "{{count}} يوم"
+      }
     }
   },
   "datePicker": {
@@ -2795,5 +2808,128 @@
     "removeStage": "إزالة المرحلة",
     "deactivateTemplate": "تعطيل القالب",
     "removeTransition": "إزالة الانتقال"
+  },
+  "headship": {
+    "title": "رئاسة الوحدة",
+    "titleNamed": "رئاسة {{unit}}",
+    "loading": "جارٍ تحميل رئاسة الوحدة…",
+    "loadFailed": "تعذّر تحميل رئاسة الوحدة.",
+    "saveFailed": "تعذّر حفظ التغيير.",
+    "pill": {
+      "twoHeads": "⇆ رئيسان حتى {{date}}",
+      "atRisk": "▲ معرّضة للخطر من {{date}}"
+    },
+    "head": {
+      "label": "الرئيس",
+      "none": "لا يوجد رئيس",
+      "assigned": "تم تعيين رئيس",
+      "noneRecorded": "لا يوجد رئيس مسجّل",
+      "vacatedBy": "أُخليت في {{date}} بواسطة {{name}}",
+      "vacated": "أُخليت في {{date}}",
+      "since": "منذ {{date}}",
+      "sinceUnknown": "تاريخ البدء غير مسجّل",
+      "accessUntil": "صلاحيات الرئاسة حتى {{date}}",
+      "awayCovered": "غياب · مع تغطية",
+      "awayLeaves": "غياب · المغادرة في {{date}}"
+    },
+    "cover": {
+      "label": "الرئيس بالنيابة",
+      "arranged": "تم ترتيب تغطية",
+      "coveringFor": "تغطية عن {{name}}",
+      "coveringVacancy": "تغطية الشاغر",
+      "theHead": "الرئيس",
+      "range": "من {{from}} إلى {{to}}",
+      "sinceOpen": "منذ {{from}} · بلا تاريخ انتهاء",
+      "startsOpen": "تبدأ في {{from}} · بلا تاريخ انتهاء",
+      "startsRange": "تبدأ في {{from}} · حتى {{to}}",
+      "noEndDate": "بلا تاريخ انتهاء",
+      "barFrom": "من {{date}}",
+      "barFlag": "▲ تُنبَّه في {{date}} إن بقيت مفتوحة"
+    },
+    "incoming": {
+      "label": "رئيس أيضًا · قادم",
+      "accessSince": "صلاحيات الرئاسة منذ {{date}}",
+      "accessSinceUnknown": "بدء صلاحيات الرئاسة غير مسجّل",
+      "soleFrom": "رئيس منفرد من {{date}}"
+    },
+    "action": {
+      "appointHead": "تعيين رئيس",
+      "appointSuccessor": "تعيين خلف",
+      "startNewHeadToday": "بدء الرئيس الجديد اليوم",
+      "withdrawAppointment": "سحب التعيين",
+      "vacate": "إخلاء",
+      "arrangeCover": "ترتيب تغطية",
+      "endCover": "إنهاء التغطية"
+    },
+    "appoint": {
+      "title": "تعيين رئيس {{unitWithLam}}",
+      "noHead": "لا يوجد رئيس {{unitWithLam}}",
+      "head": "الرئيس",
+      "position": "المنصب",
+      "personPlaceholder": "اختر شخصًا من هذه الوحدة",
+      "nobody": "لا يوجد في هذه الوحدة من يمكن اختياره",
+      "positionPlaceholder": "اختر منصب رئاسة",
+      "onlyPosition": "المنصب الوحيد الذي يمنح الرئاسة",
+      "from": "من",
+      "fromNow": "الآن، عند الحفظ",
+      "fromHint": "اليوم، {{date}} — لا يمكن تحديد تاريخ بدء بعد",
+      "submit": "تعيين الآن",
+      "noPosition": "لا يوجد منصب يمنح الرئاسة — حدّد منصبًا في المناصب",
+      "flagOne": "فتح المناصب",
+      "positionsUnavailable": "تعذّرت قراءة مناصب الرئاسة، فلا يمكن تعيين رئيس هنا"
+    },
+    "successor": {
+      "title": "تعيين الرئيس التالي {{unitWithLam}}",
+      "accessWarning": "تبدأ صلاحيات الرئاسة فور الحفظ، لا في التاريخ أدناه",
+      "replaces": "يحل محل",
+      "nextHead": "الرئيس التالي",
+      "since": "منذ {{date}}",
+      "sinceUnknown": "تاريخ البدء غير مسجّل",
+      "until": "حتى {{date}}",
+      "soleFrom": "رئيس منفرد من",
+      "dateHint": "اليوم الذي يصبح فيه الرئيس الجديد رئيسًا منفردًا",
+      "dateHintChosen": "حتى ذلك الحين كلاهما رئيس · تنتهي صلاحيات {{name}} في {{date}}",
+      "dateRequired": "اختر يوم بدء الرئاسة المنفردة",
+      "datePast": "اختر اليوم أو يومًا لاحقًا",
+      "showCalendar": "عرض التقويم",
+      "backToDetails": "العودة إلى التفاصيل",
+      "dateTypeHint": "اكتب تاريخًا أو اختره أدناه",
+      "note": "ملاحظة للسجل · اختيارية",
+      "notePlaceholder": "مثال: التقاعد في 30 سبتمبر؛ بموافقة المدير الطبي",
+      "submit": "منح صلاحيات الرئاسة الآن"
+    },
+    "confirm": {
+      "theHead": "الرئيس",
+      "theCurrentHead": "الرئيس الحالي",
+      "theIncomingHead": "الرئيس القادم",
+      "theActingHead": "الرئيس بالنيابة",
+      "vacate": {
+        "header": "تسجيل مغادرة {{name}} {{unitWithLam}}؟",
+        "message": "لن يكون {{unitWithLam}} رئيس من الآن، ويفقد {{name}} أي دور منحه إياه منصب الرئاسة. وتنتهي هذه الرئاسة اليوم في السجل.",
+        "coverContinues": "تستمر تغطية {{name}}.",
+        "accept": "تسجيل المغادرة"
+      },
+      "startToday": {
+        "header": "جعل {{name}} رئيسًا {{unitWithLam}} اليوم؟",
+        "message": "لدى {{incoming}} صلاحيات الرئاسة بالفعل. وهذا ينهي صلاحيات {{outgoing}} اليوم، قبل {{early}} من الموعد المقرر {{date}}، ويجعل {{incoming}} رئيسًا منفردًا.",
+        "messageUndated": "لدى {{incoming}} صلاحيات الرئاسة بالفعل. وهذا ينهي صلاحيات {{outgoing}} اليوم، ويجعل {{incoming}} رئيسًا منفردًا.",
+        "coverContinues": "تستمر تغطية {{name}} حتى تُنهى.",
+        "accept": "بدء الرئاسة اليوم"
+      },
+      "withdraw": {
+        "header": "سحب تعيين {{name}} اعتبارًا من {{date}}؟",
+        "headerUndated": "سحب تعيين {{name}}؟",
+        "message": "يفقد {{incoming}} صلاحيات الرئاسة التي لديه منذ {{date}}، وأي دور منحته إياه. ويعود ما وُجّه إليه بصفة الرئيس إلى {{outgoing}}. وتبقى أي ملاحظة سُجّلت مع التعيين في السجل.",
+        "messageUndated": "يفقد {{incoming}} صلاحيات الرئاسة، وأي دور منحته إياه. ويعود ما وُجّه إليه بصفة الرئيس إلى {{outgoing}}. وتبقى أي ملاحظة سُجّلت مع التعيين في السجل.",
+        "accept": "إلغاء التعيين",
+        "keep": "إبقاء التعيين"
+      },
+      "endCover": {
+        "header": "إنهاء تغطية {{name}} {{unitWithLam}}؟",
+        "messageAbsence": "تنتهي التغطية الآن، ويفقد {{name}} أي دور منحته إياه. ويبقى {{head}} مسجّلًا رئيسًا.",
+        "messageVacancy": "تنتهي التغطية الآن، ويفقد {{name}} أي دور منحته إياه. وتبقى {{unit}} بلا رئيس ولا تغطية، فيذهب ما يخص رئيسها إلى رئيس الوحدة الأعلى منها إن وُجدت.",
+        "accept": "إنهاء التغطية"
+      }
+    }
   }
 }

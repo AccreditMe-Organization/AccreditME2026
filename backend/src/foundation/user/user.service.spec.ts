@@ -3562,7 +3562,10 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
         findFirst: jest.fn(({ where }: { where: { id: string } }) => Promise.resolve(orgUnits[where.id] ?? null)),
       },
       userTransferEvent: { create: jest.fn().mockResolvedValue({}) },
-      orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}) },
+      // ACC-133 — getHeadStatus() also reads the head ledger and the cover
+      // periods; this test is about the role grant, so both are empty.
+      orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}), findMany: jest.fn().mockResolvedValue([]) },
+      orgUnitHeadAssignment: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       // ACC-120 — count() is the root-role invariant's own read: holders of
       // TENANT_ADMIN joined to User and filtered to ACTIVE. Defaults to 1 so

@@ -5042,30 +5042,160 @@ controller — no special-casing.
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `listPositions()` | `GET /org-positions` | `position-list.component.ts`, `user-profile.component.ts`, `user-list.component.ts`, `invite-user.component.ts`, `org-unit-head-panel.component.ts` |
+| `listPositions()` | `GET /org-positions` | `position-list.component.ts`, `user-profile.component.ts`, `user-list.component.ts`, `invite-user.component.ts`, `headship-panel.component.ts` (ACC-133) |
 | `getById()` | `GET /org-positions/:id` | **ZERO frontend callers found** (unchanged from pre-ACC-40) |
 | `create()` / `update()` | `POST` / `PATCH /org-positions/:id` | `position-form.component.ts` — form includes `isSingleAssignee`/`isUnitHeadPosition` (with the head-implies-single constraint mirrored client-side, unchecking one clears the other) /`roleId` |
 | `deactivate()` / `reactivate()` | `POST /org-positions/:id/(de)activate` | `position-list.component.ts` |
 
 `frontend/src/app/foundation/organization/services/org-unit-head.service.ts`
-+ `org-unit-head-panel.component.ts` — `getHeadStatus`/`assignHead`/
-`vacateHead`/`declareHandover`/`completeHandoverNow`/`cancelHandover`/
-`assignActingHead`/`clearActingHead` (Phase 11) all wired and reachable
-from an `OrgUnit` detail screen's Head-management panel — the vacant-
-unit branch now offers both "assign a real Head" and, as a distinct
-action, "assign Acting Head coverage" (with an optional "covering for"
-picker, 2.6.4); a set `actingHeadUserId` shows the current holder plus
-a clear button instead of the assignment form. No component-level unit
-tests exist for this panel at all (none of the four prior actions had
-any either) — verified via `tsc --noEmit` and manual translation-key
-parity check instead, consistent with this codebase's actual testing
-pattern for this component (CLAUDE.md's Testing Strategy scopes
-Playwright E2E to critical workflows, not per-component unit tests for
-every Angular form).
+— all seven head actions and the read are wired through the Headship panel
+(5.15). **SUPERSEDED (ACC-133):** this entry used to describe
+`org-unit-head-panel.component.ts`, a three-state panel with no component
+tests; it is deleted, and the panel that replaced it is specified and tested
+below.
 
 `user-profile.component.ts` — `actingOrgUnitId`/`actingOrgUnitUntil`
 (5.7) fully wired as an optional profile field, distinct from the
 position/org-unit picker above it.
+
+### 5.15 The Headship panel (ACC-133)
+
+Plan and Ahmad's answers: `backend/Plans/step-133-headship-panel.md`. Drawing:
+`frontend/design-reference/AccreditMe Head Management.dc.html` (25 Sep).
+
+#### 5.15.1 The read: `GET /organization/units/:id/head`, extended
+
+Same route, same `org:view` gate, no migration, no new write. Every earlier
+field is kept for older callers (`holders[].{id,name,positionId}`,
+`pendingHeadUserId`, `headHandoverEffectiveDate`, `actingHeadUserId`). Added:
+
+| Field | Source | Null when |
+|---|---|---|
+| `holders[].positionNameEn/Ar` | the holder's position | no position row |
+| `holders[].headSince` | latest `ASSIGNED` / `HANDOVER_COMPLETED` event about them on this unit (a pending successor: their `HANDOVER_DECLARED`) | no event, or a later event ended or superseded that headship (their `VACATED`, or another person `ASSIGNED` / completed as head) |
+| `lastVacancy {at, by{userId,name}}` | latest `VACATED` event; `by` is its `approvedBy`, who recorded it | no `VACATED` event |
+| `pendingHeadAccessSince` | the pending successor's `HANDOVER_DECLARED.createdAt`: access starts at declaration | nobody pending, or no event |
+| `cover {userId,name,reason,validFrom,validTo}` | `findRunningActingCover()` | no cover in force |
+| `scheduledCover` | an ACTING period not ended, starting later | none |
+| `recentlyEndedCovers[] {userId,name,endedAt}` | ACTING periods whose `validTo` fell in the last 7 days, newest first | (empty list) |
+
+**Never reconstructed from `AuditLog`.** Where the ledger has no row, the
+field is null, and the panel says what is NOT recorded.
+
+**Holders count only ACTIVE head positions (D13):** `position.isActive: true`.
+
+**`scheduledCover` exists for the refusal rule, not for display.** The cached
+`actingHeadUserId` is written when a cover is ARRANGED (even one starting next
+month) and cleared only by End cover; a cover that lapses on its own date
+leaves it set. While a scheduled cover exists, Arrange cover is refused and
+End cover accepted, so the panel treats it as covered.
+
+**THE NAMES RULE (D7, Ahmad).** Every person `name` in the response is null
+unless the caller holds `users:view`; ids, dates, reasons and position titles
+are not withheld. The controller passes `includeNames` from
+`@CurrentUserPermissions()`. The panel shows "Head assigned" / "Cover
+arranged" where a name would go. `getHeadStatus()`'s internal callers
+(`UserService.getTransferContext()`, `transferUser()`) keep the default
+(names included); the transfer context returns exactly its own three fields.
+
+#### 5.15.2 `unit-headship.ts` — the shared headship reads
+
+`backend/src/foundation/organization/unit-headship.ts`, one file that lane B's
+ACC-244 builds on. A new reader of "who is head" or "who covers" uses these
+rather than writing another copy. Both are scoped by organisation AND unit.
+
+- **`findCurrentHeadHolders(prisma: Pick<PrismaService, 'user'>, organizationId, orgUnitId)`**:
+  ACTIVE users whose `primaryOrgUnitId` is the unit and whose position has
+  `isUnitHeadPosition` and `isActive`. Zero, one, or TWO while a successor is
+  pending: do not assume one head.
+- **`findRunningActingCover(prisma: Pick<PrismaService, 'orgUnitHeadAssignment'>, organizationId, orgUnitId, now = new Date())`**:
+  the ACTING period in force: `endedAt` null, `validFrom <= now`, `validTo`
+  null or after now, newest first. Never the cached `actingHeadUserId`.
+
+`task-authority.service.ts` still has its own absence-cover window; ACC-133
+did not change it.
+
+#### 5.15.3 The panel and its six states
+
+`am-headship-panel` (`components/headship-panel/`), standalone, taking a unit
+id. It is the body of the tree's Manage head dialog today and is built to be
+embedded on the future unit record page. The state is one pure function,
+`deriveHeadshipState()` (`headship-state.ts`):
+
+| # | State | Actions (first is primary, except 5 and 6) |
+|---|---|---|
+| 1 | Vacant | Appoint head · Arrange cover |
+| 2 | Vacant · covered | Appoint head · End cover |
+| 3 | Held | Appoint successor · Arrange cover · Vacate |
+| 4 | Held · covered | End cover · Appoint successor · Vacate |
+| 5 | Held · successor pending | Start new head today · Withdraw appointment |
+| 6 | Held · covered · successor pending | Start new head today · Withdraw appointment · End cover |
+
+- **No state offers an action its endpoint refuses**, and
+  `headship-state.spec.ts` checks every combination of the three facts against
+  a model of the refusals transcribed from `org-unit-head.service.ts`.
+- **Covered** = a cover in force or a scheduled one. **End cover** also needs
+  the cached `actingHeadUserId`, because `clearActingHead()` reads it.
+- **No primary in states 5 and 6.** Both actions are exceptions to a plan that
+  finishes on its own date.
+- **A viewer without `org:manage` sees the panel and no actions**, and the
+  dialogs' choices (people, positions) are not even fetched. The tree's crown
+  button shows for every viewer of the page, titled "Headship" for them.
+- **Empty-ledger renderings:** "No head recorded" (never "Never had a head"),
+  "Start date not recorded", "Vacant · no head recorded".
+
+**Interface names are not endpoint names, and "handover" appears nowhere:**
+`POST /assign` Appoint head · `/vacate` Vacate, confirmed "Record departure" ·
+`/handover` Appoint successor · `/handover/complete` Start new head today ·
+`/handover/cancel` Withdraw appointment · `/acting-head` Arrange cover ·
+`/acting-head/clear` End cover.
+
+#### 5.15.4 THE HEAD-ACCESS COPY RULE
+
+`declareHandover()` grants the successor the head position IN THE SAME CALL;
+the effective date gates only the sweep that later clears the outgoing head.
+There is no maximum window (Ahmad, 25 Sep). So the interface is the only
+safeguard, and it says so in every place an approver looks:
+
+- Appoint successor's header line: "▲ Head access starts when you save, not on
+  the date below"; its button "Give head access now"; its date "Sole head
+  from".
+- States 5 and 6: the pill "⇆ Two heads until {date}", the successor's row
+  "Also head · incoming" with "Head access since {date} · sole head from
+  {date}", and the outgoing head's "Head access until {date}".
+- The confirms: Start new head today opens "{successor} already has head
+  access"; Withdraw appointment says they lose the access they have had since
+  the declaration.
+
+**Do not soften any of this wording.** It is the difference between an admin
+knowing what they granted and finding out later.
+
+**Confirm lines the drawing has and the server contradicts are not shown:**
+Vacate does not relabel a running cover as covering a vacancy, and Start new
+head today does not end a running cover; both confirms say the cover
+continues.
+
+#### 5.15.5 The dialogs
+
+- **Appoint head** (`am-appoint-head-dialog`, Horizon 1): Head, Position, and
+  From as a read-only row "Now, when you save"; no note (`assignHead` takes
+  none); button "Appoint now". Position: one head-conferring position, a
+  read-only pair; two or more, a select; none, the dialog does not open and
+  Appoint head is disabled with "No position confers headship — flag one in
+  Org positions". Standard density.
+- **Appoint successor** (`am-appoint-successor-dialog`): the Replaces strip
+  (name, position, since or "start date not recorded", until), Next head, Sole
+  head from (typed or picked; today or later), Note for the record (500).
+  **No Position field:** `POST /handover` takes none, and the strip names it.
+  **Compact, declared explicitly**; the class comment records why.
+- **Arrange cover** is the existing `SetActingHeadDialogComponent`, now dating
+  the Vacancy strip from the ledger and warning, when the chosen person had a
+  cover here that ended in the last 7 days, that a new cover "starts a new
+  90-day period".
+
+Measured in `headship-dialogs.layout.spec.ts` (EN / AR, 1280 and 390, the long
+real position name): Appoint head 265–279; Appoint successor 347–368 EN and
+365–406 AR, 55 spare in Arabic at 1280.
 
 ---
 
