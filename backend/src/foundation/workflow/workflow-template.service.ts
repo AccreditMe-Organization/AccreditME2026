@@ -25,14 +25,18 @@ import { UpdateWorkflowTransitionDto } from './dto/update-workflow-transition.dt
 import { CreateWorkflowTransitionActionDto } from './dto/create-workflow-transition-action.dto';
 import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transition-action.dto';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
-import { KEYED_SEED_TEMPLATES } from './workflow-stage-keys';
+import { applyWorkflowSeed } from './workflow-seed-apply';
+import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
-import { WorkflowRefusalException } from './workflow-refusal';
+import { refuseProtected, WorkflowRefusalException } from './workflow-refusal';
 import {
   assertKnownAndGrantable,
   isPlatformPermission,
 } from '../roles/permission-grantability';
+
+/** Stage fields a protected template's stage may still change (names, description, deadline and its escalation). */
+const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr', 'description', 'slaWorkingHours', 'escalationConfig']);
 
 @Injectable()
 export class WorkflowTemplateService {
@@ -45,159 +49,7 @@ export class WorkflowTemplateService {
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
   async seedDefaultWorkflows(organizationId: string): Promise<void> {
-    const roleKeys = new Set<string>();
-    for (const seedWorkflow of SYSTEM_WORKFLOW_SEED) {
-      for (const stage of seedWorkflow.stages) {
-        if (stage.assigneeRoleKey) roleKeys.add(stage.assigneeRoleKey);
-      }
-      for (const transition of seedWorkflow.transitions) {
-        if (transition.triggerRoleKey) roleKeys.add(transition.triggerRoleKey);
-      }
-    }
-
-    const roles = await this.prisma.role.findMany({
-      where: { organizationId, key: { in: Array.from(roleKeys) } },
-    });
-    const roleIdByKey = new Map(roles.map((r) => [r.key, r.id]));
-
-    const resolveRoleId = (key: string | undefined): string | undefined => {
-      if (!key) return undefined;
-      const id = roleIdByKey.get(key);
-      if (!id) {
-        throw new Error(
-          `Role key '${key}' referenced in workflow seed data was not found for organization ${organizationId} — seedSystemRoles() must run first`,
-        );
-      }
-      return id;
-    };
-
-    for (const seedWorkflow of SYSTEM_WORKFLOW_SEED) {
-      const existingTemplate = await this.prisma.workflowTemplate.findFirst({
-        where: { organizationId, objectType: seedWorkflow.objectType, isDefault: true },
-      });
-
-      const templateData = {
-        nameEn: seedWorkflow.nameEn,
-        nameAr: seedWorkflow.nameAr,
-        objectType: seedWorkflow.objectType,
-        isDefault: true,
-        isActive: true,
-      };
-
-      const template = existingTemplate
-        ? await this.prisma.workflowTemplate.update({
-            where: { id: existingTemplate.id },
-            data: templateData,
-          })
-        : await this.prisma.workflowTemplate.create({
-            data: { organizationId, ...templateData },
-          });
-
-      const stageIdByKey = new Map<string, string>();
-
-      // ACC-233 — the stages of a keyed template carry the seed's own key, so
-      // code can recognise them whatever the tenant later calls them. Found by
-      // key first: a stage renamed since would otherwise be created again.
-      const keyed = KEYED_SEED_TEMPLATES.has(seedWorkflow.objectType);
-
-      for (const seedStage of seedWorkflow.stages) {
-        const existingStage =
-          (keyed &&
-            (await this.prisma.workflowStage.findFirst({
-              where: { workflowTemplateId: template.id, key: seedStage.key },
-            }))) ||
-          (await this.prisma.workflowStage.findFirst({
-            where: { workflowTemplateId: template.id, nameEn: seedStage.nameEn },
-          }));
-
-        const stageData = {
-          ...(keyed && { key: seedStage.key }),
-          nameEn: seedStage.nameEn,
-          nameAr: seedStage.nameAr,
-          order: seedStage.order,
-          slaWorkingHours: seedStage.slaWorkingHours ?? null,
-          isInitial: seedStage.isInitial,
-          isFinal: seedStage.isFinal,
-          approvalMode: seedStage.approvalMode,
-          parallelThreshold: seedStage.parallelThreshold ?? null,
-          assigneeStrategy: seedStage.assigneeStrategy,
-          assigneeRoleId: resolveRoleId(seedStage.assigneeRoleKey) ?? null,
-        };
-
-        const stage = existingStage
-          ? await this.prisma.workflowStage.update({ where: { id: existingStage.id }, data: stageData })
-          : await this.prisma.workflowStage.create({
-              data: { workflowTemplateId: template.id, ...stageData },
-            });
-
-        stageIdByKey.set(seedStage.key, stage.id);
-      }
-
-      for (const seedTransition of seedWorkflow.transitions) {
-        const fromStageId = stageIdByKey.get(seedTransition.fromStageKey);
-        const toStageId = stageIdByKey.get(seedTransition.toStageKey);
-        if (!fromStageId || !toStageId) {
-          throw new Error(
-            `Workflow seed for objectType '${seedWorkflow.objectType}' references an unknown stage key in a transition`,
-          );
-        }
-
-        const existingTransition = await this.prisma.workflowTransition.findFirst({
-          where: { fromStageId, toStageId },
-        });
-
-        const transitionData = {
-          labelEn: seedTransition.labelEn,
-          labelAr: seedTransition.labelAr,
-          requiredPermission: seedTransition.requiredPermission ?? null,
-          triggerCondition: seedTransition.triggerCondition,
-          triggerRoleId: resolveRoleId(seedTransition.triggerRoleKey) ?? null,
-          validatorConfig: this.toJson(seedTransition.validatorConfig),
-          isApprovalPath: seedTransition.isApprovalPath ?? false,
-          kind: seedTransition.kind ?? 'ADVANCE',
-        };
-
-        const transition = existingTransition
-          ? await this.prisma.workflowTransition.update({
-              where: { id: existingTransition.id },
-              data: transitionData,
-            })
-          : await this.prisma.workflowTransition.create({
-              data: { fromStageId, toStageId, ...transitionData },
-            });
-
-        for (const seedAction of seedTransition.actions) {
-          const existingAction = await this.prisma.workflowTransitionAction.findFirst({
-            where: {
-              workflowTransitionId: transition.id,
-              actionType: seedAction.actionType,
-              order: seedAction.order,
-            },
-          });
-
-          const actionData = {
-            isEnabled: true,
-            configJson: this.toJson(seedAction.configJson),
-          };
-
-          if (existingAction) {
-            await this.prisma.workflowTransitionAction.update({
-              where: { id: existingAction.id },
-              data: actionData,
-            });
-          } else {
-            await this.prisma.workflowTransitionAction.create({
-              data: {
-                workflowTransitionId: transition.id,
-                actionType: seedAction.actionType,
-                order: seedAction.order,
-                ...actionData,
-              },
-            });
-          }
-        }
-      }
-    }
+    await applyWorkflowSeed(this.prisma, organizationId, SYSTEM_WORKFLOW_SEED);
   }
 
   // ── Templates ────────────────────────────────────────────────────────────────
@@ -249,6 +101,8 @@ export class WorkflowTemplateService {
     organizationId: string,
     actorId: string,
   ): Promise<IWorkflowTemplate> {
+    // ACC-239 — the seeded template is the only one for a protected type.
+    if (PROTECTED_TEMPLATES.has(dto.objectType)) refuseProtected('CREATE_TEMPLATE');
     const template = await this.prisma.workflowTemplate.create({
       data: {
         organizationId,
@@ -280,6 +134,15 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowTemplate> {
     const template = await this.prisma.workflowTemplate.findFirst({ where: { id, organizationId } });
     if (!template) throw new NotFoundException('Workflow template not found');
+    // ACC-239 — renaming is allowed; changing the type to or from a protected
+    // one, or giving up a protected template's default, is not. Only a value
+    // that CHANGES is refused: a form sends the unchanged ones too.
+    if (dto.objectType !== undefined && dto.objectType !== template.objectType) {
+      if (PROTECTED_TEMPLATES.has(template.objectType) || PROTECTED_TEMPLATES.has(dto.objectType)) refuseProtected('CHANGE_TYPE');
+    }
+    if (PROTECTED_TEMPLATES.has(template.objectType) && dto.isDefault === false && template.isDefault) {
+      refuseProtected('REPLACE_DEFAULT');
+    }
 
     const updated = await this.prisma.workflowTemplate.update({
       where: { id },
@@ -308,6 +171,8 @@ export class WorkflowTemplateService {
     const template = await this.prisma.workflowTemplate.findFirst({ where: { id, organizationId } });
     if (!template) throw new NotFoundException('Workflow template not found');
     if (template.isDefault) return;
+    // ACC-239 — a protected type keeps its seeded template as the default.
+    if (PROTECTED_TEMPLATES.has(template.objectType)) refuseProtected('REPLACE_DEFAULT');
 
     await this.prisma.$transaction([
       this.prisma.workflowTemplate.updateMany({
@@ -332,6 +197,7 @@ export class WorkflowTemplateService {
     const template = await this.prisma.workflowTemplate.findFirst({ where: { id, organizationId } });
     if (!template) throw new NotFoundException('Workflow template not found');
     if (!template.isActive) return;
+    if (PROTECTED_TEMPLATES.has(template.objectType)) refuseProtected('DEACTIVATE');
 
     await this.prisma.workflowTemplate.update({ where: { id }, data: { isActive: false } });
 
@@ -358,6 +224,7 @@ export class WorkflowTemplateService {
       where: { id: templateId, organizationId },
     });
     if (!template) throw new NotFoundException('Workflow template not found');
+    if (PROTECTED_TEMPLATES.has(template.objectType)) refuseProtected('ADD_STAGE');
 
     if (dto.assigneeUserId) {
       await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
@@ -420,8 +287,18 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowStage> {
     const stage = await this.prisma.workflowStage.findFirst({
       where: { id, workflowTemplate: { organizationId } },
+      include: { workflowTemplate: { select: { objectType: true } } },
     });
     if (!stage) throw new NotFoundException('Workflow stage not found');
+    // ACC-239 — a protected template's stage keeps its shape: only a field
+    // that CHANGES, outside names, description and deadline, is refused.
+    if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType)) {
+      const stored = stage as unknown as Record<string, unknown>;
+      const changed = Object.entries(dto).filter(
+        ([field, value]) => value !== undefined && !PROTECTED_STAGE_EDITABLE.has(field) && (stored[field] ?? null) !== (value ?? null),
+      );
+      if (changed.length > 0) refuseProtected('STAGE_FIELD');
+    }
 
     if (dto.assigneeUserId) {
       await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
@@ -498,8 +375,10 @@ export class WorkflowTemplateService {
   async removeStage(id: string, organizationId: string, actorId: string): Promise<void> {
     const stage = await this.prisma.workflowStage.findFirst({
       where: { id, workflowTemplate: { organizationId } },
+      include: { workflowTemplate: { select: { objectType: true } } },
     });
     if (!stage) throw new NotFoundException('Workflow stage not found');
+    if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType)) refuseProtected('REMOVE_STAGE');
 
     const referencingTransition = await this.prisma.workflowTransition.findFirst({
       where: { OR: [{ fromStageId: id }, { toStageId: id }] },
@@ -542,8 +421,10 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowTransitionWriteResult> {
     const fromStage = await this.prisma.workflowStage.findFirst({
       where: { id: dto.fromStageId, workflowTemplate: { organizationId } },
+      include: { workflowTemplate: { select: { objectType: true } } },
     });
     if (!fromStage) throw new NotFoundException('From-stage not found');
+    if (PROTECTED_TEMPLATES.has(fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
 
     const toStage = await this.prisma.workflowStage.findFirst({
       where: { id: dto.toStageId, workflowTemplate: { organizationId } },
@@ -598,8 +479,10 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowTransitionWriteResult> {
     const transition = await this.prisma.workflowTransition.findFirst({
       where: { id, fromStage: { workflowTemplate: { organizationId } } },
+      include: { fromStage: { select: { workflowTemplate: { select: { objectType: true } } } } },
     });
     if (!transition) throw new NotFoundException('Workflow transition not found');
+    if (PROTECTED_TEMPLATES.has(transition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
     this.assertNoRetiredValidator(dto.validatorConfig);
     // Only a CHANGED key is checked. A transition already holding a key that
     // could not be chosen today (a seeded forward reference) keeps it when any
@@ -668,8 +551,10 @@ export class WorkflowTemplateService {
   async removeTransition(id: string, organizationId: string, actorId: string): Promise<void> {
     const transition = await this.prisma.workflowTransition.findFirst({
       where: { id, fromStage: { workflowTemplate: { organizationId } } },
+      include: { fromStage: { select: { workflowTemplate: { select: { objectType: true } } } } },
     });
     if (!transition) throw new NotFoundException('Workflow transition not found');
+    if (PROTECTED_TEMPLATES.has(transition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
 
     await this.prisma.workflowTransitionAction.deleteMany({ where: { workflowTransitionId: id } });
     await this.prisma.workflowTransition.delete({ where: { id } });
@@ -694,8 +579,10 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowTransitionAction> {
     const transition = await this.prisma.workflowTransition.findFirst({
       where: { id: transitionId, fromStage: { workflowTemplate: { organizationId } } },
+      include: { fromStage: { select: { workflowTemplate: { select: { objectType: true } } } } },
     });
     if (!transition) throw new NotFoundException('Workflow transition not found');
+    if (PROTECTED_TEMPLATES.has(transition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
     if (dto.actionType === 'CREATE_TASK') throw new WorkflowRefusalException('ACTION_TYPE_RETIRED');
 
     const action = await this.prisma.workflowTransitionAction.create({
@@ -728,8 +615,10 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowTransitionAction> {
     const action = await this.prisma.workflowTransitionAction.findFirst({
       where: { id, workflowTransition: { fromStage: { workflowTemplate: { organizationId } } } },
+      include: { workflowTransition: { select: { fromStage: { select: { workflowTemplate: { select: { objectType: true } } } } } } },
     });
     if (!action) throw new NotFoundException('Workflow transition action not found');
+    if (PROTECTED_TEMPLATES.has(action.workflowTransition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
     if (dto.actionType === 'CREATE_TASK') throw new WorkflowRefusalException('ACTION_TYPE_RETIRED');
 
     const updated = await this.prisma.workflowTransitionAction.update({
@@ -758,8 +647,10 @@ export class WorkflowTemplateService {
   async removeTransitionAction(id: string, organizationId: string, actorId: string): Promise<void> {
     const action = await this.prisma.workflowTransitionAction.findFirst({
       where: { id, workflowTransition: { fromStage: { workflowTemplate: { organizationId } } } },
+      include: { workflowTransition: { select: { fromStage: { select: { workflowTemplate: { select: { objectType: true } } } } } } },
     });
     if (!action) throw new NotFoundException('Workflow transition action not found');
+    if (PROTECTED_TEMPLATES.has(action.workflowTransition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
 
     await this.prisma.workflowTransitionAction.delete({ where: { id } });
 

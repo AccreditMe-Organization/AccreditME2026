@@ -76,6 +76,7 @@ enum WorkflowObjectType {
   CORRECTIVE_ACTION
   MEETING
   COMMITTEE
+  COMMITTEE_CHANGE_REQUEST // ACC-239 — a change to an approved committee's details
 }
 
 enum WorkflowApprovalMode {
@@ -593,6 +594,7 @@ model User {
   notifications                   Notification[]
   committeeMembers                CommitteeMember[]
   committeeMembershipEvents       CommitteeMembershipEvent[]
+  committeeChangeRequests         CommitteeChangeRequest[]   @relation("CommitteeChangeRequestRequester") // ACC-239
   meetings                        Meeting[]                  @relation("MeetingOrganizer")
   auditLogs                       AuditLog[]
   aiInteractionLogs               AiInteractionLog[]
@@ -1331,6 +1333,11 @@ model WorkflowInstanceStage {
   // covered-for user's id for OUT_OF_OFFICE_COVERAGE.
   delegationReason     DelegationReason?
   delegationContextId  String?
+  // ACC-239 — the quorum an approval in a COMMITTEE-mode stage counts against,
+  // saved when the record ENTERS the stage, so a quorum changed while the vote is
+  // open does not move it. Null for every other stage, and for an entry made
+  // before ACC-239, which falls back to the committee's live quorum.
+  quorumCount          Int?
 
   workflowInstance WorkflowInstance   @relation(fields: [workflowInstanceId], references: [id])
   stage            WorkflowStage      @relation(fields: [stageId], references: [id])
@@ -1888,6 +1895,7 @@ model Committee {
   membershipEvents     CommitteeMembershipEvent[]
   meetings             Meeting[]
   poolTasks            Task[]                     @relation("TaskAssignedCommittee") // ACC-167
+  changeRequests       CommitteeChangeRequest[] // ACC-239
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionCommittee") // ACC-190
 
@@ -1943,6 +1951,52 @@ model CommitteeMembershipEvent {
   @@index([organizationId])
   @@index([committeeId])
   @@index([userId])
+}
+
+// ACC-239 — a change to an APPROVED committee's details. In Formation a
+// committee is edited directly; once it is Active or Suspended, every field
+// change goes through one of these, decided by a holder of committees:approve.
+//
+// NO STATUS COLUMN. A request's state is its workflow instance's current stage
+// KEY (draft, under_review, returned, approved, rejected, withdrawn) — one fact
+// in one place (ACC-82). The instance is found by record type and id, as every
+// workflow record's is.
+model CommitteeChangeRequest {
+  id              String    @id @default(cuid())
+  organizationId  String
+  committeeId     String
+  // Per committee: "Change request 3". max + 1, taken under the committee row lock.
+  number          Int
+  requestedById   String
+  // "Why is this change needed?" — required.
+  reason          String
+  // Only the fields that change, with their proposed values:
+  // { "quorumCount": 6, "reportingToCommitteeId": "…" }. A key present means
+  // "changes to this value" (null included, for an optional field cleared).
+  changes         Json
+  // Q11 (Ahmad, 18 Oct): the committee's value of each changed field, stored at
+  // SUBMIT (and every resubmit). Approval is refused if any current value
+  // differs. Kept after approval as the values the change replaced.
+  fromValues      Json?
+  submittedAt     DateTime?
+  returnNote      String? // the latest Return's note
+  rejectionReason String?
+  decidedById     String?
+  decidedAt       DateTime?
+  appliedAt       DateTime?
+  termsTaskId     String? // the "Revise the terms of reference" task approval created
+  withdrawnById   String?
+  withdrawnAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  committee   Committee @relation(fields: [committeeId], references: [id])
+  requestedBy User      @relation("CommitteeChangeRequestRequester", fields: [requestedById], references: [id])
+
+  @@unique([committeeId, number])
+  @@index([organizationId])
+  @@index([organizationId, committeeId])
+  @@index([organizationId, requestedById])
 }
 
 enum CommitteeMembershipAction {

@@ -116,6 +116,18 @@ export interface StageEntryTaskDraft {
   placement: ResolvedPlacement | null;
 }
 
+/** ACC-239 — a task on a record, outside any stage (prepareRecordTask()). */
+export interface RecordTaskDraft {
+  title: string;
+  titleAr: string | null;
+  description: string | null;
+  priority: TaskPriority;
+  sourceType: TaskSourceType;
+  sourceId: string;
+  /** Its people, directly; anyone not ACTIVE is dropped, and none leaves it UNASSIGNED. */
+  assigneeUserIds: string[];
+}
+
 /**
  * A task ready to insert: every read done (placement, SLA window, pool clock,
  * active assignees), so the insert itself can run inside a caller's short
@@ -339,6 +351,41 @@ export class TaskService {
       eligibleAssigneeIds,
       delegations: new Map(),
       pooled,
+    };
+  }
+
+  /**
+   * ACC-239 — a task on a record that is NOT a stage entry's (the committee's
+   * "Revise the terms of reference", made when a change request is approved),
+   * ready to insert inside the caller's transaction. The same shape as
+   * prepareStageEntryTask(): every read here, the insert with insertPrepared(),
+   * the notices after commit with announceCreated(). Object-scoped, like a
+   * manual task: no stage, so no stage exit ever cancels it. Its SLA starts now.
+   */
+  async prepareRecordTask(draft: RecordTaskDraft, organizationId: string): Promise<PreparedTask> {
+    const slaStartAt = new Date();
+    const window = await this.sla.windowFrom(slaStartAt, draft.priority, organizationId);
+    const eligibleAssigneeIds = await this.filterActiveUsers(draft.assigneeUserIds, organizationId);
+    return {
+      data: {
+        title: draft.title,
+        titleAr: draft.titleAr,
+        description: draft.description,
+        sourceType: draft.sourceType,
+        sourceId: draft.sourceId,
+        isMandatory: false,
+        requiresEvidence: false,
+        priority: draft.priority,
+        status: eligibleAssigneeIds.length === 0 ? 'UNASSIGNED' : 'PENDING',
+        dueAt: window,
+        dueDateOverridden: false,
+        slaStartAt,
+        slaLimitAt: window,
+        slaExtendedTo: null,
+      },
+      eligibleAssigneeIds,
+      delegations: new Map(),
+      pooled: false,
     };
   }
 
