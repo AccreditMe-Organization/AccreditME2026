@@ -1,6 +1,7 @@
 import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { useFixedClock } from '../../common/testing/fixed-clock';
 
 // ACC-173 — canActForCreator(): the creator, their out-of-office delegate while
 // they are out, or the acting head appointed for ABSENCE of a unit they head
@@ -8,6 +9,10 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
+// ACC-248 — every test runs with the clock held at NOW (useFixedClock below).
+// decisionRecipients() and creatorsCoveredBy() read the clock themselves, and
+// these windows end on 20 Oct: against the real clock the delegate's absence
+// "ended" at midnight UTC on 20 Oct 2026, and the test failed from then on.
 const NOW = new Date('2026-10-06T09:00:00Z');
 const BEFORE = new Date('2026-10-01T00:00:00Z');
 const AFTER = new Date('2026-10-20T00:00:00Z');
@@ -33,9 +38,12 @@ describe('TaskAuthorityService (ACC-173)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    useFixedClock(NOW);
     prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(null);
     prisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
   });
+
+  afterEach(() => jest.useRealTimers());
 
   describe('canActForCreator', () => {
     it('admits the creator without reading anything', async () => {
