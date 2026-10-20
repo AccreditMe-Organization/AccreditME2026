@@ -17,6 +17,9 @@ describe('placementOf — the matrix column for every catalogue key (D1)', () =>
     'committees:view': 'view', 'committees:create': 'create', 'committees:edit_details': 'edit',
     'committees:add_member': 'edit', 'committees:remove_member': 'edit', 'committees:change_member_role': 'edit',
     'committees:approve': 'approve', 'committees:manage': 'row',
+    // ACC-244 — the per-type task keys, placed by the action-name rules.
+    'committees:view_all_tasks': 'view', 'committees:create_tasks': 'create', 'committees:manage_tasks': 'row',
+    'committees:view_unit_tasks': 'view',
     'notifications:view': 'view', 'notifications:manage': 'row',
     'meetings:view': 'view', 'meetings:record_minutes': 'edit', 'meetings:approve_minutes': 'approve',
     'meetings:manage': 'row',
@@ -38,8 +41,8 @@ describe('placementOf — the matrix column for every catalogue key (D1)', () =>
     'platform:admin': 'row', 'platform:impersonate': 'row',
   };
 
-  it('covers the whole catalogue: 74 keys', () => {
-    expect(Object.keys(TABLE).length).toBe(74);
+  it('covers the whole catalogue: 78 keys', () => {
+    expect(Object.keys(TABLE).length).toBe(78);
   });
 
   for (const [key, expected] of Object.entries(TABLE)) {

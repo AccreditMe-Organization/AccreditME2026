@@ -82,6 +82,32 @@ export const COMMITTEES_PERMISSIONS = {
   CHANGE_MEMBER_ROLE: 'committees:change_member_role',
 } as const;
 
+// ACC-244 — what a person may do with the TASKS on committee records, per
+// record type rather than the flat tasks:* keys (the task screens' decision 3,
+// Ahmad 18 Oct). The module is the record's, so the matrix shows them in the
+// Committees block; the actions are the names permission-columns.ts already
+// places (view_all_tasks → View, create_tasks → Create, manage_tasks → whole row).
+//
+// Its own group, not COMMITTEES_PERMISSIONS: QUALITY_MANAGER is seeded with
+// every value of that group, and ACC-28's umbrella rule (committees:manage holds
+// every committee string) is about committee CRUD, not task reach. Each grant
+// of these is deliberate (role.seed.ts, and backfill:acc244-grant-task-keys for
+// existing tenants).
+//
+// NOTHING READS THEM YET. PR 2 switches every task path onto them and retires
+// tasks:view / create / reassign / manage; until then they are on
+// PERMISSIONS_NOT_YET_CHECKED below.
+export const COMMITTEE_TASKS_PERMISSIONS = {
+  // Every task on every committee the holder can see.
+  VIEW_ALL:  'committees:view_all_tasks',
+  // New task on a committee the holder can see.
+  CREATE:    'committees:create_tasks',
+  // Reassign, decide requests, Unassigned, and a departed creator's tasks.
+  MANAGE:    'committees:manage_tasks',
+  // Every task on committees owned by the holder's own unit and its sub-units.
+  VIEW_UNIT: 'committees:view_unit_tasks',
+} as const;
+
 export const NOTIFICATIONS_PERMISSIONS = {
   VIEW:   'notifications:view',
   MANAGE: 'notifications:manage',
@@ -244,4 +270,10 @@ export const PERMISSIONS_NOT_YET_CHECKED: readonly string[] = [
   KPI_PERMISSIONS.VERIFY,
   KPI_PERMISSIONS.MANAGE,
   KPI_PERMISSIONS.MANAGE_SYSTEM,
+  // ACC-244 PR 1 — seeded and granted ahead of the code that reads them (PR 2),
+  // which removes these four lines in the same change.
+  COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL,
+  COMMITTEE_TASKS_PERMISSIONS.CREATE,
+  COMMITTEE_TASKS_PERMISSIONS.MANAGE,
+  COMMITTEE_TASKS_PERMISSIONS.VIEW_UNIT,
 ];
