@@ -171,7 +171,7 @@ function fixture(): Db {
       person('p1', 'u3', STAFF_POS),
       person('p2', 'u3', STAFF_POS),
       person('p3', 'u3', TECH_POS),
-      person('gone', 'u3', STAFF_POS, { status: 'DEACTIVATED' }),
+      person('gone', 'u3', STAFF_POS, { status: 'INACTIVE' }),
       person('u0-head', 'u0', HEAD_POS),
       person('old-head', 'u2', { ...HEAD_POS, isActive: false }),
       // B's people in A's unit ids.
