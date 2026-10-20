@@ -4092,6 +4092,14 @@ and the build's departures: `backend/Plans/step-238-committee-changes.md` §5,
 - **A COMMITTEE VOTE COUNTS AGAINST THE QUORUM SAVED WHEN ITS STAGE WAS
   ENTERED** (`WorkflowInstanceStage.quorumCount`). An entry with none (made
   before ACC-239) reads the live quorum. 0 open entries were affected.
+- **EVERY STAGE RULE IS ONE MAP KEYED BY STAGE KEY**
+  (`committees/change-requests/change-request-policy.ts`): what each request
+  stage allows, which stages are open, what each committee stage still allows
+  (the Dissolution Pending and Dissolved limits), and each move's destination.
+  The service and the response's `actions` flags ask it and name no stage.
+  The committee header's rule (Edit only in Formation) is the same shape on the
+  screens: `COMMITTEE_HEADER_POLICY` (`committee-stage.ts`). When stage
+  permissions become configuration, these maps are what is replaced.
 - **SEEDING ONE TEMPLATE USES THE BOOTSTRAP'S OWN CODE**
   (`applyWorkflowSeed()`, `workflow-seed-apply.ts`). A backfill never re-runs
   `seedDefaultWorkflows()`: that overwrites a tenant's edits to every template.

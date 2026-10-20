@@ -4233,6 +4233,20 @@ its screens are ACC-240, and the API lock on direct edits is ACC-241.
   preview for Request a change. The preview names the impact of each change,
   including how many open committee votes keep the quorum they began with
   (§2.17), and always the terms task approval will create.
+- **Every stage rule is one policy file**, `change-requests/change-request-policy.ts`:
+  `REQUEST_STAGE_POLICY` (per request stage: open, the actions it allows, and
+  whether someone other than the requester may withdraw it), and
+  `COMMITTEE_STAGE_POLICY` (per committee stage: whether a request may be
+  raised, and what an open one may still do; the Dissolution Pending and
+  Dissolved limits live here). Also there: each move's destination stage, the
+  refusal for each case, and fail-safe entries for a stage with no key. An
+  action is allowed where BOTH maps allow it. The service and every response's
+  `actions` flags ask the policy, and name no stage themselves.
+  `change-request-policy.spec.ts` pins every answer. A later workflow-engine
+  step that makes stage permissions configurable replaces these maps there and
+  only there. The committee's own header rule (Edit only in Formation) is the
+  same shape on the screens: `COMMITTEE_HEADER_POLICY` in
+  `frontend/.../committees/committee-stage.ts`. The API's half of it is ACC-241.
 - **Refusals** are `change-request-refusal.ts`, each a code a screen says in
   either language. Another organisation's request or committee is the
   identical 404 an invented id gets.

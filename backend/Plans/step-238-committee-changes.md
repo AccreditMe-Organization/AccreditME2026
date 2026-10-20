@@ -686,7 +686,8 @@ actions in the footer. The drawing's committee with its longest values. **Cap
 4. **Withdraw and Submit re-check the stage inside the engine's lock.** The engine picks the transition from the stage it reads first. Without the re-check, an approver allowed to withdraw a draft could withdraw a request submitted a moment earlier.
 5. **A notice opens the committee** (`objectType COMMITTEE`), where the request's banner will be: the bell has no route for a request yet (PR 3).
 6. **A request's committee type is not checked against the lookup**, exactly as a direct edit does not check it today.
-7. **Only the stage form says this refusal from its code**, in both languages. The editor's other screens still show the server's English sentence; PR 3 or ACC-245 can carry the code to them.
+7. **Only the stage form says this refusal from its code**, in both languages.
+8. **The stage rules moved into one policy map** (`change-request-policy.ts`, keyed by stage key), so the step that makes stage permissions configurable swaps them in one place. No endpoint changed what it allows or refuses. One `actions` flag changed to match its endpoint: `edit` used to be false whenever the committee was not Active or Suspended, while the edit endpoint refused only a dissolving committee. The flag now says what the endpoint does. That state is reachable only for a request left open while its committee stands in a stage with no key, since no seeded transition takes an Active committee back to Formation. The editor's other screens still show the server's English sentence; PR 3 or ACC-245 can carry the code to them.
 
 ### 12.3 Mutation checks (each turned `committee-change-request.db-spec.ts` red)
 
