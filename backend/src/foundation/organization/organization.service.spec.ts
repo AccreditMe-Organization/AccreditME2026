@@ -762,10 +762,9 @@ describe('OrganizationService', () => {
         expect(err).toBeInstanceOf(ConflictException);
         const body = (err as ConflictException).getResponse() as {
           message: string;
-          blockers: string[];
+          blockers: Array<{ code: string; count: number }>;
         };
-        expect(body.blockers).toHaveLength(1);
-        expect(body.blockers[0]).toMatch(/2 active user\(s\)/);
+        expect(body.blockers).toEqual([{ code: 'ACTIVE_USERS', count: 2 }]);
       }
       expect(mockPrisma.user.count).toHaveBeenCalledWith(
         expect.objectContaining({ where: { primaryOrgUnitId: 'unit-1', organizationId: ORG_A, status: 'ACTIVE' } }),
@@ -792,13 +791,39 @@ describe('OrganizationService', () => {
         expect(err).toBeInstanceOf(ConflictException);
         const body = (err as ConflictException).getResponse() as {
           message: string;
-          blockers: string[];
+          blockers: Array<{ code: string; count: number }>;
         };
         expect(body.message).toMatch(/Cannot deactivate/);
-        expect(Array.isArray(body.blockers)).toBe(true);
-        expect(body.blockers).toHaveLength(1);
-        expect(body.blockers[0]).toMatch(/3 active child unit/);
+        expect(body.blockers).toEqual([{ code: 'ACTIVE_CHILDREN', count: 3 }]);
       }
+    });
+
+    // ACC-120 slice 11 — the refusal is coded, every blocker at once, and keeps
+    // the English message for clients that read only it.
+    it('refuses with ORG_UNIT_HAS_DEPENDENCIES, every blocker coded and counted, message kept', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_UNIT);
+      mockPrisma.orgUnit.count.mockResolvedValue(3);
+      mockPrisma.user.count.mockResolvedValue(12);
+      mockPrisma.committee.count.mockResolvedValue(1);
+
+      const err = await service.deactivate('unit-1', ORG_A, 'actor-1').then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getStatus()).toBe(409);
+      expect((err as ConflictException).getResponse()).toEqual({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'ORG_UNIT_HAS_DEPENDENCIES',
+        message: 'Cannot deactivate org unit — active dependencies exist',
+        blockers: [
+          { code: 'ACTIVE_CHILDREN', count: 3 },
+          { code: 'ACTIVE_USERS', count: 12 },
+          { code: 'ACTIVE_COMMITTEES', count: 1 },
+        ],
+      });
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundException when unit does not exist', async () => {
@@ -825,10 +850,9 @@ describe('OrganizationService', () => {
         expect(err).toBeInstanceOf(ConflictException);
         const body = (err as ConflictException).getResponse() as {
           message: string;
-          blockers: string[];
+          blockers: Array<{ code: string; count: number }>;
         };
-        expect(body.blockers).toHaveLength(1);
-        expect(body.blockers[0]).toMatch(/2 active committee\(s\)/);
+        expect(body.blockers).toEqual([{ code: 'ACTIVE_COMMITTEES', count: 2 }]);
       }
       expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
     });

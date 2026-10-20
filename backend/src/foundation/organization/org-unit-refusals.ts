@@ -26,3 +26,32 @@ export class OrgUnitParentCycleRefusal extends ConflictException {
     });
   }
 }
+
+/**
+ * ACC-120 slice 11 — a unit that still has active dependencies can't be
+ * deactivated. Each blocker is a code and a count, so the screen can say each
+ * one in the reader's language and link to it (Show in tree, Show in Users).
+ * `message` stays, in English, for clients that read only it.
+ */
+export const ORG_UNIT_HAS_DEPENDENCIES = 'ORG_UNIT_HAS_DEPENDENCIES';
+
+export type OrgUnitDependencyCode = 'ACTIVE_CHILDREN' | 'ACTIVE_USERS' | 'ACTIVE_COMMITTEES';
+
+export interface OrgUnitDependencyBlocker {
+  code: OrgUnitDependencyCode;
+  count: number;
+}
+
+export class OrgUnitHasDependenciesRefusal extends ConflictException {
+  readonly code = ORG_UNIT_HAS_DEPENDENCIES;
+
+  constructor(readonly blockers: OrgUnitDependencyBlocker[]) {
+    super({
+      statusCode: 409,
+      message: 'Cannot deactivate org unit — active dependencies exist',
+      error: 'Conflict',
+      code: ORG_UNIT_HAS_DEPENDENCIES,
+      blockers,
+    });
+  }
+}
