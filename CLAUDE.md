@@ -899,7 +899,8 @@ Full visual integration builder (n8n-style) deferred to Phase 3.
 - Tasks are created two ways:
   1. Automatically when a record ENTERS a workflow stage, one task per
      stage task definition (ACC-190 — this replaced the CREATE_TASK action)
-  2. Manually by users with tasks:create permission
+  2. Manually by users holding Create tasks on the record's type
+     (`committees:create_tasks`, ACC-244)
   Every task MUST have sourceType and sourceId regardless
   of how it was created — no standalone tasks
 - Single TaskService used by all modules
@@ -1069,8 +1070,8 @@ meetings:approve_minutes
 committees:view              committees:manage          committees:approve
 committees:create            committees:edit_details    committees:add_member
 committees:remove_member     committees:change_member_role
-tasks:view                  tasks:create              tasks:reassign
-tasks:manage
+committees:view_all_tasks    committees:view_unit_tasks
+committees:create_tasks      committees:manage_tasks
 org:view                    org:manage
 users:view                  users:manage              users:invite
 roles:view                  roles:manage
@@ -1081,6 +1082,11 @@ reports:view                reports:export
 setup:view
 platform:admin              platform:impersonate
 ```
+
+The flat `tasks:view` / `tasks:create` / `tasks:reassign` / `tasks:manage`
+are RETIRED (ACC-244): task keys are per record type, read through one rule
+(see Key Architecture Decisions (ACC-244)). Older entries below that name a
+flat key describe the rule as it was.
 
 Every API endpoint decorated with @Permissions('module:action').
 PermissionGuard checks JWT permissions on every request after TenantGuard.
@@ -4114,6 +4120,46 @@ and the build's departures: `backend/Plans/step-238-committee-changes.md` §5,
   `npm run backfill:acc239-change-request-workflow` (dry run first, then
   `-- --execute`), run AFTER the deploy: the enum value must not reach the
   shared database before the code that knows it.
+
+## Key Architecture Decisions (ACC-244)
+
+Who sees a task, and the task keys per record type. Full mechanism and the API
+contract: SYSTEM-REFERENCE.md §3.19 (and §5.15.2 for the headship reads). Plan,
+Ahmad's answers (Q1–Q10) and the dry runs:
+`backend/Plans/step-244-task-permissions.md`. Briefly:
+
+- **ONE RULE, `taskVisibleSql()` (`foundation/task/task-visibility.ts`).** The
+  task page and every file path ask it of one row (`TaskAdmissionService`);
+  every list puts it in the `WHERE` before `LIMIT`. Never a second copy, and
+  never a filter after paging.
+- **A RELATIONSHIP ALWAYS COUNTS, WITHOUT THE RECORD CHECK** (Ahmad, Q1):
+  creator or whoever covers them, ever an assignee, or in the pool while it
+  waits.
+- **A KEY COUNTS ONLY ON A RECORD TYPE THE VIEWER MAY SEE, AND ONLY FOR A
+  RECORD IN THE TASK'S ORGANISATION.** View all; Manage while the task needs
+  managing (an open request, the creator gone, or nobody owns it); unit scope —
+  a head, an acting head, or View unit tasks on the holder's unit, SUB-UNITS
+  INCLUDED.
+- **TASK KEYS ARE PER RECORD TYPE, REGISTERED IN `TASK_RECORD_TYPES`**
+  (`task-record-types.ts`): the four keys, the owning-unit SQL and the
+  record-exists SQL. A type with no entry has no task keys: only relationships
+  reach its tasks (fail closed). A module with tasks adds its line there.
+- **THE FLAT `tasks:*` KEYS ARE RETIRED** — from the catalogue and the seed,
+  and from existing roles by `npm run backfill:acc244-retire-flat-task-keys`
+  (dry run first, `-- --execute` AFTER the deploy; it refuses customers, a
+  transition gated on one, or any changed count). `retired-task-keys.spec.ts`
+  fails if any non-spec source names one again.
+- **HEADSHIP IS READ FROM `unit-headship.ts`, NEVER RE-DERIVED**:
+  `headHolderWhere()`, `runningActingCoverWhere(now)`, the reverse lookups
+  (`findUnitHeadedBy`, `findUnitsCoveredBy`) and the sub-unit walk
+  (`findUnitSubtreeIds`), all scoped by organisation.
+- **`GET /tasks/views`, `view=all|unit|unassigned` and the panel's `canCreate`**
+  are the API slice 3 renders from. Until it does, today's screens read the new
+  keys with no redesign.
+- **What it changed for people:** only the three VIEWERs (Badr, Fatima,
+  Nasser), each to 0 (Q2). Every other count is identical (dry run, 20 Oct).
+- **No migration.** `GET /tasks?sourceType=` and `GET /tasks/:id` are removed
+  (no caller).
 
 ## Open / Deferred Items
 

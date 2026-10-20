@@ -1,6 +1,6 @@
 # ACC-244 — task permissions per record type, plus unit scope (plan)
 
-**Status: PLAN, answered by Ahmad on 20 Oct (§10). PR 1 built (§9); the shared headship work moved to PR 2.** Branch
+**Status: PLAN, answered by Ahmad on 20 Oct (§10). PR 1 shipped (#200, #201); PR 2 built on `feature/ACC-244-task-permissions-2` (§9, "PR 2 as built").** PR 1's branch was
 `feature/ACC-244-task-permissions`, cut from `origin/dev` at `8fa444e`.
 Every database read behind this plan was read-only (`BEGIN READ ONLY`, then
 `ROLLBACK`). Nothing was granted, revoked or written.
@@ -586,11 +586,42 @@ added blind.
    - the §1.3 frontend key swaps;
    - the old constants removed.
 
-   Then `backfill:acc244-task-permissions-revoke`, dry run first, then
-   `--execute` **after** PR 2 is deployed. It deletes the grants and catalogue
+   Then `backfill:acc244-retire-flat-task-keys` (the name the PR 2 brief
+   gave it; this plan first called it `…-task-permissions-revoke`), dry run
+   first, then `--execute` **after** PR 2 is deployed. It deletes the grants and catalogue
    rows of the four old keys, with the audit trail. Between the deploy and the
    revocation, nothing reads the old keys, so there is no access gap.
 3. **Lane A, slice 3:** one `/tasks` list with saved views, on PR 2's API.
+
+**PR 2 as built (20 Oct).** Everything in item 2 above. The contract is
+SYSTEM-REFERENCE §3.19. Where it went further than written, or found the plan
+short:
+
+- **`tasks:manage` is retired too.** The brief named three flat keys; nothing
+  reads `tasks:manage` after the switch, so it goes with them (four in all,
+  as §5 says).
+- **Every key-based clause also requires the record to exist in the task's
+  organisation** (`recordInOrgSql`). A task naming another organisation's
+  committee was listed in All tasks without it; the db-spec has that case.
+- **A Manage holder without `committees:view` is refused** (rule 1): the
+  key counts only with the record type's view permission.
+- **A pool member now sees a waiting pool task on the record panel**, as the
+  task page already admitted them.
+- **The QUALITY_OFFICERs and AUDITORs lose the All tasks link**; none holds
+  `committees:view`, so the page listed nothing for them.
+- **Two head-holder rules remain on purpose.** `task-authority.service.ts`'s
+  substantive-head check does not require `position.isActive`; the shared
+  `headHolderWhere()` does. It was kept to change no behaviour.
+- **The EXPLAIN (§3.4, §9), local Postgres, 60,000 tasks / 600 committees /
+  60 units:** every page query is index-driven (All tasks 3 ms, Unit tasks
+  8 ms, a record panel 0.4 ms). The org-wide COUNTS read the whole
+  organisation (84 ms, 96 ms), which is the right plan for a count of nearly
+  every row. `Task(organizationId, sourceType)` would not change it, since
+  every task here has the one type, so it is **not added**. The ids-first
+  sub-unit walk stays, because the panel needs its answer for one record.
+- **The dry runs on the shared database** (read-only): today's rule against
+  the new one, per user — only Badr, Fatima and Nasser change, each to 0. The
+  retire backfill: 51 grants, 47 users, 0 counts changed by the revocation.
 
 SYSTEM-REFERENCE.md (§3.12, §3.13, §5) and CLAUDE.md are updated in PR 2.
 
