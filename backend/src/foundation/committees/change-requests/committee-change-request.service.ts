@@ -7,16 +7,20 @@ import { COMMITTEES_PERMISSIONS } from '../../../common/constants/permissions';
 import { NotificationService } from '../../notification/notification.service';
 import { TaskService } from '../../task/task.service';
 import { EngineTx, WorkflowService } from '../../workflow/workflow.service';
-import {
-  CHANGE_REQUEST_COMMITTEE_STAGE_KEYS,
-  CHANGE_REQUEST_EDITABLE_KEYS,
-  CHANGE_REQUEST_STAGE_KEYS,
-  isDissolvingStageKey,
-  isOpenChangeRequestKey,
-} from '../../workflow/workflow-stage-keys';
+import { CHANGE_REQUEST_STAGE_KEYS } from '../../workflow/workflow-stage-keys';
 import { lockWorkflowInstance } from '../../task/stage-deadline';
 import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-reference-checks';
 import { ChangeRequestRefusal } from './change-request-refusal';
+import {
+  ACTION_TARGET_STAGE,
+  ChangeRequestAction,
+  assertCommitteeAllowsRaise,
+  awaitsDecision,
+  assertCommitteeStageAllows,
+  assertRequestStageAllows,
+  requestStagePolicy,
+  stagesAllow,
+} from './change-request-policy';
 import {
   ChangeRequestListQueryDto,
   CommitteeChangeValuesDto,
@@ -174,7 +178,7 @@ export class CommitteeChangeRequestService {
       // The committee's stage, under its instance's share lock: a transition
       // into Dissolution Pending in flight finishes first, or waits for this.
       const stageKey = await committeeStageKey(tx, committeeId, organizationId);
-      assertCommitteeAllowsNewRequest(stageKey);
+      assertCommitteeAllowsRaise(stageKey);
 
       // ONE OPEN REQUEST PER COMMITTEE, drafts included. The committee's row
       // lock queues two creates; the second then sees the first's request.
@@ -233,10 +237,8 @@ export class CommitteeChangeRequestService {
       // reads the stage, so a submitted request is never edited after the fact.
       await lockWorkflowInstance(tx, loaded.instanceId, organizationId);
       const stage = await instanceStageKey(tx, loaded.instanceId);
-      if (!CHANGE_REQUEST_EDITABLE_KEYS.has(stage ?? '')) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_EDITABLE');
-
-      const committeeStage = await committeeStageKey(tx, loaded.row.committeeId, organizationId);
-      if (isDissolvingStageKey(committeeStage ?? '')) throw new ChangeRequestRefusal('CHANGE_REQUEST_COMMITTEE_DISSOLVING');
+      assertRequestStageAllows(stage, 'edit');
+      assertCommitteeStageAllows(await committeeStageKey(tx, loaded.row.committeeId, organizationId), 'edit');
 
       await tx.$queryRaw`SELECT id FROM "CommitteeChangeRequest" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
       const before = await tx.committeeChangeRequest.findFirstOrThrow({ where: { id, organizationId } });
@@ -276,17 +278,14 @@ export class CommitteeChangeRequestService {
     requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
     const loaded = await this.loadRequest(id, organizationId);
     assertRequester(loaded.row, viewer);
-    if (!CHANGE_REQUEST_EDITABLE_KEYS.has(loaded.stageKey ?? '')) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_EDITABLE');
+    assertRequestStageAllows(loaded.stageKey, 'submit');
 
     let fromValues: ChangeValues = {};
-    await this.workflow.triggerSystemTransition(loaded.instanceId, 'under_review', organizationId, viewer.userId, {
+    await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.submit, organizationId, viewer.userId, {
       inTx: async (tx) => {
         // Re-read under the instance's lock: the stage the move starts from.
-        if (!CHANGE_REQUEST_EDITABLE_KEYS.has((await instanceStageKey(tx, loaded.instanceId)) ?? '')) {
-          throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_EDITABLE');
-        }
-        const committeeStage = await committeeStageKey(tx, loaded.row.committeeId, organizationId);
-        assertCommitteeAllowsOpenWork(committeeStage);
+        assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'submit');
+        assertCommitteeStageAllows(await committeeStageKey(tx, loaded.row.committeeId, organizationId), 'submit');
 
         await tx.$queryRaw`SELECT id FROM "Committee" WHERE id = ${loaded.row.committeeId} AND "organizationId" = ${organizationId} FOR SHARE`;
         const committee = (await tx.committee.findFirstOrThrow({
@@ -340,14 +339,15 @@ export class CommitteeChangeRequestService {
     const loaded = await this.loadRequest(id, organizationId);
     const own = loaded.row.requestedById === viewer.userId;
     const allowed = (stage: string | null): boolean => {
-      if (!isOpenChangeRequestKey(stage)) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_OPEN');
-      // The requester withdraws at any open stage; an approver only a draft
-      // (Returned counts as one) — one left behind by someone else.
-      return own || (hasPermission(viewer, COMMITTEES_PERMISSIONS.APPROVE) && CHANGE_REQUEST_EDITABLE_KEYS.has(stage ?? ''));
+      assertRequestStageAllows(stage, 'withdraw');
+      // The requester withdraws at any open stage; an approver only where the
+      // stage says someone else may (a draft left behind).
+      return own || (hasPermission(viewer, COMMITTEES_PERMISSIONS.APPROVE) && requestStagePolicy(stage).othersMayWithdraw);
     };
     if (!allowed(loaded.stageKey)) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_REQUESTER');
+    assertCommitteeStageAllows(await committeeStageKey(this.prisma, loaded.row.committeeId, organizationId), 'withdraw');
 
-    await this.workflow.triggerSystemTransition(loaded.instanceId, 'withdrawn', organizationId, viewer.userId, {
+    await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.withdraw, organizationId, viewer.userId, {
       outcome: 'SKIPPED',
       inTx: async (tx) => {
         if (!allowed(await instanceStageKey(tx, loaded.instanceId))) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_REQUESTER');
@@ -379,7 +379,7 @@ export class CommitteeChangeRequestService {
   }
 
   async approve(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    const loaded = await this.loadDecision(id, organizationId, viewer);
+    const loaded = await this.loadDecision(id, organizationId, viewer, 'approve');
     const changes = loaded.row.changes as ChangeValues;
     const touchesHierarchy = 'parentCommitteeId' in changes || 'reportingToCommitteeId' in changes;
 
@@ -400,15 +400,15 @@ export class CommitteeChangeRequestService {
     // Filled inside the transaction, read after it commits.
     const out: { before?: CommitteeRow; after?: CommitteeRow; task?: Awaited<ReturnType<TaskService['insertPrepared']>> } = {};
 
-    await this.workflow.triggerSystemTransition(loaded.instanceId, 'approved', organizationId, viewer.userId, {
+    await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.approve, organizationId, viewer.userId, {
       outcome: 'APPROVED',
       inTx: async (tx) => {
-        await assertUnderReviewInTx(tx, loaded.instanceId);
+        assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'approve');
 
         // The committee's instance: no committee transition moves under the
         // apply, and a committee now dissolving refuses it.
         await lockCommitteeInstance(tx, loaded.row.committeeId, organizationId);
-        assertCommitteeAllowsOpenWork(await committeeStageKey(tx, loaded.row.committeeId, organizationId));
+        assertCommitteeStageAllows(await committeeStageKey(tx, loaded.row.committeeId, organizationId), 'approve');
         if (touchesHierarchy) await lockCommitteeHierarchy(tx, organizationId);
         await tx.$queryRaw`SELECT id FROM "Committee" WHERE id = ${loaded.row.committeeId} AND "organizationId" = ${organizationId} FOR UPDATE`;
         const before = (await tx.committee.findFirstOrThrow({
@@ -476,15 +476,15 @@ export class CommitteeChangeRequestService {
   }
 
   async returnForChanges(id: string, dto: ReturnChangeRequestDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    const loaded = await this.loadDecision(id, organizationId, viewer);
+    const loaded = await this.loadDecision(id, organizationId, viewer, 'return');
     const note = dto.note.trim();
-    await this.workflow.triggerSystemTransition(loaded.instanceId, 'returned', organizationId, viewer.userId, {
+    await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.return, organizationId, viewer.userId, {
       outcome: 'REJECTED',
       comment: note,
       inTx: async (tx) => {
-        await assertUnderReviewInTx(tx, loaded.instanceId);
-        // A committee being dissolved: only reject or withdraw.
-        assertCommitteeAllowsOpenWork(await committeeStageKey(tx, loaded.row.committeeId, organizationId));
+        assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'return');
+        // The committee's stage decides whether a decision may still be made.
+        assertCommitteeStageAllows(await committeeStageKey(tx, loaded.row.committeeId, organizationId), 'return');
         await tx.committeeChangeRequest.update({
           where: { id },
           data: { returnNote: note, decidedById: viewer.userId, decidedAt: new Date() },
@@ -509,13 +509,13 @@ export class CommitteeChangeRequestService {
   }
 
   async reject(id: string, dto: RejectChangeRequestDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    const loaded = await this.loadDecision(id, organizationId, viewer, { whileDissolving: true });
+    const loaded = await this.loadDecision(id, organizationId, viewer, 'reject');
     const reason = dto.reason.trim();
-    await this.workflow.triggerSystemTransition(loaded.instanceId, 'rejected', organizationId, viewer.userId, {
+    await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.reject, organizationId, viewer.userId, {
       outcome: 'REJECTED',
       comment: reason,
       inTx: async (tx) => {
-        await assertUnderReviewInTx(tx, loaded.instanceId);
+        assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'reject');
         await tx.committeeChangeRequest.update({
           where: { id },
           data: { rejectionReason: reason, decidedById: viewer.userId, decidedAt: new Date() },
@@ -583,7 +583,7 @@ export class CommitteeChangeRequestService {
   /** The committee's open request, for its banner — or null. */
   async openSummary(committeeId: string, organizationId: string, viewer: ChangeRequestViewer): Promise<{ request: IChangeRequest | null }> {
     const page = await this.list(committeeId, { sort: 'number', dir: 'desc' }, organizationId, viewer);
-    return { request: page.items.find((r) => isOpenChangeRequestKey(r.status)) ?? null };
+    return { request: page.items.find((r) => requestStagePolicy(r.status).open) ?? null };
   }
 
   /** Every request under review that the viewer may decide: not their own. */
@@ -595,12 +595,12 @@ export class CommitteeChangeRequestService {
       orderBy: { submittedAt: 'asc' },
     });
     const stages = await requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId);
-    const waiting = rows.filter((r) => stages.get(r.id)?.key === 'under_review');
+    const waiting = rows.filter((r) => awaitsDecision(stages.get(r.id)?.key));
     const committeeStages = new Map<string, string | null>();
     for (const r of waiting) {
       if (!committeeStages.has(r.committeeId)) committeeStages.set(r.committeeId, await committeeStageKey(this.prisma, r.committeeId, organizationId));
     }
-    return waiting.map((r) => toDto(r, 'under_review', committeeStages.get(r.committeeId) ?? null, viewer));
+    return waiting.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStages.get(r.committeeId) ?? null, viewer));
   }
 
   /** What approving these changes would do — for Request a change, before anything is saved. */
@@ -659,21 +659,18 @@ export class CommitteeChangeRequestService {
     return { row, instanceId: instance.id, stageKey: stages.get(id)?.key ?? null };
   }
 
-  /** Approve, Return, Reject: committees:approve, never the requester, and only under review. */
+  /** Approve, Return, Reject: committees:approve, never the requester, and what both stages allow (the policy). */
   private async loadDecision(
     id: string,
     organizationId: string,
     viewer: ChangeRequestViewer,
-    options: { whileDissolving?: boolean } = {},
+    action: Extract<ChangeRequestAction, 'approve' | 'return' | 'reject'>,
   ): Promise<{ row: RequestRow; instanceId: string; stageKey: string | null }> {
     requirePermission(viewer, COMMITTEES_PERMISSIONS.APPROVE);
     const loaded = await this.loadRequest(id, organizationId);
     if (loaded.row.requestedById === viewer.userId) throw new ChangeRequestRefusal('CHANGE_REQUEST_OWN_DECISION');
-    if (loaded.stageKey !== 'under_review') throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_UNDER_REVIEW');
-    if (!options.whileDissolving) {
-      const committeeStage = await committeeStageKey(this.prisma, loaded.row.committeeId, organizationId);
-      assertCommitteeAllowsOpenWork(committeeStage);
-    }
+    assertRequestStageAllows(loaded.stageKey, action);
+    assertCommitteeStageAllows(await committeeStageKey(this.prisma, loaded.row.committeeId, organizationId), action);
     return loaded;
   }
 
@@ -718,17 +715,6 @@ function requirePermission(viewer: ChangeRequestViewer, permission: string): voi
 
 function assertRequester(row: { requestedById: string }, viewer: ChangeRequestViewer): void {
   if (row.requestedById !== viewer.userId) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_REQUESTER');
-}
-
-/** A new request: only an Active or Suspended committee (Ahmad, 18 Oct). */
-function assertCommitteeAllowsNewRequest(stageKey: string | null): void {
-  if (isDissolvingStageKey(stageKey ?? '')) throw new ChangeRequestRefusal('CHANGE_REQUEST_COMMITTEE_DISSOLVING');
-  if (!CHANGE_REQUEST_COMMITTEE_STAGE_KEYS.has(stageKey ?? '')) throw new ChangeRequestRefusal('CHANGE_REQUEST_STAGE_NOT_ALLOWED');
-}
-
-/** Submit, Approve, Return: a committee being dissolved allows only reject or withdraw. */
-function assertCommitteeAllowsOpenWork(stageKey: string | null): void {
-  assertCommitteeAllowsNewRequest(stageKey);
 }
 
 /**
@@ -792,10 +778,9 @@ function toDto(row: RequestRow, status: string | null, committeeStage: string | 
   const own = row.requestedById === viewer.userId;
   const approver = hasPermission(viewer, COMMITTEES_PERMISSIONS.APPROVE);
   const editor = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
-  const open = isOpenChangeRequestKey(status);
-  const editable = CHANGE_REQUEST_EDITABLE_KEYS.has(status ?? '');
-  const committeeOpen = CHANGE_REQUEST_COMMITTEE_STAGE_KEYS.has(committeeStage ?? '');
-  const deciding = approver && !own && status === 'under_review';
+  // What both stages allow (the policy); who is asking decides the rest.
+  const stage = (action: ChangeRequestAction) => stagesAllow(status, committeeStage, action);
+  const deciding = approver && !own;
   return {
     id: row.id,
     committeeId: row.committeeId,
@@ -819,12 +804,12 @@ function toDto(row: RequestRow, status: string | null, committeeStage: string | 
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     actions: {
-      edit: own && editor && editable && committeeOpen,
-      submit: own && editor && editable && committeeOpen,
-      withdraw: open && (own || (approver && editable)),
-      approve: deciding && committeeOpen,
-      return: deciding && committeeOpen,
-      reject: deciding,
+      edit: own && editor && stage('edit'),
+      submit: own && editor && stage('submit'),
+      withdraw: stage('withdraw') && (own || (approver && requestStagePolicy(status).othersMayWithdraw)),
+      approve: deciding && stage('approve'),
+      return: deciding && stage('return'),
+      reject: deciding && stage('reject'),
     },
   };
 }
@@ -868,9 +853,6 @@ async function instanceStageKey(tx: Reader, instanceId: string): Promise<string 
   return stage?.key ?? null;
 }
 
-async function assertUnderReviewInTx(tx: Reader, instanceId: string): Promise<void> {
-  if ((await instanceStageKey(tx, instanceId)) !== 'under_review') throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_UNDER_REVIEW');
-}
 
 /**
  * Each request's stage key, and whether it is open. A request whose instance
@@ -895,7 +877,7 @@ async function requestStageKeys(
   // Ascending, so the newest instance of a request is the one kept.
   for (const instance of instances) {
     const key = instance.currentStageId ? keyOf.get(instance.currentStageId) ?? null : null;
-    out.set(instance.objectId, { key, open: instance.status !== 'CANCELLED' && isOpenChangeRequestKey(key) });
+    out.set(instance.objectId, { key, open: instance.status !== 'CANCELLED' && requestStagePolicy(key).open });
   }
   return out;
 }

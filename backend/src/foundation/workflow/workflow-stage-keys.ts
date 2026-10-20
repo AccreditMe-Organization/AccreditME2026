@@ -50,23 +50,8 @@ export const CHANGE_REQUEST_STAGE_KEYS = ['draft', 'under_review', 'returned', '
 
 export type ChangeRequestStageKey = (typeof CHANGE_REQUEST_STAGE_KEYS)[number];
 
-/** A request in one of these may be edited and submitted by its requester (Returned behaves like Draft). */
-export const CHANGE_REQUEST_EDITABLE_KEYS: ReadonlySet<string> = new Set<ChangeRequestStageKey>(['draft', 'returned']);
-
-/** A request in one of these is closed: decided, or withdrawn. */
-export const CHANGE_REQUEST_CLOSED_KEYS: ReadonlySet<string> = new Set<ChangeRequestStageKey>(['approved', 'rejected', 'withdrawn']);
-
-/**
- * Whether a request is open — anything not closed, so a stage with no key
- * counts as open (fail safe: one open request per committee is never
- * bypassed by an unrecognised stage).
- */
-export function isOpenChangeRequestKey(key: string | null | undefined): boolean {
-  return !key || !CHANGE_REQUEST_CLOSED_KEYS.has(key);
-}
-
-/** The committee stages in which a change request may be raised (Ahmad, 18 Oct). */
-export const CHANGE_REQUEST_COMMITTEE_STAGE_KEYS: ReadonlySet<string> = new Set<CommitteeStageKey>(['active', 'suspended']);
+// What each request stage, and each committee stage, ALLOWS a change request
+// to do is its policy, in one place: committees/change-requests/change-request-policy.ts.
 
 /**
  * ACC-239 — templates whose SHAPE is fixed, because code runs them: tenants may
