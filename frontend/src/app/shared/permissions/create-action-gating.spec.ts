@@ -215,6 +215,10 @@ const CASES: readonly Case[] = [
     component: OrgUnitTreeComponent,
     permission: 'org:manage',
     services: [OrgUnitService],
+    // ACC-120 slice 11 PR C — the tree reads the structure, an object, not a list.
+    overrides: new Map<Type<unknown>, unknown>([
+      [OrgUnitService, { getStructure: () => of({ nodes: [], asOf: '' }), getFlat: () => of([]) }],
+    ]),
   },
   {
     page: 'user-list',
