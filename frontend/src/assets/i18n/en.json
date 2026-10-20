@@ -115,7 +115,61 @@
     "saveFailed": "Couldn't save the unit.",
     "refusal": {
       "parentCycle": "A unit can't be placed under itself or one of its own sub-units."
-    }
+    },
+    "tree": {
+      "tabsLabel": "Organization views",
+      "tabTree": "Tree",
+      "count": "{{units}} · {{levels}}",
+      "search": "Search units",
+      "searchClear": "Clear search",
+      "typeFilter": "Type",
+      "typeFilterRemove": "Remove",
+      "noType": "(No type)",
+      "showDeactivated": "Show deactivated",
+      "matchCount": "{{matches}} · shown with {{ancestors}}",
+      "expandAll": "Expand all",
+      "collapseAll": "Collapse all",
+      "colUnit": "Unit",
+      "colType": "Type",
+      "colHead": "Head",
+      "colPeople": "People",
+      "colAttention": "Attention",
+      "colActions": "Actions",
+      "noTypeCell": "No type",
+      "deactivated": "Deactivated",
+      "incoming": "+ incoming {{name}}",
+      "awayCovering": "Away · {{name}} covering",
+      "acting": "Acting",
+      "actionsFor": "Actions for {{unit}}",
+      "noMatches": "No units match.",
+      "loadFailed": "Couldn't load the organization.",
+      "menu": {
+        "headship": "Headship",
+        "headshipDetails": "Headship details",
+        "loadingHeadship": "Loading headship…",
+        "headshipFailed": "Couldn't load the headship"
+      },
+      "attention": {
+        "ORG_UNIT_WITHOUT_HEAD": "▲ No head",
+        "ORG_UNIT_WITHOUT_TYPE": "▲ No type",
+        "ACTING_HEAD_OPEN_ENDED": "▲ At risk {{date}}",
+        "named": "{{severity}}: {{condition}}"
+      }
+    },
+    "deactivateConfirm": {
+      "header": "Deactivate {{unit}}?",
+      "message": "It disappears from pickers, the chart and new assignments. Its history stays. This can't be undone here: there's no way to reactivate a unit from AccreditMe yet; it would need support.",
+      "accept": "Deactivate"
+    },
+    "blockers": {
+      "header": "{{unit}} can't be deactivated yet",
+      "sub": "Resolve these first. Nothing has changed.",
+      "close": "Close",
+      "showInTree": "Show in tree",
+      "showInUsers": "Show in Users",
+      "showInCommittees": "Show in Committees"
+    },
+    "deactivateFailed": "Couldn't deactivate the unit."
   },
   "orgUnitHead": {
     "manageHead": "Manage Head",
@@ -2076,6 +2130,36 @@
       "row": {
         "one": "{{name}}: {{count}} credit, {{percent}}",
         "other": "{{name}}: {{count}} credits, {{percent}}"
+      }
+    },
+    "organization": {
+      "units": {
+        "one": "{{count}} unit",
+        "other": "{{count}} units"
+      },
+      "levels": {
+        "one": "{{count}} level",
+        "other": "{{count}} levels"
+      },
+      "matches": {
+        "one": "{{count}} unit matches",
+        "other": "{{count}} units match"
+      },
+      "ancestors": {
+        "one": "{{count}} ancestor",
+        "other": "{{count}} ancestors"
+      },
+      "blockerChildren": {
+        "one": "active sub-unit must be deactivated first",
+        "other": "active sub-units must be deactivated first"
+      },
+      "blockerUsers": {
+        "one": "active person is assigned to this unit",
+        "other": "active people are assigned to this unit"
+      },
+      "blockerCommittees": {
+        "one": "active committee is owned by this unit",
+        "other": "active committees are owned by this unit"
       }
     },
     "orgUnit": {
