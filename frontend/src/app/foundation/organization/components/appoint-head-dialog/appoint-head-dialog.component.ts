@@ -9,6 +9,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitHeadService } from '../../services/org-unit-head.service';
 
@@ -123,8 +124,8 @@ export interface HeadshipPerson {
       #dialog
       [visible]="visible()"
       (visibleChange)="visibleChange.emit($event)"
-      [header]="'headship.appoint.title' | translate: { unit: unitName() }"
-      [context]="'headship.appoint.noHead' | translate: { unit: unitName() }"
+      [header]="'headship.appoint.title' | translate: unitParams()"
+      [context]="'headship.appoint.noHead' | translate: unitParams()"
       [content]="bodyTpl"
       [footer]="footerTpl"
       [dirty]="dirty()"
@@ -162,6 +163,9 @@ export class AppointHeadDialogComponent {
   readonly visible = input.required<boolean>();
   readonly visibleChange = output<boolean>();
   readonly saved = output<void>();
+
+  /** Both forms of the unit's name: Arabic attaches ل and elides ال (withArabicLam). */
+  readonly unitParams = computed(() => ({ unit: this.unitName(), unitWithLam: withArabicLam(this.unitName()) }));
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);

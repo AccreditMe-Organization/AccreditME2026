@@ -8,6 +8,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { IOrgPositionDto, OrgPositionService } from '../../../org-position/services/org-position.service';
+import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { UserService } from '../../../user/services/user.service';
 import { IOrgUnitHeadHolder, IOrgUnitHeadStatus, OrgUnitHeadService } from '../../services/org-unit-head.service';
 import { AppointHeadDialogComponent, HeadshipPerson } from '../appoint-head-dialog/appoint-head-dialog.component';
@@ -612,7 +613,7 @@ export class HeadshipPanelComponent implements OnInit {
     const t = (key: string, params?: Record<string, unknown>) => this.translate.instant(key, params);
     const name = this.personName(v.head?.name ?? null, 'headship.confirm.theHead');
     const unit = this.unitName();
-    let message = t('headship.confirm.vacate.message', { unit, name });
+    let message = t('headship.confirm.vacate.message', { unit, unitWithLam: withArabicLam(unit), name });
     if (this.status()?.cover) {
       message += ' ' + t('headship.confirm.vacate.coverContinues', {
         name: this.personName(this.status()!.cover!.name, 'headship.confirm.theActingHead'),
@@ -620,7 +621,7 @@ export class HeadshipPanelComponent implements OnInit {
     }
     this.confirm.ask({
       tone: 'destructive',
-      header: t('headship.confirm.vacate.header', { name, unit }),
+      header: t('headship.confirm.vacate.header', { name, unit, unitWithLam: withArabicLam(unit) }),
       message,
       acceptLabel: t('headship.confirm.vacate.accept'),
       accept: () => this.send(this.headService.vacateHead(this.orgUnitId())),
@@ -654,7 +655,7 @@ export class HeadshipPanelComponent implements OnInit {
     }
     this.confirm.ask({
       tone: 'neutral',
-      header: t('headship.confirm.startToday.header', { name: incoming, unit }),
+      header: t('headship.confirm.startToday.header', { name: incoming, unit, unitWithLam: withArabicLam(unit) }),
       message,
       acceptLabel: t('headship.confirm.startToday.accept'),
       accept: () => this.send(this.headService.completeHandoverNow(this.orgUnitId())),
@@ -694,10 +695,10 @@ export class HeadshipPanelComponent implements OnInit {
             name,
             head: this.personName(v.head?.name ?? null, 'headship.confirm.theHead'),
           })
-        : t('headship.confirm.endCover.messageVacancy', { name, unit });
+        : t('headship.confirm.endCover.messageVacancy', { name, unit, unitWithLam: withArabicLam(unit) });
     this.confirm.ask({
       tone: 'destructive',
-      header: t('headship.confirm.endCover.header', { name, unit }),
+      header: t('headship.confirm.endCover.header', { name, unit, unitWithLam: withArabicLam(unit) }),
       message,
       acceptLabel: t('headship.confirm.endCover.accept'),
       accept: () => this.send(this.headService.clearActingHead(this.orgUnitId())),

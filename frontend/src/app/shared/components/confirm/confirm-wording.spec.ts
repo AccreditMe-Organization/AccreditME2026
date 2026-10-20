@@ -162,8 +162,8 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
             accept: 'Record departure',
           }
         : {
-            header: 'تسجيل مغادرة Sara Ali لـأمراض القلب؟',
-            message: 'لن يكون لـأمراض القلب رئيس من الآن، ويفقد Sara Ali أي دور منحه إياه منصب الرئاسة. وتنتهي هذه الرئاسة اليوم في السجل.',
+            header: 'تسجيل مغادرة Sara Ali لأمراض القلب؟',
+            message: 'لن يكون لأمراض القلب رئيس من الآن، ويفقد Sara Ali أي دور منحه إياه منصب الرئاسة. وتنتهي هذه الرئاسة اليوم في السجل.',
             accept: 'تسجيل المغادرة',
           },
     );
@@ -206,7 +206,7 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
             accept: 'End cover',
           }
         : {
-            header: 'إنهاء تغطية Tariq Haddad لـأمراض القلب؟',
+            header: 'إنهاء تغطية Tariq Haddad لأمراض القلب؟',
             message:
               'تنتهي التغطية الآن، ويفقد Tariq Haddad أي دور منحته إياه. وتبقى أمراض القلب بلا رئيس ولا تغطية، فيذهب ما يخص رئيسها إلى رئيس الوحدة الأعلى منها إن وُجدت.',
             accept: 'إنهاء التغطية',
@@ -227,7 +227,7 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
             accept: 'Make head today',
           }
         : {
-            header: 'جعل Omar Saleh رئيسًا لـأمراض القلب اليوم؟',
+            header: 'جعل Omar Saleh رئيسًا لأمراض القلب اليوم؟',
             message: 'لدى Omar Saleh صلاحيات الرئاسة بالفعل. وهذا ينهي صلاحيات Sara Ali اليوم، ويجعل Omar Saleh رئيسًا منفردًا.',
             accept: 'بدء الرئاسة اليوم',
           },

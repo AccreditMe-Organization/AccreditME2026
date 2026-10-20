@@ -14,6 +14,7 @@ import { InlineCalendarComponent } from '../../../../shared/components/inline-ca
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { IOrgUnitHeadStatus, OrgUnitHeadService } from '../../services/org-unit-head.service';
 import { HeadshipPerson } from '../appoint-head-dialog/appoint-head-dialog.component';
@@ -199,7 +200,7 @@ export const SUCCESSOR_NOTE_MAX = 500;
       #dialog
       [visible]="visible()"
       (visibleChange)="visibleChange.emit($event)"
-      [header]="'headship.successor.title' | translate: { unit: unitName() }"
+      [header]="'headship.successor.title' | translate: unitParams()"
       [headerExtra]="warnTpl"
       [content]="bodyTpl"
       [footer]="footerTpl"
@@ -313,6 +314,9 @@ export class AppointSuccessorDialogComponent {
   readonly visible = input.required<boolean>();
   readonly visibleChange = output<boolean>();
   readonly saved = output<void>();
+
+  /** Both forms of the unit's name: Arabic attaches ل and elides ال (withArabicLam). */
+  readonly unitParams = computed(() => ({ unit: this.unitName(), unitWithLam: withArabicLam(this.unitName()) }));
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
