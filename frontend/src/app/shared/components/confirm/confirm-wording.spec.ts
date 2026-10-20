@@ -14,7 +14,7 @@ import { preserveDocumentLanguage } from '../../../../testing/document-language'
 import { AmConfirmOptions, AmConfirmService } from './am-confirm.service';
 import { LookupValueListComponent } from '../../../foundation/lookup/components/lookup-value-list/lookup-value-list.component';
 import { PositionListComponent } from '../../../foundation/org-position/components/position-list/position-list.component';
-import { HeadshipPanelComponent } from '../../../foundation/organization/components/headship-panel/headship-panel.component';
+import { HeadshipActionsComponent } from '../../../foundation/organization/components/headship-actions/headship-actions.component';
 import { RoleListComponent } from '../../../foundation/roles/components/role-list/role-list.component';
 import { UserStatusActionsService } from '../../../foundation/user/services/user-status-actions.service';
 import { WorkflowActionConfiguratorComponent } from '../../../foundation/workflow/components/workflow-action-configurator/workflow-action-configurator.component';
@@ -143,13 +143,14 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
     pendingHeadAccessSince: null, cover: null, scheduledCover: null, recentlyEndedCovers: [],
   };
   const holder = (id: string, name: string) => ({ id, name, positionId: 'pos', positionNameEn: 'Head', positionNameAr: null, headSince: null });
-  function headPanel(lang: Lang, status: unknown): HeadshipPanelComponent {
-    const panel = create(HeadshipPanelComponent, {
+  // ACC-120 slice 11 — the confirms moved, unchanged, from the panel into
+  // am-headship-actions, which the panel and the org tree's row menu share.
+  function headPanel(lang: Lang, status: unknown): HeadshipActionsComponent {
+    return create(HeadshipActionsComponent, {
       orgUnitId: 'u1',
       unitName: lang === 'en' ? 'Cardiology' : 'أمراض القلب',
+      status: { ...EMPTY, ...(status as object) },
     });
-    panel.status.set({ ...EMPTY, ...(status as object) } as never);
-    return panel;
   }
 
   both('#5 Vacate records the departure, naming the unit and the head', (lang) => {

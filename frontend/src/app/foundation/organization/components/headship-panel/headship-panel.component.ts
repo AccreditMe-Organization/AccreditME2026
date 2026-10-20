@@ -1,19 +1,14 @@
-import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
-import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { IOrgPositionDto, OrgPositionService } from '../../../org-position/services/org-position.service';
-import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
-import { UserService } from '../../../user/services/user.service';
 import { IOrgUnitHeadHolder, IOrgUnitHeadStatus, OrgUnitHeadService } from '../../services/org-unit-head.service';
-import { AppointHeadDialogComponent, HeadshipPerson } from '../appoint-head-dialog/appoint-head-dialog.component';
-import { AppointSuccessorDialogComponent } from '../appoint-successor-dialog/appoint-successor-dialog.component';
 import { SetActingHeadDialogComponent } from '../set-acting-head-dialog/set-acting-head-dialog.component';
+import { HeadshipActionsComponent } from '../headship-actions/headship-actions.component';
 import { HeadshipAction, deriveHeadshipState } from './headship-state';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -53,14 +48,7 @@ interface PanelRow {
 @Component({
   selector: 'am-headship-panel',
   standalone: true,
-  imports: [
-    TranslatePipe,
-    RouterLink,
-    ButtonModule,
-    AppointHeadDialogComponent,
-    AppointSuccessorDialogComponent,
-    SetActingHeadDialogComponent,
-  ],
+  imports: [TranslatePipe, RouterLink, ButtonModule, HeadshipActionsComponent],
   template: `
     <section class="am-hs" data-testid="headship-panel" [attr.data-state]="view()?.state">
       <header class="am-hs__bar">
@@ -121,10 +109,10 @@ interface PanelRow {
                   [severity]="actionSeverity(action, first && v.primary)"
                   [outlined]="actionStyle(action, first && v.primary) === 'secondary'"
                   [text]="actionStyle(action, first && v.primary) === 'danger'"
-                  [disabled]="busy() || !!blockedReason(action)"
-                  (onClick)="run(action)"
+                  [disabled]="actions().busy() || !!actions().blockedReason(action)"
+                  (onClick)="actions().run(action)"
                 />
-                @if (blockedReason(action); as reason) {
+                @if (actions().blockedReason(action); as reason) {
                   <span class="am-hs__blocked" data-testid="headship-blocked">
                     {{ reason | translate }}
                     @if (canOpenPositions()) {
@@ -137,42 +125,20 @@ interface PanelRow {
           </div>
         }
 
-        @if (actionError()) {
-          <p class="am-hs__note am-hs__note--error" role="alert">{{ actionError()! | translate }}</p>
+        @if (actions().actionError(); as error) {
+          <p class="am-hs__note am-hs__note--error" role="alert">{{ error | translate }}</p>
         }
       }
     </section>
 
-    @if (status(); as s) {
-      <am-appoint-head-dialog
-        [orgUnitId]="orgUnitId()"
-        [unitName]="unitName()"
-        [people]="people()"
-        [positions]="headPositions()"
-        [visible]="dialog() === 'appointHead'"
-        (visibleChange)="!$event && dialog.set(null)"
-        (saved)="onSaved()"
-      />
-      <am-appoint-successor-dialog
-        [orgUnitId]="orgUnitId()"
-        [unitName]="unitName()"
-        [status]="s"
-        [people]="people()"
-        [positions]="headPositions()"
-        [visible]="dialog() === 'appointSuccessor'"
-        (visibleChange)="!$event && dialog.set(null)"
-        (saved)="onSaved()"
-      />
-      <app-set-acting-head-dialog
-        [orgUnitId]="orgUnitId()"
-        [unitName]="unitName()"
-        [status]="s"
-        [people]="people()"
-        [visible]="dialog() === 'arrangeCover'"
-        (visibleChange)="!$event && dialog.set(null)"
-        (saved)="onSaved()"
-      />
-    }
+    <!-- The dialogs and confirms: one copy, shared with the org tree's row
+         menu (ACC-120 slice 11). -->
+    <am-headship-actions
+      [orgUnitId]="orgUnitId()"
+      [unitName]="unitName()"
+      [status]="status()"
+      (saved)="onSaved()"
+    />
   `,
   styles: [
     `
@@ -318,9 +284,6 @@ interface PanelRow {
 })
 export class HeadshipPanelComponent implements OnInit {
   private readonly headService = inject(OrgUnitHeadService);
-  private readonly userService = inject(UserService);
-  private readonly positionService = inject(OrgPositionService);
-  private readonly confirm = inject(AmConfirmService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly language = inject(LanguageService);
@@ -334,13 +297,9 @@ export class HeadshipPanelComponent implements OnInit {
   readonly status = signal<IOrgUnitHeadStatus | null>(null);
   readonly loading = signal(false);
   readonly loadError = signal<string | null>(null);
-  readonly actionError = signal<string | null>(null);
-  readonly busy = signal(false);
-  readonly dialog = signal<'appointHead' | 'appointSuccessor' | 'arrangeCover' | null>(null);
 
-  readonly people = signal<HeadshipPerson[]>([]);
-  readonly headPositions = signal<IOrgPositionDto[] | null>(null);
-  private readonly positionsFailed = signal(false);
+  /** The dialogs, confirms and what they need (`am-headship-actions`). */
+  readonly actions = viewChild.required(HeadshipActionsComponent);
 
   readonly canManage = computed(() => this.access.hasPermission('org:manage'));
   readonly canOpenPeople = computed(() => this.access.hasPermission('users:view'));
@@ -353,18 +312,6 @@ export class HeadshipPanelComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
-    if (!this.canManage()) return;
-    // The dialogs' choices: this unit's active people, and the organisation's
-    // head-conferring positions. Read only for a viewer who may act.
-    this.userService.listAllUsers({ status: 'ACTIVE', orgUnitId: this.orgUnitId() }).subscribe({
-      next: (users) =>
-        this.people.set(users.map((u) => ({ id: u.id, name: u.name, email: u.email, positionId: u.positionId }))),
-      error: () => this.people.set([]),
-    });
-    this.positionService.listPositions().subscribe({
-      next: (positions) => this.headPositions.set(positions.filter((p) => p.isUnitHeadPosition && p.isActive !== false)),
-      error: () => this.positionsFailed.set(true),
-    });
   }
 
   load(): void {
@@ -555,153 +502,9 @@ export class HeadshipPanelComponent implements OnInit {
     return style === 'danger' ? 'danger' : style === 'secondary' ? 'secondary' : 'primary';
   }
 
-  /**
-   * Why an offered action cannot open yet, said beside it. Only Appoint head
-   * has one: with no head-conferring position there is nothing to appoint to,
-   * so the dialog does not open and the reason stays visible.
-   */
-  blockedReason(action: HeadshipAction): string | null {
-    if (action !== 'appointHead') return null;
-    if (this.positionsFailed()) return 'headship.appoint.positionsUnavailable';
-    const positions = this.headPositions();
-    if (positions !== null && positions.length === 0) return 'headship.appoint.noPosition';
-    return null;
-  }
-
-  run(action: HeadshipAction): void {
-    this.actionError.set(null);
-    switch (action) {
-      case 'appointHead':
-      case 'appointSuccessor':
-      case 'arrangeCover':
-        this.dialog.set(action);
-        return;
-      case 'vacate':
-        return this.askVacate();
-      case 'startNewHeadToday':
-        return this.askStartToday();
-      case 'withdrawAppointment':
-        return this.askWithdraw();
-      case 'endCover':
-        return this.askEndCover();
-    }
-  }
-
+  /** After a dialog or confirm saved: read the unit again, and tell the host. */
   onSaved(): void {
-    this.dialog.set(null);
     this.load();
     this.saved.emit();
-  }
-
-  private send(request: ReturnType<OrgUnitHeadService['vacateHead']>): void {
-    this.busy.set(true);
-    request.subscribe({
-      next: () => {
-        this.busy.set(false);
-        this.load();
-        this.saved.emit();
-      },
-      error: (err: unknown) => {
-        this.busy.set(false);
-        this.actionError.set(extractErrorMessage(err, 'headship.saveFailed'));
-      },
-    });
-  }
-
-  private askVacate(): void {
-    const v = this.view()!;
-    const t = (key: string, params?: Record<string, unknown>) => this.translate.instant(key, params);
-    const name = this.personName(v.head?.name ?? null, 'headship.confirm.theHead');
-    const unit = this.unitName();
-    let message = t('headship.confirm.vacate.message', { unit, unitWithLam: withArabicLam(unit), name });
-    if (this.status()?.cover) {
-      message += ' ' + t('headship.confirm.vacate.coverContinues', {
-        name: this.personName(this.status()!.cover!.name, 'headship.confirm.theActingHead'),
-      });
-    }
-    this.confirm.ask({
-      tone: 'destructive',
-      header: t('headship.confirm.vacate.header', { name, unit, unitWithLam: withArabicLam(unit) }),
-      message,
-      acceptLabel: t('headship.confirm.vacate.accept'),
-      accept: () => this.send(this.headService.vacateHead(this.orgUnitId())),
-    });
-  }
-
-  private askStartToday(): void {
-    const v = this.view()!;
-    const s = this.status()!;
-    const t = (key: string, params?: Record<string, unknown>) => this.translate.instant(key, params);
-    const incoming = this.personName(v.incoming?.name ?? null, 'headship.confirm.theIncomingHead');
-    const outgoing = this.personName(v.head?.name ?? null, 'headship.confirm.theCurrentHead');
-    const unit = this.unitName();
-    const planned = s.headHandoverEffectiveDate;
-    const daysEarly = planned ? Math.max(0, Math.ceil((new Date(planned).getTime() - Date.now()) / DAY_MS)) : 0;
-    let message = planned
-      ? t('headship.confirm.startToday.message', {
-          incoming,
-          outgoing,
-          early: this.format.count('headship.daysBefore', daysEarly),
-          date: this.format.date(planned),
-        })
-      : t('headship.confirm.startToday.messageUndated', { incoming, outgoing });
-    // completeHandoverNow() does not touch a running cover, so it is said to
-    // continue — never that it ends (the drawing's line was not what the
-    // server does).
-    if (s.cover || s.scheduledCover) {
-      message += ' ' + t('headship.confirm.startToday.coverContinues', {
-        name: this.personName((s.cover ?? s.scheduledCover)!.name, 'headship.confirm.theActingHead'),
-      });
-    }
-    this.confirm.ask({
-      tone: 'neutral',
-      header: t('headship.confirm.startToday.header', { name: incoming, unit, unitWithLam: withArabicLam(unit) }),
-      message,
-      acceptLabel: t('headship.confirm.startToday.accept'),
-      accept: () => this.send(this.headService.completeHandoverNow(this.orgUnitId())),
-    });
-  }
-
-  private askWithdraw(): void {
-    const v = this.view()!;
-    const s = this.status()!;
-    const t = (key: string, params?: Record<string, unknown>) => this.translate.instant(key, params);
-    const incoming = this.personName(v.incoming?.name ?? null, 'headship.confirm.theIncomingHead');
-    const outgoing = this.personName(v.head?.name ?? null, 'headship.confirm.theCurrentHead');
-    const header = s.headHandoverEffectiveDate
-      ? t('headship.confirm.withdraw.header', { name: incoming, date: this.format.date(s.headHandoverEffectiveDate) })
-      : t('headship.confirm.withdraw.headerUndated', { name: incoming });
-    const message = s.pendingHeadAccessSince
-      ? t('headship.confirm.withdraw.message', { incoming, outgoing, date: this.format.date(s.pendingHeadAccessSince) })
-      : t('headship.confirm.withdraw.messageUndated', { incoming, outgoing });
-    this.confirm.ask({
-      tone: 'destructive',
-      header,
-      message,
-      acceptLabel: t('headship.confirm.withdraw.accept'),
-      rejectLabel: t('headship.confirm.withdraw.keep'),
-      accept: () => this.send(this.headService.cancelHandover(this.orgUnitId())),
-    });
-  }
-
-  private askEndCover(): void {
-    const v = this.view()!;
-    const t = (key: string, params?: Record<string, unknown>) => this.translate.instant(key, params);
-    const name = this.personName(v.cover?.name ?? null, 'headship.confirm.theActingHead');
-    const unit = this.unitName();
-    const message =
-      v.cover?.reason === 'ABSENCE'
-        ? t('headship.confirm.endCover.messageAbsence', {
-            name,
-            head: this.personName(v.head?.name ?? null, 'headship.confirm.theHead'),
-          })
-        : t('headship.confirm.endCover.messageVacancy', { name, unit, unitWithLam: withArabicLam(unit) });
-    this.confirm.ask({
-      tone: 'destructive',
-      header: t('headship.confirm.endCover.header', { name, unit, unitWithLam: withArabicLam(unit) }),
-      message,
-      acceptLabel: t('headship.confirm.endCover.accept'),
-      accept: () => this.send(this.headService.clearActingHead(this.orgUnitId())),
-    });
   }
 }
