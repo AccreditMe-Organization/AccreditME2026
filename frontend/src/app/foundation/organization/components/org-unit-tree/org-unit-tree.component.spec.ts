@@ -6,6 +6,7 @@ import { provideRouter } from '@angular/router';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { environment } from '../../../../../environments/environment';
 import { LanguageService } from '../../../../core/services/language.service';
+import { pickBilingualName } from '../../../../shared/utils/bilingual-name.util';
 import { OrgUnitDto } from '../../services/org-unit.service';
 import { OrgUnitTreeComponent } from './org-unit-tree.component';
 
@@ -29,11 +30,18 @@ describe('OrgUnitTreeComponent — head panel title (ACC-82)', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         provideTranslateService({ lang: 'en' }),
-        { provide: LanguageService, useValue: { isArabic: () => arabic } },
+        {
+          provide: LanguageService,
+          useValue: {
+            isArabic: () => arabic,
+            bilingual: (en: string, ar: string | null | undefined) => pickBilingualName(en, ar, arabic),
+          },
+        },
       ],
     });
     TestBed.inject(TranslateService).setTranslation('en', {
       orgUnitHead: { manageHead: 'Manage Head', manageHeadNamed: 'Manage Head — {{unit}}' },
+      organization: { addUnit: 'Add unit', addSubUnitTo: 'Add sub-unit to {{parent}}', editUnitNamed: 'Edit {{unit}}' },
     });
     const fixture = TestBed.createComponent(OrgUnitTreeComponent);
     fixture.detectChanges();
@@ -58,5 +66,73 @@ describe('OrgUnitTreeComponent — head panel title (ACC-82)', () => {
     tree.onManageHead(UNIT);
 
     expect(tree.headPanelHeader()).toBe('Manage Head — الأشعة');
+  });
+});
+
+// ACC-120 slice 11 — one dialog, three titles (OS L634).
+describe('OrgUnitTreeComponent — the unit dialog title (ACC-120 slice 11)', () => {
+  const PHARMACY = {
+    id: 'unit-pharmacy',
+    nameEn: 'Pharmacy',
+    nameAr: 'الصيدلية',
+    parentId: 'unit-root',
+    isActive: true,
+    children: [],
+  } as unknown as OrgUnitDto;
+
+  function create(arabic: boolean): OrgUnitTreeComponent {
+    TestBed.configureTestingModule({
+      imports: [OrgUnitTreeComponent],
+      providers: [
+        provideHttpClient(),
+        ConfirmationService,
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideTranslateService({ lang: 'en' }),
+        {
+          provide: LanguageService,
+          useValue: {
+            isArabic: () => arabic,
+            bilingual: (en: string, ar: string | null | undefined) => pickBilingualName(en, ar, arabic),
+          },
+        },
+      ],
+    });
+    TestBed.inject(TranslateService).setTranslation('en', {
+      organization: { addUnit: 'Add unit', addSubUnitTo: 'Add sub-unit to {{parent}}', editUnitNamed: 'Edit {{unit}}' },
+    });
+    const fixture = TestBed.createComponent(OrgUnitTreeComponent);
+    fixture.detectChanges();
+    TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/organization/units`).flush([PHARMACY]);
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('"Add unit" from the header', () => {
+    const tree = create(false);
+    tree.onAdd();
+    expect(tree.unitDialogHeader()).toBe('Add unit');
+  });
+
+  it('"Add sub-unit to {parent}" from a row', () => {
+    const tree = create(false);
+    tree.onAddChild(PHARMACY);
+    expect(tree.unitDialogHeader()).toBe('Add sub-unit to Pharmacy');
+    expect(tree.newUnitParentId()).toBe('unit-pharmacy');
+  });
+
+  it('"Edit {unit}", and Add after it forgets the unit', () => {
+    const tree = create(false);
+    tree.onEdit(PHARMACY);
+    expect(tree.unitDialogHeader()).toBe('Edit Pharmacy');
+    tree.onAdd();
+    expect(tree.unitDialogHeader()).toBe('Add unit');
+  });
+
+  it('names the unit in Arabic in an Arabic session', () => {
+    const tree = create(true);
+    tree.onEdit(PHARMACY);
+    expect(tree.unitDialogHeader()).toBe('Edit الصيدلية');
   });
 });
