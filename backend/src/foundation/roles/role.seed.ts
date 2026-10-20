@@ -7,6 +7,7 @@ import {
   WORKFLOWS_PERMISSIONS,
   TASKS_PERMISSIONS,
   COMMITTEES_PERMISSIONS,
+  COMMITTEE_TASKS_PERMISSIONS,
   NOTIFICATIONS_PERMISSIONS,
   MEETINGS_PERMISSIONS,
   DOCUMENTS_PERMISSIONS,
@@ -39,6 +40,12 @@ const ALL = [
   // A tenant is free to grant it to a custom role — it is an ordinary
   // permission in the catalogue, editable on the Roles screen like any other.
   ADMIN_PERMISSIONS,
+  // ACC-244 — the per-type task keys. Through this spread they reach
+  // TENANT_ADMIN (all four) and READ_ONLY_ADMIN (its view_* filter takes
+  // view_all_tasks and view_unit_tasks). VIEWER's readOnly() reads only a
+  // group's VIEW entry, and this group has none, so VIEWER gets no task-wide
+  // reach (Ahmad, 20 Oct, Q2).
+  COMMITTEE_TASKS_PERMISSIONS,
 ].flatMap((g) => Object.values(g));
 
 const readOnly = (...groups: Record<string, string>[]) =>
@@ -83,6 +90,11 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
       ...Object.values(MEETINGS_PERMISSIONS),
       ...Object.values(COMMITTEES_PERMISSIONS),
       ...Object.values(TASKS_PERMISSIONS),
+      // ACC-244 — View all, Create and Manage on committees. Not View unit
+      // tasks: beside View all it adds nothing.
+      COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL,
+      COMMITTEE_TASKS_PERMISSIONS.CREATE,
+      COMMITTEE_TASKS_PERMISSIONS.MANAGE,
       ...Object.values(KPI_PERMISSIONS),
       ...Object.values(REPORTS_PERMISSIONS),
       ORG_PERMISSIONS.VIEW,

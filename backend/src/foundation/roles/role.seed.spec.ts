@@ -4,6 +4,7 @@ import {
   AUDITS_PERMISSIONS,
   BILLING_PERMISSIONS,
   COMMITTEES_PERMISSIONS,
+  COMMITTEE_TASKS_PERMISSIONS,
   DOCUMENTS_PERMISSIONS,
   INCIDENTS_PERMISSIONS,
   KPI_PERMISSIONS,
@@ -178,6 +179,8 @@ describe('SYSTEM_ROLE_SEED — READ_ONLY_ADMIN (ACC-123)', () => {
     AUDITS_PERMISSIONS.VIEW,
     BILLING_PERMISSIONS.VIEW,
     COMMITTEES_PERMISSIONS.VIEW,
+    COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL,
+    COMMITTEE_TASKS_PERMISSIONS.VIEW_UNIT,
     DOCUMENTS_PERMISSIONS.VIEW,
     INCIDENTS_PERMISSIONS.VIEW,
     KPI_PERMISSIONS.VIEW_ALL,
@@ -202,8 +205,8 @@ describe('SYSTEM_ROLE_SEED — READ_ONLY_ADMIN (ACC-123)', () => {
     expect(SYSTEM_ROLE_SEED.some((r) => r.key === 'READ_ONLY_ADMIN')).toBe(true);
   });
 
-  it('holds exactly admin:access plus the 21 view permissions, and nothing else', () => {
-    expect(EXPECTED).toHaveLength(22);
+  it('holds exactly admin:access plus the 23 view permissions, and nothing else', () => {
+    expect(EXPECTED).toHaveLength(24);
     expect([...permissionsOf('READ_ONLY_ADMIN')].sort()).toEqual([...EXPECTED].sort());
   });
 
@@ -235,12 +238,50 @@ describe('SYSTEM_ROLE_SEED — READ_ONLY_ADMIN (ACC-123)', () => {
   });
 
   // Measured in this ticket and recorded as a test, because it is the reason the
-  // role is new rather than an extension: VIEWER is 9 short, not 1.
+  // role is new rather than an extension: VIEWER is 9 short, not 1 (11 since
+  // ACC-244, whose two committee task reads VIEWER deliberately lacks).
   it('is not reachable by adding admin:access to VIEWER', () => {
     const viewer = permissionsOf('VIEWER');
     const missing = EXPECTED.filter((p) => !viewer.includes(p));
-    expect(missing).toHaveLength(9);
+    expect(missing).toHaveLength(11);
     expect(missing).toContain(ADMIN_PERMISSIONS.ACCESS);
     expect(missing).toContain(SETUP_PERMISSIONS.VIEW);
+  });
+});
+
+// ACC-244 — which system role holds which per-type task key on committees: the
+// plan's table (backend/Plans/step-244-task-permissions.md §5.2), pinned per
+// role, EXACTLY, so a key reaching a role by a new spread is a failing test and
+// not a silent widening. VIEWER holding none is Ahmad's answer to Q2 (20 Oct):
+// it is the role the hospital fixture maps Unit Head to, and with View all it
+// opened every committee task to that head.
+describe('SYSTEM_ROLE_SEED — committee task keys (ACC-244)', () => {
+  const committeeTaskKeys = (key: string): string[] =>
+    permissionsOf(key).filter((p) => (Object.values(COMMITTEE_TASKS_PERMISSIONS) as string[]).includes(p)).sort();
+  const { VIEW_ALL, CREATE, MANAGE, VIEW_UNIT } = COMMITTEE_TASKS_PERMISSIONS;
+
+  it('are in the global permission catalog', () => {
+    const catalogue = ALL_PERMISSIONS.map((p) => `${p.module}:${p.action}`);
+    expect([VIEW_ALL, CREATE, MANAGE, VIEW_UNIT].filter((k) => !catalogue.includes(k))).toEqual([]);
+  });
+
+  it.each([
+    ['TENANT_ADMIN', [VIEW_ALL, CREATE, MANAGE, VIEW_UNIT]],
+    ['PLATFORM_ADMIN', [VIEW_ALL, CREATE, MANAGE, VIEW_UNIT]],
+    ['QUALITY_MANAGER', [VIEW_ALL, CREATE, MANAGE]],
+    ['READ_ONLY_ADMIN', [VIEW_ALL, VIEW_UNIT]],
+    ['QUALITY_OFFICER', []],
+    ['AUDITOR', []],
+    ['BASE_USER', []],
+    ['VIEWER', []],
+  ] as [string, string[]][])('%s holds exactly %j', (key, expected) => {
+    expect(committeeTaskKeys(key)).toEqual([...expected].sort());
+  });
+
+  // Every system role is in the table above: a role added later has to be placed.
+  it('names every system role', () => {
+    expect(SYSTEM_ROLE_SEED.map((r) => r.key).sort()).toEqual(
+      ['AUDITOR', 'BASE_USER', 'PLATFORM_ADMIN', 'QUALITY_MANAGER', 'QUALITY_OFFICER', 'READ_ONLY_ADMIN', 'TENANT_ADMIN', 'VIEWER'].sort(),
+    );
   });
 });

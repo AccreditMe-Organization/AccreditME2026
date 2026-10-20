@@ -81,6 +81,7 @@ describe('TaskController', () => {
     getById: jest.Mock;
     getByIdForViewer: jest.Mock;
     create: jest.Mock;
+    createForViewer: jest.Mock;
     complete: jest.Mock;
     start: jest.Mock;
     reject: jest.Mock;
@@ -157,6 +158,7 @@ describe('TaskController', () => {
       getById: jest.fn().mockResolvedValue(MOCK_TASK),
       getByIdForViewer: jest.fn().mockResolvedValue(MOCK_TASK),
       create: jest.fn().mockResolvedValue(MOCK_TASK),
+      createForViewer: jest.fn().mockResolvedValue(MOCK_TASK),
       complete: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'COMPLETED' }),
       start: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'IN_PROGRESS' }),
       reject: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'REJECTED' }),
@@ -352,11 +354,13 @@ describe('TaskController', () => {
     expect(result).toEqual(MOCK_TASK);
   });
 
-  it('create delegates to the service with tenant and actor', async () => {
+  // ACC-244 — the route takes the record-checking path, never the trusted one.
+  it('create delegates to the record-checking create, with the caller and their permissions', async () => {
     const dto = { title: 'Task', sourceType: 'DOCUMENT' as const, sourceId: 'doc-1', assigneeUserIds: ['u1'] };
-    const result = await controller.create(dto, TENANT_ID, USER_ID);
+    const result = await controller.create(dto, TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
 
-    expect(service.create).toHaveBeenCalledWith(dto, TENANT_ID, USER_ID);
+    expect(service.createForViewer).toHaveBeenCalledWith(dto, TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
+    expect(service.create).not.toHaveBeenCalled();
     expect(result).toEqual(MOCK_TASK);
   });
 

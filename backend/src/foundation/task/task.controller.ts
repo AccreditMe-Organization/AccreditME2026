@@ -447,14 +447,18 @@ export class TaskController {
     return this.taskService.reopen(id, dto, { id: userId, permissions }, tenantId);
   }
 
+  // ACC-244 — tasks:create, AND the record: it must exist in this organisation
+  // and be one the caller may see (ACC-101 clause a). PR 2 replaces tasks:create
+  // with Create tasks on the record's type, decided in the service.
   @Post()
   @Permissions(TASKS_PERMISSIONS.CREATE)
   create(
     @Body() dto: CreateTaskDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ITask> {
-    return this.taskService.create(dto, tenantId, userId);
+    return this.taskService.createForViewer(dto, tenantId, { id: userId, permissions });
   }
 
   // ACC-76 — deliberately NOT @Permissions(tasks:complete), for

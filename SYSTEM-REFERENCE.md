@@ -393,6 +393,10 @@ elsewhere.**
   from the list in the same change that starts checking it.**
   `permission.seed.ts` flattens only exports named `*_PERMISSIONS`, so the
   list is not seeded as keys.
+  **ACC-244 PR 1 adds the four committee task keys to it** (42 of 78 now):
+  seeded and granted ahead of the code that reads them, so the matrix hides
+  them and a save cannot add them until PR 2 starts checking them and takes
+  them off the list. Their sentences are already in both languages (§3.6).
 - **A workflow transition may not REQUIRE a key no role can be given**
   (ACC-120 slice 5, CC-92 F1). `WorkflowTemplateService.addTransition()`, and
   `updateTransition()` when `requiredPermission` CHANGES, refuse an unknown
@@ -2578,6 +2582,15 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 > inside the engine's transaction). `cancel()` allows an optional definition
 > task; `reopen()` checks a definition task's entry. §2.15.
 
+- **`createForViewer()`** (ACC-244) — `POST /tasks`'s path. Runs the record
+  rule first (`ObjectVisibilityService.assertCanView()`, ACC-101 clause a):
+  403 naming the permission for a record type the caller may not see,
+  decided before any read; the identical 404 for an id that is not this
+  organisation's, invented or another organisation's; 403 for a record type
+  with no visibility rule. Only then `create()`. Before ACC-244 the route
+  called `create()` directly, which accepted any `sourceId`. `create()` stays
+  the trusted path (specs, and callers acting on their own behalf), the
+  `getById()` / `getByIdForViewer()` line.
 - **`create()`** — computes `dueAt` via `computeSlaDueAt()` (3.3) unless
   an explicit `dueDate` is given (`dueDateOverridden: true` in that
   case). Filters assignees through `filterActiveUsers()` — **status
@@ -3041,7 +3054,9 @@ notification fires either (that notification path,
 ```
 tasks:view       — TaskController: getForSource, getById
                    NOT getMyTasks — self-scoped, ungated (ACC-70)
-tasks:create     — TaskController: create
+tasks:create     — TaskController: create, AND the record must exist in
+                   the organisation and be visible (createForViewer,
+                   ACC-244)
 tasks:complete   — RETIRED (ACC-162). Gated nothing once complete()
                    (ACC-76) and addEvidence() (ACC-162) became
                    self-scoped; removed from the constants, the seed
@@ -3054,6 +3069,18 @@ tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
                    role permission sets (role.seed.ts) but not checked
                    anywhere, a currently-inert permission string; no
                    longer inert as of ACC-34.
+
+committees:view_all_tasks, committees:create_tasks,
+committees:manage_tasks, committees:view_unit_tasks
+                 — ACC-244 PR 1: COMMITTEE_TASKS_PERMISSIONS, the
+                   per-type keys that replace the four tasks:* keys in
+                   PR 2. Seeded (TENANT_ADMIN and PLATFORM_ADMIN all four,
+                   QUALITY_MANAGER view all / create / manage,
+                   READ_ONLY_ADMIN the two views, VIEWER none) and
+                   granted to existing tenants by
+                   backfill:acc244-grant-task-keys. READ BY NOTHING YET,
+                   so on PERMISSIONS_NOT_YET_CHECKED (§1.4). Plan:
+                   backend/Plans/step-244-task-permissions.md.
 ```
 
 **Six endpoints here carry NO `@Permissions`, and the omission is load-bearing
