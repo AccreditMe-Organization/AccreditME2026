@@ -115,6 +115,13 @@ const GATE_PATTERN = /hasPermission|isPlatformAdmin|canWriteModule|\bcan[A-Z]\w*
 // file by hand.
 const ALLOWLIST = new Map([
   [
+    'foundation/organization/components/org-unit-tree/org-unit-tree.component.ts#pi-crown',
+    'Opens the unit\'s Headship panel (ACC-133), which is a READ for every viewer of ' +
+      'the page: GET /organization/units/:id/head is org:view. Every write inside the ' +
+      'panel is gated by org:manage, and a viewer without it sees the panel and no ' +
+      'actions. Titled "Headship" for them, "Manage head" for org:manage.',
+  ],
+  [
     'shared/components/edit-dialog/edit-dialog.component.ts#pi-times',
     'The dialog\'s own ✕. Closing a dialog changes nothing; it is the one exit ' +
       'path that must always be available (ACC-96 — every close path asks the ' +
