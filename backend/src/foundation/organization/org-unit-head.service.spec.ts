@@ -119,6 +119,7 @@ describe('OrgUnitHeadService', () => {
           id: true,
           name: true,
           positionId: true,
+          primaryOrgUnitId: true,
           position: { select: { nameEn: true, nameAr: true } },
         },
       });
@@ -449,7 +450,13 @@ describe('OrgUnitHeadService', () => {
     itEnforcesTenantIsolation('getHeadStatus: the cover in force (findRunningActingCover)', async () => {
       covers.push(cv({ organizationId: ORG_B, validFrom: day('2026-10-01') }));
       expect((await service.getHeadStatus(UNIT_1, ORG_A)).cover).toBeNull();
-      for (const [args] of mockPrisma.orgUnitHeadAssignment.findFirst.mock.calls) {
+      // ACC-120 slice 11 — the cover in force is read by findMany now (the
+      // batched read, for one unit). Non-vacuous: the call must exist.
+      const runningCalls = mockPrisma.orgUnitHeadAssignment.findMany.mock.calls.filter(
+        ([args]) => (args as { where: { validFrom?: { lte?: Date } } }).where.validFrom?.lte !== undefined,
+      );
+      expect(runningCalls.length).toBeGreaterThan(0);
+      for (const [args] of runningCalls) {
         expect((args as { where: Where }).where).toEqual(expect.objectContaining({ organizationId: ORG_A, orgUnitId: UNIT_1 }));
       }
     });
