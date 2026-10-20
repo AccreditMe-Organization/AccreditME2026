@@ -15,6 +15,7 @@ import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { ITaskSlaSettings } from '../tenant/interfaces/tenant.interface';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { useFixedClock } from '../../common/testing/fixed-clock';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -359,8 +360,14 @@ describe('TaskService', () => {
     });
 
     it('checks the claim against THIS person, THIS organisation, this feature, a successful call, in the last 24 hours', async () => {
-      const before = Date.now();
-      await service.create({ ...DTO, aiDraft: CLAIM }, ORG_A, ACTOR);
+      // ACC-248 — a fixed clock, so the window is exact however slow the run.
+      const NOW = new Date('2026-10-20T09:00:00.000Z');
+      useFixedClock(NOW);
+      try {
+        await service.create({ ...DTO, aiDraft: CLAIM }, ORG_A, ACTOR);
+      } finally {
+        jest.useRealTimers();
+      }
 
       const { where, select } = (mockPrisma.aiInteractionLog.findFirst.mock.calls[0] as [{ where: Record<string, unknown>; select: unknown }])[0];
       expect(where).toEqual({
@@ -372,8 +379,7 @@ describe('TaskService', () => {
         createdAt: { gte: expect.any(Date) },
       });
       const since = (where['createdAt'] as { gte: Date }).gte.getTime();
-      expect(before - since).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 5);
-      expect(before - since).toBeLessThan(24 * 60 * 60 * 1000 + 5000);
+      expect(since).toBe(NOW.getTime() - 24 * 60 * 60 * 1000);
       expect(select).toEqual({ id: true });
     });
 
