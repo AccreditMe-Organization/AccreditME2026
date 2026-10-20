@@ -9,7 +9,11 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { IOrgUnit, IOrgUnitType } from './interfaces/org-unit.interface';
 import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
-import { OrgUnitParentCycleRefusal } from './org-unit-refusals';
+import {
+  OrgUnitDependencyBlocker,
+  OrgUnitHasDependenciesRefusal,
+  OrgUnitParentCycleRefusal,
+} from './org-unit-refusals';
 import { ORG_UNIT_TYPE_CATEGORY, buildOrgUnitTypeResolver } from './org-unit-type-resolver';
 import { headHolderWhere } from './unit-headship';
 
@@ -520,21 +524,21 @@ export class OrganizationService {
     // Idempotent — already inactive
     if (!unit.isActive) return this.toInterface(unit, await buildOrgUnitTypeResolver(this.prisma, organizationId));
 
-    const blockers: string[] = [];
+    const blockers: OrgUnitDependencyBlocker[] = [];
 
     // Check active child org units (available now — same module)
     const activeChildren = await this.prisma.orgUnit.count({
       where: { parentId: id, organizationId, isActive: true },
     });
     if (activeChildren > 0) {
-      blockers.push(`${activeChildren} active child unit(s) must be deactivated first`);
+      blockers.push({ code: 'ACTIVE_CHILDREN', count: activeChildren });
     }
 
     // Users shipped at ACC-12 — this blocker is no longer deferred.
     const activeUsers = await this.prisma.user.count({
       where: { primaryOrgUnitId: id, organizationId, status: 'ACTIVE' },
     });
-    if (activeUsers > 0) blockers.push(`${activeUsers} active user(s) are assigned to this unit`);
+    if (activeUsers > 0) blockers.push({ code: 'ACTIVE_USERS', count: activeUsers });
 
     // ACC-135 — ships with the relation that made it possible, not after it.
     //
@@ -546,7 +550,7 @@ export class OrganizationService {
       where: { orgUnitId: id, organizationId, isActive: true },
     });
     if (activeCommittees > 0) {
-      blockers.push(`${activeCommittees} active committee(s) are owned by this unit`);
+      blockers.push({ code: 'ACTIVE_COMMITTEES', count: activeCommittees });
     }
 
     // TODO(Step 17 — Documents): check for active documents owned by this org unit
@@ -567,12 +571,9 @@ export class OrganizationService {
     // });
     // if (activeWorkflows > 0) blockers.push(`${activeWorkflows} active workflow instance(s) are running in this unit`);
 
-    if (blockers.length > 0) {
-      throw new ConflictException({
-        message: 'Cannot deactivate org unit — active dependencies exist',
-        blockers,
-      });
-    }
+    // ACC-120 slice 11 — coded blockers (ORG_UNIT_HAS_DEPENDENCIES), with the
+    // English message kept for clients that read only it.
+    if (blockers.length > 0) throw new OrgUnitHasDependenciesRefusal(blockers);
 
     const before = this.toInterface(unit);
 
