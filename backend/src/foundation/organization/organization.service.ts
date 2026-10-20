@@ -9,6 +9,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { IOrgUnit, IOrgUnitType } from './interfaces/org-unit.interface';
 import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
+import { OrgUnitParentCycleRefusal } from './org-unit-refusals';
 
 // ACC-137 — the lookup category a unit's type comes from. Seeded as a SYSTEM
 // category (organizationId null) and extensible, so a tenant may add its own
@@ -424,7 +425,38 @@ export class OrganizationService {
       after: this.toInterface(unit) as unknown as Record<string, unknown>,
     });
 
-    return this.toInterface(unit);
+    // ACC-120 slice 11 — resolved like the GETs, so the dialog's caller gets the
+    // type it just chose rather than null.
+    return this.toInterface(unit, await this.buildTypeResolver(organizationId));
+  }
+
+  /**
+   * ACC-120 slice 11 — refuses a parent inside the unit's own subtree.
+   *
+   * Walks UP from the proposed parent's own parent: if the walk reaches the unit
+   * being moved, the proposed parent sits below it. Each step is read with the
+   * tenant's id, so another organisation's rows are never followed. The visited
+   * set stops a loop that already exists elsewhere in the data from spinning
+   * forever; such a loop does not include this unit, so it is not this write's
+   * to refuse.
+   */
+  private async assertParentOutsideOwnSubtree(
+    id: string,
+    startParentId: string | null,
+    organizationId: string,
+  ): Promise<void> {
+    const visited = new Set<string>();
+    let current = startParentId;
+    while (current) {
+      if (current === id) throw new OrgUnitParentCycleRefusal();
+      if (visited.has(current)) return;
+      visited.add(current);
+      const row: { parentId: string | null } | null = await this.prisma.orgUnit.findFirst({
+        where: { id: current, organizationId },
+        select: { parentId: true },
+      });
+      current = row?.parentId ?? null;
+    }
   }
 
   async update(
@@ -468,13 +500,14 @@ export class OrganizationService {
     // stays allowed — the exclusion below is what makes the write idempotent
     // instead of a unit being unable to re-save its own unchanged parent.
     if (dto.parentId !== undefined && dto.parentId !== null) {
-      if (dto.parentId === id) {
-        throw new ConflictException('An org unit cannot be its own parent');
-      }
+      // ACC-120 slice 11 — the unit itself, or any unit below it, is refused
+      // with one code (ORG_UNIT_PARENT_CYCLE). Self was its own message before.
+      if (dto.parentId === id) throw new OrgUnitParentCycleRefusal();
       const parent = await this.prisma.orgUnit.findFirst({
         where: { id: dto.parentId, organizationId },
       });
       if (!parent) throw new NotFoundException('Parent org unit not found');
+      await this.assertParentOutsideOwnSubtree(id, parent.parentId, organizationId);
     } else if (dto.parentId === null) {
       const root = await this.findActiveRoot(organizationId, id);
       if (root) throw this.rootAlreadyExists(root);
@@ -559,7 +592,7 @@ export class OrganizationService {
     if (!unit) throw new NotFoundException('Org unit not found');
 
     // Idempotent — already inactive
-    if (!unit.isActive) return this.toInterface(unit);
+    if (!unit.isActive) return this.toInterface(unit, await this.buildTypeResolver(organizationId));
 
     const blockers: string[] = [];
 
@@ -632,7 +665,7 @@ export class OrganizationService {
       after: this.toInterface(updated) as unknown as Record<string, unknown>,
     });
 
-    return this.toInterface(updated);
+    return this.toInterface(updated, await this.buildTypeResolver(organizationId));
   }
 
   // Used by TenantService.bootstrap() to seed the root org unit without injecting this service

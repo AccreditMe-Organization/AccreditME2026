@@ -73,7 +73,7 @@
   },
   "organization": {
     "title": "Organization Structure",
-    "addUnit": "Add Unit",
+    "addUnit": "Add unit",
     "addChildUnit": "Add Child Unit",
     "editUnit": "Edit Unit",
     "deactivate": "Deactivate",
@@ -81,21 +81,41 @@
     "nameEn": "Name (English)",
     "nameAr": "Name (Arabic)",
     "code": "Unit Code",
-    "codeHint": "Uppercase letters and numbers only. Used in document numbering.",
+    "codeHint": "Up to 10 · capitals, numbers, hyphens",
     "codeLockedHint": "This code is locked. A document number was already generated using it and cannot be changed.",
     "type": "Unit Type",
-    "parentUnit": "Parent Unit",
-    "unitType": "Unit Type",
+    "parentUnit": "Parent unit",
+    "unitType": "Type",
     "rootTypeFixed": "The root unit is the organization itself. Its type is set by the system and cannot be changed.",
-    "typeLoading": "Loading unit types...",
     "typesEmpty": "No unit types are configured. An administrator can add them under Lookups.",
     "typeLoadFailed": "Could not load unit types.",
     "typeRetired": "retired",
-    "description": "Description",
     "noUnits": "No organization units defined yet.",
     "confirmDeactivate": "Deactivate this unit? Active children must be deactivated first.",
     "codeInUse": "This code is already in use in your organization.",
-    "unitInactive": "This unit is inactive"
+    "unitInactive": "This unit is inactive",
+    "addSubUnit": "Add sub-unit",
+    "addSubUnitTo": "Add sub-unit to {{parent}}",
+    "editUnitNamed": "Edit {{unit}}",
+    "nameEnShort": "Name · English",
+    "nameArShort": "Name · Arabic",
+    "codeShort": "Code",
+    "codePatternError": "Only A–Z, 0–9 and -",
+    "codeTooLong": "Up to 10 characters",
+    "unitTypePlaceholder": "Choose a type",
+    "parentPlaceholder": "Choose the unit this one sits under",
+    "parentRootText": "None — this is the organisation itself",
+    "parentHintEdit": "A unit's own sub-units can't be chosen.",
+    "parentUnavailableSelf": "this is the unit you're editing",
+    "parentUnavailableDescendant": "it's one of this unit's own sub-units",
+    "movesAlone": "Moves {{unit}}",
+    "descriptionOptional": "Description · optional",
+    "descriptionPlaceholder": "What this unit is responsible for",
+    "loadUnitsFailed": "Couldn't load the units.",
+    "saveFailed": "Couldn't save the unit.",
+    "refusal": {
+      "parentCycle": "A unit can't be placed under itself or one of its own sub-units."
+    }
   },
   "orgUnitHead": {
     "manageHead": "Manage Head",
@@ -2048,6 +2068,12 @@
       "row": {
         "one": "{{name}}: {{count}} credit, {{percent}}",
         "other": "{{name}}: {{count}} credits, {{percent}}"
+      }
+    },
+    "orgUnit": {
+      "movesWith": {
+        "one": "Moves {{unit}} and its {{count}} sub-unit",
+        "other": "Moves {{unit}} and its {{count}} sub-units"
       }
     }
   },

@@ -103,6 +103,35 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
            (23px of the 39 non-control pixels) and it costs nothing, because a
            slot reserved for a message that cannot happen is pure whitespace. -->
       @if (message() === 'reserved') {
+      @if (counter(); as c) {
+      <!-- ACC-120 slice 11 — a character counter at the end of the message slot,
+           beside the hint or the error (OS L385-390). Opt-in: a field without
+           [counter] renders exactly the markup below. aria-hidden, because a
+           count announced on every keystroke is noise; the limit itself belongs
+           in the hint, which stays in aria-describedby. -->
+      <p
+        class="am-field__message am-field__message--counted"
+        [class.am-field__message--error]="showError()"
+        [id]="messageId"
+        [attr.role]="showError() ? 'alert' : null"
+      >
+        <span class="am-field__message-text" [class.sr-only]="hintVisuallyHidden() && !showError()">
+          @if (showError()) {
+            {{ errorText() | translate }}
+          } @else {
+            {{ hint() }}
+          }
+        </span>
+        <span
+          class="am-field__counter"
+          [class.am-field__counter--warn]="c.warnFrom !== undefined && c.value >= c.warnFrom"
+          dir="ltr"
+          aria-hidden="true"
+          data-testid="field-counter"
+          >{{ c.value }} / {{ c.max }}</span
+        >
+      </p>
+      } @else {
       <p
         class="am-field__message"
         [class.am-field__message--error]="showError()"
@@ -115,6 +144,7 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
           {{ hint() }}
         }
       </p>
+      }
       }
     </div>
   `,
@@ -264,6 +294,27 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
         color: var(--am-danger-ink);
         font-weight: 500;
       }
+
+      /* ACC-120 slice 11 — hint (or error) at the start, the count at the end. */
+      .am-field__message--counted {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--am-space-8);
+      }
+      .am-field__message-text {
+        min-inline-size: 0;
+      }
+      .am-field__counter {
+        flex: none;
+        margin-inline-start: auto;
+        font-variant-numeric: tabular-nums;
+        color: var(--am-ink-500);
+        font-weight: 400;
+      }
+      .am-field__counter--warn {
+        color: var(--am-warning-ink);
+        font-weight: 600;
+      }
     `,
   ],
 })
@@ -281,6 +332,23 @@ export class FieldComponent {
 
   /** Helper text. Replaced by the error message while one is showing. */
   readonly hint = input<string>('');
+
+  /**
+   * ACC-120 slice 11 — an optional character counter, "value / max", at the end
+   * of the message slot. warnFrom turns it amber from that count. Absent means
+   * no counter and the slot is unchanged.
+   */
+  readonly counter = input<{ value: number; max: number; warnFrom?: number } | null>(null);
+
+  /**
+   * ACC-120 slice 11 — with a counter, the hint is read but not drawn. For a
+   * half-width column on a phone, where the hint beside its counter wraps to a
+   * second line and pushes a dialog body over its cap. The hint stays in the
+   * DOM, in the message the control's aria-describedby names, so a screen
+   * reader still hears it; an error is always drawn. Opt-in, and only with a
+   * counter: without one the field has nothing else on its message line.
+   */
+  readonly hintVisuallyHidden = input(false);
 
   /** Renders the value as text, with no control and no box. */
   readonly readonly = input(false);

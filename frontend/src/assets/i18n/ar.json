@@ -81,21 +81,41 @@
     "nameEn": "الاسم (بالإنجليزية)",
     "nameAr": "الاسم (بالعربية)",
     "code": "رمز الوحدة",
-    "codeHint": "أحرف كبيرة وأرقام فقط. يُستخدم في ترقيم الوثائق.",
+    "codeHint": "حتى 10 · أحرف كبيرة وأرقام وشرطات",
     "codeLockedHint": "هذا الرمز مقفل. تم إنشاء رقم وثيقة باستخدامه ولا يمكن تغييره.",
     "type": "نوع الوحدة",
     "parentUnit": "الوحدة الأم",
-    "unitType": "نوع الوحدة",
+    "unitType": "النوع",
     "rootTypeFixed": "الوحدة الجذرية هي المنشأة نفسها، ونوعها يُحدّده النظام ولا يمكن تغييره.",
-    "typeLoading": "جارٍ تحميل أنواع الوحدات...",
     "typesEmpty": "لا توجد أنواع وحدات مُعرّفة. يمكن للمسؤول إضافتها من القوائم المرجعية.",
     "typeLoadFailed": "تعذّر تحميل أنواع الوحدات.",
     "typeRetired": "متقاعد",
-    "description": "الوصف",
     "noUnits": "لم يتم تحديد وحدات تنظيمية بعد.",
     "confirmDeactivate": "هل تريد إلغاء تفعيل هذه الوحدة؟ يجب إلغاء تفعيل الوحدات الفرعية النشطة أولاً.",
     "codeInUse": "هذا الرمز مستخدم بالفعل في منظمتك.",
-    "unitInactive": "هذه الوحدة غير نشطة"
+    "unitInactive": "هذه الوحدة غير نشطة",
+    "addSubUnit": "إضافة وحدة فرعية",
+    "addSubUnitTo": "إضافة وحدة فرعية إلى {{parent}}",
+    "editUnitNamed": "تعديل {{unit}}",
+    "nameEnShort": "الاسم · بالإنجليزية",
+    "nameArShort": "الاسم · بالعربية",
+    "codeShort": "الرمز",
+    "codePatternError": "فقط \u2066A–Z\u2069 و\u20660–9\u2069 و-",
+    "codeTooLong": "10 أحرف كحد أقصى",
+    "unitTypePlaceholder": "اختر نوعًا",
+    "parentPlaceholder": "اختر الوحدة التي تتبعها هذه الوحدة",
+    "parentRootText": "لا يوجد — هذه هي المنشأة نفسها",
+    "parentHintEdit": "لا يمكن اختيار إحدى الوحدات الفرعية لهذه الوحدة.",
+    "parentUnavailableSelf": "هذه هي الوحدة التي تعدّلها",
+    "parentUnavailableDescendant": "إنها إحدى الوحدات الفرعية لهذه الوحدة",
+    "movesAlone": "ينقل {{unit}}",
+    "descriptionOptional": "الوصف · اختياري",
+    "descriptionPlaceholder": "ما تتولاه هذه الوحدة",
+    "loadUnitsFailed": "تعذّر تحميل الوحدات.",
+    "saveFailed": "تعذّر حفظ الوحدة.",
+    "refusal": {
+      "parentCycle": "لا يمكن وضع وحدة تحت نفسها أو تحت إحدى وحداتها الفرعية."
+    }
   },
   "orgUnitHead": {
     "manageHead": "إدارة الرئاسة",
@@ -2304,6 +2324,16 @@
         "few": "{{name}}: {{count}} أرصدة، {{percent}}",
         "many": "{{name}}: {{count}} رصيدًا، {{percent}}",
         "other": "{{name}}: {{count}} رصيد، {{percent}}"
+      }
+    },
+    "orgUnit": {
+      "movesWith": {
+        "zero": "ينقل {{unit}} دون وحدات فرعية",
+        "one": "ينقل {{unit}} ووحدتها الفرعية",
+        "two": "ينقل {{unit}} ووحدتيها الفرعيتين",
+        "few": "ينقل {{unit}} و{{count}} وحدات فرعية تابعة لها",
+        "many": "ينقل {{unit}} و{{count}} وحدة فرعية تابعة لها",
+        "other": "ينقل {{unit}} و{{count}} وحدة فرعية تابعة لها"
       }
     }
   },

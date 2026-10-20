@@ -1,236 +1,355 @@
-import { Component, OnInit, inject, input, output, signal, computed } from '@angular/core';
+import { Component, DestroyRef, ElementRef, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
-import { InputNumberModule } from 'primeng/inputnumber';
-import { TooltipModule } from 'primeng/tooltip';
 import {
   OrgUnitService,
   OrgUnitDto,
-  CreateOrgUnitDto,
   UpdateOrgUnitDto,
-  buildOrgUnitCascadeOptions,
+  buildOrgUnitParentOptions,
+  countDescendants,
 } from '../../services/org-unit.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-// ACC-149 - the unit's type is an org_unit_type lookup value (ACC-137). The
-// form had no such field while the API required one, so every Add Unit returned
-// 400. Read through LookupService rather than a local map: ACC-137's read-path
-// contract is that a label is labelOverride ?? label, and a client-side
-// translation table is exactly what shows a tenant the wrong word.
+// ACC-149 - the unit's type is an org_unit_type lookup value (ACC-137). Read
+// through LookupService rather than a local map: ACC-137's read-path contract is
+// that a label is labelOverride ?? label, and a client-side translation table is
+// exactly what shows a tenant the wrong word.
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
-import { TranslateService } from '@ngx-translate/core';
-// ACC-42 Phase 6 — OverlaySelectComponent replaces p-cascadeSelect on this
-// field: the first hierarchy-mode consumer (optionGroupLabel/
-// optionGroupChildren mirror p-cascadeSelect's own input names exactly, see
-// overlay-select.component.ts §1.2). Real-data checkpoint (plan §5.4)
-// applies here specifically — verified against this tenant's live
-// buildOrgUnitCascadeOptions() output, not a fixture.
+import { FormatService } from '../../../../core/formatting';
+// ACC-42 Phase 6 — OverlaySelectComponent in hierarchy mode for the parent.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
-import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
+import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { SHELL_PHONE_BELOW_PX } from '../../../../layout/app-shell/app-shell.component';
 
+/**
+ * The server's code rule, copied CHARACTER FOR CHARACTER from
+ * create-org-unit.dto.ts (`@MaxLength(10)`, `@Matches(/^[A-Z0-9-]+$/)`), so the
+ * form and the API agree on every code. ACC-120 slice 11: the form used to allow
+ * 20 characters and an underscore, both of which the server refused with a 400.
+ */
+export const ORG_UNIT_CODE_MAX = 10;
+export const ORG_UNIT_CODE_PATTERN = /^[A-Z0-9-]+$/;
+export const ORG_UNIT_DESCRIPTION_MAX = 1000;
+/** The description counter turns amber from here (OS L633). */
+export const ORG_UNIT_DESCRIPTION_WARN = 900;
+
+/**
+ * Add / Edit unit (ACC-120 slice 11, OS L377-394, L631-638).
+ *
+ * One form for three entry points: Add unit (no parent chosen yet), Add sub-unit
+ * (the parent prefilled and changeable) and Edit. The host owns the dialog shell
+ * and its footer; this form tells it what it needs through `ready` (itself) and
+ * `dirtyChange`, as position-form does.
+ *
+ * Six fields in four rows, no steps: two name fields side by side, code beside
+ * type, the parent, the description. Compact density, declared by the host:
+ * artboard 13 makes a dialog compact from five field blocks, and the drawing's
+ * "four blocks, standard density" counted rows (check:dialog-density counts
+ * fields). org-unit-form.layout.spec measures the body in both languages at
+ * 1280 and on a phone, against the 420 cap with 10px spare.
+ *
+ * Left out on purpose:
+ * - sortOrder. A number field would ask the reader to know where every sibling
+ *   sits; ordering arrives with ACC-138 (append on create, Move up / down).
+ *   Until then a new unit sorts by name, and the dialog promises nothing about
+ *   "last".
+ * - the locked-code state as a tested state. Nothing sets isCodeLocked today
+ *   (OS L634), so it renders read-only if it ever is set, and nothing tests it.
+ */
 @Component({
   selector: 'app-org-unit-form',
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    NgTemplateOutlet,
     TranslatePipe,
     ButtonModule,
     InputTextModule,
     TextareaModule,
     OverlaySelectComponent,
-    InputNumberModule,
-    InputNumberLatinDigits,
-    TooltipModule,
+    FieldComponent,
   ],
   template: `
     @if (loadError()) {
-      <p class="text-red-500 mb-4">{{ loadError() | translate }}</p>
+      <p class="am-ouf__error" role="alert">{{ loadError() | translate }}</p>
     }
 
-    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
-
-      <div class="flex flex-col gap-1">
-        <label for="nameEn" class="font-medium text-sm">
-          {{ 'organization.nameEn' | translate }} *
-        </label>
-        <input
-          id="nameEn"
-          pInputText
-          formControlName="nameEn"
-          (input)="onNameEnInput()"
-        />
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label for="nameAr" class="font-medium text-sm">
-          {{ 'organization.nameAr' | translate }}
-        </label>
-        <input id="nameAr" pInputText formControlName="nameAr" dir="rtl" />
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label for="code" class="font-medium text-sm flex items-center gap-2">
-          {{ 'organization.code' | translate }} *
-          @if (codeLocked()) {
-            <span
-              class="pi pi-lock text-amber-500"
-              [pTooltip]="'organization.codeLockedHint' | translate"
-              tooltipPosition="top"
-            ></span>
-          }
-        </label>
-        <input
-          id="code"
-          pInputText
-          formControlName="code"
-          class="font-mono"
-          (input)="onCodeManualEdit()"
-        />
-        <small class="text-[var(--am-text-secondary)]">{{ 'organization.codeHint' | translate }}</small>
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label class="font-medium text-sm">
-          {{ 'organization.parentUnit' | translate }}
-        </label>
-        <app-overlay-select
-          formControlName="parentId"
-          [options]="cascadeOptions()"
-          optionLabel="label"
-          optionValue="value"
-          optionGroupLabel="label"
-          optionGroupChildren="items"
-          [placeholder]="'organization.parentUnit' | translate"
-        />
-      </div>
-
-      <!-- ACC-149 - the unit's type. Required by the API since ACC-137; this
-           form never had the field, so every Add Unit returned 400. -->
-      <div class="flex flex-col gap-1">
-        <label class="font-medium text-sm">
-          {{ 'organization.unitType' | translate }} *
-        </label>
-
-        @if (isRootUnit()) {
-          <!-- ACC-141 rule 2 - the root's type is system-set and has no edit
-               path. Shown, not offered: a disabled picker would still imply a
-               choice exists. -->
-          <p class="text-sm">{{ rootTypeLabel() }}</p>
-          <p class="text-xs text-[var(--am-text-secondary)]">
-            {{ 'organization.rootTypeFixed' | translate }}
-          </p>
-        } @else if (typesLoading()) {
-          <p class="text-sm text-[var(--am-text-secondary)]">
-            {{ 'organization.typeLoading' | translate }}
-          </p>
-        } @else if (typesError()) {
-          <!-- Error, with a retry that re-requests ONLY this list. Everything
-               already typed into the form survives, because losing a
-               half-filled form to a failed side request is its own defect. -->
-          <div class="flex items-center gap-2">
-            <p class="text-sm text-red-500">{{ typesError() }}</p>
-            <p-button
-              size="small"
-              severity="secondary"
-              [label]="'common.retry' | translate"
-              (onClick)="retryTypes()"
-            />
-          </div>
-        } @else if (typeOptions().length === 0) {
-          <!-- Empty states the CAUSE. An admin cannot add a lookup value from
-               this form, so "no types" without a reason is a dead end. -->
-          <p class="text-sm text-[var(--am-text-secondary)]">
-            {{ 'organization.typesEmpty' | translate }}
-          </p>
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="am-ouf" novalidate>
+      <!-- A name in two languages, as one pair. In the Arabic interface the
+           Arabic field comes first: rendered first, so the Tab order matches. -->
+      <div class="am-ouf__pair" data-testid="org-unit-names">
+        @if (isArabic()) {
+          <ng-container *ngTemplateOutlet="nameArTpl" />
+          <ng-container *ngTemplateOutlet="nameEnTpl" />
         } @else {
-          <app-overlay-select
-            formControlName="typeValueId"
-            [options]="typeOptions()"
-            optionLabel="label"
-            optionValue="value"
-            [placeholder]="'organization.unitType' | translate"
-          />
+          <ng-container *ngTemplateOutlet="nameEnTpl" />
+          <ng-container *ngTemplateOutlet="nameArTpl" />
         }
       </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="description" class="font-medium text-sm">
-          {{ 'organization.description' | translate }}
-        </label>
-        <textarea id="description" pTextarea formControlName="description" rows="3"></textarea>
+      <div class="am-ouf__pair">
+        @if (codeLocked()) {
+          <am-field
+            [label]="'organization.codeShort' | translate"
+            [readonly]="true"
+            [readonlyText]="form.controls.code.value ?? ''"
+            [hint]="'organization.codeLockedHint' | translate"
+          ></am-field>
+        } @else {
+          <am-field
+            [label]="'organization.codeShort' | translate"
+            [control]="form.controls.code"
+            inputId="org-unit-code"
+            [hint]="'organization.codeHint' | translate"
+            [counter]="{ value: codeLength(), max: codeMax }"
+            [hintVisuallyHidden]="phone()"
+            [forceShowErrors]="showErrors() || codeRuleBroken()"
+            [errorMessages]="codeErrors"
+          >
+            <!-- No native maxlength: it would drop an 11th character without a
+                 word. The character goes in and the rule shows at once. -->
+            <input
+              pInputText
+              id="org-unit-code"
+              class="w-full am-ouf__code"
+              [class.am-ouf__code--rtl]="isArabic()"
+              dir="ltr"
+              formControlName="code"
+              autocomplete="off"
+              (input)="onCodeInput($event)"
+            />
+          </am-field>
+        }
+
+        <!-- ACC-141 rule 2: the root's type is system-set, so it is shown, not
+             offered. -->
+        @if (isRootUnit()) {
+          <am-field
+            [label]="'organization.unitType' | translate"
+            [readonly]="true"
+            [readonlyText]="rootTypeLabel()"
+            [hint]="'organization.rootTypeFixed' | translate"
+          ></am-field>
+        } @else {
+          <am-field
+            [label]="'organization.unitType' | translate"
+            [control]="form.controls.typeValueId"
+            inputId="org-unit-type"
+            [loading]="typesLoading()"
+            [hint]="typeHint()"
+            [forceShowErrors]="showErrors()"
+          >
+            @if (typesError()) {
+              <!-- A retry that re-requests ONLY this list; everything already
+                   typed survives. -->
+              <div class="am-ouf__inline-error">
+                <span>{{ typesError() }}</span>
+                <p-button size="small" severity="secondary" [text]="true" [label]="'common.retry' | translate" (onClick)="retryTypes()" />
+              </div>
+            } @else {
+              <app-overlay-select
+                formControlName="typeValueId"
+                [options]="typeOptions()"
+                optionLabel="label"
+                optionValue="value"
+                [ariaLabel]="'organization.unitType' | translate"
+                [placeholder]="'organization.unitTypePlaceholder' | translate"
+              />
+            }
+          </am-field>
+        }
       </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="sortOrder" class="font-medium text-sm">Sort Order</label>
-        <p-inputNumber id="sortOrder" formControlName="sortOrder" [min]="0" styleClass="w-full" />
-      </div>
-
-      @if (saveError()) {
-        <p class="text-red-500">{{ saveError() | translate }}</p>
+      @if (isRootUnit()) {
+        <am-field
+          [label]="'organization.parentUnit' | translate"
+          [readonly]="true"
+          [readonlyText]="'organization.parentRootText' | translate"
+        ></am-field>
+      } @else {
+        <am-field
+          [label]="'organization.parentUnit' | translate"
+          [control]="form.controls.parentId"
+          inputId="org-unit-parent"
+          [loading]="unitsLoading()"
+          [hint]="parentHint()"
+          [forceShowErrors]="showErrors()"
+        >
+          <app-overlay-select
+            formControlName="parentId"
+            [options]="parentOptions()"
+            optionLabel="label"
+            optionValue="value"
+            optionGroupLabel="label"
+            optionGroupChildren="items"
+            optionDisabled="unavailable"
+            optionDisabledReason="unavailableReason"
+            [ariaLabel]="'organization.parentUnit' | translate"
+            [placeholder]="'organization.parentPlaceholder' | translate"
+          />
+        </am-field>
       }
 
-      <div class="flex gap-3 justify-end">
-        <p-button
-          [label]="'common.cancel' | translate"
-          severity="secondary"
-          [text]="true"
-          (onClick)="cancelled.emit()"
-          [disabled]="saving()"
-        />
-        <p-button
-          type="submit"
-          [label]="'common.save' | translate"
-          [loading]="saving()"
-          [disabled]="form.invalid"
-        />
-      </div>
+      <am-field
+        [label]="'organization.descriptionOptional' | translate"
+        [control]="form.controls.description"
+        inputId="org-unit-description"
+        [counter]="{ value: descriptionLength(), max: descriptionMax, warnFrom: descriptionWarn }"
+        [forceShowErrors]="showErrors()"
+      >
+        <textarea
+          pTextarea
+          id="org-unit-description"
+          class="w-full am-ouf__description"
+          formControlName="description"
+          rows="2"
+          [attr.maxlength]="descriptionMax"
+          [placeholder]="'organization.descriptionPlaceholder' | translate"
+        ></textarea>
+      </am-field>
 
+      @if (saveError()) {
+        <p class="am-ouf__error" role="alert" data-testid="org-unit-save-error">{{ saveError() }}</p>
+      }
     </form>
+
+    <!-- Declared outside <form>, so these bind [formControl] directly: an
+         ng-template resolves directives where it is DECLARED, and
+         formControlName would find no parent group here. -->
+    <ng-template #nameEnTpl>
+      <am-field
+        [label]="'organization.nameEnShort' | translate"
+        [control]="form.controls.nameEn"
+        inputId="org-unit-name-en"
+        [forceShowErrors]="showErrors()"
+      >
+        <input pInputText id="org-unit-name-en" class="w-full" dir="ltr" [formControl]="form.controls.nameEn" (input)="onNameEnInput()" />
+      </am-field>
+    </ng-template>
+    <ng-template #nameArTpl>
+      <am-field
+        [label]="'organization.nameArShort' | translate"
+        [control]="form.controls.nameAr"
+        inputId="org-unit-name-ar"
+        [forceShowErrors]="showErrors()"
+      >
+        <input pInputText id="org-unit-name-ar" class="w-full am-ouf__arabic" dir="rtl" [formControl]="form.controls.nameAr" />
+      </am-field>
+    </ng-template>
   `,
+  styles: [
+    `
+      :host {
+        display: block;
+      }
+      .am-ouf {
+        display: flex;
+        flex-direction: column;
+        gap: var(--am-space-12);
+      }
+      /* Two fields side by side, 50/50 (OS L381-388). */
+      .am-ouf__pair {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: var(--am-space-12);
+      }
+      .am-ouf__code {
+        font-family: var(--am-font-mono);
+        text-transform: uppercase;
+      }
+      /* The code reads left to right inside a right-to-left field, so its text
+         starts where am-field draws the error's "!" (the field's inline end,
+         the left). Room is kept there, or the glyph covers the first letter.
+         Inline-start is the box's own start, and the box is always ltr. */
+      .am-ouf__code--rtl {
+        padding-inline-start: var(--am-space-24);
+      }
+      .am-ouf__description {
+        resize: vertical;
+      }
+      .am-ouf__inline-error {
+        display: flex;
+        align-items: center;
+        gap: var(--am-space-8);
+        font-size: var(--am-type-body-size);
+        color: var(--am-danger-ink);
+      }
+      .am-ouf__error {
+        margin: 0;
+        font-size: var(--am-type-body-size);
+        color: var(--am-danger-ink);
+      }
+    `,
+  ],
 })
 export class OrgUnitFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly orgUnitService = inject(OrgUnitService);
+  private readonly lookupService = inject(LookupService);
+  private readonly languageService = inject(LanguageService);
+  private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
-  // null = add mode, set = edit mode — same convention as PositionFormComponent's
-  // [position] input.
+  // null = add mode, set = edit mode.
   readonly unit = input<OrgUnitDto | null>(null);
-  // Only relevant in add mode — pre-fills parentId when adding a child unit
-  // from a specific row (replaces the old ?parentId= query param, which no
-  // longer exists now that this isn't a routed page).
+  // Add mode only: the parent chosen by the entry point ("Add sub-unit").
   readonly parentId = input<string | null>(null);
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
+  /** The host's footer drives the form through this reference. */
+  readonly ready = output<OrgUnitFormComponent>();
+  readonly dirtyChange = output<boolean>();
+
+  readonly codeMax = ORG_UNIT_CODE_MAX;
+  readonly descriptionMax = ORG_UNIT_DESCRIPTION_MAX;
+  readonly descriptionWarn = ORG_UNIT_DESCRIPTION_WARN;
+  readonly codeErrors = {
+    pattern: 'organization.codePatternError',
+    maxlength: 'organization.codeTooLong',
+  };
 
   readonly codeLocked = signal(false);
+  /**
+   * A character the server refuses was typed. The rule shows as the error at
+   * once, not on leaving the field: on a phone the hint is not drawn (ACC-120
+   * slice 11), so this is the moment the reader learns it.
+   */
+  readonly codeRuleBroken = signal(false);
+  /**
+   * The phone layout (the shell's breakpoint, SHELL_PHONE_BELOW_PX): the Code
+   * helper beside its counter wraps in a half-width column and pushes the
+   * Arabic body over the 420 cap, so it is read but not drawn.
+   */
+  readonly phone = signal(false);
   readonly codeManuallyEdited = signal(false);
   readonly saving = signal(false);
   readonly loadError = signal<string | null>(null);
   readonly saveError = signal<string | null>(null);
+  /** Set by a Save attempt on an invalid form, so every field says what's missing. */
+  readonly showErrors = signal(false);
 
   private readonly flatUnits = signal<OrgUnitDto[]>([]);
-
-  // ACC-149 - the type list has its own request, so it has its own outcome.
-  // A failure here must not read as "no types exist": an empty picker and a
-  // broken picker look identical to a user, and only one of them is worth
-  // retrying.
-  private readonly lookupService = inject(LookupService);
-  private readonly languageService = inject(LanguageService);
-  private readonly translate = inject(TranslateService);
-  private readonly typeValues = signal<LookupValueDto[]>([]);
   /**
-   * Editing the organisation's own root unit - ACC-141.
-   *
-   * Its type is system-set with NO edit path (rule 2), so the picker is replaced
-   * by read-only text. That is rule 2 rendered rather than merely enforced: the
-   * API refuses the change anyway, and offering a control that always fails is
-   * the "do not offer what will be refused" principle this project applies
-   * everywhere else.
+   * The units the parent picker lists are still on their way. Without this an
+   * Edit opened on a slow connection showed the placeholder instead of the
+   * current parent, and the picker said "No results found".
    */
+  readonly unitsLoading = signal(true);
+  private readonly typeValues = signal<LookupValueDto[]>([]);
+  readonly typesLoading = signal(true);
+  readonly typesError = signal<string | null>(null);
+
+  readonly isArabic = computed(() => this.languageService.isArabic());
+  readonly isEdit = computed(() => this.unit() !== null);
+
+  /** Editing the organisation's own root unit (ACC-141): no parent, fixed type. */
   readonly isRootUnit = computed(() => {
     const unit = this.unit();
     return unit != null && unit.parentId === null;
@@ -242,51 +361,44 @@ export class OrgUnitFormComponent implements OnInit {
     return this.languageService.bilingual(held.labelEn, held.labelAr);
   });
 
-  readonly typesLoading = signal(true);
-  readonly typesError = signal<string | null>(null);
+  readonly form = this.fb.group({
+    nameEn: ['', [Validators.required, Validators.maxLength(255)]],
+    nameAr: ['', Validators.maxLength(255)],
+    code: [
+      '',
+      [Validators.required, Validators.maxLength(ORG_UNIT_CODE_MAX), Validators.pattern(ORG_UNIT_CODE_PATTERN)],
+    ],
+    // Required: a tenant has exactly one root (ACC-134), so every other unit has
+    // a parent, and Add unit from the header starts with none chosen (OS L635).
+    // The root's control is disabled instead (see ngOnInit).
+    parentId: [null as string | null, [Validators.required]],
+    // ACC-149 - required, matching the API, on edit too.
+    typeValueId: [null as string | null, [Validators.required]],
+    description: ['', Validators.maxLength(ORG_UNIT_DESCRIPTION_MAX)],
+  });
+
+  private readonly codeValue = toSignal(this.form.controls.code.valueChanges, { initialValue: '' });
+  private readonly descriptionValue = toSignal(this.form.controls.description.valueChanges, { initialValue: '' });
+  private readonly parentValue = toSignal(this.form.controls.parentId.valueChanges, { initialValue: null });
+
+  readonly codeLength = computed(() => (this.codeValue() ?? this.form.controls.code.value ?? '').length);
+  readonly descriptionLength = computed(
+    () => (this.descriptionValue() ?? this.form.controls.description.value ?? '').length,
+  );
 
   /**
-   * The selectable types, plus whatever the unit already holds.
-   *
-   * ACC-137's contract, applied to a picker: a value the tenant has since
-   * hidden or deactivated is NOT offered as a new choice, but a unit that holds
-   * one must still show it - marked - or opening the form would silently
-   * present a different type from the one saved, and saving would change it.
-   * getValues() already drops hidden and inactive values, so the unit's own
-   * type is re-added here when the list does not contain it.
+   * The selectable types, plus whatever the unit already holds (ACC-137): a
+   * retired value the unit holds is shown, marked, so saving can't change it
+   * silently. `organization` is never offered (ACC-141).
    */
   readonly typeOptions = computed(() => {
     const options = this.typeValues()
-      // ACC-141 - `organization` is never offered. It is reserved for the root
-      // unit, which the system types at bootstrap and which has NO edit path, so
-      // no picker exists for it and there is no "is this the root" question to
-      // ask here. One filter, unconditional.
-      //
-      // THIS DOES NOT REPLACE THE API GUARD, and must not be read as doing so.
-      // Filtering a list is an affordance for a human; a client can post any
-      // value, so OrganizationService refuses `organization` on create and on
-      // update independently. Both hold.
-      //
-      // And it is a SELECTION filter only. The same values serve three
-      // questions with three different answers: selecting excludes this value,
-      // filtering the tree by type includes it (the root holds it), and
-      // resolving a label for display includes it (or every root renders blank).
-      // Same split ACC-137 settled for hidden and retired values.
       .filter((v) => v.key !== 'organization')
-      .map((v) => ({
-      label: this.labelFor(v),
-      value: v.id,
-    }));
+      .map((v) => ({ label: this.labelFor(v), value: v.id }));
     const held = this.unit()?.typeValue ?? null;
-    // ACC-141 - the re-add is for RETIRED values only, never for the excluded
-    // one. Without this guard the two rules collide: the filter removes
-    // `organization`, the re-add notices the root's own value is missing, and
-    // puts it back LABELLED RETIRED - wrong twice over, since it is neither
-    // retired nor selectable. Caught by its own test, not by reading.
     if (held && held.key !== 'organization' && !options.some((o) => o.value === held.id)) {
       options.push({
-        // ACC-160 — through bilingual(), never a bare ternary: inside a template
-        // literal a null Arabic label renders as the TEXT "null".
+        // ACC-160 — through bilingual(), never a bare ternary.
         label: `${this.languageService.bilingual(held.labelEn, held.labelAr)} (${this.translate.instant('organization.typeRetired')})`,
         value: held.id,
       });
@@ -294,28 +406,72 @@ export class OrgUnitFormComponent implements OnInit {
     return options;
   });
 
-  readonly cascadeOptions = computed(() =>
-    buildOrgUnitCascadeOptions(this.flatUnits(), this.unit()?.id ?? null, null),
+  /** The held type's retired note, or the empty states' cause. */
+  readonly typeHint = computed(() => {
+    if (!this.typesLoading() && !this.typesError() && this.typeOptions().length === 0) {
+      return this.translate.instant('organization.typesEmpty');
+    }
+    return '';
+  });
+
+  /** The whole active tree, with this unit and its descendants greyed (OS L637). */
+  readonly parentOptions = computed(() =>
+    buildOrgUnitParentOptions(
+      this.flatUnits(),
+      this.unit()?.id ?? null,
+      (u) => this.languageService.bilingual(u.nameEn, u.nameAr),
+      {
+        self: this.translate.instant('organization.parentUnavailableSelf'),
+        descendant: this.translate.instant('organization.parentUnavailableDescendant'),
+      },
+    ),
   );
 
-  readonly form = this.fb.group({
-    nameEn: ['', [Validators.required, Validators.maxLength(255)]],
-    nameAr: ['', Validators.maxLength(255)],
-    code: ['', [Validators.required, Validators.maxLength(20), Validators.pattern(/^[A-Z0-9_-]+$/)]],
-    parentId: [null as string | null],
-    // ACC-149 - required, matching the API. Required on EDIT too: without it an
-    // existing unit's type could never be changed through the UI, which is the
-    // other half of the same gap - the 40 units that have types have them only
-    // because a backfill put them there.
-    typeValueId: [null as string | null, [Validators.required]],
-    description: ['', Validators.maxLength(1000)],
-    sortOrder: [0, [Validators.required, Validators.min(0)]],
+  /**
+   * "Moves Pharmacy and its 3 sub-units" — only in Edit, only once the parent
+   * has changed (OS L635). Counts every unit below this one, because a move
+   * takes all of them.
+   */
+  readonly parentHint = computed(() => {
+    const unit = this.unit();
+    if (!unit) return '';
+    const chosen = this.parentValue() ?? this.form.controls.parentId.value;
+    if (chosen === unit.parentId || chosen === null) {
+      return this.translate.instant('organization.parentHintEdit');
+    }
+    const name = this.languageService.bilingual(unit.nameEn, unit.nameAr);
+    const below = countDescendants(this.flatUnits(), unit.id);
+    return below === 0
+      ? this.translate.instant('organization.movesAlone', { unit: name })
+      : this.format.count('orgUnit.movesWith', below, { unit: name });
   });
+
+  /** The footer's primary button. */
+  readonly submitLabelKey = computed(() => {
+    if (this.isEdit()) return 'common.save';
+    return this.parentId() ? 'organization.addSubUnit' : 'organization.addUnit';
+  });
+
+  constructor() {
+    const media = inject(DOCUMENT).defaultView?.matchMedia?.(`(max-width: ${SHELL_PHONE_BELOW_PX - 0.02}px)`);
+    if (media) {
+      this.phone.set(media.matches);
+      const onChange = (e: MediaQueryListEvent): void => this.phone.set(e.matches);
+      media.addEventListener('change', onChange);
+      inject(DestroyRef).onDestroy(() => media.removeEventListener('change', onChange));
+    }
+  }
 
   ngOnInit(): void {
     this.orgUnitService.getFlat().subscribe({
-      next: (units) => this.flatUnits.set(units),
-      error: () => this.loadError.set('Failed to load organization units'),
+      next: (units) => {
+        this.flatUnits.set(units);
+        this.unitsLoading.set(false);
+      },
+      error: () => {
+        this.loadError.set('organization.loadUnitsFailed');
+        this.unitsLoading.set(false);
+      },
     });
 
     this.loadTypes();
@@ -324,16 +480,16 @@ export class OrgUnitFormComponent implements OnInit {
     if (unit) {
       if (unit.isCodeLocked) {
         this.codeLocked.set(true);
-        this.form.get('code')?.disable();
+        this.form.controls.code.disable();
       }
       this.codeManuallyEdited.set(true);
 
       if (unit.parentId === null) {
-        // ACC-141 - disabled, not merely hidden. The control keeps its value
-        // (getRawValue() still returns it, so the payload is unchanged and the
-        // API's "same value" path accepts it), but `required` can no longer
-        // block a save on a field the user is not allowed to touch.
-        this.form.get('typeValueId')?.disable();
+        // ACC-141 / ACC-134 - the root has no parent and a fixed type. Disabled,
+        // not removed: getRawValue() still sends the unchanged values, and the
+        // validators can no longer block a save on fields nobody may change.
+        this.form.controls.typeValueId.disable();
+        this.form.controls.parentId.disable();
       }
 
       this.form.patchValue({
@@ -343,46 +499,48 @@ export class OrgUnitFormComponent implements OnInit {
         parentId: unit.parentId,
         typeValueId: unit.typeValueId,
         description: unit.description ?? '',
-        sortOrder: unit.sortOrder,
       });
     } else if (this.parentId()) {
       this.form.patchValue({ parentId: this.parentId() });
     }
+    this.form.markAsPristine();
+
+    this.ready.emit(this);
+    this.form.valueChanges.subscribe(() => this.dirtyChange.emit(this.form.dirty));
   }
 
+  /** While the code hasn't been typed by hand, it follows the English name. */
   onNameEnInput(): void {
     if (this.codeManuallyEdited()) return;
-    const raw = (this.form.get('nameEn')?.value ?? '') as string;
+    const raw = (this.form.controls.nameEn.value ?? '') as string;
     const code = raw
       .toUpperCase()
       .replace(/\s+/g, '-')
-      .replace(/[^A-Z0-9_-]/g, '')
-      .slice(0, 10);
-    this.form.get('code')?.setValue(code, { emitEvent: false });
-  }
-
-  onCodeManualEdit(): void {
-    this.codeManuallyEdited.set(true);
+      .replace(/[^A-Z0-9-]/g, '')
+      .slice(0, ORG_UNIT_CODE_MAX);
+    this.form.controls.code.setValue(code);
   }
 
   /**
-   * ACC-149 - the type list, with its own outcome handling.
-   *
-   * Gate 6's six outcomes for this list:
-   *   loading  - typesLoading(), the select is disabled and says so
-   *   rows     - typeOptions(), the normal case
-   *   empty    - loaded but no values: states the cause rather than blaming
-   *              the user, since an admin cannot fix it from this form
-   *   denied   - a 403 renders through the same error branch with the server's
-   *              own message; lookups:view is held by every role that can reach
-   *              this form, so this is defensive rather than reachable
-   *   error    - typesError(), with a Retry that re-requests only this list and
-   *              leaves everything typed in the form untouched
-   *   partial  - NOT APPLICABLE, and stated rather than faked. Partial means
-   *              some regions of a composite view loaded and others did not.
-   *              This is one request for one list; it either arrives or it does
-   *              not. Inventing a half-state here would be ceremony.
+   * Auto-uppercase as you type (OS L634), keeping the caret where it was. Only
+   * the case changes: an underscore, an 11th character or anything else the
+   * server refuses is left in place, and the rule shows as the error at once,
+   * rather than the character vanishing without a word.
    */
+  onCodeInput(event: Event): void {
+    this.codeManuallyEdited.set(true);
+    const el = event.target as HTMLInputElement;
+    const upper = el.value.toUpperCase();
+    if (upper !== el.value) {
+      const caret = el.selectionStart;
+      el.value = upper;
+      if (caret !== null) el.setSelectionRange(caret, caret);
+    }
+    this.form.controls.code.setValue(upper, { emitEvent: true });
+    const errors = this.form.controls.code.errors;
+    if (errors?.['pattern'] || errors?.['maxlength']) this.codeRuleBroken.set(true);
+  }
+
   private loadTypes(): void {
     this.typesLoading.set(true);
     this.typesError.set(null);
@@ -392,7 +550,7 @@ export class OrgUnitFormComponent implements OnInit {
         this.typesLoading.set(false);
       },
       error: (err: unknown) => {
-        this.typesError.set(extractErrorMessage(err, 'organization.typeLoadFailed'));
+        this.typesError.set(extractErrorMessage(err, this.translate.instant('organization.typeLoadFailed')));
         this.typesLoading.set(false);
       },
     });
@@ -402,25 +560,30 @@ export class OrgUnitFormComponent implements OnInit {
     this.loadTypes();
   }
 
-  /**
-   * ACC-137's read-path contract, on the client side of it.
-   *
-   * labelOverride ?? label, and the language decides which pair - never a
-   * key-to-label map of the client's own, which is what shows a tenant the
-   * seeded word after they renamed it.
-   */
+  /** labelOverride ?? label, in the reader's language (ACC-137). */
   private labelFor(value: LookupValueDto): string {
     return this.languageService.bilingual(value.labelOverrideEn ?? value.labelEn, value.labelOverrideAr ?? value.labelAr);
   }
 
   onSubmit(): void {
-    if (this.form.invalid) return;
+    if (this.saving()) return;
+    if (this.form.invalid) {
+      this.showErrors.set(true);
+      this.form.markAllAsTouched();
+      // Focus the first field that needs attention, in reading order.
+      queueMicrotask(() =>
+        this.host.nativeElement.querySelector<HTMLElement>('[aria-invalid="true"], .ng-invalid input, .ng-invalid textarea')?.focus(),
+      );
+      return;
+    }
     this.saving.set(true);
     this.saveError.set(null);
 
     const id = this.unit()?.id ?? null;
     const value = this.form.getRawValue();
 
+    // sortOrder is not sent: create keeps the server's default, and update
+    // leaves the stored order alone (ACC-138 owns ordering).
     const payload = {
       nameEn: value.nameEn!,
       nameAr: value.nameAr || undefined,
@@ -428,7 +591,6 @@ export class OrgUnitFormComponent implements OnInit {
       parentId: value.parentId ?? undefined,
       typeValueId: value.typeValueId!,
       description: value.description || undefined,
-      sortOrder: value.sortOrder ?? 0,
     };
 
     const request$ = id
@@ -441,9 +603,16 @@ export class OrgUnitFormComponent implements OnInit {
         this.saved.emit();
       },
       error: (err: unknown) => {
-        this.saveError.set(extractErrorMessage(err, 'Save failed'));
+        this.saveError.set(this.refusalText(err));
         this.saving.set(false);
       },
     });
+  }
+
+  /** A coded refusal in the reader's language; anything else as the server says it. */
+  private refusalText(err: unknown): string {
+    const code = (err as { error?: { code?: string } } | null)?.error?.code;
+    if (code === 'ORG_UNIT_PARENT_CYCLE') return this.translate.instant('organization.refusal.parentCycle');
+    return extractErrorMessage(err, this.translate.instant('organization.saveFailed'));
   }
 }

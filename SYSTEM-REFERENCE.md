@@ -5114,15 +5114,22 @@ model OrgUnit {
   what `OrgPosition`/User components actually consume — see 7.5).
 - **`create()`** — validates a given `parentId` belongs to the same
   tenant; validates `code` uniqueness (`@@unique([organizationId, code])`).
+  Returns the unit with its type RESOLVED, as the GETs do (ACC-120 slice
+  11); it used to return `typeValue: null` for the type just chosen.
 - **`update()`** — **code-lock check**: rejects changing `code` if
-  `unit.isCodeLocked` is true (7.3). Rejects `parentId === id`
-  (self-parenting). **No cycle detection beyond that single-level
-  check** — confirmed by reading the full method: setting unit A's
-  `parentId` to one of A's own *descendants* (a deeper cycle, not just
-  direct self-parenting) is not checked anywhere. A real, unexercised
-  gap — nothing in the seeded data or tests currently creates one, but
-  the guard rejecting it does not exist.
-- **`deactivate()`** — idempotent. Blocker list is a real
+  `unit.isCodeLocked` is true (7.3). **A parent inside the unit's own
+  subtree is refused — 409 `ORG_UNIT_PARENT_CYCLE`** (ACC-120 slice 11,
+  `org-unit-refusals.ts`): the unit itself, a child, a grandchild, any
+  depth. `assertParentOutsideOwnSubtree()` walks UP from the proposed
+  parent's own parent, one `findFirst({ id, organizationId })` per step,
+  and refuses if the walk reaches the unit; a visited set stops a loop
+  already in the data from spinning. Another organisation's rows are never
+  followed (the tenant-isolation spec pins the `organizationId` on every
+  step). The screen says it from the code. **CORRECTED ACC-120 slice 11 —
+  this entry previously said only direct self-parenting was refused**,
+  and a move under a descendant detached the branch from the root.
+- **`deactivate()`** — idempotent, and returns the type resolved (both
+  returns, ACC-120 slice 11). Blocker list is a real
   `ConflictException` carrying a structured `blockers: string[]`.
   **THREE checks are live, and three remain TODO-commented:**
   - live: **active child units**, **active users assigned to the unit**
@@ -5229,6 +5236,60 @@ section.
 | `create()` | `POST /organization/units` | `org-unit-form.component.ts:234` |
 | `update()` | `PATCH /organization/units/:id` | `org-unit-form.component.ts:233` |
 | `deactivate()` | `POST /organization/units/:id/deactivate` | `org-unit-tree.component.ts:170` |
+
+### 7.7 The Add / Edit unit dialog (ACC-120 slice 11)
+
+`org-unit-form.component.ts`, hosted by `org-unit-tree.component.ts` in
+`EditDialogComponent` (compact density, the actions in the footer, `[dirty]`).
+Drawing: `AccreditMe Organization Structure.dc.html` L377-394, L631-638. Plan:
+`backend/Plans/step-120-11-organisation.md`.
+
+- **Three titles, one form:** "Add unit" (no parent yet, so the parent is
+  required), "Add sub-unit to {parent}" (prefilled, changeable), "Edit {unit}".
+  The primary button says the same ("Add unit", "Add sub-unit", "Save").
+- **Fields, all in `am-field`:** Name · English and Name · Arabic side by side
+  (the reader's own language first, in DOM order too, so Tab follows it), Code
+  beside Type, Parent unit, Description · optional. No steps. **Compact
+  density**: six field blocks is past artboard 13's five (`check:dialog-density`),
+  though the drawing counted its four rows and said standard. The body measured
+  380 English and 394 Arabic against the 420 cap, at 1280 and on a phone
+  (`org-unit-form.layout.spec.ts`, 24 cases, gate 410).
+- **The code rule is the server's, character for character:** at most 10,
+  `/^[A-Z0-9-]+$/` (`ORG_UNIT_CODE_MAX` / `ORG_UNIT_CODE_PATTERN`, copied from
+  `create-org-unit.dto.ts`; a spec pins the source). Monospace, uppercased as
+  typed, a "n / 10" counter. It used to allow 20 characters and an underscore,
+  both of which the server refused with a 400. **There is no native
+  `maxlength`**: it dropped an 11th character silently. A refused character
+  goes in, and the rule shows as the error at once (`codeRuleBroken`), not on
+  leaving the field. While the name is typed and the code is not, the code
+  follows the English name (no underscore, at most 10). The Arabic error wraps
+  "A–Z" and "0–9" in bidi isolates (LRI…PDI, written as `\u2066`/`\u2069` in
+  `ar.json`): an en dash between digits in a right-to-left line drew "9–0".
+  In an Arabic session the code box keeps room on its left for the error's "!"
+  (`am-ouf__code--rtl`): a left-to-right box in a right-to-left field starts its
+  text exactly where `am-field` draws the glyph. **That is an `am-field` defect
+  for every `dir="ltr"` input in an Arabic session**: the glyph reserves no room
+  unless the control has a trailing part. Here it is fixed locally only.
+- **On a phone the Code helper is read, not drawn.** Below the shell's phone
+  breakpoint (`SHELL_PHONE_BELOW_PX`, 768) the helper "Up to 10 · capitals,
+  numbers, hyphens" is `sr-only` through `am-field`'s `hintVisuallyHidden`
+  (10.12): beside its counter in a half-width column it wrapped, which took the
+  Arabic body to 425 at standard density and still past the 410 gate at compact. It stays in the input's `aria-describedby`; the counter
+  stays drawn; an error is always drawn.
+- **The parent picker** is `buildOrgUnitParentOptions()`: the whole active tree,
+  with the unit being edited and every unit below it shown greyed and not
+  choosable, each with its reason in its accessible name (`OverlaySelectComponent`'s
+  `optionDisabled`, 10.7). The root's parent and type are read-only text. The
+  field shows `am-field`'s spinner until the units arrive (`unitsLoading`): from
+  the Frankfurt database that takes seconds, and an Edit opened before then
+  showed the placeholder where the current parent belongs.
+- **"Moves {unit} and its N sub-units"** replaces the parent's helper in Edit
+  once the parent changes (`countDescendants()`, every depth, a plural object).
+- **Description:** at most 1000, the counter amber from 900.
+- **Sort Order is gone**, field and payload: create keeps the server's default,
+  update leaves the stored order alone. Ordering is ACC-138's.
+- **`isCodeLocked`** renders read-only if it is ever set, and nothing tests it:
+  nothing sets it (7.3).
 
 `getFlat()` is the most widely reused endpoint found in this document
 so far — six distinct components across three different modules
@@ -6322,6 +6383,18 @@ so it never invites the click CDK now refuses.
 Consumers so far (1): `workflow-transition-editor.requiredPermission`
 (both the add and edit dialogs).
 
+##### `optionDisabled` / `optionDisabledReason` — shown but not chosen (ACC-120 slice 11)
+
+Each names a FIELD on the option, as PrimeNG's own `optionDisabled` does: a
+boolean that makes the option unavailable, and a string saying why. Unavailable
+options stay in the list, greyed (`am-overlay-select-option-unavailable`), and
+are disabled through the same `cdkOptionDisabled` as a heading, so pointer and
+keyboard both skip them. The reason is appended to the option's accessible name
+("Pharmacy, this is the unit you're editing"), with the Arabic comma "، " in a
+right-to-left session. Opt-in; unset, every option is as before. `overlay-select-option-disabled.spec.ts`.
+
+Consumers so far (1): `org-unit-form.parentId`.
+
 #### 10.7.3 Item-template projection (`itemTemplate`)
 
 `CdkOption` is a plain directive, not a component, so it has no
@@ -7330,6 +7403,15 @@ cannot take focus) it focuses the first focusable element inside. Also used afte
 the server puts an error on a field.
 
 Consumers: the ACC-111 proof screens; every screen migration inherits it.
+
+**A character counter is `[counter]="{ value, max, warnFrom? }"`** (ACC-120
+slice 11): "n / max" at the end of the message line, beside the hint or the
+error, amber from `warnFrom`. `aria-hidden` (a count read out on every
+keystroke is noise); the limit belongs in the hint. Without it the message
+line is exactly as before. **`hintVisuallyHidden`** draws no hint while keeping
+it as the `aria-describedby` message (`sr-only`), for a half-width column on a
+phone where hint and counter would wrap; an error is always drawn.
+`field-counter.spec.ts`. Consumers: `org-unit-form` (code, description).
 
 
 ---
