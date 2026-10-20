@@ -19,13 +19,11 @@
  * screens' half of the rule only.
  */
 
-export const COMMITTEE_FORMATION_KEY = 'formation';
-export const COMMITTEE_TERMS_REVIEW_KEY = 'terms_review';
 
 /**
  * The seeded committee lifecycle's keys, as the backend's workflow-stage-keys.ts
  * lists them — for specs that walk every stage. Nothing in the app branches on
- * this list; a screen asks committeeHeaderOffers().
+ * this list to decide anything; a screen asks committeeHeaderOffers().
  */
 export const COMMITTEE_STAGE_KEYS_FOR_TEST = [
   'formation',
@@ -43,9 +41,24 @@ export interface CommitteeHeaderOffers {
   lockedLine: boolean;
 }
 
+type CommitteeStageKey = (typeof COMMITTEE_STAGE_KEYS_FOR_TEST)[number];
+
+/**
+ * ACC-239 — THE header rule, as one map keyed by stage key: what each stage
+ * offers to a holder of committees:edit_details. A stage not listed here, or
+ * one with no key, offers nothing. A later workflow-engine step makes stage
+ * permissions configurable; it replaces this map, and nothing else on the
+ * screens names a committee stage.
+ */
+export const COMMITTEE_HEADER_POLICY: Readonly<Partial<Record<CommitteeStageKey, Partial<CommitteeHeaderOffers>>>> = {
+  formation: { edit: true },
+  terms_review: { lockedLine: true },
+};
+
 export function committeeHeaderOffers(stageKey: string | null | undefined, canEditDetails: boolean): CommitteeHeaderOffers {
+  const offers = (stageKey && COMMITTEE_HEADER_POLICY[stageKey as CommitteeStageKey]) || {};
   return {
-    edit: canEditDetails && stageKey === COMMITTEE_FORMATION_KEY,
-    lockedLine: canEditDetails && stageKey === COMMITTEE_TERMS_REVIEW_KEY,
+    edit: canEditDetails && !!offers.edit,
+    lockedLine: canEditDetails && !!offers.lockedLine,
   };
 }
