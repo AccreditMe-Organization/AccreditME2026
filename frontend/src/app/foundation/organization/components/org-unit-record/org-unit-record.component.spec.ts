@@ -186,7 +186,9 @@ describe('OrgUnitRecordComponent (ACC-120 slice 11, PR D)', () => {
     const parts: string[] = [];
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) parts.push(n.textContent ?? '');
-    return parts.join(' ').replace(/\s+/g, ' ').trim();
+    // The isolates around a name in a sentence are invisible; one test below
+    // pins that they are there.
+    return parts.join(' ').replace(/[\u2068\u2069]/g, '').replace(/\s+/g, ' ').trim();
   };
   const q = (el: HTMLElement, id: string) => el.querySelector(`[data-testid="${id}"]`);
   const panel = (el: HTMLElement, prefix: string) => el.querySelector(`[data-testid="${prefix}-panel"]`);
@@ -388,6 +390,16 @@ describe('OrgUnitRecordComponent (ACC-120 slice 11, PR D)', () => {
     expect(text(q(el, 'relation-acting'))).toBe('Acting head ◉ Cover arranged · Name hidden · until 30 Nov 2026');
     expect(rows(el, 'unit-people')).toEqual(['Name hidden Director · head', 'Name hidden No position']);
     expect(rows(el, 'unit-history')).toEqual(['Clinical Pharmacist (name hidden) set as acting head 25 Sep 2026 · Quality Director (name hidden)']);
+  });
+
+  it('a name in a sentence is isolated (FSI … PDI), so it keeps its own direction in Arabic', async () => {
+    const { el } = await render({
+      lang: 'ar',
+      summary: summary({}, { isActive: false }),
+      history: page(HISTORY, { deactivation: { at: '2026-06-03T09:00:00.000Z', actor: actor('Nora Al-Otaibi') } }),
+    });
+    expect(q(el, 'unit-deactivated')!.textContent).toContain('\u2068Nora Al-Otaibi\u2069');
+    expect(panel(el, 'unit-history')!.textContent).toContain('\u2068Dr. Huda Zahrani\u2069');
   });
 
   it('an actor from outside the organisation is said so, not "name hidden"', async () => {

@@ -11,6 +11,14 @@ export interface HistoryTextDeps {
   date: (value: string) => string;
 }
 
+/**
+ * A name as it goes INTO a sentence: wrapped in Unicode isolates (FSI … PDI),
+ * so an English name in an Arabic sentence keeps its own direction. Without
+ * them, "Al-Dosari" broken at its hyphen puts the hyphen at the wrong end of
+ * the line (found in the PR D browser check).
+ */
+export const isolate = (text: string): string => `\u2068${text}\u2069`;
+
 /** The order fields are named in, whatever order the server lists them. */
 const FIELD_ORDER: OrgUnitHistoryField[] = ['nameEn', 'nameAr', 'code', 'type', 'description', 'sortOrder'];
 
@@ -19,11 +27,11 @@ const FIELD_ORDER: OrgUnitHistoryField[] = ['nameEn', 'nameAr', 'code', 'type', 
  * position and "name hidden", never a blank.
  */
 export function historyPerson(person: OrgUnitHistoryPersonDto, deps: HistoryTextDeps): string {
-  if (person.name) return person.name;
+  if (person.name) return isolate(person.name);
   if (!person.inOrganization) return deps.t('organization.record.outsideOrganization');
   const position = person.positionNameEn ? deps.bilingual(person.positionNameEn, person.positionNameAr) : null;
   return position
-    ? deps.t('organization.record.hiddenPersonWithPosition', { position })
+    ? deps.t('organization.record.hiddenPersonWithPosition', { position: isolate(position) })
     : deps.t('organization.record.nameHidden');
 }
 
@@ -32,7 +40,7 @@ export function historyWhat(entry: OrgUnitHistoryEntryDto, deps: HistoryTextDeps
   const t = (key: string, params?: Record<string, unknown>) => deps.t(`organization.history.${key}`, params);
   if (entry.source === 'HEAD_EVENT') {
     const person = historyPerson(entry.subject, deps);
-    const position = entry.position ? deps.bilingual(entry.position.nameEn, entry.position.nameAr) : null;
+    const position = entry.position ? isolate(deps.bilingual(entry.position.nameEn, entry.position.nameAr)) : null;
     if (entry.kind === 'ASSIGNED' && position) return t('head.ASSIGNED_AS', { person, position });
     return t(`head.${entry.kind}`, { person });
   }
@@ -41,7 +49,7 @@ export function historyWhat(entry: OrgUnitHistoryEntryDto, deps: HistoryTextDeps
   const parts: string[] = [];
   if (entry.fields.includes('parent')) {
     if (entry.movedTo === null) parts.push(t('movedToTop'));
-    else if (entry.movedTo) parts.push(t('movedUnder', { parent: deps.bilingual(entry.movedTo.nameEn, entry.movedTo.nameAr) }));
+    else if (entry.movedTo) parts.push(t('movedUnder', { parent: isolate(deps.bilingual(entry.movedTo.nameEn, entry.movedTo.nameAr)) }));
     else parts.push(t('parentChanged'));
   }
   const others = FIELD_ORDER.filter((f) => entry.fields.includes(f));
