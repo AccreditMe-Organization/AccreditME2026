@@ -722,3 +722,19 @@ Branch `feature/ACC-120-11c-org-tree`, from `dev` at `6d315ce` (PR B merged). Fr
   - the 900px rule measured the bordered card, not the component;
   - a 120px Attention column left Unit a few characters wide on a phone, so below 600px it moves under the name.
 - **Not changed (ACC-133's copy):** Arabic Arrange cover reads "ترتيب تغطية" in the menu and the panel, and "ترتيب تكليف" in its dialog title.
+
+### PR D as built (CC-134, 21 Oct)
+
+Branch `feature/ACC-120-11d-org-unit-record`, from `dev` at `6a1d728` (PR C merged).
+
+**What the code had, and what that changed:**
+- **There is no `am-relation` component.** The Design System draws the relation field (artboard 4), but nothing builds it, and the committee record renders its relations as a plain fact strip. PR D builds `am-relation` in `shared/components/relation/`, with the record-header context (C) only: a type glyph, the name (a link when the viewer may open the target), and its state as text. The tree and the chart do not adopt it in this PR.
+- **The summary has no list of children.** PR B returns `childCount` only. `GET …/:id/summary` gains `children`: the unit's direct ACTIVE children, decorated by the same batched queries as the unit itself, so the query count doesn't grow per child.
+- **Setup health has no per-unit filter.** "+ N more" opens `/setup-health?object=<unitId>`, which shows only that object's open conditions, with "Show all" beside the filter. `openCount` counts exactly those rows.
+- **The breadcrumb took one parent record (ACC-228).** `BreadcrumbParentService` gains a trail of ancestors, so the record's breadcrumb is Administration › Organization Structure › each ancestor. Per ACC-79 it stops at the parent; the drawing's trail ends with the unit itself, and that crumb isn't built.
+
+**History (D8):** `GET /organization/units/:id/history?skip=&take=`, `org:view`.
+- **Headship rows come from `OrgUnitHeadEvent` only.** Every headship operation writes a ledger row and an audit row together (`org-unit-head.service.ts`), and the audit row holds only `metadata`. So the AuditLog rows read are the ones holding a copy of the unit (`after` set): created, details changed, moved, deactivated. Each headship change shows once, from the ledger, and the audit log is never read for headship.
+- **What changed is named, never shown.** `before` / `after` are read on the server to name the fields that changed and the new parent; neither is returned.
+- **Names (D7):** actor and subject names only with `users:view`; anyone else gets the person's position where there is one, and "Name hidden".
+- **The deactivated header** reads its date and actor from the latest audit row that moved `isActive` from true to false. A unit deactivated with no such row says "Deactivated" and no date.
