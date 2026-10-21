@@ -1,7 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, NgZone, inject } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
-import { ConfirmationService } from 'primeng/api';
+import { Confirmation, ConfirmationService } from 'primeng/api';
 import { LayerStackService } from '../../overlay/layer-stack.service';
 
 /**
@@ -16,6 +16,12 @@ export interface AmConfirmOptions {
   header: string;
   /** The consequence, already translated. */
   message: string;
+  /**
+   * ACC-240 — optional lines listed under the message, already translated
+   * (Approve's "Quorum: 5 → 6"). Still a confirm: one question, two buttons,
+   * no fields. Without it the confirm is exactly as before.
+   */
+  details?: readonly string[];
   /** The action's verb, already translated ("Deactivate role"). Never Yes. */
   acceptLabel: string;
   /** Defaults to Cancel. */
@@ -25,6 +31,11 @@ export interface AmConfirmOptions {
   reject?: () => void;
   /** Where focus goes on close. Defaults to whatever had it when ask() ran. */
   opener?: HTMLElement | null;
+}
+
+/** ACC-240 — what the host's message template reads: PrimeNG's confirmation, plus the details. */
+export interface AmConfirmation extends Confirmation {
+  amDetails?: readonly string[];
 }
 
 /** The classes the host's styles key on. */
@@ -92,9 +103,10 @@ export class AmConfirmService {
 
     const stopFocusing = this.focusOnOpen(destructive ? CONFIRM_REJECT_CLASS : CONFIRM_ACCEPT_CLASS);
 
-    this.confirmation.confirm({
+    const confirmation: AmConfirmation = {
       header: options.header,
       message: options.message,
+      amDetails: options.details?.length ? [...options.details] : undefined,
       acceptLabel: options.acceptLabel,
       rejectLabel: options.rejectLabel ?? this.translate.instant('common.cancel'),
       acceptButtonStyleClass: destructive ? `${CONFIRM_ACCEPT_CLASS} ${CONFIRM_DESTRUCTIVE_CLASS}` : CONFIRM_ACCEPT_CLASS,
@@ -102,7 +114,8 @@ export class AmConfirmService {
       rejectButtonProps: { text: true, severity: 'secondary' },
       accept: () => settle(options.accept),
       reject: () => settle(options.reject),
-    });
+    };
+    this.confirmation.confirm(confirmation);
   }
 
   /**

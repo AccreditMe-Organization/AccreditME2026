@@ -1,7 +1,7 @@
 import { Component, ViewEncapsulation } from '@angular/core';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ConfirmDialogCloseLabel } from '../../directives/confirm-dialog-close-label.directive';
-import { CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from './am-confirm.service';
+import { AmConfirmation, CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from './am-confirm.service';
 
 /**
  * ACC-120 slice 10 — the app's ONE confirmation dialog, rendered once by the
@@ -23,7 +23,25 @@ import { CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from './am-confirm.se
   standalone: true,
   imports: [ConfirmDialogModule, ConfirmDialogCloseLabel],
   encapsulation: ViewEncapsulation.None,
-  template: `<p-confirmDialog amCloseLabel styleClass="am-confirm" [style]="frame" [draggable]="false" />`,
+  // ACC-240 — the message template draws the message as PrimeNG's own default
+  // does (same class, innerHTML), after the optional details: what is listed
+  // first, then the consequence (Approve: the changes, then the task it creates).
+  template: `
+    <p-confirmDialog amCloseLabel styleClass="am-confirm" [style]="frame" [draggable]="false">
+      <ng-template #message let-c>
+        <div class="am-confirm__body">
+          @if (detailsOf(c); as details) {
+            <ul class="am-confirm__details" data-testid="confirm-details">
+              @for (d of details; track $index) {
+                <li>{{ d }}</li>
+              }
+            </ul>
+          }
+          <span class="p-confirmdialog-message" [innerHTML]="c.message"></span>
+        </div>
+      </ng-template>
+    </p-confirmDialog>
+  `,
   styles: [
     `
       .am-confirm.p-dialog {
@@ -32,6 +50,21 @@ import { CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from './am-confirm.se
       }
       .am-confirm .p-confirmdialog-message {
         margin: 0;
+      }
+      .am-confirm__body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--am-space-6);
+        min-inline-size: 0;
+      }
+      .am-confirm__details {
+        margin: 0;
+        padding-inline-start: var(--am-space-8);
+        display: flex;
+        flex-direction: column;
+        gap: var(--am-space-2);
+        color: var(--am-ink-900);
+        overflow-wrap: anywhere;
       }
       .am-confirm .${CONFIRM_DESTRUCTIVE_CLASS}.p-button {
         background: var(--am-danger-ink);
@@ -51,6 +84,10 @@ import { CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from './am-confirm.se
   ],
 })
 export class ConfirmHostComponent {
+  protected detailsOf(c: AmConfirmation | null | undefined): readonly string[] | null {
+    return c?.amDetails?.length ? c.amDetails : null;
+  }
+
   // Width and its cap as the dialog's own style, so they apply whatever the
   // breakpoints PrimeNG writes for its dialogs.
   protected readonly frame = { width: 'var(--am-dialog-confirm)', maxWidth: 'calc(100vw - 32px)' };
