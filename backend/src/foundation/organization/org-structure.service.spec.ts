@@ -450,6 +450,18 @@ describe('OrgStructureService (ACC-120 slice 11)', () => {
       expect(summary.people.map((p) => p.userId)).not.toContain('gone');
     });
 
+    // PR D — the record's Sub-units panel.
+    it('children: the direct ACTIVE children, in sibling order, each decorated', async () => {
+      const { children } = await service.summary(ORG_A, ALL, 'u0');
+      // u1x is inactive; B's b-unit claims u0 as its parent and is not A's.
+      expect(children.map((c) => c.id)).toEqual(['u1', 'u1b']);
+      expect(children[0]).toEqual(expect.objectContaining({ childCount: 1, headcount: 0 }));
+      const u3 = await service.summary(ORG_A, ALL, 'u3');
+      expect(u3.children.map((c) => c.id)).toEqual(['u4', 'u4b']);
+      expect(u3.children[0]!.acting).toEqual(expect.objectContaining({ userId: 'sara', countedHere: true }));
+      expect((await service.summary(ORG_A, ALL, 'u6')).children).toEqual([]);
+    });
+
     it('an inactive unit is returned, marked inactive', async () => {
       const summary = await service.summary(ORG_A, ALL, 'u1x');
       expect(summary.unit.isActive).toBe(false);

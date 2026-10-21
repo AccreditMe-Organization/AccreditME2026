@@ -151,6 +151,8 @@ export interface IOrgUnitSummary {
   };
   /** From the organisation's top unit down to this unit, inclusive. */
   path: IOrgUnitPathItem[];
+  /** Direct ACTIVE children, in sibling order (sortOrder, then name). */
+  children: IOrgStructureNode[];
   /** Grade high to low, then the most people, then the name. */
   positions: IOrgUnitPositionInUse[];
   /** ACTIVE people whose primary unit this is. */
