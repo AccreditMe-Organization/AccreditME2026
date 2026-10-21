@@ -11,6 +11,7 @@ import { ChangeRequestDto, ChangeRequestService } from '../committees/change-req
 import { REQUEST } from '../committees/change-requests/change-request.testing';
 import { TaskRequestForDecisionDto, TaskService } from '../tasks/services/task.service';
 import { HomeAwaitingComponent } from './home-awaiting.component';
+import { preserveDocumentLanguage } from '../../../testing/document-language';
 
 function taskRequest(id: string, createdAt: string, over: Partial<TaskRequestForDecisionDto> = {}): TaskRequestForDecisionDto {
   return {
@@ -29,6 +30,8 @@ function taskRequest(id: string, createdAt: string, over: Partial<TaskRequestFor
 
 // ACC-240 — Home's "Awaiting my action" (plan §3.5, Q-B).
 describe('HomeAwaitingComponent (ACC-240)', () => {
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<HomeAwaitingComponent>;
   let format: FormatService;
   let approver: boolean;

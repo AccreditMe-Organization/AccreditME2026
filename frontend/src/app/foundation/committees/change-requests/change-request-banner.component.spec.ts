@@ -9,6 +9,7 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../core/for
 import { ChangeRequestBannerComponent, ChangeRequestBannerState } from './change-request-banner.component';
 import { ChangeRequestDto } from './change-request.service';
 import { REQUEST, fakePhone } from './change-request.testing';
+import { preserveDocumentLanguage } from '../../../../testing/document-language';
 
 @Component({
   standalone: true,
@@ -25,6 +26,8 @@ class HostComponent {
 // request; Error with Retry; Partial for a request naming no field the screen
 // knows; nothing while loading or with no request open.
 describe('ChangeRequestBannerComponent (ACC-240)', () => {
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<HostComponent>;
   let format: FormatService;
 

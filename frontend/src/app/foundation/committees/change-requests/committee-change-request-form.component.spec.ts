@@ -17,6 +17,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../s
 import { CommitteeChangeRequestFormComponent, diffChanges } from './committee-change-request-form.component';
 import { ChangeRequestPreviewDto, ChangeRequestService, OpenChangeRequestDto } from './change-request.service';
 import { REQUEST } from './change-request.testing';
+import { preserveDocumentLanguage } from '../../../../testing/document-language';
 
 const COMMITTEE: CommitteeDetailDto = {
   id: 'c-1',
@@ -63,6 +64,8 @@ const PREVIEW: ChangeRequestPreviewDto = {
 
 // ACC-240 — Request a change, and its draft edit (plan §3.2).
 describe('CommitteeChangeRequestFormComponent (ACC-240)', () => {
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<CommitteeChangeRequestFormComponent>;
   let page: CommitteeChangeRequestFormComponent;
   let navigate: jasmine.Spy;

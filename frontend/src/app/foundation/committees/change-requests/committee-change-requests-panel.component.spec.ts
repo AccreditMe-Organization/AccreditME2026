@@ -12,6 +12,7 @@ import { CommitteePageDto } from '../services/committee.service';
 import { CommitteeChangeRequestsPanelComponent } from './committee-change-requests-panel.component';
 import { ChangeRequestDto, ChangeRequestListQuery, ChangeRequestService } from './change-request.service';
 import { REQUEST, fakePhone } from './change-request.testing';
+import { preserveDocumentLanguage } from '../../../../testing/document-language';
 
 /** Request n, newest = highest number. */
 export function requestRow(n: number, over: Partial<ChangeRequestDto> = {}): ChangeRequestDto {
@@ -24,6 +25,8 @@ export function requestRow(n: number, over: Partial<ChangeRequestDto> = {}): Cha
 // status. See all: the plain list popup, sorted by header both ways, searched
 // by the server, Load more by 50.
 describe('CommitteeChangeRequestsPanelComponent (ACC-240)', () => {
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<CommitteeChangeRequestsPanelComponent>;
   let format: FormatService;
   let calls: ChangeRequestListQuery[];

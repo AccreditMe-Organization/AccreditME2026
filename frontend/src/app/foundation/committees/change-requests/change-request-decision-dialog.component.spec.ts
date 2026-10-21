@@ -13,6 +13,7 @@ import { EditDialogComponent } from '../../../shared/components/edit-dialog/edit
 import { ChangeRequestDecision, ChangeRequestDecisionDialogComponent } from './change-request-decision-dialog.component';
 import { ChangeRequestDto, ChangeRequestService } from './change-request.service';
 import { REQUEST } from './change-request.testing';
+import { preserveDocumentLanguage } from '../../../../testing/document-language';
 
 @Component({
   standalone: true,
@@ -36,6 +37,8 @@ const REFUSALS = [
 
 // ACC-240 — Return for changes and Reject (plan §3.4).
 describe('ChangeRequestDecisionDialogComponent (ACC-240)', () => {
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<Host>;
   let answer: () => Observable<ChangeRequestDto>;
   let returned: jasmine.Spy;

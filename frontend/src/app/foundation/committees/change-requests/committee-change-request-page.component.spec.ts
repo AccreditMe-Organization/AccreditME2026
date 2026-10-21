@@ -17,6 +17,7 @@ import { CommitteeDetailDto, CommitteeService } from '../services/committee.serv
 import { CommitteeChangeRequestPageComponent } from './committee-change-request-page.component';
 import { ChangeRequestActionsDto, ChangeRequestDto, ChangeRequestService } from './change-request.service';
 import { REQUEST, fakePhone } from './change-request.testing';
+import { preserveDocumentLanguage } from '../../../../testing/document-language';
 
 const LIVE: CommitteeDetailDto = {
   id: 'c-1',
@@ -65,6 +66,8 @@ const VIEWER_ID = { requester: 'u-nora', approver: 'u-hessa', reader: 'u-fahad' 
 
 // ACC-240 — the request page (plan §3.3).
 describe('CommitteeChangeRequestPageComponent (ACC-240)', () => {
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<CommitteeChangeRequestPageComponent>;
   let format: FormatService;
   let request: ChangeRequestDto;
