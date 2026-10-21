@@ -1,6 +1,8 @@
 import {
   AfterViewInit,
   Component,
+  Injector,
+  afterNextRender,
   DestroyRef,
   ElementRef,
   NgZone,
@@ -13,7 +15,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { TreeNode } from 'primeng/api';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -93,6 +95,7 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
   imports: [
     PageHeaderComponent,
     TranslatePipe,
+    RouterLink,
     FormsModule,
     TreeTableModule,
     ButtonModule,
@@ -255,13 +258,15 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
             [class.am-ot__row--match]="isMatch(rowData)"
             [class.am-ot__row--context]="isContext(rowData)"
             [class.am-ot__row--inactive]="!rowData.isActive"
+            [class.am-ot__row--sought]="soughtId() === rowData.id"
             [attr.data-unit]="rowData.id"
           >
             <td class="am-ot__unit">
               <div class="am-ot__unit-inner flex items-center min-w-0">
                 <p-treeTableToggler [rowNode]="rowNode" />
                 <span class="block min-w-0">
-                  <span class="am-ot__name" data-testid="unit-name">{{ primaryName(rowData) }}</span>
+                  <!-- PR D — the name opens the unit's record. -->
+                  <a class="am-ot__name" [routerLink]="['/organization/units', rowData.id]" data-testid="unit-name">{{ primaryName(rowData) }}</a>
                   @if (secondaryName(rowData); as other) {
                     <span class="block text-meta text-ink-500 text-start [unicode-bidi:isolate]" [attr.dir]="isArabic() ? 'ltr' : 'rtl'" [attr.lang]="isArabic() ? 'en' : 'ar'">{{ other }}</span>
                   }
@@ -411,7 +416,9 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
       .am-ot__col-attention { inline-size: 120px; }
       .am-ot__col-menu { inline-size: 40px; }
       :host ::ng-deep .am-ot__table td.am-ot__menu-cell { padding-inline: var(--am-space-4); }
-      .am-ot__name { display: block; font-weight: 500; color: var(--am-ink-900); }
+      .am-ot__name { display: block; font-weight: 500; color: var(--am-ink-900); text-decoration: none; }
+      .am-ot__name:hover { color: var(--am-primary-700); text-decoration: underline; }
+      .am-ot__row--sought { box-shadow: inset 3px 0 0 var(--am-primary-600); }
       .am-ot__row--match { background: var(--am-primary-50); }
       .am-ot__row--match .am-ot__name { font-weight: 600; color: var(--am-primary-700); }
       .am-ot__row--context .am-ot__name { font-weight: 400; color: var(--am-ink-500); }
@@ -440,6 +447,7 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly headshipActions = viewChild(HeadshipActionsComponent);
 
   // ACC-118 — found by check:create-gating, not by the ticket's own list of
@@ -604,6 +612,12 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
   // panel, where a head or an acting head is assigned. Only for a unit that is
   // in the tree and active.
   private readonly fixLinkHead = injectFixLinkParam('head');
+  /**
+   * PR D — "Show in tree" on a unit's record (?show=<unitId>): the unit's
+   * ancestors are opened, and its row is marked and scrolled to.
+   */
+  private readonly fixLinkShow = injectFixLinkParam('show');
+  readonly soughtId = signal<string | null>(null);
 
   ngOnInit(): void {
     this.load();
@@ -628,6 +642,7 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
       next: ({ nodes }) => {
         this.nodes.set(nodes);
         this.expanded.set(this.restoreExpanded(nodes));
+        this.showUnit(this.fixLinkShow(), nodes);
         this.headStatus.set(new Map());
         this.loading.set(false);
         const unitId = this.fixLinkHead();
@@ -645,6 +660,25 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
       next: (units) => this.units.set(units),
       error: () => this.units.set([]),
     });
+  }
+
+  private showUnit(unitId: string | null, nodes: OrgStructureNodeDto[]): void {
+    const target = unitId ? nodes.find((n) => n.id === unitId) : undefined;
+    if (!target) return;
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const next = new Set(this.expanded());
+    const seen = new Set<string>();
+    for (let p = target.parentId ? byId.get(target.parentId) : undefined; p && !seen.has(p.id); p = p.parentId ? byId.get(p.parentId) : undefined) {
+      seen.add(p.id);
+      next.add(p.id);
+    }
+    this.expanded.set(next);
+    this.saveExpanded(next);
+    this.soughtId.set(target.id);
+    afterNextRender(
+      () => this.host.nativeElement.querySelector<HTMLElement>(`[data-unit="${target.id}"]`)?.scrollIntoView({ block: 'center' }),
+      { injector: this.injector },
+    );
   }
 
   selectView(view: 'tree'): void {
@@ -833,7 +867,8 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
   menuGroups(node: OrgStructureNodeDto): RowMenuItem[][] {
     const t = (key: string) => this.translate.instant(key);
     const details: RowMenuItem = { id: 'headship', label: t('organization.tree.menu.headshipDetails') };
-    if (!this.canManage()) return [[details]];
+    const open: RowMenuItem = { id: 'open', label: t('organization.tree.menu.openUnit') };
+    if (!this.canManage()) return [[open, details]];
 
     const unit: RowMenuItem[] = [
       { id: 'add', label: t('organization.addSubUnit') },
@@ -857,7 +892,7 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
         };
       });
     }
-    return [unit, headship, [details], [{ id: 'deactivate', label: t('organization.deactivate'), danger: true }]];
+    return [unit, headship, [open, details], [{ id: 'deactivate', label: t('organization.deactivate'), danger: true }]];
   }
 
   menuLabels(_node: OrgStructureNodeDto): (string | null)[] {
@@ -866,6 +901,7 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
 
   onPicked(node: OrgStructureNodeDto, id: string): void {
     this.actionError.set(null);
+    if (id === 'open') return void this.router.navigate(['/organization/units', node.id]);
     if (id === 'headship') return this.onManageHead(node);
     if (id === 'deactivate') return this.askDeactivate(node);
     const record = this.units().find((u) => u.id === node.id);

@@ -335,7 +335,8 @@ describe('OrgUnitTreeComponent (ACC-120 slice 11, PR C)', () => {
       expect(groups[0]!.map((i) => i.id)).toEqual(['add', 'edit']);
       expect(groups[1]!.map((i) => i.id)).toEqual(expected.map((a) => `hs:${a}`));
       expect(groups[1]!.map((i) => i.label)).toEqual(expected.map((a) => (en as unknown as { headship: { action: Record<string, string> } }).headship.action[a]!));
-      expect(groups[2]!.map((i) => i.id)).toEqual(['headship']);
+      // PR D — Open unit joins Headship details in the View group.
+      expect(groups[2]!.map((i) => i.id)).toEqual(['open', 'headship']);
       expect(groups[3]!.map((i) => i.id)).toEqual(['deactivate']);
       expect(tree().menuLabels(NODES[2]!)).toEqual([null, 'Headship', null, null]);
     });
@@ -368,7 +369,9 @@ describe('OrgUnitTreeComponent (ACC-120 slice 11, PR C)', () => {
 
   it('read-only (no org:manage): the menu holds Headship details and nothing else, and reads no headship', () => {
     render(['org:view', 'users:view']);
-    expect(tree().menuGroups(NODES[2]!)).toEqual([[jasmine.objectContaining({ id: 'headship', label: 'Headship details' })]]);
+    expect(tree().menuGroups(NODES[2]!)).toEqual([
+      [jasmine.objectContaining({ id: 'open', label: 'Open unit' }), jasmine.objectContaining({ id: 'headship', label: 'Headship details' })],
+    ]);
     expect(tree().menuLabels(NODES[2]!)).toEqual([]);
     tree().onMenuOpened(NODES[2]!);
     http.expectNone(`${BASE}/pharm/head`);
