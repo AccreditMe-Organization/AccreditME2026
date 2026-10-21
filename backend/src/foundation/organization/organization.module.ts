@@ -9,6 +9,7 @@ import { OrgUnitHeadController } from './org-unit-head.controller';
 import { OrganizationService } from './organization.service';
 import { OrgUnitHeadService } from './org-unit-head.service';
 import { OrgStructureService } from './org-structure.service';
+import { OrgUnitHistoryService } from './org-unit-history.service';
 
 @Module({
   imports: [
@@ -46,7 +47,7 @@ import { OrgStructureService } from './org-structure.service';
     forwardRef(() => RolesModule),
   ],
   controllers: [OrganizationController, OrgUnitHeadController],
-  providers: [OrganizationService, OrgUnitHeadService, OrgStructureService],
+  providers: [OrganizationService, OrgUnitHeadService, OrgStructureService, OrgUnitHistoryService],
   exports: [OrganizationService, OrgUnitHeadService],
 })
 export class OrganizationModule {}

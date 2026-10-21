@@ -22,7 +22,9 @@ import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
 import { IOrgUnit } from './interfaces/org-unit.interface';
 import { OrgStructureService } from './org-structure.service';
-import { OrgChartQueryDto, OrgStructureQueryDto } from './dto/org-structure-query.dto';
+import { OrgChartQueryDto, OrgStructureQueryDto, OrgUnitHistoryQueryDto } from './dto/org-structure-query.dto';
+import { OrgUnitHistoryService } from './org-unit-history.service';
+import type { IOrgUnitHistoryPage } from './interfaces/org-unit-history.interface';
 import type {
   IOrgChartResponse,
   IOrgStructureResponse,
@@ -35,6 +37,7 @@ export class OrganizationController {
   constructor(
     private readonly organizationService: OrganizationService,
     private readonly orgStructure: OrgStructureService,
+    private readonly orgUnitHistory: OrgUnitHistoryService,
   ) {}
 
   @Get()
@@ -81,6 +84,19 @@ export class OrganizationController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IOrgUnitSummary> {
     return this.orgStructure.summary(tenantId, permissions, id);
+  }
+
+  // PR D — the record's History panel (D8): the unit's stored AuditLog and
+  // OrgUnitHeadEvent rows, newest first. Names follow the caller's permissions.
+  @Get(':id/history')
+  @Permissions(ORG_PERMISSIONS.VIEW)
+  history(
+    @Param('id') id: string,
+    @Query() query: OrgUnitHistoryQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IOrgUnitHistoryPage> {
+    return this.orgUnitHistory.history(tenantId, permissions, id, { skip: query.skip, take: query.take });
   }
 
   @Get(':id')
