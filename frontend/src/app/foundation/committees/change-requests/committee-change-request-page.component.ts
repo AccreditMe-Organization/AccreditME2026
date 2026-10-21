@@ -195,7 +195,8 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
             }
 
             @if (instance(); as instance) {
-              <section class="am-crp__card" data-testid="crp-history">
+              <section class="am-crp__card" aria-labelledby="crp-h-history" data-testid="crp-history">
+                <h2 class="am-crp__h" id="crp-h-history">{{ 'committee.stageHistory' | translate }}</h2>
                 <app-workflow-stage-indicator [instance]="instance" show="history" />
               </section>
             }
