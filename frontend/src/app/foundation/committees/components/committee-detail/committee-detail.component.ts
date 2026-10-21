@@ -42,6 +42,9 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { COMMITTEE_HEADER_GRID, COMMITTEE_PANEL_GRID } from './committee-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { committeeHeaderOffers } from '../../committee-stage';
+import { ChangeRequestBannerComponent, ChangeRequestBannerState } from '../../change-requests/change-request-banner.component';
+import { CommitteeChangeRequestsPanelComponent } from '../../change-requests/committee-change-requests-panel.component';
+import { ChangeRequestDto, ChangeRequestService } from '../../change-requests/change-request.service';
 
 /** ACC-174/177 — the task-row dialogs this page opens, one at a time. */
 type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
@@ -68,6 +71,8 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     CommitteeMemberFormComponent,
     WorkflowTransitionActionsComponent,
     EditDialogComponent,
+    ChangeRequestBannerComponent,
+    CommitteeChangeRequestsPanelComponent,
   ],
   template: `
     @if (error()) {
@@ -160,6 +165,19 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                   data-testid="committee-edit"
                 />
               }
+              <!-- ACC-240 — Request a change follows the server's canRaise
+                   (its permission, the stage policy and no open request), and
+                   shows only once the open read has answered. -->
+              @if (openState() === 'ready' && canRaise()) {
+                <p-button
+                  [label]="'committee.changeRequest.requestChange' | translate"
+                  icon="pi pi-file-edit"
+                  size="small"
+                  [outlined]="true"
+                  (onClick)="onRequestChange()"
+                  data-testid="committee-request-change"
+                />
+              }
             </div>
           </div>
           @if (offers().lockedLine) {
@@ -240,6 +258,10 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
              columns because a six-stage sequence needs the width; the history
              sits beside it rather than below so "where is it" and "how did it
              get there" are read together. -->
+        <!-- ACC-240 — the open change request, between the header card and
+             the Lifecycle row. -->
+        <am-change-request-banner [state]="openState()" [request]="openRequest()" (retry)="loadOpenRequest()" />
+
         @if (currentInstance(); as instance) {
           <section class="grid gap-3" [style.grid-template-columns]="headerGrid">
             <div
@@ -365,6 +387,12 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
               </div>
             }
           </app-record-panel>
+          <!-- ACC-240 — last in the grid. -->
+          <am-committee-change-requests-panel
+            [committeeId]="committeeId"
+            [committeeName]="displayName(c)"
+            [reloadKey]="changeRequestsReload()"
+          />
         </section>
       </div>
     }
@@ -552,6 +580,14 @@ export class CommitteeDetailComponent implements OnInit {
   readonly canEdit = computed(() => this.navigationAccess.hasPermission('committees:edit_details'));
   // ACC-238 — Edit and the Terms Review locked line, by the committee's stage KEY.
   readonly offers = computed(() => committeeHeaderOffers(this.committee()?.currentStageKey, this.canEdit()));
+
+  // ACC-240 — the committee's open change request and canRaise, one read.
+  private readonly changeRequests = inject(ChangeRequestService);
+  readonly openState = signal<ChangeRequestBannerState>('loading');
+  readonly openRequest = signal<ChangeRequestDto | null>(null);
+  readonly canRaise = signal(false);
+  /** Bumped so the Change requests panel reads its list again. */
+  readonly changeRequestsReload = signal(0);
   readonly canAddMember = computed(() => this.navigationAccess.hasPermission('committees:add_member'));
   readonly canRemoveMember = computed(() =>
     this.navigationAccess.hasPermission('committees:remove_member'),
@@ -581,6 +617,7 @@ export class CommitteeDetailComponent implements OnInit {
     this.loadMembers();
     this.loadMembershipEvents();
     this.loadCurrentStage();
+    this.loadOpenRequest();
     this.watchSoughtTask();
   }
 
@@ -667,6 +704,7 @@ export class CommitteeDetailComponent implements OnInit {
 
   onCommitteeSaved(): void {
     this.loadCommittee();
+    this.loadOpenRequest();
     // The committee's own row in allCommittees() is now stale — its name feeds
     // any sibling's parent lookup, and its stage feeds the header pill.
     this.loadCommitteeList();
@@ -752,6 +790,27 @@ export class CommitteeDetailComponent implements OnInit {
   // Feeds four things, three of which can change from this page: the header
   // stage pill, the parent-committee name, the reporting-to name, and the
   // sub-committees panel. Loaded once in ngOnInit was the bug.
+  /** ACC-240 — the banner's request and the header's canRaise. */
+  loadOpenRequest(): void {
+    this.openState.set('loading');
+    this.changeRequests.open(this.committeeId).subscribe({
+      next: (open) => {
+        this.openRequest.set(open.request);
+        this.canRaise.set(open.canRaise);
+        this.openState.set('ready');
+      },
+      error: () => {
+        this.openRequest.set(null);
+        this.canRaise.set(false);
+        this.openState.set('error');
+      },
+    });
+  }
+
+  onRequestChange(): void {
+    void this.router.navigate(['/committees', this.committeeId, 'change-requests', 'new']);
+  }
+
   private loadCommitteeList(): void {
     this.committeeService.listCommittees().subscribe({ next: (v) => this.allCommittees.set(v) });
   }
@@ -792,6 +851,9 @@ export class CommitteeDetailComponent implements OnInit {
     // ACC-238 — the stage KEY decides Edit and the locked line, and it just
     // changed: read the committee again.
     this.loadCommittee();
+    // ACC-240 — and with it whether a change may be requested now.
+    this.loadOpenRequest();
+    this.changeRequestsReload.update((n) => n + 1);
     // ACC-76 — the SECOND instance of the stale-panel bug Ahmad found on the
     // stage timeline, in a different place. The header's stage pill reads
     // currentStageName(), which derives from allCommittees() — loaded once in

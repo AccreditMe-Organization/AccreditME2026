@@ -1061,7 +1061,208 @@
       "reload": "Reload",
       "unreachable": "Nothing was saved: the server couldn't be reached."
     },
-    "lockedTermsReview": "Locked while the terms are under review. Revise Terms to change it."
+    "lockedTermsReview": "Locked while the terms are under review. Revise Terms to change it.",
+    "changeRequest": {
+      "requestChange": "Request a change",
+      "field": {
+        "nameEn": "Name (English)",
+        "nameAr": "Name (Arabic)",
+        "typeValueId": "Type",
+        "purpose": "Purpose",
+        "quorumCount": "Quorum",
+        "meetingFrequency": "Meeting frequency",
+        "orgUnitId": "Owning unit",
+        "parentCommitteeId": "Parent committee",
+        "reportingToCommitteeId": "Reports to"
+      },
+      "list": {
+        "and": "{{a}} and {{b}}",
+        "separator": ","
+      },
+      "status": {
+        "draft": "Draft",
+        "under_review": "Under review",
+        "returned": "Returned for changes",
+        "approved": "✓ Applied",
+        "rejected": "Rejected",
+        "withdrawn": "Withdrawn",
+        "unknown": "Open"
+      },
+      "banner": {
+        "under_review": "Change request {{n}} is under review: {{fields}}",
+        "draft": "Change request {{n}} is a draft: {{fields}}",
+        "returned": "Change request {{n}} was returned for changes: {{fields}}",
+        "unknown": "Change request {{n}} is open: {{fields}}",
+        "bodyUnderReview": "Submitted by {{name}} on {{date}}. Until it is decided, the committee carries on as it is.",
+        "bodyDraft": "Started by {{name}} on {{date}} and not yet submitted.",
+        "bodyReturned": "Returned to {{name}} on {{date}} for changes.",
+        "bodyPhone": "{{name}} · {{date}}",
+        "view": "View request",
+        "error": "Couldn't check for an open change request.",
+        "partial": "A change request is open."
+      },
+      "panel": {
+        "title": "Change requests",
+        "rowTitle": "Change request {{n}} · {{fields}}",
+        "metaSubmitted": "{{name}} · submitted {{date}}",
+        "metaStarted": "{{name}} · started {{date}}",
+        "metaDecided": "{{name}} · {{from}} to {{to}}",
+        "metaOn": "{{name}} · {{date}}",
+        "empty": "No change requests yet. Changes to this committee's details after approval are listed here.",
+        "error": "Couldn't load the change requests.",
+        "loading": "Loading change requests…"
+      },
+      "popup": {
+        "title": "All change requests · {{committee}}",
+        "close": "Close change requests",
+        "search": "Search change requests",
+        "searchPlaceholder": "Number or requester",
+        "col": {
+          "request": "Request",
+          "fields": "Fields",
+          "status": "Status",
+          "requestedBy": "Requested by",
+          "requested": "Requested"
+        },
+        "noMatch": "No change request matches “{{q}}”."
+      },
+      "form": {
+        "eyebrowNew": "Change request · new",
+        "eyebrowDraft": "Change request {{n}} · draft",
+        "title": "Request a change",
+        "titleEdit": "Edit change request {{n}}",
+        "intro": "Change only what needs changing. Every value shown is current until you edit it.",
+        "changed": "✎ Changed",
+        "current": "Current",
+        "was": "was {{value}}",
+        "summary": "Changing: {{fields}}",
+        "reason": "Why is this change needed?",
+        "reasonRequired": "Say why this change is needed.",
+        "noChanges": "Change at least one field.",
+        "goesTo": "Goes to everyone who can approve committee changes.",
+        "saveDraft": "Save as draft",
+        "submit": "Submit for review",
+        "loading": "Loading the committee…",
+        "loadError": "Couldn't load this committee."
+      },
+      "impact": {
+        "title": "What this change does",
+        "loading": "Working out what this change does…",
+        "failed": "Couldn't work out what this change does.",
+        "none": "Change a field to see what it does.",
+        "span": "{{field}}: {{from}} → {{to}}",
+        "QUORUM": "Approvals already in progress keep quorum {{from}}; approvals that start after this change need {{to}}.",
+        "QUORUM_NONE": "Approvals that start after this change need {{to}}. None is in progress now.",
+        "nameKey": "Name",
+        "NAME": "Shown everywhere from approval.",
+        "TYPE": "The committee is listed under its new type from approval.",
+        "PURPOSE": "The new purpose shows on the committee from approval.",
+        "MEETING_FREQUENCY": "No meetings are scheduled yet, so only the frequency changes.",
+        "OWNING_UNIT": "From approval, the new unit's head sees the committee's tasks, and new tasks routed to the committee's unit go there. Open tasks keep their assignee.",
+        "PARENT": "It is listed among the new parent's sub-committees.",
+        "PARENT_NONE": "It is no longer a sub-committee.",
+        "REPORTS_TO": "It reports to the new committee from approval.",
+        "REPORTS_TO_NONE": "It reports to no committee from approval.",
+        "TERMS_TASK_KEY": "Terms of reference",
+        "TERMS_TASK": "A task to revise them is created for {{name}} on approval."
+      },
+      "page": {
+        "eyebrow": "Change request {{n}}",
+        "title": "Change request {{n}} · {{committee}}",
+        "requestedBy": "Requested by {{name}} · {{date}}",
+        "returnedBy": "Returned by {{name}} · {{date}}",
+        "approvedBy": "Approved by {{name}}",
+        "appliedOn": "✓ Applied {{date}}",
+        "withdrawnBy": "Withdrawn by {{name}} · {{date}}",
+        "whatChanges": "What changes",
+        "changedOnly": "Changed fields only",
+        "whatItAsked": "What it asked to change",
+        "col": {
+          "field": "Field",
+          "current": "Current",
+          "proposed": "Proposed",
+          "phone": "Current → Proposed"
+        },
+        "was": "was {{value}}",
+        "driftMark": "Changed since it was submitted",
+        "none": "None",
+        "reason": "Reason",
+        "waiting": "Waiting for a decision since {{date}}. You can withdraw it until it's decided.",
+        "returnedTitle": "Returned for changes",
+        "returnedBody": "“{{note}}” · {{name}}, {{date}}",
+        "appliedTitle": "Applied {{date}}",
+        "appliedBody": "The committee now shows these values. A task to revise the terms of reference was created for {{name}}.",
+        "openTask": "Open the task",
+        "rejectedTitle": "Rejected by {{name}} on {{date}}",
+        "rejectedBody": "“{{reason}}” Nothing was changed.",
+        "withdrawnTitle": "Withdrawn by {{name}} on {{date}}",
+        "nothingChanged": "Nothing was changed.",
+        "dissolvingTitle": "This committee is being dissolved, so these changes can't be applied.",
+        "dissolvingBody": "The request can only be rejected or withdrawn.",
+        "driftTitle": "The committee has changed since this request was submitted.",
+        "driftBody": "It can't be applied as it is. Return it to the requester.",
+        "actionsRegion": "Actions for change request {{n}}",
+        "loading": "Loading the change request…",
+        "error": "Couldn't load this change request.",
+        "notFound": "Change request not found",
+        "notFoundBody": "It may have been removed, or the link is wrong.",
+        "backToCommittee": "Back to the committee"
+      },
+      "action": {
+        "submit": "Submit for review",
+        "withdraw": "Withdraw…",
+        "approve": "Approve…",
+        "return": "Return for changes…",
+        "reject": "Reject…"
+      },
+      "approve": {
+        "header": "Approve and apply these changes?",
+        "headerOne": "Approve and apply this change?",
+        "context": "Change request {{n}} · {{committee}}",
+        "changedText": "{{field}}: changed",
+        "task": "A task to revise the terms of reference will be created for {{name}}.",
+        "button": "Approve"
+      },
+      "return": {
+        "header": "Return for changes",
+        "context": "Change request {{n}} · back to {{name}} as a draft",
+        "sentence": "{{name}} can edit and resubmit it.",
+        "note": "Note",
+        "noteRequired": "Say what needs changing.",
+        "button": "Return"
+      },
+      "reject": {
+        "header": "Reject change request {{n}}",
+        "context": "Nothing is changed",
+        "sentence": "{{name}} is told, with your reason.",
+        "reason": "Reason",
+        "reasonRequired": "Say why it is rejected.",
+        "button": "Reject"
+      },
+      "withdraw": {
+        "header": "Withdraw change request {{n}}?",
+        "message": "It ends here and nothing is changed. You can start a new request afterwards.",
+        "keep": "Keep it",
+        "button": "Withdraw"
+      },
+      "refusal": {
+        "CHANGE_REQUEST_STAGE_NOT_ALLOWED": "A change can't be requested in this committee's current stage.",
+        "CHANGE_REQUEST_ALREADY_OPEN": "A change request is already open for this committee. Finish or withdraw it first.",
+        "CHANGE_REQUEST_NO_CHANGES": "Change at least one field.",
+        "CHANGE_REQUEST_QUORUM_MIN": "The quorum must be at least 1.",
+        "CHANGE_REQUEST_NOT_REQUESTER": "Only the person who raised this change request can do this.",
+        "CHANGE_REQUEST_NOT_ALLOWED": "You can't do this to this change request.",
+        "CHANGE_REQUEST_OWN_DECISION": "You raised this change request, so someone else must decide it.",
+        "CHANGE_REQUEST_NOT_EDITABLE": "Only a draft or returned change request can be changed or submitted.",
+        "CHANGE_REQUEST_NOT_UNDER_REVIEW": "Only a change request under review can be approved, returned or rejected.",
+        "CHANGE_REQUEST_NOT_OPEN": "This change request is already closed.",
+        "CHANGE_REQUEST_COMMITTEE_DISSOLVING": "This committee is being dissolved, or has been, so its change request can only be rejected or withdrawn.",
+        "CHANGE_REQUEST_COMMITTEE_CHANGED": "The committee has changed since this request was submitted, so it can't be applied. Return it to the requester. Nothing was changed.",
+        "CHANGE_REQUEST_CHANGED": "Change request {{n}} was changed by someone else since you opened it. Nothing was saved.",
+        "unreachable": "Nothing was changed: the server couldn't be reached.",
+        "failed": "Something went wrong, so nothing was changed."
+      }
+    }
   },
   "orgPosition": {
     "addPosition": "Add Position",
@@ -1650,6 +1851,10 @@
     }
   },
   "home": {
+    "awaiting": "Awaiting my action",
+    "awaitingChange": "Change request {{n}} · {{committee}}",
+    "awaitingChangeMeta": "{{name}} · submitted {{date}}",
+    "awaitingSeeAll": "See all in My Tasks",
     "greeting": "Welcome back, {{name}}",
     "myTasks": "My Open Tasks",
     "viewAll": "View all",
@@ -1997,6 +2202,22 @@
       }
     },
     "committee": {
+      "changeRequestsCount": {
+        "one": "{{count}} change request",
+        "other": "{{count}} change requests"
+      },
+      "changeRequestsMatch": {
+        "one": "{{count}} change request matches",
+        "other": "{{count}} change requests match"
+      },
+      "changeRequestOfMembers": {
+        "one": "of {{count}} member",
+        "other": "of {{count}} members"
+      },
+      "changeRequestAndMore": {
+        "one": "{{fields}} and {{count}} more",
+        "other": "{{fields}} and {{count}} more"
+      },
       "members": {
         "one": "{{count}} member",
         "other": "{{count}} members"
