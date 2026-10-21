@@ -209,7 +209,7 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
           </div>
 
           <ng-template #actionsTpl>
-            @if (r.actions.edit) {
+            @if (canEdit()) {
               <p-button [label]="'common.edit' | translate" icon="pi pi-pencil" size="small" [outlined]="true" (onClick)="edit()" data-testid="crp-edit" />
             }
             @if (r.actions.submit) {
@@ -248,7 +248,7 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
       .am-crp{display:flex;flex-direction:column;gap:var(--am-space-12);max-inline-size:1040px;min-inline-size:0}
       .am-crp__state{display:flex;align-items:center;gap:var(--am-space-8);padding:var(--am-space-16) 0;color:var(--am-ink-700)}
       .am-crp__state--block{flex-direction:column;align-items:flex-start}
-      .am-crp__skel{border-radius:var(--am-radius-card);background:var(--am-skeleton-shimmer,#F1F4F8)}
+      .am-crp__skel{border-radius:var(--am-radius-card);background:var(--am-skeleton-shimmer)}
       .am-crp__chips{display:inline-flex;flex-wrap:wrap;gap:var(--am-space-6);align-items:center}
       .am-crp__chip{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--am-neutral-chip-bg);border:1px solid var(--am-neutral-chip-border);color:var(--am-neutral-chip-ink);white-space:nowrap}
       .am-crp__chip[data-status='under_review']{background:var(--am-info-bg);border-color:var(--am-info-border);color:var(--am-info-ink)}
@@ -262,7 +262,7 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
       .am-crp__banner--success{background:var(--am-success-bg);border-color:var(--am-success-border)}
       .am-crp__banner--warning{background:var(--am-warning-bg);border-color:var(--am-warning-border)}
       .am-crp__banner--danger{background:var(--am-danger-bg);border-color:var(--am-danger-border)}
-      .am-crp__card{background:var(--am-card,#fff);border:1px solid var(--am-border);border-radius:var(--am-radius-card);padding:14px 18px;min-inline-size:0}
+      .am-crp__card{background:var(--am-card);border:1px solid var(--am-border);border-radius:var(--am-radius-card);padding:14px 18px;min-inline-size:0}
       .am-crp__card-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--am-space-4) var(--am-space-12);margin-block-end:var(--am-space-8)}
       .am-crp__h{margin:0;font-size:13px;font-weight:600;color:var(--am-ink-900)}
       .am-crp__card > .am-crp__h{margin-block-end:var(--am-space-8)}
@@ -279,7 +279,7 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
          bottom of the page while it scrolls. Sticky, not fixed, so the bar keeps
          its own place at the end of the page and nothing is ever behind it. */
       .am-crp--phone .am-crp__line{grid-template-columns:minmax(0,1fr);gap:var(--am-space-2)}
-      .am-crp__bar{position:sticky;inset-block-end:-16px;z-index:2;display:flex;flex-wrap:wrap;gap:var(--am-space-8);margin-inline:-16px;margin-block-end:-16px;padding:12px 16px;background:var(--am-card,#fff);border-block-start:1px solid var(--am-border)}
+      .am-crp__bar{position:sticky;inset-block-end:-16px;z-index:2;display:flex;flex-wrap:wrap;gap:var(--am-space-8);margin-inline:-16px;margin-block-end:-16px;padding:12px 16px;background:var(--am-card);border-block-start:1px solid var(--am-border)}
       .am-crp__bar p-button{flex:1 1 auto}
       .am-crp__bar p-button .p-button{inline-size:100%}
     `,
@@ -325,6 +325,8 @@ export class CommitteeChangeRequestPageComponent implements OnDestroy {
     const me = this.auth.currentUser()?.id;
     return !!me && me === this.request()?.requestedBy.id;
   });
+  /** The server's answer for this viewer: the request's own `actions.edit`. */
+  readonly canEdit = computed(() => !!this.request()?.actions.edit);
   readonly hasActions = computed(() => {
     const a = this.request()?.actions;
     return !!a && (a.edit || a.submit || a.approve || a.return || a.reject || a.withdraw);

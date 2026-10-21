@@ -25,7 +25,7 @@ export const CHANGE_FIELDS = [
   'reportingToCommitteeId',
 ] as const;
 export type ChangeField = (typeof CHANGE_FIELDS)[number];
-export type ChangeValue = string | number | null;
+export type ChangeValue = number | string | null;
 export type ChangeValues = Partial<Record<ChangeField, ChangeValue>>;
 
 export interface ChangeRequestActionsDto {

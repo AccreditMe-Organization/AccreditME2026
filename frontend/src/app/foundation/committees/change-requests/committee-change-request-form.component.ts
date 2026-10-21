@@ -306,7 +306,7 @@ export function diffChanges(values: Partial<Record<ChangeField, unknown>>, commi
       .am-crf{display:flex;flex-direction:column;gap:var(--am-space-16);max-inline-size:880px;padding-block-end:0}
       .am-crf__state{display:flex;align-items:center;gap:var(--am-space-8);margin:0;padding:var(--am-space-16) 0;color:var(--am-ink-700)}
       .am-crf__form{display:flex;flex-direction:column;gap:var(--am-space-16);min-inline-size:0}
-      .am-crf__group,.am-crf__impact{background:var(--am-card,#fff);border:1px solid var(--am-border);border-radius:var(--am-radius-card);padding:14px 18px;min-inline-size:0}
+      .am-crf__group,.am-crf__impact{background:var(--am-card);border:1px solid var(--am-border);border-radius:var(--am-radius-card);padding:14px 18px;min-inline-size:0}
       .am-crf__heading{margin:0 0 var(--am-space-8);font-size:13px;font-weight:600;color:var(--am-ink-900)}
       .am-crf__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:0 var(--am-space-16)}
       .am-crf__f{position:relative;min-inline-size:0}
@@ -323,7 +323,7 @@ export function diffChanges(values: Partial<Record<ChangeField, unknown>>, commi
       .am-crf__line dd{margin:0;color:var(--am-ink-700);overflow-wrap:anywhere}
       .am-crf__link{font:inherit;font-weight:600;color:var(--am-primary-700);background:none;border:0;padding:0;cursor:pointer}
       .am-crf__link:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
-      .am-crf__foot{position:sticky;inset-block-end:-16px;z-index:2;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--am-space-8) var(--am-space-16);margin-inline:-16px;margin-block-end:-16px;padding:12px 16px;background:var(--am-card,#fff);border-block-start:1px solid var(--am-border)}
+      .am-crf__foot{position:sticky;inset-block-end:-16px;z-index:2;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--am-space-8) var(--am-space-16);margin-inline:-16px;margin-block-end:-16px;padding:12px 16px;background:var(--am-card);border-block-start:1px solid var(--am-border)}
       .am-crf__foot-note{font-size:var(--am-type-meta-size);color:var(--am-ink-500);min-inline-size:0}
       .am-crf__foot-message{margin:0;font-size:var(--am-type-meta-size);color:var(--am-danger-ink);min-inline-size:0}
       .am-crf__buttons{display:flex;flex-wrap:wrap;gap:var(--am-space-12);margin-inline-start:auto}
