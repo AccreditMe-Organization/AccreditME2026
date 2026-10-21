@@ -259,11 +259,13 @@ describe('HeadshipPanelComponent (ACC-133)', () => {
 
   it('Appoint head, Appoint successor and Arrange cover open their dialogs, and ask nothing', () => {
     const el = render(status());
+    // ACC-120 slice 11 — the dialogs live in am-headship-actions, shared with
+    // the org tree; the panel reaches them through actions().
     click(el, 'appointHead');
-    expect(fixture.componentInstance.dialog()).toBe('appointHead');
-    fixture.componentInstance.dialog.set(null);
+    expect(fixture.componentInstance.actions().dialog()).toBe('appointHead');
+    fixture.componentInstance.actions().dialog.set(null);
     click(el, 'arrangeCover');
-    expect(fixture.componentInstance.dialog()).toBe('arrangeCover');
+    expect(fixture.componentInstance.actions().dialog()).toBe('arrangeCover');
     expect(asked.length).toBe(0);
   });
 });

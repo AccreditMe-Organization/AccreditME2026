@@ -148,7 +148,15 @@ describe('OrgUnitForm — the unit dialog against the 420px body cap (ACC-120 sl
         { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
         {
           provide: OrgUnitService,
-          useValue: { getTree: () => of(TREE), getFlat: () => of(UNITS), create: () => of(UNITS[3]), update: () => of(UNITS[2]) },
+          // ACC-120 slice 11 PR C — the tree reads the structure; the dialog
+          // still reads the flat list of units.
+          useValue: {
+            getTree: () => of(TREE),
+            getStructure: () => of({ nodes: [], asOf: '2026-10-20T09:00:00.000Z' }),
+            getFlat: () => of(UNITS),
+            create: () => of(UNITS[3]),
+            update: () => of(UNITS[2]),
+          },
         },
         { provide: LookupService, useValue: { getValues: () => of(TYPES) } },
       ],

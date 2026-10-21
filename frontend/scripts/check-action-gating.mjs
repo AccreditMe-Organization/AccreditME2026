@@ -115,11 +115,10 @@ const GATE_PATTERN = /hasPermission|isPlatformAdmin|canWriteModule|\bcan[A-Z]\w*
 // file by hand.
 const ALLOWLIST = new Map([
   [
-    'foundation/organization/components/org-unit-tree/org-unit-tree.component.ts#pi-crown',
-    'Opens the unit\'s Headship panel (ACC-133), which is a READ for every viewer of ' +
-      'the page: GET /organization/units/:id/head is org:view. Every write inside the ' +
-      'panel is gated by org:manage, and a viewer without it sees the panel and no ' +
-      'actions. Titled "Headship" for them, "Manage head" for org:manage.',
+    'foundation/organization/components/org-unit-tree/org-unit-tree.component.ts#pi-times',
+    'Clears the tree search box (ACC-120 slice 11). A view control: it changes what the ' +
+      'reader sees and writes nothing. Every write on the page is in the row menu or the ' +
+      'header, each gated by org:manage.',
   ],
   [
     'shared/components/edit-dialog/edit-dialog.component.ts#pi-times',

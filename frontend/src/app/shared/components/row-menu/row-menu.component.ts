@@ -74,9 +74,12 @@ const POSITIONS: ConnectedPosition[] = [
     </button>
     <ng-template #menu>
       <div cdkMenu class="am-row-menu" data-testid="row-menu">
-        @for (group of groups(); track $index; let first = $first) {
+        @for (group of groups(); track $index; let first = $first; let g = $index) {
           @if (!first) {
             <div class="am-row-menu__divider" role="separator"></div>
+          }
+          @if (groupLabels()[g]; as heading) {
+            <div class="am-row-menu__heading" role="presentation" data-testid="row-menu-heading">{{ heading }}</div>
           }
           @for (item of group; track item.id) {
             <button
@@ -111,6 +114,7 @@ const POSITIONS: ConnectedPosition[] = [
       .am-row-menu__item--danger{color:var(--am-danger-ink)}
       .am-row-menu__sub{display:block;font-size:11.5px;color:var(--am-ink-500)}
       .am-row-menu__divider{block-size:1px;margin:4px 0;background:var(--am-border)}
+      .am-row-menu__heading{padding:var(--am-space-6) 14px var(--am-space-2);font-size:var(--am-type-micro-size);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--am-ink-500)}
     `,
   ],
 })
@@ -124,7 +128,19 @@ export class RowMenuComponent {
   readonly groups = input.required<RowMenuItem[][]>();
   /** The ⋯'s accessible name, naming the row ("Actions for Renew the terms"). */
   readonly label = input.required<string>();
+  /**
+   * ACC-120 slice 11 — an optional heading per group, by index (null for none),
+   * already translated: the org tree's "Headship" group. Opt-in; a menu without
+   * it renders exactly as before. The heading is not an item: the CDK menu's
+   * keys never land on it.
+   */
+  readonly groupLabels = input<(string | null)[]>([]);
   readonly picked = output<string>();
+  /**
+   * ACC-120 slice 11 — the menu opened, so a caller can read what its items
+   * depend on (the org tree reads the unit's headship then). Opt-in.
+   */
+  readonly openedChange = output<boolean>();
 
   protected readonly positions = POSITIONS;
   private layerId: number | null = null;
@@ -136,9 +152,11 @@ export class RowMenuComponent {
   opened(): void {
     if (this.layerId === null) this.layerId = this.layers.push();
     this.unregisterScroll ??= registerScrollableAncestors(this.host.nativeElement, this.scrollDispatcher, this.ngZone);
+    this.openedChange.emit(true);
   }
 
   closed(): void {
+    if (this.layerId !== null) this.openedChange.emit(false);
     if (this.layerId !== null) {
       this.layers.remove(this.layerId);
       this.layerId = null;

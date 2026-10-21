@@ -112,3 +112,59 @@ describe('am-row-menu — follows its row, and aligns in either direction (ACC-2
     });
   }
 });
+
+// ACC-120 slice 11 — two opt-in additions the org tree needs: a heading per
+// group, and an event when the menu opens.
+@Component({
+  standalone: true,
+  imports: [RowMenuComponent],
+  template: `<am-row-menu [groups]="groups" [groupLabels]="labels" label="Actions for Pharmacy" (openedChange)="events.push($event)" />`,
+})
+class LabelledHostComponent {
+  readonly groups: RowMenuItem[][] = [[{ id: 'edit', label: 'Edit' }], [{ id: 'vacate', label: 'Vacate' }]];
+  labels: (string | null)[] = [null, 'Headship'];
+  readonly events: boolean[] = [];
+}
+
+describe('am-row-menu — group headings and the opened event (ACC-120 slice 11)', () => {
+  let fixture: ComponentFixture<LabelledHostComponent>;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ imports: [LabelledHostComponent], providers: [provideTranslateService({ lang: 'en' })] });
+    fixture = TestBed.createComponent(LabelledHostComponent);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    fixture.nativeElement.remove();
+    document.querySelectorAll('.cdk-overlay-container').forEach((n) => n.remove());
+  });
+
+  const open = () => {
+    (fixture.nativeElement.querySelector('[data-testid="row-menu-trigger"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+  };
+
+  it('draws a heading only where one is given, and never as an item', () => {
+    open();
+    const headings = Array.from(document.querySelectorAll('[data-testid="row-menu-heading"]')).map((h) => h.textContent!.trim());
+    expect(headings).toEqual(['Headship']);
+    const items = Array.from(document.querySelectorAll('[cdkMenuItem], .am-row-menu__item')).map((i) => i.textContent!.trim());
+    expect(items).toEqual(['Edit', 'Vacate']);
+  });
+
+  it('without groupLabels, no heading renders', () => {
+    fixture.componentInstance.labels = [];
+    fixture.detectChanges();
+    open();
+    expect(document.querySelectorAll('[data-testid="row-menu-heading"]').length).toBe(0);
+  });
+
+  it('says when it opens and when it closes', () => {
+    open();
+    expect(fixture.componentInstance.events).toEqual([true]);
+    open(); // a second press on the ⋯ closes it
+    expect(fixture.componentInstance.events).toEqual([true, false]);
+  });
+});
