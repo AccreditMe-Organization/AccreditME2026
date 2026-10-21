@@ -2946,7 +2946,7 @@
     },
     "cover": {
       "label": "الرئيس بالنيابة",
-      "arranged": "تم ترتيب تغطية",
+      "arranged": "تم ترتيب التكليف",
       "coveringFor": "تغطية عن {{name}}",
       "coveringVacancy": "تغطية الشاغر",
       "theHead": "الرئيس",
@@ -2970,7 +2970,7 @@
       "startNewHeadToday": "بدء الرئيس الجديد اليوم",
       "withdrawAppointment": "سحب التعيين",
       "vacate": "إخلاء",
-      "arrangeCover": "ترتيب تغطية",
+      "arrangeCover": "ترتيب تكليف",
       "endCover": "إنهاء التغطية"
     },
     "appoint": {
