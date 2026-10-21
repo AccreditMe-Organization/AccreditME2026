@@ -60,7 +60,7 @@ export type CappedPanelState = 'loading' | 'error' | 'ready';
             } @else {
               <ul class="am-cp__list" role="list"><ng-content /></ul>
             }
-            @if (total() > shown()) {
+            @if (offersSeeAll() && total() > shown()) {
               <div class="am-cp__foot" [attr.data-testid]="testIdPrefix() + '-foot'">
                 <span>{{ 'record.showing' | translate: { shown: format.number(shown()), total: format.number(total()) } }}</span>
                 <span aria-hidden="true">·</span>
@@ -120,6 +120,12 @@ export class CappedPanelComponent {
   /** The body's line when there is nothing, already translated. */
   readonly emptyText = input('');
   readonly testIdPrefix = input('capped');
+  /**
+   * ACC-120 slice 11, PR D — false for a total the viewer may count but not
+   * read (an org unit's committees without `committees:view`, D7): no
+   * "Showing 0 of 3 · See all" for rows they can't open. Opt-in; default true.
+   */
+  readonly offersSeeAll = input(true);
   readonly retry = output<void>();
   readonly seeAll = output<void>();
 

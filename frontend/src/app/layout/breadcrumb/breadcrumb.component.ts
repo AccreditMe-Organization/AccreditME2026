@@ -163,7 +163,10 @@ export class BreadcrumbComponent {
     // own ancestry (its section, as on the record's page), then the record.
     const parent = this.parents.current();
     const recordParent = parent && parent.forPath === path ? parent : null;
-    const location = resolveNavLocation(recordParent ? recordParent.url : path, this.access);
+    // A longer ancestry (an org unit's parent units, PR D) resolves its section
+    // from the top record, which sits in the same section as the rest.
+    const above = recordParent?.above ?? [];
+    const location = resolveNavLocation(recordParent ? (above[0]?.url ?? recordParent.url) : path, this.access);
     if (!location) return trail;
 
     // The platform shell has one group, labelled "Platform" — the same word as
@@ -180,6 +183,7 @@ export class BreadcrumbComponent {
     }
 
     if (recordParent) {
+      for (const crumb of above) trail.push({ text: crumb.text, url: crumb.url });
       trail.push({ text: recordParent.text, url: recordParent.url });
     }
 
