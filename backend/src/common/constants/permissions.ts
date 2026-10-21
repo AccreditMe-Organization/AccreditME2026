@@ -55,15 +55,13 @@ export const WORKFLOWS_PERMISSIONS = {
   MANAGE: 'workflows:manage',
 } as const;
 
-export const TASKS_PERMISSIONS = {
-  VIEW:     'tasks:view',
-  CREATE:   'tasks:create',
-  REASSIGN: 'tasks:reassign',
-  MANAGE:   'tasks:manage',
-  // No COMPLETE. tasks:complete was retired in ACC-162: completing a task and
-  // attaching evidence are both self-scoped to an active assignee, so it gated
-  // nothing. Do not reintroduce it.
-} as const;
+// ACC-244 — THERE IS NO tasks:* GROUP ANY MORE. tasks:view, tasks:create,
+// tasks:reassign and tasks:manage were the flat task keys; each is replaced by
+// a key PER RECORD TYPE (COMMITTEE_TASKS_PERMISSIONS below, read through
+// foundation/task/task-record-types.ts), and a relationship to a task needs no
+// key at all. backfill:acc244-retire-flat-task-keys removes them from existing
+// tenants. tasks:complete went the same way in ACC-162. Do not reintroduce a
+// flat task key: retired-task-keys.spec.ts fails on any code that names one.
 
 export const COMMITTEES_PERMISSIONS = {
   VIEW:               'committees:view',
@@ -94,9 +92,8 @@ export const COMMITTEES_PERMISSIONS = {
 // of these is deliberate (role.seed.ts, and backfill:acc244-grant-task-keys for
 // existing tenants).
 //
-// NOTHING READS THEM YET. PR 2 switches every task path onto them and retires
-// tasks:view / create / reassign / manage; until then they are on
-// PERMISSIONS_NOT_YET_CHECKED below.
+// ACC-244 PR 2 — every task path reads them now, through the record-type
+// registry (task-record-types.ts); the flat tasks:* keys are retired.
 export const COMMITTEE_TASKS_PERMISSIONS = {
   // Every task on every committee the holder can see.
   VIEW_ALL:  'committees:view_all_tasks',
@@ -270,10 +267,4 @@ export const PERMISSIONS_NOT_YET_CHECKED: readonly string[] = [
   KPI_PERMISSIONS.VERIFY,
   KPI_PERMISSIONS.MANAGE,
   KPI_PERMISSIONS.MANAGE_SYSTEM,
-  // ACC-244 PR 1 — seeded and granted ahead of the code that reads them (PR 2),
-  // which removes these four lines in the same change.
-  COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL,
-  COMMITTEE_TASKS_PERMISSIONS.CREATE,
-  COMMITTEE_TASKS_PERMISSIONS.MANAGE,
-  COMMITTEE_TASKS_PERMISSIONS.VIEW_UNIT,
 ];

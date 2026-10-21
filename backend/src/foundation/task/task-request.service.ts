@@ -10,8 +10,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
-import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
-import { TaskAssignee, TaskStatus } from '../../../generated/prisma/client';
+import { holdsTaskKey, typesHolding } from './task-record-types';
+import { TaskAssignee, TaskSourceType, TaskStatus } from '../../../generated/prisma/client';
 import { ITask } from './interfaces/task.interface';
 import { ITaskRequest, ITaskRequestForDecision } from './interfaces/task-request.interface';
 import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './dto/task-request.dto';
@@ -50,7 +50,7 @@ const REQUEST_STATUS_PHRASE: Record<string, string> = {
  *   ask        an active assignee of an Assigned or In-progress task
  *   withdraw   the person who asked
  *   decide     the creator, anyone acting for them (canActForCreator), or a
- *              tasks:reassign holder — never the person who asked
+ *              Manage tasks holder on the type (ACC-244) — never the person who asked
  *   resume     an active assignee, or anyone who may decide
  * Everyone else gets the identical 404, checked before any 409.
  *
@@ -149,7 +149,7 @@ export class TaskRequestService {
     });
 
     const requester = await this.userName(userId, organizationId);
-    const recipients = await this.authority.decisionRecipients(task.createdById, userId, organizationId);
+    const recipients = await this.authority.decisionRecipients(task.createdById, userId, organizationId, task.sourceType);
     for (const recipient of recipients) {
       await this.notificationService.create(
         {
@@ -427,7 +427,7 @@ export class TaskRequestService {
       const entitled =
         !!task &&
         (isActiveAssignee(task, viewer.id) ||
-          viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
+          holdsTaskKey(viewer.permissions, task.sourceType, 'MANAGE') ||
           (await this.authority.canActForCreator(task.createdById, viewer.id, organizationId, tx)));
       if (!task || !entitled) throw new NotFoundException(NOT_FOUND);
       if (task.status !== 'ON_HOLD') throw new ConflictException('This task is not on hold');
@@ -457,12 +457,14 @@ export class TaskRequestService {
 
   /**
    * "Waiting for your decision": pending requests on tasks the viewer created
-   * or currently acts for — and, for a tasks:reassign holder, on tasks whose
-   * creator is no longer ACTIVE. Never the viewer's own requests.
+   * or currently acts for — and, for a Manage tasks holder, on tasks of the
+   * record types they manage whose creator is no longer ACTIVE (ACC-244, where
+   * tasks:reassign was). Never the viewer's own requests.
    */
   async awaitingDecision(viewer: RequestViewer, organizationId: string): Promise<ITaskRequestForDecision[]> {
     const covered = await this.authority.creatorsCoveredBy(viewer.id, organizationId);
     const creators = [viewer.id, ...covered];
+    const manageTypes = typesHolding(viewer.permissions, 'MANAGE') as TaskSourceType[];
     const rows = await this.prisma.taskRequest.findMany({
       where: {
         organizationId,
@@ -470,8 +472,8 @@ export class TaskRequestService {
         requestedById: { not: viewer.id },
         OR: [
           { task: { createdById: { in: creators } } },
-          ...(viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN)
-            ? [{ task: { createdBy: { status: { not: 'ACTIVE' as const } } } }]
+          ...(manageTypes.length > 0
+            ? [{ task: { sourceType: { in: manageTypes }, createdBy: { status: { not: 'ACTIVE' as const } } } }]
             : []),
         ],
       },
@@ -522,7 +524,7 @@ export class TaskRequestService {
     const entitled =
       !!task &&
       !!request &&
-      (viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
+      (holdsTaskKey(viewer.permissions, task.sourceType, 'MANAGE') ||
         (await this.authority.canActForCreator(task.createdById, viewer.id, organizationId, tx)));
     if (!task || !request || !entitled) throw new NotFoundException(NOT_FOUND);
     if (request.requestedById === viewer.id) {

@@ -17,7 +17,7 @@ const DELEGATION_REASONS = ['ACTING_HEAD', 'OUT_OF_OFFICE_COVERAGE'] as const;
 
 // ACC-40 Section 2.6.3 — per-assignee delegation stamp, populated ONLY by
 // the workflow engine's own internal call (WorkflowService.executeCreateTask()),
-// never by the public controller/manual (tasks:create) path — a manually
+// never by the public controller/manual (Create tasks) path — a manually
 // created task's assignees are directly chosen by a human, no delegation
 // reasoning applies.
 export class TaskAssigneeDelegationDto {
@@ -70,7 +70,7 @@ export class TaskAiDraftDto {
 // Every task MUST have sourceType and sourceId — no standalone tasks, per
 // CLAUDE.md's non-negotiable rule. Both fields are required here, not
 // optional, regardless of whether the task is created automatically by the
-// workflow engine or manually by a user holding tasks:create.
+// workflow engine or manually by a user holding Create tasks on the record's type.
 export class CreateTaskDto {
   @IsString()
   @IsNotEmpty()
@@ -94,7 +94,7 @@ export class CreateTaskDto {
   sourceStageId?: string;
 
   // Links a workflow-generated task back to the WorkflowInstance that
-  // created it — never set by manual (tasks:create) task creation.
+  // created it — never set by manual (Create tasks) task creation.
   @IsString()
   @IsOptional()
   workflowInstanceId?: string;

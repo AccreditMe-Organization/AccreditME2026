@@ -907,7 +907,7 @@ describe('RoleService', () => {
 
     // ── D4: a stale save is refused ───────────────────────────────────────────
     it('refuses a save whose loaded set is no longer the role\'s with 409 ROLE_PERMISSIONS_CHANGED, writing nothing', async () => {
-      const state = stageRolePermissions(['committees:view', 'tasks:view']);
+      const state = stageRolePermissions(['committees:view', 'workflows:view']);
 
       const code = await codeOf(
         service.assignPermissions(
@@ -921,17 +921,17 @@ describe('RoleService', () => {
       expect(code).toBe('ROLE_PERMISSIONS_CHANGED');
       expect(mockPrisma.rolePermission.deleteMany).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
-      expect(state.held()).toEqual(['committees:view', 'tasks:view']);
+      expect(state.held()).toEqual(['committees:view', 'workflows:view']);
     });
 
     it('compares as a SET: the same keys in another order, or repeated, save normally', async () => {
-      const state = stageRolePermissions(['committees:view', 'tasks:view']);
+      const state = stageRolePermissions(['committees:view', 'workflows:view']);
 
       await service.assignPermissions(
         'role-1',
         {
           permissionKeys: ['committees:view'],
-          expectedPermissionKeys: ['tasks:view', 'committees:view', 'tasks:view'],
+          expectedPermissionKeys: ['workflows:view', 'committees:view', 'workflows:view'],
         },
         ORG_A,
         ACTOR,
@@ -983,7 +983,7 @@ describe('RoleService', () => {
         codeOf(
           service.assignPermissions(
             'role-1',
-            { permissionKeys: ['committees:view', 'tasks:view'], expectedPermissionKeys: loaded },
+            { permissionKeys: ['committees:view', 'workflows:view'], expectedPermissionKeys: loaded },
             ORG_A,
             ACTOR,
           ),
@@ -1000,7 +1000,7 @@ describe('RoleService', () => {
 
       expect(first).toBeUndefined();
       expect(second).toBe('ROLE_PERMISSIONS_CHANGED');
-      expect(state.held()).toEqual(['committees:view', 'tasks:view']);
+      expect(state.held()).toEqual(['committees:view', 'workflows:view']);
       expect(mockAuditLog.log).toHaveBeenCalledTimes(1);
     });
 
@@ -1030,7 +1030,7 @@ describe('RoleService', () => {
 
     // ── D6: an empty set ──────────────────────────────────────────────────────
     it('accepts an EMPTY list for an ordinary role: every grant is removed', async () => {
-      const state = stageRolePermissions(['committees:view', 'tasks:view']);
+      const state = stageRolePermissions(['committees:view', 'workflows:view']);
 
       await service.assignPermissions('role-1', { permissionKeys: [], expectedPermissionKeys: state.held() }, ORG_A, ACTOR);
 
@@ -1040,11 +1040,11 @@ describe('RoleService', () => {
 
     // ── D5: the audit ─────────────────────────────────────────────────────────
     it('audits before, after, added and removed', async () => {
-      stageRolePermissions(['committees:view', 'tasks:view']);
+      stageRolePermissions(['committees:view', 'workflows:view']);
 
       await service.assignPermissions(
         'role-1',
-        { permissionKeys: ['committees:view', 'lookups:view'], expectedPermissionKeys: ['committees:view', 'tasks:view'] },
+        { permissionKeys: ['committees:view', 'lookups:view'], expectedPermissionKeys: ['committees:view', 'workflows:view'] },
         ORG_A,
         ACTOR,
       );
@@ -1053,9 +1053,9 @@ describe('RoleService', () => {
         expect.objectContaining({
           objectType: 'RolePermission',
           objectId: 'role-1',
-          before: { permissions: ['committees:view', 'tasks:view'] },
+          before: { permissions: ['committees:view', 'workflows:view'] },
           after: { permissions: ['committees:view', 'lookups:view'] },
-          metadata: { added: ['lookups:view'], removed: ['tasks:view'] },
+          metadata: { added: ['lookups:view'], removed: ['workflows:view'] },
         }),
       );
     });
@@ -1147,11 +1147,11 @@ describe('RoleService', () => {
 
       await service.assignPermissions(
         'role-1',
-        { permissionKeys: ['platform:admin', 'tasks:view'], expectedPermissionKeys: state.held() },
+        { permissionKeys: ['platform:admin', 'workflows:view'], expectedPermissionKeys: state.held() },
         ORG_A,
         ACTOR,
       );
-      expect(state.held()).toEqual(['platform:admin', 'tasks:view']);
+      expect(state.held()).toEqual(['platform:admin', 'workflows:view']);
     });
 
     // ── F2: in the platform organisation, platform keys are ordinary keys ────
@@ -1256,12 +1256,12 @@ describe('RoleService', () => {
 
       await service.assignPermissions(
         'role-1',
-        { permissionKeys: ['tasks:view'], expectedPermissionKeys: state.held() },
+        { permissionKeys: ['workflows:view'], expectedPermissionKeys: state.held() },
         ORG_A,
         ACTOR,
       );
 
-      expect(state.held()).toEqual(['documents:view', 'platform:impersonate', 'tasks:view']);
+      expect(state.held()).toEqual(['documents:view', 'platform:impersonate', 'workflows:view']);
     });
 
     it('a held not-in-use key sent back in the request is simply kept, not refused', async () => {
@@ -1269,12 +1269,12 @@ describe('RoleService', () => {
 
       await service.assignPermissions(
         'role-1',
-        { permissionKeys: ['documents:view', 'tasks:view'], expectedPermissionKeys: state.held() },
+        { permissionKeys: ['documents:view', 'workflows:view'], expectedPermissionKeys: state.held() },
         ORG_A,
         ACTOR,
       );
 
-      expect(state.held()).toEqual(['documents:view', 'tasks:view']);
+      expect(state.held()).toEqual(['documents:view', 'workflows:view']);
     });
 
     it('the 409 comparison uses the FULL set, kept keys included', async () => {

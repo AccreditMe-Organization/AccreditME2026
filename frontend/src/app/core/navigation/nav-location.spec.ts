@@ -20,7 +20,7 @@ describe('resolveNavLocation (ACC-79)', () => {
   it('prefers the longest matching route', () => {
     const loc = resolveNavLocation(
       '/tasks/unassigned',
-      access([ADMIN_ACCESS, 'tasks:manage']),
+      access([ADMIN_ACCESS, 'committees:manage_tasks']),
     );
     expect(loc?.item.key).toBe('unassignedTasks');
     expect(loc?.isSectionPage).toBe(true);

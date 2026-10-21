@@ -14,6 +14,7 @@ import {
   draftSystemPrompt,
   parseDraftAnswer,
 } from './draft-answer';
+import { assertMayCreateTasks, seesRecordType } from '../task/task-record-types';
 import { draftRecordContext } from './draft-record-context';
 import { DraftRefusalException } from './draft-refusal';
 import { ITaskDraft, ITaskDraftAvailability } from './interfaces/task-draft.interface';
@@ -64,18 +65,29 @@ export class TaskDraftService {
     private readonly objectVisibility: ObjectVisibilityService,
   ) {}
 
-  /** Whether to show "Draft with AI" at all. Says nothing about the balance: a press answers "used up". */
-  async availability(organizationId: string): Promise<ITaskDraftAvailability> {
+  /**
+   * Whether to show "Draft with AI" at all. Says nothing about the balance: a
+   * press answers "used up". ACC-244 — gated like New task: Create tasks on at
+   * least one record type.
+   */
+  async availability(organizationId: string, permissions: readonly string[]): Promise<ITaskDraftAvailability> {
+    assertMayCreateTasks(permissions);
     const { available } = await aiFeatureAvailability(this.prisma, organizationId, DRAFT_FEATURE);
     return { available };
   }
 
   async draft(viewer: DraftViewer, organizationId: string, request: DraftRequest): Promise<ITaskDraft> {
+    const sourceType = request.sourceType || null;
+    const sourceId = request.sourceId || null;
+    // ACC-244 — gated like New task, before anything else: Create tasks on the
+    // named record's type (a type the caller cannot see is assertCanView's 403
+    // below, which names the record's permission), or on any type with none.
+    if (!sourceType) assertMayCreateTasks(viewer.permissions);
+    else if (seesRecordType(viewer.permissions, sourceType)) assertMayCreateTasks(viewer.permissions, sourceType);
+
     const note = request.note.trim();
     if (countLetters(note) < NOTE_MIN_LETTERS) throw new DraftRefusalException('DRAFT_NOTE_TOO_SHORT');
 
-    const sourceType = request.sourceType || null;
-    const sourceId = request.sourceId || null;
     if (!sourceType !== !sourceId) throw new BadRequestException('sourceType and sourceId go together');
     if (sourceType && sourceId) {
       await this.objectVisibility.assertCanView(sourceType, sourceId, organizationId, viewer.permissions);

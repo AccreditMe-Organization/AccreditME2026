@@ -30,9 +30,9 @@ export interface TaskActionFacts {
   /** The viewer is in that pool right now (task-pool.ts isPoolMember). */
   viewerInPool: boolean;
   openRequest: { requestedById: string } | null;
-  /** mayManage(): the creator, anyone acting for them, or tasks:reassign while the creator is gone. */
+  /** mayManage(): the creator, anyone acting for them, or Manage tasks on the type while the creator is gone. */
   mayManage: boolean;
-  /** tasks:reassign, or canActForCreator(): who may reassign, decide a request and resume. */
+  /** Manage tasks on the type, or canActForCreator(): who may reassign, decide a request and resume. */
   mayDecide: boolean;
   /** ACC-190 — created from a stage task definition, for one stage entry. */
   stageEntryTask: boolean;
@@ -66,13 +66,13 @@ export function taskActionsFor(f: TaskActionFacts): ITaskActions {
   // TaskRequestService.create(): an active assignee of an Assigned or In-progress task, one request at a time.
   const canAsk = assignee && REQUESTABLE_STATUSES.includes(f.status) && !f.openRequest;
   const withdrawRequest = !!f.openRequest && f.openRequest.requestedById === f.viewerId;
-  // decide(): tasks:reassign or acting for the creator — never the person who asked.
+  // decide(): Manage tasks on the type, or acting for the creator — never the person who asked.
   const reviewRequest = !!f.openRequest && f.openRequest.requestedById !== f.viewerId && f.mayDecide;
   // resume(): an active assignee, or anyone who may decide.
   const resume = onHold && (assignee || f.mayDecide);
   // TaskEvidenceService: an active assignee while the task is open (on hold included).
   const addEvidence = assignee && open;
-  // reassign(): tasks:reassign or canActForCreator, the task not closed.
+  // reassign(): Manage tasks on the type, or canActForCreator; the task not closed.
   const reassign = open && f.mayDecide;
   // update(): mayManage, not closed.
   const edit = f.mayManage && open;

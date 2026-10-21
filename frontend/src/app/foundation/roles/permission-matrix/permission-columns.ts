@@ -16,7 +16,8 @@
  * The rules come before the fallback so that keys nobody has written yet still
  * land somewhere sensible with no layout change: the task-permission rework's
  * `*:view_all_tasks` reads as View, `*:create_tasks` as Create, and
- * `*:manage_tasks` as a whole-row grant. The table in
+ * `*:manage_tasks` as a whole-row grant — as committees' did (ACC-244), which
+ * retired the flat tasks:* keys. The table in
  * backend/Plans/step-120-5-permission-matrix.md, section A, is what the
  * overrides and rules reproduce. The spec checks every catalogue key against
  * it.
@@ -35,7 +36,6 @@ const OVERRIDES: Readonly<Record<string, Placement>> = {
   'users:manage': 'edit',
   'users:transfer': 'edit',
   'users:deactivate': 'delete',
-  'tasks:reassign': 'edit',
   'committees:edit_details': 'edit',
   'committees:add_member': 'edit',
   'committees:remove_member': 'edit',

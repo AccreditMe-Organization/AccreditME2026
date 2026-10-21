@@ -8,6 +8,10 @@ import { AiRefusalException } from '../../ai/ai-refusal';
 import { TaskAssignmentService } from '../task-assignment.service';
 import { IAssignableHolder } from '../interfaces/task-assignment.interface';
 import { WorkloadHintDto } from '../dto/workload-hint.dto';
+import { TaskVisibilityService } from '../task-visibility.service';
+import type { TaskVisibilityContext } from '../task-visibility';
+import { recordTypesVisibleTo } from '../../../common/services/object-visibility.service';
+import { typesHolding } from '../task-record-types';
 import { TaskWorkloadService } from './task-workload.service';
 import { WorkloadHintService } from './workload-hint.service';
 import { WorkloadRefusalException } from './workload-refusal';
@@ -17,7 +21,20 @@ import { WorkloadRefusalException } from './workload-refusal';
 // of the checks and the record rule are the ones that ship.
 
 const ORG = 'org-a';
-const VIEWER = { id: 'assigner', permissions: ['tasks:create', 'tasks:view', 'committees:view'] };
+// ACC-244 — the task visibility rule's context, from the viewer's own keys
+// (no unit scope here: that path is proved on real rows in
+// task-visibility.db-spec.ts). Counts need the whole record: View all tasks.
+const ruleStub = {
+  contextFor: async (v: { id: string; permissions: readonly string[] }) =>
+    ({
+      viewerId: v.id,
+      recordTypes: recordTypesVisibleTo(v.permissions),
+      viewAllTypes: typesHolding(v.permissions, 'VIEW_ALL'),
+      unitScope: [],
+    }) as unknown as TaskVisibilityContext,
+  seesWholeRecord: async (ctx: TaskVisibilityContext, type: string) => ctx.viewAllTypes.includes(type),
+};
+const VIEWER = { id: 'assigner', permissions: ['committees:create_tasks', 'committees:view_all_tasks', 'committees:view'] };
 const NAMES = { nora: 'Nora Al-Otaibi', sara: 'Sara Al-Mutairi', khalid: 'Khalid Al-Zahrani' };
 const holder = (id: keyof typeof NAMES): IAssignableHolder => ({
   id,
@@ -89,6 +106,7 @@ function setup(options: { counts?: Record<string, number>; answer?: string; avai
     assignment as unknown as TaskAssignmentService,
     new ObjectVisibilityService(db),
     workingCalendar as unknown as WorkingCalendarService,
+    ruleStub as unknown as TaskVisibilityService,
   );
   const service = new WorkloadHintService(db, ai as unknown as AiService, workload);
   return { service, prisma, assignment, ai };
@@ -155,13 +173,13 @@ describe('WorkloadHintService.suggest (ACC-199)', () => {
   });
 
   describe('refused before the model is called — nothing is charged', () => {
-    it('without tasks:view: 403 naming it, before anything is read', async () => {
+    it('without View all tasks (and no unit scope): 403 naming it, before anything is read', async () => {
       const { service, prisma, assignment, ai } = setup();
       const error = await service
-        .suggest({ id: 'x', permissions: ['tasks:create', 'committees:view'] }, ORG, DTO)
+        .suggest({ id: 'x', permissions: ['committees:create_tasks', 'committees:view'] }, ORG, DTO)
         .catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ForbiddenException);
-      expect((error as Error).message).toBe('Required permission: tasks:view');
+      expect((error as Error).message).toBe('Required permission: committees:view_all_tasks');
       expect(prisma.committee.findFirst).not.toHaveBeenCalled();
       expect(assignment.listHolders).not.toHaveBeenCalled();
       expect(ai.run).not.toHaveBeenCalled();
@@ -169,7 +187,9 @@ describe('WorkloadHintService.suggest (ACC-199)', () => {
 
     it('without the record\'s own permission: 403 naming it, before the record is read', async () => {
       const { service, prisma, ai } = setup();
-      const error = await service.suggest({ id: 'x', permissions: ['tasks:create', 'tasks:view'] }, ORG, DTO).catch((e: unknown) => e);
+      const error = await service
+        .suggest({ id: 'x', permissions: ['committees:create_tasks', 'committees:view_all_tasks'] }, ORG, DTO)
+        .catch((e: unknown) => e);
       expect((error as Error).message).toBe('Required permission: committees:view');
       expect(prisma.committee.findFirst).not.toHaveBeenCalled();
       expect(ai.run).not.toHaveBeenCalled();

@@ -30,7 +30,7 @@ const creatorRow = (overrides: Record<string, unknown> = {}) => ({
 describe('TaskAuthorityService (ACC-173)', () => {
   const prisma = {
     user: { findFirst: jest.fn(), findMany: jest.fn() },
-    orgUnitHeadAssignment: { findFirst: jest.fn(), findMany: jest.fn() },
+    orgUnitHeadAssignment: { findMany: jest.fn() },
     userRole: { findMany: jest.fn() },
     orgUnit: { findFirst: jest.fn() },
   };
@@ -39,11 +39,30 @@ describe('TaskAuthorityService (ACC-173)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useFixedClock(NOW);
-    prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(null);
     prisma.orgUnitHeadAssignment.findMany.mockResolvedValue([]);
   });
 
   afterEach(() => jest.useRealTimers());
+
+  // The cover IN FORCE on a unit is read by unit-headship's batched reader
+  // (findRunningActingCoversForUnits, findMany by orgUnitId); a person's own
+  // covers by findUnitsCoveredBy (findMany by userId). This answers the first
+  // with `rows` and leaves the second empty, so a test reads one source only.
+  function unitCovers(rows: { userId: string; reason: 'ABSENCE' | 'VACANCY'; [k: string]: unknown }[]): void {
+    prisma.orgUnitHeadAssignment.findMany.mockImplementation(({ where }: { where: { orgUnitId?: string } }) =>
+      Promise.resolve(
+        where.orgUnitId === undefined
+          ? []
+          : rows.map((r) => ({
+              orgUnitId: where.orgUnitId,
+              validFrom: BEFORE,
+              validTo: null,
+              ...r,
+              user: { name: r.userId, primaryOrgUnitId: null },
+            })),
+      ),
+    );
+  }
 
   describe('canActForCreator', () => {
     it('admits the creator without reading anything', async () => {
@@ -79,37 +98,55 @@ describe('TaskAuthorityService (ACC-173)', () => {
       await expect(service.canActForCreator('creator', 'colleague', ORG_A, undefined, NOW)).resolves.toBe(false);
     });
 
+    // ACC-244 — read through unit-headship's findRunningActingCover: the cover
+    // in force on the unit, at the explicit NOW, held by the viewer, for ABSENCE.
+    const cover = (userId: string, reason: 'ABSENCE' | 'VACANCY') => ({
+      id: 'period-1',
+      userId,
+      reason,
+      validFrom: BEFORE,
+      validTo: null,
+      user: { name: userId },
+    });
+
     it('admits the acting head covering an ABSENCE of the unit the creator heads, read from the period table', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ position: { isUnitHeadPosition: true } }));
-      prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue({ id: 'period-1' });
+      unitCovers([cover('acting', 'ABSENCE')]);
 
       await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(true);
-      expect(prisma.orgUnitHeadAssignment.findFirst).toHaveBeenCalledWith({
-        where: {
-          organizationId: ORG_A,
-          orgUnitId: 'unit-1',
-          userId: 'acting',
-          kind: 'ACTING',
-          reason: 'ABSENCE',
-          endedAt: null,
-          validFrom: { lte: NOW },
-          OR: [{ validTo: null }, { validTo: { gt: NOW } }],
-        },
-        select: { id: true },
-      });
+      expect(prisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            organizationId: ORG_A,
+            orgUnitId: 'unit-1',
+            kind: 'ACTING',
+            endedAt: null,
+            validFrom: { lte: NOW },
+            OR: [{ validTo: null }, { validTo: { gt: NOW } }],
+          },
+        }),
+      );
       // Never the cache column, which is set early and never expires.
       expect(prisma.orgUnit.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('refuses the cover holder when the cover is for a VACANCY, and an ABSENCE cover held by someone else', async () => {
+      prisma.user.findFirst.mockResolvedValue(creatorRow({ position: { isUnitHeadPosition: true } }));
+      unitCovers([cover('acting', 'VACANCY')]);
+      await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(false);
+      unitCovers([cover('someone-else', 'ABSENCE')]);
+      await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(false);
     });
 
     it('does not look for an acting head when the creator heads no unit', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow());
       await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(false);
-      expect(prisma.orgUnitHeadAssignment.findFirst).not.toHaveBeenCalled();
+      expect(prisma.orgUnitHeadAssignment.findMany).not.toHaveBeenCalled();
     });
 
     it('refuses an acting head when no ABSENCE appointment is in force (future, ended, vacancy)', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ position: { isUnitHeadPosition: true } }));
-      prisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(null);
+      unitCovers([]);
       await expect(service.canActForCreator('creator', 'acting', ORG_A, undefined, NOW)).resolves.toBe(false);
     });
 
@@ -137,45 +174,69 @@ describe('TaskAuthorityService (ACC-173)', () => {
           position: { isUnitHeadPosition: true },
         }),
       );
-      prisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ userId: 'acting' }, { userId: 'requester' }]);
+      unitCovers([{ id: 'p', userId: 'acting', reason: 'ABSENCE' }]);
       prisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(where.id.in.map((id) => ({ id }))),
       );
 
-      const ids = await service.decisionRecipients('creator', 'requester', ORG_A);
+      const ids = await service.decisionRecipients('creator', 'requester', ORG_A, 'COMMITTEE', NOW);
 
       expect(ids.sort()).toEqual(['acting', 'creator', 'delegate']);
       expect(prisma.userRole.findMany).not.toHaveBeenCalled();
     });
 
-    it('is the tasks:reassign holders when the creator is no longer ACTIVE', async () => {
+    it('never names the requester, even when they are the acting head', async () => {
+      prisma.user.findFirst.mockResolvedValue(creatorRow({ position: { isUnitHeadPosition: true } }));
+      unitCovers([{ id: 'p', userId: 'requester', reason: 'ABSENCE' }]);
+      prisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(where.id.in.map((id) => ({ id }))),
+      );
+      expect((await service.decisionRecipients('creator', 'requester', ORG_A, 'COMMITTEE', NOW)).sort()).toEqual(['creator']);
+    });
+
+    // ACC-244 — Manage tasks on the task's record type, where tasks:reassign
+    // was, AND the record type's own view permission (rule 1): both keys.
+    it('is the Manage tasks holders on the type who can see its records, when the creator is no longer ACTIVE', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ status: 'INACTIVE' }));
-      prisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }, { userId: 'admin-2' }, { userId: 'requester' }]);
+      prisma.userRole.findMany.mockImplementation(
+        ({ where }: { where: { role: { rolePermissions: { some: { permission: { module: string; action: string } } } } } }) => {
+          const key = `${where.role.rolePermissions.some.permission.module}:${where.role.rolePermissions.some.permission.action}`;
+          const holders: Record<string, string[]> = {
+            'committees:manage_tasks': ['admin-1', 'admin-2', 'requester', 'cannot-see'],
+            'committees:view': ['admin-1', 'admin-2', 'requester'],
+          };
+          return Promise.resolve((holders[key] ?? []).map((userId) => ({ userId })));
+        },
+      );
       prisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(where.id.in.map((id) => ({ id }))),
       );
 
-      const ids = await service.decisionRecipients('creator', 'requester', ORG_A);
+      const ids = await service.decisionRecipients('creator', 'requester', ORG_A, 'COMMITTEE');
 
       expect(ids.sort()).toEqual(['admin-1', 'admin-2']);
-      expect(prisma.userRole.findMany).toHaveBeenCalledWith({
-        where: {
-          user: { organizationId: ORG_A, status: 'ACTIVE' },
-          role: {
-            organizationId: ORG_A,
-            isActive: true,
-            rolePermissions: { some: { permission: { module: 'tasks', action: 'reassign' } } },
+      for (const [module, action] of [['committees', 'manage_tasks'], ['committees', 'view']]) {
+        expect(prisma.userRole.findMany).toHaveBeenCalledWith({
+          where: {
+            user: { organizationId: ORG_A, status: 'ACTIVE' },
+            role: { organizationId: ORG_A, isActive: true, rolePermissions: { some: { permission: { module, action } } } },
           },
-        },
-        select: { userId: true },
-      });
+          select: { userId: true },
+        });
+      }
+    });
+
+    it('is nobody for a departed creator\'s task on a record type with no task keys', async () => {
+      prisma.user.findFirst.mockResolvedValue(creatorRow({ status: 'INACTIVE' }));
+      await expect(service.decisionRecipients('creator', 'requester', ORG_A, 'DOCUMENT')).resolves.toEqual([]);
+      expect(prisma.userRole.findMany).not.toHaveBeenCalled();
     });
 
     it('drops anyone who is not ACTIVE', async () => {
       prisma.user.findFirst.mockResolvedValue(creatorRow({ actingUserId: 'delegate', outOfOfficeFrom: BEFORE, outOfOfficeTo: AFTER }));
       prisma.user.findMany.mockResolvedValue([{ id: 'creator' }]);
 
-      await expect(service.decisionRecipients('creator', 'requester', ORG_A)).resolves.toEqual(['creator']);
+      await expect(service.decisionRecipients('creator', 'requester', ORG_A, 'COMMITTEE')).resolves.toEqual(['creator']);
       expect(prisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, status: 'ACTIVE' }) }),
       );
@@ -184,7 +245,7 @@ describe('TaskAuthorityService (ACC-173)', () => {
     itEnforcesTenantIsolation('decisionRecipients', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
       prisma.userRole.findMany.mockResolvedValue([]);
-      await service.decisionRecipients('creator', 'requester', ORG_B);
+      await service.decisionRecipients('creator', 'requester', ORG_B, 'COMMITTEE');
       expect(prisma.user.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'creator', organizationId: ORG_B } }),
       );
@@ -203,7 +264,20 @@ describe('TaskAuthorityService (ACC-173)', () => {
         .mockResolvedValueOnce([{ id: 'head-1' }]);
       prisma.orgUnitHeadAssignment.findMany.mockResolvedValue([{ orgUnitId: 'unit-1' }]);
 
-      const ids = await service.creatorsCoveredBy('viewer', ORG_A);
+      const ids = await service.creatorsCoveredBy('viewer', ORG_A, NOW);
+      // The reverse lookup, at the explicit NOW, ABSENCE covers only.
+      expect(prisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          userId: 'viewer',
+          kind: 'ACTING',
+          endedAt: null,
+          validFrom: { lte: NOW },
+          OR: [{ validTo: null }, { validTo: { gt: NOW } }],
+          reason: 'ABSENCE',
+        },
+        select: { orgUnitId: true },
+      });
 
       expect(ids.sort()).toEqual(['away-1', 'head-1']);
       expect(prisma.user.findMany).toHaveBeenLastCalledWith({

@@ -115,14 +115,16 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
       },
       // ACC-229 — the organisation's tasks: the All tasks list without a
       // record, every task in the record types the viewer may see. Gated like
-      // its endpoint (GET /tasks/record-list with no record needs tasks:view),
-      // so the item, the route guard and the API agree.
+      // its endpoint, so the item, the route guard and the API agree. ACC-244 —
+      // that is View all tasks on a record type now; committees are the only
+      // type with task keys, so it is committees:view_all_tasks. Lane A's
+      // slice 3 replaces this item with a saved view read from GET /tasks/views.
       {
         key: 'allTasks',
         labelKey: 'task.allTasks',
         icon: 'pi pi-list',
         route: '/tasks/all',
-        requiredPermission: 'tasks:view',
+        requiredPermission: 'committees:view_all_tasks',
       },
     ],
   },
@@ -250,7 +252,8 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         route: '/admin-settings/task-sla',
         requiredPermission: 'tenant:manage_config',
       },
-      // Not in the design reference. A tasks:manage triage view: the reference's
+      // Not in the design reference. A triage view for Manage tasks (ACC-244:
+      // committees:manage_tasks, the only type with task keys): the reference's
       // nearest equivalent, "Awaiting my action", is unbuilt. Kept here rather
       // than dropped, because removing a working screen from the rail would
       // orphan it the way Platform Admin's screens once were.
@@ -259,7 +262,7 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         labelKey: 'nav.unassignedTasks',
         icon: 'pi pi-exclamation-triangle',
         route: '/tasks/unassigned',
-        requiredPermission: 'tasks:manage',
+        requiredPermission: 'committees:manage_tasks',
       },
       // tenant:view, not manage_config — the page reads GET /tenant. Its save
       // is PATCH /tenant, which needs tenant:update, so a custom role holding
@@ -395,7 +398,7 @@ export function visibleNavGroups(access: NavAccess): NavGroup[] {
 // route would be the one gated screen the guard silently allowed through.
 //
 // Empty since ACC-229: /tasks/all, the one entry, became a rail item ("All
-// tasks", tasks:view), so its permission now comes from the item like every
+// tasks", now committees:view_all_tasks), so its permission now comes from the item like every
 // other. It was listed here while it was an unlinked stopgap that never loaded
 // a task. Its route still carries its own canActivate (tasks.routes.ts),
 // because /tasks itself is ungated and a child without one never runs the

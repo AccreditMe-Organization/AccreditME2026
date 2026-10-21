@@ -90,7 +90,7 @@ describe('ownProfileGuard (ACC-79)', () => {
   // Every user can open their own profile — it is where language and
   // out-of-office live — and an administrator is not required to have one.
   it('still lets an ordinary user open their OWN profile after ACC-123', () => {
-    setup({ permissions: ['tasks:create'], currentUserId: ME });
+    setup({ permissions: ['committees:create_tasks'], currentUserId: ME });
     expect(run(ME)).toBe(true);
   });
 

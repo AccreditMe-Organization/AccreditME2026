@@ -19,6 +19,7 @@ import { DelegationLabelService } from '../../common/services/delegation-label.s
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { TaskService, TaskViewer } from './task.service';
 import { TaskAuthorityService } from './task-authority.service';
+import { TaskVisibilityService } from './task-visibility.service';
 import { TaskPageService } from './task-page.service';
 import { TaskAdmissionService } from './task-admission.service';
 import { TaskRecordListService } from './task-record-list.service';
@@ -38,14 +39,13 @@ describe('A row\'s actions equal its task page\'s (ACC-229)', () => {
   const authority = new TaskAuthorityService(prisma);
   // The real mayManage, on the real authority — the one rule both services call.
   const tasks = { mayManage: TaskService.prototype.mayManage.bind({ prisma, authority }) } as unknown as TaskService;
-  const visibility = {
-    assertCanView: () => Promise.resolve(),
-    viewableTypes: () => ['COMMITTEE'],
-  } as unknown as ObjectVisibilityService;
+  const visibility = { assertCanView: () => Promise.resolve() } as unknown as ObjectVisibilityService;
+  // ACC-244 — the real task visibility rule, shared by the page and the list.
+  const rule = new TaskVisibilityService(prisma, authority);
   const labels = { resolveMany: () => Promise.resolve(new Map()), lookup: () => null } as unknown as DelegationLabelService;
   const calendar = { getEffectiveTimeZone: () => Promise.resolve('Asia/Riyadh') } as unknown as WorkingCalendarService;
-  const page = new TaskPageService(prisma, labels, new TaskAdmissionService(prisma, visibility, tasks, authority));
-  const list = new TaskRecordListService(prisma, visibility, tasks, authority, calendar);
+  const page = new TaskPageService(prisma, labels, new TaskAdmissionService(prisma, visibility, tasks, rule));
+  const list = new TaskRecordListService(prisma, visibility, tasks, rule, calendar);
 
   let org = '';
   const record = `rec-${randomUUID().slice(0, 8)}`;
@@ -56,6 +56,9 @@ describe('A row\'s actions equal its task page\'s (ACC-229)', () => {
     const slug = `acc229a-${randomUUID().slice(0, 8)}`;
     org = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } })).id;
     const unit = await prisma.orgUnit.create({ data: { organizationId: org, nameEn: 'Facilities', code: `F${slug.slice(-4)}` } });
+    // ACC-244 — key-based access needs the record to be this organisation's,
+    // so the tasks' committee is real.
+    await prisma.committee.create({ data: { id: record, organizationId: org, nameEn: 'Facilities Committee', typeValueId: 'type', orgUnitId: unit.id } });
     const position = await prisma.orgPosition.create({ data: { organizationId: org, nameEn: 'Engineer', grade: 3 } });
     const user = async (key: string, extra: Record<string, unknown> = {}) =>
       (await prisma.user.create({ data: { organizationId: org, email: `${slug}-${key}@example.test`, name: key, status: 'ACTIVE', ...extra } })).id;
@@ -90,13 +93,17 @@ describe('A row\'s actions equal its task page\'s (ACC-229)', () => {
   });
 
   const viewers: [string, () => TaskViewer][] = [
-    ['the creator (tasks:view)', () => ({ id: people.creator, permissions: ['committees:view', 'tasks:view'] })],
-    ['a direct assignee (no task permissions)', () => ({ id: people.assignee, permissions: ['committees:view'] })],
-    ['a pool member (no task permissions)', () => ({ id: people.member, permissions: ['committees:view'] })],
-    // With tasks:view the task still WAITING in their pool is listed too, so Pick
-    // up depends on the list knowing they are in it.
-    ['a pool member with tasks:view', () => ({ id: people.member, permissions: ['committees:view', 'tasks:view'] })],
-    ['a reader with tasks:view and tasks:reassign', () => ({ id: people.reader, permissions: ['committees:view', 'tasks:view', 'tasks:reassign'] })],
+    ['the creator (View all tasks)', () => ({ id: people.creator, permissions: ['committees:view', 'committees:view_all_tasks'] })],
+    ['a direct assignee (no task key)', () => ({ id: people.assignee, permissions: ['committees:view'] })],
+    // ACC-244 — the task still WAITING in their pool is a relationship now, so
+    // it is listed with no key at all, and Pick up depends on the list knowing
+    // they are in the pool.
+    ['a pool member (no task key)', () => ({ id: people.member, permissions: ['committees:view'] })],
+    ['a pool member with View all tasks', () => ({ id: people.member, permissions: ['committees:view', 'committees:view_all_tasks'] })],
+    [
+      'a reader with View all tasks and Manage tasks',
+      () => ({ id: people.reader, permissions: ['committees:view', 'committees:view_all_tasks', 'committees:manage_tasks'] }),
+    ],
   ];
 
   for (const [who, viewer] of viewers) {
@@ -104,7 +111,7 @@ describe('A row\'s actions equal its task page\'s (ACC-229)', () => {
       const v = viewer();
       const rows = (await list.list({ sourceType: 'COMMITTEE', sourceId: record }, org, v)).items;
       expect(rows.length).toBeGreaterThan(0); // non-vacuity: there is something to compare
-      if (v.id === people.member && v.permissions.includes('tasks:view')) {
+      if (v.id === people.member) {
         expect(rows.some((r) => r.actions.pickUp)).toBe(true); // the waiting pool task offers Pick up
       }
       for (const row of rows) {
@@ -120,15 +127,16 @@ describe('A row\'s actions equal its task page\'s (ACC-229)', () => {
     expect(all.total).toBe(9);
     const own = await list.list({ sourceType: 'COMMITTEE', sourceId: record }, org, viewers[2]![1]());
     expect(own.scope).toBe('own');
-    // The pool member was on two tasks (one picked, one later left).
-    expect(own.total).toBe(2);
+    // The pool member was on two tasks (one picked, one later left), and the
+    // task waiting in their pool is theirs to see (ACC-244: a relationship).
+    expect(own.total).toBe(3);
   });
 
   // Q1 (Ahmad, 14 Oct): the own variant is the tasks the viewer is or was ON,
   // and the tasks they CREATED — every one a task the page admits them to. A
   // creator on none of them still sees them all, with the actions the page
   // gives a manager.
-  it("without tasks:view, a creator sees the tasks they created, with the page's actions (Q1)", async () => {
+  it("without View all tasks, a creator sees the tasks they created, with the page's actions (Q1)", async () => {
     const v = { id: people.creator, permissions: ['committees:view'] };
     const own = await list.list({ sourceType: 'COMMITTEE', sourceId: record }, org, v);
     expect(own.scope).toBe('own');

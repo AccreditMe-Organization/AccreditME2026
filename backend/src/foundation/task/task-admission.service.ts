@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
-import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
 import { TaskService, TaskViewer } from './task.service';
-import { TaskAuthorityService } from './task-authority.service';
-import { PICKABLE_STATUSES, isPoolMember, poolTargetOf } from './task-pool';
+import { poolTargetOf } from './task-pool';
 import { OPEN_REQUEST_INCLUDE } from './task-request-lifecycle';
+import { holdsTaskKey } from './task-record-types';
+import { TaskVisibilityService } from './task-visibility.service';
 
 /**
  * ACC-231 — WHO MAY OPEN A TASK, AND EVERYTHING IN IT. One rule, read by the
@@ -13,15 +13,18 @@ import { OPEN_REQUEST_INCLUDE } from './task-request-lifecycle';
  * download, the in-app viewer and both AI summary routes. Moved here from
  * TaskPageService unchanged; there is no second copy anywhere.
  *
- * The union of what the app already shows each person somewhere (ACC-228 Q4,
- * Ahmad 14 Oct), and nothing more:
- *   (a) anyone ever on it — an assignee now or before
- *   (b) whoever may manage it — TaskService.mayManage(), the one copy of that rule
- *   (c) a member of its pool while it waits to be picked up
- *   (d) whoever may decide its open request, while one is open
- *   (e) tasks:view AND the record it is about (ACC-101)
+ * ACC-244 — WHETHER is now THE task visibility rule, asked for this one row:
+ * taskVisibleSql() (task-visibility.ts), the very condition every list, panel
+ * and count filters on, so the page and a list cannot disagree. In words:
+ * a relationship (the creator or whoever acts for them, anyone ever on it, a
+ * pool member while it waits), with no permission and no record check; or,
+ * with the record visible, View all tasks on its type, Manage tasks on its type
+ * (an open request, a departed creator, no actionable owner), or unit scope.
  * Access follows the task's state (Ahmad, 16 Oct): a pool member is out once
- * the task is picked up, a decider once the request is decided.
+ * the task is picked up, a Manage holder once the request is decided.
+ *
+ * This service then gathers the facts the page's actions need: mayManage
+ * (TaskService.mayManage(), the one copy), mayDecide, inPool, recordVisible.
  *
  * Everyone else — and every other organisation, whose task the scoped read
  * never finds — gets the identical 404 from the caller, and a log line here,
@@ -64,7 +67,7 @@ export class TaskAdmissionService {
     private readonly prisma: PrismaService,
     private readonly objectVisibility: ObjectVisibilityService,
     private readonly tasks: TaskService,
-    private readonly authority: TaskAuthorityService,
+    private readonly visibility: TaskVisibilityService,
   ) {}
 
   /**
@@ -89,29 +92,12 @@ export class TaskAdmissionService {
   }
 
   /**
-   * Q4's union, cheapest checks first. Null means refused; the caller turns it
-   * into the identical 404. The facts it gathers are the ones the page's
-   * actions need too, so nothing is asked twice.
+   * The rule, for this task. Null means refused; the caller turns it into the
+   * identical 404. Then the facts the page's actions need, read once.
    */
   async admit(task: AdmissionRow, viewer: TaskViewer, organizationId: string, route = 'task page'): Promise<TaskAdmission | null> {
-    const recordVisible = await this.canSeeRecord(task.sourceType, task.sourceId, organizationId, viewer);
-    const mayManage = await this.tasks.mayManage(task, viewer, organizationId);
-    const mayDecide =
-      viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
-      (await this.authority.canActForCreator(task.createdById, viewer.id, organizationId));
-    const target = poolTargetOf(task);
-    const inPool = !!target && (await isPoolMember(this.prisma, viewer.id, target, organizationId));
-
-    const everOnIt = task.assignees.some((a) => a.userId === viewer.id); // (a)
-    const waiting =
-      !task.assignees.some((a) => a.removedAt === null) && (PICKABLE_STATUSES as readonly string[]).includes(task.status);
-    const decider = task.requests.length > 0 && mayDecide; // (d)
-    const allowed =
-      everOnIt ||
-      mayManage || // (b)
-      (inPool && waiting) || // (c)
-      decider ||
-      (viewer.permissions.includes(TASKS_PERMISSIONS.VIEW) && recordVisible); // (e)
+    const ctx = await this.visibility.contextFor(viewer, organizationId);
+    const allowed = await this.visibility.isVisible(ctx, task.id);
 
     if (!allowed) {
       // The response conceals this; the log must not (ACC-101's reasoning).
@@ -120,6 +106,19 @@ export class TaskAdmissionService {
       );
       return null;
     }
+    const covered = new Set(ctx.coveredCreatorIds);
+    const mayManage = await this.tasks.mayManage(task, viewer, organizationId, { covered });
+    // Deciding a request: whoever acts for the creator, or Manage tasks on the type.
+    const mayDecide = covered.has(task.createdById) || holdsTaskKey(viewer.permissions, task.sourceType, 'MANAGE');
+    const target = poolTargetOf(task);
+    const inPool =
+      !!target &&
+      ctx.pools.some((p) =>
+        p.kind === 'POSITION' && target.kind === 'POSITION'
+          ? p.orgUnitId === target.orgUnitId && p.positionId === target.positionId
+          : p.kind === 'COMMITTEE_ROLE' && target.kind === 'COMMITTEE_ROLE' && p.committeeId === target.committeeId && p.roleValueId === target.roleValueId,
+      );
+    const recordVisible = await this.canSeeRecord(task.sourceType, task.sourceId, organizationId, viewer);
     return { mayManage, mayDecide, inPool, recordVisible };
   }
 

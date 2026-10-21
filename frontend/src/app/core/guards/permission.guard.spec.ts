@@ -112,27 +112,27 @@ describe('permissionGuard', () => {
 
   // The hazard that unmapping 'tasks' created. /tasks/all can return ANY task
   // in the tenant, so it must not inherit the parent's new absence of a gate.
-  it('still gates /tasks/all on tasks:view now that its parent is ungated', () => {
+  it('still gates /tasks/all on committees:view_all_tasks now that its parent is ungated', () => {
     setup({ permissions: [] });
     expect(run('tasks', 'all')).toEqual(router.parseUrl(LANDING_ROUTE));
 
-    setup({ permissions: ['tasks:view'] });
+    setup({ permissions: ['committees:view_all_tasks'] });
     expect(run('tasks', 'all')).toBe(true);
   });
 
-  it('gates /tasks/unassigned on tasks:manage, no longer on tasks:view as well', () => {
-    setup({ permissions: [ADMIN_ACCESS, 'tasks:manage'] });
+  it('gates /tasks/unassigned on committees:manage_tasks, not on View all tasks as well', () => {
+    setup({ permissions: [ADMIN_ACCESS, 'committees:manage_tasks'] });
     expect(run('tasks', 'unassigned')).toBe(true);
   });
 
-  it('applies a nested route’s OWN stricter permission (/tasks/unassigned needs tasks:manage)', () => {
-    setup({ permissions: [ADMIN_ACCESS, 'tasks:view'] });
+  it('applies a nested route’s OWN stricter permission (/tasks/unassigned needs committees:manage_tasks)', () => {
+    setup({ permissions: [ADMIN_ACCESS, 'committees:view_all_tasks'] });
 
     expect(run('tasks')).toBe(true);
-    // tasks:view is not enough for the unassigned view.
+    // View all tasks is not enough for the unassigned view.
     expect(run('tasks', 'unassigned')).toEqual(router.parseUrl(LANDING_ROUTE));
 
-    setup({ permissions: [ADMIN_ACCESS, 'tasks:view', 'tasks:manage'] });
+    setup({ permissions: [ADMIN_ACCESS, 'committees:view_all_tasks', 'committees:manage_tasks'] });
     expect(run('tasks', 'unassigned')).toBe(true);
   });
 
@@ -260,7 +260,7 @@ describe('permissionGuard', () => {
           'setup:view',
           'roles:view',
           'positions:view',
-          'tasks:manage',
+          'committees:manage_tasks',
           'tenant:view',
           'tenant:manage_config',
         ],
@@ -274,7 +274,7 @@ describe('permissionGuard', () => {
     // requirement by accident — the same mistake in the other direction, and
     // the one that would lock every ordinary user out of their own work.
     it('leaves the non-admin routes alone', () => {
-      setup({ permissions: ['committees:view', 'tasks:view'] });
+      setup({ permissions: ['committees:view', 'committees:view_all_tasks'] });
       expect(run('home')).toBe(true);
       expect(run('tasks')).toBe(true);
       expect(run('tasks', 'all')).toBe(true);

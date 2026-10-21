@@ -92,7 +92,8 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
       return {
         link: ['/tasks/unassigned'],
         queryParams: { reassign: condition.objectId },
-        permissions: ['tasks:manage', 'tasks:reassign'],
+        // ACC-244 — Manage tasks opens Unassigned AND reassigns from it.
+        permissions: ['committees:manage_tasks'],
       };
     case 'STORAGE_ALMOST_FULL':
       // ACC-177 — no Fix yet: the recycle bin screen, where deleted files are

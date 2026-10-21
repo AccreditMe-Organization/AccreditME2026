@@ -5,6 +5,10 @@ import { ObjectVisibilityService } from '../../../common/services/object-visibil
 import { WorkingCalendarService } from '../../working-calendar/working-calendar.service';
 import { TaskAssignmentService } from '../task-assignment.service';
 import { IAssignableHolder } from '../interfaces/task-assignment.interface';
+import { TaskVisibilityService } from '../task-visibility.service';
+import type { TaskVisibilityContext } from '../task-visibility';
+import { recordTypesVisibleTo } from '../../../common/services/object-visibility.service';
+import { typesHolding } from '../task-record-types';
 import { TaskWorkloadService } from './task-workload.service';
 
 // ACC-199 — the picker's people with their counts on the record (Q4): exactly
@@ -12,7 +16,20 @@ import { TaskWorkloadService } from './task-workload.service';
 
 const ORG = 'org-a';
 const RECORD = { sourceType: 'COMMITTEE' as const, sourceId: 'cmt-1' };
-const CAN_SEE = { id: 'assigner', permissions: ['tasks:create', 'tasks:view', 'committees:view'] };
+// ACC-244 — the task visibility rule's context, from the viewer's own keys
+// (no unit scope here: that path is proved on real rows in
+// task-visibility.db-spec.ts). Counts need the whole record: View all tasks.
+const ruleStub = {
+  contextFor: async (v: { id: string; permissions: readonly string[] }) =>
+    ({
+      viewerId: v.id,
+      recordTypes: recordTypesVisibleTo(v.permissions),
+      viewAllTypes: typesHolding(v.permissions, 'VIEW_ALL'),
+      unitScope: [],
+    }) as unknown as TaskVisibilityContext,
+  seesWholeRecord: async (ctx: TaskVisibilityContext, type: string) => ctx.viewAllTypes.includes(type),
+};
+const CAN_SEE = { id: 'assigner', permissions: ['committees:create_tasks', 'committees:view_all_tasks', 'committees:view'] };
 
 const holder = (id: string, name: string): IAssignableHolder => ({
   id,
@@ -56,6 +73,7 @@ function setup(options: { rows?: { userId: string; status?: string }[]; away?: s
     assignment as unknown as TaskAssignmentService,
     objectVisibility as unknown as ObjectVisibilityService,
     workingCalendar as unknown as WorkingCalendarService,
+    ruleStub as unknown as TaskVisibilityService,
   );
   return { service, prisma, assignment, objectVisibility, workingCalendar };
 }
@@ -72,9 +90,9 @@ describe('TaskWorkloadService (ACC-199)', () => {
     expect(prisma.taskAssignee.findMany).not.toHaveBeenCalled();
   });
 
-  it('without tasks:view: no counts, and the record is not even read', async () => {
+  it('without View all tasks (and no unit scope): no counts, and the record is not even read', async () => {
     const { service, prisma, objectVisibility } = setup();
-    const list = await service.listHolders({ id: 'x', permissions: ['tasks:create', 'committees:view'] }, ORG, {
+    const list = await service.listHolders({ id: 'x', permissions: ['committees:create_tasks', 'committees:view'] }, ORG, {
       orgUnitId: 'u1',
       positionId: 'p1',
       record: RECORD,

@@ -26,7 +26,7 @@ export interface TaskRejection {
  * committee record became its second host: a REJECTED task goes back to its
  * creator, who reassigns it (Q4).
  *
- * Who may use it is the server's decision — a tasks:reassign holder or the
+ * Who may use it is the server's decision — a Manage tasks holder or the
  * task's own creator — and each host gates the button on the same rule.
  *
  * ## Who it goes to — the assignment picker, not the user list (ACC-167)
@@ -34,7 +34,7 @@ export interface TaskRejection {
  * The task goes to a unit and position (or, on a committee's task, a member
  * role), optionally narrowed to one person — the same picker as New task. It
  * passes the task's id, so the picker answers to "may reassign THIS task"
- * rather than tasks:create, and nothing here reads the tenant's user list.
+ * rather than Create tasks, and nothing here reads the tenant's user list.
  * That closes ACC-166: before, the people list needed users:view, and a
  * creator whose role lacked it could not reassign their own rejected task.
  *

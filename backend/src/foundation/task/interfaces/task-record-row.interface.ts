@@ -49,11 +49,17 @@ export interface ITaskRecordPanel {
   /** 'own' when the viewer may see the record but not all its tasks (Q1). */
   scope: 'all' | 'own';
   rows: ITaskRecordRow[];
+  /** ACC-244 — may the viewer create a task on this record (Create tasks on its type)? */
+  canCreate: boolean;
 }
 
 export interface ITaskRecordListFacets {
   people: { id: string; name: string }[];
   pools: { key: string; pool: ITaskPoolView }[];
+  /** ACC-244 — the record types present in this view, for the Record type filter. */
+  recordTypes: string[];
+  /** ACC-244 — the unit view only: the owning units present, for the Unit filter. */
+  units: { id: string; nameEn: string; nameAr: string | null }[];
 }
 
 export interface ITaskRecordList {
@@ -63,8 +69,34 @@ export interface ITaskRecordList {
   /** The tasks the filters match. */
   matching: number;
   scope: 'all' | 'own';
+  /** ACC-244 — which list this is: one record's tasks, or an organisation-wide view. */
+  view: 'record' | 'all' | 'unit' | 'unassigned';
   /** Only on the first page: the assignee and pool filter options. */
   facets: ITaskRecordListFacets | null;
   /** Where `around` sits (0-based) under this sort and these filters; null when absent or not matched. */
   aroundIndex: number | null;
+}
+
+/**
+ * ACC-244 — GET /tasks/views: which saved views of the one /tasks list this
+ * viewer gets, and on which record types. The screen renders from this and
+ * never re-derives a permission rule.
+ */
+export interface ITaskViews {
+  /** My tasks: always. */
+  mine: true;
+  /** All tasks: View all tasks on at least one record type, with the record visible. */
+  all: { types: string[] } | null;
+  /** Unassigned: Manage tasks on at least one record type, with the record visible. */
+  unassigned: { types: string[] } | null;
+  /**
+   * Unit tasks: the units whose records' tasks the viewer sees, sub-units
+   * included (only the roots are listed), and how each is reached.
+   */
+  unit: {
+    types: string[];
+    units: { id: string; nameEn: string; nameAr: string | null; via: 'HEAD' | 'ACTING' | 'PERMISSION' }[];
+  } | null;
+  /** New task: Create tasks on these record types. */
+  create: { types: string[] };
 }

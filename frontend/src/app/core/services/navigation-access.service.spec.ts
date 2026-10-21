@@ -82,7 +82,7 @@ describe('NavigationAccessService', () => {
 
   it('records LOADED and the permissions on success', () => {
     service.loadAccess().subscribe();
-    flush(['org:view', 'tasks:view']);
+    flush(['org:view', 'committees:view_all_tasks']);
 
     expect(service.loadState()).toBe('LOADED');
     expect(service.hasTrustworthyPermissions()).toBe(true);

@@ -13,8 +13,8 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 // Tenant-wide view of tasks with status: UNASSIGNED — my-tasks/task-list
 // can never surface these (both are scoped to an assignee or a source
 // object), so this is the only place an admin sees them and reassigns
-// (ACC-34 item 4). Gated by tasks:manage (sidebar.component.ts), the first
-// real consumer of that previously-inert permission.
+// (ACC-34 item 4). Gated by Manage tasks (committees:manage_tasks since
+// ACC-244, from its nav item); the server limits it to the types held.
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 @Component({
   selector: 'app-unassigned-tasks',
@@ -47,10 +47,9 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
             <td><am-task-link [taskId]="task.id" [title]="task.title" /></td>
             <td>{{ task.createdAt | amDateTime }}</td>
             <td>
-              <!-- ACC-123 — tasks:reassign, not tasks:manage. The ROUTE is
-                   tasks:manage, and the two are separate permissions, so a
-                   custom role holding only the first reached this screen and
-                   met a 403 on its only action. -->
+              <!-- ACC-123 — the route and the action were two permissions,
+                   so a role holding only the first met a 403 on its only
+                   action. ACC-244 — one key, Manage tasks, now does both. -->
               @if (canReassign()) {
                 <p-button
                   [label]="'task.reassign' | translate"
@@ -87,11 +86,13 @@ export class UnassignedTasksComponent implements OnInit {
   private readonly taskService = inject(TaskService);
   private readonly navigationAccess = inject(NavigationAccessService);
 
-  // ACC-123 — POST /tasks/:id/reassign is open to a tasks:reassign holder (and,
-  // since ACC-163, to a task's own creator — but an UNASSIGNED task is an
-  // administrative case, so this screen keeps the permission rule alone).
+  // ACC-123 — POST /tasks/:id/reassign is open to a Manage tasks holder on the
+  // task's record type (ACC-244, where the flat reassign key was; committees are the
+  // only type with task keys) and, since ACC-163, to a task's own creator — but
+  // an UNASSIGNED task is an administrative case, so this screen keeps the
+  // permission rule alone.
   readonly canReassign = computed(() =>
-    this.navigationAccess.hasPermission('tasks:reassign'),
+    this.navigationAccess.hasPermission('committees:manage_tasks'),
   );
 
   readonly loading = signal(false);

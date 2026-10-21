@@ -13,7 +13,6 @@ describe('placementOf — the matrix column for every catalogue key (D1)', () =>
     'roles:view': 'view', 'roles:manage': 'row',
     'lookups:view': 'view', 'lookups:manage': 'row',
     'workflows:view': 'view', 'workflows:manage': 'row',
-    'tasks:view': 'view', 'tasks:create': 'create', 'tasks:reassign': 'edit', 'tasks:manage': 'row',
     'committees:view': 'view', 'committees:create': 'create', 'committees:edit_details': 'edit',
     'committees:add_member': 'edit', 'committees:remove_member': 'edit', 'committees:change_member_role': 'edit',
     'committees:approve': 'approve', 'committees:manage': 'row',
@@ -41,8 +40,9 @@ describe('placementOf — the matrix column for every catalogue key (D1)', () =>
     'platform:admin': 'row', 'platform:impersonate': 'row',
   };
 
-  it('covers the whole catalogue: 78 keys', () => {
-    expect(Object.keys(TABLE).length).toBe(78);
+  // ACC-244 retired the four flat tasks:* keys.
+  it('covers the whole catalogue: 74 keys', () => {
+    expect(Object.keys(TABLE).length).toBe(74);
   });
 
   for (const [key, expected] of Object.entries(TABLE)) {

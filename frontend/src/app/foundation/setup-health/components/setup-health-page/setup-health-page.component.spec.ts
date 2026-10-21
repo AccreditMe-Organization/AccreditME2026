@@ -55,8 +55,7 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     'org:manage',
     'workflows:view',
     'workflows:manage',
-    'tasks:manage',
-    'tasks:reassign',
+    'committees:manage_tasks',
   ];
 
   function render(health: SetupHealthDto): SetupHealthPageComponent {
@@ -180,7 +179,7 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     // Both halves are needed: the destination's own view AND the save it offers.
     it('replaces the Fix with a note, never a disabled button, when either permission is missing', () => {
       permissions.delete('org:manage'); // can see the org tree, cannot assign a head
-      permissions.delete('tasks:reassign'); // can open the triage view, cannot reassign
+      permissions.delete('committees:manage_tasks'); // cannot open the triage view, nor reassign
 
       const rows = rowsById(render(health()));
 
