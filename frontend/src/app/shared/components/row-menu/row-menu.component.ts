@@ -114,7 +114,7 @@ const POSITIONS: ConnectedPosition[] = [
       .am-row-menu__item--danger{color:var(--am-danger-ink)}
       .am-row-menu__sub{display:block;font-size:11.5px;color:var(--am-ink-500)}
       .am-row-menu__divider{block-size:1px;margin:4px 0;background:var(--am-border)}
-      .am-row-menu__heading{padding:6px 14px 2px;font-size:var(--am-type-micro-size);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--am-ink-500)}
+      .am-row-menu__heading{padding:var(--am-space-6) 14px var(--am-space-2);font-size:var(--am-type-micro-size);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--am-ink-500)}
     `,
   ],
 })
