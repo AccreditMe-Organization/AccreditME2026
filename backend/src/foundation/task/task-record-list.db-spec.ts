@@ -14,6 +14,7 @@ import { TaskRecordListService } from './task-record-list.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { TaskService } from './task.service';
 import { TaskAuthorityService } from './task-authority.service';
+import { TaskVisibilityService } from './task-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 
 const url = process.env['DATABASE_URL'];
@@ -30,15 +31,12 @@ const at = (offsetMs: number) => new Date(Date.now() + offsetMs);
 
 describe('A record\'s tasks against a real database (ACC-229)', () => {
   const prisma = new PrismaService();
-  let types = ['COMMITTEE'];
+  // ACC-244 — the real task visibility rule; nobody covers anybody here.
   const service = new TaskRecordListService(
     prisma,
-    {
-      assertCanView: () => Promise.resolve(),
-      viewableTypes: () => types,
-    } as unknown as ObjectVisibilityService,
+    { assertCanView: () => Promise.resolve() } as unknown as ObjectVisibilityService,
     { mayManage: () => Promise.resolve(false) } as unknown as TaskService,
-    { creatorsCoveredBy: () => Promise.resolve([]) } as unknown as TaskAuthorityService,
+    new TaskVisibilityService(prisma, { creatorsCoveredBy: () => Promise.resolve([]) } as unknown as TaskAuthorityService),
     { getEffectiveTimeZone: () => Promise.resolve('Asia/Riyadh') } as unknown as WorkingCalendarService,
   );
 
@@ -46,7 +44,7 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
   let viewer = '';
   const record = `rec-${randomUUID().slice(0, 8)}`;
   const id: Record<string, string> = {};
-  const VIEW_ALL = { permissions: ['tasks:view', 'committees:view'] };
+  const VIEW_ALL = { permissions: ['committees:view_all_tasks', 'committees:view'] };
 
   async function newOrg(): Promise<{ org: string; creator: string; viewer: string }> {
     const slug = `acc229-${randomUUID().slice(0, 8)}`;
@@ -61,6 +59,10 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     const a = await newOrg();
     org = a.org;
     viewer = a.viewer;
+    // ACC-244 — key-based access needs the record to be this organisation's,
+    // so the tasks' committee is real.
+    const owner = await prisma.orgUnit.create({ data: { organizationId: org, nameEn: 'Quality', code: `Q${record.slice(-4)}`.toUpperCase() } });
+    await prisma.committee.create({ data: { id: record, organizationId: org, nameEn: 'Quality Committee', typeValueId: 'type', orgUnitId: owner.id } });
     const make = async (key: string, data: Record<string, unknown>, sourceType: 'COMMITTEE' | 'MEETING' = 'COMMITTEE') => {
       const t = await prisma.task.create({
         data: { organizationId: org, createdById: a.creator, sourceType, sourceId: record, title: `Task ${key}`, ...data },
@@ -97,10 +99,6 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
   afterAll(async () => {
     await prisma.onModuleDestroy();
   });
-  beforeEach(() => {
-    types = ['COMMITTEE'];
-  });
-
   const ORDER = ['overdue', 'tomorrow', 'later', 'created', 'undated', 'held', 'doneRecently', 'doneEarlier', 'cancelled'];
   const keysOf = (items: { id: string }[]) => items.map((i) => Object.keys(id).find((k) => id[k] === i.id));
   const onRecord = { sourceType: 'COMMITTEE' as const, sourceId: record };
@@ -138,7 +136,7 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     expect(everywhere.items.map((i) => i.id)).not.toContain(id['foreign']);
   });
 
-  it('without tasks:view, only the tasks the viewer is or was on, or created (Q1)', async () => {
+  it('without View all tasks, only the tasks the viewer is or was on, or created (the rule\'s relationships)', async () => {
     const list = await service.list(onRecord, org, { id: viewer, permissions: ['committees:view'] });
     expect(list.scope).toBe('own');
     // "tomorrow" they are on, "later" they were on, "created" they created.
@@ -178,14 +176,15 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     expect(desc.items.map((i) => i.id)).toEqual([...asc.items.map((i) => i.id)].reverse());
   });
 
-  it('organisation-wide lists only the record types the viewer may see', async () => {
+  it('All tasks lists the record types View all tasks is held on, and names each record', async () => {
     const committees = await service.list({}, org, { id: viewer, ...VIEW_ALL });
     expect(keysOf(committees.items)).not.toContain('meeting');
     expect(committees.total).toBe(9);
-    types = ['COMMITTEE', 'MEETING'];
-    const both = await service.list({}, org, { id: viewer, ...VIEW_ALL });
-    expect(keysOf(both.items)[0]).toBe('meeting');
-    expect(both.items[0]!.record).toEqual({ type: 'MEETING', id: record, nameEn: null, nameAr: null });
+    expect(committees.view).toBe('all');
+    expect(committees.facets?.recordTypes).toEqual(['COMMITTEE']);
+    // A meeting has no task keys yet (ACC-244 §2.2): seeing meetings adds nothing.
+    const withMeetings = await service.list({}, org, { id: viewer, permissions: [...VIEW_ALL.permissions, 'meetings:view'] });
+    expect(keysOf(withMeetings.items)).not.toContain('meeting');
   });
 
   it('the filter options cover the whole scope', async () => {

@@ -20,6 +20,7 @@ import { WorkloadHintService } from './workload/workload-hint.service';
 import { TaskPageService } from './task-page.service';
 import { TaskAdmissionService } from './task-admission.service';
 import { TaskRecordListService } from './task-record-list.service';
+import { TaskVisibilityService } from './task-visibility.service';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
 // future functional modules that generate tasks will import TaskModule
@@ -76,6 +77,8 @@ import { TaskRecordListService } from './task-record-list.service';
     TaskAdmissionService,
     // ACC-229 — a record's Tasks panel and the All tasks list.
     TaskRecordListService,
+    // ACC-244 — the one task visibility rule, for every reader.
+    TaskVisibilityService,
   ],
   exports: [TaskService, TaskRequestService],
 })

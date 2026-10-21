@@ -102,7 +102,7 @@ export interface ITaskListItemDto extends ITaskDto {
   // ACC-173 — the task's PENDING extension or hold request, if any.
   openRequest: TaskOpenRequestDto | null;
   // ACC-174 — the caller may edit, cancel and reopen this task (its creator,
-  // whoever acts for them, or — while the creator is gone — a tasks:reassign
+  // whoever acts for them, or — while the creator is gone — a Manage tasks
   // holder). Which of those applies to the task's state is the screen's call;
   // the server re-checks every one.
   canManage: boolean;
@@ -244,6 +244,20 @@ export interface ITaskRecordPanelDto {
   total: number;
   scope: 'all' | 'own';
   rows: ITaskRecordRowDto[];
+  /** ACC-244 — Create tasks on the record's type. */
+  canCreate: boolean;
+}
+
+/**
+ * ACC-244 — GET /tasks/views: the saved views of the one /tasks list this
+ * viewer gets, and New task's record types. Lane A's slice 3 renders from it.
+ */
+export interface ITaskViewsDto {
+  mine: true;
+  all: { types: string[] } | null;
+  unassigned: { types: string[] } | null;
+  unit: { types: string[]; units: { id: string; nameEn: string; nameAr: string | null; via: 'HEAD' | 'ACTING' | 'PERMISSION' }[] } | null;
+  create: { types: string[] };
 }
 
 export interface ITaskRecordListDto {
@@ -251,9 +265,21 @@ export interface ITaskRecordListDto {
   total: number;
   matching: number;
   scope: 'all' | 'own';
-  facets: { people: { id: string; name: string }[]; pools: { key: string; pool: TaskPoolDto }[] } | null;
+  /** ACC-244 — which list this is: one record's tasks, or an organisation-wide view. */
+  view: 'record' | TaskRecordListView;
+  facets: {
+    people: { id: string; name: string }[];
+    pools: { key: string; pool: TaskPoolDto }[];
+    /** ACC-244 — the record types present, for a Record type filter. */
+    recordTypes: string[];
+    /** ACC-244 — the unit view only: the owning units present, for a Unit filter. */
+    units: { id: string; nameEn: string; nameAr: string | null }[];
+  } | null;
   aroundIndex: number | null;
 }
+
+/** ACC-244 — the organisation-wide views of GET /tasks/record-list; omitted = 'all'. */
+export type TaskRecordListView = 'all' | 'unit' | 'unassigned';
 
 export type TaskRecordListSort = 'due' | 'created' | 'updated' | 'status' | 'title';
 export type TaskRecordListStatus = 'UNASSIGNED' | 'PENDING' | 'IN_PROGRESS' | 'ON_HOLD' | 'REJECTED' | 'COMPLETED' | 'CANCELLED';
@@ -269,6 +295,10 @@ export interface TaskRecordListQuery {
   required?: 'REQUIRED' | 'OPTIONAL';
   due?: 'THIS_WEEK' | 'LATER' | 'NONE';
   mine?: boolean;
+  /** ACC-244 — organisation-wide only (no record named). */
+  view?: TaskRecordListView;
+  recordType?: string;
+  unit?: string;
   sort?: TaskRecordListSort;
   dir?: 'asc' | 'desc';
   take?: number;
@@ -626,8 +656,8 @@ export class TaskService {
   }
 
   // ACC-167 — the assignment picker. `taskId` names the task being
-  // reassigned, which is how its creator or a tasks:reassign holder reaches
-  // the picker without tasks:create.
+  // reassigned, which is how its creator or a Manage tasks holder reaches
+  // the picker without Create tasks.
   getAssignableUnits(taskId?: string): Observable<AssignableUnitDto[]> {
     return this.http.get<AssignableUnitDto[]>(`${this.base}/assignment/units`, {
       params: withTask(new HttpParams(), taskId),
@@ -681,12 +711,6 @@ export class TaskService {
     return this.http.post<WorkloadHintDto>(`${this.base}/assignment/workload-hint`, dto);
   }
 
-  // ACC-76 — the only list endpoint carrying assignees. Requires tasks:view.
-  getForSource(sourceType: string, sourceId: string): Observable<ITaskWithAssigneesDto[]> {
-    const params = new HttpParams().set('sourceType', sourceType).set('sourceId', sourceId);
-    return this.http.get<ITaskWithAssigneesDto[]>(this.base, { params });
-  }
-
   // ACC-229 — a record's Tasks panel: the first five, and the total.
   getRecordPanel(sourceType: string, sourceId: string): Observable<ITaskRecordPanelDto> {
     const params = new HttpParams().set('sourceType', sourceType).set('sourceId', sourceId);
@@ -707,12 +731,13 @@ export class TaskService {
     return this.http.get<ITaskRecordListDto>(`${this.base}/record-list`, { params });
   }
 
-  getUnassigned(): Observable<ITaskDto[]> {
-    return this.http.get<ITaskDto[]>(`${this.base}/unassigned`);
+  // ACC-244 — which views of /tasks this viewer gets, and New task's record types.
+  getViews(): Observable<ITaskViewsDto> {
+    return this.http.get<ITaskViewsDto>(`${this.base}/views`);
   }
 
-  getById(id: string): Observable<ITaskDto> {
-    return this.http.get<ITaskDto>(`${this.base}/${id}`);
+  getUnassigned(): Observable<ITaskDto[]> {
+    return this.http.get<ITaskDto[]>(`${this.base}/unassigned`);
   }
 
   // ACC-228 — the task page. No permission: who may open a task is decided by
@@ -742,7 +767,7 @@ export class TaskService {
     return this.http.post<ITaskDto>(`${this.base}/${id}/reject`, dto);
   }
 
-  // ACC-163 — open to a tasks:reassign holder OR the task's creator; the
+  // ACC-163 — open to a Manage tasks holder OR the task's creator; the
   // server decides, and refuses anyone else as not found.
   reassign(id: string, dto: ReassignTaskDto): Observable<ITaskDto> {
     return this.http.post<ITaskDto>(`${this.base}/${id}/reassign`, dto);
@@ -750,7 +775,7 @@ export class TaskService {
 
   // ACC-173 — extension and hold requests. The server decides who may: the
   // assignee asks, the asker withdraws, the creator (or their cover, or a
-  // tasks:reassign holder) decides. Anyone else is told the task is not found.
+  // Manage tasks holder) decides. Anyone else is told the task is not found.
   requestChange(taskId: string, dto: CreateTaskRequestDto): Observable<TaskRequestDto> {
     return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests`, dto);
   }
@@ -778,7 +803,7 @@ export class TaskService {
   }
 
   // ACC-174 — the creator's own actions. The server decides who may (the
-  // creator, whoever acts for them, or a tasks:reassign holder while the
+  // creator, whoever acts for them, or a Manage tasks holder while the
   // creator is gone) and tells anyone else the task is not found.
   update(id: string, dto: UpdateTaskDto): Observable<ITaskDto> {
     return this.http.patch<ITaskDto>(`${this.base}/${id}`, dto);
@@ -793,7 +818,7 @@ export class TaskService {
   }
 
   // New task's picker: every priority's due date and limit from now. Needs
-  // tasks:create, like creating one.
+  // Create tasks, like creating one.
   getSlaPreview(): Observable<SlaPreviewDto> {
     return this.http.get<SlaPreviewDto>(`${this.base}/sla-preview`);
   }

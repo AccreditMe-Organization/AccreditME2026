@@ -2,7 +2,8 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../../common/services/object-visibility.service';
-import { TASKS_PERMISSIONS } from '../../../common/constants/permissions';
+import { TaskVisibilityService } from '../task-visibility.service';
+import { taskKeyOf } from '../task-record-types';
 import { WorkingCalendarService } from '../../working-calendar/working-calendar.service';
 import { AssignmentViewer, TaskAssignmentService } from '../task-assignment.service';
 import { IAssignableHolder } from '../interfaces/task-assignment.interface';
@@ -56,6 +57,7 @@ export class TaskWorkloadService {
     private readonly assignment: TaskAssignmentService,
     private readonly objectVisibility: ObjectVisibilityService,
     private readonly workingCalendar: WorkingCalendarService,
+    private readonly visibility: TaskVisibilityService,
   ) {}
 
   async listHolders(viewer: AssignmentViewer, organizationId: string, query: HolderQuery): Promise<IAssignableHolder[]> {
@@ -78,12 +80,24 @@ export class TaskWorkloadService {
     return this.withWorkload(viewer, organizationId, members, query.record ?? null, query.taskId);
   }
 
-  /** The record task list's own rule: tasks:view, then the record (403 / 404). Throws. */
+  /**
+   * Counts are of EVERY task on the record, so the viewer must see every task
+   * on it (ACC-244): the record first (403 / 404), then View all tasks on its
+   * type or unit scope over the record — the task visibility rule's
+   * seesWholeRecord. Otherwise 403 naming View all tasks. Throws.
+   */
   async assertMayCount(viewer: AssignmentViewer, organizationId: string, record: IRecordRef): Promise<void> {
-    if (!viewer.permissions.includes(TASKS_PERMISSIONS.VIEW)) {
-      throw new ForbiddenException(`Required permission: ${TASKS_PERMISSIONS.VIEW}`);
-    }
+    const refusal = () => new ForbiddenException(`Required permission: ${taskKeyOf(record.sourceType, 'VIEW_ALL') ?? 'View all tasks'}`);
+    const ctx = await this.visibility.contextFor(viewer, organizationId);
+    // With no way to see a whole record of this type — no View all tasks, no
+    // unit scope on it — refuse before the record is read (ACC-101 clause a).
+    // A viewer who cannot see the record type at all gets assertCanView's own
+    // 403 instead, which also reads nothing.
+    const mightSeeAll =
+      ctx.viewAllTypes.includes(record.sourceType) || ctx.unitScope.some((s) => s.type === record.sourceType);
+    if (ctx.recordTypes.includes(record.sourceType) && !mightSeeAll) throw refusal();
     await this.objectVisibility.assertCanView(record.sourceType, record.sourceId, organizationId, viewer.permissions);
+    if (!(await this.visibility.seesWholeRecord(ctx, record.sourceType, record.sourceId))) throw refusal();
   }
 
   /** The same rule, as a yes or no, for the lists. Only the two refusals become "no". */

@@ -8,7 +8,8 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 
 // ACC-167 (decision 8) — the assignment picker. It replaces the users:view
 // dependency ACC-163 recorded, so these tests pin two things: WHO may use it
-// (tasks:create, or the creator / a tasks:reassign holder for a named task),
+// (Create tasks on a record type, or the creator / a Manage tasks holder on
+// the task's type for a named task — ACC-244),
 // and WHAT it returns (only what the cascade needs — no email, no status).
 
 const ORG_A = 'org-a';
@@ -28,10 +29,11 @@ const mockPrisma = {
 const mockLookups = { getValues: jest.fn() };
 
 const creator: AssignmentViewer = { id: 'creator', permissions: ['committees:view'] };
-const assigner: AssignmentViewer = { id: 'assigner', permissions: ['tasks:create', 'committees:view'] };
-const reassigner: AssignmentViewer = { id: 'reassigner', permissions: ['tasks:reassign', 'committees:view'] };
+// ACC-244 — the per-type keys, with the record type visible.
+const assigner: AssignmentViewer = { id: 'assigner', permissions: ['committees:create_tasks', 'committees:view'] };
+const reassigner: AssignmentViewer = { id: 'reassigner', permissions: ['committees:manage_tasks', 'committees:view'] };
 const bystander: AssignmentViewer = { id: 'bystander', permissions: ['committees:view'] };
-// ACC-208 (Q1) — configures workflows; holds neither tasks:create nor tasks:reassign.
+// ACC-208 (Q1) — configures workflows; holds neither Create tasks nor Manage tasks.
 const configurer: AssignmentViewer = { id: 'configurer', permissions: ['workflows:manage', 'committees:view'] };
 
 async function captureError(promise: Promise<unknown>): Promise<unknown> {
@@ -48,7 +50,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockPrisma.task.findFirst.mockResolvedValue({ createdById: 'creator' });
+    mockPrisma.task.findFirst.mockResolvedValue({ createdById: 'creator', sourceType: 'COMMITTEE' });
     mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-1' });
     mockPrisma.orgUnit.findMany.mockResolvedValue([]);
     mockPrisma.orgPosition.findMany.mockResolvedValue([]);
@@ -79,32 +81,42 @@ describe('TaskAssignmentService (ACC-167)', () => {
 
   // ── the gate ─────────────────────────────────────────────────────────────
   describe('who may use the picker', () => {
-    it('lets a tasks:create holder in without reading any task', async () => {
+    it('lets a Create tasks holder (on any type) in without reading any task', async () => {
       await service.listUnits(assigner, ORG_A);
       expect(mockPrisma.task.findFirst).not.toHaveBeenCalled();
     });
 
     // ACC-101 clause (a): no record is named, so the refusal names the
     // permission and costs no query.
-    it('refuses anyone else with no task named — 403 naming tasks:create, before any read', async () => {
+    it('refuses anyone else with no task named — 403 naming Create tasks, before any read', async () => {
       const error = await captureError(service.listUnits(creator, ORG_A));
 
       expect(error).toBeInstanceOf(ForbiddenException);
-      expect((error as ForbiddenException).message).toBe('Required permission: tasks:create');
+      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
       expect(mockPrisma.task.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.orgUnit.findMany).not.toHaveBeenCalled();
     });
 
-    it("lets a task's creator in for that task, without tasks:create or users:view", async () => {
+    it("lets a task's creator in for that task, without Create tasks or users:view", async () => {
       await expect(service.listUnits(creator, ORG_A, 'task-1')).resolves.toEqual([]);
       expect(mockPrisma.task.findFirst).toHaveBeenCalledWith({
         where: { id: 'task-1', organizationId: ORG_A },
-        select: { createdById: true },
+        select: { createdById: true, sourceType: true },
       });
     });
 
-    it('lets a tasks:reassign holder in for any task', async () => {
+    it("lets a Manage tasks holder in for any task on the type they manage", async () => {
       await expect(service.listUnits(reassigner, ORG_A, 'task-1')).resolves.toEqual([]);
+    });
+
+    it('does not let Manage tasks on committees in for a task on another record type', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({ createdById: 'creator', sourceType: 'DOCUMENT' });
+      expect(await captureError(service.listUnits(reassigner, ORG_A, 'task-1'))).toBeInstanceOf(NotFoundException);
+    });
+
+    it('does not count Create tasks without the record type\'s own view permission (rule 1)', async () => {
+      const blind: AssignmentViewer = { id: 'blind', permissions: ['committees:create_tasks'] };
+      expect(await captureError(service.listUnits(blind, ORG_A))).toBeInstanceOf(ForbiddenException);
     });
 
     // ACC-208 (Ahmad, Q1) — configuring a stage task chooses a target too.
@@ -145,10 +157,10 @@ describe('TaskAssignmentService (ACC-167)', () => {
 
     // The committee variants name a committee and list its members.
     it.each([
-      ['listCommitteeRoles', () => service.listCommitteeRoles({ id: 'x', permissions: ['tasks:create'] }, ORG_A, 'committee-1')],
+      ['listCommitteeRoles', () => service.listCommitteeRoles({ id: 'x', permissions: ['workflows:manage'] }, ORG_A, 'committee-1')],
       [
         'listCommitteeMembers',
-        () => service.listCommitteeMembers({ id: 'x', permissions: ['tasks:create'] }, ORG_A, 'committee-1', 'role-1'),
+        () => service.listCommitteeMembers({ id: 'x', permissions: ['workflows:manage'] }, ORG_A, 'committee-1', 'role-1'),
       ],
     ])('%s also needs committees:view — 403 naming it, before anything is read', async (_name, call) => {
       const error = await captureError(call());
@@ -283,7 +295,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
         service.listCommitteeRoleCatalogue({ id: 'x', permissions: ['workflows:manage'] }, ORG_A, undefined),
       );
 
-      expect((noPicker as ForbiddenException).message).toBe('Required permission: tasks:create');
+      expect((noPicker as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
       expect((noCommittees as ForbiddenException).message).toBe('Required permission: committees:view');
       expect(mockLookups.getValues).not.toHaveBeenCalled();
     });

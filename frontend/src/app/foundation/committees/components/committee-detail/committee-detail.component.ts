@@ -287,7 +287,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
 
           <!-- ACC-229 — the record Tasks panel: at most five rows at a fixed
                height, the total in the header, "See all" for the rest. Shown
-               to everyone who can see this committee: without tasks:view it is
+               to everyone who can see this committee: without View all tasks it is
                "Your tasks on this committee" (Q1) — the server decides which
                tasks, and which actions on each. -->
           <app-record-tasks-panel
@@ -559,10 +559,11 @@ export class CommitteeDetailComponent implements OnInit {
   readonly canChangeMemberRole = computed(() =>
     this.navigationAccess.hasPermission('committees:change_member_role'),
   );
-  // POST /tasks gates on tasks:create. The button now genuinely works — the
+  // POST /tasks gates on Create tasks. The button now genuinely works — the
   // form has a real assignee picker as of ACC-76 — so showing it is correct
   // where it was not before.
-  readonly canCreateTasks = computed(() => this.navigationAccess.hasPermission('tasks:create'));
+  // ACC-244 — Create tasks on committees (the record is visible: this is its page).
+  readonly canCreateTasks = computed(() => this.navigationAccess.hasPermission('committees:create_tasks'));
 
   readonly formVisible = signal(false);
   readonly memberFormVisible = signal(false);

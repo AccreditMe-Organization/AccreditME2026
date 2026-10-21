@@ -36,7 +36,6 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     getMyTasks: jest.fn().mockResolvedValue([]),
     getAvailableToPick: jest.fn().mockResolvedValue([]),
     listUnassigned: jest.fn().mockResolvedValue([]),
-    getByIdForViewer: jest.fn().mockResolvedValue({}),
     pick: jest.fn().mockResolvedValue({}),
     release: jest.fn().mockResolvedValue({}),
     update: jest.fn().mockResolvedValue({}),
@@ -90,6 +89,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
   const recordList = {
     panel: jest.fn().mockResolvedValue({ total: 0, scope: 'own', rows: [] }),
     list: jest.fn().mockResolvedValue({ items: [] }),
+    views: jest.fn().mockResolvedValue({ mine: true, all: null, unassigned: null, unit: null, create: { types: [] } }),
   };
 
   beforeAll(async () => {
@@ -132,11 +132,12 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('control: GET /tasks/:id refuses this caller, so a swallowed path would be a 403', async () => {
-    const res = await request(app.getHttpServer()).get('/tasks/task-1');
-
-    expect(res.status).toBe(403);
-    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
+  // ACC-244 (Q10) — there is no bare GET /tasks/:id any more, so a static GET
+  // path cannot be swallowed by one: an unknown path is a 404. Each static path
+  // below is proven by reaching its OWN handler (the delegate is called).
+  it('control: GET /tasks/:id is gone (404), and GET /tasks?sourceType= is gone too', async () => {
+    expect((await request(app.getHttpServer()).get('/tasks/task-1')).status).toBe(404);
+    expect((await request(app.getHttpServer()).get('/tasks?sourceType=COMMITTEE&sourceId=c1')).status).toBe(404);
   });
 
   it.each([
@@ -154,26 +155,25 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     // ACC-229 — no @Permissions: the service decides from the record and the viewer.
     ['/tasks/record-panel?sourceType=COMMITTEE&sourceId=c1', () => recordList.panel],
     ['/tasks/record-list', () => recordList.list],
+    // ACC-244 — self-scoped, no @Permissions.
+    ['/tasks/views', () => recordList.views],
   ])('GET %s reaches its own handler', async (path, delegate) => {
     const res = await request(app.getHttpServer()).get(path);
 
     expect(res.status).toBe(200);
     expect(delegate()).toHaveBeenCalledTimes(1);
-    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
   });
 
-  // ACC-197 — both draft routes are gated (tasks:create), so this caller is
-  // refused BY THE GUARD on the draft route itself, and neither the draft
-  // service nor the ':id' handlers run.
-  it('GET /tasks/draft/availability and POST /tasks/draft are refused 403 for a caller without tasks:create', async () => {
+  // ACC-197 / ACC-244 — both draft routes reach their own handlers, which
+  // decide Create tasks per record type (TaskDraftService); no route permission.
+  it('GET /tasks/draft/availability and POST /tasks/draft reach their own handlers', async () => {
     const availability = await request(app.getHttpServer()).get('/tasks/draft/availability');
     const draft = await request(app.getHttpServer()).post('/tasks/draft').send({ note: 'follow up hand rub stock', language: 'en' });
 
-    expect(availability.status).toBe(403);
-    expect(draft.status).toBe(403);
-    expect(drafts.availability).not.toHaveBeenCalled();
-    expect(drafts.draft).not.toHaveBeenCalled();
-    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
+    expect(availability.status).toBe(200);
+    expect(draft.status).toBe(200);
+    expect(drafts.availability).toHaveBeenCalledWith('org-a', []);
+    expect(drafts.draft).toHaveBeenCalledTimes(1);
   });
 
   // ACC-228 — the task page carries NO route permission: an assignee without
@@ -187,7 +187,6 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
 
     expect(res.status).toBe(200);
     expect(delegate()).toHaveBeenCalledWith('task-1', 'org-a', { id: 'user-1', permissions: [] });
-    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
   });
 
   it('forwards the query parameters, so the handler reached is the one that reads them', async () => {
@@ -210,7 +209,6 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
 
     expect(res.status).toBe(200);
     expect(workloadHint.suggest).toHaveBeenCalledTimes(1);
-    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -232,15 +230,13 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     expect(delegate()).toHaveBeenCalledTimes(1);
   });
 
-  // ACC-174 — the New task preview is gated by tasks:create, which this caller
-  // lacks. A refusal NAMING tasks:create proves the static path reached its own
-  // handler's guard: swallowed by ':id', it would name tasks:view.
-  it('GET /tasks/sla-preview is its own route, gated by tasks:create', async () => {
+  // ACC-174 / ACC-244 — the New task preview reaches its own handler; the
+  // service decides Create tasks per record type.
+  it('GET /tasks/sla-preview is its own route', async () => {
     const res = await request(app.getHttpServer()).get('/tasks/sla-preview');
 
-    expect(res.status).toBe(403);
-    expect(JSON.stringify(res.body)).toContain('tasks:create');
-    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(taskService.slaPreview).toHaveBeenCalledWith('org-a', []);
   });
 
   it('GET /tasks/:id/sla-preview and PATCH /tasks/:id reach their handlers with no route permission', async () => {
@@ -264,7 +260,6 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     const download = await request(app.getHttpServer()).get('/tasks/task-1/evidence/ev-1/download');
     expect(download.status).toBe(200);
     expect(evidence.download).toHaveBeenCalledTimes(1);
-    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
   });
 
   it('DELETE /tasks/:id/evidence/:evidenceId reaches its handler and answers 204', async () => {

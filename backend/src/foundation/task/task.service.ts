@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   ConflictException,
   Inject,
   Injectable,
@@ -16,7 +17,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
-import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
+import { assertMayCreateTasks, holdsTaskKey, seesRecordType, taskKeyOf, taskKeysOf, typesHolding } from './task-record-types';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { RejectTaskDto } from './dto/reject-task.dto';
@@ -201,7 +202,15 @@ export class TaskService {
    * organisation's. A record type with no visibility rule is refused (fail
    * closed): no record of it exists yet to hold a task.
    */
+  //
+  // ACC-244 PR 2 — and Create tasks on the record's type, replacing the flat
+  // tasks:create. Both permission refusals come before the record is read:
+  // without the record type's own view permission, assertCanView's 403 names
+  // it; with it but without Create tasks, the 403 names that key.
   async createForViewer(dto: CreateTaskDto, organizationId: string, viewer: TaskViewer): Promise<ITask> {
+    if (seesRecordType(viewer.permissions, dto.sourceType) && !holdsTaskKey(viewer.permissions, dto.sourceType, 'CREATE')) {
+      throw new ForbiddenException(`Required permission: ${taskKeyOf(dto.sourceType, 'CREATE') ?? 'Create tasks'}`);
+    }
     await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions);
     return this.create(dto, organizationId, viewer.id);
   }
@@ -586,7 +595,7 @@ export class TaskService {
         openRequest: toOpenRequest(requests),
         pickedByMe: assignees.some((a) => a.pickedAt !== null),
         canManage: await this.mayManage(
-          { createdById: task.createdById, createdBy },
+          { createdById: task.createdById, sourceType: task.sourceType, createdBy },
           { id: userId, permissions: viewerPermissions },
           organizationId,
           { covered },
@@ -629,90 +638,7 @@ export class TaskService {
         evidenceCount,
         pool,
         openRequest: null,
-        canManage: await this.mayManage({ createdById: task.createdById, createdBy }, viewer, organizationId, { covered }),
-      });
-    }
-    return result;
-  }
-
-  // Module task lists — CLAUDE.md's "tasks filtered by sourceType + sourceId".
-  // ACC-76 — returns assignees, unlike every other list query here.
-  //
-  // This is the module-task-list query: it backs an object's own detail page
-  // ("what work does this committee have"), where the assignee is most of the
-  // point. getMyTasks() needs no assignees (every row is the caller's own by
-  // construction) and listUnassigned() has none by definition, so this stays
-  // the only list that carries them rather than a shape change across all
-  // three.
-  //
-  // ACC-101 — the caller must be able to see the SOURCE record, not merely hold
-  // tasks:view. Checked before the tasks are read: a refused caller costs no
-  // query, and the refusal cannot depend on what the list happens to contain.
-  async getForSource(
-    sourceType: TaskSourceType,
-    sourceId: string,
-    organizationId: string,
-    viewerPermissions: readonly string[],
-    // ACC-101 — for the delegation-label entitlement check: a person may always
-    // be told who they are covering for.
-    viewerId: string,
-  ): Promise<ITaskWithAssignees[]> {
-    await this.objectVisibility.assertCanView(
-      sourceType,
-      sourceId,
-      organizationId,
-      viewerPermissions,
-    );
-
-    const tasks = await this.prisma.task.findMany({
-      where: { organizationId, sourceType, sourceId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        assignees: {
-          // Active assignees only. complete() stamps removedAt on everyone who
-          // did NOT complete the task rather than deleting the row, so without
-          // this filter a completed task would list everyone ever assigned as
-          // though they still were.
-          where: { removedAt: null },
-          include: { user: { select: { id: true, name: true } } },
-        },
-        // ACC-163 — who rejected it, for the record's task list, and how much
-        // evidence it holds, so Complete can be disabled before it is refused.
-        rejectedBy: { select: { id: true, name: true } },
-        _count: { select: { evidence: { where: { deletedAt: null } } } },
-        // ACC-167 — the pool the task is in, so the record can say who it is
-        // waiting for until somebody picks it up.
-        ...POOL_LABEL_INCLUDE,
-        // ACC-173 — a pending extension or hold request, shown on the record.
-        ...OPEN_REQUEST_INCLUDE,
-        // ACC-174 — who cancelled it, beside the reason; and the creator's
-        // status, for canManage.
-        cancelledBy: { select: { id: true, name: true } },
-        ...CREATOR_STATUS_INCLUDE,
-      },
-    });
-
-    // One resolve call for the whole page, not one per task — see
-    // DelegationLabelService.resolveMany() on why that matters here.
-    const viewer = { id: viewerId, permissions: viewerPermissions };
-    const allAssignees = tasks.flatMap((task) => task.assignees);
-    const delegations = await this.delegationLabels.resolveMany(allAssignees, organizationId, viewer);
-    const covered = await this.coveredCreators(viewer, organizationId);
-
-    const result: ITaskWithAssignees[] = [];
-    for (const { assignees, requests, createdBy, ...row } of tasks) {
-      const { task, evidenceCount, pool } = splitListRow(row);
-      result.push({
-        ...task,
-        evidenceCount,
-        pool,
-        openRequest: toOpenRequest(requests),
-        canManage: await this.mayManage({ createdById: task.createdById, createdBy }, viewer, organizationId, { covered }),
-        assignees: assignees.map((assignee) => ({
-          userId: assignee.userId,
-          userName: assignee.user.name,
-          delegation: this.delegationLabels.lookup(assignee, delegations),
-        })),
+        canManage: await this.mayManage({ createdById: task.createdById, sourceType: task.sourceType, createdBy }, viewer, organizationId, { covered }),
       });
     }
     return result;
@@ -725,18 +651,28 @@ export class TaskService {
   // nobody can pick them up, so they are work with no actionable owner exactly
   // as an UNASSIGNED task is. Setup health's TASK_WITHOUT_OWNER lists the same
   // tasks and its Fix opens them here.
-  async listUnassigned(organizationId: string): Promise<ITask[]> {
+  //
+  // ACC-244 — for Manage tasks holders only, and only on the record types they
+  // manage with the record type visible (rule 5): the rest of the organisation's
+  // unowned work is not theirs to see. Without Manage tasks on any type, 403
+  // naming the keys (nothing about any task is read first).
+  async listUnassigned(organizationId: string, viewer: TaskViewer): Promise<ITask[]> {
+    const types = typesHolding(viewer.permissions, 'MANAGE') as TaskSourceType[];
+    if (types.length === 0) {
+      throw new ForbiddenException(`Required permission: ${taskKeysOf('MANAGE').join(' or ')}`);
+    }
     const [unassigned, emptyPools] = await Promise.all([
       this.prisma.task.findMany({
-        where: { organizationId, status: 'UNASSIGNED' },
+        where: { organizationId, status: 'UNASSIGNED', sourceType: { in: types } },
         orderBy: { createdAt: 'desc' },
       }),
       findEmptyPoolTasks(this.prisma, organizationId),
     ]);
-    if (emptyPools.length === 0) return unassigned;
+    const strandedIds = emptyPools.filter((t) => (types as string[]).includes(t.sourceType)).map((t) => t.id);
+    if (strandedIds.length === 0) return unassigned;
 
     const stranded = await this.prisma.task.findMany({
-      where: { organizationId, id: { in: emptyPools.map((t) => t.id) } },
+      where: { organizationId, id: { in: strandedIds } },
       orderBy: { createdAt: 'desc' },
     });
     return [...unassigned, ...stranded];
@@ -754,40 +690,6 @@ export class TaskService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
-    return task;
-  }
-
-  // ACC-101 — the HTTP-facing read. Same rule as getForSource(), one record
-  // instead of a list.
-  //
-  // DELIBERATELY NOT FOLDED INTO getById(), for the reason UserService draws
-  // the identical line (ACC-43): getById() is reused internally as a trusted
-  // tenant-scoped lookup — addEvidence() calls it to validate ownership, and
-  // the workflow engine reads tasks it created — and those call sites must
-  // never acquire a viewer's permission check. A service acting on its own
-  // behalf has no viewer.
-  //
-  // The order is the reverse of getForSource() of necessity: a task's parent is
-  // only knowable once the task is read. That is also why this cannot be a
-  // guard — a guard sees the request, not the record.
-  //
-  // A caller who cannot see the parent gets 403 whether or not the task exists;
-  // a caller who can gets the ordinary 404.
-  async getByIdForViewer(
-    id: string,
-    organizationId: string,
-    viewerPermissions: readonly string[],
-    viewerId: string,
-  ): Promise<ITask> {
-    const task = await this.getById(id, organizationId);
-    await this.objectVisibility.assertCanViewOrNotFound(
-      task.sourceType,
-      task.sourceId,
-      organizationId,
-      viewerPermissions,
-      'Task not found',
-      viewerId,
-    );
     return task;
   }
 
@@ -1264,7 +1166,9 @@ export class TaskService {
    * What New task's picker stops at: for every priority, the default due date
    * and the limit, counted from now. Gated by tasks:create at the route.
    */
-  slaPreview(organizationId: string): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
+  // ACC-244 — gated like New task: Create tasks on at least one record type.
+  slaPreview(organizationId: string, permissions: readonly string[]): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
+    assertMayCreateTasks(permissions);
     return this.sla.preview(new Date(), organizationId);
   }
 
@@ -1487,9 +1391,10 @@ export class TaskService {
         where: { id, organizationId },
         include: { assignees: true },
       });
+      // ACC-244 — Manage tasks on the task's record type, or acting for its creator.
       const entitled =
         !!existing &&
-        (actorPermissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
+        (holdsTaskKey(actorPermissions, existing.sourceType, 'MANAGE') ||
           (await this.authority.canActForCreator(existing.createdById, actorId, organizationId, tx)));
       if (!existing || !entitled) {
         throw new NotFoundException('Task not found');
@@ -2222,17 +2127,17 @@ export class TaskService {
    *   1. the creator, or anyone acting for them — TaskAuthorityService's rule,
    *      not a copy of it: canActForCreator() for one task, or the page's
    *      covered-creator set (creatorsCoveredBy(), its inverse) for a list;
-   *   2. while the creator is no longer ACTIVE, a holder of the override
-   *      permission, so a departed creator's work can still be closed.
+   *   2. while the creator is no longer ACTIVE, a holder of Manage tasks on
+   *      the task's record type (with the record type visible), so a departed
+   *      creator's work can still be closed.
    *
-   * The override is tasks:reassign today. The task permission model Ahmad
-   * decided on 6 October replaces it with "Manage tasks" per record type; that
-   * swap is a change to the one line below.
+   * ACC-244 — the override was tasks:reassign; it is Manage tasks per record
+   * type now (holdsTaskKey), the one-line swap ACC-174 kept it for.
    */
   // ACC-177 — not private: TaskEvidenceService reads it for who may see a
   // task's evidence. Still the one copy of the rule.
   async mayManage(
-    task: { createdById: string; createdBy?: { status: string } | null },
+    task: { createdById: string; sourceType: string; createdBy?: { status: string } | null },
     viewer: TaskViewer,
     organizationId: string,
     ctx: { client?: TaskTx; covered?: ReadonlySet<string> } = {},
@@ -2243,7 +2148,7 @@ export class TaskService {
       : await this.authority.canActForCreator(task.createdById, viewer.id, organizationId, client);
     if (actsForCreator) return true;
 
-    if (!viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN)) return false;
+    if (!holdsTaskKey(viewer.permissions, task.sourceType, 'MANAGE')) return false;
     const status =
       task.createdBy !== undefined
         ? task.createdBy?.status

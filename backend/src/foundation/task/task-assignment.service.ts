@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { COMMITTEES_PERMISSIONS, TASKS_PERMISSIONS, WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEES_PERMISSIONS, WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
+import { holdsTaskKey, taskKeysOf, typesHolding } from './task-record-types';
 import { LookupService } from '../lookup/lookup.service';
 import { AssignTargetDto } from './dto/assign-target.dto';
 import {
@@ -35,21 +36,22 @@ export interface ResolvedPlacement extends PoolPlacement {
  *
  * ## Who may use the picker
  *
- * A tasks:create holder, or — for one task, named by `taskId` — anyone allowed
- * to reassign it: its creator, or a tasks:reassign holder. This replaces the
+ * A holder of Create tasks on any record type (ACC-244), or — for one task,
+ * named by `taskId` — anyone allowed to reassign it: its creator, whoever acts
+ * for them, or a holder of Manage tasks on its type. This replaces the
  * users:view dependency ACC-163 recorded: a creator who cannot list the
  * tenant's users can still choose who gets their task. The committee variants
  * also need committees:view, because the request names the committee and
  * lists its members (ACC-101 clause (a): refused before anything is read).
  *
  * Refusals follow ACC-101's two clauses. With no taskId the request names no
- * record, so a caller without tasks:create gets a 403 naming it. With a taskId
+ * record, so a caller without Create tasks gets a 403 naming the keys. With a taskId
  * the entitlement is only knowable from the row, so a caller who is neither
  * its creator nor a reassigner gets the identical 404.
  *
  * ACC-208 (Ahmad, 12 Oct, Q1) — workflows:manage also opens the picker, with no
  * taskId: configuring where a stage's tasks go is choosing a target, the same
- * data tasks:create chooses from. A taskId still means "reassigning THIS
+ * data Create tasks chooses from. A taskId still means "reassigning THIS
  * task", which workflows:manage does not grant.
  */
 @Injectable()
@@ -61,20 +63,22 @@ export class TaskAssignmentService {
   ) {}
 
   async assertMayAssign(viewer: AssignmentViewer, organizationId: string, taskId?: string): Promise<void> {
-    if (viewer.permissions.includes(TASKS_PERMISSIONS.CREATE)) return;
+    // ACC-244 — Create tasks on any record type replaces the flat tasks:create.
+    if (typesHolding(viewer.permissions, 'CREATE').length > 0) return;
     if (!taskId && viewer.permissions.includes(WORKFLOWS_PERMISSIONS.MANAGE)) return;
     if (!taskId) {
-      throw new ForbiddenException(`Required permission: ${TASKS_PERMISSIONS.CREATE}`);
+      throw new ForbiddenException(`Required permission: ${taskKeysOf('CREATE').join(' or ')}`);
     }
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, organizationId },
-      select: { createdById: true },
+      select: { createdById: true, sourceType: true },
     });
     // ACC-173 — "may reassign this task" is canActForCreator(): the creator
-    // or whoever covers them now — the same rule reassign() applies.
+    // or whoever covers them now — the same rule reassign() applies. ACC-244 —
+    // or Manage tasks on the task's record type, where tasks:reassign was.
     const entitled =
       !!task &&
-      (viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
+      (holdsTaskKey(viewer.permissions, task.sourceType, 'MANAGE') ||
         (await this.authority.canActForCreator(task.createdById, viewer.id, organizationId)));
     if (!entitled) throw new NotFoundException('Task not found');
   }

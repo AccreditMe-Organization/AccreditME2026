@@ -158,14 +158,14 @@ const CASES: readonly Case[] = [
   {
     page: 'task-list',
     component: TaskListComponent,
-    permission: 'tasks:create',
+    permission: 'committees:create_tasks',
     services: [TaskService],
     // ACC-229 — the page hosts the All tasks list, whose read returns a page
     // object, not an array: an empty one, so the list renders with no rows.
     overrides: new Map<Type<unknown>, unknown>([
       [
         TaskService,
-        { getRecordList: () => of({ items: [], total: 0, matching: 0, scope: 'all', facets: null, aroundIndex: null }) },
+        { getRecordList: () => of({ items: [], total: 0, matching: 0, scope: 'all', view: 'all', facets: null, aroundIndex: null }) },
       ],
     ]),
   },

@@ -47,8 +47,9 @@ function toPerson(row: PersonRow): ITaskPagePerson {
  * WHO MAY OPEN A TASK (Q4, Ahmad 14 Oct) is TaskAdmissionService.admit() —
  * moved there in ACC-231 so the task's files follow the very same rule:
  *   (a) anyone ever on it, (b) whoever may manage it, (c) a member of its pool
- *   while it waits, (d) whoever may decide its open request, (e) tasks:view
- *   AND the record it is about.
+ *   while it waits, (d) whoever may decide its open request, (e) a task key
+ *   on its type AND the record it is about. Since ACC-244 that is one
+ *   condition, taskVisibleSql() (task-visibility.ts).
  * Everyone else gets the identical 404 — the same status and body as an id
  * that does not exist — and the refusal is a log line (ACC-101 clause b). The
  * task must be read to know any of this, so the read comes first, and a

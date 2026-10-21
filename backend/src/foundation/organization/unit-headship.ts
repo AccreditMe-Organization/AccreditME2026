@@ -207,3 +207,75 @@ export async function findRunningActingCover(
     validTo: cover.validTo,
   };
 }
+
+/**
+ * ACC-244 — the unit a person heads NOW by the holder rule: their primary unit,
+ * when headHolderWhere() holds for them. Null otherwise (not a holder, not
+ * ACTIVE, an inactive head position, no primary unit). The reverse of
+ * findCurrentHeadHolders: a person is a holder of exactly the unit it answers.
+ * During a handover both the outgoing and the incoming person answer the unit.
+ */
+export async function findUnitHeadedBy(
+  prisma: Pick<PrismaService, 'user'>,
+  organizationId: string,
+  userId: string,
+): Promise<string | null> {
+  const me = await prisma.user.findFirst({
+    where: { id: userId, organizationId, ...headHolderWhere() },
+    select: { primaryOrgUnitId: true },
+  });
+  return me?.primaryOrgUnitId ?? null;
+}
+
+/**
+ * ACC-244 — the units a person COVERS now: the units with an acting period in
+ * force for them (runningActingCoverWhere). Optionally one reason only.
+ *
+ * The reverse of findRunningActingCover. They agree because two periods are
+ * never in force on one unit at once (assignActingHead refuses the overlap);
+ * if that refusal were ever bypassed, findRunningActingCover names the newest
+ * and this would also name the unit for the older period's person.
+ */
+export async function findUnitsCoveredBy(
+  prisma: Pick<PrismaService, 'orgUnitHeadAssignment'>,
+  organizationId: string,
+  userId: string,
+  now: Date,
+  reason?: 'VACANCY' | 'ABSENCE',
+): Promise<string[]> {
+  const rows = await prisma.orgUnitHeadAssignment.findMany({
+    where: { organizationId, userId, ...runningActingCoverWhere(now), ...(reason ? { reason } : {}) },
+    select: { orgUnitId: true },
+  });
+  return [...new Set(rows.map((r) => r.orgUnitId))];
+}
+
+/**
+ * ACC-244 — the given units and every unit below them, in one organisation.
+ *
+ * A ROOT must be ACTIVE: headship of a deactivated unit grants no reach (a unit
+ * can be deactivated only with no active users, children or committees under
+ * it). Descendants are walked whether active or not, so a parent's head still
+ * sees the history of an inactive sub-unit.
+ *
+ * One recursive query on OrgUnit(parentId), touching only the subtree; every
+ * step is scoped by organisation. UNION, not UNION ALL, so a cycle (which
+ * update refuses) cannot loop.
+ */
+export async function findUnitSubtreeIds(
+  prisma: Pick<PrismaService, '$queryRaw'>,
+  organizationId: string,
+  rootIds: readonly string[],
+): Promise<string[]> {
+  if (rootIds.length === 0) return [];
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    WITH RECURSIVE s(id) AS (
+      SELECT u.id FROM "OrgUnit" u
+       WHERE u."organizationId" = ${organizationId} AND u.id = ANY(${[...rootIds]}::text[]) AND u."isActive"
+      UNION
+      SELECT c.id FROM "OrgUnit" c JOIN s ON c."parentId" = s.id
+       WHERE c."organizationId" = ${organizationId}
+    )
+    SELECT id FROM s`;
+  return rows.map((r) => r.id).sort();
+}

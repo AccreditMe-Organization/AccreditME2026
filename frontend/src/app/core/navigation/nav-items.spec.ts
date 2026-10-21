@@ -91,16 +91,17 @@ describe('nav-items (ACC-79)', () => {
     });
   });
 
-  // ACC-229 — All tasks sits beside My tasks, for tasks:view holders only.
+  // ACC-229 — All tasks sits beside My tasks, for View all tasks holders only
+  // (committees:view_all_tasks since ACC-244).
   describe('All tasks', () => {
-    it('shows after My tasks to a holder of tasks:view, and opens /tasks/all', () => {
-      const work = visibleNavGroups(access({ permissions: ['tasks:view'] })).find((g) => g.key === 'work');
+    it('shows after My tasks to a holder of committees:view_all_tasks, and opens /tasks/all', () => {
+      const work = visibleNavGroups(access({ permissions: ['committees:view_all_tasks'] })).find((g) => g.key === 'work');
       expect(work?.items.map((i) => i.key)).toEqual(['home', 'myTasks', 'allTasks']);
       expect(work?.items[2]).toEqual(jasmine.objectContaining({ route: '/tasks/all', labelKey: 'task.allTasks' }));
     });
 
-    it('is absent without tasks:view', () => {
-      const items = visibleNavGroups(access({ permissions: ['tasks:create', 'tasks:reassign', 'committees:view'] })).flatMap((g) =>
+    it('is absent without committees:view_all_tasks', () => {
+      const items = visibleNavGroups(access({ permissions: ['committees:create_tasks', 'committees:manage_tasks', 'committees:view', 'committees:view_unit_tasks'] })).flatMap((g) =>
         g.items.map((i) => i.key),
       );
       expect(items).not.toContain('allTasks');
@@ -281,11 +282,11 @@ describe('nav-items (ACC-79)', () => {
 
     it('still gates the task routes that are not self-scoped', () => {
       // /tasks/all is the All tasks rail item (ACC-229), not an Administration
-      // screen, so it is tasks:view alone — from the item now, not a standalone entry.
-      expect(ROUTE_PERMISSIONS.get('tasks/all')).toEqual(['tasks:view']);
+      // screen, so it is View all tasks alone — from the item now, not a standalone entry.
+      expect(ROUTE_PERMISSIONS.get('tasks/all')).toEqual(['committees:view_all_tasks']);
       expect(ROUTE_PERMISSIONS.get('tasks/unassigned')).toEqual([
         ADMIN_ACCESS,
-        'tasks:manage',
+        'committees:manage_tasks',
       ]);
     });
 

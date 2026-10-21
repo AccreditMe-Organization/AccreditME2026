@@ -101,13 +101,13 @@ describe('RecordTasksPanelComponent (ACC-229)', () => {
     expect(fixture.componentInstance.created).toBe(1);
   });
 
-  it('New task is absent, not disabled, without tasks:create', () => {
+  it('New task is absent, not disabled, without committees:create_tasks', () => {
     fixture.componentInstance.canCreate.set(false);
     flush({ total: 0, scope: 'all', rows: [] });
     expect(q('record-tasks-new')).toBeNull();
   });
 
-  it('without tasks:view (Q1): "Your tasks on this committee"', () => {
+  it('without View all tasks (Q1): "Your tasks on this committee"', () => {
     flush({ total: 2, scope: 'own', rows: rows(2) });
     expect(el.querySelector('h2')!.textContent).toContain('Your tasks on this committee');
   });

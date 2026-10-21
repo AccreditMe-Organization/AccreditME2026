@@ -1,6 +1,6 @@
 // ACC-167 — what the assignment picker returns. ONLY what the cascade needs:
 // no email, no user status, no other profile field. The picker is open to
-// tasks:create holders who may hold no users:view, so it must not become a
+// Create tasks holders (ACC-244) who may hold no users:view, so it must not become a
 // way round that permission.
 
 export interface IAssignableUnit {

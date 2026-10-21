@@ -39,6 +39,8 @@ const task = (overrides: Record<string, unknown> = {}) => ({
   id: 'task-1',
   organizationId: ORG_A,
   title: 'Collect the audit sample',
+  sourceType: 'COMMITTEE',
+  sourceId: 'c1',
   createdById: CREATOR,
   status: 'PENDING',
   priority: 'MEDIUM',
@@ -97,7 +99,9 @@ const mockAuthority = {
 const assignee = { id: ASSIGNEE, permissions: [] as string[] };
 const creator = { id: CREATOR, permissions: [] as string[] };
 const outsider = { id: OUTSIDER, permissions: [] as string[] };
-const admin = { id: ADMIN, permissions: ['tasks:reassign'] };
+// ACC-244 — Manage tasks on committees, with committees visible: where
+// tasks:reassign was.
+const admin = { id: ADMIN, permissions: ['committees:view', 'committees:manage_tasks'] };
 
 async function captureError(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -183,7 +187,7 @@ describe('TaskRequestService (ACC-173)', () => {
           holdUntil: null,
         }),
       });
-      expect(mockAuthority.decisionRecipients).toHaveBeenCalledWith(CREATOR, ASSIGNEE, ORG_A);
+      expect(mockAuthority.decisionRecipients).toHaveBeenCalledWith(CREATOR, ASSIGNEE, ORG_A, 'COMMITTEE');
       expect(mockNotifications.create).toHaveBeenCalledWith(
         {
           userId: CREATOR,
@@ -527,7 +531,7 @@ describe('TaskRequestService (ACC-173)', () => {
       expect(data['slaStartAt']).toEqual(holdEnds);
     });
 
-    it('lets a tasks:reassign holder decide, though they do not cover the creator', async () => {
+    it('lets a Manage tasks holder on the type decide, though they do not cover the creator', async () => {
       mockPrisma.taskRequest.findFirst.mockResolvedValue(request());
       await expect(service.approve('task-1', 'req-1', {}, admin, ORG_A)).resolves.toBeDefined();
     });
@@ -753,7 +757,7 @@ describe('TaskRequestService (ACC-173)', () => {
       expect(told[0]).toEqual(expect.objectContaining({ titleEn: 'Task resumed', titleAr: 'استُؤنفت المهمة' }));
     });
 
-    it('lets a decider resume early: the creator, their cover, or a tasks:reassign holder', async () => {
+    it('lets a decider resume early: the creator, their cover, or a Manage tasks holder on the type', async () => {
       await expect(service.resume('task-1', creator, ORG_A)).resolves.toBeDefined();
       await expect(service.resume('task-1', admin, ORG_A)).resolves.toBeDefined();
     });
@@ -862,7 +866,7 @@ describe('TaskRequestService (ACC-173)', () => {
       expect(rows[0]).not.toHaveProperty('requestedBy');
     });
 
-    it('adds tasks whose creator is no longer ACTIVE for a tasks:reassign holder', async () => {
+    it('adds tasks of the managed types whose creator is no longer ACTIVE, for a Manage tasks holder', async () => {
       mockPrisma.taskRequest.findMany.mockResolvedValue([]);
       await service.awaitingDecision(admin, ORG_A);
       expect(mockPrisma.taskRequest.findMany).toHaveBeenCalledWith(
@@ -870,7 +874,7 @@ describe('TaskRequestService (ACC-173)', () => {
           where: expect.objectContaining({
             OR: [
               { task: { createdById: { in: [ADMIN] } } },
-              { task: { createdBy: { status: { not: 'ACTIVE' } } } },
+              { task: { sourceType: { in: ['COMMITTEE'] }, createdBy: { status: { not: 'ACTIVE' } } } },
             ],
           }),
         }),

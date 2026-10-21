@@ -16,7 +16,6 @@ import {
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
-import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
@@ -61,7 +60,7 @@ import { TaskEvidenceService } from './task-evidence.service';
 import { TaskPageService } from './task-page.service';
 import { TaskRecordListService } from './task-record-list.service';
 import { RecordListQueryDto, RecordPanelQueryDto } from './dto/record-list-query.dto';
-import { ITaskRecordList, ITaskRecordPanel } from './interfaces/task-record-row.interface';
+import { ITaskRecordList, ITaskRecordPanel, ITaskViews } from './interfaces/task-record-row.interface';
 import { ITaskHistoryEvent, ITaskPageView } from './interfaces/task-page.interface';
 import { SingleFileUploadInterceptor } from '../file-storage/single-file-upload.interceptor';
 import { IFileDownload, IUploadedFile } from '../file-storage/interfaces/stored-file.interface';
@@ -86,7 +85,7 @@ export class TaskController {
     private readonly recordList: TaskRecordListService,
   ) {}
 
-  // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
+  // ACC-70 — deliberately NOT @Permissions (it was tasks:view, retired in ACC-244).
   //
   // A user's own task list is intrinsically self-scoped, exactly like the
   // notification inbox: getMyTasks() filters on
@@ -103,9 +102,9 @@ export class TaskController {
   // user their own assigned work, which is most of the reason that page
   // exists.
   //
-  // Note the contrast with the neighbouring endpoints, which stay gated and
-  // should: getForSource()/getById() can return ANY task in the tenant, and
-  // 'unassigned' is an administrative view. Only this one is self-scoped.
+  // Note the contrast with the record list and Unassigned, which can return
+  // tasks the viewer is not on: they answer from the task visibility rule
+  // (ACC-244). Only this one is self-scoped.
   //
   // PermissionGuard still runs (class-level @UseGuards) and returns true when
   // no @Permissions metadata is present; TenantGuard still authenticates and
@@ -143,10 +142,13 @@ export class TaskController {
   // ACC-174 — what New task's date picker stops at: the default due date and
   // the SLA limit for every priority, counted from now. It names no task, so it
   // is gated like creating one (ACC-101 clause a — a 403 naming the permission).
+  // ACC-244 — Create tasks on at least one record type, decided in the service.
   @Get('sla-preview')
-  @Permissions(TASKS_PERMISSIONS.CREATE)
-  getSlaPreview(@CurrentTenant() tenantId: string): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
-    return this.taskService.slaPreview(tenantId);
+  getSlaPreview(
+    @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
+    return this.taskService.slaPreview(tenantId, permissions);
   }
 
   // ACC-197 — "Draft with AI" on New task. Both are gated like creating a
@@ -154,18 +156,22 @@ export class TaskController {
   //
   // Whether to show the trigger at all: AI is on for the organisation and the
   // feature is open to it. Nothing about the balance.
+  // ACC-244 — Create tasks on at least one record type, decided in the service.
   @Get('draft/availability')
-  @Permissions(TASKS_PERMISSIONS.CREATE)
-  getDraftAvailability(@CurrentTenant() tenantId: string): Promise<ITaskDraftAvailability> {
-    return this.drafts.availability(tenantId);
+  getDraftAvailability(
+    @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITaskDraftAvailability> {
+    return this.drafts.availability(tenantId, permissions);
   }
 
   // A draft is returned and NOT stored: a task exists only when the person
   // presses Create task (POST /tasks below). 2 credits through the AI gateway;
   // ten a minute per user (Q3).
+  // ACC-244 — Create tasks on the named record's type (any type with none),
+  // decided in the service.
   @Post('draft')
   @HttpCode(HttpStatus.OK)
-  @Permissions(TASKS_PERMISSIONS.CREATE)
   @perUser(RATE_LIMITS.taskDraft)
   draft(
     @Body() dto: DraftTaskDto,
@@ -177,9 +183,10 @@ export class TaskController {
   }
 
   // The assignment picker (decision 8). No @Permissions on any of these, by
-  // design: who may use it is "tasks:create, OR the creator / a tasks:reassign
-  // holder of the task named by ?taskId", and the second half is only knowable
-  // from the row. TaskAssignmentService.assertMayAssign() decides.
+  // design: who may use it is "Create tasks on a record type, OR whoever may
+  // reassign the task named by ?taskId" (its creator or someone acting for
+  // them, or Manage tasks on its type — ACC-244), and the second half is only
+  // knowable from the row. TaskAssignmentService.assertMayAssign() decides.
   @Get('assignment/units')
   getAssignableUnits(
     @Query() query: AssignmentQueryDto,
@@ -301,6 +308,18 @@ export class TaskController {
     return this.recordList.panel(query, tenantId, viewer(userId, actorPermissions));
   }
 
+  // ACC-244 — which saved views of the one /tasks list the caller gets (My
+  // tasks, All tasks, Unassigned, Unit tasks) and New task's record types.
+  // Self-scoped, so no @Permissions; static, so declared before ':id'.
+  @Get('views')
+  getViews(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITaskViews> {
+    return this.recordList.views(tenantId, viewer(userId, permissions));
+  }
+
   @Get('record-list')
   getRecordList(
     @Query() query: RecordListQueryDto,
@@ -313,62 +332,22 @@ export class TaskController {
 
   // Must be declared before ':id' — Nest matches routes in declaration order
   // and :id would otherwise swallow the literal 'unassigned' segment.
+  //
+  // ACC-244 — Manage tasks holders only, limited to the record types they
+  // manage; decided in the service (403 naming the keys).
   @Get('unassigned')
-  @Permissions(TASKS_PERMISSIONS.MANAGE)
-  getUnassigned(@CurrentTenant() tenantId: string): Promise<ITask[]> {
-    return this.taskService.listUnassigned(tenantId);
+  getUnassigned(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITask[]> {
+    return this.taskService.listUnassigned(tenantId, viewer(userId, permissions));
   }
 
-  // Must be declared before ':id' — Nest matches routes in declaration order
-  // and :id would otherwise swallow the literal 'my-tasks' segment above.
-  @Get()
-  @Permissions(TASKS_PERMISSIONS.VIEW)
-  getForSource(
-    @CurrentTenant() tenantId: string,
-    @Query('sourceType')
-    sourceType:
-      | 'MEETING'
-      | 'DOCUMENT'
-      | 'AUDIT'
-      | 'CAPA'
-      | 'INCIDENT'
-      | 'CORRECTIVE_ACTION'
-      | 'STANDARD'
-      | 'KPI'
-      | 'GAP'
-      | 'QUALITY_IMPROVEMENT_PLAN'
-      | 'COMMITTEE',
-    @Query('sourceId') sourceId: string,
-    // ACC-76 — the ONLY list endpoint returning assignees. Stays gated on
-    // tasks:view (unlike my-tasks above, which is self-scoped): this can
-    // return any task in the tenant, and now names the people on it.
-    //
-    // ACC-101 — tasks:view is no longer sufficient. The permission set is
-    // passed to the service, which refuses a caller who cannot see the source
-    // record. Same decorator UserService.getByIdForViewer() already uses.
-    @CurrentUserPermissions() actorPermissions: string[],
-    @CurrentUser() actorId: string,
-  ): Promise<ITaskWithAssignees[]> {
-    return this.taskService.getForSource(
-      sourceType,
-      sourceId,
-      tenantId,
-      actorPermissions,
-      actorId,
-    );
-  }
-
-  @Get(':id')
-  @Permissions(TASKS_PERMISSIONS.VIEW)
-  getById(
-    @Param('id') id: string,
-    @CurrentTenant() tenantId: string,
-    @CurrentUserPermissions() actorPermissions: string[],
-    // Named in the refusal log, which records what the 404 conceals.
-    @CurrentUser() actorId: string,
-  ): Promise<ITask> {
-    return this.taskService.getByIdForViewer(id, tenantId, actorPermissions, actorId);
-  }
+  // ACC-244 (Q10) — GET /tasks?sourceType=&sourceId= and GET /tasks/:id are
+  // removed. Neither had a frontend caller, and each answered from its own copy
+  // of who may see a task; a record's tasks are GET /tasks/record-panel and
+  // /record-list, and one task is GET /tasks/:id/view.
 
   // ── ACC-228 — the task page (/tasks/:id) ───────────────────────────────
   // No @Permissions, deliberately: an assignee without tasks:view must open
@@ -447,11 +426,10 @@ export class TaskController {
     return this.taskService.reopen(id, dto, { id: userId, permissions }, tenantId);
   }
 
-  // ACC-244 — tasks:create, AND the record: it must exist in this organisation
-  // and be one the caller may see (ACC-101 clause a). PR 2 replaces tasks:create
-  // with Create tasks on the record's type, decided in the service.
+  // ACC-244 — Create tasks on the record's type, AND the record: it must exist
+  // in this organisation and be one the caller may see (ACC-101 clause a).
+  // Decided in the service, because the type is in the body.
   @Post()
-  @Permissions(TASKS_PERMISSIONS.CREATE)
   create(
     @Body() dto: CreateTaskDto,
     @CurrentTenant() tenantId: string,
@@ -483,7 +461,7 @@ export class TaskController {
   //
   // ACC-162 then ungated addEvidence() on the same grounds, which left
   // tasks:complete gating nothing anywhere, so it was RETIRED: removed from
-  // TASKS_PERMISSIONS and the seed, and from existing tenants by
+  // the flat tasks:* group and the seed, and from existing tenants by
   // backfill-retire-tasks-complete.ts. Do not reintroduce it.
   @Post(':id/complete')
   complete(

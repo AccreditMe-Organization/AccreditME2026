@@ -49,8 +49,9 @@ describe('TaskService.createForViewer — the task\'s record comes first (ACC-24
 
   const dto = (sourceId: string, sourceType: CreateTaskDto['sourceType'] = 'COMMITTEE') =>
     ({ title: 'Collect the minutes', sourceType, sourceId }) as CreateTaskDto;
-  const seesCommittees: TaskViewer = { id: 'creator', permissions: ['tasks:create', 'committees:view'] };
-  const cannotSeeCommittees: TaskViewer = { id: 'creator', permissions: ['tasks:create'] };
+  // ACC-244 PR 2 — Create tasks on committees, the per-type key.
+  const seesCommittees: TaskViewer = { id: 'creator', permissions: ['committees:create_tasks', 'committees:view'] };
+  const cannotSeeCommittees: TaskViewer = { id: 'creator', permissions: ['committees:create_tasks'] };
 
   /** The refusal's status and body, for comparing two refusals by content. */
   async function refusal(p: Promise<unknown>): Promise<string> {
@@ -87,6 +88,15 @@ describe('TaskService.createForViewer — the task\'s record comes first (ACC-24
     expect(await refusal(createForViewer(dto('no-such-committee'), ORG_A, cannotSeeCommittees))).toBe(
       await refusal(createForViewer(dto(COMMITTEE_A), ORG_A, cannotSeeCommittees)),
     );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('sees committees but lacks Create tasks on them: 403 naming the key, before any read', async () => {
+    const reader: TaskViewer = { id: 'creator', permissions: ['committees:view'] };
+    expect(await refusal(createForViewer(dto(COMMITTEE_A), ORG_A, reader))).toBe(
+      `403 ${JSON.stringify({ message: 'Required permission: committees:create_tasks', error: 'Forbidden', statusCode: 403 })}`,
+    );
+    expect(findFirst).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
   });
 

@@ -62,7 +62,7 @@ describe('Saving a role\'s permissions against a real database (ACC-120 slice 5)
 
   it('ten concurrent saves from ONE loaded set: exactly one commits, nine get 409, one audit row', async () => {
     const { organizationId, roleId, actorId } = await role();
-    const choices = ['committees:view', 'tasks:view', 'lookups:view', 'users:view', 'roles:view',
+    const choices = ['committees:view', 'admin:access', 'lookups:view', 'users:view', 'roles:view',
       'org:view', 'workflows:view', 'positions:view', 'setup:view', 'meetings:view'];
 
     const outcomes = await Promise.all(
@@ -84,16 +84,16 @@ describe('Saving a role\'s permissions against a real database (ACC-120 slice 5)
 
   it('a save from a FRESH load after the winner goes through', async () => {
     const { organizationId, roleId, actorId } = await role();
-    await roles.assignPermissions(roleId, { permissionKeys: ['tasks:view'], expectedPermissionKeys: [] }, organizationId, actorId);
+    await roles.assignPermissions(roleId, { permissionKeys: ['roles:view'], expectedPermissionKeys: [] }, organizationId, actorId);
 
     await roles.assignPermissions(
       roleId,
-      { permissionKeys: ['tasks:view', 'lookups:view'], expectedPermissionKeys: ['tasks:view'] },
+      { permissionKeys: ['roles:view', 'lookups:view'], expectedPermissionKeys: ['roles:view'] },
       organizationId,
       actorId,
     );
 
-    expect(await held(roleId)).toEqual(['lookups:view', 'tasks:view']);
+    expect(await held(roleId)).toEqual(['lookups:view', 'roles:view']);
   });
 
   it("another organisation's role cannot be saved from this one, and is left untouched", async () => {
@@ -101,7 +101,7 @@ describe('Saving a role\'s permissions against a real database (ACC-120 slice 5)
     const theirs = await role();
     await roles.assignPermissions(
       theirs.roleId,
-      { permissionKeys: ['tasks:view'], expectedPermissionKeys: [] },
+      { permissionKeys: ['roles:view'], expectedPermissionKeys: [] },
       theirs.organizationId,
       theirs.actorId,
     );
@@ -109,12 +109,12 @@ describe('Saving a role\'s permissions against a real database (ACC-120 slice 5)
     await expect(
       roles.assignPermissions(
         theirs.roleId,
-        { permissionKeys: [], expectedPermissionKeys: ['tasks:view'] },
+        { permissionKeys: [], expectedPermissionKeys: ['roles:view'] },
         mine.organizationId,
         mine.actorId,
       ),
     ).rejects.toThrow('Role not found');
 
-    expect(await held(theirs.roleId)).toEqual(['tasks:view']);
+    expect(await held(theirs.roleId)).toEqual(['roles:view']);
   });
 });

@@ -26,6 +26,7 @@ import { TaskService, TaskViewer } from './task.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskAdmissionService } from './task-admission.service';
 import { TaskEvidenceService } from './task-evidence.service';
+import { TaskVisibilityService } from './task-visibility.service';
 import { TENANT_ISOLATION_GATE_STRING } from '../../common/testing/tenant-isolation';
 
 const url = process.env['DATABASE_URL'];
@@ -46,7 +47,8 @@ describe('A task\'s files follow the task page\'s rule, on a real database (ACC-
   // The real mayManage on the real authority — the one rule the admission calls.
   const tasks = { mayManage: TaskService.prototype.mayManage.bind({ prisma, authority }) } as unknown as TaskService;
   const visibility = new ObjectVisibilityService(prisma);
-  const admission = new TaskAdmissionService(prisma, visibility, tasks, authority);
+  // ACC-244 — the real task visibility rule, on the real authority.
+  const admission = new TaskAdmissionService(prisma, visibility, tasks, new TaskVisibilityService(prisma, authority));
   const storedFiles = {
     openDownload: async () => ({ url: 'signed-download', viaApi: false, expiresAt: 'later' }),
     openView: async () => ({ url: 'signed-view', viaApi: false, expiresAt: 'later' }),
@@ -219,35 +221,41 @@ describe('A task\'s files follow the task page\'s rule, on a real database (ACC-
   const as = (key: string, permissions: string[] = []): TaskViewer => ({ id: u[key]!, permissions });
   const on = (task: string, viewer: TaskViewer) => five(t[task]!.id, t[task]!.file, A, viewer);
 
-  describe('unchanged — admitted before, admitted now', () => {
-    it('an active assignee, without tasks:view', async () => expect(await on('main', as('assignee'))).toEqual(allOk));
+  // ACC-244 — the keys are per record type now: View all tasks and Manage
+  // tasks on committees, each needing committees:view too (rule 1).
+  // Relationships need no key and no record, exactly as before (Q1).
+  const VIEW_ALL = ['committees:view_all_tasks', 'committees:view'];
+  const MANAGE = ['committees:manage_tasks', 'committees:view'];
+
+  describe('relationships: admitted with no key and no record (Q1)', () => {
+    it('an active assignee', async () => expect(await on('main', as('assignee'))).toEqual(allOk));
     it('a former assignee', async () => expect(await on('main', as('former'))).toEqual(allOk));
     it('the creator', async () => expect(await on('main', as('creator'))).toEqual(allOk));
     it('the creator\'s out-of-office delegate', async () => expect(await on('main', as('delegate'))).toEqual(allOk));
     it('the acting head appointed for the creator\'s absence', async () => expect(await on('main', as('actingHead'))).toEqual(allOk));
-    it('a tasks:reassign holder, the creator no longer active', async () =>
-      expect(await on('orphaned', as('reassigner', ['tasks:reassign']))).toEqual(allOk));
-    it('tasks:view AND the record', async () => expect(await on('main', as('reader', ['tasks:view', 'committees:view']))).toEqual(allOk));
-  });
-
-  describe('gains — refused before, admitted now', () => {
     it('a pool member while the task waits, who cannot see the record', async () =>
       expect(await on('waiting', as('poolMember'))).toEqual(allOk));
-    it('a tasks:reassign holder while a request is open, who cannot see the record', async () =>
-      expect(await on('request', as('reassigner', ['tasks:reassign']))).toEqual(allOk));
   });
 
-  describe('loses — admitted before, the identical 404 now', () => {
-    it('Fahad: sees the record, without tasks:view, not otherwise related', async () =>
+  describe('keys: admitted with the record visible', () => {
+    it('View all tasks on committees, and the record', async () => expect(await on('main', as('reader', VIEW_ALL))).toEqual(allOk));
+    it('Manage tasks on committees, the creator no longer active', async () =>
+      expect(await on('orphaned', as('reassigner', MANAGE))).toEqual(allOk));
+    it('Manage tasks on committees while a request is open', async () =>
+      expect(await on('request', as('reassigner', MANAGE))).toEqual(allOk));
+  });
+
+  describe('refused: the identical 404', () => {
+    it('Fahad: sees the record, without View all tasks, not otherwise related', async () =>
       expect(await on('main', as('fahad', ['committees:view']))).toEqual(all404));
-    it('a pool member after someone picked it up, who sees the record without tasks:view', async () =>
+    it('a pool member after someone picked it up, who sees the record without View all tasks', async () =>
       expect(await on('picked', as('poolMemberReader', ['committees:view']))).toEqual(all404));
-    it('a tasks:reassign holder with no open request, creator active, record visible, no tasks:view', async () =>
-      expect(await on('noRequest', as('reassigner', ['tasks:reassign', 'committees:view']))).toEqual(all404));
-  });
-
-  describe('unchanged — refused before, refused now', () => {
-    it('tasks:view without the record', async () => expect(await on('main', as('tasksViewOnly', ['tasks:view']))).toEqual(all404));
+    it('Manage tasks with no open request, creator active, task owned', async () =>
+      expect(await on('noRequest', as('reassigner', MANAGE))).toEqual(all404));
+    it('View all tasks WITHOUT the record (rule 1)', async () =>
+      expect(await on('main', as('tasksViewOnly', ['committees:view_all_tasks']))).toEqual(all404));
+    it('Manage tasks WITHOUT the record, even with an open request (rule 1; was admitted under tasks:reassign)', async () =>
+      expect(await on('request', as('reassigner', ['committees:manage_tasks']))).toEqual(all404));
     it('no relation and no permission', async () => expect(await on('main', as('nobody'))).toEqual(all404));
     it('a pool member, once the task is picked up and without the record', async () =>
       expect(await on('picked', as('poolMember'))).toEqual(all404));

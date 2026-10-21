@@ -393,10 +393,9 @@ elsewhere.**
   from the list in the same change that starts checking it.**
   `permission.seed.ts` flattens only exports named `*_PERMISSIONS`, so the
   list is not seeded as keys.
-  **ACC-244 PR 1 adds the four committee task keys to it** (42 of 78 now):
-  seeded and granted ahead of the code that reads them, so the matrix hides
-  them and a save cannot add them until PR 2 starts checking them and takes
-  them off the list. Their sentences are already in both languages (§3.6).
+  **ACC-244 PR 1 added the four committee task keys to it**, ahead of the code
+  that reads them; **PR 2 took them off and retired the four flat `tasks:*`
+  keys** from the catalogue: 38 of 74 now (§3.19).
 - **A workflow transition may not REQUIRE a key no role can be given**
   (ACC-120 slice 5, CC-92 F1). `WorkflowTemplateService.addTransition()`, and
   `updateTransition()` when `requiredPermission` CHANGES, refuse an unknown
@@ -943,7 +942,8 @@ the Administration group came back from `visibleNavGroups()`. The two agree
 today; naming the permission means the label cannot drift if the group's
 visibility rule changes.
 
-**`/tasks/all` was deliberately left on `tasks:view` alone**, not an
+**`/tasks/all` was deliberately left on `tasks:view` alone** (since ACC-244,
+`committees:view_all_tasks`), not an
 Administration screen. When this was written it was a stopgap route with no nav
 item. It became a real list in ACC-229, and a rail item in ACC-230: "All
 Tasks", in My work after My Tasks, gated on `tasks:view` by its nav entry
@@ -3052,11 +3052,14 @@ notification fires either (that notification path,
 ### 3.6 Permission Model
 
 ```
-tasks:view       — TaskController: getForSource, getById
+tasks:view, tasks:create, tasks:reassign, tasks:manage
+                 — RETIRED (ACC-244 PR 2), replaced by the per-type keys
+                   below and one visibility rule: §3.19. The entries
+                   that follow are what they gated, kept as history.
+tasks:view       — was: TaskController getForSource, getById (both removed)
                    NOT getMyTasks — self-scoped, ungated (ACC-70)
-tasks:create     — TaskController: create, AND the record must exist in
-                   the organisation and be visible (createForViewer,
-                   ACC-244)
+tasks:create     — was: TaskController create; now Create tasks on the
+                   record's type (createForViewer)
 tasks:complete   — RETIRED (ACC-162). Gated nothing once complete()
                    (ACC-76) and addEvidence() (ACC-162) became
                    self-scoped; removed from the constants, the seed
@@ -3072,16 +3075,17 @@ tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
 
 committees:view_all_tasks, committees:create_tasks,
 committees:manage_tasks, committees:view_unit_tasks
-                 — ACC-244 PR 1: COMMITTEE_TASKS_PERMISSIONS, the
-                   per-type keys that replace the four tasks:* keys in
-                   PR 2. Seeded (TENANT_ADMIN and PLATFORM_ADMIN all four,
+                 — ACC-244: COMMITTEE_TASKS_PERMISSIONS, read through
+                   TASK_RECORD_TYPES and taskVisibleSql() (§3.19).
+                   Seeded (TENANT_ADMIN and PLATFORM_ADMIN all four,
                    QUALITY_MANAGER view all / create / manage,
                    READ_ONLY_ADMIN the two views, VIEWER none) and
                    granted to existing tenants by
-                   backfill:acc244-grant-task-keys. READ BY NOTHING YET,
-                   so on PERMISSIONS_NOT_YET_CHECKED (§1.4). Plan:
-                   backend/Plans/step-244-task-permissions.md.
+                   backfill:acc244-grant-task-keys.
 ```
+
+Wherever the paragraphs below say `tasks:reassign`, read Manage tasks on the
+task's record type; `tasks:create`, Create tasks (§3.19).
 
 **Six endpoints here carry NO `@Permissions`, and the omission is load-bearing
 in each — do not "restore" any of them for consistency with its neighbours.**
@@ -3351,8 +3355,8 @@ a committee task) states the server's outcome before Save. My tasks gains
 /tasks/assignees`, `/tasks/assignees/committee`) take an optional `sourceType` +
 `sourceId`. With them, each person carries `workload: { openCount,
 overdueCount, canSuggest }` counted on THAT record only — for a caller who can
-see the record's task list (`tasks:view` and `ObjectVisibilityService`), else
-`null`, never an error. `TaskWorkloadService` (`task/workload/`) does it; the
+see the whole record's tasks (View all on its type, or unit scope over it —
+ACC-244; was `tasks:view`), else `null`, never an error. `TaskWorkloadService` (`task/workload/`) does it; the
 picker's own lists and rules are unchanged. §17.11 has "Suggest someone".
 
 ### 3.10 More time and holds — requests the creator decides (ACC-173)
@@ -3604,8 +3608,11 @@ already shows that person elsewhere:
 | (a) | any `TaskAssignee` row for them — now or before | My tasks |
 | (b) | `TaskService.mayManage()` | the creator's actions (ACC-174) |
 | (c) | a member of its pool, while it waits (no active assignee, a `PICKABLE_STATUSES` status) | Available |
-| (d) | a decider of its open request: `tasks:reassign` or `canActForCreator()` | Waiting for your decision |
-| (e) | `tasks:view` **and** the record (`ObjectVisibilityService.assertCanView`) | `GET /tasks/:id` |
+| (d) | a decider of its open request: Manage tasks on the type or `canActForCreator()` | Waiting for your decision |
+| (e) | a task key on the type **and** the record — View all, Manage while it needs managing, or unit scope | All tasks, Unit tasks, Unassigned |
+
+**Since ACC-244 the five are one SQL condition, `taskVisibleSql()`, which
+`admit()` asks of one row (§3.19).**
 
 Anyone else gets the identical 404 — the same status and body as an id that
 does not exist — and a `warn` log line naming the route (`task page`, `task
@@ -3616,11 +3623,9 @@ history`, `task files`; ACC-101 clause b). The task is read first (scoped by
 state (Ahmad, 16 Oct): a pool member is out once someone picks the task up, a
 decider once the request is decided.
 
-**Routes — no `@Permissions`, deliberately.** An assignee without `tasks:view`
-(every `BASE_USER`) must open their own task. `GET /tasks/:id` keeps
-`tasks:view` and the record; the frontend has no caller for it, and since
-ACC-231 it no longer returns the task's evidence (Q1), so a task's files have
-exactly one reader.
+**Routes — no `@Permissions`, deliberately.** An assignee with no task key
+(every `BASE_USER`) must open their own task. `GET /tasks/:id` was removed in
+ACC-244 (no caller); since ACC-231 a task's files have exactly one reader.
 
 | Endpoint | Returns |
 |---|---|
@@ -3686,8 +3691,8 @@ list.**
 
 | Mode | Gate | Rows |
 |---|---|---|
-| On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | with `tasks:view`: every task on it (`scope: 'all'`). Without (Q1): only the tasks the viewer **is or was on, or created** (`scope: 'own'`, Ahmad, 14 Oct) — each one a task its page already admits them to, as an assignee (a) or as its manager (b) |
-| Organisation-wide (neither) | `tasks:view`, else 403 naming it | every task whose record type the viewer may see — `ObjectVisibilityService.viewableTypes()`, the same rules as `assertCanView`, failing closed: a type with no rule is never listed |
+| On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | **ACC-244:** the tasks on it that `taskVisibleSql()` admits; `scope: 'all'` when the viewer sees the whole record (View all, or unit scope over it), else `'own'` |
+| Organisation-wide (neither) | **ACC-244:** the `view` (§3.19) — All tasks needs View all on some type, else 403 naming the keys | the view's tasks AND `taskVisibleSql()` |
 
 Naming one of `sourceType`/`sourceId` without the other is a 400.
 
@@ -3869,7 +3874,7 @@ its client-side copies of the action rules (`committee-detail.tasks.spec.ts`,
 state and an action's failure are separate signals.
 
 **`/tasks/all` is in the rail** (ACC-230): "All Tasks" / «كل المهام»
-(`task.allTasks`), after My Tasks, shown to `tasks:view` holders. Its nav entry
+(`task.allTasks`), after My Tasks, shown to `committees:view_all_tasks` holders (ACC-244; was `tasks:view`). Its nav entry
 carries the permission, so the route guard derives from the same line.
 
 ### 3.14 Capped record panels: Members and Sub-committees (ACC-230)
@@ -4293,6 +4298,147 @@ its screens are ACC-240, and the API lock on direct edits is ACC-241.
   Mutation-checked: dropping the create row lock, the "from" comparison, or the
   self-approval refusal, or moving Approve's committee write outside the
   transaction, each turns it red.
+
+### 3.19 Who sees a task — one rule, keys per record type (ACC-244)
+
+Plan, Ahmad's answers (Q1–Q10) and the dry runs:
+`backend/Plans/step-244-task-permissions.md`. **This section is the authority
+for task visibility**; §3.12's table, §3.13's scope table and §3.6's key list
+point here.
+
+**The keys, per record type.** The four flat keys (`tasks:view`,
+`tasks:create`, `tasks:reassign`, `tasks:manage`) are RETIRED — from the
+catalogue, the seed, and existing roles by
+`backfill:acc244-retire-flat-task-keys`. Each record type has four instead;
+committees are the only type with them today:
+
+| Key | Says | Was |
+|---|---|---|
+| `committees:view_all_tasks` | every task on committees | `tasks:view` |
+| `committees:view_unit_tasks` | tasks on committees owned by the holder's unit or below | — |
+| `committees:create_tasks` | New task on a committee | `tasks:create` |
+| `committees:manage_tasks` | reassign, decide requests, manage while the creator is gone, and Unassigned | `tasks:reassign` + `tasks:manage` |
+
+They are registered in ONE place, `TASK_RECORD_TYPES`
+(`foundation/task/task-record-types.ts`): per type its four keys, the SQL that
+reads a task's owning unit (`ownerUnitSql`) and the SQL that proves its record
+exists in the task's organisation (`recordInOrgSql`). **A key counts only with
+the record type's own view permission** (`holdsTaskKey()`, reading
+`RECORD_VIEW_PERMISSION` from `ObjectVisibilityService`):
+`committees:manage_tasks` without `committees:view` grants nothing. A type with
+no entry has no task keys, so only relationships reach its tasks — fail closed
+(ACC-101).
+
+**The rule — `taskVisibleSql(ctx)` (`foundation/task/task-visibility.ts`), one
+SQL condition over the task row `t`.** A task is visible when ANY of:
+
+1. **A relationship — no key, no record check** (Ahmad, Q1):
+   - the viewer created it, or covers its creator (`creatorsCoveredBy()`: an
+     out-of-office delegate in their window, or the acting head for ABSENCE of
+     a unit the creator heads);
+   - the viewer is or was an assignee (any `TaskAssignee` row);
+   - it waits in a pool the viewer is in (`poolTargetsOfUser()`, the holder
+     rule — §3.9).
+2. **A key — only on a record type the viewer may see, and only when the
+   record exists in the task's organisation:**
+   - View all tasks on the type;
+   - Manage tasks on the type AND (an open request, OR the creator is not
+     ACTIVE, OR nobody owns it — `UNASSIGNED`, or waiting with an empty pool);
+   - **unit scope**: the record's owning unit is in the viewer's units. A head
+     (the holder rule, `findUnitHeadedBy()`) or an acting head
+     (`findUnitsCoveredBy()`, either reason) gets every unit-capable type they
+     can see; a View unit tasks holder gets their `primaryOrgUnitId` on the
+     types they hold it on. **Sub-units are included**
+     (`findUnitSubtreeIds()`, §5.15.2).
+
+`buildTaskVisibilityContext()` reads everything about the viewer once per
+request; `TaskVisibilityService` (`contextFor`, `isVisible`, `countVisible`)
+is how a reader asks. **There is no second copy**:
+
+| Reader | How |
+|---|---|
+| The task page and every file path (`TaskAdmissionService.admit()`) | `isVisible(ctx, taskId)` — the same condition on one row |
+| A record's Tasks panel and list, All tasks, Unit tasks, Unassigned list views (`TaskRecordListService`) | `AND taskVisibleSql(ctx)` in the `WHERE`, **before** `LIMIT` — never filtered after paging |
+| Workload counts (`TaskWorkloadService`) | View all, or unit scope over the record (`seesWholeRecord()`) |
+| Unassigned (`TaskService.listUnassigned()`) | Manage tasks, limited to the types held, the record checked |
+| Deciding, resuming, reassigning, managing (`task-request`, `task.service`, `task-assignment`) | `holdsTaskKey(…, 'MANAGE')` on the task's type, where `tasks:reassign` was |
+| Creating, the SLA preview, drafting (`createForViewer()`, `slaPreview()`, `TaskDraftService`) | `holdsTaskKey(…, 'CREATE')` on the type, or on any type when none is named (`assertMayCreateTasks()`, a 403 naming the key or keys) |
+
+`task-visibility.db-spec.ts` proves it on a real Postgres for every kind of
+viewer — relationship only, View all, a head of a parent unit, an acting head
+in force and before its period, a View unit tasks holder, a Manage holder, and
+nobody, each with and without the record's view permission — with LIST =
+ADMIT on every committee, every view a subset of admit, and a second
+organisation reaching nothing.
+
+**The API for the task list (lane A's slice 3).**
+
+`GET /tasks/views` — no `@Permissions`; what this viewer's `/tasks` offers:
+
+```ts
+{
+  mine: true,
+  all: { types: string[] } | null,        // View all on these types
+  unassigned: { types: string[] } | null, // Manage on these types
+  unit: {
+    types: string[];
+    units: { id: string; nameEn: string; nameAr: string | null; via: 'HEAD' | 'ACTING' | 'PERMISSION' }[];
+  } | null,
+  create: { types: string[] },            // New task's record types
+}
+```
+
+A view is null exactly when its list would refuse. `units` are the roots;
+their sub-units are in the list but not named here.
+
+`GET /tasks/record-list` — organisation-wide when neither `sourceType` nor
+`sourceId` is sent, and then:
+
+| Param | |
+|---|---|
+| `view` | `all` (the default when omitted — today's All tasks) · `unit` · `unassigned`. Sent with a record: 400 |
+| `recordType` | one record type, from `facets.recordTypes` |
+| `unit` | one owning unit in scope (unit view), from `facets.units` |
+
+A view the viewer lacks is **403 naming the keys** (`committees:view_all_tasks`;
+`unit headship or committees:view_unit_tasks`; `committees:manage_tasks`). The
+response gains `view` (`'record' | 'all' | 'unit' | 'unassigned'`) and
+`facets.recordTypes` / `facets.units`, computed in SQL over the same scope. On
+a record, `scope` is `'all'` when the viewer sees the whole record (View all,
+or unit scope over it), else `'own'`.
+
+`GET /tasks/record-panel` gains **`canCreate`**: Create tasks on the record's
+type (the record is visible — it is being shown).
+
+**Removed:** `GET /tasks?sourceType=&sourceId=` and `GET /tasks/:id` — the
+frontend had no caller, and both service methods went with them. The task page
+is `GET /tasks/:id/view`; a record's tasks are the panel and the list. The
+route-order spec pins `GET /tasks/:id` as a 404.
+
+**Nothing may read a flat key again.** `retired-task-keys.spec.ts` reads every
+non-spec source in `backend/src` and `frontend/src` and fails on a quoted
+retired key or the `TASKS_PERMISSIONS` constant. Its non-vacuity guards read a
+real number of files and match the retire backfill, which has to name them.
+
+**Today's screens moved to the new keys, with no redesign:** All tasks on
+`committees:view_all_tasks`; Unassigned, its Reassign and Setup health's Fix on
+`committees:manage_tasks`; New task on `committees:create_tasks`. Slice 3
+replaces them with views read from `GET /tasks/views`.
+
+**What changed for people (dry run on the shared database, 20 Oct):** only the
+three VIEWERs — al-manara's Badr, al-nakheel's Fatima and Nasser — each from
+their committees' tasks to 0, as planned (Q2). Every other count is identical.
+Four people (two Quality Officers, two Auditors) lose the All tasks link, a
+page that already listed nothing for them: none holds `committees:view`.
+
+**The retire backfill** (`npm run backfill:acc244-retire-flat-task-keys`, dry
+run by default, `-- --execute` after the deploy): one audit row per
+revocation, one transaction (`BACKFILL_TX`), idempotent; a catalogue row is
+deleted only once nothing references it. It prints each active user's
+visible-task count by the rule before and after the revocation, and refuses
+`--execute` for a customer organisation (ACC-101), a transition gated on a
+retired key, or any count that would change. Dry run, 20 Oct: 51 grants across
+the three organisations, 47 users, 0 changed.
 
 ## 4. Notification System
 
@@ -5153,8 +5299,22 @@ selects `primaryOrgUnitId`, and the cover is read with `findMany`.
   `hasDirectOrActingHead()`, `workflow.service.ts` and
   `task-authority.service.ts`. Recorded, not changed.
 
-`task-authority.service.ts` still has its own absence-cover window; ACC-133
-did not change it.
+**ACC-244 adds the reverse lookups and the sub-unit walk**, built on the same
+two helpers:
+
+- **`findUnitHeadedBy(prisma, organizationId, userId)`** — the unit the user
+  heads now by the holder rule, or null.
+- **`findUnitsCoveredBy(prisma, organizationId, userId, now, reason?)`** — the
+  units whose cover the user is running now; `now` is required.
+- **`findUnitSubtreeIds(prisma, organizationId, rootIds)`** — the roots and
+  every unit below, one recursive query scoped to the organisation at every
+  step. A root must be active; descendants are walked whatever their state.
+
+`task-authority.service.ts` now reads cover through `findRunningActingCover`
+with an explicit `now`. Its own SUBSTANTIVE-head check (the creator's unit) is
+unchanged and does not require `position.isActive`, unlike `headHolderWhere()`
+— kept to change no behaviour; recorded so nobody "fixes" one to match the
+other by accident. Specs: `unit-headship.db-spec.ts`.
 
 #### 5.15.3 The panel and its six states
 
@@ -9513,8 +9673,8 @@ confirmed.
   pattern ACC-77 flags.
 - **A row's Fix renders only if the viewer holds both the destination
   route's permission and the one its save needs**: `org:view` +
-  `org:manage`; `workflows:view` + `workflows:manage`; `tasks:manage` +
-  `tasks:reassign`. Without them the row still shows, with a note naming
+  `org:manage`; `workflows:view` + `workflows:manage`; `committees:manage_tasks`
+  (ACC-244; was `tasks:manage` + `tasks:reassign`). Without them the row still shows, with a note naming
   what is needed — never a disabled control with no reason.
 
 ### 13.7 What left the bell
@@ -11410,7 +11570,7 @@ the task controller's).
   (`POST /tasks`, unchanged). New task only; Edit task has no trigger.
 - **Routes:** `GET /tasks/draft/availability` → `{ available }` (says nothing
   about the balance) and `POST /tasks/draft` (`{ note, language, title?,
-  sourceType?, sourceId? }`), both `tasks:create`. The POST is limited to
+  sourceType?, sourceId? }`), both Create tasks (ACC-244: on the named record's type, or any). The POST is limited to
   **10 a minute per user** (`RATE_LIMITS.taskDraft`, `perUser()`), the first
   AI call an ordinary user can repeat.
 - **`TaskDraftService.draft()`, in order:**
@@ -11512,8 +11672,8 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
   - The counts are open tasks ON THE RECORD the dialog was opened from (the
     committee or meeting): ACC-65's open on an active assignee row (ON_HOLD
     included), ACC-173's overdue.
-  - Only for a caller who can see that record's task list (`tasks:view` and
-    the record); otherwise `workload: null` and the rows are as before. No
+  - Only for a caller who sees the whole record's tasks (View all on its type
+    or unit scope over it, and the record — ACC-244); otherwise `workload: null` and the rows are as before. No
     extra permission.
   - With no record (New task from the Tasks page), and on a stage task
     definition: no counts, no button.
