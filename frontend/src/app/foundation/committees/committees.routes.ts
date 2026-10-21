@@ -29,6 +29,13 @@ export const COMMITTEE_ROUTES: Routes = [
       ),
   },
   {
+    path: ':id/change-requests/:requestId',
+    loadComponent: () =>
+      import('./change-requests/committee-change-request-page.component').then(
+        (m) => m.CommitteeChangeRequestPageComponent,
+      ),
+  },
+  {
     path: ':id',
     loadComponent: () =>
       import('./components/committee-detail/committee-detail.component').then(
