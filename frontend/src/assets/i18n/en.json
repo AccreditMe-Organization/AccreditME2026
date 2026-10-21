@@ -958,6 +958,7 @@
       "quorumMin": "The quorum can't be less than 0.",
       "quorumNotSet": "0 means not set yet",
       "activeUnitsOnly": "Active units only",
+      "listFailed": "Couldn't load the list.",
       "parentLeftOut": "Not listed: this committee, the committees under it, and those being dissolved.",
       "reportsToLeftOut": "Not listed: this committee, the committees reporting to it, and those being dissolved.",
       "leftOutNew": "Not listed: committees being dissolved, or dissolved.",
