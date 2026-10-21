@@ -82,6 +82,9 @@ describe('The org unit History endpoint against a real database (ACC-120 slice 1
     // A row that switched isActive the other way, then the real deactivation.
     await audit(orgA, unit, at('2026-10-01'), { before: copy({ isActive: false }), after: copy({ isActive: true }) });
     await audit(orgA, unit, at('2026-10-10'), { before: copy(), after: copy({ isActive: false }) });
+    // An edit made after it was deactivated (written directly): inactive on
+    // both sides, so it is not the deactivation.
+    await audit(orgA, unit, at('2026-10-12'), { before: copy({ isActive: false }), after: copy({ isActive: false, nameEn: 'Pharmacy (closed)' }) });
     // B's rows on A's unit id.
     await audit(orgB, unit, at('2026-10-11'), { actorId: bUser, before: copy(), after: copy({ isActive: false }) });
 
@@ -101,19 +104,20 @@ describe('The org unit History endpoint against a real database (ACC-120 slice 1
   it('the unit’s own audit rows and its head event, newest first; never the metadata-only twin', async () => {
     const page = await service.history(orgA, ALL, unit);
     expect(page.items.map((i) => [i.source, i.kind])).toEqual([
+      ['AUDIT', 'CHANGED'],
       ['AUDIT', 'DEACTIVATED'],
       ['AUDIT', 'REACTIVATED'],
       ['HEAD_EVENT', 'ACTING_ASSIGNED'],
       ['AUDIT', 'CHANGED'],
       ['AUDIT', 'CREATED'],
     ]);
-    expect(page.total).toBe(5);
-    const moved = page.items[3] as IOrgUnitAuditHistoryEntry;
+    expect(page.total).toBe(6);
+    const moved = page.items[4] as IOrgUnitAuditHistoryEntry;
     expect(moved.movedTo).toEqual({ id: parent, nameEn: 'Medical Services', nameAr: null });
     expect(JSON.stringify(page)).not.toContain('B Person');
   });
 
-  it('the deactivation is the row that moved isActive from true to false', async () => {
+  it('the deactivation is the row that moved isActive from true to false, not a later edit', async () => {
     const page = await service.history(orgA, ALL, unit);
     expect(page.deactivation).toEqual({ at: at('2026-10-10'), actor: expect.objectContaining({ userId: nora, name: 'Nora Al-Otaibi' }) });
   });
@@ -123,6 +127,7 @@ describe('The org unit History endpoint against a real database (ACC-120 slice 1
     const second = await service.history(orgA, ALL, unit, { skip: 2, take: 2 });
     const third = await service.history(orgA, ALL, unit, { skip: 4, take: 2 });
     const all = await service.history(orgA, ALL, unit);
+    expect(all.items.length).toBe(6);
     expect([...first.items, ...second.items, ...third.items].map((i) => i.id)).toEqual(all.items.map((i) => i.id));
   });
 
