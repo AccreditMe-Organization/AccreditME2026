@@ -75,6 +75,9 @@ function fakePrisma(db: Db) {
 
 // ── the fixture ───────────────────────────────────────────────────────────────
 
+/** A stored copy, typed as the Json column it is read from. */
+const json = (row: Row) => row as Prisma.JsonObject;
+
 const copy = (over: Row = {}): Row => ({
   id: UNIT,
   parentId: 'medical',
@@ -226,14 +229,14 @@ describe('OrgUnitHistoryService', () => {
 
   describe('classifyAuditRow', () => {
     it('deactivation and moving to the top', () => {
-      expect(classifyAuditRow({ action: 'UPDATE', before: copy(), after: copy({ isActive: false }) }).kind).toBe('DEACTIVATED');
-      expect(classifyAuditRow({ action: 'UPDATE', before: copy(), after: copy({ parentId: null }) })).toEqual({
+      expect(classifyAuditRow({ action: 'UPDATE', before: json(copy()), after: json(copy({ isActive: false })) }).kind).toBe('DEACTIVATED');
+      expect(classifyAuditRow({ action: 'UPDATE', before: json(copy()), after: json(copy({ parentId: null })) })).toEqual({
         kind: 'CHANGED',
         fields: ['parent'],
         newParentId: null,
       });
       // A row without both copies is recorded, never guessed at.
-      expect(classifyAuditRow({ action: 'UPDATE', before: null, after: copy() }).kind).toBe('RECORDED');
+      expect(classifyAuditRow({ action: 'UPDATE', before: null, after: json(copy()) }).kind).toBe('RECORDED');
     });
   });
 
@@ -315,12 +318,12 @@ describe('OrgUnitHistoryService', () => {
       expect(text).not.toContain('B Person');
       expect(text).not.toContain('B parent');
       for (const call of [...prisma.auditLog.findMany.mock.calls, ...prisma.auditLog.count.mock.calls]) {
-        expect(call[0].where).toEqual(expect.objectContaining({ organizationId: ORG_A, objectId: UNIT }));
+        expect(call[0]?.where).toEqual(expect.objectContaining({ organizationId: ORG_A, objectId: UNIT }));
       }
       for (const call of [...prisma.orgUnitHeadEvent.findMany.mock.calls, ...prisma.orgUnitHeadEvent.count.mock.calls]) {
-        expect(call[0].where).toEqual({ organizationId: ORG_A, orgUnitId: UNIT });
+        expect(call[0]?.where).toEqual({ organizationId: ORG_A, orgUnitId: UNIT });
       }
-      for (const call of prisma.user.findMany.mock.calls) expect(call[0].where.organizationId).toBe(ORG_A);
+      for (const call of prisma.user.findMany.mock.calls) expect(call[0]?.where?.['organizationId']).toBe(ORG_A);
       expect(prisma.user.findMany).toHaveBeenCalled();
       // B's unit, asked for from A: the same 404 as an invented id.
       await expect(service.history(ORG_A, ALL, 'b-unit')).rejects.toThrow(new NotFoundException('Org unit not found'));
@@ -333,7 +336,7 @@ describe('OrgUnitHistoryService', () => {
       const row = page.items.find((i) => i.id === 'audit:a-cross') as IOrgUnitAuditHistoryEntry;
       expect(row.fields).toEqual(['parent']);
       expect(row).not.toHaveProperty('movedTo');
-      for (const call of prisma.orgUnit.findMany.mock.calls) expect(call[0].where.organizationId).toBe(ORG_A);
+      for (const call of prisma.orgUnit.findMany.mock.calls) expect(call[0]?.where?.['organizationId']).toBe(ORG_A);
       expect(prisma.orgUnit.findMany).toHaveBeenCalled();
     });
   });
