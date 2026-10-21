@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
@@ -407,5 +408,104 @@ describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
     const row = render(true).groups().find((g) => g.type === 'STORAGE_ALMOST_FULL')!.rows[0]!;
     expect(row.objectName).toBe('تخزين الملفات');
     expect(row.consequence).toContain('استُخدم 92٪ من 10 غيغابايت');
+  });
+});
+
+// ACC-120 slice 11, PR D — the org unit record: Set type and the open-ended
+// acting head's Fix go to the unit's record, ACTING_HEAD_OPEN_ENDED is listed
+// at all (the API reported it since slice 2 and this page dropped it), and the
+// record's "+ N more" opens this page filtered to the one unit (?object=).
+describe('SetupHealthPageComponent — the org unit record (ACC-120 slice 11, PR D)', () => {
+  const NOW_D = new Date('2026-10-20T09:00:00.000Z');
+  const ALL = ['org:view', 'org:manage', 'workflows:view', 'workflows:manage', 'committees:manage_tasks'];
+  const health = (): SetupHealthDto => ({
+    open: [
+      condition({ id: 'nohead', type: 'ORG_UNIT_WITHOUT_HEAD', objectId: 'pharm', subject: { nameEn: 'Pharmacy', nameAr: 'الصيدلية', escalationResolves: true } }),
+      condition({ id: 'notype', type: 'ORG_UNIT_WITHOUT_TYPE', objectId: 'pharm', severity: 'BLOCKS_WORK', subject: { nameEn: 'Pharmacy', nameAr: 'الصيدلية' } }),
+      condition({
+        id: 'acting',
+        type: 'ACTING_HEAD_OPEN_ENDED',
+        objectId: 'lab',
+        subject: { orgUnitNameEn: 'Laboratory', orgUnitNameAr: 'المختبر', validFrom: '2026-06-25T12:00:00.000Z' },
+      }),
+      condition({ id: 'task', type: 'TASK_WITHOUT_OWNER', objectId: 'task-1', subject: { title: 'T' } }),
+    ],
+    recentlyCleared: [],
+    freshness: current(),
+  });
+
+  async function render(url: string) {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([{ path: 'setup-health', component: SetupHealthPageComponent }]),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => ALL.includes(p) } },
+        { provide: LanguageService, useValue: { isArabic: () => false } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use('en');
+    const harness = await RouterTestingHarness.create();
+    const page = await harness.navigateByUrl(url, SetupHealthPageComponent);
+    harness.detectChanges();
+    TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/setup-health`).flush(health());
+    harness.detectChanges();
+    return { page, harness, el: harness.routeNativeElement as HTMLElement };
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(NOW_D);
+  });
+  afterEach(() => {
+    TestBed.inject(HttpTestingController).verify();
+    jasmine.clock().uninstall();
+    TestBed.resetTestingModule();
+  });
+
+  it('Set type opens the unit’s record, with its Edit dialog (?edit=1)', async () => {
+    const { page, el } = await render('/setup-health');
+    const rows = Object.fromEntries(page.groups().flatMap((g) => g.rows).map((r) => [r.id, r]));
+    expect(rows['notype']!.fix).toEqual({ label: 'Set type', link: ['/organization/units', 'pharm'], queryParams: { edit: '1' } });
+    const hrefs = Array.from(el.querySelectorAll<HTMLAnchorElement>('a.am-health-fix')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toContain('/organization/units/pharm?edit=1');
+    // Assign head still opens the tree's headship panel.
+    expect(rows['nohead']!.fix!.link).toEqual(['/organization']);
+  });
+
+  it('an open-ended acting head is listed, named, worded, and fixed on the unit’s record', async () => {
+    const { page } = await render('/setup-health');
+    const group = page.groups().find((g) => g.type === 'ACTING_HEAD_OPEN_ENDED')!;
+    expect(group).toBeDefined();
+    expect(group.label).toBe('Acting head with no end date');
+    const row = group.rows[0]!;
+    expect(row.objectName).toBe('Laboratory');
+    expect(row.consequence).toBe('Acting head since 25 Jun 2026, with no end date.');
+    expect(row.fix).toEqual({ label: 'Open unit', link: ['/organization/units', 'lab'], queryParams: {} });
+  });
+
+  it('?object=<unit>: only that unit’s conditions, counted, and Show all brings back the rest', async () => {
+    const { page, harness, el } = await render('/setup-health?object=pharm');
+    const ids = () => page.groups().flatMap((g) => g.rows).map((r) => r.id).sort();
+    expect(ids()).toEqual(['nohead', 'notype']);
+    expect(page.filters().map((f) => f.count)).toEqual([2, 1, 1]);
+    const note = el.querySelector('[data-testid="health-object-filter"]')!;
+    expect(note.textContent!.replace(/\s+/g, ' ').trim()).toBe('Showing Pharmacy only Show all');
+    (el.querySelector('[data-testid="health-show-all"]') as HTMLButtonElement).click();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(ids()).toEqual(['acting', 'nohead', 'notype', 'task']);
+    expect(TestBed.inject(Router).url).toBe('/setup-health');
+    expect(el.querySelector('[data-testid="health-object-filter"]')).toBeNull();
+  });
+
+  it('?object= for a unit with nothing open says so', async () => {
+    const { page, el } = await render('/setup-health?object=nothing-here');
+    expect(page.groups()).toEqual([]);
+    expect(page.emptyMessageKey()).toBe('setupHealth.emptyObject');
+    expect(el.textContent).toContain('Nothing is open for this unit.');
   });
 });
