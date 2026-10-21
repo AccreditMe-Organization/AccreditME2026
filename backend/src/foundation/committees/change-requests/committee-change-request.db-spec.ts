@@ -581,6 +581,176 @@ describe('Committee change requests against a real database (ACC-239)', () => {
     });
   });
 
+  // ── ACC-240: the reads the screens need ─────────────────────────────────────
+
+  describe('ACC-240 — canRaise agrees with create, case by case', () => {
+    type Setup = (w: World) => Promise<ChangeRequestViewer>;
+    const asRequester: Setup = async (w) => w.requester;
+    const inStage = (key: string): Setup => async (w) => {
+      await setCommitteeStage(w, w.committee, key);
+      return w.requester;
+    };
+    const withRequestIn = (stage: 'draft' | 'under_review' | 'returned' | 'approved' | 'rejected' | 'withdrawn'): Setup => async (w) => {
+      const r = await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'r' }, w.org, w.editor2);
+      if (stage === 'draft') return w.requester;
+      if (stage === 'withdrawn') {
+        await requests.withdraw(r.id, w.org, w.editor2);
+        return w.requester;
+      }
+      await requests.submit(r.id, w.org, w.editor2);
+      if (stage === 'returned') await requests.returnForChanges(r.id, { note: 'n' }, w.org, w.approver);
+      if (stage === 'approved') await requests.approve(r.id, w.org, w.approver);
+      if (stage === 'rejected') await requests.reject(r.id, { reason: 'n' }, w.org, w.approver);
+      return w.requester;
+    };
+
+    // [case, setup, what create answers]
+    const CASES: [string, Setup, string][] = [
+      ['Active, no request, committees:edit_details', asRequester, 'OK'],
+      ['Suspended, no request', inStage('suspended'), 'OK'],
+      ['without committees:edit_details (an approver)', async (w) => w.approver, 'CHANGE_REQUEST_NOT_ALLOWED'],
+      ['with committees:view only', async (w) => w.reader, 'CHANGE_REQUEST_NOT_ALLOWED'],
+      ['Formation', inStage('formation'), 'CHANGE_REQUEST_STAGE_NOT_ALLOWED'],
+      ['Terms Review', inStage('terms_review'), 'CHANGE_REQUEST_STAGE_NOT_ALLOWED'],
+      ['Dissolution Pending', inStage('dissolution_pending'), 'CHANGE_REQUEST_COMMITTEE_DISSOLVING'],
+      ['Dissolved', inStage('dissolved'), 'CHANGE_REQUEST_COMMITTEE_DISSOLVING'],
+      [
+        'a committee stage with no key',
+        async (w) => {
+          await prisma.workflowStage.update({ where: { id: w.stageOf['active']! }, data: { key: null } });
+          return w.requester;
+        },
+        'CHANGE_REQUEST_STAGE_NOT_ALLOWED',
+      ],
+      ['an open draft (someone else\'s)', withRequestIn('draft'), 'CHANGE_REQUEST_ALREADY_OPEN'],
+      ['an open request under review', withRequestIn('under_review'), 'CHANGE_REQUEST_ALREADY_OPEN'],
+      ['an open request returned for changes', withRequestIn('returned'), 'CHANGE_REQUEST_ALREADY_OPEN'],
+      [
+        'an open request in a stage with no key',
+        async (w) => {
+          await withRequestIn('draft')(w);
+          await prisma.workflowStage.updateMany({ where: { workflowTemplate: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST' }, key: 'draft' }, data: { key: null } });
+          return w.requester;
+        },
+        'CHANGE_REQUEST_ALREADY_OPEN',
+      ],
+      ['only a withdrawn request', withRequestIn('withdrawn'), 'OK'],
+      ['only a rejected request', withRequestIn('rejected'), 'OK'],
+      ['only an approved request', withRequestIn('approved'), 'OK'],
+    ];
+
+    it.each(CASES)('%s: create answers %s, and canRaise says the same', async (_case, setup, expected) => {
+      const w = await world();
+      const viewer = await setup(w);
+      const before = await requests.openSummary(w.committee, w.org, viewer);
+      const created = await outcome(requests.create(w.committee, { changes: { quorumCount: 9 }, reason: 'r' }, w.org, viewer));
+      // Non-vacuity first: create really answered what this case is about.
+      expect(created).toBe(expected);
+      expect(before.canRaise).toBe(created === 'OK');
+    });
+
+    it('covers every refusal create can make for a valid proposal, and the success', () => {
+      const codes = new Set(CASES.map(([, , code]) => code));
+      expect([...codes].sort()).toEqual(
+        ['CHANGE_REQUEST_ALREADY_OPEN', 'CHANGE_REQUEST_COMMITTEE_DISSOLVING', 'CHANGE_REQUEST_NOT_ALLOWED', 'CHANGE_REQUEST_STAGE_NOT_ALLOWED', 'OK'].sort(),
+      );
+    });
+
+    it('the banner still names the open request beside canRaise false', async () => {
+      const w = await world();
+      const r = await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'r' }, w.org, w.editor2);
+      const open = await requests.openSummary(w.committee, w.org, w.requester);
+      expect({ id: open.request?.id, canRaise: open.canRaise }).toEqual({ id: r.id, canRaise: false });
+    });
+  });
+
+  describe('ACC-240 — who returned, decided and withdrew it', () => {
+    it('names the decider after a return, a reject and an approval, and the withdrawer — from this organisation only', async () => {
+      const w = await world();
+      const r = await submitted(w);
+      expect((await requests.getOne(r.id, w.org, w.reader)).decidedBy).toBeNull();
+      await requests.returnForChanges(r.id, { note: 'Say which members' }, w.org, w.approver);
+      expect((await requests.getOne(r.id, w.org, w.reader)).decidedBy).toEqual({ id: w.approver.userId, name: 'Approver' });
+      await requests.submit(r.id, w.org, w.requester);
+      await requests.reject(r.id, { reason: 'No' }, w.org, w.approver2);
+      expect((await requests.getOne(r.id, w.org, w.reader)).decidedBy).toEqual({ id: w.approver2.userId, name: 'Approver Two' });
+
+      const second = await submitted(w, { quorumCount: 6 });
+      await requests.approve(second.id, w.org, w.approver);
+      const approved = (await requests.list(w.committee, {}, w.org, w.reader)).items.find((i) => i.id === second.id)!;
+      expect(approved.decidedBy).toEqual({ id: w.approver.userId, name: 'Approver' });
+      expect(approved.withdrawnBy).toBeNull();
+
+      const third = await requests.create(w.committee, { changes: { quorumCount: 7 }, reason: 'r' }, w.org, w.requester);
+      await requests.withdraw(third.id, w.org, w.requester);
+      expect((await requests.getOne(third.id, w.org, w.reader)).withdrawnBy).toEqual({ id: w.requester.userId, name: 'Requester' });
+    });
+  });
+
+  describe('ACC-240 — labels for the id-valued fields', () => {
+    /** A committee_type value in `org` (the system category, created once if this database lacks it). */
+    async function typeValue(org: string, labelEn: string, labelAr: string | null, isActive = true): Promise<string> {
+      const category =
+        (await prisma.lookupCategory.findFirst({ where: { key: 'committee_type', organizationId: null } })) ??
+        (await prisma.lookupCategory.create({ data: { key: 'committee_type', labelEn: 'Committee type', labelAr: 'نوع اللجنة' } as never }));
+      return (
+        await prisma.lookupValue.create({
+          data: { organizationId: org, categoryId: category.id, key: `t-${randomUUID().slice(0, 8)}`, labelEn, labelAr, layer: 'TENANT', isActive } as never,
+        })
+      ).id;
+    }
+
+    it('names the type, unit and committees a request names — inactive values too — in both languages', async () => {
+      const w = await world();
+      const oldType = await typeValue(w.org, 'Standing committee', 'لجنة دائمة');
+      const newType = await typeValue(w.org, 'Task force', null, false);
+      await prisma.committee.update({ where: { id: w.committee }, data: { typeValueId: oldType } });
+      const unit2 = (await prisma.orgUnit.create({ data: { organizationId: w.org, nameEn: 'Pharmacy', nameAr: 'الصيدلية', code: `P-${w.slug}`, parentId: w.unit } })).id;
+      await prisma.committee.update({ where: { id: w.other }, data: { nameAr: 'لجنة سلامة المرضى' } });
+
+      const r = await submitted(w, { typeValueId: newType, orgUnitId: unit2, reportingToCommitteeId: w.other });
+      // Deactivated after it was proposed: a closed request still names it.
+      await prisma.orgUnit.update({ where: { id: unit2 }, data: { isActive: false } });
+      const read = await requests.getOne(r.id, w.org, w.reader);
+      expect(read.labels).toEqual({
+        [oldType]: { en: 'Standing committee', ar: 'لجنة دائمة' },
+        [newType]: { en: 'Task force', ar: null },
+        [w.unit]: { en: 'Root', ar: null },
+        [unit2]: { en: 'Pharmacy', ar: 'الصيدلية' },
+        [w.other]: { en: 'Patient Safety Committee', ar: 'لجنة سلامة المرضى' },
+      });
+
+      const preview = await requests.preview(w.committee, { reportingToCommitteeId: w.other }, w.org);
+      expect(preview.labels).toEqual({ [w.other]: { en: 'Patient Safety Committee', ar: 'لجنة سلامة المرضى' } });
+    });
+
+    it("should NOT return records belonging to a different tenant — another organisation's type, unit, committee and person ids never resolve", async () => {
+      const a = await world();
+      const b = await world();
+      const bType = await typeValue(b.org, 'Their type', 'نوعهم');
+      const aType = await typeValue(a.org, 'Our type', 'نوعنا');
+      const r = await submitted(a, { quorumCount: 6 });
+      // A request naming B's ids, as a corrupt row would: the labels stay A's.
+      await prisma.committeeChangeRequest.update({
+        where: { id: r.id },
+        data: {
+          changes: { typeValueId: bType, orgUnitId: b.unit, parentCommitteeId: b.committee, reportingToCommitteeId: a.other },
+          fromValues: { typeValueId: aType },
+          // And people from B, as a corrupt row would name them: never named.
+          decidedById: b.approver.userId,
+          withdrawnById: b.requester.userId,
+        },
+      });
+      const read = await requests.getOne(r.id, a.org, a.reader);
+      expect({ decidedBy: read.decidedBy, withdrawnBy: read.withdrawnBy }).toEqual({ decidedBy: null, withdrawnBy: null });
+      // Non-vacuity: A's own ids in the same request do resolve.
+      expect(read.labels[aType]).toEqual({ en: 'Our type', ar: 'نوعنا' });
+      expect(read.labels[a.other]).toEqual({ en: 'Patient Safety Committee', ar: null });
+      for (const foreign of [bType, b.unit, b.committee]) expect(read.labels[foreign]).toBeUndefined();
+      expect(Object.keys(read.labels).sort()).toEqual([aType, a.other].sort());
+    });
+  });
+
   // ── The backfill ─────────────────────────────────────────────────────────────
 
   describe('backfill-acc239-change-request-workflow', () => {
