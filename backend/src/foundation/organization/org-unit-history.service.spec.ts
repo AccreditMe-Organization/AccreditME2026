@@ -216,6 +216,14 @@ describe('OrgUnitHistoryService', () => {
     expect(byId.get('head:e3')!.actor).toBeNull();
   });
 
+  it('an actor who is not a user of this organisation is marked so, never named from elsewhere', async () => {
+    db.auditLog.push(audit('a-platform', '2026-10-12', { actorId: 'b-user', before: copy(), after: copy({ code: 'PH2' }) }));
+    const page = await service.history(ORG_A, ALL, UNIT);
+    const row = page.items.find((i) => i.id === 'audit:a-platform')!;
+    expect(row.actor).toEqual({ userId: 'b-user', name: null, inOrganization: false, positionNameEn: null, positionNameAr: null });
+    expect(page.items.find((i) => i.id === 'audit:a3')!.actor!.inOrganization).toBe(true);
+  });
+
   describe('classifyAuditRow', () => {
     it('deactivation and moving to the top', () => {
       expect(classifyAuditRow({ action: 'UPDATE', before: copy(), after: copy({ isActive: false }) }).kind).toBe('DEACTIVATED');
@@ -262,7 +270,7 @@ describe('OrgUnitHistoryService', () => {
       expect(people.length).toBeGreaterThan(0);
       expect(people.every((p) => p!.name === null)).toBe(true);
       const e2 = page.items.find((i) => i.id === 'head:e2') as IOrgUnitHeadHistoryEntry;
-      expect(e2.subject).toEqual({ userId: 'huda', name: null, positionNameEn: 'Clinical Pharmacist', positionNameAr: null });
+      expect(e2.subject).toEqual({ userId: 'huda', name: null, inOrganization: true, positionNameEn: 'Clinical Pharmacist', positionNameAr: null });
       expect(JSON.stringify(page)).not.toContain('Nora Al-Otaibi');
     });
   });

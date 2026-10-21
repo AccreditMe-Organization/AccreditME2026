@@ -17,6 +17,12 @@ import type { IOrgUnitPathItem } from './org-structure.interface';
 export interface IOrgUnitHistoryPerson {
   userId: string;
   name: string | null;
+  /**
+   * False when the id is not a user of this organisation (a platform account,
+   * a script). Their name is never looked up elsewhere; the row says so rather
+   * than calling the name hidden.
+   */
+  inOrganization: boolean;
   /** Their position now, shown in place of a hidden name. Titles are `org:view` data. */
   positionNameEn: string | null;
   positionNameAr: string | null;

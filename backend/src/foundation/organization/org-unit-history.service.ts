@@ -212,6 +212,7 @@ export class OrgUnitHistoryService {
       return {
         userId,
         name: viewer.names ? (u?.name ?? null) : null,
+        inOrganization: !!u,
         positionNameEn: u?.position?.nameEn ?? null,
         positionNameAr: u?.position?.nameAr ?? null,
       };
