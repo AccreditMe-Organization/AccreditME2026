@@ -120,7 +120,7 @@ export interface UnitPanelItem {
       .am-ulp__name:hover{text-decoration:underline}
       .am-ulp__name:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
       .am-ulp__muted{color:var(--am-ink-500)}
-      .am-ulp__count{flex:none;margin-inline-start:auto;font-size:12px;color:var(--am-ink-700);font-variant-numeric:tabular-nums}
+      .am-ulp__count{flex:none;margin-inline-start:auto;font-size:var(--am-type-meta-size);color:var(--am-ink-700);font-variant-numeric:tabular-nums}
     `,
   ],
 })
