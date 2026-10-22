@@ -18,6 +18,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { TreeNode } from 'primeng/api';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TreeTableModule } from 'primeng/treetable';
 import { ButtonModule } from 'primeng/button';
@@ -36,6 +37,8 @@ import { HeadshipActionsComponent } from '../headship-actions/headship-actions.c
 import { OrgUnitBlockersDialogComponent } from '../org-unit-blockers-dialog/org-unit-blockers-dialog.component';
 import { HeadshipAction, deriveHeadshipState } from '../headship-panel/headship-state';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { TabStripComponent, TabStripItem } from '../../../../shared/components/tab-strip/tab-strip.component';
+import { OrgUnitChartComponent } from '../org-unit-chart/org-unit-chart.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -108,6 +111,8 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
     HeadshipActionsComponent,
     OrgUnitBlockersDialogComponent,
     EditDialogComponent,
+    TabStripComponent,
+    OrgUnitChartComponent,
   ],
   template: `
     <app-page-header [title]="'organization.title' | translate">
@@ -121,22 +126,21 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
       </div>
     </app-page-header>
 
-    <!-- The Tree / Chart tabs (OS L57-60). Chart arrives with PR E; until then
-         Tree is the one tab, kept in ?view= so a link says which. -->
-    <div class="flex border-b border-rule mb-3" role="tablist" [attr.aria-label]="'organization.tree.tabsLabel' | translate">
-      <button
-        type="button"
-        role="tab"
-        class="am-ot__tab"
-        aria-selected="true"
-        data-testid="tab-tree"
-        (click)="selectView('tree')"
-      >
-        {{ 'organization.tree.tabTree' | translate }}
-      </button>
-    </div>
+    <!-- The Tree / Chart tabs (OS L57-60), kept in ?view= so a link says which.
+         PR E — the chart is its own component (D3). -->
+    <am-tab-strip
+      class="block mb-3"
+      [tabs]="viewTabs"
+      [selected]="view()"
+      [ariaLabel]="'organization.tree.tabsLabel' | translate"
+      idPrefix="org-views"
+      (selectedChange)="selectView($event === 'chart' ? 'chart' : 'tree')"
+    />
 
-    <div class="block min-w-0 border border-rule rounded-card bg-surface-raised">
+    @if (view() === 'chart') {
+      <am-org-unit-chart role="tabpanel" id="org-views-panel-chart" aria-labelledby="org-views-tab-chart" (addUnder)="onAddUnder($event)" />
+    } @else {
+    <div class="block min-w-0 border border-rule rounded-card bg-surface-raised" role="tabpanel" id="org-views-panel-tree" aria-labelledby="org-views-tab-tree">
       <div class="flex flex-wrap items-center gap-2 px-3 py-2 bg-surface border-b border-rule rounded-t-card" data-testid="tree-toolbar">
         <span class="relative inline-flex items-center flex-[0_1_300px] min-w-0">
           <i class="pi pi-search absolute start-2 text-meta text-ink-500 pointer-events-none" aria-hidden="true"></i>
@@ -332,6 +336,8 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
       </p-treeTable>
     </div>
 
+    }
+
     <!-- The dialogs and confirms behind the row menu's headship items: one copy,
          shared with the Headship panel. -->
     @for (unit of actionUnit(); track unit.id) {
@@ -400,8 +406,6 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
   styles: [
     `
       :host { display: block; }
-      .am-ot__tab { font: inherit; font-size: var(--am-type-value-size); font-weight: 600; padding: var(--am-space-6) var(--am-space-12); margin-block-end: -1px; border: 0; border-block-end: 2px solid var(--am-primary-600); background: none; color: var(--am-primary-700); cursor: pointer; }
-      .am-ot__tab:focus-visible { outline: var(--am-focus-ring-width) solid var(--am-focus-ring); outline-offset: var(--am-focus-ring-offset); }
       .am-ot__search-input { padding-inline: var(--am-space-32) var(--am-space-24); }
       .am-ot__search-input::-webkit-search-cancel-button { display: none; }
       :host ::ng-deep .am-ot__table td.am-ot__type-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
@@ -616,11 +620,30 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
    * PR D — "Show in tree" on a unit's record (?show=<unitId>): the unit's
    * ancestors are opened, and its row is marked and scrolled to.
    */
-  private readonly fixLinkShow = injectFixLinkParam('show');
   readonly soughtId = signal<string | null>(null);
+
+  /** PR E — Tree or Chart, from ?view=. */
+  readonly view = signal<'tree' | 'chart'>(this.route.snapshot.queryParamMap.get('view') === 'chart' ? 'chart' : 'tree');
+  protected readonly viewTabs: readonly TabStripItem[] = [
+    { id: 'tree', key: 'organization.tree.tabTree' },
+    { id: 'chart', key: 'organization.chart.tabChart' },
+  ];
 
   ngOnInit(): void {
     this.load();
+    // PR E — the chart's Find in tree switches to the tree with ?show=, on this
+    // same page, so the parameter is read on every change, not only at load.
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      this.view.set(params.get('view') === 'chart' ? 'chart' : 'tree');
+      const show = params.get('show');
+      if (show && this.view() === 'tree' && this.nodes().length) this.consumeShow(show);
+    });
+  }
+
+  /** Reveal ?show=<id> once, then drop it, so Back and a reload do not repeat it. */
+  private consumeShow(id: string): void {
+    this.showUnit(id, this.nodes());
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { show: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   ngAfterViewInit(): void {
@@ -642,7 +665,8 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
       next: ({ nodes }) => {
         this.nodes.set(nodes);
         this.expanded.set(this.restoreExpanded(nodes));
-        this.showUnit(this.fixLinkShow(), nodes);
+        const show = this.route.snapshot.queryParamMap.get('show');
+        if (show && this.view() === 'tree') this.consumeShow(show);
         this.headStatus.set(new Map());
         this.loading.set(false);
         const unitId = this.fixLinkHead();
@@ -676,13 +700,25 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
     this.saveExpanded(next);
     this.soughtId.set(target.id);
     afterNextRender(
-      () => this.host.nativeElement.querySelector<HTMLElement>(`[data-unit="${target.id}"]`)?.scrollIntoView({ block: 'center' }),
+      () => {
+        const row = this.host.nativeElement.querySelector<HTMLElement>(`[data-unit="${target.id}"]`);
+        row?.scrollIntoView({ block: 'center' });
+        // PR E — Find in tree: revealed AND focused.
+        row?.querySelector<HTMLElement>('[data-testid="unit-name"]')?.focus({ preventScroll: true });
+      },
       { injector: this.injector },
     );
   }
 
-  selectView(view: 'tree'): void {
+  selectView(view: 'tree' | 'chart'): void {
+    this.view.set(view);
     void this.router.navigate([], { relativeTo: this.route, queryParams: { view }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  /** PR E — the chart's "Add the first unit under …". */
+  onAddUnder(id: string): void {
+    const record = this.units().find((u) => u.id === id);
+    if (record) this.onAddChild(record);
   }
 
   // ── rendering ─────────────────────────────────────────────────────────────
@@ -868,7 +904,8 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
     const t = (key: string) => this.translate.instant(key);
     const details: RowMenuItem = { id: 'headship', label: t('organization.tree.menu.headshipDetails') };
     const open: RowMenuItem = { id: 'open', label: t('organization.tree.menu.openUnit') };
-    if (!this.canManage()) return [[open, details]];
+    const chart: RowMenuItem = { id: 'chart', label: t('organization.tree.menu.showOnChart') };
+    if (!this.canManage()) return [[open, chart, details]];
 
     const unit: RowMenuItem[] = [
       { id: 'add', label: t('organization.addSubUnit') },
@@ -892,7 +929,7 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
         };
       });
     }
-    return [unit, headship, [open, details], [{ id: 'deactivate', label: t('organization.deactivate'), danger: true }]];
+    return [unit, headship, [open, chart, details], [{ id: 'deactivate', label: t('organization.deactivate'), danger: true }]];
   }
 
   menuLabels(_node: OrgStructureNodeDto): (string | null)[] {
@@ -902,6 +939,10 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
   onPicked(node: OrgStructureNodeDto, id: string): void {
     this.actionError.set(null);
     if (id === 'open') return void this.router.navigate(['/organization/units', node.id]);
+    // PR E — the chart, from this unit, with it selected.
+    if (id === 'chart') {
+      return void this.router.navigate([], { relativeTo: this.route, queryParams: { view: 'chart', root: node.id, sel: node.id }, queryParamsHandling: 'merge' });
+    }
     if (id === 'headship') return this.onManageHead(node);
     if (id === 'deactivate') return this.askDeactivate(node);
     const record = this.units().find((u) => u.id === node.id);
