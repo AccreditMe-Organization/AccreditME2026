@@ -39,6 +39,13 @@ const routes: Routes = [
       { path: 'committees', loadChildren: lazy },
       { path: 'users', loadChildren: lazy },
       {
+        path: 'organization',
+        children: [
+          { path: '', component: StubLeafComponent },
+          { path: 'units/:id', component: StubLeafComponent },
+        ],
+      },
+      {
         path: 'tasks',
         children: [
           { path: '', component: StubLeafComponent },
@@ -192,6 +199,40 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
       TestBed.inject(BreadcrumbParentService).set('/tasks/task-1', '/committees/abc123', 'Infection Prevention & Control');
       const { crumb } = await trailAt('/tasks/task-2');
       expect(crumb.items().some((i) => i.text === 'Infection Prevention & Control')).toBe(false);
+    });
+  });
+
+  // ACC-120 slice 11, PR D — an org unit's record: its parent units, top
+  // first, after the section. Still stops at the parent.
+  describe('an org unit record', () => {
+    it('reads as Organization Structure, then each parent unit', async () => {
+      configure({ permissions: ['admin:access', 'org:view'] });
+      TestBed.inject(BreadcrumbParentService).setTrail('/organization/units/pharm', [
+        { url: '/organization/units/root', text: 'Al Nakheel Hospital' },
+        { url: '/organization/units/med', text: 'Medical Services' },
+      ]);
+      const { crumb } = await trailAt('/organization/units/pharm');
+      expect(crumb.items()).toEqual([
+        { text: TENANT, url: '/home' },
+        { labelKey: 'nav.groups.admin', url: null },
+        { labelKey: 'nav.organization', url: '/organization' },
+        { text: 'Al Nakheel Hospital', url: '/organization/units/root' },
+        { text: 'Medical Services', url: '/organization/units/med' },
+      ]);
+    });
+
+    it('the top unit has no parent crumbs; an empty trail clears the entry', async () => {
+      configure({ permissions: ['admin:access', 'org:view'] });
+      const parents = TestBed.inject(BreadcrumbParentService);
+      parents.set('/organization/units/root', '/organization/units/x', 'Stale');
+      parents.setTrail('/organization/units/root', []);
+      expect(parents.current()).toBeNull();
+      const { crumb } = await trailAt('/organization/units/root');
+      expect(crumb.items()).toEqual([
+        { text: TENANT, url: '/home' },
+        { labelKey: 'nav.groups.admin', url: null },
+        { labelKey: 'nav.organization', url: '/organization' },
+      ]);
     });
   });
 

@@ -189,9 +189,12 @@ export class OrgStructureService {
     const units = await this.loadUnits(organizationId);
     const unit = units.find((u) => u.id === id);
     if (!unit) throw new NotFoundException('Org unit not found');
+    // The record's Sub-units panel: direct ACTIVE children (the same set
+    // childCount counts), decorated by the unit's own batched queries.
+    const children = units.filter((u) => u.parentId === id && u.isActive && u.id !== id).sort(bySiblingOrder);
 
     const [nodes, people, committees] = await Promise.all([
-      this.decorate(organizationId, [unit], units, viewer),
+      this.decorate(organizationId, [unit, ...children], units, viewer),
       this.prisma.user.findMany({
         where: { organizationId, primaryOrgUnitId: id, status: 'ACTIVE' },
         orderBy: { name: 'asc' },
@@ -225,6 +228,7 @@ export class OrgStructureService {
     return {
       unit: { ...node, description: unit.description, createdAt: unit.createdAt, updatedAt: unit.updatedAt },
       path: this.pathTo(unit, units),
+      children: nodes.slice(1),
       positions: [...positions.values()].sort(
         (a, b) => b.grade - a.grade || b.count - a.count || a.nameEn.localeCompare(b.nameEn),
       ),

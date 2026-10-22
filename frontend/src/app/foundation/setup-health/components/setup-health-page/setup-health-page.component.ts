@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FilesService } from '../../../../shared/files/files.service';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
@@ -38,6 +38,7 @@ export type SeverityFilter = 'ALL' | SetupConditionSeverity;
 const TYPE_ORDER: SetupConditionType[] = [
   'ORG_UNIT_WITHOUT_HEAD',
   'ORG_UNIT_WITHOUT_TYPE',
+  'ACTING_HEAD_OPEN_ENDED',
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
   'STORAGE_ACCESS_WITHDRAWN',
@@ -69,14 +70,18 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
       // ACC-137 — the same page, a different one-time parameter, because the
       // fix is editing the unit rather than appointing anyone.
       //
-      // `unit` is not read by anything YET: org-unit-tree reads only
-      // injectFixLinkParam('head'), and that component belongs to ACC-120 slice
-      // 11, which is gated on its design round and must not be touched here. So
-      // the Fix opens the right page and does not yet open the right row.
-      // Deferred to slice 11, which already redraws this surface.
+      // ACC-120 slice 11 (PR D) — the unit's own record, which opens its Edit
+      // dialog for the one-time `edit` parameter.
       return {
-        link: ['/organization'],
-        queryParams: { unit: condition.objectId },
+        link: ['/organization/units', condition.objectId],
+        queryParams: { edit: '1' },
+        permissions: ['org:view', 'org:manage'],
+      };
+    case 'ACTING_HEAD_OPEN_ENDED':
+      // The record, whose first panel is Headship: Set an end date is there.
+      return {
+        link: ['/organization/units', condition.objectId],
+        queryParams: {},
         permissions: ['org:view', 'org:manage'],
       };
     case 'STAGE_WITHOUT_ASSIGNEE':
@@ -184,6 +189,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
               {{ f.label }}
               <span class="ms-[5px] text-[10.5px] opacity-70 tabular-nums">{{ f.count }}</span>
             </button>
+          }
+          @if (objectFilter()) {
+            <span class="inline-flex items-center gap-2 text-[12px] text-[var(--am-text-secondary)]" data-testid="health-object-filter">
+              {{ objectFilterName() ? ('setupHealth.objectFilter' | translate: { name: objectFilterName() }) : ('setupHealth.objectFilterNone' | translate) }}
+              <button type="button" class="am-health-showall" (click)="showAllObjects()" data-testid="health-show-all">
+                {{ 'setupHealth.showAll' | translate }}
+              </button>
+            </span>
           }
           <span class="flex-1"></span>
           @if (lastChecked(); as checked) {
@@ -339,6 +352,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
         text-decoration: none;
         white-space: nowrap;
       }
+      .am-health-showall {
+        font: inherit;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--am-primary-700);
+        font-weight: 600;
+        cursor: pointer;
+      }
       .am-health-fix:hover {
         filter: brightness(0.92);
       }
@@ -352,11 +374,36 @@ export class SetupHealthPageComponent implements OnInit {
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly files = inject(FilesService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly health = signal<SetupHealthDto | null>(null);
   readonly filter = signal<SeverityFilter>('ALL');
+  /**
+   * ACC-120 slice 11 (PR D) — `?object=<id>`: only that object's open
+   * conditions, from an org unit record's "+ N more". Read once; Show all
+   * clears it.
+   */
+  readonly objectFilter = signal<string | null>(inject(ActivatedRoute).snapshot.queryParamMap.get('object'));
+  /** The open conditions in scope: one object's, or every one. */
+  private readonly scoped = computed(() => {
+    const open = this.health()?.open ?? [];
+    const id = this.objectFilter();
+    return id ? open.filter((c) => c.objectId === id) : open;
+  });
+  /** The filtered object's name, from its own conditions. */
+  readonly objectFilterName = computed(() => {
+    this.translate.currentLang();
+    const first = this.scoped()[0];
+    return first ? this.objectName(first) : null;
+  });
+
+  showAllObjects(): void {
+    this.objectFilter.set(null);
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { object: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
   // Relative ages are measured from when the data arrived, not re-ticked: the
   // rows themselves are at most an hour fresh, so a live clock would imply a
   // precision they do not have.
@@ -384,7 +431,7 @@ export class SetupHealthPageComponent implements OnInit {
 
   readonly filters = computed(() => {
     this.translate.currentLang();
-    const open = this.health()?.open ?? [];
+    const open = this.scoped();
     const count = (s: SetupConditionSeverity) => open.filter((c) => c.severity === s).length;
     return [
       { key: 'ALL' as const, label: this.translate.instant('setupHealth.filter.all'), count: open.length },
@@ -398,7 +445,8 @@ export class SetupHealthPageComponent implements OnInit {
     const health = this.health();
     if (!health) return [];
     const filter = this.filter();
-    const shown = filter === 'ALL' ? health.open : health.open.filter((c) => c.severity === filter);
+    const open = this.scoped();
+    const shown = filter === 'ALL' ? open : open.filter((c) => c.severity === filter);
 
     return TYPE_ORDER.map((type) => {
       // The API already orders rows blocking first, then oldest first.
@@ -460,6 +508,7 @@ export class SetupHealthPageComponent implements OnInit {
   readonly emptyMessageKey = computed(() => {
     const health = this.health();
     if (!health) return 'setupHealth.empty';
+    if (this.objectFilter() && this.scoped().length === 0) return 'setupHealth.emptyObject';
     if (health.open.length > 0) return 'setupHealth.emptyFiltered';
     return health.freshness.every((f) => f.status === 'CURRENT')
       ? 'setupHealth.empty'
@@ -521,6 +570,9 @@ export class SetupHealthPageComponent implements OnInit {
     if (condition.type === 'STORAGE_ACCESS_WITHDRAWN' || condition.type === 'STORAGE_SECRET_EXPIRING') {
       return this.translate.instant('setupHealth.sharePointObject');
     }
+    if (condition.type === 'ACTING_HEAD_OPEN_ENDED') {
+      return (this.languageService.isArabic() && s.orgUnitNameAr) || s.orgUnitNameEn || '—';
+    }
     return (this.languageService.isArabic() && s.nameAr) || s.nameEn || '—';
   }
 
@@ -553,6 +605,8 @@ export class SetupHealthPageComponent implements OnInit {
         return t(`sharePointWithdrawn.${s.reason ?? 'UNKNOWN'}`);
       case 'STORAGE_SECRET_EXPIRING':
         return t('sharePointSecretExpiring', { date: this.format.date(s.expiresOn ?? null) });
+      case 'ACTING_HEAD_OPEN_ENDED':
+        return t('actingOpenEnded', { date: this.format.date(s.validFrom ?? null) });
     }
   }
 

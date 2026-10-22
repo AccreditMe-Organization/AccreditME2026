@@ -7,6 +7,7 @@ import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
 import { IOrgUnit } from './interfaces/org-unit.interface';
 import { OrgStructureService } from './org-structure.service';
+import { OrgUnitHistoryService } from './org-unit-history.service';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ describe('OrganizationController', () => {
     deactivate: jest.Mock;
   };
   let structure: { structure: jest.Mock; chart: jest.Mock; summary: jest.Mock };
+  let history: { history: jest.Mock };
 
   beforeEach(async () => {
     service = {
@@ -62,12 +64,14 @@ describe('OrganizationController', () => {
       chart: jest.fn().mockResolvedValue({ root: { id: UNIT_ID, path: [] }, depth: 4, nodes: [], asOf: new Date() }),
       summary: jest.fn().mockResolvedValue({ unit: { id: UNIT_ID } }),
     };
+    history = { history: jest.fn().mockResolvedValue({ items: [], total: 0, skip: 0, take: 20 }) };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrganizationController],
       providers: [
         { provide: OrganizationService, useValue: service },
         { provide: OrgStructureService, useValue: structure },
+        { provide: OrgUnitHistoryService, useValue: history },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -122,8 +126,13 @@ describe('OrganizationController', () => {
       expect(structure.summary).toHaveBeenCalledWith(TENANT_ID, PERMS, UNIT_ID);
     });
 
-    it('all three need org:view', () => {
-      for (const handler of ['structure', 'chart', 'summary'] as const) {
+    it('history passes the unit id and the page', async () => {
+      await controller.history(UNIT_ID, { skip: 20, take: 10 }, TENANT_ID, PERMS);
+      expect(history.history).toHaveBeenCalledWith(TENANT_ID, PERMS, UNIT_ID, { skip: 20, take: 10 });
+    });
+
+    it('all four need org:view', () => {
+      for (const handler of ['structure', 'chart', 'summary', 'history'] as const) {
         expect(Reflect.getMetadata(PERMISSIONS_KEY, OrganizationController.prototype[handler])).toEqual(['org:view']);
       }
     });
@@ -132,7 +141,7 @@ describe('OrganizationController', () => {
     // and 'chart' would be read as unit ids and answer 404.
     it('are declared above :id', () => {
       const order = Object.getOwnPropertyNames(OrganizationController.prototype);
-      for (const handler of ['structure', 'chart', 'summary']) {
+      for (const handler of ['structure', 'chart', 'summary', 'history']) {
         expect(order.indexOf(handler)).toBeGreaterThan(-1);
         expect(order.indexOf(handler)).toBeLessThan(order.indexOf('findById'));
       }

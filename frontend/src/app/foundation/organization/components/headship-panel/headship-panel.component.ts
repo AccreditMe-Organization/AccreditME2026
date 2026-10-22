@@ -146,6 +146,8 @@ interface PanelRow {
         display: block;
       }
       .am-hs {
+        box-sizing: border-box;
+        min-block-size: 100%;
         border: 1px solid var(--am-border);
         border-radius: var(--am-radius-card);
         overflow: hidden;
@@ -291,6 +293,11 @@ export class HeadshipPanelComponent implements OnInit {
 
   readonly orgUnitId = input.required<string>();
   readonly unitName = input.required<string>();
+  /**
+   * PR D — no actions, whatever the viewer holds: a deactivated unit's record
+   * shows its headship and offers nothing (a deactivated unit cannot be acted on).
+   */
+  readonly readOnly = input(false);
   /** After any change, so a host can refresh what it shows. */
   readonly saved = output<void>();
 
@@ -301,7 +308,7 @@ export class HeadshipPanelComponent implements OnInit {
   /** The dialogs, confirms and what they need (`am-headship-actions`). */
   readonly actions = viewChild.required(HeadshipActionsComponent);
 
-  readonly canManage = computed(() => this.access.hasPermission('org:manage'));
+  readonly canManage = computed(() => !this.readOnly() && this.access.hasPermission('org:manage'));
   readonly canOpenPeople = computed(() => this.access.hasPermission('users:view'));
   readonly canOpenPositions = computed(() => this.access.hasPermission('positions:view'));
 

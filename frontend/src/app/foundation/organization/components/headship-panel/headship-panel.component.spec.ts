@@ -64,6 +64,7 @@ describe('HeadshipPanelComponent (ACC-133)', () => {
     s: IOrgUnitHeadStatus,
     perms = ['org:view', 'org:manage', 'users:view', 'positions:view'],
     positions: unknown[] = DIRECTOR,
+    readOnly = false,
   ): HTMLElement {
     permissions = perms;
     asked = [];
@@ -86,6 +87,7 @@ describe('HeadshipPanelComponent (ACC-133)', () => {
     fixture = TestBed.createComponent(HeadshipPanelComponent);
     fixture.componentRef.setInput('orgUnitId', UNIT);
     fixture.componentRef.setInput('unitName', 'Pharmacy');
+    if (readOnly) fixture.componentRef.setInput('readOnly', true);
     fixture.detectChanges();
     http = TestBed.inject(HttpTestingController);
     http.expectOne(HEAD_URL).flush(s);
@@ -140,6 +142,14 @@ describe('HeadshipPanelComponent (ACC-133)', () => {
     // Nor are the dialogs' choices fetched for someone who cannot use them.
     http.expectNone((r) => r.url === `${API}/users`);
     http.expectNone(`${API}/org-positions`);
+  });
+
+  // ACC-120 slice 11, PR D — a deactivated unit's record: the panel shows its
+  // headship and offers nothing, whatever the viewer holds.
+  it('readOnly: the panel shows, and no action does, even for org:manage', () => {
+    const el = render(status(held(noon('2024-03-03'))), undefined, DIRECTOR, true);
+    expect(el.querySelector('[data-row="head"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="headship-actions"]')).toBeNull();
   });
 
   // ── the empty ledger ─────────────────────────────────────────────────────

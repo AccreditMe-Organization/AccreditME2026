@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
@@ -335,7 +336,8 @@ describe('OrgUnitTreeComponent (ACC-120 slice 11, PR C)', () => {
       expect(groups[0]!.map((i) => i.id)).toEqual(['add', 'edit']);
       expect(groups[1]!.map((i) => i.id)).toEqual(expected.map((a) => `hs:${a}`));
       expect(groups[1]!.map((i) => i.label)).toEqual(expected.map((a) => (en as unknown as { headship: { action: Record<string, string> } }).headship.action[a]!));
-      expect(groups[2]!.map((i) => i.id)).toEqual(['headship']);
+      // PR D — Open unit joins Headship details in the View group.
+      expect(groups[2]!.map((i) => i.id)).toEqual(['open', 'headship']);
       expect(groups[3]!.map((i) => i.id)).toEqual(['deactivate']);
       expect(tree().menuLabels(NODES[2]!)).toEqual([null, 'Headship', null, null]);
     });
@@ -368,7 +370,9 @@ describe('OrgUnitTreeComponent (ACC-120 slice 11, PR C)', () => {
 
   it('read-only (no org:manage): the menu holds Headship details and nothing else, and reads no headship', () => {
     render(['org:view', 'users:view']);
-    expect(tree().menuGroups(NODES[2]!)).toEqual([[jasmine.objectContaining({ id: 'headship', label: 'Headship details' })]]);
+    expect(tree().menuGroups(NODES[2]!)).toEqual([
+      [jasmine.objectContaining({ id: 'open', label: 'Open unit' }), jasmine.objectContaining({ id: 'headship', label: 'Headship details' })],
+    ]);
     expect(tree().menuLabels(NODES[2]!)).toEqual([]);
     tree().onMenuOpened(NODES[2]!);
     http.expectNone(`${BASE}/pharm/head`);
@@ -469,5 +473,83 @@ describe('OrgUnitTreeComponent (ACC-120 slice 11, PR C)', () => {
     tree().onManageHead(NODES[2]!);
     expect(tree().headPanelHeader()).toContain('Pharmacy');
     expect(tree().headPanelHeader()).not.toBe('Headship of Pharmacy');
+  });
+});
+
+// ACC-120 slice 11, PR D — the tree leads to each unit's record: the name is
+// the link, the row menu's Open unit goes there, and the record's Show in tree
+// (?show=<id>) opens the unit's parents and marks its row.
+describe('OrgUnitTreeComponent — links to the record (ACC-120 slice 11, PR D)', () => {
+  preserveDocumentLanguage();
+
+  async function render(url: string, perms = ['org:view', 'org:manage', 'users:view']) {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* no storage in this browser */
+    }
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([
+          { path: 'organization', component: OrgUnitTreeComponent },
+          { path: 'organization/units/:id', children: [] },
+        ]),
+        provideNoopAnimations(),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        providePrimeNG({}),
+        ConfirmationService,
+        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => perms.includes(p) } },
+        { provide: AmConfirmService, useValue: { ask: () => undefined } },
+        { provide: AuthService, useValue: { currentUser: () => ({ id: USER, email: 'h@x', name: 'Hessa' }) } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use('en');
+    TestBed.inject(LanguageService).use('en');
+    const harness = await RouterTestingHarness.create();
+    const tree = await harness.navigateByUrl(url, OrgUnitTreeComponent);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne((r) => r.url === `${BASE}/structure`).flush({ nodes: NODES, asOf: noon('2026-10-20') });
+    http.expectOne(`${BASE}/flat`).flush(RECORDS);
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    return { tree, harness, el: harness.routeNativeElement as HTMLElement, http };
+  }
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('each unit’s name is the link to its record', async () => {
+    const { el } = await render('/organization');
+    const name = el.querySelector<HTMLAnchorElement>('tr[data-unit="root"] a[data-testid="unit-name"]')!;
+    expect(name).not.toBeNull();
+    expect(name.getAttribute('href')).toBe('/organization/units/root');
+  });
+
+  it('Open unit goes to the record', async () => {
+    const { tree } = await render('/organization');
+    const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+    expect(tree.menuGroups(NODES[0]!)[2]!.map((i) => i.label)).toEqual(['Open unit', 'Headship details']);
+    tree.onPicked(NODES[0]!, 'open');
+    expect(navigate).toHaveBeenCalledWith(['/organization/units', 'root']);
+  });
+
+  it('?show=<id> opens the unit’s parents, marks its row, and leaves the parameter behind', async () => {
+    const { el, harness } = await render('/organization?show=pharm-ip');
+    harness.detectChanges();
+    const shown = Array.from(el.querySelectorAll('tr[data-unit]')).map((r) => r.getAttribute('data-unit'));
+    expect(shown).toContain('pharm-ip');
+    expect(el.querySelector('tr[data-unit="pharm-ip"]')!.classList).toContain('am-ot__row--sought');
+    expect(el.querySelectorAll('.am-ot__row--sought').length).toBe(1);
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/organization');
+  });
+
+  it('without ?show, nothing is marked', async () => {
+    const { el } = await render('/organization');
+    expect(el.querySelectorAll('.am-ot__row--sought').length).toBe(0);
   });
 });

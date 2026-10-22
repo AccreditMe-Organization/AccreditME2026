@@ -722,3 +722,56 @@ Branch `feature/ACC-120-11c-org-tree`, from `dev` at `6d315ce` (PR B merged). Fr
   - the 900px rule measured the bordered card, not the component;
   - a 120px Attention column left Unit a few characters wide on a phone, so below 600px it moves under the name.
 - **Not changed (ACC-133's copy):** Arabic Arrange cover reads "ترتيب تغطية" in the menu and the panel, and "ترتيب تكليف" in its dialog title.
+
+### PR D as built (CC-134, 21 Oct)
+
+Branch `feature/ACC-120-11d-org-unit-record`, from `dev` at `6a1d728` (PR C merged).
+
+**What the code had, and what that changed:**
+- **There is no `am-relation` component.** The Design System draws the relation field (artboard 4), but nothing builds it, and the committee record renders its relations as a plain fact strip. PR D builds `am-relation` in `shared/components/relation/`, with the record-header context (C) only: a type glyph, the name (a link when the viewer may open the target), and its state as text. The tree and the chart do not adopt it in this PR.
+- **The summary has no list of children.** PR B returns `childCount` only. `GET …/:id/summary` gains `children`: the unit's direct ACTIVE children, decorated by the same batched queries as the unit itself, so the query count doesn't grow per child.
+- **Setup health has no per-unit filter.** "+ N more" opens `/setup-health?object=<unitId>`, which shows only that object's open conditions, with "Show all" beside the filter. `openCount` counts exactly those rows.
+- **The breadcrumb took one parent record (ACC-228).** `BreadcrumbParentService` gains a trail of ancestors, so the record's breadcrumb is Administration › Organization Structure › each ancestor. Per ACC-79 it stops at the parent; the drawing's trail ends with the unit itself, and that crumb isn't built.
+
+**History (D8):** `GET /organization/units/:id/history?skip=&take=`, `org:view`.
+- **Headship rows come from `OrgUnitHeadEvent` only.** Every headship operation writes a ledger row and an audit row together (`org-unit-head.service.ts`), and the audit row holds only `metadata`. So the AuditLog rows read are the ones holding a copy of the unit (`after` set): created, details changed, moved, deactivated. Each headship change shows once, from the ledger, and the audit log is never read for headship.
+- **What changed is named, never shown.** `before` / `after` are read on the server to name the fields that changed and the new parent; neither is returned.
+- **Names (D7):** actor and subject names only with `users:view`; anyone else gets the person's position where there is one, and "Name hidden".
+- **The deactivated header** reads its date and actor from the latest audit row that moved `isActive` from true to false. A unit deactivated with no such row says "Deactivated" and no date.
+
+**Built and measured (PR D):**
+- **Layout spec (`org-unit-record.layout.spec.ts`), EN and AR** at 988, 358 and 328px of content (the shell at 1280, 390 and 360):
+  - Every capped panel is **338px in English and 376px in Arabic**, with five rows and the footer or with none.
+  - Nothing is wider than the frame.
+  - A 53-character unit name wraps: 108px tall in English and 120px in Arabic at phone widths, 36 / 80 at 988.
+  - Three columns of panels at 988, one at 358 and 328.
+- **Browser, local, as Hessa** (EN and AR, at 1280, 390 and 360): Pharmacy Section, Adult ICU (shown with no head), Microbiology Unit (a leaf), the root, and the deactivated test unit.
+  - No sideways scroll anywhere.
+  - The capped panels are 338 / 376 at every width.
+  - The Headship panel fills its cell at 1280 and is 120–214px on a phone.
+  - Every empty state says what is true.
+  - The deactivated unit reads "Deactivated 29 Sep 2026 by Dr. Hessa Al-Dosari".
+- **Every See all opened** (Pharmacy Section with its lists enlarged by answering its GETs). All five popups opened with focus in the search box. History loaded 20, then 23 with Load more.
+- **Links:**
+  - "+ 1 more" lands on `/setup-health?object=…`, which reads "Showing one unit only · Show all".
+  - Setup health's Set type Fix opens the record with its Edit dialog, which was cancelled.
+  - The tree's name links to the record, and Show in tree marks the row.
+- **Every headship action** on Pharmacy Section and the root was opened and cancelled in both languages, as were Edit, Add sub-unit and Deactivate.
+- **As Noura (read-only admin):** no Edit, no Add sub-unit, no ⋯, no headship action and no Fix, on any unit.
+- **Writes that reached the server: 0.**
+
+**Found while checking, and fixed:**
+- **A Latin name in an Arabic sentence broke at its hyphen** and put the hyphen at the wrong end of the line ("…by Dr. Hessa Al-Dosari"). Names in history sentences are now isolated (FSI … PDI), as elsewhere in the app.
+- **Setup health dropped `ACTING_HEAD_OPEN_ENDED` rows** (no group, no label), although the API had reported them since slice 2. They are listed now.
+- **The history spec didn't type-check** under `tsc`; Jest alone had passed it.
+- **A db-spec mutation survived:** dropping the deactivation lookup's "was active" half. A later edit of a deactivated unit is now in the fixture, and the mutation fails.
+
+**Mutation checks:** 14 on the backend unit specs, 2 on the db-spec, and 26 on the frontend, each red. One frontend mutation first failed to compile and was redone with one that compiles.
+
+**Not built as drawn, and why:**
+- **The breadcrumb ends at the parent,** not the unit (ACC-79: the H1 names the page).
+- **The other-language name is 16px** (`text-heading`), not 17. No 17px token exists in English.
+- **The Head relation's state is the position only.** The drawing's "· away" has no field in the summary.
+- **People above ten are grouped by ORDER, not headings,** so "Showing 5 of 14" counts people.
+- **`am-relation` is header-only.** The tree and the committee record don't adopt it in this PR.
+- **The Headship panel isn't capped.** It isn't a list.

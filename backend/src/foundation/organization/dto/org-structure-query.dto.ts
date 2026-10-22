@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 const toBoolean = ({ value }: { value: unknown }) => (value === 'true' ? true : value === 'false' ? false : value);
 
@@ -25,4 +25,21 @@ export class OrgChartQueryDto {
   @Min(1)
   @IsOptional()
   depth?: number;
+}
+
+/** ACC-120 slice 11, PR D — `GET /organization/units/:id/history`. */
+export class OrgUnitHistoryQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  skip?: number;
+
+  /** At most 50 a page. */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  @IsOptional()
+  take?: number;
 }

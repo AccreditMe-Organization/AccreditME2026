@@ -185,6 +185,8 @@ export interface OrgUnitCommitteeItemDto {
 export interface OrgUnitSummaryDto {
   unit: OrgStructureNodeDto & { description: string | null; createdAt: string; updatedAt: string };
   path: OrgUnitPathItemDto[];
+  /** PR D — direct ACTIVE children, in sibling order. */
+  children: OrgStructureNodeDto[];
   positions: OrgUnitPositionInUseDto[];
   people: OrgUnitPersonDto[];
   committees: { count: number; items: OrgUnitCommitteeItemDto[] | null };
@@ -192,6 +194,63 @@ export interface OrgUnitSummaryDto {
 }
 
 /** ACC-120 slice 11 — deactivate's refusal (409), said from its codes. */
+/**
+ * PR D — `GET /organization/units/:id/history` (D8). The unit's stored rows,
+ * newest first. A name is null without `users:view`; the position stands in.
+ */
+export interface OrgUnitHistoryPersonDto {
+  userId: string;
+  name: string | null;
+  /** False for an id that is not a user of this organisation (a platform account, a script). */
+  inOrganization: boolean;
+  positionNameEn: string | null;
+  positionNameAr: string | null;
+}
+
+export type OrgUnitHistoryField = 'nameEn' | 'nameAr' | 'code' | 'type' | 'description' | 'parent' | 'sortOrder';
+
+export type OrgUnitHeadEventKind =
+  | 'ASSIGNED'
+  | 'HANDOVER_DECLARED'
+  | 'HANDOVER_COMPLETED'
+  | 'HANDOVER_CANCELLED'
+  | 'VACATED'
+  | 'ACTING_ASSIGNED'
+  | 'ACTING_ENDED';
+
+export interface OrgUnitAuditHistoryEntryDto {
+  id: string;
+  source: 'AUDIT';
+  kind: 'CREATED' | 'CHANGED' | 'DEACTIVATED' | 'REACTIVATED' | 'RECORDED';
+  at: string;
+  actor: OrgUnitHistoryPersonDto | null;
+  fields: OrgUnitHistoryField[];
+  /** Only when the parent changed: the new parent, or null for the top. */
+  movedTo?: OrgUnitPathItemDto | null;
+}
+
+export interface OrgUnitHeadHistoryEntryDto {
+  id: string;
+  source: 'HEAD_EVENT';
+  kind: OrgUnitHeadEventKind;
+  at: string;
+  effectiveDate: string;
+  actor: OrgUnitHistoryPersonDto | null;
+  subject: OrgUnitHistoryPersonDto;
+  position: { id: string; nameEn: string; nameAr: string | null } | null;
+}
+
+export type OrgUnitHistoryEntryDto = OrgUnitAuditHistoryEntryDto | OrgUnitHeadHistoryEntryDto;
+
+export interface OrgUnitHistoryPageDto {
+  items: OrgUnitHistoryEntryDto[];
+  total: number;
+  skip: number;
+  take: number;
+  /** Inactive units only: the row that deactivated it, or null if none was recorded. */
+  deactivation?: { at: string; actor: OrgUnitHistoryPersonDto | null } | null;
+}
+
 export interface OrgUnitDependenciesRefusalDto {
   code: 'ORG_UNIT_HAS_DEPENDENCIES';
   message: string;
@@ -251,6 +310,11 @@ export class OrgUnitService {
     return this.http.get<OrgUnitDto[]>(`${this.base}/flat`);
   }
 
+  /** PR D — one unit, for the record's Edit dialog. */
+  getById(id: string): Observable<OrgUnitDto> {
+    return this.http.get<OrgUnitDto>(`${this.base}/${id}`);
+  }
+
   create(dto: CreateOrgUnitDto): Observable<OrgUnitDto> {
     return this.http.post<OrgUnitDto>(this.base, dto);
   }
@@ -280,6 +344,13 @@ export class OrgUnitService {
   /** ACC-120 slice 11 — one unit for its record page and the chart's side panel. */
   getSummary(id: string): Observable<OrgUnitSummaryDto> {
     return this.http.get<OrgUnitSummaryDto>(`${this.base}/${id}/summary`);
+  }
+
+  getHistory(id: string, page: { skip?: number; take?: number } = {}): Observable<OrgUnitHistoryPageDto> {
+    let params = new HttpParams();
+    if (page.skip !== undefined) params = params.set('skip', String(page.skip));
+    if (page.take !== undefined) params = params.set('take', String(page.take));
+    return this.http.get<OrgUnitHistoryPageDto>(`${this.base}/${id}/history`, { params });
   }
 }
 
