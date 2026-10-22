@@ -4,6 +4,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { assertCommitteeReferences, CommitteeTx, lockCommitteeHierarchy } from './committee-reference-checks';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
+import { StageRules, StageRulesService } from '../workflow/stage-rules.service';
+import { COMMITTEE_ACTIONS } from '../workflow/record-registry';
 import { CreateCommitteeDto } from './dto/create-committee.dto';
 import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
@@ -15,6 +17,7 @@ import {
   ICommitteeListItem,
   ICommitteeMember,
   ICommitteeMembershipEvent,
+  ICommitteeStageRules,
 } from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
 import { committeeTypeValues } from './committee-type-values';
@@ -28,6 +31,21 @@ function changed<T>(sent: T | undefined, stored: T): T | undefined {
   return sent === undefined || sent === stored ? undefined : sent;
 }
 
+/** ACC-255 — the engine's answer, as the committee read carries it. No live stage: nothing allowed. */
+function committeeStageRules(rules: StageRules | undefined): ICommitteeStageRules {
+  const allowed = (key: string): boolean => rules?.actions[key] === true;
+  return {
+    actions: {
+      edit_details: allowed(COMMITTEE_ACTIONS.EDIT_DETAILS),
+      add_member: allowed(COMMITTEE_ACTIONS.ADD_MEMBER),
+      remove_member: allowed(COMMITTEE_ACTIONS.REMOVE_MEMBER),
+      change_member_role: allowed(COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE),
+      request_change: allowed(COMMITTEE_ACTIONS.REQUEST_CHANGE),
+    },
+    flags: [...(rules?.flags ?? [])],
+  };
+}
+
 @Injectable()
 export class CommitteesService {
   private readonly logger = new Logger(CommitteesService.name);
@@ -36,6 +54,7 @@ export class CommitteesService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly workflowService: WorkflowService,
+    private readonly stageRules: StageRulesService,
   ) {}
 
   // ── Committee CRUD ───────────────────────────────────────────────────────────
@@ -57,9 +76,12 @@ export class CommitteesService {
 
     // ACC-230 — the counts and stages are read by the one helper the
     // Sub-committees list also reads, so the two cannot disagree.
-    const [facts, types] = await Promise.all([
-      committeeStagesAndCounts(this.prisma, organizationId, committees.map((c) => c.id)),
+    // ACC-255 — and what each one's stage allows, three more queries for the set.
+    const ids = committees.map((c) => c.id);
+    const [facts, types, rules] = await Promise.all([
+      committeeStagesAndCounts(this.prisma, organizationId, ids),
       committeeTypeValues(this.prisma, organizationId, committees.map((c) => c.typeValueId)),
+      this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', ids),
     ]);
     return committees.map((committee) => {
       const fact = facts.get(committee.id);
@@ -71,6 +93,7 @@ export class CommitteesService {
         currentStageKey: fact?.stageKey ?? null,
         isDissolving: fact?.isDissolving ?? false,
         typeValue: types.get(committee.typeValueId) ?? null,
+        stageRules: committeeStageRules(rules.get(committee.id)),
       };
     });
   }
@@ -90,9 +113,10 @@ export class CommitteesService {
   // Internal callers keep getCommitteeById(), which costs one query.
   async getCommitteeDetail(id: string, organizationId: string): Promise<ICommitteeDetail> {
     const committee = await this.getCommitteeById(id, organizationId);
-    const [facts, types] = await Promise.all([
+    const [facts, types, rules] = await Promise.all([
       committeeStagesAndCounts(this.prisma, organizationId, [committee.id]),
       committeeTypeValues(this.prisma, organizationId, [committee.typeValueId]),
+      this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [committee.id]),
     ]);
     const fact = facts.get(committee.id);
     return {
@@ -100,6 +124,8 @@ export class CommitteesService {
       currentStageKey: fact?.stageKey ?? null,
       isDissolving: fact?.isDissolving ?? false,
       typeValue: types.get(committee.typeValueId) ?? null,
+      // ACC-255 — the same answer PR 2's writes will assert.
+      stageRules: committeeStageRules(rules.get(committee.id)),
     };
   }
 

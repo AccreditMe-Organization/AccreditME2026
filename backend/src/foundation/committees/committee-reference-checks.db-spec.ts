@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
+import { StageRulesService } from '../workflow/stage-rules.service';
 import { CommitteesService } from './committees.service';
 
 const url = process.env['DATABASE_URL'];
@@ -37,7 +38,7 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
   // A new committee's workflow instance is not what these tests are about; the
   // instances the dissolving test needs are written directly below.
   const workflow = { startInstance: async () => undefined } as unknown as WorkflowService;
-  const committees = new CommitteesService(prisma, new AuditLogService(prisma), workflow);
+  const committees = new CommitteesService(prisma, new AuditLogService(prisma), workflow, new StageRulesService(prisma));
 
   interface Org {
     organizationId: string;

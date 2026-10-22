@@ -4,6 +4,7 @@ import { CommitteesService } from './committees.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
+import { StageRulesService } from '../workflow/stage-rules.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const ORG_A = 'org-a-id';
@@ -101,6 +102,8 @@ const mockPrisma = {
 
 const mockAuditLog = { log: jest.fn() };
 const mockWorkflowService = { startInstance: jest.fn() };
+// ACC-255 — the engine's stage answer for the committee reads.
+const mockStageRules = { stageRulesFor: jest.fn() };
 
 describe('CommitteesService', () => {
   let service: CommitteesService;
@@ -120,6 +123,7 @@ describe('CommitteesService', () => {
     mockPrisma.workflowStage.findMany.mockResolvedValue([]);
     mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-committee-type' });
     mockPrisma.lookupValue.findMany.mockResolvedValue([]);
+    mockStageRules.stageRulesFor.mockResolvedValue(new Map());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -127,6 +131,7 @@ describe('CommitteesService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: WorkflowService, useValue: mockWorkflowService },
+        { provide: StageRulesService, useValue: mockStageRules },
       ],
     }).compile();
 
@@ -325,6 +330,60 @@ describe('CommitteesService', () => {
       await expect(service.getCommitteeDetail('committee-1', ORG_B)).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({ where: { id: 'committee-1', organizationId: ORG_B } });
       expect(mockPrisma.workflowInstance.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── stageRules (ACC-255) ─────────────────────────────────────────────────────
+
+  describe('stageRules on the committee reads (ACC-255)', () => {
+    const ACTIVE_RULES = {
+      stageId: 'stage-active',
+      stageNameEn: 'Active',
+      stageNameAr: null,
+      flags: ['IN_FORCE'],
+      actions: { edit_details: false, add_member: true, remove_member: true, change_member_role: true, request_change: true },
+    };
+    const NOTHING = {
+      actions: { edit_details: false, add_member: false, remove_member: false, change_member_role: false, request_change: false },
+      flags: [],
+    };
+
+    it("the detail carries the engine's answer for the committee's current stage, asked with the caller's organisation", async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+      mockStageRules.stageRulesFor.mockResolvedValue(new Map([['committee-1', ACTIVE_RULES]]));
+
+      const result = await service.getCommitteeDetail('committee-1', ORG_A);
+
+      expect(mockStageRules.stageRulesFor).toHaveBeenCalledWith(ORG_A, 'COMMITTEE', ['committee-1']);
+      expect(result.stageRules).toEqual({
+        actions: { edit_details: false, add_member: true, remove_member: true, change_member_role: true, request_change: true },
+        flags: ['IN_FORCE'],
+      });
+    });
+
+    it('a committee with no live stage is allowed nothing', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+      expect((await service.getCommitteeDetail('committee-1', ORG_A)).stageRules).toEqual(NOTHING);
+    });
+
+    it('every list row carries its own answer, read for the whole list at once', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([makeCommittee({ id: 'c-1' }), makeCommittee({ id: 'c-2' })]);
+      mockStageRules.stageRulesFor.mockResolvedValue(new Map([['c-1', ACTIVE_RULES]]));
+
+      const rows = await service.listCommittees(ORG_A);
+
+      expect(mockStageRules.stageRulesFor).toHaveBeenCalledTimes(1);
+      expect(mockStageRules.stageRulesFor).toHaveBeenCalledWith(ORG_A, 'COMMITTEE', ['c-1', 'c-2']);
+      expect(rows.map((r) => [r.id, r.stageRules.actions.request_change, r.stageRules.flags])).toEqual([
+        ['c-1', true, ['IN_FORCE']],
+        ['c-2', false, []],
+      ]);
+    });
+
+    itEnforcesTenantIsolation('stageRules — another organisation\'s committee is not found, and no stage is read', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+      await expect(service.getCommitteeDetail('committee-1', ORG_B)).rejects.toThrow(NotFoundException);
+      expect(mockStageRules.stageRulesFor).not.toHaveBeenCalled();
     });
   });
 

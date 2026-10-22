@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
+import { StageRulesService } from '../workflow/stage-rules.service';
 import { CommitteesService } from './committees.service';
 
 const url = process.env['DATABASE_URL'];
@@ -35,7 +36,7 @@ jest.setTimeout(120_000);
 describe('Committee stale save against a real database (ACC-238)', () => {
   const prisma = new PrismaService();
   const workflow = { startInstance: async () => undefined } as unknown as WorkflowService;
-  const committees = new CommitteesService(prisma, new AuditLogService(prisma), workflow);
+  const committees = new CommitteesService(prisma, new AuditLogService(prisma), workflow, new StageRulesService(prisma));
 
   async function committee(): Promise<{ organizationId: string; actorId: string; id: string; loaded: string }> {
     const slug = `acc238-${randomUUID().slice(0, 8)}`;
