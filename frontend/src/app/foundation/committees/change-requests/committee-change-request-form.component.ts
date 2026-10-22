@@ -651,9 +651,16 @@ export class CommitteeChangeRequestFormComponent implements LeaveGuarded, OnDest
     const list = this.listOf(field);
     if (list && this.failedLists().has(list)) return this.translate.instant('committee.form.listFailed');
     const c = this.committee() as unknown as Record<ChangeField, ChangeValue> | null;
+    // ACC-240 — Parent committee and Reports to say what they are for while
+    // unchanged, instead of "Current" (Ahmad, 22 Oct: the field already shows
+    // the current value); "was …" replaces it once changed.
+    const about: Partial<Record<ChangeField, string>> = {
+      parentCommitteeId: 'committee.form.parentAbout',
+      reportingToCommitteeId: 'committee.form.reportsToAbout',
+    };
     const base = this.isChanged(field)
       ? this.translate.instant('committee.changeRequest.form.was', { value: this.text.value(field, c?.[field] ?? null, this.labels()) })
-      : this.translate.instant('committee.changeRequest.form.current');
+      : this.translate.instant(about[field] ?? 'committee.changeRequest.form.current');
     const members = this.memberCount();
     return field === 'quorumCount' && members !== null ? `${base} · ${this.format.count('committee.changeRequestOfMembers', members)}` : base;
   }

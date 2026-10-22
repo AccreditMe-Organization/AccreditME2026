@@ -1052,6 +1052,8 @@
       "quorumNotSet": "0 means not set yet",
       "activeUnitsOnly": "Active units only",
       "listFailed": "Couldn't load the list.",
+      "parentAbout": "The committee this one is a sub-committee of.",
+      "reportsToAbout": "Where its minutes and recommendations go for decisions.",
       "parentLeftOut": "Not listed: this committee, the committees under it, and those being dissolved.",
       "reportsToLeftOut": "Not listed: this committee, the committees reporting to it, and those being dissolved.",
       "leftOutNew": "Not listed: committees being dissolved, or dissolved.",

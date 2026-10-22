@@ -284,6 +284,49 @@ describe('CommitteeChangeRequestFormComponent (ACC-240)', () => {
       expect(create).toHaveBeenCalledWith('c-1', { changes: { purpose: null }, reason: 'No longer needed.', submit: false });
     }));
 
+    describe('what Parent committee and Reports to are for (ACC-240)', () => {
+      const HINT = {
+        en: { parent: 'The committee this one is a sub-committee of.', reportsTo: 'Where its minutes and recommendations go for decisions.' },
+        ar: { parent: 'اللجنة التي تتبع لها هذه اللجنة كلجنة فرعية.', reportsTo: 'اللجنة التي تُرفع إليها محاضرها وتوصياتها لاتخاذ القرار.' },
+      };
+      const slot = (f: string) => text(field(f).querySelector('.am-field__message'));
+
+      for (const lang of ['en', 'ar'] as const) {
+        it(`unchanged [${lang}]: the hint instead of "Current"; the other fields keep "Current"`, fakeAsync(() => {
+          TestBed.inject(TranslateService).use(lang);
+          render();
+          settle();
+          expect(slot('parentCommitteeId')).toBe(HINT[lang].parent);
+          expect(slot('reportingToCommitteeId')).toBe(HINT[lang].reportsTo);
+          expect(slot('nameEn')).toBe({ en, ar }[lang].committee.changeRequest.form.current);
+        }));
+
+        it(`changed [${lang}]: "was …" replaces the hint`, fakeAsync(() => {
+          TestBed.inject(TranslateService).use(lang);
+          render();
+          settle();
+          page.form.controls.reportingToCommitteeId.setValue('c-8');
+          page.form.controls.parentCommitteeId.setValue('c-8');
+          settle();
+          const was = { en, ar }[lang].committee.changeRequest.form.was;
+          expect(slot('reportingToCommitteeId')).toBe(was.replace('{{value}}', 'Board'));
+          expect(slot('parentCommitteeId')).toBe(was.replace('{{value}}', { en: 'None', ar: ar.committee.changeRequest.page.none }[lang]));
+        }));
+
+        it(`a failed list [${lang}]: "Couldn't load the list." replaces the hint`, fakeAsync(() => {
+          TestBed.inject(TranslateService).use(lang);
+          (TestBed.inject(CommitteeService) as unknown as { listCommittees: () => unknown }).listCommittees = () =>
+            throwError(() => new HttpErrorResponse({ status: 500 }));
+          render();
+          settle();
+          const failed = { en, ar }[lang].committee.form.listFailed;
+          for (const f of ['parentCommitteeId', 'reportingToCommitteeId']) {
+            expect(slot(f).startsWith(failed)).withContext(`${f}: ${slot(f)}`).toBeTrue();
+          }
+        }));
+      }
+    });
+
     describe('someone else opened a request first (ALREADY_OPEN)', () => {
       const theirs = () => REQUEST({ id: 'cr-theirs', number: 7, requestedBy: { id: 'u-badr', name: 'Badr Al-Shammari' } });
 
