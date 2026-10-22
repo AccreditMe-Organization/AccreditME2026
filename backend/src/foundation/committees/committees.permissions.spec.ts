@@ -99,3 +99,25 @@ describe('CommitteesController permission wiring (ACC-28 correction — Retrospe
     }
   });
 });
+
+// ACC-255 (plan §10.5) — the committee dialogs' choices answer to EITHER
+// committee key that opens a dialog (the guard admits any of them), and to
+// nothing else: the lookups:view and org:view a 403 used to demand are not
+// what decides it.
+describe('CommitteesController — the form choices (ACC-255)', () => {
+  const guard = new PermissionGuard(new Reflector());
+  const ctx = (userPermissions: string[]) =>
+    ({
+      getHandler: () => (CommitteesController.prototype as unknown as Record<string, () => unknown>)['getFormChoices'],
+      getClass: () => CommitteesController,
+      switchToHttp: () => ({ getRequest: () => ({ userPermissions }) }),
+    }) as unknown as ExecutionContext;
+
+  it.each([[COMMITTEES_PERMISSIONS.CREATE], [COMMITTEES_PERMISSIONS.EDIT_DETAILS]])('admits a holder of %s alone', (key) => {
+    expect(guard.canActivate(ctx([key]))).toBe(true);
+  });
+
+  it.each([[[]], [[COMMITTEES_PERMISSIONS.VIEW]], [['lookups:view', 'org:view']]])('refuses %j', (keys) => {
+    expect(() => guard.canActivate(ctx(keys))).toThrow(ForbiddenException);
+  });
+});

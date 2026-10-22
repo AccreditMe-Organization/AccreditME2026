@@ -1,3 +1,6 @@
+import type { ILookupValue } from '../../lookup/interfaces/lookup-value.interface';
+import type { IOrgUnit } from '../../organization/interfaces/org-unit.interface';
+
 /**
  * ACC-255 — what the committee's CURRENT STAGE allows to be done to it, and
  * what that stage means, from the workflow engine's own answer
@@ -14,6 +17,17 @@ export interface ICommitteeStageRules {
     request_change: boolean;
   };
   flags: string[];
+}
+
+/**
+ * ACC-255 (plan §10.5) — what the committee dialogs choose from, for anyone
+ * who may create or edit a committee: exactly what
+ * GET /lookups/categories/committee_type/values and GET /organization/units/flat
+ * serve, without their lookups:view and org:view gates. No person data.
+ */
+export interface ICommitteeFormChoices {
+  committeeTypes: ILookupValue[];
+  orgUnits: IOrgUnit[];
 }
 
 export interface ICommittee {

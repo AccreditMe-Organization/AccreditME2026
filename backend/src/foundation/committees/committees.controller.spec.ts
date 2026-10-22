@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CommitteesController } from './committees.controller';
 import { CommitteesService } from './committees.service';
 import { CommitteeListsService } from './committee-lists.service';
+import { CommitteeFormChoicesService } from './committee-form-choices.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { ICommittee, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
@@ -62,6 +63,7 @@ const MOCK_EVENT: ICommitteeMembershipEvent = {
 describe('CommitteesController', () => {
   let controller: CommitteesController;
   let lists: { members: jest.Mock; subCommittees: jest.Mock };
+  let formChoices: { forOrganization: jest.Mock };
   let service: {
     listCommittees: jest.Mock;
     getCommitteeDetail: jest.Mock;
@@ -87,6 +89,8 @@ describe('CommitteesController', () => {
       removeMember: jest.fn().mockResolvedValue(undefined),
     };
 
+    formChoices = { forOrganization: jest.fn().mockResolvedValue({ committeeTypes: [], orgUnits: [] }) };
+
     lists = {
       members: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
       subCommittees: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
@@ -97,6 +101,7 @@ describe('CommitteesController', () => {
       providers: [
         { provide: CommitteesService, useValue: service },
         { provide: CommitteeListsService, useValue: lists },
+        { provide: CommitteeFormChoicesService, useValue: formChoices },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -189,5 +194,11 @@ describe('CommitteesController', () => {
     await controller.removeMember('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID);
 
     expect(service.removeMember).toHaveBeenCalledWith('committee-1', 'member-1', dto, TENANT_ID, USER_ID);
+  });
+
+  // ACC-255 (plan §10.5)
+  it('getFormChoices delegates to the form choices service with the tenant', async () => {
+    await expect(controller.getFormChoices('org-a')).resolves.toEqual({ committeeTypes: [], orgUnits: [] });
+    expect(formChoices.forOrganization).toHaveBeenCalledWith('org-a');
   });
 });
