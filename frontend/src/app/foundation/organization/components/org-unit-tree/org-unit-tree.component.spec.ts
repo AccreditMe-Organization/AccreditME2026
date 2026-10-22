@@ -17,7 +17,8 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { AmConfirmOptions, AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { IOrgUnitHeadStatus } from '../../services/org-unit-head.service';
-import { OrgStructureNodeDto, OrgUnitDto } from '../../services/org-unit.service';
+import { OrgChartResponseDto, OrgStructureNodeDto, OrgUnitDto } from '../../services/org-unit.service';
+import { chartNode } from '../org-unit-chart/org-chart-model.spec';
 import { HeadshipActionsComponent } from '../headship-actions/headship-actions.component';
 import { OrgUnitTreeComponent } from './org-unit-tree.component';
 
@@ -195,11 +196,12 @@ describe('OrgUnitTreeComponent (ACC-120 slice 11, PR C)', () => {
     expect(el.querySelectorAll('[aria-sort], am-sort-header, .p-sortable-column').length).toBe(0);
   });
 
-  it('the Tree tab is selected; Chart waits for PR E', () => {
+  it('the Tree tab is selected, with Chart beside it (PR E)', () => {
     const el = render();
     const tabs = Array.from(el.querySelectorAll('[role="tab"]'));
-    expect(tabs.map((t) => t.textContent!.trim())).toEqual(['Tree']);
+    expect(tabs.map((t) => t.textContent!.trim())).toEqual(['Tree', 'Chart']);
     expect(tabs[0]!.getAttribute('aria-selected')).toBe('true');
+    expect(tabs[1]!.getAttribute('aria-selected')).toBe('false');
   });
 
   // ── the Head cell ────────────────────────────────────────────────────────
@@ -337,7 +339,7 @@ describe('OrgUnitTreeComponent (ACC-120 slice 11, PR C)', () => {
       expect(groups[1]!.map((i) => i.id)).toEqual(expected.map((a) => `hs:${a}`));
       expect(groups[1]!.map((i) => i.label)).toEqual(expected.map((a) => (en as unknown as { headship: { action: Record<string, string> } }).headship.action[a]!));
       // PR D — Open unit joins Headship details in the View group.
-      expect(groups[2]!.map((i) => i.id)).toEqual(['open', 'headship']);
+      expect(groups[2]!.map((i) => i.id)).toEqual(['open', 'chart', 'headship']);
       expect(groups[3]!.map((i) => i.id)).toEqual(['deactivate']);
       expect(tree().menuLabels(NODES[2]!)).toEqual([null, 'Headship', null, null]);
     });
@@ -371,7 +373,11 @@ describe('OrgUnitTreeComponent (ACC-120 slice 11, PR C)', () => {
   it('read-only (no org:manage): the menu holds Headship details and nothing else, and reads no headship', () => {
     render(['org:view', 'users:view']);
     expect(tree().menuGroups(NODES[2]!)).toEqual([
-      [jasmine.objectContaining({ id: 'open', label: 'Open unit' }), jasmine.objectContaining({ id: 'headship', label: 'Headship details' })],
+      [
+        jasmine.objectContaining({ id: 'open', label: 'Open unit' }),
+        jasmine.objectContaining({ id: 'chart', label: 'Show on chart' }),
+        jasmine.objectContaining({ id: 'headship', label: 'Headship details' }),
+      ],
     ]);
     expect(tree().menuLabels(NODES[2]!)).toEqual([]);
     tree().onMenuOpened(NODES[2]!);
@@ -532,7 +538,7 @@ describe('OrgUnitTreeComponent — links to the record (ACC-120 slice 11, PR D)'
   it('Open unit goes to the record', async () => {
     const { tree } = await render('/organization');
     const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
-    expect(tree.menuGroups(NODES[0]!)[2]!.map((i) => i.label)).toEqual(['Open unit', 'Headship details']);
+    expect(tree.menuGroups(NODES[0]!)[2]!.map((i) => i.label)).toEqual(['Open unit', 'Show on chart', 'Headship details']);
     tree.onPicked(NODES[0]!, 'open');
     expect(navigate).toHaveBeenCalledWith(['/organization/units', 'root']);
   });
@@ -551,5 +557,52 @@ describe('OrgUnitTreeComponent — links to the record (ACC-120 slice 11, PR D)'
   it('without ?show, nothing is marked', async () => {
     const { el } = await render('/organization');
     expect(el.querySelectorAll('.am-ot__row--sought').length).toBe(0);
+  });
+
+  // PR E — the two round trips between the tree and the chart.
+  const settle = async (h: RouterTestingHarness) => {
+    await h.fixture.whenStable();
+    h.detectChanges();
+    await h.fixture.whenStable();
+    h.detectChanges();
+  };
+  const chartOf = (rootId: string): OrgChartResponseDto => ({
+    root: { id: rootId, path: [{ id: rootId, nameEn: rootId, nameAr: null }] },
+    depth: 4,
+    asOf: noon('2026-10-20'),
+    nodes: [chartNode(rootId, null, 0, { childCount: 1 }), chartNode('pharm-ip', rootId, 1)],
+  });
+
+  it('Show on chart: the chart opens with that unit as its root, and selected', async () => {
+    const { tree, el, harness, http } = await render('/organization');
+    tree.onPicked(NODES[2]!, 'chart');
+    await settle(harness);
+    const url = TestBed.inject(Router).url;
+    expect(url).toContain('view=chart');
+    expect(url).toContain(`root=${NODES[2]!.id}`);
+    expect(url).toContain(`sel=${NODES[2]!.id}`);
+    http.expectOne((r) => r.url === `${BASE}/chart` && r.params.get('rootId') === NODES[2]!.id).flush(chartOf(NODES[2]!.id));
+    http.match(`${BASE}/${NODES[2]!.id}/summary`).forEach((r) => r.flush(null, { status: 500, statusText: 'x' }));
+    await settle(harness);
+    const box = el.querySelector(`[data-box="${NODES[2]!.id}"]`)!;
+    expect(box.getAttribute('aria-level')).toBe('1');
+    expect(box.getAttribute('aria-selected')).toBe('true');
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')!.textContent!.trim()).toBe('Chart');
+  });
+
+  it('Find in tree: back on the tree, the unit is revealed, marked and focused', async () => {
+    const { el, harness, http } = await render('/organization?view=chart&root=root&sel=pharm-ip');
+    http.expectOne((r) => r.url === `${BASE}/chart`).flush(chartOf('root'));
+    http.match(`${BASE}/pharm-ip/summary`).forEach((r) => r.flush(null, { status: 500, statusText: 'x' }));
+    await settle(harness);
+    el.querySelector<HTMLButtonElement>('[data-testid="panel-find-in-tree"]')!.click();
+    await settle(harness);
+    await new Promise((r) => setTimeout(r));
+    harness.detectChanges();
+    expect(el.querySelector('am-org-unit-chart')).toBeNull();
+    expect(el.querySelector('tr[data-unit="pharm-ip"]')!.classList).toContain('am-ot__row--sought');
+    expect(document.activeElement).toBe(el.querySelector('tr[data-unit="pharm-ip"] a[data-testid="unit-name"]'));
+    expect(TestBed.inject(Router).url).not.toContain('show=');
+    expect(TestBed.inject(Router).url).toContain('view=tree');
   });
 });
