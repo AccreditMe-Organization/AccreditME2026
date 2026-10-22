@@ -16,7 +16,7 @@ import { KEYED_SEED_TEMPLATES } from './workflow-stage-keys';
  */
 export type WorkflowSeedDb = Pick<
   Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
-  'role' | 'workflowTemplate' | 'workflowStage' | 'workflowTransition' | 'workflowTransitionAction'
+  'role' | 'workflowTemplate' | 'workflowStage' | 'workflowTransition' | 'workflowTransitionAction' | 'workflowStageRecordAction'
 >;
 
 export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: string, seeds: readonly SeedWorkflow[]): Promise<void> {
@@ -99,11 +99,21 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
         assigneeRoleId: resolveRoleId(seedStage.assigneeRoleKey) ?? null,
       };
 
+      // ACC-255 — a stage's record actions and flags are written only when the
+      // seed CREATES it: a stage that already exists keeps what its tenant
+      // configured. This is how a NEW organisation gets the rules (bootstrap
+      // runs this same code); existing ones got them from the ACC-255
+      // backfill, which refuses customer organisations.
       const stage = existingStage
         ? await db.workflowStage.update({ where: { id: existingStage.id }, data: stageData })
         : await db.workflowStage.create({
-            data: { workflowTemplateId: template.id, ...stageData },
+            data: { workflowTemplateId: template.id, ...stageData, flags: [...(seedStage.flags ?? [])] },
           });
+      if (!existingStage && seedStage.actions?.length) {
+        await db.workflowStageRecordAction.createMany({
+          data: seedStage.actions.map((actionKey) => ({ organizationId, stageId: stage.id, actionKey })),
+        });
+      }
 
       stageIdByKey.set(seedStage.key, stage.id);
     }

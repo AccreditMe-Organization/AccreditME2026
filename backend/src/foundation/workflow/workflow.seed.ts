@@ -5,6 +5,13 @@
 // "seed with a stable string, resolve to a real ID at seed time" pattern
 // already used by RoleService.seedSystemRoles() for permission strings.
 
+import { COMMITTEE_ACTIONS, STAGE_FLAG } from './record-registry';
+
+// ACC-255 — today's committee rules, reproduced exactly (the plan's §4.1):
+// membership in every stage, Edit details in Formation only, a change request
+// raised in Active and Suspended. Ahmad's Dissolved change (Q-A) is PR 2's.
+const MEMBERS = [COMMITTEE_ACTIONS.ADD_MEMBER, COMMITTEE_ACTIONS.REMOVE_MEMBER, COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE] as const;
+
 export interface SeedAction {
   actionType:
     | 'SEND_NOTIFICATION'
@@ -49,6 +56,11 @@ export interface SeedStage {
   parallelThreshold?: 'ALL' | 'MAJORITY' | 'ANY';
   assigneeStrategy: 'SPECIFIC_USER' | 'ROLE' | 'ORG_UNIT_HEAD' | 'SELF' | 'COMMITTEE' | 'ROUND_ROBIN';
   assigneeRoleKey?: string; // resolved to Role.id at seed time
+  // ACC-255 — the record actions this stage allows (RECORD_ACTIONS keys) and
+  // what it means (STAGE_FLAGS keys). Written only when the seed CREATES the
+  // stage: a stage that already exists keeps what its tenant configured.
+  actions?: readonly string[];
+  flags?: readonly string[];
 }
 
 export interface SeedWorkflow {
@@ -255,12 +267,12 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Committee Management',
     nameAr: 'إدارة اللجان',
     stages: [
-      { key: 'formation', nameEn: 'Formation', nameAr: 'التأسيس', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
-      { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40 },
-      { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
-      { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
-      { key: 'dissolution_pending', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40 },
-      { key: 'dissolved', nameEn: 'Dissolved', nameAr: 'محلولة', order: 60, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
+      { key: 'formation', nameEn: 'Formation', nameAr: 'التأسيس', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [COMMITTEE_ACTIONS.EDIT_DETAILS, ...MEMBERS] },
+      { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, actions: [...MEMBERS] },
+      { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE] },
+      { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE] },
+      { key: 'dissolution_pending', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, actions: [...MEMBERS], flags: [STAGE_FLAG.DISSOLVING] },
+      { key: 'dissolved', nameEn: 'Dissolved', nameAr: 'محلولة', order: 60, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS], flags: [STAGE_FLAG.DISSOLVING] },
     ],
     transitions: [
       { fromStageKey: 'formation', toStageKey: 'terms_review', labelEn: 'Submit for Approval', labelAr: 'إرسال للاعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
@@ -292,7 +304,7 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
       { key: 'draft', nameEn: 'Draft', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
       { key: 'under_review', nameEn: 'Under review', nameAr: 'قيد المراجعة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
       { key: 'returned', nameEn: 'Returned', nameAr: 'مُعاد', order: 25, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'approved', nameEn: 'Approved', nameAr: 'معتمد', order: 30, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+      { key: 'approved', nameEn: 'Approved', nameAr: 'معتمد', order: 30, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', flags: [STAGE_FLAG.APPLIES_APPROVED_CHANGE] },
       { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
       { key: 'withdrawn', nameEn: 'Withdrawn', nameAr: 'مسحوب', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
     ],

@@ -673,6 +673,26 @@
     "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
   },
   "workflow": {
+    "recordAction": {
+      "COMMITTEE": {
+        "edit_details": "Edit the committee's details",
+        "add_member": "Add members",
+        "remove_member": "Remove members",
+        "change_member_role": "Change a member's role",
+        "request_change": "Request a change to the approved committee"
+      }
+    },
+    "stageFlag": {
+      "DISSOLVING": "The committee is being dissolved, or has been",
+      "IN_FORCE": "The committee is approved and in force",
+      "APPLIES_APPROVED_CHANGE": "Reaching this stage applies the approved change"
+    },
+    "recordField": {
+      "COMMITTEE": {
+        "typeValueId": "Committee type",
+        "orgUnitId": "Owning unit"
+      }
+    },
     "actionCreateTask": "Create Task",
     "actionEnabled": "Enabled",
     "actionGeneratePdf": "Generate PDF Snapshot",

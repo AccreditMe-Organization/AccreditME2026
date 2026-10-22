@@ -115,6 +115,12 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  // ACC-255 — the record actions a stage allows.
+  workflowStageRecordAction: {
+    createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    findMany: jest.fn().mockResolvedValue([]),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+  },
   workflowTransitionAction: {
     findFirst: jest.fn(),
     create: jest.fn(),
@@ -350,6 +356,35 @@ describe('WorkflowTemplateService', () => {
 
     // ACC-233 — the committee lifecycle's stages carry the seed's stable key; no
     // other template's do yet (KEYED_SEED_TEMPLATES).
+    it("ACC-255 — writes each seeded stage's record actions and flags when it creates the stage, and none on a second run", async () => {
+      installFakeStore();
+
+      await service.seedDefaultWorkflows(ORG_A);
+
+      const created = mockPrisma.workflowStage.create.mock.calls.map(
+        ([arg]: [{ data: { key?: string; nameEn: string; flags: string[] } }]) => arg.data,
+      );
+      const committee = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'COMMITTEE')!;
+      for (const seedStage of committee.stages) {
+        const row = created.find((d: { key?: string }) => d.key === seedStage.key)!;
+        expect({ key: seedStage.key, flags: row.flags }).toEqual({ key: seedStage.key, flags: [...(seedStage.flags ?? [])] });
+      }
+      const written = mockPrisma.workflowStageRecordAction.createMany.mock.calls.flatMap(
+        ([arg]: [{ data: { organizationId: string; actionKey: string }[] }]) => arg.data,
+      );
+      expect(written.every((r: { organizationId: string }) => r.organizationId === ORG_A)).toBe(true);
+      const expected = SYSTEM_WORKFLOW_SEED.flatMap((w) => w.stages.flatMap((st) => [...(st.actions ?? [])]));
+      expect(written.map((r: { actionKey: string }) => r.actionKey).sort()).toEqual(expected.sort());
+      // Every stage without a flag gets an explicit empty list, never undefined.
+      expect(created.every((d: { flags: unknown }) => Array.isArray(d.flags))).toBe(true);
+
+      // A second run finds every stage and writes no actions: a stage that
+      // exists keeps what its tenant configured.
+      mockPrisma.workflowStageRecordAction.createMany.mockClear();
+      await service.seedDefaultWorkflows(ORG_A);
+      expect(mockPrisma.workflowStageRecordAction.createMany).not.toHaveBeenCalled();
+    });
+
     it("writes the seed key on every COMMITTEE and COMMITTEE_CHANGE_REQUEST stage, and on no other template's", async () => {
       installFakeStore();
 

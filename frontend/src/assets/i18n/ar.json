@@ -673,6 +673,26 @@
     "confirmDeactivateRoleUnknown": "يفقد كل من يحمله صلاحيات الدور الآن. ويبقى الدور مُسندًا كما هو، فإعادة تفعيله تعيدها."
   },
   "workflow": {
+    "recordAction": {
+      "COMMITTEE": {
+        "edit_details": "تعديل بيانات اللجنة",
+        "add_member": "إضافة أعضاء",
+        "remove_member": "إزالة أعضاء",
+        "change_member_role": "تغيير دور عضو",
+        "request_change": "طلب تغيير على اللجنة المعتمدة"
+      }
+    },
+    "stageFlag": {
+      "DISSOLVING": "اللجنة قيد الحل أو منحلّة",
+      "IN_FORCE": "اللجنة معتمدة وسارية",
+      "APPLIES_APPROVED_CHANGE": "بلوغ هذه المرحلة يطبّق التغيير المعتمد"
+    },
+    "recordField": {
+      "COMMITTEE": {
+        "typeValueId": "نوع اللجنة",
+        "orgUnitId": "الوحدة المالكة"
+      }
+    },
     "actionCreateTask": "إنشاء مهمة",
     "actionEnabled": "مُفعّل",
     "actionGeneratePdf": "إنشاء نسخة PDF",
