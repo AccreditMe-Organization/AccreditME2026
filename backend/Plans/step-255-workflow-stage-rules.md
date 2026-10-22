@@ -328,7 +328,9 @@ The refusal is unchanged: DISSOLVING flag ⇒ `CHANGE_REQUEST_COMMITTEE_DISSOLVI
   - it re-plans inside the transaction and throws "database changed since the dry run" if the plan moved;
   - it refuses customer organisations (fixtures only, ACC-101), with exit code 1;
   - it writes one `AuditLog` row per organisation (`objectType: 'WorkflowTemplate'`, `actorId: null`, `metadata { source, ticket: 'ACC-255', reason, stagesWritten }`).
-- **The parity check** (`npm run check:acc255-stage-parity`, read-only):
+- **The parity check** (`npm run parity:acc255-stage-rules`, read-only):
+  - **Renamed while building PR 1: it is NOT a `check:*` script.** CI and the PR gate run every `check:*` they discover — CI with no database, the gate with `backend/.env`'s, which is the shared one. A check that reads a database would fail in CI and, in the gate, read the shared database unasked. It is run by hand, after the backfill, against the database it is meant to check.
+  - **A committee with no workflow instance is reported as a difference** (`(no live stage)`): today its members can be changed; under D14 it allows nothing. Count 7 (§13) says whether any exist on the shared database; PR 2 does not switch while any do.
   - For every organisation, every committee and every open change request, it compares the new answer with the old maps:
     - Edit offered;
     - each member action;
@@ -560,7 +562,7 @@ ACC-240's PR 3a and 3b merge first. 3a's `canRaise` (`openSummary()`) reads `com
 | PR | Contents | Migration | Behaviour change |
 |---|---|---|---|
 | **1 — backend, expand** | registries; migration; seed actions and flags; backfill and its spec; `StageRulesService`; template API read and write of `actions` / `flags` with the four refusals and cardinality; stage-config audit diff; `stageRules` on the committee read; the parity check; `GET /committees/form-choices` | `acc255_workflow_stage_rules` | **none** — the rules are written and served, but nothing decides by them |
-| *after PR 1 deploys* | `backfill:acc255-stage-rules` dry run → `-- --execute` → dry run (0); `check:acc255-stage-parity` = 0 differences | — | none |
+| *after PR 1 deploys* | `backfill:acc255-stage-rules` dry run → `-- --execute` → dry run (0); `parity:acc255-stage-rules` = 0 differences | — | none |
 | **2 — backend, switch** | reference checks, counts, change-request policy and the approve target read the answer (§4.2-4.4); ACC-241 lock on `updateCommittee` and the member actions (§4.5); `isDissolvingStageKey` and `COMMITTEE_STAGE_POLICY` deleted; the key-name scan spec | none | **API only:** a direct edit outside Formation is refused (ACC-241, intended). Screens never offered it. |
 | **3 — frontend** | committee page and members panel read `stageRules` (`COMMITTEE_HEADER_POLICY` deleted); new refusal codes said; ACC-254; icon labels and the scan at 0; protected-refusal translations; Edit dialog and Request a change read `form-choices` | none | members panel hides actions a stage forbids (none today); otherwise nothing |
 | **4 — frontend, after the drawing** | stage form: "What can be done to the record here" and flags | none | the new section |
@@ -687,7 +689,7 @@ PR 1 builds the guard exactly as workflow editing has it today.
 
 ### 16.2 Member changes in Dissolved (Q-A) — PR 2's one seeded rule change
 
-- **PR 1** seeds and backfills today's rules exactly (members allowed in every stage), so `check:acc255-stage-parity` reads 0 differences.
+- **PR 1** seeds and backfills today's rules exactly (members allowed in every stage), so `parity:acc255-stage-rules` reads 0 differences.
 - **PR 2** changes one seeded rule: the COMMITTEE seed's `dissolved` stage loses `add_member`, `remove_member` and `change_member_role`; `dissolution_pending` keeps them.
   - **Backfill step:** `npm run backfill:acc255-dissolved-membership`.
     - It removes the three action rows from every COMMITTEE stage keyed `dissolved` whose rows still equal PR 1's seed. A stage a tenant has since configured is left alone and reported.
