@@ -364,8 +364,10 @@ describe('CommitteeChangeRequestFormComponent (ACC-240)', () => {
       it('Arabic', fakeAsync(() => {
         TestBed.inject(TranslateService).use('ar');
         aPresses('crf-save-draft');
+        // The literal sentence, so a wording change is a decision this spec sees.
+        // Neutral: the passive names nobody's gender (Ahmad, 22 Oct).
         expect(text(el().querySelector('[data-testid="crf-footer-message"]'))).toContain(
-          ar.committee.changeRequest.form.openedFirst.replace('{{n}}', '7').replace('{{name}}', 'Badr Al-Shammari'),
+          'سبق أن فُتح طلب التغيير 7 بواسطة Badr Al-Shammari. لم تُحفظ تغييراتك.',
         );
         expect(text(el().querySelector('[data-testid="crf-footer-link"]'))).toBe(ar.committee.changeRequest.banner.view);
       }));
