@@ -1,6 +1,7 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { StageRulesService } from './stage-rules.service';
 import { WorkflowRefusalException } from './workflow-refusal';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // ACC-255 — the engine's answer about a record's current stage. Unit-level:
 // the queries' shape (newest instance, organisation in every WHERE) and the
@@ -70,7 +71,7 @@ describe('StageRulesService (ACC-255)', () => {
       expect(JSON.stringify(prisma.$queryRaw.mock.calls[1])).toContain('FOR SHARE OF wi');
     });
 
-    it('should NOT return records belonging to a different tenant — the stage and its action rows are read with the caller\'s organisation', async () => {
+    itEnforcesTenantIsolation("currentStageRules — the stage and its action rows are read with the caller's organisation", async () => {
       const prisma = makePrisma({ current: { instanceId: 'wi-1', stageId: ACTIVE.id }, stage: null, actions: ['add_member'] });
       const service = new StageRulesService(prisma as unknown as PrismaService);
       const rules = await service.currentStageRules('COMMITTEE', 'c-1', OTHER_ORG);

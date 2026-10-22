@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { WorkflowTemplateService } from './workflow-template.service';
+import { stageAuditDiff, WorkflowTemplateService } from './workflow-template.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
@@ -48,6 +48,9 @@ const BASE_STAGE = {
   assigneePositionId: null as string | null,
   assigneeOrgUnitId: null as string | null,
   escalationConfig: null as unknown,
+  // ACC-255 — a stage's flags, and (on reads that include them) its action rows.
+  flags: [] as string[],
+  recordActions: [] as { actionKey: string }[],
 };
 
 const BASE_TRANSITION = {
@@ -162,7 +165,11 @@ const mockPrisma = {
   organization: {
     findUnique: jest.fn(),
   },
-  $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+  // An array runs as a batch; a callback (ACC-255's stage saves) runs against this same mock.
+  $transaction: jest.fn((arg: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)): Promise<unknown> =>
+    typeof arg === 'function' ? arg(mockPrisma) : Promise.all(arg),
+  ),
+  $queryRaw: jest.fn().mockResolvedValue([]),
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -522,7 +529,11 @@ describe('WorkflowTemplateService', () => {
       expect(result.stages?.[0]?.transitions?.[0]?.actions).toHaveLength(1);
       expect(mockPrisma.workflowStage.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          include: { transitionsFrom: { include: { actions: { orderBy: { order: 'asc' } } } } },
+          include: {
+            transitionsFrom: { include: { actions: { orderBy: { order: 'asc' } } } },
+            // ACC-255 — each stage's action rows, read with the caller's organisation.
+            recordActions: { where: { organizationId: ORG_A }, select: { actionKey: true } },
+          },
         }),
       );
     });
@@ -1961,6 +1972,265 @@ describe('WorkflowTemplateService', () => {
     ])('%s %s → %s is %s', (objectType, from, to, kind) => {
       const t = transitions.find((x) => x.objectType === objectType && x.fromStageKey === from && x.toStageKey === to);
       expect(t?.kind ?? 'ADVANCE').toBe(kind);
+    });
+  });
+
+  // ── ACC-255 — stage rules: what a stage allows and means ──────────────────────
+
+  describe('ACC-255 — stage rules', () => {
+    const committeeStage = (overrides: Partial<typeof BASE_STAGE> = {}) =>
+      makeStage({ workflowTemplate: { objectType: 'COMMITTEE' }, ...overrides });
+    const requestStage = (overrides: Partial<typeof BASE_STAGE> = {}) =>
+      makeStage({ workflowTemplate: { objectType: 'COMMITTEE_CHANGE_REQUEST' }, ...overrides });
+    const rows = (...keys: string[]) => keys.map((actionKey) => ({ actionKey }));
+    const auditCalls = () => mockAuditLog.log.mock.calls.map((c) => c[0] as Record<string, unknown>);
+
+    describe('the template read', () => {
+      it("serves the record type's actions, flags and fields, and each stage's actions in registry order", async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'COMMITTEE' }));
+        mockPrisma.workflowStage.findMany.mockResolvedValue([
+          { ...committeeStage({ flags: ['IN_FORCE'], recordActions: rows('request_change', 'add_member') }), transitionsFrom: [] },
+        ]);
+
+        const result = await service.getTemplateById('template-1', ORG_A);
+
+        expect(result.recordActions?.map((a) => a.key)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change']);
+        expect(result.recordActions?.[0]).toEqual({ key: 'edit_details', labelKey: 'workflow.recordAction.COMMITTEE.edit_details' });
+        expect(result.stageFlags).toEqual([
+          { key: 'DISSOLVING', labelKey: 'workflow.stageFlag.DISSOLVING', cardinality: 'any' },
+          { key: 'IN_FORCE', labelKey: 'workflow.stageFlag.IN_FORCE', cardinality: 'any' },
+        ]);
+        expect(result.recordFields?.map((f) => f.key)).toEqual(['typeValueId', 'orgUnitId']);
+        expect(result.stages?.[0]).toMatchObject({ actions: ['add_member', 'request_change'], flags: ['IN_FORCE'] });
+      });
+
+      it('a record type with no registry entry offers nothing to configure', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'DOCUMENT' }));
+        mockPrisma.workflowStage.findMany.mockResolvedValue([{ ...BASE_STAGE, transitionsFrom: [] }]);
+        const result = await service.getTemplateById('template-1', ORG_A);
+        expect(result).toMatchObject({ recordActions: [], stageFlags: [], recordFields: [] });
+        expect(result.stages?.[0]).toMatchObject({ actions: [], flags: [] });
+      });
+    });
+
+    describe('updateStage', () => {
+      it('replaces the action set, writing only the difference, every row scoped by organisation', async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(committeeStage({ recordActions: rows('add_member', 'edit_details') }));
+        mockPrisma.workflowStage.update.mockResolvedValue(committeeStage());
+        mockPrisma.workflowStageRecordAction.findMany.mockResolvedValueOnce(rows('add_member', 'edit_details'));
+
+        const result = await service.updateStage('stage-1', { actions: ['request_change', 'add_member', 'add_member'] } as never, ORG_A, ACTOR);
+
+        expect(mockPrisma.workflowStageRecordAction.findMany).toHaveBeenCalledWith({
+          where: { organizationId: ORG_A, stageId: 'stage-1' },
+          select: { actionKey: true },
+        });
+        expect(mockPrisma.workflowStageRecordAction.deleteMany).toHaveBeenCalledWith({
+          where: { organizationId: ORG_A, stageId: 'stage-1', actionKey: { in: ['edit_details'] } },
+        });
+        expect(mockPrisma.workflowStageRecordAction.createMany).toHaveBeenCalledWith({
+          data: [{ organizationId: ORG_A, stageId: 'stage-1', actionKey: 'request_change' }],
+        });
+        expect(result.actions).toEqual(['add_member', 'request_change']);
+      });
+
+      it('writes flags in registry order, and leaves actions alone when none are sent', async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(committeeStage({ recordActions: rows('add_member') }));
+        mockPrisma.workflowStage.update.mockResolvedValue(committeeStage({ flags: ['DISSOLVING', 'IN_FORCE'] }));
+
+        const result = await service.updateStage('stage-1', { flags: ['IN_FORCE', 'DISSOLVING'] } as never, ORG_A, ACTOR);
+
+        expect(mockPrisma.workflowStage.update).toHaveBeenCalledWith(expect.objectContaining({ data: { flags: ['DISSOLVING', 'IN_FORCE'] } }));
+        expect(mockPrisma.workflowStageRecordAction.findMany).not.toHaveBeenCalled();
+        expect(mockPrisma.workflowStageRecordAction.createMany).not.toHaveBeenCalled();
+        expect(result.actions).toEqual(['add_member']);
+      });
+
+      it('refuses an action the record type does not list (400 STAGE_ACTION_UNKNOWN), writing nothing', async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(committeeStage());
+        const refusal = await service.updateStage('stage-1', { actions: ['add_member', 'publish'] } as never, ORG_A, ACTOR).catch((e: unknown) => e);
+        expect((refusal as WorkflowRefusalException).getStatus()).toBe(400);
+        expect((refusal as WorkflowRefusalException).getResponse()).toMatchObject({ code: 'STAGE_ACTION_UNKNOWN', actionKey: 'publish', objectType: 'COMMITTEE' });
+        expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses any action on a record type with no actions, and a flag of another type (400 STAGE_FLAG_UNKNOWN)', async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+        expect(await codeOf(service.updateStage('stage-1', { actions: ['edit_details'] } as never, ORG_A, ACTOR))).toBe('STAGE_ACTION_UNKNOWN');
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(committeeStage());
+        expect(await codeOf(service.updateStage('stage-1', { flags: ['APPLIES_APPROVED_CHANGE'] } as never, ORG_A, ACTOR))).toBe('STAGE_FLAG_UNKNOWN');
+        expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+      });
+
+      it("a protected template refuses CHANGED flags or actions as a stage field, and passes the stored ones re-sent", async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(requestStage({ flags: ['APPLIES_APPROVED_CHANGE'] }));
+        mockPrisma.workflowStage.update.mockResolvedValue(requestStage({ nameEn: 'Agreed', flags: ['APPLIES_APPROVED_CHANGE'] }));
+
+        const changed = await service.updateStage('stage-1', { flags: [] } as never, ORG_A, ACTOR).catch((e: unknown) => e);
+        expect((changed as WorkflowRefusalException).getResponse()).toMatchObject({ code: 'WORKFLOW_TEMPLATE_PROTECTED', edit: 'STAGE_FIELD' });
+        expect(await codeOf(service.updateStage('stage-1', { actions: ['edit_details'] } as never, ORG_A, ACTOR))).toBe('WORKFLOW_TEMPLATE_PROTECTED');
+        expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+
+        await service.updateStage('stage-1', { nameEn: 'Agreed', flags: ['APPLIES_APPROVED_CHANGE'], actions: [] } as never, ORG_A, ACTOR);
+        expect(mockPrisma.workflowStage.update).toHaveBeenCalledTimes(1);
+      });
+
+      it('audits exactly the fields that changed, actions included, before and after', async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(committeeStage({ recordActions: rows('add_member') }));
+        mockPrisma.workflowStage.update.mockResolvedValue(committeeStage({ slaWorkingHours: 16 }));
+        mockPrisma.workflowStageRecordAction.findMany.mockResolvedValueOnce(rows('add_member'));
+
+        await service.updateStage('stage-1', { nameEn: 'Drafting', slaWorkingHours: 16, actions: ['add_member', 'remove_member'] } as never, ORG_A, ACTOR);
+
+        expect(auditCalls()).toEqual([
+          expect.objectContaining({
+            action: 'UPDATE',
+            objectType: 'WorkflowStage',
+            objectId: 'stage-1',
+            tenantId: ORG_A,
+            before: { slaWorkingHours: null, actions: ['add_member'] },
+            after: { slaWorkingHours: 16, actions: ['add_member', 'remove_member'] },
+          }),
+        ]);
+      });
+
+      it('writes no audit row for a save that changes nothing', async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(committeeStage({ recordActions: rows('add_member'), flags: ['IN_FORCE'] }));
+        mockPrisma.workflowStage.update.mockResolvedValue(committeeStage({ flags: ['IN_FORCE'] }));
+        mockPrisma.workflowStageRecordAction.findMany.mockResolvedValueOnce(rows('add_member'));
+
+        await service.updateStage('stage-1', { nameEn: 'Drafting', actions: ['add_member'], flags: ['IN_FORCE'] } as never, ORG_A, ACTOR);
+
+        expect(mockAuditLog.log).not.toHaveBeenCalled();
+      });
+
+      itEnforcesTenantIsolation("updateStage — another organisation's stage is not found, and no action row is touched", async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(null);
+        await expect(service.updateStage('stage-1', { actions: ['add_member'] } as never, ORG_B, ACTOR)).rejects.toThrow(NotFoundException);
+        expect(mockPrisma.workflowStage.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'stage-1', workflowTemplate: { organizationId: ORG_B } },
+            include: expect.objectContaining({ recordActions: { where: { organizationId: ORG_B }, select: { actionKey: true } } }),
+          }),
+        );
+        expect(mockPrisma.workflowStageRecordAction.createMany).not.toHaveBeenCalled();
+        expect(mockPrisma.workflowStageRecordAction.deleteMany).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('addStage', () => {
+      const ADD = { nameEn: 'Board Review', order: 25, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' };
+
+      it("a committee stage added with no actions gets the member actions — what such a stage allowed before stage rules", async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'COMMITTEE' }));
+        mockPrisma.workflowStage.create.mockResolvedValue(committeeStage({ id: 'stage-new', nameEn: 'Board Review', order: 25 }));
+
+        const result = await service.addStage('template-1', ADD as never, ORG_A, ACTOR);
+
+        expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ flags: [] }) }));
+        expect(mockPrisma.workflowStageRecordAction.createMany).toHaveBeenCalledWith({
+          data: ['add_member', 'remove_member', 'change_member_role'].map((actionKey) => ({ organizationId: ORG_A, stageId: 'stage-new', actionKey })),
+        });
+        expect(result.actions).toEqual(['add_member', 'remove_member', 'change_member_role']);
+      });
+
+      it('takes the actions and flags the save names — none at all when it sends empty lists', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'COMMITTEE' }));
+        mockPrisma.workflowStage.create.mockResolvedValue(committeeStage({ id: 'stage-new', flags: ['DISSOLVING'] }));
+
+        const result = await service.addStage('template-1', { ...ADD, actions: [], flags: ['DISSOLVING'] } as never, ORG_A, ACTOR);
+
+        expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ flags: ['DISSOLVING'] }) }));
+        expect(mockPrisma.workflowStageRecordAction.createMany).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ actions: [], flags: ['DISSOLVING'] });
+      });
+
+      it('refuses an unknown flag before writing anything', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'COMMITTEE' }));
+        expect(await codeOf(service.addStage('template-1', { ...ADD, flags: ['ARCHIVED'] } as never, ORG_A, ACTOR))).toBe('STAGE_FLAG_UNKNOWN');
+        expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+      });
+
+      it('audits the whole new stage, its actions and flags included', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'COMMITTEE' }));
+        mockPrisma.workflowStage.create.mockResolvedValue(committeeStage({ id: 'stage-new', nameEn: 'Board Review', order: 25 }));
+
+        await service.addStage('template-1', ADD as never, ORG_A, ACTOR);
+
+        const [row] = auditCalls();
+        expect(row).toMatchObject({ action: 'CREATE', objectType: 'WorkflowStage', objectId: 'stage-new', tenantId: ORG_A });
+        expect(Object.keys(row!['after'] as object)).toEqual([
+          'nameEn', 'nameAr', 'description', 'order', 'slaWorkingHours', 'isInitial', 'isFinal', 'approvalMode', 'parallelThreshold',
+          'committeeId', 'assigneeStrategy', 'assigneeUserId', 'assigneeRoleId', 'assigneeCommitteeRoleValueId', 'assigneePositionId',
+          'assigneeOrgUnitId', 'escalationConfig', 'actions', 'flags',
+        ]);
+        expect(row!['after']).toMatchObject({ nameEn: 'Board Review', order: 25, actions: ['add_member', 'remove_member', 'change_member_role'], flags: [] });
+      });
+    });
+
+    describe('removeStage', () => {
+      it('audits the whole removed stage, its actions and flags included', async () => {
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(
+          committeeStage({ isInitial: false, flags: ['DISSOLVING'], recordActions: rows('remove_member', 'add_member') }),
+        );
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
+
+        await service.removeStage('stage-1', ORG_A, ACTOR);
+
+        expect(mockPrisma.workflowStage.delete).toHaveBeenCalledWith({ where: { id: 'stage-1' } });
+        expect(auditCalls()[0]).toMatchObject({
+          action: 'DELETE',
+          objectId: 'stage-1',
+          before: expect.objectContaining({ nameEn: 'Drafting', actions: ['add_member', 'remove_member'], flags: ['DISSOLVING'] }),
+        });
+      });
+    });
+
+    describe('exactly-one flags', () => {
+      // Only the change request template carries one (APPLIES_APPROVED_CHANGE)
+      // and it is protected, so no save reaches the count today; the check is
+      // exercised directly so it holds for the next type that has one.
+      type CardinalityCheck = { assertFlagCardinality(tx: unknown, templateId: string, flags: string[]): Promise<void> };
+      const check = () => service as unknown as CardinalityCheck;
+
+      it('passes when the flag sits on exactly one stage, and refuses 409 naming the stages otherwise', async () => {
+        mockPrisma.workflowStage.findMany.mockResolvedValueOnce([{ nameEn: 'Approved', nameAr: null }]);
+        await expect(check().assertFlagCardinality(mockPrisma, 'template-1', ['APPLIES_APPROVED_CHANGE'])).resolves.toBeUndefined();
+        expect(mockPrisma.workflowStage.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { workflowTemplateId: 'template-1', flags: { has: 'APPLIES_APPROVED_CHANGE' } } }),
+        );
+
+        for (const holders of [[], [{ nameEn: 'Approved', nameAr: null }, { nameEn: 'Agreed', nameAr: 'موافق' }]]) {
+          mockPrisma.workflowStage.findMany.mockResolvedValueOnce(holders);
+          const refusal = await check().assertFlagCardinality(mockPrisma, 'template-1', ['APPLIES_APPROVED_CHANGE']).catch((e: unknown) => e);
+          expect((refusal as WorkflowRefusalException).getStatus()).toBe(409);
+          expect((refusal as WorkflowRefusalException).getResponse()).toMatchObject({
+            code: 'STAGE_FLAG_EXACTLY_ONE',
+            flag: 'APPLIES_APPROVED_CHANGE',
+            stageNames: holders,
+          });
+        }
+      });
+
+      it('counts nothing when the save touched no exactly-one flag', async () => {
+        await check().assertFlagCardinality(mockPrisma, 'template-1', []);
+        expect(mockPrisma.workflowStage.findMany).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('stageAuditDiff', () => {
+      it('lists only changed fields; arrays compare as sets; a no-op is null', () => {
+        expect(stageAuditDiff({ nameEn: 'A', actions: ['x', 'y'], flags: [] }, { nameEn: 'A', actions: ['y', 'x'], flags: [] })).toBeNull();
+        expect(stageAuditDiff({ nameEn: 'A', nameAr: null, order: 1 }, { nameEn: 'B', nameAr: undefined, order: 1 })).toEqual({
+          before: { nameEn: 'A' },
+          after: { nameEn: 'B' },
+        });
+        expect(stageAuditDiff({ escalationConfig: [{ afterHours: 4 }] }, { escalationConfig: [{ afterHours: 8 }] })).toEqual({
+          before: { escalationConfig: [{ afterHours: 4 }] },
+          after: { escalationConfig: [{ afterHours: 8 }] },
+        });
+        expect(stageAuditDiff({ flags: ['IN_FORCE'] }, { flags: [] })).toEqual({ before: { flags: ['IN_FORCE'] }, after: { flags: [] } });
+      });
     });
   });
 });

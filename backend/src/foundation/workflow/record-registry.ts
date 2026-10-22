@@ -25,6 +25,13 @@ import { WorkflowObjectType } from '../../../generated/prisma/client';
 export interface RecordActionDef {
   readonly key: string;
   readonly labelKey: string;
+  /**
+   * Allowed on a stage a tenant ADDS when the save names no actions, so a new
+   * stage keeps what the record allowed before stage rules existed. The
+   * committee's member actions were never limited by stage; Edit and Request a
+   * change were never offered on a tenant-added stage (plan §4.1).
+   */
+  readonly onNewStage?: boolean;
 }
 
 export type StageFlagCardinality = 'any' | 'exactlyOne';
@@ -63,15 +70,19 @@ export const STAGE_FLAG = {
 } as const;
 export type StageFlag = (typeof STAGE_FLAG)[keyof typeof STAGE_FLAG];
 
-const committeeAction = (key: CommitteeAction): RecordActionDef => ({ key, labelKey: `workflow.recordAction.COMMITTEE.${key}` });
+const committeeAction = (key: CommitteeAction, onNewStage = false): RecordActionDef => ({
+  key,
+  labelKey: `workflow.recordAction.COMMITTEE.${key}`,
+  ...(onNewStage && { onNewStage }),
+});
 const flag = (key: StageFlag, cardinality: StageFlagCardinality): StageFlagDef => ({ key, labelKey: `workflow.stageFlag.${key}`, cardinality });
 
 export const RECORD_ACTIONS: Partial<Record<WorkflowObjectType, readonly RecordActionDef[]>> = {
   COMMITTEE: [
     committeeAction(COMMITTEE_ACTIONS.EDIT_DETAILS),
-    committeeAction(COMMITTEE_ACTIONS.ADD_MEMBER),
-    committeeAction(COMMITTEE_ACTIONS.REMOVE_MEMBER),
-    committeeAction(COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE),
+    committeeAction(COMMITTEE_ACTIONS.ADD_MEMBER, true),
+    committeeAction(COMMITTEE_ACTIONS.REMOVE_MEMBER, true),
+    committeeAction(COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, true),
     committeeAction(COMMITTEE_ACTIONS.REQUEST_CHANGE),
   ],
 };
@@ -109,6 +120,11 @@ export function isRecordAction(objectType: WorkflowObjectType, actionKey: string
 /** Whether `flagKey` is a stage flag of `objectType`. */
 export function isStageFlag(objectType: WorkflowObjectType, flagKey: string): boolean {
   return stageFlagsFor(objectType).some((f) => f.key === flagKey);
+}
+
+/** The actions a stage a tenant adds gets when its save names none. */
+export function newStageActionKeys(objectType: WorkflowObjectType): string[] {
+  return recordActionsFor(objectType).filter((a) => a.onNewStage).map((a) => a.key);
 }
 
 /** Puts action keys in registry order (the order the screens list them). */

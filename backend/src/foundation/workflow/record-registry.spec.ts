@@ -9,6 +9,7 @@ import {
   STAGE_FLAGS,
   isRecordAction,
   isStageFlag,
+  newStageActionKeys,
   orderedActionKeys,
   recordActionsFor,
 } from './record-registry';
@@ -45,7 +46,7 @@ describe('record registries (ACC-255)', () => {
   it('keys are unique within each record type', () => {
     for (const registry of [RECORD_ACTIONS, STAGE_FLAGS, RECORD_FIELDS]) {
       for (const [type, defs] of Object.entries(registry)) {
-        const keys = defs!.map((d) => d.key);
+        const keys = (defs as readonly { key: string }[]).map((d) => d.key);
         expect({ type, keys }).toEqual({ type, keys: [...new Set(keys)] });
       }
     }
@@ -67,6 +68,12 @@ describe('record registries (ACC-255)', () => {
     expect(isStageFlag('DOCUMENT', 'DISSOLVING')).toBe(false);
     expect(isStageFlag('COMMITTEE', 'APPLIES_APPROVED_CHANGE')).toBe(false);
     expect(isRecordAction('COMMITTEE', 'not_an_action')).toBe(false);
+  });
+
+  it("a stage a tenant adds gets the committee's member actions, which no stage ever limited, and nothing else", () => {
+    expect(newStageActionKeys('COMMITTEE')).toEqual(['add_member', 'remove_member', 'change_member_role']);
+    expect(newStageActionKeys('COMMITTEE_CHANGE_REQUEST')).toEqual([]);
+    expect(newStageActionKeys('DOCUMENT')).toEqual([]);
   });
 
   it('orders keys as the registry lists them, dropping unknown ones', () => {

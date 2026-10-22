@@ -359,6 +359,7 @@ stages[].flags:   string[];
   - **`actions` replaces the stage's set:** the service diffs it against the rows, inserts and deletes inside one transaction, and audits the difference (§8).
   - **Unknown keys are refused** (§7).
   - **On a protected template** `actions` and `flags` are not in `PROTECTED_STAGE_EDITABLE` (`:39`), so a changed value is `WORKFLOW_TEMPLATE_PROTECTED` with `edit: 'STAGE_FIELD'`. Re-sending the stored value unchanged passes (`:298`), as for every other field.
+- **A stage added with no `actions` gets the record type's new-stage defaults** (`onNewStage` in `RECORD_ACTIONS`: the committee's three member actions). That is what a tenant-added stage allowed before stage rules, and what the backfill writes on one (§5.4), so a stage added after PR 1 deploys answers the parity check the same way. An explicit `[]` means none. *(Added while building PR 1.)*
 - **Nothing else is a new route.** The registries ride on the template read, as `recordRoutes` does, so there is one place to read them and no frontend copy (rule 1).
 
 ### 6.2 For the record screens
