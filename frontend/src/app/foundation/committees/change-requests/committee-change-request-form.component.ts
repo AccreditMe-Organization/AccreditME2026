@@ -1,7 +1,7 @@
 import { Component, DestroyRef, ElementRef, HostListener, OnDestroy, ViewEncapsulation, computed, effect, inject, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Observable, catchError, debounceTime, distinctUntilChanged, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -49,7 +49,12 @@ const PREVIEW_DELAY_MS = 400;
 
 type Phase = 'loading' | 'error' | 'ready';
 type PreviewState = { kind: 'none' } | { kind: 'loading' } | { kind: 'failed' } | { kind: 'ready'; preview: ChangeRequestPreviewDto };
-type Footer = { text: string; retry: boolean; reload: boolean } | null;
+/**
+ * A footer message and what it offers. `link` goes to another request (ALREADY_OPEN);
+ * a `sticky` message stays while the person keeps editing, because what it says
+ * stays true until they leave.
+ */
+type Footer = { text: string; retry: boolean; reload: boolean; link?: string[]; sticky?: boolean } | null;
 type ChoiceList = 'types' | 'units' | 'committees';
 
 /** A value as the server compares it: text trimmed, an emptied optional text is null. */
@@ -99,6 +104,7 @@ export function diffChanges(values: Partial<Record<ChangeField, unknown>>, commi
   encapsulation: ViewEncapsulation.None,
   imports: [
     ReactiveFormsModule,
+    RouterLink,
     TranslatePipe,
     ButtonModule,
     InputTextModule,
@@ -267,7 +273,12 @@ export function diffChanges(values: Partial<Record<ChangeField, unknown>>, commi
 
           <div class="am-crf__foot" role="region" [attr.aria-label]="title()">
             @if (footer(); as f) {
-              <p class="am-crf__foot-message" role="alert" data-testid="crf-footer-message">{{ f.text }}</p>
+              <p class="am-crf__foot-message" role="alert" data-testid="crf-footer-message">
+                {{ f.text }}
+                @if (f.link) {
+                  <a class="am-crf__link" [routerLink]="f.link" data-testid="crf-footer-link">{{ 'committee.changeRequest.banner.view' | translate }}</a>
+                }
+              </p>
             } @else {
               <span class="am-crf__foot-note">{{ 'committee.changeRequest.form.goesTo' | translate }}</span>
             }
@@ -504,7 +515,8 @@ export class CommitteeChangeRequestFormComponent implements LeaveGuarded, OnDest
     // A refusal belongs to the value it was about.
     this.form.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.noChanges.set(false);
-      if (this.footer() && !this.footer()!.reload) this.footer.set(null);
+      const f = this.footer();
+      if (f && !f.reload && !f.sticky) this.footer.set(null);
     });
 
     // The breadcrumb's parent is the committee.
@@ -737,15 +749,30 @@ export class CommitteeChangeRequestFormComponent implements LeaveGuarded, OnDest
   private failed(err: unknown): void {
     const refusal = this.text.refusal(err, this.request()?.number ?? null);
     if (refusal.code === 'CHANGE_REQUEST_ALREADY_OPEN') {
-      // Someone opened one first: take the reader to it.
+      // Someone opened one first. Nothing of this person's was saved — the
+      // server's create makes only a NEW request, and refused before writing —
+      // so their values stay on screen, the footer names the other request and
+      // links to it, and leaving still asks Keep editing · Discard (the form is
+      // dirty and `done` stays false). The refusal carries no id or number, so
+      // the open request is read again to name it.
+      const plain = { text: refusal.text, retry: false, reload: false, sticky: true };
       this.changeRequests.open(this.committeeId).subscribe({
         next: (open) => {
-          if (open.request) {
-            this.done = true;
-            void this.router.navigate(this.requestLink(open.request.id), { replaceUrl: true });
-          } else this.footer.set({ text: refusal.text, retry: false, reload: false });
+          const theirs = open.request;
+          this.footer.set(
+            theirs
+              ? {
+                  ...plain,
+                  text: this.translate.instant('committee.changeRequest.form.openedFirst', {
+                    n: this.format.number(theirs.number),
+                    name: theirs.requestedBy.name,
+                  }),
+                  link: this.requestLink(theirs.id),
+                }
+              : plain,
+          );
         },
-        error: () => this.footer.set({ text: refusal.text, retry: false, reload: false }),
+        error: () => this.footer.set(plain),
       });
       return;
     }

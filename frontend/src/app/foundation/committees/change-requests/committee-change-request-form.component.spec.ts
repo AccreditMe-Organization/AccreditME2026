@@ -284,18 +284,92 @@ describe('CommitteeChangeRequestFormComponent (ACC-240)', () => {
       expect(create).toHaveBeenCalledWith('c-1', { changes: { purpose: null }, reason: 'No longer needed.', submit: false });
     }));
 
-    it('ALREADY_OPEN: someone opened one first, so the page goes to it', fakeAsync(() => {
-      render();
-      settle();
-      create.and.callFake(() => throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'CHANGE_REQUEST_ALREADY_OPEN' } })));
-      open = () => of({ request: REQUEST({ id: 'cr-theirs' }), canRaise: false });
-      page.form.controls.quorumCount.setValue(6);
-      page.form.controls.reason.setValue('x');
-      settle();
-      press('crf-submit');
-      settle();
-      expect(navigate).toHaveBeenCalledWith(['/committees', 'c-1', 'change-requests', 'cr-theirs'], { replaceUrl: true });
-    }));
+    describe('someone else opened a request first (ALREADY_OPEN)', () => {
+      const theirs = () => REQUEST({ id: 'cr-theirs', number: 7, requestedBy: { id: 'u-badr', name: 'Badr Al-Shammari' } });
+
+      /** A has typed into the form; B's request now exists; A presses `button`. */
+      function aPresses(button: 'crf-save-draft' | 'crf-submit'): void {
+        render();
+        settle();
+        create.and.callFake(() => throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'CHANGE_REQUEST_ALREADY_OPEN' } })));
+        open = () => of({ request: theirs(), canRaise: false });
+        page.form.controls.quorumCount.setValue(6);
+        page.form.controls.reason.setValue('Two new members joined.');
+        page.form.markAsDirty();
+        settle();
+        press(button);
+        settle();
+      }
+
+      for (const button of ['crf-save-draft', 'crf-submit'] as const) {
+        it(`${button === 'crf-submit' ? 'Submit' : 'Save as draft'}: nothing of A's reaches B's request, A is told why with a link, and A's values stay`, fakeAsync(() => {
+          aPresses(button);
+          // Only a NEW request was ever asked for, once, with A's values; B's
+          // request was never written to.
+          expect(create).toHaveBeenCalledTimes(1);
+          expect(create.calls.mostRecent().args[1].changes).toEqual({ quorumCount: 6 });
+          expect(update).not.toHaveBeenCalled();
+          expect(submit).not.toHaveBeenCalled();
+          // A stays here: no navigation, the values on screen.
+          expect(navigate).not.toHaveBeenCalled();
+          expect(page.form.controls.quorumCount.value).toBe(6);
+          expect(page.form.controls.reason.value).toBe('Two new members joined.');
+          expect(field('quorumCount').querySelector('[data-testid="crf-changed"]')).not.toBeNull();
+          // Told plainly, naming B's request, with a link to it.
+          expect(text(el().querySelector('[data-testid="crf-footer-message"]'))).toContain(
+            "Change request 7 was opened by Badr Al-Shammari first. Your changes weren't saved.",
+          );
+          const link = el().querySelector('[data-testid="crf-footer-link"]')!;
+          expect(link.getAttribute('href')).toBe('/committees/c-1/change-requests/cr-theirs');
+          expect(text(link)).toBe('View request');
+        }));
+      }
+
+      it('the message stays while A keeps editing', fakeAsync(() => {
+        aPresses('crf-submit');
+        page.form.controls.quorumCount.setValue(7);
+        settle();
+        expect(text(el().querySelector('[data-testid="crf-footer-message"]'))).toContain('Change request 7 was opened by Badr Al-Shammari first.');
+      }));
+
+      it('leaving afterwards still asks Keep editing · Discard', fakeAsync(() => {
+        aPresses('crf-submit');
+        const answer = page.canLeave();
+        expect(answer).withContext('the guard let A leave without asking').not.toBeTrue();
+        expect(asked.length).toBe(1);
+        expect(asked[0]).toEqual(jasmine.objectContaining({ header: 'Discard changes?', acceptLabel: 'Discard', rejectLabel: 'Keep editing' }));
+        asked[0].reject!();
+        let left: boolean | undefined;
+        void (answer as Promise<boolean>).then((v) => (left = v));
+        flush();
+        expect(left).toBeFalse();
+      }));
+
+      it('if the open request cannot be read, the plain sentence, still no navigation', fakeAsync(() => {
+        render();
+        settle();
+        create.and.callFake(() => throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'CHANGE_REQUEST_ALREADY_OPEN' } })));
+        open = () => throwError(() => new HttpErrorResponse({ status: 500 }));
+        page.form.controls.quorumCount.setValue(6);
+        page.form.controls.reason.setValue('x');
+        settle();
+        press('crf-submit');
+        settle();
+        expect(text(el().querySelector('[data-testid="crf-footer-message"]'))).toBe(en.committee.changeRequest.refusal.CHANGE_REQUEST_ALREADY_OPEN);
+        expect(el().querySelector('[data-testid="crf-footer-link"]')).toBeNull();
+        expect(navigate).not.toHaveBeenCalled();
+        expect(page.form.controls.quorumCount.value).toBe(6);
+      }));
+
+      it('Arabic', fakeAsync(() => {
+        TestBed.inject(TranslateService).use('ar');
+        aPresses('crf-save-draft');
+        expect(text(el().querySelector('[data-testid="crf-footer-message"]'))).toContain(
+          ar.committee.changeRequest.form.openedFirst.replace('{{n}}', '7').replace('{{name}}', 'Badr Al-Shammari'),
+        );
+        expect(text(el().querySelector('[data-testid="crf-footer-link"]'))).toBe(ar.committee.changeRequest.banner.view);
+      }));
+    });
 
     it('unreachable: the footer says so and offers Retry, which saves again', fakeAsync(() => {
       render();

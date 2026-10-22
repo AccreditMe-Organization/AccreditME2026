@@ -1139,6 +1139,7 @@
         "reason": "Why is this change needed?",
         "reasonRequired": "Say why this change is needed.",
         "noChanges": "Change at least one field.",
+        "openedFirst": "Change request {{n}} was opened by {{name}} first. Your changes weren't saved.",
         "goesTo": "Goes to everyone who can approve committee changes.",
         "saveDraft": "Save as draft",
         "submit": "Submit for review",
