@@ -507,19 +507,18 @@ stageRules: {
 - Fix the matcher's `[^>]*` (`:73`), which stops at the first `>` inside an attribute (an `=>` or `a > b`) and would hide a later `ariaLabel`. It is replaced with an attribute-aware match.
 - Add a selftest, like `check:action-gating:selftest`: clean before, fails on an unnamed `<p-button icon>` naming the file, clean after.
 
-### 10.3 The Quality Manager is redirected from `/workflows`
+### 10.3 The Quality Manager is redirected from `/workflows` — DECIDED, not changed
 
-**Cause:**
-- The Workflows item sits in the Administration group (`nav-items.ts:213-217`), whose gate is `admin:access` (`:171`). `ROUTE_PERMISSIONS` therefore needs both keys (`:434-450`).
-- The route's `permissionGuard` (`app.routes.ts:83-89`) sends anyone without both to the landing page (`permission.guard.ts:70-73`).
-- QUALITY_MANAGER holds `workflows:view` (`role.seed.ts:102`) but not `admin:access`, by ACC-123's decision (`:34-37`). The API serves the reads on `workflows:view` alone (`workflow-template.controller.ts:56-57`, `:230-231`).
+**Ahmad, 22 Oct (Q-D):** only the tenant admin changes a workflow (its stages,
+stage rules, flags and transitions). Every other role gets no workflow setup
+pages, and sees a running workflow's progress only on the record it runs on
+(the committee's stage, for example). Lane A cancelled ACC-257, so the current
+redirect for non-admins **stays**. Nothing in §10.3 is built.
 
-**Pick (Q-D):** let `workflows:view` alone open the workflows pages, read-only.
-- The route's permission becomes `workflows:view` only.
-- Every write control there is already gated on `workflows:manage`, and `check:action-gating` checks it.
-- The rail shows "Workflows" outside Administration, under Quality management, for holders of `workflows:view` without `admin:access`.
-- Administration stays for tenant admins (ACC-123 unchanged).
-- **Why:** after this ticket a stage decides what can be done to a committee, so the people who run committees need to read those rules.
+The new stage-rule writes (§6.1) are guarded exactly as workflow editing is
+today: `@Permissions(WORKFLOWS_PERMISSIONS.MANAGE)` on the template
+controller, under `TenantGuard` + `PermissionGuard`. §16.1 records who can hold
+that check.
 
 ### 10.4 The other workflow screens show the server's English refusal
 
@@ -562,7 +561,7 @@ ACC-240's PR 3a and 3b merge first. 3a's `canRaise` (`openSummary()`) reads `com
 | **1 — backend, expand** | registries; migration; seed actions and flags; backfill and its spec; `StageRulesService`; template API read and write of `actions` / `flags` with the four refusals and cardinality; stage-config audit diff; `stageRules` on the committee read; the parity check; `GET /committees/form-choices` | `acc255_workflow_stage_rules` | **none** — the rules are written and served, but nothing decides by them |
 | *after PR 1 deploys* | `backfill:acc255-stage-rules` dry run → `-- --execute` → dry run (0); `check:acc255-stage-parity` = 0 differences | — | none |
 | **2 — backend, switch** | reference checks, counts, change-request policy and the approve target read the answer (§4.2-4.4); ACC-241 lock on `updateCommittee` and the member actions (§4.5); `isDissolvingStageKey` and `COMMITTEE_STAGE_POLICY` deleted; the key-name scan spec | none | **API only:** a direct edit outside Formation is refused (ACC-241, intended). Screens never offered it. |
-| **3 — frontend** | committee page and members panel read `stageRules` (`COMMITTEE_HEADER_POLICY` deleted); new refusal codes said; ACC-254; icon labels and the scan at 0; QM route; protected-refusal translations; Edit dialog and Request a change read `form-choices` | none | members panel hides actions a stage forbids (none today); otherwise nothing |
+| **3 — frontend** | committee page and members panel read `stageRules` (`COMMITTEE_HEADER_POLICY` deleted); new refusal codes said; ACC-254; icon labels and the scan at 0; protected-refusal translations; Edit dialog and Request a change read `form-choices` | none | members panel hides actions a stage forbids (none today); otherwise nothing |
 | **4 — frontend, after the drawing** | stage form: "What can be done to the record here" and flags | none | the new section |
 
 - PRs 1 and 2 are backend and deploy through Railway; PR 3 can merge while Railway is paused, once PR 2 is live (it reads `stageRules`).
@@ -635,12 +634,12 @@ any surprise to report. PR 1 does not merge until they are read.
 | D12 | One refusal code for every module's stage refusal, or one per module? | One, `STAGE_ACTION_NOT_ALLOWED`, carrying the action and stage names. It replaces step-238's unbuilt `COMMITTEE_EDIT_LOCKED`. |
 | D13 | Read rules before or after the backfill? | After. PR 1 writes and serves; PR 2 decides, once parity is 0 (§5.2). |
 | D14 | A record with no instance or no current stage? | Allows nothing, has no flags, logs ids. |
-| Q-A | Should Dissolved (and Dissolution Pending) stop membership changes? | **Keep today's behaviour in the seed** (allowed). Turning it off is one tick per stage once the screen exists, and a tenant decision. |
+| Q-A | Should Dissolved (and Dissolution Pending) stop membership changes? | **DECIDED (Ahmad, 22 Oct):** blocked in Dissolved, still allowed in Dissolution Pending. PR 1 still reproduces today (parity 0); the change is PR 2's one seeded rule change (§16.2). |
 | Q-B | IN_FORCE has no reader on `dev` except §4.2. Is that the flag's meaning? | **Yes**: "the committee is approved and governs", which is exactly what `RAISED_HERE` meant. The ticket's "in-force stages in committee-stage-counts" are not in the code (§2.1). |
 | Q-C | Where does `RECORD_FIELDS` live, and what reads it now? | **In `record-registry.ts`**, served on the template read; nothing reads it until step 2. |
-| Q-D | How does the Quality Manager reach `/workflows`? | **`workflows:view` alone opens the pages read-only, with a rail item outside Administration** (§10.3). The other choice is to remove `workflows:view` from QM, which the pickers need. |
+| Q-D | How does the Quality Manager reach `/workflows`? | **DECIDED (Ahmad, 22 Oct):** it doesn't. Only the tenant admin changes a workflow; everyone else sees progress on the record. The redirect stays (§10.3). Who can hold the check today: §16.1. |
 | Q-E | Fix the committee 403 by an endpoint or by granting `lookups:view` / `org:view`? | **The endpoint** (§10.5). Granting reaches into other modules' keys, and a tenant can remove them again. |
-| Q-F | The committees list shows Formation and Terms Review committees as "Active" (`committee-list.component.ts:35-37`). Should it read IN_FORCE? | **Not in this ticket** (nothing should change). `isInForce` is served from PR 1; the list status is a separate, visible decision. |
+| Q-F | The committees list shows Formation and Terms Review committees as "Active" (`committee-list.component.ts:35-37`). Should it read IN_FORCE? | **ACC-256** (Ahmad, 22 Oct). Not in this ticket; `isInForce` is served from PR 1 for it. |
 | Q-G | `check:icon-labels`: fix the 14 now, or keep the ratchet? | **Fix all 14 and gate at 0** (ACC-120's rule). |
 
 ---
@@ -651,3 +650,60 @@ any surprise to report. PR 1 does not merge until they are read.
 - **The stage form section**, until the drawing exists (PR 4 waits for it).
 - **Moving the change request's own moves onto actions** (D7).
 - **The committees list's status wording** (Q-F).
+
+---
+
+## 16. Ahmad's answers (22 Oct), and what they change
+
+### 16.1 Who can hold the workflow-edit check today (Q-D)
+
+The check that guards workflow editing is `workflows:manage`, the
+`@Permissions(WORKFLOWS_PERMISSIONS.MANAGE)` on every write in
+`workflow-template.controller.ts` (:62, :82-136, :149, :160, :183-217, :239-272).
+The new stage-rule writes ride the existing stage routes, so they carry the
+same check.
+
+**Seeded holders** (`role.seed.ts`):
+- `TENANT_ADMIN` — through `ALL` (:25-27). Its permission set is frozen (ACC-120), so this grant cannot be removed.
+- `PLATFORM_ADMIN` — through `ALL` (:68). It cannot be assigned inside a tenant (`role.service.ts:681-686`, `PlatformRoleNotAssignableException`), and its permissions cannot be edited (:521-523). It reaches only the platform organisation's own users.
+- No other seeded role holds it:
+  - `QUALITY_MANAGER` holds `workflows:view` only (:102).
+  - `VIEWER` (:183-200) and `READ_ONLY_ADMIN` (:247) take view keys only (`readOnly()` at :50-51 keeps `VIEW`).
+  - `QUALITY_OFFICER`, `AUDITOR` and `BASE_USER` hold no workflow key.
+- The fixtures' custom roles hold neither key (`hospital.fixture.ts:400`, `university.fixture.ts:327`).
+
+**But the key is GRANTABLE, so the check is NOT tenant-admin-only today.**
+- `assertKnownAndGrantable()` (`permission-grantability.ts`) refuses only `platform:*` keys inside a tenant and keys on `PERMISSIONS_NOT_YET_CHECKED`.
+- `workflows:manage` is neither. So a tenant admin can give it to any custom role, or to any system role except the frozen root role, through the permission matrix or role creation.
+- The shared database could not be read (its password was rotated), so whether any tenant has already done so is unknown. That is the first read-only count to take (§13).
+
+**Stopping here, as asked.** No grant is changed in this ticket. Making
+workflow editing tenant-admin-only needs one of these, a decision for Ahmad:
+- `workflows:manage` fixed to the root role (refused by `assertGrantable` everywhere else, with existing holders reported per ACC-101's revocation rule);
+- or the stage-rule writes checking the ROOT ROLE rather than a permission.
+
+PR 1 builds the guard exactly as workflow editing has it today.
+
+### 16.2 Member changes in Dissolved (Q-A) — PR 2's one seeded rule change
+
+- **PR 1** seeds and backfills today's rules exactly (members allowed in every stage), so `check:acc255-stage-parity` reads 0 differences.
+- **PR 2** changes one seeded rule: the COMMITTEE seed's `dissolved` stage loses `add_member`, `remove_member` and `change_member_role`; `dissolution_pending` keeps them.
+  - **Backfill step:** `npm run backfill:acc255-dissolved-membership`.
+    - It removes the three action rows from every COMMITTEE stage keyed `dissolved` whose rows still equal PR 1's seed. A stage a tenant has since configured is left alone and reported.
+    - It runs dry, then executed, then dry again (0); `BACKFILL_TX`; customer organisations refused; one audit row per organisation.
+  - **Refusal:** `STAGE_ACTION_NOT_ALLOWED` (§7), with `action` and the stage's names.
+  - **Wording:**
+    - "Members can't be changed while the committee is {stage}." / «لا يمكن تغيير الأعضاء بينما اللجنة {stage}.»
+    - In the members panel, the add, remove and change-role controls are absent in that stage (PR 3), so the sentence is seen only by an API caller or a stale page.
+  - **The parity check** is updated in PR 2 to expect exactly this difference and nothing else.
+
+### 16.3 New organisations get the rules from the seed, not the backfill
+
+- The backfill refuses customer organisations (§5.4), so no customer may depend on it.
+- A new organisation is bootstrapped through `TenantService.bootstrap()` → `seedDefaultWorkflows()` → `applyWorkflowSeed()` (`workflow-seed-apply.ts`). That writes each seeded stage's `actions` and `flags` when it creates the stage (§5.3).
+- A real-database spec bootstraps an organisation through `applyWorkflowSeed()` and requires its COMMITTEE and COMMITTEE_CHANGE_REQUEST stages to carry exactly §4.1's actions and flags, with no backfill run.
+- The parity check then reads 0 for it.
+
+### 16.4 Q-F is ACC-256
+
+The committees list's status wording is ACC-256. PR 1 serves `isInForce` for it and changes nothing on screen.
