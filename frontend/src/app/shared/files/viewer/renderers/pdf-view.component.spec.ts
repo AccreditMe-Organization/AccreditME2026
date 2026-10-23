@@ -6,26 +6,39 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/
 import { PdfJsLoader } from '../pdf-loader';
 import { FilePdfViewComponent } from './pdf-view.component';
 
-/** A pdf.js stand-in: three A4 pages, renders that resolve at once, and spies on teardown. */
-function pdfStub() {
+/**
+ * A pdf.js stand-in: three A4 pages and spies on teardown. Renders resolve at
+ * once, or — with `hold` — only when the test releases them, so a spec can see
+ * a page between "asked to paint" and "painted". Every render is recorded.
+ */
+function pdfStub(options: { hold?: boolean } = {}) {
   const loadingDestroy = jasmine.createSpy('loadingTask.destroy').and.resolveTo(undefined);
   const getDocument = jasmine.createSpy('getDocument');
+  const renders: { release: () => void }[] = [];
   const page = {
     getViewport: ({ scale }: { scale: number }) => ({ width: 595 * scale, height: 842 * scale }),
-    render: () => ({ promise: Promise.resolve(), cancel: () => undefined }),
+    render: () => {
+      let release = (): void => undefined;
+      const promise = options.hold ? new Promise<void>((r) => (release = r)) : Promise.resolve();
+      renders.push({ release });
+      return { promise, cancel: () => undefined };
+    },
   };
   const doc = { numPages: 3, getPage: () => Promise.resolve(page) };
   getDocument.and.callFake(() => ({ promise: Promise.resolve(doc), destroy: loadingDestroy }));
   const module = { PixelsPerInch: { PDF_TO_CSS_UNITS: 96 / 72 }, getDocument };
-  return { module, getDocument, loadingDestroy };
+  return { module, getDocument, loadingDestroy, renders };
 }
+
+/** How long a spec waits for the browser to report a page near the view and paint it. */
+const PAINT_TIMEOUT_MS = 10_000;
 
 describe('FilePdfViewComponent (ACC-189)', () => {
   let fixture: ComponentFixture<FilePdfViewComponent>;
   let stub: ReturnType<typeof pdfStub>;
 
-  async function setup() {
-    stub = pdfStub();
+  async function setup(options: { hold?: boolean } = {}) {
+    stub = pdfStub(options);
     TestBed.configureTestingModule({
       imports: [FilePdfViewComponent],
       providers: [
@@ -44,6 +57,26 @@ describe('FilePdfViewComponent (ACC-189)', () => {
   }
 
   afterEach(() => fixture?.destroy());
+
+  /**
+   * ACC-253 — waits for `condition`, polling with a bounded timeout. Never a
+   * fixed number of ticks: a page is painted only after the browser's
+   * IntersectionObserver reports it near the view and pdf.js's render settles,
+   * and how long that takes depends on how loaded the machine is. A fixed
+   * budget (it was 20 × 25 ms) failed on a slow CI run.
+   */
+  async function until(condition: () => boolean, what: string): Promise<void> {
+    const deadline = Date.now() + PAINT_TIMEOUT_MS;
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error(`timed out after ${PAINT_TIMEOUT_MS} ms waiting for ${what} (renders asked for: ${stub.renders.length})`);
+      await new Promise((r) => setTimeout(r, 10));
+      fixture.detectChanges();
+    }
+    fixture.detectChanges();
+  }
+
+  /** The renderer's own completion signal: page n is marked rendered only after its paint settles. */
+  const painted = (n: number) => () => fixture.componentInstance.pages()[n - 1]?.rendered === true;
 
   it('opens the bytes with our pinned options and reports the page count', async () => {
     let count = 0;
@@ -81,14 +114,23 @@ describe('FilePdfViewComponent (ACC-189)', () => {
 
   it('pages near the view are PAINTED, not left "Loading page n…"', async () => {
     await setup();
-    for (let i = 0; i < 20 && fixture.nativeElement.querySelector('.am-fpdf__pending'); i++) {
-      await new Promise((r) => setTimeout(r, 25));
-      fixture.detectChanges();
-    }
+    await until(painted(1), 'page 1 to be painted');
     const first = fixture.nativeElement.querySelector('.am-fpdf__page') as HTMLElement;
     expect(first.querySelector('.am-fpdf__pending')).toBeNull();
     expect((first.querySelector('canvas') as HTMLCanvasElement).width).toBeGreaterThan(0);
-  });
+  }, PAINT_TIMEOUT_MS + 5_000);
+
+  it('a page says "Loading page n…" until its paint finishes, and not after', async () => {
+    await setup({ hold: true });
+    await until(() => stub.renders.length > 0, 'page 1 to be asked to paint');
+    const first = fixture.nativeElement.querySelector('.am-fpdf__page') as HTMLElement;
+    // Asked to paint, not yet painted: still pending, however long it takes.
+    expect(painted(1)()).toBeFalse();
+    expect(first.querySelector('.am-fpdf__pending')).not.toBeNull();
+    for (const r of stub.renders) r.release();
+    await until(painted(1), 'page 1 to be painted once released');
+    expect(first.querySelector('.am-fpdf__pending')).toBeNull();
+  }, PAINT_TIMEOUT_MS * 2 + 5_000);
 
   it('a zoom level is a percentage of the printed size: 150% is 1.5 × the CSS size of a point', async () => {
     await setup();
