@@ -10,12 +10,14 @@ import { EngineTx, WorkflowService } from '../../workflow/workflow.service';
 import { CHANGE_REQUEST_STAGE_KEYS } from '../../workflow/workflow-stage-keys';
 import { lockWorkflowInstance } from '../../task/stage-deadline';
 import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-reference-checks';
+import { committeeTypeValues } from '../committee-type-values';
 import { ChangeRequestRefusal } from './change-request-refusal';
 import {
   ACTION_TARGET_STAGE,
   ChangeRequestAction,
   assertCommitteeAllowsRaise,
   awaitsDecision,
+  committeeAllowsRaise,
   assertCommitteeStageAllows,
   assertRequestStageAllows,
   requestStagePolicy,
@@ -85,6 +87,20 @@ export interface ChangeRequestActions {
   reject: boolean;
 }
 
+/** ACC-240 — a person named on a request, read within its organisation. */
+export interface ChangeRequestPerson {
+  id: string;
+  name: string;
+}
+
+/**
+ * ACC-240 — the name of each id-valued field's value (a type, an owning unit,
+ * a committee), keyed by the id. Only the ids this response names, resolved
+ * within its organisation, inactive values included: a closed request still
+ * names what it named. An id that does not resolve is absent.
+ */
+export type ChangeRequestLabels = Record<string, { en: string; ar: string | null }>;
+
 export interface IChangeRequest {
   id: string;
   committeeId: string;
@@ -101,14 +117,31 @@ export interface IChangeRequest {
   returnNote: string | null;
   rejectionReason: string | null;
   decidedById: string | null;
+  /** ACC-240 — whoever last returned, approved or rejected it. */
+  decidedBy: ChangeRequestPerson | null;
   decidedAt: Date | null;
   appliedAt: Date | null;
   termsTaskId: string | null;
   withdrawnById: string | null;
+  /** ACC-240 — whoever withdrew it. */
+  withdrawnBy: ChangeRequestPerson | null;
   withdrawnAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   actions: ChangeRequestActions;
+  /** ACC-240 — names for the ids in `changes` and `fromValues`. */
+  labels: ChangeRequestLabels;
+}
+
+/** ACC-240 — the committee's open request, for its banner, and whether this viewer may raise one now. */
+export interface IOpenChangeRequest {
+  request: IChangeRequest | null;
+  /**
+   * The create call's own three checks, answered without creating:
+   * committees:edit_details, the committee's stage allows a request
+   * (COMMITTEE_STAGE_POLICY.raise), and no open request (drafts count).
+   */
+  canRaise: boolean;
 }
 
 export interface IChangeRequestPage {
@@ -131,6 +164,8 @@ export type ChangeImpact =
 export interface IChangeRequestPreview {
   changedFields: ChangeField[];
   impacts: ChangeImpact[];
+  /** ACC-240 — names for the ids in `impacts` (the from and to of a unit or a committee). */
+  labels: ChangeRequestLabels;
 }
 
 /** Who is asking: their id and the permissions their roles grant (TenantGuard, per request). */
@@ -188,7 +223,7 @@ export class CommitteeChangeRequestService {
         select: { id: true, number: true },
       });
       const states = await requestStageKeys(tx, existing.map((r) => r.id), organizationId);
-      if (existing.some((r) => states.get(r.id)?.open ?? true)) {
+      if (existing.some((r) => isOpen(states.get(r.id)))) {
         throw new ChangeRequestRefusal('CHANGE_REQUEST_ALREADY_OPEN');
       }
 
@@ -544,11 +579,12 @@ export class CommitteeChangeRequestService {
   async getOne(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
     const row = await this.prisma.committeeChangeRequest.findFirst({ where: { id, organizationId }, include: REQUEST_INCLUDE });
     if (!row) throw new NotFoundException('Change request not found');
-    const [stages, committeeStage] = await Promise.all([
+    const [stages, committeeStage, extras] = await Promise.all([
       requestStageKeys(this.prisma, [row.id], organizationId),
       committeeStageKey(this.prisma, row.committeeId, organizationId),
+      this.loadExtras([row], organizationId),
     ]);
-    return toDto(row, stages.get(row.id)?.key ?? null, committeeStage, viewer);
+    return toDto(row, stages.get(row.id)?.key ?? null, committeeStage, viewer, extras);
   }
 
   /** The committee's requests — its panel and See all — searched, sorted and paged here (they are few). */
@@ -558,11 +594,12 @@ export class CommitteeChangeRequestService {
       where: { committeeId, organizationId },
       include: REQUEST_INCLUDE,
     });
-    const [stages, committeeStage] = await Promise.all([
+    const [stages, committeeStage, extras] = await Promise.all([
       requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId),
       committeeStageKey(this.prisma, committeeId, organizationId),
+      this.loadExtras(rows, organizationId),
     ]);
-    const all = rows.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStage, viewer));
+    const all = rows.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStage, viewer, extras));
 
     const needle = (query.q ?? '').trim().replace(/^#/, '').toLocaleLowerCase();
     const matching = needle
@@ -580,10 +617,29 @@ export class CommitteeChangeRequestService {
     return { items: sorted.slice(skip, skip + (query.take ?? PAGE)), total: all.length, matching: matching.length };
   }
 
-  /** The committee's open request, for its banner — or null. */
-  async openSummary(committeeId: string, organizationId: string, viewer: ChangeRequestViewer): Promise<{ request: IChangeRequest | null }> {
-    const page = await this.list(committeeId, { sort: 'number', dir: 'desc' }, organizationId, viewer);
-    return { request: page.items.find((r) => requestStagePolicy(r.status).open) ?? null };
+  /**
+   * The committee's open request, for its banner — or null — and `canRaise`:
+   * whether `create()` would accept a request from this viewer now. It is the
+   * create call's own three checks, read from the same functions (the
+   * permission, `committeeAllowsRaise()`, `isOpen()`), never a second copy.
+   * Create re-checks all three under the committee's row lock; this is a read.
+   */
+  async openSummary(committeeId: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IOpenChangeRequest> {
+    await this.loadCommittee(committeeId, organizationId);
+    const rows = await this.prisma.committeeChangeRequest.findMany({
+      where: { committeeId, organizationId },
+      include: REQUEST_INCLUDE,
+      orderBy: { number: 'desc' },
+    });
+    const [states, committeeStage] = await Promise.all([
+      requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId),
+      committeeStageKey(this.prisma, committeeId, organizationId),
+    ]);
+    const open = rows.find((r) => isOpen(states.get(r.id))) ?? null;
+    const canRaise = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS) && committeeAllowsRaise(committeeStage) && !open;
+    if (!open) return { request: null, canRaise };
+    const extras = await this.loadExtras([open], organizationId);
+    return { request: toDto(open, states.get(open.id)?.key ?? null, committeeStage, viewer, extras), canRaise };
   }
 
   /** Every request under review that the viewer may decide: not their own. */
@@ -600,7 +656,8 @@ export class CommitteeChangeRequestService {
     for (const r of waiting) {
       if (!committeeStages.has(r.committeeId)) committeeStages.set(r.committeeId, await committeeStageKey(this.prisma, r.committeeId, organizationId));
     }
-    return waiting.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStages.get(r.committeeId) ?? null, viewer));
+    const extras = await this.loadExtras(waiting, organizationId);
+    return waiting.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStages.get(r.committeeId) ?? null, viewer, extras));
   }
 
   /** What approving these changes would do — for Request a change, before anything is saved. */
@@ -635,10 +692,69 @@ export class CommitteeChangeRequestService {
     if ('parentCommitteeId' in changes) impacts.push({ code: 'PARENT', ...span('parentCommitteeId') });
     if ('reportingToCommitteeId' in changes) impacts.push({ code: 'REPORTS_TO', ...span('reportingToCommitteeId') });
     if (fields.length > 0) impacts.push({ code: 'TERMS_TASK' });
-    return { changedFields: fields, impacts };
+    const ids: Record<'typeValueId' | 'orgUnitId' | 'committeeId', string[]> = { typeValueId: [], orgUnitId: [], committeeId: [] };
+    for (const impact of impacts) {
+      const bucket = impact.code === 'OWNING_UNIT' ? ids.orgUnitId : impact.code === 'PARENT' || impact.code === 'REPORTS_TO' ? ids.committeeId : null;
+      if (bucket && 'from' in impact) for (const v of [impact.from, impact.to]) if (typeof v === 'string') bucket.push(v);
+    }
+    return { changedFields: fields, impacts, labels: await this.resolveLabels(ids, organizationId) };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  /**
+   * ACC-240 — the people and the value names the given requests carry, each
+   * read once for all of them, every read scoped by organisation. A request's
+   * own labels are then picked from these by `toDto()`, so each response names
+   * only its own ids.
+   */
+  private async loadExtras(rows: RequestRow[], organizationId: string): Promise<DtoExtras> {
+    const personIds = [...new Set(rows.flatMap((r) => [r.decidedById, r.withdrawnById]).filter((id): id is string => !!id))];
+    const ids: Record<'typeValueId' | 'orgUnitId' | 'committeeId', string[]> = { typeValueId: [], orgUnitId: [], committeeId: [] };
+    for (const row of rows) {
+      for (const values of [row.changes, row.fromValues] as unknown[]) {
+        if (!values || typeof values !== 'object') continue;
+        for (const [field, value] of Object.entries(values as Record<string, unknown>)) {
+          const bucket = LABELLED_FIELDS[field as ChangeField];
+          if (bucket && typeof value === 'string') ids[bucket].push(value);
+        }
+      }
+    }
+    const [people, labels] = await Promise.all([
+      personIds.length
+        ? this.prisma.user.findMany({ where: { id: { in: personIds }, organizationId }, select: { id: true, name: true } })
+        : Promise.resolve([] as ChangeRequestPerson[]),
+      this.resolveLabels(ids, organizationId),
+    ]);
+    return { people: new Map(people.map((p) => [p.id, p])), labels };
+  }
+
+  /**
+   * ACC-240 — names for type, unit and committee ids, within the organisation
+   * only (another organisation's id resolves to nothing), inactive values
+   * included. Types go through ACC-246's resolver, which reads the shared
+   * system values and this organisation's own rows, with its label overrides.
+   */
+  private async resolveLabels(
+    ids: Record<'typeValueId' | 'orgUnitId' | 'committeeId', string[]>,
+    organizationId: string,
+  ): Promise<ChangeRequestLabels> {
+    const unique = (list: string[]) => [...new Set(list)];
+    const [types, units, committees] = await Promise.all([
+      committeeTypeValues(this.prisma, organizationId, unique(ids.typeValueId)),
+      ids.orgUnitId.length
+        ? this.prisma.orgUnit.findMany({ where: { id: { in: unique(ids.orgUnitId) }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
+        : Promise.resolve([]),
+      ids.committeeId.length
+        ? this.prisma.committee.findMany({ where: { id: { in: unique(ids.committeeId) }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
+        : Promise.resolve([]),
+    ]);
+    const labels: ChangeRequestLabels = {};
+    for (const t of types.values()) labels[t.id] = { en: t.labelEn, ar: t.labelAr };
+    for (const u of units) labels[u.id] = { en: u.nameEn, ar: u.nameAr };
+    for (const c of committees) labels[c.id] = { en: c.nameEn, ar: c.nameAr };
+    return labels;
+  }
 
   private async loadCommittee(committeeId: string, organizationId: string): Promise<CommitteeRow> {
     const committee = await this.prisma.committee.findFirst({ where: { id: committeeId, organizationId } });
@@ -774,7 +890,44 @@ function referenceChange(committeeId: string, organizationId: string, changes: C
   };
 }
 
-function toDto(row: RequestRow, status: string | null, committeeStage: string | null, viewer: ChangeRequestViewer): IChangeRequest {
+/** Which label kind each id-valued field takes. */
+const LABELLED_FIELDS: Partial<Record<ChangeField, 'typeValueId' | 'orgUnitId' | 'committeeId'>> = {
+  typeValueId: 'typeValueId',
+  orgUnitId: 'orgUnitId',
+  parentCommitteeId: 'committeeId',
+  reportingToCommitteeId: 'committeeId',
+};
+
+/** ACC-240 — what `loadExtras()` read for a set of requests. */
+interface DtoExtras {
+  people: Map<string, ChangeRequestPerson>;
+  labels: ChangeRequestLabels;
+}
+
+/** A request is open unless its stage says closed; a request with no instance counts as open (fail safe). */
+function isOpen(state: { open: boolean } | undefined): boolean {
+  return state?.open ?? true;
+}
+
+/** This request's own labels: only the ids its changes and from-values name. */
+function labelsFor(row: RequestRow, all: ChangeRequestLabels): ChangeRequestLabels {
+  const out: ChangeRequestLabels = {};
+  for (const values of [row.changes, row.fromValues] as unknown[]) {
+    if (!values || typeof values !== 'object') continue;
+    for (const [field, value] of Object.entries(values as Record<string, unknown>)) {
+      if (LABELLED_FIELDS[field as ChangeField] && typeof value === 'string' && all[value]) out[value] = all[value]!;
+    }
+  }
+  return out;
+}
+
+function toDto(
+  row: RequestRow,
+  status: string | null,
+  committeeStage: string | null,
+  viewer: ChangeRequestViewer,
+  extras: DtoExtras,
+): IChangeRequest {
   const own = row.requestedById === viewer.userId;
   const approver = hasPermission(viewer, COMMITTEES_PERMISSIONS.APPROVE);
   const editor = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
@@ -796,10 +949,12 @@ function toDto(row: RequestRow, status: string | null, committeeStage: string | 
     returnNote: row.returnNote,
     rejectionReason: row.rejectionReason,
     decidedById: row.decidedById,
+    decidedBy: (row.decidedById && extras.people.get(row.decidedById)) || null,
     decidedAt: row.decidedAt,
     appliedAt: row.appliedAt,
     termsTaskId: row.termsTaskId,
     withdrawnById: row.withdrawnById,
+    withdrawnBy: (row.withdrawnById && extras.people.get(row.withdrawnById)) || null,
     withdrawnAt: row.withdrawnAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -811,6 +966,7 @@ function toDto(row: RequestRow, status: string | null, committeeStage: string | 
       return: deciding && stage('return'),
       reject: deciding && stage('reject'),
     },
+    labels: labelsFor(row, extras.labels),
   };
 }
 
