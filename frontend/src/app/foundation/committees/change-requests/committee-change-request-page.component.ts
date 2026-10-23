@@ -52,9 +52,9 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
       @case ('loading') {
         <div class="am-crp" aria-busy="true" data-testid="crp-loading">
           <span class="sr-only" role="status">{{ 'committee.changeRequest.page.loading' | translate }}</span>
-          <div class="am-crp__skel" style="block-size:64px"></div>
-          <div class="am-crp__skel" style="block-size:200px"></div>
-          <div class="am-crp__skel" style="block-size:140px"></div>
+          <div class="am-crp__skel am-crp__skel--header"></div>
+          <div class="am-crp__skel am-crp__skel--changes"></div>
+          <div class="am-crp__skel am-crp__skel--history"></div>
         </div>
       }
       @case ('error') {
@@ -249,6 +249,9 @@ function same(a: ChangeValue | undefined, b: ChangeValue | undefined): boolean {
       .am-crp__state{display:flex;align-items:center;gap:var(--am-space-8);padding:var(--am-space-16) 0;color:var(--am-ink-700)}
       .am-crp__state--block{flex-direction:column;align-items:flex-start}
       .am-crp__skel{border-radius:var(--am-radius-card);background:var(--am-skeleton-shimmer)}
+      .am-crp__skel--header{block-size:64px}
+      .am-crp__skel--changes{block-size:200px}
+      .am-crp__skel--history{block-size:140px}
       .am-crp__chips{display:inline-flex;flex-wrap:wrap;gap:var(--am-space-6);align-items:center}
       .am-crp__chip{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--am-neutral-chip-bg);border:1px solid var(--am-neutral-chip-border);color:var(--am-neutral-chip-ink);white-space:nowrap}
       .am-crp__chip[data-status='under_review']{background:var(--am-info-bg);border-color:var(--am-info-border);color:var(--am-info-ink)}
