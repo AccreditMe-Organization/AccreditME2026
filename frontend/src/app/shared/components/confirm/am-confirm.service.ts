@@ -17,7 +17,7 @@ export interface AmConfirmOptions {
   /** The consequence, already translated. */
   message: string;
   /**
-   * ACC-240 — optional lines listed under the message, already translated
+   * ACC-240 — optional lines listed before the message, already translated
    * (Approve's "Quorum: 5 → 6"). Still a confirm: one question, two buttons,
    * no fields. Without it the confirm is exactly as before.
    */
