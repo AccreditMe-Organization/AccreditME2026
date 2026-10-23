@@ -66,6 +66,65 @@ describe('CommitteeChangeRequestService — organisation scoping (ACC-239)', () 
   });
 });
 
+describe('CommitteeChangeRequestService — the ACC-240 reads, organisation scoping', () => {
+  /** A request in ORG_A naming a type, a unit, two committees and two people. */
+  function withRequest() {
+    const { prisma, service } = setup();
+    const ext = prisma as unknown as Record<string, Record<string, jest.Mock>>;
+    ext['user'] = { findMany: jest.fn().mockResolvedValue([]) };
+    ext['orgUnit'] = { findMany: jest.fn().mockResolvedValue([]) };
+    ext['committee']!['findMany'] = jest.fn().mockResolvedValue([]);
+    ext['lookupCategory'] = { findFirst: jest.fn().mockResolvedValue({ id: 'cat' }) };
+    ext['lookupValue'] = { findMany: jest.fn().mockResolvedValue([]) };
+    prisma.committeeChangeRequest.findFirst.mockResolvedValue({
+      id: 'cr-1',
+      committeeId: 'c-1',
+      requestedById: 'u-req',
+      decidedById: 'u-dec',
+      withdrawnById: 'u-wd',
+      changes: { typeValueId: 't-new', orgUnitId: 'unit-new', parentCommitteeId: 'c-parent' },
+      fromValues: { reportingToCommitteeId: 'c-old' },
+      committee: { nameEn: 'Council', nameAr: null },
+      requestedBy: { id: 'u-req', name: 'Requester' },
+    });
+    return { prisma: ext, service };
+  }
+
+  it("should NOT return records belonging to a different tenant — the decider's and withdrawer's names are read within the organisation", async () => {
+    const { prisma, service } = withRequest();
+    await service.getOne('cr-1', ORG_A, viewer);
+    expect(prisma['user']!['findMany']).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['u-dec', 'u-wd'] }, organizationId: ORG_A } }),
+    );
+  });
+
+  it('should NOT return records belonging to a different tenant — unit and committee labels are read within the organisation', async () => {
+    const { prisma, service } = withRequest();
+    await service.getOne('cr-1', ORG_A, viewer);
+    expect(prisma['orgUnit']!['findMany']).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['unit-new'] }, organizationId: ORG_A } }),
+    );
+    expect(prisma['committee']!['findMany']).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['c-parent', 'c-old'] }, organizationId: ORG_A } }),
+    );
+  });
+
+  it("should NOT return records belonging to a different tenant — type labels are the shared system values and this organisation's own only", async () => {
+    const { prisma, service } = withRequest();
+    await service.getOne('cr-1', ORG_A, viewer);
+    expect(prisma['lookupValue']!['findMany']).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: { in: ['t-new'] }, OR: [{ organizationId: null }, { organizationId: ORG_A }] }) }),
+    );
+  });
+
+  it("should NOT return records belonging to a different tenant — the open read checks the committee by id AND organisation before anything else", async () => {
+    const { prisma, service } = setup();
+    await expect(service.openSummary('c-1', ORG_B, viewer)).rejects.toThrow('Committee not found');
+    expect(prisma.committee.findFirst).toHaveBeenCalledWith({ where: { id: 'c-1', organizationId: ORG_B } });
+    expect(prisma.committeeChangeRequest.findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('normaliseChanges (ACC-239)', () => {
   const committee = {
     id: 'c-1',

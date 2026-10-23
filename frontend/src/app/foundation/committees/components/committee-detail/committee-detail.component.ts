@@ -725,11 +725,15 @@ export class CommitteeDetailComponent implements OnInit {
     this.tasksPanel()?.reload();
   }
 
+  // ACC-240 — the question names the person; the consequence is the server's:
+  // no date is sent, so the membership ends now (committees.service.ts:397,
+  // :401–403), and a LEFT event keeps it in the history (:406–413). A person has
+  // one name (User.name, no Arabic form), so there is no bilingual choice here.
   onRemoveMember(member: CommitteeMemberDto): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      message: this.translate.instant('committee.confirmRemoveMember', { name: this.userName(member.userId) }),
-      header: this.translate.instant('common.confirm'),
+      header: this.translate.instant('committee.confirmRemoveMember', { name: this.userName(member.userId) }),
+      message: this.translate.instant('committee.confirmRemoveMemberMessage'),
       acceptLabel: this.translate.instant('common.remove'),
       accept: () => {
         this.committeeService.removeMember(this.committeeId, member.id, {}).subscribe({

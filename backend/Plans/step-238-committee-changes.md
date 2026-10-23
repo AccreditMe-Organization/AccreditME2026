@@ -405,6 +405,13 @@ All are sent after commit with the stored-notice shape (`NotificationService.cre
 
 ## 6. PR 3 — The change request screens (ACC-240)
 
+**SUPERSEDED (21 Oct) by `backend/Plans/step-240-change-request-screens.md`**,
+written against the code ACC-239 actually shipped. It names the three reads the
+screens still need (G1 `canRaise`, G2 the decider's and withdrawer's names,
+G3 labels for id-valued fields), splits PR 3 into 3a and 3b, and lists the
+strings in both languages. Everything below in §6 is the pre-build plan, kept
+as history; where the two disagree, step 240 is current.
+
 ### 6.1 Screen → code map
 
 | Screen in the drawing | Component | Exists? | Endpoint |
