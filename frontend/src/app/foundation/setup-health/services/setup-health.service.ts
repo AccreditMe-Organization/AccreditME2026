@@ -18,7 +18,10 @@ export type SetupConditionType =
   // ACC-185 — the organisation's SharePoint can no longer be reached.
   | 'STORAGE_ACCESS_WITHDRAWN'
   // ACC-185 — the SharePoint client secret expires within 30 days.
-  | 'STORAGE_SECRET_EXPIRING';
+  | 'STORAGE_SECRET_EXPIRING'
+  // ACC-120 slice 2 — an acting head with no end date, 90 days on. Listed by the
+  // backend since then; the page shows it since slice 11 (PR D).
+  | 'ACTING_HEAD_OPEN_ENDED';
 
 export type SetupConditionSeverity = 'BLOCKS_WORK' | 'AT_RISK';
 
@@ -48,6 +51,10 @@ export interface SetupConditionSubject {
   reason?: 'SECRET_INVALID' | 'CONSENT_REVOKED' | 'GRANT_REMOVED' | 'LIBRARY_GONE' | null;
   expiresOn?: string;
   daysLeft?: number;
+  // ACC-120 slice 2 — ACTING_HEAD_OPEN_ENDED: the unit, and when the cover began.
+  orgUnitNameEn?: string;
+  orgUnitNameAr?: string | null;
+  validFrom?: string;
 }
 
 export interface SetupConditionDto {

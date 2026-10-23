@@ -147,7 +147,8 @@
         "headship": "الرئاسة",
         "headshipDetails": "تفاصيل الرئاسة",
         "loadingHeadship": "جارٍ تحميل الرئاسة…",
-        "headshipFailed": "تعذّر تحميل الرئاسة"
+        "headshipFailed": "تعذّر تحميل الرئاسة",
+        "openUnit": "فتح الوحدة"
       },
       "attention": {
         "ORG_UNIT_WITHOUT_HEAD": "▲ بلا رئيس",
@@ -169,7 +170,99 @@
       "showInUsers": "عرض في المستخدمين",
       "showInCommittees": "عرض في اللجان"
     },
-    "deactivateFailed": "تعذّر إلغاء تفعيل الوحدة."
+    "deactivateFailed": "تعذّر إلغاء تفعيل الوحدة.",
+    "record": {
+      "notFound": "هذه الوحدة غير موجودة، أو لا يمكنك فتحها.",
+      "backToTree": "العودة إلى الهيكل التنظيمي",
+      "loadFailed": "تعذّر تحميل هذه الوحدة.",
+      "moreActionsFor": "إجراءات أخرى لـ{{unit}}",
+      "stateActive": "نشطة",
+      "stateDeactivated": "معطّلة",
+      "deactivatedOnBy": "عُطّلت في {{date}} بواسطة {{person}}",
+      "deactivatedOn": "عُطّلت في {{date}}",
+      "deactivatedNoDate": "معطّلة · لم يُسجَّل تاريخ",
+      "noReactivation": "لا يمكن إعادة تفعيل الوحدات المعطّلة من AccreditMe.",
+      "topUnit": "لا يوجد — هذه هي الوحدة العليا",
+      "nameHidden": "الاسم مخفي",
+      "outsideOrganization": "شخص من خارج هذه المنظمة",
+      "hiddenPersonWithPosition": "{{position}} (الاسم مخفي)",
+      "incoming": "قادم",
+      "actingUntil": "حتى {{date}}",
+      "actingName": "بالإنابة: {{name}}",
+      "stripSince": "{{severity}} منذ {{date}}",
+      "fixHeadship": "الإصلاح في الرئاسة",
+      "fixType": "تحديد النوع",
+      "subUnits": "الوحدات الفرعية",
+      "noSubUnits": "لا توجد وحدات فرعية",
+      "subUnitsOf": "الوحدات الفرعية لـ{{unit}}",
+      "searchSubUnits": "البحث في الوحدات الفرعية",
+      "showInTree": "عرض في الشجرة",
+      "people": "الأشخاص",
+      "noPeople": "لا أحد وحدته {{unit}}",
+      "peopleOf": "الأشخاص في {{unit}}",
+      "searchPeople": "البحث في الأشخاص",
+      "openUsers": "المستخدمون",
+      "noPosition": "بلا منصب",
+      "headTag": "رئيس",
+      "positions": "المناصب المستخدمة",
+      "noPositions": "لا مناصب مستخدمة",
+      "positionsOf": "المناصب المستخدمة في {{unit}}",
+      "searchPositions": "البحث في المناصب",
+      "confersHeadship": "يمنح الرئاسة",
+      "grade": "الدرجة {{grade}}",
+      "committees": "اللجان",
+      "noCommittees": "لا تملك هذه الوحدة أي لجنة",
+      "committeesHidden": "تتطلّب أسماء اللجان صلاحية عرض اللجان.",
+      "committeesOf": "اللجان التي تملكها {{unit}}",
+      "searchCommittees": "البحث في اللجان",
+      "noStage": "بلا مرحلة",
+      "closeList": "إغلاق",
+      "noMatch": "لا شيء يطابق بحثك.",
+      "colName": "الاسم",
+      "colPosition": "المنصب",
+      "colHolders": "الأشخاص",
+      "colCommittee": "اللجنة",
+      "colStage": "المرحلة"
+    },
+    "history": {
+      "title": "السجل",
+      "loading": "جارٍ تحميل السجل",
+      "loadFailed": "تعذّر تحميل السجل.",
+      "empty": "لم تُسجَّل أي تغييرات",
+      "popupTitle": "سجل {{unit}}",
+      "close": "إغلاق",
+      "byWhom": "{{date}} · {{person}}",
+      "bySystem": "{{date}} · سُجّل تلقائيًا",
+      "head": {
+        "ASSIGNED": "عُيّن {{person}} رئيسًا",
+        "ASSIGNED_AS": "عُيّن {{person}} رئيسًا بمنصب {{position}}",
+        "HANDOVER_DECLARED": "عُيّن {{person}} رئيسًا قادمًا",
+        "HANDOVER_COMPLETED": "بدأ {{person}} رئيسًا",
+        "HANDOVER_CANCELLED": "سُحب تعيين {{person}}",
+        "VACATED": "لم يعد {{person}} رئيسًا",
+        "ACTING_ASSIGNED": "كُلّف {{person}} رئيسًا بالإنابة",
+        "ACTING_ENDED": "انتهى تكليف {{person}} بالإنابة"
+      },
+      "audit": {
+        "CREATED": "أُنشئت الوحدة",
+        "DEACTIVATED": "عُطّلت الوحدة",
+        "REACTIVATED": "أُعيد تفعيل الوحدة",
+        "RECORDED": "سُجّل تغيير"
+      },
+      "movedToTop": "نُقلت إلى المستوى الأعلى",
+      "movedUnder": "تغيّرت الوحدة الأم إلى {{parent}}",
+      "parentChanged": "تغيّرت الوحدة الأم",
+      "changed": "تغيّر {{fields}}",
+      "fieldSeparator": "، ",
+      "field": {
+        "nameEn": "الاسم الإنجليزي",
+        "nameAr": "الاسم العربي",
+        "code": "الرمز",
+        "type": "النوع",
+        "description": "الوصف",
+        "sortOrder": "الترتيب"
+      }
+    }
   },
   "orgUnitHead": {
     "manageHead": "إدارة الرئاسة",
@@ -1651,7 +1744,8 @@
       "TASK_WITHOUT_OWNER": "مهمة بلا مسؤول فعّال",
       "STORAGE_ALMOST_FULL": "مساحة تخزين الملفات توشك على الامتلاء",
       "STORAGE_ACCESS_WITHDRAWN": "تعذّر الوصول إلى تخزين SharePoint",
-      "STORAGE_SECRET_EXPIRING": "سرّ عميل SharePoint ينتهي قريبًا"
+      "STORAGE_SECRET_EXPIRING": "سرّ عميل SharePoint ينتهي قريبًا",
+      "ACTING_HEAD_OPEN_ENDED": "رئيس بالإنابة دون تاريخ انتهاء"
     },
     "context": {
       "template": "سير العمل: {{name}}"
@@ -1669,7 +1763,8 @@
         "LIBRARY_GONE": "لم تعد المكتبة موجودة. رفع الملفات المخزّنة في SharePoint وتنزيلها متوقفان.",
         "UNKNOWN": "رفع الملفات المخزّنة في SharePoint وتنزيلها متوقفان."
       },
-      "sharePointSecretExpiring": "ينتهي سرّ العميل في {{date}}. بعد ذلك يتوقف رفع الملفات المخزّنة في SharePoint وتنزيلها."
+      "sharePointSecretExpiring": "ينتهي سرّ العميل في {{date}}. بعد ذلك يتوقف رفع الملفات المخزّنة في SharePoint وتنزيلها.",
+      "actingOpenEnded": "رئيس بالإنابة منذ {{date}}، دون تاريخ انتهاء."
     },
     "hint": {
       "STAGE_WITHOUT_ASSIGNEE": "السبب غير مسجّل: راجع المسؤول عن المرحلة، والشرط الذي يفعّل كل انتقال خارج منها.",
@@ -1687,13 +1782,15 @@
       "ORG_UNIT_WITHOUT_HEAD": "تعيين رئيس",
       "ORG_UNIT_WITHOUT_TYPE": "تحديد النوع",
       "STAGE_WITHOUT_ASSIGNEE": "مراجعة المرحلة",
-      "TASK_WITHOUT_OWNER": "إعادة إسناد"
+      "TASK_WITHOUT_OWNER": "إعادة إسناد",
+      "ACTING_HEAD_OPEN_ENDED": "فتح الوحدة"
     },
     "fixNeeds": {
       "ORG_UNIT_WITHOUT_HEAD": "إصلاح هذا يتطلب صلاحية إدارة الهيكل التنظيمي.",
       "ORG_UNIT_WITHOUT_TYPE": "يتطلّب إصلاح هذا صلاحية إدارة الهيكل التنظيمي.",
       "STAGE_WITHOUT_ASSIGNEE": "إصلاح هذا يتطلب صلاحية إدارة سير العمل.",
-      "TASK_WITHOUT_OWNER": "إصلاح هذا يتطلب صلاحية إدارة المهام وإعادة إسنادها."
+      "TASK_WITHOUT_OWNER": "إصلاح هذا يتطلب صلاحية إدارة المهام وإعادة إسنادها.",
+      "ACTING_HEAD_OPEN_ENDED": "يتطلّب إصلاح هذا صلاحية إدارة الهيكل التنظيمي."
     },
     "freshness": {
       "failed": "{{type}}: فشل آخر فحص. الصفوف كما تأكدت آخر مرة في {{when}}.",
@@ -1709,7 +1806,11 @@
       "note": "تُعرض لترى أن الإصلاح تم، وليرى المقيّم متى أُغلقت الفجوة. يختفي كل إدخال بعد 7 أيام."
     },
     "storageObject": "تخزين الملفات",
-    "sharePointObject": "تخزين SharePoint"
+    "sharePointObject": "تخزين SharePoint",
+    "objectFilter": "عرض {{name}} فقط",
+    "objectFilterNone": "عرض وحدة واحدة فقط",
+    "showAll": "عرض الكل",
+    "emptyObject": "لا توجد حالات قائمة لهذه الوحدة."
   },
   "format": {
     "lessThanMinute": "أقل من دقيقة",
@@ -2443,6 +2544,38 @@
         "few": "لجان نشطة تملكها هذه الوحدة",
         "many": "لجنةً نشطةً تملكها هذه الوحدة",
         "other": "لجنة نشطة تملكها هذه الوحدة"
+      },
+      "people": {
+        "zero": "لا أحد",
+        "one": "شخص واحد",
+        "two": "شخصان",
+        "few": "{{count}} أشخاص",
+        "many": "{{count}} شخصًا",
+        "other": "{{count}} شخص"
+      },
+      "positions": {
+        "zero": "لا مناصب",
+        "one": "منصب واحد",
+        "two": "منصبان",
+        "few": "{{count}} مناصب",
+        "many": "{{count}} منصبًا",
+        "other": "{{count}} منصب"
+      },
+      "committees": {
+        "zero": "لا لجان",
+        "one": "لجنة واحدة",
+        "two": "لجنتان",
+        "few": "{{count}} لجان",
+        "many": "{{count}} لجنة",
+        "other": "{{count}} لجنة"
+      },
+      "moreConditions": {
+        "zero": "+ لا حالات أخرى",
+        "one": "+ حالة أخرى",
+        "two": "+ حالتان أخريان",
+        "few": "+ {{count}} حالات أخرى",
+        "many": "+ {{count}} حالة أخرى",
+        "other": "+ {{count}} حالة أخرى"
       }
     },
     "orgUnit": {

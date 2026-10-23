@@ -3657,7 +3657,10 @@ dialog is reused unchanged.
   (only when `canOpen`) and the breadcrumb resolves that record's own section,
   so the trail is "Committees / Infection Prevention & Control". Keyed by the
   page's path, so it cannot leak onto another page. Otherwise the nav model's
-  own: "My work / My tasks".
+  own: "My work / My tasks". **`setTrail()` (ACC-120 slice 11, PR D)** takes
+  several records, top first, ending with the parent (an org unit's parent
+  units, §7.10); the section is resolved from the top one. An empty trail
+  clears the page's entry.
 - **Rail:** `NavItem.alsoActiveFor` — My tasks lights on `/tasks/:id`, never on
   `/tasks/all` or `/tasks/unassigned`. **The rail now decides "current" itself
   (`isActive()`):** `RouterLinkActive` removed `aria-current` in a microtask
@@ -3928,6 +3931,9 @@ is in `CommitteeListsService`:
     its body's height.
   - **Test ids:** `testIdPrefix` names the parts (`{prefix}-head`, `-body`,
     `-count`, `-foot`, `-see-all`).
+  - **`offersSeeAll`** (ACC-120 slice 11 PR D; opt-in, default true): false
+    for a total the viewer may count but not read (an org unit's committees
+    without `committees:view`), so there is no "Showing 0 of 3 · See all".
 - **`SimpleListComponent`** (`am-simple-list`,
   `shared/components/simple-list/`) is the body of a plain list popup.
   - **Toolbar:** search (`type=search`, so `am-list-dialog` focuses it). There
@@ -5771,8 +5777,9 @@ static check can only confirm the schema itself doesn't enforce it.
 
 ```
 org:view    — OrganizationController: getTree, listFlat, findById,
-              structure, chart, summary (ACC-120 slice 11; what each shows
-              inside also follows users:view, committees:view, setup:view — 7.8)
+              structure, chart, summary, history (ACC-120 slice 11; what
+              each shows inside also follows users:view, committees:view,
+              setup:view — 7.8, 7.10, 7.11)
 org:manage  — OrganizationController: create, update, deactivate
 ```
 
@@ -5781,23 +5788,22 @@ Both fully wired, no inert permission string.
 ### 7.6 Frontend Consumption (Static Check)
 
 `frontend/src/app/foundation/organization/services/org-unit.service.ts`
-wraps only **5 of the 6** backend endpoints — `findById()`
-(`GET /organization/units/:id`) has **no frontend method at all**, not
-even an unused one; it was never wrapped, a step earlier in the gap
-chain than the usual "wrapped but uncalled" pattern seen in every prior
-section.
+wraps every backend endpoint since ACC-120 slice 11 PR D. `findById()`
+(`GET /organization/units/:id`) was never wrapped until PR D, whose record
+page reads it for its Edit dialog (`getById()`).
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
 | `getTree()` | `GET /organization/units` | **none since ACC-120 slice 11 PR C**: the tree reads `getStructure()` (7.9) |
 | `getFlat()` | `GET /organization/units/flat` | `position-list`, `position-form`, `invite-user`, `org-unit-form`, `user-list`, `user-profile` |
-| — (`findById()`) | `GET /organization/units/:id` | **not wrapped in the frontend service at all** |
+| `getById()` | `GET /organization/units/:id` | `org-unit-record.component.ts` (Edit, 7.10) |
 | `create()` | `POST /organization/units` | `org-unit-form.component.ts:234` |
 | `update()` | `PATCH /organization/units/:id` | `org-unit-form.component.ts:233` |
 | `deactivate()` | `POST /organization/units/:id/deactivate` | `org-unit-tree.component.ts:170` |
 | `getStructure()` | `GET /organization/units/structure` | `org-unit-tree.component.ts` (7.9) |
 | `getChart()` | `GET /organization/units/chart` | none yet: the chart, PR E |
-| `getSummary()` | `GET /organization/units/:id/summary` | none yet: the unit record, PR D |
+| `getSummary()` | `GET /organization/units/:id/summary` | `org-unit-record.component.ts` (7.10) |
+| `getHistory()` | `GET /organization/units/:id/history` | `org-unit-record.component.ts` and its History panel (7.10, 7.11) |
 
 ### 7.7 The Add / Edit unit dialog (ACC-120 slice 11)
 
@@ -5927,6 +5933,13 @@ in the response:
 The summary adds its people (1, plus the position relation) and, for
 `committees:view`, its committees and their stages.
 
+**`children` (PR D):** the summary also returns the unit's direct ACTIVE
+children, in sibling order — the record's Sub-units panel. They are
+decorated in the SAME batched queries as the unit (`decorate([unit,
+...children])`), so the query count does not grow with the number of
+children; with children, the head and cover reads use `in` rather than an
+equality.
+
 Measured locally on al-nakheel (21 units), as Hessa:
 - 16 queries per call: 6 are `TenantGuard`'s, 10 are the read model's;
 - `structure` 13.1 KB, `chart` from the top 13.5 KB, `summary` 1.7 KB;
@@ -5992,8 +6005,8 @@ functions in `org-tree-model.ts`.
   widens. The drawing has no phone; at 328px a 120px Attention column left Unit
   a few characters wide.
 - **Unit:** the reader's language on top, the other below at meta size in its
-  own direction (`unicode-bidi: isolate`). Plain text until PR D's record page
-  exists.
+  own direction (`unicode-bidi: isolate`). The name is the link to the unit's
+  record (7.10) since PR D, for every viewer and for deactivated units too.
 - **Type:** one line, cut with an ellipsis, the whole label in its `title`.
   "No type" is muted; "· retired" follows a retired type.
 - **Head:** the head, then one meta line:
@@ -6020,7 +6033,8 @@ functions in `org-tree-model.ts`.
   - **Headship** (a group heading): the actions `deriveHeadshipState()` gives
     for the unit's own head status, in the panel's words, run through
     `am-headship-actions` (5.15.5).
-  - **View:** Headship details, which opens the panel.
+  - **View:** Open unit (the record, PR D), then Headship details, which
+    opens the panel.
   - **Deactivate.**
 - **Why the head status is read when the menu opens:**
   - The structure node lacks the scheduled cover and the cached
@@ -6030,12 +6044,15 @@ functions in `org-tree-model.ts`.
     load the headship".
   - Appoint head with no head-conferring position is disabled, with the
     panel's reason as its second line.
-- **Without `org:manage`** (OS §6, read-only): the menu holds Headship details
-  only.
+- **Without `org:manage`** (OS §6, read-only): the menu holds Open unit and
+  Headship details.
   - No head status is read; it replaces the old crown button.
   - Add unit and Show deactivated are absent.
-- **Left out:** Open unit (PR D), Show on chart (PR E), Move up/down
-  (ACC-138).
+- **Left out:** Show on chart (PR E), Move up/down (ACC-138).
+- **`?show=<unitId>`** (PR D, the record's "Show in tree"): a one-time
+  parameter (`injectFixLinkParam`). The unit's parents are added to the expand
+  state (and saved, as any expand is), its row gets `am-ot__row--sought` (an
+  inline-start bar) and is scrolled into view, and the parameter is removed.
 
 **Deactivate:**
 - An `AmConfirmService` destructive confirm: "Deactivate {unit}?", "It
@@ -6055,6 +6072,206 @@ functions in `org-tree-model.ts`.
 - `org-unit-tree.layout.spec.ts` measures EN and AR at 988, 358, 328, 900 and
   899px of content: the columns, no sideways scroll, the ⋯ inside its row,
   names wrapped, and the blockers dialog at five blockers under the 420 cap.
+
+### 7.10 The org unit record, `/organization/units/:id` (ACC-120 slice 11, PR D)
+
+`components/org-unit-record/`, built to the drawing (`AccreditMe Organization
+Structure.dc.html` §3, OS L312-339, L611-628), a sibling of the Committee
+record. A child route of `/organization`, so the parent's `permissionGuard`
+(`org:view`) covers it, and the rail's Organization Structure stays lit (a
+prefix match). No nav entry of its own.
+
+**What it reads:**
+- `GET …/:id/summary` (7.8), with `children`.
+- `GET …/:id/history?take=5`: the History panel's five, and the deactivated
+  header's line.
+- `GET …/:id` only when Edit is pressed (or Setup health's `?edit=1` asks).
+- A link to a sub-unit reuses the component: the unit id is read from the
+  route as it changes, and the Headship panel is rebuilt per unit.
+
+**The breadcrumb is the unit's ancestry (ACC-79):**
+`BreadcrumbParentService.setTrail()` with every parent, top first:
+"Administration › Organization Structure › Al Nakheel Specialist Hospital ›
+Clinical Support Services". It stops at the parent. The drawing's trail also
+names the unit itself, which the H1 already does. The top unit has no parent
+crumbs. The tab title is the unit's name.
+
+**Header:**
+- The name in the reader's language (`text-record`, 28px), and the other
+  language beside it on its baseline (`text-heading`, 16px; the drawing says
+  17), in its own direction. Both wrap, never cut.
+- "Type · CODE · state" (`active` / `deactivated`). A unit with no type reads
+  "No type".
+- Edit, Add sub-unit and ⋯ (Deactivate), for `org:manage` on an active unit.
+  They open the tree's own dialog, form and blockers dialog (7.7, 7.9).
+- **The relation row,** in `am-relation` (10.23):
+  - Parent unit: a link, or "None — this is the top unit" for the top unit.
+  - Head: the substantive head, then "incoming", or "No head".
+  - Acting head: only while a cover runs, with "no end date" or
+    "until {date}".
+
+  A person links to `/users/:id` only for `admin:access` + `users:view`, the
+  user page's own guard (ACC-123).
+
+**The Setup health strip** shows only while `summary.unit.attention` is
+non-null: so only for `setup:view`, and only while a condition is open.
+- It reads "▲ {severity} from {date}", then the condition's type label.
+- A Fix, for `org:manage` on an active unit:
+  - "Set type" (opens Edit) for `ORG_UNIT_WITHOUT_TYPE`;
+  - otherwise "Fix in Headship", which scrolls to the Headship panel and
+    focuses its first action.
+- "+ N more" (a plural object) when `openCount` is above one. It links to
+  `/setup-health?object=<unitId>` (13.9).
+
+**Panels, in the drawn order,** in a grid of 320px columns
+(`ORG_UNIT_PANEL_GRID`, the committee record's rule):
+1. **Headship:** `am-headship-panel` (5.15), embedded unchanged, with
+   `readOnly` on a deactivated unit.
+   - It isn't a list, so it isn't capped. Its card fills its grid cell
+     (`min-block-size: 100%`).
+   - On a phone it is as tall as its content.
+2. **Sub-units:** the summary's `children`.
+   - Each row: the name (a link to its record), "Type · head", and the
+     headcount. The head is the name, "Head assigned" (withheld), "Acting: …"
+     or "No head".
+   - "Show in tree" in the header (`/organization?show=<id>`).
+   - Empty: "No sub-units", with Add sub-unit for a manager.
+3. **People:** ACTIVE people whose primary unit this is.
+   - Each row: the name (a link, as above) and "position · head".
+   - **Above ten people they are grouped by position:** heads first, then each
+     position together, then by name. At ten or fewer, the server's order (by
+     name).
+   - The grouping is an ORDER, not headings: a heading row would make "Showing
+     5 of 14" count groups. Above ten, the popup also sorts by position by
+     default.
+   - Empty: "No one has {unit} as their unit", with a Users link for
+     `admin:access` + `users:view`.
+4. **Positions in use:** the summary's `positions`.
+   - Each row: "confers headship" or the grade, and how many hold it.
+   - **Absent when People is empty,** as drawn: it is derived from People.
+5. **Committees:** ACTIVE committees this unit owns, with their stage, each
+   linking to its committee.
+   - Without `committees:view`: the header shows the count, the body says
+     "Committee names need permission to view committees.", and there is no
+     See all (`am-capped-panel`'s `offersSeeAll`).
+   - Empty: "This unit owns no committees".
+6. **History** (7.11).
+
+**Panels 2–6 are `am-capped-panel` (D10):** five rows, the body fixed, and See
+all opening `am-list-dialog` (compact).
+- Sub-units, People, Positions and Committees share `am-unit-list-panel`. Its
+  popup is `am-simple-list` over the summary's rows **in memory** (ACC-230's
+  shape for a list read once).
+- The History popup reads the server 20 at a time, with Load more.
+
+**Names follow the response (D7).** A null name is never a blank:
+- the relation shows the position (or "Head assigned" / "Cover arranged") with
+  "Name hidden", on a hatched ground;
+- a People row reads "Name hidden", muted, with the position below;
+- a History row reads "{position} (name hidden)".
+
+**Deactivated:**
+- The header reads "Deactivated {date} by {name}", from the history's
+  `deactivation`. With no person recorded it reads "Deactivated {date}"; with
+  no row, "Deactivated · no date recorded".
+- Then one line: "Deactivated units can't be reactivated from AccreditMe."
+- Edit, Add sub-unit, ⋯, the strip's Fix and the headship actions are absent.
+  There is no reactivate endpoint.
+
+**Not found:** an invented id and another organisation's unit both get the
+summary's 404: "This unit doesn't exist, or you can't open it", with a link
+back to the tree. Any other failure says so, with Retry.
+
+**Tests:**
+- `org-unit-record.component.spec.ts` covers:
+  - the header, the relations, the breadcrumb trail, the top unit, and the
+    read-only view;
+  - the strip: absent, one condition, more than one, and no Fix without
+    `org:manage`;
+  - the panel order, every empty state, committees without permission, the cap
+    and its footer, the People grouping, and See all's in-memory search and
+    sort;
+  - names withheld, an outside actor, both deactivated states, not found,
+    `?edit=1`, and Arabic.
+- `org-unit-record.layout.spec.ts`: EN and AR at 988, 358 and 328px of content
+  (the shell at 1280, 390 and 360).
+  - Every capped panel is the same fixed height, **338px English and 376px
+    Arabic**, whether full (five rows and the footer) or empty.
+  - Nothing is wider than the frame.
+  - The unit's names wrap, never cut. At 358 and 328, a 53-character name is
+    108px tall in English and 120px in Arabic.
+
+### 7.11 The unit's History, `GET /organization/units/:id/history` (ACC-120 slice 11, PR D)
+
+`OrgUnitHistoryService` (`org-unit-history.service.ts`), `org:view`, D8.
+
+**What it returns:** the unit's stored rows, newest first, paged (`skip`, and
+`take` from 1 to 50, default 20), as `{ items, total, skip, take, deactivation? }`.
+Each item is ONE stored row:
+- **`OrgUnitHeadEvent`** rows (`source: 'HEAD_EVENT'`):
+  - the `action` as stored (`kind`);
+  - the person it is about (`subject`);
+  - the head position (null for acting events);
+  - `effectiveDate`;
+  - who recorded it (`approvedBy`). It is null when the system did, e.g. a
+    handover completing on its date.
+- **`AuditLog`** rows on the unit (`source: 'AUDIT'`): `CREATED`, `CHANGED`,
+  `DEACTIVATED`, `REACTIVATED`, or `RECORDED` (a row without both copies).
+  - For `CHANGED`, `fields` names what differs between the stored copies:
+    `nameEn`, `nameAr`, `code`, `type`, `description`, `parent`, `sortOrder`.
+  - `movedTo` is the new parent with its CURRENT names. It is null when the
+    unit was moved to the top, and absent for a parent no longer there or in
+    another organisation.
+
+**Headship comes from the ledger only, and each change shows once.**
+- Every headship operation in `org-unit-head.service.ts` writes an
+  `OrgUnitHeadEvent` AND an audit row holding only `metadata`.
+- The audit rows read are the unit's OWN record, the ones with `after` set
+  (`unitRecordAuditWhere()`: `after: { not: Prisma.DbNull }`).
+- So the metadata-only twin is never read, and headship is never
+  reconstructed from the audit log (ACC-133). Proved on a real Postgres.
+
+**The stored copies are never returned.** `before` / `after` are read on the
+server to classify the row and name its fields; the response carries only
+those names. It also never carries `metadata`, an IP address or a user agent.
+
+**Names (D7):** a person (`actor` or `subject`) is `{ userId, name,
+inOrganization, positionNameEn, positionNameAr }`.
+- `name` needs `users:view`. Without it, the position (`org:view` data)
+  stands in.
+- `inOrganization` is false for an id that is not a user of THIS organisation
+  (a platform account, a script). No name is looked up elsewhere, and the row
+  says "someone outside this organization" rather than "name hidden".
+
+**`deactivation`** (inactive units only): the latest audit row whose stored
+copies moved `isActive` from true to false, or null when none exists. Both
+halves are checked, so a later edit of the deactivated unit is not mistaken
+for it.
+
+**Paging over two tables:**
+- Each page reads at most `skip + take` rows from each table (ordered by
+  `createdAt`, then id), merges them, and returns the slice. `total` is both
+  counts added together.
+- A unit's history is short and `take` is capped, so the window stays small.
+- Pages never repeat or skip a row (proved by the spec and the db-spec).
+
+**Isolation:** every query carries `organizationId`: the unit, both row reads,
+both counts, the deactivation lookup, the people and the new parents. Another
+organisation's unit gets the identical 404 an invented id gets.
+
+**Specs:**
+- `org-unit-history.service.spec.ts`: an in-memory database that evaluates
+  each `where`, Json filters included. It covers:
+  - the order, the classification and the head events;
+  - paging and the cap;
+  - names with and without `users:view`, and an outside actor;
+  - that no stored copy is returned;
+  - the deactivation;
+  - two tenant-isolation tests named for the CI gate.
+- `org-unit-history.db-spec.ts` (`npm run test:db`): the Json filters, the
+  deactivation lookup, paging, and the 404 both ways.
+- Every filter mutation-checked red.
+
 
 `getFlat()` is the most widely reused endpoint found in this document
 so far — six distinct components across three different modules
@@ -8639,6 +8856,27 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
     dialog's trash button name.
   - Mutation-checked: ten mutations (no layer, focus, the danger class and ink, the text Cancel, focus return, the ⋯ fallback, the required label, and the Actions dialog's layer and its top-layer check) each turned at least one of these red.
 
+### 10.23 `am-relation` — the Relation Field, in a Record Header (ACC-120 slice 11, PR D)
+
+`shared/components/relation/relation.component.ts`: the Design System's
+relation field (artboard 4), built in its record-header context (C) only, for
+the org unit record's Parent unit · Head · Acting head (§7.10).
+
+- **Four slots, in order:** the field label, a type glyph (▦ unit, ◉ person,
+  ◇ committee), the name, and its state as text ("Director", "no end date").
+- **The name is a real link** (`routerLink`) only when the caller passes one:
+  the viewer may open the target. Otherwise plain text.
+- **`hidden`:** the target exists and its name is withheld (D7). The caller
+  passes what may be shown instead (a position title) and "Name hidden" as the
+  state; the value's ground is hatched, so it reads as present but withheld,
+  never as empty.
+- **`none`:** nothing to point at ("None — this is the top unit", "No head"):
+  muted, no glyph.
+- **It holds no strings;** the caller translates everything. The name wraps
+  (`overflow-wrap: anywhere`), never cut.
+- **Not yet adopted** by the tree or the committee record, whose fact strip
+  predates it. The table-cell and inline contexts (B, A) are unbuilt.
+
 ## 11. Known Cross-Cutting Gaps
 
 **✅ Complete — built incrementally as each of Sections 1–10 above was
@@ -9783,6 +10021,20 @@ unbuilt and not shown.
   days with closure times.
 - **Destinations** name the object they were opened for: the reassign
   dialog is titled with the task, the head panel with the unit.
+- **One object's conditions (ACC-120 slice 11, PR D):** `?object=<id>` shows
+  only that object's open conditions, counted in the severity filters, with
+  "Showing {name} only · Show all" (Show all drops the parameter); nothing
+  open reads "Nothing is open for this unit." It is the org unit record's
+  "+ N more" (7.10).
+- **`ACTING_HEAD_OPEN_ENDED` is listed (PR D).** The API reported it since
+  ACC-120 slice 2, and this page dropped it: the type was in no group, had no
+  label and no consequence. It now has its group ("Acting head with no end
+  date"), the unit's name, "Acting head since {date}, with no end date.", and
+  a Fix, Open unit, to the unit's record.
+- **The org unit Fixes (PR D):** Set type (`ORG_UNIT_WITHOUT_TYPE`) opens the
+  unit's record with `?edit=1`, which opens its Edit dialog once loaded
+  (until PR D it opened the tree with a `?unit=` nothing read). Assign head
+  still opens the tree's headship panel (`?head=`).
 - **Out of scope:** the admin home's top-three slice (the home-pages
   ticket reads from this model).
 

@@ -147,7 +147,8 @@
         "headship": "Headship",
         "headshipDetails": "Headship details",
         "loadingHeadship": "Loading headship…",
-        "headshipFailed": "Couldn't load the headship"
+        "headshipFailed": "Couldn't load the headship",
+        "openUnit": "Open unit"
       },
       "attention": {
         "ORG_UNIT_WITHOUT_HEAD": "▲ No head",
@@ -169,7 +170,99 @@
       "showInUsers": "Show in Users",
       "showInCommittees": "Show in Committees"
     },
-    "deactivateFailed": "Couldn't deactivate the unit."
+    "deactivateFailed": "Couldn't deactivate the unit.",
+    "record": {
+      "notFound": "This unit doesn't exist, or you can't open it.",
+      "backToTree": "Back to Organization Structure",
+      "loadFailed": "Couldn't load this unit.",
+      "moreActionsFor": "More actions for {{unit}}",
+      "stateActive": "active",
+      "stateDeactivated": "deactivated",
+      "deactivatedOnBy": "Deactivated {{date}} by {{person}}",
+      "deactivatedOn": "Deactivated {{date}}",
+      "deactivatedNoDate": "Deactivated · no date recorded",
+      "noReactivation": "Deactivated units can't be reactivated from AccreditMe.",
+      "topUnit": "None — this is the top unit",
+      "nameHidden": "Name hidden",
+      "outsideOrganization": "someone outside this organization",
+      "hiddenPersonWithPosition": "{{position}} (name hidden)",
+      "incoming": "incoming",
+      "actingUntil": "until {{date}}",
+      "actingName": "Acting: {{name}}",
+      "stripSince": "{{severity}} from {{date}}",
+      "fixHeadship": "Fix in Headship",
+      "fixType": "Set type",
+      "subUnits": "Sub-units",
+      "noSubUnits": "No sub-units",
+      "subUnitsOf": "Sub-units of {{unit}}",
+      "searchSubUnits": "Search sub-units",
+      "showInTree": "Show in tree",
+      "people": "People",
+      "noPeople": "No one has {{unit}} as their unit",
+      "peopleOf": "People in {{unit}}",
+      "searchPeople": "Search people",
+      "openUsers": "Users",
+      "noPosition": "No position",
+      "headTag": "head",
+      "positions": "Positions in use",
+      "noPositions": "No positions in use",
+      "positionsOf": "Positions in use in {{unit}}",
+      "searchPositions": "Search positions",
+      "confersHeadship": "confers headship",
+      "grade": "Grade {{grade}}",
+      "committees": "Committees",
+      "noCommittees": "This unit owns no committees",
+      "committeesHidden": "Committee names need permission to view committees.",
+      "committeesOf": "Committees owned by {{unit}}",
+      "searchCommittees": "Search committees",
+      "noStage": "No stage",
+      "closeList": "Close",
+      "noMatch": "Nothing matches your search.",
+      "colName": "Name",
+      "colPosition": "Position",
+      "colHolders": "People",
+      "colCommittee": "Committee",
+      "colStage": "Stage"
+    },
+    "history": {
+      "title": "History",
+      "loading": "Loading history",
+      "loadFailed": "Couldn't load the history.",
+      "empty": "No changes recorded",
+      "popupTitle": "History of {{unit}}",
+      "close": "Close",
+      "byWhom": "{{date}} · {{person}}",
+      "bySystem": "{{date}} · recorded automatically",
+      "head": {
+        "ASSIGNED": "{{person}} appointed head",
+        "ASSIGNED_AS": "{{person}} appointed head as {{position}}",
+        "HANDOVER_DECLARED": "{{person}} appointed as the next head",
+        "HANDOVER_COMPLETED": "{{person}} started as head",
+        "HANDOVER_CANCELLED": "{{person}}'s appointment withdrawn",
+        "VACATED": "{{person}} no longer head",
+        "ACTING_ASSIGNED": "{{person}} set as acting head",
+        "ACTING_ENDED": "{{person}}'s acting cover ended"
+      },
+      "audit": {
+        "CREATED": "Unit created",
+        "DEACTIVATED": "Unit deactivated",
+        "REACTIVATED": "Unit reactivated",
+        "RECORDED": "Change recorded"
+      },
+      "movedToTop": "Moved to the top level",
+      "movedUnder": "Parent changed to {{parent}}",
+      "parentChanged": "Parent changed",
+      "changed": "Changed {{fields}}",
+      "fieldSeparator": ", ",
+      "field": {
+        "nameEn": "English name",
+        "nameAr": "Arabic name",
+        "code": "code",
+        "type": "type",
+        "description": "description",
+        "sortOrder": "order"
+      }
+    }
   },
   "orgUnitHead": {
     "manageHead": "Manage Head",
@@ -1651,7 +1744,8 @@
       "TASK_WITHOUT_OWNER": "Task with no actionable owner",
       "STORAGE_ALMOST_FULL": "File storage almost full",
       "STORAGE_ACCESS_WITHDRAWN": "SharePoint storage can't be reached",
-      "STORAGE_SECRET_EXPIRING": "SharePoint client secret expires soon"
+      "STORAGE_SECRET_EXPIRING": "SharePoint client secret expires soon",
+      "ACTING_HEAD_OPEN_ENDED": "Acting head with no end date"
     },
     "context": {
       "template": "Workflow: {{name}}"
@@ -1669,7 +1763,8 @@
         "LIBRARY_GONE": "The library no longer exists. Uploads and downloads of files stored in SharePoint are paused.",
         "UNKNOWN": "Uploads and downloads of files stored in SharePoint are paused."
       },
-      "sharePointSecretExpiring": "The client secret expires on {{date}}. After that, uploads and downloads of files stored in SharePoint pause."
+      "sharePointSecretExpiring": "The client secret expires on {{date}}. After that, uploads and downloads of files stored in SharePoint pause.",
+      "actingOpenEnded": "Acting head since {{date}}, with no end date."
     },
     "hint": {
       "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it.",
@@ -1687,13 +1782,15 @@
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
       "ORG_UNIT_WITHOUT_TYPE": "Set type",
       "STAGE_WITHOUT_ASSIGNEE": "Review stage",
-      "TASK_WITHOUT_OWNER": "Reassign"
+      "TASK_WITHOUT_OWNER": "Reassign",
+      "ACTING_HEAD_OPEN_ENDED": "Open unit"
     },
     "fixNeeds": {
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
       "ORG_UNIT_WITHOUT_TYPE": "Fixing this needs permission to manage the organization structure.",
       "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
-      "TASK_WITHOUT_OWNER": "Fixing this needs permission to manage and reassign tasks."
+      "TASK_WITHOUT_OWNER": "Fixing this needs permission to manage and reassign tasks.",
+      "ACTING_HEAD_OPEN_ENDED": "Fixing this needs permission to manage the organization structure."
     },
     "freshness": {
       "failed": "{{type}}: the last check failed. Its rows are as last confirmed on {{when}}.",
@@ -1709,7 +1806,11 @@
       "note": "Shown so you can see a fix landed, and so a surveyor can see when a gap closed. Each entry drops off after 7 days."
     },
     "storageObject": "File storage",
-    "sharePointObject": "SharePoint storage"
+    "sharePointObject": "SharePoint storage",
+    "objectFilter": "Showing {{name}} only",
+    "objectFilterNone": "Showing one unit only",
+    "showAll": "Show all",
+    "emptyObject": "Nothing is open for this unit."
   },
   "format": {
     "lessThanMinute": "less than a minute",
@@ -2159,6 +2260,22 @@
       "blockerCommittees": {
         "one": "active committee is owned by this unit",
         "other": "active committees are owned by this unit"
+      },
+      "people": {
+        "one": "{{count}} person",
+        "other": "{{count}} people"
+      },
+      "positions": {
+        "one": "{{count}} position",
+        "other": "{{count}} positions"
+      },
+      "committees": {
+        "one": "{{count}} committee",
+        "other": "{{count}} committees"
+      },
+      "moreConditions": {
+        "one": "+ {{count}} more",
+        "other": "+ {{count}} more"
       }
     },
     "orgUnit": {
