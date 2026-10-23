@@ -135,8 +135,13 @@ export function assertCommitteeStageAllows(committeeStageKey: string | null | un
   }
 }
 
+/** May a new request be raised while the committee stands here? The open read's `canRaise` asks this. */
+export function committeeAllowsRaise(committeeStageKey: string | null | undefined): boolean {
+  return committeeStagePolicy(committeeStageKey).raise;
+}
+
 export function assertCommitteeAllowsRaise(committeeStageKey: string | null | undefined): void {
-  if (!committeeStagePolicy(committeeStageKey).raise) throw new ChangeRequestRefusal(committeeStageRefusal(committeeStageKey));
+  if (!committeeAllowsRaise(committeeStageKey)) throw new ChangeRequestRefusal(committeeStageRefusal(committeeStageKey));
 }
 
 /** Both maps allow the action — what each response's `actions` flags read, before who is asking. */

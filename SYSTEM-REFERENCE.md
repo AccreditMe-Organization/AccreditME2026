@@ -4278,6 +4278,45 @@ its screens are ACC-240, and the API lock on direct edits is ACC-241.
   preview for Request a change. The preview names the impact of each change,
   including how many open committee votes keep the quorum they began with
   (§2.17), and always the terms task approval will create.
+- **What the screens read, beyond the request itself (ACC-240, PR 3a)**. Each
+  of these was added to an existing response; no route, permission or refusal
+  changed.
+  - **`GET /committees/:id/change-requests/open` answers
+    `{ request, canRaise }`.** `canRaise` is the create call's own three
+    checks, from the same functions, answered without creating:
+    `committees:edit_details`; `committeeAllowsRaise()`, i.e.
+    `COMMITTEE_STAGE_POLICY[key].raise` (Active or Suspended only); and no
+    open request, by `isOpen()` (drafts count, and a request with no instance
+    counts as open). `create()` asks `isOpen()` and
+    `assertCommitteeAllowsRaise()` (which asks `committeeAllowsRaise()`)
+    again under the committee's row lock, so the two cannot disagree. The
+    "Request a change" button follows `canRaise`; no screen keeps its own copy
+    of the stage rule.
+  - **`decidedBy` and `withdrawnBy`**: `{ id, name } | null` beside
+    `decidedById` and `withdrawnById` on every `IChangeRequest`. `decidedBy`
+    is whoever last returned, approved or rejected it. Both are read by id AND
+    `organizationId`, in one query for all the requests a response carries.
+  - **`labels`**: `{ [id]: { en, ar } }` on every `IChangeRequest` and on the
+    preview. It names the ids of the type, owning unit, parent and reports-to
+    in that request's `changes` and `fromValues` (the preview's: in its
+    impacts), and only those. Every read is scoped by organisation, and
+    inactive values are included, because a closed request still names what
+    it named. Types go through ACC-246's `committeeTypeValues()` (the shared
+    system values and this organisation's own rows, with its label
+    overrides). An id that does not resolve is absent.
+  - Example open read (an under-review request changing Reports to, viewed by
+    an approver who did not raise it):
+    `{ "canRaise": false, "request": { "number": 3, "status": "under_review",
+    "changes": { "reportingToCommitteeId": "c-mec" }, "fromValues":
+    { "reportingToCommitteeId": "c-qps" }, "decidedBy": null, "withdrawnBy":
+    null, "labels": { "c-mec": { "en": "Medical Executive Committee", "ar":
+    "اللجنة التنفيذية الطبية" }, "c-qps": { "en": "Quality & Patient Safety
+    Council", "ar": null } }, "actions": { "approve": true, "return": true,
+    "reject": true, … } } }`.
+  - Proved on a real database: 16 cases, each asking `canRaise` and then
+    `create()`, which must agree; and a tenant-isolation case that plants
+    another organisation's type, unit, committee and people in a request and
+    resolves none of them. Six mutations each turned it red.
 - **Every stage rule is one policy file**, `change-requests/change-request-policy.ts`:
   `REQUEST_STAGE_POLICY` (per request stage: open, the actions it allows, and
   whether someone other than the requester may withdraw it), and
@@ -4300,7 +4339,8 @@ its screens are ACC-240, and the API lock on direct edits is ACC-241.
   `--execute` after the deploy). It writes only this template, leaves an
   organisation that has one alone, writes one audit row per organisation, and
   refuses a customer organisation.
-- **Real-database spec:** `committee-change-request.db-spec.ts`, 31 tests.
+- **Real-database spec:** `committee-change-request.db-spec.ts`, 31 tests
+  at ACC-239, 52 with ACC-240's reads.
   Mutation-checked: dropping the create row lock, the "from" comparison, or the
   self-approval refusal, or moving Approve's committee write outside the
   transaction, each turns it red.
@@ -8356,6 +8396,13 @@ line is exactly as before. **`hintVisuallyHidden`** draws no hint while keeping
 it as the `aria-describedby` message (`sr-only`), for a half-width column on a
 phone where hint and counter would wrap; an error is always drawn.
 `field-counter.spec.ts`. Consumers: `org-unit-form` (code, description).
+
+**An action after the hint is `[hintAction]="{ label, run }"`** (ACC-240): a
+text button in the hint's own slot, inside the `aria-describedby` message, so
+it costs no height. It is for a short fix the hint names ("Couldn't load the
+list. Retry"). Without it the message line is exactly as before. An error
+replaces the hint, and its action with it. `field-hint-action.spec.ts`.
+Consumers: `committee-form` (a picker list that failed to load).
 
 
 ---

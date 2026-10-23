@@ -139,12 +139,15 @@ export class TaskActionHostComponent {
         return this.call(row.id, this.tasks.withdrawRequest(row.id, row.openRequest.id));
       case 'complete':
         if (row.actions.completeNeedsEvidence) return;
-        // Confirmed first, as the committee page always did: completing
-        // finishes the task for every other assignee on it too.
+        // Confirmed first, as the committee page always did. ACC-240 — the
+        // question names the task (titleOf: bilingual(), ACC-160); the message
+        // is what complete() does: every other active assignee comes off it
+        // (task.service.ts:720–723), it becomes COMPLETED (:725–727), and its
+        // open requests are cancelled (:730).
         this.amConfirm.ask({
           tone: 'neutral',
-          message: this.translate.instant('task.confirmComplete', { title: this.titleOf(row) }),
-          header: this.translate.instant('common.confirm'),
+          header: this.translate.instant('task.confirmCompleteHeader', { title: this.titleOf(row) }),
+          message: this.translate.instant('task.confirmComplete'),
           acceptLabel: this.translate.instant('task.complete'),
           accept: () => this.call(row.id, this.tasks.complete(row.id)),
         });

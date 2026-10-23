@@ -115,6 +115,9 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
  * and a quiet line under each says what is left out. The owning unit offers
  * active units only.
  */
+/** ACC-240 — the three lists the pickers read. */
+type ChoiceList = 'types' | 'units' | 'committees';
+
 @Component({
   selector: 'app-committee-form',
   standalone: true,
@@ -182,6 +185,8 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
             [label]="'committee.type' | translate"
             [control]="form.controls.typeValueId"
             inputId="cf-type"
+            [hint]="typesFailed() ? ('committee.form.listFailed' | translate) : ''"
+            [hintAction]="typesFailed() ? retryAction('types') : null"
             [forceShowErrors]="showErrors()"
             [errorMessages]="errorKeys('typeValueId', { required: 'committee.form.typeRequired' })"
           >
@@ -265,7 +270,8 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
             [label]="'committee.owningUnit' | translate"
             [control]="form.controls.orgUnitId"
             inputId="cf-unit"
-            [hint]="'committee.form.activeUnitsOnly' | translate"
+            [hint]="(unitsFailed() ? 'committee.form.listFailed' : 'committee.form.activeUnitsOnly') | translate"
+            [hintAction]="unitsFailed() ? retryAction('units') : null"
             [forceShowErrors]="showErrors()"
             [errorMessages]="errorKeys('orgUnitId', { required: 'committee.refusal.unitRequired' })"
           >
@@ -285,7 +291,8 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
             [label]="'committee.parentCommittee' | translate"
             [control]="form.controls.parentCommitteeId"
             inputId="cf-parent"
-            [hint]="(editing() ? 'committee.form.parentLeftOut' : 'committee.form.leftOutNew') | translate"
+            [hint]="(committeesFailed() ? 'committee.form.listFailed' : editing() ? 'committee.form.parentLeftOut' : 'committee.form.leftOutNew') | translate"
+            [hintAction]="committeesFailed() ? retryAction('committees') : null"
             [forceShowErrors]="showErrors()"
             [errorMessages]="errorKeys('parentCommitteeId')"
           >
@@ -304,7 +311,8 @@ const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
             [label]="'committee.reportingTo' | translate"
             [control]="form.controls.reportingToCommitteeId"
             inputId="cf-reports-to"
-            [hint]="reportsToHint() | translate"
+            [hint]="(committeesFailed() ? 'committee.form.listFailed' : reportsToHint()) | translate"
+            [hintAction]="committeesFailed() ? retryAction('committees') : null"
             [forceShowErrors]="showErrors()"
             [errorMessages]="errorKeys('reportingToCommitteeId')"
           >
@@ -490,6 +498,14 @@ export class CommitteeFormComponent {
   readonly typesLoaded = signal(false);
   readonly unitsLoaded = signal(false);
   readonly committeesLoaded = signal(false);
+  /**
+   * ACC-240 — a list whose read failed. Its fields say so in their hint slot,
+   * with Retry, instead of opening an empty list that says nothing.
+   */
+  readonly typesFailed = signal(false);
+  readonly unitsFailed = signal(false);
+  readonly committeesFailed = signal(false);
+  private readonly retryActions = new Map<ChoiceList, { label: string; run: () => void }>();
   /** The committee's own type, from its read: shown before the list arrives, and when the list leaves it out. */
   private readonly heldType = signal<CommitteeTypeValueDto | null>(null);
   /** The type picker can show the saved type, or has its list. */
@@ -638,34 +654,76 @@ export class CommitteeFormComponent {
    * leave out what is true NOW (a committee that began dissolving since).
    */
   private loadChoices(): void {
+    this.loadList('types');
+    this.loadList('units');
+    this.loadList('committees');
+  }
+
+  /**
+   * One picker list. ACC-246 — each picker waits for its own list, and a failed
+   * list releases it (never "Loading…" for ever). ACC-240 — and a failed list
+   * says so in its fields' hint slot, with Retry, which reads only that list.
+   */
+  private loadList(list: ChoiceList): void {
     const c = this.form.controls;
-    // ACC-246 — each picker waits for its own list, and a failed list releases
-    // it (an empty list then, never "Loading…" for ever).
-    this.waitFor(this.typesLoaded, this.heldType() ? [] : [c.typeValueId]);
-    this.waitFor(this.unitsLoaded, [c.orgUnitId]);
-    this.waitFor(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]);
-    this.lookupService.getValues('committee_type').subscribe({
-      next: (values) => {
-        this.committeeTypes.set(values);
-        this.release(this.typesLoaded, [c.typeValueId]);
-      },
-      error: () => this.release(this.typesLoaded, [c.typeValueId]),
-    });
-    this.orgUnitService.getFlat().subscribe({
-      next: (units) => {
-        this.orgUnits.set(units);
-        this.release(this.unitsLoaded, [c.orgUnitId]);
-        this.prefillRootUnit(units);
-      },
-      error: () => this.release(this.unitsLoaded, [c.orgUnitId]),
-    });
-    this.committeeService.listCommittees().subscribe({
-      next: (committees) => {
-        this.allCommittees.set(committees);
-        this.release(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]);
-      },
-      error: () => this.release(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]),
-    });
+    if (list === 'types') {
+      this.typesFailed.set(false);
+      this.waitFor(this.typesLoaded, this.heldType() ? [] : [c.typeValueId]);
+      this.lookupService.getValues('committee_type').subscribe({
+        next: (values) => {
+          this.committeeTypes.set(values);
+          this.release(this.typesLoaded, [c.typeValueId]);
+        },
+        error: () => {
+          this.typesFailed.set(true);
+          this.release(this.typesLoaded, [c.typeValueId]);
+        },
+      });
+    } else if (list === 'units') {
+      this.unitsFailed.set(false);
+      this.waitFor(this.unitsLoaded, [c.orgUnitId]);
+      this.orgUnitService.getFlat().subscribe({
+        next: (units) => {
+          this.orgUnits.set(units);
+          this.release(this.unitsLoaded, [c.orgUnitId]);
+          this.prefillRootUnit(units);
+        },
+        error: () => {
+          this.unitsFailed.set(true);
+          this.release(this.unitsLoaded, [c.orgUnitId]);
+        },
+      });
+    } else {
+      this.committeesFailed.set(false);
+      this.waitFor(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]);
+      this.committeeService.listCommittees().subscribe({
+        next: (committees) => {
+          this.allCommittees.set(committees);
+          this.release(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]);
+        },
+        error: () => {
+          this.committeesFailed.set(true);
+          this.release(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]);
+        },
+      });
+    }
+  }
+
+  /** The Retry after a list's failure line; one object per list, so the field's input does not change each check. */
+  retryAction(list: ChoiceList): { label: string; run: () => void } {
+    let action = this.retryActions.get(list);
+    if (!action) {
+      const translate = this.translate;
+      // A getter, so the label follows a language switch with the same object.
+      action = {
+        get label() {
+          return translate.instant('common.retry');
+        },
+        run: () => this.loadList(list),
+      };
+      this.retryActions.set(list, action);
+    }
+    return action;
   }
 
   /** Until its list arrives a picker is disabled: it keeps its value and cannot open. */

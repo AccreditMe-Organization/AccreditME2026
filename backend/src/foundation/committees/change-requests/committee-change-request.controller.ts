@@ -9,6 +9,7 @@ import { CurrentUserPermissions } from '../../../common/decorators/current-user-
 import {
   CommitteeChangeRequestService,
   IChangeRequest,
+  IOpenChangeRequest,
   IChangeRequestPage,
   IChangeRequestPreview,
 } from './committee-change-request.service';
@@ -51,7 +52,7 @@ export class CommitteeChangeRequestsByCommitteeController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
-  ): Promise<{ request: IChangeRequest | null }> {
+  ): Promise<IOpenChangeRequest> {
     return this.requests.openSummary(committeeId, tenantId, { userId, permissions });
   }
 

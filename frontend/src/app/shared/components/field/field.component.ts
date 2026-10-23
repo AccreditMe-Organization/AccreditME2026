@@ -120,6 +120,9 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
             {{ errorText() | translate }}
           } @else {
             {{ hint() }}
+            @if (hintAction(); as a) {
+              <button type="button" class="am-field__hint-action" data-testid="field-hint-action" (click)="a.run()">{{ a.label }}</button>
+            }
           }
         </span>
         <span
@@ -142,6 +145,9 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
           {{ errorText() | translate }}
         } @else {
           {{ hint() }}
+          @if (hintAction(); as a) {
+            <button type="button" class="am-field__hint-action" data-testid="field-hint-action" (click)="a.run()">{{ a.label }}</button>
+          }
         }
       </p>
       }
@@ -295,6 +301,22 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
         font-weight: 500;
       }
 
+      /* ACC-240 — the hint's action: a text button in the hint's own type. */
+      .am-field__hint-action {
+        font: inherit;
+        padding: 0;
+        margin-inline-start: var(--am-space-4);
+        border: 0;
+        background: none;
+        color: var(--am-primary-700);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .am-field__hint-action:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+
       /* ACC-120 slice 11 — hint (or error) at the start, the count at the end. */
       .am-field__message--counted {
         display: flex;
@@ -332,6 +354,13 @@ export class FieldComponent {
 
   /** Helper text. Replaced by the error message while one is showing. */
   readonly hint = input<string>('');
+  /**
+   * ACC-240 — an action after the hint, in the same slot (a list that failed
+   * to load: "Couldn't load the list. Retry"). Opt-in: without it the slot is
+   * exactly as before. Hidden while an error shows, because the error replaces
+   * the hint.
+   */
+  readonly hintAction = input<{ label: string; run: () => void } | null>(null);
 
   /**
    * ACC-120 slice 11 — an optional character counter, "value / max", at the end
