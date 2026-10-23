@@ -5801,7 +5801,7 @@ page reads it for its Edit dialog (`getById()`).
 | `update()` | `PATCH /organization/units/:id` | `org-unit-form.component.ts:233` |
 | `deactivate()` | `POST /organization/units/:id/deactivate` | `org-unit-tree.component.ts:170` |
 | `getStructure()` | `GET /organization/units/structure` | `org-unit-tree.component.ts` (7.9) |
-| `getChart()` | `GET /organization/units/chart` | none yet: the chart, PR E |
+| `getChart()` | `GET /organization/units/chart` | `org-unit-chart.component.ts` (7.12) |
 | `getSummary()` | `GET /organization/units/:id/summary` | `org-unit-record.component.ts` (7.10) |
 | `getHistory()` | `GET /organization/units/:id/history` | `org-unit-record.component.ts` and its History panel (7.10, 7.11) |
 
@@ -5980,7 +5980,8 @@ functions in `org-tree-model.ts`.
 - The title with "N units · N levels" beside it (active units; levels counted
   from 1).
 - Add unit, for `org:manage`.
-- A Tree tab, kept in `?view=`. It's one tab until PR E adds Chart.
+- Tree and Chart tabs (`am-tab-strip`), kept in `?view=`. The Chart tab is
+  the chart (7.12).
 
 **Toolbar:**
 - **Search** reads either name and the code, in any letter case.
@@ -6033,7 +6034,8 @@ functions in `org-tree-model.ts`.
   - **Headship** (a group heading): the actions `deriveHeadshipState()` gives
     for the unit's own head status, in the panel's words, run through
     `am-headship-actions` (5.15.5).
-  - **View:** Open unit (the record, PR D), then Headship details, which
+  - **View:** Open unit (the record, PR D), Show on chart (7.12: the chart
+    with the unit as its root and selected), then Headship details, which
     opens the panel.
   - **Deactivate.**
 - **Why the head status is read when the menu opens:**
@@ -6044,15 +6046,17 @@ functions in `org-tree-model.ts`.
     load the headship".
   - Appoint head with no head-conferring position is disabled, with the
     panel's reason as its second line.
-- **Without `org:manage`** (OS §6, read-only): the menu holds Open unit and
-  Headship details.
+- **Without `org:manage`** (OS §6, read-only): the menu holds Open unit, Show
+  on chart and Headship details.
   - No head status is read; it replaces the old crown button.
   - Add unit and Show deactivated are absent.
-- **Left out:** Show on chart (PR E), Move up/down (ACC-138).
-- **`?show=<unitId>`** (PR D, the record's "Show in tree"): a one-time
-  parameter (`injectFixLinkParam`). The unit's parents are added to the expand
-  state (and saved, as any expand is), its row gets `am-ot__row--sought` (an
-  inline-start bar) and is scrolled into view, and the parameter is removed.
+- **Left out:** Move up/down (ACC-138).
+- **`?show=<unitId>`** (PR D, the record's "Show in tree"; PR E, the chart's
+  "Find in tree"): read whenever it arrives, not only at load, because the
+  chart reaches the tree without reloading it. The unit's parents are added to
+  the expand state (and saved, as any expand is), its row gets
+  `am-ot__row--sought` (an inline-start bar), is scrolled into view and its
+  name link is focused, and the parameter is removed (`replaceUrl`).
 
 **Deactivate:**
 - An `AmConfirmService` destructive confirm: "Deactivate {unit}?", "It
@@ -6271,6 +6275,135 @@ organisation's unit gets the identical 404 an invented id gets.
 - `org-unit-history.db-spec.ts` (`npm run test:db`): the Json filters, the
   deactivation lookup, paging, and the 404 both ways.
 - Every filter mutation-checked red.
+
+### 7.12 The chart, `/organization?view=chart` (ACC-120 slice 11, PR E)
+
+`components/org-unit-chart/`, to the drawing (OS §2, L161-172, L573-577).
+**Our own component, not `p-organizationChart` (D3)**, from the CC-136 test
+against B1–B9:
+- PrimeNG draws each level as nested tables, and its connector stubs sit at
+  column boundaries, measured up to 15px from a box's centre (B2).
+- Its `pt` reaches only the root table, leaving 149 tables and 777 row and
+  cell nodes inside the role=tree, and its toggler adds tab stops (B4).
+
+**Parts:**
+- `org-chart-model.ts`: the pure rules. `buildChart()` turns the response
+  into a tree, never past four levels, and gives a box with no rendered
+  children its `childCount` as `below`. `moveFocus()` maps a key to the
+  next box. `boxSize()` is the size table. `headSubject()` is the head line.
+- `org-chart-box.component.ts` (`am-org-chart-box`): one box, a
+  `treeitem`.
+- `org-chart-toolbar.component.ts`: "Showing from" the root's path, each
+  ancestor a link that re-roots; the levels note; Show committees; Zoom out /
+  Fit / Zoom in. No Print (D14).
+- `org-chart-panel.component.ts`: the 280px side panel.
+- `org-unit-chart.component.ts` (`am-org-unit-chart`): the page part,
+  hosted by the tree as its Chart tab panel.
+
+**What it reads:** `GET …/chart?rootId=&depth=4` (7.8), on every change of
+`root`. The panel reads `GET …/:id/summary` (7.8) for the selected unit
+only, when it is selected.
+
+**The URL:** `?view=chart`, `&root=<unitId>` (absent = the top unit) and
+`&sel=<unitId>`.
+- A re-root pushes history, so Back returns to the previous window.
+- Selecting replaces it.
+- A root that isn't on the chart (deactivated, unknown, another
+  organisation's: the API's identical 404) says so, with Show from the top.
+
+**Boxes** (`boxSize()`):
+
+| | English | Arabic |
+|---|---|---|
+| Levels 1–2 | 210 × 96 | 210 × 112 |
+| Levels 3–4 | 180 × 84 | 190 × 96 |
+| A level with the "below" button | 180 × 118 | 190 × 134 |
+| Show committees | +29 per line | +33 |
+
+- Arabic adds 4px per text line.
+- Every box on a level with the "N sub-units below · show from here" button
+  is the tall height, so the row stays level.
+- Selected: a 2px border. No head: a dashed avatar. Colour means attention
+  only.
+- Names are cut to one line; the whole name is in the box's accessible name
+  and in the panel.
+
+**Connectors are drawn by the layout, not measured.** Each branch is a column
+of its box over a row of children:
+- a 1 × 14px stub under the parent (`.occ__kids::before`);
+- the bar along the top of the children (`.occ__kid::before`, starting and
+  ending at the outer children's centres);
+- a 1 × 14px stub above each child (`.occ__kid::after`).
+
+The stubs sit at `inset-inline-start: calc(50% - 0.5px)`, so they meet each
+box's centre by construction and mirror in Arabic. Sibling gaps are 20px
+under the root and 14px elsewhere.
+
+**Keyboard:** `role=tree`, one tab stop (the selected box, else the root).
+- Up goes to the parent, Down to the first child.
+- Left and Right move along the row in VISUAL order, so in Arabic Right is the
+  previous sibling.
+- Home goes to the root, End to the last box.
+- Enter or Space selects. Selecting the selected box keeps it selected.
+- Shift+Enter re-roots at the focused box. The level-4 button is
+  `tabindex=-1`, because Shift+Enter is its keyboard path.
+
+**Zoom:** a CSS scale (30%–150%, steps of 10) on the tree, inside a wrapper
+sized to the scaled chart, so the area's scrollbar matches what is drawn.
+- Fit scales the chart to the area's width, never above 100%.
+- After every zoom, language switch or new window, the area scrolls the root
+  into the middle. In Arabic the scroll origin is the right edge, so a scaled
+  chart would otherwise sit out of sight.
+
+**The panel:** both names, the head, "Positions · N people" with a row per
+position, the unit's committees (only with `committees:view`), then Open
+unit (`/organization/units/:id`), Show chart from here, and Find in tree.
+- Below `SHELL_PHONE_BELOW_PX` (768) it drops below the chart as a
+  full-width sheet (D15).
+- The chart keeps scrolling sideways inside its own area. The page never
+  does.
+
+**D7:**
+- Names only with `users:view`; the API returns `name: null` otherwise, and
+  the box shows the position title with no initials.
+- The panel links a head to `/users/:id` only with `admin:access` AND
+  `users:view`.
+- Committees only with `committees:view`: the switch is absent without it,
+  even when the viewer had saved it as on.
+- The attention chip only when the API sent `attention` (`setup:view`).
+
+**D9:** the zoom and Show committees are remembered per viewer in local
+storage (`am.orgChart.<userId>`), read in `try`; the page works without
+it.
+
+**From the tree** (7.9):
+- **Show on chart**, the row menu's View item, opens
+  `?view=chart&root=<id>&sel=<id>`.
+- **Find in tree**, in the panel, opens `?view=tree&show=<id>`. The tree reveals,
+  marks and focuses the row (7.9).
+
+**Tests:**
+- `org-chart-model.spec.ts`: the window as a tree, the tall levels, the
+  four-level cut, `moveFocus()` in both directions, the size table, the
+  head line.
+- `org-unit-chart.component.spec.ts`, through the router:
+  - the keyboard in LTR and RTL, and select;
+  - re-root by the button, Shift+Enter and a path link;
+  - a shared link;
+  - the depth-6 fixture: 118 with the button, the row taking the tallest,
+    84 without;
+  - D7, D9, the empty cases, the panel's three actions, and zoom.
+- `org-unit-chart.layout.spec.ts`, EN and AR at 988, 358 and 328px of
+  content:
+  - every box's size per level;
+  - level rows;
+  - every connector stub within 1px of its box's centre, read from the
+    stub's own computed position, on a deliberately uneven tree;
+  - the panel at 280, or below on a phone;
+  - no sideways page scroll;
+  - 150 boxes timed.
+- `org-unit-tree.component.spec.ts`: Show on chart and Find in tree, both
+  ways.
 
 
 `getFlat()` is the most widely reused endpoint found in this document
