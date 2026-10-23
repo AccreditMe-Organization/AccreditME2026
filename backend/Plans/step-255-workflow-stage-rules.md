@@ -330,7 +330,7 @@ The refusal is unchanged: DISSOLVING flag ⇒ `CHANGE_REQUEST_COMMITTEE_DISSOLVI
   - it writes one `AuditLog` row per organisation (`objectType: 'WorkflowTemplate'`, `actorId: null`, `metadata { source, ticket: 'ACC-255', reason, stagesWritten }`).
 - **The parity check** (`npm run parity:acc255-stage-rules`, read-only):
   - **Renamed while building PR 1: it is NOT a `check:*` script.** CI and the PR gate run every `check:*` they discover — CI with no database, the gate with `backend/.env`'s, which is the shared one. A check that reads a database would fail in CI and, in the gate, read the shared database unasked. It is run by hand, after the backfill, against the database it is meant to check.
-  - **A committee with no workflow instance is reported as a difference** (`(no live stage)`): today its members can be changed; under D14 it allows nothing. Count 7 (§13) says whether any exist on the shared database; PR 2 does not switch while any do.
+  - **A committee with no workflow instance is reported as a difference** (`(no live stage)`): today its members can be changed; under D14 it allows nothing. Count 7 (§13) says whether any exist on the shared database; PR 2 does not switch until it is taken, and if it is above 0 such a committee follows today's rules (§11, Ahmad 23 Oct).
   - For every organisation, every committee and every open change request, it compares the new answer with the old maps:
     - Edit offered;
     - each member action;
@@ -568,6 +568,12 @@ ACC-240's PR 3a and 3b merge first. 3a's `canRaise` (`openSummary()`) reads `com
 | **4 — frontend, after the drawing** | stage form: "What can be done to the record here" and flags | none | the new section |
 
 - PRs 1 and 2 are backend and deploy through Railway; PR 3 can merge while Railway is paused, once PR 2 is live (it reads `stageRules`).
+- **PR 2 and committees with no workflow instance (D14) — Ahmad, 23 Oct.** Such a committee must not lose the member changes it has today (add, remove, change role, which no stage limits now).
+  - **PR 2 does not switch over until §13 count 7** (committees with no workflow instance) **has been taken on the shared database**, read only.
+  - **If that count is above 0**, PR 2 treats a committee with no instance as following TODAY's rules: member changes allowed; Edit, Request a change and the request moves as `UNKEYED_COMMITTEE_STAGE` allows them now; not dissolving. That is one branch where the engine's answer is read, with a spec that a committee with no instance can still add, remove and change a member's role, and is refused nothing it is allowed today.
+  - **If it is 0**, D14 stands as written (nothing allowed, logged), and the spec pins that.
+  - Either way the parity check is run again on the shared database after the backfill, and its `(no live stage)` rows are read against this decision before PR 2 merges.
+  - PR 1's local run found such committees only among leftover test organisations (1,920 of them), not in the fixtures: the shared count is the one that decides.
 - Each PR carries its own tests. PR 1's real-database spec includes the backfill.
 
 ---
@@ -686,6 +692,11 @@ workflow editing tenant-admin-only needs one of these, a decision for Ahmad:
 - or the stage-rule writes checking the ROOT ROLE rather than a permission.
 
 PR 1 builds the guard exactly as workflow editing has it today.
+
+**Handled by ACC-258, not by ACC-255 (Ahmad, 23 Oct).** That
+`workflows:manage` can be granted to roles other than Organization
+Administrator is ACC-258's to close, including how existing holders are
+reported. ACC-255 changes no grant and no grantability rule in any PR.
 
 ### 16.2 Member changes in Dissolved (Q-A) — PR 2's one seeded rule change
 
