@@ -44,6 +44,7 @@
     "backfill:acc233-committee-stage-keys": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc233-committee-stage-keys.ts",
     "backfill:acc239-change-request-workflow": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc239-change-request-workflow.ts",
     "backfill:acc258-revoke-workflows-manage": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc258-revoke-workflows-manage.ts",
+    "backfill:acc255-dissolved-membership": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc255-dissolved-membership.ts",
     "backfill:acc255-stage-rules": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc255-stage-rules.ts",
     "parity:acc255-stage-rules": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/parity-acc255-stage-rules.ts",
     "backfill:acc244-grant-task-keys": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc244-grant-task-keys.ts",
