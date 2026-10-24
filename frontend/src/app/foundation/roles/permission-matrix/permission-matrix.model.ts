@@ -46,17 +46,21 @@ export const CELL_COUNT = 1 + MATRIX_COLUMNS.length;
  * would be a checkbox that does nothing, and the server keeps those as the
  * role holds them whatever is sent. Platform keys are hidden INSIDE A TENANT
  * (D2): they mean nothing there, and a tenant role may not gain one (R1).
+ * ACC-258: a `rootRoleOnly` key (workflows:manage) is shown only on the root
+ * role, whose matrix is read-only; no other role may hold it, so it is never
+ * offered there. Which keys are root-only is the server's answer.
  *
  * Modules come in the fixed product order (D3). Inside a module, rows follow
  * the columns left to right, then the whole-row grants; within one column,
  * catalogue order.
  */
-export function buildMatrix(catalogue: readonly PermissionDto[], opts: { isTenant: boolean }): MatrixModule[] {
+export function buildMatrix(catalogue: readonly PermissionDto[], opts: { isTenant: boolean; isRootRole?: boolean }): MatrixModule[] {
   const firstSeen = new Map<string, number>();
   const byModule = new Map<string, MatrixPermission[]>();
   catalogue.forEach((p, i) => {
     if (!p.inUse) return;
     if (opts.isTenant && p.module === 'platform') return;
+    if (p.rootRoleOnly && !opts.isRootRole) return;
     if (!firstSeen.has(p.module)) firstSeen.set(p.module, i);
     const key = `${p.module}:${p.action}`;
     const list = byModule.get(p.module) ?? [];

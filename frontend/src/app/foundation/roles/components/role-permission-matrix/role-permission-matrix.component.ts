@@ -600,7 +600,7 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
 
   /** D2 — platform keys are hidden inside a tenant. */
   readonly modules = computed<MatrixModule[]>(() =>
-    buildMatrix(this.catalogue(), { isTenant: !this.navigationAccess.isPlatformOrg() }),
+    buildMatrix(this.catalogue(), { isTenant: !this.navigationAccess.isPlatformOrg(), isRootRole: this.isRootRole() }),
   );
   readonly rows = computed<MatrixRow[]>(() => matrixRows(this.modules()));
 
@@ -911,6 +911,8 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
       error: (err: unknown) => {
         if (err instanceof HttpErrorResponse && err.status === 403) this.saveState.set('forbidden');
         else if (refusalCode(err) === 'ROLE_PERMISSIONS_CHANGED') this.saveState.set('conflict');
+        // ACC-258 — only reachable from a stale catalogue: the matrix no longer offers the key.
+        else if (refusalCode(err) === 'PERMISSION_ROOT_ROLE_ONLY') this.saveState.set('rootRoleOnly');
         else this.saveState.set('failed');
       },
     });

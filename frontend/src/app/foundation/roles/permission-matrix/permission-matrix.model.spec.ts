@@ -13,7 +13,7 @@ import {
 // ACC-120 slice 5, PR B — the matrix's rules, apart from the screen.
 const perm = (key: string, inUse = true): PermissionDto => {
   const [module, action] = key.split(':');
-  return { id: key, module, action, description: null, inUse };
+  return { id: key, module, action, description: null, inUse, rootRoleOnly: key === 'workflows:manage' };
 };
 
 const CATALOGUE: PermissionDto[] = [
@@ -35,6 +35,15 @@ describe('buildMatrix', () => {
     expect(keys).not.toContain('kpi:verify');
     expect(keys).not.toContain('platform:admin');
     expect(keys).toContain('users:view');
+  });
+
+  // ACC-258 — which keys are root-only is the catalogue's answer (rootRoleOnly).
+  it('hides a rootRoleOnly key on every role but the root role, whose read-only matrix shows it', () => {
+    const catalogue = [perm('workflows:view'), perm('workflows:manage')];
+    const keysOf = (isRootRole?: boolean) => buildMatrix(catalogue, { isTenant: true, isRootRole }).flatMap((m) => m.keys);
+    expect(keysOf()).toEqual(['workflows:view']);
+    expect(keysOf(false)).toEqual(['workflows:view']);
+    expect(keysOf(true).sort()).toEqual(['workflows:manage', 'workflows:view']);
   });
 
   it('shows platform keys in the platform organisation', () => {
