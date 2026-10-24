@@ -67,6 +67,14 @@ export interface NavItem {
   // with this one's). /tasks/:id is My tasks' task page; /tasks/unassigned is
   // not, so the pattern names the page, never a prefix.
   alsoActiveFor?: RegExp;
+  // ACC-120 slice 11, PR F — the item is shown only to a viewer who does NOT
+  // hold this permission. It exists for one pair: the read-only Organisation
+  // page (/org, Quality management) is for org:view holders who do not
+  // administer, and an administrator keeps /organization under Administration,
+  // so nobody sees both. It hides a LINK only; the route's permission still
+  // comes from requiredPermission below, and /org sends an administrator to
+  // /organization by its own guard.
+  hiddenWithPermission?: string;
 }
 
 export interface NavGroup {
@@ -157,6 +165,18 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-flag',
         route: '/committees',
         requiredPermission: 'committees:view',
+      },
+      // ACC-120 slice 11, PR F (D1, option B1) — the Organisation pages,
+      // read-only, for an org:view holder who does not administer (OS §6). An
+      // administrator never sees this item: they have Organization Structure
+      // under Administration, the same pages with their write controls.
+      {
+        key: 'organizationReadOnly',
+        labelKey: 'nav.organizationReadOnly',
+        icon: 'pi pi-building',
+        route: '/org',
+        requiredPermission: 'org:view',
+        hiddenWithPermission: ADMIN_ACCESS,
       },
     ],
   },
@@ -365,7 +385,8 @@ export function isNavItemVisible(item: NavItem, access: NavAccess): boolean {
   const permitted =
     !item.requiredPermission || access.hasPermission(item.requiredPermission);
   const entitled = !item.moduleKey || access.isModuleEnabled(item.moduleKey);
-  return permitted && entitled;
+  const notExcluded = !item.hiddenWithPermission || !access.hasPermission(item.hiddenWithPermission);
+  return permitted && entitled && notExcluded;
 }
 
 /** ACC-123 — a group the caller may see at all, before its items are filtered. */

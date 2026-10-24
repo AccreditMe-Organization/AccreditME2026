@@ -1,4 +1,5 @@
 import { Component, DestroyRef, ElementRef, computed, effect, inject, signal, untracked } from '@angular/core';
+import { injectOrgPages } from '../../org-pages';
 import { HttpErrorResponse } from '@angular/common/http';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -91,7 +92,7 @@ interface RelationView {
       @case ('notFound') {
         <div class="am-ur__card px-4 py-6" role="alert" data-testid="unit-not-found">
           <p class="m-0 text-body text-ink-900">{{ 'organization.record.notFound' | translate }}</p>
-          <a class="text-primary-700 font-semibold" routerLink="/organization">{{ 'organization.record.backToTree' | translate }}</a>
+          <a class="text-primary-700 font-semibold" [routerLink]="pages.base">{{ 'organization.record.backToTree' | translate }}</a>
         </div>
       }
       @case ('error') {
@@ -181,7 +182,7 @@ interface RelationView {
               class="am-ur__headship"
               [orgUnitId]="id"
               [unitName]="primaryName()"
-              [readOnly]="!s.unit.isActive"
+              [readOnly]="pages.readOnly || !s.unit.isActive"
               (saved)="load()"
             />
           }
@@ -202,7 +203,7 @@ interface RelationView {
           >
             <span amPanelActions class="flex items-center gap-3">
               @if (s.children.length) {
-                <a class="am-ur__link text-meta" routerLink="/organization" [queryParams]="{ show: s.unit.id }" data-testid="unit-show-in-tree">{{ 'organization.record.showInTree' | translate }}</a>
+                <a class="am-ur__link text-meta" [routerLink]="pages.base" [queryParams]="{ show: s.unit.id }" data-testid="unit-show-in-tree">{{ 'organization.record.showInTree' | translate }}</a>
               } @else if (canAct()) {
                 <button type="button" class="am-ur__link text-meta" (click)="onAddChild()" data-testid="unit-subs-add">{{ 'organization.addSubUnit' | translate }}</button>
               }
@@ -367,7 +368,10 @@ export class OrgUnitRecordComponent {
   private readonly fixLinkEdit = injectFixLinkParam('edit');
 
   readonly isArabic = computed(() => this.language.isArabic());
-  readonly canManage = computed(() => this.access.hasPermission('org:manage'));
+  /** `/organization` or the read-only `/org` (PR F, OS §6), and the base every link here uses. */
+  readonly pages = injectOrgPages();
+  /** Never on the read-only page, whatever the viewer holds: every write there is absent. */
+  readonly canManage = computed(() => !this.pages.readOnly && this.access.hasPermission('org:manage'));
   /** Edit, Add sub-unit and ⋯: a manager, on an active unit. */
   readonly canAct = computed(() => this.canManage() && !!this.summary()?.unit.isActive);
   /** A person's record (`/users/:id`) opens for `admin:access` + `users:view` (ACC-123). */
@@ -384,12 +388,12 @@ export class OrgUnitRecordComponent {
     // The breadcrumb is the unit's ancestry (ACC-79): every parent, top first.
     effect(() => {
       const s = this.summary();
-      const path = `/organization/units/${this.unitId()}`;
+      const path = `${this.pages.base}/units/${this.unitId()}`;
       if (!s || s.unit.id !== this.unitId()) return;
-      const crumbs = s.path.slice(0, -1).map((p) => ({ url: `/organization/units/${p.id}`, text: this.language.bilingual(p.nameEn, p.nameAr) }));
+      const crumbs = s.path.slice(0, -1).map((p) => ({ url: `${this.pages.base}/units/${p.id}`, text: this.language.bilingual(p.nameEn, p.nameAr) }));
       untracked(() => this.breadcrumb.setTrail(path, crumbs));
     });
-    inject(DestroyRef).onDestroy(() => this.breadcrumb.clear(`/organization/units/${this.unitId()}`));
+    inject(DestroyRef).onDestroy(() => this.breadcrumb.clear(`${this.pages.base}/units/${this.unitId()}`));
   }
 
   load(): void {
@@ -487,7 +491,7 @@ export class OrgUnitRecordComponent {
       label: t('organization.parentUnit'),
       kind: 'unit',
       name: parent ? this.language.bilingual(parent.nameEn, parent.nameAr) : t('organization.record.topUnit'),
-      link: parent ? ['/organization/units', parent.id] : null,
+      link: parent ? this.pages.unit(parent.id) : null,
       state: '',
       hidden: false,
       none: !parent,
@@ -541,7 +545,7 @@ export class OrgUnitRecordComponent {
   readonly strip = computed(() => {
     const s = this.summary();
     const a = s?.unit.attention;
-    if (!s || !a) return null;
+    if (!s || !a || this.pages.readOnly) return null;
     const t = this.textDeps().t;
     const severity = t(`setupHealth.severity.${a.severity}`);
     const fix = this.canAct()
@@ -587,7 +591,7 @@ export class OrgUnitRecordComponent {
       return {
         id: c.id,
         primary: name,
-        link: ['/organization/units', c.id],
+        link: this.pages.unit(c.id),
         secondary: `${type} · ${head}`,
         trailing: people,
         cells: [type, head, people],

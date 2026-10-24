@@ -6065,6 +6065,8 @@ each.
 
 ### 7.9 The tree, `/organization` (ACC-120 slice 11, PR C)
 
+Also served read-only at `/org` (7.13).
+
 `components/org-unit-tree/`, rebuilt to the drawing (`AccreditMe Organization
 Structure.dc.html` §1, OS L40-148, L498-540). The rules it filters by are pure
 functions in `org-tree-model.ts`.
@@ -6177,6 +6179,8 @@ functions in `org-tree-model.ts`.
   names wrapped, and the blockers dialog at five blockers under the 420 cap.
 
 ### 7.10 The org unit record, `/organization/units/:id` (ACC-120 slice 11, PR D)
+
+Also served read-only at `/org/units/:id` (7.13).
 
 `components/org-unit-record/`, built to the drawing (`AccreditMe Organization
 Structure.dc.html` §3, OS L312-339, L611-628), a sibling of the Committee
@@ -6377,6 +6381,8 @@ organisation's unit gets the identical 404 an invented id gets.
 
 ### 7.12 The chart, `/organization?view=chart` (ACC-120 slice 11, PR E)
 
+Also served read-only at `/org?view=chart` (7.13).
+
 `components/org-unit-chart/`, to the drawing (OS §2, L161-172, L573-577).
 **Our own component, not `p-organizationChart` (D3)**, from the CC-136 test
 against B1–B9:
@@ -6503,6 +6509,88 @@ it.
   - 150 boxes timed.
 - `org-unit-tree.component.spec.ts`: Show on chart and Find in tree, both
   ways.
+
+### 7.13 The read-only Organisation pages, `/org` (ACC-120 slice 11, PR F)
+
+D1, option B1 (OS §6, L409-451): an `org:view` holder who does not hold
+`admin:access` gets the tree, the chart and the unit record read-only, outside
+Administration. Before this, QUALITY_MANAGER and VIEWER held `org:view` and
+were sent to /home.
+
+**Routes** (`app.routes.ts`): `/org` loads the same `ORGANIZATION_ROUTES` as
+`/organization`, with route data `orgReadOnly: true`:
+- `/org` (tree, and `?view=chart&root=&sel=`);
+- `/org/units/:id` (the record);
+- `?show=`.
+
+Its guards, in order:
+1. `orgReadOnlyRedirectGuard` (`foundation/organization/org-read-only.guard.ts`):
+   - a holder of `admin:access` is sent to the same URL under `/organization`,
+     with the path and query kept (`toAdminUrl()` moves only a leading `/org`
+     segment);
+   - with permissions not yet known it lets the request through (ACC-70), and
+     the page is then read-only, the safe direction.
+2. `permissionGuard`, with `org` → `['org:view']` from the nav item.
+
+`/organization` is unchanged: `admin:access` + `org:view`, so a read-only
+viewer typing it is still refused.
+
+**Nav** (`nav-items.ts`): a second item, `organizationReadOnly`, "Organization",
+in Quality management, `route: '/org'`, `requiredPermission: 'org:view'`,
+`hiddenWithPermission: 'admin:access'`.
+- `hiddenWithPermission` is a new `NavItem` field, read in
+  `isNavItemVisible()` only. It hides the LINK; the route's permission still
+  comes from `requiredPermission` (ACC-79's one source).
+- So an administrator sees only Organization Structure under Administration,
+  and never both.
+- The breadcrumb resolves `/org/…` to Quality management: "{tenant} › Quality
+  management › Organization › {ancestors}" on a record.
+
+**The mode:** `injectOrgPages()` (`foundation/organization/org-pages.ts`) reads
+the route data and gives each page `readOnly`, its `base` (`/org` or
+`/organization`) and `unit(id)`.
+- Every link between the pages uses the base: tree name links, Open unit (row
+  menu and chart panel), Find in tree, Show on chart, Show in tree, the
+  record's breadcrumb trail, the parent relation and the sub-unit rows.
+- `readOnly` is folded into each page's write gate (`canManage` /
+  `canCreate` = `!readOnly && org:manage`), so a custom role holding
+  `org:manage` but not `admin:access` is read-only there too.
+
+**Absent on `/org`, never disabled:**
+
+| Page | Absent |
+|---|---|
+| Tree | Add unit; Show deactivated; the Attention column and chips; the ⋯ menu's Unit, Headship and Deactivate groups and Headship details (it keeps Open unit and Show on chart); the `?head=` Fix link |
+| Chart | the severity chips on boxes; "Add the first unit under …" (a sentence instead) |
+| Record | Edit, Add sub-unit and ⋯; the Setup health strip and its Fix; every headship action (the Headship panel gets `readOnly` and shows its state rows); "Add sub-unit" in the empty Sub-units panel |
+
+- The H1 is "Organization" (`organization.readOnlyTitle`), as drawn.
+- D7 is unchanged: names with `users:view`, committees with
+  `committees:view`, and position titles and headcount for every `org:view`
+  holder.
+- A link to a user's record needs `admin:access` + `users:view` everywhere on
+  these pages. The Headship panel linked on `users:view` alone, a link that
+  bounced; this was invisible while only administrators reached the page, and is
+  fixed here.
+
+**Tests:**
+- `org-read-only.guard.spec.ts`, through the real `/org` and `/organization`
+  entries:
+  - a quality manager reaches `/org`, read-only, with the query kept;
+  - a user without `org:view` is refused;
+  - an administrator is redirected with the path and query kept;
+  - the read-only viewer is still refused `/organization`;
+  - unknown permissions redirect nobody.
+- `nav-items.spec.ts`: the item for a quality manager, neither item without
+  `org:view`, only Administration's for an administrator, and the route
+  permissions.
+- `org-read-only.absence.spec.ts`: the tree, the chart and the record through
+  the real routes.
+  - Each write control is first proven PRESENT at `/organization` for an
+    administrator.
+  - Then it is ABSENT at `/org` for a viewer holding every permission but
+    `admin:access`.
+  - The page's links stay in `/org`, and no request but a GET is sent.
 
 
 `getFlat()` is the most widely reused endpoint found in this document
@@ -8122,7 +8210,11 @@ permissions. All three are gone.
 entitlement (if `moduleKey` declared). Never a role name. A group with no
 visible items is dropped, not rendered as a lone heading. Committees is the
 one Quality item deliberately NOT entitlement-driven (no tenant has modules
-switched on — see Section 1.8); a test pins that.
+switched on — see Section 1.8); a test pins that. ACC-120 slice 11, PR F adds
+`hiddenWithPermission`: an item shown only to a viewer who does NOT hold it.
+Its one use is the read-only Organisation item (7.13), hidden from
+`admin:access` holders. It hides the link only; the route's permission still
+comes from `requiredPermission`.
 
 **Resolution** (`resolveNavLocation`): longest route wins, matched on whole
 segments, among items THIS user can see — so `/tasks/unassigned` resolves to

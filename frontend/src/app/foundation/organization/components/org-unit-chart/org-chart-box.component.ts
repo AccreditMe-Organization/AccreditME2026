@@ -129,8 +129,12 @@ export class OrgChartBoxComponent {
     return n ? this.format.count('organization.people', n) : this.t('organization.chart.noOneAssigned');
   });
 
+  /** False on the read-only page (PR F, OS §6): no severity chip, whatever the API sent. */
+  readonly attention = input(true);
+
   /** The attention chip: present only when the API sent it (setup:view, D7). */
   readonly chip = computed(() => {
+    if (!this.attention()) return null;
     this.translate.currentLang();
     const a = this.box().node.attention;
     if (!a) return null;

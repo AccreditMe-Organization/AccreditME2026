@@ -7,6 +7,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { ADMIN_ACCESS } from '../../../../core/navigation/admin-access';
 import { OrgChartNodeDto, OrgUnitService, OrgUnitSummaryDto } from '../../services/org-unit.service';
 import { headSubject } from './org-chart-model';
+import { injectOrgPages } from '../../org-pages';
 
 /**
  * ACC-120 slice 11, PR E — the docked side panel (OS L218-233), OUTSIDE the
@@ -69,7 +70,7 @@ import { headSubject } from './org-chart-model';
       }
 
       <div class="ocp__actions">
-        <a class="ocp__btn ocp__btn--primary" [routerLink]="['/organization/units', n.id]" data-testid="panel-open">{{ 'organization.tree.menu.openUnit' | translate }}</a>
+        <a class="ocp__btn ocp__btn--primary" [routerLink]="pages.unit(n.id)" data-testid="panel-open">{{ 'organization.tree.menu.openUnit' | translate }}</a>
         <button type="button" class="ocp__btn" (click)="showFromHere.emit(n.id)" data-testid="panel-show-from-here">{{ 'organization.chart.showFromHere' | translate }}</button>
         <button type="button" class="ocp__btn" (click)="findInTree.emit(n.id)" data-testid="panel-find-in-tree">{{ 'organization.chart.findInTree' | translate }}</button>
       </div>
@@ -102,6 +103,8 @@ export class OrgChartPanelComponent {
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly access = inject(NavigationAccessService);
+  /** Open unit goes to the record at this page's base: `/org` on the read-only page (PR F). */
+  readonly pages = injectOrgPages();
 
   readonly node = input<OrgChartNodeDto | null>(null);
   readonly showCommittees = input(false);

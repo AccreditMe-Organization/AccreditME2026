@@ -26,6 +26,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { AuthService } from '../../../../core/services/auth.service';
 import { ADMIN_ACCESS } from '../../../../core/navigation/admin-access';
 import { SHELL_PHONE_BELOW_PX } from '../../../../layout/app-shell/app-shell.component';
+import { injectOrgPages } from '../../org-pages';
 import { OrgChartResponseDto, OrgUnitService } from '../../services/org-unit.service';
 import { OrgChartBoxComponent } from './org-chart-box.component';
 import { OrgChartPanelComponent } from './org-chart-panel.component';
@@ -170,6 +171,7 @@ type LoadState = 'loading' | 'error' | 'notFound' | 'ready';
           [selected]="selectedId() === b.node.id"
           [focusable]="focusId() === b.node.id"
           [showCommittees]="showCommittees() && model().committeeLevels.has(b.level)"
+          [attention]="!pages.readOnly"
           (click)="select(b.node.id)"
           (focusin)="focusId.set(b.node.id)"
           (reroot)="reroot(b.node.id)"
@@ -252,7 +254,9 @@ export class OrgUnitChartComponent implements AfterViewInit {
   private readonly committeesPref = signal(false);
 
   readonly isRtl = computed(() => this.language.isRtl());
-  readonly canManage = computed(() => this.access.hasPermission('org:manage'));
+  /** `/organization` or the read-only `/org` (PR F): no write and no Setup health prompt there. */
+  readonly pages = injectOrgPages();
+  readonly canManage = computed(() => !this.pages.readOnly && this.access.hasPermission('org:manage'));
   readonly canOpenUsers = computed(() => this.access.hasPermission(ADMIN_ACCESS) && this.access.hasPermission('users:view'));
   /** D7: committees only with committees:view, so the switch is absent without it. */
   readonly canSeeCommittees = computed(() => this.access.hasPermission('committees:view'));
