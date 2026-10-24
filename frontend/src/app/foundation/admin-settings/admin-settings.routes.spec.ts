@@ -9,11 +9,13 @@ import { permissionGuard } from '../../core/guards/permission.guard';
 describe('ADMIN_SETTINGS_ROUTES (ACC-79)', () => {
   const screens = ADMIN_SETTINGS_ROUTES.filter((r) => !r.redirectTo);
 
-  it('lists the four screens', () => {
+  // ACC-260 added File storage, the fifth.
+  it('lists the five screens', () => {
     expect(screens.map((r) => r.path)).toEqual([
       'organization-profile',
       'email-provider',
       'ai-settings',
+      'storage',
       'task-sla',
     ]);
   });

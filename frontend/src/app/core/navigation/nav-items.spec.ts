@@ -339,7 +339,7 @@ describe('nav-items (ACC-79)', () => {
         ADMIN_ACCESS,
         'tenant:view',
       ]);
-      for (const screen of ['email-provider', 'ai-settings', 'task-sla']) {
+      for (const screen of ['email-provider', 'ai-settings', 'storage', 'task-sla']) {
         expect(ROUTE_PERMISSIONS.get(`admin-settings/${screen}`))
           .withContext(screen)
           .toEqual([ADMIN_ACCESS, 'tenant:manage_config']);
@@ -374,7 +374,8 @@ describe('nav-items (ACC-79)', () => {
           .withContext(item.key)
           .toContain(ADMIN_ACCESS);
       }
-      expect(admin.items.length).withContext('the section is not empty').toBe(13);
+      // ACC-260 — File storage is the fourteenth.
+      expect(admin.items.length).withContext('the section is not empty').toBe(14);
     });
 
     it('holds no platform routes — /platform is guarded as a whole', () => {
