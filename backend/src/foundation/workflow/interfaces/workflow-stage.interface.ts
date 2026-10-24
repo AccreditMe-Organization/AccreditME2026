@@ -21,6 +21,10 @@ export interface IWorkflowStage {
   assigneePositionId: string | null;
   assigneeOrgUnitId: string | null;
   escalationConfig: Record<string, unknown> | null;
+  // ACC-255 — the record actions this stage allows and its flags, as keys in
+  // registry order (record-registry.ts). Labels are the frontend's.
+  actions: string[];
+  flags: string[];
   transitions?: IWorkflowTransition[];
   // ACC-190 — on a template read: how many tasks entering this stage creates,
   // and the longest one's due time in working hours (null when it creates none).

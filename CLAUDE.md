@@ -4989,6 +4989,12 @@ complete, not just the currently-in-review ones.
   `AuditLogService` entirely, so those changes leave no trail at all.
   Worth addressing for a compliance product — config-change history
   that can't say what was configured is close to useless.
+  **UPDATED (ACC-255): the first half is fixed for saves through the
+  API.** `updateStage` now records every field that changed, before and
+  after, record actions and flags included, and nothing for a no-op;
+  adding and removing a stage record the whole stage (SYSTEM-REFERENCE
+  §2.18). Still open: `WorkflowStage` has no `updatedAt`, and scripts
+  writing through Prisma directly still bypass the audit.
 
 ---
 

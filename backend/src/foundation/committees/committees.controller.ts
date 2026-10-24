@@ -14,6 +14,7 @@ import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
 import {
   ICommittee,
   ICommitteeDetail,
+  ICommitteeFormChoices,
   ICommitteeListItem,
   ICommitteeMember,
   ICommitteeMemberRow,
@@ -22,6 +23,7 @@ import {
   ISubCommitteeRow,
 } from './interfaces/committee.interface';
 import { CommitteeListsService } from './committee-lists.service';
+import { CommitteeFormChoicesService } from './committee-form-choices.service';
 import { CommitteeMembersPageQueryDto, SubCommitteesQueryDto } from './dto/committee-list-query.dto';
 
 // Lifecycle transitions (FORMATION -> ... -> DISSOLVED) go through the
@@ -34,12 +36,23 @@ export class CommitteesController {
   constructor(
     private readonly committeesService: CommitteesService,
     private readonly lists: CommitteeListsService,
+    private readonly formChoices: CommitteeFormChoicesService,
   ) {}
 
   @Get()
   @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   listCommittees(@CurrentTenant() tenantId: string): Promise<ICommitteeListItem[]> {
     return this.committeesService.listCommittees(tenantId);
+  }
+
+  // ACC-255 (plan §10.5) — what the create and edit dialogs choose from, for
+  // anyone who may create OR edit a committee (the guard admits either), so
+  // neither needs lookups:view or org:view. Declared ABOVE ':id' so
+  // 'form-choices' is not read as an id.
+  @Get('form-choices')
+  @Permissions(COMMITTEES_PERMISSIONS.CREATE, COMMITTEES_PERMISSIONS.EDIT_DETAILS)
+  getFormChoices(@CurrentTenant() tenantId: string): Promise<ICommitteeFormChoices> {
+    return this.formChoices.forOrganization(tenantId);
   }
 
   @Get(':id')

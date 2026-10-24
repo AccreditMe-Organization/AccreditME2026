@@ -1,3 +1,35 @@
+import type { ILookupValue } from '../../lookup/interfaces/lookup-value.interface';
+import type { IOrgUnit } from '../../organization/interfaces/org-unit.interface';
+
+/**
+ * ACC-255 — what the committee's CURRENT STAGE allows to be done to it, and
+ * what that stage means, from the workflow engine's own answer
+ * (StageRulesService), never from a stage key. The stage only narrows: a
+ * screen still needs the person's permission for each action. Nothing decides
+ * by this yet (PR 2 switches the writes; PR 3 the screens).
+ */
+export interface ICommitteeStageRules {
+  actions: {
+    edit_details: boolean;
+    add_member: boolean;
+    remove_member: boolean;
+    change_member_role: boolean;
+    request_change: boolean;
+  };
+  flags: string[];
+}
+
+/**
+ * ACC-255 (plan §10.5) — what the committee dialogs choose from, for anyone
+ * who may create or edit a committee: exactly what
+ * GET /lookups/categories/committee_type/values and GET /organization/units/flat
+ * serve, without their lookups:view and org:view gates. No person data.
+ */
+export interface ICommitteeFormChoices {
+  committeeTypes: ILookupValue[];
+  orgUnits: IOrgUnit[];
+}
+
 export interface ICommittee {
   id: string;
   organizationId: string;
@@ -56,6 +88,8 @@ export interface ICommitteeListItem extends ICommittee {
   // it at once, and still shows one no longer offered. Null for an id that is
   // no committee type in this organisation.
   typeValue: ICommitteeTypeValue | null;
+  // ACC-255 — what the current stage allows and means.
+  stageRules: ICommitteeStageRules;
 }
 
 // ACC-238 — a single committee as its record page reads it: the row plus its
@@ -66,6 +100,8 @@ export interface ICommitteeDetail extends ICommittee {
   currentStageKey: string | null;
   isDissolving: boolean;
   typeValue: ICommitteeTypeValue | null;
+  // ACC-255 — what the current stage allows and means.
+  stageRules: ICommitteeStageRules;
 }
 
 /** ACC-246 — see committee-type-values.ts. */
