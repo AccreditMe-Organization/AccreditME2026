@@ -22,6 +22,7 @@
  * database, and refuses any database that is not on this machine.
  */
 import { randomUUID } from 'crypto';
+import { Client } from 'pg';
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -294,6 +295,42 @@ describe('Stage rules against a real database (ACC-255)', () => {
       // An open change request on it keeps the moves an unkeyed stage gave:
       // with no flags, the §4.2 derivation allows edit, withdraw and reject.
       expect(CHANGE_REQUEST_ACTIONS.filter((a) => committeeAllowsRequestMove(rules, a))).toEqual(['edit', 'withdraw', 'reject']);
+    });
+  });
+
+  describe('the committee list reads every stage in a constant number of statements (ACC-255 PR 2)', () => {
+    /** Every statement any pg client sends while `run` runs. */
+    async function statementsDuring(run: () => Promise<unknown>): Promise<number> {
+      let count = 0;
+      const original = Client.prototype.query;
+      (Client.prototype as unknown as { query: (...a: unknown[]) => unknown }).query = function (this: Client, ...args: unknown[]) {
+        count++;
+        return (original as unknown as (...a: unknown[]) => unknown).apply(this, args);
+      };
+      try {
+        await run();
+      } finally {
+        Client.prototype.query = original;
+      }
+      return count;
+    }
+
+    it('1 committee and 30 committees, in every seeded stage, cost the same', async () => {
+      const keys = Object.keys(EXPECTED_COMMITTEE);
+      const small = await org();
+      await committeeAt(small.id, 'active');
+      const large = await org();
+      for (let i = 0; i < 30; i++) await committeeAt(large.id, keys[i % keys.length]!);
+      const committees = new CommitteesService(prisma, new AuditLogService(prisma), {} as WorkflowService, stageRules);
+
+      const one = await statementsDuring(() => committees.listCommittees(small.id));
+      const thirty = await statementsDuring(() => committees.listCommittees(large.id));
+
+      expect(one).toBeGreaterThan(0); // non-vacuity: the counter sees the driver
+      expect(thirty).toBe(one);
+      const rows = await committees.listCommittees(large.id);
+      expect(rows).toHaveLength(30);
+      expect(rows.filter((r) => r.stageRules.flags.includes('DISSOLVING'))).toHaveLength(10);
     });
   });
 

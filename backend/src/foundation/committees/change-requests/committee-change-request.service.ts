@@ -141,8 +141,8 @@ export interface IOpenChangeRequest {
   request: IChangeRequest | null;
   /**
    * The create call's own three checks, answered without creating:
-   * committees:edit_details, the committee's stage allows a request
-   * (COMMITTEE_STAGE_POLICY.raise), and no open request (drafts count).
+   * committees:edit_details, the committee's stage allows a request (its
+   * stored request_change action, ACC-255), and no open request (drafts count).
    */
   canRaise: boolean;
 }

@@ -60,7 +60,7 @@ export class StageRulesService {
 
   /**
    * The rules of the record's current stage: its NEWEST instance's stage (the
-   * rule `committeeStagesAndCounts()` and `committeeStageKey()` already use).
+   * rule `committeeStagesAndCounts()` and the reference checks also use).
    */
   async currentStageRules(
     objectType: WorkflowObjectType,
