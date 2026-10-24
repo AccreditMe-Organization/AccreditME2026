@@ -69,7 +69,8 @@
       "quality": "Quality management",
       "admin": "Administration",
       "platform": "Platform"
-    }
+    },
+    "organizationReadOnly": "Organization"
   },
   "organization": {
     "title": "Organization Structure",
@@ -289,7 +290,8 @@
       "nobodyAssigned": "Nobody is assigned to a unit yet. The chart shows structure only.",
       "addFirst": "Add the first unit under {{unit}}",
       "noUnitsYet": "No units under {{unit}} yet."
-    }
+    },
+    "readOnlyTitle": "Organization"
   },
   "orgUnitHead": {
     "manageHead": "Manage Head",

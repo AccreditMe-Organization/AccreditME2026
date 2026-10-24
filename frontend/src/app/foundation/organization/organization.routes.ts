@@ -9,8 +9,12 @@ export const ORGANIZATION_ROUTES: Routes = [
       ),
   },
   // ACC-120 slice 11, PR D — one unit's record. Guarded by the parent's
-  // permissionGuard (`/organization`, org:view); its breadcrumb is the unit's
-  // ancestry, set by the page (BreadcrumbParentService.setTrail).
+  // permissionGuard; its breadcrumb is the unit's ancestry, set by the page
+  // (BreadcrumbParentService.setTrail).
+  //
+  // PR F — these routes are loaded twice: under `/organization` (Administration,
+  // admin:access + org:view) and under `/org` (Quality management, org:view,
+  // read-only by its route data). Each page reads its mode with injectOrgPages().
   {
     path: 'units/:id',
     loadComponent: () =>

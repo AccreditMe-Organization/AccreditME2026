@@ -2,6 +2,8 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { platformAdminGuard } from './core/guards/platform-admin.guard';
 import { permissionGuard } from './core/guards/permission.guard';
+import { orgReadOnlyRedirectGuard } from './foundation/organization/org-read-only.guard';
+import { ORG_READ_ONLY_DATA } from './foundation/organization/org-pages';
 import { AppShellComponent } from './layout/app-shell/app-shell.component';
 
 // Every route below the shell inherits its parent's canActivate — a child
@@ -52,6 +54,19 @@ export const routes: Routes = [
       {
         path: 'organization',
         canActivate: [permissionGuard],
+        loadChildren: () =>
+          import('./foundation/organization/organization.routes').then(
+            (m) => m.ORGANIZATION_ROUTES,
+          ),
+      },
+      // ACC-120 slice 11, PR F (D1, B1) — the same pages, read-only, for an
+      // org:view holder who does not administer (OS §6). Its permission comes
+      // from its Quality nav item (org:view). An administrator is sent to the
+      // same URL under /organization first, so the two never overlap.
+      {
+        path: 'org',
+        canActivate: [orgReadOnlyRedirectGuard, permissionGuard],
+        data: { [ORG_READ_ONLY_DATA]: true },
         loadChildren: () =>
           import('./foundation/organization/organization.routes').then(
             (m) => m.ORGANIZATION_ROUTES,

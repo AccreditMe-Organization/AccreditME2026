@@ -69,7 +69,8 @@
       "quality": "إدارة الجودة",
       "admin": "الإدارة",
       "platform": "المنصة"
-    }
+    },
+    "organizationReadOnly": "المؤسسة"
   },
   "organization": {
     "title": "هيكل المنظمة",
@@ -289,7 +290,8 @@
       "nobodyAssigned": "لم يُعيَّن أحد في أي وحدة بعد. يعرض المخطط الهيكل فقط.",
       "addFirst": "إضافة أول وحدة تحت {{unit}}",
       "noUnitsYet": "لا توجد وحدات تحت {{unit}} بعد."
-    }
+    },
+    "readOnlyTitle": "المؤسسة"
   },
   "orgUnitHead": {
     "manageHead": "إدارة الرئاسة",
