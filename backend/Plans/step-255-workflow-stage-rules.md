@@ -574,6 +574,7 @@ ACC-240's PR 3a and 3b merge first. 3a's `canRaise` (`openSummary()`) reads `com
   - **If it is 0**, D14 stands as written (nothing allowed, logged), and the spec pins that.
   - Either way the parity check is run again on the shared database after the backfill, and its `(no live stage)` rows are read against this decision before PR 2 merges.
   - PR 1's local run found such committees only among leftover test organisations (1,920 of them), not in the fixtures: the shared count is the one that decides.
+  - **DECIDED (24 Oct): count 7 is 0 on the shared database** (§13), and so is the count of committees whose newest instance has no current stage. **D14 stays as written:** a committee with no workflow instance allows nothing, has no flags, and is logged with ids. PR 1 pins it in `stage-rules.db-spec.ts` ("D14"): a real committee with no instance is allowed none of the five actions, through both the engine's answer and the committee read. Its open change request, if it had one, keeps exactly today's moves: with no flags the §4.2 derivation allows edit, withdraw and reject, as `UNKEYED_COMMITTEE_STAGE` does now. PR 2 keeps that spec green and adds no today's-rules branch.
 - Each PR carries its own tests. PR 1's real-database spec includes the backfill.
 
 ---

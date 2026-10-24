@@ -30,7 +30,10 @@ import { StageRulesService } from './stage-rules.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowTemplateService } from './workflow-template.service';
 import { planBackfill, runBackfill } from '../../../prisma/backfill-acc255-stage-rules';
-import { checkParity } from '../../../prisma/parity-acc255-stage-rules';
+import { checkParity, requestMoveAllowed } from '../../../prisma/parity-acc255-stage-rules';
+import { CommitteesService } from '../committees/committees.service';
+import { CHANGE_REQUEST_ACTIONS } from '../committees/change-requests/change-request-policy';
+import type { WorkflowService } from './workflow.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) {
@@ -261,6 +264,35 @@ describe('Stage rules against a real database (ACC-255)', () => {
       expect(rules.stageId).toBeNull();
       expect(Object.values(rules.actions).some(Boolean)).toBe(false);
       expect((await stageRules.stageRulesFor(b.id, 'COMMITTEE', [committee])).get(committee)?.stageId).toBeNull();
+    });
+  });
+
+  describe('D14 — a committee with no workflow instance allows nothing (§13 count 7 is 0 on the shared database)', () => {
+    const NOTHING = { edit_details: false, add_member: false, remove_member: false, change_member_role: false, request_change: false };
+
+    it("is allowed none of the five actions and has no flags: in the engine's answer, the committee read and the list", async () => {
+      const o = await org();
+      const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R-${randomUUID().slice(0, 6)}` } });
+      const committee = await prisma.committee.create({
+        data: { organizationId: o.id, nameEn: 'Committee with no workflow', typeValueId: 'type', orgUnitId: unit.id },
+      });
+      expect(await prisma.workflowInstance.count({ where: { objectType: 'COMMITTEE', objectId: committee.id } })).toBe(0);
+
+      const rules = await stageRules.currentStageRules('COMMITTEE', committee.id, o.id);
+      expect(rules).toEqual({ stageId: null, stageNameEn: null, stageNameAr: null, flags: [], actions: NOTHING });
+      for (const action of Object.keys(NOTHING)) {
+        const refusal = await stageRules.assertStageAllows('COMMITTEE', committee.id, action, o.id).catch((e: { getResponse(): unknown }) => e.getResponse());
+        expect(refusal).toMatchObject({ code: 'STAGE_ACTION_NOT_ALLOWED', action, stageNameEn: null });
+      }
+
+      const committees = new CommitteesService(prisma, new AuditLogService(prisma), {} as WorkflowService, stageRules);
+      expect((await committees.getCommitteeDetail(committee.id, o.id)).stageRules).toEqual({ actions: NOTHING, flags: [] });
+      const row = (await committees.listCommittees(o.id)).find((c) => c.id === committee.id);
+      expect(row?.stageRules).toEqual({ actions: NOTHING, flags: [] });
+
+      // An open change request on it would keep today's moves: with no flags,
+      // the §4.2 derivation gives what UNKEYED_COMMITTEE_STAGE gives now.
+      expect(CHANGE_REQUEST_ACTIONS.filter((a) => requestMoveAllowed(a, rules.flags))).toEqual(['edit', 'withdraw', 'reject']);
     });
   });
 
