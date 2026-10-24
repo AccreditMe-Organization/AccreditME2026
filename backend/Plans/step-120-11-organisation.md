@@ -845,3 +845,69 @@ keyboard 5, re-root and rows 5, connectors 4, D7 5.
 - **No "away" on a head:** the API has no field for it.
 - **No "+ head from <unit>" note** on the box.
 - **No Print** (D14).
+
+### PR F as built (CC-140, 24 Oct)
+
+Branch `feature/ACC-120-11f-org-read-only`, from `dev` at `3336c6e` (PR E merged).
+D1 is B with B1. No backend change.
+
+**The path is `/org`.** It isn't a reserved slug (`check:reserved-slugs`
+passes; that list is subdomain labels). It clashes with no route: `org-positions`
+is a different segment, and both the rail and the breadcrumb match
+`route + '/'`, so `/org-positions` is never read as under `/org`.
+
+**Built:**
+- **Route:** `/org` loads the same routes with `orgReadOnly: true`, guarded by
+  `orgReadOnlyRedirectGuard` then `permissionGuard` (`org:view`).
+- **Redirect:** an `admin:access` holder is sent to the same URL under
+  `/organization`, path and query kept.
+- **Nav:** "Organization" in Quality management, `hiddenWithPermission:
+  admin:access`.
+- **Mode:** `injectOrgPages()` gives each page `readOnly` and its link base.
+- Full mechanism: SYSTEM-REFERENCE §7.13.
+
+**Found while building, and fixed:** the Headship panel linked a person to
+`/users/:id` on `users:view` alone. A user's record needs `admin:access` too
+(ACC-123), so on `/org` a quality manager would have had a link that bounces.
+It needs both now, as every other person link on these pages does. No
+administrator loses a link.
+
+**Tests:**
+- the guard spec through the real routes (6);
+- nav (5 new, 1 updated: Yasser's org:view now shows the Quality item);
+- the affordance-absence spec (7). Each write control is first proven PRESENT
+  at `/organization` for an administrator, then ABSENT at `/org` for a viewer
+  holding every permission but `admin:access`, `org:manage` included.
+
+**Mutation checks:** 14, each red on a failing test:
+- record: Edit and Add sub-unit, the strip, headship actions, Show in tree;
+- tree: Add unit, Attention, the menu's Headship details, a name link;
+- chart: chips, add-first, Open unit;
+- the nav exclusion;
+- the redirect;
+- the panel's person link.
+
+**Browser, local, as Yasser (QUALITY_MANAGER)**, in EN and AR at 1280 and 390:
+- **Rail:** the rail holds one organisation item, "Organization", under Quality
+  management; it opens `/org`; typing `/organization` lands on /home.
+- **Tree:** H1 "Organization", breadcrumb "{tenant} › Quality management".
+- **Row menu:** Open unit and Show on chart only. Show on chart, the chart's
+  Find in tree, a name link and a sub-unit link all stay in `/org`.
+- **Chart panel:** Open unit, Show chart from here and Find in tree.
+- **Record:** the breadcrumb ends "… › Quality management › Organization ›
+  {ancestors}", and the Headship panel shows its state row.
+- **Everywhere:** no write control; no link to `/organization`, `/users` or
+  `/setup-health`; no sideways scroll.
+- **As Hessa:** `/org`, `/org?view=chart&root=&sel=` and `/org/units/:id` land
+  on the same `/organization` URLs, and her rail has one organisation item.
+- **Non-GET requests:**
+  - sign-in and refresh: 2 per persona;
+  - everything else: 0.
+
+**Built differently from the drawing:**
+- **The ⋯ column stays, with Open unit and Show on chart** (CC-140's rule); the
+  drawing has no ⋯ column on the read-only tree.
+- **The breadcrumb** is "{tenant} › Quality management", the shell's group
+  trail (ACC-79), rather than the drawn "Organization".
+- **No Print:** the drawing keeps it for the read-only viewer, but Print isn't
+  built at all (D14).
