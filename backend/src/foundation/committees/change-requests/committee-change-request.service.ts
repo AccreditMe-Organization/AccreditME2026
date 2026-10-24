@@ -7,6 +7,8 @@ import { COMMITTEES_PERMISSIONS } from '../../../common/constants/permissions';
 import { NotificationService } from '../../notification/notification.service';
 import { TaskService } from '../../task/task.service';
 import { EngineTx, WorkflowService } from '../../workflow/workflow.service';
+import { StageRulesService } from '../../workflow/stage-rules.service';
+import { STAGE_FLAG } from '../../workflow/record-registry';
 import { CHANGE_REQUEST_STAGE_KEYS } from '../../workflow/workflow-stage-keys';
 import { lockWorkflowInstance } from '../../task/stage-deadline';
 import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-reference-checks';
@@ -15,6 +17,7 @@ import { ChangeRequestRefusal } from './change-request-refusal';
 import {
   ACTION_TARGET_STAGE,
   ChangeRequestAction,
+  CommitteeStageRules,
   assertCommitteeAllowsRaise,
   awaitsDecision,
   committeeAllowsRaise,
@@ -196,6 +199,8 @@ export class CommitteeChangeRequestService {
     private readonly tasks: TaskService,
     private readonly auditLog: AuditLogService,
     private readonly notifications: NotificationService,
+    // ACC-255 PR 2 — the committee's current stage, from its stored rules.
+    private readonly stageRules: StageRulesService,
   ) {}
 
   // ── Writes ──────────────────────────────────────────────────────────────────
@@ -212,8 +217,8 @@ export class CommitteeChangeRequestService {
     const { request, started } = await this.prisma.$transaction(async (tx) => {
       // The committee's stage, under its instance's share lock: a transition
       // into Dissolution Pending in flight finishes first, or waits for this.
-      const stageKey = await committeeStageKey(tx, committeeId, organizationId);
-      assertCommitteeAllowsRaise(stageKey);
+      const stage = await this.committeeStage(tx, committeeId, organizationId);
+      assertCommitteeAllowsRaise(stage);
 
       // ONE OPEN REQUEST PER COMMITTEE, drafts included. The committee's row
       // lock queues two creates; the second then sees the first's request.
@@ -273,7 +278,7 @@ export class CommitteeChangeRequestService {
       await lockWorkflowInstance(tx, loaded.instanceId, organizationId);
       const stage = await instanceStageKey(tx, loaded.instanceId);
       assertRequestStageAllows(stage, 'edit');
-      assertCommitteeStageAllows(await committeeStageKey(tx, loaded.row.committeeId, organizationId), 'edit');
+      assertCommitteeStageAllows(await this.committeeStage(tx, loaded.row.committeeId, organizationId), 'edit');
 
       await tx.$queryRaw`SELECT id FROM "CommitteeChangeRequest" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
       const before = await tx.committeeChangeRequest.findFirstOrThrow({ where: { id, organizationId } });
@@ -320,7 +325,7 @@ export class CommitteeChangeRequestService {
       inTx: async (tx) => {
         // Re-read under the instance's lock: the stage the move starts from.
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'submit');
-        assertCommitteeStageAllows(await committeeStageKey(tx, loaded.row.committeeId, organizationId), 'submit');
+        assertCommitteeStageAllows(await this.committeeStage(tx, loaded.row.committeeId, organizationId), 'submit');
 
         await tx.$queryRaw`SELECT id FROM "Committee" WHERE id = ${loaded.row.committeeId} AND "organizationId" = ${organizationId} FOR SHARE`;
         const committee = (await tx.committee.findFirstOrThrow({
@@ -380,7 +385,7 @@ export class CommitteeChangeRequestService {
       return own || (hasPermission(viewer, COMMITTEES_PERMISSIONS.APPROVE) && requestStagePolicy(stage).othersMayWithdraw);
     };
     if (!allowed(loaded.stageKey)) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_REQUESTER');
-    assertCommitteeStageAllows(await committeeStageKey(this.prisma, loaded.row.committeeId, organizationId), 'withdraw');
+    assertCommitteeStageAllows(await this.committeeStage(this.prisma, loaded.row.committeeId, organizationId, 'none'), 'withdraw');
 
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.withdraw, organizationId, viewer.userId, {
       outcome: 'SKIPPED',
@@ -435,7 +440,10 @@ export class CommitteeChangeRequestService {
     // Filled inside the transaction, read after it commits.
     const out: { before?: CommitteeRow; after?: CommitteeRow; task?: Awaited<ReturnType<TaskService['insertPrepared']>> } = {};
 
-    await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.approve, organizationId, viewer.userId, {
+    // ACC-255 §4.3 — the target is the one stage of this request's template
+    // flagged APPLIES_APPROVED_CHANGE, never a fixed key.
+    const approvedStageKey = await this.approvedStageKey(loaded.instanceId, organizationId);
+    await this.workflow.triggerSystemTransition(loaded.instanceId, approvedStageKey, organizationId, viewer.userId, {
       outcome: 'APPROVED',
       inTx: async (tx) => {
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'approve');
@@ -443,7 +451,7 @@ export class CommitteeChangeRequestService {
         // The committee's instance: no committee transition moves under the
         // apply, and a committee now dissolving refuses it.
         await lockCommitteeInstance(tx, loaded.row.committeeId, organizationId);
-        assertCommitteeStageAllows(await committeeStageKey(tx, loaded.row.committeeId, organizationId), 'approve');
+        assertCommitteeStageAllows(await this.committeeStage(tx, loaded.row.committeeId, organizationId), 'approve');
         if (touchesHierarchy) await lockCommitteeHierarchy(tx, organizationId);
         await tx.$queryRaw`SELECT id FROM "Committee" WHERE id = ${loaded.row.committeeId} AND "organizationId" = ${organizationId} FOR UPDATE`;
         const before = (await tx.committee.findFirstOrThrow({
@@ -519,7 +527,7 @@ export class CommitteeChangeRequestService {
       inTx: async (tx) => {
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'return');
         // The committee's stage decides whether a decision may still be made.
-        assertCommitteeStageAllows(await committeeStageKey(tx, loaded.row.committeeId, organizationId), 'return');
+        assertCommitteeStageAllows(await this.committeeStage(tx, loaded.row.committeeId, organizationId), 'return');
         await tx.committeeChangeRequest.update({
           where: { id },
           data: { returnNote: note, decidedById: viewer.userId, decidedAt: new Date() },
@@ -581,7 +589,7 @@ export class CommitteeChangeRequestService {
     if (!row) throw new NotFoundException('Change request not found');
     const [stages, committeeStage, extras] = await Promise.all([
       requestStageKeys(this.prisma, [row.id], organizationId),
-      committeeStageKey(this.prisma, row.committeeId, organizationId),
+      this.committeeStage(this.prisma, row.committeeId, organizationId, 'none'),
       this.loadExtras([row], organizationId),
     ]);
     return toDto(row, stages.get(row.id)?.key ?? null, committeeStage, viewer, extras);
@@ -596,7 +604,7 @@ export class CommitteeChangeRequestService {
     });
     const [stages, committeeStage, extras] = await Promise.all([
       requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId),
-      committeeStageKey(this.prisma, committeeId, organizationId),
+      this.committeeStage(this.prisma, committeeId, organizationId, 'none'),
       this.loadExtras(rows, organizationId),
     ]);
     const all = rows.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStage, viewer, extras));
@@ -633,7 +641,7 @@ export class CommitteeChangeRequestService {
     });
     const [states, committeeStage] = await Promise.all([
       requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId),
-      committeeStageKey(this.prisma, committeeId, organizationId),
+      this.committeeStage(this.prisma, committeeId, organizationId, 'none'),
     ]);
     const open = rows.find((r) => isOpen(states.get(r.id))) ?? null;
     const canRaise = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS) && committeeAllowsRaise(committeeStage) && !open;
@@ -652,12 +660,10 @@ export class CommitteeChangeRequestService {
     });
     const stages = await requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId);
     const waiting = rows.filter((r) => awaitsDecision(stages.get(r.id)?.key));
-    const committeeStages = new Map<string, string | null>();
-    for (const r of waiting) {
-      if (!committeeStages.has(r.committeeId)) committeeStages.set(r.committeeId, await committeeStageKey(this.prisma, r.committeeId, organizationId));
-    }
+    // ACC-255 PR 2 — every committee's stage in one batch (three queries), not one read each.
+    const committeeStages = await this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [...new Set(waiting.map((r) => r.committeeId))]);
     const extras = await this.loadExtras(waiting, organizationId);
-    return waiting.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStages.get(r.committeeId) ?? null, viewer, extras));
+    return waiting.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStages.get(r.committeeId) ?? NO_STAGE, viewer, extras));
   }
 
   /** What approving these changes would do — for Request a change, before anything is saved. */
@@ -762,6 +768,42 @@ export class CommitteeChangeRequestService {
     return committee as unknown as CommitteeRow;
   }
 
+  /**
+   * ACC-255 PR 2 — the committee's current stage, from its stored rules
+   * (StageRulesService): the actions it allows and its flags. Inside a
+   * transaction the instance is read FOR SHARE, so a committee transition in
+   * flight finishes first, exactly as the old key read did.
+   */
+  private committeeStage(
+    client: Parameters<StageRulesService['currentStageRules']>[3],
+    committeeId: string,
+    organizationId: string,
+    lock: 'share' | 'none' = 'share',
+  ): Promise<CommitteeStageRules> {
+    return this.stageRules.currentStageRules('COMMITTEE', committeeId, organizationId, client, { lock });
+  }
+
+  /**
+   * ACC-255 §4.3 — approve's target: the one stage of this request's template
+   * flagged APPLIES_APPROVED_CHANGE. Exactly one is enforced on every stage
+   * save; if a template ever has none (or more), approve is refused and the
+   * ids logged, and no change is applied from an unflagged stage.
+   */
+  private async approvedStageKey(instanceId: string, organizationId: string): Promise<string> {
+    const flagged = await this.prisma.workflowStage.findMany({
+      where: {
+        flags: { has: STAGE_FLAG.APPLIES_APPROVED_CHANGE },
+        workflowTemplate: { organizationId, instances: { some: { id: instanceId, organizationId } } },
+      },
+      select: { id: true, key: true },
+    });
+    if (flagged.length !== 1 || !flagged[0]!.key) {
+      this.logger.warn(`Approve refused: instance ${instanceId} (organisation ${organizationId}) has ${flagged.length} stage(s) flagged APPLIES_APPROVED_CHANGE.`);
+      throw new ChangeRequestRefusal('CHANGE_REQUEST_STAGE_NOT_ALLOWED');
+    }
+    return flagged[0]!.key;
+  }
+
   private async loadRequest(id: string, organizationId: string): Promise<{ row: RequestRow; instanceId: string; stageKey: string | null }> {
     const row = await this.prisma.committeeChangeRequest.findFirst({ where: { id, organizationId }, include: REQUEST_INCLUDE });
     if (!row) throw new NotFoundException('Change request not found');
@@ -786,7 +828,7 @@ export class CommitteeChangeRequestService {
     const loaded = await this.loadRequest(id, organizationId);
     if (loaded.row.requestedById === viewer.userId) throw new ChangeRequestRefusal('CHANGE_REQUEST_OWN_DECISION');
     assertRequestStageAllows(loaded.stageKey, action);
-    assertCommitteeStageAllows(await committeeStageKey(this.prisma, loaded.row.committeeId, organizationId), action);
+    assertCommitteeStageAllows(await this.committeeStage(this.prisma, loaded.row.committeeId, organizationId, 'none'), action);
     return loaded;
   }
 
@@ -924,7 +966,7 @@ function labelsFor(row: RequestRow, all: ChangeRequestLabels): ChangeRequestLabe
 function toDto(
   row: RequestRow,
   status: string | null,
-  committeeStage: string | null,
+  committeeStage: CommitteeStageRules,
   viewer: ChangeRequestViewer,
   extras: DtoExtras,
 ): IChangeRequest {
@@ -974,22 +1016,8 @@ function toDto(
 
 type Reader = Pick<EngineTx, '$queryRaw' | 'workflowInstance' | 'workflowStage'>;
 
-/**
- * The committee's current stage key: its newest COMMITTEE instance's stage,
- * read FOR SHARE inside a transaction (so a committee transition in flight
- * finishes first). Null when the committee has no instance, or its stage no key.
- */
-async function committeeStageKey(client: Pick<EngineTx, '$queryRaw'>, committeeId: string, organizationId: string): Promise<string | null> {
-  const rows = await client.$queryRaw<{ key: string | null }[]>`
-    SELECT ws."key" AS "key"
-    FROM "WorkflowInstance" wi
-    LEFT JOIN "WorkflowStage" ws ON ws.id = wi."currentStageId"
-    WHERE wi."organizationId" = ${organizationId} AND wi."objectType" = 'COMMITTEE' AND wi."objectId" = ${committeeId}
-    ORDER BY wi."createdAt" DESC
-    LIMIT 1
-    FOR SHARE OF wi`;
-  return rows[0]?.key ?? null;
-}
+/** ACC-255 PR 2 — a committee with no live stage: nothing allowed, no flags (D14). */
+const NO_STAGE: CommitteeStageRules = { actions: {}, flags: [] };
 
 /** The committee's newest instance, locked for the apply. */
 async function lockCommitteeInstance(tx: EngineTx, committeeId: string, organizationId: string): Promise<void> {
