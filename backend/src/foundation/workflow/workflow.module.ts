@@ -12,6 +12,7 @@ import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
+import { StageRulesService } from './stage-rules.service';
 import { WorkflowService } from './workflow.service';
 import { WorkflowActionProcessor } from './workflow-action.processor';
 import { SlaMonitorProcessor } from './sla-monitor.processor';
@@ -73,8 +74,10 @@ import { workersEnabled } from '../../common/queue/workers.config';
     WorkflowTemplateService,
     WorkflowService,
     StageTaskDefinitionService,
+    // ACC-255 — what a record's current stage allows; read by the modules.
+    StageRulesService,
     ...(workersEnabled() ? [WorkflowActionProcessor, SlaMonitorProcessor] : []),
   ],
-  exports: [WorkflowTemplateService, WorkflowService],
+  exports: [WorkflowTemplateService, WorkflowService, StageRulesService],
 })
 export class WorkflowModule {}

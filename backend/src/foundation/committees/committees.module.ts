@@ -5,6 +5,8 @@ import { WorkflowModule } from '../workflow/workflow.module';
 import { CommitteesController } from './committees.controller';
 import { CommitteesService } from './committees.service';
 import { CommitteeListsService } from './committee-lists.service';
+import { CommitteeFormChoicesService } from './committee-form-choices.service';
+import { OrganizationModule } from '../organization/organization.module';
 import { LookupModule } from '../lookup/lookup.module';
 import { TaskModule } from '../task/task.module';
 import { CommitteeChangeRequestService } from './change-requests/committee-change-request.service';
@@ -23,9 +25,18 @@ import {
   // resolution). forwardRef: LookupModule reaches TenantModule, as TaskModule's does.
   // ACC-239 — TaskModule for the "Revise the terms of reference" task an
   // approved change request creates, inside its approval transaction.
-  imports: [PrismaModule, forwardRef(() => TenantModule), WorkflowModule, forwardRef(() => LookupModule), TaskModule],
+  // ACC-255 — OrganizationModule for the form choices' unit list (forwardRef,
+  // as every edge into it is).
+  imports: [
+    PrismaModule,
+    forwardRef(() => TenantModule),
+    WorkflowModule,
+    forwardRef(() => LookupModule),
+    TaskModule,
+    forwardRef(() => OrganizationModule),
+  ],
   controllers: [CommitteesController, CommitteeChangeRequestsByCommitteeController, CommitteeChangeRequestsController],
-  providers: [CommitteesService, CommitteeListsService, CommitteeChangeRequestService],
+  providers: [CommitteesService, CommitteeListsService, CommitteeChangeRequestService, CommitteeFormChoicesService],
   exports: [CommitteesService],
 })
 export class CommitteesModule {}

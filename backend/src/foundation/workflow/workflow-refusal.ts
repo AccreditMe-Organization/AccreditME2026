@@ -23,7 +23,12 @@ export type WorkflowRefusalCode =
   // ACC-238 — a transition precondition (transition-preconditions.ts).
   | 'COMMITTEE_QUORUM_NOT_SET'
   // ACC-239 — an edit to a template whose shape code relies on (PROTECTED_TEMPLATES).
-  | 'WORKFLOW_TEMPLATE_PROTECTED';
+  | 'WORKFLOW_TEMPLATE_PROTECTED'
+  // ACC-255 — stage rules: what a stage allows (StageRulesService) and what a stage save may name.
+  | 'STAGE_ACTION_NOT_ALLOWED'
+  | 'STAGE_ACTION_UNKNOWN'
+  | 'STAGE_FLAG_UNKNOWN'
+  | 'STAGE_FLAG_EXACTLY_ONE';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -43,6 +48,10 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   VALIDATOR_RETIRED: HttpStatus.BAD_REQUEST,
   COMMITTEE_QUORUM_NOT_SET: HttpStatus.CONFLICT,
   WORKFLOW_TEMPLATE_PROTECTED: HttpStatus.CONFLICT,
+  STAGE_ACTION_NOT_ALLOWED: HttpStatus.CONFLICT,
+  STAGE_ACTION_UNKNOWN: HttpStatus.BAD_REQUEST,
+  STAGE_FLAG_UNKNOWN: HttpStatus.BAD_REQUEST,
+  STAGE_FLAG_EXACTLY_ONE: HttpStatus.CONFLICT,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -64,6 +73,10 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   COMMITTEE_QUORUM_NOT_SET: 'Set a quorum of at least 1 before submitting this committee for approval',
   WORKFLOW_TEMPLATE_PROTECTED:
     'The committee change request workflow is fixed: its stages can be renamed and given deadlines, and nothing else changed',
+  STAGE_ACTION_NOT_ALLOWED: "This can't be done while the record is at its current stage",
+  STAGE_ACTION_UNKNOWN: 'This kind of record has no such action',
+  STAGE_FLAG_UNKNOWN: 'This kind of record has no such stage meaning',
+  STAGE_FLAG_EXACTLY_ONE: 'Exactly one stage of this workflow must carry this meaning',
 };
 
 export class WorkflowRefusalException extends HttpException {

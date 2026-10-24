@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -109,4 +110,22 @@ export class CreateWorkflowStageDto {
   @IsArray()
   @IsOptional()
   escalationConfig?: Record<string, unknown>[];
+
+  // ACC-255 — what this stage allows to be done to the record, as action keys
+  // from RECORD_ACTIONS (record-registry.ts). The set REPLACES the stage's
+  // own; omitted leaves it. Keys are checked against the template's record
+  // type in the service (STAGE_ACTION_UNKNOWN), not here.
+  @IsArray()
+  @IsOptional()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  actions?: string[];
+
+  // ACC-255 — what this stage means, as flag keys from STAGE_FLAGS. Replaces
+  // the stage's own; omitted leaves it (STAGE_FLAG_UNKNOWN in the service).
+  @IsArray()
+  @IsOptional()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  flags?: string[];
 }

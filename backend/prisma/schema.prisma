@@ -430,6 +430,7 @@ model Organization {
   lookupValues             LookupValue[]
   lookupCategories         LookupCategory[]
   workflowTemplates        WorkflowTemplate[]
+  stageRecordActions       WorkflowStageRecordAction[] // ACC-255
   workflowInstances        WorkflowInstance[]
   workflowActionLogs       WorkflowActionLog[]
   workingCalendar          WorkingCalendar?
@@ -1255,6 +1256,13 @@ model WorkflowStage {
 
   escalationConfig Json?
 
+  // ACC-255 — what this stage MEANS, from STAGE_FLAGS (record-registry.ts):
+  // DISSOLVING, IN_FORCE, APPLIES_APPROVED_CHANGE. Validated against the
+  // registry for the template's record type; an exactly-one flag is held on
+  // exactly one stage of its template. Never a key: the seed's keys stay
+  // internal identity.
+  flags String[] @default([])
+
   workflowTemplate WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
   transitionsFrom  WorkflowTransition[]    @relation("TransitionFrom")
   transitionsTo    WorkflowTransition[]    @relation("TransitionTo")
@@ -1263,9 +1271,29 @@ model WorkflowStage {
   assigneeOrgUnit  OrgUnit?                @relation("WorkflowStageAssigneeOrgUnit", fields: [assigneeOrgUnitId], references: [id])
 
   taskDefinitions WorkflowStageTaskDefinition[] // ACC-190
+  recordActions   WorkflowStageRecordAction[]   // ACC-255 — the record actions this stage allows
 
   @@unique([workflowTemplateId, key]) // ACC-233
   @@index([workflowTemplateId])
+}
+
+// ACC-255 — one row per record action a stage ALLOWS (presence = allowed; a
+// stage with no row for an action does not allow it: fail closed). The action
+// keys come from RECORD_ACTIONS (record-registry.ts). A stage only NARROWS what
+// a role allows: the module still checks the person's permission, and both
+// must say yes. Deleted with its stage, whose own delete is audited with them.
+model WorkflowStageRecordAction {
+  id             String   @id @default(cuid())
+  organizationId String
+  stageId        String
+  actionKey      String
+  createdAt      DateTime @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  stage        WorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@unique([stageId, actionKey])
+  @@index([organizationId])
 }
 
 model WorkflowTransition {

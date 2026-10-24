@@ -59,6 +59,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get publicHoliday() { return this._client.publicHoliday; }
   get workflowTemplate() { return this._client.workflowTemplate; }
   get workflowStage() { return this._client.workflowStage; }
+  get workflowStageRecordAction() { return this._client.workflowStageRecordAction; } // ACC-255
   get workflowTransition() { return this._client.workflowTransition; }
   get workflowInstance() { return this._client.workflowInstance; }
   get workflowInstanceStage() { return this._client.workflowInstanceStage; }

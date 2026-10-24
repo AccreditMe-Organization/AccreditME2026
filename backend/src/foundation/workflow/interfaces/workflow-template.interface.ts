@@ -20,4 +20,11 @@ export interface IWorkflowTemplate {
   // dialog (B3), which a workflows:manage holder may not otherwise read.
   recordRoutes?: { unit: boolean; committee: boolean };
   taskDueHours?: TaskDueHours;
+  // ACC-255 — detail only. What this template's record type offers a stage,
+  // read from the registries (record-registry.ts) so no screen keeps a copy:
+  // the actions a stage may allow, the flags it may carry, and the record
+  // fields a later condition may read. Keys and label keys only.
+  recordActions?: { key: string; labelKey: string }[];
+  stageFlags?: { key: string; labelKey: string; cardinality: 'any' | 'exactlyOne' }[];
+  recordFields?: { key: string; labelKey: string; kind: 'lookup' | 'orgUnit' }[];
 }

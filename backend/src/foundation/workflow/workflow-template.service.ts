@@ -7,6 +7,7 @@ import {
   WorkflowStage as PrismaWorkflowStage,
   WorkflowTransition as PrismaWorkflowTransition,
   WorkflowTransitionAction as PrismaWorkflowTransitionAction,
+  WorkflowObjectType,
 } from '../../../generated/prisma/client';
 import { IWorkflowTemplate } from './interfaces/workflow-template.interface';
 import { IWorkflowStage } from './interfaces/workflow-stage.interface';
@@ -31,12 +32,96 @@ import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
 import { refuseProtected, WorkflowRefusalException } from './workflow-refusal';
 import {
+  isRecordAction,
+  isStageFlag,
+  newStageActionKeys,
+  orderedActionKeys,
+  orderedFlagKeys,
+  recordActionsFor,
+  recordFieldsFor,
+  stageFlagsFor,
+} from './record-registry';
+import type { EngineTx } from './workflow.service';
+import {
   assertKnownAndGrantable,
   isPlatformPermission,
 } from '../roles/permission-grantability';
 
 /** Stage fields a protected template's stage may still change (names, description, deadline and its escalation). */
 const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr', 'description', 'slaWorkingHours', 'escalationConfig']);
+
+/**
+ * ACC-255 — every stage field an audit row may name, in the stage form's
+ * order, then the stage rules. `addStage` and `removeStage` record all of
+ * them; `updateStage` records the ones that changed (`stageAuditDiff`).
+ */
+const STAGE_AUDIT_FIELDS = [
+  'nameEn',
+  'nameAr',
+  'description',
+  'order',
+  'slaWorkingHours',
+  'isInitial',
+  'isFinal',
+  'approvalMode',
+  'parallelThreshold',
+  'committeeId',
+  'assigneeStrategy',
+  'assigneeUserId',
+  'assigneeRoleId',
+  'assigneeCommitteeRoleValueId',
+  'assigneePositionId',
+  'assigneeOrgUnitId',
+  'escalationConfig',
+] as const;
+
+/** ACC-255 — a stage as an audit row records it: every field, its allowed actions and its flags. */
+export function stageSnapshot(
+  stage: Pick<PrismaWorkflowStage, (typeof STAGE_AUDIT_FIELDS)[number]> & { flags?: string[] | null },
+  actions: readonly string[],
+): Record<string, unknown> {
+  const snapshot: Record<string, unknown> = {};
+  for (const field of STAGE_AUDIT_FIELDS) snapshot[field] = (stage as Record<string, unknown>)[field] ?? null;
+  snapshot['actions'] = [...actions];
+  snapshot['flags'] = [...(stage.flags ?? [])];
+  return snapshot;
+}
+
+/**
+ * ACC-255 — the fields that differ between two snapshots, before and after.
+ * A field re-sent unchanged is not listed; null when nothing changed, so a
+ * no-op save writes no audit row. Arrays (actions, flags) compare as sets.
+ */
+export function stageAuditDiff(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): { before: Record<string, unknown>; after: Record<string, unknown> } | null {
+  const diff = { before: {} as Record<string, unknown>, after: {} as Record<string, unknown> };
+  for (const field of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (sameAuditValue(before[field], after[field])) continue;
+    diff.before[field] = before[field] ?? null;
+    diff.after[field] = after[field] ?? null;
+  }
+  return Object.keys(diff.after).length > 0 ? diff : null;
+}
+
+function sameAuditValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b) && a.every((v) => typeof v === 'string') && b.every((v) => typeof v === 'string')) {
+    return sameKeySet(a as string[], b as string[]);
+  }
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+function sameKeySet(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((k) => right.has(k));
+}
+
+/** ACC-255 — the exactly-one flags of a record type (STAGE_FLAG_EXACTLY_ONE guards them). */
+function exactlyOneFlags(objectType: WorkflowObjectType): string[] {
+  return stageFlagsFor(objectType).filter((f) => f.cardinality === 'exactlyOne').map((f) => f.key);
+}
 
 @Injectable()
 export class WorkflowTemplateService {
@@ -73,6 +158,8 @@ export class WorkflowTemplateService {
         transitionsFrom: {
           include: { actions: { orderBy: { order: 'asc' } } },
         },
+        // ACC-255 — the record actions each stage allows.
+        recordActions: { where: { organizationId }, select: { actionKey: true } },
       },
     });
 
@@ -85,10 +172,15 @@ export class WorkflowTemplateService {
       // ACC-208 (B2, B3).
       recordRoutes: { unit: typeof recordRoute?.unit === 'function', committee: typeof recordRoute?.committee === 'function' },
       taskDueHours: await this.stageTasks.taskDueHours(organizationId),
+      // ACC-255 — what a stage of this record type may allow and mean.
+      recordActions: recordActionsFor(template.objectType).map(({ key, labelKey }) => ({ key, labelKey })),
+      stageFlags: stageFlagsFor(template.objectType).map(({ key, labelKey, cardinality }) => ({ key, labelKey, cardinality })),
+      recordFields: recordFieldsFor(template.objectType).map(({ key, labelKey, kind }) => ({ key, labelKey, kind })),
       stages: stages.map((s) => ({
         ...this.mapStage(
           s,
           s.transitionsFrom.map((t) => this.mapTransition(t, t.actions.map((a) => this.mapTransitionAction(a)))),
+          orderedActionKeys(template.objectType, s.recordActions.map((r) => r.actionKey)),
         ),
         taskDefinitionCount: stageTasks.get(s.id)?.taskDefinitionCount ?? 0,
         longestTaskHours: stageTasks.get(s.id)?.longestTaskHours ?? null,
@@ -225,6 +317,11 @@ export class WorkflowTemplateService {
     });
     if (!template) throw new NotFoundException('Workflow template not found');
     if (PROTECTED_TEMPLATES.has(template.objectType)) refuseProtected('ADD_STAGE');
+    // ACC-255 — a new stage allows what the save names, or the record type's
+    // new-stage defaults (what such a stage allowed before stage rules).
+    const rules = this.stageRuleKeys(template.objectType, dto.actions, dto.flags);
+    const actions = rules.actions ?? newStageActionKeys(template.objectType);
+    const flags = rules.flags ?? [];
 
     if (dto.assigneeUserId) {
       await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
@@ -242,7 +339,10 @@ export class WorkflowTemplateService {
       await this.validateAssigneeOrgUnitId(dto.assigneeOrgUnitId, organizationId);
     }
 
-    const stage = await this.prisma.workflowStage.create({
+    const counted = exactlyOneFlags(template.objectType).filter((f) => flags.includes(f));
+    const stage = await this.prisma.$transaction(async (tx) => {
+      if (counted.length > 0) await this.lockTemplate(tx, templateId, organizationId);
+      const created = await tx.workflowStage.create({
       data: {
         workflowTemplateId: templateId,
         nameEn: dto.nameEn,
@@ -264,19 +364,29 @@ export class WorkflowTemplateService {
         assigneePositionId: dto.assigneePositionId ?? null,
         assigneeOrgUnitId: dto.assigneeOrgUnitId ?? null,
         escalationConfig: this.toJson(dto.escalationConfig),
+        flags,
       },
+      });
+      if (actions.length > 0) {
+        await tx.workflowStageRecordAction.createMany({
+          data: actions.map((actionKey) => ({ organizationId, stageId: created.id, actionKey })),
+        });
+      }
+      await this.assertFlagCardinality(tx, templateId, counted);
+      return created;
     });
 
+    // ACC-255 — the whole new stage, its actions and flags included.
     await this.auditLog.log({
       tenantId: organizationId,
       actorId,
       action: 'CREATE',
       objectType: 'WorkflowStage',
       objectId: stage.id,
-      after: { nameEn: stage.nameEn, nameAr: stage.nameAr, order: stage.order },
+      after: stageSnapshot(stage, actions),
     });
 
-    return this.mapStage(stage);
+    return this.mapStage(stage, undefined, actions);
   }
 
   async updateStage(
@@ -287,18 +397,30 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowStage> {
     const stage = await this.prisma.workflowStage.findFirst({
       where: { id, workflowTemplate: { organizationId } },
-      include: { workflowTemplate: { select: { objectType: true } } },
+      include: {
+        workflowTemplate: { select: { objectType: true } },
+        recordActions: { where: { organizationId }, select: { actionKey: true } },
+      },
     });
     if (!stage) throw new NotFoundException('Workflow stage not found');
+    const objectType = stage.workflowTemplate.objectType;
+    const storedActions = orderedActionKeys(objectType, (stage.recordActions ?? []).map((r) => r.actionKey));
+    const storedFlags = stage.flags ?? [];
     // ACC-239 — a protected template's stage keeps its shape: only a field
     // that CHANGES, outside names, description and deadline, is refused.
-    if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType)) {
+    // ACC-255 — actions and flags compare as sets, so re-sending the stored
+    // ones passes.
+    if (PROTECTED_TEMPLATES.has(objectType)) {
       const stored = stage as unknown as Record<string, unknown>;
-      const changed = Object.entries(dto).filter(
-        ([field, value]) => value !== undefined && !PROTECTED_STAGE_EDITABLE.has(field) && (stored[field] ?? null) !== (value ?? null),
-      );
+      const changed = Object.entries(dto).filter(([field, value]) => {
+        if (value === undefined || PROTECTED_STAGE_EDITABLE.has(field)) return false;
+        if (field === 'actions') return !sameKeySet(storedActions, value as string[]);
+        if (field === 'flags') return !sameKeySet(storedFlags, value as string[]);
+        return (stored[field] ?? null) !== (value ?? null);
+      });
       if (changed.length > 0) refuseProtected('STAGE_FIELD');
     }
+    const rules = this.stageRuleKeys(objectType, dto.actions, dto.flags);
 
     if (dto.assigneeUserId) {
       await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
@@ -328,7 +450,17 @@ export class WorkflowTemplateService {
       if (defined > 0) throw new WorkflowRefusalException('STAGE_TASK_ON_FINAL_STAGE', { taskDefinitionCount: defined });
     }
 
-    const updated = await this.prisma.workflowStage.update({
+    // ACC-255 — an exactly-one flag this save adds or removes is re-counted
+    // across the template after the write, under the template's lock.
+    const newFlags = rules.flags;
+    const counted =
+      newFlags === undefined ? [] : exactlyOneFlags(objectType).filter((f) => storedFlags.includes(f) !== newFlags.includes(f));
+
+    const { updated, actionsBefore, actionsAfter } = await this.prisma.$transaction(async (tx) => {
+      if (counted.length > 0) await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
+      // The update takes the stage's row lock, so the action rows read next
+      // are the ones no other save is changing.
+      const written = await tx.workflowStage.update({
       where: { id },
       data: {
         ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
@@ -356,26 +488,44 @@ export class WorkflowTemplateService {
         ...(dto.assigneePositionId !== undefined && { assigneePositionId: dto.assigneePositionId }),
         ...(dto.assigneeOrgUnitId !== undefined && { assigneeOrgUnitId: dto.assigneeOrgUnitId }),
         ...(dto.escalationConfig !== undefined && { escalationConfig: this.toJson(dto.escalationConfig) }),
+        ...(newFlags !== undefined && { flags: newFlags }),
       },
+      });
+      const replaced =
+        rules.actions === undefined
+          ? { before: storedActions, after: storedActions }
+          : await this.replaceStageActions(tx, id, organizationId, rules.actions);
+      await this.assertFlagCardinality(tx, stage.workflowTemplateId, counted);
+      return { updated: written, actionsBefore: replaced.before, actionsAfter: replaced.after };
     });
 
-    await this.auditLog.log({
-      tenantId: organizationId,
-      actorId,
-      action: 'UPDATE',
-      objectType: 'WorkflowStage',
-      objectId: id,
-      before: { nameEn: stage.nameEn, nameAr: stage.nameAr },
-      after: { nameEn: updated.nameEn, nameAr: updated.nameAr },
-    });
+    // ACC-255 — every field that changed, before and after; nothing for a no-op.
+    const diff = stageAuditDiff(
+      stageSnapshot(stage, orderedActionKeys(objectType, actionsBefore)),
+      stageSnapshot(updated, orderedActionKeys(objectType, actionsAfter)),
+    );
+    if (diff) {
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'UPDATE',
+        objectType: 'WorkflowStage',
+        objectId: id,
+        before: diff.before,
+        after: diff.after,
+      });
+    }
 
-    return this.mapStage(updated);
+    return this.mapStage(updated, undefined, orderedActionKeys(objectType, actionsAfter));
   }
 
   async removeStage(id: string, organizationId: string, actorId: string): Promise<void> {
     const stage = await this.prisma.workflowStage.findFirst({
       where: { id, workflowTemplate: { organizationId } },
-      include: { workflowTemplate: { select: { objectType: true } } },
+      include: {
+        workflowTemplate: { select: { objectType: true } },
+        recordActions: { where: { organizationId }, select: { actionKey: true } },
+      },
     });
     if (!stage) throw new NotFoundException('Workflow stage not found');
     if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType)) refuseProtected('REMOVE_STAGE');
@@ -400,16 +550,94 @@ export class WorkflowTemplateService {
       }
     }
 
-    await this.prisma.workflowStage.delete({ where: { id } });
+    // ACC-255 — the action rows go with the stage (cascade); an exactly-one
+    // flag it carried must still sit on exactly one stage afterwards.
+    const objectType = stage.workflowTemplate.objectType;
+    const counted = exactlyOneFlags(objectType).filter((f) => (stage.flags ?? []).includes(f));
+    await this.prisma.$transaction(async (tx) => {
+      if (counted.length > 0) await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
+      await tx.workflowStage.delete({ where: { id } });
+      await this.assertFlagCardinality(tx, stage.workflowTemplateId, counted);
+    });
 
+    // ACC-255 — the whole removed stage, its actions and flags included.
     await this.auditLog.log({
       tenantId: organizationId,
       actorId,
       action: 'DELETE',
       objectType: 'WorkflowStage',
       objectId: id,
-      before: { nameEn: stage.nameEn, nameAr: stage.nameAr },
+      before: stageSnapshot(stage, orderedActionKeys(objectType, (stage.recordActions ?? []).map((r) => r.actionKey))),
     });
+  }
+
+  // ── Stage rules (ACC-255) ────────────────────────────────────────────────────
+
+  /**
+   * Checks a save's action and flag keys against the record type's registry,
+   * and returns them deduplicated in registry order (undefined = not sent).
+   */
+  private stageRuleKeys(
+    objectType: WorkflowObjectType,
+    actions: string[] | undefined,
+    flags: string[] | undefined,
+  ): { actions?: string[]; flags?: string[] } {
+    const unknownAction = actions?.find((key) => !isRecordAction(objectType, key));
+    if (unknownAction !== undefined) {
+      throw new WorkflowRefusalException('STAGE_ACTION_UNKNOWN', { actionKey: unknownAction, objectType });
+    }
+    const unknownFlag = flags?.find((key) => !isStageFlag(objectType, key));
+    if (unknownFlag !== undefined) {
+      throw new WorkflowRefusalException('STAGE_FLAG_UNKNOWN', { flag: unknownFlag, objectType });
+    }
+    return {
+      ...(actions !== undefined && { actions: orderedActionKeys(objectType, actions) }),
+      ...(flags !== undefined && { flags: orderedFlagKeys(objectType, flags) }),
+    };
+  }
+
+  /** Replaces a stage's action rows with `wanted`, writing only the difference. Run inside the stage's transaction. */
+  private async replaceStageActions(
+    tx: EngineTx,
+    stageId: string,
+    organizationId: string,
+    wanted: string[],
+  ): Promise<{ before: string[]; after: string[] }> {
+    const rows = await tx.workflowStageRecordAction.findMany({ where: { organizationId, stageId }, select: { actionKey: true } });
+    const before = rows.map((r) => r.actionKey);
+    const remove = before.filter((key) => !wanted.includes(key));
+    const add = wanted.filter((key) => !before.includes(key));
+    if (remove.length > 0) {
+      await tx.workflowStageRecordAction.deleteMany({ where: { organizationId, stageId, actionKey: { in: remove } } });
+    }
+    if (add.length > 0) {
+      await tx.workflowStageRecordAction.createMany({ data: add.map((actionKey) => ({ organizationId, stageId, actionKey })) });
+    }
+    return { before, after: wanted };
+  }
+
+  /** Locks the template row, so two saves touching an exactly-one flag count one after the other. */
+  private async lockTemplate(tx: EngineTx, templateId: string, organizationId: string): Promise<void> {
+    await tx.$queryRaw`SELECT id FROM "WorkflowTemplate" WHERE id = ${templateId} AND "organizationId" = ${organizationId} FOR UPDATE`;
+  }
+
+  /**
+   * Refuses (409 STAGE_FLAG_EXACTLY_ONE, rolling the save back) when a flag the
+   * save touched no longer sits on exactly one stage of the template. Only a
+   * touched flag is counted, so a template already short of one (before its
+   * backfill) is not refused an unrelated save.
+   */
+  private async assertFlagCardinality(tx: EngineTx, templateId: string, flags: string[]): Promise<void> {
+    for (const flag of flags) {
+      const holders = await tx.workflowStage.findMany({
+        where: { workflowTemplateId: templateId, flags: { has: flag } },
+        select: { nameEn: true, nameAr: true },
+        orderBy: { order: 'asc' },
+      });
+      if (holders.length !== 1) {
+        throw new WorkflowRefusalException('STAGE_FLAG_EXACTLY_ONE', { flag, stageNames: holders });
+      }
+    }
   }
 
   // ── Transitions ──────────────────────────────────────────────────────────────
@@ -849,7 +1077,7 @@ export class WorkflowTemplateService {
     };
   }
 
-  private mapStage(stage: PrismaWorkflowStage, transitions?: IWorkflowTransition[]): IWorkflowStage {
+  private mapStage(stage: PrismaWorkflowStage, transitions?: IWorkflowTransition[], actions: string[] = []): IWorkflowStage {
     return {
       id: stage.id,
       workflowTemplateId: stage.workflowTemplateId,
@@ -870,6 +1098,8 @@ export class WorkflowTemplateService {
       assigneePositionId: stage.assigneePositionId,
       assigneeOrgUnitId: stage.assigneeOrgUnitId,
       escalationConfig: stage.escalationConfig as Record<string, unknown> | null,
+      actions,
+      flags: [...(stage.flags ?? [])],
       ...(transitions !== undefined && { transitions }),
     };
   }
