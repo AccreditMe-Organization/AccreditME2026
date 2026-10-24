@@ -39,6 +39,7 @@ import { HeadshipAction, deriveHeadshipState } from '../headship-panel/headship-
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { TabStripComponent, TabStripItem } from '../../../../shared/components/tab-strip/tab-strip.component';
 import { OrgUnitChartComponent } from '../org-unit-chart/org-unit-chart.component';
+import { injectOrgPages } from '../../org-pages';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -115,13 +116,13 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
     OrgUnitChartComponent,
   ],
   template: `
-    <app-page-header [title]="'organization.title' | translate">
+    <app-page-header [title]="(pages.readOnly ? 'organization.readOnlyTitle' : 'organization.title') | translate">
       @if (counts(); as c) {
         <span pageMeta dir="ltr" class="text-meta text-ink-500 tabular-nums" data-testid="tree-count">{{ c }}</span>
       }
       <div pageActions>
         @if (canCreate()) {
-          <p-button icon="pi pi-plus" [label]="'organization.addUnit' | translate" (onClick)="onAdd()" />
+          <p-button icon="pi pi-plus" [label]="'organization.addUnit' | translate" (onClick)="onAdd()" data-testid="tree-add-unit" />
         }
       </div>
     </app-page-header>
@@ -270,7 +271,7 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
                 <p-treeTableToggler [rowNode]="rowNode" />
                 <span class="block min-w-0">
                   <!-- PR D — the name opens the unit's record. -->
-                  <a class="am-ot__name" [routerLink]="['/organization/units', rowData.id]" data-testid="unit-name">{{ primaryName(rowData) }}</a>
+                  <a class="am-ot__name" [routerLink]="pages.unit(rowData.id)" data-testid="unit-name">{{ primaryName(rowData) }}</a>
                   @if (secondaryName(rowData); as other) {
                     <span class="block text-meta text-ink-500 text-start [unicode-bidi:isolate]" [attr.dir]="isArabic() ? 'ltr' : 'rtl'" [attr.lang]="isArabic() ? 'en' : 'ar'">{{ other }}</span>
                   }
@@ -392,7 +393,7 @@ type HeadStatusEntry = { state: 'loading' } | { state: 'ready'; status: IOrgUnit
 
     <ng-template #headPanelTpl>
       @if (managingHeadUnitId(); as unitId) {
-        <am-headship-panel [orgUnitId]="unitId" [unitName]="managingHeadUnitName()" (saved)="onHeadPanelSaved()" />
+        <am-headship-panel [orgUnitId]="unitId" [unitName]="managingHeadUnitName()" [readOnly]="pages.readOnly" (saved)="onHeadPanelSaved()" />
       }
     </ng-template>
     <app-edit-dialog [(visible)]="headPanelVisible" [header]="headPanelHeader()" [content]="headPanelTpl" />
@@ -454,11 +455,17 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
   private readonly injector = inject(Injector);
   private readonly headshipActions = viewChild(HeadshipActionsComponent);
 
+  /** `/organization` or the read-only `/org` (PR F), and the base every link here uses. */
+  readonly pages = injectOrgPages();
+
   // ACC-118 — found by check:create-gating, not by the ticket's own list of
   // ten. Hidden, not disabled, same as every other page-header create action.
   // POST /organization enforces ORG_PERMISSIONS.MANAGE — org:manage
   // (organization.controller.ts).
-  readonly canCreate = computed(() => this.navigationAccess.hasPermission('org:manage'));
+  //
+  // ACC-120 slice 11, PR F — and never on the read-only page (/org, OS §6),
+  // whatever the viewer holds: every write is absent there, not disabled.
+  readonly canCreate = computed(() => !this.pages.readOnly && this.navigationAccess.hasPermission('org:manage'));
   // ACC-123 — the same permission, asked about changing an existing unit.
   readonly canManage = this.canCreate;
 
@@ -526,8 +533,12 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
   private readonly contentWidth = signal<number>(Number.POSITIVE_INFINITY);
   readonly narrow = computed(() => this.contentWidth() < TREE_NARROW_BELOW_PX);
   readonly compact = computed(() => this.contentWidth() < TREE_COMPACT_BELOW_PX);
-  /** Attention is shown only when the response carries it (setup:view). */
-  readonly showAttention = computed(() => this.nodes().some((n) => 'attention' in n));
+  /**
+   * Attention is shown only when the response carries it (setup:view), and
+   * never on the read-only page: a condition with no Fix is an alarm the
+   * viewer can't act on (OS §6). "No head" stays as text in the Head column.
+   */
+  readonly showAttention = computed(() => !this.pages.readOnly && this.nodes().some((n) => 'attention' in n));
   readonly attentionColumn = computed(() => this.showAttention() && !this.compact());
   readonly columnCount = computed(() => 2 + (this.narrow() ? 0 : 2) + (this.attentionColumn() ? 1 : 0) + 1);
 
@@ -671,7 +682,7 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
         this.loading.set(false);
         const unitId = this.fixLinkHead();
         const target = unitId ? nodes.find((n) => n.id === unitId) : undefined;
-        if (target?.isActive) this.onManageHead(target);
+        if (target?.isActive && !this.pages.readOnly) this.onManageHead(target);
       },
       error: (err: unknown) => {
         this.error.set(extractErrorMessage(err, 'organization.tree.loadFailed'));
@@ -717,6 +728,7 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
 
   /** PR E — the chart's "Add the first unit under …". */
   onAddUnder(id: string): void {
+    if (!this.canManage()) return;
     const record = this.units().find((u) => u.id === id);
     if (record) this.onAddChild(record);
   }
@@ -905,6 +917,9 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
     const details: RowMenuItem = { id: 'headship', label: t('organization.tree.menu.headshipDetails') };
     const open: RowMenuItem = { id: 'open', label: t('organization.tree.menu.openUnit') };
     const chart: RowMenuItem = { id: 'chart', label: t('organization.tree.menu.showOnChart') };
+    // PR F — the read-only page keeps the View items that open something
+    // read-only elsewhere, and nothing else.
+    if (this.pages.readOnly) return [[open, chart]];
     if (!this.canManage()) return [[open, chart, details]];
 
     const unit: RowMenuItem[] = [
@@ -938,11 +953,12 @@ export class OrgUnitTreeComponent implements OnInit, AfterViewInit {
 
   onPicked(node: OrgStructureNodeDto, id: string): void {
     this.actionError.set(null);
-    if (id === 'open') return void this.router.navigate(['/organization/units', node.id]);
+    if (id === 'open') return void this.router.navigate(this.pages.unit(node.id));
     // PR E — the chart, from this unit, with it selected.
     if (id === 'chart') {
       return void this.router.navigate([], { relativeTo: this.route, queryParams: { view: 'chart', root: node.id, sel: node.id }, queryParamsHandling: 'merge' });
     }
+    if (this.pages.readOnly) return;
     if (id === 'headship') return this.onManageHead(node);
     if (id === 'deactivate') return this.askDeactivate(node);
     const record = this.units().find((u) => u.id === node.id);

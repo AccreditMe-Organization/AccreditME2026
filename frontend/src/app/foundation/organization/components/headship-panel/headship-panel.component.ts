@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import { ADMIN_ACCESS } from '../../../../core/navigation/admin-access';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -309,7 +310,10 @@ export class HeadshipPanelComponent implements OnInit {
   readonly actions = viewChild.required(HeadshipActionsComponent);
 
   readonly canManage = computed(() => !this.readOnly() && this.access.hasPermission('org:manage'));
-  readonly canOpenPeople = computed(() => this.access.hasPermission('users:view'));
+  // A person's record (/users/:id) opens for admin:access + users:view (ACC-123),
+  // as the record's relations ask. users:view alone linked a page that bounces,
+  // which the read-only /org page (PR F) is the first to show a non-admin.
+  readonly canOpenPeople = computed(() => this.access.hasPermission(ADMIN_ACCESS) && this.access.hasPermission('users:view'));
   readonly canOpenPositions = computed(() => this.access.hasPermission('positions:view'));
 
   readonly view = computed(() => {
