@@ -1242,6 +1242,22 @@ describe('WorkflowTemplateService', () => {
         .mockResolvedValueOnce(makeStage({ id: 'stage-2', workflowTemplateId: 'template-1' }));
     }
 
+    // ACC-258 — workflows:manage is root-role-only for ROLES, but a transition
+    // may still require it: the root role holds it, so someone can fire it.
+    it('accepts a transition that requires workflows:manage', async () => {
+      stageLookupsSucceed();
+      mockPrisma.workflowTransition.create.mockResolvedValue(makeTransition({ requiredPermission: 'workflows:manage' }));
+
+      const result = await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Reopen', labelAr: 'إعادة فتح', triggerCondition: 'ROLE_BASED', requiredPermission: 'workflows:manage' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.transition.requiredPermission).toBe('workflows:manage');
+      expect(mockPrisma.workflowTransition.create).toHaveBeenCalled();
+    });
+
     it('returns no warning when the permission exists and an active role holds it', async () => {
       stageLookupsSucceed();
       mockPrisma.workflowTransition.create.mockResolvedValue(

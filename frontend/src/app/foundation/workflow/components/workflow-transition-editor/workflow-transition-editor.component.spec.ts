@@ -51,6 +51,8 @@ const PERMISSIONS = [
   { id: 'p4', module: 'documents', action: 'view', description: null, inUse: false },
   { id: 'p5', module: 'documents', action: 'review', description: null, inUse: false },
   { id: 'p6', module: 'platform', action: 'admin', description: null, inUse: true },
+  // ACC-258 — root-only for ROLES; a transition may still require it.
+  { id: 'p7', module: 'workflows', action: 'manage', description: null, inUse: true, rootRoleOnly: true },
 ];
 
 /** A seeded Document Lifecycle-style transition: its key exists, but nothing checks it yet. */
@@ -266,6 +268,21 @@ describe('WorkflowTransitionEditorComponent (ACC-55)', () => {
       // widening who could fire the transition.
       expect(req.request.body.requiredPermission).toBe('committees:manage');
       req.flush({ transition: EXISTING, permissionWarning: null });
+    });
+
+    // ACC-258 — the role editor hides a rootRoleOnly key; the transition picker must not.
+    it('still lists workflows:manage, which only the root role may hold, and it can be chosen', () => {
+      component.openEdit(EXISTING);
+      fixture.detectChanges();
+
+      const rows = openPermissionPicker();
+      const leaf = rows.find((el) => el.textContent?.trim() === 'workflows:manage');
+      expect(leaf).toBeDefined();
+      expect(leaf!.getAttribute('aria-disabled')).toBe('false');
+      leaf!.click();
+      fixture.detectChanges();
+
+      expect(component.editForm.controls.requiredPermission.value).toBe('workflows:manage');
     });
 
     it('a real permission leaf is still selectable', () => {

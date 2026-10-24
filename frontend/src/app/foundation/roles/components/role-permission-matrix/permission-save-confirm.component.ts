@@ -5,7 +5,7 @@ import { AmCountPipe } from '../../../../core/formatting';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
 /** Where a save stands, as the confirmation draws it (Users and Roles 3c). */
-export type PermissionSaveState = 'idle' | 'saving' | 'failed' | 'forbidden' | 'conflict';
+export type PermissionSaveState = 'idle' | 'saving' | 'failed' | 'forbidden' | 'conflict' | 'rootRoleOnly';
 
 /** One line of the confirmation: "Module · permission sentence". */
 export interface PermissionChangeLine {
@@ -75,6 +75,9 @@ export interface PermissionChangeGroup {
                 @case ('forbidden') {
                   <span class="psc-alert-title">{{ 'roles.matrix.forbidden' | translate }}</span>
                 }
+                @case ('rootRoleOnly') {
+                  <span class="psc-alert-title">{{ 'roles.matrix.rootRoleOnly' | translate }}</span>
+                }
                 @default {
                   <span class="psc-alert-title">{{ 'roles.matrix.conflict' | translate: { name: roleName() } }}</span>
                 }
@@ -114,7 +117,7 @@ export interface PermissionChangeGroup {
       />
       @if (state() === 'conflict') {
         <p-button [label]="'roles.matrix.reloadRole' | translate" (onClick)="reload.emit()" data-pm-reload />
-      } @else if (state() !== 'forbidden') {
+      } @else if (state() !== 'forbidden' && state() !== 'rootRoleOnly') {
         <p-button [label]="primaryLabel()" [loading]="state() === 'saving'" (onClick)="confirmed.emit()" data-pm-save />
       }
     </ng-template>
@@ -221,6 +224,6 @@ export class PermissionSaveConfirmComponent {
 
   readonly failed = computed(() => {
     const s = this.state();
-    return s === 'failed' || s === 'forbidden' || s === 'conflict';
+    return s === 'failed' || s === 'forbidden' || s === 'conflict' || s === 'rootRoleOnly';
   });
 }

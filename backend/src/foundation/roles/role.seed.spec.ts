@@ -272,3 +272,13 @@ describe('SYSTEM_ROLE_SEED — committee task keys (ACC-244)', () => {
     );
   });
 });
+
+// ACC-258 — only the root role edits workflows. Platform Administrator keeps the
+// key through its own frozen seed (Ahmad, 24 Oct, Q1); no other seeded role
+// holds it.
+describe('SYSTEM_ROLE_SEED — workflows:manage (ACC-258)', () => {
+  it('is held by TENANT_ADMIN and PLATFORM_ADMIN, and by no other seeded role', () => {
+    const holders = SYSTEM_ROLE_SEED.filter((r) => r.permissions.includes('workflows:manage')).map((r) => r.key);
+    expect(holders.sort()).toEqual(['PLATFORM_ADMIN', 'TENANT_ADMIN']);
+  });
+});

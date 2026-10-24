@@ -35,6 +35,7 @@ const MOCK_PERMISSION: IPermission = {
   action: 'view',
   description: 'documents:view',
   inUse: false,
+  rootRoleOnly: false,
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
