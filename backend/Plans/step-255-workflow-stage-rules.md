@@ -601,27 +601,47 @@ The stage form is `workflow-stage-form.component.ts`. It holds 13 controls in `a
 
 ## 13. Read-only counts
 
-**None were taken.** On 22 Oct the shared database refused the password in
-`backend/.env` (`password authentication failed`, for both the pooler URL and
-the direct one, on a bare `SELECT 1`). The local backend on 3001 had stopped
-for the same reason.
+**Taken on 24 Oct 2026**, on the shared database, after the credential was
+rotated. Everything ran in one `BEGIN TRANSACTION READ ONLY`, rolled back, so
+Postgres refused any write. The script is in the session scratchpad
+(`acc255-counts.js`), outside the repository. It prints slugs, keys and counts
+only. (On 22 Oct the database had refused the old password, so no count could
+be taken then.)
 
-These are the counts to take once the credential is fixed. Each runs in one
-`BEGIN TRANSACTION READ ONLY`; the script is in the session scratchpad
-(`acc255-counts.js`), outside the repository:
+1. **Organisations:** 3: `al-manara`, `al-nakheel` and `platform` (the
+   platform one, which the backfill skips). Both tenants are fixtures; there
+   is no customer.
+2. **Templates:** each tenant has exactly one COMMITTEE and one
+   COMMITTEE_CHANGE_REQUEST template, each default and active.
+3. **Their stages:** all 24 are keyed. Each tenant has the six COMMITTEE keys
+   (formation, terms_review, active, suspended, dissolution_pending,
+   dissolved) and the six change-request keys (draft, under_review, returned,
+   approved, rejected, withdrawn). **No stage was added by a tenant**, so the
+   backfill's member-only case meets no stage today.
+4. **Keyed stages on other template types:** 0, as expected.
+5. **All stages:** 120, of which 24 are keyed.
+6. **Committees by current stage** (newest instance; all IN_PROGRESS):
+   - al-manara: 3 in formation;
+   - al-nakheel: 3 in formation, 2 active.
+   No committee is in terms_review, suspended, dissolution_pending or
+   dissolved.
+7. **Committees with no workflow instance: 0.** Also checked: committees
+   whose newest instance has no current stage: 0. So no committee would be
+   allowed nothing under D14 today. **PR 2 keeps D14 as written** (nothing
+   allowed, logged), with a spec that pins it, per §11 (Ahmad, 23 Oct). The
+   1,920 such committees in PR 1's local run were leftover test
+   organisations, not data on the shared database.
+8. **Change requests:** al-nakheel has 2, both withdrawn (ACC-240's live proofs,
+   on "ACC-208 proof committee"). al-manara has none, and none is open.
+9. **`AuditLog` rows for `WorkflowStage`:** 8, all UPDATE. These are the
+   names-only rows the audit wrote before this ticket.
 
-1. organisations, by slug, with `isPlatformOrg`;
-2. COMMITTEE and COMMITTEE_CHANGE_REQUEST templates per organisation, with defaults and active;
-3. their stages by organisation, template and key, **including stages with no key** (tenant-added — the backfill's member-only case);
-4. keyed stages on any other template type (expected 0);
-5. all stages, and how many carry a key;
-6. committees by current stage key and instance status, per organisation;
-7. committees with no workflow instance (fail-closed cases: they would allow nothing);
-8. change requests by stage key;
-9. existing `AuditLog` rows for `WorkflowStage`, by action.
-
-Counts 3, 6 and 7 decide whether the backfill's plan and the parity check have
-any surprise to report. PR 1 does not merge until they are read.
+**What this means for the backfill and the parity check:**
+- **The backfill's plan:** per tenant, 6 committee stages and the change
+  request's `approved` stage, 7 stages in all, with no added stage and no stage
+  already configured.
+- **The parity check:** after the backfill, nothing here should differ. Every
+  committee stands at a keyed stage, and no committee lacks an instance.
 
 ---
 
