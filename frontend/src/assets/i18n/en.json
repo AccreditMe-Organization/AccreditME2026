@@ -148,7 +148,8 @@
         "headshipDetails": "Headship details",
         "loadingHeadship": "Loading headship…",
         "headshipFailed": "Couldn't load the headship",
-        "openUnit": "Open unit"
+        "openUnit": "Open unit",
+        "showOnChart": "Show on chart"
       },
       "attention": {
         "ORG_UNIT_WITHOUT_HEAD": "▲ No head",
@@ -262,6 +263,32 @@
         "description": "description",
         "sortOrder": "order"
       }
+    },
+    "chart": {
+      "tabChart": "Chart",
+      "showingFrom": "Showing from",
+      "levelsNote": "· {{levels}} · shows the administrative reporting line only",
+      "showCommittees": "Show committees",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "fit": "Fit",
+      "treeLabel": "Organization chart",
+      "acting": "(acting)",
+      "noOneAssigned": "No one assigned",
+      "selectedUnit": "Selected unit",
+      "positionsHeader": "Positions · {{people}}",
+      "panelLoading": "Loading the positions…",
+      "panelFailed": "Couldn't load the positions.",
+      "showFromHere": "Show chart from here",
+      "findInTree": "Find in tree",
+      "noSelection": "Select a unit to see its positions and actions.",
+      "loading": "Loading the chart…",
+      "loadFailed": "Couldn't load the chart.",
+      "notFound": "This unit isn't on the chart. It may have been deactivated.",
+      "showFromTop": "Show from the top",
+      "nobodyAssigned": "Nobody is assigned to a unit yet. The chart shows structure only.",
+      "addFirst": "Add the first unit under {{unit}}",
+      "noUnitsYet": "No units under {{unit}} yet."
     }
   },
   "orgUnitHead": {
@@ -2500,6 +2527,10 @@
       "moreConditions": {
         "one": "+ {{count}} more",
         "other": "+ {{count}} more"
+      },
+      "subUnitsBelow": {
+        "one": "{{count}} sub-unit below · show from here",
+        "other": "{{count}} sub-units below · show from here"
       }
     },
     "orgUnit": {

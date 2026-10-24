@@ -148,7 +148,8 @@
         "headshipDetails": "تفاصيل الرئاسة",
         "loadingHeadship": "جارٍ تحميل الرئاسة…",
         "headshipFailed": "تعذّر تحميل الرئاسة",
-        "openUnit": "فتح الوحدة"
+        "openUnit": "فتح الوحدة",
+        "showOnChart": "عرض في المخطط"
       },
       "attention": {
         "ORG_UNIT_WITHOUT_HEAD": "▲ بلا رئيس",
@@ -262,6 +263,32 @@
         "description": "الوصف",
         "sortOrder": "الترتيب"
       }
+    },
+    "chart": {
+      "tabChart": "المخطط",
+      "showingFrom": "العرض من",
+      "levelsNote": "· {{levels}} · يعرض خط التبعية الإدارية فقط",
+      "showCommittees": "عرض اللجان",
+      "zoomOut": "تصغير",
+      "zoomIn": "تكبير",
+      "fit": "ملاءمة",
+      "treeLabel": "المخطط التنظيمي",
+      "acting": "(بالإنابة)",
+      "noOneAssigned": "لا أحد معيّن",
+      "selectedUnit": "الوحدة المحددة",
+      "positionsHeader": "المناصب · {{people}}",
+      "panelLoading": "جارٍ تحميل المناصب…",
+      "panelFailed": "تعذّر تحميل المناصب.",
+      "showFromHere": "عرض المخطط من هنا",
+      "findInTree": "إظهار في الشجرة",
+      "noSelection": "اختر وحدة لعرض مناصبها وإجراءاتها.",
+      "loading": "جارٍ تحميل المخطط…",
+      "loadFailed": "تعذّر تحميل المخطط.",
+      "notFound": "هذه الوحدة غير موجودة في المخطط. ربما عُطّلت.",
+      "showFromTop": "العرض من الأعلى",
+      "nobodyAssigned": "لم يُعيَّن أحد في أي وحدة بعد. يعرض المخطط الهيكل فقط.",
+      "addFirst": "إضافة أول وحدة تحت {{unit}}",
+      "noUnitsYet": "لا توجد وحدات تحت {{unit}} بعد."
     }
   },
   "orgUnitHead": {
@@ -2816,6 +2843,14 @@
         "few": "+ {{count}} حالات أخرى",
         "many": "+ {{count}} حالة أخرى",
         "other": "+ {{count}} حالة أخرى"
+      },
+      "subUnitsBelow": {
+        "zero": "لا وحدات فرعية أدناه",
+        "one": "وحدة فرعية واحدة أدناه · العرض من هنا",
+        "two": "وحدتان فرعيتان أدناه · العرض من هنا",
+        "few": "{{count}} وحدات فرعية أدناه · العرض من هنا",
+        "many": "{{count}} وحدة فرعية أدناه · العرض من هنا",
+        "other": "{{count}} وحدة فرعية أدناه · العرض من هنا"
       }
     },
     "orgUnit": {

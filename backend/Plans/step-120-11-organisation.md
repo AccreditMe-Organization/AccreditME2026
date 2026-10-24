@@ -775,3 +775,73 @@ Branch `feature/ACC-120-11d-org-unit-record`, from `dev` at `6a1d728` (PR C merg
 - **People above ten are grouped by ORDER, not headings,** so "Showing 5 of 14" counts people.
 - **`am-relation` is header-only.** The tree and the committee record don't adopt it in this PR.
 - **The Headship panel isn't capped.** It isn't a list.
+
+### PR E as built (CC-137, 22 Oct)
+
+Branch `feature/ACC-120-11e-org-chart`. #206's commits came in through a
+merge (`c2c1ca6`) before it reached `dev`, then `dev` was merged in after it
+did.
+
+**D3, decided: our own component**, from the CC-136 test against B1–B9, with
+real tenant data and a 150-box fixture:
+- **B2, connectors:** `p-organizationChart` draws nested tables, and its
+  stubs sit at column boundaries, measured up to 15px from a box's centre.
+  Ours meet the centre by construction: worst 0px.
+- **B4, keyboard:** its `pt` reaches only the root table, leaving 149 tables
+  and 777 row and cell nodes inside the role=tree, and its toggler adds tab
+  stops. Ours is one tree of treeitems with one tab stop.
+- PrimeNG's timings, for the record: first render 405ms, re-root 99 / 322ms.
+
+**Built:** everything in PR E's list above except Print (D14 is no). The
+phone panel is D15: at 390 it drops below the chart as a full-width sheet.
+Full mechanism: SYSTEM-REFERENCE §7.12.
+
+**Layout spec (`org-unit-chart.layout.spec.ts`)**, EN and AR at 988, 358 and
+328px of content (the shell at 1280, 390 and 360):
+
+| | English | Arabic |
+|---|---|---|
+| Levels 1–2 | 210 × 96 | 210 × 112 |
+| Levels 3–4 | 180 × 84 | 190 × 96 |
+| A level with the "below" button | 180 × 118 | 190 × 134 |
+
+- Every box on a level sits at the same top, within 1px.
+- **Connectors, worst offset 0px everywhere:** 19 on the uneven fixture in
+  each language and layout, and 179 on the 150-box chart. Each stub is read
+  from its own computed position.
+- The panel is 280px beside the chart, outside the sideways-scroll area. On a
+  phone it is the chart area's full width (356 / 326), below the chart.
+- The chart scrolls inside its own area; the page never scrolls sideways.
+- **150 boxes:** first render 88ms, re-root 81ms.
+
+**Browser, local, as Hessa and as Noura**, in EN and AR at 1280 and 390:
+- **Select a box:** it stays selected; the panel lists its positions.
+- **Keyboard:** 10 boxes walked across levels 2 to 4; Home returns to the
+  root; one tab stop.
+- **Fit and zoom:** Fit lands on the 30% minimum, because the real tree is
+  that wide; at 30% it spans the area. The root stays in view after every
+  zoom, in Arabic too.
+- **Depth-6, intercepted:**
+  - level 4 is 118 / 134 on every box in the row;
+  - the button, a path link and Shift+Enter all re-root.
+- **Round trips:** Open unit, Find in tree (the row marked and its name
+  focused) and Show on chart from the tree.
+- The real data has no open unit condition, so the attention chip appears in
+  the specs only.
+- **Non-GET requests:**
+  - sign-in and refresh: 2 per persona;
+  - everything else: 0.
+
+**Mutation checks:** 19, each red on a failing test, none on a compile error:
+keyboard 5, re-root and rows 5, connectors 4, D7 5.
+
+**Found in the pre-PR review, and fixed:** the "Showing from" path separated its links with `›`, which points back at the ancestors in Arabic. It is a slash now, as in the shell's breadcrumb, and a spec pins it (a mutation back to the chevron fails).
+
+**Built differently from the drawing:**
+- **No positions count on the box.** The chart node has none, and this PR
+  changes no backend; the panel shows the positions.
+- **The Arabic box with the "below" button is 134, not 130:** the button's
+  line takes the Arabic +4 too.
+- **No "away" on a head:** the API has no field for it.
+- **No "+ head from <unit>" note** on the box.
+- **No Print** (D14).
