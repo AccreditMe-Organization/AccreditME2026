@@ -139,6 +139,18 @@ describe('StageRulesService (ACC-255)', () => {
       });
     });
 
+    it("a caller's message names the stage in the record's words; without one the generic sentence stays", async () => {
+      const prisma = makePrisma({ current: { instanceId: 'wi', stageId: ACTIVE.id }, stage: ACTIVE, actions: [] });
+      const service = new StageRulesService(prisma as unknown as PrismaService);
+      const said = (options?: { message: (n: string | null) => string }) =>
+        service
+          .assertStageAllows('COMMITTEE', 'c-1', 'edit_details', ORG, undefined, options)
+          .catch((e: WorkflowRefusalException) => (e.getResponse() as { message: string }).message);
+
+      expect(await said({ message: (n) => `Not while ${n}.` })).toBe('Not while Active.');
+      expect(await said()).toBe("This can't be done while the record is at its current stage");
+    });
+
     it('never allows an action the record type does not register, without reading anything', async () => {
       const prisma = makePrisma({ current: { instanceId: 'wi', stageId: formation.id }, stage: formation, actions: ['edit_details'] });
       const service = new StageRulesService(prisma as unknown as PrismaService);

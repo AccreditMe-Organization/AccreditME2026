@@ -1041,7 +1041,11 @@
       "reportsToNotFound": "هذه اللجنة غير موجودة. اختر لجنة أخرى.",
       "unitRequired": "اختر الوحدة المالكة لهذه اللجنة.",
       "unitNotFound": "هذه الوحدة غير موجودة أو لم تعد نشطة. اختر وحدة أخرى.",
-      "saveFailed": "حدث خطأ، فلم يُحفظ شيء."
+      "saveFailed": "حدث خطأ، فلم يُحفظ شيء.",
+      "membersNotAllowedInStage": "لا يمكن تغيير الأعضاء بينما اللجنة {{stage}}.",
+      "membersNotAllowedNoStage": "لا يمكن تغيير الأعضاء: ليس للجنة مرحلة حالية.",
+      "editNotAllowedInStage": "لا يمكن تنفيذ ذلك بينما اللجنة في مرحلة {{stage}}.",
+      "editNotAllowedNoStage": "لا يمكن تنفيذ ذلك: ليس للجنة مرحلة حالية."
     },
     "status": {
       "active": "نشطة",

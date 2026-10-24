@@ -6,6 +6,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { WorkflowRefusalException } from '../workflow/workflow-refusal';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -102,8 +103,9 @@ const mockPrisma = {
 
 const mockAuditLog = { log: jest.fn() };
 const mockWorkflowService = { startInstance: jest.fn() };
-// ACC-255 — the engine's stage answer for the committee reads.
-const mockStageRules = { stageRulesFor: jest.fn() };
+// ACC-255 — the engine's stage answer: for the committee reads, and (PR 2)
+// the refusal of a write the committee's stage does not allow.
+const mockStageRules = { stageRulesFor: jest.fn(), assertStageAllows: jest.fn() };
 
 describe('CommitteesService', () => {
   let service: CommitteesService;
@@ -124,6 +126,7 @@ describe('CommitteesService', () => {
     mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-committee-type' });
     mockPrisma.lookupValue.findMany.mockResolvedValue([]);
     mockStageRules.stageRulesFor.mockResolvedValue(new Map());
+    mockStageRules.assertStageAllows.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -721,6 +724,11 @@ describe('CommitteesService', () => {
 
     const lockCalls = () =>
       mockPrisma.$queryRaw.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join('?').includes('pg_advisory_xact_lock'));
+    /** When the committee is read in full — the read the locks protect. */
+    const fullReadOrder = (): number => {
+      const i = mockPrisma.committee.findFirst.mock.calls.findIndex(([args]) => !(args as { select?: unknown }).select);
+      return mockPrisma.committee.findFirst.mock.invocationCallOrder[i]!;
+    };
 
     it("sets a parent inside ONE transaction, after the organisation's hierarchy lock", async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
@@ -732,9 +740,8 @@ describe('CommitteesService', () => {
       expect(lockCalls()).toHaveLength(1);
       expect(lockCalls()[0]!.slice(1)).toEqual([`committee-hierarchy:${ORG_A}`]);
       // The lock comes first: the committee is read, walked and written under it.
-      expect(mockPrisma.$queryRaw.mock.invocationCallOrder[0]!).toBeLessThan(
-        mockPrisma.committee.findFirst.mock.invocationCallOrder[0]!,
-      );
+      // (The existence check before it is an unlocked id-only read, ACC-255.)
+      expect(mockPrisma.$queryRaw.mock.invocationCallOrder[0]!).toBeLessThan(fullReadOrder());
       expect(mockPrisma.committee.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { parentCommitteeId: 'committee-2' } }),
       );
@@ -764,7 +771,7 @@ describe('CommitteesService', () => {
       expect(rowLockCalls()).toHaveLength(1);
       expect(rowLockCalls()[0]!.slice(1)).toEqual(['committee-1', ORG_A]);
       const rowLockOrder = mockPrisma.$queryRaw.mock.invocationCallOrder[mockPrisma.$queryRaw.mock.calls.indexOf(rowLockCalls()[0]!)]!;
-      expect(rowLockOrder).toBeLessThan(mockPrisma.committee.findFirst.mock.invocationCallOrder[0]!);
+      expect(rowLockOrder).toBeLessThan(fullReadOrder());
     });
 
     it('saves when the committee is unchanged since it was loaded', async () => {
@@ -1222,6 +1229,88 @@ describe('CommitteesService', () => {
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
   });
+
+  // ── ACC-241 (ACC-255 PR 2) — the committee's stage decides direct writes ────
+
+  describe("the committee's stage (ACC-241)", () => {
+    const refusal = (action: string, stageNameEn: string | null) =>
+      new WorkflowRefusalException('STAGE_ACTION_NOT_ALLOWED', { action, stageNameEn, stageNameAr: null });
+    const stageCall = () => mockStageRules.assertStageAllows.mock.calls[0] as unknown[];
+    const stageOrder = () => mockStageRules.assertStageAllows.mock.invocationCallOrder[0]!;
+
+    it("updateCommittee asks for edit_details, FOR SHARE of the instance, BEFORE the hierarchy and row locks", async () => {
+      mockPrisma.committee.update.mockResolvedValue(makeCommittee({ parentCommitteeId: 'committee-2' }));
+
+      await service.updateCommittee('committee-1', { parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR);
+
+      expect(stageCall().slice(0, 4)).toEqual(['COMMITTEE', 'committee-1', 'edit_details', ORG_A]);
+      expect(stageCall()[5]).toMatchObject({ lock: 'share' });
+      // Instance first, then the hierarchy lock, then the committee row (the engine's order).
+      expect(stageOrder()).toBeLessThan(mockPrisma.$queryRaw.mock.invocationCallOrder[0]!);
+    });
+
+    it('updateCommittee refused by the stage: 409 STAGE_ACTION_NOT_ALLOWED naming it, nothing locked, written or audited', async () => {
+      mockStageRules.assertStageAllows.mockRejectedValue(refusal('edit_details', 'Active'));
+
+      await expect(service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR)).rejects.toMatchObject({
+        status: 409,
+        code: 'STAGE_ACTION_NOT_ALLOWED',
+      });
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(mockPrisma.committee.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it("a committee that doesn't exist is still 404, and its stage is never asked", async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_B, ACTOR)).rejects.toThrow(NotFoundException);
+      expect(mockStageRules.assertStageAllows).not.toHaveBeenCalled();
+    });
+
+    it('the refusal names the stage in the committee\'s words', () => {
+      mockPrisma.committee.update.mockResolvedValue(makeCommittee());
+      return service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR).then(() => {
+        const message = (stageCall()[5] as { message: (n: string | null) => string }).message;
+        expect(message('Active')).toBe("This can't be done while the committee is in Active.");
+        expect(message(null)).toBe("This can't be done: the committee has no current stage.");
+      });
+    });
+
+    const memberWrites: [string, string, () => Promise<unknown>][] = [
+      ['addMember', 'add_member', () => service.addMember('committee-1', { userId: 'user-1', roleValueId: 'member' } as never, ORG_A, ACTOR)],
+      ['changeMemberRole', 'change_member_role', () => service.changeMemberRole('committee-1', 'member-1', { roleValueId: 'secretary' } as never, ORG_A, ACTOR)],
+      ['removeMember', 'remove_member', () => service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR)],
+    ];
+
+    it.each(memberWrites)('%s asks for its own action (%s), FOR SHARE, inside the transaction, before reading the member', async (_name, action, call) => {
+      mockPrisma.committeeMember.findFirst.mockResolvedValue(action === 'add_member' ? null : makeMember());
+      mockPrisma.committeeMember.create.mockResolvedValue(makeMember());
+      mockPrisma.committeeMember.update.mockResolvedValue(makeMember());
+
+      await call();
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(stageCall().slice(0, 4)).toEqual(['COMMITTEE', 'committee-1', action, ORG_A]);
+      expect(stageCall()[5]).toMatchObject({ lock: 'share' });
+      expect(stageOrder()).toBeLessThan(mockPrisma.committeeMember.findFirst.mock.invocationCallOrder[0]!);
+      const message = (stageCall()[5] as { message: (n: string | null) => string }).message;
+      expect(message('Dissolved')).toBe("Members can't be changed while the committee is Dissolved.");
+      expect(message(null)).toBe("Members can't be changed: the committee has no current stage.");
+    });
+
+    it.each(memberWrites)('%s refused by the stage (%s): 409, and nothing written or audited', async (_name, action, call) => {
+      mockStageRules.assertStageAllows.mockRejectedValue(refusal(action, 'Dissolved'));
+      mockPrisma.committeeMember.findFirst.mockResolvedValue(makeMember());
+
+      await expect(call()).rejects.toMatchObject({ status: 409, code: 'STAGE_ACTION_NOT_ALLOWED' });
+      expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
+      expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
+      expect(mockPrisma.committeeMembershipEvent.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+  });
+
 
   // assertCommitteeAuthority() and its tests were removed entirely —
   // ACC-28 correction, see step-28-resource-scoped-roles.md's

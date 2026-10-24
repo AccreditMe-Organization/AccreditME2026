@@ -21,6 +21,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
+import { putCommitteeInEditableStage } from '../../common/testing/committee-in-stage';
 import { CommitteesService } from './committees.service';
 
 const url = process.env['DATABASE_URL'];
@@ -53,12 +54,17 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
     const actor = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}@example.test`, name: 'Committee editor' } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R-${slug}` } });
-    const make = async (name: string, links: { parentCommitteeId?: string; reportingToCommitteeId?: string } = {}) =>
-      (
+    // Each committee in a live stage that allows editing (ACC-255 PR 2: one
+    // with no workflow instance allows nothing, D14).
+    const make = async (name: string, links: { parentCommitteeId?: string; reportingToCommitteeId?: string } = {}) => {
+      const id = (
         await prisma.committee.create({
           data: { organizationId: o.id, nameEn: name, typeValueId: 'type', orgUnitId: unit.id, ...links },
         })
       ).id;
+      await putCommitteeInEditableStage(prisma, o.id, id);
+      return id;
+    };
     return { organizationId: o.id, actorId: actor.id, unitId: unit.id, make };
   }
 

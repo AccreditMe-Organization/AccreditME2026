@@ -22,6 +22,7 @@ import {
 import { committeeStagesAndCounts } from './committee-stage-counts';
 import { committeeTypeValues } from './committee-type-values';
 import { CommitteeChangedException } from './committee-edit-refusal';
+import { committeeStageRefusalMessage } from './committee-stage-refusal';
 
 /**
  * ACC-233 — the value an update SETS, only when it differs from what is stored;
@@ -203,12 +204,22 @@ export class CommitteesService {
     const touchesHierarchy = dto.parentCommitteeId !== undefined || dto.reportingToCommitteeId !== undefined;
 
     const { existing, committee } = await this.prisma.$transaction(async (tx) => {
+      // A committee that does not exist (or is another organisation's) is the
+      // same 404 as before, ahead of any stage answer. No lock is taken here.
+      await this.assertCommitteeExists(tx, id, organizationId);
+
+      // ACC-241 (ACC-255 §4.5) — the stage must allow a direct edit. Its answer
+      // is read FOR SHARE of the committee's workflow INSTANCE, FIRST: a
+      // transition (Submit for Approval) locks the instance and then reads the
+      // committee, so taking the instance before the committee row is the
+      // engine's order and the two cannot deadlock (step-238 §7).
+      await this.assertStage(tx, id, COMMITTEE_ACTIONS.EDIT_DETAILS, organizationId);
+
       if (touchesHierarchy) await lockCommitteeHierarchy(tx, organizationId);
 
-      // ACC-238 — the committee's row lock, after the hierarchy lock (always in
-      // that order), so two saves of one committee queue here and the second
-      // reads the first's `updatedAt`. Scoped by organisation: another
-      // organisation's id locks nothing and gets the same 404 as a missing one.
+      // ACC-238 — the committee's row lock, after the instance and hierarchy
+      // locks (always in that order), so two saves of one committee queue here
+      // and the second reads the first's `updatedAt`. Scoped by organisation.
       await tx.$queryRaw`SELECT id FROM "Committee" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
 
       const before = await tx.committee.findFirst({ where: { id, organizationId } });
@@ -305,53 +316,61 @@ export class CommitteesService {
     await this.getCommitteeById(committeeId, organizationId);
     await this.validateUserReference(dto.userId, organizationId);
 
-    // No isActive filter here — a departed member's row must be found too,
-    // so a rejoin reactivates it in place (mirroring RoleService.reactivateRole())
-    // instead of hitting @@unique([committeeId, userId]) on create().
-    const existing = await this.prisma.committeeMember.findFirst({
-      where: { committeeId, userId: dto.userId },
-    });
-    if (existing?.isActive) {
-      throw new ConflictException('This user is already an active member of this committee');
-    }
-
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
 
-    const member = existing
-      ? await this.prisma.committeeMember.update({
-          where: { id: existing.id },
-          data: {
-            roleValueId: dto.roleValueId,
-            isActive: true,
-            leftAt: null,
-            joinedAt: effectiveDate,
-          },
-        })
-      : await this.prisma.committeeMember.create({
-          data: {
-            organizationId,
-            committeeId,
-            userId: dto.userId,
-            roleValueId: dto.roleValueId,
-            isActive: true,
-            // The day they joined, as on a rejoin above (ACC-120 slice 4). Before
-            // this a new member's joinedAt was always "now", whatever date was
-            // sent, while the JOINED event recorded the date sent.
-            joinedAt: effectiveDate,
-          },
-        });
+    // ACC-255 PR 2 — one transaction, so the stage's answer (read FOR SHARE of
+    // the instance) holds until the member is written: a transition into
+    // Dissolved in flight finishes first, and one started now waits for this.
+    const { existing, member } = await this.prisma.$transaction(async (tx) => {
+      await this.assertStage(tx, committeeId, COMMITTEE_ACTIONS.ADD_MEMBER, organizationId);
 
-    await this.prisma.committeeMembershipEvent.create({
-      data: {
-        organizationId,
-        committeeId,
-        userId: dto.userId,
-        roleValueId: dto.roleValueId,
-        action: 'JOINED',
-        effectiveDate,
-        reason: dto.reason ?? null,
-        approvedBy: actorId,
-      },
+      // No isActive filter here — a departed member's row must be found too,
+      // so a rejoin reactivates it in place (mirroring RoleService.reactivateRole())
+      // instead of hitting @@unique([committeeId, userId]) on create().
+      const existing = await tx.committeeMember.findFirst({
+        where: { committeeId, userId: dto.userId, organizationId },
+      });
+      if (existing?.isActive) {
+        throw new ConflictException('This user is already an active member of this committee');
+      }
+
+      const member = existing
+        ? await tx.committeeMember.update({
+            where: { id: existing.id },
+            data: {
+              roleValueId: dto.roleValueId,
+              isActive: true,
+              leftAt: null,
+              joinedAt: effectiveDate,
+            },
+          })
+        : await tx.committeeMember.create({
+            data: {
+              organizationId,
+              committeeId,
+              userId: dto.userId,
+              roleValueId: dto.roleValueId,
+              isActive: true,
+              // The day they joined, as on a rejoin above (ACC-120 slice 4). Before
+              // this a new member's joinedAt was always "now", whatever date was
+              // sent, while the JOINED event recorded the date sent.
+              joinedAt: effectiveDate,
+            },
+          });
+
+      await tx.committeeMembershipEvent.create({
+        data: {
+          organizationId,
+          committeeId,
+          userId: dto.userId,
+          roleValueId: dto.roleValueId,
+          action: 'JOINED',
+          effectiveDate,
+          reason: dto.reason ?? null,
+          approvedBy: actorId,
+        },
+      });
+      return { existing, member };
     });
 
     await this.auditLog.log({
@@ -375,26 +394,32 @@ export class CommitteesService {
     actorId: string,
   ): Promise<ICommitteeMember> {
     await this.getCommitteeById(committeeId, organizationId);
-    const existing = await this.getActiveMember(committeeId, memberId, organizationId);
-
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
 
-    const member = await this.prisma.committeeMember.update({
-      where: { id: memberId },
-      data: { roleValueId: dto.roleValueId },
-    });
+    // ACC-255 PR 2 — the stage first (FOR SHARE of the instance), then the
+    // member: a missing member is still a 404 only where the stage allows it.
+    const { existing, member } = await this.prisma.$transaction(async (tx) => {
+      await this.assertStage(tx, committeeId, COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, organizationId);
+      const existing = await this.getActiveMember(committeeId, memberId, organizationId, tx);
 
-    await this.prisma.committeeMembershipEvent.create({
-      data: {
-        organizationId,
-        committeeId,
-        userId: existing.userId,
-        roleValueId: dto.roleValueId,
-        action: 'ROLE_CHANGED',
-        effectiveDate,
-        reason: dto.reason ?? null,
-        approvedBy: actorId,
-      },
+      const member = await tx.committeeMember.update({
+        where: { id: memberId },
+        data: { roleValueId: dto.roleValueId },
+      });
+
+      await tx.committeeMembershipEvent.create({
+        data: {
+          organizationId,
+          committeeId,
+          userId: existing.userId,
+          roleValueId: dto.roleValueId,
+          action: 'ROLE_CHANGED',
+          effectiveDate,
+          reason: dto.reason ?? null,
+          approvedBy: actorId,
+        },
+      });
+      return { existing, member };
     });
 
     await this.auditLog.log({
@@ -418,28 +443,33 @@ export class CommitteesService {
     actorId: string,
   ): Promise<void> {
     await this.getCommitteeById(committeeId, organizationId);
-    const existing = await this.getActiveMember(committeeId, memberId, organizationId);
-
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
 
-    // isActive derived STRICTLY from leftAt (ACC-22 Pending Discussion #6)
-    // — never set independently of it.
-    const member = await this.prisma.committeeMember.update({
-      where: { id: memberId },
-      data: { leftAt: effectiveDate, isActive: false },
-    });
+    // ACC-255 PR 2 — the stage first (FOR SHARE of the instance), then the member.
+    const { existing, member } = await this.prisma.$transaction(async (tx) => {
+      await this.assertStage(tx, committeeId, COMMITTEE_ACTIONS.REMOVE_MEMBER, organizationId);
+      const existing = await this.getActiveMember(committeeId, memberId, organizationId, tx);
 
-    await this.prisma.committeeMembershipEvent.create({
-      data: {
-        organizationId,
-        committeeId,
-        userId: existing.userId,
-        roleValueId: existing.roleValueId,
-        action: 'LEFT',
-        effectiveDate,
-        reason: dto.reason ?? null,
-        approvedBy: actorId,
-      },
+      // isActive derived STRICTLY from leftAt (ACC-22 Pending Discussion #6)
+      // — never set independently of it.
+      const member = await tx.committeeMember.update({
+        where: { id: memberId },
+        data: { leftAt: effectiveDate, isActive: false },
+      });
+
+      await tx.committeeMembershipEvent.create({
+        data: {
+          organizationId,
+          committeeId,
+          userId: existing.userId,
+          roleValueId: existing.roleValueId,
+          action: 'LEFT',
+          effectiveDate,
+          reason: dto.reason ?? null,
+          approvedBy: actorId,
+        },
+      });
+      return { existing, member };
     });
 
     await this.auditLog.log({
@@ -455,12 +485,32 @@ export class CommitteesService {
 
   // ── Internal helpers ─────────────────────────────────────────────────────────
 
+  /**
+   * ACC-255 PR 2 — refuses 409 STAGE_ACTION_NOT_ALLOWED, naming the stage, when
+   * the committee's current stage does not allow `action`. Reads FOR SHARE of
+   * the committee's workflow instance, so it must run inside the transaction
+   * that writes, and BEFORE the committee row lock (instance, then committee).
+   * A committee with no instance allows nothing (D14).
+   */
+  private assertStage(tx: CommitteeTx, committeeId: string, action: string, organizationId: string): Promise<void> {
+    return this.stageRules.assertStageAllows('COMMITTEE', committeeId, action, organizationId, tx, {
+      lock: 'share',
+      message: (stageNameEn) => committeeStageRefusalMessage(action, stageNameEn),
+    });
+  }
+
+  private async assertCommitteeExists(tx: CommitteeTx, id: string, organizationId: string): Promise<void> {
+    const found = await tx.committee.findFirst({ where: { id, organizationId }, select: { id: true } });
+    if (!found) throw new NotFoundException('Committee not found');
+  }
+
   private async getActiveMember(
     committeeId: string,
     memberId: string,
     organizationId: string,
+    client: Pick<CommitteeTx, 'committeeMember'> = this.prisma,
   ): Promise<ICommitteeMember> {
-    const member = await this.prisma.committeeMember.findFirst({
+    const member = await client.committeeMember.findFirst({
       where: { id: memberId, committeeId, organizationId, isActive: true },
     });
     if (!member) {
