@@ -39,6 +39,13 @@ export const ADMIN_SETTINGS_ROUTES: Routes = [
         (m) => m.AiSettingsComponent,
       ),
   },
+  // ACC-260 — File storage: where the organisation's files are kept.
+  {
+    path: 'storage',
+    canActivate: [permissionGuard],
+    loadComponent: () =>
+      import('./storage/storage-settings.component').then((m) => m.StorageSettingsComponent),
+  },
   {
     path: 'task-sla',
     canActivate: [permissionGuard],

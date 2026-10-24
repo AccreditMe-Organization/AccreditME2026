@@ -70,7 +70,8 @@
       "admin": "الإدارة",
       "platform": "المنصة"
     },
-    "organizationReadOnly": "المؤسسة"
+    "organizationReadOnly": "المؤسسة",
+    "fileStorage": "تخزين الملفات"
   },
   "organization": {
     "title": "هيكل المنظمة",
@@ -2041,14 +2042,18 @@
       "ORG_UNIT_WITHOUT_TYPE": "تحديد النوع",
       "STAGE_WITHOUT_ASSIGNEE": "مراجعة المرحلة",
       "TASK_WITHOUT_OWNER": "إعادة إسناد",
-      "ACTING_HEAD_OPEN_ENDED": "فتح الوحدة"
+      "ACTING_HEAD_OPEN_ENDED": "فتح الوحدة",
+      "STORAGE_ACCESS_WITHDRAWN": "فتح تخزين الملفات",
+      "STORAGE_SECRET_EXPIRING": "فتح تخزين الملفات"
     },
     "fixNeeds": {
       "ORG_UNIT_WITHOUT_HEAD": "إصلاح هذا يتطلب صلاحية إدارة الهيكل التنظيمي.",
       "ORG_UNIT_WITHOUT_TYPE": "يتطلّب إصلاح هذا صلاحية إدارة الهيكل التنظيمي.",
       "STAGE_WITHOUT_ASSIGNEE": "إصلاح هذا يتطلب صلاحية إدارة سير العمل.",
       "TASK_WITHOUT_OWNER": "إصلاح هذا يتطلب صلاحية إدارة المهام وإعادة إسنادها.",
-      "ACTING_HEAD_OPEN_ENDED": "يتطلّب إصلاح هذا صلاحية إدارة الهيكل التنظيمي."
+      "ACTING_HEAD_OPEN_ENDED": "يتطلّب إصلاح هذا صلاحية إدارة الهيكل التنظيمي.",
+      "STORAGE_ACCESS_WITHDRAWN": "إصلاح هذا يتطلب صلاحية ضبط البريد والتخزين والمهل والذكاء الاصطناعي.",
+      "STORAGE_SECRET_EXPIRING": "إصلاح هذا يتطلب صلاحية ضبط البريد والتخزين والمهل والذكاء الاصطناعي."
     },
     "freshness": {
       "failed": "{{type}}: فشل آخر فحص. الصفوف كما تأكدت آخر مرة في {{when}}.",
@@ -3472,6 +3477,118 @@
         "messageVacancy": "تنتهي التغطية الآن، ويفقد {{name}} أي دور منحته إياه. وتبقى {{unit}} بلا رئيس ولا تغطية، فيذهب ما يخص رئيسها إلى رئيس الوحدة الأعلى منها إن وُجدت.",
         "accept": "إنهاء التغطية"
       }
+    }
+  },
+  "storage": {
+    "title": "تخزين الملفات",
+    "purpose": "مكان حفظ الملفات التي ترفعها مؤسستك: أدلة المهام الآن، ومرفقات الاجتماعات والمستندات لاحقًا.",
+    "denied": "إعدادات تخزين الملفات متاحة لمسؤولي المؤسسة.",
+    "errorLoad": "تعذّر تحميل إعدادات التخزين. لم يتغير شيء.",
+    "current": {
+      "label": "الموقع الحالي",
+      "noneName": "لم يُؤكَّد بعد",
+      "noneDetail": "تبدأ المؤسسات الجديدة على سحابة AccreditMe. يبقى الرفع موقوفًا للجميع حتى يُؤكَّد موقع.",
+      "managed": "تديرها AccreditMe",
+      "confirmedOnBy": "أكّده {{name}} في {{date}}",
+      "confirmedOn": "أُكِّد في {{date}}",
+      "refused": "يُرفض الرفع الجديد",
+      "requestedOnBy": "طلب {{name}} تغييرًا في {{date}} · ستتواصل معكم AccreditMe",
+      "requestedOn": "طُلب تغيير في {{date}} · ستتواصل معكم AccreditMe"
+    },
+    "chip": {
+      "blocked": "✕ الرفع موقوف",
+      "confirmed": "✓ مؤكَّد",
+      "unreachable": "✕ تعذّر الوصول"
+    },
+    "kind": {
+      "S3": {
+        "name": "سحابة AccreditMe",
+        "desc": "تديرها AccreditMe. لا يلزم أي إعداد."
+      },
+      "MINIO": {
+        "name": "MinIO على خوادمكم",
+        "desc": "مخزن متوافق مع S3 يديره فريق تقنية المعلومات لديكم."
+      },
+      "LOCAL_FILESYSTEM": {
+        "name": "مجلد محلي أو محرك شبكة",
+        "desc": "مجلد أو مشاركة يستطيع خادم AccreditMe الكتابة فيها.",
+        "descNotOffered": "متاح في التثبيت المحلي فقط."
+      },
+      "SHAREPOINT": {
+        "name": "SharePoint Online",
+        "desc": "مكتبة مستندات في Microsoft 365 لديكم، عبر تطبيق يسجّله فريق تقنية المعلومات لديكم."
+      }
+    },
+    "location": {
+      "chooseTitle": "اختر مكان حفظ الملفات",
+      "chooseSub": "يُختار مرة واحدة للمؤسسة كلها. بعد ذلك لا يغيّره إلا AccreditMe.",
+      "fixedTitle": "مكان حفظ الملفات",
+      "fixedSub": "ثابت لمؤسستك. لا ينقله إلا AccreditMe.",
+      "current": "الحالي"
+    },
+    "cloud": {
+      "managedTitle": "تديرها AccreditMe",
+      "managedBody": "لا شيء لإدارته هنا. الرفع مفتوح."
+    },
+    "field": {
+      "endpoint": "عنوان الخادم (Endpoint)",
+      "bucket": "الحاوية (Bucket)",
+      "regionHttps": "المنطقة · HTTPS",
+      "accessKey": "مفتاح الوصول",
+      "secretKey": "المفتاح السري",
+      "folderPath": "مسار المجلد",
+      "spTenant": "معرّف المستأجر (Tenant ID)",
+      "spSiteUrl": "عنوان الموقع",
+      "spLibrary": "اسم المكتبة",
+      "spClientId": "معرّف العميل (Client ID)",
+      "spClientSecret": "سر العميل",
+      "spSecretExpires": "ينتهي السر في",
+      "set": "محفوظ",
+      "none": "لا يوجد",
+      "on": "مفعّل",
+      "off": "غير مفعّل",
+      "notRecorded": "غير مسجّل"
+    },
+    "help": {
+      "lock": "تغيير مكان حفظ الملفات تتولاه AccreditMe.",
+      "locked": "مقفل",
+      "cantShow": "لا يمكن عرض القيمة."
+    },
+    "sp": {
+      "withdrawnTitle": "تعذّر على AccreditMe الوصول إلى SharePoint",
+      "withdrawnSince": "منذ {{date}}. يُرفض الرفع الجديد حتى تُستعاد الصلاحية.",
+      "withdrawn": {
+        "SECRET_INVALID": "رفضت Microsoft سر العميل: إنه غير صالح أو منتهي الصلاحية. أنشئ سرًا جديدًا للتطبيق في Microsoft Entra.",
+        "CONSENT_REVOKED": "أُزيلت صلاحية التطبيق في مستأجر Microsoft لديكم، أو عُطّل التطبيق أو حُذف. اطلب من مسؤول Microsoft لديكم استعادتها.",
+        "GRANT_REMOVED": "لم يعد للتطبيق وصول إلى «{{library}}». اطلب من مسؤول Microsoft لديكم منحه صلاحية الكتابة في المكتبة مجددًا.",
+        "LIBRARY_GONE": "المكتبة «{{library}}» لم تعد موجودة في SharePoint. تواصل مع AccreditMe للاتفاق على مكان حفظ الملفات بعد ذلك.",
+        "UNKNOWN": "رفضت Microsoft وصول AccreditMe. اطلب من مسؤول Microsoft لديكم مراجعة التطبيق ووصوله إلى المكتبة."
+      },
+      "expiring": "ينتهي سر العميل في {{date}}. أنشئ سرًا جديدًا في Microsoft واستبدله هنا.",
+      "expired": "انتهى سر العميل في {{date}}. أنشئ سرًا جديدًا في Microsoft واستبدله هنا."
+    },
+    "usage": {
+      "title": "الاستخدام",
+      "sub": "سحابة AccreditMe فقط تُحتسب ضمن الحد",
+      "of": "{{used}} من {{limit}}",
+      "pct": "{{pct}}%",
+      "almostFull": "شبه ممتلئ · {{pct}}%",
+      "full": "ممتلئ",
+      "normalLine": "عند {{limit}} يُرفض الرفع الجديد، ولا تتأثر الملفات الموجودة.",
+      "nearLine": "يتبقى نحو {{left}}. عند {{limit}} يُرفض الرفع الجديد، وتبقى الملفات الموجودة متاحة.",
+      "fullLine": "يُرفض الرفع الجديد في المؤسسة كلها. لا تتأثر الملفات الموجودة ويمكن فتحها.",
+      "contact": "تواصل مع AccreditMe لرفع الحد.",
+      "own": "تخزينكم الخاص: لا ينطبق عليه حد AccreditMe.",
+      "ownLeftover": "ما زال {{used}} من قبل في سحابة AccreditMe · {{used}} من {{limit}}.",
+      "meterLabel": "استُخدم {{used}} من {{limit}}"
+    },
+    "rules": {
+      "title": "قواعد الرفع",
+      "sub": "تحددها AccreditMe، ولا تُعدَّل هنا",
+      "maxSize": "الحد الأقصى للملف",
+      "maxSizeValue": "{{size}} لكل ملف",
+      "types": "الأنواع المسموحة",
+      "typesFailed": "تعذّر تحميل الأنواع المسموحة."
     }
   }
 }
