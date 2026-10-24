@@ -6,6 +6,7 @@ import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } 
 import { of, throwError } from 'rxjs';
 import { HomeComponent } from './home.component';
 import { TaskService } from '../tasks/services/task.service';
+import { ChangeRequestService } from '../committees/change-requests/change-request.service';
 import { NotificationService } from '../notification/services/notification.service';
 import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
@@ -80,8 +81,11 @@ describe('HomeComponent', () => {
           useValue: {
             getMyTasks: () =>
               opts.tasksFail ? throwError(() => new Error('boom')) : of(opts.tasks ?? []),
+            // ACC-240 — Awaiting my action; empty here, its own spec covers it.
+            getAwaitingDecision: () => of([]),
           },
         },
+        { provide: ChangeRequestService, useValue: { awaitingDecision: () => of([]) } },
         {
           provide: NotificationService,
           useValue: {
