@@ -835,6 +835,8 @@ Full mechanism: SYSTEM-REFERENCE §7.12.
 **Mutation checks:** 19, each red on a failing test, none on a compile error:
 keyboard 5, re-root and rows 5, connectors 4, D7 5.
 
+**Found in the pre-PR review, and fixed:** the "Showing from" path separated its links with `›`, which points back at the ancestors in Arabic. It is a slash now, as in the shell's breadcrumb, and a spec pins it (a mutation back to the chevron fails).
+
 **Built differently from the drawing:**
 - **No positions count on the box.** The chart node has none, and this PR
   changes no backend; the panel shows the positions.

@@ -135,6 +135,8 @@ describe('OrgUnitChartComponent (ACC-120 slice 11, PR E)', () => {
     expect(el.querySelectorAll('[role="group"]').length).toBe(4);
     expect(el.querySelector('[data-testid="chart-path-current"]')!.textContent!.trim()).toBe('Root');
     expect(el.querySelectorAll('[data-testid="chart-path"] button[data-path]').length).toBe(1);
+    // A slash, never a chevron: it reads the right way in both directions.
+    expect(Array.from(el.querySelectorAll('[data-testid="chart-path-sep"]')).map((s) => s.textContent!.trim())).toEqual(['/']);
     expect(box(el, 'a1x').getAttribute('aria-level')).toBe('4');
     expect(box(el, 'b').getAttribute('aria-posinset')).toBe('2');
     expect(box(el, 'b').getAttribute('aria-setsize')).toBe('3');

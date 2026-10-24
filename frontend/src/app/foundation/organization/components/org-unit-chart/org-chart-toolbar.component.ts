@@ -25,7 +25,9 @@ import { OrgUnitPathItemDto } from '../../services/org-unit.service';
         @for (p of path(); track p.id; let last = $last) {
           @if (!last) {
             <button type="button" class="oct__link" (click)="reroot.emit(p.id)" [attr.data-path]="p.id">{{ name(p) }}</button>
-            <span class="text-ink-500" aria-hidden="true">›</span>
+            <!-- A slash, as in the shell's breadcrumb: a chevron would point
+                 back at the ancestors in Arabic. -->
+            <span class="text-ink-500" aria-hidden="true" data-testid="chart-path-sep">/</span>
           } @else {
             <span class="font-semibold text-ink-900" aria-current="location" data-testid="chart-path-current">{{ name(p) }}</span>
           }
