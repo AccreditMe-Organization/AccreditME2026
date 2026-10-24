@@ -2139,6 +2139,11 @@ Prisma Studio.
   committee reference checks needed to recognise Dissolution Pending and
   Dissolved. Other templates are still unkeyed; key one when a feature first
   needs it, with a backfill. See Key Architecture Decisions (ACC-233).
+  **UPDATED (ACC-255): what a stage allows and what it means are now the
+  stage's own configuration** (record actions and flags), so a feature that
+  needs to recognise a stage asks its rules, not its key. The backend reads no
+  committee stage key for a rule any more; see Key Architecture Decisions
+  (ACC-255).
 - **`WorkflowTransitionActionsComponent`**
   (`frontend/src/app/foundation/workflow/components/workflow-transition-actions/`,
   ACC-22) is the standard, reusable pattern for triggering workflow
@@ -3874,6 +3879,9 @@ owning unit. Full mechanism: SYSTEM-REFERENCE.md §3.15 (the rules) and §2.16
   `npm run backfill:acc233-committee-stage-keys`, which matches by POSITION
   (confirmed by the first/final flags) and leaves anything it cannot match
   null. A stage with no key is not dissolving, and is logged (ids only).
+  **SUPERSEDED (ACC-255 PR 2): "dissolving" is the stage's `DISSOLVING` FLAG**,
+  seeded on Dissolution Pending and Dissolved and configurable per tenant —
+  neither its key nor its name. The keys stay, for the seed and the backfills.
 - **AN OMITTED OWNING UNIT ON CREATE IS STILL THE ROOT** (ACC-135, unchanged).
   Sending it empty, or `null` on update, is refused; it used to reach the
   database and fail as a 500.
@@ -4007,6 +4015,9 @@ Briefly:
   - **The API still accepts a direct edit in any stage until ACC-241.** That
     ticket must take the instance lock BEFORE the committee row lock (plan §7),
     or an edit and a transition can deadlock.
+    **BUILT (ACC-255 PR 2):** the API refuses a direct edit where the stage does
+    not allow `edit_details`, instance lock first. The header rule is still
+    keyed on the screens until ACC-255 PR 3.
 - **A STALE SAVE IS REFUSED UNDER THE ROW LOCK.**
   - The dialog sends `expectedUpdatedAt`. `updateCommittee()` locks the
     committee row and compares, giving 409 `COMMITTEE_CHANGED` with nothing
@@ -4111,11 +4122,17 @@ and the build's departures: `backend/Plans/step-238-committee-changes.md` §5,
   The committee header's rule (Edit only in Formation) is the same shape on the
   screens: `COMMITTEE_HEADER_POLICY` (`committee-stage.ts`). When stage
   permissions become configuration, these maps are what is replaced.
+  **REPLACED IN PART (ACC-255 PR 2):** the committee-stage map
+  (`COMMITTEE_STAGE_POLICY`) is deleted; the policy file reads the
+  committee's stored stage rules instead, and approve lands in the request
+  stage flagged `APPLIES_APPROVED_CHANGE`. The REQUEST's own stage map stays
+  keyed: that template is protected. `COMMITTEE_HEADER_POLICY` goes in PR 3.
 - **SEEDING ONE TEMPLATE USES THE BOOTSTRAP'S OWN CODE**
   (`applyWorkflowSeed()`, `workflow-seed-apply.ts`). A backfill never re-runs
   `seedDefaultWorkflows()`: that overwrites a tenant's edits to every template.
 - **Not built here:** the screens (ACC-240) and the API lock on direct edits
-  outside Formation (ACC-241, before the first customer).
+  outside Formation (ACC-241, before the first customer). Both are built now:
+  ACC-240 shipped, and ACC-241 in ACC-255 PR 2.
 - **One additive migration** (`acc239_committee_change_request`). It, and then
   `npm run backfill:acc239-change-request-workflow` (dry run first, then
   `-- --execute`), run AFTER the deploy: the enum value must not reach the
@@ -4181,6 +4198,41 @@ SYSTEM-REFERENCE.md §1.14. Plan and Ahmad's answers (22 and 24 Oct):
   AFTER the deploy (dry run, execute, dry run 0). On 24 Oct's data it removes
   nothing.
 - **No migration.**
+
+## Key Architecture Decisions (ACC-255)
+
+What each workflow stage allows, and stage flags. Full mechanism:
+SYSTEM-REFERENCE.md §2.18 (and §2.18.1 for what decides by it). Plan, Ahmad's
+answers and PR 2 as built: `backend/Plans/step-255-workflow-stage-rules.md`
+(§16, §16.5). Briefly:
+
+- **A STAGE SAYS WHAT MAY BE DONE TO THE RECORD, AND WHAT IT MEANS** — record
+  actions (`WorkflowStageRecordAction`, a row means "allowed") and flags
+  (`WorkflowStage.flags`: DISSOLVING, IN_FORCE, APPLIES_APPROVED_CHANGE),
+  configured per tenant, from registries in `record-registry.ts` that fail
+  closed. Read only through `StageRulesService`. A stage only NARROWS what a
+  role allows: the permission is checked first.
+- **SINCE PR 2 THE BACKEND DECIDES BY THEM, NEVER BY A COMMITTEE STAGE KEY:**
+  a committee's direct edit and member changes (ACC-241), whether it is
+  dissolving, and what a change request may do.
+  `committee-stage-keys.scan.spec.ts` fails on a key read again outside the
+  seed, the key list and the quorum precondition out of Formation (a
+  transition rule, D10).
+- **ONE REFUSAL, `STAGE_ACTION_NOT_ALLOWED`** (409, `{ action, stageNameEn,
+  stageNameAr }`), for every module, with a sentence naming the stage
+  ("Members can't be changed while the committee is Dissolved.").
+- **LOCK ORDER: THE RECORD'S INSTANCE (FOR SHARE), THEN THE HIERARCHY LOCK, THEN
+  THE RECORD ROW** — the engine's order, so a write and a transition cannot
+  deadlock. A missing or another organisation's record is still the 404 first.
+- **D14: A RECORD WITH NO WORKFLOW INSTANCE ALLOWS NOTHING.** None exist on the
+  shared database (24 Oct).
+- **A DISSOLVED COMMITTEE'S MEMBERS CAN'T BE CHANGED** (Ahmad, Q-A); Dissolution
+  Pending still allows it. The seed carries it; existing organisations get it
+  from `npm run backfill:acc255-dissolved-membership` (dry run, then
+  `-- --execute`, then a dry run reporting 0), AFTER PR 2 deploys.
+- **The parity script and `COMMITTEE_STAGE_POLICY` are deleted** (PR 2). The
+  frontend still reads keys (`COMMITTEE_HEADER_POLICY`) until PR 3.
+- **No migration in PR 2.**
 
 ## Open / Deferred Items
 
