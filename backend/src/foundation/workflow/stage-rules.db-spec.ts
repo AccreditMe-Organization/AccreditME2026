@@ -56,7 +56,8 @@ const EXPECTED_COMMITTEE = {
   active: { actions: [...MEMBERS, 'request_change'].sort(), flags: ['IN_FORCE'] },
   suspended: { actions: [...MEMBERS, 'request_change'].sort(), flags: ['IN_FORCE'] },
   dissolution_pending: { actions: MEMBERS, flags: ['DISSOLVING'] },
-  dissolved: { actions: MEMBERS, flags: ['DISSOLVING'] },
+  // ACC-255 PR 2 (Q-A): a dissolved committee's members can't be changed.
+  dissolved: { actions: [] as string[], flags: ['DISSOLVING'] },
 };
 
 describe('Stage rules against a real database (ACC-255)', () => {

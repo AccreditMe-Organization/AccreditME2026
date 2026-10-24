@@ -100,7 +100,7 @@ describe('record registries (ACC-255)', () => {
       }
     });
 
-    it("reproduces today's committee rules exactly (the plan's §4.1)", () => {
+    it("gives the committee stages the plan's §4.1 rules, with Dissolved's member changes removed (§16.2, Q-A)", () => {
       const committee = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'COMMITTEE')!;
       const rules = Object.fromEntries(committee.stages.map((s) => [s.key, { actions: [...(s.actions ?? [])].sort(), flags: [...(s.flags ?? [])] }]));
       const members = [COMMITTEE_ACTIONS.ADD_MEMBER, COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, COMMITTEE_ACTIONS.REMOVE_MEMBER].sort();
@@ -110,7 +110,7 @@ describe('record registries (ACC-255)', () => {
         active: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE].sort(), flags: [STAGE_FLAG.IN_FORCE] },
         suspended: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE].sort(), flags: [STAGE_FLAG.IN_FORCE] },
         dissolution_pending: { actions: members, flags: [STAGE_FLAG.DISSOLVING] },
-        dissolved: { actions: members, flags: [STAGE_FLAG.DISSOLVING] },
+        dissolved: { actions: [], flags: [STAGE_FLAG.DISSOLVING] },
       });
     });
 
