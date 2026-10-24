@@ -291,7 +291,7 @@ type ChoiceList = 'types' | 'units' | 'committees';
             [label]="'committee.parentCommittee' | translate"
             [control]="form.controls.parentCommitteeId"
             inputId="cf-parent"
-            [hint]="(committeesFailed() ? 'committee.form.listFailed' : editing() ? 'committee.form.parentLeftOut' : 'committee.form.leftOutNew') | translate"
+            [hint]="parentHintText()"
             [hintAction]="committeesFailed() ? retryAction('committees') : null"
             [forceShowErrors]="showErrors()"
             [errorMessages]="errorKeys('parentCommitteeId')"
@@ -311,7 +311,7 @@ type ChoiceList = 'types' | 'units' | 'committees';
             [label]="'committee.reportingTo' | translate"
             [control]="form.controls.reportingToCommitteeId"
             inputId="cf-reports-to"
-            [hint]="(committeesFailed() ? 'committee.form.listFailed' : reportsToHint()) | translate"
+            [hint]="reportsToHintText()"
             [hintAction]="committeesFailed() ? retryAction('committees') : null"
             [forceShowErrors]="showErrors()"
             [errorMessages]="errorKeys('reportingToCommitteeId')"
@@ -603,6 +603,27 @@ export class CommitteeFormComponent {
         ? 'committee.form.reportsToLeftOut'
         : 'committee.form.leftOutNew',
   );
+
+  /**
+   * ACC-240 — what each field is for, then ACC-233's line saying what the list
+   * leaves out (Ahmad, 22 Oct: both, because people ask why a committee is
+   * missing). A failed list replaces both; so does Reports to's "Filled in from
+   * Parent committee", which is about the value now in the field.
+   */
+  readonly parentHintText = computed(() => {
+    this.translate.currentLang();
+    if (this.committeesFailed()) return this.translate.instant('committee.form.listFailed');
+    const leftOut = this.editing() ? 'committee.form.parentLeftOut' : 'committee.form.leftOutNew';
+    return `${this.translate.instant('committee.form.parentAbout')} ${this.translate.instant(leftOut)}`;
+  });
+
+  readonly reportsToHintText = computed(() => {
+    this.translate.currentLang();
+    if (this.committeesFailed()) return this.translate.instant('committee.form.listFailed');
+    const key = this.reportsToHint();
+    if (key === 'committee.form.reportsToFilledIn') return this.translate.instant(key);
+    return `${this.translate.instant('committee.form.reportsToAbout')} ${this.translate.instant(key)}`;
+  });
 
   /** Per tab, how many of its fields show an error — only once Save has been pressed. */
   readonly tabErrors = computed<Record<CommitteeFormTab, number>>(() => {

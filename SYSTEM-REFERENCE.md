@@ -8922,11 +8922,15 @@ once. **Every confirmation goes through `ask()`.** `npm run
 check:confirm-through-helper` fails a `ConfirmationService.confirm(`
 anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
 
-- **The call:** `ask({ tone, header, message, acceptLabel, rejectLabel?,
-  accept, reject?, opener? })`. `acceptLabel` is REQUIRED and is the action's
+- **The call:** `ask({ tone, header, message, details?, acceptLabel,
+  rejectLabel?, accept, reject?, opener? })`. `acceptLabel` is REQUIRED and is the action's
   verb ("Deactivate role", "Vacate Head"), never Yes. A blank `acceptLabel`,
   `header` or `message` throws before anything opens. `rejectLabel` defaults
   to Cancel. `reject` runs for Cancel, ×, and Escape alike.
+- **`details` (ACC-240):** optional lines, already translated, listed before the
+  message, which stays the consequence ("Quorum: 5 → 6" on Approve). Still a confirm: one question, two
+  buttons, no fields. The host renders them as a list only when there are any;
+  without them the confirm is exactly as before (`am-confirm.details.spec.ts`).
 - **`tone` decides the buttons and the focus, and nothing else may.** No call
   passes button classes, props or an icon.
   - `destructive`: the action is filled `--am-danger-ink` (#B42318) with white
@@ -8960,8 +8964,11 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
   its tooltip showed and Escape no longer closed the dialog. The editor now
   pushes a layer while the dialog is open and answers Escape itself
   (`closeOnEscape` off, top layer only).
-- **The 23 calls and their tones:** neutral for Complete task and Reactivate
-  user, destructive for the other 21.
+- **The calls and their tones:** 29 `ask()` calls outside specs at ACC-240
+  PR 3b (it was 23 at slice 10; `grep -rn "\.ask({"` gives today's count).
+  Neutral where the action carries work forward (Complete task, Reactivate
+  user, Approve a change request, and the neutral headship actions);
+  destructive for the rest, including 3b's Withdraw and Discard.
 - **The words (slice 10, PR 2):** the header is the question and names what it
   acts on; the message is the consequence. Never "Confirm", never Yes / No.
   - **A consequence is what the server does**, read from the service the
@@ -8977,12 +8984,16 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
   - **Names follow the session's language** (`LanguageService.bilingual`).
     A workflow action type is a word (`workflow.actionTypeName.*`), never the
     enum; one with no translation reads "Unknown".
-  - **Not yet reworded:** Remove member and Complete task (lane B's files).
+  - **Remove member and Complete task were reworded in ACC-240 PR 3a** (#205):
+    Remove reads "Remove {name} from this committee?" / "Their membership ends
+    today and stays in the committee's history."
 - **Specs:**
   - `am-confirm.service.spec.ts`: tone to classes, colour and focus; required
     labels; layer push and pop on accept, Cancel and Escape; focus back,
     including the ⋯ fallback.
   - `confirm-over-dialog.spec.ts`: the Vacate Head case.
+  - `am-confirm.details.spec.ts` (ACC-240): the details list renders in order,
+    before the message, only when given and non-empty, and as text, never markup.
   - The Actions-dialog block in `workflow-transition-editor.component.spec.ts`.
   - `confirm-wording.spec.ts`: every reworded confirm's header, message and
     buttons from the real translation files, in both languages, and the Actions

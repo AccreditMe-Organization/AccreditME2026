@@ -12,6 +12,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
 import { HomeBriefingComponent } from './home-briefing.component';
+import { HomeAwaitingComponent } from './home-awaiting.component';
 import { TaskLinkComponent } from '../tasks/components/task-link/task-link.component';
 
 // HomeComponent — ACC-70. The post-login landing page.
@@ -41,7 +42,7 @@ import { TaskLinkComponent } from '../tasks/components/task-link/task-link.compo
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [PageHeaderComponent, HomeBriefingComponent, AmDateTimePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent, TaskLinkComponent],
+  imports: [PageHeaderComponent, HomeBriefingComponent, HomeAwaitingComponent, AmDateTimePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent, TaskLinkComponent],
   template: `
     <div class="flex flex-col gap-6">
       <!-- ACC-79 — no purpose line. "Your open work and recent activity"
@@ -55,6 +56,10 @@ import { TaskLinkComponent } from '../tasks/components/task-link/task-link.compo
       <!-- ACC-198 — the AI briefing, above the accepted panels at full width.
            Renders nothing at all unless a tenant admin may make one here. -->
       <app-home-briefing (showAll)="showFullList()" />
+
+      <!-- ACC-240 — what waits for this person's decision, oldest first.
+           Renders nothing at all with nothing waiting. -->
+      <app-home-awaiting />
 
       <div id="home-panels" tabindex="-1" class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start outline-none">
         <app-card>
