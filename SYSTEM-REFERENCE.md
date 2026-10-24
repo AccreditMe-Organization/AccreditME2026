@@ -2441,6 +2441,105 @@ Three engine changes made for committee change requests (§3.18).
 
 ---
 
+### 2.18 Stage rules — what a stage allows and what it means (ACC-255, PR 1)
+
+Each stage now carries its own answer to two questions: "what may be done to
+the record here?" and "what does this stage mean?". **In PR 1 nothing decides
+by these answers.** They are written, served and compared, and the old
+key-based maps (`COMMITTEE_STAGE_POLICY`, `COMMITTEE_HEADER_POLICY`,
+`isDissolvingStageKey`) still decide everything until PR 2 switches over. Plan:
+`backend/Plans/step-255-workflow-stage-rules.md`.
+
+- **The registries** (`foundation/workflow/record-registry.ts`), per record type
+  and in code, never copied in the frontend:
+  - `RECORD_ACTIONS`: for COMMITTEE, `edit_details`, `add_member`,
+    `remove_member`, `change_member_role` and `request_change`. The three
+    member actions are `onNewStage`: a stage a tenant adds with no actions
+    gets them, which is what such a stage allowed before stage rules.
+  - `STAGE_FLAGS`: COMMITTEE has `DISSOLVING` and `IN_FORCE` (any number of
+    stages); COMMITTEE_CHANGE_REQUEST has `APPLIES_APPROVED_CHANGE`, which must
+    sit on exactly one stage.
+  - `RECORD_FIELDS`: COMMITTEE `typeValueId` and `orgUnitId`, for step 2's
+    conditions. Nothing reads them yet.
+  - **Fail closed:** a type with no entry has no actions to configure; a key not
+    in the registry is refused on save and never allowed; a stage with no row
+    for an action does not allow it. Labels are the frontend's (`labelKey`), and
+    `record-registry.spec.ts` checks each one exists in both `en.json` and
+    `ar.json`.
+- **The data** (migration `acc255_workflow_stage_rules`, additive):
+  - `WorkflowStageRecordAction`, where a row means "allowed": `organizationId`,
+    `stageId`, `actionKey`. It is unique on (stage, action) and deleted with its
+    stage.
+  - `WorkflowStage.flags`, a `String[]`, empty by default.
+- **The seed reproduces today's rules exactly:**
+  - Formation allows Edit and the member actions.
+  - Terms Review, Dissolution Pending and Dissolved allow the member actions.
+  - Active and Suspended allow the member actions and Request a change, and are
+    `IN_FORCE`.
+  - The two dissolving stages are `DISSOLVING`.
+  - The change request's Approved stage is `APPLIES_APPROVED_CHANGE`.
+  - `applyWorkflowSeed()` writes these only when it creates a stage, so a new
+    organisation gets them at bootstrap and a re-seed never overwrites a
+    tenant's choice.
+- **The engine's answer** (`StageRulesService`, exported by `WorkflowModule`):
+  - `currentStageRules(type, id, org, client?, { lock })` reads the record's
+    NEWEST instance's stage, optionally `FOR SHARE OF wi` inside a transaction.
+    It returns the stage's names, its flags in registry order, and every
+    registered action as true or false.
+  - `stageRulesFor(org, type, ids)` answers a whole list in three queries.
+  - `stageAllows()` answers one action. `assertStageAllows()` refuses with 409
+    `STAGE_ACTION_NOT_ALLOWED` `{ action, stageNameEn, stageNameAr }`.
+  - **It never reads a permission.** A stage only narrows what a role allows;
+    the module checks the permission first.
+  - **D14:** a record with no instance, or no current stage, allows nothing,
+    has no flags, and is logged with ids. Pinned against a real database in
+    `stage-rules.db-spec.ts`. On the shared database, 24 Oct, no committee is
+    in that state.
+- **The template API** (`workflows:view` to read, `workflows:manage` to write;
+  that `workflows:manage` can be granted to other roles is ACC-258's to
+  close):
+  - `GET /workflow-templates/:id` adds `recordActions`, `stageFlags`,
+    `recordFields`, and each stage's `actions` and `flags`.
+  - `PATCH /workflow-templates/stages/:stageId` and `POST /workflow-templates/:id/stages`
+    accept `actions` and `flags`.
+    - Unknown keys are 400 `STAGE_ACTION_UNKNOWN` or `STAGE_FLAG_UNKNOWN`.
+    - `actions` replaces the stage's set by writing only the difference, inside
+      the stage's transaction.
+    - A flag that must sit on exactly one stage is re-counted under the
+      template's row lock whenever a save, add or remove touches it, and a
+      wrong count is 409 `STAGE_FLAG_EXACTLY_ONE`, rolled back. Only a touched
+      flag is counted.
+    - On a protected template a CHANGED set is `WORKFLOW_TEMPLATE_PROTECTED`
+      (`STAGE_FIELD`); the stored set re-sent passes.
+- **The stage audit names what changed** (`stageSnapshot()` and
+  `stageAuditDiff()` in `workflow-template.service.ts`):
+  - an update records only the fields that changed, actions and flags
+    included, and writes nothing for a no-op;
+  - adding or removing a stage records the whole stage.
+  - Before this, the audit named only the stage's names: the "workflow stage configuration changes are effectively unaudited" item in CLAUDE.md's open items. That is now fixed for saves through the API; scripts writing through Prisma directly still bypass the audit.
+- **On the committee read** (§3.17, §3.18):
+  - `GET /committees/:id` and every list row carry
+    `stageRules: { actions: { edit_details, add_member, remove_member, change_member_role, request_change }, flags }`.
+    A real `GET /committees` makes 17 statements at 1, 10 and 50 committees.
+  - `GET /committees/form-choices` (`committees:create` or
+    `committees:edit_details`) returns the committee types and units exactly
+    as the lookup and unit lists serve them, through the same services. A
+    tenant-made role that may edit committees without `lookups:view` or
+    `org:view` no longer gets a 403 whose Retry can never succeed. The screens
+    switch to it in PR 3.
+- **Runbook, after PR 1 deploys** (never before; the table must exist first):
+  1. `npm run backfill:acc255-stage-rules`: a dry run; then `-- --execute`; then
+     a dry run again, which must plan 0. It writes only stages with no rules,
+     takes one `BACKFILL_TX` transaction per organisation that plans again and
+     refuses a moved plan, writes one audit row per organisation, and refuses
+     customer organisations. On 24 Oct it would write 7 stages per tenant.
+  2. `npm run parity:acc255-stage-rules`, read-only: compares the engine's answer
+     with the old maps for every committee and exits 1 on any difference. It is
+     deliberately NOT a `check:*` script, because CI and the PR gate run those
+     with no database, or with the shared one.
+
+---
+
 ## 3. Task System
 
 `backend/src/foundation/task/task.service.ts` +
