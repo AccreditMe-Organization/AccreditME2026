@@ -1,6 +1,6 @@
 # Step 258 — Workflow editing for the Organization Administrator only (ACC-258)
 
-**Status:** plan only (24 Oct 2026). Nothing is built.
+**Status:** planned 24 Oct 2026; Ahmad answered Q1–Q3 the same day (§8), and it is being built.
 **Decision behind it:** Ahmad, 22 Oct (ACC-255 Q-D). Only the tenant admin can
 change a workflow: its stages, stage rules, flags and transitions. Every other
 role sees a running workflow's progress only on the record it runs on. The
@@ -244,6 +244,17 @@ not a schema change.
 | Q3 | Ship the backend first and let lane A follow, or land both together? | **Together, if lane A can take it this week.** Otherwise backend first. The refusal is correct on its own, and the only visible effect until lane A ships is a generic error on a box that shouldn't be ticked. |
 
 ---
+
+### 8.1 Ahmad's answers (24 Oct)
+
+- **Q1 — Platform Administrator: leave it as it is.** It keeps `workflows:manage`
+  through its frozen seed, in every organisation, and the backfill skips it.
+- **Q2 — a non-root role that already holds the key: its next save drops it**
+  and writes an audit row (the save's own row, with the key under `removed`). It
+  is dropped even if a stale screen sends it back ticked.
+- **Q3 — backend and frontend ship together, in this one PR**, with the frontend
+  changes in their own commits, separate from the backend ones. The roles-screen
+  files are lane A's; if lane A objects, those commits are dropped.
 
 ## 9. Not in this ticket
 
