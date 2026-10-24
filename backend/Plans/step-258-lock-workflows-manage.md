@@ -191,6 +191,24 @@ conventions:
 
 ---
 
+### 5.1 Runbook, after the deploy
+
+1. `npm run backfill:acc258-revoke-workflows-manage`: a dry run. It lists, per
+   tenant, each role other than Organization Administrator and Platform
+   Administrator that holds `workflows:manage`, with its active users. On
+   24 Oct's data it plans **0**: no such role exists.
+2. Only if the dry run plans any: `npm run backfill:acc258-revoke-workflows-manage -- --execute`.
+   It refuses a customer organisation (exit 1) and writes one audit row per
+   revoked grant.
+3. The dry run again: it must plan 0.
+
+Run from the main checkout, on the merged commit, with the shared database's
+credentials, after Railway shows the deploy live and `GET /api/v1/health`
+reports it. Never before: until the server refuses the grant, a tenant admin
+could give it back between the run and the deploy.
+
+---
+
 ## 6. Specs
 
 **Backend, unit:**
