@@ -11696,8 +11696,27 @@ own error text is logged, never returned — it can name a host or bucket.
 - Opened from My tasks and the committee task list: "Add evidence" (active
   assignee, open task) and "Evidence" (any task with some).
 - Setup health lists "File storage almost full" (16.12), and "SharePoint
-  storage can't be reached" / "SharePoint client secret expires soon" (16.14),
-  none of them with a Fix until lane A's screens exist.
+  storage can't be reached" / "SharePoint client secret expires soon" (16.14).
+  Since ACC-260 PR A the two SharePoint rows have a Fix, "Open file storage"
+  (`tenant:manage_config`). Almost full keeps none until the recycle bin
+  screen exists (ACC-260 PR D).
+- `StorageSettingsComponent` — File storage, `/admin-settings/storage`, the
+  Administration rail item after AI credits (`tenant:manage_config`; ACC-260
+  PR A, **read-only**). One `GET /tenant/storage` through the shared request
+  outcome:
+  - **The strip:** not confirmed ("Uploads blocked"), or the confirmed location
+    with who confirmed it, a pending change request as a line, and SharePoint's
+    withdrawn access as "Can't be reached".
+  - **The four options:** the current one open with its details. Where files
+    are is locked; credentials show only "Set".
+  - **SharePoint:** the withdrawn reason with what to fix in Microsoft, and the
+    secret's expiry warning from 30 days before.
+  - **Usage** (AccreditMe cloud only), and the **upload rules** from the server.
+
+  The state logic is pure functions in `storage-view.ts`. **AccreditMe cloud
+  renders no location and no field, whatever the response holds** (rule 1, a
+  spec feeds it platform-looking values). Nothing on the page writes yet; PRs
+  B–D add first-time setup, Request a change, SharePoint, and the recycle bin.
 - `FilesService` — limits, opening a download (navigation, not a popup),
   sizes, refusal codes.
 
@@ -11765,9 +11784,10 @@ Virus scanning (ACC-178), the orphan-object reconciler (ACC-179), moving files
 between locations, SharePoint included (ACC-180),
 the platform admin storage screens (ACC-182), an upload-specific rate limit
 (ACC-129's global per-user limit applies),
-per-plan upload caps, and the tenant storage, confirm, request-a-change and
-recycle bin screens, and SharePoint's settings, Replace secret and Disconnect
-(lane A). **No bucket exists**: until one does — and until
+per-plan upload caps, and, from lane A's ACC-260 (the read-only File storage
+page exists, 16.9): first-time confirm, Request a change, credential
+replacement, SharePoint's settings, Replace secret and Disconnect, and the
+recycle bin screen. **No bucket exists**: until one does — and until
 each organisation confirms — production refuses every upload.
 
 ### 16.14 SharePoint — the customer's own library (ACC-185)

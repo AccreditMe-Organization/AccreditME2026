@@ -498,3 +498,60 @@ Each PR is one draft into `dev`, run through `/ready-to-pr` by Ahmad, and touche
 - **D5:** yes; the small backend change goes in PR C.
 - **D10:** noted on ACC-182.
 - **D11:** filed as ACC-261 (lane B, needs a migration).
+
+### PR A as built (CC-143, 24 Oct)
+
+Branch `feature/ACC-260-storage-settings`, with `dev` merged in at `bab1c02`
+(#213). Frontend only; no backend change.
+
+**Built:**
+- `StorageSettingsService` and `IStorageSettings`, field for field the
+  backend's interface.
+- `storage-view.ts`: the state logic as pure functions — the strip, the
+  options, the current location's fields, SharePoint health, and usage.
+- `StorageLocationComponent` (the "Where files are kept" card) and
+  `StorageSettingsComponent` (the page).
+- The route `/admin-settings/storage` with its own `permissionGuard`, and the
+  rail item "File storage" after AI credits.
+- Setup health's Fix for `STORAGE_ACCESS_WITHDRAWN` and
+  `STORAGE_SECRET_EXPIRING`.
+- English and Arabic.
+
+**Built differently from the design:**
+- **No write control:** no Request a change, Test again, Replace or Confirm.
+  Those are PRs B and C.
+- **The chip says "Confirmed", not "Working"** (D4): nothing measures health.
+- **Secrets read "Set" with no date** (G12).
+- **No file counts** (G6). Usage has no recycle-bin line yet; that comes with
+  PR D.
+- **No scanning row** in Upload rules (ACC-178).
+- **Before confirming, the options are a plain list,** with nothing selected or
+  open, and the subtitle says what is true now. Choosing one comes with PR B.
+- **"Fixed for your organisation. Only AccreditMe can move it."** replaces "· to
+  move, request a change" until that control exists (PR B).
+- **SharePoint follows D1:** the six fields, with the tenant, site and library
+  locked.
+- **"Today" for the expiry warning is the UTC calendar day,** so the 30-day line
+  can be a day early or late near midnight in the tenant's zone.
+
+**Layout spec** (EN and AR at 988, 358 and 328px of content, five states each):
+- **Nothing is wider than the frame:** sideways 0 in every case.
+- **Usage and rules** sit side by side at 988 and stack on a phone.
+- **A long MinIO endpoint wraps** inside its field at 328.
+
+**Mutation checks:** 15, each red on a failing test:
+- the not-confirmed state;
+- the danger tone;
+- withdrawn shown as Confirmed;
+- AccreditMe cloud showing a location (rule 1);
+- a raw secret marker (rule 2);
+- options not greyed;
+- the 30-day boundary;
+- withdrawn priority;
+- the 90% boundary;
+- own storage before confirming;
+- the request line hidden;
+- a write control appearing;
+- the route with no guard;
+- the rail item on `tenant:view`;
+- the Setup health Fix with no permission.
