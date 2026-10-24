@@ -1,10 +1,12 @@
-import { PERMISSIONS_NOT_YET_CHECKED } from '../../common/constants/permissions';
+import { PERMISSIONS_NOT_YET_CHECKED, WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
 import { ALL_PERMISSIONS } from './permission.seed';
 import {
   PermissionNotInUseException,
+  PermissionRootRoleOnlyException,
   PermissionUnknownException,
   PlatformPermissionNotAllowedException,
 } from './role-permission-refusal';
+import { TENANT_ADMIN_KEY } from './tenant-administrator.invariant';
 
 /**
  * ACC-120 slice 5 — which permission keys can be GIVEN, and where.
@@ -49,6 +51,34 @@ export function assertGrantable(keys: readonly string[], isPlatformOrg: boolean)
   if (platform.length > 0) throw new PlatformPermissionNotAllowedException(platform);
   const unused = keys.filter((k) => !isPermissionInUse(k));
   if (unused.length > 0) throw new PermissionNotInUseException(unused);
+}
+
+/**
+ * ACC-258 — keys only the tenant's ROOT ROLE (Organization Administrator,
+ * `TENANT_ADMIN`) may hold (Ahmad, 22 Oct: only the tenant admin changes a
+ * workflow). Platform Administrator keeps the key through its own frozen seed
+ * (24 Oct, Q1); it is never assignable inside a tenant.
+ *
+ * Kept APART from assertGrantable / assertKnownAndGrantable on purpose: those
+ * also guard a workflow transition's requiredPermission, and a transition that
+ * requires workflows:manage stays valid — the root role holds it, so someone can
+ * still fire it.
+ *
+ * The role editor reads this through the catalogue's `rootRoleOnly` flag, so
+ * no screen keeps a copy of the list.
+ */
+export const ROOT_ROLE_ONLY_PERMISSIONS: ReadonlySet<string> = new Set<string>([WORKFLOWS_PERMISSIONS.MANAGE]);
+
+export const isRootRoleOnly = (key: string): boolean => ROOT_ROLE_ONLY_PERMISSIONS.has(key);
+
+/**
+ * Refuses (400 PERMISSION_ROOT_ROLE_ONLY) giving a root-only key to any role but
+ * the root role. `roleKey` is null for a role a tenant created.
+ */
+export function assertNotRootRoleOnly(keys: readonly string[], roleKey: string | null): void {
+  if (roleKey === TENANT_ADMIN_KEY) return;
+  const reserved = keys.filter(isRootRoleOnly);
+  if (reserved.length > 0) throw new PermissionRootRoleOnlyException(reserved);
 }
 
 /** assertGrantable, after refusing a key the catalogue does not have (400). */
