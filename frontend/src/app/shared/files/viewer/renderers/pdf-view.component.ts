@@ -16,6 +16,7 @@ import {
 import { TranslatePipe } from '@ngx-translate/core';
 import { FormatService } from '../../../../core/formatting';
 import { PdfJsLoader, PdfJsModule, pdfDocumentOptions } from '../pdf-loader';
+import { PdfPageVisibility, PdfPageWatch } from './pdf-page-visibility';
 
 /** Fit width (the default), fit page, or a zoom level where 100% is the page's printed size. */
 export type PdfZoom = { mode: 'fitWidth' } | { mode: 'fitPage' } | { mode: 'custom'; percent: number };
@@ -120,6 +121,7 @@ export class FilePdfViewComponent {
   private readonly loader = inject(PdfJsLoader);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly visibility = inject(PdfPageVisibility);
 
   readonly bytes = input.required<ArrayBuffer>();
   readonly zoom = input<PdfZoom>({ mode: 'fitWidth' });
@@ -153,7 +155,7 @@ export class FilePdfViewComponent {
   private readonly near = new Set<number>();
   private readonly ratios = new Map<number, number>();
   private renderedAt = new Map<number, number>();
-  private observers: IntersectionObserver[] = [];
+  private pageWatch: PdfPageWatch | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private destroyed = false;
 
@@ -225,41 +227,27 @@ export class FilePdfViewComponent {
       this.resizeObserver.observe(scroller);
     }
 
-    const pageOf = (entry: IntersectionObserverEntry): number => Number((entry.target as HTMLElement).dataset['page']);
-    const nearby = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const n = pageOf(e);
-          if (e.isIntersecting) {
-            this.near.add(n);
-            void this.render(n);
-          } else {
-            this.near.delete(n);
-          }
+    // ACC-253 — which pages are near the view comes from PdfPageVisibility
+    // (the browser's IntersectionObserver by default); what to do about it
+    // stays here.
+    this.pageWatch = this.visibility.watch(scroller, Array.from(root.querySelectorAll('.am-fpdf__page')), {
+      near: (n, isNear) => {
+        if (isNear) {
+          this.near.add(n);
+          void this.render(n);
+        } else {
+          this.near.delete(n);
         }
       },
-      { root: scroller, rootMargin: '100% 0px' },
-    );
-    const far = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) if (!e.isIntersecting) this.release(pageOf(e));
-      },
-      { root: scroller, rootMargin: '400% 0px' },
-    );
-    const visible = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) this.ratios.set(pageOf(e), e.intersectionRatio);
+      far: (n) => this.release(n),
+      visible: (ratios) => {
+        for (const [n, ratio] of ratios) this.ratios.set(n, ratio);
         let best = 0;
         let bestRatio = -1;
         for (const [n, ratio] of this.ratios) if (ratio > bestRatio || (ratio === bestRatio && n < best)) [best, bestRatio] = [n, ratio];
         if (best) this.currentPage.emit(best);
       },
-      { root: scroller, threshold: [0, 0.25, 0.5, 0.75, 1] },
-    );
-    this.observers = [nearby, far, visible];
-    for (const el of Array.from(root.querySelectorAll('.am-fpdf__page'))) {
-      for (const o of this.observers) o.observe(el);
-    }
+    });
   }
 
   private async render(n: number): Promise<void> {
@@ -314,7 +302,8 @@ export class FilePdfViewComponent {
     this.destroyed = true;
     for (const task of this.renderTasks.values()) task.cancel();
     this.renderTasks.clear();
-    for (const o of this.observers) o.disconnect();
+    this.pageWatch?.disconnect();
+    this.pageWatch = null;
     this.resizeObserver?.disconnect();
     for (const canvas of Array.from(this.host.nativeElement.querySelectorAll('canvas'))) {
       canvas.width = 0;
