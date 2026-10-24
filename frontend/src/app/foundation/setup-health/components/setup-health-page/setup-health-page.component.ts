@@ -106,9 +106,14 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
       return null;
     case 'STORAGE_ACCESS_WITHDRAWN':
     case 'STORAGE_SECRET_EXPIRING':
-      // ACC-185 — no Fix yet: the storage settings screen (Replace secret) is
-      // lane A's and not built. The row's hint says what to do.
-      return null;
+      // ACC-260 — File storage, which shows the withdrawn access or the
+      // expiring secret with what to fix in Microsoft. Replace secret itself
+      // arrives with the SharePoint PR (PR C).
+      return {
+        link: ['/admin-settings/storage'],
+        queryParams: {},
+        permissions: ['tenant:manage_config'],
+      };
   }
 }
 
