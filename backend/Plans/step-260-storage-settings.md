@@ -486,3 +486,15 @@ Each PR is one draft into `dev`, run through `/ready-to-pr` by Ahmad, and touche
   - **Recommended:** a follow-up ticket, since it needs an enum value and a migration. The strip and the upload refusal already say it.
 - **D12 — Where the customer SharePoint guide is linked from.**
   - **Recommended:** a "How to prepare SharePoint" link in the SharePoint body to wherever `docs/customer/sharepoint-storage-setup.md` is published. If it isn't published anywhere a customer can open, the link waits and the body keeps a sentence instead.
+
+---
+
+## Review answers (24 Oct)
+
+- **D1:** build the API's six SharePoint fields (Tenant ID, Client ID, write-only secret, Site URL, Library name, optional expiry) in the MinIO layout the design draws, not the dropped consent flow.
+- **D2:** Disconnect for SharePoint only, refused with its reason while files are stored there.
+- **D3:** the optional expiry date field, plus a warning line from 30 days before.
+- **D4–D9 and D12:** as recommended. For D12, if the customer guide isn't published anywhere a customer can open, the link waits and the body keeps a sentence.
+- **D5:** yes; the small backend change goes in PR C.
+- **D10:** noted on ACC-182.
+- **D11:** filed as ACC-261 (lane B, needs a migration).
