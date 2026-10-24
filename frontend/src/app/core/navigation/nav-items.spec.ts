@@ -165,8 +165,11 @@ describe('nav-items (ACC-79)', () => {
           permissions: ['users:view', 'org:view', 'lookups:view', 'workflows:view'],
         }),
       );
+      // ACC-120 slice 11, PR F — his org:view now opens the read-only
+      // Organisation page under Quality management, never Administration.
       expect(keysOf(groups)).toEqual([
         { group: 'work', items: ['home', 'myTasks'] },
+        { group: 'quality', items: ['organizationReadOnly'] },
       ]);
     });
 
@@ -212,6 +215,43 @@ describe('nav-items (ACC-79)', () => {
         (i) => i.key === 'committees',
       );
       expect(committees?.moduleKey).toBeUndefined();
+    });
+  });
+
+  // ACC-120 slice 11, PR F (D1, B1) — the read-only Organisation page.
+  describe('the read-only Organisation item', () => {
+    const orgItems = (groups: ReturnType<typeof visibleNavGroups>) =>
+      groups.flatMap((g) => g.items.filter((i) => i.route === '/org' || i.route === '/organization').map((i) => `${g.key}:${i.route}`));
+
+    it('a quality manager (org:view, no admin:access) gets it under Quality management, and no Administration', () => {
+      const groups = visibleNavGroups(access({ permissions: ['org:view', 'users:view', 'committees:view'] }));
+      expect(keysOf(groups)).toEqual([
+        { group: 'work', items: ['home', 'myTasks'] },
+        { group: 'quality', items: ['committees', 'organizationReadOnly'] },
+      ]);
+      expect(orgItems(groups)).toEqual(['quality:/org']);
+    });
+
+    it('a user without org:view gets neither item', () => {
+      expect(orgItems(visibleNavGroups(access({ permissions: ['committees:view', 'users:view'] })))).toEqual([]);
+      expect(orgItems(visibleNavGroups(access({ permissions: [ADMIN_ACCESS, 'users:view'] })))).toEqual([]);
+    });
+
+    it('an administrator sees only Organization Structure under Administration, never both', () => {
+      expect(orgItems(visibleNavGroups(access({ permissions: [ADMIN_ACCESS, 'org:view'] })))).toEqual(['admin:/organization']);
+      expect(orgItems(visibleNavGroups(access({ permissions: ALL_TENANT_PERMISSIONS })))).toEqual(['admin:/organization']);
+    });
+
+    it('its route needs org:view only; /organization still needs admin:access as well', () => {
+      expect(ROUTE_PERMISSIONS.get('org')).toEqual(['org:view']);
+      expect(ROUTE_PERMISSIONS.get('organization')).toEqual([ADMIN_ACCESS, 'org:view']);
+    });
+
+    it('hiddenWithPermission hides the link only for a holder of that permission', () => {
+      const item = TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === 'organizationReadOnly')!;
+      expect(item.hiddenWithPermission).toBe(ADMIN_ACCESS);
+      expect(isNavItemVisible(item, access({ permissions: ['org:view'] }))).toBe(true);
+      expect(isNavItemVisible(item, access({ permissions: ['org:view', ADMIN_ACCESS] }))).toBe(false);
     });
   });
 
