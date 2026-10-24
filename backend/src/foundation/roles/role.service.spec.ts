@@ -1078,6 +1078,81 @@ describe('RoleService', () => {
       expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
 
+    // ── ACC-258: workflows:manage is the root role's alone ───────────────────
+    it('refuses creating a role WITH workflows:manage with 400 PERMISSION_ROOT_ROLE_ONLY, creating and auditing nothing', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      const code = await codeOf(
+        service.createRole({ nameEn: 'Workflow editors', nameAr: undefined, permissionKeys: ['workflows:view', 'workflows:manage'] } as never, ORG_A, ACTOR),
+      );
+
+      expect(code).toBe('PERMISSION_ROOT_ROLE_ONLY');
+      expect(mockPrisma.role.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('refuses ADDING workflows:manage to a tenant-made role, and to an editable system role, writing nothing', async () => {
+      for (const role of [BASE_ROLE, makeRole({ key: 'QUALITY_MANAGER', isSystem: true })]) {
+        jest.clearAllMocks();
+        mockPrisma.role.findFirst.mockResolvedValue(role);
+        const state = stageRolePermissions(['workflows:view']);
+
+        const code = await codeOf(
+          service.assignPermissions(
+            'role-1',
+            { permissionKeys: ['workflows:view', 'workflows:manage'], expectedPermissionKeys: state.held() },
+            ORG_A,
+            ACTOR,
+          ),
+        );
+
+        expect(code).toBe('PERMISSION_ROOT_ROLE_ONLY');
+        expect(state.held()).toEqual(['workflows:view']);
+        expect(mockAuditLog.log).not.toHaveBeenCalled();
+      }
+    });
+
+    it('DROPS workflows:manage from a role that already holds it, even when a stale screen sends it back, and audits it as removed', async () => {
+      const state = stageRolePermissions(['committees:view', 'workflows:manage']);
+
+      await service.assignPermissions(
+        'role-1',
+        { permissionKeys: ['committees:view', 'workflows:manage'], expectedPermissionKeys: state.held() },
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(state.held()).toEqual(['committees:view']);
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          objectType: 'RolePermission',
+          before: { permissions: ['committees:view', 'workflows:manage'] },
+          after: { permissions: ['committees:view'] },
+          metadata: { added: [], removed: ['workflows:manage'] },
+        }),
+      );
+    });
+
+    it('drops it too when the save simply leaves it out', async () => {
+      const state = stageRolePermissions(['committees:view', 'workflows:manage']);
+
+      await service.assignPermissions('role-1', { permissionKeys: ['committees:view'], expectedPermissionKeys: state.held() }, ORG_A, ACTOR);
+
+      expect(state.held()).toEqual(['committees:view']);
+    });
+
+    itEnforcesTenantIsolation('ACC-258 — another organisation\'s role is not found, never answered with the root-only refusal', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      const refusal = await service
+        .assignPermissions('role-1', { permissionKeys: ['workflows:manage'], expectedPermissionKeys: [] }, ORG_B, ACTOR)
+        .catch((e: unknown) => e);
+
+      expect(refusal).toBeInstanceOf(NotFoundException);
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith({ where: { id: 'role-1', organizationId: ORG_B } });
+      expect(mockPrisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+    });
+
     it('refuses creating a tenant role WITH a platform key, the same way', async () => {
       mockPrisma.role.findFirst.mockResolvedValue(null);
 
@@ -1431,7 +1506,42 @@ describe('RoleService', () => {
     });
   });
 
+  describe('listAllPermissions — rootRoleOnly (ACC-258)', () => {
+    it('marks workflows:manage rootRoleOnly: true, and every other key false', async () => {
+      mockPrisma.permission.findMany.mockResolvedValue([
+        makePermission({ id: 'p1', module: 'workflows', action: 'manage' }),
+        makePermission({ id: 'p2', module: 'workflows', action: 'view' }),
+        makePermission({ id: 'p3', module: 'roles', action: 'manage' }),
+      ]);
+
+      const list = await service.listAllPermissions();
+
+      expect(list.map((p) => [`${p.module}:${p.action}`, p.rootRoleOnly])).toEqual([
+        ['workflows:manage', true],
+        ['workflows:view', false],
+        ['roles:manage', false],
+      ]);
+    });
+  });
+
   describe('assignPermissions — the root role is frozen', () => {
+    // ACC-258 — so Organization Administrator can never lose workflows:manage:
+    // a save to it is refused before anything is read or written.
+    it('keeps workflows:manage on the root role: a save that leaves it out is refused, writing nothing', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(makeRole({ key: 'TENANT_ADMIN', isSystem: true }));
+
+      await expect(
+        service.assignPermissions(
+          'role-1',
+          { permissionKeys: ['workflows:view'], expectedPermissionKeys: ['workflows:view', 'workflows:manage'] },
+          ORG_A,
+          ACTOR,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+      expect(mockPrisma.rolePermission.createMany).not.toHaveBeenCalled();
+    });
+
     // THE LIVE DEFECT THIS CLOSES. assignPermissions had no guard of any kind:
     // it deleted every permission on the role and wrote back whatever arrived.
     // One call with an empty list emptied Organization Administrator, leaving

@@ -4161,6 +4161,27 @@ Ahmad's answers (Q1–Q10) and the dry runs:
 - **No migration.** `GET /tasks?sourceType=` and `GET /tasks/:id` are removed
   (no caller).
 
+## Key Architecture Decisions (ACC-258)
+
+Workflow editing is the Organization Administrator's alone. Full mechanism:
+SYSTEM-REFERENCE.md §1.14. Plan and Ahmad's answers (22 and 24 Oct):
+`backend/Plans/step-258-lock-workflows-manage.md`. Briefly:
+
+- **`workflows:manage` IS A ROOT-ROLE-ONLY KEY.** Only Organization
+  Administrator holds it in a tenant; Platform Administrator keeps it through its
+  frozen seed. Creating a role with it, or adding it to another role, is 400
+  `PERMISSION_ROOT_ROLE_ONLY`; a role that already holds it loses it on its next
+  save, audited. This is a second limit on "system roles are tenant-editable",
+  beside the root role's frozen set.
+- **The rule is `ROOT_ROLE_ONLY_PERMISSIONS`** in `permission-grantability.ts`,
+  kept apart from the transition check: a transition may still REQUIRE the key.
+  The next root-only key is one line there, with its own decision and backfill.
+- **Screens learn it from the catalogue's `rootRoleOnly`**; no screen names the key.
+- **`npm run backfill:acc258-revoke-workflows-manage`** removes any other grant,
+  AFTER the deploy (dry run, execute, dry run 0). On 24 Oct's data it removes
+  nothing.
+- **No migration.**
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

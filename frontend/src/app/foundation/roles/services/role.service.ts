@@ -39,6 +39,9 @@ export interface PermissionDto {
   // ACC-120 slice 5 (R2) — whether any code checks this key today. The matrix
   // shows only keys in use; the server keeps the rest as the role holds them.
   inUse: boolean;
+  // ACC-258 — a key only the root role (Organization Administrator) may hold,
+  // decided by the server. The matrix hides it on every other role.
+  rootRoleOnly: boolean;
 }
 
 /** Mirrors the backend's UserRoleGrantSource. */

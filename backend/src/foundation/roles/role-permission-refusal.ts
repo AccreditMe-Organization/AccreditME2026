@@ -92,6 +92,24 @@ export class PermissionNotInUseException extends BadRequestException {
   }
 }
 
+/**
+ * ACC-258 — a key only the tenant's root role (Organization Administrator) may
+ * hold was asked for another role. Today: workflows:manage (Ahmad, 22 Oct).
+ */
+export const PERMISSION_ROOT_ROLE_ONLY = 'PERMISSION_ROOT_ROLE_ONLY';
+
+export class PermissionRootRoleOnlyException extends BadRequestException {
+  constructor(readonly keys: readonly string[]) {
+    super({
+      statusCode: 400,
+      message: "Only the Organization Administrator role can edit workflows. This permission can't be given to another role.",
+      error: 'Bad Request',
+      code: PERMISSION_ROOT_ROLE_ONLY,
+      keys,
+    });
+  }
+}
+
 /** The catalogue has no such key (F1: a transition's requiredPermission). */
 export const PERMISSION_UNKNOWN = 'PERMISSION_UNKNOWN';
 

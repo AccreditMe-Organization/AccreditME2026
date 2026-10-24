@@ -40,9 +40,11 @@ import {
 } from './role-permission-refusal';
 import {
   assertGrantable,
+  assertNotRootRoleOnly,
   isFixedInOrganisation,
   isPermissionInUse,
   isPlatformPermission,
+  isRootRoleOnly,
 } from './permission-grantability';
 
 // The seeded role that exists in every organisation and means something only in
@@ -349,6 +351,9 @@ export class RoleService {
         )?.isPlatformOrg === true
       : false;
     assertGrantable(createKeys, isPlatformOrg);
+    // ACC-258 — a role a tenant creates is never the root role, so a root-only
+    // key (workflows:manage) is refused here, whatever else is asked for.
+    assertNotRootRoleOnly(createKeys, null);
 
     const permissionIds = dto.permissionKeys
       ? await this.resolvePermissionIds(dto.permissionKeys)
@@ -578,10 +583,19 @@ export class RoleService {
         requested.filter((k) => !current.has(k)),
         !isTenant,
       );
+      // ACC-258 — a root-only key (workflows:manage) can't be ADDED to this
+      // role: the root role never reaches here (frozen above). One the role
+      // already holds is DROPPED by this save, even if a stale screen sends it
+      // back ticked (Ahmad, 24 Oct, Q2); the audit row below names it under
+      // `removed`.
+      assertNotRootRoleOnly(
+        requested.filter((k) => !current.has(k)),
+        role.key,
+      );
 
       const fixed = (k: string): boolean => isFixedInOrganisation(k, !isTenant);
       const kept = before.filter(fixed);
-      const editable = requested.filter((k) => !fixed(k));
+      const editable = requested.filter((k) => !fixed(k) && !isRootRoleOnly(k));
       after = [...new Set([...editable, ...kept])].sort();
 
       await tx.rolePermission.deleteMany({ where: { roleId: role.id } });
@@ -630,6 +644,7 @@ export class RoleService {
       action: p.action,
       description: p.description,
       inUse: isPermissionInUse(`${p.module}:${p.action}`),
+      rootRoleOnly: isRootRoleOnly(`${p.module}:${p.action}`),
     }));
   }
 

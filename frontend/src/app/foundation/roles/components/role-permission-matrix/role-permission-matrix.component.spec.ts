@@ -25,7 +25,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 
 const perm = (key: string, inUse = true): PermissionDto => {
   const [module, action] = key.split(':');
-  return { id: key, module, action, description: null, inUse };
+  return { id: key, module, action, description: null, inUse, rootRoleOnly: key === 'workflows:manage' };
 };
 
 const CATALOGUE: PermissionDto[] = [
@@ -279,6 +279,24 @@ describe('RolePermissionMatrixComponent (ACC-120 slice 5, PR B)', () => {
     expect(id).toBe('r1');
     expect([...keys].sort()).toEqual(['committees:create', 'committees:view', 'documents:view']);
     expect([...expected].sort()).toEqual(['committees:view', 'documents:view']);
+  });
+
+  // ACC-258 — only a stale catalogue can send workflows:manage now; the server's
+  // refusal is said in words, and Save is not offered again.
+  it('a 400 PERMISSION_ROOT_ROLE_ONLY says only the Organization Administrator can edit workflows, and offers no Save', () => {
+    render({
+      assign: () =>
+        throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'PERMISSION_ROOT_ROLE_ONLY', keys: ['workflows:manage'] } })),
+    });
+    grantCreateAndOpen();
+    buttonByAttr('data-pm-save')!.click();
+    fixture.detectChanges();
+    expect(component.saveState()).toBe('rootRoleOnly');
+    expect(plain(document.querySelector('[data-pm-alert]')?.textContent)).toContain(
+      "Only the Organization Administrator role can edit workflows. This permission can't be given to another role.",
+    );
+    expect(buttonByAttr('data-pm-save')).toBeNull();
+    expect(buttonByAttr('data-pm-reload')).toBeNull();
   });
 
   it('a 409 says someone else saved first, and offers only "Reload role", which reloads', () => {

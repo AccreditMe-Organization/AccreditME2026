@@ -343,8 +343,9 @@ elsewhere.**
      only — it refuses a non-local database).
   6. Gaining a `platform:*` key inside a tenant is 400
      `PLATFORM_PERMISSION_NOT_ALLOWED`; gaining a key on
-     `PERMISSIONS_NOT_YET_CHECKED` is 400 `PERMISSION_NOT_IN_USE`. Both
-     bodies carry `keys`.
+     `PERMISSIONS_NOT_YET_CHECKED` is 400 `PERMISSION_NOT_IN_USE`; gaining a
+     root-only key (`workflows:manage`) is 400 `PERMISSION_ROOT_ROLE_ONLY`
+     (§1.14). All three bodies carry `keys`.
   7. **Kept keys:** not-yet-checked keys the role ALREADY holds, in every
      organisation, and platform keys it already holds INSIDE A TENANT, are
      kept whatever the request sends — the matrix never shows them, so
@@ -360,8 +361,9 @@ elsewhere.**
   The codes and messages live in `role-permission-refusal.ts`.
 - **The permission matrix screen** (`/roles/:id/permissions`, ACC-120 slice
   5 PR B; plan `backend/Plans/step-120-5-permission-matrix.md`).
-  - **Shown:** only `inUse` keys, and no `platform:*` inside a tenant
-    (`NavigationAccessService.isPlatformOrg`). Each row is labelled with a
+  - **Shown:** only `inUse` keys, no `platform:*` inside a tenant
+    (`NavigationAccessService.isPlatformOrg`), and no `rootRoleOnly` key on any
+    role but the root role (§1.14). Each row is labelled with a
     sentence, never its key (`roles.matrix.sentence.<key>` in both i18n
     files).
   - **Placement:** ONE function, `permission-matrix/permission-columns.ts`
@@ -1322,6 +1324,55 @@ email delivery — still runs.
 **Not done, recorded:** hashing invitation tokens at rest (they are plaintext in
 `User.invitationToken` and in the stored invitation email body). Clearing the
 token from the page's address bar is DONE in 9e (§10.16).
+
+### 1.14 Root-role-only keys — `workflows:manage` (ACC-258)
+
+Only the tenant admin changes a workflow (Ahmad, 22 Oct): its stages, stage
+rules, flags and transitions. So `workflows:manage`, the check on every
+workflow write, may be held by the root role (Organization Administrator,
+`TENANT_ADMIN`) and by no other tenant role. Plan:
+`backend/Plans/step-258-lock-workflows-manage.md`.
+
+- **One rule:** `ROOT_ROLE_ONLY_PERMISSIONS` and `assertNotRootRoleOnly()` in
+  `foundation/roles/permission-grantability.ts`. It is kept apart from
+  `assertKnownAndGrantable()` on purpose: a workflow transition may still
+  REQUIRE `workflows:manage`, because the root role holds it.
+- **Refused:** creating a role with the key, and a save that adds it to any
+  role but the root role. Both are 400 `PERMISSION_ROOT_ROLE_ONLY` with `keys`,
+  and nothing is written. English: "Only the Organization Administrator role
+  can edit workflows. This permission can't be given to another role."
+  Arabic: «تعديل سير العمل متاح لدور مسؤول المؤسسة فقط. لا يمكن منح هذه
+  الصلاحية لدور آخر.»
+- **Dropped:** a role that already holds it loses it on its next save, even if
+  a stale screen sends it back ticked. The save's audit row names it under
+  `removed` (Ahmad, 24 Oct, Q2).
+- **Kept:** the root role keeps it, since its set is frozen
+  (`assignPermissions()` refuses it). **Platform Administrator also keeps it**
+  through its own frozen seed (24 Oct, Q1); that role is never assignable
+  inside a tenant. `role.seed.spec.ts` pins that no other seeded role holds it.
+- **The screens learn it from the server:** `GET /roles/permissions` answers
+  `rootRoleOnly` per key. The permission matrix (`buildMatrix(…, { isRootRole })`)
+  hides such a key on every role but the root role, whose read-only matrix
+  shows it as held. The transition editor still lists it. No screen names the
+  key.
+- **Counts on the shared database, 24 Oct:** no custom or other system role
+  held it; all three Organization Administrator roles and all three Platform
+  Administrator roles did.
+- **Runbook, after the deploy:**
+
+  1. `npm run backfill:acc258-revoke-workflows-manage`: a dry run. It lists, per
+     tenant, each role other than Organization Administrator and Platform
+     Administrator that holds `workflows:manage`, with its active users. On
+     24 Oct's data it plans **0**: no such role exists.
+  2. Only if the dry run plans any: `npm run backfill:acc258-revoke-workflows-manage -- --execute`.
+     It refuses a customer organisation (exit 1) and writes one audit row per
+     revoked grant.
+  3. The dry run again: it must plan 0.
+
+  Run from the main checkout, on the merged commit, with the shared database's
+  credentials, after Railway shows the deploy live and `GET /api/v1/health`
+  reports it. Never before: until the server refuses the grant, a tenant admin
+  could give it back between the run and the deploy.
 
 ---
 
@@ -2495,9 +2546,8 @@ key-based maps (`COMMITTEE_STAGE_POLICY`, `COMMITTEE_HEADER_POLICY`,
     has no flags, and is logged with ids. Pinned against a real database in
     `stage-rules.db-spec.ts`. On the shared database, 24 Oct, no committee is
     in that state.
-- **The template API** (`workflows:view` to read, `workflows:manage` to write;
-  that `workflows:manage` can be granted to other roles is ACC-258's to
-  close):
+- **The template API** (`workflows:view` to read, `workflows:manage` to write,
+  which only the Organization Administrator role may hold since ACC-258, §1.14):
   - `GET /workflow-templates/:id` adds `recordActions`, `stageFlags`,
     `recordFields`, and each stage's `actions` and `flags`.
   - `PATCH /workflow-templates/stages/:stageId` and `POST /workflow-templates/:id/stages`

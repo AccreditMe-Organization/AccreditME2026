@@ -556,6 +556,7 @@
       "failedBody": "The save is all or nothing, so no one's access changed.",
       "forbidden": "You no longer have permission to change roles. Nothing was saved.",
       "conflict": "{{name}} was changed by someone else since you opened it. Nothing was saved.",
+      "rootRoleOnly": "Only the Organization Administrator role can edit workflows. This permission can't be given to another role.",
       "leaveHeader": "Leave without saving?",
       "leaveMessage": "Your unsaved changes to this role's permissions will be lost.",
       "leave": "Leave",
