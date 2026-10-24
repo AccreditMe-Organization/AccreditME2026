@@ -305,7 +305,7 @@ describe('CommitteesService', () => {
       mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
       mockPrisma.workflowInstance.findMany.mockResolvedValue([{ objectId: 'committee-1', currentStageId: 'stage-dp' }]);
       mockPrisma.workflowStage.findMany.mockResolvedValue([
-        { id: 'stage-dp', nameEn: 'Dissolution Pending', nameAr: null, key: 'dissolution_pending' },
+        { id: 'stage-dp', nameEn: 'Dissolution Pending', nameAr: null, key: 'dissolution_pending', flags: ['DISSOLVING'] },
       ]);
 
       const result = await service.getCommitteeDetail('committee-1', ORG_A);
@@ -809,7 +809,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ parentCommitteeId: 'committee-2', nameEn: 'Renamed' }));
       // Were it checked, this stage read would refuse it.
       mockPrisma.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
-        Promise.resolve(strings.join('?').includes('"WorkflowInstance"') ? [{ stageId: 's', key: 'dissolved' }] : []),
+        Promise.resolve(strings.join('?').includes('"WorkflowInstance"') ? [{ stageId: 's', key: 'dissolved', flags: ['DISSOLVING'] }] : []),
       );
 
       await service.updateCommittee('committee-1', { nameEn: 'Renamed', parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR);
@@ -820,7 +820,7 @@ describe('CommitteesService', () => {
     it('a CHANGED parent that is dissolving is refused, and nothing is written or audited', async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
-        Promise.resolve(strings.join('?').includes('"WorkflowInstance"') ? [{ stageId: 's', key: 'dissolution_pending' }] : []),
+        Promise.resolve(strings.join('?').includes('"WorkflowInstance"') ? [{ stageId: 's', key: 'dissolution_pending', flags: ['DISSOLVING'] }] : []),
       );
 
       await expect(
