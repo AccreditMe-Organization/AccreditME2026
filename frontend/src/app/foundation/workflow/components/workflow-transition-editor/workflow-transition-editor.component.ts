@@ -139,10 +139,10 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
           <tr>
             <th>{{ 'workflow.label' | translate }}</th>
             <th>{{ 'workflow.toStage' | translate }}</th>
-            <th style="width: 7.5rem">{{ 'workflow.kind.label' | translate }}</th>
+            <th class="am-tr-col-kind">{{ 'workflow.kind.label' | translate }}</th>
             <th>{{ 'workflow.triggerCondition' | translate }}</th>
-            <th style="width: 2.75rem"></th>
-            <th style="width: 5rem"></th>
+            <th class="am-tr-col-cog"></th>
+            <th class="am-tr-col-actions"></th>
           </tr>
         </ng-template>
 
@@ -623,6 +623,16 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
       .am-tr-table th {
         min-inline-size: 0;
         overflow: hidden;
+      }
+      /* The fixed columns: Kind's longest chip, the Actions cog, Edit and Remove. */
+      .am-tr-col-kind {
+        inline-size: 7.5rem;
+      }
+      .am-tr-col-cog {
+        inline-size: 2.75rem;
+      }
+      .am-tr-col-actions {
+        inline-size: 5rem;
       }
       .am-tr-cut {
         white-space: nowrap;
