@@ -6,6 +6,7 @@ import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { providePrimeNG } from 'primeng/config';
+import { ConfirmationService } from 'primeng/api';
 import en from '../../../../assets/i18n/en.json';
 import ar from '../../../../assets/i18n/ar.json';
 import { environment } from '../../../../environments/environment';
@@ -60,6 +61,7 @@ describe('StorageSettings — layout (ACC-260, PR A)', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         provideNoopAnimations(),
+        ConfirmationService,
         provideTranslateService({ lang: 'en' }),
         provideFormatTesting(),
         providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),

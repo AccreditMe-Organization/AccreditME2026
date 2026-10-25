@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { FormControl } from '@angular/forms';
+import { FormControl, Validators } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import en from '../../../../assets/i18n/en.json';
@@ -12,9 +12,20 @@ import { SecretFieldComponent } from './secret-field.component';
 @Component({
   standalone: true,
   imports: [SecretFieldComponent],
-  template: `<am-secret-field label="Password" inputId="pw" [control]="control" [isSet]="isSet()" [setAt]="setAt()" />`,
+  template: `<am-secret-field
+    label="Password"
+    inputId="pw"
+    [control]="control"
+    [isSet]="isSet()"
+    [setAt]="setAt()"
+    [forceShowErrors]="force()"
+    [errorMessages]="{ required: 'storage.setup.secretRequired' }"
+    (replaceClicked)="replaced = replaced + 1"
+  />`,
 })
 class HostComponent {
+  readonly force = signal(false);
+  replaced = 0;
   readonly control = new FormControl<string>('', { nonNullable: true });
   readonly isSet = signal(true);
   readonly setAt = signal<string | null>('2026-09-29T08:00:00.000Z');
@@ -77,6 +88,23 @@ describe('SecretFieldComponent (ACC-181)', () => {
     await fixture.whenStable();
     expect(el().querySelector('input')).toBeNull();
     expect(fixture.componentInstance.control.value).toBe('');
+  });
+
+  // ACC-260 — two secrets replaced together (MinIO's keys) open as one.
+  it('Replace tells the caller, so it can reopen a paired secret', () => {
+    (el().querySelector('button') as HTMLButtonElement).click();
+    expect(fixture.componentInstance.replaced).toBe(1);
+  });
+
+  it('forceShowErrors reveals the error without a blur (an advance that is not a submit)', () => {
+    fixture.componentInstance.isSet.set(false);
+    fixture.componentInstance.control.addValidators(Validators.required);
+    fixture.componentInstance.control.updateValueAndValidity();
+    fixture.detectChanges();
+    expect(el().textContent).not.toContain('Enter the secret key.');
+    fixture.componentInstance.force.set(true);
+    fixture.detectChanges();
+    expect(el().textContent).toContain('Enter the secret key.');
   });
 
   it('Arabic: Replace and the hint are translated', () => {
