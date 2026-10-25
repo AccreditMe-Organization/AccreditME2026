@@ -2826,7 +2826,9 @@
         "busy": "Summaries are busy right now. Try again in a moment.",
         "inProgress": "A summary of this file is being made. Check again in a minute."
       }
-    }
+    },
+    "notSetUpAdmin": "File storage isn't set up yet. Uploads are blocked for everyone until a location is confirmed.",
+    "setUpStorage": "Set up file storage"
   },
   "drawer": {
     "expand": "Expand",
@@ -3259,7 +3261,7 @@
       "chooseTitle": "Choose where files are kept",
       "chooseSub": "Chosen once for the whole organisation. After this, only AccreditMe can change it.",
       "fixedTitle": "Where files are kept",
-      "fixedSub": "Fixed for your organisation. Only AccreditMe can move it.",
+      "fixedSub": "Fixed for your organisation · to move, request a change",
       "current": "Current"
     },
     "cloud": {
@@ -3325,6 +3327,123 @@
       "maxSizeValue": "{{size}} per file",
       "types": "Allowed types",
       "typesFailed": "Couldn't load the allowed types."
+    },
+    "setup": {
+      "cloudTitle": "Nothing to set up",
+      "cloudBody": "AccreditMe manages this storage. Confirm it to open uploads for everyone, or choose your own storage below.",
+      "endpointHint": "The address your MinIO server answers on, with its port. Start it with https:// — http:// sends files unencrypted between the servers.",
+      "endpointInvalid": "Enter the full address, starting with https://",
+      "bucketHint": "Must already exist",
+      "bucketInvalid": "3 to 63 lower-case letters, digits, dots or hyphens, starting and ending with a letter or digit.",
+      "regionOptional": "Region · optional",
+      "regionHint": "Only if your server requires one, e.g. me-central-1",
+      "regionInvalid": "Lower-case letters, digits and hyphens, e.g. me-central-1.",
+      "secretHint": "Never shown again after saving",
+      "keyRequired": "Enter the access key.",
+      "keyShort": "At least 3 characters.",
+      "secretRequired": "Enter the secret key.",
+      "secretShort": "At least 8 characters.",
+      "folderHint": "Relative to the storage folder AccreditMe was installed with, e.g. quality/files",
+      "folderInvalid": "A folder inside the storage folder, such as quality/files: letters, digits, dots, underscores and hyphens, separated by /."
+    },
+    "test": {
+      "idle": "Not tested yet",
+      "idleNote": "Writes a small test file, reads it back and deletes it. Takes a few seconds.",
+      "run": "Test connection",
+      "running": "Testing the connection…",
+      "runningButton": "Testing…",
+      "again": "Test again",
+      "passed": "✓ Connection works · tested {{time}}",
+      "keysPassed": "✓ New key works · tested {{time}}",
+      "couldNotRun": "Couldn't run the test. Check your connection and try again.",
+      "stale": "Test out of date · the settings changed after it ran",
+      "staleNote": "Confirming needs a pass for the values on screen.",
+      "stepsLabel": "Test steps",
+      "step": {
+        "configure": "Check the settings",
+        "write": "Write a small test file",
+        "read": "Read it back",
+        "verify": "Check it's the same file",
+        "delete": "Delete it"
+      },
+      "state": {
+        "done": "passed",
+        "fail": "failed",
+        "skip": "skipped",
+        "wait": "not run yet"
+      },
+      "failHead": {
+        "configure": "These settings can't be used",
+        "write": "Couldn't write the test file",
+        "read": "Wrote the file but couldn't read it back",
+        "verify": "The file read back didn't match",
+        "delete": "Couldn't delete the test file",
+        "generic": "The test didn't pass"
+      },
+      "fail": {
+        "MINIO": {
+          "configure": "AccreditMe couldn't connect with these settings. Check the endpoint address.",
+          "write": "AccreditMe couldn't write to the bucket. Check the address, that the bucket exists, and that this access key may write to it.",
+          "read": "The file was written but couldn't be read back. Check that the key may read files, and that nothing removes new files.",
+          "verify": "The file read back wasn't the file written. Check what sits between AccreditMe and your server.",
+          "delete": "The test file couldn't be deleted. AccreditMe must be able to delete files when the recycle bin empties. A small test file may be left in the bucket."
+        },
+        "LOCAL_FILESYSTEM": {
+          "configure": "This folder path can't be used on this installation.",
+          "write": "AccreditMe couldn't write to this folder. Check that it exists and that the AccreditMe server may write to it.",
+          "read": "The file was written but couldn't be read back. Check that the AccreditMe server may read the folder.",
+          "verify": "The file read back wasn't the file written. Check the folder's drive or share.",
+          "delete": "The test file couldn't be deleted. AccreditMe must be able to delete files when the recycle bin empties. A small test file may be left in the folder."
+        },
+        "generic": "This step didn't pass."
+      }
+    },
+    "save": {
+      "blocked": "Uploads are blocked until a location is confirmed",
+      "testFirst": "Test the connection first",
+      "waiting": "Waiting for the test",
+      "fixAndTest": "Fix the problem and test again",
+      "stale": "Settings changed since the test · test again",
+      "tested": "Tested with exactly these values",
+      "keysTested": "Tested with the new key, same endpoint and bucket",
+      "confirm": {
+        "S3": "Confirm AccreditMe cloud…",
+        "MINIO": "Confirm MinIO…",
+        "LOCAL_FILESYSTEM": "Confirm local folder…"
+      }
+    },
+    "confirm": {
+      "title": {
+        "S3": "Confirm AccreditMe cloud?",
+        "MINIO": "Confirm MinIO?",
+        "LOCAL_FILESYSTEM": "Confirm the local folder?"
+      },
+      "context": "File storage · first-time setup",
+      "body": "Uploads open for everyone as soon as you confirm. After this, only AccreditMe can change where files are stored.",
+      "location": "Location",
+      "by": "Confirmed by",
+      "confirm": "Confirm",
+      "nothingChanged": "Nothing changed. Uploads are still blocked.",
+      "failed": "Couldn't confirm the location."
+    },
+    "keys": {
+      "accessHint": "New key for the same endpoint and bucket",
+      "secretHint": "The saved key stays in use until you save",
+      "save": "Save new key",
+      "failed": "Couldn't save the new key. The saved key is still in use."
+    },
+    "request": {
+      "open": "Request a change…",
+      "title": "Request a change of storage",
+      "context": "Current: {{name}}",
+      "note": "AccreditMe will contact you to agree the details. Nothing changes until then.",
+      "by": "Requested by",
+      "to": "Sent to",
+      "toValue": "AccreditMe's platform team",
+      "message": "Anything we should know? · optional",
+      "placeholder": "e.g. We're moving to SharePoint next quarter.",
+      "send": "Send request",
+      "failed": "Couldn't send the request. Nothing was sent."
     }
   }
 }

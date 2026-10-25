@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { providePrimeNG } from 'primeng/config';
+import { ConfirmationService } from 'primeng/api';
 import en from '../../../../assets/i18n/en.json';
 import ar from '../../../../assets/i18n/ar.json';
 import { environment } from '../../../../environments/environment';
@@ -16,8 +17,9 @@ import { StorageSettingsComponent } from './storage-settings.component';
 import { TODAY, cloud, local, minio, requested, sharepoint, unconfirmed } from './storage-fixtures';
 
 // ACC-260, PR A — the File storage page in each read state, answered from
-// fixtures. Nothing here writes: the page has no write control yet, and a spec
-// below fails if one appears.
+// fixtures. Nothing here writes. PR B added the write controls (first-time
+// setup, Request a change, Replace on MinIO's keys); each state below names
+// exactly the ones it may show, so an unexpected one still fails.
 
 const STORAGE_URL = `${environment.apiUrl}/tenant/storage`;
 const LIMITS_URL = `${environment.apiUrl}/files/upload-limits`;
@@ -36,6 +38,7 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         provideNoopAnimations(),
+        ConfirmationService,
         provideTranslateService({ lang: 'en' }),
         provideFormatTesting(),
         providePrimeNG({}),
@@ -68,10 +71,11 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
 
   const text = (el: HTMLElement, id: string) => el.querySelector(`[data-testid="${id}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
   const field = (el: HTMLElement, id: string) => el.querySelector(`[data-field="${id}"] [data-testid="field-value"]`)?.textContent?.trim() ?? null;
+  /** Every control outside the upload-rules card, by what it is: a test id, an input's name, or a button's words. */
   const writes = (el: HTMLElement) =>
-    Array.from(el.querySelectorAll('button, p-button, a[href], input, select, textarea, [role="radio"], [role="checkbox"]')).filter(
-      (n) => !n.closest('[data-testid="rule-types"]'),
-    );
+    Array.from(el.querySelectorAll('button, a[href], input, select, textarea, [role="radio"], [role="checkbox"]'))
+      .filter((n) => !n.closest('[data-testid="rule-types"]'))
+      .map((n) => n.closest('[data-testid]')?.getAttribute('data-testid') ?? (n as HTMLInputElement).name ?? n.textContent!.trim());
 
   it('not confirmed: uploads blocked, the four options listed, nothing open, no write control', () => {
     const el = answer(unconfirmed());
@@ -87,7 +91,8 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
     expect(el.querySelector('[data-option="LOCAL_FILESYSTEM"]')!.textContent).toContain('Available on an on-premises installation.');
     expect(el.querySelector('[data-testid="current-body"]')).toBeNull();
     expect(el.querySelector('[data-testid="option-current"]')).toBeNull();
-    expect(writes(el)).toEqual([]);
+    // PR B: the four choices and Confirm, nothing else.
+    expect(writes(el)).toEqual(['choose-S3', 'choose-MINIO', 'choose-LOCAL_FILESYSTEM', 'choose-SHAREPOINT', 'confirm-open']);
   });
 
   it('AccreditMe cloud: managed by AccreditMe, confirmed by whom, the Current chip, no fields', () => {
@@ -99,7 +104,7 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
     expect(el.querySelector('[data-testid="cloud-managed"] > :first-child')!.textContent!.trim()).toBe('Managed by AccreditMe');
     expect(el.querySelector('[data-testid="cloud-managed"] > :last-child')!.textContent!.trim()).toBe('Nothing to manage here. Uploads are open.');
     expect(el.querySelector('[data-testid="current-fields"]')).toBeNull();
-    expect(writes(el)).toEqual([]);
+    expect(writes(el)).toEqual(['request-open']);
   });
 
   it("rule 1: AccreditMe's own region, bucket or endpoint never reach the page", () => {
@@ -110,29 +115,36 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
     for (const leak of ['eu-central-1', 'accreditme-files-prod', 'amazonaws']) expect(page).withContext(leak).not.toContain(leak);
   });
 
-  it('MinIO: host · bucket on the strip; where files are locked; the keys only "Set"', () => {
+  it('MinIO: host · bucket on the strip; where files are locked; the keys only "set", with Replace', () => {
     const el = answer(minio());
     expect(text(el, 'strip-detail')).toBe('minio.alnakheel.local · accreditme-files · Confirmed 3 Oct 2026 by Hessa Al-Dosari');
     expect(field(el, 'endpoint')).toBe('https://minio.alnakheel.local:9000');
     expect(field(el, 'bucket')).toBe('accreditme-files');
     expect(field(el, 'regionHttps')).toBe('None · On');
-    expect(field(el, 'accessKey')).toBe('Set');
-    expect(field(el, 'secretKey')).toBe('Set');
+    // PR B: the keys are write-once secrets (am-secret-field), replaceable together.
+    expect(el.querySelector('[data-field="accessKey"] [data-secret-state="set"]')).not.toBeNull();
+    expect(el.querySelector('[data-field="secretKey"] [data-secret-state="set"]')).not.toBeNull();
     expect(el.querySelector('[data-field="endpoint"] [data-testid="field-help"]')!.textContent!.trim()).toBe('Changing where files are stored is done by AccreditMe.');
     expect(el.querySelector('[data-field="bucket"] [data-testid="field-help"]')!.textContent!.trim()).toBe('Locked');
     // Every option but the current one is greyed, and only it is open.
     expect(el.querySelectorAll('[data-testid="current-body"]').length).toBe(1);
-    expect(writes(el)).toEqual([]);
+    expect(writes(el)).toEqual(['request-open', 'minio-keys', 'minio-keys']);
   });
 
-  for (const [name, fixture] of [['MinIO', minio], ['SharePoint', sharepoint]] as const) {
-    it(`rule 2 (${name}): a secret is never shown, only "Set", never the API's raw marker`, () => {
-      const el = answer(fixture());
-      const values = Array.from(el.querySelectorAll('[data-testid="field-value"]')).map((v) => v.textContent!.trim());
-      expect(values).toContain('Set');
-      expect(values).not.toContain('set');
-    });
-  }
+  it("rule 2 (SharePoint): a secret is never shown, only \"Set\", never the API's raw marker", () => {
+    const el = answer(sharepoint());
+    const values = Array.from(el.querySelectorAll('[data-testid="field-value"]')).map((v) => v.textContent!.trim());
+    expect(values).toContain('Set');
+    expect(values).not.toContain('set');
+  });
+
+  it('rule 2 (MinIO): the keys show no value and no input, only that one is set', () => {
+    const el = answer(minio());
+    for (const id of ['accessKey', 'secretKey']) {
+      expect(el.querySelector(`[data-field="${id}"] input`)).withContext(id).toBeNull();
+      expect(el.querySelector(`[data-field="${id}"] [data-secret-set-on]`)!.textContent!.trim()).withContext(id).toBe('set');
+    }
+  });
 
   it('local folder: the folder, locked', () => {
     const el = answer(local());
@@ -274,7 +286,7 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
     expect(text(el, 'strip-name')).toBe('MinIO على خوادمكم');
     expect(text(el, 'strip-chip')).toBe('✓ مؤكَّد');
     expect(text(el, 'strip-request')).toContain('ستتواصل معكم AccreditMe');
-    expect(field(el, 'secretKey')).toBe('محفوظ');
+    expect(el.querySelector('[data-field="secretKey"] [data-secret-set-on]')!.textContent!.trim()).toBe('مُعيَّن');
     expect(el.querySelector('[data-field="endpoint"] [data-testid="field-value"]')!.getAttribute('dir')).toBe('ltr');
   });
 });

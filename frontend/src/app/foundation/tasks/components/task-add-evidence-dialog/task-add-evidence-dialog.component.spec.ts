@@ -4,6 +4,8 @@ import { By } from '@angular/platform-browser';
 import { HttpEventType, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import en from '../../../../../assets/i18n/en.json';
@@ -48,10 +50,15 @@ const file = (name: string, size = 10, type = 'application/pdf') =>
 describe('TaskAddEvidenceDialogComponent (ACC-177)', () => {
   let http: HttpTestingController;
 
-  function setup(language: 'en' | 'ar' = 'en') {
+  /** `admin`: the caller holds tenant:manage_config (ACC-260, G13). */
+  function setup(language: 'en' | 'ar' = 'en', admin = false) {
     TestBed.configureTestingModule({
       imports: [HostComponent],
       providers: [
+        // A stub either way: the real service pulls in LanguageService, which
+        // writes <html dir> — this spec is about the dialog, not the shell.
+        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => admin && p === 'tenant:manage_config' } },
+        ...(admin ? [provideRouter([])] : []),
         provideHttpClient(),
         provideHttpClientTesting(),
         provideNoopAnimations(),
@@ -229,6 +236,54 @@ describe('TaskAddEvidenceDialogComponent (ACC-177)', () => {
       await fixture.whenStable();
       expect(dialog.queue()[0]!.reason).toBe('لم يُجهَّز تخزين الملفات بعد. راجع مسؤول النظام.');
       expect(fixture.componentInstance.visible()).toBe(true);
+    });
+
+    describe("ACC-260 (G13) — the tenant admin's variant", () => {
+      async function refusedNotConfirmed(language: 'en' | 'ar', admin: boolean) {
+        const ctx = setup(language, admin);
+        ctx.dialog.chooseKind('FILE');
+        ctx.dialog.enqueue([file('a.pdf')]);
+        ctx.dialog.submit();
+        http
+          .expectOne(FILE_URL)
+          .flush({ statusCode: 409, code: 'STORAGE_NOT_CONFIRMED', message: "File storage isn't set up yet. Ask your administrator." }, { status: 409, statusText: 'Conflict' });
+        await ctx.fixture.whenStable();
+        ctx.fixture.detectChanges();
+        return ctx;
+      }
+      const link = () => document.body.querySelector<HTMLAnchorElement>('[data-testid="storage-setup-link"] a');
+
+      afterEach(() => document.querySelectorAll('.p-dialog-mask, .p-dialog').forEach((n) => n.remove()));
+
+      it('a tenant admin is told what it blocks, and gets "Set up file storage" to the page', async () => {
+        const { dialog } = await refusedNotConfirmed('en', true);
+        expect(dialog.queue()[0]!.reason).toBe("File storage isn't set up yet. Uploads are blocked for everyone until a location is confirmed.");
+        expect(link()!.textContent!.trim()).toBe('Set up file storage');
+        expect(link()!.getAttribute('href')).toBe('/admin-settings/storage');
+      });
+
+      it('in Arabic too', async () => {
+        const { dialog } = await refusedNotConfirmed('ar', true);
+        expect(dialog.queue()[0]!.reason).toBe('لم يُجهَّز تخزين الملفات بعد. يبقى الرفع موقوفًا للجميع حتى يُؤكَّد موقع.');
+        expect(link()!.textContent!.trim()).toBe('تجهيز تخزين الملفات');
+      });
+
+      it('everyone else keeps "Ask your administrator." and no link', async () => {
+        const { dialog } = await refusedNotConfirmed('en', false);
+        expect(dialog.queue()[0]!.reason).toBe("File storage isn't set up yet. Ask your administrator.");
+        expect(link()).toBeNull();
+      });
+
+      it('another refusal never shows the link, even to an admin', async () => {
+        const ctx = setup('en', true);
+        ctx.dialog.chooseKind('FILE');
+        ctx.dialog.enqueue([file('a.pdf')]);
+        ctx.dialog.submit();
+        http.expectOne(FILE_URL).flush({ code: 'STORAGE_QUOTA_EXCEEDED', message: 'x' }, { status: 409, statusText: 'Conflict' });
+        await ctx.fixture.whenStable();
+        ctx.fixture.detectChanges();
+        expect(link()).toBeNull();
+      });
     });
 
     it('asks for a file rather than sending nothing', () => {

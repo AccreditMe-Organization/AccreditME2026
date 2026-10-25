@@ -555,3 +555,77 @@ Branch `feature/ACC-260-storage-settings`, with `dev` merged in at `bab1c02`
 - the route with no guard;
 - the rail item on `tenant:view`;
 - the Setup health Fix with no permission.
+
+### PR B as built (CC-147, 25 Oct)
+
+Branch `feature/ACC-260-storage-setup`, from `dev` at `341545f` (#215).
+Frontend only; no backend change.
+
+**Built:**
+- `StorageSettingsService`: `test`, `confirm`, `replaceKeys` (PATCH) and
+  `requestChange`, with `IStorageTestResult` and `IStorageCandidate` field for
+  field the backend's.
+- `storage-setup.ts`: the setup rules as pure functions — the request bodies,
+  the stale check, the test box's view, the reason beside Confirm, the
+  Location pair, and the DTO's validators.
+- `StorageTestBoxComponent`, `StorageConfirmDialogComponent` (Confirm 420),
+  `StorageRequestDialogComponent` (Form 560); `StorageLocationComponent` holds
+  the forms and the test state.
+- `am-secret-field` gained `forceShowErrors` and `replaceClicked` (opt-in).
+- The task evidence dialog's admin variant (G13), with "Set up file storage".
+- English and Arabic.
+
+**Built differently from the design, or from this plan:**
+- **The test shows five steps, not three:** configure, write, read, verify and
+  delete — what the API runs (`runTest`). While it runs, every step shows
+  "not run yet": the API answers once, at the end, so the drawn "step 2 of 3"
+  can't be known.
+- **A failed step's sentence comes from the STEP, not the server.** The design
+  quotes the server ("access is denied for bucket …", L620–624); the API sends
+  `STORAGE_UNAVAILABLE` for every MinIO and local failure and keeps the
+  provider's words for its log, so the screen says what that step needs and
+  where to look. The delete sentence can't name the probe file either.
+- **No "Use HTTPS" select** (G9, D8): the endpoint's scheme is the choice, and
+  its hint says what http:// does.
+- **The folder path is relative to the installation's storage folder** (G10),
+  so the drawn UNC path is refused on screen with what is accepted.
+- **No "Show" while typing a secret** (D7).
+- **SharePoint is listed but not selectable** before confirming, as PR A drew
+  it; it is set up in PR C.
+- **A draft saved through the API is picked up**: its option is selected, its
+  values shown and its stored keys read "set" (typing one is then optional).
+  The screen still saves no draft (D6).
+- **No "Test again" on a confirmed location** (D4's on-demand test): not in
+  this PR's scope.
+- **"Confirmed by" and "Requested by" name the signed-in user**, as the
+  session has them ("Dr. Hessa Al-Dosari").
+- **The admin variant (G13) appears after the first refused upload**: the
+  evidence dialog does not read the storage settings beforehand, so the
+  drawn "off" zone before any upload isn't shown.
+- **Request a change in Arabic measures 219, not the drawn 222:** `am-field`'s
+  message row is one 17px line in both languages, where the drawing's Arabic
+  help line is 20px. Changing `am-field` would move every form.
+
+**Layout spec** (EN and AR at 988, 358 and 328px of content, five setup states
+each): nothing wider than the frame, sideways 0 in every case. Dialog bodies:
+Confirm 94 / 104 as drawn (and with a long endpoint, cut inside the dialog);
+Request a change 204 / 219.
+
+**Mutation checks:** 18, each red on a failing test:
+- an untyped secret sent anyway;
+- the form not emptied after Confirm;
+- the stale check off;
+- Confirm open without a pass;
+- a failed step losing its sentence;
+- the server's message shown for an unknown refusal;
+- STORAGE_TEST_FAILED at confirm losing its step;
+- AccreditMe cloud's Location not its name (rule 1);
+- a local folder choosable where not offered;
+- Replace opening only one key;
+- Save new key sending more than the two keys;
+- Request a change shown while one is pending;
+- Test pressable while running;
+- Test sending with invalid fields;
+- the admin variant shown to everyone, and not shown to the admin;
+- the secret field not telling its caller about Replace;
+- the Request textarea not at the drawn height.

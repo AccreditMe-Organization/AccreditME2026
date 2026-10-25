@@ -10,6 +10,8 @@ import { FilesService, IUploadLimitsDto } from '../../../shared/files/files.serv
 import { IStorageSettings, StorageSettingsService } from './storage-settings.service';
 import { StripView, UsageView, stripView, usageView } from './storage-view';
 import { StorageLocationComponent } from './storage-location.component';
+import { StorageRequestDialogComponent } from './storage-request-dialog.component';
+import { AuthService } from '../../../core/services/auth.service';
 
 type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLimitsDto } | { status: 'failed' };
 
@@ -18,14 +20,16 @@ type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLim
  * Design: AccreditMe Storage Settings.dc.html §1 (L41-196); plan:
  * backend/Plans/step-260-storage-settings.md §6, PR A.
  *
- * Read only in this PR. It shows where the organisation's files are kept and
- * the state of that location:
- * - the current-location strip;
- * - the location list, with the current one open and its details locked;
+ * It shows where the organisation's files are kept and the state of that
+ * location:
+ * - the current-location strip, with "Request a change…" once confirmed
+ *   (PR B) — or the pending request's line instead;
+ * - the location list: first-time setup before confirming, and the current
+ *   location's details after, with MinIO's keys replaceable (PR B);
  * - usage, and the upload rules.
  *
- * Choosing and confirming a location, Request a change, and replacing a
- * credential arrive in PR B and PR C. Nothing on this page writes.
+ * Every write answers with the settings, and the page reads GET again
+ * afterwards. SharePoint's setup is PR C.
  *
  * One request, GET /tenant/storage, through the shared request outcome: a
  * skeleton at final heights (never a flash of "Not confirmed"), a sentence for
@@ -36,7 +40,7 @@ type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLim
 @Component({
   selector: 'app-storage-settings',
   standalone: true,
-  imports: [PageHeaderComponent, TranslatePipe, ButtonModule, MessageModule, StorageLocationComponent],
+  imports: [PageHeaderComponent, TranslatePipe, ButtonModule, MessageModule, StorageLocationComponent, StorageRequestDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex max-w-6xl flex-col gap-3">
@@ -82,7 +86,21 @@ type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLim
                     <span class="block text-heading" data-testid="strip-name">{{ (st.kind ? 'storage.kind.' + st.kind + '.name' : 'storage.current.noneName') | translate }}</span>
                     <span class="block text-meta text-ink-700 [unicode-bidi:plaintext]" data-testid="strip-detail">{{ detailOf(st) }}</span>
                   </span>
-                  <span class="am-ss__chip" [class.am-ss__chip--danger]="st.tone === 'danger'" data-testid="strip-chip">{{ st.chipKey | translate }}</span>
+                  <span class="flex flex-wrap items-center gap-2">
+                    <span class="am-ss__chip" [class.am-ss__chip--danger]="st.tone === 'danger'" data-testid="strip-chip">{{ st.chipKey | translate }}</span>
+                    <!-- One open request at a time (design L1028): while one is pending, its line takes the button's place. -->
+                    @if (st.kind && !st.request) {
+                      <p-button
+                        type="button"
+                        size="small"
+                        [outlined]="true"
+                        severity="secondary"
+                        [label]="'storage.request.open' | translate"
+                        (onClick)="requestOpen.set(true)"
+                        data-testid="request-open"
+                      />
+                    }
+                  </span>
                 </div>
                 @if (st.request; as r) {
                   <div class="am-ss__request" role="status" data-testid="strip-request">{{ requestLine(r) }}</div>
@@ -90,7 +108,16 @@ type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLim
               </section>
             }
 
-            <am-storage-location [settings]="s" [today]="today()" />
+            <am-storage-location [settings]="s" [today]="today()" (saved)="reload()" />
+            @if (confirmedKind(); as kind) {
+              <am-storage-request-dialog
+                [visible]="requestOpen()"
+                (visibleChange)="requestOpen.set($event)"
+                [current]="'storage.kind.' + kind + '.name' | translate"
+                [by]="userName()"
+                (sent)="reload()"
+              />
+            }
 
             <div class="am-ss__pair">
               @if (usage(); as u) {
@@ -190,6 +217,17 @@ export class StorageSettingsComponent {
   protected readonly files = inject(FilesService);
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
+  private readonly auth = inject(AuthService);
+
+  readonly requestOpen = signal(false);
+  readonly userName = computed(() => this.auth.currentUser()?.name ?? '');
+  /** The confirmed location, for Request a change's "Current: …". */
+  readonly confirmedKind = computed(() => this.strip()?.kind ?? null);
+
+  /** After a write: GET again. The answer on screen stays while it reloads (never a skeleton flash). */
+  reload(): void {
+    this.handle.retry();
+  }
 
   /** Today, YYYY-MM-DD (UTC): the secret's expiry warning counts days from it. */
   readonly today = signal(new Date().toISOString().slice(0, 10));

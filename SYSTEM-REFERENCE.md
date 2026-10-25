@@ -9142,8 +9142,14 @@ secret is entered once and never rendered again.
 - The date goes through the formatting layer (`amDate`), so it reads
   "29 Sep 2026" rather than the drawing's "29 Sep".
 
-First consumer: the email provider screen (Section 4.7). The storage settings
-screen is the next.
+- **Two opt-in inputs (ACC-260):** `forceShowErrors` passes through to its
+  `am-field`, for an advance that is not a submit (the storage page's Test);
+  `replaceClicked` is emitted on Replace, so a caller can reopen a PAIR of
+  secrets together (MinIO's access key and secret) by setting `isSet` false on
+  both. A lone secret needs neither.
+
+Consumers: the email provider screen (Section 4.7) and the storage settings
+screen (Section 16.9).
 
 ### 10.19 `am-ai-assist` — the One AI Pattern (ACC-198)
 
@@ -11821,8 +11827,9 @@ own error text is logged, never returned — it can name a host or bucket.
   screen exists (ACC-260 PR D).
 - `StorageSettingsComponent` — File storage, `/admin-settings/storage`, the
   Administration rail item after AI credits (`tenant:manage_config`; ACC-260
-  PR A, **read-only**). One `GET /tenant/storage` through the shared request
-  outcome:
+  PR A read it, PR B writes). One `GET /tenant/storage` through the shared
+  request outcome, read again after every write (the answer stays on screen
+  while it reloads):
   - **The strip:** not confirmed ("Uploads blocked"), or the confirmed location
     with who confirmed it, a pending change request as a line, and SharePoint's
     withdrawn access as "Can't be reached".
@@ -11834,8 +11841,38 @@ own error text is logged, never returned — it can name a host or bucket.
 
   The state logic is pure functions in `storage-view.ts`. **AccreditMe cloud
   renders no location and no field, whatever the response holds** (rule 1, a
-  spec feeds it platform-looking values). Nothing on the page writes yet; PRs
-  B–D add first-time setup, Request a change, SharePoint, and the recycle bin.
+  spec feeds it platform-looking values).
+
+  **PR B, before confirming** — a radio list: AccreditMe cloud and MinIO always,
+  a local folder where offered; SharePoint is listed and set up in PR C.
+  - AccreditMe cloud: "Nothing to set up", then Confirm, no test.
+  - MinIO (endpoint, bucket, optional region, both keys as `am-secret-field`)
+    and a local folder (a path relative to the installation's storage folder):
+    Test (`POST /tenant/storage/test`), then Confirm. The scheme of the
+    endpoint is the HTTPS choice; there is no separate control.
+  - **Confirm opens only after a pass for EXACTLY the values on screen**; a
+    changed value makes the pass stale, and putting it back makes it count
+    again (a pass never expires with time). The server tests again at confirm.
+  - The 420 Confirm dialog sends `POST /tenant/storage/confirm`; a refusal
+    keeps the values and says nothing changed.
+  - **A secret is in a body only when typed, never as `null` or `''`**, and
+    the form is emptied after a save (rule 2).
+  - A failed step is said in the screen's words from the STEP: MinIO and local
+    failures all arrive as `STORAGE_UNAVAILABLE`, and the server's `message`
+    (which can name a host) is never shown.
+
+  **PR B, once confirmed** — "Request a change…" on the strip opens the 560
+  dialog (`POST /tenant/storage/change-request`, an optional note of at most
+  1,000 characters); while `changeRequestedAt` is set the line shows instead
+  of the button. On MinIO, Replace on either key opens both, then Test, then
+  "Save new key" (`PATCH /tenant/storage` with the two keys only).
+
+  The setup rules are pure functions in `storage-setup.ts`. PRs C and D add
+  SharePoint and the recycle bin.
+- The task evidence dialog's **admin variant (G13)**: an upload refused
+  `STORAGE_NOT_CONFIRMED` tells a holder of `tenant:manage_config` that
+  uploads are blocked for everyone, with "Set up file storage" to the page.
+  Everyone else keeps "Ask your administrator."
 - `FilesService` — limits, opening a download (navigation, not a popup),
   sizes, refusal codes.
 
@@ -11903,10 +11940,10 @@ Virus scanning (ACC-178), the orphan-object reconciler (ACC-179), moving files
 between locations, SharePoint included (ACC-180),
 the platform admin storage screens (ACC-182), an upload-specific rate limit
 (ACC-129's global per-user limit applies),
-per-plan upload caps, and, from lane A's ACC-260 (the read-only File storage
-page exists, 16.9): first-time confirm, Request a change, credential
-replacement, SharePoint's settings, Replace secret and Disconnect, and the
-recycle bin screen. **No bucket exists**: until one does — and until
+per-plan upload caps, and, from lane A's ACC-260 (the File storage page,
+first-time confirm, Request a change and MinIO key replacement exist, 16.9):
+SharePoint's settings, Replace secret and Disconnect, and the recycle bin
+screen. **No bucket exists**: until one does — and until
 each organisation confirms — production refuses every upload.
 
 ### 16.14 SharePoint — the customer's own library (ACC-185)

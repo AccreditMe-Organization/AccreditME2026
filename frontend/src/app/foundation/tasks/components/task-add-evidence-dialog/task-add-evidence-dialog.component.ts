@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { HttpEventType } from '@angular/common/http';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
@@ -10,6 +11,7 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { acceptAttribute, extensionOf, FilesService, IUploadLimitsDto } from '../../../../shared/files/files.service';
 import { FormatService } from '../../../../core/formatting';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { ITaskDto, TaskService } from '../../services/task.service';
 
 // http or https, then something that is not a space — the screen's half of the
@@ -60,7 +62,7 @@ export interface QueuedFile {
 @Component({
   selector: 'app-task-add-evidence-dialog',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, ButtonModule, InputTextModule, EditDialogComponent, FieldComponent, IconButtonComponent],
+  imports: [ReactiveFormsModule, RouterLink, TranslatePipe, ButtonModule, InputTextModule, EditDialogComponent, FieldComponent, IconButtonComponent],
   template: `
     <ng-template #bodyTpl>
       <div class="flex flex-col gap-3">
@@ -159,6 +161,13 @@ export interface QueuedFile {
                   </li>
                 }
               </ul>
+            }
+            <!-- ACC-260 (G13) — the tenant admin's variant of "Storage not set up":
+                 the one person who can fix it gets the way there. -->
+            @if (storageNotSetUp() && canSetUpStorage()) {
+              <p class="am-setup-link" data-testid="storage-setup-link">
+                <a routerLink="/admin-settings/storage" (click)="visibleChange.emit(false)">{{ 'files.setUpStorage' | translate }}</a>
+              </p>
             }
           }
         </div>
@@ -319,6 +328,15 @@ export interface QueuedFile {
       .am-file-row__state--refused {
         color: var(--am-danger-ink);
       }
+      .am-setup-link {
+        margin: var(--am-space-8) 0 0;
+        font-size: var(--am-type-meta-size);
+        line-height: var(--am-type-meta-line);
+      }
+      .am-setup-link a {
+        color: var(--am-primary-600);
+        font-weight: 600;
+      }
     `,
   ],
 })
@@ -328,6 +346,7 @@ export class TaskAddEvidenceDialogComponent {
   private readonly files = inject(FilesService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
+  private readonly access = inject(NavigationAccessService);
 
   readonly visible = input.required<boolean>();
   readonly task = input<Pick<ITaskDto, 'id' | 'title' | 'requiresEvidence'> | null>(null);
@@ -347,6 +366,10 @@ export class TaskAddEvidenceDialogComponent {
   readonly showErrors = signal(false);
   readonly dragOver = signal(false);
   readonly limits = signal<IUploadLimitsDto | null>(null);
+  /** An upload was refused because no storage location is confirmed yet. */
+  readonly storageNotSetUp = signal(false);
+  /** Whoever can confirm a location (tenant:manage_config) is shown the way there (ACC-260, G13). */
+  readonly canSetUpStorage = computed(() => this.access.hasPermission('tenant:manage_config'));
   private nextId = 1;
 
   readonly linkForm = this.fb.group({
@@ -521,7 +544,13 @@ export class TaskAddEvidenceDialogComponent {
           }
         },
         error: (err: unknown) => {
-          const reason = this.files.refusal(err) ?? this.translate.instant(extractErrorMessage(err, 'task.errorAction'));
+          const notSetUp = (err as { error?: { code?: unknown } })?.error?.code === 'STORAGE_NOT_CONFIRMED';
+          if (notSetUp) this.storageNotSetUp.set(true);
+          // Everyone else keeps "Ask your administrator."; the admin is told what it blocks.
+          const reason =
+            notSetUp && this.canSetUpStorage()
+              ? this.translate.instant('files.notSetUpAdmin')
+              : (this.files.refusal(err) ?? this.translate.instant(extractErrorMessage(err, 'task.errorAction')));
           this.patch(item.id, { state: 'refused', reason });
           resolve(false);
         },
@@ -560,5 +589,6 @@ export class TaskAddEvidenceDialogComponent {
     this.dragOver.set(false);
     this.linkForm.reset({ url: '', linkTitle: '' });
     this.linkFormDirty.set(false);
+    this.storageNotSetUp.set(false);
   }
 }

@@ -1,4 +1,4 @@
-import { IStorageSettings } from './storage-settings.service';
+import { IStorageSettings, IStorageTestResult, StorageKind, StorageTestStep } from './storage-settings.service';
 import { GIB } from './storage-view';
 
 /**
@@ -93,3 +93,42 @@ export function sharepoint(sp: Partial<IStorageSettings['sharepoint']> = {}): IS
 export function requested(): IStorageSettings {
   return minio({ changeRequestedAt: '2026-10-07T08:00:00.000Z', changeRequestedBy: HESSA });
 }
+
+// ── PR B: first-time setup and test results ──────────────────────────────────
+
+/** An organisation on an on-premises installation: a local folder can be chosen. */
+export function unconfirmedOnPrem(over: Partial<IStorageSettings> = {}): IStorageSettings {
+  return unconfirmed({ offeredProviders: ['S3', 'MINIO', 'LOCAL_FILESYSTEM', 'SHAREPOINT'], ...over });
+}
+
+/** A confirmed local folder (design state 19). */
+export function localConfirmed(): IStorageSettings {
+  return local();
+}
+
+const ORDER: StorageTestStep[] = ['configure', 'write', 'read', 'verify', 'delete'];
+
+/** POST /tenant/storage/test, passed. */
+export function testPassed(provider: StorageKind = 'MINIO'): IStorageTestResult {
+  return { ok: true, provider, passed: [...ORDER], failedStep: null, code: null, message: null, sharepoint: null };
+}
+
+/**
+ * POST /tenant/storage/test, failed at `step`. The message names a host on
+ * purpose: the screen must never show it.
+ */
+export function testFailed(step: StorageTestStep, code = 'STORAGE_UNAVAILABLE', provider: StorageKind = 'MINIO'): IStorageTestResult {
+  return {
+    ok: false,
+    provider,
+    passed: ORDER.slice(0, ORDER.indexOf(step)),
+    failedStep: step,
+    code,
+    message: 'Access Denied on host minio-internal.secret.lan:9000',
+    sharepoint: null,
+  };
+}
+
+/** A typed MinIO candidate's values (the access key and secret are what rule 2 is about). */
+export const TYPED_ACCESS_KEY = 'AKAM-QUALITY-01';
+export const TYPED_SECRET = 'sk-Very-Secret-Value-123';
