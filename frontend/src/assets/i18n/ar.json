@@ -1101,7 +1101,8 @@
       "editNotAllowedNoStage": "لا يمكن تنفيذ ذلك: ليس للجنة مرحلة حالية."
     },
     "status": {
-      "active": "نشطة",
+      "not_yet_in_force": "غير سارية بعد",
+      "in_force": "سارية",
       "dissolving": "قيد الحل",
       "inactive": "غير نشطة"
     },

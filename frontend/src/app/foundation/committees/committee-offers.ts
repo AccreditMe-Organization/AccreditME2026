@@ -38,9 +38,13 @@ export interface CommitteePermissions {
   changeMemberRole: boolean;
 }
 
-/** The stage meanings this page reads, as the server names them (STAGE_FLAGS). */
-const IN_FORCE = 'IN_FORCE';
-const DISSOLVING = 'DISSOLVING';
+/**
+ * The stage meanings the committee screens read, as the server names them
+ * (STAGE_FLAGS). The page's offers and the list's status (ACC-256) read the
+ * same two names, from here.
+ */
+export const STAGE_FLAG_IN_FORCE = 'IN_FORCE';
+export const STAGE_FLAG_DISSOLVING = 'DISSOLVING';
 
 /** Nothing allowed and no meaning: what a committee with no live stage reads as (D14). */
 export const NO_STAGE_RULES: CommitteeStageRulesDto = {
@@ -54,7 +58,7 @@ export function committeeOffers(rules: CommitteeStageRulesDto | null | undefined
   const meaning = (flag: string): boolean => stage.flags.includes(flag);
   return {
     edit: can.editDetails && allows.edit_details,
-    lockedLine: can.editDetails && !allows.edit_details && !meaning(IN_FORCE) && !meaning(DISSOLVING),
+    lockedLine: can.editDetails && !allows.edit_details && !meaning(STAGE_FLAG_IN_FORCE) && !meaning(STAGE_FLAG_DISSOLVING),
     addMember: can.addMember && allows.add_member,
     removeMember: can.removeMember && allows.remove_member,
     changeMemberRole: can.changeMemberRole && allows.change_member_role,

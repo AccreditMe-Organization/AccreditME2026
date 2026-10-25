@@ -1101,7 +1101,8 @@
       "editNotAllowedNoStage": "This can't be done: the committee has no current stage."
     },
     "status": {
-      "active": "Active",
+      "not_yet_in_force": "Not yet in force",
+      "in_force": "In force",
       "dissolving": "Being dissolved",
       "inactive": "Inactive"
     },

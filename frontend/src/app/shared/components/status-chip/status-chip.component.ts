@@ -1,7 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
-export type StatusChipVariant = 'user' | 'status' | 'severity' | 'account';
+export type StatusChipVariant = 'user' | 'status' | 'severity' | 'account' | 'committee';
 
 // ACC-78 — WRAPS StatusBadgeComponent's idea rather than modifying it.
 //
@@ -41,6 +41,10 @@ const TIERS: Record<StatusChipVariant, { plain: string[]; attention: string[] }>
   severity: { plain: [], attention: ['CRITICAL', 'HIGH'] },
   // Tenant lifecycle: ACTIVE is the normal running state.
   account: { plain: ['ACTIVE'], attention: ['SUSPENDED', 'CANCELLED'] },
+  // ACC-256 — a committee's status on the list: IN_FORCE is the normal case;
+  // not yet in force, being dissolved and inactive are muted states, none of
+  // them something to chase.
+  committee: { plain: ['IN_FORCE'], attention: [] },
 };
 
 @Component({
