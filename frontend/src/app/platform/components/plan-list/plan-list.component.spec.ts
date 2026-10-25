@@ -77,6 +77,13 @@ describe('PlanListComponent — seat limits (ACC-263)', () => {
     expect(cells(el, 'plan-max-staff')[2]).toBe('غير محدود');
   });
 
+  // ACC-264 — the pencil names the plan it opens.
+  it('each edit button names its plan, in both languages', async () => {
+    const names = (el: HTMLElement) => Array.from(el.querySelectorAll('[data-testid="plan-edit"] button, [data-testid="plan-edit"] a')).map((b) => b.getAttribute('aria-label'));
+    expect(names(await render(PLANS))).toEqual(['Edit starter', 'Edit professional', 'Edit enterprise']);
+    expect(names(await render(PLANS, 'ar'))).toEqual(['تعديل starter', 'تعديل professional', 'تعديل enterprise']);
+  });
+
   it('the empty row still spans every column', async () => {
     const el = await render([]);
     expect(el.querySelector('td[colspan]')?.getAttribute('colspan')).toBe(String(el.querySelectorAll('th').length));
