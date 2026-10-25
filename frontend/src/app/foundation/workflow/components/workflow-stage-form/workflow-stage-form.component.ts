@@ -6,6 +6,7 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { FormatService } from '../../../../core/formatting';
 import { deadlineBeforeTasks, finalStageTaskCount, plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { WorkflowEnumKind, workflowOptionKeys } from '../../workflow-labels';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
@@ -49,19 +50,6 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
-const APPROVAL_MODES = [
-  { label: 'SINGLE', value: 'SINGLE' },
-  { label: 'SEQUENTIAL', value: 'SEQUENTIAL' },
-  { label: 'PARALLEL', value: 'PARALLEL' },
-  { label: 'COMMITTEE', value: 'COMMITTEE' },
-];
-
-const PARALLEL_THRESHOLDS = [
-  { label: 'ALL', value: 'ALL' },
-  { label: 'MAJORITY', value: 'MAJORITY' },
-  { label: 'ANY', value: 'ANY' },
-];
-
 // ACC-40 Section 6/Phase 7 — ORG_UNIT_HEAD re-added now that both
 // resolveAssigneeRaw() and resolveApproverPool() (backend) have real
 // resolution logic wired to OrganizationService.resolveActingHeadForOrgUnit().
@@ -73,19 +61,10 @@ const PARALLEL_THRESHOLDS = [
 // or invalid state. Confirmed acceptable per the plan's own Non-Goals
 // restriction, same "wired then dormant" state ASSIGNEE_POOL itself sat in
 // for months before ACC-28 gave it real behavior.
-const ASSIGNEE_STRATEGIES = [
-  { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
-  { label: 'ROLE', value: 'ROLE' },
-  { label: 'SELF', value: 'SELF' },
-  { label: 'COMMITTEE', value: 'COMMITTEE' },
-  { label: 'ROUND_ROBIN', value: 'ROUND_ROBIN' },
-  { label: 'ORG_UNIT_HEAD', value: 'ORG_UNIT_HEAD' },
-  // ACC-54 — unlike ORG_UNIT_HEAD above (wired but still unreachable, since
-  // no workflow-driven object carries an orgUnitId to resolve against), this
-  // one is immediately usable: both the position and the unit are chosen
-  // here at config time, so nothing external has to supply them.
-  { label: 'POSITION_FIXED', value: 'POSITION_FIXED' },
-];
+// ACC-254 — the approval modes, thresholds and assignee strategies are
+// workflow-labels.ts's, labelled in the reader's words (approvalModes,
+// parallelThresholds, assigneeStrategies below). ORG_UNIT_HEAD and
+// POSITION_FIXED stay offered for the reasons above.
 
 @Component({
   selector: 'app-workflow-stage-form',
@@ -169,7 +148,7 @@ const ASSIGNEE_STRATEGIES = [
         </label>
         <app-overlay-select
           formControlName="approvalMode"
-          [options]="approvalModes"
+          [options]="approvalModes()"
           optionLabel="label"
           optionValue="value"
         />
@@ -182,7 +161,7 @@ const ASSIGNEE_STRATEGIES = [
           </label>
           <app-overlay-select
             formControlName="parallelThreshold"
-            [options]="parallelThresholds"
+            [options]="parallelThresholds()"
             optionLabel="label"
             optionValue="value"
           />
@@ -202,7 +181,7 @@ const ASSIGNEE_STRATEGIES = [
         </label>
         <app-overlay-select
           formControlName="assigneeStrategy"
-          [options]="assigneeStrategies"
+          [options]="assigneeStrategies()"
           optionLabel="label"
           optionValue="value"
         />
@@ -411,9 +390,14 @@ export class WorkflowStageFormComponent implements OnInit {
     })),
   );
 
-  readonly approvalModes = APPROVAL_MODES;
-  readonly parallelThresholds = PARALLEL_THRESHOLDS;
-  readonly assigneeStrategies = ASSIGNEE_STRATEGIES;
+  /** ACC-254 — each list in the reader's words; follows a language switch. */
+  private optionsOf(kind: WorkflowEnumKind): { value: string; label: string }[] {
+    this.translate.currentLang();
+    return workflowOptionKeys(kind).map(({ value, labelKey }) => ({ value, label: this.translate.instant(labelKey) }));
+  }
+  readonly approvalModes = computed(() => this.optionsOf('approvalMode'));
+  readonly parallelThresholds = computed(() => this.optionsOf('threshold'));
+  readonly assigneeStrategies = computed(() => this.optionsOf('assignee'));
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(100)]],
@@ -605,7 +589,7 @@ export class WorkflowStageFormComponent implements OnInit {
       error: (err: unknown) => {
         this.saving.set(false);
         if (this.showRefusal(err)) return;
-        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'Save failed'));
+        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed'));
       },
     });
   }

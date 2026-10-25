@@ -15,6 +15,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../.
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { CommitteeFormComponent, CommitteeFormTab } from './committee-form.component';
+import { FORMATION_RULES } from '../../testing';
 
 // ACC-238 — the three-tab committee dialog against the 420px body cap
 // (ACC-111), measured rather than assumed (ACC-120): each tab, in both
@@ -65,7 +66,7 @@ const ROW = (id: string, over: Partial<CommitteeListItemDto> = {}): CommitteeLis
   memberCount: 7,
   currentStageNameEn: 'Formation',
   currentStageNameAr: 'التشكيل',
-  currentStageKey: 'formation',
+  stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: null,
   ...over,
@@ -108,7 +109,21 @@ describe('CommitteeForm — three tabs against the 420px body cap (ACC-238)', ()
         provideFormatTesting(),
         ConfirmationService,
         providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
-        { provide: CommitteeService, useValue: { listCommittees: () => of(LIST), update, create: update, getById: () => of(EDITING) } },
+        {
+          provide: CommitteeService,
+          useValue: {
+            listCommittees: () => of(LIST),
+            // ACC-255 (plan §10.5) — the dialog's types and units, in one read.
+            formChoices: () =>
+              of({
+                committeeTypes: [{ id: 'type-1', labelEn: 'Standing committee', labelAr: 'لجنة دائمة' }],
+                orgUnits: [{ id: 'unit-root', nameEn: 'Al Nakheel Specialist Hospital', nameAr: 'مستشفى النخيل التخصصي', parentId: null, isActive: true }],
+              }),
+            update,
+            create: update,
+            getById: () => of(EDITING),
+          },
+        },
         { provide: LookupService, useValue: { getValues: () => of([{ id: 'type-1', labelEn: 'Standing committee', labelAr: 'لجنة دائمة' }]) } },
         {
           provide: OrgUnitService,

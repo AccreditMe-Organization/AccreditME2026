@@ -14,6 +14,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { CommitteeListItemDto } from '../../services/committee.service';
 import { CommitteeListComponent, committeeListStatus } from './committee-list.component';
+import { ACTIVE_RULES } from '../../testing';
 
 // ACC-120 slice 4 — the committees list (plan: step-120-4-committees-list.md).
 // Six columns from GET /committees; search over both names; sort by name, type,
@@ -44,7 +45,7 @@ function committee(id: string, over: Partial<CommitteeListItemDto> = {}): Commit
     memberCount: 4,
     currentStageNameEn: 'Active',
     currentStageNameAr: 'نشطة',
-    currentStageKey: 'active',
+    stageRules: ACTIVE_RULES,
     isDissolving: false,
     typeValue: null,
     ...over,
@@ -229,7 +230,13 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     add!.click();
     fixture.detectChanges();
     expect(fixture.componentInstance.formVisible()).toBeTrue();
-    // The add form reads its own lookups as it always has.
+    // The add form reads its own lists: types and units in one read (ACC-255,
+    // plan §10.5), the committees in another.
+    http.expectOne(`${API}/committees/form-choices`).flush({ committeeTypes: [], orgUnits: [] });
+    // …never the lookup or unit lists, which need lookups:view and org:view
+    // that a tenant-made committee editor may not hold.
+    http.expectNone(`${API}/lookups/categories/committee_type/values`);
+    http.expectNone(`${API}/organization/units/flat`);
     http.match(() => true).forEach((r) => r.flush([]));
   }));
 

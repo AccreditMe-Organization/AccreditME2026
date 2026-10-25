@@ -7,6 +7,8 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { workflowLabelKey } from '../../workflow-labels';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -48,7 +50,7 @@ import { LanguageService } from '../../../../core/services/language.service';
             <td>{{ template.nameEn }}</td>
             <td dir="rtl">{{ template.nameAr || '—' }}</td>
             <td>
-              <p-tag [value]="template.objectType" severity="info" />
+              <p-tag [value]="objectTypeLabelKey(template.objectType) | translate" severity="info" data-testid="template-object-type" />
             </td>
             <td>
               @if (template.isDefault) {
@@ -78,6 +80,10 @@ import { LanguageService } from '../../../../core/services/language.service';
                         : 'workflow.setDefault'
                       ) | translate
                     "
+                    [ariaLabel]="
+                      (template.isDefault ? 'workflow.alreadyDefaultNamed' : 'workflow.setDefaultNamed')
+                        | translate: { name: templateName(template) }
+                    "
                     (onClick)="onSetDefault(template, $event)"
                   />
                   @if (template.isActive) {
@@ -87,6 +93,7 @@ import { LanguageService } from '../../../../core/services/language.service';
                       size="small"
                       severity="danger"
                       [pTooltip]="'workflow.deactivateTemplate' | translate"
+                      [ariaLabel]="'workflow.deactivateTemplateNamed' | translate: { name: templateName(template) }"
                       (onClick)="onDeactivate(template, $event)"
                     />
                   }
@@ -109,6 +116,16 @@ import { LanguageService } from '../../../../core/services/language.service';
   `,
 })
 export class WorkflowTemplateListComponent implements OnInit {
+  /** ACC-254 — the record type in words, never the stored code. */
+  /** The template's name in the reader's language, for the controls that name it. */
+  templateName(template: { nameEn: string; nameAr: string | null }): string {
+    return this.languageService.bilingual(template.nameEn, template.nameAr);
+  }
+
+  objectTypeLabelKey(objectType: string | null | undefined): string {
+    return workflowLabelKey('objectType', objectType);
+  }
+
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
@@ -141,7 +158,7 @@ export class WorkflowTemplateListComponent implements OnInit {
     this.workflowTemplateService.setDefault(template.id).subscribe({
       next: () => this.loadTemplates(),
       error: (err: unknown) =>
-        this.error.set(extractErrorMessage(err, 'Set default failed')),
+        this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.setDefaultFailed')),
     });
   }
 
@@ -163,7 +180,7 @@ export class WorkflowTemplateListComponent implements OnInit {
         this.workflowTemplateService.deactivateTemplate(template.id).subscribe({
           next: () => this.loadTemplates(),
           error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, 'Deactivate failed')),
+            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.deactivateFailed')),
         });
       },
     });

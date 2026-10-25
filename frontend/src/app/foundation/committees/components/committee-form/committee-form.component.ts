@@ -19,9 +19,9 @@ import {
   COMMITTEE_MEETING_FREQUENCIES,
 } from '../../services/committee.service';
 import { CommitteeReferenceField, committeeRefusal, referenceOptions } from '../../committee-references';
-import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
+import { CommitteeStageRefusal, committeeStageRefusal } from '../../committee-stage-refusal';
+import { LookupValueDto } from '../../../lookup/services/lookup.service';
 import {
-  OrgUnitService,
   OrgUnitDto,
   OrgUnitCascadeOption,
   buildOrgUnitCascadeOptions,
@@ -63,7 +63,13 @@ const TAB_ORDER: readonly CommitteeFormTab[] = ['identity', 'governance', 'struc
  * trying again can help (Design System artboard 14, rule 5.5); `failed` offers
  * neither.
  */
-type FooterState = { kind: 'conflict' } | { kind: 'unreachable' } | { kind: 'failed' } | null;
+type FooterState =
+  | { kind: 'conflict' }
+  | { kind: 'unreachable' }
+  | { kind: 'failed' }
+  // ACC-255 — the committee's stage does not allow a direct edit (ACC-241).
+  | { kind: 'stage'; refusal: CommitteeStageRefusal }
+  | null;
 
 /** Status codes that mean the server was not reached or did not answer in time. */
 const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
@@ -340,6 +346,11 @@ type ChoiceList = 'types' | 'units' | 'committees';
               @case ('unreachable') {
                 {{ 'committee.form.unreachable' | translate }}
               }
+              @case ('stage') {
+                @if (f.kind === 'stage') {
+                  {{ f.refusal.key | translate: { stage: stageName(f.refusal) } }}
+                }
+              }
               @default {
                 {{ 'committee.refusal.saveFailed' | translate }}
               }
@@ -454,8 +465,6 @@ type ChoiceList = 'types' | 'units' | 'committees';
 export class CommitteeFormComponent {
   private readonly fb = inject(FormBuilder);
   private readonly committeeService = inject(CommitteeService);
-  private readonly lookupService = inject(LookupService);
-  private readonly orgUnitService = inject(OrgUnitService);
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
@@ -675,8 +684,7 @@ export class CommitteeFormComponent {
    * leave out what is true NOW (a committee that began dissolving since).
    */
   private loadChoices(): void {
-    this.loadList('types');
-    this.loadList('units');
+    this.loadFormChoices();
     this.loadList('committees');
   }
 
@@ -687,33 +695,8 @@ export class CommitteeFormComponent {
    */
   private loadList(list: ChoiceList): void {
     const c = this.form.controls;
-    if (list === 'types') {
-      this.typesFailed.set(false);
-      this.waitFor(this.typesLoaded, this.heldType() ? [] : [c.typeValueId]);
-      this.lookupService.getValues('committee_type').subscribe({
-        next: (values) => {
-          this.committeeTypes.set(values);
-          this.release(this.typesLoaded, [c.typeValueId]);
-        },
-        error: () => {
-          this.typesFailed.set(true);
-          this.release(this.typesLoaded, [c.typeValueId]);
-        },
-      });
-    } else if (list === 'units') {
-      this.unitsFailed.set(false);
-      this.waitFor(this.unitsLoaded, [c.orgUnitId]);
-      this.orgUnitService.getFlat().subscribe({
-        next: (units) => {
-          this.orgUnits.set(units);
-          this.release(this.unitsLoaded, [c.orgUnitId]);
-          this.prefillRootUnit(units);
-        },
-        error: () => {
-          this.unitsFailed.set(true);
-          this.release(this.unitsLoaded, [c.orgUnitId]);
-        },
-      });
+    if (list === 'types' || list === 'units') {
+      this.loadFormChoices();
     } else {
       this.committeesFailed.set(false);
       this.waitFor(this.committeesLoaded, [c.parentCommitteeId, c.reportingToCommitteeId]);
@@ -728,6 +711,36 @@ export class CommitteeFormComponent {
         },
       });
     }
+  }
+
+  /**
+   * ACC-255 (plan §10.5) — the committee types and the unit tree, in ONE read
+   * (GET /committees/form-choices), which needs only committees:create or
+   * committees:edit_details, never lookups:view or org:view. Each picker still
+   * waits for its own list and a failure says so in each field's slot; a
+   * Retry on either reads both again, since they come together.
+   */
+  private loadFormChoices(): void {
+    const c = this.form.controls;
+    this.typesFailed.set(false);
+    this.unitsFailed.set(false);
+    this.waitFor(this.typesLoaded, this.heldType() ? [] : [c.typeValueId]);
+    this.waitFor(this.unitsLoaded, [c.orgUnitId]);
+    this.committeeService.formChoices().subscribe({
+      next: ({ committeeTypes, orgUnits }) => {
+        this.committeeTypes.set(committeeTypes);
+        this.release(this.typesLoaded, [c.typeValueId]);
+        this.orgUnits.set(orgUnits);
+        this.release(this.unitsLoaded, [c.orgUnitId]);
+        this.prefillRootUnit(orgUnits);
+      },
+      error: () => {
+        this.typesFailed.set(true);
+        this.unitsFailed.set(true);
+        this.release(this.typesLoaded, [c.typeValueId]);
+        this.release(this.unitsLoaded, [c.orgUnitId]);
+      },
+    });
   }
 
   /** The Retry after a list's failure line; one object per list, so the field's input does not change each check. */
@@ -901,6 +914,12 @@ export class CommitteeFormComponent {
       this.footer.set({ kind: 'conflict' });
       return;
     }
+    // ACC-255 — refused by the committee's stage: said, with the stage's name.
+    const stage = committeeStageRefusal(err);
+    if (stage) {
+      this.footer.set({ kind: 'stage', refusal: stage });
+      return;
+    }
     const refusal = committeeRefusal(err);
     if (refusal.field) {
       // In the field's own slot, on its own tab (ACC-233's codes).
@@ -913,6 +932,11 @@ export class CommitteeFormComponent {
       return;
     }
     this.footer.set(this.isUnreachable(err) ? { kind: 'unreachable' } : { kind: 'failed' });
+  }
+
+  /** The stage's own name, in the reader's language (English when it has no Arabic). */
+  stageName(refusal: CommitteeStageRefusal): string {
+    return this.languageService.bilingual(refusal.stageNameEn ?? refusal.stageNameAr ?? '', refusal.stageNameAr);
   }
 
   private isUnreachable(err: unknown): boolean {

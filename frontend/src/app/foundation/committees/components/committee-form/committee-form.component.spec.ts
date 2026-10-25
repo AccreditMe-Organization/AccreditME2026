@@ -9,6 +9,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../.
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
+import { FORMATION_RULES } from '../../testing';
 
 // ACC-233 — the committee dialog leaves out what the server would refuse, says
 // a refusal from its code under the field it is about, keeps what was typed,
@@ -40,7 +41,7 @@ const committee = (id: string, over: Partial<CommitteeListItemDto> = {}): Commit
   memberCount: 7,
   currentStageNameEn: null,
   currentStageNameAr: null,
-  currentStageKey: 'formation',
+  stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: null,
   ...over,
@@ -78,7 +79,21 @@ describe('CommitteeFormComponent', () => {
         provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
         provideFormatTesting(),
         ConfirmationService,
-        { provide: CommitteeService, useValue: { listCommittees: () => of(LIST), update, create, getById } },
+        {
+          provide: CommitteeService,
+          useValue: {
+            listCommittees: () => of(LIST),
+            // ACC-255 (plan §10.5) — the dialog's types and units, in one read.
+            formChoices: () =>
+              of({
+                committeeTypes: [{ id: 'type-1', labelEn: 'Quality', labelAr: null }],
+                orgUnits: [{ id: 'unit-root', nameEn: 'Root', nameAr: null, parentId: null, isActive: true }],
+              }),
+            update,
+            create,
+            getById,
+          },
+        },
         { provide: LookupService, useValue: { getValues: () => of([{ id: 'type-1', labelEn: 'Quality', labelAr: null }]) } },
         {
           provide: OrgUnitService,
@@ -207,6 +222,24 @@ describe('CommitteeFormComponent', () => {
       expect(q('[data-cf-footer-message]')?.textContent?.trim()).toBe('committee.refusal.saveFailed');
       expect(q('[data-cf-retry]')).toBeNull();
       expect(q('[data-cf-save]')).not.toBeNull();
+    });
+
+    it('409 STAGE_ACTION_NOT_ALLOWED (ACC-241): the footer says the stage sentence, not "something went wrong"', () => {
+      edit();
+      update.and.returnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 409,
+              error: { code: 'STAGE_ACTION_NOT_ALLOWED', action: 'edit_details', stageNameEn: 'Active', stageNameAr: 'نشطة', message: 'English only' },
+            }),
+        ),
+      );
+      component.submit();
+      fixture.detectChanges();
+      expect(q('[data-cf-footer-message]')?.textContent?.trim()).toBe('committee.refusal.editNotAllowedInStage');
+      expect(q('[data-cf-retry]')).toBeNull();
+      expect(document.body.textContent).not.toContain('English only');
     });
 
     it('an unreachable server offers Retry, which saves again', () => {

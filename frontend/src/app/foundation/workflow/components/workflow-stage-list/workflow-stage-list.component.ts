@@ -13,6 +13,7 @@ import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor
 import { StageTaskListComponent, StageTaskSummary } from '../stage-task-list/stage-task-list.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { LanguageService } from '../../../../core/services/language.service';
 import {
   DataListColumn,
@@ -26,6 +27,19 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
+import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
+import { workflowLabelKey } from '../../workflow-labels';
+
+/**
+ * ACC-254 — the stages list's two fixed tracks. The actions cell holds the
+ * labelled Edit and the ⋯ (am-row-menu), which measure 84.3px in Arabic and
+ * 77.3px in English at every width (workflow-stage-list.layout.spec.ts, at
+ * 1280, 1440 and 1920); 96px leaves room for a slightly longer translation.
+ * Before the ⋯ the cell held up, down, Edit and remove, about 150-160px, and
+ * spilled out of data-list's 88px default. The expand track is the chevron's.
+ */
+const ACTIONS_TRACK = '96px';
+const EXPAND_TRACK = '32px';
 
 @Component({
   selector: 'app-workflow-stage-list',
@@ -38,8 +52,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
     DataListComponent,
     WorkflowTransitionEditorComponent,
     StageTaskListComponent,
-    EditDialogComponent,
-  ],
+    EditDialogComponent, RowMenuComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
 
@@ -89,6 +102,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
           [source]="source"
           [trackBy]="trackById"
           [columns]="columns()"
+          [gridSuffix]="actionsTrack"
           [showPager]="false"
           [searchPlaceholder]="'workflow.searchStages' | translate"
           [emptyTitle]="'workflow.noStages' | translate"
@@ -109,11 +123,18 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
                 style="grid-template-columns: var(--am-list-cols)"
               >
                 @if (v('expand')) {
+                  <!-- ACC-254 — named, and says whether it is open. -->
                   <p-button
                     [icon]="isExpanded(stage.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
                     [text]="true"
                     size="small"
+                    [ariaLabel]="
+                      (isExpanded(stage.id) ? 'workflow.hideStageDetails' : 'workflow.showStageDetails')
+                        | translate: { name: stageDisplayName(stage) }
+                    "
+                    [attr.aria-expanded]="isExpanded(stage.id)"
                     (onClick)="toggleExpanded(stage.id)"
+                    data-testid="stage-expand"
                   />
                 }
                 @if (v('name')) {
@@ -145,13 +166,14 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
                   </div>
                 }
                 @if (v('approval')) {
-                  <span class="text-sm text-[var(--am-text-secondary)] truncate">
-                    {{ stage.approvalMode }}
+                  <!-- ACC-254 — the mode in words, never the stored code. -->
+                  <span class="text-sm text-[var(--am-text-secondary)] truncate min-w-0" data-testid="stage-approval">
+                    {{ approvalLabelKey(stage.approvalMode) | translate }}
                   </span>
                 }
                 @if (v('assignee')) {
-                  <span class="text-sm text-[var(--am-text-secondary)] truncate">
-                    {{ stage.assigneeStrategy }}
+                  <span class="text-sm text-[var(--am-text-secondary)] truncate min-w-0" data-testid="stage-assignee">
+                    {{ assigneeLabelKey(stage.assigneeStrategy) | translate }}
                   </span>
                 }
                 @if (v('sla')) {
@@ -170,40 +192,26 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
                      get it wrong. Note the Edit button carries a label rather
                      than an icon, so check:action-gating cannot see it — a
                      reason to gate the container, not each control. -->
-                <div class="flex items-center gap-1 shrink-0">
+                <!-- ACC-254 — Edit is the row's next step; Move up, Move down and
+                     Remove are in a worded ⋯ menu (ACC-229's shape), so the cell
+                     fits its fixed track (ACTIONS_TRACK) in both languages and
+                     the page never scrolls sideways. -->
+                <div class="flex items-center justify-end gap-1 min-w-0" data-testid="stage-actions">
                   @if (canManage()) {
-                  <p-button
-                    icon="pi pi-arrow-up"
-                    [text]="true"
-                    size="small"
-                    [disabled]="reordering() || stageIndex(stage) === 0"
-                    [pTooltip]="'workflow.moveUp' | translate"
-                    (onClick)="onMoveUp(stageIndex(stage))"
-                  />
-                  <p-button
-                    icon="pi pi-arrow-down"
-                    [text]="true"
-                    size="small"
-                    [disabled]="reordering() || stageIndex(stage) === stages().length - 1"
-                    [pTooltip]="'workflow.moveDown' | translate"
-                    (onClick)="onMoveDown(stageIndex(stage))"
-                  />
-                  <p-button
-                    [label]="'common.edit' | translate"
-                    size="small"
-                    [text]="true"
-                    [disabled]="reordering()"
-                    (onClick)="openEdit(stage)"
-                  />
-                  <p-button
-                    icon="pi pi-trash"
-                    [text]="true"
-                    size="small"
-                    severity="danger"
-                    [disabled]="reordering()"
-                    [pTooltip]="'common.remove' | translate"
-                    (onClick)="onRemove(stage)"
-                  />
+                    <p-button
+                      [label]="'common.edit' | translate"
+                      size="small"
+                      [text]="true"
+                      [disabled]="reordering()"
+                      [ariaLabel]="'workflow.editStageNamed' | translate: { name: stageDisplayName(stage) }"
+                      (onClick)="openEdit(stage)"
+                      data-testid="stage-edit"
+                    />
+                    <am-row-menu
+                      [groups]="menuFor(stage)"
+                      [label]="'workflow.stageActionsFor' | translate: { name: stageDisplayName(stage) }"
+                      (picked)="pick(stage, $event)"
+                    />
                   }
                 </div>
               </div>
@@ -327,13 +335,50 @@ export class WorkflowStageListComponent implements OnInit {
   });
 
   readonly trackById = (stage: WorkflowStageDto): string => stage.id;
+  readonly actionsTrack = ACTIONS_TRACK;
+
+  /** ACC-254 — the stored code in words. */
+  approvalLabelKey(mode: string | null | undefined): string {
+    return workflowLabelKey('approvalMode', mode);
+  }
+
+  assigneeLabelKey(strategy: string | null | undefined): string {
+    return workflowLabelKey('assignee', strategy);
+  }
+
+  /** The stage's name in the reader's language, for the controls that name it. */
+  stageDisplayName(stage: WorkflowStageDto): string {
+    return this.languageService.bilingual(stage.nameEn, stage.nameAr);
+  }
+
+  /** ACC-254 — the row's ⋯: reorder, then Remove apart (it is the one that deletes). */
+  menuFor(stage: WorkflowStageDto): RowMenuItem[][] {
+    const index = this.stageIndex(stage);
+    const busy = this.reordering();
+    return [
+      [
+        { id: 'moveUp', label: this.translate.instant('workflow.moveUp'), disabled: busy || index === 0 },
+        { id: 'moveDown', label: this.translate.instant('workflow.moveDown'), disabled: busy || index === this.stages().length - 1 },
+      ],
+      [{ id: 'remove', label: this.translate.instant('common.remove'), danger: true, disabled: busy }],
+    ];
+  }
+
+  pick(stage: WorkflowStageDto, id: string): void {
+    const index = this.stageIndex(stage);
+    if (id === 'moveUp') this.onMoveUp(index);
+    if (id === 'moveDown') this.onMoveDown(index);
+    if (id === 'remove') this.onRemove(stage);
+  }
 
   // NO sortBy on any column, permanently — see the template comment. A header
   // is a label; labelling a column does not imply it sorts.
   readonly columns = computed<DataListColumn[]>(() => {
     this.translate.currentLang();
     return [
-      { key: 'expand', label: '', alwaysVisible: true, width: 'auto' },
+      // ACC-254 — fixed: an 'auto' track sized each row to its own content, so
+      // header and rows misaligned (data-list's rule, ACC-234).
+      { key: 'expand', label: '', alwaysVisible: true, width: EXPAND_TRACK },
       {
         key: 'name',
         label: this.translate.instant('workflow.stageName'),
@@ -427,7 +472,7 @@ export class WorkflowStageListComponent implements OnInit {
         this.workflowTemplateService.removeStage(stage.id).subscribe({
           next: () => this.loadTemplate(),
           error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, 'Remove failed')),
+            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')),
         });
       },
     });
@@ -460,13 +505,13 @@ export class WorkflowStageListComponent implements OnInit {
         this.workflowTemplateService.updateStage(b.id, { order: a.order }).subscribe({
           next: () => this.loadTemplate(),
           error: (err: unknown) => {
-            this.error.set(extractErrorMessage(err, 'Reorder failed'));
+            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.reorderFailed'));
             this.loadTemplate(); // reload to restore true server state
           },
         });
       },
       error: (err: unknown) => {
-        this.error.set(extractErrorMessage(err, 'Reorder failed'));
+        this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.reorderFailed'));
         this.loadTemplate(); // reload to restore true server state
       },
     });

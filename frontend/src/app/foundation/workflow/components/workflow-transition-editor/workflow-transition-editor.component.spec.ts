@@ -543,9 +543,10 @@ describe('WorkflowTransitionEditorComponent — trigger role in the table (ACC-8
   const rowText = (el: HTMLElement) =>
     Array.from(el.querySelectorAll('tbody tr')).map((tr) => (tr.textContent ?? '').replace(/\s+/g, ' ').trim());
 
-  it('shows the role’s name beside ROLE_BASED', () => {
+  it('shows the role’s name beside Role-based (ACC-254: the condition in words, never ROLE_BASED)', () => {
     const el = render([{ ...EXISTING, triggerRoleId: 'role-auditor' }]);
-    expect(rowText(el)[0]).toContain('ROLE_BASED');
+    expect(rowText(el)[0]).toContain('workflow.triggerRoleBased');
+    expect(rowText(el)[0]).not.toContain('ROLE_BASED');
     expect(el.querySelector('tbody tr td:nth-child(4) span.ms-2')?.textContent?.trim()).toBe('Auditor');
   });
 

@@ -17,6 +17,7 @@ import {
   CreateWorkflowTransitionActionDto,
 } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 // ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on this field:
 // this component's own dialog renders inside workflow-transition-editor's
 // "Configure Actions" p-dialog (still a nested case after ACC-39 below,
@@ -99,7 +100,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
         <ng-template pTemplate="body" let-action>
           <tr>
             <td>
-              <p-tag [value]="action.actionType" severity="info" />
+              <p-tag [value]="actionTypeName(action.actionType)" severity="info" data-testid="action-type" />
             </td>
             <td>{{ action.order }}</td>
             <td>
@@ -121,6 +122,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
                   [text]="true"
                   size="small"
                   [pTooltip]="'common.edit' | translate"
+                  [ariaLabel]="'workflow.editActionNamed' | translate: { type: actionTypeName(action.actionType) }"
                   (onClick)="openEdit(action)"
                 />
                 <p-button
@@ -283,7 +285,7 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
     this.workflowTemplateService.updateTransitionAction(action.id, { isEnabled }).subscribe({
       next: () => this.changed.emit(),
       error: (err: unknown) =>
-        this.error.set(extractErrorMessage(err, 'Update failed')),
+        this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.updateFailed')),
     });
   }
 
@@ -309,7 +311,7 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
         this.workflowTemplateService.removeTransitionAction(action.id).subscribe({
           next: () => this.changed.emit(),
           error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, 'Remove failed')),
+            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')),
         });
       },
     });
@@ -325,7 +327,7 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
       try {
         headers = raw.webhookHeaders ? JSON.parse(raw.webhookHeaders) : undefined;
       } catch {
-        this.saveError.set('Invalid JSON in webhook headers');
+        this.saveError.set('workflow.error.invalidHeadersJson');
         return;
       }
       configJson = { webhookUrl: raw.webhookUrl, ...(headers ? { headers } : {}) };
@@ -353,7 +355,7 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
         this.changed.emit();
       },
       error: (err: unknown) => {
-        this.saveError.set(extractErrorMessage(err, 'Save failed'));
+        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed'));
         this.saving.set(false);
       },
     });

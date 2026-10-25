@@ -2445,11 +2445,13 @@ Plan: `backend/Plans/step-233-committee-reference-checks.md` (§2.1, §4b).
   check).
 
 **Readers today:** committee change requests (§3.18), whose state IS their
-stage key; the quorum precondition out of Formation; the committees list's
-`currentStageKey` (for the frontend's header rule until ACC-255 PR 3); the
-seed and the backfills. **Since ACC-255 PR 2 no committee rule is decided by a
-COMMITTEE stage key** — dissolving is the stage's `DISSOLVING` flag (§2.18.1),
-and `committee-stage-keys.scan.spec.ts` fails on a key read again.
+stage key; the quorum precondition out of Formation; the seed and the
+backfills. **Since ACC-255 no committee rule is decided by a COMMITTEE stage
+key, on either side** — the backend since PR 2 (dissolving is the stage's
+`DISSOLVING` flag, §2.18.1), the screens since PR 3 (they read `stageRules`,
+§2.18.2) — and `committee-stage-keys.scan.spec.ts` fails on a key read again
+in `backend/src` or `frontend/src`. The committee read still carries
+`currentStageKey`, now read by no screen; dropping it is a later contract step.
 
 ### 2.17 System moves with a module's write, protected templates, the quorum snapshot (ACC-239)
 
@@ -2502,9 +2504,10 @@ record here?" and "what does this stage mean?". **Since PR 2 the backend
 decides by these answers** (§2.18.1): a committee's direct edit and member
 changes, whether a committee is dissolving, and what a change request may do.
 The old key-based maps `COMMITTEE_STAGE_POLICY` and `isDissolvingStageKey`
-are deleted. **The frontend still reads keys** (`COMMITTEE_HEADER_POLICY` in
-`committee-stage.ts`) until PR 3. Plan:
-`backend/Plans/step-255-workflow-stage-rules.md` (§16.5 for PR 2 as built).
+are deleted. **Since PR 3 the screens decide by the same answers** (§2.18.2):
+the frontend's `COMMITTEE_HEADER_POLICY` (`committee-stage.ts`) is deleted
+too. Plan: `backend/Plans/step-255-workflow-stage-rules.md` (§16.5 for PR 2
+and §16.6 for PR 3 as built).
 
 - **The registries** (`foundation/workflow/record-registry.ts`), per record type
   and in code, never copied in the frontend:
@@ -2587,8 +2590,9 @@ are deleted. **The frontend still reads keys** (`COMMITTEE_HEADER_POLICY` in
     `committees:edit_details`) returns the committee types and units exactly
     as the lookup and unit lists serve them, through the same services. A
     tenant-made role that may edit committees without `lookups:view` or
-    `org:view` no longer gets a 403 whose Retry can never succeed. The screens
-    switch to it in PR 3.
+    `org:view` no longer gets a 403 whose Retry can never succeed. The edit
+    dialog and Request a change read it since PR 3, in one read: one Retry
+    reads both lists.
 - **Runbook, after PR 1 deploys** (never before; the table must exist first):
   1. `npm run backfill:acc255-stage-rules`: a dry run; then `-- --execute`; then
      a dry run again, which must plan 0. It writes only stages with no rules,
@@ -2609,7 +2613,7 @@ are deleted. **The frontend still reads keys** (`COMMITTEE_HEADER_POLICY` in
   Active.", and a no-stage form for D14. The four sentences are
   `committee.refusal.membersNotAllowedInStage` / `…NoStage` and
   `editNotAllowedInStage` / `…NoStage` in both languages; the screens say them
-  in PR 3.
+  from the code since PR 3 (§2.18.2).
   - **Lock order:** existence first (an id-only read, so a missing or another
     organisation's committee is the same 404); then the stage, read FOR SHARE
     of the committee's workflow INSTANCE; then the hierarchy lock (if a parent
@@ -2635,7 +2639,8 @@ are deleted. **The frontend still reads keys** (`COMMITTEE_HEADER_POLICY` in
 - **Still keyed, deliberately:** the quorum precondition out of Formation
   (`transition-preconditions.ts`, a rule about a transition), the seed and the
   backfills. `committee-stage-keys.scan.spec.ts` fails on any other backend
-  source naming a committee stage key.
+  source naming a committee stage key, and since PR 3 on any frontend source
+  (none is allowed there).
 - **Spec helper:** `common/testing/committee-in-stage.ts` puts a committee in
   a live stage allowing every direct change, for db-specs about something else.
 - **Runbook, after PR 2 deploys:** `npm run backfill:acc255-dissolved-membership`
@@ -2646,6 +2651,51 @@ are deleted. **The frontend still reads keys** (`COMMITTEE_HEADER_POLICY` in
   per organisation, the platform organisation excluded, customers refused
   (exit 1). Until it runs, existing organisations' Dissolved committees still
   allow member changes.
+
+#### 2.18.2 What the screens read (ACC-255 PR 3)
+
+No screen reads a stage key, name or order to decide anything, and none keeps
+a copy of a server rule.
+
+- **The committee page** (`foundation/committees/committee-offers.ts`,
+  `committeeOffers(stageRules, permissions)`): Edit where the stage allows
+  `edit_details` and the person holds `committees:edit_details`; the
+  "Locked while the terms are under review" line to the same people where the
+  stage allows no edit and is neither `IN_FORCE` nor `DISSOLVING` (Terms
+  Review, seeded); Add member, Change role and Remove each where the stage
+  allows it AND the person holds its key. A missing `stageRules` reads as
+  `NO_STAGE_RULES` (nothing allowed, no flags, D14). Request a change follows
+  the server's own `canRaise`, which reads `request_change`. The header's
+  transition buttons are the live workflow's.
+- **Refusals** (`committee-stage-refusal.ts`): the edit dialog, Add member,
+  Change role and Remove read a 409 `STAGE_ACTION_NOT_ALLOWED` by its code and
+  say the matching `committee.refusal.*` sentence, the stage name picked in the
+  reader's language (`LanguageService.bilingual`), or the no-stage form. Add
+  member reads the code before the status, so the stage's 409 is not "already
+  a member".
+- **Form choices:** the edit dialog and Request a change read
+  `GET /committees/form-choices` (§2.18) for the committee types and the unit
+  tree, in one read with one Retry; the committees list is its own read.
+- **The workflow setup screens** say every engine refusal from its code
+  (`foundation/workflow/workflow-refusal.ts`, `plainWorkflowRefusalKey()`,
+  called first at every write): `WORKFLOW_TEMPLATE_PROTECTED` by its `edit`
+  detail (nine sentences, `workflow.refusal.protected.*`, and the general
+  `templateProtected` for an edit not listed), the retired action and
+  validator, and PR 2's `STAGE_ACTION_*` / `STAGE_FLAG_*` codes. The screens'
+  own fallbacks are `workflow.error.*` keys. `workflow-refusal.screens.spec.ts`
+  drives each screen to its write in both languages.
+- **Enum values in words** (`foundation/workflow/workflow-labels.ts`,
+  `workflowLabelKey(kind, value)`): approval mode, threshold, assignee
+  strategy, trigger condition and record type; a value nobody listed reads
+  "Unknown" (`workflow.valueUnknown`), never its code. `npm run
+  check:workflow-enum-display` fails a template that prints one of those
+  fields directly.
+- **The stages page (ACC-254)** fits its column: Edit is the row's next step,
+  Move up / Move down / Remove a worded ⋯ menu, the actions track a fixed 96 px
+  and the expand track 32 px; the transition table inside a stage has fixed
+  widths, ellipsis and the whole label in a tooltip.
+  `workflow-stage-list.layout.spec.ts` measures it at 1280, 1440 and 1920 in
+  both languages.
 
 ---
 
@@ -4340,21 +4390,24 @@ Ahmad's rules of 15 Oct and decisions of 18 Oct). A committee is edited directly
 only while it is FORMING; after approval its details change only through a
 change request (§3.18; its screens are ACC-240).
 
-- **The record page's read carries the stage KEY.** `GET /committees/:id` is
-  `CommitteesService.getCommitteeDetail()`: the row plus `currentStageKey` and
-  `isDissolving`, from the same `committeeStagesAndCounts()` the list rows read,
+- **The record page's read carries the stage's rules.** `GET /committees/:id` is
+  `CommitteesService.getCommitteeDetail()`: the row plus `stageRules` (ACC-255),
+  `isDissolving` and `currentStageKey` (read by no screen since ACC-255 PR 3), from the same `committeeStagesAndCounts()` the list rows read,
   so the two cannot disagree. Internal callers keep `getCommitteeById()`.
-- **What the header offers, by key** (`frontend/.../committees/committee-stage.ts`,
-  `committeeHeaderOffers()`):
-  - `formation`: Edit, with `committees:edit_details`.
-  - `terms_review`: no Edit; the locked line "Locked while the terms are under
+- **What the header offers, by the stage's rules** (since ACC-255 PR 3:
+  `frontend/.../committees/committee-offers.ts`, §2.18.2; the key-based
+  `committee-stage.ts` is deleted):
+  - Where the stage allows `edit_details` (seeded: Formation): Edit, with
+    `committees:edit_details`.
+  - Where it allows no edit and is neither in force nor dissolving (seeded:
+    Terms Review): no Edit; the locked line "Locked while the terms are under
     review. Revise Terms to change it." for holders of `committees:edit_details`.
     Revise Terms is the seeded RETURN transition (terms_review → formation,
     `committees:manage`).
-  - Any other key, or none: nothing new. The transition buttons stay as the
-    live workflow renders them.
-  - The page reads the committee again after every transition, because the key
-    just changed.
+  - Anywhere else: nothing new. The transition buttons stay as the live
+    workflow renders them.
+  - The page reads the committee again after every transition, because the
+    stage just changed.
   - **The API refuses a direct edit where the stage does not allow
     `edit_details`** (ACC-241, built in ACC-255 PR 2, §2.18.1): 409
     `STAGE_ACTION_NOT_ALLOWED` naming the stage. Seeded, only Formation allows
@@ -4543,9 +4596,9 @@ ACC-255 PR 2, §2.18.1).
   stage flagged `APPLIES_APPROVED_CHANGE`; the other moves' destinations are
   in the file. An action is allowed where BOTH allow it. The service and every
   response's `actions` flags ask the policy, and name no stage themselves. The
-  committee's own header rule (Edit only in Formation) is still keyed on the
-  screens until ACC-255 PR 3: `COMMITTEE_HEADER_POLICY` in
-  `frontend/.../committees/committee-stage.ts`. Its API half is ACC-241, built.
+  committee's own header rule (Edit only where the stage allows it) reads the
+  stage's rules on the screens since ACC-255 PR 3 (`committee-offers.ts`,
+  §2.18.2; `COMMITTEE_HEADER_POLICY` is deleted). Its API half is ACC-241, built.
 - **Refusals** are `change-request-refusal.ts`, each a code a screen says in
   either language. Another organisation's request or committee is the
   identical 404 an invented id gets.

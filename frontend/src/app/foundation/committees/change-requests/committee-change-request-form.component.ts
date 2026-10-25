@@ -17,8 +17,8 @@ import { AmConfirmService } from '../../../shared/components/confirm/am-confirm.
 import { FieldComponent } from '../../../shared/components/field/field.component';
 import { OverlaySelectComponent } from '../../../shared/components/overlay-select/overlay-select.component';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
-import { LookupService, LookupValueDto } from '../../lookup/services/lookup.service';
-import { OrgUnitCascadeOption, OrgUnitDto, OrgUnitService, buildOrgUnitCascadeOptions, orgUnitDisplayName } from '../../organization/services/org-unit.service';
+import { LookupValueDto } from '../../lookup/services/lookup.service';
+import { OrgUnitCascadeOption, OrgUnitDto, buildOrgUnitCascadeOptions, orgUnitDisplayName } from '../../organization/services/org-unit.service';
 import { LeaveGuarded } from '../../roles/permission-matrix/leave-guard';
 import { referenceOptions } from '../committee-references';
 import { COMMITTEE_MEETING_FREQUENCIES, CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../services/committee.service';
@@ -347,8 +347,6 @@ export class CommitteeChangeRequestFormComponent implements LeaveGuarded, OnDest
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
   private readonly committees = inject(CommitteeService);
-  private readonly lookups = inject(LookupService);
-  private readonly orgUnits = inject(OrgUnitService);
   private readonly changeRequests = inject(ChangeRequestService);
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
@@ -586,7 +584,6 @@ export class CommitteeChangeRequestFormComponent implements LeaveGuarded, OnDest
 
   private loadLists(): void {
     this.loadList('types');
-    this.loadList('units');
     this.loadList('committees');
   }
 
@@ -594,12 +591,26 @@ export class CommitteeChangeRequestFormComponent implements LeaveGuarded, OnDest
   private loadList(list: ChoiceList): void {
     this.failedLists.update((s) => new Set([...s].filter((l) => l !== list)));
     const fail = () => this.failedLists.update((s) => new Set([...s, list]));
-    if (list === 'types') {
+    if (list === 'types' || list === 'units') {
+      // ACC-255 (plan §10.5) — types and units in ONE read, GET
+      // /committees/form-choices (committees:edit_details is enough). A Retry
+      // on either reads both again; a failure is said in both fields' slots.
+      this.failedLists.update((s) => new Set([...s].filter((l) => l !== 'types' && l !== 'units')));
       this.typesLoaded.set(false);
-      this.lookups.getValues('committee_type').subscribe({ next: (v) => (this.types.set(v), this.typesLoaded.set(true)), error: () => (fail(), this.typesLoaded.set(true)) });
-    } else if (list === 'units') {
       this.unitsLoaded.set(false);
-      this.orgUnits.getFlat().subscribe({ next: (v) => (this.units.set(v), this.unitsLoaded.set(true)), error: () => (fail(), this.unitsLoaded.set(true)) });
+      this.committees.formChoices().subscribe({
+        next: ({ committeeTypes, orgUnits }) => {
+          this.types.set(committeeTypes);
+          this.units.set(orgUnits);
+          this.typesLoaded.set(true);
+          this.unitsLoaded.set(true);
+        },
+        error: () => {
+          this.failedLists.update((s) => new Set([...s, 'types', 'units']));
+          this.typesLoaded.set(true);
+          this.unitsLoaded.set(true);
+        },
+      });
     } else {
       this.committeesLoaded.set(false);
       this.committees.listCommittees().subscribe({

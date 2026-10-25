@@ -20,6 +20,7 @@ import { CommitteeDetailDto, CommitteeService } from '../services/committee.serv
 import { CommitteeChangeRequestPageComponent } from './committee-change-request-page.component';
 import { ChangeRequestDto, ChangeRequestService, ChangeValues } from './change-request.service';
 import { REQUEST, fakePhone } from './change-request.testing';
+import { ACTIVE_RULES } from '../testing';
 
 // ACC-240 — the four dialogs, MEASURED in both languages, in the real theme and
 // font, opened from the real request page (plan §3.4, §4):
@@ -64,7 +65,7 @@ const LIVE: CommitteeDetailDto = {
   isActive: true,
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-01T00:00:00Z',
-  currentStageKey: 'active',
+  stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: null,
 };

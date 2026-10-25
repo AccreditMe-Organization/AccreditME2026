@@ -41,7 +41,8 @@ import { CommitteeMemberFormComponent } from '../committee-member-form/committee
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { COMMITTEE_HEADER_GRID, COMMITTEE_PANEL_GRID } from './committee-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
-import { committeeHeaderOffers } from '../../committee-stage';
+import { committeeOffers } from '../../committee-offers';
+import { CommitteeStageRefusal, committeeStageRefusal } from '../../committee-stage-refusal';
 import { ChangeRequestBannerComponent, ChangeRequestBannerState } from '../../change-requests/change-request-banner.component';
 import { CommitteeChangeRequestsPanelComponent } from '../../change-requests/committee-change-requests-panel.component';
 import { ChangeRequestDto, ChangeRequestService } from '../../change-requests/change-request.service';
@@ -75,7 +76,13 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     CommitteeChangeRequestsPanelComponent,
   ],
   template: `
-    @if (error()) {
+    @if (stageRefusal(); as r) {
+      <p-message
+        severity="error"
+        [text]="r.key | translate: { stage: stageName(r) }"
+        data-testid="committee-stage-refusal"
+      />
+    } @else if (error()) {
       <p-message severity="error" [text]="error()! | translate" />
     }
 
@@ -151,10 +158,10 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                   (transitioned)="onWorkflowTransitioned($event)"
                 />
               }
-              <!-- ACC-238 — Edit in Formation only, decided by the stage KEY
-                   (committee-stage.ts), after the transition buttons. canEdit()
-                   is the endpoint's own permission (committees:edit_details),
-                   read here as well so the gate is visible where it applies. -->
+              <!-- ACC-238 / ACC-255 — Edit where the server says the stage
+                   allows edit_details (Formation, on the seeded workflow), for
+                   holders of committees:edit_details (committee-offers.ts),
+                   after the transition buttons. -->
               @if (canEdit() && offers().edit) {
                 <p-button
                   [label]="'common.edit' | translate"
@@ -299,9 +306,9 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
           <app-committee-members-panel
             [committeeId]="committeeId"
             [committeeName]="committee() ? displayName(committee()!) : ''"
-            [canAddMember]="canAddMember()"
-            [canChangeRole]="canChangeMemberRole()"
-            [canRemove]="canRemoveMember()"
+            [canAddMember]="offers().addMember"
+            [canChangeRole]="offers().changeMemberRole"
+            [canRemove]="offers().removeMember"
             (addRequested)="onAddMember()"
             (changeRoleRequested)="onChangeMemberRoleRow($event)"
             (removeRequested)="onRemoveMemberRow($event)"
@@ -515,6 +522,13 @@ export class CommitteeDetailComponent implements OnInit {
   readonly membershipEvents = signal<CommitteeMembershipEventDto[]>([]);
   readonly membersLoading = signal(false);
   readonly error = signal<string | null>(null);
+  /** ACC-255 — a change the committee's stage does not allow (STAGE_ACTION_NOT_ALLOWED). */
+  readonly stageRefusal = signal<CommitteeStageRefusal | null>(null);
+
+  /** The stage's own name, in the reader's language (English when it has no Arabic). */
+  stageName(refusal: CommitteeStageRefusal): string {
+    return this.languageService.bilingual(refusal.stageNameEn ?? refusal.stageNameAr ?? '', refusal.stageNameAr);
+  }
 
   readonly allCommittees = signal<CommitteeListItemDto[]>([]);
   readonly committeeTypes = signal<LookupValueDto[]>([]);
@@ -578,8 +592,17 @@ export class CommitteeDetailComponent implements OnInit {
   // never computed at runtime, so checking the specific string here is correct
   // and not a narrowing.
   readonly canEdit = computed(() => this.navigationAccess.hasPermission('committees:edit_details'));
-  // ACC-238 — Edit and the Terms Review locked line, by the committee's stage KEY.
-  readonly offers = computed(() => committeeHeaderOffers(this.committee()?.currentStageKey, this.canEdit()));
+  // ACC-255 — Edit, the locked line and the member actions: the server's
+  // stageRules for the committee's current stage, with each action's own
+  // permission (committee-offers.ts). No stage key is read.
+  readonly offers = computed(() =>
+    committeeOffers(this.committee()?.stageRules, {
+      editDetails: this.canEdit(),
+      addMember: this.canAddMember(),
+      removeMember: this.canRemoveMember(),
+      changeMemberRole: this.canChangeMemberRole(),
+    }),
+  );
 
   // ACC-240 — the committee's open change request and canRaise, one read.
   private readonly changeRequests = inject(ChangeRequestService);
@@ -774,14 +797,18 @@ export class CommitteeDetailComponent implements OnInit {
       message: this.translate.instant('committee.confirmRemoveMemberMessage'),
       acceptLabel: this.translate.instant('common.remove'),
       accept: () => {
+        this.stageRefusal.set(null);
         this.committeeService.removeMember(this.committeeId, member.id, {}).subscribe({
           next: () => {
             this.loadMembers();
             this.loadMembershipEvents();
             this.membersPanel()?.reload();
           },
-          error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, 'committee.errorAction')),
+          error: (err: unknown) => {
+            // ACC-255 — refused by the committee's stage: said, with its name.
+            this.stageRefusal.set(committeeStageRefusal(err));
+            if (!this.stageRefusal()) this.error.set(extractErrorMessage(err, 'committee.errorAction'));
+          },
         });
       },
     });

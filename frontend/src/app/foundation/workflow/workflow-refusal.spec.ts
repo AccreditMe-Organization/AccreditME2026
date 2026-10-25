@@ -128,3 +128,52 @@ describe('workflow refusals (ACC-208)', () => {
     expect(openStageTasks(refusal(409, { code: 'STAGE_DEADLINE_BEFORE_TASKS' }))).toBeNull();
   });
 });
+
+// ACC-255 PR 3 (plan §10.4) — the refusals PR 2 added, the two retired ones, and
+// the protected workflow by WHICH edit was refused.
+describe('workflow refusals (ACC-255 PR 3)', () => {
+  it('gives every new plain refusal a key in both languages', () => {
+    const codes = [
+      'ACTION_TYPE_RETIRED',
+      'VALIDATOR_RETIRED',
+      'STAGE_ACTION_NOT_ALLOWED',
+      'STAGE_ACTION_UNKNOWN',
+      'STAGE_FLAG_UNKNOWN',
+      'STAGE_FLAG_EXACTLY_ONE',
+    ];
+    for (const code of codes) {
+      const key = plainWorkflowRefusalKey(refusal(409, { code }));
+      expect(key).withContext(code).not.toBeNull();
+      expect(typeof lookup(en, key!)).withContext(`en ${key}`).toBe('string');
+      expect(typeof lookup(ar, key!)).withContext(`ar ${key}`).toBe('string');
+    }
+  });
+
+  it('says each of the nine protected edits in its own sentence, in both languages', () => {
+    const edits = ['CREATE_TEMPLATE', 'REPLACE_DEFAULT', 'DEACTIVATE', 'CHANGE_TYPE', 'ADD_STAGE', 'REMOVE_STAGE', 'STAGE_FIELD', 'TRANSITION', 'STAGE_TASKS'];
+    const sentences = new Set<unknown>();
+    for (const edit of edits) {
+      const key = plainWorkflowRefusalKey(refusal(409, { code: 'WORKFLOW_TEMPLATE_PROTECTED', edit }));
+      expect(key).withContext(edit).toBe(`workflow.refusal.protected.${edit}`);
+      expect(typeof lookup(en, key!)).withContext(`en ${edit}`).toBe('string');
+      expect(typeof lookup(ar, key!)).withContext(`ar ${edit}`).toBe('string');
+      sentences.add(lookup(en, key!));
+    }
+    expect(sentences.size).withContext('nine different sentences').toBe(9);
+  });
+
+  it('says the general sentence for an edit it does not know, or none', () => {
+    for (const edit of ['SOMETHING_NEW', undefined, 7, 'toString']) {
+      expect(plainWorkflowRefusalKey(refusal(409, { code: 'WORKFLOW_TEMPLATE_PROTECTED', edit })))
+        .withContext(String(edit))
+        .toBe('workflow.refusal.templateProtected');
+    }
+  });
+
+  it('gives every workflow screen fallback a key in both languages', () => {
+    for (const key of ['updateFailed', 'removeFailed', 'saveFailed', 'reorderFailed', 'setDefaultFailed', 'deactivateFailed', 'invalidHeadersJson', 'invalidValidatorJson']) {
+      expect(typeof lookup(en, `workflow.error.${key}`)).withContext(`en ${key}`).toBe('string');
+      expect(typeof lookup(ar, `workflow.error.${key}`)).withContext(`ar ${key}`).toBe('string');
+    }
+  });
+});
