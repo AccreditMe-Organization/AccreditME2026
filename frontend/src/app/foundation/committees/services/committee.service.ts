@@ -2,6 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import type { LookupValueDto } from '../../lookup/services/lookup.service';
+import type { OrgUnitDto } from '../../organization/services/org-unit.service';
 
 export const COMMITTEE_MEETING_FREQUENCIES = [
   'WEEKLY',
@@ -96,6 +98,12 @@ export interface CommitteeDetailDto extends CommitteeDto {
   isDissolving: boolean;
   stageRules: CommitteeStageRulesDto;
   typeValue: CommitteeTypeValueDto | null;
+}
+
+/** GET /committees/form-choices (ACC-255, plan §10.5). */
+export interface CommitteeFormChoicesDto {
+  committeeTypes: LookupValueDto[];
+  orgUnits: OrgUnitDto[];
 }
 
 export interface CommitteeMemberDto {
@@ -207,6 +215,18 @@ export class CommitteeService {
 
   listCommittees(): Observable<CommitteeListItemDto[]> {
     return this.http.get<CommitteeListItemDto[]>(this.base);
+  }
+
+  /**
+   * ACC-255 (plan §10.5) — what the committee dialogs choose from: the
+   * committee types the organisation offers and its unit tree, exactly as
+   * the lookup and unit lists serve them, for anyone who may create OR edit a
+   * committee. So a tenant-made role that edits committees without
+   * lookups:view or org:view gets its lists rather than a 403 its Retry can
+   * never get past.
+   */
+  formChoices(): Observable<CommitteeFormChoicesDto> {
+    return this.http.get<CommitteeFormChoicesDto>(`${this.base}/form-choices`);
   }
 
   getById(id: string): Observable<CommitteeDetailDto> {

@@ -7,15 +7,18 @@ import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
-import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../../services/committee.service';
-import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
-import { OrgUnitDto, OrgUnitService } from '../../../organization/services/org-unit.service';
+import { CommitteeDetailDto, CommitteeFormChoicesDto, CommitteeListItemDto, CommitteeService } from '../../services/committee.service';
+import { LookupValueDto } from '../../../lookup/services/lookup.service';
 import { CommitteeFormComponent } from './committee-form.component';
 import { FORMATION_RULES } from '../../testing';
 
 // ACC-240 — a picker whose list fails to load says so in its field's hint slot,
 // with Retry, instead of opening an empty list that says nothing. Retry reads
 // that list again, and only that list. Read from the REAL translation files.
+//
+// ACC-255 (plan §10.5) — the committee types and the unit tree come in ONE read,
+// GET /committees/form-choices, so they fail together and one Retry reads both.
+// The committees list is its own read.
 
 const DETAIL: CommitteeDetailDto = {
   id: 'self',
@@ -43,8 +46,7 @@ const DETAIL: CommitteeDetailDto = {
 describe('CommitteeFormComponent — a picker list that fails to load (ACC-240)', () => {
   preserveDocumentLanguage();
   let fixture: ComponentFixture<CommitteeFormComponent>;
-  let types: Subject<LookupValueDto[]>[];
-  let units: Subject<OrgUnitDto[]>[];
+  let choices: Subject<CommitteeFormChoicesDto>[];
   let committees: Subject<CommitteeListItemDto[]>[];
 
   /** Each read returns a fresh stream, so a Retry is a second, separate read. */
@@ -55,8 +57,7 @@ describe('CommitteeFormComponent — a picker list that fails to load (ACC-240)'
   };
 
   function render(lang: 'en' | 'ar' = 'en'): void {
-    types = [];
-    units = [];
+    choices = [];
     committees = [];
     TestBed.configureTestingModule({
       imports: [CommitteeFormComponent],
@@ -67,10 +68,14 @@ describe('CommitteeFormComponent — a picker list that fails to load (ACC-240)'
         ConfirmationService,
         {
           provide: CommitteeService,
-          useValue: { listCommittees: stream(committees), update: () => of(DETAIL), create: () => of(DETAIL), getById: () => of(DETAIL) },
+          useValue: {
+            listCommittees: stream(committees),
+            formChoices: stream(choices),
+            update: () => of(DETAIL),
+            create: () => of(DETAIL),
+            getById: () => of(DETAIL),
+          },
         },
-        { provide: LookupService, useValue: { getValues: stream(types) } },
-        { provide: OrgUnitService, useValue: { getFlat: stream(units) } },
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -91,43 +96,42 @@ describe('CommitteeFormComponent — a picker list that fails to load (ACC-240)'
     (document.querySelector(`[data-cf-field="${field}"] .am-field__message`)?.textContent ?? '').replace(/\s+/g, ' ').trim();
   const retry = (field: string) => document.querySelector(`[data-cf-field="${field}"] [data-testid="field-hint-action"]`) as HTMLButtonElement | null;
 
-  it('the type list fails: its field says so with Retry; the other fields keep their own hints', () => {
+  it('the choices read fails: Committee type and Owning unit say so with Retry; Parent and Reports to keep their own hints', () => {
     render();
-    types[0]!.error(new Error('down'));
-    units[0]!.next([]);
+    choices[0]!.error(new Error('down'));
     committees[0]!.next([]);
     fixture.detectChanges();
 
     // Non-vacuity first: a field whose list arrived still shows its own hint.
-    expect(message('orgUnitId')).toBe('Active units only');
+    expect(message('parentCommitteeId')).not.toBe("Couldn't load the list. Retry");
+    expect(retry('parentCommitteeId')).toBeNull();
     expect(message('typeValueId')).toBe("Couldn't load the list. Retry");
+    expect(message('orgUnitId')).toBe("Couldn't load the list. Retry");
     expect(retry('typeValueId')).not.toBeNull();
-    expect(retry('orgUnitId')).toBeNull();
+    expect(retry('orgUnitId')).not.toBeNull();
   });
 
-  it('Retry reads only the failed list again; the line goes, and the list arrives', () => {
+  it('Retry on either reads the choices once again; both lines go, both lists arrive, the committees are not read again', () => {
     render();
-    types[0]!.error(new Error('down'));
-    units[0]!.next([]);
+    choices[0]!.error(new Error('down'));
     committees[0]!.next([]);
     fixture.detectChanges();
 
     retry('typeValueId')!.click();
     fixture.detectChanges();
-    expect([types.length, units.length, committees.length]).toEqual([2, 1, 1]);
+    expect([choices.length, committees.length]).toEqual([2, 1]);
     expect(retry('typeValueId')).toBeNull();
+    expect(retry('orgUnitId')).toBeNull();
 
-    types[1]!.next([{ id: 'type-1', key: 'quality', labelEn: 'Quality Committee', labelAr: null } as LookupValueDto]);
+    choices[1]!.next({
+      committeeTypes: [{ id: 'type-1', key: 'quality', labelEn: 'Quality Committee', labelAr: null } as LookupValueDto],
+      orgUnits: [],
+    });
     fixture.detectChanges();
     expect(message('typeValueId')).toBe('');
+    expect(message('orgUnitId')).toBe('Active units only');
     expect(fixture.componentInstance.typesFailed()).toBeFalse();
-  });
-
-  it('the units list fails: Owning unit says so instead of "Active units only"', () => {
-    render();
-    units[0]!.error(new Error('down'));
-    fixture.detectChanges();
-    expect(message('orgUnitId')).toBe("Couldn't load the list. Retry");
+    expect(fixture.componentInstance.unitsFailed()).toBeFalse();
   });
 
   it('the committees list fails: Parent and Reports to both say so, and one Retry reads it once', () => {
@@ -145,7 +149,7 @@ describe('CommitteeFormComponent — a picker list that fails to load (ACC-240)'
 
   it('…in Arabic', () => {
     render('ar');
-    units[0]!.error(new Error('down'));
+    choices[0]!.error(new Error('down'));
     fixture.detectChanges();
     expect(message('orgUnitId')).toBe('تعذّر تحميل القائمة. إعادة المحاولة');
   });

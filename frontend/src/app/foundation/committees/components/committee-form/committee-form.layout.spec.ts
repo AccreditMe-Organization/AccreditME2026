@@ -109,7 +109,21 @@ describe('CommitteeForm — three tabs against the 420px body cap (ACC-238)', ()
         provideFormatTesting(),
         ConfirmationService,
         providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
-        { provide: CommitteeService, useValue: { listCommittees: () => of(LIST), update, create: update, getById: () => of(EDITING) } },
+        {
+          provide: CommitteeService,
+          useValue: {
+            listCommittees: () => of(LIST),
+            // ACC-255 (plan §10.5) — the dialog's types and units, in one read.
+            formChoices: () =>
+              of({
+                committeeTypes: [{ id: 'type-1', labelEn: 'Standing committee', labelAr: 'لجنة دائمة' }],
+                orgUnits: [{ id: 'unit-root', nameEn: 'Al Nakheel Specialist Hospital', nameAr: 'مستشفى النخيل التخصصي', parentId: null, isActive: true }],
+              }),
+            update,
+            create: update,
+            getById: () => of(EDITING),
+          },
+        },
         { provide: LookupService, useValue: { getValues: () => of([{ id: 'type-1', labelEn: 'Standing committee', labelAr: 'لجنة دائمة' }]) } },
         {
           provide: OrgUnitService,

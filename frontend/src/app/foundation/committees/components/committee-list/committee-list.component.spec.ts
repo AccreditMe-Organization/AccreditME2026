@@ -230,7 +230,13 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     add!.click();
     fixture.detectChanges();
     expect(fixture.componentInstance.formVisible()).toBeTrue();
-    // The add form reads its own lookups as it always has.
+    // The add form reads its own lists: types and units in one read (ACC-255,
+    // plan §10.5), the committees in another.
+    http.expectOne(`${API}/committees/form-choices`).flush({ committeeTypes: [], orgUnits: [] });
+    // …never the lookup or unit lists, which need lookups:view and org:view
+    // that a tenant-made committee editor may not hold.
+    http.expectNone(`${API}/lookups/categories/committee_type/values`);
+    http.expectNone(`${API}/organization/units/flat`);
     http.match(() => true).forEach((r) => r.flush([]));
   }));
 

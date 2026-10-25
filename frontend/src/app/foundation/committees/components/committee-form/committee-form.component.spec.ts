@@ -79,7 +79,21 @@ describe('CommitteeFormComponent', () => {
         provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
         provideFormatTesting(),
         ConfirmationService,
-        { provide: CommitteeService, useValue: { listCommittees: () => of(LIST), update, create, getById } },
+        {
+          provide: CommitteeService,
+          useValue: {
+            listCommittees: () => of(LIST),
+            // ACC-255 (plan §10.5) — the dialog's types and units, in one read.
+            formChoices: () =>
+              of({
+                committeeTypes: [{ id: 'type-1', labelEn: 'Quality', labelAr: null }],
+                orgUnits: [{ id: 'unit-root', nameEn: 'Root', nameAr: null, parentId: null, isActive: true }],
+              }),
+            update,
+            create,
+            getById,
+          },
+        },
         { provide: LookupService, useValue: { getValues: () => of([{ id: 'type-1', labelEn: 'Quality', labelAr: null }]) } },
         {
           provide: OrgUnitService,

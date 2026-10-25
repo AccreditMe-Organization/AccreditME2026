@@ -77,7 +77,13 @@ describe('CommitteeFormComponent — what Parent committee and Reports to are fo
         ConfirmationService,
         {
           provide: CommitteeService,
-          useValue: { listCommittees: stream(committees), update: () => of(DETAIL), create: () => of(DETAIL), getById: () => of(DETAIL) },
+          useValue: {
+            listCommittees: stream(committees),
+            formChoices: () => of({ committeeTypes: [], orgUnits: [] }),
+            update: () => of(DETAIL),
+            create: () => of(DETAIL),
+            getById: () => of(DETAIL),
+          },
         },
         { provide: LookupService, useValue: { getValues: () => of([]) } },
         { provide: OrgUnitService, useValue: { getFlat: () => of([]) } },

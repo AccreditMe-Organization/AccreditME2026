@@ -107,6 +107,12 @@ describe('CommitteeChangeRequestFormComponent (ACC-240)', () => {
           useValue: {
             getById: () => of(COMMITTEE),
             listCommittees: () => of([LIST_ITEM('c-1', 'Quality Council'), LIST_ITEM('c-9', 'Board'), LIST_ITEM('c-8', 'Medical Executive Committee')]),
+            // ACC-255 (plan §10.5) — Request a change's types and units, in one read.
+            formChoices: () =>
+              of({
+                committeeTypes: [{ id: 'type-1', labelEn: 'Quality', labelAr: 'الجودة' }],
+                orgUnits: [{ id: 'unit-root', nameEn: 'Hospital', nameAr: null, parentId: null, isActive: true }],
+              }),
           },
         },
         { provide: LookupService, useValue: { getValues: () => of([{ id: 'type-1', labelEn: 'Quality', labelAr: 'الجودة' }]) } },
