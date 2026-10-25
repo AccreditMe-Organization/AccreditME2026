@@ -63,7 +63,9 @@ import { AmNumberPipe } from '../../../core/formatting';
                 icon="pi pi-pencil"
                 [text]="true"
                 size="small"
+                [ariaLabel]="'platform.editPlanNamed' | translate: { plan: plan.nameEn }"
                 [routerLink]="['/platform/plans', plan.id]"
+                data-testid="plan-edit"
               />
             </td>
           </tr>

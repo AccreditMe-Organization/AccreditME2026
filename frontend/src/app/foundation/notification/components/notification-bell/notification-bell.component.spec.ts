@@ -1,4 +1,9 @@
 import { TestBed } from '@angular/core/testing';
+import { TranslateService } from '@ngx-translate/core';
+import en from '../../../../../assets/i18n/en.json';
+import ar from '../../../../../assets/i18n/ar.json';
+import { loadTranslationsForTest } from '../../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { provideRouter } from '@angular/router';
 import { provideTranslateService } from '@ngx-translate/core';
 import { of } from 'rxjs';
@@ -56,5 +61,45 @@ describe('NotificationBellComponent — task notifications open the task page (A
   it('still marks the notification read when it is opened', () => {
     create().onItemClick(item({}));
     expect(markRead).toHaveBeenCalledWith('n-1');
+  });
+});
+
+// ACC-264 — the bell is an icon: its name is what a screen reader hears, and the
+// unread badge is drawn, not read, so the name carries the count.
+describe('NotificationBellComponent — the bell is named (ACC-264)', () => {
+  preserveDocumentLanguage();
+
+  function render(language: 'en' | 'ar', unread: number): HTMLElement {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [NotificationBellComponent],
+      providers: [
+        provideRouter([]),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        { provide: NotificationService, useValue: { markRead: () => of({}), unreadCount: () => of({ count: unread }), list: () => of({ data: [] }) } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(language);
+    const fixture = TestBed.createComponent(NotificationBellComponent);
+    fixture.componentInstance.unreadCount.set(unread);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+  const name = (el: HTMLElement) => el.querySelector('[data-testid="notification-bell"] button')!.getAttribute('aria-label');
+
+  it('names the bell with how many are unread', () => {
+    expect(name(render('en', 3))).toBe('Notifications, 3 unread');
+    expect(name(render('en', 1))).toBe('Notifications, 1 unread');
+    expect(name(render('en', 0))).toBe('Notifications, 0 unread');
+  });
+
+  it('in Arabic, with the plural form each count takes', () => {
+    expect(name(render('ar', 0))).toBe('الإشعارات، لا جديد');
+    expect(name(render('ar', 1))).toBe('الإشعارات، إشعار واحد غير مقروء');
+    expect(name(render('ar', 2))).toBe('الإشعارات، إشعاران غير مقروءين');
+    expect(name(render('ar', 5))).toBe('الإشعارات، 5 إشعارات غير مقروءة');
+    expect(name(render('ar', 11))).toBe('الإشعارات، 11 إشعارًا غير مقروء');
   });
 });
