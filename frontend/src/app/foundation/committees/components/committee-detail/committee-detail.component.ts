@@ -41,7 +41,7 @@ import { CommitteeMemberFormComponent } from '../committee-member-form/committee
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { COMMITTEE_HEADER_GRID, COMMITTEE_PANEL_GRID } from './committee-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
-import { committeeHeaderOffers } from '../../committee-stage';
+import { committeeOffers } from '../../committee-offers';
 import { ChangeRequestBannerComponent, ChangeRequestBannerState } from '../../change-requests/change-request-banner.component';
 import { CommitteeChangeRequestsPanelComponent } from '../../change-requests/committee-change-requests-panel.component';
 import { ChangeRequestDto, ChangeRequestService } from '../../change-requests/change-request.service';
@@ -151,11 +151,11 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                   (transitioned)="onWorkflowTransitioned($event)"
                 />
               }
-              <!-- ACC-238 — Edit in Formation only, decided by the stage KEY
-                   (committee-stage.ts), after the transition buttons. canEdit()
-                   is the endpoint's own permission (committees:edit_details),
-                   read here as well so the gate is visible where it applies. -->
-              @if (canEdit() && offers().edit) {
+              <!-- ACC-238 / ACC-255 — Edit where the server says the stage
+                   allows edit_details (Formation, on the seeded workflow), for
+                   holders of committees:edit_details (committee-offers.ts),
+                   after the transition buttons. -->
+              @if (offers().edit) {
                 <p-button
                   [label]="'common.edit' | translate"
                   icon="pi pi-pencil"
@@ -299,9 +299,9 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
           <app-committee-members-panel
             [committeeId]="committeeId"
             [committeeName]="committee() ? displayName(committee()!) : ''"
-            [canAddMember]="canAddMember()"
-            [canChangeRole]="canChangeMemberRole()"
-            [canRemove]="canRemoveMember()"
+            [canAddMember]="offers().addMember"
+            [canChangeRole]="offers().changeMemberRole"
+            [canRemove]="offers().removeMember"
             (addRequested)="onAddMember()"
             (changeRoleRequested)="onChangeMemberRoleRow($event)"
             (removeRequested)="onRemoveMemberRow($event)"
@@ -578,8 +578,17 @@ export class CommitteeDetailComponent implements OnInit {
   // never computed at runtime, so checking the specific string here is correct
   // and not a narrowing.
   readonly canEdit = computed(() => this.navigationAccess.hasPermission('committees:edit_details'));
-  // ACC-238 — Edit and the Terms Review locked line, by the committee's stage KEY.
-  readonly offers = computed(() => committeeHeaderOffers(this.committee()?.currentStageKey, this.canEdit()));
+  // ACC-255 — Edit, the locked line and the member actions: the server's
+  // stageRules for the committee's current stage, with each action's own
+  // permission (committee-offers.ts). No stage key is read.
+  readonly offers = computed(() =>
+    committeeOffers(this.committee()?.stageRules, {
+      editDetails: this.canEdit(),
+      addMember: this.canAddMember(),
+      removeMember: this.canRemoveMember(),
+      changeMemberRole: this.canChangeMemberRole(),
+    }),
+  );
 
   // ACC-240 — the committee's open change request and canRaise, one read.
   private readonly changeRequests = inject(ChangeRequestService);

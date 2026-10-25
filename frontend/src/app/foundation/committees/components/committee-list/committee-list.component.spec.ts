@@ -14,6 +14,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { CommitteeListItemDto } from '../../services/committee.service';
 import { CommitteeListComponent, committeeListStatus } from './committee-list.component';
+import { ACTIVE_RULES } from '../../testing';
 
 // ACC-120 slice 4 — the committees list (plan: step-120-4-committees-list.md).
 // Six columns from GET /committees; search over both names; sort by name, type,
@@ -44,7 +45,7 @@ function committee(id: string, over: Partial<CommitteeListItemDto> = {}): Commit
     memberCount: 4,
     currentStageNameEn: 'Active',
     currentStageNameAr: 'نشطة',
-    currentStageKey: 'active',
+    stageRules: ACTIVE_RULES,
     isDissolving: false,
     typeValue: null,
     ...over,

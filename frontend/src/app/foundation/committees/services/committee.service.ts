@@ -47,14 +47,32 @@ export interface CommitteeListItemDto extends CommitteeDto {
   // by isArabic() selection, never `| translate`.
   currentStageNameEn: string | null;
   currentStageNameAr: string | null;
-  // ACC-233 — the current stage's stable key (null for a stage the tenant added),
-  // and the SERVER's answer to "is it being dissolved, or has it been?". The
-  // dialog's pickers leave those committees out; no screen keeps its own list
-  // of keys.
-  currentStageKey: string | null;
+  // ACC-233 — the SERVER's answer to "is it being dissolved, or has it been?"
+  // (its stage's DISSOLVING flag since ACC-255). The dialog's pickers leave
+  // those committees out.
   isDissolving: boolean;
+  /** ACC-255 — what the current stage allows and means, as the server answers it. */
+  stageRules: CommitteeStageRulesDto;
   /** ACC-246 — the committee's own type, with its label (see CommitteeTypeValueDto). */
   typeValue: CommitteeTypeValueDto | null;
+}
+
+/**
+ * ACC-255 — the engine's answer for the committee's current stage: which record
+ * actions it allows, and what it means (DISSOLVING, IN_FORCE). The writes are
+ * refused by the same answer (STAGE_ACTION_NOT_ALLOWED). A committee with no
+ * live stage allows nothing (D14). Screens combine it with the person's
+ * permission (committee-offers.ts) and never read a stage key.
+ */
+export interface CommitteeStageRulesDto {
+  actions: {
+    edit_details: boolean;
+    add_member: boolean;
+    remove_member: boolean;
+    change_member_role: boolean;
+    request_change: boolean;
+  };
+  flags: string[];
 }
 
 /**
@@ -71,12 +89,12 @@ export interface CommitteeTypeValueDto {
 }
 
 // ACC-238 — a single committee as its record page reads it (GET /committees/:id):
-// the row plus its current stage key and whether that key says it is
-// dissolving. The page offers Edit, the locked line and the rest by KEY, never by
-// a stage name. Separate from CommitteeDto for CommitteeListItemDto's reason.
+// the row plus what its current stage allows and means (ACC-255: `stageRules`,
+// the server's answer; the page never reads a stage key or name). Separate from
+// CommitteeDto for CommitteeListItemDto's reason.
 export interface CommitteeDetailDto extends CommitteeDto {
-  currentStageKey: string | null;
   isDissolving: boolean;
+  stageRules: CommitteeStageRulesDto;
   typeValue: CommitteeTypeValueDto | null;
 }
 

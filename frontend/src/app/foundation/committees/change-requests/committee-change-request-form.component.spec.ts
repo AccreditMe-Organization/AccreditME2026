@@ -18,6 +18,7 @@ import { CommitteeChangeRequestFormComponent, diffChanges } from './committee-ch
 import { ChangeRequestPreviewDto, ChangeRequestService, OpenChangeRequestDto } from './change-request.service';
 import { REQUEST } from './change-request.testing';
 import { preserveDocumentLanguage } from '../../../../testing/document-language';
+import { ACTIVE_RULES } from '../testing';
 
 const COMMITTEE: CommitteeDetailDto = {
   id: 'c-1',
@@ -37,7 +38,7 @@ const COMMITTEE: CommitteeDetailDto = {
   isActive: true,
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-01T00:00:00Z',
-  currentStageKey: 'active',
+  stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: { id: 'type-1', key: 'quality', labelEn: 'Quality', labelAr: 'الجودة', offered: true },
 };
@@ -51,7 +52,7 @@ const LIST_ITEM = (id: string, nameEn: string, over: Partial<CommitteeListItemDt
   memberCount: 7,
   currentStageNameEn: 'Active',
   currentStageNameAr: null,
-  currentStageKey: 'active',
+  stageRules: ACTIVE_RULES,
   isDissolving: false,
   ...over,
 });

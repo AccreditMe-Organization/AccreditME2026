@@ -9,6 +9,7 @@ import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.s
 import { OrgUnitDto, OrgUnitService } from '../../../organization/services/org-unit.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
+import { FORMATION_RULES } from '../../testing';
 
 // ACC-246 — Edit committee shows the committee's own values the moment it opens.
 //
@@ -42,7 +43,7 @@ const DETAIL = (over: Partial<CommitteeDetailDto> = {}): CommitteeDetailDto => (
   isActive: true,
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-18T09:00:00.123Z',
-  currentStageKey: 'formation',
+  stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: TYPE,
   ...over,

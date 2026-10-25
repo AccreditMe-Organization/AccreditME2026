@@ -11,6 +11,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../.
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { CommitteeFormComponent } from './committee-form.component';
+import { FORMATION_RULES } from '../../testing';
 
 // ACC-240 — Parent committee and Reports to say what they are for, then
 // ACC-233's line saying what their list leaves out (Ahmad, 22 Oct: both). A
@@ -36,7 +37,7 @@ const DETAIL: CommitteeDetailDto = {
   isActive: true,
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-18T09:00:00.123Z',
-  currentStageKey: 'formation',
+  stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: null,
 };

@@ -11,6 +11,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../.
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { OrgUnitDto, OrgUnitService } from '../../../organization/services/org-unit.service';
 import { CommitteeFormComponent } from './committee-form.component';
+import { FORMATION_RULES } from '../../testing';
 
 // ACC-240 — a picker whose list fails to load says so in its field's hint slot,
 // with Retry, instead of opening an empty list that says nothing. Retry reads
@@ -34,7 +35,7 @@ const DETAIL: CommitteeDetailDto = {
   isActive: true,
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-18T09:00:00.123Z',
-  currentStageKey: 'formation',
+  stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: null,
 };

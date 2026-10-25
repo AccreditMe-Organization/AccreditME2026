@@ -15,6 +15,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../.
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { CommitteeFormComponent, CommitteeFormTab } from './committee-form.component';
+import { FORMATION_RULES } from '../../testing';
 
 // ACC-238 — the three-tab committee dialog against the 420px body cap
 // (ACC-111), measured rather than assumed (ACC-120): each tab, in both
@@ -65,7 +66,7 @@ const ROW = (id: string, over: Partial<CommitteeListItemDto> = {}): CommitteeLis
   memberCount: 7,
   currentStageNameEn: 'Formation',
   currentStageNameAr: 'التشكيل',
-  currentStageKey: 'formation',
+  stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: null,
   ...over,
