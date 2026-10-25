@@ -1,5 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormBuilder, FormControl, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
@@ -12,6 +13,8 @@ import { PlanService, IPlanModule, KNOWN_MODULE_KEYS, PlanModuleAccessLevel } fr
 import { extractErrorMessage } from '../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
+import { FieldComponent } from '../../../shared/components/field/field.component';
+import { limitForSave, limitFromPlan, wholeNumber } from './plan-limits';
 
 const ACCESS_LEVEL_OPTIONS = [
   { label: 'FULL', value: 'FULL' },
@@ -22,7 +25,7 @@ const ACCESS_LEVEL_OPTIONS = [
 @Component({
   selector: 'app-plan-form',
   standalone: true,
-  imports: [PageHeaderComponent, ReactiveFormsModule, FormsModule, TranslatePipe, InputTextModule, InputNumberModule, InputNumberLatinDigits, CheckboxModule, SelectModule, ButtonModule, MessageModule],
+  imports: [PageHeaderComponent, FieldComponent, ReactiveFormsModule, FormsModule, TranslatePipe, InputTextModule, InputNumberModule, InputNumberLatinDigits, CheckboxModule, SelectModule, ButtonModule, MessageModule],
   template: `
     <div class="flex flex-col gap-6 max-w-2xl">
       <app-page-header [title]="(isEditing() ? 'platform.editPlan' : 'platform.addPlan') | translate" />
@@ -59,6 +62,32 @@ const ACCESS_LEVEL_OPTIONS = [
           <label for="maxStorageGb" class="text-sm font-medium">{{ 'platform.maxStorageGb' | translate }}</label>
           <p-inputNumber inputId="maxStorageGb" formControlName="maxStorageGb" [min]="1" />
         </div>
+        @for (limit of limits; track limit.key) {
+          <div class="flex flex-col gap-2" [attr.data-testid]="'limit-' + limit.key">
+            <am-field
+              [label]="limit.label | translate"
+              [hint]="limit.hint | translate"
+              [control]="limit.value"
+              [inputId]="limit.key"
+              [errorMessages]="limitErrors"
+              [forceShowErrors]="!limit.unlimited.value"
+            >
+              <p-inputNumber
+                [inputId]="limit.key"
+                [formControl]="limit.value"
+                [min]="1"
+                [maxFractionDigits]="0"
+                [fluid]="true"
+              />
+            </am-field>
+            <div class="flex items-center gap-2">
+              <p-checkbox [formControl]="limit.unlimited" [binary]="true" [inputId]="limit.key + 'Unlimited'" />
+              <label [for]="limit.key + 'Unlimited'" class="text-sm cursor-pointer">
+                {{ 'platform.unlimited' | translate }}<span class="sr-only"> — {{ limit.label | translate }}</span>
+              </label>
+            </div>
+          </div>
+        }
         <div class="flex flex-col gap-1">
           <label for="aiCreditsPerMonth" class="text-sm font-medium">{{ 'platform.aiCreditsPerMonth' | translate }}</label>
           <p-inputNumber inputId="aiCreditsPerMonth" formControlName="aiCreditsPerMonth" [min]="0" />
@@ -120,7 +149,57 @@ export class PlanFormComponent implements OnInit {
     maxStorageGb: [10, [Validators.required, Validators.min(1)]],
     aiCreditsPerMonth: [0, [Validators.required, Validators.min(0)]],
     isPublic: [true],
+    // ACC-263 — seat limits. null = unlimited, so a new plan starts Unlimited,
+    // which is what an omitted limit has always saved as.
+    maxFullUsers: new FormControl<number | null>(
+      { value: null, disabled: true },
+      [Validators.required, Validators.min(1), wholeNumber],
+    ),
+    fullUsersUnlimited: new FormControl(true, { nonNullable: true }),
+    maxStaff: new FormControl<number | null>(
+      { value: null, disabled: true },
+      [Validators.required, Validators.min(1), wholeNumber],
+    ),
+    staffUnlimited: new FormControl(true, { nonNullable: true }),
   });
+
+  /** The two seat limits, drawn by one block each. */
+  readonly limits = [
+    {
+      key: 'maxFullUsers',
+      label: 'platform.maxFullUsers',
+      hint: 'platform.maxFullUsersHint',
+      value: this.form.controls.maxFullUsers,
+      unlimited: this.form.controls.fullUsersUnlimited,
+    },
+    {
+      key: 'maxStaff',
+      label: 'platform.maxStaff',
+      hint: 'platform.maxStaffHint',
+      value: this.form.controls.maxStaff,
+      unlimited: this.form.controls.staffUnlimited,
+    },
+  ] as const;
+
+  // Shown at once while Unlimited is unticked: Save is disabled while the form
+  // is invalid, and this is the line that says why.
+  readonly limitErrors = {
+    required: 'platform.limitRequired',
+    min: 'platform.limitMin',
+    integer: 'platform.limitWhole',
+  };
+
+  constructor() {
+    // Unlimited disables its number, so a ticked box can't leave the form
+    // invalid and the number can't be edited while it means nothing.
+    const destroyRef = inject(DestroyRef);
+    for (const limit of this.limits) {
+      limit.unlimited.valueChanges.pipe(takeUntilDestroyed(destroyRef)).subscribe((unlimited) => {
+        if (unlimited) limit.value.disable();
+        else limit.value.enable();
+      });
+    }
+  }
 
   isEditing(): boolean {
     return !!this.planId;
@@ -131,11 +210,22 @@ export class PlanFormComponent implements OnInit {
       this.planService.getPlanById(this.planId).subscribe({
         next: (plan) => {
           this.form.patchValue(plan);
+          this.patchLimit(this.limits[0], plan.maxFullUsers);
+          this.patchLimit(this.limits[1], plan.maxStaff);
           this.planModules.set(plan.planModules ?? []);
         },
         error: () => this.error.set('platform.errorLoad'),
       });
     }
+  }
+
+  private patchLimit(
+    limit: { value: FormControl<number | null>; unlimited: FormControl<boolean> },
+    stored: number | null | undefined,
+  ): void {
+    const { unlimited, value } = limitFromPlan(stored);
+    limit.value.setValue(value);
+    limit.unlimited.setValue(unlimited);
   }
 
   accessLevelFor(moduleKey: string): PlanModuleAccessLevel {
@@ -170,6 +260,8 @@ export class PlanFormComponent implements OnInit {
       maxStorageGb: value.maxStorageGb!,
       aiCreditsPerMonth: value.aiCreditsPerMonth!,
       isPublic: value.isPublic!,
+      maxFullUsers: limitForSave(value.fullUsersUnlimited, value.maxFullUsers),
+      maxStaff: limitForSave(value.staffUnlimited, value.maxStaff),
     };
     const request$ = this.planId ? this.planService.updatePlan(this.planId, dto) : this.planService.createPlan(dto);
 

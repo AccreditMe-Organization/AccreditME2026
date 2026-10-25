@@ -8,11 +8,12 @@ import { MessageModule } from 'primeng/message';
 import { PlanService, IPlan } from '../../services/plan.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../core/services/navigation-access.service';
+import { AmNumberPipe } from '../../../core/formatting';
 
 @Component({
   selector: 'app-plan-list',
   standalone: true,
-  imports: [PageHeaderComponent, RouterLink, TranslatePipe, TableModule, ButtonModule, TagModule, MessageModule],
+  imports: [PageHeaderComponent, RouterLink, TranslatePipe, TableModule, ButtonModule, TagModule, MessageModule, AmNumberPipe],
   template: `
     <div class="flex flex-col gap-4">
       <app-page-header [title]="'platform.plans' | translate">
@@ -34,6 +35,8 @@ import { NavigationAccessService } from '../../../core/services/navigation-acces
             <th>{{ 'platform.monthlyPrice' | translate }}</th>
             <th>{{ 'platform.annualPrice' | translate }}</th>
             <th>{{ 'platform.aiCreditsPerMonth' | translate }}</th>
+            <th>{{ 'platform.maxFullUsers' | translate }}</th>
+            <th>{{ 'platform.maxStaff' | translate }}</th>
             <th></th>
             <th></th>
           </tr>
@@ -44,6 +47,12 @@ import { NavigationAccessService } from '../../../core/services/navigation-acces
             <td>{{ plan.monthlyPrice }}</td>
             <td>{{ plan.annualPrice }}</td>
             <td>{{ plan.aiCreditsPerMonth }}</td>
+            <td data-testid="plan-max-full-users">
+              {{ plan.maxFullUsers === null ? ('platform.unlimited' | translate) : (plan.maxFullUsers | amNumber) }}
+            </td>
+            <td data-testid="plan-max-staff">
+              {{ plan.maxStaff === null ? ('platform.unlimited' | translate) : (plan.maxStaff | amNumber) }}
+            </td>
             <td>
               @if (!plan.isActive) {
                 <p-tag [value]="'platform.inactive' | translate" severity="secondary" />
@@ -61,7 +70,7 @@ import { NavigationAccessService } from '../../../core/services/navigation-acces
         </ng-template>
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="6" class="text-center py-4 text-[var(--am-text-secondary)]">{{ 'platform.noPlans' | translate }}</td>
+            <td colspan="8" class="text-center py-4 text-[var(--am-text-secondary)]">{{ 'platform.noPlans' | translate }}</td>
           </tr>
         </ng-template>
       </p-table>

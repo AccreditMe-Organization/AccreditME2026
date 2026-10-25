@@ -1868,7 +1868,15 @@
     "announcement": "Platform-wide announcement banner, shown to every tenant.",
     "announcementMessage": "Announcement Message",
     "announcementSeverity": "Severity",
-    "suspendHeader": "Suspend {{name}}?"
+    "suspendHeader": "Suspend {{name}}?",
+    "maxFullUsers": "Full users",
+    "maxFullUsersHint": "People who sign in and work in the system.",
+    "maxStaff": "Staff",
+    "maxStaffHint": "People who only read and acknowledge documents.",
+    "unlimited": "Unlimited",
+    "limitRequired": "Enter a number, or tick Unlimited.",
+    "limitMin": "The limit is at least 1.",
+    "limitWhole": "Enter a whole number."
   },
   "account": {
     "trial": "Trial",
