@@ -166,25 +166,6 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     expect(el.querySelectorAll('[data-cell="status"] .rounded-full').length).withContext('no attention dot').toBe(0);
   }));
 
-  // ACC-256 (Ahmad, 25 Oct) — the status is read from the stage's FLAGS, so
-  // Formation and Terms Review no longer read "Active".
-  it('each seeded stage reads its status from its flags', () => {
-    const statuses = SEEDED_STAGE_RULES.map(({ stage, rules }) => [stage, committeeListStatus({ isActive: true, stageRules: rules })]);
-    expect(statuses).toEqual([
-      ['Formation', 'NOT_YET_IN_FORCE'],
-      ['Terms Review', 'NOT_YET_IN_FORCE'],
-      ['Active', 'IN_FORCE'],
-      ['Suspended', 'IN_FORCE'],
-      ['Dissolution Pending', 'DISSOLVING'],
-      ['Dissolved', 'DISSOLVING'],
-    ]);
-    // A dissolved committee's record is inactive, and that is what it reads as.
-    expect(committeeListStatus({ isActive: false, stageRules: DISSOLVED_RULES })).toBe('INACTIVE');
-    expect(committeeListStatus({ isActive: false, stageRules: ACTIVE_RULES })).toBe('INACTIVE');
-    // No live stage (D14): nothing is in force yet.
-    expect(committeeListStatus({ isActive: true, stageRules: NO_STAGE_RULES })).toBe('NOT_YET_IN_FORCE');
-  });
-
   it('a stage a tenant renamed or added reads by its flags, never its name', fakeAsync(() => {
     setup(['committees:view'], [
       // Named "Active", but configured with no meaning: not in force.
@@ -414,5 +395,26 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
       expect(button.getAttribute('aria-label')).toBe('ترتيب حسب الأعضاء');
       expect(Array.from(button.children).map((c) => c.textContent!.trim())).toEqual(['الأعضاء', '▲']);
     }));
+  });
+});
+
+// ACC-256 — the status rule itself, a pure function: kept out of the rendered
+// describe above, whose afterEach verifies an HTTP backend this needs none of.
+describe('committeeListStatus (ACC-256)', () => {
+  it('each seeded stage reads its status from its flags', () => {
+    const statuses = SEEDED_STAGE_RULES.map(({ stage, rules }) => [stage, committeeListStatus({ isActive: true, stageRules: rules })]);
+    expect(statuses).toEqual([
+      ['Formation', 'NOT_YET_IN_FORCE'],
+      ['Terms Review', 'NOT_YET_IN_FORCE'],
+      ['Active', 'IN_FORCE'],
+      ['Suspended', 'IN_FORCE'],
+      ['Dissolution Pending', 'DISSOLVING'],
+      ['Dissolved', 'DISSOLVING'],
+    ]);
+    // A dissolved committee's record is inactive, and that is what it reads as.
+    expect(committeeListStatus({ isActive: false, stageRules: DISSOLVED_RULES })).toBe('INACTIVE');
+    expect(committeeListStatus({ isActive: false, stageRules: ACTIVE_RULES })).toBe('INACTIVE');
+    // No live stage (D14): nothing is in force yet.
+    expect(committeeListStatus({ isActive: true, stageRules: NO_STAGE_RULES })).toBe('NOT_YET_IN_FORCE');
   });
 });
