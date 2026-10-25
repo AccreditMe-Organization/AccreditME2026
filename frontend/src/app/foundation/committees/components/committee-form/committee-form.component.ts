@@ -19,6 +19,7 @@ import {
   COMMITTEE_MEETING_FREQUENCIES,
 } from '../../services/committee.service';
 import { CommitteeReferenceField, committeeRefusal, referenceOptions } from '../../committee-references';
+import { CommitteeStageRefusal, committeeStageRefusal } from '../../committee-stage-refusal';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import {
   OrgUnitService,
@@ -63,7 +64,13 @@ const TAB_ORDER: readonly CommitteeFormTab[] = ['identity', 'governance', 'struc
  * trying again can help (Design System artboard 14, rule 5.5); `failed` offers
  * neither.
  */
-type FooterState = { kind: 'conflict' } | { kind: 'unreachable' } | { kind: 'failed' } | null;
+type FooterState =
+  | { kind: 'conflict' }
+  | { kind: 'unreachable' }
+  | { kind: 'failed' }
+  // ACC-255 — the committee's stage does not allow a direct edit (ACC-241).
+  | { kind: 'stage'; refusal: CommitteeStageRefusal }
+  | null;
 
 /** Status codes that mean the server was not reached or did not answer in time. */
 const UNREACHABLE = new Set([0, 408, 502, 503, 504]);
@@ -339,6 +346,11 @@ type ChoiceList = 'types' | 'units' | 'committees';
               }
               @case ('unreachable') {
                 {{ 'committee.form.unreachable' | translate }}
+              }
+              @case ('stage') {
+                @if (f.kind === 'stage') {
+                  {{ f.refusal.key | translate: { stage: stageName(f.refusal) } }}
+                }
               }
               @default {
                 {{ 'committee.refusal.saveFailed' | translate }}
@@ -901,6 +913,12 @@ export class CommitteeFormComponent {
       this.footer.set({ kind: 'conflict' });
       return;
     }
+    // ACC-255 — refused by the committee's stage: said, with the stage's name.
+    const stage = committeeStageRefusal(err);
+    if (stage) {
+      this.footer.set({ kind: 'stage', refusal: stage });
+      return;
+    }
     const refusal = committeeRefusal(err);
     if (refusal.field) {
       // In the field's own slot, on its own tab (ACC-233's codes).
@@ -913,6 +931,11 @@ export class CommitteeFormComponent {
       return;
     }
     this.footer.set(this.isUnreachable(err) ? { kind: 'unreachable' } : { kind: 'failed' });
+  }
+
+  /** The stage's own name, in the reader's language (English when it has no Arabic). */
+  stageName(refusal: CommitteeStageRefusal): string {
+    return this.languageService.bilingual(refusal.stageNameEn ?? refusal.stageNameAr ?? '', refusal.stageNameAr);
   }
 
   private isUnreachable(err: unknown): boolean {

@@ -412,6 +412,54 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
     expect(fixture.componentInstance.visible()).withContext('the dialog closed').toBeFalse();
   }));
 
+  // ACC-255 PR 3 — a change the committee's stage does not allow (ACC-241,
+  // Q-A: a dissolved committee's members can't be changed). The 409 is the
+  // stage's, not "already a member": the code is read before the status.
+  const STAGE_REFUSAL = (action: string) => ({
+    code: 'STAGE_ACTION_NOT_ALLOWED',
+    action,
+    stageNameEn: 'Dissolved',
+    stageNameAr: 'محلولة',
+    message: "Members can't be changed while the committee is Dissolved.",
+  });
+
+  for (const lang of ['en', 'ar'] as const) {
+    it(`Add member refused by a Dissolved stage says so, with the stage's name (${lang})`, fakeAsync(() => {
+      setup();
+      TestBed.inject(TranslateService).use(lang);
+      const c = findForm();
+      c.form.controls.userId.setValue('u-mona');
+      c.form.controls.roleValueId.setValue('role-member');
+      q<HTMLButtonElement>('[data-testid="member-submit"] button')!.click();
+      fixture.detectChanges();
+      http.expectOne(`${API}/committees/c-1/members`).flush(STAGE_REFUSAL('add_member'), { status: 409, statusText: 'Conflict' });
+      fixture.detectChanges();
+      const said = q('[data-testid="member-stage-refusal"]')!.textContent!.trim();
+      expect(said).toBe(
+        lang === 'en' ? "Members can't be changed while the committee is Dissolved." : 'لا يمكن تغيير الأعضاء بينما اللجنة محلولة.',
+      );
+      expect(q('[data-testid="member-save-error"]')).withContext('not "already a member"').toBeNull();
+      flush();
+    }));
+  }
+
+  it('Change role refused by the stage says the same sentence, never the server text', fakeAsync(() => {
+    setup(member('u-huda'));
+    findForm().form.controls.roleValueId.setValue('role-secretary');
+    fixture.detectChanges();
+    document.querySelector<HTMLButtonElement>('app-committee-member-form button[type="submit"]')!.click();
+    fixture.detectChanges();
+    http
+      .expectOne(`${API}/committees/c-1/members/m-u-huda`)
+      .flush({ ...STAGE_REFUSAL('change_member_role'), message: 'server words' }, { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+    expect(q('[data-testid="member-stage-refusal"]')!.textContent!.trim()).toBe(
+      "Members can't be changed while the committee is Dissolved.",
+    );
+    expect(document.body.textContent).not.toContain('server words');
+    flush();
+  }));
+
   it('Change role is untouched: no person, no joined date, no field wrapper', () => {
     setup(member('u-huda'));
     expect(q('[data-testid="member-add-form"]')).toBeNull();

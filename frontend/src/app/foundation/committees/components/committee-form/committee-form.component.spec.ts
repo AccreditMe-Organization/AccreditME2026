@@ -210,6 +210,24 @@ describe('CommitteeFormComponent', () => {
       expect(q('[data-cf-save]')).not.toBeNull();
     });
 
+    it('409 STAGE_ACTION_NOT_ALLOWED (ACC-241): the footer says the stage sentence, not "something went wrong"', () => {
+      edit();
+      update.and.returnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 409,
+              error: { code: 'STAGE_ACTION_NOT_ALLOWED', action: 'edit_details', stageNameEn: 'Active', stageNameAr: 'نشطة', message: 'English only' },
+            }),
+        ),
+      );
+      component.submit();
+      fixture.detectChanges();
+      expect(q('[data-cf-footer-message]')?.textContent?.trim()).toBe('committee.refusal.editNotAllowedInStage');
+      expect(q('[data-cf-retry]')).toBeNull();
+      expect(document.body.textContent).not.toContain('English only');
+    });
+
     it('an unreachable server offers Retry, which saves again', () => {
       edit();
       update.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));

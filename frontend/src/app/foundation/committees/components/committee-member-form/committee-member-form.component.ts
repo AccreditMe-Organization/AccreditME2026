@@ -15,6 +15,7 @@ import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.s
 import { LanguageService } from '../../../../core/services/language.service';
 import { FormatService } from '../../../../core/formatting';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { CommitteeStageRefusal, committeeStageRefusal } from '../../committee-stage-refusal';
 // ACC-42 Phase 3 — OverlaySelectComponent replaces p-select on this field:
 // EditDialogComponent context, proves item-template projection (Phase 2)
 // end-to-end for the first time in a real consumer. See CLAUDE.md's
@@ -95,7 +96,11 @@ export function addMemberRefusal(err: unknown): string {
           <input pInputText id="reason" formControlName="reason" />
         </div>
 
-        @if (saveError()) {
+        @if (stageRefusal(); as r) {
+          <p class="text-red-500 text-sm" role="alert" data-testid="member-stage-refusal">
+            {{ r.key | translate: { stage: stageName(r) } }}
+          </p>
+        } @else if (saveError()) {
           <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
         }
 
@@ -209,7 +214,11 @@ export function addMemberRefusal(err: unknown): string {
           <input pInputText id="memberReason" formControlName="reason" class="w-full" />
         </am-field>
 
-        @if (saveError()) {
+        @if (stageRefusal(); as r) {
+          <p class="text-meta text-[var(--am-danger-ink)] m-0 mb-2" role="alert" data-testid="member-stage-refusal">
+            {{ r.key | translate: { stage: stageName(r) } }}
+          </p>
+        } @else if (saveError()) {
           <p class="text-meta text-[var(--am-danger-ink)] m-0 mb-2" role="alert" data-testid="member-save-error">
             {{ saveError()! | translate }}
           </p>
@@ -354,6 +363,13 @@ export class CommitteeMemberFormComponent implements OnInit {
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
+  /** ACC-255 — a change the committee's stage does not allow (STAGE_ACTION_NOT_ALLOWED). */
+  readonly stageRefusal = signal<CommitteeStageRefusal | null>(null);
+
+  /** The stage's own name, in the reader's language (English when it has no Arabic). */
+  stageName(refusal: CommitteeStageRefusal): string {
+    return this.languageService.bilingual(refusal.stageNameEn ?? refusal.stageNameAr ?? '', refusal.stageNameAr);
+  }
   /** Active people, once loaded; null until then (the picker shows its skeleton). */
   private readonly users = signal<IUserDto[] | null>(null);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
@@ -521,6 +537,7 @@ export class CommitteeMemberFormComponent implements OnInit {
     this.form.controls.userId.markAsDirty();
     this.form.controls.userId.setValue(person.id);
     this.saveError.set(null);
+    this.stageRefusal.set(null);
     this.pickerOpen.set(false);
   }
 
@@ -567,6 +584,7 @@ export class CommitteeMemberFormComponent implements OnInit {
     }
     this.saving.set(true);
     this.saveError.set(null);
+    this.stageRefusal.set(null);
 
     const value = this.form.getRawValue();
     const current = this.member();
@@ -583,7 +601,8 @@ export class CommitteeMemberFormComponent implements OnInit {
             this.saved.emit();
           },
           error: (err: unknown) => {
-            this.saveError.set(extractErrorMessage(err, 'Save failed'));
+            this.stageRefusal.set(committeeStageRefusal(err));
+            if (!this.stageRefusal()) this.saveError.set(extractErrorMessage(err, 'Save failed'));
             this.saving.set(false);
           },
         });
@@ -606,7 +625,9 @@ export class CommitteeMemberFormComponent implements OnInit {
           this.saved.emit();
         },
         error: (err: unknown) => {
-          this.saveError.set(addMemberRefusal(err));
+          // ACC-255 — a 409 from the stage is not "already a member": read the code first.
+          this.stageRefusal.set(committeeStageRefusal(err));
+          if (!this.stageRefusal()) this.saveError.set(addMemberRefusal(err));
           this.saving.set(false);
         },
       });
