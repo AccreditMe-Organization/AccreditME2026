@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, OnInit, TemplateRef, ViewChild, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -270,10 +270,16 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
         <am-change-request-banner [state]="openState()" [request]="openRequest()" (retry)="loadOpenRequest()" />
 
         @if (currentInstance(); as instance) {
-          <section class="grid gap-3" [style.grid-template-columns]="headerGrid">
+          <!-- ACC-265 — the Lifecycle card alone sets this row's height. While
+               Stage history sits beside it, the history cell is contain: size,
+               so its rows add nothing to the row, and the panel fills the
+               height and scrolls. Stacked (a phone, or two tracks), neither
+               applies and history shows in full. -->
+          <section #lifecycleRow class="grid gap-3" [style.grid-template-columns]="headerGrid">
             <div
               class="rounded-lg bg-[var(--am-card)] border border-[var(--am-border)] px-[18px] py-3.5 min-w-0"
               style="grid-column: span 2"
+              data-lifecycle-card
             >
               <app-workflow-stage-indicator [instance]="instance" [show]="'sequence'" />
             </div>
@@ -282,6 +288,9 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
               [heading]="'committee.stageHistory' | translate"
               [count]="stageHistoryCount()"
               [bodyHeight]="146"
+              [fill]="historyBesideLifecycle()"
+              [style.contain]="historyBesideLifecycle() ? 'size' : null"
+              data-stage-history
             >
               <div class="px-4 py-1">
                 <app-workflow-stage-indicator
@@ -549,6 +558,29 @@ export class CommitteeDetailComponent implements OnInit {
   readonly soughtTask = signal<{ id: string } | null>(null);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+
+  // ACC-265 — whether Stage history shares the Lifecycle card's row. Read from
+  // the layout (the two cells' tops), never from a width that copies the
+  // grid's breakpoints, so it stays right if COMMITTEE_HEADER_GRID changes.
+  private readonly lifecycleRow = viewChild<ElementRef<HTMLElement>>('lifecycleRow');
+  readonly historyBesideLifecycle = signal(false);
+  private readonly lifecycleRowObserver = effect((onCleanup) => {
+    const row = this.lifecycleRow()?.nativeElement;
+    if (!row || typeof ResizeObserver === 'undefined') {
+      this.historyBesideLifecycle.set(false);
+      return;
+    }
+    const measure = () => {
+      const card = row.querySelector<HTMLElement>('[data-lifecycle-card]');
+      const history = row.querySelector<HTMLElement>('[data-stage-history]');
+      const beside = !!card && !!history && Math.abs(card.getBoundingClientRect().top - history.getBoundingClientRect().top) < 1;
+      if (beside !== this.historyBesideLifecycle()) this.historyBesideLifecycle.set(beside);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    measure();
+    onCleanup(() => observer.disconnect());
+  });
   private readonly tasksPanel = viewChild(RecordTasksPanelComponent);
   private readonly membersPanel = viewChild(CommitteeMembersPanelComponent);
 

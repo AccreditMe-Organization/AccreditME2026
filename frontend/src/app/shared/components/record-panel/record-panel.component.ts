@@ -49,6 +49,16 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
 //
 // OPT-IN, so nothing changes for a caller that does not bind it: `loading`,
 // `isEmpty` and `error` still drive the Committee page exactly as before.
+//
+// ## FILL (ACC-265)
+//
+// `[fill]="true"` makes the panel take its cell's height instead of setting
+// it: the card is full height, the body takes what is left and scrolls, with
+// no min-height. The caller gives the cell its height (the committee page's
+// Stage history sits beside the Lifecycle card with `contain: size`, so the
+// card alone sets the row). The scrolling body is then a focusable region,
+// named by the heading, so a keyboard user can scroll it. Off by default:
+// every other panel keeps its fixed body height.
 @Component({
   selector: 'app-record-panel',
   standalone: true,
@@ -57,6 +67,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
   template: `
     <section
       class="flex flex-col min-w-0 rounded-lg bg-[var(--am-card)] border border-[var(--am-border)]"
+      [class.h-full]="fill()"
     >
       <header
         class="flex items-center justify-between gap-2.5 px-4 py-2.5 border-b border-[var(--am-border)]"
@@ -97,7 +108,16 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
         </div>
       </header>
 
-      <div class="overflow-y-auto" [style.min-height.px]="bodyHeight()">
+      <div
+        class="overflow-y-auto"
+        [class.flex-1]="fill()"
+        [class.min-h-0]="fill()"
+        [style.min-height.px]="fill() ? null : bodyHeight()"
+        [attr.tabindex]="fill() ? 0 : null"
+        [attr.role]="fill() ? 'region' : null"
+        [attr.aria-label]="fill() ? heading() : null"
+        data-panel-body
+      >
         @if (outcome(); as o) {
           @switch (o.status) {
             @case ('loading') {
@@ -148,7 +168,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
            none", and a reader cannot tell the difference without it. -->
       <div
         class="flex flex-col items-center justify-center gap-1.5 text-center px-6 py-4 h-full"
-        [style.min-height.px]="bodyHeight()"
+        [style.min-height.px]="fill() ? null : bodyHeight()"
       >
         <span
           class="w-[34px] h-[34px] rounded-lg border border-dashed border-[var(--am-border)] bg-[var(--am-surface)]"
@@ -186,6 +206,9 @@ export class RecordPanelComponent {
   readonly badgeBackground = input<string>('var(--am-surface)');
 
   readonly bodyHeight = input<number>(214);
+
+  /** ACC-265 — take the cell's height, and scroll the body inside it (see FILL above). */
+  readonly fill = input(false);
 
   readonly loading = input(false);
   readonly isEmpty = input(false);
