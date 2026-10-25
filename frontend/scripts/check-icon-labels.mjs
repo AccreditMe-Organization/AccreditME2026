@@ -42,12 +42,11 @@ const appDir = join(root, 'src', 'app');
 // Lowered to 3 in ACC-255 PR 3 (plan §10.2): every workflow screen's icon
 // buttons are named, the stages list's row reorder and remove moved into a
 // worded ⋯ menu (ACC-254), and the shared list's Columns button is named. The
-// 3 left are lane A's screens, left for lane A, each listed with its file and
-// line by this scan:
-//   - the notification bell (the shell's top bar);
-//   - the AI feature costs list (platform admin);
-//   - the plans list (platform admin).
-const BASELINE = 3;
+// 3 left were lane A's screens.
+// Lowered to 0 in ACC-264: the notification bell (its name counts the unread),
+// the AI feature costs list's pencil and the plans list's pencil (each names
+// what it edits). From here a new unnamed icon-only control fails the build.
+const BASELINE = 0;
 
 // A TOOLTIP IS NOT A NAME. pTooltip is deliberately absent here: a tooltip is
 // unreachable to a screen reader and to a touch user, so a control carrying
