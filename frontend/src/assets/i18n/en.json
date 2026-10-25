@@ -1928,7 +1928,9 @@
     "unlimited": "Unlimited",
     "limitRequired": "Enter a number, or tick Unlimited.",
     "limitMin": "The limit is at least 1.",
-    "limitWhole": "Enter a whole number."
+    "limitWhole": "Enter a whole number.",
+    "editFeatureCost": "Edit {{feature}}",
+    "editPlanNamed": "Edit {{plan}}"
   },
   "account": {
     "trial": "Trial",
@@ -2635,6 +2637,12 @@
       "daysBefore": {
         "one": "{{count}} day",
         "other": "{{count}} days"
+      }
+    },
+    "notification": {
+      "bellUnread": {
+        "one": "Notifications, {{count}} unread",
+        "other": "Notifications, {{count}} unread"
       }
     }
   },
