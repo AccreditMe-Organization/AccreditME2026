@@ -16,6 +16,7 @@ import { SimpleListComponent } from '../../../../shared/components/simple-list/s
 import { CommitteeMemberDto } from '../../services/committee.service';
 import { CommitteeMemberFormComponent, addMemberRefusal } from './committee-member-form.component';
 import { HttpErrorResponse } from '@angular/common/http';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-120 slice 4 — Add member: the person picker as its own layer, the joined
 // date, the field wrapper, and refusals said from their status. Hosted the way
@@ -76,6 +77,9 @@ class HostComponent {
 }
 
 describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => {
+  // The Dissolved-stage refusal is also said in Arabic, which turns <html> right to left.
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<HostComponent>;
   let http: HttpTestingController;
   let confirm: jasmine.Spy;
