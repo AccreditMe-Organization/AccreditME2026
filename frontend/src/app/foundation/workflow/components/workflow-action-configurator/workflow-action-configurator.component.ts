@@ -99,7 +99,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
         <ng-template pTemplate="body" let-action>
           <tr>
             <td>
-              <p-tag [value]="action.actionType" severity="info" />
+              <p-tag [value]="actionTypeName(action.actionType)" severity="info" data-testid="action-type" />
             </td>
             <td>{{ action.order }}</td>
             <td>

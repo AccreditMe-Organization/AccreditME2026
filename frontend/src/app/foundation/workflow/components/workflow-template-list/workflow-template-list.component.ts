@@ -7,6 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { workflowLabelKey } from '../../workflow-labels';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -48,7 +49,7 @@ import { LanguageService } from '../../../../core/services/language.service';
             <td>{{ template.nameEn }}</td>
             <td dir="rtl">{{ template.nameAr || '—' }}</td>
             <td>
-              <p-tag [value]="template.objectType" severity="info" />
+              <p-tag [value]="objectTypeLabelKey(template.objectType) | translate" severity="info" data-testid="template-object-type" />
             </td>
             <td>
               @if (template.isDefault) {
@@ -109,6 +110,11 @@ import { LanguageService } from '../../../../core/services/language.service';
   `,
 })
 export class WorkflowTemplateListComponent implements OnInit {
+  /** ACC-254 — the record type in words, never the stored code. */
+  objectTypeLabelKey(objectType: string | null | undefined): string {
+    return workflowLabelKey('objectType', objectType);
+  }
+
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);

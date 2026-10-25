@@ -22,6 +22,7 @@
     "check:reserved-slugs": "node scripts/check-reserved-slugs.mjs",
     "check:vercel-config": "node scripts/check-vercel-config.mjs",
     "check:permission-sentences": "node scripts/check-permission-sentences.mjs",
+    "check:workflow-enum-display": "node scripts/check-workflow-enum-display.mjs",
     "verify:built-index": "node scripts/verify-built-index.mjs"
   },
   "engines": {

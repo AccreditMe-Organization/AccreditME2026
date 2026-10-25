@@ -70,16 +70,12 @@ const GROUP_SENTINEL_PREFIX = '__module__:';
 // sentinel: this one IS meant to be selected, and persists as null.
 const NO_PERMISSION_VALUE = '';
 
-const TRIGGER_CONDITIONS = [
-  { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
-  { label: 'ROLE_BASED', value: 'ROLE_BASED' },
-  { label: 'ANY_AUTHENTICATED', value: 'ANY_AUTHENTICATED' },
-  { label: 'SYSTEM_AUTOMATIC', value: 'SYSTEM_AUTOMATIC' },
-  { label: 'ASSIGNEE_POOL', value: 'ASSIGNEE_POOL' },
-];
+// ACC-254 — the trigger conditions come from workflow-labels.ts, labelled in
+// the reader's words (triggerConditions below), never the stored code.
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
+import { workflowLabelKey, workflowOptionKeys } from '../../workflow-labels';
 // ACC-208 — literal keys, so the translation-keys spec sees each one.
 const KIND_LABEL_KEYS: Record<WorkflowTransitionKind, string> = {
   ADVANCE: 'workflow.kind.advance',
@@ -134,22 +130,25 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
         <p class="text-red-500 text-sm">{{ error() | translate }}</p>
       }
 
-      <p-table [value]="transitions" styleClass="w-full">
+      <!-- ACC-254 — fixed column widths, so a long label or stage name is cut
+           with an ellipsis (its whole text in a tooltip) instead of pushing the
+           table past the panel's column and the page sideways. -->
+      <p-table [value]="transitions" styleClass="w-full am-tr-table" [tableStyle]="{ 'table-layout': 'fixed', width: '100%' }">
         <ng-template pTemplate="header">
           <tr>
             <th>{{ 'workflow.label' | translate }}</th>
             <th>{{ 'workflow.toStage' | translate }}</th>
-            <th>{{ 'workflow.kind.label' | translate }}</th>
+            <th style="width: 7.5rem">{{ 'workflow.kind.label' | translate }}</th>
             <th>{{ 'workflow.triggerCondition' | translate }}</th>
-            <th></th>
-            <th></th>
+            <th style="width: 2.75rem"></th>
+            <th style="width: 5rem"></th>
           </tr>
         </ng-template>
 
         <ng-template pTemplate="body" let-transition>
           <tr>
-            <td>{{ transitionLabel(transition) }}</td>
-            <td>{{ stageName(transition.toStageId) }}</td>
+            <td class="am-tr-cut" [pTooltip]="transitionLabel(transition)" tooltipPosition="top">{{ transitionLabel(transition) }}</td>
+            <td class="am-tr-cut" [pTooltip]="stageName(transition.toStageId)" tooltipPosition="top">{{ stageName(transition.toStageId) }}</td>
             <td>
               <!-- ACC-208 — Send back is dashed, as returns are in the stage
                    strip; End the record is outlined in danger (drawing). -->
@@ -158,7 +157,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
               </span>
             </td>
             <td>
-              <p-tag [value]="transition.triggerCondition" severity="info" />
+              <p-tag [value]="triggerLabelKey(transition.triggerCondition) | translate" severity="info" data-tr-trigger />
               <!-- ACC-82 — which role can fire it. ROLE_BASED alone does not say, and
                    a Setup health stage Fix lands here looking for exactly that. -->
               @if (triggerRoleLabel(transition); as roleLabel) {
@@ -261,7 +260,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
               <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
               <app-overlay-select
                 formControlName="triggerCondition"
-                [options]="triggerConditions"
+                [options]="triggerConditions()"
                 optionLabel="label"
                 optionValue="value"
               />
@@ -414,7 +413,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
               <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
               <app-overlay-select
                 formControlName="triggerCondition"
-                [options]="triggerConditions"
+                [options]="triggerConditions()"
                 optionLabel="label"
                 optionValue="value"
               />
@@ -604,12 +603,26 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
         gap: var(--am-space-8);
       }
       .am-tr-chip {
-        display: inline-flex;
+        display: inline-block;
+        max-inline-size: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: middle;
         font-size: var(--am-type-micro-size);
         font-weight: 600;
         border-radius: var(--am-radius-control);
         padding: 0 var(--am-space-6);
         white-space: nowrap;
+      }
+      /* ACC-254 — no cell paints outside its column (ACC-234's rule). */
+      .am-tr-table td,
+      .am-tr-table th {
+        min-inline-size: 0;
+        overflow: hidden;
+      }
+      .am-tr-cut {
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
       .am-tr-chip--advance {
         color: var(--am-primary-700);
@@ -654,7 +667,15 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   // precedent in org-unit-head-panel.component.ts.
   private readonly translateService = inject(TranslateService);
 
-  readonly triggerConditions = TRIGGER_CONDITIONS;
+  /** ACC-254 — every trigger condition, in the reader's words; follows a language switch. */
+  readonly triggerConditions = computed(() => {
+    this.translate.currentLang();
+    return workflowOptionKeys('trigger').map(({ value, labelKey }) => ({ value, label: this.translate.instant(labelKey) }));
+  });
+
+  triggerLabelKey(condition: string | null | undefined): string {
+    return workflowLabelKey('trigger', condition);
+  }
   readonly roles = signal<RoleDto[]>([]);
   private readonly languageService = inject(LanguageService);
 

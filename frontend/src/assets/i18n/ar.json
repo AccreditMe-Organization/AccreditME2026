@@ -677,6 +677,24 @@
     "confirmDeactivateRoleUnknown": "يفقد كل من يحمله صلاحيات الدور الآن. ويبقى الدور مُسندًا كما هو، فإعادة تفعيله تعيدها."
   },
   "workflow": {
+    "showStageDetails": "عرض انتقالات ومهام {{name}}",
+    "hideStageDetails": "إخفاء انتقالات ومهام {{name}}",
+    "stageActionsFor": "إجراءات أخرى للمرحلة {{name}}",
+    "editStageNamed": "تعديل المرحلة {{name}}",
+    "assigneePositionFixed": "منصب محدد",
+    "triggerAssigneePool": "المكلَّفون بالمرحلة",
+    "valueUnknown": "غير معروف",
+    "objectTypeName": {
+      "DOCUMENT_REQUEST": "طلب وثيقة",
+      "DOCUMENT": "وثيقة",
+      "CHANGE_REQUEST": "طلب تغيير وثيقة",
+      "INCIDENT": "حادثة",
+      "AUDIT": "تدقيق",
+      "CORRECTIVE_ACTION": "إجراء تصحيحي",
+      "MEETING": "اجتماع",
+      "COMMITTEE": "لجنة",
+      "COMMITTEE_CHANGE_REQUEST": "طلب تغيير لجنة"
+    },
     "recordAction": {
       "COMMITTEE": {
         "edit_details": "تعديل بيانات اللجنة",

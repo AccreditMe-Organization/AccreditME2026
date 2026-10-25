@@ -677,6 +677,24 @@
     "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
   },
   "workflow": {
+    "showStageDetails": "Show the transitions and tasks of {{name}}",
+    "hideStageDetails": "Hide the transitions and tasks of {{name}}",
+    "stageActionsFor": "More actions for the stage {{name}}",
+    "editStageNamed": "Edit the stage {{name}}",
+    "assigneePositionFixed": "Fixed position",
+    "triggerAssigneePool": "Assignee pool",
+    "valueUnknown": "Unknown",
+    "objectTypeName": {
+      "DOCUMENT_REQUEST": "Document request",
+      "DOCUMENT": "Document",
+      "CHANGE_REQUEST": "Document change request",
+      "INCIDENT": "Incident",
+      "AUDIT": "Audit",
+      "CORRECTIVE_ACTION": "Corrective action",
+      "MEETING": "Meeting",
+      "COMMITTEE": "Committee",
+      "COMMITTEE_CHANGE_REQUEST": "Committee change request"
+    },
     "recordAction": {
       "COMMITTEE": {
         "edit_details": "Edit the committee's details",
