@@ -7,6 +7,7 @@ import {
   inject,
   Injector,
   input,
+  output,
   signal,
   untracked,
 } from '@angular/core';
@@ -81,6 +82,7 @@ import { AmDatePipe } from '../../../core/formatting';
         [control]="control()"
         [hint]="replacing() ? ('secretField.replacingHint' | translate) : hint()"
         [errorMessages]="errorMessages()"
+        [forceShowErrors]="forceShowErrors()"
       >
         <input
           pInputText
@@ -111,6 +113,16 @@ export class SecretFieldComponent {
   readonly setAt = input<string | null>(null);
   readonly hint = input<string>('');
   readonly errorMessages = input<Record<string, string>>({});
+  /** Reveal the field's error without a blur — an advance that is not a form submit (ACC-260's Test). */
+  readonly forceShowErrors = input(false);
+
+  /**
+   * ACC-260 — Replace was pressed. For a secret that is replaced together with
+   * another (MinIO's access key and secret, design L1054), the caller listens,
+   * and reopens both by setting `isSet` false on each. Optional: a lone secret
+   * needs nothing, since Replace opens its own input as before.
+   */
+  readonly replaceClicked = output<void>();
 
   protected readonly replacing = signal(false);
   protected readonly labelId = () => `${this.inputId()}-label`;
@@ -132,6 +144,7 @@ export class SecretFieldComponent {
 
   replace(): void {
     this.replacing.set(true);
+    this.replaceClicked.emit();
     afterNextRender(() => this.host.nativeElement.querySelector<HTMLInputElement>('input[type="password"]')?.focus(), {
       injector: this.injector,
     });
