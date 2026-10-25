@@ -4251,9 +4251,10 @@ for what the screens read). Plan, Ahmad's answers, and PR 2 and PR 3 as built:
   server's English. Enum values show in words (`workflow-labels.ts`), and
   `check:workflow-enum-display` fails a template that prints one raw.
 - **Icon buttons are named on every lane B screen.** `check:icon-labels` reads
-  quoted values whole (a `=>` no longer ends a tag) and has a selftest; its
-  baseline is 3, all on lane A's screens (the bell, AI feature costs, plans),
-  listed in the script. Lower it to 0 when those are named.
+  quoted values whole (a `=>` no longer ends a tag) and has a selftest. Its
+  baseline was 3, all on lane A's screens; ACC-264 named them (the bell, AI
+  feature costs, plans) and **the baseline is 0**, so a new unnamed icon-only
+  control now fails CI.
 - **No migration in PR 2 or PR 3.**
 
 ## Open / Deferred Items
