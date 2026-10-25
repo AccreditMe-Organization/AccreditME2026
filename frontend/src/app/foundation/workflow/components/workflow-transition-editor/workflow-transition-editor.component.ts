@@ -24,6 +24,7 @@ import {
 import { RoleService, RoleDto, PermissionDto } from '../../../roles/services/role.service';
 import { WorkflowActionConfiguratorComponent } from '../workflow-action-configurator/workflow-action-configurator.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 // ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on these fields:
 // raw p-dialog context. See CLAUDE.md's PrimeNG-components-only exception
 // note and overlay-select.component.ts for the full mechanism.
@@ -1036,7 +1037,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     try {
       validatorConfig = raw.validatorConfig ? JSON.parse(raw.validatorConfig) : undefined;
     } catch {
-      this.saveError.set('Invalid JSON in validator config');
+      this.saveError.set('workflow.error.invalidValidatorJson');
       return;
     }
 
@@ -1083,7 +1084,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         }
       },
       error: (err: unknown) => {
-        this.saveError.set(extractErrorMessage(err, 'Save failed'));
+        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed'));
         this.saving.set(false);
       },
     });
@@ -1098,7 +1099,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     try {
       validatorConfig = raw.validatorConfig ? JSON.parse(raw.validatorConfig) : undefined;
     } catch {
-      this.saveError.set('Invalid JSON in validator config');
+      this.saveError.set('workflow.error.invalidValidatorJson');
       return;
     }
 
@@ -1134,7 +1135,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         }
       },
       error: (err: unknown) => {
-        this.saveError.set(extractErrorMessage(err, 'Save failed'));
+        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed'));
         this.saving.set(false);
       },
     });
@@ -1154,7 +1155,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         this.workflowTemplateService.removeTransition(transition.id).subscribe({
           next: () => this.changed.emit(),
           error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, 'Remove failed')),
+            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')),
         });
       },
     });

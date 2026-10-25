@@ -13,6 +13,7 @@ import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor
 import { StageTaskListComponent, StageTaskSummary } from '../stage-task-list/stage-task-list.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { LanguageService } from '../../../../core/services/language.service';
 import {
   DataListColumn,
@@ -471,7 +472,7 @@ export class WorkflowStageListComponent implements OnInit {
         this.workflowTemplateService.removeStage(stage.id).subscribe({
           next: () => this.loadTemplate(),
           error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, 'Remove failed')),
+            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')),
         });
       },
     });
@@ -504,13 +505,13 @@ export class WorkflowStageListComponent implements OnInit {
         this.workflowTemplateService.updateStage(b.id, { order: a.order }).subscribe({
           next: () => this.loadTemplate(),
           error: (err: unknown) => {
-            this.error.set(extractErrorMessage(err, 'Reorder failed'));
+            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.reorderFailed'));
             this.loadTemplate(); // reload to restore true server state
           },
         });
       },
       error: (err: unknown) => {
-        this.error.set(extractErrorMessage(err, 'Reorder failed'));
+        this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.reorderFailed'));
         this.loadTemplate(); // reload to restore true server state
       },
     });

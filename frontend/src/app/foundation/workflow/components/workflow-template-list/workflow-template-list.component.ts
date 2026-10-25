@@ -7,6 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { workflowLabelKey } from '../../workflow-labels';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
@@ -157,7 +158,7 @@ export class WorkflowTemplateListComponent implements OnInit {
     this.workflowTemplateService.setDefault(template.id).subscribe({
       next: () => this.loadTemplates(),
       error: (err: unknown) =>
-        this.error.set(extractErrorMessage(err, 'Set default failed')),
+        this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.setDefaultFailed')),
     });
   }
 
@@ -179,7 +180,7 @@ export class WorkflowTemplateListComponent implements OnInit {
         this.workflowTemplateService.deactivateTemplate(template.id).subscribe({
           next: () => this.loadTemplates(),
           error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, 'Deactivate failed')),
+            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.deactivateFailed')),
         });
       },
     });

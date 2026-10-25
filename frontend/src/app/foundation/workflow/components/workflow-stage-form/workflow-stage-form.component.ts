@@ -589,7 +589,7 @@ export class WorkflowStageFormComponent implements OnInit {
       error: (err: unknown) => {
         this.saving.set(false);
         if (this.showRefusal(err)) return;
-        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'Save failed'));
+        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed'));
       },
     });
   }
