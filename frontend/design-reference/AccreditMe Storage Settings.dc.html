@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 7 Oct 2026 · File storage settings, recycle bin and the shared upload control · round 2 · on Design System Rev 8, Templates Rev 6, Settings / Task / Meeting Screens</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">File storage</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 104ch; text-wrap: pretty;">Round 2 model: a tenant admin confirms a location once. Until then, uploads are blocked everywhere. After that the location is fixed, and only AccreditMe moves it, on request. Deleted files go to a 30-day recycle bin. Tweaks switch the full English page through every state and the usage panel through its four cases.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="8">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="s1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The page · Settings › File storage</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">English shows <strong style="font-weight: 600; color: #2D3748;">{{ stateLabel }}</strong> (switch in Tweaks). Arabic shows MinIO confirmed. Settings template, 1130px of content.</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 18px;">
+      <sc-for list="{{ pages }}" as="p" hint-placeholder-count="2">
+        <div dir="{{ p.dir }}" style="{{ p.frame }}">
+          <div style="{{ p.crumb }}">{{ p.crumbText }}</div>
+          <div style="{{ p.h1 }}">{{ p.title }}</div>
+          <div style="{{ p.sub }}">{{ p.subText }}</div>
+
+          <div style="{{ p.cur.stripStyle }}">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;">
+              <span style="min-width: 0; flex: 1 1 320px;">
+                <span style="{{ p.microLab }}">{{ p.curLabel }}</span>
+                <span style="{{ p.curName }}">{{ p.cur.name }}</span>
+                <span style="{{ p.curDetail }}">{{ p.cur.detail }}</span>
+              </span>
+              <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+                <span style="{{ p.cur.chipStyle }}">{{ p.cur.chip }}</span>
+                <sc-if value="{{ p.cur.req }}" hint-placeholder-val="{{ false }}"><button style="{{ p.cur.reqStyle }}">{{ p.cur.req }}</button></sc-if>
+              </span>
+            </div>
+            <sc-if value="{{ p.cur.line }}" hint-placeholder-val="{{ false }}"><div style="{{ p.cur.lineStyle }}">{{ p.cur.line }}</div></sc-if>
+          </div>
+
+          <div style="{{ p.card }}">
+            <div style="{{ p.cardHead }}"><span style="{{ p.secTitle }}">{{ p.locTitle }}</span><span style="{{ p.secSub }}">{{ p.locSub }}</span></div>
+            <div role="radiogroup" aria-label="{{ p.locTitle }}">
+              <sc-for list="{{ p.opts }}" as="o" hint-placeholder-count="4">
+                <div style="{{ o.rowStyle }}">
+                  <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <span role="radio" style="{{ o.radioStyle }}">{{ o.dot }}</span>
+                    <span style="flex: 1 1 auto; min-width: 0;">
+                      <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;"><span style="{{ o.titleStyle }}">{{ o.title }}</span><sc-if value="{{ o.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ o.chipStyle }}">{{ o.chip }}</span></sc-if></span>
+                      <span style="{{ o.descStyle }}">{{ o.desc }}</span>
+                    </span>
+                  </div>
+                  <sc-if value="{{ o.open }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ o.cfgStyle }}">
+                      <sc-for list="{{ o.rows }}" as="r" hint-placeholder-count="4">
+                        <div style="{{ r.wrap }}">
+                          <sc-if value="{{ r.isFields }}" hint-placeholder-val="{{ true }}">
+                            <div style="{{ r.grid }}">
+                              <sc-for list="{{ r.cols }}" as="c" hint-placeholder-count="2">
+                                <div style="min-width: 0;">
+                                  <div style="{{ c.labStyle }}">{{ c.label }}<span style="{{ c.tagStyle }}">{{ c.tag }}</span></div>
+                                  <div style="{{ c.box }}"><span dir="{{ c.vdir }}" style="{{ c.valStyle }}">{{ c.value }}</span><sc-if value="{{ c.action }}" hint-placeholder-val="{{ false }}"><span style="{{ c.actStyle }}">{{ c.action }}</span></sc-if></div>
+                                  <div style="{{ c.helpStyle }}">{{ c.help }}</div>
+                                </div>
+                              </sc-for>
+                            </div>
+                          </sc-if>
+                          <sc-if value="{{ r.isPairs }}" hint-placeholder-val="{{ false }}">
+                            <div style="{{ r.grid }}">
+                              <sc-for list="{{ r.pairs }}" as="q" hint-placeholder-count="2">
+                                <div style="min-width: 0;">
+                                  <div style="{{ q.labStyle }}">{{ q.k }}</div>
+                                  <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;"><span dir="{{ q.vdir }}" style="{{ q.valStyle }}">{{ q.v }}</span><sc-if value="{{ q.act }}" hint-placeholder-val="{{ false }}"><a href="#s1" style="{{ q.actStyle }}">{{ q.act }}</a></sc-if></div>
+                                </div>
+                              </sc-for>
+                            </div>
+                          </sc-if>
+                          <sc-if value="{{ r.isBanner }}" hint-placeholder-val="{{ false }}">
+                            <div style="{{ r.box }}">
+                              <div style="{{ r.titleStyle }}">{{ r.title }}</div>
+                              <div style="{{ r.bodyStyle }}">{{ r.body }}</div>
+                              <sc-if value="{{ r.btns }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px;"><sc-for list="{{ r.btns }}" as="b" hint-placeholder-count="1"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></div></sc-if>
+                            </div>
+                          </sc-if>
+                          <sc-if value="{{ r.isTest }}" hint-placeholder-val="{{ false }}">
+                            <div style="{{ r.box }}">
+                              <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;"><span style="{{ r.headStyle }}">{{ r.head }}</span><button style="{{ r.btnStyle }}">{{ r.btn }}</button></div>
+                              <sc-if value="{{ r.steps }}" hint-placeholder-val="{{ false }}">
+                                <div style="display: flex; flex-direction: column; gap: 4px; margin-block-start: 8px;">
+                                  <sc-for list="{{ r.steps }}" as="s" hint-placeholder-count="3">
+                                    <div style="display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: baseline;"><span style="{{ s.gStyle }}">{{ s.g }}</span><span style="min-width: 0;"><span style="{{ s.tStyle }}">{{ s.t }}</span><sc-if value="{{ s.d }}" hint-placeholder-val="{{ false }}"><span style="{{ s.dStyle }}">{{ s.d }}</span></sc-if></span></div>
+                                  </sc-for>
+                                </div>
+                              </sc-if>
+                              <sc-if value="{{ r.note }}" hint-placeholder-val="{{ false }}"><div style="{{ r.noteStyle }}">{{ r.note }}</div></sc-if>
+                            </div>
+                          </sc-if>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ p.hasSave }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ p.saveBar }}">
+                <span style="{{ p.saveWhyStyle }}">{{ p.saveWhy }}</span>
+                <span style="display: flex; gap: 8px;"><sc-if value="{{ p.cancelLabel }}" hint-placeholder-val="{{ false }}"><button style="{{ p.cancelStyle }}">{{ p.cancelLabel }}</button></sc-if><button style="{{ p.saveStyle }}">{{ p.saveLabel }}</button></span>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 14px;">
+            <div style="{{ p.card }}">
+              <div style="{{ p.cardHead }}"><span style="{{ p.secTitle }}">{{ p.useTitle }}</span><span style="{{ p.secSub }}">{{ p.use.sub }}</span></div>
+              <div style="padding: 14px 16px;">
+                <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;"><span style="{{ p.use.bigStyle }}">{{ p.use.big }}</span><span style="{{ p.use.pctStyle }}">{{ p.use.pct }}</span></div>
+                <sc-if value="{{ p.use.meter }}" hint-placeholder-val="{{ true }}"><div role="meter" aria-label="{{ p.use.aria }}" style="{{ p.use.track }}"><span style="{{ p.use.fill }}"></span></div></sc-if>
+                <div style="{{ p.use.lineStyle }}">{{ p.use.line }}</div>
+                <sc-if value="{{ p.use.extra }}" hint-placeholder-val="{{ false }}"><div style="{{ p.use.extraStyle }}">{{ p.use.extra }}</div></sc-if>
+                <div style="{{ p.use.binStyle }}">{{ p.use.bin }}</div>
+              </div>
+            </div>
+            <div style="{{ p.card }}">
+              <div style="{{ p.cardHead }}"><span style="{{ p.secTitle }}">{{ p.rulesTitle }}</span><span style="{{ p.secSub }}">{{ p.rulesSub }}</span></div>
+              <div style="padding: 6px 16px 12px;">
+                <sc-for list="{{ p.rules }}" as="u" hint-placeholder-count="3">
+                  <div style="{{ u.row }}">
+                    <span style="{{ u.kStyle }}">{{ u.k }}</span>
+                    <span style="min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline;"><span style="{{ u.vStyle }}">{{ u.v }}</span><sc-if value="{{ u.tag }}" hint-placeholder-val="{{ false }}"><span style="{{ u.tagStyle }}">{{ u.tag }}</span></sc-if></span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · the page</div>
+        <sc-for list="{{ pageNotes }}" as="n" hint-placeholder-count="8">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; display: flex; justify-content: space-between; gap: 8px;"><span style="font-size: 13px; font-weight: 600;">System health · tenant admins</span><span style="font-size: 11.5px; color: #5A6779;">the three storage conditions</span></div>
+          <sc-for list="{{ health }}" as="h" hint-placeholder-count="4">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-block-end: 1px solid #F0F3F7;">
+              <span style="{{ h.sevStyle }}">{{ h.sev }}</span>
+              <span style="flex: 1 1 auto; min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 500;">{{ h.t }}</span><span style="display: block; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ h.d }}</span></span>
+              <a href="#s1" style="flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none;">{{ h.fix }}</a>
+            </div>
+          </sc-for>
+          <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Each condition clears itself when its cause is fixed (confirmed, below 90%, reachable again). Each appears once, never repeated in the notification bell. Near-limit also sends tenant admins one notification.</div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · settings page</div>
+          <sc-for list="{{ outPage }}" as="o" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2–3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Every location state · Test connection · secrets</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The open option's body only, as it renders under its radio row, with its save bar.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px;">
+      <sc-for list="{{ gallery }}" as="g" hint-placeholder-count="12">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+          <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline;"><span style="font-size: 11px; font-weight: 700; color: #8A94A6;">{{ g.n }}</span><span style="font-size: 12.5px; font-weight: 600;">{{ g.cap }}</span><span style="{{ g.phaseStyle }}">{{ g.phase }}</span></div>
+          <div style="padding: 12px 14px; flex: 1 1 auto;">
+            <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+              <div style="{{ r.wrap }}">
+                <sc-if value="{{ r.isFields }}" hint-placeholder-val="{{ true }}">
+                  <div style="{{ r.grid }}">
+                    <sc-for list="{{ r.cols }}" as="c" hint-placeholder-count="2">
+                      <div style="min-width: 0;">
+                        <div style="{{ c.labStyle }}">{{ c.label }}<span style="{{ c.tagStyle }}">{{ c.tag }}</span></div>
+                        <div style="{{ c.box }}"><span dir="{{ c.vdir }}" style="{{ c.valStyle }}">{{ c.value }}</span><sc-if value="{{ c.action }}" hint-placeholder-val="{{ false }}"><span style="{{ c.actStyle }}">{{ c.action }}</span></sc-if></div>
+                        <div style="{{ c.helpStyle }}">{{ c.help }}</div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ r.isPairs }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ r.grid }}">
+                    <sc-for list="{{ r.pairs }}" as="q" hint-placeholder-count="2">
+                      <div style="min-width: 0;">
+                        <div style="{{ q.labStyle }}">{{ q.k }}</div>
+                        <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;"><span dir="{{ q.vdir }}" style="{{ q.valStyle }}">{{ q.v }}</span><sc-if value="{{ q.act }}" hint-placeholder-val="{{ false }}"><a href="#s2" style="{{ q.actStyle }}">{{ q.act }}</a></sc-if></div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ r.isBanner }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ r.box }}">
+                    <div style="{{ r.titleStyle }}">{{ r.title }}</div>
+                    <div style="{{ r.bodyStyle }}">{{ r.body }}</div>
+                    <sc-if value="{{ r.btns }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px;"><sc-for list="{{ r.btns }}" as="b" hint-placeholder-count="1"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></div></sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ r.isTest }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ r.box }}">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;"><span style="{{ r.headStyle }}">{{ r.head }}</span><button style="{{ r.btnStyle }}">{{ r.btn }}</button></div>
+                    <sc-if value="{{ r.steps }}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; flex-direction: column; gap: 4px; margin-block-start: 8px;">
+                        <sc-for list="{{ r.steps }}" as="s" hint-placeholder-count="3">
+                          <div style="display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: baseline;"><span style="{{ s.gStyle }}">{{ s.g }}</span><span style="min-width: 0;"><span style="{{ s.tStyle }}">{{ s.t }}</span><sc-if value="{{ s.d }}" hint-placeholder-val="{{ false }}"><span style="{{ s.dStyle }}">{{ s.d }}</span></sc-if></span></div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ r.note }}" hint-placeholder-val="{{ false }}"><div style="{{ r.noteStyle }}">{{ r.note }}</div></sc-if>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding: 8px 14px; border-block-start: 1px solid #F0F3F7; background: #FBFCFD; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; align-items: center;">
+            <span style="font-size: 11.5px; color: #4A5568;">{{ g.saveWhy }}</span>
+            <span style="{{ g.saveStyle }}">{{ g.saveLabel }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · Test connection</div>
+        <sc-for list="{{ testNotes }}" as="n" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · locked locations, secrets, SharePoint</div>
+        <sc-for list="{{ secretNotes }}" as="n" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="s3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Dialogs · confirm, request a change, delete, restore, purge</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Standard density. Each body is measured below its frame. Switch, switch confirm and Disconnect are removed.</span>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+      <sc-for list="{{ dialogs }}" as="d" hint-placeholder-count="10">
+        <div style="{{ d.outer }}">
+          <div dir="{{ d.dir }}" style="{{ d.capStyle }}">{{ d.cap }}</div>
+          <div dir="{{ d.dir }}" style="{{ d.frame }}">
+            <div style="{{ d.headStyle }}"><span style="min-width: 0;"><span style="{{ d.titleStyle }}">{{ d.title }}</span><span style="{{ d.ctxStyle }}">{{ d.ctx }}</span></span><span aria-label="Close" style="color: #5A6779; font-size: 13px;">✕</span></div>
+            <div style="{{ d.bodyStyle }}">
+              <sc-for list="{{ d.items }}" as="it" hint-placeholder-count="3">
+                <div style="{{ it.wrap }}">
+                  <sc-if value="{{ it.isNote }}" hint-placeholder-val="{{ true }}"><div style="{{ it.style }}">{{ it.text }}</div></sc-if>
+                  <sc-if value="{{ it.isPairs }}" hint-placeholder-val="{{ false }}"><div style="{{ it.grid }}"><sc-for list="{{ it.pairs }}" as="q" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ q.labStyle }}">{{ q.k }}</div><div dir="{{ q.vdir }}" style="{{ q.valStyle }}">{{ q.v }}</div></div></sc-for></div></sc-if>
+                  <sc-if value="{{ it.isArea }}" hint-placeholder-val="{{ false }}"><div style="{{ it.labStyle }}">{{ it.label }}<span style="font-weight: 400; color: #5A6779;">{{ it.tag }}</span></div><div style="{{ it.areaStyle }}">{{ it.text }}</div><div style="{{ it.helpStyle }}">{{ it.help }}</div></sc-if>
+                  <sc-if value="{{ it.isSearch }}" hint-placeholder-val="{{ false }}"><div style="{{ it.box }}"><span style="color: #8A94A6;">⌕</span><span style="{{ it.valStyle }}">{{ it.text }}</span></div></sc-if>
+                  <sc-if value="{{ it.isList }}" hint-placeholder-val="{{ false }}"><div style="{{ it.listStyle }}"><sc-for list="{{ it.rows }}" as="r" hint-placeholder-count="7"><div style="{{ r.style }}"><span style="min-width: 0; flex: 1 1 auto;"><span style="{{ r.tStyle }}">{{ r.t }}</span><span dir="ltr" style="{{ r.bStyle }}">{{ r.b }}</span></span><span style="{{ r.mStyle }}">{{ r.m }}</span></div></sc-for></div></sc-if>
+                  <sc-if value="{{ it.isCheck }}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px;"><span role="checkbox" style="{{ it.boxStyle }}">{{ it.mark }}</span><span style="{{ it.tStyle }}">{{ it.text }}</span></div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="{{ d.footStyle }}"><span style="{{ d.footLeftStyle }}">{{ d.footLeft }}</span><span style="display: flex; gap: 8px;"><sc-for list="{{ d.buttons }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ d.measure }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 16px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Every dialog body, both languages · cap 420</div>
+        <sc-for list="{{ measures }}" as="m" hint-placeholder-count="7">
+          <div style="display: flex; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12px;"><span style="flex: 1 1 0; min-width: 0; font-weight: 500;">{{ m.d }}</span><span style="flex: none; width: 110px; color: #5A6779;">{{ m.s }}</span><span style="flex: none; width: 46px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.en }}</span><span style="flex: none; width: 46px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.ar }}</span></div>
+        </sc-for>
+        <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Same constants as the Task and Meeting Screens. Read-only pair: EN 40, AR 44. Confirm sentence: EN 21px a line, AR 24px a line, at the 420 width (about 52 Latin characters a line). Three-row textarea with its message slot: EN 119, AR 130. Checkbox row: EN 24, AR 26. Gaps 12.</div>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · dialogs</div>
+        <sc-for list="{{ dialogNotes }}" as="n" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="s5" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Usage · AccreditMe cloud (three levels) and your own storage</h2>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px;">
+      <sc-for list="{{ usageAll }}" as="u" hint-placeholder-count="4">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ u.cap }}</div>
+          <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;"><span style="{{ u.bigStyle }}">{{ u.big }}</span><span style="{{ u.pctStyle }}">{{ u.pct }}</span></div>
+          <sc-if value="{{ u.meter }}" hint-placeholder-val="{{ true }}"><div role="meter" aria-label="{{ u.aria }}" style="{{ u.track }}"><span style="{{ u.fill }}"></span></div></sc-if>
+          <div style="{{ u.lineStyle }}">{{ u.line }}</div>
+          <sc-if value="{{ u.extra }}" hint-placeholder-val="{{ false }}"><div style="{{ u.extraStyle }}">{{ u.extra }}</div></sc-if>
+          <div style="{{ u.binStyle }}">{{ u.bin }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="font-size: 12px; color: #4A5568; margin-block-start: 10px; text-wrap: pretty; max-width: 112ch;">The limit counts AccreditMe cloud only. On your own storage the panel shows files and size there, with “Your own storage: no AccreditMe limit applies” and no meter, so nobody reads it as a gauge. Files still in AccreditMe cloud from before get one line against the limit. Near the limit (from 90%) the fill is amber and hatched with “Almost full”; at the limit it's solid red with the consequence spelled out. Raising the limit is plain text, “Contact AccreditMe to raise the limit.”, because only AccreditMe changes a plan.</div>
+  </section>
+
+  <section id="s6" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">6</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Recycle bin · Settings › Recycle bin</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Tenant admins only. Files only. A list, no open, preview or download. Data list (template 1) at 1130px.</span>
+    </div>
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; padding: 16px 18px; max-width: 1130px;">
+      <div style="font-size: 11.5px; color: #5A6779;">Settings / Recycle bin</div>
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px;">
+        <div><div style="font-size: 22px; line-height: 28px; font-weight: 600;">Recycle bin</div><div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">18 files · 212 MB. Deleted files stay here for 30 days, then are deleted for good. They count towards your storage limit until then.</div></div>
+      </div>
+      <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; margin-block-start: 12px; overflow-x: auto;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-block-end: 1px solid #E2E8F0;">
+          <span style="display: flex; align-items: center; height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 9px; flex: 0 1 240px; font-size: 12.5px; color: #8A94A6;">⌕ Search file name…</span>
+          <span style="font-size: 12px; color: #2D3748; background: #fff; border: 1px solid #8A94A6; border-radius: 999px; padding: 3px 10px;">Record type ▾</span>
+          <span style="font-size: 12px; color: #2D3748; background: #fff; border: 1px solid #8A94A6; border-radius: 999px; padding: 3px 10px;">Deleted by ▾</span>
+          <span style="font-size: 12px; color: #2D3748; background: #fff; border: 1px solid #8A94A6; border-radius: 999px; padding: 3px 10px;">Deleted ▾</span>
+          <span style="margin-inline-start: auto; font-size: 12px; color: #5A6779;">Soonest to expire first</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; background: #E4EEF6; border-block-end: 1px solid #C5DAEA;">
+          <span style="font-size: 13px; font-weight: 600; color: #1F5480;">3 selected · 6.7 MB</span>
+          <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 5px 12px; font-family: inherit; font-size: 12.5px; font-weight: 500;">Restore…</button>
+          <button style="background: #fff; color: #B42318; border: 1px solid #B42318; border-radius: 6px; padding: 5px 12px; font-family: inherit; font-size: 12.5px; font-weight: 600;">Purge…</button>
+          <a href="#s6" style="font-size: 12.5px; text-decoration: none;">Clear selection</a>
+        </div>
+        <div style="display: flex; gap: 12px; padding: 6px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779; min-width: 1000px;">
+          <span style="flex: none; width: 18px;"></span><span style="flex: 1 1 240px; min-width: 200px;">File</span><span style="flex: 1 1 260px; min-width: 220px;">From</span><span style="flex: none; width: 140px;">Deleted by</span><span style="flex: none; width: 96px;">Deleted</span><span style="flex: none; width: 92px;">Days left</span><span style="flex: none; width: 150px; text-align: end;">Actions</span>
+        </div>
+        <sc-for list="{{ binRows }}" as="b" hint-placeholder-count="6">
+          <div style="{{ b.rowStyle }}">
+            <span role="checkbox" aria-label="{{ b.selAria }}" style="{{ b.boxStyle }}">{{ b.mark }}</span>
+            <span style="flex: 1 1 240px; min-width: 200px;"><span style="display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ b.name }}</span><span style="display: block; font-size: 11.5px; color: #5A6779;">{{ b.meta }}</span></span>
+            <span style="flex: 1 1 260px; min-width: 220px;"><span style="display: block; font-size: 11.5px; color: #5A6779;">{{ b.fromType }}</span><sc-if value="{{ b.gone }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 12.5px; color: #5A6779; text-decoration: line-through;">{{ b.from }}</span></sc-if><sc-if value="{{ b.live }}" hint-placeholder-val="{{ true }}"><a href="#s6" style="display: block; font-size: 12.5px; font-weight: 500; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ b.from }}</a></sc-if></span>
+            <span style="flex: none; width: 140px; font-size: 12.5px; color: #4A5568;">{{ b.by }}</span>
+            <span style="flex: none; width: 96px; font-size: 12.5px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ b.when }}</span>
+            <span style="{{ b.daysStyle }}">{{ b.days }}</span>
+            <span style="flex: none; width: 150px; display: flex; justify-content: flex-end; gap: 12px;">
+              <sc-if value="{{ b.live }}" hint-placeholder-val="{{ true }}"><a href="#s4" aria-label="{{ b.restoreAria }}" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">Restore</a></sc-if>
+              <a href="#s4" aria-label="{{ b.purgeAria }}" style="font-size: 12.5px; font-weight: 600; text-decoration: none; color: #B42318;">Purge…</a>
+            </span>
+          </div>
+          <sc-if value="{{ b.gone }}" hint-placeholder-val="{{ false }}"><div style="padding: 0 12px 8px 42px; font-size: 11.5px; color: #4A5568; background: #fff; border-block-end: 1px solid #F0F3F7; min-width: 1000px; box-sizing: border-box;">Can't be restored: the record it came from no longer exists.</div></sc-if>
+        </sc-for>
+        <div style="display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; font-size: 12px; color: #5A6779;"><span>1–6 of 18</span><span>‹ 1 2 3 ›</span></div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;"><span style="display: block; font-size: 15px; font-weight: 600;">سلة المحذوفات</span><span style="display: block; font-size: 12.5px; color: #4A5568;">تبقى الملفات المحذوفة هنا <span dir="ltr" style="unicode-bidi: isolate;">30</span> يومًا ثم تُحذف نهائيًا، وتُحتسب ضمن حد التخزين حتى ذلك الحين.</span></div>
+        <sc-for list="{{ binRowsAr }}" as="b" hint-placeholder-count="3">
+          <div style="{{ b.rowStyle }}">
+            <span style="flex: none; width: 16px; height: 16px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 3px;"></span>
+            <span style="flex: 1 1 auto; min-width: 0;"><span style="display: block; font-size: 13.5px; font-weight: 500; unicode-bidi: plaintext; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ b.name }}</span><span style="display: block; font-size: 12.5px; color: #5A6779;">{{ b.from }}</span></span>
+            <span style="{{ b.daysStyle }}">{{ b.days }}</span>
+            <sc-if value="{{ b.live }}" hint-placeholder-val="{{ true }}"><a href="#s4" style="flex: none; font-size: 13.5px; font-weight: 600; text-decoration: none;">استعادة</a></sc-if>
+            <a href="#s4" style="flex: none; font-size: 13.5px; font-weight: 600; text-decoration: none; color: #B42318;">حذف نهائي…</a>
+          </div>
+          <sc-if value="{{ b.gone }}" hint-placeholder-val="{{ false }}"><div style="padding: 0 38px 8px 12px; font-size: 12.5px; color: #4A5568; border-block-end: 1px solid #F0F3F7;">لا يمكن استعادته: السجل الذي جاء منه لم يعد موجودًا.</div></sc-if>
+        </sc-for>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 18px 14px; background: #fff; text-align: center;">
+          <div style="width: 30px; height: 30px; border-radius: 7px; border: 1px dashed #CBD5E0; background: #F4F7FA; margin: 0 auto 6px;"></div>
+          <div style="font-size: 13.5px; font-weight: 600;">The recycle bin is empty</div>
+          <div style="font-size: 12px; color: #5A6779; max-width: 46ch; margin: 2px auto 0; text-wrap: pretty;">Files deleted from tasks and meetings stay here for 30 days, so you can restore them.</div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px 14px; background: #fff; text-align: center;">
+          <div style="font-size: 13.5px; font-weight: 600;">No deleted files match</div>
+          <div style="font-size: 12px; color: #5A6779; margin-block-start: 2px;">18 files in the bin; none deleted by Omar Haddad in the last 7 days.</div>
+          <button style="margin-block-start: 8px; background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 5px 12px; font-family: inherit; font-size: 12.5px;">Clear filters</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · recycle bin</div>
+        <sc-for list="{{ binNotes }}" as="n" hint-placeholder-count="8">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · recycle bin</div>
+        <sc-for list="{{ outBin }}" as="o" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="s7" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">7</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The shared upload control · am-file-upload</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">One component: a drop zone above a list of file rows. Task Screens' drawn states are kept; the rest is added.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); gap: 14px;">
+      <sc-for list="{{ upStates }}" as="u" hint-placeholder-count="12">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin-block-end: 7px;"><span style="font-size: 11px; font-weight: 700; color: #8A94A6;">{{ u.n }}</span><span style="font-size: 12.5px; font-weight: 600;">{{ u.cap }}</span><span style="{{ u.originStyle }}">{{ u.origin }}</span></div>
+          <sc-if value="{{ u.zone }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ u.zone.style }}"><span style="{{ u.zone.tStyle }}">{{ u.zone.t }}</span><span style="{{ u.zone.lStyle }}">{{ u.zone.l }}</span><sc-if value="{{ u.zone.act }}" hint-placeholder-val="{{ false }}"><a href="#s1" style="{{ u.zone.actStyle }}">{{ u.zone.act }}</a></sc-if></div>
+          </sc-if>
+          <sc-for list="{{ u.files }}" as="f" hint-placeholder-count="1">
+            <div style="{{ f.rowStyle }}">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="{{ f.iconStyle }}">{{ f.icon }}</span>
+                <span style="flex: 1 1 auto; min-width: 0;"><span style="{{ f.nameStyle }}">{{ f.name }}</span><span style="{{ f.metaStyle }}">{{ f.meta }}</span></span>
+                <sc-if value="{{ f.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ f.chipStyle }}">{{ f.chip }}</span></sc-if>
+                <span style="display: flex; gap: 10px; flex: none;"><sc-for list="{{ f.acts }}" as="a" hint-placeholder-count="2"><a href="#s7" aria-label="{{ a.aria }}" style="{{ a.style }}">{{ a.label }}</a></sc-for></span>
+              </div>
+              <sc-if value="{{ f.pct }}" hint-placeholder-val="{{ false }}"><div role="progressbar" aria-label="{{ f.pctAria }}" style="height: 4px; margin-block-start: 6px; background: #E2E8F0; border-radius: 2px; overflow: hidden;"><span style="{{ f.pctFill }}"></span></div></sc-if>
+              <sc-if value="{{ f.msg }}" hint-placeholder-val="{{ false }}"><div style="{{ f.msgStyle }}">{{ f.msg }}</div></sc-if>
+            </div>
+          </sc-for>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 7px; text-wrap: pretty;">{{ u.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 14px; margin-block-start: 16px;">
+      <sc-for list="{{ homes }}" as="h" hint-placeholder-count="4">
+        <div dir="{{ h.dir }}" style="{{ h.frame }}">
+          <div style="{{ h.capStyle }}">{{ h.cap }}</div>
+          <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"><span style="{{ h.titleStyle }}">{{ h.title }}</span><sc-if value="{{ h.tag }}" hint-placeholder-val="{{ false }}"><span style="{{ h.tagStyle }}">{{ h.tag }}</span></sc-if></span><sc-if value="{{ h.add }}" hint-placeholder-val="{{ false }}"><a href="#s7" style="{{ h.addStyle }}">{{ h.add }}</a></sc-if></div>
+            <sc-if value="{{ h.zone }}" hint-placeholder-val="{{ false }}"><div style="padding: 10px 12px 0;"><div style="{{ h.zone.style }}"><span style="{{ h.zone.tStyle }}">{{ h.zone.t }}</span><span style="{{ h.zone.lStyle }}">{{ h.zone.l }}</span><sc-if value="{{ h.zone.act }}" hint-placeholder-val="{{ false }}"><a href="#s1" style="{{ h.zone.actStyle }}">{{ h.zone.act }}</a></sc-if></div></div></sc-if>
+            <div style="padding: 4px 12px 8px;">
+              <sc-for list="{{ h.files }}" as="f" hint-placeholder-count="3">
+                <div style="{{ f.rowStyle }}">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="{{ f.iconStyle }}">{{ f.icon }}</span>
+                    <span style="flex: 1 1 auto; min-width: 0;"><span style="{{ f.nameStyle }}">{{ f.name }}</span><span style="{{ f.metaStyle }}">{{ f.meta }}</span></span>
+                    <sc-if value="{{ f.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ f.chipStyle }}">{{ f.chip }}</span></sc-if>
+                    <span style="display: flex; gap: 10px; flex: none;"><sc-for list="{{ f.acts }}" as="a" hint-placeholder-count="2"><a href="#s7" aria-label="{{ a.aria }}" style="{{ a.style }}">{{ a.label }}</a></sc-for></span>
+                  </div>
+                  <sc-if value="{{ f.pct }}" hint-placeholder-val="{{ false }}"><div role="progressbar" aria-label="{{ f.pctAria }}" style="height: 4px; margin-block-start: 6px; background: #E2E8F0; border-radius: 2px; overflow: hidden;"><span style="{{ f.pctFill }}"></span></div></sc-if>
+                  <sc-if value="{{ f.msg }}" hint-placeholder-val="{{ false }}"><div style="{{ f.msgStyle }}">{{ f.msg }}</div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="{{ h.noteStyle }}">{{ h.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · the control</div>
+        <sc-for list="{{ upNotes }}" as="n" hint-placeholder-count="8">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · upload control</div>
+        <sc-for list="{{ outUp }}" as="o" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #ABEFC6; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #ABEFC6; padding-block-end: 10px; margin-block-end: 14px;">
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Decided by the product owner</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Round 1's questions, now answered and drawn. There are no open questions.</span>
+    </div>
+    <sc-for list="{{ decided }}" as="q" hint-placeholder-count="7">
+      <div style="display: grid; grid-template-columns: 74px 1fr; gap: 10px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 11px; font-weight: 700; color: #067647; padding-block-start: 2px;">DECIDED</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;"><strong style="color: #2D3748;">{{ q.k }}</strong> {{ q.v }}</span></div>
+    </sc-for>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px;">
+    <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 600;">What changed · round 2</h2>
+    <sc-for list="{{ changed }}" as="s" hint-placeholder-count="8">
+      <div style="display: grid; grid-template-columns: minmax(0, 200px) 1fr; gap: 12px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12.5px; font-weight: 600;">{{ s.where }}</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ s.what }}</span></div>
+    </sc-for>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;state&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;first&quot;, &quot;firstMinio&quot;, &quot;firstRunning&quot;, &quot;firstPassed&quot;, &quot;firstFailWrite&quot;, &quot;firstFailRead&quot;, &quot;firstFailDelete&quot;, &quot;firstStale&quot;, &quot;firstLocal&quot;, &quot;firstLocalCloud&quot;, &quot;firstSpNone&quot;, &quot;firstSpConsent&quot;, &quot;firstSpPick&quot;, &quot;firstSpPassed&quot;, &quot;cloud&quot;, &quot;minio&quot;, &quot;minioReplace&quot;, &quot;minioReplacePassed&quot;, &quot;local&quot;, &quot;sp&quot;, &quot;spError&quot;, &quot;spConsent&quot;, &quot;requested&quot;], &quot;default&quot;: &quot;first&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Settings page&quot;}, &quot;usage&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;normal&quot;, &quot;near&quot;, &quot;full&quot;, &quot;own&quot;], &quot;default&quot;: &quot;normal&quot;, &quot;tsType&quot;: &quot;'normal' | 'near' | 'full' | 'own'&quot;, &quot;section&quot;: &quot;Settings page&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const state = this.props.state || "first";
+    const usage = this.props.usage || "normal";
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = "font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const Fz = (ar) => ar ? { lab: 13, labLh: 20, val: 14, help: 12.5, helpLh: 20, body: 14, bodyLh: 22 } : { lab: 12, labLh: 18, val: 13, help: 11.5, helpLh: 17, body: 13, bodyLh: 20 };
+    const btn = (label, kind, ar) => ({ label, style: "font-family: inherit; font-size: " + (ar ? 14 : 13) + "px; border-radius: 6px; padding: 6px 12px; white-space: nowrap; " + ({
+      primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;",
+      secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;",
+      text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;",
+      danger: "background: #B42318; color: #fff; border: 1px solid #912018; font-weight: 600;",
+      dangerOff: "background: #F4D9D6; color: #7A271A; border: 1px solid #F4D9D6; font-weight: 600; cursor: not-allowed;",
+      disabled: "background: #DCE5EE; color: #5A6779; border: 1px solid #DCE5EE; font-weight: 600; cursor: not-allowed;",
+      busy: "background: #fff; color: #5A6779; border: 1px solid #CBD5E0; font-weight: 500; cursor: progress;" })[kind] });
+
+    const R = (ar) => {
+      const F = Fz(ar);
+      const lab = "display: block; font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px;";
+      const helpInk = (t) => ({ info: "#1F5480", warn: "#B54708; font-weight: 500", error: "#B42318; font-weight: 500" })[t] || "#5A6779";
+      const field = (o) => {
+        const st = o.st || "rest";
+        return {
+          label: o.label, tag: o.req ? (ar ? " · مطلوب" : " · required") : o.opt ? (ar ? " · اختياري" : " · optional") : "",
+          tagStyle: "font-weight: 400; color: #5A6779;", labStyle: lab,
+          box: "display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; " + ({
+            rest: "background: #fff; border: 1px solid #8A94A6;", focus: "background: #fff; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);",
+            error: "background: #fff; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);", stale: "background: #fff; border: 1px solid #B54708;",
+            set: "background: #F4F7FA; border: 1px solid #E2E8F0;", locked: "background: #F4F7FA; border: 1px solid #E2E8F0;" })[st],
+          value: o.value || o.ph || "", vdir: o.ltr ? "ltr" : "auto",
+          valStyle: "flex: 1 1 auto; min-width: 0; font-size: " + F.val + "px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; unicode-bidi: isolate; color: " + (o.ph && !o.value ? "#8A94A6" : "#2D3748") + ";" + (o.secret ? " letter-spacing: 0.12em;" : "") + (st === "set" || st === "locked" ? " font-weight: 500;" : ""),
+          action: o.action || null, actStyle: "flex: none; font-size: " + F.lab + "px; font-weight: 600; color: " + (o.actTone === "muted" ? "#5A6779" : "#2E6FA3") + ";",
+          help: o.help || "", helpStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; min-height: " + F.helpLh + "px; margin-block-start: 4px; text-wrap: pretty; color: " + helpInk(o.tone) + ";"
+        };
+      };
+      return {
+        fields: (cols, top) => ({ isFields: true, wrap: "margin-block-start: " + (top || 0) + "px;", grid: "display: grid; grid-template-columns: " + (cols.length === 2 ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)") + "; gap: 12px;", cols: cols.map(field) }),
+        pairs: (list, top) => ({ isPairs: true, wrap: "margin-block-start: " + (top || 0) + "px;", grid: "display: grid; grid-template-columns: repeat(" + Math.min(list.length, 3) + ", minmax(0, 1fr)); gap: 12px;",
+          pairs: list.map(p => ({ k: p.k, v: p.v, vdir: p.ltr ? "ltr" : "auto", act: p.act || null,
+            labStyle: "font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #5A6779; margin-block-end: 2px;",
+            valStyle: "font-size: " + F.val + "px; font-weight: 500; color: #2D3748; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; unicode-bidi: isolate;",
+            actStyle: "font-size: " + F.lab + "px; font-weight: 600; text-decoration: none;" })) }),
+        banner: (tone, title, body, btns, top) => ({ isBanner: true, wrap: "margin-block-start: " + (top || 0) + "px;", title, body, btns: btns || null,
+          box: "border-radius: 6px; padding: 10px 12px; " + ({ info: "background: #F2F7FB; border: 1px solid #C5DAEA;", warn: "background: #FFFAEB; border: 1px solid #FEDF89;", danger: "background: #FEF3F2; border: 1px solid #FECDCA;", muted: "background: #F4F7FA; border: 1px solid #E2E8F0;" })[tone],
+          titleStyle: "font-size: " + F.body + "px; font-weight: 600; color: " + ({ info: "#1F5480", warn: "#B54708", danger: "#B42318", muted: "#2D3748" })[tone] + ";",
+          bodyStyle: "font-size: " + (F.body - 0.5) + "px; line-height: " + F.bodyLh + "px; color: #2D3748; text-wrap: pretty;" }),
+        test: (o, top) => ({ isTest: true, wrap: "margin-block-start: " + (top || 0) + "px;",
+          box: "border-radius: 6px; padding: 10px 12px; " + ({ idle: "background: #FBFCFD; border: 1px solid #E2E8F0;", run: "background: #F2F7FB; border: 1px solid #C5DAEA;", pass: "background: #ECFDF3; border: 1px solid #ABEFC6;", fail: "background: #FEF3F2; border: 1px solid #FECDCA;", stale: "background: #FFFAEB; border: 1px solid #FEDF89;" })[o.tone],
+          head: o.head, headStyle: "font-size: " + F.body + "px; font-weight: 600; color: " + ({ idle: "#2D3748", run: "#1F5480", pass: "#067647", fail: "#B42318", stale: "#B54708" })[o.tone] + ";",
+          btn: o.btn, btnStyle: btn("", o.btnKind || "secondary", ar).style,
+          steps: o.steps ? o.steps.map(s => ({ g: ({ done: "✓", run: "◌", fail: "✕", wait: "○", skip: "–" })[s.s], t: s.t, d: s.d || null,
+            gStyle: "font-size: 12px; font-weight: 700; text-align: center; color: " + ({ done: "#067647", run: "#1F5480", fail: "#B42318", wait: "#8A94A6", skip: "#8A94A6" })[s.s] + ";",
+            tStyle: "display: block; font-size: " + F.val + "px; " + (s.s === "fail" ? "font-weight: 600; color: #B42318;" : s.s === "wait" || s.s === "skip" ? "color: #5A6779;" : "color: #2D3748;"),
+            dStyle: "display: block; font-size: " + F.help + "px; line-height: " + F.helpLh + "px; color: #2D3748; text-wrap: pretty;" })) : null,
+          note: o.note || null, noteStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; color: #4A5568; margin-block-start: 6px; text-wrap: pretty;" })
+      };
+    };
+    const en = R(false), ar = R(true);
+
+    const LOCK = "Changing where files are stored is done by AccreditMe.";
+    const steps = (w, r, d, detail) => [
+      { t: "Write a small test file", s: w, d: w === "fail" ? detail : null },
+      { t: "Read it back", s: r, d: r === "fail" ? detail : null },
+      { t: "Delete it", s: d, d: d === "fail" ? detail : null }
+    ];
+    const secret = {
+      empty: { label: "Secret key", req: 1, value: "", ph: "Paste the secret key", ltr: 1, help: "Shown while you type, never again after saving" },
+      typed: { label: "Secret key", req: 1, value: "••••••••••••••••••••", ltr: 1, secret: 1, action: "Show", actTone: "muted", help: "Shown while you type, never again after saving" },
+      set: { label: "Secret key", value: "Set · 3 Oct 2026", st: "set", action: "Replace", help: "Can't be shown. Replace it with the access key." },
+      replacing: { label: "Secret key", req: 1, value: "••••••••••••••••••••", ltr: 1, secret: 1, st: "focus", action: "Cancel", actTone: "muted", help: "The saved key stays in use until you save", tone: "info" }
+    };
+    const minioOpen = (o) => [
+      en.fields([{ label: "Endpoint URL", req: 1, value: "https://minio.alnakheel.local:9000", ltr: 1, help: "The address your MinIO server answers on, with its port" }], 0),
+      en.fields([{ label: "Bucket", req: 1, value: o.bucket || "accreditme-files", ltr: 1, st: o.bucketSt, help: o.bucketHelp || "Must already exist", tone: o.bucketTone }, { label: "Region", opt: 1, value: "", ph: "e.g. me-central-1", ltr: 1, help: "Only if your server requires one" }], 12),
+      en.fields([{ label: "Access key", req: 1, value: o.ak === "" ? "" : "AKAM-QUALITY-01", ph: "Paste the access key", ltr: 1 }, o.secret], 12),
+      en.fields([{ label: "Use HTTPS", value: "On", action: "▼", actTone: "muted", help: "Off sends files unencrypted between the servers" }], 12)
+    ];
+    const minioLocked = (o) => [
+      en.fields([{ label: "Endpoint URL", value: "https://minio.alnakheel.local:9000", ltr: 1, st: "locked", action: "🔒", actTone: "muted", help: LOCK }], 0),
+      en.fields([{ label: "Bucket", value: "accreditme-files", ltr: 1, st: "locked", action: "🔒", actTone: "muted", help: "Locked" }, { label: "Region · HTTPS", value: "None · On", st: "locked", action: "🔒", actTone: "muted", help: "Locked" }], 12),
+      en.fields([{ label: "Access key", req: o.replacing ? 1 : 0, value: o.replacing ? "AKAM-QUALITY-02" : "AKAM-QUALITY-01", ltr: 1, st: o.replacing ? "rest" : "set", action: o.replacing ? null : "Replace", help: o.replacing ? "New key for the same endpoint and bucket" : "Replace together with the secret" }, o.secret], 12)
+    ];
+    const save = (why, kind, label) => ({ why, kind, label });
+
+    const ST = {
+      first: { cap: "First visit · AccreditMe cloud selected", phase: "first-time", opt: "cloud", cur: "none", rows: [
+        en.banner("muted", "Nothing to set up", "AccreditMe manages this storage. Confirm it to open uploads for everyone, or choose your own storage below.", null, 0)
+      ], save: save("Uploads are blocked until a location is confirmed", "primary", "Confirm AccreditMe cloud…") },
+      firstMinio: { cap: "First visit · MinIO being set up", phase: "first-time", opt: "minio", cur: "none", rows: minioOpen({ secret: secret.empty, ak: "" }).concat([
+        en.test({ tone: "idle", head: "Not tested yet", btn: "Test connection", note: "Writes a small file, reads it back and deletes it. Takes a few seconds." }, 12)
+      ]), save: save("Test the connection first", "disabled", "Confirm MinIO…") },
+      firstRunning: { cap: "First visit · MinIO test running", phase: "first-time", opt: "minio", cur: "none", rows: minioOpen({ secret: secret.typed }).concat([
+        en.test({ tone: "run", head: "Testing… step 2 of 3", btn: "Testing…", btnKind: "busy", steps: steps("done", "run", "wait") }, 12)
+      ]), save: save("Waiting for the test", "disabled", "Confirm MinIO…") },
+      firstFailWrite: { cap: "First visit · failed at write", phase: "first-time", opt: "minio", cur: "none", rows: minioOpen({ secret: secret.typed, bucketSt: "error", bucketHelp: "AccreditMe couldn't write to this bucket", bucketTone: "error" }).concat([
+        en.test({ tone: "fail", head: "Couldn't write to the bucket", btn: "Test again", steps: steps("fail", "skip", "skip", "The server said access is denied for bucket “accreditme-files”. Check that this access key may write to it.") }, 12)
+      ]), save: save("Fix the problem and test again", "disabled", "Confirm MinIO…") },
+      firstFailRead: { cap: "First visit · failed at read", phase: "first-time", opt: "minio", cur: "none", rows: minioOpen({ secret: secret.typed }).concat([
+        en.test({ tone: "fail", head: "Wrote the file but couldn't read it back", btn: "Test again", steps: steps("done", "fail", "skip", "The server said the file wasn't found. Something may be removing new files, or the key can write but not read.") }, 12)
+      ]), save: save("Fix the problem and test again", "disabled", "Confirm MinIO…") },
+      firstFailDelete: { cap: "First visit · failed at delete", phase: "first-time", opt: "minio", cur: "none", rows: minioOpen({ secret: secret.typed }).concat([
+        en.test({ tone: "fail", head: "Couldn't delete the test file", btn: "Test again", steps: steps("done", "done", "fail", "The server said access is denied. AccreditMe must be able to delete files when the recycle bin empties. The test file “accreditme-probe-7f31c” was left in the bucket."), note: "Decided: a delete failure blocks saving." }, 12)
+      ]), save: save("Fix the problem and test again", "disabled", "Confirm MinIO…") },
+      firstPassed: { cap: "First visit · MinIO test passed", phase: "first-time", opt: "minio", cur: "none", rows: minioOpen({ secret: secret.typed }).concat([
+        en.test({ tone: "pass", head: "✓ Connection works · tested 09:12", btn: "Test again", steps: steps("done", "done", "done") }, 12)
+      ]), save: save("Tested with exactly these values", "primary", "Confirm MinIO…") },
+      firstStale: { cap: "First visit · edited after a pass", phase: "first-time", opt: "minio", cur: "none", rows: minioOpen({ secret: secret.typed, bucket: "accreditme-evidence", bucketSt: "stale", bucketHelp: "Changed since the test", bucketTone: "warn" }).concat([
+        en.test({ tone: "stale", head: "Test out of date · the bucket changed after it passed", btn: "Test again", note: "The 09:12 pass was for “accreditme-files”. Confirming needs a pass for the values on screen. Decided: a pass never expires with time." }, 12)
+      ]), save: save("Settings changed since the test · test again", "disabled", "Confirm MinIO…") },
+      firstLocal: { cap: "First visit · local folder (on-premises installation)", phase: "first-time", opt: "local", cur: "none", onprem: true, rows: [
+        en.fields([{ label: "Folder path", req: 1, value: "\\\\fileserver01\\AccreditMe\\files", ltr: 1, help: "A folder or network share the AccreditMe server can write to, as the server sees it" }], 0),
+        en.test({ tone: "pass", head: "✓ Connection works · tested 09:20", btn: "Test again", steps: steps("done", "done", "done") }, 12)
+      ], save: save("Tested with exactly these values", "primary", "Confirm local folder…") },
+      firstLocalCloud: { cap: "First visit · local folder on AccreditMe's cloud", phase: "first-time", opt: "local", cur: "none", disabledOnly: true, rows: [
+        en.banner("muted", "Not available here", "This option exists for organisations that run AccreditMe on their own servers. On AccreditMe's cloud it shows disabled with its reason, so customers learn it exists.", null, 0)
+      ], save: null },
+      firstSpNone: { cap: "First visit · SharePoint, not connected", phase: "first-time", opt: "sp", cur: "none", rows: [
+        en.banner("info", "Connect your Microsoft 365", "A Microsoft sign-in opens in a new window. Someone who can approve apps for your organisation (a Global or Privileged Role Administrator) signs in and approves access for AccreditMe. Then you choose the site and library here.", [btn("Connect to Microsoft ↗", "primary")], 0)
+      ], save: save("Connect first", "disabled", "Confirm SharePoint…") },
+      firstSpConsent: { cap: "First visit · SharePoint, waiting for Microsoft", phase: "first-time", opt: "sp", cur: "none", rows: [
+        en.banner("info", "Waiting for Microsoft…", "Finish approving in the Microsoft window. This page updates by itself when you're done. If the window closed or didn't open, open it again.", [btn("Open the window again ↗", "secondary"), btn("Cancel", "text")], 0)
+      ], save: save("Waiting for Microsoft", "disabled", "Confirm SharePoint…") },
+      firstSpPick: { cap: "First visit · SharePoint, choosing site and library", phase: "first-time", opt: "sp", cur: "none", rows: [
+        en.pairs([{ k: "Microsoft tenant", v: "alnakheel.onmicrosoft.com", ltr: 1 }, { k: "Approved by", v: "it.admin@alnakheel.sa", ltr: 1 }], 0),
+        en.fields([{ label: "Site", req: 1, value: "Quality Department", action: "Choose…", help: "42 sites · opens the site picker" }, { label: "Document library", req: 1, value: "Quality Documents", action: "▼", actTone: "muted", help: "3 libraries in this site" }], 12),
+        en.test({ tone: "idle", head: "Not tested yet", btn: "Test connection" }, 4)
+      ], save: save("Test the connection first", "disabled", "Confirm SharePoint…") },
+      firstSpPassed: { cap: "First visit · SharePoint, test passed", phase: "first-time", opt: "sp", cur: "none", rows: [
+        en.pairs([{ k: "Microsoft tenant", v: "alnakheel.onmicrosoft.com", ltr: 1 }, { k: "Approved by", v: "it.admin@alnakheel.sa", ltr: 1 }], 0),
+        en.fields([{ label: "Site", req: 1, value: "Quality Department", action: "Change…", help: "42 sites" }, { label: "Document library", req: 1, value: "Quality Documents", action: "▼", actTone: "muted", help: "3 libraries in this site" }], 12),
+        en.test({ tone: "pass", head: "✓ Connection works · tested 09:30", btn: "Test again", steps: steps("done", "done", "done") }, 4)
+      ], save: save("Tested with exactly this site and library", "primary", "Confirm SharePoint…") },
+      cloud: { cap: "Confirmed · AccreditMe cloud", phase: "confirmed", opt: "cloud", cur: "cloud", rows: [
+        en.banner("muted", "Managed by AccreditMe", "Nothing to manage here. Uploads are open.", null, 0)
+      ], save: null },
+      minio: { cap: "Confirmed · MinIO", phase: "confirmed", opt: "minio", cur: "minio", rows: minioLocked({ secret: secret.set }).concat([
+        en.test({ tone: "pass", head: "✓ Working · last tested 7 Oct 2026, 09:12", btn: "Test again" }, 12)
+      ]), save: null },
+      minioReplace: { cap: "Confirmed · MinIO · replacing the access key and secret", phase: "confirmed", opt: "minio", cur: "minio", rows: minioLocked({ secret: secret.replacing, replacing: 1 }).concat([
+        en.test({ tone: "idle", head: "Test the new key before saving", btn: "Test connection" }, 12)
+      ]), save: save("Test the connection first", "disabled", "Save new key") },
+      minioReplacePassed: { cap: "Confirmed · MinIO · new key passed", phase: "confirmed", opt: "minio", cur: "minio", rows: minioLocked({ secret: secret.replacing, replacing: 1 }).concat([
+        en.test({ tone: "pass", head: "✓ New key works · tested 10:05", btn: "Test again", steps: steps("done", "done", "done") }, 12)
+      ]), save: save("Tested with the new key, same endpoint and bucket", "primary", "Save new key") },
+      local: { cap: "Confirmed · local folder", phase: "confirmed", opt: "local", cur: "local", onprem: true, rows: [
+        en.fields([{ label: "Folder path", value: "\\\\fileserver01\\AccreditMe\\files", ltr: 1, st: "locked", action: "🔒", actTone: "muted", help: LOCK }], 0),
+        en.test({ tone: "pass", head: "✓ Working · last tested 7 Oct 2026, 09:20", btn: "Test again" }, 12)
+      ], save: null },
+      sp: { cap: "Confirmed · SharePoint", phase: "confirmed", opt: "sp", cur: "sp", rows: [
+        en.pairs([{ k: "Microsoft tenant", v: "alnakheel.onmicrosoft.com", ltr: 1 }, { k: "Access", v: "Set · approved 1 Oct 2026" }], 0),
+        en.fields([{ label: "Site", value: "Quality Department", st: "locked", action: "🔒", actTone: "muted", help: LOCK }, { label: "Document library", value: "Quality Documents", st: "locked", action: "🔒", actTone: "muted", help: "Locked" }], 12),
+        en.test({ tone: "pass", head: "✓ Working · last tested 7 Oct 2026, 08:10", btn: "Test again" }, 4)
+      ], save: null },
+      spError: { cap: "Confirmed · SharePoint · access withdrawn", phase: "confirmed", opt: "sp", cur: "spErr", rows: [
+        en.banner("danger", "Microsoft access was withdrawn", "AccreditMe can't reach “Quality Documents”: approval was removed in Microsoft on 5 Oct 2026. New uploads are refused until someone who can approve apps connects again.", [btn("Connect again ↗", "primary")], 0),
+        en.fields([{ label: "Site", value: "Quality Department", st: "locked", action: "🔒", actTone: "muted", help: LOCK }, { label: "Document library", value: "Quality Documents", st: "locked", action: "🔒", actTone: "muted", help: "Locked" }], 12),
+        en.test({ tone: "fail", head: "Last test failed · 7 Oct 2026, 08:10", btn: "Test again", steps: steps("fail", "skip", "skip", "Microsoft said AccreditMe isn't approved in this organisation.") }, 4)
+      ], save: null },
+      spConsent: { cap: "Confirmed · SharePoint · connecting again", phase: "confirmed", opt: "sp", cur: "spErr", rows: [
+        en.banner("info", "Waiting for Microsoft…", "Finish approving in the Microsoft window. This page updates by itself. If the window closed or didn't open, open it again.", [btn("Open the window again ↗", "secondary"), btn("Cancel", "text")], 0)
+      ], save: null },
+      requested: { cap: "Confirmed · MinIO · change requested", phase: "confirmed", opt: "minio", cur: "minioReq", rows: minioLocked({ secret: secret.set }).concat([
+        en.test({ tone: "pass", head: "✓ Working · last tested 7 Oct 2026, 09:12", btn: "Test again" }, 12)
+      ]), save: null }
+    };
+    const LABELS = { first: "first visit, AccreditMe cloud", firstMinio: "first visit, MinIO being set up", firstRunning: "first visit, test running", firstFailWrite: "first visit, failed at write", firstFailRead: "first visit, failed at read", firstFailDelete: "first visit, failed at delete", firstPassed: "first visit, MinIO passed", firstStale: "first visit, stale test", firstLocal: "first visit, local folder on-premises", firstLocalCloud: "first visit, local folder on cloud", firstSpNone: "first visit, SharePoint not connected", firstSpConsent: "first visit, waiting for Microsoft", firstSpPick: "first visit, choosing site and library", firstSpPassed: "first visit, SharePoint passed", cloud: "confirmed, AccreditMe cloud", minio: "confirmed, MinIO", minioReplace: "MinIO, replacing the key", minioReplacePassed: "MinIO, new key passed", local: "confirmed, local folder", sp: "confirmed, SharePoint", spError: "SharePoint access withdrawn", spConsent: "SharePoint connecting again", requested: "change requested" };
+
+    const confirmedLine = (who) => "Confirmed 3 Oct 2026 by " + who;
+    const CUR = {
+      none: { name: "Not confirmed yet", detail: "New organisations start on AccreditMe cloud. Confirm it, or choose your own storage, to open uploads for everyone.", chip: "✕ Uploads blocked", tone: "danger" },
+      cloud: { name: "AccreditMe cloud", detail: "Managed by AccreditMe · " + confirmedLine("Hessa Al-Mutairi") + " · 1,284 files", chip: "✓ Working", tone: "ok", req: true },
+      minio: { name: "MinIO on your own servers", detail: "minio.alnakheel.local · accreditme-files · " + confirmedLine("Hessa Al-Mutairi"), chip: "✓ Working", tone: "ok", req: true },
+      minioReq: { name: "MinIO on your own servers", detail: "minio.alnakheel.local · accreditme-files · " + confirmedLine("Hessa Al-Mutairi"), chip: "✓ Working", tone: "ok", line: "Change requested 7 Oct 2026 by Hessa Al-Mutairi · AccreditMe will contact you" },
+      local: { name: "Local folder or network drive", detail: "\\\\fileserver01\\AccreditMe\\files · " + confirmedLine("Hessa Al-Mutairi"), chip: "✓ Working", tone: "ok", req: true },
+      sp: { name: "SharePoint Online", detail: "Quality Department › Quality Documents · " + confirmedLine("Hessa Al-Mutairi"), chip: "✓ Working", tone: "ok", req: true },
+      spErr: { name: "SharePoint Online", detail: "Quality Department › Quality Documents · new uploads are refused", chip: "✕ Can't be reached", tone: "danger", req: true }
+    };
+    const curOf = (c, ar) => Object.assign({}, c, {
+      chipStyle: "flex: none; font-size: " + (ar ? 12.5 : 12) + "px; font-weight: 600; border-radius: 999px; padding: 2px 10px; white-space: nowrap; " + (c.tone === "danger" ? "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;" : "color: #2D3748; background: #fff; border: 1px solid #8A94A6;"),
+      req: c.req ? (ar ? "طلب تغيير…" : "Request a change…") : null, reqStyle: btn("", "secondary", ar).style,
+      line: c.line || null, lineStyle: "margin-block-start: 10px; padding: 7px 10px; border-radius: 6px; background: #F2F7FB; border: 1px solid #C5DAEA; font-size: " + (ar ? 13.5 : 12.5) + "px; font-weight: 500; color: #1F5480;",
+      stripStyle: "background: #fff; border: 1px solid " + (c.tone === "danger" ? "#FECDCA" : "#E2E8F0") + "; border-radius: 8px; padding: 12px 16px;"
+    });
+
+    const OPTS = (S, ar, rows) => {
+      const F = Fz(ar);
+      const L = ar ? { cloud: ["سحابة AccreditMe", "تديرها AccreditMe. لا يلزم أي إعداد."], minio: ["MinIO على خوادمكم", "مخزن متوافق مع S3 يديره فريق تقنية المعلومات لديكم."], local: ["مجلد محلي أو محرك شبكة", "متاح في التثبيت المحلي فقط."], sp: ["SharePoint Online", "مكتبة مستندات في Microsoft 365 لديكم. يوافق عليها مسؤول Microsoft لديكم."], cur: "الحالي" }
+        : { cloud: ["AccreditMe cloud", "Managed by AccreditMe. Nothing to set up."], minio: ["MinIO on your own servers", "An S3-compatible store your IT team runs."], local: ["Local folder or network drive", S.onprem ? "A folder or share the AccreditMe server can write to." : "Available on an on-premises installation."], sp: ["SharePoint Online", "A document library in your Microsoft 365. Your own Microsoft admin approves access."], cur: "Current" };
+      const first = S.phase === "first-time";
+      return ["cloud", "minio", "local", "sp"].map(k => {
+        const on = k === S.opt;
+        const dis = first ? (k === "local" && !S.onprem) : !on;
+        return { title: L[k][0], desc: L[k][1], dot: on ? "●" : "", open: on && !!rows && !(k === "local" && !S.onprem), rows: on ? rows : [],
+          chip: !first && on ? L.cur : null, chipStyle: "font-size: 11px; font-weight: 600; color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0; border-radius: 4px; padding: 0 6px;",
+          rowStyle: "padding: 12px 16px; border-block-end: 1px solid #E2E8F0; " + (on ? "background: #FBFCFD;" : ""),
+          radioStyle: "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; margin-block-start: 3px; font-size: 9px; line-height: 14px; text-align: center; " + (on && !first ? "background: #F4F7FA; border: 1px solid #5A6779; color: #4A5568;" : dis ? "background: #EDF1F6; border: 1px solid #E2E8F0; color: transparent;" : on ? "background: #fff; border: 1px solid #1F5480; color: #2E6FA3;" : "background: #fff; border: 1px solid #8A94A6; color: transparent;"),
+          titleStyle: "font-size: " + (F.val + 1) + "px; font-weight: " + (on ? 600 : 500) + "; color: " + (dis ? "#5A6779" : "#2D3748") + ";",
+          descStyle: "display: block; font-size: " + F.help + "px; color: #5A6779;",
+          cfgStyle: "margin-block-start: 12px; margin-inline-start: 26px; max-width: 720px;" };
+      });
+    };
+
+    const USE = {
+      normal: { cap: "AccreditMe cloud · normal", big: "3.2 GB of 10 GB", pct: "32%", line: "1,284 files. At 10 GB new uploads are refused; existing files aren't affected.", tone: "normal", w: 32, bin: "Includes 212 MB in the recycle bin." },
+      near: { cap: "AccreditMe cloud · near the limit (90%+)", big: "9.1 GB of 10 GB", pct: "Almost full · 91%", line: "About 0.9 GB left. At 10 GB new uploads are refused; existing files stay available.", extra: "Contact AccreditMe to raise the limit.", tone: "near", w: 91, bin: "Includes 212 MB in the recycle bin. Purging frees it now." },
+      full: { cap: "AccreditMe cloud · at the limit", big: "10 GB of 10 GB", pct: "Full", line: "New uploads are refused across the organisation. Existing files aren't affected and can still be opened.", extra: "Contact AccreditMe to raise the limit.", tone: "full", w: 100, bin: "Includes 212 MB in the recycle bin. Purging frees it now." },
+      own: { cap: "Your own storage (MinIO)", big: "2,410 files · 18.4 GB", pct: "", line: "Your own storage: no AccreditMe limit applies.", extra: "312 files (1.1 GB) from before are still in AccreditMe cloud · 1.1 GB of 10 GB.", tone: "own", w: 0, bin: "Includes 212 MB in the recycle bin." }
+    };
+    const useOf = (u, ar) => {
+      const F = Fz(ar);
+      return Object.assign({}, u, { sub: ar ? "سحابة AccreditMe فقط تُحتسب ضمن الحد" : "Only AccreditMe cloud counts against the limit", aria: u.big, meter: u.tone !== "own",
+        bigStyle: "font-size: " + (ar ? 21 : 20) + "px; font-weight: 600; font-variant-numeric: tabular-nums; unicode-bidi: isolate;",
+        pctStyle: "font-size: " + F.val + "px; font-weight: " + (u.tone === "normal" ? 400 : 600) + "; color: " + ({ normal: "#4A5568", near: "#B54708", full: "#B42318", own: "#4A5568" })[u.tone] + ";",
+        track: "display: block; height: 10px; margin-block: 8px; border: 1px solid #8A94A6; border-radius: 3px; overflow: hidden; background: #fff;",
+        fill: "display: block; height: 100%; width: " + u.w + "%; background: " + ({ normal: "#2E6FA3", near: "repeating-linear-gradient(135deg,#F79009 0 4px,#FDB022 4px 8px)", full: "#B42318", own: "transparent" })[u.tone] + ";",
+        lineStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; color: " + (u.tone === "full" || u.tone === "own" ? "#2D3748; font-weight: 500" : "#4A5568") + "; text-wrap: pretty;" + (u.tone === "own" ? " margin-block-start: 6px;" : ""),
+        extra: u.extra || null, extraStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; color: #4A5568; margin-block-start: 6px; text-wrap: pretty;",
+        bin: u.bin, binStyle: "font-size: " + F.help + "px; color: #5A6779; margin-block-start: 6px; padding-block-start: 6px; border-block-start: 1px solid #F0F3F7;" });
+    };
+
+    const shell = (ar) => {
+      const F = Fz(ar);
+      return {
+        dir: ar ? "rtl" : "ltr",
+        frame: "border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; padding: 16px 18px; max-width: 1130px; display: flex; flex-direction: column; gap: 12px;" + (ar ? " " + AF : ""),
+        crumb: "font-size: " + F.help + "px; color: #5A6779;", h1: "font-size: " + (ar ? 23 : 22) + "px; line-height: " + (ar ? 32 : 28) + "px; font-weight: 600; margin-block-start: -6px;",
+        sub: "font-size: " + F.body + "px; color: #4A5568; margin-block-start: -10px; text-wrap: pretty;",
+        microLab: ar ? "display: block; font-size: 12px; font-weight: 700; color: #5A6779;" : "display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;",
+        curName: "display: block; font-size: " + (ar ? 17 : 16) + "px; font-weight: 600;", curDetail: "display: block; font-size: " + F.help + "px; color: #4A5568; unicode-bidi: plaintext; text-wrap: pretty;",
+        card: "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;",
+        cardHead: "display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; padding: 10px 16px; border-block-end: 1px solid #E2E8F0;",
+        secTitle: "font-size: " + (ar ? 15 : 14) + "px; font-weight: 600;", secSub: "font-size: " + F.help + "px; color: #5A6779;",
+        saveBar: "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 16px; background: #F4F7FA;",
+        saveWhyStyle: "font-size: " + F.help + "px; color: #4A5568;", cancelStyle: btn("", "text", ar).style
+      };
+    };
+    const rulesOf = (ar) => {
+      const F = Fz(ar);
+      const row = "display: grid; grid-template-columns: minmax(0, 150px) 1fr; gap: 12px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;";
+      const tagStyle = "font-size: " + (ar ? 11.5 : 10.5) + "px; font-weight: 600; color: #4A5568; border: 1px solid #8A94A6; border-radius: 3px; padding: 0 5px;";
+      const list = ar ? [
+        { k: "الحد الأقصى للملف", v: "25 MB لكل ملف" },
+        { k: "الأنواع المسموحة", v: "PDF وWord وExcel وPowerPoint (بما فيها ‎.doc و‎.xls و‎.ppt)، وCSV وTXT، والصور PNG وJPEG وGIF وWEBP وHEIC" },
+        { k: "الفحص", v: "يُفحص كل ملف قبل أن يتمكن أحد من فتحه", tag: "عند إطلاق الفحص" }
+      ] : [
+        { k: "Maximum file size", v: "25 MB per file" },
+        { k: "Allowed types", v: "PDF, Word, Excel and PowerPoint (including the older .doc, .xls and .ppt), CSV, TXT, and images: PNG, JPEG, GIF, WEBP, HEIC" },
+        { k: "Scanning", v: "Every file is checked for malware before anyone can open it", tag: "once scanning ships" }
+      ];
+      return list.map(u => ({ k: u.k, v: u.v, tag: u.tag || null, tagStyle, row, kStyle: "font-size: " + F.lab + "px; font-weight: 500; color: #5A6779;", vStyle: "font-size: " + F.val + "px; color: #2D3748;" }));
+    };
+
+    const S = ST[state] || ST.first;
+    const first = S.phase === "first-time";
+    const pageEn = Object.assign(shell(false), {
+      crumbText: "Settings / File storage", title: "File storage", subText: "Where your organisation's uploaded files are kept: task evidence now, meeting attachments and documents later.",
+      curLabel: "Current location", cur: curOf(CUR[S.cur], false),
+      locTitle: first ? "Choose where files are kept" : "Where files are kept",
+      locSub: first ? "Chosen once for the whole organisation. After this, only AccreditMe can change it." : "Fixed for your organisation · to move, request a change",
+      opts: OPTS(S, false, S.disabledOnly ? null : S.rows),
+      hasSave: !!S.save, saveWhy: S.save ? S.save.why : "", cancelLabel: S.save && !first ? "Cancel" : null,
+      saveLabel: S.save ? S.save.label : "", saveStyle: S.save ? btn("", S.save.kind, false).style : "",
+      useTitle: "Usage", use: useOf(USE[usage], false), rulesTitle: "Upload rules", rulesSub: "Set by AccreditMe, not editable here", rules: rulesOf(false)
+    });
+
+    const arRows = [
+      ar.fields([{ label: "عنوان الخادم (Endpoint)", value: "https://minio.alnakheel.local:9000", ltr: 1, st: "locked", action: "🔒", actTone: "muted", help: "تغيير مكان حفظ الملفات تتولاه AccreditMe." }], 0),
+      ar.fields([{ label: "الحاوية (Bucket)", value: "accreditme-files", ltr: 1, st: "locked", action: "🔒", actTone: "muted", help: "مقفلة" }, { label: "المنطقة · HTTPS", value: "لا يوجد · مفعّل", st: "locked", action: "🔒", actTone: "muted", help: "مقفلة" }], 12),
+      ar.fields([{ label: "مفتاح الوصول", value: "AKAM-QUALITY-01", ltr: 1, st: "set", action: "استبدال", help: "يُستبدل مع المفتاح السري" }, { label: "المفتاح السري", value: "محفوظ · " + iso("3 Oct 2026"), st: "set", action: "استبدال", help: "لا يمكن عرض القيمة." }], 12),
+      ar.test({ tone: "pass", head: "✓ يعمل · آخر اختبار " + iso("7 Oct 2026, 09:12"), btn: "اختبار مرة أخرى" }, 12)
+    ];
+    const pageAr = Object.assign(shell(true), {
+      crumbText: "الإعدادات / تخزين الملفات", title: "تخزين الملفات", subText: "مكان حفظ الملفات التي ترفعها مؤسستك: أدلة المهام الآن، ومرفقات الاجتماعات والمستندات لاحقًا.",
+      curLabel: "الموقع الحالي", cur: curOf({ name: "MinIO على خوادمكم", detail: "minio.alnakheel.local · accreditme-files · أكّدته حصة المطيري في " + iso("3 Oct 2026"), chip: "✓ يعمل", tone: "ok", req: true }, true),
+      locTitle: "مكان حفظ الملفات", locSub: "ثابت لمؤسستك · لنقله اطلب تغييرًا",
+      opts: OPTS({ phase: "confirmed", opt: "minio", onprem: false }, true, arRows),
+      hasSave: false, saveWhy: "", cancelLabel: null, saveLabel: "", saveStyle: "",
+      useTitle: "الاستخدام", use: useOf({ big: iso("2,410") + " ملفًا · " + iso("18.4 GB"), pct: "", line: "تخزينكم الخاص: لا ينطبق عليه حد AccreditMe.", extra: "ما زال " + iso("312") + " ملفًا (" + iso("1.1 GB") + ") من قبل في سحابة AccreditMe · " + iso("1.1 GB") + " من " + iso("10 GB") + ".", tone: "own", w: 0, bin: "يشمل " + iso("212 MB") + " في سلة المحذوفات." }, true),
+      rulesTitle: "قواعد الرفع", rulesSub: "تحددها AccreditMe، ولا تُعدَّل هنا", rules: rulesOf(true)
+    });
+
+    const galleryKeys = ["first", "firstMinio", "firstRunning", "firstPassed", "firstFailWrite", "firstFailRead", "firstFailDelete", "firstStale", "firstLocal", "firstLocalCloud", "firstSpNone", "firstSpConsent", "firstSpPick", "firstSpPassed", "cloud", "minio", "minioReplace", "minioReplacePassed", "local", "sp", "spError", "spConsent", "requested"];
+    const gallery = galleryKeys.map((k, i) => {
+      const g = ST[k];
+      return { n: (i + 1) + "", cap: g.cap, rows: g.rows, phase: g.phase === "first-time" ? "before confirming" : "after confirming",
+        phaseStyle: "font-size: 11px; font-weight: 600; border-radius: 3px; padding: 0 5px; " + (g.phase === "first-time" ? "color: #B54708; border: 1px solid #FEDF89; background: #FFFAEB;" : "color: #4A5568; border: 1px solid #E2E8F0; background: #fff;"),
+        saveWhy: g.save ? g.save.why : (g.disabledOnly ? "Option can't be selected" : k === "requested" ? "Request a change is absent: one open request at a time" : "Nothing to save · Request a change… sits on the current-location strip"),
+        saveLabel: g.save ? g.save.label : "—", saveStyle: g.save ? btn("", g.save.kind, false).style : "font-size: 12px; color: #8A94A6;" };
+    });
+
+    const sev = (label, tone) => "flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; " + (tone === "danger" ? "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;" : "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;");
+    const health = [
+      { sev: "● Blocks work", sevStyle: sev("", "danger"), t: "File storage not confirmed · uploads are blocked", d: "Nobody in the organisation can add files until a location is confirmed.", fix: "Set up file storage" },
+      { sev: "● At risk", sevStyle: sev("", "warn"), t: "Storage almost full · 9.1 GB of 10 GB", d: "At 10 GB new uploads are refused. Purge the recycle bin, or contact AccreditMe to raise the limit.", fix: "Open recycle bin" },
+      { sev: "● Blocks work", sevStyle: sev("", "danger"), t: "File storage can't be reached · uploads are refused", d: "SharePoint access was withdrawn on 5 Oct 2026.", fix: "Connect again" }
+    ];
+
+    // dialogs
+    const dlg = (ar) => {
+      const F = Fz(ar);
+      const note = (text, top, tone) => ({ isNote: true, wrap: "margin-block-start: " + (top || 0) + "px;", text,
+        style: "font-size: " + (ar ? 14.5 : 14) + "px; line-height: " + (ar ? 24 : 21) + "px; color: #2D3748; text-wrap: pretty;" + (tone === "info" ? " color: #1F5480; font-weight: 500;" : tone === "danger" ? " color: #B42318; font-weight: 600;" : "") });
+      const pairs = (list, top) => ({ isPairs: true, wrap: "margin-block-start: " + (top || 0) + "px;", grid: "display: grid; grid-template-columns: repeat(" + list.length + ", minmax(0, 1fr)); gap: 12px;",
+        pairs: list.map(p => ({ k: p.k, v: p.v, vdir: p.ltr ? "ltr" : "auto", labStyle: "font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #5A6779; margin-block-end: 2px;", valStyle: "font-size: " + F.val + "px; line-height: " + (ar ? 22 : 20) + "px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate;" })) });
+      const area = (label, ph, help, top) => ({ isArea: true, wrap: "margin-block-start: " + (top || 0) + "px;", label, tag: ar ? " · اختياري" : " · optional", text: ph, help,
+        labStyle: "display: block; font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px;",
+        areaStyle: "box-sizing: border-box; height: " + (ar ? 82 : 76) + "px; border: 1px solid #8A94A6; border-radius: 4px; padding: 8px 10px; font-size: " + F.val + "px; line-height: " + (ar ? 22 : 20) + "px; color: #8A94A6;",
+        helpStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; min-height: " + F.helpLh + "px; margin-block-start: 4px; color: #5A6779;" });
+      const check = (text, on, top) => ({ isCheck: true, wrap: "margin-block-start: " + (top || 0) + "px;", text, mark: on ? "✓" : "",
+        boxStyle: "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 3px; font-size: 11px; line-height: 14px; text-align: center; " + (on ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;" : "background: #fff; border: 1px solid #8A94A6; color: transparent;"),
+        tStyle: "font-size: " + F.val + "px; line-height: " + (ar ? 26 : 24) + "px; font-weight: 500;" });
+      const make = (x) => ({ cap: x.cap, dir: ar ? "rtl" : "ltr", title: x.title, ctx: x.ctx, items: x.items, buttons: x.buttons, footLeft: x.footLeft || "", measure: x.measure,
+        capStyle: ar ? AF + " font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;",
+        outer: "flex: 0 1 " + x.w + "px; min-width: 0;",
+        frame: "width: 100%; max-width: " + x.w + "px; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;" + (ar ? " " + AF : ""),
+        headStyle: "display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 20px; border-block-end: 1px solid #E2E8F0;",
+        titleStyle: "display: block; font-size: " + (ar ? 17 : 16) + "px; line-height: 1.4; font-weight: 600;", ctxStyle: "display: block; font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+        bodyStyle: "padding: 16px 20px;", footStyle: "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;", footLeftStyle: "font-size: 12px; color: #5A6779;" });
+      return { note, pairs, area, check, make };
+    };
+    const E = dlg(false), A = dlg(true);
+    const dialogs = [
+      E.make({ w: 420, cap: "Confirm the location · Confirm 420", title: "Confirm AccreditMe cloud?", ctx: "File storage · first-time setup",
+        items: [E.note("Uploads open for everyone as soon as you confirm. After this, only AccreditMe can change where files are stored.", 0),
+          E.pairs([{ k: "Location", v: "AccreditMe cloud" }, { k: "Confirmed by", v: "Hessa Al-Mutairi" }], 12)],
+        buttons: [B("Cancel", "text"), B("Confirm", "primary")],
+        measure: "Sentence 42 (2 × 21) + 12 + pairs 40 = 94. Arabic 48 (2 × 24) + 12 + 44 = 104. For MinIO, a local folder or SharePoint the same dialog shows the endpoint, path or library in the Location pair, LTR, at the same height." }),
+      A.make({ w: 420, cap: "تأكيد الموقع · العربية", title: "تأكيد سحابة AccreditMe؟", ctx: "تخزين الملفات · الإعداد الأول",
+        items: [A.note("يُفتح الرفع للجميع بمجرد التأكيد. بعد ذلك، لا يغيّر مكان حفظ الملفات إلا AccreditMe.", 0),
+          A.pairs([{ k: "الموقع", v: "سحابة AccreditMe" }, { k: "أكّده", v: "حصة المطيري" }], 12)],
+        buttons: [B("إلغاء", "text", true), B("تأكيد", "primary", true)],
+        measure: "104 of 420." }),
+      E.make({ w: 560, cap: "Request a change · Form 560", title: "Request a change of storage", ctx: "Current: MinIO on your own servers",
+        items: [E.note("AccreditMe will contact you to agree the details. Nothing changes until then.", 0, "info"),
+          E.pairs([{ k: "Requested by", v: "Hessa Al-Mutairi" }, { k: "Sent to", v: "AccreditMe's platform team" }], 12),
+          E.area("Anything we should know?", "e.g. We're moving to SharePoint next quarter.", "", 12)],
+        buttons: [B("Cancel", "text"), B("Send request", "primary")],
+        measure: "Line 21 (one line at 520) + 12 + pairs 40 + 12 + textarea 119 = 204. Arabic 24 + 12 + 44 + 12 + 130 = 222. After sending, the strip shows the request line and Request a change… is absent." }),
+      A.make({ w: 560, cap: "طلب تغيير · العربية", title: "طلب تغيير مكان التخزين", ctx: "الحالي: MinIO على خوادمكم",
+        items: [A.note("ستتواصل AccreditMe معك للاتفاق على التفاصيل. لن يتغير شيء قبل ذلك.", 0, "info"),
+          A.pairs([{ k: "مقدّم الطلب", v: "حصة المطيري" }, { k: "يُرسل إلى", v: "فريق منصة AccreditMe" }], 12),
+          A.area("هل هناك ما يجب أن نعرفه؟", "مثال: ننتقل إلى SharePoint في الربع القادم.", "", 12)],
+        buttons: [B("إلغاء", "text", true), B("إرسال الطلب", "primary", true)],
+        measure: "222 of 420." }),
+      E.make({ w: 420, cap: "Delete a file · from any record", title: "Delete this file?", ctx: "Hand hygiene audit, Ward 4B.pdf",
+        items: [E.note("It's removed from this record now. Your administrator can restore it within 30 days.", 0),
+          E.pairs([{ k: "From", v: "Task · Update hand-hygiene audit tool" }], 12),
+          E.pairs([{ k: "Size", v: "2.9 MB" }], 12)],
+        buttons: [B("Keep file", "text"), B("Delete", "danger")],
+        measure: "Sentence 42 (2 × 21) + 12 + From 40 (full width, so the record name isn't cut) + 12 + Size 40 = 146. Arabic 48 + 12 + 44 + 12 + 44 = 160. The same words on task evidence, meeting attachments and agenda papers." }),
+      A.make({ w: 420, cap: "حذف ملف · العربية", title: "حذف هذا الملف؟", ctx: "Hand hygiene audit, Ward 4B.pdf",
+        items: [A.note("يُزال من هذا السجل الآن. يمكن لمسؤول النظام استعادته خلال " + iso("30") + " يومًا.", 0),
+          A.pairs([{ k: "من", v: "مهمة · تحديث أداة تدقيق نظافة اليدين" }], 12),
+          A.pairs([{ k: "الحجم", v: iso("2.9 MB") }], 12)],
+        buttons: [B("إبقاء الملف", "text", true), B("حذف", "danger", true)],
+        measure: "160 of 420." }),
+      E.make({ w: 420, cap: "Restore · Confirm 420", title: "Restore 4 files?", ctx: "Recycle bin · 4 selected",
+        items: [E.note("3 files go back to their records, including 1 on a task that has since closed. 1 is skipped: its record no longer exists.", 0),
+          E.pairs([{ k: "Restoring", v: "3 files · 7.5 MB" }, { k: "Skipped", v: "1 file" }], 12)],
+        buttons: [B("Cancel", "text"), B("Restore 3 files", "primary")],
+        measure: "Sentence 42 (2 × 21) + 12 + pairs 40 = 94. Arabic 48 + 12 + 44 = 104. One row: “Restore ‘name’? It goes back to <record>.” at 94 / 104." }),
+      A.make({ w: 420, cap: "استعادة · العربية", title: "استعادة " + iso("4") + " ملفات؟", ctx: "سلة المحذوفات · " + iso("4") + " محددة",
+        items: [A.note("تعود " + iso("3") + " ملفات إلى سجلاتها، منها ملف على مهمة أُغلقت. ويُتخطى ملف واحد لأن سجله لم يعد موجودًا.", 0),
+          A.pairs([{ k: "تُستعاد", v: iso("3") + " ملفات · " + iso("7.5 MB") }, { k: "تُتخطى", v: "ملف واحد" }], 12)],
+        buttons: [B("إلغاء", "text", true), B("استعادة " + iso("3") + " ملفات", "primary", true)],
+        measure: "104 of 420." }),
+      E.make({ w: 420, cap: "Purge · danger, Confirm 420", title: "Purge 3 files for good?", ctx: "Recycle bin · 3 selected · 6.7 MB",
+        items: [E.note("3 files, 6.7 MB, are deleted from storage now. This can't be undone, and they can't be restored.", 0, "danger"),
+          E.pairs([{ k: "Files", v: "3" }, { k: "Total size", v: "6.7 MB" }], 12),
+          E.check("I understand these files will be gone for good", false, 12)],
+        buttons: [B("Cancel", "text"), B("Purge", "dangerOff")],
+        measure: "Sentence 42 (2 × 21) + 12 + pairs 40 + 12 + checkbox 24 = 130. Arabic 48 + 12 + 44 + 12 + 26 = 142. Purge stays disabled until the box is ticked; it is the one disabled primary in the product, because the tick is the point." }),
+      A.make({ w: 420, cap: "حذف نهائي · العربية", title: "حذف " + iso("3") + " ملفات نهائيًا؟", ctx: "سلة المحذوفات · " + iso("6.7 MB"),
+        items: [A.note("تُحذف " + iso("3") + " ملفات (" + iso("6.7 MB") + ") من التخزين الآن. لا يمكن التراجع، ولا يمكن استعادتها.", 0, "danger"),
+          A.pairs([{ k: "الملفات", v: iso("3") }, { k: "الحجم الكلي", v: iso("6.7 MB") }], 12),
+          A.check("أفهم أن هذه الملفات ستُحذف نهائيًا", true, 12)],
+        buttons: [B("إلغاء", "text", true), B("حذف نهائي", "danger", true)],
+        measure: "142 of 420. Drawn ticked, so Purge is enabled." })
+    ];
+    const siteRow = (r, ar) => ({ t: r[0], b: r[1], m: r[2], style: "display: flex; align-items: center; gap: 10px; height: " + (ar ? 48 : 44) + "px; box-sizing: border-box; padding: 0 10px; border-block-end: 1px solid #F0F3F7;" + (r[3] ? " background: #E4EEF6;" : ""), tStyle: "display: block; font-size: " + (ar ? 14 : 13) + "px; font-weight: 500;", bStyle: "display: block; font-size: " + (ar ? 12.5 : 11.5) + "px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; unicode-bidi: isolate;", mStyle: "flex: none; font-size: " + (ar ? 12.5 : 11.5) + "px; color: #5A6779;" });
+    const SITES = [["Quality Department", "alnakheel.sharepoint.com/sites/quality", "3 libraries", true], ["Quality Improvement Projects", "…/sites/qi-projects", "1 library"], ["Infection Prevention", "…/sites/ipc", "2 libraries"], ["Nursing Quality", "…/sites/nursing-quality", "4 libraries"], ["Patient Safety", "…/sites/patient-safety", "2 libraries"], ["Pharmacy", "…/sites/pharmacy", "5 libraries"], ["Policies and Procedures", "…/sites/policies", "1 library"], ["Accreditation 2026", "…/sites/accreditation-2026", "2 libraries"]];
+    const searchBox = (t) => ({ isSearch: true, wrap: "", text: t, box: "display: flex; align-items: center; gap: 7px; height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 9px;", valStyle: "font-size: 12.5px; color: #8A94A6;" });
+    dialogs.push(
+      E.make({ w: 520, cap: "Choose a site · Picker 520", title: "Choose a SharePoint site", ctx: "alnakheel.onmicrosoft.com · 42 sites", footLeft: "Then choose a library",
+        items: [searchBox("Search 42 sites…"), { isList: true, wrap: "margin-block-start: 8px;", rows: SITES.map(r => siteRow(r, false)), listStyle: "height: 340px; box-sizing: border-box; overflow: hidden; border: 1px solid #E2E8F0; border-radius: 6px;" }],
+        buttons: [B("Cancel", "text"), B("Choose site", "primary")],
+        measure: "Search 32 + 8 + list 340 = 380. The list region has a fixed height and scrolls inside: 7.7 rows at 44px. It's the one dialog allowed to scroll, and it holds no popups (artboard 7)." }),
+      A.make({ w: 520, cap: "اختيار موقع · العربية", title: "اختيار موقع SharePoint", ctx: "alnakheel.onmicrosoft.com · " + iso("42") + " موقعًا", footLeft: "ثم اختر المكتبة",
+        items: [searchBox("ابحث في " + iso("42") + " موقعًا…"), { isList: true, wrap: "margin-block-start: 8px;", rows: SITES.map(r => siteRow([r[0], r[1], r[2].replace(" libraries", " مكتبات").replace(" library", " مكتبة"), r[3]], true)), listStyle: "height: 340px; box-sizing: border-box; overflow: hidden; border: 1px solid #E2E8F0; border-radius: 6px;" }],
+        buttons: [B("إلغاء", "text", true), B("اختيار الموقع", "primary", true)],
+        measure: "380 of 420: the same fixed list region, 7 rows at 48px. Site names are tenant data, shown as Microsoft returns them; addresses stay LTR." })
+    );
+    function B(l, k, a) { return btn(l, k, a); }
+
+    // recycle bin
+    const BIN = [
+      { name: "Isolation room photo.heic", meta: "Image · 3.4 MB", fromType: "Meeting · agenda paper, item 4", from: "Infection Prevention & Control · September", by: "Eng. Khalid Al-Shehri", when: "12 Sep 2026", days: 5, sel: true },
+      { name: "Old policy draft.doc", meta: "Word · 820 KB", fromType: "Task", from: "A task that no longer exists", by: "Dana Chalabi", when: "10 Sep 2026", days: 3, gone: true },
+      { name: "Audit summary.pdf", meta: "PDF · 24.1 MB", fromType: "Meeting · attachment", from: "Medication Safety · August", by: "Nora Al-Otaibi", when: "9 Sep 2026", days: 2 },
+      { name: "Ward 6A observations.docx", meta: "Word · 410 KB", fromType: "Task · closed", from: "Re-audit wards 4B and 6A", by: "Omar Haddad", when: "22 Sep 2026", days: 15, sel: true },
+      { name: "Q3 surveillance data.xlsx", meta: "Excel · 1.6 MB", fromType: "Meeting · attachment", from: "Infection Prevention & Control · September", by: "Nora Al-Otaibi", when: "30 Sep 2026", days: 23 },
+      { name: "Hand hygiene audit, Ward 4B.pdf", meta: "PDF · 2.9 MB", fromType: "Task · evidence", from: "Update hand-hygiene audit tool", by: "Nora Al-Otaibi", when: "6 Oct 2026", days: 29, sel: true }
+    ].sort((a, b) => a.days - b.days);
+    const binRows = BIN.map(b => ({ name: b.name, meta: b.meta, fromType: b.fromType, from: b.from, by: b.by, when: b.when, gone: !!b.gone, live: !b.gone,
+      days: b.days + (b.days === 1 ? " day" : " days"), mark: b.sel ? "✓" : "", selAria: "Select " + b.name, restoreAria: "Restore " + b.name, purgeAria: "Purge " + b.name,
+      rowStyle: "display: flex; align-items: center; gap: 12px; padding: 8px 12px; min-width: 1000px; box-sizing: border-box; " + (b.gone ? "" : "border-block-end: 1px solid #F0F3F7; ") + "background: " + (b.sel ? "#F2F7FB" : "#fff") + ";",
+      boxStyle: "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 3px; font-size: 11px; line-height: 14px; text-align: center; " + (b.sel ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;" : "background: #fff; border: 1px solid #8A94A6; color: transparent;"),
+      daysStyle: "flex: none; width: 92px; font-size: 12.5px; font-variant-numeric: tabular-nums; " + (b.days <= 3 ? "font-weight: 600; color: #B54708;" : "color: #4A5568;") }));
+    const binRowsAr = [
+      { name: "Isolation room photo.heic", from: "اجتماع · مكافحة العدوى · سبتمبر", days: iso("5") + " أيام", warn: false },
+      { name: "مسودة السياسة القديمة.doc", from: "مهمة · لم تعد موجودة", days: iso("3") + " أيام", warn: true, gone: true },
+      { name: "Hand hygiene audit, Ward 4B.pdf", from: "مهمة · تحديث أداة تدقيق نظافة اليدين", days: iso("29") + " يومًا", warn: false }
+    ].map(b => Object.assign(b, { live: !b.gone, gone: !!b.gone, rowStyle: "display: flex; align-items: center; gap: 10px; padding: 8px 12px;" + (b.gone ? "" : " border-block-end: 1px solid #F0F3F7;"), daysStyle: "flex: none; font-size: 13px; " + (b.warn ? "font-weight: 600; color: #B54708;" : "color: #4A5568;") }));
+
+    // upload control
+    const U = (ar) => {
+      const F = Fz(ar);
+      const zone = (kind, t, l, act) => ({ t, l, act: act || null,
+        style: "display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 76px; box-sizing: border-box; padding: 10px 14px; border-radius: 6px; text-align: center; " + ({
+          idle: "border: 1px dashed #8A94A6; background: #fff;", over: "border: 2px dashed #2E6FA3; background: #E4EEF6;", off: "border: 1px dashed #CBD5E0; background: #F4F7FA;", full: "border: 1px solid #FECDCA; background: #FEF3F2;" })[kind],
+        tStyle: "font-size: " + F.val + "px; font-weight: " + (kind === "idle" ? 500 : 600) + "; color: " + ({ idle: "#2D3748", over: "#1F5480", off: "#2D3748", full: "#B42318" })[kind] + ";",
+        lStyle: "font-size: " + F.help + "px; color: #4A5568; text-wrap: pretty;", actStyle: "font-size: " + F.lab + "px; font-weight: 600; text-decoration: none; margin-block-start: 2px;" });
+      const act = (label, aria, kind) => ({ label, aria, style: "font-size: " + F.lab + "px; font-weight: 600; text-decoration: none; color: " + (kind === "danger" ? "#B42318" : "#2E6FA3") + "; white-space: nowrap;" });
+      const file = (o) => ({ icon: o.icon || "▦", name: o.name, meta: o.meta, chip: o.chip || null, acts: o.acts || [], pct: o.pct || null, pctAria: o.pct ? "Uploading " + o.name + ", " + o.pct + "%" : "", msg: o.msg || null,
+        rowStyle: "padding: 8px 0; border-block-end: 1px solid #F0F3F7;" + (o.tone === "error" ? " background: #FFFBFA;" : ""),
+        iconStyle: "flex: none; width: 26px; height: 26px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 12px; " + (o.tone === "error" || o.tone === "blocked" ? "background: #FEF3F2; color: #B42318; border: 1px solid #FECDCA;" : "background: #F4F7FA; color: #4A5568; border: 1px solid #E2E8F0;"),
+        nameStyle: "display: block; font-size: " + F.val + "px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; " + (o.tone === "blocked" ? "color: #4A5568; text-decoration: line-through;" : o.ready ? "color: #2E6FA3;" : "color: #2D3748;"),
+        metaStyle: "display: block; font-size: " + F.help + "px; color: #5A6779; font-variant-numeric: tabular-nums;",
+        chipStyle: "flex: none; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; white-space: nowrap; " + ({ check: "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;", blocked: "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;", error: "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;", up: "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;" })[o.chipTone || "check"],
+        pctFill: "display: block; height: 100%; width: " + (o.pct || 0) + "%; background: #2E6FA3;",
+        msgStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; margin-block-start: 4px; margin-inline-start: 34px; text-wrap: pretty; color: " + (o.tone === "error" || o.tone === "blocked" ? "#B42318; font-weight: 500" : "#4A5568") + ";" });
+      return { zone, file, act };
+    };
+    const ue = U(false), ua = U(true);
+    const LIMITS = "PDF, Word, Excel, PowerPoint, CSV, TXT or images (PNG, JPEG, GIF, WEBP, HEIC) · up to 25 MB each";
+    const drawn = "font-size: 11px; color: #5A6779; border: 1px solid #E2E8F0; border-radius: 3px; padding: 0 5px;";
+    const added = "font-size: 11px; font-weight: 600; color: #1F5480; border: 1px solid #C5DAEA; border-radius: 3px; padding: 0 5px;";
+    const later = "font-size: 11px; font-weight: 600; color: #B54708; border: 1px dashed #B54708; border-radius: 3px; padding: 0 5px;";
+    const HH = "Hand hygiene audit, Ward 4B.pdf";
+    const upStates = [
+      { cap: "Idle", origin: "drawn in Task Screens", zone: ue.zone("idle", "Drop a file here, or Browse", LIMITS), files: [], note: "Browse is a real button inside the zone; Enter or Space on the zone also opens the file chooser." },
+      { cap: "Dragging over", origin: "added", zone: ue.zone("over", "Drop to upload", "One file at a time on task evidence; several on meeting attachments"), files: [], note: "A 2px dashed border and a tint, and the words change too, so it doesn't rely on colour." },
+      { cap: "Uploading", origin: "drawn in Task Screens", files: [ue.file({ name: HH, meta: "1.8 of 2.9 MB", chip: "Uploading 62%", chipTone: "up", pct: 62, acts: [ue.act("Cancel", "Cancel uploading " + HH)] })], note: "Cancel stops the transfer and removes the row. Until scanning ships, a finished upload goes straight to Ready." },
+      { cap: "Ready · the file chip", origin: "completed here", files: [ue.file({ name: HH, meta: "2.9 MB · Nora Al-Otaibi · 7 Oct 2026", ready: true, acts: [ue.act("Download", "Download " + HH), ue.act("Delete", "Delete " + HH, "danger")] })], note: "The name opens it; Download saves it. Delete opens the 420 confirm, and the file goes to the recycle bin for 30 days." },
+      { cap: "Ready · closed task or locked minutes", origin: "added", files: [ue.file({ name: HH, meta: "2.9 MB · Nora Al-Otaibi · 7 Oct 2026", ready: true, acts: [ue.act("Download", "Download " + HH)] })], note: "Delete and the drop zone are absent, not disabled." },
+      { cap: "Checking", origin: "once scanning ships", files: [ue.file({ name: HH, meta: "2.9 MB · uploaded 09:41", chip: "Checking…", acts: [ue.act("Delete", "Delete " + HH, "danger")], msg: "Being checked for malware before anyone can open it. Usually under a minute." })], note: "Kept as drawn in Task Screens, ready for when scanning ships. Not shown until then." },
+      { cap: "Blocked", origin: "once scanning ships", files: [ue.file({ name: "Ward rota export.xlsx", meta: "640 KB · uploaded 09:44", chip: "Blocked", chipTone: "blocked", tone: "blocked", icon: "⊘", acts: [ue.act("Delete", "Delete Ward rota export.xlsx", "danger")], msg: "This file failed the malware check and can't be opened or downloaded. Delete it and upload a clean copy." })], note: "Kept as drawn. No Download, ever." },
+      { cap: "Too large", origin: "added", files: [ue.file({ name: "Theatre audit photos.pdf", meta: "41 MB · not uploaded", chip: "Too large", chipTone: "error", tone: "error", icon: "!", acts: [ue.act("Dismiss", "Dismiss Theatre audit photos.pdf")], msg: "The limit is 25 MB per file. Compress it, or split it into smaller files." })], note: "Checked in the browser before any transfer; nothing is sent or stored, so Dismiss, not Delete." },
+      { cap: "Type not allowed", origin: "added", files: [ue.file({ name: "Audit photos.zip", meta: "6.2 MB · not uploaded", chip: "Type not allowed", chipTone: "error", tone: "error", icon: "!", acts: [ue.act("Dismiss", "Dismiss Audit photos.zip")], msg: ".zip files can't be added. Allowed: PDF, Word, Excel, PowerPoint, CSV, TXT and images (PNG, JPEG, GIF, WEBP, HEIC)." })], note: "Names the extension and the allowed list." },
+      { cap: "Upload failed", origin: "added", files: [ue.file({ name: HH, meta: "Stopped at 1.8 of 2.9 MB", chip: "Failed", chipTone: "error", tone: "error", icon: "!", acts: [ue.act("Retry", "Retry uploading " + HH), ue.act("Dismiss", "Dismiss " + HH)] })], note: "Retry sends it again from the start; nothing is saved against the record until a retry succeeds." },
+      { cap: "Storage not set up", origin: "added", zone: ue.zone("off", "File storage isn't set up yet.", "Ask your administrator."), files: [], note: "Everywhere, for everyone, until a tenant admin confirms a location. A tenant admin sees a link, “Set up file storage”, in place of “Ask your administrator.”" },
+      { cap: "Storage not set up · tenant admin", origin: "added", zone: ue.zone("off", "File storage isn't set up yet.", "Uploads are blocked for everyone until a location is confirmed.", "Set up file storage"), files: [], note: "The link opens Settings › File storage on its first-visit state." },
+      { cap: "Organisation storage full", origin: "added", zone: ue.zone("full", "Your organisation's file storage is full", "New files can't be added. Files already here can still be opened. Ask your administrator."), files: [], note: "Only while new uploads go to AccreditMe cloud: own storage has no AccreditMe limit. A tenant admin reads “Contact AccreditMe to raise the limit.” as plain text." },
+      { cap: "Storage can't be reached", origin: "added", zone: ue.zone("full", "Files can't be added right now", "Try again later, or ask your administrator."), files: [], note: "Decided: uploads are refused while the location doesn't answer, and tenant admins get a health warning." }
+    ].map((u, i) => Object.assign({ zone: null }, u, { n: (i + 1) + "", originStyle: u.origin === "once scanning ships" ? later : u.origin === "drawn in Task Screens" ? drawn : added }));
+
+    const homes = [
+      { dir: "ltr", cap: "Home 1 · a task's evidence (Task Screens task page)", title: "Evidence", tag: "Required · 2 added", add: "Add evidence", zone: ue.zone("idle", "Drop a file here, or Browse", LIMITS),
+        files: [ue.file({ icon: "↗", name: "IPC audit dashboard", meta: "Link · bi.alnakheel.sa/ipc · 3 Oct 2026", ready: true, acts: [ue.act("Remove", "Remove link IPC audit dashboard", "danger")] }),
+          ue.file({ name: HH, meta: "2.9 MB · Nora Al-Otaibi · 7 Oct 2026", ready: true, acts: [ue.act("Download", "Download " + HH), ue.act("Delete", "Delete " + HH, "danger")] }),
+          ue.file({ name: "Ward 6A observations.docx", meta: "1.1 of 1.6 MB", chip: "Uploading 68%", chipTone: "up", pct: 68, acts: [ue.act("Cancel", "Cancel uploading Ward 6A observations.docx")] })],
+        note: "Files sit among links and record references. Links keep “Remove” (nothing is stored, so nothing goes to the bin); files say “Delete” because they go to the recycle bin." },
+      { dir: "ltr", cap: "Home 1 · before storage is confirmed", title: "Evidence", tag: "Required · none yet", add: "Add evidence", zone: ue.zone("off", "File storage isn't set up yet.", "Ask your administrator."),
+        files: [ue.file({ icon: "↗", name: "IPC audit dashboard", meta: "Link · bi.alnakheel.sa/ipc · 3 Oct 2026", ready: true, acts: [ue.act("Remove", "Remove link IPC audit dashboard", "danger")] })],
+        note: "Links and record references still work; only files are blocked. A required-evidence task can still be satisfied by a link." },
+      { dir: "ltr", cap: "Home 2 · a meeting's attachments (Meeting Screens)", title: "Attachments", tag: null, add: "Add", zone: ue.zone("over", "Drop to upload", "Several files at once · " + LIMITS),
+        files: [ue.file({ name: "Attendance sheet (signed).pdf", meta: "340 KB · Nora Al-Otaibi · 24 Sep 2026", ready: true, acts: [ue.act("Download", "Download Attendance sheet (signed).pdf"), ue.act("Delete", "Delete Attendance sheet (signed).pdf", "danger")] }),
+          ue.file({ name: "Board pack.zip", meta: "18 MB · not uploaded", chip: "Type not allowed", chipTone: "error", tone: "error", icon: "!", acts: [ue.act("Dismiss", "Dismiss Board pack.zip")], msg: ".zip files can't be added. Upload the documents inside it one by one." })],
+        note: "The same control, accepting several files; each gets its own row and outcome. After the minutes are approved, the zone and Delete are absent." },
+      { dir: "rtl", cap: "العربية · أدلة المهمة", title: "الأدلة", tag: "مطلوبة · أُضيف " + iso("1"), add: "إضافة دليل", zone: ua.zone("idle", "أفلت الملف هنا، أو استعرض", "PDF أو Word أو Excel أو PowerPoint أو CSV أو TXT أو صور (PNG، JPEG، GIF، WEBP، HEIC) · حتى " + iso("25 MB") + " للملف"),
+        files: [ua.file({ name: HH, meta: iso("2.9 MB") + " · نورة العتيبي · " + iso("7 Oct 2026"), ready: true, acts: [ua.act("تنزيل", "تنزيل " + HH), ua.act("حذف", "حذف " + HH, "danger")] }),
+          ua.file({ name: "Theatre audit photos.pdf", meta: iso("41 MB") + " · لم يُرفع", chip: "كبير جدًا", chipTone: "error", tone: "error", icon: "!", acts: [ua.act("تجاهل", "تجاهل")], msg: "الحد الأقصى " + iso("25 MB") + " للملف. اضغطه أو قسّمه إلى ملفات أصغر." })],
+        note: "File names keep their own direction (unicode-bidi: plaintext). Actions sit at the left end, mirrored." }
+    ].map(h => Object.assign(h, {
+      frame: h.dir === "rtl" ? AF : "", capStyle: h.dir === "rtl" ? "font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;",
+      titleStyle: "font-size: " + (h.dir === "rtl" ? 14 : 13) + "px; font-weight: 600;",
+      tagStyle: "font-size: " + (h.dir === "rtl" ? 12 : 11) + "px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 0 6px;",
+      addStyle: "font-size: " + (h.dir === "rtl" ? 13.5 : 12.5) + "px; font-weight: 600; text-decoration: none;",
+      noteStyle: (h.dir === "rtl" ? "font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; direction: ltr; " : "") + "font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;"
+    }));
+
+    return {
+      stateLabel: LABELS[state] || LABELS.first,
+      decisions: [
+        { t: "1 · Confirm once, then fixed", b: "A new organisation starts on AccreditMe cloud with file uploads blocked. A tenant admin confirms AccreditMe cloud, or tests and confirms MinIO, a local folder or SharePoint. After that the radio list is read-only: the current option stays open with its details and the others can't be selected." },
+        { t: "2 · Request a change is the only way to move", b: "It's a button on the current-location strip that opens a small Form 560 and notifies AccreditMe's platform team. After sending, the strip says who requested it and when. One open request at a time. There's no Switch, switch confirm or Disconnect on the tenant's page." },
+        { t: "3 · Where files are is locked; credentials aren't", b: "After confirming, endpoint, bucket, region, HTTPS, folder path, and the SharePoint site and library show locked with “Changing where files are stored is done by AccreditMe.” The MinIO access key and secret can be replaced (test, then save), and withdrawn SharePoint access can be connected again." },
+        { t: "4 · A radio list, kept", b: "Before confirming it's a real choice with descriptions and a disabled-with-reason option. After confirming it shows the organisation's location among the alternatives, so a surveyor sees what was chosen and what wasn't." },
+        { t: "5 · Deleted files go to a 30-day bin", b: "Deleting removes a file from its record at once, with a 420 confirm. Tenant admins can restore it, or purge it for good, from Settings › Recycle bin. Bin files count towards the limit until they go." },
+        { t: "6 · Purge needs a tick", b: "It's a danger confirm that names the count and size, and Purge is disabled until “I understand these files will be gone for good” is ticked. Restore needs only a plain confirm, since it undoes rather than destroys." },
+        { t: "7 · The limit is AccreditMe cloud's", b: "On own storage there's no meter, only files, size and “no AccreditMe limit applies”. Storage full shows in the upload control only while uploads go to AccreditMe cloud. Raising the limit is “Contact AccreditMe to raise the limit.” as plain text." },
+        { t: "8 · System health, not the bell", b: "Not confirmed, almost full and can't be reached are three System health conditions with severity chips. Each clears itself when fixed, so tenant admins see what is still open, not what was announced." }
+      ],
+      pages: [pageEn, pageAr],
+      pageNotes: [
+        { k: "First visit puts the choice up front.", v: "The strip says “Not confirmed yet · ✕ Uploads blocked” in danger. The section reads “Choose where files are kept”, with its consequence (“After this, only AccreditMe can change it”) beside the heading. AccreditMe cloud is preselected with “Confirm AccreditMe cloud…”." },
+        { k: "Confirming is one dialog for every location.", v: "A 420 confirm says uploads open for everyone and that only AccreditMe can change the location afterwards. The strip then reads “Confirmed 3 Oct 2026 by Hessa Al-Mutairi”." },
+        { k: "SharePoint is a first-setup choice.", v: "Only the customer's own Microsoft admin can approve access, so it stays tenant-side. Connect to Microsoft opens a new window, then the page waits for Microsoft, then you pick a site (picker 520) and a library (select), Test connection, and “Confirm SharePoint…” through the same confirm. After confirming, the site and library are locked like any location; Connect again appears only when access is withdrawn." },
+        { k: "After confirming, the non-current options are disabled.", v: "Grey radios and titles, descriptions kept. The current option's radio is a filled grey dot with a “Current” chip, read-only rather than selected, so nothing on the page invites a click that can't happen." },
+        { k: "A change request is a line, not a state.", v: "“Change requested 7 Oct 2026 by Hessa Al-Mutairi · AccreditMe will contact you” sits in the strip, and Request a change… is absent while it's open. When AccreditMe completes a move, the page simply shows the new location as current." },
+        { k: "Replacing credentials has its own save.", v: "Access key and secret become editable together; the saved key stays in use until “Save new key”, which needs a pass for the new key against the same, locked, endpoint and bucket." },
+        { k: "No region, bucket or endpoint for AccreditMe cloud.", v: "It says only that AccreditMe manages it and needs no setup." },
+        { k: "No colour-only state.", v: "The strip chip says “✓ Working”, “✕ Uploads blocked” or “✕ Can't be reached”. Locked fields carry 🔒 and the reason. Test results carry glyphs and a sentence." }
+      ],
+      health,
+      outPage: [
+        { k: "Loading", v: "Strip, radio list and both lower cards as skeletons at final heights. The page never flashes “Not confirmed” before the real state arrives." },
+        { k: "Populated", v: "As drawn, per state." },
+        { k: "Empty", v: "Doesn't apply: there's always a location, confirmed or not." },
+        { k: "Denied", v: "The shared not-allowed page for anyone who isn't a tenant admin: “File storage settings are open to tenant administrators.”" },
+        { k: "Error", v: "Page error with Retry if settings can't be read. A failed confirm or save keeps the values and says nothing changed (“Uploads are still blocked” before confirming)." },
+        { k: "Partial", v: "Usage failing shows its card's Retry; a failed health check shows “Health unknown · Test again” on the strip, never a guessed “Working”." }
+      ],
+      gallery,
+      testNotes: [
+        { k: "Where it runs.", v: "Before confirming, for MinIO and a local folder. After confirming, as Test again on any own-storage location, and when replacing the MinIO key." },
+        { k: "Three named steps.", v: "Write, read and delete, each marked ✓, ✕, ◌ or ○ with words. A failure names the step and quotes the server in plain words; later steps show as skipped (–)." },
+        { k: "Decided: a delete failure blocks saving.", v: "AccreditMe must be able to delete files when the recycle bin empties or an admin purges." },
+        { k: "Decided: a pass doesn't expire.", v: "Only changed values make it stale: the edited field turns amber with “Changed since the test”, and the box names what changed." },
+        { k: "Confirm or save before a pass.", v: "Disabled, with the reason beside it. There's no “Save anyway”." },
+        { k: "Confirmed locations show their last test.", v: "“✓ Working · last tested 7 Oct 2026, 09:12” with Test again." }
+      ],
+      secretNotes: [
+        { k: "Locked reads as locked, with a reason.", v: "Surface-grey box, 🔒 at the end, value still at full contrast. The first locked field carries “Changing where files are stored is done by AccreditMe.”; the rest say “Locked”." },
+        { k: "Secret states.", v: "Empty, typed (dots, with Show while typing), Set (“Set · 3 Oct 2026” with Replace), and replacing (Cancel restores Set; the saved key stays in use until saved)." },
+        { k: "Access key and secret are replaced together.", v: "Replace on either opens both. They're one credential pair, and a pair that half-changes fails the test anyway." },
+        { k: "SharePoint's credential is the approval.", v: "“Access · Set · approved 1 Oct 2026”. When it's withdrawn, a danger banner offers Connect again, which opens Microsoft's approval window; the page waits and updates by itself." },
+        { k: "Local folder on cloud.", v: "Disabled, with “Available on an on-premises installation.” It never opens." },
+        { k: "Write-once everywhere.", v: "No secret is ever shown again, exported, or written to the audit trail; the trail records “access key replaced by Hessa Al-Mutairi”." }
+      ],
+      dialogs,
+      measures: [
+        { d: "Confirm the location", s: "420 · confirm", en: "94", ar: "104" },
+        { d: "Request a change", s: "560 · form", en: "204", ar: "222" },
+        { d: "Delete a file", s: "420 · confirm", en: "146", ar: "160" },
+        { d: "Restore (several, one skipped)", s: "420 · confirm", en: "94", ar: "104" },
+        { d: "Restore (one row)", s: "420 · confirm", en: "94", ar: "104" },
+        { d: "Purge (with the tick)", s: "420 · confirm", en: "130", ar: "142" },
+        { d: "Choose a SharePoint site", s: "520 · picker", en: "380", ar: "380" }
+      ],
+      dialogNotes: [
+        { k: "Confirm names the permanence.", v: "The sentence says uploads open now, and that only AccreditMe can change the location afterwards, so the admin knows this is the one decision they own." },
+        { k: "Request a change promises nothing.", v: "“AccreditMe will contact you to agree the details. Nothing changes until then.” One optional field, and Send request." },
+        { k: "Delete says where the file can come back from.", v: "“Your administrator can restore it within 30 days.” It's a danger button inside the confirm only." },
+        { k: "Restore reports what it skips.", v: "Files whose record no longer exists are counted in the sentence and the Skipped pair. A record that has since closed still takes its file back." },
+        { k: "Purge is the strongest confirm in the product.", v: "Danger-ink sentence, count and size, the tick, and a disabled Purge until it's ticked." },
+        { k: "The site picker is back.", v: "Search, then a fixed-height scrolling list of sites with each address (LTR) and library count. It's the one dialog allowed to scroll, and it contains no popups." },
+        { k: "Removed.", v: "Switch confirm and Disconnect confirm: moving and disconnecting are AccreditMe's job now." }
+      ],
+      usageAll: [useOf(USE.normal, false), useOf(USE.near, false), useOf(USE.full, false), useOf(USE.own, false)],
+      binRows, binRowsAr,
+      binNotes: [
+        { k: "Files only.", v: "Links and record references are never stored, so removing one is immediate and doesn't come here." },
+        { k: "A list, not a viewer.", v: "No open, preview or download: the bin is for deciding a file's fate, not for reading it. Restore first to open it." },
+        { k: "Columns.", v: "File (name, type and size), From (record type, then its name as a link), Deleted by, Deleted, Days left, Actions. Soonest to expire first, so the files about to go are at the top." },
+        { k: "Days left is the one tinted value.", v: "Three days or fewer is amber at weight 600: that's the only thing here someone may need to act on." },
+        { k: "A record that no longer exists.", v: "Its name is struck through and not a link, Restore is absent, and a line under the row says why. Purge stays." },
+        { k: "Selection and bulk.", v: "Row checkboxes; a bulk bar with the count and total size, Restore… and Purge…. Rows that can't be restored are skipped and counted in the Restore confirm." },
+        { k: "Storage limit.", v: "The page header says deleted files count towards the limit until purged or deleted for good, and the Usage panel repeats it with the bin's size." },
+        { k: "Audit.", v: "Delete, restore and purge are each recorded in the audit log with who, when, which file and which record." }
+      ],
+      outBin: [
+        { k: "Loading", v: "Six skeleton rows at 52px under the toolbar." },
+        { k: "Populated", v: "As drawn." },
+        { k: "Empty", v: "“The recycle bin is empty. Files deleted from tasks and meetings stay here for 30 days, so you can restore them.” With filters: “No deleted files match · Clear filters”." },
+        { k: "Denied", v: "The shared not-allowed page: the bin is for tenant admins only, and the Settings item is absent for others." },
+        { k: "Error", v: "List error with Retry. A failed restore or purge reports per file (“2 restored, 1 couldn't be: Retry”) and leaves the rest done." },
+        { k: "Partial", v: "Bulk actions succeed or fail per file, never all-or-nothing, and the bulk bar says so." }
+      ],
+      upStates, homes,
+      upNotes: [
+        { k: "Scanning ships later.", v: "Until then an upload goes straight from Uploading to Ready, or to a refusal. Checking, Blocked and the rules' Scanning line stay drawn, labelled “once scanning ships”, so nothing needs redrawing when it lands." },
+        { k: "Delete, Dismiss, Remove.", v: "Delete for a stored file (it goes to the bin, after a confirm). Dismiss for a refused file (never stored). Remove for a link (never stored)." },
+        { k: "Errors live where they happened.", v: "Too large, type not allowed and upload failed belong to that file's row. Not set up, full and can't be reached replace the drop zone, because they apply to everyone." },
+        { k: "Not set up is the first-run state everywhere.", v: "People read “File storage isn't set up yet. Ask your administrator.” Tenant admins get “Set up file storage”, which opens the first-visit settings page." },
+        { k: "Storage full is AccreditMe cloud's only.", v: "On own storage there's no AccreditMe limit, so the zone never shows full there." },
+        { k: "Labels carry the file name.", v: "Every Download, Delete, Retry, Cancel and Dismiss has an accessible name with the file's name. Progress is a real progressbar with its percentage." }
+      ],
+      outUp: [
+        { k: "Loading", v: "Existing rows as skeletons. The zone is drawn only once storage status is known, never before." },
+        { k: "Populated", v: "File rows, as drawn." },
+        { k: "Empty", v: "Just the zone." },
+        { k: "Denied", v: "Someone who can see but not add sees rows with Download only, and no zone." },
+        { k: "Error", v: "Per row (failed, too large, type) or per zone (not set up, full, can't be reached)." },
+        { k: "Partial", v: "Several files in one drop: each succeeds or fails on its own row." }
+      ],
+      decided: [
+        { k: "A location that stops answering", v: "refuses uploads with “can't be added right now”, and tenant admins get a System health warning (drawn)." },
+        { k: "A delete failure in Test connection", v: "blocks saving or confirming (drawn)." },
+        { k: "A passed test doesn't expire;", v: "only changed values make it stale (drawn)." },
+        { k: "The storage limit counts AccreditMe cloud only.", v: "Own storage shows files and size with no meter (drawn)." },
+        { k: "Near the limit starts at 90%.", v: "Tenant admins are notified once, and System health shows “Storage almost full” (drawn)." },
+        { k: "Moving storage, disconnecting, and what happens to existing files", v: "are agreed between the tenant and AccreditMe after a change request, and done by AccreditMe. The platform side is designed later." },
+        { k: "Removed files", v: "stay 30 days in the recycle bin, then are deleted for good (drawn)." }
+      ],
+      changed: [
+        { where: "Model", what: "First-time confirmation with uploads blocked until then. The location is fixed afterwards. Request a change… replaces Switch." },
+        { where: "Removed", what: "Switch confirm, Disconnect and its confirm, and the questions list." },
+        { where: "Round 3", what: "SharePoint is a first-setup choice again: connect, wait for Microsoft, pick a site (picker 520, restored) and a library, test, Confirm SharePoint…. Arabic recycle bin: the gone-record row has no Restore and shows its reason." },
+        { where: "Added states", what: "First visit; confirmed cloud, MinIO, local folder and SharePoint with locked fields; replacing the key and its passed state; connecting SharePoint again; change requested." },
+        { where: "Added dialogs", what: "Confirm the location, Request a change (Form 560), Delete a file, Restore, Purge. Each is measured in both languages." },
+        { where: "Recycle bin", what: "New screen in Settings for tenant admins: list, filters, selection, Restore and Purge, the gone-record row, empty states, Arabic." },
+        { where: "Usage", what: "AccreditMe cloud only. Own-storage variant with no meter. Bin size line. “Contact AccreditMe to raise the limit.” as plain text everywhere." },
+        { where: "System health", what: "Three conditions drawn: not confirmed, almost full, can't be reached." },
+        { where: "Upload control", what: "Delete (to the bin) for stored files. A tenant-admin variant of not set up. Can't be reached. Checking and Blocked labelled “once scanning ships”. A home shown before storage is confirmed." }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

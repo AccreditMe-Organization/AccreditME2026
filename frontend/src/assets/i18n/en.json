@@ -70,7 +70,8 @@
       "admin": "Administration",
       "platform": "Platform"
     },
-    "organizationReadOnly": "Organization"
+    "organizationReadOnly": "Organization",
+    "fileStorage": "File storage"
   },
   "organization": {
     "title": "Organization Structure",
@@ -2045,14 +2046,18 @@
       "ORG_UNIT_WITHOUT_TYPE": "Set type",
       "STAGE_WITHOUT_ASSIGNEE": "Review stage",
       "TASK_WITHOUT_OWNER": "Reassign",
-      "ACTING_HEAD_OPEN_ENDED": "Open unit"
+      "ACTING_HEAD_OPEN_ENDED": "Open unit",
+      "STORAGE_ACCESS_WITHDRAWN": "Open file storage",
+      "STORAGE_SECRET_EXPIRING": "Open file storage"
     },
     "fixNeeds": {
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
       "ORG_UNIT_WITHOUT_TYPE": "Fixing this needs permission to manage the organization structure.",
       "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
       "TASK_WITHOUT_OWNER": "Fixing this needs permission to manage and reassign tasks.",
-      "ACTING_HEAD_OPEN_ENDED": "Fixing this needs permission to manage the organization structure."
+      "ACTING_HEAD_OPEN_ENDED": "Fixing this needs permission to manage the organization structure.",
+      "STORAGE_ACCESS_WITHDRAWN": "Fixing this needs permission to set up email, storage, deadlines and AI.",
+      "STORAGE_SECRET_EXPIRING": "Fixing this needs permission to set up email, storage, deadlines and AI."
     },
     "freshness": {
       "failed": "{{type}}: the last check failed. Its rows are as last confirmed on {{when}}.",
@@ -3148,6 +3153,118 @@
         "messageVacancy": "The cover ends now, and {{name}} loses any role it gave them. {{unit}} is left with no head and no cover, so work meant for its head goes to the head of the unit above it, if there is one.",
         "accept": "End cover"
       }
+    }
+  },
+  "storage": {
+    "title": "File storage",
+    "purpose": "Where your organisation's uploaded files are kept: task evidence now, meeting attachments and documents later.",
+    "denied": "File storage settings are open to tenant administrators.",
+    "errorLoad": "Couldn't load the storage settings. Nothing has changed.",
+    "current": {
+      "label": "Current location",
+      "noneName": "Not confirmed yet",
+      "noneDetail": "New organisations start on AccreditMe cloud. Uploads are blocked for everyone until a location is confirmed.",
+      "managed": "Managed by AccreditMe",
+      "confirmedOnBy": "Confirmed {{date}} by {{name}}",
+      "confirmedOn": "Confirmed {{date}}",
+      "refused": "new uploads are refused",
+      "requestedOnBy": "Change requested {{date}} by {{name}} · AccreditMe will contact you",
+      "requestedOn": "Change requested {{date}} · AccreditMe will contact you"
+    },
+    "chip": {
+      "blocked": "✕ Uploads blocked",
+      "confirmed": "✓ Confirmed",
+      "unreachable": "✕ Can't be reached"
+    },
+    "kind": {
+      "S3": {
+        "name": "AccreditMe cloud",
+        "desc": "Managed by AccreditMe. Nothing to set up."
+      },
+      "MINIO": {
+        "name": "MinIO on your own servers",
+        "desc": "An S3-compatible store your IT team runs."
+      },
+      "LOCAL_FILESYSTEM": {
+        "name": "Local folder or network drive",
+        "desc": "A folder or share the AccreditMe server can write to.",
+        "descNotOffered": "Available on an on-premises installation."
+      },
+      "SHAREPOINT": {
+        "name": "SharePoint Online",
+        "desc": "A document library in your Microsoft 365, reached through an app your IT team registers."
+      }
+    },
+    "location": {
+      "chooseTitle": "Choose where files are kept",
+      "chooseSub": "Chosen once for the whole organisation. After this, only AccreditMe can change it.",
+      "fixedTitle": "Where files are kept",
+      "fixedSub": "Fixed for your organisation. Only AccreditMe can move it.",
+      "current": "Current"
+    },
+    "cloud": {
+      "managedTitle": "Managed by AccreditMe",
+      "managedBody": "Nothing to manage here. Uploads are open."
+    },
+    "field": {
+      "endpoint": "Endpoint URL",
+      "bucket": "Bucket",
+      "regionHttps": "Region · HTTPS",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "folderPath": "Folder path",
+      "spTenant": "Tenant ID",
+      "spSiteUrl": "Site URL",
+      "spLibrary": "Library name",
+      "spClientId": "Client ID",
+      "spClientSecret": "Client secret",
+      "spSecretExpires": "Secret expires on",
+      "set": "Set",
+      "none": "None",
+      "on": "On",
+      "off": "Off",
+      "notRecorded": "Not recorded"
+    },
+    "help": {
+      "lock": "Changing where files are stored is done by AccreditMe.",
+      "locked": "Locked",
+      "cantShow": "Can't be shown."
+    },
+    "sp": {
+      "withdrawnTitle": "AccreditMe can't reach SharePoint",
+      "withdrawnSince": "Since {{date}}. New uploads are refused until access is restored.",
+      "withdrawn": {
+        "SECRET_INVALID": "Microsoft refused the client secret: it is invalid or has expired. Create a new client secret for the app in Microsoft Entra.",
+        "CONSENT_REVOKED": "The app's permission was removed in your Microsoft tenant, or the app was disabled or deleted. Ask your Microsoft administrator to restore it.",
+        "GRANT_REMOVED": "The app no longer has access to “{{library}}”. Ask your Microsoft administrator to give it write access to the library again.",
+        "LIBRARY_GONE": "The library “{{library}}” no longer exists in SharePoint. Contact AccreditMe to agree where files go next.",
+        "UNKNOWN": "Microsoft refused AccreditMe’s access. Ask your Microsoft administrator to check the app and its access to the library."
+      },
+      "expiring": "The client secret expires on {{date}}. Create a new one in Microsoft and replace it here.",
+      "expired": "The client secret expired on {{date}}. Create a new one in Microsoft and replace it here."
+    },
+    "usage": {
+      "title": "Usage",
+      "sub": "Only AccreditMe cloud counts against the limit",
+      "of": "{{used}} of {{limit}}",
+      "pct": "{{pct}}%",
+      "almostFull": "Almost full · {{pct}}%",
+      "full": "Full",
+      "normalLine": "At {{limit}} new uploads are refused; existing files aren't affected.",
+      "nearLine": "About {{left}} left. At {{limit}} new uploads are refused; existing files stay available.",
+      "fullLine": "New uploads are refused across the organisation. Existing files aren't affected and can still be opened.",
+      "contact": "Contact AccreditMe to raise the limit.",
+      "own": "Your own storage: no AccreditMe limit applies.",
+      "ownLeftover": "{{used}} from before is still in AccreditMe cloud · {{used}} of {{limit}}.",
+      "meterLabel": "{{used}} of {{limit}} used"
+    },
+    "rules": {
+      "title": "Upload rules",
+      "sub": "Set by AccreditMe, not editable here",
+      "maxSize": "Maximum file size",
+      "maxSizeValue": "{{size}} per file",
+      "types": "Allowed types",
+      "typesFailed": "Couldn't load the allowed types."
     }
   }
 }
