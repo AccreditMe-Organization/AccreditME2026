@@ -39,7 +39,15 @@ const appDir = join(root, 'src', 'app');
 // Lowered to 14 in ACC-120 slice 11 (PR C): the org tree's four row icon
 // buttons (three of them unnamed) became one worded row menu. 17 counted before
 // it, one under the old baseline already.
-const BASELINE = 14;
+// Lowered to 3 in ACC-255 PR 3 (plan §10.2): every workflow screen's icon
+// buttons are named, the stages list's row reorder and remove moved into a
+// worded ⋯ menu (ACC-254), and the shared list's Columns button is named. The
+// 3 left are lane A's screens, left for lane A, each listed with its file and
+// line by this scan:
+//   - the notification bell (the shell's top bar);
+//   - the AI feature costs list (platform admin);
+//   - the plans list (platform admin).
+const BASELINE = 3;
 
 // A TOOLTIP IS NOT A NAME. pTooltip is deliberately absent here: a tooltip is
 // unreachable to a screen reader and to a touch user, so a control carrying
@@ -70,7 +78,13 @@ for (const file of sourceFiles(appDir)) {
   const name = relative(root, file);
 
   // A <p-button> with an icon and no visible label is icon-only.
-  for (const m of source.matchAll(/<p-button\b([^>]*)>/g)) {
+  //
+  // ACC-255 PR 3 — the tag is read attribute by attribute, so a quoted value
+  // may hold a '>' (an arrow function, a comparison) without ending the tag
+  // early. The old [^>]* stopped at the first '>', and a name given after an
+  // (onClick)="… => …" was never seen: a named control counted as unnamed, or
+  // an icon after it was missed.
+  for (const m of source.matchAll(/<p-button\b((?:[^>"']|"[^"]*"|'[^']*')*)>/g)) {
     const attrs = m[1];
     if (!HAS_ICON.test(attrs)) continue;
     if (HAS_TEXT_LABEL.test(attrs) || NAMED.test(attrs)) continue;
@@ -78,7 +92,7 @@ for (const file of sourceFiles(appDir)) {
   }
 
   // A native <button> whose only content is an icon element.
-  for (const m of source.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)) {
+  for (const m of source.matchAll(/<button\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/button>/g)) {
     const [, attrs, inner] = m;
     const hasIcon = /<i\b|class="[^"]*\bpi\b|class="[^"]*\bti\b/.test(inner);
     if (!hasIcon) continue;

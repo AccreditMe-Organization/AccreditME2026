@@ -8,7 +8,8 @@ import { Observable, Subject, of, throwError } from 'rxjs';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
-import { CommitteeDetailDto, CommitteeService } from '../../services/committee.service';
+import { CommitteeDetailDto, CommitteeService, CommitteeStageRulesDto } from '../../services/committee.service';
+import { ACTIVE_RULES, FORMATION_RULES, SEEDED_STAGE_RULES } from '../../testing';
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { UserService } from '../../../user/services/user.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
@@ -22,7 +23,7 @@ import { CommitteeDetailComponent } from './committee-detail.component';
 // permission read here), the open-request banner sits before the Lifecycle row,
 // and the Change requests panel is LAST in the panel grid.
 
-const COMMITTEE = (stageKey: string): CommitteeDetailDto => ({
+const COMMITTEE = (stageRules: CommitteeStageRulesDto): CommitteeDetailDto => ({
   id: 'c-1',
   organizationId: 'org',
   nameEn: 'Patient Experience Committee',
@@ -40,8 +41,8 @@ const COMMITTEE = (stageKey: string): CommitteeDetailDto => ({
   isActive: true,
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-01T00:00:00Z',
-  currentStageKey: stageKey,
   isDissolving: false,
+  stageRules,
   typeValue: null,
 });
 
@@ -51,7 +52,7 @@ describe('CommitteeDetailComponent — change requests (ACC-240)', () => {
   let openCalls = 0;
   let listCalls = 0;
 
-  function render(open: () => Observable<OpenChangeRequestDto>, stageKey = 'active'): HTMLElement {
+  function render(open: () => Observable<OpenChangeRequestDto>, stageRules: CommitteeStageRulesDto = ACTIVE_RULES): HTMLElement {
     openCalls = 0;
     listCalls = 0;
     TestBed.configureTestingModule({
@@ -70,7 +71,7 @@ describe('CommitteeDetailComponent — change requests (ACC-240)', () => {
         {
           provide: CommitteeService,
           useValue: {
-            getById: () => of(COMMITTEE(stageKey)),
+            getById: () => of(COMMITTEE(stageRules)),
             listCommittees: () => of([]),
             listMembers: () => of([]),
             listMembershipEvents: () => of([]),
@@ -113,16 +114,16 @@ describe('CommitteeDetailComponent — change requests (ACC-240)', () => {
   });
 
   it('shows no Request a change when canRaise is false, whatever the stage and permissions', () => {
-    for (const key of ['active', 'suspended', 'formation']) {
-      const page = render(() => of({ request: null, canRaise: false }), key);
-      expect(button(page)).withContext(key).toBeNull();
+    for (const { stage, rules } of SEEDED_STAGE_RULES) {
+      const page = render(() => of({ request: null, canRaise: false }), rules);
+      expect(button(page)).withContext(stage).toBeNull();
       TestBed.resetTestingModule();
     }
   });
 
   it('…and follows canRaise even in a stage the screen would not offer it in', () => {
     // The screen copies no stage rule: the server's answer is the whole rule.
-    expect(button(render(() => of({ request: null, canRaise: true }), 'formation'))).not.toBeNull();
+    expect(button(render(() => of({ request: null, canRaise: true }), FORMATION_RULES))).not.toBeNull();
   });
 
   it('shows no Request a change before the open read answers', () => {

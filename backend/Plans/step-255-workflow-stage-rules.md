@@ -834,3 +834,50 @@ starts when it runs.
    alone" and not changed. A customer organisation with work makes `--execute`
    refuse with exit 1 and write nothing (ACC-101: a customer-notified change,
    not a script).
+
+### 16.6 PR 3 as built (25 Oct), and where it departs from the plan
+
+Re-read against `dev` `341545f` (PR 2, and lane A's #214 and #216) before
+building: nothing in the PR 3 row of §11 or in §10 had stopped fitting.
+
+**Commits:**
+
+| # | What |
+|---|---|
+| 1 | The committee page offers what `stageRules` allows (`committee-offers.ts`); `committee-stage.ts` (`COMMITTEE_HEADER_POLICY`, `committeeHeaderOffers`) deleted; the DTOs lose `currentStageKey`. |
+| 2 | The edit dialog, Add member, Change role and Remove say PR 2's four sentences from the code, naming the stage in the reader's language (`committee-stage-refusal.ts`). |
+| 3 | The edit dialog and Request a change read `GET /committees/form-choices` (§10.5). |
+| 4 | PR 2's key-name scan reads `frontend/src` too. |
+| 5 | ACC-254 (§10.1): the stages page's row menu and fixed tracks, the transition table's widths, the enum values in words (`workflow-labels.ts`), `check:workflow-enum-display`, and a layout spec. |
+| 6 | Icon labels (§10.2): every lane B icon button named, the attribute-aware matcher, `check:icon-labels:selftest`, baseline 14 → 3. |
+| 7 | The workflow screens' refusals in their own words (§10.4). |
+| 8 | This section, SYSTEM-REFERENCE and CLAUDE.md. |
+
+**Departures from the plan, each deliberate:**
+
+- **The icon-label baseline is 3, not 0.** The three left are on lane A's
+  screens, which this PR does not edit: the notification bell (the shell's top
+  bar), the AI feature costs list and the plans list (platform admin). The
+  script lists them; whoever next touches those screens names them and lowers
+  the baseline to 0.
+- **The shared list's Columns button (`data-list`) was named here**, because it
+  is a shared component used on lane B's pages as well as lane A's.
+- **The stages page's actions track is 96 px**, measured: the cell is 84.3 px in
+  Arabic and 77.3 px in English. The layout spec's "88 px suffix" mutation no
+  longer turns it red, because Edit and the ⋯ now fit in 88 px. The row menu is
+  the fix; the mutation that narrows the track below the cell does turn it red.
+- **The locked line also shows for a committee with no live stage (D14)** to a
+  person who could edit: nothing is allowed and it has no flags. None exists
+  on the shared database (§13 count 7 is 0).
+- **Request a change still follows the server's own `canRaise`**, which already
+  reads the stage's `request_change`; the page does not combine it a second
+  time.
+- **One Retry reads both form-choices lists**, because they are one read now;
+  the committees list (for the parent and Reports to) stays its own read.
+- **The workflow screens' plain refusal for `STAGE_ACTION_NOT_ALLOWED`** has no
+  stage to name, so it is a sentence of its own
+  (`workflow.refusal.stageActionNotAllowed`); the committee screens keep the
+  stage-named four.
+- **An unknown protected `edit` says the general sentence**
+  (`workflow.refusal.templateProtected`), so a tenth edit added on the server
+  before the screens know it is still said in the reader's language.

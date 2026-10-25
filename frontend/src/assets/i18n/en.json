@@ -677,6 +677,41 @@
     "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
   },
   "workflow": {
+    "error": {
+      "updateFailed": "Couldn't save the change.",
+      "removeFailed": "Couldn't remove it.",
+      "saveFailed": "Couldn't save.",
+      "reorderFailed": "Couldn't change the order.",
+      "setDefaultFailed": "Couldn't set it as the default.",
+      "deactivateFailed": "Couldn't deactivate it.",
+      "invalidHeadersJson": "The webhook headers aren't valid JSON.",
+      "invalidValidatorJson": "The validator settings aren't valid JSON."
+    },
+    "setDefaultNamed": "Set {{name}} as the default",
+    "alreadyDefaultNamed": "{{name}} is already the default workflow",
+    "deactivateTemplateNamed": "Deactivate {{name}}",
+    "transitionActionsFor": "Actions on the transition {{name}}",
+    "editTransitionNamed": "Edit the transition {{name}}",
+    "removeTransitionNamed": "Remove the transition {{name}}",
+    "editActionNamed": "Edit the {{type}} action",
+    "showStageDetails": "Show the transitions and tasks of {{name}}",
+    "hideStageDetails": "Hide the transitions and tasks of {{name}}",
+    "stageActionsFor": "More actions for the stage {{name}}",
+    "editStageNamed": "Edit the stage {{name}}",
+    "assigneePositionFixed": "Fixed position",
+    "triggerAssigneePool": "Assignee pool",
+    "valueUnknown": "Unknown",
+    "objectTypeName": {
+      "DOCUMENT_REQUEST": "Document request",
+      "DOCUMENT": "Document",
+      "CHANGE_REQUEST": "Document change request",
+      "INCIDENT": "Incident",
+      "AUDIT": "Audit",
+      "CORRECTIVE_ACTION": "Corrective action",
+      "MEETING": "Meeting",
+      "COMMITTEE": "Committee",
+      "COMMITTEE_CHANGE_REQUEST": "Committee change request"
+    },
     "recordAction": {
       "COMMITTEE": {
         "edit_details": "Edit the committee's details",
@@ -905,6 +940,23 @@
       "openedFrom": "Opened from “{{transition}}”"
     },
     "refusal": {
+      "actionTypeRetired": "Create task is no longer an action. Add tasks to the destination stage instead.",
+      "validatorRetired": "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves.",
+      "stageActionNotAllowed": "This can't be done while the record is at its current stage.",
+      "stageActionUnknown": "This kind of record has no such action.",
+      "stageFlagUnknown": "This kind of record has no such stage meaning.",
+      "stageFlagExactlyOne": "Exactly one stage of this workflow must carry this meaning.",
+      "protected": {
+        "CREATE_TEMPLATE": "There is already a committee change request workflow, and there can be only one. Rename its stages or set their deadlines instead.",
+        "REPLACE_DEFAULT": "The committee change request workflow cannot be replaced by another workflow.",
+        "DEACTIVATE": "The committee change request workflow cannot be switched off: changes to approved committees depend on it.",
+        "CHANGE_TYPE": "A workflow cannot be changed to or from the committee change request type.",
+        "ADD_STAGE": "Stages cannot be added to the committee change request workflow. You can rename its stages and set their deadlines.",
+        "REMOVE_STAGE": "This stage is part of how a committee change request is decided, so it cannot be deleted.",
+        "STAGE_FIELD": "In the committee change request workflow only a stage's names, description and deadline can be changed.",
+        "TRANSITION": "The moves of a committee change request are fixed, so they cannot be added, changed or removed.",
+        "STAGE_TASKS": "Tasks cannot be added to the committee change request workflow's stages: its moves are made by the request itself."
+      },
       "routeIncomplete": "Choose where the task goes: something this choice needs is missing.",
       "routeNotAvailable": "This kind of record has no unit or committee of its own, so the record's unit or committee can't be used.",
       "unitNotFound": "That unit no longer exists. Choose another.",

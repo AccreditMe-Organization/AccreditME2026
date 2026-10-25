@@ -4016,8 +4016,12 @@ Briefly:
     ticket must take the instance lock BEFORE the committee row lock (plan §7),
     or an edit and a transition can deadlock.
     **BUILT (ACC-255 PR 2):** the API refuses a direct edit where the stage does
-    not allow `edit_details`, instance lock first. The header rule is still
-    keyed on the screens until ACC-255 PR 3.
+    not allow `edit_details`, instance lock first.
+  - **SUPERSEDED (ACC-255 PR 3): the page reads the stage's RULES, not its key.**
+    `committee-stage.ts` is deleted; `committeeOffers()`
+    (`committee-offers.ts`) combines the server's `stageRules` with each
+    action's permission. Seeded, the result is the same: Edit in Formation, the
+    locked line in Terms Review.
 - **A STALE SAVE IS REFUSED UNDER THE ROW LOCK.**
   - The dialog sends `expectedUpdatedAt`. `updateCommittee()` locks the
     committee row and compares, giving 409 `COMMITTEE_CHANGED` with nothing
@@ -4126,7 +4130,8 @@ and the build's departures: `backend/Plans/step-238-committee-changes.md` §5,
   (`COMMITTEE_STAGE_POLICY`) is deleted; the policy file reads the
   committee's stored stage rules instead, and approve lands in the request
   stage flagged `APPLIES_APPROVED_CHANGE`. The REQUEST's own stage map stays
-  keyed: that template is protected. `COMMITTEE_HEADER_POLICY` goes in PR 3.
+  keyed: that template is protected. `COMMITTEE_HEADER_POLICY` is deleted
+  too (ACC-255 PR 3): the screens read `stageRules`.
 - **SEEDING ONE TEMPLATE USES THE BOOTSTRAP'S OWN CODE**
   (`applyWorkflowSeed()`, `workflow-seed-apply.ts`). A backfill never re-runs
   `seedDefaultWorkflows()`: that overwrites a tenant's edits to every template.
@@ -4202,9 +4207,9 @@ SYSTEM-REFERENCE.md §1.14. Plan and Ahmad's answers (22 and 24 Oct):
 ## Key Architecture Decisions (ACC-255)
 
 What each workflow stage allows, and stage flags. Full mechanism:
-SYSTEM-REFERENCE.md §2.18 (and §2.18.1 for what decides by it). Plan, Ahmad's
-answers and PR 2 as built: `backend/Plans/step-255-workflow-stage-rules.md`
-(§16, §16.5). Briefly:
+SYSTEM-REFERENCE.md §2.18 (§2.18.1 for what the backend decides by it, §2.18.2
+for what the screens read). Plan, Ahmad's answers, and PR 2 and PR 3 as built:
+`backend/Plans/step-255-workflow-stage-rules.md` (§16, §16.5, §16.6). Briefly:
 
 - **A STAGE SAYS WHAT MAY BE DONE TO THE RECORD, AND WHAT IT MEANS** — record
   actions (`WorkflowStageRecordAction`, a row means "allowed") and flags
@@ -4230,9 +4235,26 @@ answers and PR 2 as built: `backend/Plans/step-255-workflow-stage-rules.md`
   Pending still allows it. The seed carries it; existing organisations get it
   from `npm run backfill:acc255-dissolved-membership` (dry run, then
   `-- --execute`, then a dry run reporting 0), AFTER PR 2 deploys.
-- **The parity script and `COMMITTEE_STAGE_POLICY` are deleted** (PR 2). The
-  frontend still reads keys (`COMMITTEE_HEADER_POLICY`) until PR 3.
-- **No migration in PR 2.**
+- **The parity script and `COMMITTEE_STAGE_POLICY` are deleted** (PR 2).
+- **SINCE PR 3 THE SCREENS DECIDE BY THEM TOO, AND KEEP NO COPY OF A SERVER
+  RULE.** The committee page reads `stageRules` (`committee-offers.ts`) and
+  says a stage refusal from its code, naming the stage in the reader's language
+  (`committee-stage-refusal.ts`). `committee-stage.ts` is deleted, and the key
+  scan reads `frontend/src` too, where no key is allowed. The committee read
+  still sends `currentStageKey`, read by nothing; dropping it is a contract
+  step.
+- **The committee dialogs read `GET /committees/form-choices`** for types and
+  units, so editing a committee needs no `lookups:view` or `org:view`.
+- **Every workflow screen says a refusal from its code**
+  (`plainWorkflowRefusalKey()` first, at every write): the protected change
+  request workflow by WHICH edit (`workflow.refusal.protected.*`), never the
+  server's English. Enum values show in words (`workflow-labels.ts`), and
+  `check:workflow-enum-display` fails a template that prints one raw.
+- **Icon buttons are named on every lane B screen.** `check:icon-labels` reads
+  quoted values whole (a `=>` no longer ends a tag) and has a selftest; its
+  baseline is 3, all on lane A's screens (the bell, AI feature costs, plans),
+  listed in the script. Lower it to 0 when those are named.
+- **No migration in PR 2 or PR 3.**
 
 ## Open / Deferred Items
 

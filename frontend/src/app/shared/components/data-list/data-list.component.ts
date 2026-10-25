@@ -172,6 +172,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
               [text]="true"
               icon="pi pi-table"
               [pTooltip]="'list.columns' | translate"
+              [ariaLabel]="'list.columns' | translate"
               (onClick)="columnMenuOpen.set(!columnMenuOpen())"
             />
           }

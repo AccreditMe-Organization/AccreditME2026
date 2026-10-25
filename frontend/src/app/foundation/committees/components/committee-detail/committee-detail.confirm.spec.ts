@@ -18,6 +18,7 @@ import { UserService } from '../../../user/services/user.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { WorkflowService } from '../../../workflow/services/workflow.service';
 import { CommitteeDetailComponent } from './committee-detail.component';
+import { ACTIVE_RULES } from '../../testing';
 
 // ACC-240 (lane A's handover) — Remove member asks the question by the person's
 // name and states the server's consequence: no date is sent, so the membership
@@ -42,7 +43,7 @@ const COMMITTEE: CommitteeDetailDto = {
   isActive: true,
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-01T00:00:00Z',
-  currentStageKey: 'active',
+  stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: null,
 };

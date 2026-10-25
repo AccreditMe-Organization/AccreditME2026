@@ -30,7 +30,12 @@ export type WorkflowRefusalCode =
   // ACC-238 — a committee leaves Formation only with a quorum of at least 1.
   | 'COMMITTEE_QUORUM_NOT_SET'
   // ACC-239 — the committee change request workflow's shape is fixed.
-  | 'WORKFLOW_TEMPLATE_PROTECTED';
+  | 'WORKFLOW_TEMPLATE_PROTECTED'
+  // ACC-255 — stage rules: what a stage allows, and what a stage save may name.
+  | 'STAGE_ACTION_NOT_ALLOWED'
+  | 'STAGE_ACTION_UNKNOWN'
+  | 'STAGE_FLAG_UNKNOWN'
+  | 'STAGE_FLAG_EXACTLY_ONE';
 
 /**
  * The refusals whose words need nothing but the code. Literal keys, so the
@@ -47,13 +52,44 @@ const PLAIN_REFUSAL_KEYS: Partial<Record<WorkflowRefusalCode, string>> = {
   STAGE_TASK_USER_NOT_IN_POSITION: 'workflow.refusal.userNotInPosition',
   STAGE_TASK_ON_FINAL_STAGE: 'workflow.refusal.onFinalStage',
   STAGE_TASK_ORDER_MISMATCH: 'workflow.stageTasks.orderChanged',
+  ACTION_TYPE_RETIRED: 'workflow.refusal.actionTypeRetired',
+  VALIDATOR_RETIRED: 'workflow.refusal.validatorRetired',
   COMMITTEE_QUORUM_NOT_SET: 'workflow.refusal.committeeQuorumNotSet',
   WORKFLOW_TEMPLATE_PROTECTED: 'workflow.refusal.templateProtected',
+  // A committee screen names the stage (committee-stage-refusal.ts); a workflow
+  // screen has no stage to name, so it says the plain sentence.
+  STAGE_ACTION_NOT_ALLOWED: 'workflow.refusal.stageActionNotAllowed',
+  STAGE_ACTION_UNKNOWN: 'workflow.refusal.stageActionUnknown',
+  STAGE_FLAG_UNKNOWN: 'workflow.refusal.stageFlagUnknown',
+  STAGE_FLAG_EXACTLY_ONE: 'workflow.refusal.stageFlagExactlyOne',
 };
 
-/** The translation key for a refusal that needs only its code, or null. */
+/**
+ * ACC-255 PR 3 (plan §10.4) — what each protected edit says (the backend's
+ * PROTECTED_REFUSALS, by its `edit` detail). An edit this list does not know
+ * says the general sentence, never the server's English.
+ */
+const PROTECTED_REFUSAL_KEYS: Record<string, string> = {
+  CREATE_TEMPLATE: 'workflow.refusal.protected.CREATE_TEMPLATE',
+  REPLACE_DEFAULT: 'workflow.refusal.protected.REPLACE_DEFAULT',
+  DEACTIVATE: 'workflow.refusal.protected.DEACTIVATE',
+  CHANGE_TYPE: 'workflow.refusal.protected.CHANGE_TYPE',
+  ADD_STAGE: 'workflow.refusal.protected.ADD_STAGE',
+  REMOVE_STAGE: 'workflow.refusal.protected.REMOVE_STAGE',
+  STAGE_FIELD: 'workflow.refusal.protected.STAGE_FIELD',
+  TRANSITION: 'workflow.refusal.protected.TRANSITION',
+  STAGE_TASKS: 'workflow.refusal.protected.STAGE_TASKS',
+};
+
+/** The translation key for a refusal that needs only its code (and, if protected, its edit), or null. */
 export function plainWorkflowRefusalKey(err: unknown): string | null {
   const code = refusalCode(err) as WorkflowRefusalCode | null;
+  if (code === 'WORKFLOW_TEMPLATE_PROTECTED') {
+    const edit = refusalBody(err)?.['edit'];
+    return typeof edit === 'string' && Object.hasOwn(PROTECTED_REFUSAL_KEYS, edit)
+      ? PROTECTED_REFUSAL_KEYS[edit]
+      : 'workflow.refusal.templateProtected';
+  }
   return (code && PLAIN_REFUSAL_KEYS[code]) ?? null;
 }
 

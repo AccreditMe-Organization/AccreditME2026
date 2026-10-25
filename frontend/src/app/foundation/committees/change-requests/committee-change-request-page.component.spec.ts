@@ -18,6 +18,7 @@ import { CommitteeChangeRequestPageComponent } from './committee-change-request-
 import { ChangeRequestActionsDto, ChangeRequestDto, ChangeRequestService } from './change-request.service';
 import { REQUEST, fakePhone } from './change-request.testing';
 import { preserveDocumentLanguage } from '../../../../testing/document-language';
+import { ACTIVE_RULES } from '../testing';
 
 const LIVE: CommitteeDetailDto = {
   id: 'c-1',
@@ -37,7 +38,7 @@ const LIVE: CommitteeDetailDto = {
   isActive: true,
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-01T00:00:00Z',
-  currentStageKey: 'active',
+  stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: null,
 };
