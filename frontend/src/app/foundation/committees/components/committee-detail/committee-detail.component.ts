@@ -162,7 +162,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                    allows edit_details (Formation, on the seeded workflow), for
                    holders of committees:edit_details (committee-offers.ts),
                    after the transition buttons. -->
-              @if (offers().edit) {
+              @if (canEdit() && offers().edit) {
                 <p-button
                   [label]="'common.edit' | translate"
                   icon="pi pi-pencil"
