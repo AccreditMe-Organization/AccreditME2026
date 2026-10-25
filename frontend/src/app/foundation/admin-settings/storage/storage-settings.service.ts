@@ -63,7 +63,38 @@ export interface IStorageSettings {
   maxUploadBytes: number;
 }
 
-/** ACC-260 — the organisation's file storage settings. PR A reads only. */
+/**
+ * A connection test's steps (backend `StorageTestStep`). MinIO and a local
+ * folder run configure, write, read, verify and delete; `token`, `site` and
+ * `library` are SharePoint's own (PR C).
+ */
+export type StorageTestStep = 'configure' | 'token' | 'site' | 'library' | 'write' | 'read' | 'verify' | 'delete';
+
+/** POST /tenant/storage/test (backend IStorageTestResult). Always a 200; nothing is saved. */
+export interface IStorageTestResult {
+  ok: boolean;
+  provider: StorageKind;
+  /** The steps that passed, in order. */
+  passed: StorageTestStep[];
+  failedStep: StorageTestStep | null;
+  /** A storage refusal code; the screen shows its own words for it, never `message`. */
+  code: string | null;
+  message: string | null;
+  sharepoint: unknown;
+}
+
+/**
+ * The body of test, confirm and PATCH (backend UpdateStorageSettingsDto). A
+ * secret is present only when the person typed one: omitted, the server keeps
+ * the stored value (ACC-260 rule 2).
+ */
+export interface IStorageCandidate {
+  provider: StorageKind;
+  minio?: { endpoint?: string; region?: string; bucket?: string; accessKeyId?: string; secretAccessKey?: string };
+  local?: { rootPath?: string };
+}
+
+/** ACC-260 — the organisation's file storage settings. Every write answers with the whole settings again. */
 @Injectable({ providedIn: 'root' })
 export class StorageSettingsService {
   private readonly http = inject(HttpClient);
@@ -71,5 +102,26 @@ export class StorageSettingsService {
 
   get(): Observable<IStorageSettings> {
     return this.http.get<IStorageSettings>(this.baseUrl);
+  }
+
+  /** Writes a probe file into the storage under test and deletes it. Saves nothing. */
+  test(candidate: IStorageCandidate): Observable<IStorageTestResult> {
+    return this.http.post<IStorageTestResult>(`${this.baseUrl}/test`, candidate);
+  }
+
+  /** Once, for good: where the organisation's files are kept. */
+  confirm(candidate: IStorageCandidate): Observable<IStorageSettings> {
+    return this.http.post<IStorageSettings>(`${this.baseUrl}/confirm`, candidate);
+  }
+
+  /** After confirming: new MinIO keys for the same endpoint and bucket. The server tests them first. */
+  replaceKeys(candidate: IStorageCandidate): Observable<IStorageSettings> {
+    return this.http.patch<IStorageSettings>(this.baseUrl, candidate);
+  }
+
+  /** Asks AccreditMe to move the organisation's files. The note goes to AccreditMe only. */
+  requestChange(message: string): Observable<IStorageSettings> {
+    const note = message.trim();
+    return this.http.post<IStorageSettings>(`${this.baseUrl}/change-request`, note ? { message: note } : {});
   }
 }
