@@ -1864,7 +1864,15 @@
     "announcement": "شريط إعلان على مستوى المنصة، يظهر لجميع المؤسسات.",
     "announcementMessage": "نص الإعلان",
     "announcementSeverity": "درجة الأهمية",
-    "suspendHeader": "إيقاف {{name}}؟"
+    "suspendHeader": "إيقاف {{name}}؟",
+    "maxFullUsers": "المستخدمون الكاملون",
+    "maxFullUsersHint": "من يسجّلون الدخول ويعملون في النظام.",
+    "maxStaff": "الموظفون",
+    "maxStaffHint": "من يقرؤون الوثائق ويقرّون بالاطلاع عليها فقط.",
+    "unlimited": "غير محدود",
+    "limitRequired": "أدخل رقمًا، أو اختر «غير محدود».",
+    "limitMin": "الحد 1 على الأقل.",
+    "limitWhole": "أدخل عددًا صحيحًا."
   },
   "account": {
     "trial": "تجريبي",
