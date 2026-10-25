@@ -303,7 +303,7 @@ describe('CommitteesService', () => {
   // ── getCommitteeDetail (ACC-238) ─────────────────────────────────────────────
 
   describe('getCommitteeDetail', () => {
-    it("adds the current stage's key and whether it is dissolving, read through the list helper", async () => {
+    it('adds whether the current stage is dissolving, read through the list helper', async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
       mockPrisma.workflowInstance.findMany.mockResolvedValue([{ objectId: 'committee-1', currentStageId: 'stage-dp' }]);
@@ -313,18 +313,41 @@ describe('CommitteesService', () => {
 
       const result = await service.getCommitteeDetail('committee-1', ORG_A);
 
-      expect(result).toMatchObject({ id: 'committee-1', currentStageKey: 'dissolution_pending', isDissolving: true });
+      expect(result).toMatchObject({ id: 'committee-1', isDissolving: true });
       expect(mockPrisma.workflowInstance.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, objectType: 'COMMITTEE' }) }),
       );
     });
 
-    it('a committee with no workflow instance has no key and is not dissolving', async () => {
+    it('a committee with no workflow instance is not dissolving', async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
       mockPrisma.workflowInstance.findMany.mockResolvedValue([]);
 
-      expect(await service.getCommitteeDetail('committee-1', ORG_A)).toMatchObject({ currentStageKey: null, isDissolving: false });
+      expect(await service.getCommitteeDetail('committee-1', ORG_A)).toMatchObject({ isDissolving: false });
+    });
+
+    // ACC-265 — no committee response carries a stage key: screens decide by
+    // stageRules (ACC-255), so a key in the API is a rule waiting to be copied.
+    it('neither the record read nor the list carries the stage key, under any name', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+      mockPrisma.committee.findMany.mockResolvedValue([makeCommittee()]);
+      mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
+      mockPrisma.workflowInstance.findMany.mockResolvedValue([{ objectId: 'committee-1', currentStageId: 'stage-dp' }]);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { id: 'stage-dp', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', key: 'dissolution_pending', flags: ['DISSOLVING'] },
+      ]);
+
+      const detail = await service.getCommitteeDetail('committee-1', ORG_A);
+      const [row] = await service.listCommittees(ORG_A);
+
+      // Non-vacuity: the stage was read (its name and its flag reached the response).
+      expect(row!.currentStageNameEn).toBe('Dissolution Pending');
+      expect(detail.isDissolving).toBe(true);
+      for (const response of [detail, row!]) {
+        expect(response).not.toHaveProperty('currentStageKey');
+        expect(JSON.stringify(response)).not.toContain('dissolution_pending');
+      }
     });
 
     // ACC-265 — the owning unit is named on the read, so the record page needs no
