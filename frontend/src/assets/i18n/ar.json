@@ -677,6 +677,13 @@
     "confirmDeactivateRoleUnknown": "يفقد كل من يحمله صلاحيات الدور الآن. ويبقى الدور مُسندًا كما هو، فإعادة تفعيله تعيدها."
   },
   "workflow": {
+    "setDefaultNamed": "تعيين {{name}} كافتراضي",
+    "alreadyDefaultNamed": "{{name}} هو سير العمل الافتراضي بالفعل",
+    "deactivateTemplateNamed": "إلغاء تفعيل {{name}}",
+    "transitionActionsFor": "الإجراءات عند الانتقال {{name}}",
+    "editTransitionNamed": "تعديل الانتقال {{name}}",
+    "removeTransitionNamed": "إزالة الانتقال {{name}}",
+    "editActionNamed": "تعديل إجراء {{type}}",
     "showStageDetails": "عرض انتقالات ومهام {{name}}",
     "hideStageDetails": "إخفاء انتقالات ومهام {{name}}",
     "stageActionsFor": "إجراءات أخرى للمرحلة {{name}}",

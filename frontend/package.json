@@ -10,6 +10,7 @@
     "check:formatting": "node scripts/check-formatting-rules.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:icon-labels": "node scripts/check-icon-labels.mjs",
+    "check:icon-labels:selftest": "node scripts/check-icon-labels.selftest.mjs",
     "check:dialog-overlays": "node scripts/check-dialog-overlays.mjs",
     "check:dialog-density": "node scripts/check-dialog-density.mjs",
     "check:create-gating": "node scripts/check-create-gating.mjs",

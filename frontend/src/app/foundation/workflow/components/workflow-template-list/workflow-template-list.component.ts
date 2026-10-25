@@ -79,6 +79,10 @@ import { LanguageService } from '../../../../core/services/language.service';
                         : 'workflow.setDefault'
                       ) | translate
                     "
+                    [ariaLabel]="
+                      (template.isDefault ? 'workflow.alreadyDefaultNamed' : 'workflow.setDefaultNamed')
+                        | translate: { name: templateName(template) }
+                    "
                     (onClick)="onSetDefault(template, $event)"
                   />
                   @if (template.isActive) {
@@ -88,6 +92,7 @@ import { LanguageService } from '../../../../core/services/language.service';
                       size="small"
                       severity="danger"
                       [pTooltip]="'workflow.deactivateTemplate' | translate"
+                      [ariaLabel]="'workflow.deactivateTemplateNamed' | translate: { name: templateName(template) }"
                       (onClick)="onDeactivate(template, $event)"
                     />
                   }
@@ -111,6 +116,11 @@ import { LanguageService } from '../../../../core/services/language.service';
 })
 export class WorkflowTemplateListComponent implements OnInit {
   /** ACC-254 — the record type in words, never the stored code. */
+  /** The template's name in the reader's language, for the controls that name it. */
+  templateName(template: { nameEn: string; nameAr: string | null }): string {
+    return this.languageService.bilingual(template.nameEn, template.nameAr);
+  }
+
   objectTypeLabelKey(objectType: string | null | undefined): string {
     return workflowLabelKey('objectType', objectType);
   }

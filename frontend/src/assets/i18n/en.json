@@ -677,6 +677,13 @@
     "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
   },
   "workflow": {
+    "setDefaultNamed": "Set {{name}} as the default",
+    "alreadyDefaultNamed": "{{name}} is already the default workflow",
+    "deactivateTemplateNamed": "Deactivate {{name}}",
+    "transitionActionsFor": "Actions on the transition {{name}}",
+    "editTransitionNamed": "Edit the transition {{name}}",
+    "removeTransitionNamed": "Remove the transition {{name}}",
+    "editActionNamed": "Edit the {{type}} action",
     "showStageDetails": "Show the transitions and tasks of {{name}}",
     "hideStageDetails": "Hide the transitions and tasks of {{name}}",
     "stageActionsFor": "More actions for the stage {{name}}",

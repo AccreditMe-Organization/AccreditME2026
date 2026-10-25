@@ -173,6 +173,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
                 [text]="true"
                 size="small"
                 [pTooltip]="'workflow.actions' | translate"
+                [ariaLabel]="'workflow.transitionActionsFor' | translate: { name: transitionLabel(transition) }"
                 (onClick)="openActions(transition)"
               />
             </td>
@@ -184,6 +185,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
                   [text]="true"
                   size="small"
                   [pTooltip]="'common.edit' | translate"
+                  [ariaLabel]="'workflow.editTransitionNamed' | translate: { name: transitionLabel(transition) }"
                   (onClick)="openEdit(transition)"
                 />
                 <p-button
@@ -192,6 +194,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
                   size="small"
                   severity="danger"
                   [pTooltip]="'common.remove' | translate"
+                  [ariaLabel]="'workflow.removeTransitionNamed' | translate: { name: transitionLabel(transition) }"
                   (onClick)="onRemove(transition)"
                 />
               }

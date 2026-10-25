@@ -121,6 +121,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
                   [text]="true"
                   size="small"
                   [pTooltip]="'common.edit' | translate"
+                  [ariaLabel]="'workflow.editActionNamed' | translate: { type: actionTypeName(action.actionType) }"
                   (onClick)="openEdit(action)"
                 />
                 <p-button
