@@ -91,10 +91,30 @@ describe('a confirm over an edit dialog — the Vacate Head case (ACC-120 slice 
     fixture.detectChanges();
   }
 
+  // ACC-262 — the panel is OPEN only once it has taken focus, not once its
+  // button exists. Opening a p-dialog ends with its focus-on-show: after the
+  // enter motion, PrimeNG waits 150 ms and focuses the first focusable in the
+  // content, which here is Vacate Head itself.
+  //
+  // This used to press Vacate Head as soon as it rendered, while the panel was
+  // still opening. The panel's focus-on-show and the confirm's then ran side
+  // by side and landed 0–10 ms apart (measured: panel 473 ms, confirm 483 ms),
+  // and whichever came last kept focus. When a loaded machine put the panel's
+  // last, it took focus back out of the confirm before the poll looked, nothing
+  // ever gave it back, and the wait below ran out: "timed out waiting for the
+  // confirm to open" (25 Oct, seeds 56443 and 25208). No bound on that wait
+  // could help, because the condition had become false for good. A person
+  // never presses a button in a panel that is still opening, so waiting for
+  // the panel's own focus is also what makes this test what a person sees.
+  async function openPanel(): Promise<void> {
+    await until(
+      () => !!panelContent() && document.activeElement === panelContent(),
+      'the Head panel to open and take focus',
+    );
+  }
+
   async function openConfirm(): Promise<void> {
-    await until(() => !!panelContent(), 'the Head panel to render');
-    // A real click focuses the button first; a scripted one does not.
-    (panelContent() as HTMLElement).focus();
+    await openPanel();
     (panelContent() as HTMLElement).click();
     await until(() => !!confirmEl() && confirmEl()!.contains(document.activeElement), 'the confirm to open');
   }
@@ -103,9 +123,8 @@ describe('a confirm over an edit dialog — the Vacate Head case (ACC-120 slice 
   // confirm, and Escape on its own does close it — otherwise "the panel is
   // still open" below would prove nothing.
   it('without a confirm, one Escape does close the panel', async () => {
-    await until(() => !!panelContent(), 'the Head panel to render');
+    await openPanel();
     expect(TestBed.inject(LayerStackService).depth()).toBe(1);
-    (panelContent() as HTMLElement).focus();
     escape();
     await until(() => !fixture.componentInstance.panelOpen(), 'the panel to close');
     expect(fixture.componentInstance.panelOpen()).toBeFalse();
