@@ -8,6 +8,8 @@ import type { WorkflowObjectType } from '../../../generated/prisma/client';
  * its key instead. A key is the seed's own (`workflow.seed.ts`), unique within
  * one workflow, never shown and never editable.
  *
+ * Since ACC-255 PR 2 no committee rule is decided by a key; see below.
+ *
  * Only the templates listed here carry keys today. The seed writes them for a
  * new organisation, and `npm run backfill:acc233-committee-stage-keys` wrote
  * them for existing ones. A template is added here when a feature first needs
@@ -31,16 +33,12 @@ export const COMMITTEE_STAGE_KEYS = [
 
 export type CommitteeStageKey = (typeof COMMITTEE_STAGE_KEYS)[number];
 
-/** A committee in one of these stages is being dissolved, or has been. */
-export const COMMITTEE_DISSOLVING_STAGE_KEYS: ReadonlySet<string> = new Set<CommitteeStageKey>([
-  'dissolution_pending',
-  'dissolved',
-]);
-
-/** Whether a stage key says the committee is dissolving or dissolved. A null key never does. */
-export function isDissolvingStageKey(key: string | null | undefined): boolean {
-  return !!key && COMMITTEE_DISSOLVING_STAGE_KEYS.has(key);
-}
+// ACC-255 PR 2 — nothing decides by a COMMITTEE stage key any more. What a
+// committee's stage allows, and whether it is dissolving or in force, is the
+// stage's own configuration (WorkflowStageRecordAction, WorkflowStage.flags),
+// read through StageRulesService. These keys remain for the seed and the
+// backfills; the transition precondition (quorum out of Formation, D10) is the
+// one rule still keyed. committee-stage-keys.scan.spec.ts fails on any other.
 
 /**
  * ACC-239 — every stage of a committee change request, by the seed's key. Its
@@ -50,8 +48,10 @@ export const CHANGE_REQUEST_STAGE_KEYS = ['draft', 'under_review', 'returned', '
 
 export type ChangeRequestStageKey = (typeof CHANGE_REQUEST_STAGE_KEYS)[number];
 
-// What each request stage, and each committee stage, ALLOWS a change request
-// to do is its policy, in one place: committees/change-requests/change-request-policy.ts.
+// What each request stage ALLOWS a change request to do (keyed: the template
+// is protected, ACC-255 D7), and what the committee's stored stage rules let an
+// open request do, are its policy, in one place:
+// committees/change-requests/change-request-policy.ts.
 
 /**
  * ACC-239 — templates whose SHAPE is fixed, because code runs them: tenants may

@@ -20,6 +20,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
+import { putCommitteeInEditableStage } from '../../common/testing/committee-in-stage';
 import { CommitteesService } from './committees.service';
 
 const url = process.env['DATABASE_URL'];
@@ -46,6 +47,8 @@ describe('Committee stale save against a real database (ACC-238)', () => {
     const c = await prisma.committee.create({
       data: { organizationId: o.id, nameEn: 'Quality Council', typeValueId: 'type', orgUnitId: unit.id, quorumCount: 5 },
     });
+    // A live stage that allows editing (ACC-255 PR 2: no instance allows nothing, D14).
+    await putCommitteeInEditableStage(prisma, o.id, c.id);
     // What the dialog holds: the record page's read, serialised as JSON is.
     const read = await committees.getCommitteeDetail(c.id, o.id);
     return { organizationId: o.id, actorId: actor.id, id: c.id, loaded: JSON.parse(JSON.stringify(read)).updatedAt as string };

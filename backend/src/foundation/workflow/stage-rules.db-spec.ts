@@ -13,14 +13,16 @@
  *   4. the engine's answer read from real rows, its share lock, and that
  *      another organisation's committee gets nothing;
  *   5. a stage save writes its rules and an audit row naming what changed,
- *      and cannot reach another organisation's stage;
- *   6. the parity check: 0 differences on seeded data, and a deliberately
- *      broken row reported by organisation, committee and what differs.
+ *      and cannot reach another organisation's stage.
+ *
+ * The parity check that compared these rules with the old keyed maps went
+ * with the maps (ACC-255 PR 2).
  *
  * Same guards as the other db-specs: it FAILS, never skips, without a
  * database, and refuses any database that is not on this machine.
  */
 import { randomUUID } from 'crypto';
+import { Client } from 'pg';
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -30,9 +32,8 @@ import { StageRulesService } from './stage-rules.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowTemplateService } from './workflow-template.service';
 import { planBackfill, runBackfill } from '../../../prisma/backfill-acc255-stage-rules';
-import { checkParity, requestMoveAllowed } from '../../../prisma/parity-acc255-stage-rules';
 import { CommitteesService } from '../committees/committees.service';
-import { CHANGE_REQUEST_ACTIONS } from '../committees/change-requests/change-request-policy';
+import { CHANGE_REQUEST_ACTIONS, committeeAllowsRequestMove } from '../committees/change-requests/change-request-policy';
 import type { WorkflowService } from './workflow.service';
 
 const url = process.env['DATABASE_URL'];
@@ -56,7 +57,8 @@ const EXPECTED_COMMITTEE = {
   active: { actions: [...MEMBERS, 'request_change'].sort(), flags: ['IN_FORCE'] },
   suspended: { actions: [...MEMBERS, 'request_change'].sort(), flags: ['IN_FORCE'] },
   dissolution_pending: { actions: MEMBERS, flags: ['DISSOLVING'] },
-  dissolved: { actions: MEMBERS, flags: ['DISSOLVING'] },
+  // ACC-255 PR 2 (Q-A): a dissolved committee's members can't be changed.
+  dissolved: { actions: [] as string[], flags: ['DISSOLVING'] },
 };
 
 describe('Stage rules against a real database (ACC-255)', () => {
@@ -290,53 +292,45 @@ describe('Stage rules against a real database (ACC-255)', () => {
       const row = (await committees.listCommittees(o.id)).find((c) => c.id === committee.id);
       expect(row?.stageRules).toEqual({ actions: NOTHING, flags: [] });
 
-      // An open change request on it would keep today's moves: with no flags,
-      // the §4.2 derivation gives what UNKEYED_COMMITTEE_STAGE gives now.
-      expect(CHANGE_REQUEST_ACTIONS.filter((a) => requestMoveAllowed(a, rules.flags))).toEqual(['edit', 'withdraw', 'reject']);
+      // An open change request on it keeps the moves an unkeyed stage gave:
+      // with no flags, the §4.2 derivation allows edit, withdraw and reject.
+      expect(CHANGE_REQUEST_ACTIONS.filter((a) => committeeAllowsRequestMove(rules, a))).toEqual(['edit', 'withdraw', 'reject']);
     });
   });
 
-  describe('the parity check', () => {
-    it('reports 0 differences for committees in every seeded stage, and for a backfilled organisation', async () => {
-      const seeded = await org();
-      for (const key of Object.keys(EXPECTED_COMMITTEE)) await committeeAt(seeded.id, key);
-      const backfilled = await org();
-      await stripRules(backfilled.id);
-      for (const key of Object.keys(EXPECTED_COMMITTEE)) await committeeAt(backfilled.id, key);
-      await runBackfill(prisma, { execute: true, organizationIds: [backfilled.id], isFixture: () => true });
+  describe('the committee list reads every stage in a constant number of statements (ACC-255 PR 2)', () => {
+    /** Every statement any pg client sends while `run` runs. */
+    async function statementsDuring(run: () => Promise<unknown>): Promise<number> {
+      let count = 0;
+      const original = Client.prototype.query;
+      (Client.prototype as unknown as { query: (...a: unknown[]) => unknown }).query = function (this: Client, ...args: unknown[]) {
+        count++;
+        return (original as unknown as (...a: unknown[]) => unknown).apply(this, args);
+      };
+      try {
+        await run();
+      } finally {
+        Client.prototype.query = original;
+      }
+      return count;
+    }
 
-      const result = await checkParity(prisma, [seeded.id, backfilled.id]);
+    it('1 committee and 30 committees, in every seeded stage, cost the same', async () => {
+      const keys = Object.keys(EXPECTED_COMMITTEE);
+      const small = await org();
+      await committeeAt(small.id, 'active');
+      const large = await org();
+      for (let i = 0; i < 30; i++) await committeeAt(large.id, keys[i % keys.length]!);
+      const committees = new CommitteesService(prisma, new AuditLogService(prisma), {} as WorkflowService, stageRules);
 
-      expect(result.organisations.map((o) => o.committees)).toEqual([6, 6]);
-      expect(result.organisations.every((o) => o.requestTemplates === 1)).toBe(true);
-      expect(result.differences).toEqual([]);
-    });
+      const one = await statementsDuring(() => committees.listCommittees(small.id));
+      const thirty = await statementsDuring(() => committees.listCommittees(large.id));
 
-    it('reports a deliberately broken row, and an organisation the backfill has not reached', async () => {
-      const o = await org();
-      const committee = await committeeAt(o.id, 'active');
-      await prisma.workflowStageRecordAction.deleteMany({ where: { stageId: await stageId(o.id, 'COMMITTEE', 'active'), actionKey: 'request_change' } });
-      await prisma.workflowStage.update({ where: { id: await stageId(o.id, 'COMMITTEE', 'dissolved') }, data: { flags: [] } });
-      const dissolved = await committeeAt(o.id, 'dissolved');
-
-      const result = await checkParity(prisma, [o.id]);
-
-      expect(result.differences).toEqual(
-        expect.arrayContaining([
-          { slug: o.slug, objectId: committee, stageKey: 'active', what: 'request_change (raise)', old: true, new: false },
-          { slug: o.slug, objectId: dissolved, stageKey: 'dissolved', what: 'dissolving', old: true, new: false },
-          { slug: o.slug, objectId: dissolved, stageKey: 'dissolved', what: 'request edit', old: false, new: true },
-        ]),
-      );
-      expect(result.differences).toHaveLength(3);
-
-      const unreached = await org();
-      await stripRules(unreached.id);
-      await committeeAt(unreached.id, 'formation');
-      const before = await checkParity(prisma, [unreached.id]);
-      expect(before.differences.map((d) => d.what)).toEqual(
-        expect.arrayContaining(['edit_details', 'add_member', 'remove_member', 'change_member_role', "approve's target stage"]),
-      );
+      expect(one).toBeGreaterThan(0); // non-vacuity: the counter sees the driver
+      expect(thirty).toBe(one);
+      const rows = await committees.listCommittees(large.id);
+      expect(rows).toHaveLength(30);
+      expect(rows.filter((r) => r.stageRules.flags.includes('DISSOLVING'))).toHaveLength(10);
     });
   });
 

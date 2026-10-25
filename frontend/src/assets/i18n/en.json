@@ -1042,7 +1042,11 @@
       "reportsToNotFound": "That committee doesn't exist. Choose another.",
       "unitRequired": "Choose the unit that owns this committee.",
       "unitNotFound": "That unit doesn't exist or is no longer active. Choose another.",
-      "saveFailed": "Something went wrong, so nothing was saved."
+      "saveFailed": "Something went wrong, so nothing was saved.",
+      "membersNotAllowedInStage": "Members can't be changed while the committee is {{stage}}.",
+      "membersNotAllowedNoStage": "Members can't be changed: the committee has no current stage.",
+      "editNotAllowedInStage": "This can't be done while the committee is in {{stage}}.",
+      "editNotAllowedNoStage": "This can't be done: the committee has no current stage."
     },
     "status": {
       "active": "Active",

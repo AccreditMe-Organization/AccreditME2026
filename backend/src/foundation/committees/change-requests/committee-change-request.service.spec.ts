@@ -5,6 +5,7 @@ import { NotificationService } from '../../notification/notification.service';
 import { TaskService } from '../../task/task.service';
 import { WorkflowService } from '../../workflow/workflow.service';
 import { CommitteeChangeRequestService, normaliseChanges } from './committee-change-request.service';
+import { StageRulesService } from '../../workflow/stage-rules.service';
 import { ChangeRequestRefusal } from './change-request-refusal';
 
 // ACC-239 — the unit half. The behaviour (locks, drift, the move, the task) is
@@ -30,6 +31,7 @@ function setup() {
     {} as TaskService,
     { log: jest.fn() } as unknown as AuditLogService,
     { create: jest.fn() } as unknown as NotificationService,
+    new StageRulesService(prisma as unknown as PrismaService),
   );
   return { prisma, service };
 }

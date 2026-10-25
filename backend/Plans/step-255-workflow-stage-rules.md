@@ -4,9 +4,11 @@
 (Ahmad, 18 Oct). Step 2 (selection rules, conditional and automatic transitions,
 versions, the New workflow screen) must land before the Documents module.
 
-**Status:** PLAN ONLY. Nothing here is built. Written against `dev` at
-`6b2c026` (22 Oct). ACC-240's PR 3a (#205) and PR 3b are not on `dev` yet; §11
-says how this work lands relative to them.
+**Status:** PR 1 merged (#212, `f617304`), its backfill run on the shared
+database. PR 2 built on `feature/ACC-255-stage-rules-switch` from `dev`
+`bab1c02` (24 Oct); what it built and where it departs from this plan is §16.5.
+PRs 3 and 4 are not started. Originally written against `dev` at `6b2c026`
+(22 Oct).
 
 **Folded in:** ACC-241 (the API lock outside Formation), ACC-254 (the stages
 page scrolls sideways; raw enum codes shown), the workflow list's unnamed icon
@@ -339,7 +341,7 @@ The refusal is unchanged: DISSOLVING flag ⇒ `CHANGE_REQUEST_COMMITTEE_DISSOLVI
     - dissolving.
   - It prints differences by organisation slug and committee id. It exits 1 on any difference.
   - It runs inside `BEGIN TRANSACTION READ ONLY`.
-  - It is deleted in PR 2's follow-up once the old maps are gone.
+  - **Deleted in PR 2** (Ahmad, 24 Oct), together with the old maps it compared against, so there is one statement of the rules. Its last run, on the shared database after PR 1's backfill, read 0 differences.
 
 ---
 
@@ -425,7 +427,7 @@ stageRules: {
   - every query is scoped by organisation;
   - a tenant-isolation test named for CI's gate ("should NOT return records belonging to a different tenant").
 - `change-request-policy.spec.ts`:
-  - the §4.2 derivation equals the old `COMMITTEE_STAGE_POLICY` for all six stages and the unkeyed case. The old map is kept in the spec as the reference until the parity script is deleted.
+  - the §4.2 derivation equals the old `COMMITTEE_STAGE_POLICY` for all six stages and the unkeyed case. The map itself is deleted in PR 2; its answers stay in the spec as the expected table, computed from the seed's stored rules.
 - `workflow-template.service.spec.ts`:
   - `actions` / `flags` read and written;
   - unknown keys refused;
@@ -562,8 +564,9 @@ ACC-240's PR 3a and 3b merge first. 3a's `canRaise` (`openSummary()`) reads `com
 | PR | Contents | Migration | Behaviour change |
 |---|---|---|---|
 | **1 — backend, expand** | registries; migration; seed actions and flags; backfill and its spec; `StageRulesService`; template API read and write of `actions` / `flags` with the four refusals and cardinality; stage-config audit diff; `stageRules` on the committee read; the parity check; `GET /committees/form-choices` | `acc255_workflow_stage_rules` | **none** — the rules are written and served, but nothing decides by them |
-| *after PR 1 deploys* | `backfill:acc255-stage-rules` dry run → `-- --execute` → dry run (0); `parity:acc255-stage-rules` = 0 differences | — | none |
-| **2 — backend, switch** | reference checks, counts, change-request policy and the approve target read the answer (§4.2-4.4); ACC-241 lock on `updateCommittee` and the member actions (§4.5); `isDissolvingStageKey` and `COMMITTEE_STAGE_POLICY` deleted; the key-name scan spec | none | **API only:** a direct edit outside Formation is refused (ACC-241, intended). Screens never offered it. |
+| *after PR 1 deploys* | `backfill:acc255-stage-rules` dry run → `-- --execute` → dry run (0); `parity:acc255-stage-rules` = 0 differences (done 24 Oct; the script is deleted in PR 2) | — | none |
+| **2 — backend, switch** | reference checks, counts, change-request policy and the approve target read the answer (§4.2-4.4); ACC-241 lock on `updateCommittee` and the member actions (§4.5); `isDissolvingStageKey`, `COMMITTEE_STAGE_POLICY` and the parity script deleted; the key-name scan spec; the Dissolved seed change and `backfill:acc255-dissolved-membership` (§16.2) | none | **API only:** a direct edit outside Formation is refused (ACC-241, intended), and member changes on a Dissolved committee (Q-A). Screens never offered the first; the second is hidden in PR 3. |
+| *after PR 2 deploys* | `backfill:acc255-dissolved-membership` dry run → `-- --execute` → dry run (0) — runbook in §16.5 | — | the Dissolved refusal reaches existing organisations |
 | **3 — frontend** | committee page and members panel read `stageRules` (`COMMITTEE_HEADER_POLICY` deleted); new refusal codes said; ACC-254; icon labels and the scan at 0; protected-refusal translations; Edit dialog and Request a change read `form-choices` | none | members panel hides actions a stage forbids (none today); otherwise nothing |
 | **4 — frontend, after the drawing** | stage form: "What can be done to the record here" and flags | none | the new section |
 
@@ -721,7 +724,7 @@ reported. ACC-255 changes no grant and no grantability rule in any PR.
 
 ### 16.2 Member changes in Dissolved (Q-A) — PR 2's one seeded rule change
 
-- **PR 1** seeds and backfills today's rules exactly (members allowed in every stage), so `parity:acc255-stage-rules` reads 0 differences.
+- **PR 1** seeds and backfills today's rules exactly (members allowed in every stage), so `parity:acc255-stage-rules` read 0 differences (24 Oct).
 - **PR 2** changes one seeded rule: the COMMITTEE seed's `dissolved` stage loses `add_member`, `remove_member` and `change_member_role`; `dissolution_pending` keeps them.
   - **Backfill step:** `npm run backfill:acc255-dissolved-membership`.
     - It removes the three action rows from every COMMITTEE stage keyed `dissolved` whose rows still equal PR 1's seed. A stage a tenant has since configured is left alone and reported.
@@ -730,15 +733,104 @@ reported. ACC-255 changes no grant and no grantability rule in any PR.
   - **Wording:**
     - "Members can't be changed while the committee is {stage}." / «لا يمكن تغيير الأعضاء بينما اللجنة {stage}.»
     - In the members panel, the add, remove and change-role controls are absent in that stage (PR 3), so the sentence is seen only by an API caller or a stale page.
-  - **The parity check** is updated in PR 2 to expect exactly this difference and nothing else.
+  - **The parity check is not updated: it is deleted in PR 2** (Ahmad, 24 Oct), with the maps it compared. The new rule is pinned instead by the seed's own specs (`record-registry.spec.ts`, `stage-rules.db-spec.ts`), the backfill's real-database spec, and `committee-stage-writes.db-spec.ts`, which refuses all three member changes in Dissolved and allows them in every other seeded stage.
 
 ### 16.3 New organisations get the rules from the seed, not the backfill
 
 - The backfill refuses customer organisations (§5.4), so no customer may depend on it.
 - A new organisation is bootstrapped through `TenantService.bootstrap()` → `seedDefaultWorkflows()` → `applyWorkflowSeed()` (`workflow-seed-apply.ts`). That writes each seeded stage's `actions` and `flags` when it creates the stage (§5.3).
 - A real-database spec bootstraps an organisation through `applyWorkflowSeed()` and requires its COMMITTEE and COMMITTEE_CHANGE_REQUEST stages to carry exactly §4.1's actions and flags, with no backfill run.
-- The parity check then reads 0 for it.
+- (The parity check read 0 for it while it existed; it is deleted in PR 2.)
 
 ### 16.4 Q-F is ACC-256
 
 The committees list's status wording is ACC-256. PR 1 serves `isInForce` for it and changes nothing on screen.
+
+### 16.5 PR 2 as built (24 Oct), and where it departs from the plan
+
+**Ahmad's answers to the three points raised before building (24 Oct):**
+
+1. **One refusal code, `STAGE_ACTION_NOT_ALLOWED`, with the plan's wording**
+   naming the stage. No separate "has been dissolved" sentence, and no
+   dissolving flag on the refusal body. Body: `{ action, stageNameEn,
+   stageNameAr }` plus the sentence as `message`.
+2. **The parity script is deleted in PR 2**, and §5.4 and §16.2 say so.
+3. **The seed change and `backfill:acc255-dissolved-membership` are in PR 2**,
+   with specs for all three runs. Not run against the shared database.
+
+**Commits:**
+
+| # | What |
+|---|---|
+| 1 | The seed's Dissolved stage allows no member change (Q-A). |
+| 2 | `backfill:acc255-dissolved-membership` and its real-database spec (dry run, execute, dry run 0; a configured stage skipped; tenant isolation; platform excluded; customer refused). |
+| 3 | "Dissolving" is the stage's DISSOLVING flag: the reference checks and the committee counts (§4.4). |
+| 4 | Change requests read the committee's stored rules (§4.2); approve's target is the stage flagged APPLIES_APPROVED_CHANGE (§4.3); `COMMITTEE_STAGE_POLICY` and the parity script deleted. |
+| 5 | ACC-241: the direct edit and the three member changes ask the stage, instance first (§4.5); the wording in both languages. |
+| 6 | `isDissolvingStageKey` and `COMMITTEE_DISSOLVING_STAGE_KEYS` deleted; the key-name scan spec; the list's statement count pinned. |
+| 7 | This section, SYSTEM-REFERENCE and CLAUDE.md. |
+
+**The wording**, server and screens, in both languages:
+
+| Key (`committee.refusal.*`) | English | Arabic |
+|---|---|---|
+| `membersNotAllowedInStage` | Members can't be changed while the committee is {{stage}}. | لا يمكن تغيير الأعضاء بينما اللجنة {{stage}}. |
+| `membersNotAllowedNoStage` | Members can't be changed: the committee has no current stage. | لا يمكن تغيير الأعضاء: ليس للجنة مرحلة حالية. |
+| `editNotAllowedInStage` | This can't be done while the committee is in {{stage}}. | لا يمكن تنفيذ ذلك بينما اللجنة في مرحلة {{stage}}. |
+| `editNotAllowedNoStage` | This can't be done: the committee has no current stage. | لا يمكن تنفيذ ذلك: ليس للجنة مرحلة حالية. |
+
+The server's English `message` is the English key with the stage put in, and
+`committee-stage-refusal.spec.ts` fails if they drift. The keys are in
+`en.json` / `ar.json` now; the screens say them from the code in PR 3.
+
+**Departures from the plan, each deliberate:**
+
+- **A "no current stage" sentence.** D14's committee has no stage name to put
+  in the sentence, so it gets its own (the two `…NoStage` keys) rather than
+  "while the committee is ." The plan named only the stage-named form.
+- **Existence first.** `updateCommittee` checks the committee exists (an
+  id-only read, no lock) before asking its stage, so a missing or another
+  organisation's committee is still the same 404, and no "no current stage"
+  line is logged for an invented id. Then: instance FOR SHARE, hierarchy lock,
+  committee row, as §4.5 says.
+- **Member changes are now one transaction each** (they were three separate
+  writes), so the stage's answer holds until the member is written. The
+  existing-member read also gained its `organizationId`.
+- **`assertStageAllows` takes an optional `message` builder**, so a module
+  says the refusal in its own words while the engine keeps the one code. A
+  refusal is logged with ids (§8); still no audit row.
+- **`committeeStagesAndCounts()` returns `isInForce`** beside `isDissolving`
+  (§4.4 said so), and its stage read is now also scoped by the template's
+  organisation.
+- **The scan spec matches 'active' and 'suspended' only under
+  `foundation/committees` and `foundation/workflow`**: elsewhere they are
+  ordinary words (a tenant's status is 'suspended'). The other four keys are
+  matched everywhere. It scans the backend only; the frontend's
+  `committee-stage.ts` still reads keys until PR 3, which extends the scan.
+- **A shared spec helper, `common/testing/committee-in-stage.ts`**, puts a
+  committee in a live, unkeyed stage that allows every direct change. The
+  reference-check and stale-save db-specs use it: their committees had no
+  instance, which D14 now refuses.
+- **The list's statement count is pinned by a real-database spec** (1 and 30
+  committees across every seeded stage give the same count), and measured end
+  to end through every guard: **17 statements for 1, 10 and 50 committees**,
+  as before PR 2.
+
+**Runbook — `backfill:acc255-dissolved-membership`, AFTER PR 2 deploys.** Run
+from `D:\Accredit-me-2\backend` (its `.env` is the shared database), never
+from a worktree. Before it runs, a Dissolved committee on an existing
+organisation still allows member changes (its rows are PR 1's); the refusal
+starts when it runs.
+
+1. `npm run backfill:acc255-dissolved-membership` — dry run, writes nothing.
+   Expect one Dissolved stage to change per fixture organisation (al-manara,
+   al-nakheel), none skipped, no customer organisation listed.
+2. `npm run backfill:acc255-dissolved-membership -- --execute` — removes the
+   three member rows from each such stage, one transaction per organisation
+   (`BACKFILL_TX`), one audit row per organisation (UPDATE on its committee
+   WorkflowTemplate, `actorId` null, `metadata.source` the script's name).
+3. `npm run backfill:acc255-dissolved-membership` — must report 0.
+4. A Dissolved stage a tenant has configured otherwise is listed as "left
+   alone" and not changed. A customer organisation with work makes `--execute`
+   refuse with exit 1 and write nothing (ACC-101: a customer-notified change,
+   not a script).

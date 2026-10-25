@@ -19,7 +19,7 @@ interface Fake {
   units: Map<string, { organizationId: string; isActive: boolean }>;
   parentReaches: boolean;
   reportsToReaches: boolean;
-  stage: Map<string, { stageId: string; key: string | null } | null>; // committee -> current stage
+  stage: Map<string, { stageId: string; flags: string[] } | null>; // committee -> current stage (ACC-255: its flags)
 }
 
 function fakeTx(fake: Fake) {
@@ -67,7 +67,7 @@ function world(overrides: Partial<Fake> = {}): Fake {
     ]),
     parentReaches: false,
     reportsToReaches: false,
-    stage: new Map([['other', { stageId: 'stage-active', key: 'active' }]]),
+    stage: new Map([['other', { stageId: 'stage-active', flags: ['IN_FORCE'] }]]),
     ...overrides,
   };
 }
@@ -126,31 +126,28 @@ describe('Committee reference checks (ACC-233)', () => {
     });
   });
 
-  describe('rule 3 — not a dissolving or dissolved committee, by stage KEY', () => {
-    for (const key of ['dissolution_pending', 'dissolved']) {
-      it(`a parent in the "${key}" stage is refused`, async () => {
-        const fake = world({ stage: new Map([['other', { stageId: 's', key }]]) });
-        expect(await refusal(fake, { committeeId: 'self', parentCommitteeId: 'other' })).toBe('COMMITTEE_PARENT_DISSOLVING');
-      });
-      it(`a reports-to in the "${key}" stage is refused`, async () => {
-        const fake = world({ stage: new Map([['other', { stageId: 's', key }]]) });
-        expect(await refusal(fake, { committeeId: 'self', reportingToCommitteeId: 'other' })).toBe('COMMITTEE_REPORTS_TO_DISSOLVING');
-      });
-    }
-    it('an active, suspended or forming committee is allowed', async () => {
-      for (const key of ['formation', 'terms_review', 'active', 'suspended']) {
-        const fake = world({ stage: new Map([['other', { stageId: 's', key }]]) });
+  // ACC-255 PR 2 — decided by the stage's DISSOLVING flag, never its key or name.
+  describe('rule 3 — not a dissolving or dissolved committee, by the stage FLAG', () => {
+    it('a parent in a stage flagged DISSOLVING is refused', async () => {
+      const fake = world({ stage: new Map([['other', { stageId: 's', flags: ['DISSOLVING'] }]]) });
+      expect(await refusal(fake, { committeeId: 'self', parentCommitteeId: 'other' })).toBe('COMMITTEE_PARENT_DISSOLVING');
+    });
+    it('a reports-to in a stage flagged DISSOLVING is refused', async () => {
+      const fake = world({ stage: new Map([['other', { stageId: 's', flags: ['DISSOLVING'] }]]) });
+      expect(await refusal(fake, { committeeId: 'self', reportingToCommitteeId: 'other' })).toBe('COMMITTEE_REPORTS_TO_DISSOLVING');
+    });
+    it('a stage without the flag is allowed, whatever else it is flagged', async () => {
+      for (const flags of [[], ['IN_FORCE']]) {
+        const fake = world({ stage: new Map([['other', { stageId: 's', flags }]]) });
         expect(await refusal(fake, { committeeId: 'self', parentCommitteeId: 'other' })).toBeNull();
       }
     });
-    it('a stage with NO key is treated as not dissolving, and logged with ids only', async () => {
-      const fake = world({ stage: new Map([['other', { stageId: 'stage-added', key: null }]]) });
-      expect(await refusal(fake, { committeeId: 'self', parentCommitteeId: 'other' })).toBeNull();
-      expect(logger.warn).toHaveBeenCalledTimes(1);
-      const line = (logger.warn as jest.Mock).mock.calls[0]![0] as string;
-      expect(line).toContain('stage-added');
-      expect(line).toContain('other');
-      expect(line).not.toMatch(/@|name/i);
+    it('reads the stage FLAGS, not its key', async () => {
+      const { tx, raw } = fakeTx(world());
+      await assertCommitteeReferences(tx, { organizationId: ORG_A, committeeId: null, parentCommitteeId: 'other' }, logger);
+      const read = raw.$queryRaw.mock.calls.find(([s]) => (s as TemplateStringsArray).join('?').includes('"WorkflowInstance"'))!;
+      expect((read[0] as TemplateStringsArray).join('?')).toContain('ws."flags"');
+      expect((read[0] as TemplateStringsArray).join('?')).not.toContain('ws."key"');
     });
     it('a committee with no workflow instance is not dissolving', async () => {
       expect(await refusal(world({ stage: new Map() }), { committeeId: 'self', parentCommitteeId: 'other' })).toBeNull();

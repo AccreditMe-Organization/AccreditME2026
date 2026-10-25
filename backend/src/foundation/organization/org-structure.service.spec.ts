@@ -210,7 +210,7 @@ function fixture(): Db {
     workflowInstance: [
       { organizationId: ORG_A, objectType: 'COMMITTEE', objectId: 'cm-1', currentStageId: 'st-active', createdAt: day('2026-01-01') },
     ],
-    workflowStage: [{ id: 'st-active', nameEn: 'Active', nameAr: 'نشطة', key: 'active' }],
+    workflowStage: [{ id: 'st-active', nameEn: 'Active', nameAr: 'نشطة', key: 'active', flags: ['IN_FORCE'], workflowTemplate: { organizationId: ORG_A } }],
   };
 }
 

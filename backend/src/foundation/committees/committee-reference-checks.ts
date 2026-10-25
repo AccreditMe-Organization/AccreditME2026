@@ -1,6 +1,6 @@
 import { BadRequestException, Logger } from '@nestjs/common';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { isDissolvingStageKey } from '../workflow/workflow-stage-keys';
+import { STAGE_FLAG } from '../workflow/record-registry';
 
 /**
  * ACC-233 — what a committee may point at: its parent, the committee it reports
@@ -140,33 +140,23 @@ async function reportsToChainReaches(tx: Tx, start: string, committeeId: string,
 
 /**
  * Whether the committee's CURRENT stage — its newest COMMITTEE workflow
- * instance — is keyed `dissolution_pending` or `dissolved`. Decided by the
- * stage's KEY, never its name or order, which the tenant may change.
+ * instance — is flagged DISSOLVING (ACC-255 PR 2: the stage's own meaning,
+ * configured per tenant, never its key, name or order).
  *
  * The instance row is read FOR SHARE: a transition on that committee takes the
  * instance's row lock (ACC-190), so a dissolution already in flight finishes
  * before this answers, and one started now waits for this save.
  *
- * A stage with no key (one a tenant added) is NOT dissolving, and is logged so
- * an unrecognised stage is visible to operators. Ids only — no person, no name.
+ * A committee with no instance or no current stage is not dissolving.
  */
-async function isDissolving(tx: Tx, committeeId: string, organizationId: string, logger: Logger): Promise<boolean> {
-  const rows = await tx.$queryRaw<{ stageId: string | null; key: string | null }[]>`
-    SELECT ws.id AS "stageId", ws."key" AS "key"
+async function isDissolving(tx: Tx, committeeId: string, organizationId: string, _logger: Logger): Promise<boolean> {
+  const rows = await tx.$queryRaw<{ flags: string[] | null }[]>`
+    SELECT ws."flags" AS "flags"
     FROM "WorkflowInstance" wi
     LEFT JOIN "WorkflowStage" ws ON ws.id = wi."currentStageId"
     WHERE wi."organizationId" = ${organizationId} AND wi."objectType" = 'COMMITTEE' AND wi."objectId" = ${committeeId}
     ORDER BY wi."createdAt" DESC
     LIMIT 1
     FOR SHARE OF wi`;
-  const current = rows[0];
-  if (!current?.stageId) return false;
-  if (!current.key) {
-    logger.warn(
-      `Committee ${committeeId} (organisation ${organizationId}) is in stage ${current.stageId}, which has no key; ` +
-        'treated as not dissolving.',
-    );
-    return false;
-  }
-  return isDissolvingStageKey(current.key);
+  return (rows[0]?.flags ?? []).includes(STAGE_FLAG.DISSOLVING);
 }

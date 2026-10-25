@@ -10,7 +10,8 @@
  *   2. the organisation's hierarchy lock stops two edits saved at the same
  *      moment from closing a loop between them — without it, each reads a tree
  *      that does not yet contain the other's edit, both pass, and both commit;
- *   3. "dissolving" is read from the stage KEY, whatever the stage is called.
+ *   3. "dissolving" is read from the stage's DISSOLVING flag (ACC-255 PR 2),
+ *      whatever the stage is called or keyed.
  *
  * Same guards as the other db-specs: it FAILS, never skips, without a
  * database, and refuses any database that is not on this machine.
@@ -20,6 +21,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
+import { putCommitteeInEditableStage } from '../../common/testing/committee-in-stage';
 import { CommitteesService } from './committees.service';
 
 const url = process.env['DATABASE_URL'];
@@ -52,12 +54,17 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
     const actor = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}@example.test`, name: 'Committee editor' } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R-${slug}` } });
-    const make = async (name: string, links: { parentCommitteeId?: string; reportingToCommitteeId?: string } = {}) =>
-      (
+    // Each committee in a live stage that allows editing (ACC-255 PR 2: one
+    // with no workflow instance allows nothing, D14).
+    const make = async (name: string, links: { parentCommitteeId?: string; reportingToCommitteeId?: string } = {}) => {
+      const id = (
         await prisma.committee.create({
           data: { organizationId: o.id, nameEn: name, typeValueId: 'type', orgUnitId: unit.id, ...links },
         })
       ).id;
+      await putCommitteeInEditableStage(prisma, o.id, id);
+      return id;
+    };
     return { organizationId: o.id, actorId: actor.id, unitId: unit.id, make };
   }
 
@@ -141,23 +148,23 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
     });
   });
 
-  describe('dissolving is read from the stage KEY', () => {
-    async function inStage(o: Org, committeeId: string, stage: { nameEn: string; key: string | null; order: number }) {
+  describe("dissolving is read from the stage's DISSOLVING flag (ACC-255 PR 2)", () => {
+    async function inStage(o: Org, committeeId: string, stage: { nameEn: string; key: string | null; order: number; flags: string[] }) {
       const template = await prisma.workflowTemplate.create({
         data: { organizationId: o.organizationId, nameEn: `Lifecycle ${committeeId}`, objectType: 'COMMITTEE' },
       });
       const s = await prisma.workflowStage.create({
-        data: { workflowTemplateId: template.id, nameEn: stage.nameEn, order: stage.order, key: stage.key },
+        data: { workflowTemplateId: template.id, nameEn: stage.nameEn, order: stage.order, key: stage.key, flags: stage.flags },
       });
       await prisma.workflowInstance.create({
         data: { organizationId: o.organizationId, workflowTemplateId: template.id, objectType: 'COMMITTEE', objectId: committeeId, currentStageId: s.id },
       });
     }
 
-    it('a parent in a stage keyed dissolution_pending is refused even when the tenant has renamed it', async () => {
+    it('a parent in a stage flagged DISSOLVING is refused, whatever it is named, even with no key', async () => {
       const o = await org();
       const target = await o.make('Winding up');
-      await inStage(o, target, { nameEn: 'Winding up', key: 'dissolution_pending', order: 50 });
+      await inStage(o, target, { nameEn: 'Winding up', key: null, order: 50, flags: ['DISSOLVING'] });
       const self = await o.make('Self');
 
       expect(await update(o, self, { parentCommitteeId: target })).toBe('COMMITTEE_PARENT_DISSOLVING');
@@ -166,22 +173,22 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
       );
     });
 
-    it('a stage NAMED "Dissolved" with no key is not dissolving — the name is never read', async () => {
+    it('a stage NAMED "Dissolved" without the flag is not dissolving — the name is never read', async () => {
       const o = await org();
       const target = await o.make('Target');
-      await inStage(o, target, { nameEn: 'Dissolved', key: null, order: 60 });
+      await inStage(o, target, { nameEn: 'Dissolved', key: null, order: 60, flags: [] });
       const self = await o.make('Self');
 
       expect(await update(o, self, { parentCommitteeId: target })).toBe('OK');
     });
 
-    it('a parent in a stage keyed dissolved is refused', async () => {
+    it('a stage KEYED dissolved without the flag is not dissolving — the key is never read', async () => {
       const o = await org();
       const target = await o.make('Target');
-      await inStage(o, target, { nameEn: 'Closed', key: 'dissolved', order: 60 });
+      await inStage(o, target, { nameEn: 'Closed', key: 'dissolved', order: 60, flags: [] });
       const self = await o.make('Self');
 
-      expect(await update(o, self, { parentCommitteeId: target })).toBe('COMMITTEE_PARENT_DISSOLVING');
+      expect(await update(o, self, { parentCommitteeId: target })).toBe('OK');
     });
   });
 

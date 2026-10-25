@@ -39,6 +39,7 @@ import { SYSTEM_WORKFLOW_SEED } from '../../workflow/workflow.seed';
 import { COMMITTEE_STAGE_KEYS } from '../../workflow/workflow-stage-keys';
 import { runBackfill } from '../../../../prisma/backfill-acc239-change-request-workflow';
 import { ChangeRequestViewer, CommitteeChangeRequestService } from './committee-change-request.service';
+import { StageRulesService } from '../../workflow/stage-rules.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -53,6 +54,7 @@ const VIEW = 'committees:view';
 const EDIT = 'committees:edit_details';
 const APPROVE = 'committees:approve';
 const CR_SEED = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'COMMITTEE_CHANGE_REQUEST')!;
+const COMMITTEE_SEED = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'COMMITTEE')!;
 
 describe('Committee change requests against a real database (ACC-239)', () => {
   const prisma = new PrismaService();
@@ -79,7 +81,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
   const queue = { add: async () => undefined } as never;
   const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks);
   const templates = new WorkflowTemplateService(prisma, audit, stageTasks);
-  const requests = new CommitteeChangeRequestService(prisma, workflow, tasks, audit, notifications);
+  const requests = new CommitteeChangeRequestService(prisma, workflow, tasks, audit, notifications, new StageRulesService(prisma));
 
   interface World {
     org: string;
@@ -105,16 +107,28 @@ describe('Committee change requests against a real database (ACC-239)', () => {
     const org = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } })).id;
     await applyWorkflowSeed(prisma, org, [CR_SEED]);
 
-    // The committee lifecycle, keyed as the seed keys it (no transitions are
-    // fired on it here: a committee is put in a stage by pointing its instance).
+    // The committee lifecycle, keyed as the seed keys it, with the seed's stage
+    // rules — its flags and record actions (ACC-255 PR 2: what a change request
+    // may do is read from these, never from the key). No transitions are fired
+    // on it here: a committee is put in a stage by pointing its instance.
     const tpl = await prisma.workflowTemplate.create({
       data: { organizationId: org, nameEn: 'Committee', objectType: 'COMMITTEE', isDefault: true, isActive: true },
     });
     const stageOf: Record<string, string> = {};
     for (const [i, key] of COMMITTEE_STAGE_KEYS.entries()) {
+      const seeded = COMMITTEE_SEED.stages.find((s) => s.key === key)!;
       stageOf[key] = (
         await prisma.workflowStage.create({
-          data: { workflowTemplateId: tpl.id, key, nameEn: key, order: (i + 1) * 10, isInitial: i === 0, isFinal: key === 'dissolved' },
+          data: {
+            workflowTemplateId: tpl.id,
+            key,
+            nameEn: key,
+            order: (i + 1) * 10,
+            isInitial: i === 0,
+            isFinal: key === 'dissolved',
+            flags: [...(seeded.flags ?? [])],
+            recordActions: { create: (seeded.actions ?? []).map((actionKey) => ({ organizationId: org, actionKey })) },
+          },
         })
       ).id;
     }
@@ -343,6 +357,23 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(task.assignees.map((a) => a.userId)).toEqual([w.requester.userId]);
       expect(done).toMatchObject({ decidedById: w.approver.userId });
       expect(done.appliedAt).not.toBeNull();
+    });
+
+    it("ACC-255 §4.3: lands in the stage flagged APPLIES_APPROVED_CHANGE, found by its flag — and with none, refuses and applies nothing", async () => {
+      const w = await world();
+      const r = await submitted(w, { quorumCount: 5 });
+      const approved = await prisma.workflowStage.findFirstOrThrow({
+        where: { key: 'approved', workflowTemplate: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST' } },
+      });
+      expect(approved.flags).toEqual(['APPLIES_APPROVED_CHANGE']);
+
+      await prisma.workflowStage.update({ where: { id: approved.id }, data: { flags: [] } });
+      expect(await outcome(requests.approve(r.id, w.org, w.approver))).toBe('CHANGE_REQUEST_STAGE_NOT_ALLOWED');
+      expect((await prisma.committee.findFirstOrThrow({ where: { id: w.committee } })).quorumCount).toBe(3);
+      expect((await requests.getOne(r.id, w.org, w.approver)).status).toBe('under_review');
+
+      await prisma.workflowStage.update({ where: { id: approved.id }, data: { flags: ['APPLIES_APPROVED_CHANGE'] } });
+      expect((await requests.approve(r.id, w.org, w.approver)).status).toBe('approved');
     });
 
     it('DRIFT (Q11): a committee changed since Submit is refused with 409, and nothing is applied', async () => {
@@ -615,9 +646,18 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       ['Dissolution Pending', inStage('dissolution_pending'), 'CHANGE_REQUEST_COMMITTEE_DISSOLVING'],
       ['Dissolved', inStage('dissolved'), 'CHANGE_REQUEST_COMMITTEE_DISSOLVING'],
       [
-        'a committee stage with no key',
+        // ACC-255 PR 2: the key is never read — a stage keeps its rules without it.
+        'a committee stage with no key, which allows request_change',
         async (w) => {
           await prisma.workflowStage.update({ where: { id: w.stageOf['active']! }, data: { key: null } });
+          return w.requester;
+        },
+        'OK',
+      ],
+      [
+        'a committee stage that does not allow request_change',
+        async (w) => {
+          await prisma.workflowStageRecordAction.deleteMany({ where: { organizationId: w.org, stageId: w.stageOf['active']! } });
           return w.requester;
         },
         'CHANGE_REQUEST_STAGE_NOT_ALLOWED',

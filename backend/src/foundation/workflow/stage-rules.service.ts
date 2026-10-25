@@ -19,8 +19,9 @@ import type { EngineTx } from './workflow.service';
  * current stage, allows nothing and has no flags, and is logged with ids only.
  * An action the record type's registry does not list is never allowed.
  *
- * In ACC-255 PR 1 nothing decides by these answers yet; the committee read
- * reports them, and the parity check compares them with the old maps.
+ * Since ACC-255 PR 2 these answers decide: a committee's direct edit and its
+ * member changes (assertStageAllows), the dissolving checks, and what a change
+ * request may do.
  */
 
 export interface StageRules {
@@ -39,6 +40,11 @@ export interface CurrentStageRulesOptions {
   lock?: 'share' | 'none';
 }
 
+export interface AssertStageAllowsOptions extends CurrentStageRulesOptions {
+  /** The refusal's sentence, naming the stage, in the record's own words. The generic one otherwise. */
+  message?: (stageNameEn: string | null) => string;
+}
+
 type Reader = Pick<EngineTx, '$queryRaw' | 'workflowStage' | 'workflowStageRecordAction'>;
 
 interface CurrentStageRow {
@@ -54,7 +60,7 @@ export class StageRulesService {
 
   /**
    * The rules of the record's current stage: its NEWEST instance's stage (the
-   * rule `committeeStagesAndCounts()` and `committeeStageKey()` already use).
+   * rule `committeeStagesAndCounts()` and the reference checks also use).
    */
   async currentStageRules(
     objectType: WorkflowObjectType,
@@ -164,7 +170,7 @@ export class StageRulesService {
     actionKey: string,
     organizationId: string,
     client: Reader = this.prisma,
-    options: CurrentStageRulesOptions = {},
+    { message, ...options }: AssertStageAllowsOptions = {},
   ): Promise<void> {
     if (!isRecordAction(objectType, actionKey)) {
       this.logger.error(`Unregistered record action asked: objectType=${objectType} action=${actionKey}`);
@@ -172,10 +178,15 @@ export class StageRulesService {
     }
     const rules = await this.currentStageRules(objectType, objectId, organizationId, client, options);
     if (rules.actions[actionKey] !== true) {
+      // A refusal is not a mutation, so no audit row (plan §8); ids only.
+      this.logger.log(
+        `Refused by its stage: objectType=${objectType} objectId=${objectId} action=${actionKey} stageId=${rules.stageId ?? 'none'} organizationId=${organizationId}`,
+      );
       throw new WorkflowRefusalException('STAGE_ACTION_NOT_ALLOWED', {
         action: actionKey,
         stageNameEn: rules.stageNameEn,
         stageNameAr: rules.stageNameAr,
+        ...(message && { message: message(rules.stageNameEn) }),
       });
     }
   }
