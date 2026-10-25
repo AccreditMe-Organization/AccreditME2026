@@ -82,6 +82,7 @@ const EDITING: CommitteeDetailDto = {
     parentCommitteeId: 'council',
     reportingToCommitteeId: 'council',
   }),
+  orgUnit: null,
 };
 const LIST = [
   EDITING,

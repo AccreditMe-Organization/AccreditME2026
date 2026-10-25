@@ -46,6 +46,7 @@ const COMMITTEE: CommitteeDetailDto = {
   stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: null,
+  orgUnit: null,
 };
 
 const MEMBER: CommitteeMemberDto = {

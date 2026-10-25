@@ -98,6 +98,15 @@ export interface CommitteeDetailDto extends CommitteeDto {
   isDissolving: boolean;
   stageRules: CommitteeStageRulesDto;
   typeValue: CommitteeTypeValueDto | null;
+  /** ACC-265 — the owning unit, named; null for none, or a unit not in this organisation. */
+  orgUnit: CommitteeOrgUnitDto | null;
+}
+
+/** ACC-265 — a committee's owning unit as its record read names it. */
+export interface CommitteeOrgUnitDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
 }
 
 /** GET /committees/form-choices (ACC-255, plan §10.5). */
