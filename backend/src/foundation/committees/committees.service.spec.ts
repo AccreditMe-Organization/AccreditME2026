@@ -327,6 +327,40 @@ describe('CommitteesService', () => {
       expect(await service.getCommitteeDetail('committee-1', ORG_A)).toMatchObject({ currentStageKey: null, isDissolving: false });
     });
 
+    // ACC-265 — the owning unit is named on the read, so the record page needs no
+    // unit list (and no org:view).
+    it('names the owning unit, read in the same organisation as the committee', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ orgUnitId: 'unit-qa' }));
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-qa', nameEn: 'Quality Department', nameAr: 'إدارة الجودة' });
+
+      const result = await service.getCommitteeDetail('committee-1', ORG_A);
+
+      expect(result.orgUnit).toEqual({ id: 'unit-qa', nameEn: 'Quality Department', nameAr: 'إدارة الجودة' });
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
+        where: { id: 'unit-qa', organizationId: ORG_A },
+        select: { id: true, nameEn: true, nameAr: true },
+      });
+    });
+
+    it('a committee with no owning unit reads no unit, and asks for none', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ orgUnitId: null }));
+      mockPrisma.orgUnit.findFirst.mockClear();
+
+      expect((await service.getCommitteeDetail('committee-1', ORG_A)).orgUnit).toBeNull();
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('getCommitteeDetail owning unit read', async () => {
+      // A unit id that is another organisation's: the scoped read finds nothing.
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ orgUnitId: 'unit-of-org-b' }));
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      expect((await service.getCommitteeDetail('committee-1', ORG_A)).orgUnit).toBeNull();
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'unit-of-org-b', organizationId: ORG_A } }),
+      );
+    });
+
     itEnforcesTenantIsolation('getCommitteeDetail committee read', async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(null);
 

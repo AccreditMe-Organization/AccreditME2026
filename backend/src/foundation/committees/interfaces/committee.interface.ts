@@ -100,8 +100,20 @@ export interface ICommitteeDetail extends ICommittee {
   currentStageKey: string | null;
   isDissolving: boolean;
   typeValue: ICommitteeTypeValue | null;
+  // ACC-265 — the owning unit, named, so the record page needs no unit list
+  // (GET /organization/units/flat needs org:view, which a committee reader may
+  // not hold). Null for a committee with no unit, or an id that is no unit in
+  // this organisation.
+  orgUnit: ICommitteeOrgUnit | null;
   // ACC-255 — what the current stage allows and means.
   stageRules: ICommitteeStageRules;
+}
+
+/** ACC-265 — the committee's owning unit, as the record page names it. */
+export interface ICommitteeOrgUnit {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
 }
 
 /** ACC-246 — see committee-type-values.ts. */

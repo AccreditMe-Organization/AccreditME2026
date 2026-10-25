@@ -114,10 +114,17 @@ export class CommitteesService {
   // Internal callers keep getCommitteeById(), which costs one query.
   async getCommitteeDetail(id: string, organizationId: string): Promise<ICommitteeDetail> {
     const committee = await this.getCommitteeById(id, organizationId);
-    const [facts, types, rules] = await Promise.all([
+    const [facts, types, rules, orgUnit] = await Promise.all([
       committeeStagesAndCounts(this.prisma, organizationId, [committee.id]),
       committeeTypeValues(this.prisma, organizationId, [committee.typeValueId]),
       this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [committee.id]),
+      // ACC-265 — the owning unit's names, scoped by organisation like every read.
+      committee.orgUnitId
+        ? this.prisma.orgUnit.findFirst({
+            where: { id: committee.orgUnitId, organizationId },
+            select: { id: true, nameEn: true, nameAr: true },
+          })
+        : Promise.resolve(null),
     ]);
     const fact = facts.get(committee.id);
     return {
@@ -125,6 +132,7 @@ export class CommitteesService {
       currentStageKey: fact?.stageKey ?? null,
       isDissolving: fact?.isDissolving ?? false,
       typeValue: types.get(committee.typeValueId) ?? null,
+      orgUnit,
       // ACC-255 — the same answer PR 2's writes will assert.
       stageRules: committeeStageRules(rules.get(committee.id)),
     };
