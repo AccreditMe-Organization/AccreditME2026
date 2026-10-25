@@ -4240,9 +4240,8 @@ for what the screens read). Plan, Ahmad's answers, and PR 2 and PR 3 as built:
   RULE.** The committee page reads `stageRules` (`committee-offers.ts`) and
   says a stage refusal from its code, naming the stage in the reader's language
   (`committee-stage-refusal.ts`). `committee-stage.ts` is deleted, and the key
-  scan reads `frontend/src` too, where no key is allowed. The committee read
-  still sends `currentStageKey`, read by nothing; dropping it is a contract
-  step.
+  scan reads `frontend/src` too, where no key is allowed. Since ACC-265 no
+  committee response carries a stage key (`currentStageKey` is gone).
 - **The committee dialogs read `GET /committees/form-choices`** for types and
   units, so editing a committee needs no `lookups:view` or `org:view`.
 - **Every workflow screen says a refusal from its code**
@@ -4256,6 +4255,32 @@ for what the screens read). Plan, Ahmad's answers, and PR 2 and PR 3 as built:
   feature costs, plans) and **the baseline is 0**, so a new unnamed icon-only
   control now fails CI.
 - **No migration in PR 2 or PR 3.**
+
+## Key Architecture Decisions (ACC-256, ACC-265)
+
+Committee and workflow stages page follow-ups. Full mechanism:
+SYSTEM-REFERENCE.md §3.17 (the committee read), the committees list section
+(the status), §9.6 (the time-unit rule) and §10.8 (`fill`). Briefly:
+
+- **A COMMITTEE'S STATUS IS READ FROM ITS STAGE'S FLAGS, NEVER ITS NAME**
+  (Ahmad, 25 Oct): no flag → Not yet in force / «غير سارية بعد»; `IN_FORCE` →
+  In force / «سارية»; `DISSOLVING` → Being dissolved / «قيد الحل»; record
+  inactive → Inactive / «غير نشطة». One rule, `committeeListStatus()`; the
+  list's filter offers the same four.
+- **THE COMMITTEE READ NAMES ITS TYPE AND OWNING UNIT** (`typeValue`,
+  `orgUnit`), so the record page loads no lookup or unit list and a reader with
+  `committees:view` alone sees both names. **No committee response carries a
+  stage key.**
+- **A TIME UNIT IS NEVER WRITTEN ONTO A NUMBER BY HAND.** "40h" read the same
+  in both languages. Use a counted string (`amCount`) or a duration;
+  `check:formatting` fails `n + 'h'`, `${n} days` and `{{ n }}h`.
+- **`RecordPanelComponent`'s `fill` is opt-in**: the panel takes its cell's
+  height and its body scrolls as a focusable region. The caller sizes the cell
+  (the committee page's Stage history, with `contain: size`, only while it
+  shares the Lifecycle card's row).
+- **The Arabic transition table (ACC-265 item 3) moved to ACC-255 PR 4**, with
+  the measurements in the ACC-255 plan's §16.7.
+- **No migration.**
 
 ## Open / Deferred Items
 

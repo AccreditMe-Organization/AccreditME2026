@@ -568,7 +568,7 @@ ACC-240's PR 3a and 3b merge first. 3a's `canRaise` (`openSummary()`) reads `com
 | **2 — backend, switch** | reference checks, counts, change-request policy and the approve target read the answer (§4.2-4.4); ACC-241 lock on `updateCommittee` and the member actions (§4.5); `isDissolvingStageKey`, `COMMITTEE_STAGE_POLICY` and the parity script deleted; the key-name scan spec; the Dissolved seed change and `backfill:acc255-dissolved-membership` (§16.2) | none | **API only:** a direct edit outside Formation is refused (ACC-241, intended), and member changes on a Dissolved committee (Q-A). Screens never offered the first; the second is hidden in PR 3. |
 | *after PR 2 deploys* | `backfill:acc255-dissolved-membership` dry run → `-- --execute` → dry run (0) — runbook in §16.5 | — | the Dissolved refusal reaches existing organisations |
 | **3 — frontend** | committee page and members panel read `stageRules` (`COMMITTEE_HEADER_POLICY` deleted); new refusal codes said; ACC-254; icon labels and the scan at 0; protected-refusal translations; Edit dialog and Request a change read `form-choices` | none | members panel hides actions a stage forbids (none today); otherwise nothing |
-| **4 — frontend, after the drawing** | stage form: "What can be done to the record here" and flags | none | the new section |
+| **4 — frontend, after the drawing** | stage form: "What can be done to the record here" and flags; the stages page redrawn from the final drawing, including the transition table (§16.7) | none | the new section |
 
 - PRs 1 and 2 are backend and deploy through Railway; PR 3 can merge while Railway is paused, once PR 2 is live (it reads `stageRules`).
 - **PR 2 and committees with no workflow instance (D14) — Ahmad, 23 Oct.** Such a committee must not lose the member changes it has today (add, remove, change role, which no stage limits now).
@@ -881,3 +881,42 @@ building: nothing in the PR 3 row of §11 or in §10 had stopped fitting.
 - **An unknown protected `edit` says the general sentence**
   (`workflow.refusal.templateProtected`), so a tenth edit added on the server
   before the screens know it is still said in the reader's language.
+
+### 16.7 PR 4 notes: the transition table (moved from ACC-265, 25 Oct)
+
+ACC-265 item 3 (the Arabic transition table is cut and its trigger chip wraps)
+is NOT built in the ACC-256 + ACC-265 PR (Ahmad, 25 Oct): PR 4 redraws the
+stages page from the final drawing, so the table's layout is settled here.
+Measured on 25 Oct, Committee Management with a stage expanded, in the real
+theme, font and translations:
+
+| | 1280 | 1440 | 1920 |
+|---|---|---|---|
+| Transitions panel width | **466 px** | 546 px | 786 px |
+
+- **Why the panel is that narrow:** the expanded row puts Transitions and Tasks
+  on entry side by side once each can be 420 px (`am-stage-expanded`,
+  `minmax(min(100%, 420px), 1fr)`).
+- **The fixed columns take 244 px:** Kind 120, the Actions cog 44, Edit and
+  Remove 80. The Kind chip itself needs only 38–67 px.
+- **A one-line trigger chip needs up to about 170 px.** The longest label is
+  "Any Authenticated User" / «أي مستخدم مصادق عليه». The pool chip measured
+  117 px in Arabic («المكلَّفون بالمرحلة») and 107 px in English.
+- **So at 1280** the transition name and destination stage get about 30–40 px
+  each, even if they wrap. That is why the label reads «اعتماد الل…» and the
+  chip wraps.
+
+**Options weighed:**
+1. Stack the two panels until each can be about 660 px wide (side by side only
+   at 1920).
+2. Move the Kind chip under the destination stage and give the trigger column
+   its longest chip's width.
+3. Both, stacking below about 1056 px of content.
+
+**PR 4 must check the table at 1280, 1440 and 1920 in both languages:**
+- the full transition name is visible (no ellipsis);
+- the trigger chip stays on one line;
+- nothing paints outside its column.
+
+`workflow-stage-list.layout.spec.ts` is the place: it already measures the
+page at those widths and checks the table stays inside its column.
