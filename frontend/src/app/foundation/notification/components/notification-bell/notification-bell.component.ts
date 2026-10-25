@@ -1,6 +1,6 @@
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { AmDateTimePipe } from '../../../../core/formatting';
+import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, of, startWith, switchMap } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -19,11 +19,14 @@ const POLL_INTERVAL_MS = 30000;
   imports: [AmDateTimePipe, TranslatePipe, ButtonModule, BadgeModule, PopoverModule, RouterLink, NgTemplateOutlet],
   template: `
     <div class="relative inline-flex">
+      <!-- ACC-264 — the bell's name says how many are unread: the badge is drawn, not read. -->
       <p-button
         icon="pi pi-bell"
         [text]="true"
         [rounded]="true"
+        [ariaLabel]="bellLabel()"
         (onClick)="onToggle($event, panel)"
+        data-testid="notification-bell"
       />
       @if (unreadCount() > 0) {
         <p-badge
@@ -109,8 +112,11 @@ export class NotificationBellComponent implements OnInit {
   private readonly notificationService = inject(NotificationService);
   private readonly languageService = inject(LanguageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly format = inject(FormatService);
 
   readonly unreadCount = signal(0);
+  /** "Notifications, 3 unread" — a plural object, so every Arabic form is right. */
+  readonly bellLabel = computed(() => this.format.count('notification.bellUnread', this.unreadCount()));
   readonly recent = signal<NotificationDto[]>([]);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);

@@ -54,7 +54,14 @@ import { NavigationAccessService } from '../../../core/services/navigation-acces
                    is belt and braces rather than a fix; it is here because a
                    reader should not have to know that to see the rule. -->
               @if (canCreate()) {
-                <p-button icon="pi pi-pencil" [text]="true" size="small" (onClick)="openEdit(cost)" />
+                <p-button
+                  icon="pi pi-pencil"
+                  [text]="true"
+                  size="small"
+                  [ariaLabel]="'platform.editFeatureCost' | translate: { feature: cost.featureKey }"
+                  (onClick)="openEdit(cost)"
+                  data-testid="feature-cost-edit"
+                />
               }
             </td>
           </tr>
