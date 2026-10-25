@@ -15,6 +15,13 @@
 //     "15 Sep 2026" display (date-picker-locale.ts)
 //   - uses p-inputNumber or p-paginator without the directive that pins their
 //     digits to Latin (latin-digits.ts)
+//   - writes a time unit onto a number by hand (ACC-265): `n + 'h'`, `${n}h`,
+//     `{{ n }}h`. "40h" read the same in both languages; a quantity is a
+//     counted string (amCount / FormatService.count) or a duration (amDuration).
+//     Matched: h, hr(s), hour(s), d, day(s), min(s), minute(s), w, week(s).
+//     Not matched: a bare 's' or 'm' after ${…} (CSS seconds and margins look
+//     the same), and '%', a symbol written the same in both languages, with
+//     the digits already Latin through amNumber.
 //
 // Spec files are not scanned: they may construct Intl formatters to state the
 // platform facts a test depends on.
@@ -39,6 +46,19 @@ const RULES = [
   { pattern: /\b(DecimalPipe|PercentPipe|CurrencyPipe)\b/, message: 'imports an Angular number pipe; use amNumber' },
   { pattern: /['"`]plural\./, message: "names a plural key; resolve counted strings with amCount / FormatService.count" },
   { pattern: /\[?dateFormat\]?\s*=/, message: 'overrides the date picker format; provideDatePickerLocale() sets it app-wide' },
+  // ACC-265 — a time unit written onto a number by hand, in its three shapes.
+  {
+    pattern: /\+\s*(['"`])\s*(?:h|hrs?|hours?|d|days?|mins?|minutes?|w|wks?|weeks?)\s*\1/,
+    message: "writes a time unit onto a number ('h', 'days'…); use amCount / FormatService.count or amDuration",
+  },
+  {
+    pattern: /\$\{[^}]*\}\s*(?:h|hrs?|hours?|d|days?|mins?|minutes?|w|wks?|weeks?)\b/,
+    message: 'writes a time unit onto a number in a template string; use FormatService.count or duration',
+  },
+  {
+    pattern: /\}\}\s*(?:h|hrs?|hours?|days?|mins?|minutes?|weeks?)\b/,
+    message: 'writes a time unit after an interpolated number; use amCount or amDuration',
+  },
 ];
 
 // PrimeNG components that format digits with the BROWSER's locale unless told

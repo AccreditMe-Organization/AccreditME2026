@@ -8,6 +8,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "check:formatting": "node scripts/check-formatting-rules.mjs",
+    "check:formatting:selftest": "node scripts/check-formatting-rules.selftest.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:icon-labels": "node scripts/check-icon-labels.mjs",
     "check:icon-labels:selftest": "node scripts/check-icon-labels.selftest.mjs",
