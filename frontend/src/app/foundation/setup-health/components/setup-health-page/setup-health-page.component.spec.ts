@@ -411,6 +411,74 @@ describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
   });
 });
 
+// ACC-260 — SharePoint's two conditions get their Fix: the File storage page,
+// which shows the withdrawn access or the expiring secret. Almost full keeps no
+// Fix until the recycle bin screen exists (ACC-260 PR D).
+describe('SetupHealthPageComponent — SharePoint storage Fix (ACC-260)', () => {
+  const at = new Date().toISOString();
+  const sp = (type: 'STORAGE_ACCESS_WITHDRAWN' | 'STORAGE_SECRET_EXPIRING'): SetupConditionDto => ({
+    id: type,
+    type,
+    severity: type === 'STORAGE_ACCESS_WITHDRAWN' ? 'BLOCKS_WORK' : 'AT_RISK',
+    objectId: 'org-a',
+    subject: type === 'STORAGE_ACCESS_WITHDRAWN' ? { reason: 'GRANT_REMOVED' } : { expiresOn: '2026-11-10', daysLeft: 17 },
+    openedAt: at,
+    ageBasis: 'OBJECT',
+    lastSeenAt: at,
+    clearedAt: null,
+  });
+
+  function render(permissions: string[], arabic = false): SetupHealthPageComponent {
+    TestBed.configureTestingModule({
+      imports: [SetupHealthPageComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => permissions.includes(p) } },
+        { provide: LanguageService, useValue: { isArabic: () => arabic } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(arabic ? 'ar' : 'en');
+    const fixture = TestBed.createComponent(SetupHealthPageComponent);
+    fixture.detectChanges();
+    TestBed.inject(HttpTestingController)
+      .expectOne(`${environment.apiUrl}/setup-health`)
+      .flush({
+        open: [sp('STORAGE_ACCESS_WITHDRAWN'), sp('STORAGE_SECRET_EXPIRING')],
+        recentlyCleared: [],
+        freshness: ['STORAGE_ACCESS_WITHDRAWN', 'STORAGE_SECRET_EXPIRING'].map((type) => ({ type, status: 'CURRENT', computedAt: at })),
+      });
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  const rowOf = (page: SetupHealthPageComponent, type: string) => page.groups().find((g) => g.type === type)!.rows[0]!;
+
+  it('withdrawn access and an expiring secret open File storage, for a holder of tenant:manage_config', () => {
+    const page = render(['setup:view', 'tenant:manage_config']);
+    for (const type of ['STORAGE_ACCESS_WITHDRAWN', 'STORAGE_SECRET_EXPIRING']) {
+      expect(rowOf(page, type).fix).withContext(type).toEqual({ label: 'Open file storage', link: ['/admin-settings/storage'], queryParams: {} });
+      expect(rowOf(page, type).fixNeeds).withContext(type).toBeNull();
+    }
+  });
+
+  it('without tenant:manage_config: no Fix, and the row says what fixing it needs', () => {
+    const page = render(['setup:view']);
+    expect(rowOf(page, 'STORAGE_ACCESS_WITHDRAWN').fix).toBeNull();
+    expect(rowOf(page, 'STORAGE_ACCESS_WITHDRAWN').fixNeeds).toBe('Fixing this needs permission to set up email, storage, deadlines and AI.');
+  });
+
+  it('reads in Arabic', () => {
+    expect(rowOf(render(['setup:view', 'tenant:manage_config'], true), 'STORAGE_SECRET_EXPIRING').fix?.label).toBe('فتح تخزين الملفات');
+  });
+});
+
 // ACC-120 slice 11, PR D — the org unit record: Set type and the open-ended
 // acting head's Fix go to the unit's record, ACTING_HEAD_OPEN_ENDED is listed
 // at all (the API reported it since slice 2 and this page dropped it), and the

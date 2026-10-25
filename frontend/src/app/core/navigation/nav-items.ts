@@ -320,6 +320,16 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         route: '/admin-settings/ai-settings',
         requiredPermission: 'tenant:manage_config',
       },
+      // ACC-260 — File storage: where the organisation's files are kept, and
+      // the state of that location. Until a location is confirmed, uploads are
+      // refused everywhere, so this is where a tenant admin opens them.
+      {
+        key: 'fileStorage',
+        labelKey: 'nav.fileStorage',
+        icon: 'pi pi-database',
+        route: '/admin-settings/storage',
+        requiredPermission: 'tenant:manage_config',
+      },
     ],
   },
 ];
