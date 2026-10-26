@@ -183,8 +183,7 @@ const EXPAND_TRACK = '32px';
                        hours" / «40 ساعة عمل»), in the page's own direction. -->
                   <span
                     data-cell="sla"
-                    style="font-variant-numeric: tabular-nums"
-                    class="text-sm text-[var(--am-text-secondary)] text-start"
+                    class="text-sm tabular-nums text-[var(--am-text-secondary)] text-start"
                   >
                     {{ stage.slaWorkingHours ? (stage.slaWorkingHours | amCount: 'workflow.workingHours') : '—' }}
                   </span>

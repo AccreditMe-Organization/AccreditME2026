@@ -289,7 +289,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
               [count]="stageHistoryCount()"
               [bodyHeight]="146"
               [fill]="historyBesideLifecycle()"
-              [style.contain]="historyBesideLifecycle() ? 'size' : null"
+              [class.contain-size]="historyBesideLifecycle()"
               data-stage-history
             >
               <div class="px-4 py-1">
