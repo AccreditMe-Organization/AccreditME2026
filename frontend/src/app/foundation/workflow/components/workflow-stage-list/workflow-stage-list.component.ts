@@ -208,9 +208,10 @@ const NUMBER_TRACK = '32px';
                    pRowToggler and expandedRowKeys to coordinate two templates;
                    here the row owns its own disclosure, and the nested editor
                    is simply a child of it. -->
-              <!-- ACC-208 — two columns, read side by side (drawing decision 1):
-                   what makes a record move, and what must happen before it
-                   can. They stack below the width where both fit. -->
+              <!-- ACC-208 put these two side by side (drawing decision 1). ACC-255
+                   PR 4a replaces that (Ahmad, Q4): Transitions stack above Tasks on
+                   entry until each can be about 660px, so the transition table
+                   shows whole names — side by side only at 1920 (plan §17.5). -->
               @if (isExpanded(stage.id)) {
                 <div class="am-stage-expanded px-3 pb-3 bg-[var(--am-surface)]">
                   <app-workflow-transition-editor
@@ -303,7 +304,7 @@ const NUMBER_TRACK = '32px';
     `
       .am-stage-expanded {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 660px), 1fr));
         gap: var(--am-space-16);
         align-items: start;
       }

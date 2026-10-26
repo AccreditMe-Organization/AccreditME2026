@@ -118,6 +118,22 @@ function stage(i: number, over: Record<string, unknown> = {}): Record<string, un
               isApprovalPath: false,
               kind: 'RETURN',
             },
+            {
+              // The longest chips of each column (measured, ACC-255 PR 4a):
+              // "End the record" and "Any Authenticated User".
+              id: 't-2',
+              fromStageId: 'stage-1',
+              toStageId: 'stage-2',
+              labelEn: 'Withdraw the committee proposal before the Board has considered it',
+              labelAr: 'سحب مقترح اللجنة قبل أن ينظر فيه مجلس الإدارة',
+              requiredPermission: null,
+              triggerCondition: 'ANY_AUTHENTICATED',
+              triggerUserId: null,
+              triggerRoleId: null,
+              validatorConfig: null,
+              isApprovalPath: false,
+              kind: 'EXIT',
+            },
           ]
         : [],
     ...over,
@@ -243,6 +259,9 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
         // ── No sideways scroll, anywhere in the page ──
         const sideways = [host, ...Array.from(host.querySelectorAll<HTMLElement>('*'))].filter((el) => {
           const ox = getComputedStyle(el).overflowX;
+          // The transition table's own frame may scroll on a phone (ACC-254's
+          // allowance); at desktop widths it must not either.
+          if (c.width < 400 && el.closest('[data-tr-scroll]')) return false;
           return (ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1;
         });
         expect(sideways.map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80))).withContext('scrolls sideways').toEqual([]);
@@ -285,12 +304,44 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
         }
 
         // ── The transition table stays inside its column ──
-        const table = host.querySelector<HTMLElement>('.am-tr-table table') ?? host.querySelector<HTMLElement>('.am-tr-table');
+        const table = host.querySelector<HTMLElement>('[data-tr-scroll]');
         expect(table).withContext('the expanded row shows its transitions').not.toBeNull();
         const column = table!.closest<HTMLElement>('app-workflow-transition-editor')!.getBoundingClientRect();
         const box = table!.getBoundingClientRect();
         expect(box.right).withContext('table right edge').toBeLessThanOrEqual(column.right + 1);
         expect(box.left).withContext('table left edge').toBeGreaterThanOrEqual(column.left - 1);
+
+        // ── ACC-255 PR 4a (ACC-265 item 3): the table reads whole ──
+        const labels = Array.from(host.querySelectorAll<HTMLElement>('[data-tr-label], [data-tr-to]'));
+        expect(labels.length).withContext('non-vacuity: two transitions, name and destination').toBe(4);
+        for (const cell of labels) {
+          // The whole text is drawn: it wraps, and nothing is clipped or cut.
+          expect(getComputedStyle(cell).textOverflow).withContext('no ellipsis').not.toBe('ellipsis');
+          expect(cell.scrollWidth).withContext(`"${cell.textContent!.trim()}" not clipped`).toBeLessThanOrEqual(cell.clientWidth + 1);
+          expect(cell.scrollHeight).withContext(`"${cell.textContent!.trim()}" not cut`).toBeLessThanOrEqual(cell.clientHeight + 1);
+        }
+        const oneLine = (el: HTMLElement) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const rects = Array.from(range.getClientRects());
+          const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || parseFloat(getComputedStyle(el).fontSize) * 1.5;
+          const spread = Math.max(...rects.map((r) => r.top)) - Math.min(...rects.map((r) => r.top));
+          return rects.length > 0 && spread < lineHeight / 2;
+        };
+        for (const chip of Array.from(host.querySelectorAll<HTMLElement>('[data-tr-trigger], [data-tr-kind]'))) {
+          expect(oneLine(chip)).withContext(`chip "${chip.textContent!.trim()}" on one line`).toBeTrue();
+          if (c.width < 400) continue;
+          const cell = chip.closest('td')!.getBoundingClientRect();
+          const r = chip.getBoundingClientRect();
+          expect(r.left).withContext(`chip "${chip.textContent!.trim()}" inside its cell (left)`).toBeGreaterThanOrEqual(cell.left - 1);
+          expect(r.right).withContext(`chip "${chip.textContent!.trim()}" inside its cell (right)`).toBeLessThanOrEqual(cell.right + 1);
+        }
+        // Transitions stack above Tasks on entry until each can be about 660px:
+        // side by side only at 1920 (Ahmad, Q4).
+        const editor = host.querySelector<HTMLElement>('app-workflow-transition-editor')!.getBoundingClientRect();
+        const tasks = host.querySelector<HTMLElement>('app-stage-task-list')!.getBoundingClientRect();
+        const sideBySide = Math.abs(editor.top - tasks.top) < 1;
+        expect(sideBySide).withContext('side by side only at 1920').toBe(c.width === 1628);
       });
     }
   }
@@ -314,7 +365,7 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
         allows: ['Allows 4 of 5 actions', 'Allows 3 of 5 actions', 'Allows 4 of 5 actions', 'Allows 4 of 5 actions', 'Allows 3 of 5 actions', 'Allows nothing'],
         meanings: [[], [], ['Record is in force'], ['Record is in force'], ['Dissolving'], ['Dissolving']],
         tip: 'Allows: Edit details, Add member, Remove member, Change member role',
-        details: ['1 transition', 'No exits', 'No exits · 1 task on entry', 'No exits', 'No exits', 'No exits'],
+        details: ['2 transitions', 'No exits', 'No exits · 1 task on entry', 'No exits', 'No exits', 'No exits'],
       },
     ],
     [
@@ -323,7 +374,7 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
         allows: ['يسمح بـ 4 من 5 إجراءات', 'يسمح بـ 3 من 5 إجراءات', 'يسمح بـ 4 من 5 إجراءات', 'يسمح بـ 4 من 5 إجراءات', 'يسمح بـ 3 من 5 إجراءات', 'لا يسمح بشيء'],
         meanings: [[], [], ['السجل نافذ'], ['السجل نافذ'], ['قيد الحل'], ['قيد الحل']],
         tip: 'يسمح بـ: تعديل التفاصيل، إضافة عضو، إزالة عضو، تغيير دور العضو',
-        details: ['انتقال واحد', 'لا مخارج', 'لا مخارج · مهمة واحدة عند الدخول', 'لا مخارج', 'لا مخارج', 'لا مخارج'],
+        details: ['انتقالان', 'لا مخارج', 'لا مخارج · مهمة واحدة عند الدخول', 'لا مخارج', 'لا مخارج', 'لا مخارج'],
       },
     ],
   ] as const) {

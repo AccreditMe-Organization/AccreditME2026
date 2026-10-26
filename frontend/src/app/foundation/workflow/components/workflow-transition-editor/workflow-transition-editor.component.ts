@@ -131,16 +131,25 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
         <p class="text-red-500 text-sm">{{ error() | translate }}</p>
       }
 
-      <!-- ACC-254 — fixed column widths, so a long label or stage name is cut
-           with an ellipsis (its whole text in a tooltip) instead of pushing the
-           table past the panel's column and the page sideways. -->
-      <p-table [value]="transitions" styleClass="w-full am-tr-table" [tableStyle]="{ 'table-layout': 'fixed', width: '100%' }">
+      <!-- ACC-254 — fixed column widths, so nothing pushes the table past the
+           panel's column and the page sideways. ACC-255 PR 4a (ACC-265 item 3):
+           the transition's name and its destination WRAP onto lines, whole,
+           rather than ending in an ellipsis; the Kind and trigger chips stay on
+           one line because each column is sized to its longest chip, in both
+           languages (the layout spec checks every chip is on one line). -->
+      <!-- On a phone the fixed columns alone (456px) are wider than the panel,
+           so the table scrolls sideways inside this frame (ACC-254's allowance:
+           "a narrow phone may still scroll the table inside its own card"),
+           with a minimum width that keeps the name and destination readable.
+           At desktop widths the frame never scrolls. -->
+      <div class="am-tr-scroll" data-tr-scroll>
+      <p-table [value]="transitions" styleClass="w-full am-tr-table" [tableStyle]="{ 'table-layout': 'fixed', width: '100%', 'min-width': '44rem' }">
         <ng-template pTemplate="header">
           <tr>
             <th>{{ 'workflow.label' | translate }}</th>
             <th>{{ 'workflow.toStage' | translate }}</th>
             <th class="am-tr-col-kind">{{ 'workflow.kind.label' | translate }}</th>
-            <th>{{ 'workflow.triggerCondition' | translate }}</th>
+            <th class="am-tr-col-trigger">{{ 'workflow.triggerCondition' | translate }}</th>
             <th class="am-tr-col-cog"></th>
             <th class="am-tr-col-actions"></th>
           </tr>
@@ -148,8 +157,8 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
 
         <ng-template pTemplate="body" let-transition>
           <tr>
-            <td class="am-tr-cut" [pTooltip]="transitionLabel(transition)" tooltipPosition="top">{{ transitionLabel(transition) }}</td>
-            <td class="am-tr-cut" [pTooltip]="stageName(transition.toStageId)" tooltipPosition="top">{{ stageName(transition.toStageId) }}</td>
+            <td class="am-tr-wrap" data-tr-label>{{ transitionLabel(transition) }}</td>
+            <td class="am-tr-wrap" data-tr-to>{{ stageName(transition.toStageId) }}</td>
             <td>
               <!-- ACC-208 — Send back is dashed, as returns are in the stage
                    strip; End the record is outlined in danger (drawing). -->
@@ -212,6 +221,7 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
           </tr>
         </ng-template>
       </p-table>
+      </div>
 
       <!-- Add Transition.
            ACC-208 — TWO STEPS, measured (ACC-120). Before Kind existed this
@@ -624,9 +634,16 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
         min-inline-size: 0;
         overflow: hidden;
       }
-      /* The fixed columns: Kind's longest chip, the Actions cog, Edit and Remove. */
+      /* The fixed columns, each sized to its content in both languages
+         (measured, ACC-255 PR 4a): the longest Kind chip ("End the record",
+         89px) and the longest trigger chip ("Any Authenticated User", 173px),
+         each with the cell's 16px padding on both sides; the Actions cog; Edit
+         and Remove. The transition's name and destination share the rest. */
       .am-tr-col-kind {
-        inline-size: 7.5rem;
+        inline-size: 7.75rem;
+      }
+      .am-tr-col-trigger {
+        inline-size: 13rem;
       }
       .am-tr-col-cog {
         inline-size: 2.75rem;
@@ -634,9 +651,13 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
       .am-tr-col-actions {
         inline-size: 5rem;
       }
-      .am-tr-cut {
-        white-space: nowrap;
-        text-overflow: ellipsis;
+      .am-tr-scroll {
+        overflow-x: auto;
+        max-width: 100%;
+      }
+      .am-tr-wrap {
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
       .am-tr-chip--advance {
         color: var(--am-primary-700);
