@@ -568,7 +568,7 @@ ACC-240's PR 3a and 3b merge first. 3a's `canRaise` (`openSummary()`) reads `com
 | **2 — backend, switch** | reference checks, counts, change-request policy and the approve target read the answer (§4.2-4.4); ACC-241 lock on `updateCommittee` and the member actions (§4.5); `isDissolvingStageKey`, `COMMITTEE_STAGE_POLICY` and the parity script deleted; the key-name scan spec; the Dissolved seed change and `backfill:acc255-dissolved-membership` (§16.2) | none | **API only:** a direct edit outside Formation is refused (ACC-241, intended), and member changes on a Dissolved committee (Q-A). Screens never offered the first; the second is hidden in PR 3. |
 | *after PR 2 deploys* | `backfill:acc255-dissolved-membership` dry run → `-- --execute` → dry run (0) — runbook in §16.5 | — | the Dissolved refusal reaches existing organisations |
 | **3 — frontend** | committee page and members panel read `stageRules` (`COMMITTEE_HEADER_POLICY` deleted); new refusal codes said; ACC-254; icon labels and the scan at 0; protected-refusal translations; Edit dialog and Request a change read `form-choices` | none | members panel hides actions a stage forbids (none today); otherwise nothing |
-| **4 — frontend, after the drawing** | stage form: "What can be done to the record here" and flags; the stages page redrawn from the final drawing, including the transition table (§16.7) | none | the new section |
+| **4 — frontend, after the drawing** | stage form: "What can be done to the record here" and flags; the stages page redrawn from the final drawing, including the transition table (§16.7). **Planned in §17, and split there into 4a, 4b-be and 4b** | 4b-be: read-only additions, no migration | the new section |
 
 - PRs 1 and 2 are backend and deploy through Railway; PR 3 can merge while Railway is paused, once PR 2 is live (it reads `stageRules`).
 - **PR 2 and committees with no workflow instance (D14) — Ahmad, 23 Oct.** Such a committee must not lose the member changes it has today (add, remove, change role, which no stage limits now).
@@ -920,3 +920,220 @@ theme, font and translations:
 
 `workflow-stage-list.layout.spec.ts` is the place: it already measures the
 page at those widths and checks the table stays inside its column.
+
+---
+
+## 17. PR 4 plan: the stage editor and stages list from the final drawing (26 Oct)
+
+**Source:** `frontend/design-reference/AccreditMe Workflow Setup.dc.html`
+(accepted 25 Oct, round 3), copied unchanged as this branch's first commit.
+PR 4 builds only its **Step 1** parts:
+- section 2, "What can be done to the record here";
+- section 3, "What this stage means";
+- the stages list (desktop and phone, both languages);
+- the protected read-only state.
+
+The page around them is **Templates 6b** (`AccreditMe Templates.dc.html`,
+"6b · Workflow stages and transitions"). Step 2 (the condition builder, How it
+moves, automatic exits, the branching strip, drafts and versions) is out of
+scope.
+
+### 17.1 What the drawing settles from §12
+
+| §12 item | Settled as |
+|---|---|
+| 1. Actions section | One checkbox row per registry action: its label, a one-line description, and an "Also needs: {permission sentence}" column (see gap G1). Under the heading: "A person can do these only when both this stage and their role allow it. A stage can only narrow; it never grants what a role doesn't." No actions for the record type: the section reads "This record type has no actions a stage can limit yet." (drawn empty state), rather than being absent. |
+| 2. Meanings section | One checkbox row per registry flag: label, description and cardinality ("Any number" / "Exactly one stage"). Note above: "The product relies on these. Their names are fixed; the stage's own name is yours." Descriptions: Dissolving "Committees here can't be a parent or be reported to."; Record is in force "Counted as active in lists. Change requests can be submitted and decided here."; Applies the approved change "A change request's values are applied to the committee when it reaches this stage. Exactly one stage." |
+| 3. Exactly-one refusal | On Save, both in the row's own message slot and in a danger banner ("The workflow can't be saved") naming the other stage. Missing: "This workflow needs one stage that applies the approved change." Save stays enabled. |
+| 4. Protected | Both sections read-only (✓ and –, no boxes) under a muted "Protected workflow" banner. **No screen shows a protected sentence today** (it exists only as the refusal after a Save), and the template read does not say a template is protected (gap G6). The drawing's banner wording "stands in for the sentence as built; the build's own string wins", and it promises "add new ones", which ACC-245 has not built. So the build's sentence is: "AccreditMe keeps this workflow working: you can rename its stages and set their deadlines, but not change what they allow or mean." / «تحافظ AccreditMe على عمل سير العمل هذا: يمكن إعادة تسمية مراحله وتحديد مهلها، ولا يمكن تغيير ما تسمح به أو ما تعنيه.» |
+| 5. Stages list | Rows: # · Stage (name, meaning chips underneath) · Allows ("Allows n of 5 actions", the action names as its tooltip, or "Allows nothing") · Details. A type with no actions shows an empty Allows cell. Phone: one column. Fixed tracks only (ACC-234). |
+| 6. Fit | **Not a dialog.** The stage editor is a page panel beneath the flow strip (6b: "Neither editor is a dialog — both measure over the 420px cap"). No step or tab question remains, and the page scrolls as the document, with no inner scroll container (6b, "No inner scroll on the workflow route"). |
+| 7. Committee page | Already built in PR 3. |
+
+Also drawn, and in scope:
+- **Changed rows:** a row changed since the last save is tinted and its title
+  turns blue, and the footer counts the changes ("2 changes").
+- **The note under the sections:** "Changed since saving: … Saved changes are
+  recorded in the workflow's history."
+
+### 17.2 Screens and components, by drawing frame
+
+| Drawing frame | Build |
+|---|---|
+| 6b page: header, flow strip, editor below | **`workflow-stage-list.component.ts` restructured**, in this order: header, then a **flow strip**, then (once a stage is chosen) **the stage editor panel**, then the stages list. **Q1:** where the panel sits. |
+| 6b strip (linear, generated, "Selection opens an editor below") | **New `am-workflow-strip`** (`foundation/workflow/components/workflow-strip/`). Stage cards in order, as buttons; forward transitions are solid connectors, returns dashed (6b). Clicking a card opens that stage in the editor panel. In PR 4 a connector opens the existing transition dialog, because the transition editor stays a dialog (§17.8). The strip scrolls sideways inside its own frame; the page never does. Live counts: gap G4. |
+| Sections 2 and 3, the editor's two new sections | **New `am-stage-record-actions`** and **`am-stage-meanings`**: presentational checkbox groups from the template's registries and the stage's stored values, emitting the chosen keys. Editable or read-only (✓ / –) by input. They know no rule. |
+| 6b stage editor (identity, axis 1 assignee, axis 2 approval) | **`workflow-stage-form.component.ts` moves out of `app-edit-dialog`** into **a page panel, `am-stage-editor-panel`**. Its 13 controls move into `am-field` wrappers (they are not yet). Add stage opens the same panel for a new stage. The footer holds Cancel, Save stage, and the count of changed rows. |
+| "Dissolution pending · after unticking" | Changed rows are tracked against the stage as loaded, never against the seed. |
+| Section 3 refusal and Arabic refusal | Row slot plus a banner, from the refusal's code and details (§17.3). |
+| Protected · read only | Decided by the server's **`isProtected` on the template read (gap G6; not served today)**, never by a frontend copy of `PROTECTED_TEMPLATES`. The two sections render read-only under the banner (§17.1). The panel still allows what the server allows: names, description and deadline (ACC-239). |
+| Stages list EN / AR, change request, phone EN / AR | `app-data-list` rows rebuilt to the drawing's tracks: `#` 32, Stage 260, Allows 190, Details flex. Meaning chips in words (`workflow.stageFlag.*`). The Allows text uses the plural catalogue (`amCount`), never "n of 5" by hand (ACC-265's rule). Phone: one card per stage, as drawn. |
+| "History · Committee lifecycle" | **Not built: gap G2.** |
+| "Read only · a viewer without Manage workflows" | **Not built:** Q-D removes the reader (§17.4). Only the protected read-only state is built. |
+
+### 17.3 Saving actions and flags, and the refusals
+
+- **Save:** `PATCH /workflow-templates/stages/:stageId` with `actions` (the
+  ticked keys, registry order) and `flags`, beside the fields the form already
+  sends. A new stage uses `POST /workflow-templates/:id/stages` with the same
+  two fields. A key is sent only when the stage changed it, so an unchanged
+  section is not re-sent. **No new endpoint and no frontend rule:** the
+  checkboxes offer exactly what the template's registries list, and the
+  server decides.
+- **Refusals**, read by code through `plainWorkflowRefusalKey()` /
+  `workflow-refusal.ts`, never the English `message`. Existing keys are reused
+  (PR 3), and the new ones are:
+
+| Code | Where it shows | English | Arabic |
+|---|---|---|---|
+| `STAGE_FLAG_EXACTLY_ONE`, the flag already on another stage | the flag's row slot, plus a banner titled "The workflow can't be saved" / «تعذّر حفظ سير العمل» | "{Flag} is already on {Stage}. A workflow has exactly one." | «{Flag}» موجود بالفعل في مرحلة «{Stage}». لسير العمل مرحلة واحدة فقط بهذا المعنى. |
+| `STAGE_FLAG_EXACTLY_ONE`, no stage holds it | same | "This workflow needs one stage that {applies the approved change}." | «يحتاج سير العمل هذا إلى مرحلة واحدة {تطبّق التغيير المعتمد}.» |
+| `STAGE_ACTION_UNKNOWN` / `STAGE_FLAG_UNKNOWN` | banner | PR 3's sentences | PR 3's |
+| `WORKFLOW_TEMPLATE_PROTECTED` (`STAGE_FIELD`) | banner | PR 3's nine edit sentences | PR 3's |
+
+  The refusal body carries `stageNames` only, so "the other stage" would be
+  picked out by name (gap G3).
+- **After a save:** the panel stays open, the changed tint clears, and the
+  stages list and strip reload from the template read. ACC-55's contract
+  still holds: nothing that reloads may destroy the panel while it shows a
+  warning.
+
+### 17.4 Who: Ahmad's Q-D
+
+- **Only the Organization Administrator edits.** `workflows:manage` has been
+  root-only since ACC-258, and every write already needs it.
+- **Every other role gets no setup pages.** Today the Workflows rail item and
+  route need `admin:access` plus `workflows:view`, so a tenant-made admin role
+  holding `workflows:view` can open the pages read-only. **PR 4 moves the rail
+  item and the route's permission to `workflows:manage`.** The GET endpoints
+  stay at `workflows:view`, because pickers and the Setup health Fix links read
+  them.
+- **The protected read-only state is the only read-only rendering built.** The
+  drawing's "viewer without Manage workflows" card has no reader left.
+- **A spec** checks that a role with `admin:access` and `workflows:view` but
+  not `workflows:manage` gets no rail item and is redirected.
+
+### 17.5 The transition table in Arabic (ACC-265 item 3, §16.7)
+
+- **The recommendation is option 1:** stack the expanded row's panels until
+  each can be about 660 px wide (`minmax(min(100%, 660px), 1fr)`).
+  - At 1280 and 1440 that means Transitions above Tasks on entry; at 1920 they
+    sit side by side.
+  - The drawing's Step 2 puts a third list, Automatic exits, in the same row,
+    so a three-across row would be narrower still. Stacking now avoids redoing
+    the row then.
+- **The table itself:**
+  - the label and destination stage wrap onto lines rather than ending in an
+    ellipsis;
+  - the Kind and trigger chips are `whitespace-nowrap`;
+  - the Kind column narrows from 120 to the widest Kind chip (measured, both
+    languages);
+  - the cog, Edit and Remove columns stay.
+- **Expected room** for the name and stage columns, measured at build: about
+  260 px each at 1280, 340 px at 1440, and 186 px at 1920.
+- **`workflow-stage-list.layout.spec.ts` checks** at 1280, 1440 and 1920 in
+  both languages: no ellipsis on the label, the trigger chip on one line, and
+  nothing outside its column.
+- **The ACC-208 drawing's two-column decision** is superseded by the measured
+  numbers. **Q4.**
+
+### 17.6 Layout specs, RTL, phone, keyboard
+
+- **The editor panel and the strip** (a new `stage-editor-panel.layout.spec.ts`):
+  - at 1280, 1440 and 1920, and at 390, in both languages;
+  - non-vacuity first;
+  - no element inside the panel scrolls (`overflow-y` auto or scroll with
+    `scrollHeight > clientHeight`);
+  - the page has no sideways scroll; the strip scrolls only inside its frame;
+  - every row of the two sections fits its track.
+- **Dialogs that stay dialogs** (the transition editor's two steps, Add and
+  Edit stage task, the action configurator):
+  - each body measured in both languages;
+  - **at most 400 px**, so at least 20 px under the 420 cap, which is never
+    raised;
+  - any that measures over is stepped or split per ACC-120, as a finding,
+    before PR 4b is built.
+- **RTL:**
+  - the strip mirrors and reads right to left;
+  - checkboxes and the "Also needs" column mirror;
+  - counts use Latin digits through the formatting layer;
+  - meaning chips and "Allows" use plural objects with every Arabic category;
+  - all new Arabic is gender-neutral.
+- **Phone (390):**
+  - the list is one column per stage (number and name, chips, then what it
+    allows);
+  - tapping a row opens the editor panel full width;
+  - the strip scrolls inside its frame.
+- **Keyboard:**
+  - strip cards are buttons in stage order;
+  - opening a stage moves focus to the panel's heading;
+  - Cancel and Save return focus to the card;
+  - switching stages with unsaved changes asks `AmConfirmService.ask()`
+    ("Discard changes?");
+  - checkbox rows are labelled by their title, and the change count is
+    announced politely;
+  - Escape in the panel cancels, but only when no overlay above it is open
+    (`LayerStackService`).
+- **Mutation-checked:**
+  - an inner scroll container in the panel;
+  - a raised dialog body;
+  - a chip that wraps;
+  - an ellipsised label;
+  - the gate back on `workflows:view`;
+  - "Allows" written by hand.
+
+### 17.7 What the drawing needs that the backend doesn't support yet
+
+Listed, not invented. Each is small, but each is a backend change.
+
+| # | Drawn | Missing | Smallest backend change |
+|---|---|---|---|
+| G1 | "Also needs: Edit a committee's details and request changes" on every action row | The registry does not say which permission an action pairs with, and the frontend must not keep that map | A `permissionKey` on each `RECORD_ACTIONS` entry, served in `recordActions`. The screen words it from the catalogue's permission sentence. |
+| G2 | "History · Committee lifecycle": "action: before → after in stage, by, date" | No read of a template's audit rows (PR 1 writes them) | `GET /workflow-templates/:id/history` (`workflows:manage`), scoped by organisation, the rows' before and after turned into change lines |
+| G3 | The exactly-one refusal names *the other* stage | `STAGE_FLAG_EXACTLY_ONE` sends `stageNames`, no ids | Add `stageIds` beside `stageNames` |
+| G4 | 6b strip: live counts per stage ("22 live committees") | No count of records per stage | A per-stage `liveCount` on the template read: one grouped count of open instances by current stage, scoped by organisation |
+| G6 | The protected read-only state and its banner | The template read does not say a template is protected; only `PROTECTED_TEMPLATES` on the server knows | `isProtected` on `GET /workflow-templates/:id` (and the list). **Required for 4b**, unlike G1, G2 and G4. |
+| G5 | Change-request list: a tenant-added "Legal review" ("Added by Al Nakheel Specialist Hospital"); the protected banner's "and add new ones" | The protected template refuses ADD_STAGE; no "tenant-added" fact is served | **ACC-245** (not PR 4). Until then the protected list shows the six seeded stages, and the build's own protected sentence, which does not promise adding, stays. |
+
+Not gaps:
+- the "Allows" count (the stage's stored actions against the registry);
+- the meaning chips and the changed-row tint;
+- the empty-actions state (the registry has no actions for that type).
+
+### 17.8 The split
+
+Recommended, three PRs in this order:
+
+| PR | Contents | Backend | Size |
+|---|---|---|---|
+| **4a: stages list and transition table** | The stages list redrawn (chips, Allows, Details; phone), the Q-D gate move, the Arabic transition table (§17.5), the template DTO's registries | none | medium |
+| **4b-be: the backend gaps** | G6 (required), G3, G1 and G4, and G2 if wanted | yes, read-only additions; no migration | small to medium |
+| **4b: the stage editor panel and strip** | The flow strip; the stage form moved out of its dialog into the page panel; sections 2 and 3; refusals; protected read-only; the panel and dialog layout specs | none (reads 4b-be) | large |
+
+- **Why this order:** 4a is independent and settles the expanded-row layout
+  that 4b's panel sits beside.
+- **4b-be must merge and deploy before 4b reads its fields.** It can be built
+  in parallel with 4a.
+- **If G1, G2 and G4 are dropped**, 4b-be shrinks to G6 and G3:
+  - the action rows lose "Also needs";
+  - the strip has no counts;
+  - the History card waits.
+- **The transition editor** stays a dialog (ACC-208, already stepped) until
+  Step 2 redraws it ("How it moves"). That PR moves it into a page panel
+  beside the stage editor, as 6b intends.
+
+### 17.9 Questions for Ahmad
+
+- **Q1.** Where the stage editor panel sits: between the strip and the stages
+  list, as drawn in 6b's "editor below" (recommended); or does it replace the
+  list while open?
+- **Q2.** Gaps G1–G4 and G6: build them in PR 4b-be? Recommended: G6 and G3
+  (needed), G1 and G4 now, G2 with the History card. Or drop "Also needs", the
+  counts and History for now?
+- **Q3.** The Q-D gate (§17.4): move the Workflows rail item and route to
+  `workflows:manage`, so a tenant-made admin role with `workflows:view` loses
+  the read-only view (recommended, as Q-D says)?
+- **Q4.** The transition table (§17.5): stack the expanded row's panels below
+  about 1320 px of content (side by side only at 1920), superseding ACC-208's
+  side-by-side drawing decision?
+- **Q5.** The split (§17.8): 4a, then 4b-be, then 4b?
