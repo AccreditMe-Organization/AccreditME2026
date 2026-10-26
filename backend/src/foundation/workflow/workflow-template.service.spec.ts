@@ -163,6 +163,10 @@ const mockPrisma = {
   rolePermission: {
     count: jest.fn(),
   },
+  // ACC-255 PR 4b-be (G4) — the template read's live count per stage.
+  workflowInstance: {
+    groupBy: jest.fn().mockResolvedValue([]),
+  },
   // ACC-120 slice 5 (F1) — read only when a transition asks for a platform key.
   organization: {
     findUnique: jest.fn(),
@@ -2052,6 +2056,41 @@ describe('WorkflowTemplateService', () => {
           const detail = await service.getTemplateById('template-1', ORG_A);
           expect([objectType, detail.isProtected]).toEqual([objectType, PROTECTED_TEMPLATES.has(objectType)]);
         }
+      });
+
+      // ACC-255 PR 4b-be (G4).
+      it('counts the records in each stage with ONE grouped query, scoped by organisation and template', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'COMMITTEE' }));
+        mockPrisma.workflowStage.findMany.mockResolvedValue([
+          { ...committeeStage({ id: 'st-a' }), transitionsFrom: [] },
+          { ...committeeStage({ id: 'st-b' }), transitionsFrom: [] },
+          { ...committeeStage({ id: 'st-c' }), transitionsFrom: [] },
+        ]);
+        mockPrisma.workflowInstance.groupBy.mockResolvedValueOnce([
+          { currentStageId: 'st-a', _count: { _all: 22 } },
+          { currentStageId: 'st-c', _count: { _all: 3 } },
+        ]);
+
+        const result = await service.getTemplateById('template-1', ORG_A);
+
+        expect(result.stages?.map((s) => [s.id, s.liveCount])).toEqual([
+          ['st-a', 22],
+          ['st-b', 0],
+          ['st-c', 3],
+        ]);
+        expect(mockPrisma.workflowInstance.groupBy).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.workflowInstance.groupBy).toHaveBeenCalledWith({
+          by: ['currentStageId'],
+          where: { organizationId: ORG_A, workflowTemplateId: 'template-1', currentStageId: { not: null }, status: { not: 'CANCELLED' } },
+          _count: { _all: true },
+        });
+      });
+
+      itEnforcesTenantIsolation("getTemplateById — another organisation's template is not found, and nothing is counted", async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(null);
+        await expect(service.getTemplateById('template-1', ORG_B)).rejects.toThrow(NotFoundException);
+        expect(mockPrisma.workflowTemplate.findFirst).toHaveBeenCalledWith({ where: { id: 'template-1', organizationId: ORG_B } });
+        expect(mockPrisma.workflowInstance.groupBy).not.toHaveBeenCalled();
       });
 
       it('a record type with no registry entry offers nothing to configure', async () => {

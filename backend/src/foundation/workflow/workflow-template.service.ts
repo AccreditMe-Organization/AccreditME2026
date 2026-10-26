@@ -165,6 +165,7 @@ export class WorkflowTemplateService {
 
     // ACC-190 — what entering each stage creates, for the stage header line.
     const stageTasks = await this.stageTasks.summaryForStages(stages.map((s) => s.id), organizationId);
+    const liveCounts = await this.liveCountsByStage(id, organizationId);
     const recordRoute = RECORD_ROUTES[template.objectType];
 
     return {
@@ -184,8 +185,26 @@ export class WorkflowTemplateService {
         ),
         taskDefinitionCount: stageTasks.get(s.id)?.taskDefinitionCount ?? 0,
         longestTaskHours: stageTasks.get(s.id)?.longestTaskHours ?? null,
+        liveCount: liveCounts.get(s.id) ?? 0,
       })),
     };
+  }
+
+  /**
+   * ACC-255 PR 4b-be (G4) — how many of the organisation's records stand in
+   * each stage of a template: ONE grouped count of its workflow instances by
+   * current stage, whatever the number of stages and records. A cancelled
+   * instance is not counted; one that reached a final stage is (it is still
+   * there). Scoped by the organisation as well as the template, so an instance
+   * of another organisation can never be counted.
+   */
+  private async liveCountsByStage(templateId: string, organizationId: string): Promise<Map<string, number>> {
+    const groups = await this.prisma.workflowInstance.groupBy({
+      by: ['currentStageId'],
+      where: { organizationId, workflowTemplateId: templateId, currentStageId: { not: null }, status: { not: 'CANCELLED' } },
+      _count: { _all: true },
+    });
+    return new Map(groups.flatMap((g) => (g.currentStageId ? [[g.currentStageId, g._count._all] as const] : [])));
   }
 
   async createTemplate(
