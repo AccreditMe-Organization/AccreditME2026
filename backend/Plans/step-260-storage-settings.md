@@ -683,9 +683,13 @@ Branch `feature/ACC-260-change-request-contact`, from `dev` at `3f02863`
   body that fits grows a scrollbar. That narrows the text and the English note
   wraps (383 instead of 362). The smallest screen these users have is 768px
   tall, where the cap is the 420. The browser measured the same 362.
-- **At phone widths the body is over the cap and scrolls:** 495 / 528 at 358
-  and 495 / 548 at 328 (EN / AR). Email and phone stack there. PR B measured
-  this dialog only at 988, so this is the first phone measurement of it.
+- **KNOWN EXCEPTION, WAITING ON AHMAD'S DECISION: at phone widths the body is
+  over the 420 cap and scrolls.** Measured (EN / AR): 495 / 528 at 358 and
+  495 / 548 at 328, with email and phone stacked. At 560 it fits, 362 / 385.
+  PR B measured this dialog only at 988, so this is the first phone
+  measurement of it. Left as built (CC-151c): not compacted or stepped until
+  Ahmad decides. ACC-120's order for a dialog over the cap is compaction
+  first, then a step on a seam the form already has, then a page.
 
 **Layout spec** (EN and AR at the 560 the page gives it, 358 and 328): nothing
 sideways, nothing past the dialog. Body 362 / 385, 495 / 528 and 495 / 548.
