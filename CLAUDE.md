@@ -4254,7 +4254,8 @@ for what the screens read). Plan, Ahmad's answers, and PR 2 and PR 3 as built:
     pinned to the endpoint's own check;
   - each stage's `liveCount` from ONE grouped count, scoped by organisation
     (final stages count, cancelled instances do not).
-  It must deploy before PR 4b reads them. No migration.
+  It must deploy before PR 4b reads them. No migration. It also drops the stage
+  key from `committeeStagesAndCounts()`, which nothing read after #222.
 - **Every workflow screen says a refusal from its code**
   (`plainWorkflowRefusalKey()` first, at every write): the protected change
   request workflow by WHICH edit (`workflow.refusal.protected.*`), never the

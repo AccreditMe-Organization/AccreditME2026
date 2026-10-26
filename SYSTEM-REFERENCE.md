@@ -4226,7 +4226,9 @@ is in `CommitteeListsService`:
   search matches.
 - **The stage and member count** come from `committeeStagesAndCounts()`
   (`committee-stage-counts.ts`), which the committees list also uses. That is
-  three queries for any number of committees.
+  three queries for any number of committees. It reads no stage key (ACC-255
+  PR 4b-be): what a stage means is its flags, so no response built from it can
+  carry one (`committee-stage-counts.spec.ts`).
 
 **Frontend.**
 
