@@ -82,7 +82,7 @@ describe('permissionGuard', () => {
   // The mapping is derived from the sidebar's own list, so these assert the
   // wiring rather than restating it: if nav-items.ts changed, these break.
   it('reads the permission from the shared nav mapping', () => {
-    setup({ permissions: [ADMIN_ACCESS, 'workflows:view', 'positions:view'] });
+    setup({ permissions: [ADMIN_ACCESS, 'workflows:manage', 'positions:view'] });
 
     expect(run('workflows')).toBe(true);
     expect(run('org-positions')).toBe(true);
@@ -263,11 +263,23 @@ describe('permissionGuard', () => {
           'committees:manage_tasks',
           'tenant:view',
           'tenant:manage_config',
+          'workflows:manage',
         ],
       });
       for (const segments of ADMIN_ROUTES) {
         expect(run(...segments)).withContext(segments.join('/')).toBe(true);
       }
+    });
+
+    // ACC-255 PR 4a, Q-D: the workflow setup pages are the Organization
+    // Administrator's. A tenant-made admin role holding workflows:view (which
+    // the pickers read) but not workflows:manage (root-only since ACC-258)
+    // gets no setup page, top or nested.
+    it('refuses the workflow setup pages to admin:access with workflows:view but not workflows:manage', () => {
+      setup({ permissions: [ADMIN_ACCESS, 'workflows:view', 'users:view'] });
+      expect(run('users')).withContext('non-vacuity: an admin page it may open').toBe(true);
+      expect(run('workflows')).toEqual(router.parseUrl(LANDING_ROUTE));
+      expect(run('workflows', ':templateId/stages')).toEqual(router.parseUrl(LANDING_ROUTE));
     });
 
     // The routes OUTSIDE Administration must not have acquired the new

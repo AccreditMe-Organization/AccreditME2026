@@ -234,7 +234,13 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         labelKey: 'nav.workflows',
         icon: 'pi pi-sitemap',
         route: '/workflows',
-        requiredPermission: 'workflows:view',
+        // ACC-255 PR 4a, Ahmad's Q-D: only the Organization Administrator
+        // edits a workflow, and every other role gets no setup pages. Since
+        // ACC-258 workflows:manage is the root role's alone, so the PAGE is
+        // gated on it, not on workflows:view (which the pickers and Setup
+        // health still read through the API). The guard reads this, so
+        // /workflows and every page under it follow.
+        requiredPermission: 'workflows:manage',
       },
       {
         key: 'lookups',
