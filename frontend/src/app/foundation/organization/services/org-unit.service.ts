@@ -179,7 +179,6 @@ export interface OrgUnitCommitteeItemDto {
   nameAr: string | null;
   stageNameEn: string | null;
   stageNameAr: string | null;
-  stageKey: string | null;
 }
 
 export interface OrgUnitSummaryDto {
