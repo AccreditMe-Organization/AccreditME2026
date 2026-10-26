@@ -1193,3 +1193,52 @@ Recommended, three PRs in this order:
   minimum keeps the name and destination about 124 px each), because its fixed
   columns alone (456 px) are wider than the panel. That is ACC-254's
   allowance; the page never scrolls sideways.
+
+## 18. PR 4b-be as built (26 Oct)
+
+The backend reads the stage editor needs: gaps G6, G3, G1 and G4 from §17.7
+(Ahmad's Q2, §17.10). Read-only additions; every response only gains fields.
+No migration. It deploys before PR 4b.
+
+| Gap | Commit | What the read gains |
+|---|---|---|
+| G6 | the template read says whether a template is protected | `isProtected` on the list and the detail, from `PROTECTED_TEMPLATES` |
+| G3 | the exactly-one refusal names the stages by id as well | `stageIds` beside `stageNames` (same order; `stageNames` unchanged) |
+| G1 | each record action names the permission it pairs with | `permissionKey` on each `recordActions` entry |
+| G4 | the template read counts the records in each stage | `liveCount` on each stage of the detail read |
+
+**Where it departs from §17.7, each deliberate:**
+
+- **G1, Request a change pairs with `committees:edit_details`.** That is what
+  the change request service checks on create (its route is gated on
+  `committees:view` only). The drawing's "Also needs: Edit a committee's
+  details and request changes" is that permission's sentence, so the screen
+  words it from the catalogue as planned.
+- **G1 is held to the real checks, not only declared.** `record-registry.spec.ts`
+  reads the four committee routes' `@Permissions` and the service's first
+  `requirePermission` on create, so a pairing that drifts from its check fails.
+- **G4 counts what stands in a stage, not only open instances.** §17.7 said
+  "open instances by current stage". The engine marks an instance COMPLETED when
+  it reaches a final stage, so counting only open ones would show 0 at
+  Dissolved while dissolved committees sit there, and a change to that stage
+  does apply to them. So every instance at the stage counts except a cancelled
+  one.
+- **G4's tenant isolation is proved on a real Postgres**
+  (`workflow-template-live-count.db-spec.ts`, under the CI gate's name): an
+  instance owned by another organisation that names this template and stage is
+  not counted, and another organisation cannot read the template. The same
+  file proves one query for 1 record or 240.
+
+**Mutation checks**, each red:
+
+- **G6:** `isProtected` always false.
+- **G3:** no `stageIds`; ids leaking into `stageNames`.
+- **G1:**
+  - Request a change paired with `committees:approve`;
+  - Add member paired with `committees:manage`;
+  - `permissionKey` not served.
+- **G4:**
+  - no organisation in the `WHERE` (the db-spec);
+  - cancelled instances counted;
+  - one count per stage instead of one grouped query (the db-spec and the unit
+    spec).

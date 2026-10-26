@@ -2572,6 +2572,23 @@ and §16.6 for PR 3 as built).
   which only the Organization Administrator role may hold since ACC-258, §1.14):
   - `GET /workflow-templates/:id` adds `recordActions`, `stageFlags`,
     `recordFields`, and each stage's `actions` and `flags`.
+  - **What the stage editor reads (ACC-255 PR 4b-be).** Fields are only added;
+    nothing existing changes shape.
+    - **`isProtected`** on every template read, list and detail (G6), from
+      `PROTECTED_TEMPLATES` itself, the set every protected refusal reads.
+    - **Each `recordActions` entry's `permissionKey`** (G1): the permission
+      the action's own endpoint checks, declared in `RECORD_ACTIONS`. Request a
+      change pairs with `committees:edit_details`, which the change request
+      service checks on create. `record-registry.spec.ts` reads the
+      controller's `@Permissions` and that check, so the pairing cannot drift.
+    - **Each stage's `liveCount`** on the detail read (G4): how many of the
+      organisation's records stand in the stage now. It is ONE `groupBy` of the
+      template's workflow instances by current stage, scoped by organisation
+      and template, whatever the number of stages and records. A record at a
+      final stage counts (a dissolved committee is at Dissolved); a cancelled
+      instance does not. `workflow-template-live-count.db-spec.ts` proves it
+      on a real Postgres, including another organisation's instance that names
+      this template.
   - `PATCH /workflow-templates/stages/:stageId` and `POST /workflow-templates/:id/stages`
     accept `actions` and `flags`.
     - Unknown keys are 400 `STAGE_ACTION_UNKNOWN` or `STAGE_FLAG_UNKNOWN`.
@@ -2580,7 +2597,8 @@ and §16.6 for PR 3 as built).
     - A flag that must sit on exactly one stage is re-counted under the
       template's row lock whenever a save, add or remove touches it, and a
       wrong count is 409 `STAGE_FLAG_EXACTLY_ONE`, rolled back. Only a touched
-      flag is counted.
+      flag is counted. The refusal carries `stageNames` and, since PR 4b-be
+      (G3), `stageIds` in the same order.
     - On a protected template a CHANGED set is `WORKFLOW_TEMPLATE_PROTECTED`
       (`STAGE_FIELD`); the stored set re-sent passes.
 - **The stage audit names what changed** (`stageSnapshot()` and
