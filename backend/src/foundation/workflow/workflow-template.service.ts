@@ -631,11 +631,17 @@ export class WorkflowTemplateService {
     for (const flag of flags) {
       const holders = await tx.workflowStage.findMany({
         where: { workflowTemplateId: templateId, flags: { has: flag } },
-        select: { nameEn: true, nameAr: true },
+        select: { id: true, nameEn: true, nameAr: true },
         orderBy: { order: 'asc' },
       });
       if (holders.length !== 1) {
-        throw new WorkflowRefusalException('STAGE_FLAG_EXACTLY_ONE', { flag, stageNames: holders });
+        // ACC-255 PR 4b-be (G3) — the ids beside the names, in the same order,
+        // so the stage editor can say which OTHER stage holds the flag.
+        throw new WorkflowRefusalException('STAGE_FLAG_EXACTLY_ONE', {
+          flag,
+          stageNames: holders.map(({ nameEn, nameAr }) => ({ nameEn, nameAr })),
+          stageIds: holders.map((h) => h.id),
+        });
       }
     }
   }

@@ -2232,21 +2232,33 @@ describe('WorkflowTemplateService', () => {
       const check = () => service as unknown as CardinalityCheck;
 
       it('passes when the flag sits on exactly one stage, and refuses 409 naming the stages otherwise', async () => {
-        mockPrisma.workflowStage.findMany.mockResolvedValueOnce([{ nameEn: 'Approved', nameAr: null }]);
+        mockPrisma.workflowStage.findMany.mockResolvedValueOnce([{ id: 'st-approved', nameEn: 'Approved', nameAr: null }]);
         await expect(check().assertFlagCardinality(mockPrisma, 'template-1', ['APPLIES_APPROVED_CHANGE'])).resolves.toBeUndefined();
         expect(mockPrisma.workflowStage.findMany).toHaveBeenCalledWith(
-          expect.objectContaining({ where: { workflowTemplateId: 'template-1', flags: { has: 'APPLIES_APPROVED_CHANGE' } } }),
+          expect.objectContaining({
+            where: { workflowTemplateId: 'template-1', flags: { has: 'APPLIES_APPROVED_CHANGE' } },
+            select: { id: true, nameEn: true, nameAr: true },
+          }),
         );
 
-        for (const holders of [[], [{ nameEn: 'Approved', nameAr: null }, { nameEn: 'Agreed', nameAr: 'موافق' }]]) {
+        const two = [
+          { id: 'st-approved', nameEn: 'Approved', nameAr: null },
+          { id: 'st-agreed', nameEn: 'Agreed', nameAr: 'موافق' },
+        ];
+        for (const holders of [[], two]) {
           mockPrisma.workflowStage.findMany.mockResolvedValueOnce(holders);
           const refusal = await check().assertFlagCardinality(mockPrisma, 'template-1', ['APPLIES_APPROVED_CHANGE']).catch((e: unknown) => e);
           expect((refusal as WorkflowRefusalException).getStatus()).toBe(409);
+          // ACC-255 PR 4b-be (G3) — stageNames keeps its shape (names only);
+          // stageIds sits beside it, in the same order.
           expect((refusal as WorkflowRefusalException).getResponse()).toMatchObject({
             code: 'STAGE_FLAG_EXACTLY_ONE',
             flag: 'APPLIES_APPROVED_CHANGE',
-            stageNames: holders,
+            stageNames: holders.map(({ nameEn, nameAr }) => ({ nameEn, nameAr })),
+            stageIds: holders.map((h) => h.id),
           });
+          const names = ((refusal as WorkflowRefusalException).getResponse() as { stageNames: object[] }).stageNames;
+          expect(names.every((n) => !('id' in n))).toBe(true);
         }
       });
 
