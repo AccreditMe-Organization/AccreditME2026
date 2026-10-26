@@ -629,3 +629,91 @@ Request a change 204 / 219.
 - the admin variant shown to everyone, and not shown to the admin;
 - the secret field not telling its caller about Replace;
 - the Request textarea not at the drawn height.
+
+### Change request contact (PR B2, CC-151, 26 Oct)
+
+Branch `feature/ACC-260-change-request-contact`, from `dev` at `3f02863`
+(#220). Backend and frontend; no migration.
+
+**Built:**
+- `StorageChangeRequestDto` keeps the optional `message` (at most 1,000) and
+  requires three more fields. Each is trimmed first:
+  - `contactName`: 1–120 characters.
+  - `contactEmail`: an email, at most 254.
+  - `contactPhone`: "+" and a country code, then digits with spaces or
+    dashes (`/^\+\d[\d -]*\d$/`), 8–20 characters, kept as typed.
+- `requestChange()` passes the contact to the notice and puts it in the audit
+  metadata beside `message` (`storage_change_requested`). Nothing new is
+  stored on the organisation: its write is still the request time and who
+  asked.
+- The platform admins' notice adds a contact line after "Asked by …", in
+  English and Arabic, and now goes in-app AND by email (`channel: 'BOTH'`).
+  The other storage notices stay in-app.
+- The request dialog has a contact group above the note:
+  - Name and email start as the signed-in admin's. The phone starts empty,
+    since no profile holds one.
+  - The hint reads "AccreditMe will contact this person about the move. It
+    may be your IT or security team."
+  - Email and phone sit side by side where they fit and stack on a phone.
+    Both are `dir="ltr"`.
+  - The same rules as the server apply. A field says what is wrong once it has
+    been left.
+  - The body sends `contactName`, `contactEmail` and `contactPhone`, plus the
+    note when there is one.
+
+**Built differently from the design, or from the brief:**
+- **No "Requested by" or "Sent to" pairs** (Ahmad, 26 Oct, CC-151b). With the
+  contact group the body measured 435 / 441 at standard density and 433 / 433
+  at compact, all over the 420 cap. Without the pairs it is 362 / 385 at
+  standard density. The requester is always the signed-in admin, and the
+  notice still names them ("Asked by …").
+- **Send is never disabled** (CLAUDE.md, ACC-238, rule 5.2; Ahmad, CC-151b).
+  The brief said "disabled until valid". Pressed on an invalid form, Send marks
+  every field, shows every error and sends nothing.
+- **The Arabic notice isolates the email and phone** (U+2066 … U+2069), so
+  they read left to right inside the Arabic sentence. Before this the body had
+  no isolation at all.
+- **The email rule on screen requires a dot in the domain**, which is what the
+  server's `IsEmail` accepts in practice, so `name@localhost` is refused on
+  both sides.
+- **Typing a phone counts as unsaved work**, so Escape asks before discarding
+  it, just as a typed note does.
+- **The layout spec holds the dialog body to the 420 cap alone.** Karma's
+  window is about 600px tall, where the cap's `60vh` falls under 420 and a
+  body that fits grows a scrollbar. That narrows the text and the English note
+  wraps (383 instead of 362). The smallest screen these users have is 768px
+  tall, where the cap is the 420. The browser measured the same 362.
+- **At phone widths the body is over the cap and scrolls:** 495 / 528 at 358
+  and 495 / 548 at 328 (EN / AR). Email and phone stack there. PR B measured
+  this dialog only at 988, so this is the first phone measurement of it.
+
+**Layout spec** (EN and AR at the 560 the page gives it, 358 and 328): nothing
+sideways, nothing past the dialog. Body 362 / 385, 495 / 528 and 495 / 548.
+
+**Mutation checks:** 10 backend and 17 frontend, each red on a failing test.
+- Backend:
+  - an invalid email, a phone with no "+", an empty name, or a phone of any
+    length accepted;
+  - the contact left out of the audit row, or written to the organisation;
+  - the notice in-app only;
+  - the English or Arabic body losing the contact;
+  - the Arabic email and phone not isolated.
+- Frontend:
+  - each of the three fields not required;
+  - the phone pattern or its length dropped;
+  - the email pattern loosened;
+  - Send disabled while invalid, or an invalid form sent;
+  - errors not shown on Send, or not shown once a field is left;
+  - the phone sent empty, or the contact not trimmed;
+  - no prefill;
+  - email or phone not left to right;
+  - email and phone forced side by side;
+  - a wider gap in the group.
+
+**Browser check** (local, as Hessa, EN and AR at 1280 and 390):
+- GET `/tenant/storage` was answered from a confirmed fixture.
+- POST `/tenant/storage/change-request` was fulfilled from a literal, and its
+  body asserted in each of the four runs.
+- The guard aborted 0 other storage writes.
+- Non-GETs: sign-in and refresh, 2 (expected); everything else reaching the
+  server, 0.
