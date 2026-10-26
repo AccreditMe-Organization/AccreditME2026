@@ -1,4 +1,5 @@
 import { WorkflowObjectType } from '../../../generated/prisma/client';
+import { COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
 
 /**
  * ACC-255 — what can be done to a record, what a stage means, and which record
@@ -25,6 +26,14 @@ import { WorkflowObjectType } from '../../../generated/prisma/client';
 export interface RecordActionDef {
   readonly key: string;
   readonly labelKey: string;
+  /**
+   * ACC-255 PR 4b-be (G1) — the permission the action's own endpoint checks.
+   * A person needs it AND a stage that allows the action ("A stage only
+   * narrows"), so the stage editor shows it beside the action ("Also needs:
+   * …") in the catalogue's own sentence. It states the check the module makes;
+   * `record-registry.spec.ts` holds the two against each other.
+   */
+  readonly permissionKey: string;
   /**
    * Allowed on a stage a tenant ADDS when the save names no actions, so a new
    * stage keeps what the record allowed before stage rules existed. The
@@ -70,20 +79,23 @@ export const STAGE_FLAG = {
 } as const;
 export type StageFlag = (typeof STAGE_FLAG)[keyof typeof STAGE_FLAG];
 
-const committeeAction = (key: CommitteeAction, onNewStage = false): RecordActionDef => ({
+const committeeAction = (key: CommitteeAction, permissionKey: string, onNewStage = false): RecordActionDef => ({
   key,
   labelKey: `workflow.recordAction.COMMITTEE.${key}`,
+  permissionKey,
   ...(onNewStage && { onNewStage }),
 });
 const flag = (key: StageFlag, cardinality: StageFlagCardinality): StageFlagDef => ({ key, labelKey: `workflow.stageFlag.${key}`, cardinality });
 
 export const RECORD_ACTIONS: Partial<Record<WorkflowObjectType, readonly RecordActionDef[]>> = {
   COMMITTEE: [
-    committeeAction(COMMITTEE_ACTIONS.EDIT_DETAILS),
-    committeeAction(COMMITTEE_ACTIONS.ADD_MEMBER, true),
-    committeeAction(COMMITTEE_ACTIONS.REMOVE_MEMBER, true),
-    committeeAction(COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, true),
-    committeeAction(COMMITTEE_ACTIONS.REQUEST_CHANGE),
+    committeeAction(COMMITTEE_ACTIONS.EDIT_DETAILS, COMMITTEES_PERMISSIONS.EDIT_DETAILS),
+    committeeAction(COMMITTEE_ACTIONS.ADD_MEMBER, COMMITTEES_PERMISSIONS.ADD_MEMBER, true),
+    committeeAction(COMMITTEE_ACTIONS.REMOVE_MEMBER, COMMITTEES_PERMISSIONS.REMOVE_MEMBER, true),
+    committeeAction(COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, COMMITTEES_PERMISSIONS.CHANGE_MEMBER_ROLE, true),
+    // Raising a change request is checked against Edit details
+    // (committee-change-request.service.ts, requirePermission on create).
+    committeeAction(COMMITTEE_ACTIONS.REQUEST_CHANGE, COMMITTEES_PERMISSIONS.EDIT_DETAILS),
   ],
 };
 

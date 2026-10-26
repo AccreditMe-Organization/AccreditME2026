@@ -2013,7 +2013,19 @@ describe('WorkflowTemplateService', () => {
         const result = await service.getTemplateById('template-1', ORG_A);
 
         expect(result.recordActions?.map((a) => a.key)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change']);
-        expect(result.recordActions?.[0]).toEqual({ key: 'edit_details', labelKey: 'workflow.recordAction.COMMITTEE.edit_details' });
+        // ACC-255 PR 4b-be (G1) — each action carries the permission it pairs with.
+        expect(result.recordActions?.[0]).toEqual({
+          key: 'edit_details',
+          labelKey: 'workflow.recordAction.COMMITTEE.edit_details',
+          permissionKey: 'committees:edit_details',
+        });
+        expect(result.recordActions?.map((a) => a.permissionKey)).toEqual([
+          'committees:edit_details',
+          'committees:add_member',
+          'committees:remove_member',
+          'committees:change_member_role',
+          'committees:edit_details',
+        ]);
         expect(result.stageFlags).toEqual([
           { key: 'DISSOLVING', labelKey: 'workflow.stageFlag.DISSOLVING', cardinality: 'any' },
           { key: 'IN_FORCE', labelKey: 'workflow.stageFlag.IN_FORCE', cardinality: 'any' },

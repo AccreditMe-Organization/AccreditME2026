@@ -29,7 +29,9 @@ export interface IWorkflowTemplate {
   // read from the registries (record-registry.ts) so no screen keeps a copy:
   // the actions a stage may allow, the flags it may carry, and the record
   // fields a later condition may read. Keys and label keys only.
-  recordActions?: { key: string; labelKey: string }[];
+  // ACC-255 PR 4b-be (G1): each action's permissionKey, the permission its
+  // own endpoint checks, which a person needs as well as the stage's allowance.
+  recordActions?: { key: string; labelKey: string; permissionKey: string }[];
   stageFlags?: { key: string; labelKey: string; cardinality: 'any' | 'exactlyOne' }[];
   recordFields?: { key: string; labelKey: string; kind: 'lookup' | 'orgUnit' }[];
 }

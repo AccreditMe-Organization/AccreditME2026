@@ -14,6 +14,9 @@ import {
   recordActionsFor,
 } from './record-registry';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
+import * as PermissionConstants from '../../common/constants/permissions';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
+import { CommitteesController } from '../committees/committees.controller';
 
 // ACC-255 — the registries. Every label the server sends as a key must exist in
 // BOTH translation files (the frontend renders them; the server sends keys
@@ -78,6 +81,53 @@ describe('record registries (ACC-255)', () => {
 
   it('orders keys as the registry lists them, dropping unknown ones', () => {
     expect(orderedActionKeys('COMMITTEE', ['request_change', 'nope', 'edit_details'])).toEqual(['edit_details', 'request_change']);
+  });
+
+  // ACC-255 PR 4b-be (G1) — each action names the permission its own
+  // endpoint checks, so the stage editor's "Also needs" says what is really
+  // required. Read from the checks themselves, so the two cannot drift.
+  describe("each action's paired permission", () => {
+    const seededKeys = new Set(
+      Object.entries(PermissionConstants)
+        .filter(([name, group]) => name.endsWith('_PERMISSIONS') && group && typeof group === 'object' && !Array.isArray(group))
+        .flatMap(([, group]) => Object.values(group as Record<string, string>)),
+    );
+    const routeKeys = (method: keyof CommitteesController): string[] =>
+      Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype[method]) as string[];
+
+    it('every action names a seeded permission that is checked somewhere', () => {
+      const actions = Object.values(RECORD_ACTIONS).flatMap((defs) => [...defs!]);
+      expect(actions.length).toBeGreaterThan(0);
+      for (const a of actions) {
+        expect({ action: a.key, permissionKey: a.permissionKey, seeded: seededKeys.has(a.permissionKey) }).toMatchObject({ seeded: true });
+        expect(PermissionConstants.PERMISSIONS_NOT_YET_CHECKED).not.toContain(a.permissionKey);
+      }
+    });
+
+    it("the committee's direct changes pair with their endpoint's own @Permissions", () => {
+      const byKey = Object.fromEntries(recordActionsFor('COMMITTEE').map((a) => [a.key, a.permissionKey]));
+      expect([
+        [COMMITTEE_ACTIONS.EDIT_DETAILS, routeKeys('updateCommittee')],
+        [COMMITTEE_ACTIONS.ADD_MEMBER, routeKeys('addMember')],
+        [COMMITTEE_ACTIONS.REMOVE_MEMBER, routeKeys('removeMember')],
+        [COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, routeKeys('changeMemberRole')],
+      ]).toEqual([
+        [COMMITTEE_ACTIONS.EDIT_DETAILS, [byKey[COMMITTEE_ACTIONS.EDIT_DETAILS]]],
+        [COMMITTEE_ACTIONS.ADD_MEMBER, [byKey[COMMITTEE_ACTIONS.ADD_MEMBER]]],
+        [COMMITTEE_ACTIONS.REMOVE_MEMBER, [byKey[COMMITTEE_ACTIONS.REMOVE_MEMBER]]],
+        [COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, [byKey[COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE]]],
+      ]);
+    });
+
+    it('requesting a change pairs with the permission the change request service checks on create', () => {
+      // The create route is gated on committees:view and the service checks the
+      // real permission itself, so read the service's own first check.
+      const source = readFileSync(join(__dirname, '..', 'committees', 'change-requests', 'committee-change-request.service.ts'), 'utf8');
+      const create = /async create\([^)]*\)[^{]*\{\s*requirePermission\(viewer, COMMITTEES_PERMISSIONS\.(\w+)\)/.exec(source);
+      expect(create).not.toBeNull();
+      const checked = (PermissionConstants.COMMITTEES_PERMISSIONS as Record<string, string>)[create![1]!];
+      expect(recordActionsFor('COMMITTEE').find((a) => a.key === COMMITTEE_ACTIONS.REQUEST_CHANGE)!.permissionKey).toBe(checked);
+    });
   });
 
   describe('the seed', () => {

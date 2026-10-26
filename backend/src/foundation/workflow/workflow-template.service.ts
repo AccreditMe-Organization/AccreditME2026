@@ -173,7 +173,7 @@ export class WorkflowTemplateService {
       recordRoutes: { unit: typeof recordRoute?.unit === 'function', committee: typeof recordRoute?.committee === 'function' },
       taskDueHours: await this.stageTasks.taskDueHours(organizationId),
       // ACC-255 — what a stage of this record type may allow and mean.
-      recordActions: recordActionsFor(template.objectType).map(({ key, labelKey }) => ({ key, labelKey })),
+      recordActions: recordActionsFor(template.objectType).map(({ key, labelKey, permissionKey }) => ({ key, labelKey, permissionKey })),
       stageFlags: stageFlagsFor(template.objectType).map(({ key, labelKey, cardinality }) => ({ key, labelKey, cardinality })),
       recordFields: recordFieldsFor(template.objectType).map(({ key, labelKey, kind }) => ({ key, labelKey, kind })),
       stages: stages.map((s) => ({
