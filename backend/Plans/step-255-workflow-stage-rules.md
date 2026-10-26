@@ -1154,3 +1154,42 @@ Recommended, three PRs in this order:
   decision 1, "two columns, read side by side"): the measurements in §16.7
   showed that side by side at 1280 leaves the transition name about 30–40 px.
 - **Q5:** yes. The order is 4a, then 4b-be (deployed before 4b), then 4b.
+
+### 17.11 PR 4a as built (26 Oct), and where it departs from §17
+
+| # | Commit |
+|---|---|
+| 1 | The drawing, copied unchanged |
+| 2 | The plan (§17) and Ahmad's answers (§17.10) |
+| 3 | The stages list as drawn |
+| 4 | The Q-D gate (its own commit: lane A's nav file) |
+| 4b | Setup health's Review stage Fix: a spec that it needs `workflows:manage`, as the route now does (it already required both keys; nothing pinned it) |
+| 5 | The transition table and the stacking |
+| 6 | This section, SYSTEM-REFERENCE and CLAUDE.md |
+
+**Departures, each deliberate:**
+
+- **The list keeps its actions track** (Edit and the ⋯). The drawing's stages
+  list shows four columns; until 4b moves editing into the panel, Edit opens
+  the existing dialog and the ⋯ holds Move up, Move down and Remove.
+- **Details is the row's disclosure**, and says what the expansion holds as
+  counts ("2 transitions · 1 task on entry", or "No exits"). The drawing's
+  Details cell reads "Transitions · Tasks on entry" as a placeholder.
+- **On a phone, Details sits under Allows** in the one column, because the
+  disclosure must be reachable there until 4b's tap-to-edit exists.
+- **The approval mode, assignee, deadline and the Initial / Final tags leave
+  the list**, as drawn. So ACC-265's SLA wording ("40 working hours") is no
+  longer shown in the list. It returns in 4b's stage editor panel, and
+  `check:formatting` still refuses a hand-written unit anywhere.
+- **The registry labels were renamed to the drawing's names** (Dissolving,
+  Record is in force, Edit details…). Nothing rendered them before. 4b adds the
+  longer descriptions as their own keys.
+- **The trigger chip has no `white-space: nowrap`.** The measured 13rem column
+  keeps it on one line, and the spec checks every chip is on one line and
+  inside its cell. A mutation removing `nowrap` stayed green, so it was dead
+  code and was removed.
+- **The 390 width** is in the stages layout spec (§17.6 promised it for 4b's
+  panel). On a phone the transition table scrolls inside its own frame (a 44rem
+  minimum keeps the name and destination about 124 px each), because its fixed
+  columns alone (456 px) are wider than the panel. That is ACC-254's
+  allowance; the page never scrolls sideways.
