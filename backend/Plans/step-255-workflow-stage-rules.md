@@ -1137,3 +1137,20 @@ Recommended, three PRs in this order:
   about 1320 px of content (side by side only at 1920), superseding ACC-208's
   side-by-side drawing decision?
 - **Q5.** The split (§17.8): 4a, then 4b-be, then 4b?
+
+### 17.10 Ahmad's answers (26 Oct)
+
+- **Q1:** the stage editor panel sits **between the strip and the stages list**.
+- **Q2:** 4b-be builds **G6, G3, G1 and G4**.
+  - **G2** (the History card) waits for its own ticket, and 4b leaves the card
+    out until then.
+  - **G5** stays with ACC-245. The safer protected sentence (§17.1, item 4)
+    stands.
+- **Q3:** yes. The Workflows rail item and the `/workflows` route move to
+  `workflows:manage` (Q-D). The rail and routes are lane A's files, so the
+  change is its own commit, and it is dropped if lane A objects.
+- **Q4:** yes. Transitions stack above Tasks on entry until each panel is about
+  660 px wide. **This replaces ACC-208's side-by-side layout** (drawing
+  decision 1, "two columns, read side by side"): the measurements in §16.7
+  showed that side by side at 1280 leaves the transition name about 30–40 px.
+- **Q5:** yes. The order is 4a, then 4b-be (deployed before 4b), then 4b.
