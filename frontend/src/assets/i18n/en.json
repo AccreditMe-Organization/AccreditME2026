@@ -3446,13 +3446,19 @@
       "title": "Request a change of storage",
       "context": "Current: {{name}}",
       "note": "AccreditMe will contact you to agree the details. Nothing changes until then.",
-      "by": "Requested by",
-      "to": "Sent to",
-      "toValue": "AccreditMe's platform team",
       "message": "Anything we should know? · optional",
       "placeholder": "e.g. We're moving to SharePoint next quarter.",
       "send": "Send request",
-      "failed": "Couldn't send the request. Nothing was sent."
+      "failed": "Couldn't send the request. Nothing was sent.",
+      "contactName": "Contact name",
+      "contactEmail": "Contact email",
+      "contactPhone": "Contact phone",
+      "contactHint": "AccreditMe will contact this person about the move. It may be your IT or security team.",
+      "contactNameRequired": "Enter who AccreditMe should contact.",
+      "contactEmailRequired": "Enter their email.",
+      "contactEmailInvalid": "Enter an email address, such as name@example.com.",
+      "contactPhoneRequired": "Enter their phone number.",
+      "contactPhoneInvalid": "Start with + and the country code, such as +965 2222 3333."
     }
   }
 }

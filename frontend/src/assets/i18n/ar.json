@@ -3778,13 +3778,19 @@
       "title": "طلب تغيير مكان التخزين",
       "context": "الحالي: {{name}}",
       "note": "ستتواصل معكم AccreditMe للاتفاق على التفاصيل. لن يتغير شيء قبل ذلك.",
-      "by": "مقدّم الطلب",
-      "to": "يُرسل إلى",
-      "toValue": "فريق منصة AccreditMe",
       "message": "هل هناك ما يجب أن نعرفه؟ · اختياري",
       "placeholder": "مثال: ننتقل إلى SharePoint في الربع القادم.",
       "send": "إرسال الطلب",
-      "failed": "تعذّر إرسال الطلب. لم يُرسل شيء."
+      "failed": "تعذّر إرسال الطلب. لم يُرسل شيء.",
+      "contactName": "اسم جهة التواصل",
+      "contactEmail": "البريد الإلكتروني لجهة التواصل",
+      "contactPhone": "هاتف جهة التواصل",
+      "contactHint": "ستتواصل AccreditMe مع هذا الشخص بشأن النقل. قد يكون فريق تقنية المعلومات أو الأمن لديكم.",
+      "contactNameRequired": "أدخل من يجب أن تتواصل معه AccreditMe.",
+      "contactEmailRequired": "أدخل بريده الإلكتروني.",
+      "contactEmailInvalid": "أدخل عنوان بريد إلكتروني، مثل name@example.com.",
+      "contactPhoneRequired": "أدخل رقم هاتفه.",
+      "contactPhoneInvalid": "ابدأ بـ + ورمز الدولة، مثل ‎+965 2222 3333."
     }
   }
 }

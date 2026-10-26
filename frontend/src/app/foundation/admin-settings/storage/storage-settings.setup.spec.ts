@@ -462,20 +462,45 @@ describe('StorageSettings — first-time setup and Request a change (ACC-260, PR
   });
 
   // ── Request a change ───────────────────────────────────────────────────────
+  // PR B2 — who AccreditMe should contact: name, email and phone, all required.
 
-  it('Request a change: the dialog as drawn; Send with no note sends {}; then the line takes the button\'s place', async () => {
+  const PHONE = '+965 2222 3333';
+  /** Types into a field of the open dialog (it renders into <body>), then leaves it. */
+  async function fill(id: string, value: string): Promise<void> {
+    const input = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    leaveField(input);
+    await settle();
+  }
+  async function leave(id: string): Promise<void> {
+    leaveField(document.getElementById(id)!);
+    await settle();
+  }
+  /** What a browser fires when a field is left: blur (the dialog's own handler) and focusout (am-field's). */
+  function leaveField(el: HTMLElement): void {
+    el.dispatchEvent(new FocusEvent('blur'));
+    el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+  }
+  const sendButton = () => btn('request-send', dialog())!;
+  const field = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const groupText = () => text('[data-testid="request-contact"]', dialog()) ?? '';
+
+  it('Request a change: the dialog as drawn, without the pairs; Send sends the contact; then the line takes the button\'s place', async () => {
     await open(minio());
     await click('request-open');
     const d = dialog();
     expect(d.textContent).toContain('Request a change of storage');
     expect(d.textContent).toContain('Current: MinIO on your own servers');
     expect(d.textContent).toContain('AccreditMe will contact you to agree the details. Nothing changes until then.');
-    expect(text('[data-testid="request-by"]', d)).toBe(HESSA.name);
-    expect(d.textContent).toContain("AccreditMe's platform team");
+    // Dropped to keep the body under the 420 cap (Ahmad, 26 Oct).
+    expect(d.textContent).not.toContain('Requested by');
+    expect(d.textContent).not.toContain("AccreditMe's platform team");
     expect(d.textContent).toContain('0 / 1000');
+    await fill('storage-request-contact-phone', PHONE);
     await click('request-send', d);
     const req = http.expectOne((r) => r.method === 'POST' && r.url === `${URL}/change-request`);
-    expect(req.request.body).toEqual({});
+    expect(req.request.body).toEqual({ contactName: HESSA.name, contactEmail: 'hessa@x.test', contactPhone: PHONE });
     req.flush(requested());
     await settle();
     http.expectOne(URL).flush(requested());
@@ -484,30 +509,114 @@ describe('StorageSettings — first-time setup and Request a change (ACC-260, PR
     expect(text('[data-testid="strip-request"]')).toContain('Change requested');
   });
 
-  it('Request a change: a note is sent trimmed, at most 1,000 characters', async () => {
+  it('the contact starts as the signed-in admin, with the phone empty, and the hint says who AccreditMe will call', async () => {
     await open(cloud());
     await click('request-open');
-    const area = q('[data-testid="request-message"]', dialog()) as HTMLTextAreaElement;
+    expect(field('storage-request-contact-name').value).toBe(HESSA.name);
+    expect(field('storage-request-contact-email').value).toBe('hessa@x.test');
+    expect(field('storage-request-contact-phone').value).toBe('');
+    expect(text('[data-testid="request-contact-hint"]', dialog())).toBe('AccreditMe will contact this person about the move. It may be your IT or security team.');
+    // Addresses read left to right in Arabic too.
+    expect(field('storage-request-contact-email').dir).toBe('ltr');
+    expect(field('storage-request-contact-phone').dir).toBe('ltr');
+    expect(field('storage-request-contact-email').type).toBe('email');
+    expect(field('storage-request-contact-phone').type).toBe('tel');
+    // Nothing is shown as wrong before anything is left.
+    expect(groupText()).not.toContain('Enter');
+  });
+
+  it('a contact typed over the prefill is what is sent, trimmed; a note is sent trimmed too', async () => {
+    await open(cloud());
+    await click('request-open');
+    await fill('storage-request-contact-name', '  Khalid Al-Mansour ');
+    await fill('storage-request-contact-email', ' it.infra@alnakheel.sa ');
+    await fill('storage-request-contact-phone', ' +965 2222-3333 ');
+    const area = document.querySelector('[data-testid="request-message"]') as HTMLTextAreaElement;
     expect(area.maxLength).toBe(1000);
-    area.value = "  We're moving to SharePoint next quarter.  ";
-    area.dispatchEvent(new Event('input'));
-    await settle();
+    await fill('storage-request-message', "  We're moving to SharePoint next quarter.  ");
     await click('request-send', dialog());
     const req = http.expectOne((r) => r.url === `${URL}/change-request`);
-    expect(req.request.body).toEqual({ message: "We're moving to SharePoint next quarter." });
+    expect(req.request.body).toEqual({
+      contactName: 'Khalid Al-Mansour',
+      contactEmail: 'it.infra@alnakheel.sa',
+      contactPhone: '+965 2222-3333',
+      message: "We're moving to SharePoint next quarter.",
+    });
     req.flush(requested());
     await settle();
     http.expectOne(URL).flush(requested());
     await settle();
   });
 
+  it('Send is never disabled (rule 5.2): pressed on an invalid form it shows all three errors and sends nothing', async () => {
+    await open(cloud());
+    await click('request-open');
+    expect(sendButton().disabled).toBeFalse();
+    const name = field('storage-request-contact-name');
+    const email = field('storage-request-contact-email');
+    name.value = '';
+    name.dispatchEvent(new Event('input'));
+    email.value = '';
+    email.dispatchEvent(new Event('input'));
+    await settle();
+    expect(sendButton().disabled).toBeFalse();
+    await click('request-send', dialog());
+    expect(groupText()).toContain('Enter who AccreditMe should contact.');
+    expect(groupText()).toContain('Enter their email.');
+    expect(groupText()).toContain('Enter their phone number.');
+    // http.verify() in afterEach: no request was made.
+  });
+
+  it('each field says it is required once it has been left', async () => {
+    await open(cloud());
+    await click('request-open');
+    await leave('storage-request-contact-phone');
+    expect(groupText()).toContain('Enter their phone number.');
+    await fill('storage-request-contact-name', '   ');
+    expect(groupText()).toContain('Enter who AccreditMe should contact.');
+    await fill('storage-request-contact-email', '');
+    expect(groupText()).toContain('Enter their email.');
+  });
+
+  const formats: [string, string, string, string][] = [
+    ['an email that is not one', 'storage-request-contact-email', 'not-an-email', 'Enter an email address, such as name@example.com.'],
+    ['an email with no domain dot', 'storage-request-contact-email', 'name@localhost', 'Enter an email address, such as name@example.com.'],
+    ['a phone with no +', 'storage-request-contact-phone', '965 2222 3333', 'Start with + and the country code, such as +965 2222 3333.'],
+    ['a phone with letters', 'storage-request-contact-phone', '+965 2222 ABCD', 'Start with + and the country code, such as +965 2222 3333.'],
+    ['a phone too short', 'storage-request-contact-phone', '+96522', 'Start with + and the country code, such as +965 2222 3333.'],
+    ['a phone too long', 'storage-request-contact-phone', '+965 2222 3333 4444 55', 'Start with + and the country code, such as +965 2222 3333.'],
+  ];
+  for (const [label, id, value, words] of formats) {
+    it(`${label}: said once left, and Send sends nothing`, async () => {
+      await open(cloud());
+      await click('request-open');
+      await fill('storage-request-contact-phone', PHONE);
+      await fill(id, value);
+      expect(groupText()).toContain(words);
+      await click('request-send', dialog());
+      // http.verify() in afterEach: no request was made.
+    });
+  }
+
   it('Request a change refused: its words, never the server\'s', async () => {
     await open(minio());
     await click('request-open');
+    await fill('storage-request-contact-phone', PHONE);
     await click('request-send', dialog());
     http.expectOne((r) => r.url === `${URL}/change-request`).flush({ code: 'STORAGE_NOT_CONFIRMED', message: 'server English' }, { status: 409, statusText: 'x' });
     await settle();
     expect(text('[data-testid="request-error"]', dialog())).toBe("File storage isn't set up yet. Ask your administrator.");
+  });
+
+  it('the contact group reads in Arabic, the addresses left to right', async () => {
+    await open(cloud(), 'ar');
+    await click('request-open');
+    expect(groupText()).toContain('اسم جهة التواصل');
+    expect(groupText()).toContain('هاتف جهة التواصل');
+    expect(text('[data-testid="request-contact-hint"]', dialog())).toContain('ستتواصل AccreditMe مع هذا الشخص');
+    expect(field('storage-request-contact-phone').dir).toBe('ltr');
+    await click('request-send', dialog());
+    expect(groupText()).toContain('أدخل رقم هاتفه.');
   });
 
   // ── secrets (rule 2) ───────────────────────────────────────────────────────

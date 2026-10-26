@@ -139,7 +139,6 @@ export interface IOrgUnitCommitteeItem {
   nameAr: string | null;
   stageNameEn: string | null;
   stageNameAr: string | null;
-  stageKey: string | null;
 }
 
 /** `GET /organization/units/:id/summary` — the record page and the chart's side panel. */

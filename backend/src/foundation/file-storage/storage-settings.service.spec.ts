@@ -217,23 +217,46 @@ describe('StorageSettingsService (ACC-177)', () => {
   });
 
   describe('requestChange', () => {
+    const contact = { contactName: 'Khalid Al-Mansour', contactEmail: 'it.infra@alnakheel.sa', contactPhone: '+965 2222 3333' };
+    const CONTACT = { name: 'Khalid Al-Mansour', email: 'it.infra@alnakheel.sa', phone: '+965 2222 3333' };
+
     it('is refused until storage is confirmed', async () => {
       org('S3', null);
-      expect(await codeOf(service.requestChange('org-a', { message: 'x' }, 'admin-1'))).toBe('STORAGE_NOT_CONFIRMED');
+      expect(await codeOf(service.requestChange('org-a', { message: 'x', ...contact }, 'admin-1'))).toBe('STORAGE_NOT_CONFIRMED');
+    });
+
+    // ACC-260 (PR B2) — who to contact lives in the audit row, never on the organisation.
+    it('puts the contact in the audit metadata beside the message, and passes it to the notice', async () => {
+      org('S3', null, true);
+      await service.requestChange('org-a', { message: 'Move us', ...contact }, 'admin-1');
+      expect(auditLog.log.mock.calls[0]![0]).toEqual(
+        expect.objectContaining({ metadata: { event: 'storage_change_requested', message: 'Move us', contact: CONTACT } }),
+      );
+      expect(notices.storageChangeRequested).toHaveBeenCalledWith('org-a', 'admin-1', expect.any(Date), 'Move us', CONTACT);
+    });
+
+    it('never writes the contact to the organisation', async () => {
+      org('S3', null, true);
+      await service.requestChange('org-a', contact, 'admin-1');
+      const { data } = prisma.organization.update.mock.calls[0]![0] as { data: Record<string, unknown> };
+      expect(Object.keys(data).sort()).toEqual(['storageChangeRequestedAt', 'storageChangeRequestedById']);
+      expect(JSON.stringify(data)).not.toContain('it.infra@alnakheel.sa');
     });
 
     it('stamps who and when, audits the message, then tells the platform admins — and again on a repeat', async () => {
       org('S3', null, true);
-      await service.requestChange('org-a', { message: '  Move us to our MinIO  ' }, 'admin-1');
-      await service.requestChange('org-a', {}, 'admin-1');
+      await service.requestChange('org-a', { message: '  Move us to our MinIO  ', ...contact }, 'admin-1');
+      await service.requestChange('org-a', contact, 'admin-1');
 
       expect(prisma.organization.update).toHaveBeenCalledWith({
         where: { id: 'org-a' },
         data: { storageChangeRequestedAt: expect.any(Date), storageChangeRequestedById: 'admin-1' },
       });
-      expect(auditLog.log.mock.calls[0]![0]).toEqual(expect.objectContaining({ metadata: { event: 'storage_change_requested', message: 'Move us to our MinIO' } }));
-      expect(notices.storageChangeRequested).toHaveBeenNthCalledWith(1, 'org-a', 'admin-1', expect.any(Date), 'Move us to our MinIO');
-      expect(notices.storageChangeRequested).toHaveBeenNthCalledWith(2, 'org-a', 'admin-1', expect.any(Date), null);
+      expect(auditLog.log.mock.calls[0]![0]).toEqual(
+        expect.objectContaining({ metadata: { event: 'storage_change_requested', message: 'Move us to our MinIO', contact: CONTACT } }),
+      );
+      expect(notices.storageChangeRequested).toHaveBeenNthCalledWith(1, 'org-a', 'admin-1', expect.any(Date), 'Move us to our MinIO', CONTACT);
+      expect(notices.storageChangeRequested).toHaveBeenNthCalledWith(2, 'org-a', 'admin-1', expect.any(Date), null, CONTACT);
       // Notified after the change was written.
       expect(prisma.organization.update.mock.invocationCallOrder[0]).toBeLessThan(notices.storageChangeRequested.mock.invocationCallOrder[0]!);
     });
@@ -286,9 +309,14 @@ describe('StorageSettingsService (ACC-177)', () => {
 
   itEnforcesTenantIsolation("requestChange stamps the caller's own organisation only", async () => {
     org('S3', null, true);
-    await service.requestChange('org-b', {}, 'admin-1');
+    const contact = { contactName: 'Khalid Al-Mansour', contactEmail: 'it.infra@alnakheel.sa', contactPhone: '+965 2222 3333' };
+    await service.requestChange('org-b', contact, 'admin-1');
     expect(prisma.organization.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'org-b' } }));
-    expect(notices.storageChangeRequested).toHaveBeenCalledWith('org-b', 'admin-1', expect.any(Date), null);
+    expect(notices.storageChangeRequested).toHaveBeenCalledWith('org-b', 'admin-1', expect.any(Date), null, {
+      name: 'Khalid Al-Mansour',
+      email: 'it.infra@alnakheel.sa',
+      phone: '+965 2222 3333',
+    });
   });
 
   itEnforcesTenantIsolation("test writes its probe under the caller's own organisation", async () => {
