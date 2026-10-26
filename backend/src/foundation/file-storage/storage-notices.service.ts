@@ -5,6 +5,16 @@ import { NotificationService } from '../notification/notification.service';
 
 const GIB = 1024 ** 3;
 
+/** ACC-260 (PR B2) — who AccreditMe talks to about a requested move. */
+export interface StorageChangeContact {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+/** Left-to-right inside an Arabic sentence: "+965 2222 3333" would otherwise reorder (LRI … PDI). */
+const ltr = (text: string): string => `\u2066${text}\u2069`;
+
 /** ACC-185 — why the customer's SharePoint can no longer be reached. */
 export type SharePointAccessLostReason = 'SECRET_INVALID' | 'CONSENT_REVOKED' | 'GRANT_REMOVED' | 'LIBRARY_GONE';
 
@@ -19,9 +29,10 @@ const ACCESS_LOST_WORDS: Readonly<Record<SharePointAccessLostReason, { en: strin
 };
 
 /**
- * ACC-177 — the two storage notices, both in-app, English and Arabic, and both
- * sent AFTER the change that caused them has committed. A notice that fails to
- * send is logged and never undoes the change.
+ * ACC-177 — the storage notices, in English and Arabic, all sent AFTER the
+ * change that caused them has committed. A notice that fails to send is logged
+ * and never undoes the change. The change request also goes by email (ACC-260,
+ * PR B2); the others are in-app.
  *
  *   - "storage almost full" → the organisation's ACTIVE tenant admins;
  *   - "a storage change was requested" → every ACTIVE platform admin of
@@ -65,7 +76,13 @@ export class StorageNoticesService {
     }
   }
 
-  async storageChangeRequested(organizationId: string, requesterId: string, at: Date, message: string | null): Promise<void> {
+  async storageChangeRequested(
+    organizationId: string,
+    requesterId: string,
+    at: Date,
+    message: string | null,
+    contact: StorageChangeContact,
+  ): Promise<void> {
     const [org, requester, admins] = await Promise.all([
       this.prisma.organization.findFirst({ where: { id: organizationId }, select: { name: true, nameAr: true } }),
       this.prisma.user.findFirst({ where: { id: requesterId, organizationId }, select: { name: true } }),
@@ -83,6 +100,9 @@ export class StorageNoticesService {
     const when = DateTime.fromJSDate(at, { zone: 'utc' });
     const whenEn = `${when.setLocale('en').toFormat('d LLL yyyy, HH:mm')} UTC`;
     const whenAr = `${when.setLocale('ar').reconfigure({ numberingSystem: 'latn' }).toFormat('d LLLL yyyy، HH:mm')} UTC`;
+    // ACC-260 (PR B2) — the person to talk to about the move, often not the requester.
+    const contactEn = ` Contact: ${contact.name}, ${contact.email}, ${contact.phone}.`;
+    const contactAr = ` جهة التواصل: ${contact.name}، ${ltr(contact.email)}، ${ltr(contact.phone)}.`;
     const quotedEn = message ? ` Their message: “${message}”` : ' They left no message.';
     const quotedAr = message ? ` رسالته: «${message}»` : ' لم يترك رسالة.';
     for (const admin of admins) {
@@ -91,8 +111,10 @@ export class StorageNoticesService {
           userId: admin.id,
           titleEn: 'Storage change requested',
           titleAr: 'طلب تغيير مكان تخزين الملفات',
-          bodyEn: `${org.name} asked to change where its files are stored. Asked by ${requester.name} on ${whenEn}.${quotedEn}`,
-          bodyAr: `طلبت ${org.nameAr ?? org.name} تغيير مكان تخزين ملفاتها. الطلب من ${requester.name} في ${whenAr}.${quotedAr}`,
+          bodyEn: `${org.name} asked to change where its files are stored. Asked by ${requester.name} on ${whenEn}.${contactEn}${quotedEn}`,
+          bodyAr: `طلبت ${org.nameAr ?? org.name} تغيير مكان تخزين ملفاتها. الطلب من ${requester.name} في ${whenAr}.${contactAr}${quotedAr}`,
+          // ACC-260 (PR B2) — in-app AND email: platform admins do not live in the app.
+          channel: 'BOTH',
           objectType: 'Organization',
           objectId: organizationId,
         },

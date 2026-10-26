@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { Type } from 'class-transformer';
-import { IsIn, IsISO8601, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { Transform, TransformFnParams, Type } from 'class-transformer';
+import { IsEmail, IsIn, IsISO8601, IsOptional, IsString, IsUrl, Length, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
 
 // ACC-177 — the tenant admin's storage settings. Secrets (both keys) are
 // WRITE-ONLY: sent to change them, omitted to keep the stored ones, and never
@@ -140,10 +140,40 @@ export class UpdateStorageSettingsDto {
 // stored settings; a body is a candidate, merged with the stored secrets.
 export class TestStorageSettingsDto extends PartialType(UpdateStorageSettingsDto) {}
 
-// POST /tenant/storage/change-request — an optional note for AccreditMe.
+// ACC-260 (PR B2) — who AccreditMe talks to about the move. Often the
+// customer's infrastructure or security team, not the admin who asks.
+// "+" and a country code, then digits with optional spaces or dashes; kept as
+// typed (only trimmed), never reformatted.
+export const CONTACT_PHONE_PATTERN = /^\+\d[\d -]*\d$/;
+
+// A string is trimmed; anything else passes through, so the validators refuse
+// it by name.
+function trimmed({ value }: TransformFnParams): unknown {
+  return typeof value === 'string' ? value.trim() : value;
+}
+
+// POST /tenant/storage/change-request — who to contact, and an optional note
+// for AccreditMe.
 export class StorageChangeRequestDto {
   @IsOptional()
   @IsString()
   @MaxLength(1000)
   message?: string;
+
+  @Transform(trimmed)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  contactName!: string;
+
+  @Transform(trimmed)
+  @IsEmail()
+  @MaxLength(254)
+  contactEmail!: string;
+
+  @Transform(trimmed)
+  @IsString()
+  @Length(8, 20)
+  @Matches(CONTACT_PHONE_PATTERN, { message: 'contactPhone must start with + and a country code, then digits, spaces or dashes' })
+  contactPhone!: string;
 }

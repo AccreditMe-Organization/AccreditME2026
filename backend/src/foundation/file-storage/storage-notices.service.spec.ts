@@ -4,6 +4,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const GIB = 1024 ** 3;
+const CONTACT = { name: 'Khalid Al-Mansour', email: 'it.infra@alnakheel.sa', phone: '+965 2222 3333' };
+const LRI = String.fromCharCode(0x2066);
+const PDI = String.fromCharCode(0x2069);
 
 describe('StorageNoticesService (ACC-177)', () => {
   const prisma = {
@@ -37,7 +40,7 @@ describe('StorageNoticesService (ACC-177)', () => {
 
   it('tells every active platform admin of the platform organisation about a change request — who, when, the message', async () => {
     prisma.user.findMany.mockResolvedValue([{ id: 'pa-1', organizationId: 'platform-org' }]);
-    await service.storageChangeRequested('org-a', 'admin-1', new Date('2026-10-07T05:12:00Z'), 'Move us to our MinIO');
+    await service.storageChangeRequested('org-a', 'admin-1', new Date('2026-10-07T05:12:00Z'), 'Move us to our MinIO', CONTACT);
 
     expect(prisma.user.findMany).toHaveBeenCalledWith({
       where: {
@@ -51,10 +54,40 @@ describe('StorageNoticesService (ACC-177)', () => {
     // Written into the PLATFORM admin's own organisation, never the tenant's.
     expect(org).toBe('platform-org');
     expect(dto['bodyEn']).toBe(
-      'Al Nakheel Specialist Hospital asked to change where its files are stored. Asked by Dr. Hessa Al-Dosari on 7 Oct 2026, 05:12 UTC. Their message: “Move us to our MinIO”',
+      'Al Nakheel Specialist Hospital asked to change where its files are stored. Asked by Dr. Hessa Al-Dosari on 7 Oct 2026, 05:12 UTC. Contact: Khalid Al-Mansour, it.infra@alnakheel.sa, +965 2222 3333. Their message: “Move us to our MinIO”',
     );
     expect(dto['bodyAr']).toContain('مستشفى النخيل التخصصي');
     expect(dto['bodyAr']).toContain('«Move us to our MinIO»');
+  });
+
+  // ACC-260 (PR B2) — the person to talk to, and an email as well as the in-app notice.
+  it('a change request names who to contact, in both languages, keeping the email and phone left to right in Arabic', async () => {
+    prisma.user.findMany.mockResolvedValue([{ id: 'pa-1', organizationId: 'platform-org' }]);
+    await service.storageChangeRequested('org-a', 'admin-1', new Date('2026-10-07T05:12:00Z'), null, CONTACT);
+    const [dto] = notifications.create.mock.calls[0] as [Record<string, string>, string];
+    expect(dto['bodyEn']).toContain('Contact: Khalid Al-Mansour, it.infra@alnakheel.sa, +965 2222 3333.');
+    expect(dto['bodyAr']).toContain(`جهة التواصل: Khalid Al-Mansour، ${LRI}it.infra@alnakheel.sa${PDI}، ${LRI}+965 2222 3333${PDI}.`);
+    // After "Asked by …", before the message.
+    const en = dto['bodyEn']!;
+    expect(en.indexOf('Asked by')).toBeLessThan(en.indexOf('Contact:'));
+    expect(en.indexOf('Contact:')).toBeLessThan(en.indexOf('They left no message.'));
+  });
+
+  it('a change request goes in-app AND by email to every platform admin (channel BOTH)', async () => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'pa-1', organizationId: 'platform-org' },
+      { id: 'pa-2', organizationId: 'platform-org' },
+    ]);
+    await service.storageChangeRequested('org-a', 'admin-1', new Date(), null, CONTACT);
+    expect(notifications.create).toHaveBeenCalledTimes(2);
+    for (const [dto] of notifications.create.mock.calls as [Record<string, string>][]) expect(dto['channel']).toBe('BOTH');
+  });
+
+  it('the other storage notices stay in-app', async () => {
+    prisma.user.findMany.mockResolvedValue([{ id: 'admin-1' }]);
+    await service.storageAlmostFull('org-a', 9.2 * GIB, 10 * GIB);
+    const [dto] = notifications.create.mock.calls[0] as [Record<string, string>];
+    expect(dto['channel']).toBeUndefined();
   });
 
   it('a notice that cannot be sent is logged and never throws', async () => {
@@ -65,7 +98,7 @@ describe('StorageNoticesService (ACC-177)', () => {
 
   itEnforcesTenantIsolation("the requester is read from the requesting organisation only", async () => {
     prisma.user.findMany.mockResolvedValue([]);
-    await service.storageChangeRequested('org-b', 'admin-1', new Date(), null);
+    await service.storageChangeRequested('org-b', 'admin-1', new Date(), null, CONTACT);
     expect(prisma.user.findFirst).toHaveBeenCalledWith({ where: { id: 'admin-1', organizationId: 'org-b' }, select: { name: true } });
     expect(prisma.organization.findFirst).toHaveBeenCalledWith({ where: { id: 'org-b' }, select: { name: true, nameAr: true } });
   });
