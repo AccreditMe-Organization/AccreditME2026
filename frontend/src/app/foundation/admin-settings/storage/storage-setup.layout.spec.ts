@@ -135,11 +135,6 @@ describe('StorageSettings — setup layout (ACC-260, PR B)', () => {
   // The dialogs' bodies, as drawn (design L851–872).
   const DIALOGS: [string, () => IStorageSettings, string, string, { en: number; ar: number }][] = [
     ['Confirm (420)', unconfirmed, 'confirm-open', 'confirm-body', { en: 94, ar: 104 }],
-    // The note, the pairs, then am-field's label, the textarea at the drawn
-    // 76 / 82 and its message row. Drawn 204 / 222: Arabic is 219 because
-    // am-field's message row is one 17px line in both languages, where the
-    // drawing's Arabic help line is 20px. Changing am-field moves every form.
-    ['Request a change (560)', cloud, 'request-open', 'request-body', { en: 204, ar: 219 }],
   ];
   for (const lang of ['en', 'ar'] as const) {
     for (const [name, state, opener, body, height] of DIALOGS) {
@@ -158,6 +153,68 @@ describe('StorageSettings — setup layout (ACC-260, PR B)', () => {
         const h = (content as HTMLElement).offsetHeight;
         measured.push(`  ${lang} ${name}: dialog ${(dialog as HTMLElement).offsetWidth} wide, body ${h}`);
         expect(h).toBe(height[lang]);
+      });
+    }
+  }
+
+  // ACC-260 PR B2 — Request a change (Form 560) with the contact group: name,
+  // then email and phone side by side where they fit, the hint, then the note.
+  // The dialog's own width token is narrowed to each phone width the page
+  // specs use, since Karma's window cannot be resized. The body above the note
+  // grew with the contact group; nothing in it may run sideways.
+  //
+  // Measured (ACC-260 PR B2, standard density): at the 560 the page gives it
+  // at 988, 362 / 385, under the 420 cap with the "Requested by" and "Sent to"
+  // pairs dropped (Ahmad, 26 Oct). At 358 and 328 email and phone stack and the
+  // body scrolls: 495 / 528 and 495 / 548. The same as the app measures in a
+  // browser at 1280 and 390 wide.
+  const REQUEST_HEIGHTS: Record<'en' | 'ar', Record<560 | 358 | 328, number>> = {
+    en: { 560: 362, 358: 495, 328: 495 },
+    ar: { 560: 385, 358: 528, 328: 548 },
+  };
+  for (const lang of ['en', 'ar'] as const) {
+    for (const width of [560, 358, 328] as const) {
+      it(`${lang}: Request a change at ${width} — the contact group laid out, nothing sideways, body ${REQUEST_HEIGHTS[lang][width]}px`, async () => {
+        document.documentElement.style.setProperty('--am-dialog-form', `${width}px`);
+        try {
+          const frame = await render(lang, 988, cloud());
+          frame.querySelector<HTMLElement>('[data-testid="request-open"] button')!.click();
+          await settle();
+          // The body's cap is min(420px, 60vh). Karma's window is about 600px
+          // tall, where 60vh falls under 420 and a body that fits the cap
+          // grows a scrollbar, narrowing its text so the note wraps. The
+          // smallest screen these users have is 768px tall (ACC-111), where
+          // the cap is the 420 alone, so that is the cap measured here.
+          document.body.querySelector<HTMLElement>('.am-dialog__body')!.style.maxHeight = 'var(--am-dialog-form-body-max)';
+          await settle();
+          const dialog = document.body.querySelector<HTMLElement>('.p-dialog')!;
+          const content = document.body.querySelector<HTMLElement>('[data-testid="request-body"]')!;
+          const group = document.body.querySelector<HTMLElement>('[data-testid="request-contact"]')!;
+          const scroller = content.closest<HTMLElement>('.p-dialog-content') ?? content.parentElement!;
+          // Non-vacuity: the dialog opened at the width asked for, with the group in it.
+          expect(dialog.offsetWidth).withContext('dialog width').toBe(width);
+          expect(group.offsetHeight).withContext('contact group').toBeGreaterThan(100);
+          for (const id of ['storage-request-contact-name', 'storage-request-contact-email', 'storage-request-contact-phone']) {
+            expect(document.getElementById(id)).withContext(id).not.toBeNull();
+          }
+          // Nothing sideways, at any depth.
+          expect(scroller.scrollWidth).withContext('sideways').toBeLessThanOrEqual(scroller.clientWidth);
+          const d = dialog.getBoundingClientRect();
+          const over = Array.from(dialog.querySelectorAll<HTMLElement>('*')).filter((e) => {
+            const r = e.getBoundingClientRect();
+            return r.width > 0 && (r.right > d.right + 1 || r.left < d.left - 1);
+          });
+          expect(over.map((e) => e.id || e.getAttribute('data-testid') || e.className || e.tagName)).withContext('past the dialog').toEqual([]);
+          const h = content.offsetHeight;
+          const twoUp = Math.abs(
+            document.getElementById('storage-request-contact-email')!.getBoundingClientRect().top -
+              document.getElementById('storage-request-contact-phone')!.getBoundingClientRect().top,
+          ) < 1;
+          measured.push(`  ${lang} Request a change at ${width}: body ${h} (cap 420, ${h > 420 ? 'scrolls' : 'fits'}), email and phone ${twoUp ? 'side by side' : 'stacked'}`);
+          expect(h).toBe(REQUEST_HEIGHTS[lang][width]);
+        } finally {
+          document.documentElement.style.removeProperty('--am-dialog-form');
+        }
       });
     }
   }

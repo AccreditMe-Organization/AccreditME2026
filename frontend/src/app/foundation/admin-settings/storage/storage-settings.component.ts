@@ -115,6 +115,7 @@ type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLim
                 (visibleChange)="requestOpen.set($event)"
                 [current]="'storage.kind.' + kind + '.name' | translate"
                 [by]="userName()"
+                [byEmail]="userEmail()"
                 (sent)="reload()"
               />
             }
@@ -221,6 +222,7 @@ export class StorageSettingsComponent {
 
   readonly requestOpen = signal(false);
   readonly userName = computed(() => this.auth.currentUser()?.name ?? '');
+  readonly userEmail = computed(() => this.auth.currentUser()?.email ?? '');
   /** The confirmed location, for Request a change's "Current: …". */
   readonly confirmedKind = computed(() => this.strip()?.kind ?? null);
 
