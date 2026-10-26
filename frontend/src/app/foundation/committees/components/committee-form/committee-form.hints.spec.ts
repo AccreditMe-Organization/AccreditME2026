@@ -40,6 +40,7 @@ const DETAIL: CommitteeDetailDto = {
   stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: null,
+  orgUnit: null,
 };
 
 const OTHER = { ...DETAIL, id: 'c-9', nameEn: 'Medical Executive Committee', memberCount: 9, currentStageNameEn: null, currentStageNameAr: null } as unknown as CommitteeListItemDto;

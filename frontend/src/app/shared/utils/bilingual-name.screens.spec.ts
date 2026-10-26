@@ -131,9 +131,9 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
 
     it('labels a committee type and a member role in English when they have no Arabic label', () => {
       const c = build(CommitteeDetailComponent);
-      c.committeeTypes.set([as({ id: 't1', labelEn: 'Board', labelAr: null })]);
       c.memberRoles.set([as({ id: 'r1', labelEn: 'Secretary', labelAr: null })]);
-      expect(c.typeLabel('t1')).toBe('Board');
+      // ACC-265 — the type is named by the committee read itself.
+      expect(c.typeLabel(as({ typeValue: { id: 't1', key: 'board', labelEn: 'Board', labelAr: null, offered: true } }))).toBe('Board');
       expect(c.memberRoleLabel('r1')).toBe('Secretary');
     });
 

@@ -14,7 +14,10 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { CommitteeListItemDto } from '../../services/committee.service';
 import { CommitteeListComponent, committeeListStatus } from './committee-list.component';
-import { ACTIVE_RULES } from '../../testing';
+import { ACTIVE_RULES, DISSOLVED_RULES, SEEDED_STAGE_RULES, tenantStageRules } from '../../testing';
+import { NO_STAGE_RULES } from '../../committee-offers';
+
+const DISSOLUTION_PENDING_RULES = SEEDED_STAGE_RULES[4]!.rules;
 
 // ACC-120 slice 4 — the committees list (plan: step-120-4-committees-list.md).
 // Six columns from GET /committees; search over both names; sort by name, type,
@@ -67,9 +70,17 @@ const ROWS = [
     memberCount: 2,
     currentStageNameEn: null,
     currentStageNameAr: null,
+    stageRules: NO_STAGE_RULES,
   }),
-  committee('c', { nameEn: 'Ethics', nameAr: 'الأخلاقيات', isDissolving: true, memberCount: 5 }),
-  committee('d', { nameEn: 'Board', nameAr: 'المجلس', isActive: false, isDissolving: true, typeValueId: 'type-missing' }),
+  committee('c', { nameEn: 'Ethics', nameAr: 'الأخلاقيات', isDissolving: true, memberCount: 5, stageRules: DISSOLUTION_PENDING_RULES }),
+  committee('d', {
+    nameEn: 'Board',
+    nameAr: 'المجلس',
+    isActive: false,
+    isDissolving: true,
+    typeValueId: 'type-missing',
+    stageRules: DISSOLVED_RULES,
+  }),
 ];
 
 describe('CommitteeListComponent (ACC-120 slice 4)', () => {
@@ -144,15 +155,51 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     expect(el.textContent).not.toContain('type-missing');
   }));
 
-  it('status: active reads plain, a committee being dissolved and an inactive one say so', fakeAsync(() => {
+  it('status: in force reads plain, the other three say what they are', fakeAsync(() => {
     setup(['committees:view']);
     flush();
     fixture.detectChanges();
-    expect(cells('status')).toEqual(['Inactive', 'Being dissolved', 'Active', 'Active']);
-    expect(committeeListStatus({ isActive: true, isDissolving: false })).toBe('ACTIVE');
-    expect(committeeListStatus({ isActive: true, isDissolving: true })).toBe('DISSOLVING');
-    expect(committeeListStatus({ isActive: false, isDissolving: true })).toBe('INACTIVE');
-    expect(committeeListStatus({ isActive: false, isDissolving: false })).toBe('INACTIVE');
+    expect(cells('status')).toEqual(['Inactive', 'Being dissolved', 'Not yet in force', 'In force']);
+    // In force is the normal case and draws no chip; the other three are muted chips, none with the attention dot.
+    const chipped = Array.from(el.querySelectorAll<HTMLElement>('[data-cell="status"]')).map((c) => !!c.querySelector('.inline-flex'));
+    expect(chipped).toEqual([true, true, true, false]);
+    expect(el.querySelectorAll('[data-cell="status"] .rounded-full').length).withContext('no attention dot').toBe(0);
+  }));
+
+  it('a stage a tenant renamed or added reads by its flags, never its name', fakeAsync(() => {
+    setup(['committees:view'], [
+      // Named "Active", but configured with no meaning: not in force.
+      committee('p', { nameEn: 'P', currentStageNameEn: 'Active', currentStageNameAr: 'نشطة', stageRules: tenantStageRules([], []) }),
+      // A tenant's own name for an in-force stage.
+      committee('q', {
+        nameEn: 'Q',
+        currentStageNameEn: 'Approved and running',
+        currentStageNameAr: 'معتمدة وجارية',
+        stageRules: tenantStageRules(['add_member'], ['IN_FORCE']),
+      }),
+      // A renamed winding-down stage.
+      committee('r', { nameEn: 'R', currentStageNameEn: 'Closing', currentStageNameAr: 'قيد الإغلاق', stageRules: tenantStageRules([], ['DISSOLVING']) }),
+    ]);
+    flush();
+    fixture.detectChanges();
+    expect(cells('name')).withContext('rows rendered').toEqual(['P', 'Q', 'R']);
+    expect(cells('stage')).toEqual(['Active', 'Approved and running', 'Closing']);
+    expect(cells('status')).toEqual(['Not yet in force', 'In force', 'Being dissolved']);
+  }));
+
+  it('says the four statuses in Arabic', fakeAsync(() => {
+    setup(['committees:view'], [...ROWS, committee('e', { nameEn: 'Audit', nameAr: 'التدقيق', stageRules: SEEDED_STAGE_RULES[0]!.rules })], 'ar');
+    flush();
+    fixture.detectChanges();
+    expect(cells('status').sort()).toEqual(['سارية', 'غير سارية بعد', 'غير سارية بعد', 'غير نشطة', 'قيد الحل'].sort());
+    expect(el.textContent).not.toContain('committee.status');
+    // The Status filter offers the same four, in lifecycle order.
+    expect(fixture.componentInstance.statusOptions()).toEqual([
+      { value: 'NOT_YET_IN_FORCE', label: 'غير سارية بعد' },
+      { value: 'IN_FORCE', label: 'سارية' },
+      { value: 'DISSOLVING', label: 'قيد الحل' },
+      { value: 'INACTIVE', label: 'غير نشطة' },
+    ]);
   }));
 
   it('search reads both names: the Arabic name finds a committee in an English session', async () => {
@@ -168,11 +215,13 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     const src = fixture.componentInstance.source;
     const ids = async (filters: Record<string, string | null>) =>
       (await firstValueFrom(src({ filters }))).data.map((c) => c.id).sort();
-    expect(await ids({ status: 'ACTIVE' })).toEqual(['a', 'b']);
+    expect(await ids({ status: 'IN_FORCE' })).toEqual(['a']);
+    expect(await ids({ status: 'NOT_YET_IN_FORCE' })).toEqual(['b']);
     expect(await ids({ status: 'DISSOLVING' })).toEqual(['c']);
     expect(await ids({ status: 'INACTIVE' })).toEqual(['d']);
     expect(await ids({ typeValueId: 'type-safety' })).toEqual(['b']);
-    expect(await ids({ status: 'ACTIVE', typeValueId: 'type-quality' })).toEqual(['a']);
+    expect(await ids({ status: 'IN_FORCE', typeValueId: 'type-quality' })).toEqual(['a']);
+    expect(await ids({ status: 'NOT_YET_IN_FORCE', typeValueId: 'type-quality' })).toEqual([]);
     expect(await ids({ status: null, typeValueId: null })).toEqual(['a', 'b', 'c', 'd']);
   });
 
@@ -255,7 +304,7 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     expect(el.textContent).toContain('Add the first one with Add Committee.');
   }));
 
-  it('on a phone: one name column carrying type, stage and a status that is not Active, the count, and the filters above', fakeAsync(() => {
+  it('on a phone: one name column carrying type, stage and a status that is not In force, the count, and the filters above', fakeAsync(() => {
     setup(['committees:view'], ROWS, 'en', true);
     flush();
     fixture.detectChanges();
@@ -265,7 +314,12 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     for (const wide of ['type', 'parent', 'stage', 'status']) {
       expect(cells(wide).length).withContext(`no ${wide} cell on a phone`).toBe(0);
     }
-    expect(cells('meta')).toEqual(['— · Active · Inactive', 'Quality · Active · Being dissolved', 'Safety · —', 'Quality · Active']);
+    expect(cells('meta')).toEqual([
+      '— · Active · Inactive',
+      'Quality · Active · Being dissolved',
+      'Safety · — · Not yet in force',
+      'Quality · Active',
+    ]);
     expect(cells('members')).toEqual(['4', '5', '2', '7']);
     const phoneFilters = el.querySelector('[data-testid="committee-filters-phone"]');
     expect(phoneFilters?.querySelectorAll('app-overlay-select').length).withContext('both filters above the list').toBe(2);
@@ -341,5 +395,26 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
       expect(button.getAttribute('aria-label')).toBe('ترتيب حسب الأعضاء');
       expect(Array.from(button.children).map((c) => c.textContent!.trim())).toEqual(['الأعضاء', '▲']);
     }));
+  });
+});
+
+// ACC-256 — the status rule itself, a pure function: kept out of the rendered
+// describe above, whose afterEach verifies an HTTP backend this needs none of.
+describe('committeeListStatus (ACC-256)', () => {
+  it('each seeded stage reads its status from its flags', () => {
+    const statuses = SEEDED_STAGE_RULES.map(({ stage, rules }) => [stage, committeeListStatus({ isActive: true, stageRules: rules })]);
+    expect(statuses).toEqual([
+      ['Formation', 'NOT_YET_IN_FORCE'],
+      ['Terms Review', 'NOT_YET_IN_FORCE'],
+      ['Active', 'IN_FORCE'],
+      ['Suspended', 'IN_FORCE'],
+      ['Dissolution Pending', 'DISSOLVING'],
+      ['Dissolved', 'DISSOLVING'],
+    ]);
+    // A dissolved committee's record is inactive, and that is what it reads as.
+    expect(committeeListStatus({ isActive: false, stageRules: DISSOLVED_RULES })).toBe('INACTIVE');
+    expect(committeeListStatus({ isActive: false, stageRules: ACTIVE_RULES })).toBe('INACTIVE');
+    // No live stage (D14): nothing is in force yet.
+    expect(committeeListStatus({ isActive: true, stageRules: NO_STAGE_RULES })).toBe('NOT_YET_IN_FORCE');
   });
 });

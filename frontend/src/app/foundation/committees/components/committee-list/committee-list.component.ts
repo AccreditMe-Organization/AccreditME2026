@@ -24,17 +24,28 @@ import { ListRowDirective } from '../../../../shared/components/data-list/list-r
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { AmNumberPipe } from '../../../../core/formatting';
+import { STAGE_FLAG_DISSOLVING, STAGE_FLAG_IN_FORCE } from '../../committee-offers';
 import { SHELL_PHONE_BELOW_PX } from '../../../../layout/app-shell/app-shell.component';
 
-/** A committee's state as the list shows and filters it. */
-export type CommitteeListStatus = 'ACTIVE' | 'DISSOLVING' | 'INACTIVE';
+/** A committee's state as the list shows and filters it, in lifecycle order. */
+export const COMMITTEE_LIST_STATUSES = ['NOT_YET_IN_FORCE', 'IN_FORCE', 'DISSOLVING', 'INACTIVE'] as const;
+export type CommitteeListStatus = (typeof COMMITTEE_LIST_STATUSES)[number];
 
-// ACC-233's isDissolving is the server's answer for "being dissolved, or has
-// been". A dissolved committee is also inactive, and inactive is what it reads
-// as: "being dissolved" is only for one still active while it winds down.
-export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | 'isDissolving'>): CommitteeListStatus {
+// ACC-256 (Ahmad, 25 Oct) — read from the current stage's FLAGS (the server's
+// stageRules), never its name or key, so a stage a tenant renames or adds reads
+// by what it means:
+//   - the committee record is inactive               → Inactive (Dissolved);
+//   - the stage is flagged DISSOLVING                → Being dissolved;
+//   - the stage is flagged IN_FORCE                  → In force (Active, Suspended);
+//   - no flag, or no live stage at all (D14)         → Not yet in force
+//                                                      (Formation, Terms Review).
+// Before this, every active committee that was not dissolving read "Active",
+// Formation and Terms Review included.
+export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | 'stageRules'>): CommitteeListStatus {
   if (!c.isActive) return 'INACTIVE';
-  return c.isDissolving ? 'DISSOLVING' : 'ACTIVE';
+  const flags = c.stageRules?.flags ?? [];
+  if (flags.includes(STAGE_FLAG_DISSOLVING)) return 'DISSOLVING';
+  return flags.includes(STAGE_FLAG_IN_FORCE) ? 'IN_FORCE' : 'NOT_YET_IN_FORCE';
 }
 
 // ACC-120 slice 4 — the committees list, on the list template /roles and /users
@@ -155,7 +166,7 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
               @if (!phone() && v('status')) {
                 <span class="text-xs" data-cell="status">
                   <app-status-chip
-                    variant="user"
+                    variant="committee"
                     labelPrefix="committee.status"
                     [value]="status(committee)"
                   />
@@ -270,7 +281,7 @@ export class CommitteeListComponent {
       width: 'minmax(0, 2fr)',
     };
     // On a phone, the name cell carries type, stage and any status that is
-    // not Active on its second line; only the member count keeps a column.
+    // not In force on its second line; only the member count keeps a column.
     if (this.phone()) {
       return [
         { ...name, width: 'minmax(0, 1fr)' },
@@ -289,7 +300,7 @@ export class CommitteeListComponent {
 
   readonly statusOptions = computed(() => {
     this.translate.currentLang();
-    return (['ACTIVE', 'DISSOLVING', 'INACTIVE'] as const).map((value) => ({
+    return COMMITTEE_LIST_STATUSES.map((value) => ({
       value,
       label: this.translate.instant(`committee.status.${value.toLowerCase()}`),
     }));
@@ -375,11 +386,11 @@ export class CommitteeListComponent {
     return this.languageService.bilingual(committee.currentStageNameEn ?? '', committee.currentStageNameAr) || '—';
   }
 
-  /** The phone row's second line: type · stage, and the status unless Active. */
+  /** The phone row's second line: type · stage, and the status unless In force. */
   phoneMeta(committee: CommitteeListItemDto): string {
     const parts = [this.typeLabel(committee.typeValueId), this.stageName(committee)];
     const status = committeeListStatus(committee);
-    if (status !== 'ACTIVE') parts.push(this.translate.instant(`committee.status.${status.toLowerCase()}`));
+    if (status !== 'IN_FORCE') parts.push(this.translate.instant(`committee.status.${status.toLowerCase()}`));
     return parts.join(' · ');
   }
 

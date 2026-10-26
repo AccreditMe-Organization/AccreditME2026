@@ -79,10 +79,10 @@ export interface ICommitteeListItem extends ICommittee {
   // `| translate` (SYSTEM-REFERENCE §9.3).
   currentStageNameEn: string | null;
   currentStageNameAr: string | null;
-  // ACC-233 — the current stage's stable key, and whether it says the committee
-  // is being dissolved or has been. The dialog's pickers leave those out; the
-  // server decides, so no screen keeps its own list of keys.
-  currentStageKey: string | null;
+  // ACC-233 / ACC-255 — whether the current stage is flagged DISSOLVING (being
+  // dissolved, or has been). The dialog's pickers leave those committees out;
+  // the server decides. No stage KEY is sent (ACC-265): screens decide by
+  // stageRules, and committees.service.spec.ts fails if one comes back.
   isDissolving: boolean;
   // ACC-246 — the committee's own type, with its label: the Edit dialog shows
   // it at once, and still shows one no longer offered. Null for an id that is
@@ -92,16 +92,28 @@ export interface ICommitteeListItem extends ICommittee {
   stageRules: ICommitteeStageRules;
 }
 
-// ACC-238 — a single committee as its record page reads it: the row plus its
-// current stage key and whether that key says it is dissolving, from the same
-// helper as the list rows. Separate from ICommittee for ICommitteeListItem's
-// reason: an optional field filled by one endpoint is a trap.
+// ACC-238 — a single committee as its record page reads it: the row plus
+// whether its current stage is dissolving, from the same helper as the list
+// rows, and what that stage allows (stageRules). No stage key (ACC-265).
+// Separate from ICommittee for ICommitteeListItem's reason: an optional field
+// filled by one endpoint is a trap.
 export interface ICommitteeDetail extends ICommittee {
-  currentStageKey: string | null;
   isDissolving: boolean;
   typeValue: ICommitteeTypeValue | null;
+  // ACC-265 — the owning unit, named, so the record page needs no unit list
+  // (GET /organization/units/flat needs org:view, which a committee reader may
+  // not hold). Null for a committee with no unit, or an id that is no unit in
+  // this organisation.
+  orgUnit: ICommitteeOrgUnit | null;
   // ACC-255 — what the current stage allows and means.
   stageRules: ICommitteeStageRules;
+}
+
+/** ACC-265 — the committee's owning unit, as the record page names it. */
+export interface ICommitteeOrgUnit {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
 }
 
 /** ACC-246 — see committee-type-values.ts. */

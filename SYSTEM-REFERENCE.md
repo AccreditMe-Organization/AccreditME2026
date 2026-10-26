@@ -2450,8 +2450,9 @@ backfills. **Since ACC-255 no committee rule is decided by a COMMITTEE stage
 key, on either side** — the backend since PR 2 (dissolving is the stage's
 `DISSOLVING` flag, §2.18.1), the screens since PR 3 (they read `stageRules`,
 §2.18.2) — and `committee-stage-keys.scan.spec.ts` fails on a key read again
-in `backend/src` or `frontend/src`. The committee read still carries
-`currentStageKey`, now read by no screen; dropping it is a later contract step.
+in `backend/src` or `frontend/src`. Since ACC-265 no committee response
+carries a stage key (`currentStageKey` is gone), and `committees.service.spec.ts`
+fails if one comes back under any name.
 
 ### 2.17 System moves with a module's write, protected templates, the quorum snapshot (ACC-239)
 
@@ -4336,13 +4337,24 @@ the /roles template.
 - **Sort:** by the name being read (an Arabic name sorts last when missing,
   ACC-160), type, stage (none last) or members. The sort comes from the
   column headers (`am-sort-header`, §10.20, ACC-234).
-- **Status:** Active, Being dissolved (active, with `isDissolving`) or
-  Inactive. A dissolved committee is inactive.
+- **Status (ACC-256, Ahmad 25 Oct):** read from the current stage's FLAGS in
+  the server's `stageRules`, never its name or key (`committeeListStatus()`,
+  `committee-list.component.ts`):
+  - committee record inactive → **Inactive** / «غير نشطة» (Dissolved);
+  - stage flagged `DISSOLVING` → **Being dissolved** / «قيد الحل»;
+  - stage flagged `IN_FORCE` → **In force** / «سارية» (Active, Suspended);
+  - no flag, or no live stage (D14) → **Not yet in force** / «غير سارية بعد»
+    (Formation, Terms Review).
+
+  The filter offers the same four, in that lifecycle order. In force is drawn
+  plain and the other three as muted chips (the status chip's `committee`
+  variant). Before ACC-256 every active committee not being dissolved read
+  "Active", Formation and Terms Review included.
 - **Empty:** "No committees yet", with a line pointing to Add Committee for a
   `committees:create` holder only. A search or filter with no result uses the
   list's own "No matching results" and Clear filters.
 - **Phone, below `SHELL_PHONE_BELOW_PX`:** one name column whose second line
-  is type · stage, plus the status when it is not Active, and the member
+  is type · stage, plus the status when it is not In force, and the member
   count. The two filters move to their own row above the list.
 - **Add Committee** is hidden without `committees:create` and opens the
   existing form unchanged.
@@ -4390,10 +4402,20 @@ Ahmad's rules of 15 Oct and decisions of 18 Oct). A committee is edited directly
 only while it is FORMING; after approval its details change only through a
 change request (§3.18; its screens are ACC-240).
 
-- **The record page's read carries the stage's rules.** `GET /committees/:id` is
-  `CommitteesService.getCommitteeDetail()`: the row plus `stageRules` (ACC-255),
-  `isDissolving` and `currentStageKey` (read by no screen since ACC-255 PR 3), from the same `committeeStagesAndCounts()` the list rows read,
-  so the two cannot disagree. Internal callers keep `getCommitteeById()`.
+- **The record page's read carries the stage's rules and names its type and
+  unit.** `GET /committees/:id` (`committees:view`) is
+  `CommitteesService.getCommitteeDetail()`: the row plus
+  - `stageRules` (ACC-255) and `isDissolving`, from the same
+    `committeeStagesAndCounts()` the list rows read, so the two cannot disagree;
+  - `typeValue` (ACC-246): the type's id, key, labels and whether it is still
+    offered;
+  - `orgUnit` (ACC-265): `{ id, nameEn, nameAr }` of the owning unit, read
+    scoped by organisation, or null.
+
+  No stage key (ACC-265 removed `currentStageKey`). The page names the type and
+  the unit from this read, and loads neither the type list (`lookups:view`) nor
+  the unit list (`org:view`), so a reader with `committees:view` alone sees
+  both. Internal callers keep `getCommitteeById()`.
 - **What the header offers, by the stage's rules** (since ACC-255 PR 3:
   `frontend/.../committees/committee-offers.ts`, §2.18.2; the key-based
   `committee-stage.ts` is deleted):
@@ -7242,6 +7264,14 @@ per file, so a multi-line tag is caught). It reported 35 violations against
 `dev` at `fc8adcb` before the migration. The translation-file rules are specs
 (§9.4).
 
+**ACC-265 — a time unit written onto a number by hand** also fails it, in
+three shapes: `n + 'h'`, `${n} days` and `{{ n }}h` (h, hr, hour, d, day,
+min, minute, w, week and their plurals). The stages page's SLA column was the
+one instance ("40h" in both languages); it is now the counted string
+`workflow.workingHours` ("40 working hours" / «40 ساعة عمل»). `%` and CSS
+lengths are deliberately not matched. `npm run check:formatting:selftest`
+proves the rule against the real script.
+
 **Not covered — server-built text.** Notification and email bodies are built
 on the backend and stored; they do not pass through this layer. ACC-95,
 including why "due in 2 days" would disagree with an SLA counted in working
@@ -7962,6 +7992,15 @@ nothing structural in common.
 - **`bodyHeight` is a min-height, not a fixed height** (default 214px).
   Equal heights are what make a row of panels read as a row; clipping an
   Arabic row, which runs longer, is worse than a slightly uneven edge.
+- **`fill` (ACC-265), opt-in, default off:** the panel takes its CELL's height
+  instead of setting it. The card is full height, the body takes what is left
+  and scrolls with no min-height, and the body is a focusable region
+  (`tabindex="0"`, `role="region"`) named by the heading. The caller sizes the
+  cell. The committee page's Stage history is the one user: while it shares the
+  Lifecycle card's row (read from the two cells' tops by a ResizeObserver), the
+  cell is `contain: size` and the panel fills, so the card alone sets the row's
+  height. Stacked (two tracks at 1280, one on a phone), neither applies and
+  history shows in full. `committee-detail.history.layout.spec.ts` measures it.
 
 **A record page should NOT embed a routed list component to fill a
 panel.** ACC-76 tried exactly that with `TaskListComponent` and reverted
