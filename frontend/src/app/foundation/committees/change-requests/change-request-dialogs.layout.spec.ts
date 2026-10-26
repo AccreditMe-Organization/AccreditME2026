@@ -68,6 +68,7 @@ const LIVE: CommitteeDetailDto = {
   stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: null,
+  orgUnit: null,
 };
 
 const LABELS = {

@@ -41,6 +41,7 @@ const DETAIL: CommitteeDetailDto = {
   stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: null,
+  orgUnit: null,
 };
 
 describe('CommitteeFormComponent — a picker list that fails to load (ACC-240)', () => {

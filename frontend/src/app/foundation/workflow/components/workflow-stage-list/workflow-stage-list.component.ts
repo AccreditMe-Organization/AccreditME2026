@@ -1,6 +1,7 @@
 import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { AmCountPipe } from '../../../../core/formatting';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import {
@@ -46,6 +47,7 @@ const EXPAND_TRACK = '32px';
   standalone: true,
   imports: [PageHeaderComponent, 
     TranslatePipe,
+    AmCountPipe,
     ButtonModule,
     TooltipModule,
     WorkflowStageFormComponent,
@@ -177,12 +179,13 @@ const EXPAND_TRACK = '32px';
                   </span>
                 }
                 @if (v('sla')) {
+                  <!-- ACC-265 — a counted string in the reader's language ("40 working
+                       hours" / «40 ساعة عمل»), in the page's own direction. -->
                   <span
-                    dir="ltr"
-                    style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
-                    class="text-sm text-[var(--am-text-secondary)] text-start"
+                    data-cell="sla"
+                    class="text-sm tabular-nums text-[var(--am-text-secondary)] text-start"
                   >
-                    {{ stage.slaWorkingHours ? stage.slaWorkingHours + 'h' : '—' }}
+                    {{ stage.slaWorkingHours ? (stage.slaWorkingHours | amCount: 'workflow.workingHours') : '—' }}
                   </span>
                 }
 

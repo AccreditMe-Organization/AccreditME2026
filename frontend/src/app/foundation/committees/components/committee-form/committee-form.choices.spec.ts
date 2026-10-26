@@ -46,6 +46,7 @@ const DETAIL = (over: Partial<CommitteeDetailDto> = {}): CommitteeDetailDto => (
   stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: TYPE,
+  orgUnit: null,
   ...over,
 });
 

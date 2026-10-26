@@ -108,7 +108,8 @@ describe('CommitteeFormComponent', () => {
     fixture.detectChanges();
   }
 
-  const edit = (over: Partial<CommitteeListItemDto> = {}) => render(committee('self', { parentCommitteeId: 'keeps', updatedAt: LOADED, ...over }));
+  const edit = (over: Partial<CommitteeListItemDto> = {}) =>
+    render({ ...committee('self', { parentCommitteeId: 'keeps', updatedAt: LOADED, ...over }), orgUnit: null });
   const q = (selector: string) => document.querySelector<HTMLElement>(selector);
   const slot = (field: string) => q(`[data-cf-field="${field}"] .am-field__message`)?.textContent?.trim() ?? '';
 

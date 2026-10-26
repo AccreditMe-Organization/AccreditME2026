@@ -91,7 +91,6 @@ export class CommitteesService {
         memberCount: fact?.memberCount ?? 0,
         currentStageNameEn: fact?.stageNameEn ?? null,
         currentStageNameAr: fact?.stageNameAr ?? null,
-        currentStageKey: fact?.stageKey ?? null,
         isDissolving: fact?.isDissolving ?? false,
         typeValue: types.get(committee.typeValueId) ?? null,
         stageRules: committeeStageRules(rules.get(committee.id)),
@@ -107,24 +106,31 @@ export class CommitteesService {
     return committee;
   }
 
-  // ACC-238 — the record page's read: the committee plus its current stage KEY
-  // and whether that key says it is dissolving, so the page decides what to
-  // offer (Edit in Formation, the locked line in Terms Review) by key, never by
-  // a stage name. Read by the same helper as the list rows, so the two agree.
+  // ACC-238 — the record page's read: the committee plus what its current
+  // stage allows and means (stageRules, ACC-255), whether it is dissolving, and
+  // its type and owning unit named (ACC-246, ACC-265). Read by the same helpers
+  // as the list rows, so the two agree. No stage key is sent (ACC-265).
   // Internal callers keep getCommitteeById(), which costs one query.
   async getCommitteeDetail(id: string, organizationId: string): Promise<ICommitteeDetail> {
     const committee = await this.getCommitteeById(id, organizationId);
-    const [facts, types, rules] = await Promise.all([
+    const [facts, types, rules, orgUnit] = await Promise.all([
       committeeStagesAndCounts(this.prisma, organizationId, [committee.id]),
       committeeTypeValues(this.prisma, organizationId, [committee.typeValueId]),
       this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [committee.id]),
+      // ACC-265 — the owning unit's names, scoped by organisation like every read.
+      committee.orgUnitId
+        ? this.prisma.orgUnit.findFirst({
+            where: { id: committee.orgUnitId, organizationId },
+            select: { id: true, nameEn: true, nameAr: true },
+          })
+        : Promise.resolve(null),
     ]);
     const fact = facts.get(committee.id);
     return {
       ...committee,
-      currentStageKey: fact?.stageKey ?? null,
       isDissolving: fact?.isDissolving ?? false,
       typeValue: types.get(committee.typeValueId) ?? null,
+      orgUnit,
       // ACC-255 — the same answer PR 2's writes will assert.
       stageRules: committeeStageRules(rules.get(committee.id)),
     };

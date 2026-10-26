@@ -233,6 +233,15 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
           }
         }
 
+        // ── ACC-265: the SLA, now a counted string, fits its column, uncut ──
+        const slaCells = Array.from(host.querySelectorAll<HTMLElement>('[data-cell="sla"]'));
+        expect(slaCells.length).withContext('one SLA cell per stage').toBe(6);
+        for (const cell of slaCells) {
+          // Non-vacuity: a real box (an inline span would measure 0 and pass for nothing).
+          expect(cell.clientWidth).withContext('SLA cell has a width').toBeGreaterThan(20);
+          expect(cell.scrollWidth).withContext(`SLA "${cell.textContent!.trim()}" fits`).toBeLessThanOrEqual(cell.clientWidth + 1);
+        }
+
         // ── The transition table stays inside its column ──
         const table = host.querySelector<HTMLElement>('.am-tr-table table') ?? host.querySelector<HTMLElement>('.am-tr-table');
         expect(table).withContext('the expanded row shows its transitions').not.toBeNull();
@@ -254,4 +263,18 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
     expect(text).toContain('Fixed position');
     expect(host.querySelector('[data-tr-trigger]')!.textContent!.trim()).toBe('Assignee pool');
   });
+
+  // ACC-265 item 2 — the SLA column read "40h" in both languages.
+  for (const [lang, hours] of [
+    ['en', '40 working hours'],
+    ['ar', '40 ساعة عمل'],
+  ] as const) {
+    it(`the SLA reads as a counted string, never "40h" [${lang}]`, async () => {
+      const host = await render(1148, lang);
+      const sla = Array.from(host.querySelectorAll<HTMLElement>('[data-cell="sla"]')).map((c) => c.textContent!.trim());
+      // Stages 1, 3 and 5 have a 40-hour SLA; the rest have none.
+      expect(sla).toEqual([hours, '—', hours, '—', hours, '—']);
+      expect(host.textContent).not.toContain('40h');
+    });
+  }
 });

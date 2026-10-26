@@ -5,6 +5,7 @@ import { CommitteeListsService } from './committee-lists.service';
 import { CommitteeFormChoicesService } from './committee-form-choices.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 import { ICommittee, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
 
 const TENANT_ID = 'tenant-test';
@@ -128,6 +129,13 @@ describe('CommitteesController', () => {
 
     expect(service.getCommitteeDetail).toHaveBeenCalledWith('committee-1', TENANT_ID);
     expect(result).toEqual(MOCK_COMMITTEE);
+  });
+
+  // ACC-265 — the record page's read, which now names the type and the owning
+  // unit, needs committees:view and nothing else: a role without lookups:view
+  // or org:view reads the names with the committee.
+  it('the record read needs committees:view alone', () => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getCommitteeById)).toEqual(['committees:view']);
   });
 
   it('createCommittee delegates to the service with tenant and actor', async () => {
