@@ -22,6 +22,7 @@ const MOCK_TEMPLATE: IWorkflowTemplate = {
   objectType: 'DOCUMENT',
   isDefault: true,
   isActive: true,
+  isProtected: false,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };

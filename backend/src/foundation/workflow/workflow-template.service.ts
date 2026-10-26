@@ -1072,6 +1072,8 @@ export class WorkflowTemplateService {
       objectType: template.objectType,
       isDefault: template.isDefault,
       isActive: template.isActive,
+      // ACC-255 PR 4b-be (G6) — the server's own rule, the one every refusal reads.
+      isProtected: PROTECTED_TEMPLATES.has(template.objectType),
       createdAt: template.createdAt,
       updatedAt: template.updatedAt,
     };

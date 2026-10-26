@@ -7,6 +7,8 @@ import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
+import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
+import { WorkflowObjectType } from '../../../generated/prisma/enums';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -2018,6 +2020,26 @@ describe('WorkflowTemplateService', () => {
         ]);
         expect(result.recordFields?.map((f) => f.key)).toEqual(['typeValueId', 'orgUnitId']);
         expect(result.stages?.[0]).toMatchObject({ actions: ['add_member', 'request_change'], flags: ['IN_FORCE'] });
+      });
+
+      // ACC-255 PR 4b-be (G6) — the read says which templates are protected,
+      // from PROTECTED_TEMPLATES itself, on the list and the detail alike.
+      it('says whether a template is protected, from the server’s own rule, on the list and the detail', async () => {
+        const request = makeTemplate({ id: 'tpl-request', objectType: 'COMMITTEE_CHANGE_REQUEST' });
+        const committee = makeTemplate({ id: 'tpl-committee', objectType: 'COMMITTEE' });
+        mockPrisma.workflowTemplate.findMany.mockResolvedValue([committee, request]);
+        const list = await service.getTemplates(ORG_A);
+        expect(list.map((t) => [t.objectType, t.isProtected])).toEqual([
+          ['COMMITTEE', false],
+          ['COMMITTEE_CHANGE_REQUEST', true],
+        ]);
+        // Every protected type, and only those, reads as protected.
+        for (const objectType of Object.values(WorkflowObjectType)) {
+          mockPrisma.workflowTemplate.findFirst.mockResolvedValueOnce(makeTemplate({ objectType }));
+          mockPrisma.workflowStage.findMany.mockResolvedValueOnce([]);
+          const detail = await service.getTemplateById('template-1', ORG_A);
+          expect([objectType, detail.isProtected]).toEqual([objectType, PROTECTED_TEMPLATES.has(objectType)]);
+        }
       });
 
       it('a record type with no registry entry offers nothing to configure', async () => {

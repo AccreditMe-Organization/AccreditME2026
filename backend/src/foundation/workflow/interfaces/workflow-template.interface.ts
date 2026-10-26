@@ -11,6 +11,11 @@ export interface IWorkflowTemplate {
                        // runtime import of the generated Prisma enum
   isDefault: boolean;
   isActive: boolean;
+  // ACC-255 PR 4b-be (G6) — whether AccreditMe keeps this template's shape
+  // fixed (PROTECTED_TEMPLATES): its stages may be renamed and given deadlines,
+  // nothing else. On every template read, list and detail, so a screen renders
+  // the protected state from the server's own rule rather than a copy of it.
+  isProtected: boolean;
   createdAt: Date;
   updatedAt: Date;
   stages?: IWorkflowStage[]; // populated when requested with detail
