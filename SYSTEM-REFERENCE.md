@@ -375,6 +375,21 @@ elsewhere.**
     `expectedPermissionKeys`. A 409 offers only "Reload role".
   - **Read-only:** the root role, Platform Administrator, and any reader
     without `roles:manage`.
+  - **Layout (ACC-266).** The grid scrolls both ways inside its frame.
+    - The header row is sticky at the top (z 3). Its corner is sticky on both
+      axes, above the header and the frozen column (z 4). The frozen column is
+      `inset-inline-start`, with its shadow flipped by direction.
+    - The page is as tall as `<main>`, and the frame shrinks into what the
+      page header leaves, never past its content. Below a floor, `<main>`
+      scrolls the page.
+    - The grid is at least 1200 wide; wider, the six action columns share the
+      extra. The frozen column is 300, and 160 below Tailwind's `sm` (640px),
+      where names wrap (Ahmad, 27 Oct).
+    - **Arrow keys scroll the CELL with `scrollIntoView({ block: 'nearest',
+      inline: 'nearest' })` after `focus({ preventScroll: true })`**, so both
+      scroll paddings (frozen column, header) hold. Chrome's own focus scroll
+      leaves an element alone once 32px of it shows, which kept a cell half
+      under the frozen column. Any grid with a sticky column needs the same.
   - **Leaving with unsaved changes asks first.** This is
     `permission-matrix/leave-guard.ts`, the app's first `canDeactivate`: a
     screen implements `canLeave()`, plus its own `beforeunload`.
