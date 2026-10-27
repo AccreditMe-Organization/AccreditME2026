@@ -16,6 +16,7 @@ import { StorageRefusalException } from './storage-refusal';
 import { isPrivateEndpointRefusal, StoredFileService } from './stored-file.service';
 import { StorageProviderKind, StorageResolverService } from './storage-resolver.service';
 import { SharePointAccessLostReason, StorageNoticesService } from './storage-notices.service';
+import { SharePointAccessService } from './sharepoint-access.service';
 import { StorageChangeRequestDto, TestStorageSettingsDto, UpdateStorageSettingsDto } from './dto/update-storage-settings.dto';
 import { IStorageSettings, IStorageTestResult, StorageTestStep } from './interfaces/storage-settings.interface';
 
@@ -79,6 +80,7 @@ export class StorageSettingsService {
     private readonly storedFiles: StoredFileService,
     private readonly auditLog: AuditLogService,
     private readonly notices: StorageNoticesService,
+    private readonly access: SharePointAccessService,
   ) {}
 
   async get(organizationId: string): Promise<IStorageSettings> {
@@ -378,8 +380,13 @@ export class StorageSettingsService {
   /**
    * Writes a probe object, reads it back, compares it, deletes it — against
    * the candidate settings if any were sent, the stored ones otherwise.
-   * SAVES NOTHING, and writes nothing to the organisation (Q6). Reports the
-   * first step that failed.
+   * SAVES NOTHING, and writes nothing to the organisation (Q6), with ONE
+   * exception (ACC-260 PR C, Ahmad's D5): a passing test of the CONFIRMED
+   * SharePoint location's STORED settings, reaching the same tenant, site and
+   * library Confirm recorded, ends "access withdrawn" at once — what the hourly
+   * probe would do an hour later. A typed candidate never clears it, because
+   * the stored credentials, which every upload uses, may still fail. Reports
+   * the first step that failed.
    *
    * Which option is tested: the one named, else the confirmed provider, else
    * the draft being set up.
@@ -389,7 +396,19 @@ export class StorageSettingsService {
     const stored = readStorageConfig(org.storageConfig);
     const provider: StorageChoice =
       dto.provider ?? (org.storageConfirmedAt ? org.storageProvider : (stored.draftProvider ?? org.storageProvider));
-    return this.runTest(organizationId, provider, this.merge(stored, dto));
+    const result = await this.runTest(organizationId, provider, this.merge(stored, dto));
+    if (
+      result.ok &&
+      provider === 'SHAREPOINT' &&
+      org.storageProvider === 'SHAREPOINT' &&
+      org.storageConfirmedAt !== null &&
+      org.storageAccessLostAt !== null &&
+      !sentSharePointValues(dto) &&
+      sameSharePointLocation(stored, result)
+    ) {
+      await this.access.markRestored(organizationId);
+    }
+    return result;
   }
 
   private async runTest(organizationId: string, provider: StorageChoice, candidate: IStorageConfig): Promise<IStorageTestResult> {
@@ -506,18 +525,7 @@ export class StorageSettingsService {
    * change.
    */
   private assertSameSharePointLocation(stored: IStorageConfig, result: IStorageTestResult): void {
-    const was = stored.sharepoint?.resolved;
-    const now = result.sharepoint;
-    if (
-      !was ||
-      !now ||
-      was.tenantId !== now.tenantId ||
-      was.siteId !== now.siteId ||
-      was.listId !== now.listId ||
-      was.driveId !== now.driveId
-    ) {
-      throw new StorageRefusalException('STORAGE_CHANGE_BY_PLATFORM');
-    }
+    if (!sameSharePointLocation(stored, result)) throw new StorageRefusalException('STORAGE_CHANGE_BY_PLATFORM');
   }
 
   // Stored settings with the sent ones on top. An omitted field — a secret
@@ -614,6 +622,29 @@ function changedFields(before: IStorageConfig, after: IStorageConfig): string[] 
   return (['minio', 'local', 'sharepoint'] as const).flatMap((block) =>
     changedFieldNames(before[block], after[block], `${block}.`),
   );
+}
+
+/** Whether a test reached exactly the tenant, site and library Confirm recorded. */
+function sameSharePointLocation(stored: IStorageConfig, result: IStorageTestResult): boolean {
+  const was = stored.sharepoint?.resolved;
+  const now = result.sharepoint;
+  return Boolean(
+    was &&
+      now &&
+      was.tenantId === now.tenantId &&
+      was.siteId === now.siteId &&
+      was.listId === now.listId &&
+      was.driveId === now.driveId,
+  );
+}
+
+/**
+ * Whether a test body carried any SharePoint value of its own. An omitted or
+ * empty field keeps its stored value (the merge's rule); anything else, null
+ * included, is a candidate.
+ */
+function sentSharePointValues(dto: TestStorageSettingsDto): boolean {
+  return Object.values(dto.sharepoint ?? {}).some((value) => value !== undefined && value !== '');
 }
 
 function sha256(content: Buffer): string {
