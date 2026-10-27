@@ -77,6 +77,16 @@ export class ListRowDirective implements OnDestroy {
    */
   readonly key = input<string | null>(null, { alias: 'amListRowKey' });
 
+  /**
+   * ACC-260 PR D — the row's place in the list, when the caller has it (the
+   * list's `let-i="index"`). With it, "is this the first row" is the list's
+   * answer, not the DOM's: a row the animation renderer has not removed yet is
+   * still the DOM's first sibling, so the DOM answer changed between the check
+   * and its re-check whenever a search or a page dropped the first row
+   * (NG0100). Without it, the DOM is asked, as before.
+   */
+  readonly index = input<number | null>(null, { alias: 'amListRowIndex' });
+
   /** Enter, or a double click. */
   readonly rowOpen = output<void>();
 
@@ -133,6 +143,8 @@ export class ListRowDirective implements OnDestroy {
   }
 
   private isFirstRow(): boolean {
+    const index = this.index();
+    if (index !== null) return index === 0;
     const el = this.host.nativeElement;
     return this.siblings()[0] === el;
   }

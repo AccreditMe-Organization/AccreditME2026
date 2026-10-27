@@ -362,9 +362,9 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
              it. Never shown where the set is genuinely empty: telling someone
              to clear a search they did not make is worse than saying nothing. -->
         <div class="flex flex-col items-center justify-center text-center gap-1 px-6 py-8">
-          <span class="text-[13px] font-semibold">{{ 'list.noResults' | translate }}</span>
+          <span class="text-[13px] font-semibold">{{ noResultsTitle() || ('list.noResults' | translate) }}</span>
           <span class="text-xs text-[var(--am-text-secondary)]">
-            {{ 'list.noResultsBody' | translate }}
+            {{ noResultsMessage() || ('list.noResultsBody' | translate) }}
           </span>
           <p-button
             class="mt-2"
@@ -526,6 +526,14 @@ export class DataListComponent<T> implements OnInit {
   readonly searchPlaceholder = input<string>('');
   readonly emptyTitle = input<string>('');
   readonly emptyMessage = input<string>('');
+  // ACC-260 PR D — a list's own words for "nothing matches" ("No deleted files
+  // match"). Empty keeps the shared sentence. Already translated.
+  readonly noResultsTitle = input<string>('');
+  readonly noResultsMessage = input<string>('');
+  // ACC-260 PR D — the sort a list starts with when nothing is saved for it,
+  // so its header shows it (the bin opens soonest to expire first). A saved or
+  // shared sort still wins. Null: no sort until one is chosen.
+  readonly initialSort = input<{ sortBy: string; sortDir: 'asc' | 'desc' } | null>(null);
 
   // Page mode renders a pager; a list that is inherently COMPLETE turns it
   // off. This is an explicit caller decision, not a row-count rule — Workflow
@@ -808,7 +816,9 @@ export class DataListComponent<T> implements OnInit {
 
   private restore(): void {
     const key = this.persistKey();
+    const initial = this.initialSort();
     if (!key) {
+      if (initial) this.query.set({ page: 1, sortBy: initial.sortBy, sortDir: initial.sortDir });
       this.restored.set(true);
       return;
     }
@@ -816,8 +826,8 @@ export class DataListComponent<T> implements OnInit {
     const prefs = readPreferences(key);
     let query: IListQuery = {
       page: 1,
-      sortBy: prefs.sortBy,
-      sortDir: prefs.sortDir,
+      sortBy: prefs.sortBy ?? initial?.sortBy,
+      sortDir: prefs.sortBy ? prefs.sortDir : initial?.sortDir,
       pageSize: prefs.pageSize,
     };
     let scope = prefs.scope ?? null;
