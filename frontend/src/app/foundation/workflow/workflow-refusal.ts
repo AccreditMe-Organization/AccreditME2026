@@ -185,3 +185,25 @@ export function openStageTasks(err: unknown): OpenStageTask[] | null {
     pool: t.pool ?? null,
   }));
 }
+
+/**
+ * ACC-255 PR 4b — a meaning that must sit on exactly one stage, refused: the
+ * flag and the stages that hold it now, each with its id (4b-be's G3) beside
+ * its names, so the stage editor can name AND open the other one. An empty
+ * list means no stage holds it.
+ */
+export function flagExactlyOne(
+  err: unknown,
+): { flag: string; stages: { id: string; nameEn: string; nameAr: string | null }[] } | null {
+  const body = bodyIf(err, 'STAGE_FLAG_EXACTLY_ONE');
+  if (!body || typeof body['flag'] !== 'string') return null;
+  const names = Array.isArray(body['stageNames']) ? (body['stageNames'] as { nameEn?: unknown; nameAr?: unknown }[]) : [];
+  const ids = Array.isArray(body['stageIds']) ? (body['stageIds'] as unknown[]) : [];
+  const stages = ids.flatMap((id, i) => {
+    const name = names[i];
+    return typeof id === 'string' && name && typeof name.nameEn === 'string'
+      ? [{ id, nameEn: name.nameEn, nameAr: typeof name.nameAr === 'string' ? name.nameAr : null }]
+      : [];
+  });
+  return { flag: body['flag'], stages };
+}
