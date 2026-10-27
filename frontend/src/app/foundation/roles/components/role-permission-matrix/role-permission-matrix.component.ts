@@ -71,10 +71,28 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
  * Its shadow's x-offset is physical, so it flips by direction through two
  * tokens.
  *
- * Nothing reads or writes `scrollLeft`: an RTL scroller starts at its right
- * edge and browsers disagree on the sign. Focus keeps the focused cell in
- * view, and `scroll-padding-inline-start` keeps it clear of the frozen column.
- * Columns are never reordered for Arabic; `dir` mirrors them.
+ * Nothing reads or writes `scrollLeft` or `scrollTop`: an RTL scroller starts
+ * at its right edge and browsers disagree on the sign. Focus keeps the focused
+ * cell in view, and the scroll padding keeps it clear of the frozen column
+ * (`scroll-padding-inline-start`) and of the header row
+ * (`scroll-padding-block-start`). Columns are never reordered for Arabic;
+ * `dir` mirrors them.
+ *
+ * ACC-266 — the grid scrolls in BOTH directions inside `.pm-scroll`, so the
+ * header row is `position: sticky; top: 0` above the body, and its corner
+ * cell is sticky on both axes, above the header and the frozen column. The
+ * frame fills what is left of the window under the top bar and the page
+ * header (the page is the height of `<main>`, and the frame shrinks into
+ * it), and is never taller than its content. That is a LAYOUT height, not a
+ * calc: the page header's own height changes with its purpose line, its
+ * buttons and the language, so no fixed number could subtract it. Below
+ * its floor (the header row, six rows, the legend and the page header) the
+ * page stops shrinking and `<main>` scrolls it, so a short
+ * window still shows a usable box. The grid is at least 1200 wide (300 + six
+ * of 150); wider, the six action columns share the extra equally. Below
+ * Tailwind's sm (640px) the frozen column is 160 and its names wrap (Ahmad,
+ * 27 Oct), so the grid is at least 1060 and a whole action column fits beside
+ * it at 390; the sticky offset and the scroll padding read the same width.
  *
  * ## The keyboard (D9)
  *
@@ -92,10 +110,16 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
  */
 @Component({
   selector: 'app-role-permission-matrix',
+  // ACC-266 — as tall as <main>, so the page below can share out its height.
+  // The frozen column is 300, and 160 below Tailwind's sm (640px), where names
+  // wrap instead (Ahmad, 27 Oct): at 390 that leaves room for a whole action
+  // column beside it. Set here, not in styles, so the breakpoint costs the
+  // component's 4kB style budget nothing and beats no :host rule.
+  host: { class: 'block h-full [--pm-frozen-width:300px] max-sm:[--pm-frozen-width:160px]' },
   standalone: true,
   imports: [NgClass, PageHeaderComponent, PermissionSaveConfirmComponent, TranslatePipe, AmCountPipe, ButtonModule, TagModule, MessageModule],
   template: `
-    <div class="flex flex-col gap-4">
+    <div class="flex flex-col gap-4 h-full min-h-[calc(var(--pm-head-height)+6*44px+4*var(--am-space-40))]">
       @if (role(); as r) {
         <app-page-header [title]="roleName()" [purpose]="subtitle()" [eyebrow]="'roles.permissionMatrix' | translate">
           <div pageActions class="flex flex-wrap items-center gap-2">
@@ -138,8 +162,8 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
       } @else if (rows().length === 0) {
         <p class="text-sm text-[var(--am-ink-500)]">{{ 'roles.matrix.noneShown' | translate }}</p>
       } @else {
-        <div class="pm-frame" [class.pm--rtl]="isRtl()">
-          <div class="pm-scroll">
+        <div class="pm-frame flex flex-col flex-[0_1_auto] min-h-0" [class.pm--rtl]="isRtl()">
+          <div class="pm-scroll flex-[0_1_auto] min-h-0 overflow-auto">
             <div
               class="pm-grid"
               role="grid"
@@ -150,7 +174,7 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
               (keydown)="onGridKeydown($event)"
               (focusin)="onGridFocusIn($event)"
             >
-              <div role="row" class="pm-row pm-row--head" aria-rowindex="1">
+              <div role="row" class="pm-row pm-row--head sticky top-0 z-3" aria-rowindex="1">
                 <div role="columnheader" class="pm-frozen pm-head">{{ 'roles.matrix.columnHeader' | translate }}</div>
                 @for (col of columns; track col) {
                   <div role="columnheader" class="pm-cell pm-head">{{ 'roles.matrix.col.' + col | translate }}</div>
@@ -237,7 +261,7 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
             </div>
           </div>
 
-          <div class="pm-legend">
+          <div class="pm-legend flex-none">
             @if (readOnly()) {
               <span><span class="pm-ro pm-glyph--on" aria-hidden="true">✓</span>{{ 'roles.matrix.legend.granted' | translate }}</span>
               <span><span class="pm-ro pm-glyph--off" aria-hidden="true">·</span>{{ 'roles.matrix.legend.notGranted' | translate }}</span>
@@ -269,6 +293,16 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
   `,
   styles: [
     `
+      /* The grid's own sizes, named once so the sticky offsets, the scroll
+         padding and the minimum width cannot drift from the cells. The page
+         (h-full) is as tall as <main>; the frame (flex 0 1 auto) never grows
+         past its content and shrinks into what the page header leaves; the
+         scroller scrolls both ways. The page stops shrinking at its min-h
+         — the header row, six permission rows and the legend, plus the page
+         header — and <main> then scrolls it. */
+      :host {
+        --pm-head-height: 35px;
+      }
       .pm-frame {
         border: 1px solid var(--am-border-strong);
         border-radius: var(--am-radius-card);
@@ -280,13 +314,13 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
         --pm-frozen-shadow: var(--am-frozen-shadow-rtl);
       }
       .pm-scroll {
-        overflow-x: auto;
         /* Focus scrolls a cell into view; this keeps it out from under the
-           frozen column instead of behind it. */
-        scroll-padding-inline-start: 300px;
+           frozen column and the header row instead of behind them. */
+        scroll-padding-inline-start: var(--pm-frozen-width);
+        scroll-padding-block-start: var(--pm-head-height);
       }
       .pm-grid {
-        width: 1200px; /* 300 + 6 × 150 */
+        min-width: calc(var(--pm-frozen-width) + 6 * 150px);
       }
       .pm-row {
         display: flex;
@@ -301,9 +335,10 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
         background: var(--am-surface);
         border-block-end-color: var(--am-border);
       }
+      /* ACC-266 — sticky top-0 z-3 in the template: at the top of the scroller,
+         above the frozen column (2); its corner is 4. */
       .pm-row--head {
-        min-height: 35px;
-        height: 35px;
+        height: var(--pm-head-height);
         background: var(--am-surface);
         border-block-end-color: var(--am-border);
       }
@@ -312,7 +347,7 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
          permission rows all use it, so the column cannot drift between them. */
       .pm-frozen {
         flex: none;
-        width: 300px;
+        width: var(--pm-frozen-width);
         box-sizing: border-box;
         padding: 7px 12px;
         border-inline-end: 1px solid var(--am-border-strong);
@@ -321,6 +356,11 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
         position: sticky;
         inset-inline-start: 0;
         background: inherit;
+      }
+      /* The corner: frozen inline (above) inside the sticky header row, so
+         pinned on both axes, and above both the header and the column. */
+      .pm-row--head > .pm-frozen {
+        z-index: 4;
       }
 
       .pm-head {
@@ -334,8 +374,9 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
         justify-content: center;
       }
       .pm-cell {
-        flex: none;
-        width: 150px;
+        /* Six equal shares of whatever is wider than 1200 (ACC-266). */
+        flex: 1 0 150px;
+        min-width: 0;
         box-sizing: border-box;
         display: flex;
         align-items: center;
@@ -875,9 +916,14 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   private moveFocus(r: number, cell: number): void {
     this.focusAt.set([r, cell]);
     const el = this.host.nativeElement.querySelector<HTMLElement>(`[data-pm-cell="${r}:${cell}"]`);
-    // focus() scrolls the cell into view; scroll-padding keeps it clear of the
-    // frozen column. scrollLeft is never touched (see the header).
-    el?.focus();
+    // The CELL is scrolled into view, and scroll-padding keeps it clear of the
+    // frozen column and the sticky header row. Not focus()'s own scroll:
+    // Chrome leaves an element alone once 32px of it shows, so a cell half
+    // under the frozen column stayed there (ACC-266). 'nearest' moves only as
+    // far as the whole cell needs. scrollLeft and scrollTop are never touched
+    // (see the header).
+    el?.focus({ preventScroll: true });
+    el?.closest<HTMLElement>('.pm-cell, .pm-frozen')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   // ── Saving ────────────────────────────────────────────────────────────────
