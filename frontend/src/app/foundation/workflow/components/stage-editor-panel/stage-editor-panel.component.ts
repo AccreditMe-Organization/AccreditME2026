@@ -171,8 +171,11 @@ interface PanelRefusal {
             <am-field [label]="'workflow.slaWorkingHours' | translate" [control]="form.controls.slaWorkingHours" inputId="sep-sla"
               [readonly]="!editable('slaWorkingHours')" [readonlyText]="deadlineText()"
               [hint]="slaRefusal() ? '' : deadlineText()">
-              <p-inputNumber inputId="sep-sla" formControlName="slaWorkingHours" [min]="0" styleClass="w-full"
-                [inputStyleClass]="slaRefusal() ? 'p-invalid' : ''" />
+              <!-- The field and its input fill the card and may shrink: the input's
+                   own intrinsic width (its size attribute times the font's character
+                   width) passed a 358px phone column on CI's Linux fonts. -->
+              <p-inputNumber inputId="sep-sla" formControlName="slaWorkingHours" [min]="0" styleClass="w-full min-w-0"
+                [inputStyleClass]="slaRefusal() ? 'w-full min-w-0 p-invalid' : 'w-full min-w-0'" />
             </am-field>
             @if (slaRefusal(); as refusal) {
               <small class="am-sep__refusal" role="alert" data-sla-refusal>{{ refusal }}</small>
@@ -384,6 +387,10 @@ interface PanelRefusal {
         padding: var(--am-space-12);
         border: 1px solid var(--am-border);
         border-radius: var(--am-radius-control);
+      }
+      /* A card's fields shrink with the card, never past it. */
+      .am-sep__card > * {
+        min-inline-size: 0;
       }
       .am-sep__card-title,
       .am-sep__section-title {

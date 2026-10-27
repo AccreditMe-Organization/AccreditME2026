@@ -42,9 +42,11 @@ const CASES = [
   { name: 'at 1920', width: 1628 },
   { name: 'at 390', width: 358 },
   // CI's Linux runner overflowed the 390 case by 15px where a Windows machine
-  // did not. This case runs it again with a wide fallback font (what a Linux
-  // runner without the app's font draws), so a local run sees more of what CI
-  // sees.
+  // did not: the deadline's number input, sized by its own intrinsic width
+  // (its size attribute times the font's character width). This case runs it
+  // again with a wide fallback font AND every input's intrinsic width widened
+  // (size 50), so a local run fails the way CI did on a field that cannot
+  // shrink with its column.
   { name: 'at 390, wide fallback font', width: 358, wideFont: true },
 ] as const;
 
@@ -60,15 +62,15 @@ function clippedBelow(el: HTMLElement, host: HTMLElement): boolean {
 }
 
 /**
- * Every element under the host whose right edge passes the host's, unclipped
- * on the way: what to fix when the page-width check fails, named in the
+ * Every element under the host that passes either of its edges (the right in
+ * English, the left in Arabic), unclipped on the way: what to fix when the page-width check fails, named in the
  * failure itself (CI's overflow could not be reproduced on a Windows machine).
  */
 function pastTheEdge(host: HTMLElement): string {
-  const edge = host.getBoundingClientRect().right;
+  const box = host.getBoundingClientRect();
   const found = Array.from(host.querySelectorAll<HTMLElement>('*'))
     .map((el) => ({ el, r: el.getBoundingClientRect() }))
-    .filter(({ el, r }) => r.width > 0 && r.right > edge + 1 && !clippedBelow(el, host))
+    .filter(({ el, r }) => r.width > 0 && (r.right > box.right + 1 || r.left < box.left - 1) && !clippedBelow(el, host))
     .map(({ el, r }) => {
       const s = getComputedStyle(el);
       const data = Array.from(el.attributes)
@@ -77,7 +79,7 @@ function pastTheEdge(host: HTMLElement): string {
         .join(' ');
       return `${el.tagName.toLowerCase()}.${String(el.className).trim().replace(/\s+/g, '.').slice(0, 80)} [${data}] left=${Math.round(r.left)} right=${Math.round(r.right)} width=${Math.round(r.width)} css-width=${s.width} min-width=${s.minWidth}`;
     });
-  return found.length ? `past the host's right edge (${Math.round(edge)}):\n  ${found.join('\n  ')}` : 'nothing past the host';
+  return found.length ? `past the host's edges (${Math.round(box.left)}..${Math.round(box.right)}):\n  ${found.join('\n  ')}` : 'nothing past the host';
 }
 
 const LONG = {
@@ -200,6 +202,10 @@ describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)'
     await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     fixture.detectChanges();
+    if (wideFont) {
+      (fixture.nativeElement as HTMLElement).querySelectorAll('input').forEach((i) => i.setAttribute('size', '50'));
+      fixture.detectChanges();
+    }
     return fixture.nativeElement.querySelector('[data-host]') as HTMLElement;
   }
 

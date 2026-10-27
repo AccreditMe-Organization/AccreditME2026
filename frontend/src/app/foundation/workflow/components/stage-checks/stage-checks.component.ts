@@ -82,6 +82,9 @@ export interface StageCheckRow {
   styles: [
     `
       .am-checks {
+        /* The rows narrow on the LIST's width, not the window's: the panel can
+           be narrow inside a wide window, and the reverse. */
+        container-type: inline-size;
         margin: 0;
         padding: 0;
         list-style: none;
@@ -164,7 +167,7 @@ export interface StageCheckRow {
         clip: rect(0 0 0 0);
         white-space: nowrap;
       }
-      @media (max-width: 559.98px) {
+      @container (max-width: 479.98px) {
         .am-checks__row {
           flex-wrap: wrap;
         }

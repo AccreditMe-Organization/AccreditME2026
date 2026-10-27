@@ -165,9 +165,9 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
                and the actions are in the dialog's footer, so the tallest state
                (a webhook with a save error) keeps 20px under the 420px cap. -->
           <div class="grid grid-cols-2 items-end gap-4">
-            <div class="flex flex-col gap-1">
+            <div class="flex min-w-0 flex-col gap-1">
               <label class="font-medium text-sm">{{ 'workflow.order' | translate }} <span class="text-red-500">*</span></label>
-              <p-inputNumber formControlName="order" [min]="0" styleClass="w-full" />
+              <p-inputNumber formControlName="order" [min]="0" styleClass="w-full min-w-0" inputStyleClass="w-full min-w-0" />
             </div>
             <div class="flex items-center gap-2 pb-2">
               <p-checkbox formControlName="isEnabled" [binary]="true" inputId="isEnabled" />
