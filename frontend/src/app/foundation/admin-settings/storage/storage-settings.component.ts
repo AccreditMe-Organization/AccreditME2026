@@ -12,6 +12,10 @@ import { StripView, UsageView, stripView, usageView } from './storage-view';
 import { StorageLocationComponent } from './storage-location.component';
 import { StorageRequestDialogComponent } from './storage-request-dialog.component';
 import { AuthService } from '../../../core/services/auth.service';
+import { RouterLink } from '@angular/router';
+import { NavigationAccessService } from '../../../core/services/navigation-access.service';
+import { RecycleBinService } from '../recycle-bin/recycle-bin.service';
+import { totals } from '../recycle-bin/recycle-bin-view';
 
 type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLimitsDto } | { status: 'failed' };
 
@@ -40,7 +44,7 @@ type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLim
 @Component({
   selector: 'app-storage-settings',
   standalone: true,
-  imports: [PageHeaderComponent, TranslatePipe, ButtonModule, MessageModule, StorageLocationComponent, StorageRequestDialogComponent],
+  imports: [PageHeaderComponent, TranslatePipe, RouterLink, ButtonModule, MessageModule, StorageLocationComponent, StorageRequestDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex max-w-6xl flex-col gap-3">
@@ -151,6 +155,13 @@ type LimitsState = { status: 'loading' } | { status: 'ready'; limits: IUploadLim
                         <span class="am-ss__fill" [class.am-ss__fill--near]="u.tone === 'near'" [class.am-ss__fill--full]="u.tone === 'full'" [style.inline-size.%]="u.percent"></span>
                       </div>
                       <p class="m-0 text-meta text-ink-700" data-testid="usage-line">{{ ('storage.usage.' + u.tone + 'Line') | translate: sizes(u) }}</p>
+                      <!-- PR D — the bin's share of the usage (plan G6: summed from the bin list). -->
+                      @if (binBytes(); as bytes) {
+                        <p class="m-0 mt-1.5 text-meta text-ink-700" data-testid="usage-bin">
+                          {{ 'storage.usage.inBin' | translate: { size: files.size(bytes) } }} ·
+                          <a routerLink="/admin-settings/recycle-bin" data-testid="usage-open-bin">{{ 'storage.usage.openBin' | translate }}</a>
+                        </p>
+                      }
                       @if (u.tone !== 'normal') {
                         <p class="m-0 mt-1.5 text-meta text-ink-700" data-testid="usage-contact">{{ 'storage.usage.contact' | translate }}</p>
                       }
@@ -219,6 +230,15 @@ export class StorageSettingsComponent {
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
   private readonly auth = inject(AuthService);
+  private readonly recycleBin = inject(RecycleBinService);
+  private readonly access = inject(NavigationAccessService);
+
+  /**
+   * PR D — the recycle bin's total, for "Includes 212 MB in the recycle bin".
+   * Read only by someone who may open the bin, and absent while it is empty or
+   * could not be read: the line is extra, never a reason the card fails.
+   */
+  readonly binBytes = signal<number | null>(null);
 
   readonly requestOpen = signal(false);
   readonly userName = computed(() => this.auth.currentUser()?.name ?? '');
@@ -262,6 +282,12 @@ export class StorageSettingsComponent {
 
   constructor() {
     this.loadLimits();
+    if (this.access.hasPermission('tenant:manage_config')) {
+      this.recycleBin.list().subscribe({
+        next: (items) => this.binBytes.set(items.length > 0 ? totals(items).bytes : null),
+        error: () => this.binBytes.set(null),
+      });
+    }
   }
 
   loadLimits(): void {

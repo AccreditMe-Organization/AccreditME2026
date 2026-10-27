@@ -47,8 +47,9 @@ describe('File storage route and rail item (ACC-260, PR A)', () => {
     const access = (perms: string[]) => ({ hasPermission: (p: string) => perms.includes(p), isModuleEnabled: () => false, isPlatformAdmin: () => false });
     const admin = visibleNavGroups(access([ADMIN_ACCESS, 'tenant:manage_config', 'tenant:view'])).find((g) => g.key === 'admin')!;
     const keys = admin.items.map((i) => i.key);
-    expect(keys.slice(-2)).toEqual(['aiCredits', 'fileStorage']);
-    expect(admin.items.at(-1)).toEqual(jasmine.objectContaining({ route: '/admin-settings/storage', labelKey: 'nav.fileStorage', requiredPermission: 'tenant:manage_config' }));
+    // PR D — the Recycle bin follows it.
+    expect(keys.slice(-3)).toEqual(['aiCredits', 'fileStorage', 'recycleBin']);
+    expect(admin.items.find((i) => i.key === 'fileStorage')).toEqual(jasmine.objectContaining({ route: '/admin-settings/storage', labelKey: 'nav.fileStorage', requiredPermission: 'tenant:manage_config' }));
     expect(visibleNavGroups(access([ADMIN_ACCESS, 'tenant:view'])).find((g) => g.key === 'admin')?.items.map((i) => i.key) ?? []).not.toContain('fileStorage');
   });
 });

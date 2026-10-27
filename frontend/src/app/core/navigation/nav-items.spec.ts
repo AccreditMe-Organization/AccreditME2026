@@ -385,8 +385,8 @@ describe('nav-items (ACC-79)', () => {
           .withContext(item.key)
           .toContain(ADMIN_ACCESS);
       }
-      // ACC-260 — File storage is the fourteenth.
-      expect(admin.items.length).withContext('the section is not empty').toBe(14);
+      // ACC-260 — File storage is the fourteenth, the Recycle bin (PR D) the fifteenth.
+      expect(admin.items.length).withContext('the section is not empty').toBe(15);
     });
 
     it('holds no platform routes — /platform is guarded as a whole', () => {
