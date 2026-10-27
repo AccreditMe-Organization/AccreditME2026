@@ -336,6 +336,16 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         route: '/admin-settings/storage',
         requiredPermission: 'tenant:manage_config',
       },
+      // ACC-260 PR D — the Recycle bin: files deleted from any record wait here
+      // 30 days before the daily job purges them. The API it reads needs
+      // tenant:manage_config, so the item and its route ask for the same.
+      {
+        key: 'recycleBin',
+        labelKey: 'nav.recycleBin',
+        icon: 'pi pi-trash',
+        route: '/admin-settings/recycle-bin',
+        requiredPermission: 'tenant:manage_config',
+      },
     ],
   },
 ];

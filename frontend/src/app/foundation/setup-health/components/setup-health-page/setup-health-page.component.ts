@@ -104,9 +104,13 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         permissions: ['committees:manage_tasks'],
       };
     case 'STORAGE_ALMOST_FULL':
-      // ACC-177 — no Fix yet: the recycle bin screen, where deleted files are
-      // purged, is lane A's and not built. The row's hint says what to do.
-      return null;
+      // ACC-260 PR D — the recycle bin, where deleted files that still count
+      // against the limit are purged. Its route and API need tenant:manage_config.
+      return {
+        link: ['/admin-settings/recycle-bin'],
+        queryParams: {},
+        permissions: ['tenant:manage_config'],
+      };
     case 'STORAGE_ACCESS_WITHDRAWN':
     case 'STORAGE_SECRET_EXPIRING':
       // ACC-260 — File storage, which shows the withdrawn access or the

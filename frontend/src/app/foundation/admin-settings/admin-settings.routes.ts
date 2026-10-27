@@ -46,6 +46,13 @@ export const ADMIN_SETTINGS_ROUTES: Routes = [
     loadComponent: () =>
       import('./storage/storage-settings.component').then((m) => m.StorageSettingsComponent),
   },
+  // ACC-260 PR D — the recycle bin: deleted files, restored or purged here.
+  {
+    path: 'recycle-bin',
+    canActivate: [permissionGuard],
+    loadComponent: () =>
+      import('./recycle-bin/recycle-bin.component').then((m) => m.RecycleBinComponent),
+  },
   {
     path: 'task-sla',
     canActivate: [permissionGuard],

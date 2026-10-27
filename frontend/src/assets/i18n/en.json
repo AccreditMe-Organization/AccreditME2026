@@ -71,7 +71,8 @@
       "platform": "Platform"
     },
     "organizationReadOnly": "Organization",
-    "fileStorage": "File storage"
+    "fileStorage": "File storage",
+    "recycleBin": "Recycle bin"
   },
   "organization": {
     "title": "Organization Structure",
@@ -2175,7 +2176,8 @@
       "TASK_WITHOUT_OWNER": "Reassign",
       "ACTING_HEAD_OPEN_ENDED": "Open unit",
       "STORAGE_ACCESS_WITHDRAWN": "Open file storage",
-      "STORAGE_SECRET_EXPIRING": "Open file storage"
+      "STORAGE_SECRET_EXPIRING": "Open file storage",
+      "STORAGE_ALMOST_FULL": "Open recycle bin"
     },
     "fixNeeds": {
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
@@ -2184,7 +2186,8 @@
       "TASK_WITHOUT_OWNER": "Fixing this needs permission to manage and reassign tasks.",
       "ACTING_HEAD_OPEN_ENDED": "Fixing this needs permission to manage the organization structure.",
       "STORAGE_ACCESS_WITHDRAWN": "Fixing this needs permission to set up email, storage, deadlines and AI.",
-      "STORAGE_SECRET_EXPIRING": "Fixing this needs permission to set up email, storage, deadlines and AI."
+      "STORAGE_SECRET_EXPIRING": "Fixing this needs permission to set up email, storage, deadlines and AI.",
+      "STORAGE_ALMOST_FULL": "Fixing this needs permission to set up email, storage, deadlines and AI."
     },
     "freshness": {
       "failed": "{{type}}: the last check failed. Its rows are as last confirmed on {{when}}.",
@@ -2728,6 +2731,72 @@
       "bellUnread": {
         "one": "Notifications, {{count}} unread",
         "other": "Notifications, {{count}} unread"
+      }
+    },
+    "recycleBin": {
+      "summary": {
+        "one": "{{count}} file · {{size}}.",
+        "other": "{{count}} files · {{size}}."
+      },
+      "daysLeft": {
+        "one": "{{count}} day",
+        "other": "{{count}} days"
+      },
+      "selected": {
+        "one": "{{count}} selected · {{size}}",
+        "other": "{{count}} selected · {{size}}"
+      },
+      "restoreTitle": {
+        "one": "Restore {{count}} file?",
+        "other": "Restore {{count}} files?"
+      },
+      "restoreNote": {
+        "one": "{{count}} file goes back to its record.",
+        "other": "{{count}} files go back to their records."
+      },
+      "restoreSkipped": {
+        "one": "{{count}} is skipped: its record no longer exists.",
+        "other": "{{count}} are skipped: their records no longer exist."
+      },
+      "filesSize": {
+        "one": "{{count}} file · {{size}}",
+        "other": "{{count}} files · {{size}}"
+      },
+      "filesCount": {
+        "one": "{{count}} file",
+        "other": "{{count}} files"
+      },
+      "restoreConfirm": {
+        "one": "Restore {{count}} file",
+        "other": "Restore {{count}} files"
+      },
+      "restored": {
+        "one": "{{count}} file restored.",
+        "other": "{{count}} files restored."
+      },
+      "restoreMixed": {
+        "one": "{{restored}} restored, {{count}} couldn't be:",
+        "other": "{{restored}} restored, {{count}} couldn't be:"
+      },
+      "purgeTitle": {
+        "one": "Purge {{count}} file for good?",
+        "other": "Purge {{count}} files for good?"
+      },
+      "purgeContext": {
+        "one": "Recycle bin · {{count}} selected · {{size}}",
+        "other": "Recycle bin · {{count}} selected · {{size}}"
+      },
+      "purgeNote": {
+        "one": "{{count}} file, {{size}}, is deleted from storage now. This can't be undone, and it can't be restored.",
+        "other": "{{count}} files, {{size}}, are deleted from storage now. This can't be undone, and they can't be restored."
+      },
+      "purged": {
+        "one": "{{count}} file purged.",
+        "other": "{{count}} files purged."
+      },
+      "noResultsBody": {
+        "one": "{{count}} file in the bin; none match your search or filters.",
+        "other": "{{count}} files in the bin; none match your search or filters."
       }
     }
   },
@@ -3411,7 +3480,9 @@
       "contact": "Contact AccreditMe to raise the limit.",
       "own": "Your own storage: no AccreditMe limit applies.",
       "ownLeftover": "{{used}} from before is still in AccreditMe cloud · {{used}} of {{limit}}.",
-      "meterLabel": "{{used}} of {{limit}} used"
+      "meterLabel": "{{used}} of {{limit}} used",
+      "inBin": "Includes {{size}} in the recycle bin",
+      "openBin": "Open recycle bin"
     },
     "rules": {
       "title": "Upload rules",
@@ -3544,5 +3615,91 @@
       "contactPhoneRequired": "Enter their phone number.",
       "contactPhoneInvalid": "Start with + and the country code, such as +965 2222 3333."
     }
+  },
+  "recycleBin": {
+    "title": "Recycle bin",
+    "purpose": "Deleted files stay here for {{period}}, then are deleted for good. They count towards your storage limit until then.",
+    "searchPlaceholder": "Search file name…",
+    "filter": {
+      "recordType": "Record type",
+      "allRecordTypes": "All record types",
+      "deletedBy": "Deleted by",
+      "anyone": "Anyone",
+      "deleted": "Deleted",
+      "anyTime": "Any time",
+      "day": "In the last 24 hours",
+      "week": "In the last 7 days",
+      "older": "More than 7 days ago"
+    },
+    "col": {
+      "file": "File",
+      "from": "From",
+      "deletedBy": "Deleted by",
+      "deleted": "Deleted",
+      "daysLeft": "Days left"
+    },
+    "recordType": {
+      "TASK": "Task",
+      "other": "Record"
+    },
+    "recordGoneName": {
+      "TASK": "A task that no longer exists",
+      "other": "A record that no longer exists"
+    },
+    "kind": {
+      "pdf": "PDF",
+      "word": "Word",
+      "excel": "Excel",
+      "powerpoint": "PowerPoint",
+      "csv": "CSV",
+      "text": "Text",
+      "image": "Image",
+      "file": "File"
+    },
+    "meta": "{{kind}} · {{size}}",
+    "recordGone": "Can't be restored: the record it came from no longer exists.",
+    "deletedByUnknown": "Unknown",
+    "restore": "Restore",
+    "restoreAria": "Restore {{name}}",
+    "purge": "Purge…",
+    "purgeAria": "Purge {{name}}",
+    "selectRow": "Select {{name}}",
+    "selectPage": "Select every file on this page",
+    "bulk": {
+      "restore": "Restore…",
+      "purge": "Purge…",
+      "clear": "Clear selection"
+    },
+    "restoreDialog": {
+      "context": "Recycle bin",
+      "titleOne": "Restore “{{name}}”?",
+      "bodyOne": "It goes back to {{record}}.",
+      "restoring": "Restoring",
+      "skipped": "Skipped",
+      "confirmOne": "Restore"
+    },
+    "purgeDialog": {
+      "titleOne": "Purge “{{name}}” for good?",
+      "contextOne": "Recycle bin · {{size}}",
+      "files": "Files",
+      "totalSize": "Total size",
+      "tick": "I understand these files will be gone for good",
+      "tickOne": "I understand this file will be gone for good",
+      "confirm": "Purge",
+      "tooMany": "You can purge up to {{max}} files at a time. Select {{max}} or fewer.",
+      "nothingPurged": "Nothing was purged.",
+      "failed": "The files couldn't be purged. Try again."
+    },
+    "outcome": {
+      "notInBin": "It was no longer in the recycle bin.",
+      "restoreFailed": "It couldn't be restored. Try again.",
+      "purgeGone": "Some files had already gone; nothing was purged. Check the list and try again.",
+      "restoredLine": "{{name}}: restored",
+      "refusedLine": "{{name}}: {{reason}}",
+      "dismiss": "Dismiss"
+    },
+    "empty": "The recycle bin is empty",
+    "emptyBody": "Files deleted from tasks stay here for {{period}}, so you can restore them.",
+    "noResults": "No deleted files match"
   }
 }

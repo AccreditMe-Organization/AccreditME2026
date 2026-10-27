@@ -363,7 +363,7 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
 });
 
 // ACC-177 — "File storage almost full": AccreditMe-cloud usage at 90% or more.
-// No Fix: the recycle bin screen is lane A's; the row says what to do.
+// ACC-260 PR D — its Fix is the recycle bin, gated on tenant:manage_config.
 describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
   const GIB = 1024 ** 3;
   const storage: SetupConditionDto = {
@@ -378,7 +378,7 @@ describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
     clearedAt: null,
   };
 
-  function render(arabic: boolean): SetupHealthPageComponent {
+  function render(arabic: boolean, permissions: readonly string[] | null = null): SetupHealthPageComponent {
     TestBed.configureTestingModule({
       imports: [SetupHealthPageComponent],
       providers: [
@@ -387,7 +387,7 @@ describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
         provideRouter([]),
         provideTranslateService({ lang: 'en' }),
         provideFormatTesting(),
-        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => permissions === null || permissions.includes(p) } },
         { provide: LanguageService, useValue: { isArabic: () => arabic } },
       ],
     });
@@ -404,7 +404,7 @@ describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
 
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
-  it('shows the condition with how full it is, what to do, and no Fix', () => {
+  it('shows the condition with how full it is, what to do, and its Fix: the recycle bin', () => {
     const page = render(false);
     const group = page.groups().find((g) => g.type === 'STORAGE_ALMOST_FULL')!;
     expect(group.label).toBe('File storage almost full');
@@ -414,8 +414,14 @@ describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
       '92% of 10 GB is used. Uploads stop at the limit; deleted files count until they are purged from the recycle bin.',
     );
     expect(row.hint).toBe('Purge deleted files from the recycle bin, or ask AccreditMe for more storage.');
-    expect(row.fix).toBeNull();
+    expect(row.fix).toEqual({ label: 'Open recycle bin', link: ['/admin-settings/recycle-bin'], queryParams: {} });
     expect(row.fixNeeds).toBeNull();
+  });
+
+  it('without tenant:manage_config the Fix is absent and the row says what it needs', () => {
+    const row = render(false, ['setup:view']).groups().find((g) => g.type === 'STORAGE_ALMOST_FULL')!.rows[0]!;
+    expect(row.fix).toBeNull();
+    expect(row.fixNeeds).toBe('Fixing this needs permission to set up email, storage, deadlines and AI.');
   });
 
   it('reads in Arabic, with Latin digits', () => {
@@ -426,8 +432,8 @@ describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
 });
 
 // ACC-260 — SharePoint's two conditions get their Fix: the File storage page,
-// which shows the withdrawn access or the expiring secret. Almost full keeps no
-// Fix until the recycle bin screen exists (ACC-260 PR D).
+// which shows the withdrawn access or the expiring secret. Almost full opens the
+// recycle bin instead (ACC-260 PR D).
 describe('SetupHealthPageComponent — SharePoint storage Fix (ACC-260)', () => {
   const at = new Date().toISOString();
   const sp = (type: 'STORAGE_ACCESS_WITHDRAWN' | 'STORAGE_SECRET_EXPIRING'): SetupConditionDto => ({

@@ -8507,6 +8507,16 @@ pickers**: it compiles, it renders, and a colleague is simply missing
 from a dropdown. Audit what a commit TOUCHED, not what its message says,
 before discarding it.
 
+#### Opt-in inputs added later (ACC-260 PR D)
+
+- **`initialSort`** (`{ sortBy, sortDir }`): the sort a list opens with when
+  nothing is saved or shared for it, so its header shows ▲/▼ from the first
+  render. A saved preference or the URL still wins. The Recycle bin opens on
+  Days left, ascending.
+- **`noResultsTitle` / `noResultsMessage`**: a list's own words for the
+  filtered-empty state ("No deleted files match"). Empty keeps the shared
+  "No matching results" sentence and its Clear filters button.
+
 #### Consumers (3)
 
 `user-list`, `role-list`, `workflow-stage-list`. **Fifteen `p-table`
@@ -8868,6 +8878,21 @@ removing the positional fallback fails the delete case), because a single
 restore-by-index path passes the delete test and silently mis-focuses every
 edit that re-sorts. Rows opt in by binding `amListRowKey` to the same value
 the list tracks by.
+
+**`amListRowIndex`: the first row by the list's count, not the DOM's (ACC-260
+PR D).** The roving tab stop's `tabindex` binding asks "am I the first row?".
+Asked of the DOM, the answer changes between Angular's check and its re-check
+whenever a search or a page removes the first row: with the app's animations, a
+removed row is still in the DOM for the first pass and gone for the second, so
+the next row's `tabindex` flips from -1 to 0 and the page throws NG0100 in a dev
+build. A row bound with `[amListRowIndex]="i"` (the row template's
+`let-i="index"`) answers from the list instead. Opt in; a row without it keeps
+the DOM check. **The Recycle bin is the first to pass it**; the directive's
+other users are still open under ACC-205 / ACC-153.
+
+**Selection's first user is the Recycle bin** (ACC-260 PR D): the page owns the
+selected ids, binds `amListRowSelected` and flips them on `rowToggleSelect`
+(Space) and on each row's checkbox; its bulk bar reads them.
 
 ---
 

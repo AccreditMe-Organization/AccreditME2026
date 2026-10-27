@@ -10,12 +10,13 @@ describe('ADMIN_SETTINGS_ROUTES (ACC-79)', () => {
   const screens = ADMIN_SETTINGS_ROUTES.filter((r) => !r.redirectTo);
 
   // ACC-260 added File storage, the fifth.
-  it('lists the five screens', () => {
+  it('lists the six screens', () => {
     expect(screens.map((r) => r.path)).toEqual([
       'organization-profile',
       'email-provider',
       'ai-settings',
       'storage',
+      'recycle-bin',
       'task-sla',
     ]);
   });
