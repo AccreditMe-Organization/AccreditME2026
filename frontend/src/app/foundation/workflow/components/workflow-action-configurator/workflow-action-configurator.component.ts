@@ -161,16 +161,20 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
             />
           </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.order' | translate }} <span class="text-red-500">*</span></label>
-            <p-inputNumber formControlName="order" [min]="0" styleClass="w-full" />
-          </div>
-
-          <div class="flex items-center gap-2">
-            <p-checkbox formControlName="isEnabled" [binary]="true" inputId="isEnabled" />
-            <label for="isEnabled" class="text-sm cursor-pointer">
-              {{ 'workflow.actionEnabled' | translate }}
-            </label>
+          <!-- ACC-255 PR 4b — compacted (ACC-120): Order and Enabled share a row,
+               and the actions are in the dialog's footer, so the tallest state
+               (a webhook with a save error) keeps 20px under the 420px cap. -->
+          <div class="grid grid-cols-2 items-end gap-4">
+            <div class="flex flex-col gap-1">
+              <label class="font-medium text-sm">{{ 'workflow.order' | translate }} <span class="text-red-500">*</span></label>
+              <p-inputNumber formControlName="order" [min]="0" styleClass="w-full" />
+            </div>
+            <div class="flex items-center gap-2 pb-2">
+              <p-checkbox formControlName="isEnabled" [binary]="true" inputId="isEnabled" />
+              <label for="isEnabled" class="text-sm cursor-pointer">
+                {{ 'workflow.actionEnabled' | translate }}
+              </label>
+            </div>
           </div>
 
           @if (actionType() === 'WEBHOOK') {
@@ -180,35 +184,37 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
             </div>
             <div class="flex flex-col gap-1">
               <label class="font-medium text-sm">{{ 'workflow.webhookHeaders' | translate }}</label>
-              <textarea pTextarea rows="3" formControlName="webhookHeaders" placeholder='{"Authorization": "Bearer ..."}'></textarea>
+              <textarea pTextarea rows="2" formControlName="webhookHeaders" placeholder='{"Authorization": "Bearer ..."}'></textarea>
             </div>
           }
-
-          @if (saveError()) {
-            <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
-          }
-
-          <div class="flex gap-3 justify-end">
-            <p-button
-              [label]="'common.cancel' | translate"
-              severity="secondary"
-              [text]="true"
-              type="button"
-              (onClick)="showFormDialog.set(false)"
-            />
-            <p-button
-              type="submit"
-              [label]="(editingAction() ? 'common.save' : 'common.add') | translate"
-              [loading]="saving()"
-              [disabled]="form.invalid"
-            />
-          </div>
         </form>
+      </ng-template>
+      <ng-template #footerTpl>
+        <div class="flex w-full items-center justify-end gap-3">
+          @if (saveError()) {
+            <p class="me-auto min-w-0 text-red-500 text-sm" role="alert">{{ saveError() | translate }}</p>
+          }
+          <p-button
+            [label]="'common.cancel' | translate"
+            severity="secondary"
+            [text]="true"
+            type="button"
+            (onClick)="showFormDialog.set(false)"
+          />
+          <p-button
+            type="button"
+            [label]="(editingAction() ? 'common.save' : 'common.add') | translate"
+            [loading]="saving()"
+            [disabled]="form.invalid"
+            (onClick)="onSubmit()"
+          />
+        </div>
       </ng-template>
       <app-edit-dialog
         [(visible)]="showFormDialog"
         [header]="(editingAction() ? 'workflow.editStage' : 'workflow.addAction') | translate"
         [content]="formTpl"
+        [footer]="footerTpl"
         width="520px"
       />
 
