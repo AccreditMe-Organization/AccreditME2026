@@ -717,3 +717,142 @@ sideways, nothing past the dialog. Body 362 / 385, 495 / 528 and 495 / 548.
 - The guard aborted 0 other storage writes.
 - Non-GETs: sign-in and refresh, 2 (expected); everything else reaching the
   server, 0.
+
+### PR D as built (CC-155, 27 Oct)
+
+Branch `feature/ACC-260-recycle-bin`, from `dev` at `7d381a5` (#224).
+Frontend, plus this note. Read against `recycle-bin.controller.ts`,
+`recycle-bin.service.ts` and `dto/recycle-bin.dto.ts`.
+
+**Built:**
+- `/admin-settings/recycle-bin`, with its own `permissionGuard` on
+  `tenant:manage_config`, and the rail item "Recycle bin" right after File
+  storage (EN and AR).
+- The list, read once from `GET /tenant/recycle-bin` (the whole list, no
+  paging, G8) and searched, filtered, sorted and paged in memory on the shared
+  `app-data-list`:
+  - columns as drawn: select, File (name, type, size), From (record type, and
+    the task as a link when its name is set), Deleted by, Deleted (the tenant's
+    zone, through the formatting layer), Days left (amber at 3 or fewer),
+    Actions;
+  - search on the file name; filters Record type, Deleted by (with "Unknown"
+    for a deleter whose account is gone) and Deleted (the last 24 hours, the
+    last 7 days, more than 7 days ago);
+  - sorting by header on File, From, Deleted by, Deleted and Days left; it
+    opens soonest to expire first, with Days left's ▲ showing it;
+  - 10 a page, with the shared pager and rows-per-page.
+- Restore, one row or the selection:
+  - one request per file, in sequence, each reported: restored, or refused
+    with its translated reason;
+  - `FILE_RECORD_GONE` marks the row gone for the rest of the visit (struck
+    through, no link, no Restore, the drawn "Can't be restored" line);
+  - the list shown afterwards is the last successful restore's answer, or a
+    fresh GET when a file was no longer in the bin (404).
+- Purge, for one row or the selection:
+  - the drawn dialog, with Purge unavailable until "I understand these files
+    will be gone for good" is ticked; the tick clears on every open;
+  - one `POST /tenant/recycle-bin/purge`, all or nothing; on a 404 the bin is
+    read again and the page says "Some files had already gone; nothing was
+    purged. Check the list and try again." (G14);
+  - `STORAGE_ACCESS_WITHDRAWN` and `STORAGE_UNAVAILABLE` through
+    `FilesService.refusal()`, in the dialog, with "Nothing was purged.";
+  - more than 100 selected: the dialog says so and nothing is sent (the page
+    refuses too).
+- The empty state and the filtered-empty state ("No deleted files match", with
+  Clear filters); the skeleton rows and the error with Retry are the shared
+  list's own.
+- File storage's usage card: "Includes {size} in the recycle bin · Open
+  recycle bin", summed from the bin list (G6), read only by someone who may
+  open the bin, and shown only when it has files.
+- Setup health: `STORAGE_ALMOST_FULL` gets its Fix, "Open recycle bin", gated
+  on `tenant:manage_config` like the other storage Fixes (lane B's Workflows
+  Fix links in `fixTargetFor` are unchanged).
+- Shared, opt-in, defaults unchanged:
+  - `app-data-list` gained `initialSort`, and `noResultsTitle` /
+    `noResultsMessage`;
+  - the row directive gained `amListRowIndex`.
+
+**Built differently from the design, or from this plan:**
+- **A task file whose task no longer exists is known to be gone from the
+  start.** The code reads every task's title in one organisation-scoped query,
+  so `record.name` null on a TASK file means the task is not there. G8 said a
+  gone record could only be known after a refused restore. Another record type
+  with no name is not judged gone. A refused `FILE_RECORD_GONE` still marks a
+  row gone.
+- **Purge is all or nothing** (the API, G14); the design's notes (L1096) draw
+  per-file outcomes. Restore is per file, as drawn.
+- **The bulk Restore dialog counts as skipped only rows already known to be
+  gone**; any other is tried and reported with the rest.
+- **The bulk bar sits above the search toolbar**, not under it: the shared
+  list's toolbar holds no bar.
+- **10 a page**, not the drawn 6, which are illustrative; rows-per-page is the
+  shared pager's.
+- **The Deleted filter's bands** are by how long ago, so no calendar day or
+  zone is involved; the design draws "Deleted ▾" without its options.
+- **The empty state says "Files deleted from tasks"**: meetings do not exist
+  yet. The filtered-empty line says how many files are in the bin and that
+  none match, without naming the filters.
+- **A record type other than Task reads "Record"**; only tasks exist today.
+- **Days left of 0 reads "0 days"** in English (Arabic has its zero form).
+- **The usage line is AccreditMe cloud's only.** The bin list has no provider
+  field, and the organisation's own storage is not metered.
+- **The Purge dialog is 127 / 140, drawn 130 / 142**: PrimeNG's checkbox row
+  is 21 / 24 against the drawn 24 / 26. Restore several is 94 / 104, as drawn.
+- **On a phone** the page grows and `<main>` scrolls it. Held to `<main>`'s
+  height, the filters, the outcome and the bulk bar left the rows a sliver
+  (found in the browser). File and Days left stay as sortable headers, and a
+  row's Restore and Purge… sit under its lines. The actions track is 190px on
+  a wide screen so Arabic's two buttons stay on one line.
+- **Selection is the page's**, through the shared row directive's selection
+  hook (Space toggles), whose own header says the caller owns it. The bin is
+  its first user.
+- **Found on the way, fixed for the bin only:** the row directive asked the
+  DOM "am I the first row?". With the app's animations, a removed row is
+  still in the DOM between the check and its re-check, so a search or a page
+  that drops the first row threw NG0100. The bin passes `amListRowIndex`;
+  every other list keeps the DOM check, and would log the same in a dev build
+  when a search or a page removes its first row. That wants its own ticket.
+
+**Layout spec** (EN and AR at 988, 358 and 328): nothing sideways, nothing
+past the frame, the long file name cut in its cell, headers over their columns
+at 988, and both actions on one line. On a phone the actions sit under the
+name, File and Days left stay sortable, and nothing inside the list scrolls on
+its own. Dialog bodies at desktop width: Restore one 21 / 24, Restore several
+with one skipped 94 / 104, Purge 127 / 140, all under the 420 cap.
+
+**Tests:** 43 new frontend tests; 3,072 in all, every one passing.
+- `recycle-bin.component.spec.ts` (22): the states, search, each filter,
+  sorting on every header, the pager, restore one and several with mixed
+  outcomes, the 404, purge with its tick, its 404, each refusal and the 100
+  limit, selection, Arabic.
+- `recycle-bin-view.spec.ts` (6), `recycle-bin.route.spec.ts` (3),
+  `recycle-bin.layout.spec.ts` (8), `storage-settings.bin.spec.ts` (3), and
+  one new Setup health test (the Fix's permission).
+- Updated to the new order, not loosened: the admin routes list, the
+  Administration item count, File storage's rail position and Setup health's
+  almost-full Fix.
+
+**Mutation checks:** 23, each red on a named test:
+- a refused FILE_RECORD_GONE not marked gone; restore stopping after the first
+  file; a restore 404 not reading the bin again; a task file with no task name
+  not judged gone;
+- Purge available without the tick; the tick carried over; a purge 404 kept
+  open without reading again; a purge refusal untranslated; more than 100 sent;
+- amber at two days; no initial sort; the shared list ignoring `initialSort`;
+  the list's own no-results words not passed; the row index not passed
+  (NG0100); restored files left selected;
+- the long name not cut; the actions track too narrow for Arabic; a phone page
+  held to `<main>`'s height; the phone keeping only the File header;
+- the route without its guard; the rail item asking for a weaker permission;
+  Setup health with no Fix; the usage line for an empty bin.
+
+**Browser check** (local, as Hessa, EN and AR at 1280 and 390):
+- `GET /tenant/recycle-bin` and `GET /tenant/storage` answered from the spec
+  fixtures; every restore and purge fulfilled from a literal, never continued.
+- Opened soonest to expire first; search; restore one; restore three in
+  sequence with one refused FILE_RECORD_GONE (reported, the row marked gone);
+  purge two with the tick, then the 404 path; the storage page's usage line
+  and link.
+- The guard aborted 0 other writes; no NG0 error in the console.
+- Non-GETs: sign-in and refresh, 2 (expected); everything else reaching the
+  server, 0.
