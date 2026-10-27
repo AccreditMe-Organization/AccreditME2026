@@ -4278,7 +4278,22 @@ for what the screens read). Plan, Ahmad's answers, and PR 2 and PR 3 as built:
   - **The setup pages** need `workflows:manage` (Q-D).
   - **The expanded row** stacks Transitions above Tasks on entry below about
     660 px each, replacing ACC-208's side-by-side layout (Q4).
-- **No migration in PR 2, PR 3 or PR 4a.**
+- **PR 4b: the flow strip and the stage editor PANEL** (Ahmad's answers, 27
+  Oct, plan §17.11 and §19):
+  - The strip is generated from the stages and transitions, with each stage's
+    `liveCount`; its connectors are labels.
+  - The panel sits between the strip and the list and replaced the stage form
+    dialog. Its two new sections come from the registries; "Also needs" is the
+    matrix sentence of the server's `permissionKey`.
+  - Adding a stage shows no action or meaning boxes (Q1): the server applies
+    its defaults and the panel reopens on what it stored.
+  - A protected template's read carries `editableStageFields` (Q2), from the
+    set `updateStage()` checks; the panel shows every other field read-only.
+  - `committees:edit_details` reads "Edit a committee's details and request
+    changes" (Q3).
+  - Dialogs that stay dialogs keep 20 px under the 420 px cap; the action
+    configurator was compacted from 470 px to 322 px.
+- **No migration in PR 2, PR 3, PR 4a, PR 4b-be or PR 4b.**
 
 ## Key Architecture Decisions (ACC-256, ACC-265)
 

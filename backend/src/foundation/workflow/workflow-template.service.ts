@@ -1099,6 +1099,9 @@ export class WorkflowTemplateService {
       isActive: template.isActive,
       // ACC-255 PR 4b-be (G6) — the server's own rule, the one every refusal reads.
       isProtected: PROTECTED_TEMPLATES.has(template.objectType),
+      // ACC-255 PR 4b — what a protected template's stage may still change: the
+      // set updateStage() checks, never a second list.
+      ...(PROTECTED_TEMPLATES.has(template.objectType) && { editableStageFields: [...PROTECTED_STAGE_EDITABLE] }),
       createdAt: template.createdAt,
       updatedAt: template.updatedAt,
     };

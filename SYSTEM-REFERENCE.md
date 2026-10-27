@@ -574,7 +574,7 @@ endpoint. Grepped for actual callers (not just the service definition):
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `listRoles()` | `GET /roles` | `committee-form`, `committee-detail`, `workflow-transition-editor`, `workflow-stage-form`, `user-role-assignment`, `role-list` |
+| `listRoles()` | `GET /roles` | `committee-form`, `committee-detail`, `workflow-transition-editor`, `stage-editor-panel` (was `workflow-stage-form`, ACC-255 PR 4b), `user-role-assignment`, `role-list` |
 | `getRole()` | `GET /roles/:id` | `role-permission-matrix` |
 | `listAllPermissions()` | `GET /roles/permissions` | `role-permission-matrix`, `workflow-transition-editor` |
 | `createRole()` | `POST /roles` | `role-form` |
@@ -2604,6 +2604,11 @@ and §16.6 for PR 3 as built).
       instance does not. `workflow-template-live-count.db-spec.ts` proves it
       on a real Postgres, including another organisation's instance that names
       this template.
+    - **`editableStageFields`** on a protected template only (ACC-255 PR 4b,
+      Ahmad's Q2): the stage fields its stages may still change, read from
+      `PROTECTED_STAGE_EDITABLE`, the set `updateStage()` checks. A spec tries
+      every field the update DTO takes with a changed value and requires the
+      refusal exactly where the list leaves it out, so the two cannot drift.
   - `PATCH /workflow-templates/stages/:stageId` and `POST /workflow-templates/:id/stages`
     accept `actions` and `flags`.
     - Unknown keys are 400 `STAGE_ACTION_UNKNOWN` or `STAGE_FLAG_UNKNOWN`.
@@ -2734,8 +2739,8 @@ a copy of a server rule.
 - **The stages page (ACC-254; redrawn in ACC-255 PR 4a from the Workflow
   Setup drawing, section 3)** fits its column:
   - **Each row:** # · Stage, with the stage's meanings as chips under its name
-    · Allows · Details, plus the actions track (a fixed 96 px: Edit and a
-    worded ⋯ with Move up, Move down and Remove).
+    · Allows · Details. Since ACC-255 PR 4b the stage's name is the button that
+    opens it in the editor panel; Edit and the ⋯ moved there.
   - **Allows** reads "Allows 4 of 5 actions" (`plural.workflow.allowsActions`),
     with the action names as its tooltip and accessible name. It reads "Allows
     nothing" when the stage allows none, and is empty for a record type with no
@@ -2745,8 +2750,8 @@ a copy of a server rule.
   - **Every value comes from the template read:** the registries
     (`recordActions`, `stageFlags`) and each stage's stored `actions` and
     `flags`, named by their `labelKey`. The screen holds no copy of a rule.
-  - **Left to the stage editor (ACC-255 PR 4b):** the approval mode, assignee,
-    deadline and the Initial / Final tags.
+  - **Left to the stage editor panel:** the approval mode, assignee, deadline
+    and the Initial / Final tags.
   - **The name** shows in the reader's language, falling back to English
     (ACC-160).
   - **On a phone (below `SHELL_PHONE_BELOW_PX`)** the row is one column:
@@ -2763,6 +2768,52 @@ a copy of a server rule.
     44rem minimum), never the page.
 - **The spec:** `workflow-stage-list.layout.spec.ts` measures 1280, 1440, 1920
   and 390 in both languages.
+- **The flow strip (ACC-255 PR 4b, Templates 6b),** `am-workflow-strip`:
+  generated from the stages and transitions, never authored. Stage cards in
+  order, as buttons, each with the server's `liveCount` ("3 records here
+  now", `plural.workflow.liveInStage`) and its exits' names; between two
+  cards, forward transitions to the next stage solid and RETURN transitions
+  back dashed; a transition to any other stage is named on its card only.
+  Connectors are labels, not buttons. The strip scrolls sideways inside its
+  own frame, never the page.
+- **The stage editor panel (ACC-255 PR 4b),** `am-stage-editor-panel`: a PAGE
+  panel between the strip and the list (Ahmad's Q1), which replaced the stage
+  form dialog. Nothing in it scrolls; the route scrolls as the document.
+  - **Opened** by a strip card, a stage's name in the list, or Add stage;
+    focus moves to its heading. Switching with unsaved work asks
+    `AmConfirmService.ask()`. Cancel closes it and returns focus to the
+    opener. Save keeps it open, focus on Save, and says "Stage saved" politely.
+    Escape cancels only when no overlay above it is open (`LayerStackService`).
+  - **Three cards**, in `am-field` wrappers: the stage (names, description,
+    deadline in words, "40 working hours", Initial / Final); who the work lands
+    on; how approval is reached.
+  - **"What can be done to the record here"** and **"What this stage means"**
+    (`am-stage-checks`): a row per registry action or meaning, with its
+    description (`workflow.recordActionHint.*` / `workflow.stageFlagHint.*`),
+    and "Also needs: {the permission's matrix sentence}" from the action's
+    `permissionKey`, or the meaning's cardinality. Changed rows are tinted; the
+    footer counts the changes and a note names them. A section is sent only
+    when it changed, in registry order.
+  - **Adding a stage** shows no action or meaning boxes, only "You can set what
+    this stage allows once it's added." (Q1); the panel then reopens on the new
+    stage as the server stored it.
+  - **Refusals from their code** (`flagExactlyOne()` in `workflow-refusal.ts`):
+    "Applies the approved change" on another stage is named in its row and in
+    a "The workflow can't be saved" banner that opens that stage (`stageIds`);
+    the missing case names the meaning. ACC-208's refusals stay under their
+    fields.
+  - **A protected workflow** (`isProtected`) shows "AccreditMe keeps this
+    workflow working: you can rename its stages and set their deadlines, but
+    not change what they allow or mean." and renders every field
+    `editableStageFields` leaves out read-only, the two sections as ✓ and –. It
+    offers no Add stage, Move or Remove.
+  - **Specs:** `stage-editor-panel.component.spec.ts` (behaviour, both
+    languages), `workflow-stage-list.panel.spec.ts` (the page around it), and
+    `stage-editor-panel.layout.spec.ts` (1280, 1440, 1920 and 390, both
+    languages: nothing scrolls in the panel, everything inside its box).
+- **The dialogs that stay dialogs** keep at least 20 px under the 420 px cap:
+  the transition editor's steps, Add / Edit stage task, and the action
+  configurator (compacted in PR 4b from 470 px to 322 px).
 
 ---
 
@@ -4527,7 +4578,9 @@ change request (§3.18; its screens are ACC-240).
 - **The ACC-233 refusals read as the dialog does.** `COMMITTEE_OWN_PARENT` and
   `COMMITTEE_PARENT_DISSOLVING` now say "parent committee".
 - **The two permission sentences** (`roles.matrix.sentence`):
-  - `committees:edit_details`: "Edit a committee in Formation and request changes after approval".
+  - `committees:edit_details`: "Edit a committee's details and request changes" (ACC-255 PR 4b,
+    Ahmad's Q3: since stage rules, the stage decides where editing is allowed, so
+    the sentence no longer names Formation).
   - `committees:approve`: "Approve terms, changes and dissolutions".
 - **The quorum input is `[fluid]="true"` (ACC-243).** Without it PrimeNG's
   number input kept its default width, 345px in a 251px column, and ran 94px
@@ -7159,7 +7212,7 @@ are platform data and stay required. An emptied Arabic field is stored as
 `OverlaySelectComponent` `optionLabel="nameAr"` draws a blank option for a
 record with no Arabic name. Options carry a `label` computed over the options
 AND the language (`committee-form`, `committee-member-form`,
-`workflow-stage-form`, `invite-user`); `invite-user`'s spec reads the RENDERED
+`stage-editor-panel`, `invite-user`); `invite-user`'s spec reads the RENDERED
 label across a language switch and fails if it freezes.
 
 **Sorting: an unnamed record sorts LAST, in both directions.** Server side,
@@ -7581,7 +7634,11 @@ confirmed empirically before any production code was written.
   dialog* specifically should default to `p-listbox` unless a
   collapsed dropdown is a real requirement.
 
-**Confirmed consumers — 17 screens total.** 9 migrated ACC-29
+**ACC-255 PR 4b: 16 now.** `workflow-stage-list`'s stage edit is no longer a
+dialog: the stage editor became a page panel (it measured over the 420px
+cap, Templates 6b), so that screen left the list below.
+
+**Confirmed consumers — 17 screens total (as of ACC-39).** 9 migrated ACC-29
 Phases 2–3/ACC-36 (the original pre-fill-bug fix): `workflow-stage-list`
 (stage edit), `lookup-value-list` (value add/edit), `public-holiday-list`,
 `role-list`, `position-list`, `committee-list` (add-only),
@@ -9105,7 +9162,8 @@ the endpoint's `@Permissions()`, same HIDDEN-not-disabled default.
 
 **Gated by CONTAINER where a group of controls shares one permission.** Not
 laziness: it is also how controls a template scan cannot see get covered — a
-label-only Edit button in `workflow-stage-list`, the `pi-tag` override-label in
+label-only Edit button in `workflow-stage-list` (since ACC-255 PR 4b, the stage
+name that opens the editor panel, in the same permission's `@if`), the `pi-tag` override-label in
 `lookup-value-list`, and an add-child `pi-plus` in `org-unit-tree` that sits in
 a row rather than a page header and so was invisible to `check:create-gating`
 as well.
