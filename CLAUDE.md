@@ -4247,6 +4247,15 @@ for what the screens read). Plan, Ahmad's answers, and PR 2 and PR 3 as built:
   committee response carries a stage key (`currentStageKey` is gone).
 - **The committee dialogs read `GET /committees/form-choices`** for types and
   units, so editing a committee needs no `lookups:view` or `org:view`.
+- **PR 4b-be adds what the stage editor reads (G6, G3, G1, G4), and only adds:**
+  - `isProtected` on every template read, from `PROTECTED_TEMPLATES`;
+  - `stageIds` beside `stageNames` on `STAGE_FLAG_EXACTLY_ONE`;
+  - each record action's `permissionKey`, declared in `RECORD_ACTIONS` and
+    pinned to the endpoint's own check;
+  - each stage's `liveCount` from ONE grouped count, scoped by organisation
+    (final stages count, cancelled instances do not).
+  It must deploy before PR 4b reads them. No migration. It also drops the stage
+  key from `committeeStagesAndCounts()`, which nothing read after #222.
 - **Every workflow screen says a refusal from its code**
   (`plainWorkflowRefusalKey()` first, at every write): the protected change
   request workflow by WHICH edit (`workflow.refusal.protected.*`), never the

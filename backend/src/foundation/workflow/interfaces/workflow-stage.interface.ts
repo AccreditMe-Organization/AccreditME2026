@@ -30,4 +30,9 @@ export interface IWorkflowStage {
   // and the longest one's due time in working hours (null when it creates none).
   taskDefinitionCount?: number;
   longestTaskHours?: number | null;
+  // ACC-255 PR 4b-be (G4) — on a template read: how many of the organisation's
+  // records stand in this stage now (their workflow instance's current stage).
+  // A record at a final stage counts (a dissolved committee is at Dissolved);
+  // a cancelled instance does not.
+  liveCount?: number;
 }

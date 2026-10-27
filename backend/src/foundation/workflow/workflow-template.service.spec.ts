@@ -7,6 +7,8 @@ import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
+import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
+import { WorkflowObjectType } from '../../../generated/prisma/enums';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -160,6 +162,10 @@ const mockPrisma = {
   },
   rolePermission: {
     count: jest.fn(),
+  },
+  // ACC-255 PR 4b-be (G4) — the template read's live count per stage.
+  workflowInstance: {
+    groupBy: jest.fn().mockResolvedValue([]),
   },
   // ACC-120 slice 5 (F1) — read only when a transition asks for a platform key.
   organization: {
@@ -2011,13 +2017,80 @@ describe('WorkflowTemplateService', () => {
         const result = await service.getTemplateById('template-1', ORG_A);
 
         expect(result.recordActions?.map((a) => a.key)).toEqual(['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change']);
-        expect(result.recordActions?.[0]).toEqual({ key: 'edit_details', labelKey: 'workflow.recordAction.COMMITTEE.edit_details' });
+        // ACC-255 PR 4b-be (G1) — each action carries the permission it pairs with.
+        expect(result.recordActions?.[0]).toEqual({
+          key: 'edit_details',
+          labelKey: 'workflow.recordAction.COMMITTEE.edit_details',
+          permissionKey: 'committees:edit_details',
+        });
+        expect(result.recordActions?.map((a) => a.permissionKey)).toEqual([
+          'committees:edit_details',
+          'committees:add_member',
+          'committees:remove_member',
+          'committees:change_member_role',
+          'committees:edit_details',
+        ]);
         expect(result.stageFlags).toEqual([
           { key: 'DISSOLVING', labelKey: 'workflow.stageFlag.DISSOLVING', cardinality: 'any' },
           { key: 'IN_FORCE', labelKey: 'workflow.stageFlag.IN_FORCE', cardinality: 'any' },
         ]);
         expect(result.recordFields?.map((f) => f.key)).toEqual(['typeValueId', 'orgUnitId']);
         expect(result.stages?.[0]).toMatchObject({ actions: ['add_member', 'request_change'], flags: ['IN_FORCE'] });
+      });
+
+      // ACC-255 PR 4b-be (G6) — the read says which templates are protected,
+      // from PROTECTED_TEMPLATES itself, on the list and the detail alike.
+      it('says whether a template is protected, from the server’s own rule, on the list and the detail', async () => {
+        const request = makeTemplate({ id: 'tpl-request', objectType: 'COMMITTEE_CHANGE_REQUEST' });
+        const committee = makeTemplate({ id: 'tpl-committee', objectType: 'COMMITTEE' });
+        mockPrisma.workflowTemplate.findMany.mockResolvedValue([committee, request]);
+        const list = await service.getTemplates(ORG_A);
+        expect(list.map((t) => [t.objectType, t.isProtected])).toEqual([
+          ['COMMITTEE', false],
+          ['COMMITTEE_CHANGE_REQUEST', true],
+        ]);
+        // Every protected type, and only those, reads as protected.
+        for (const objectType of Object.values(WorkflowObjectType)) {
+          mockPrisma.workflowTemplate.findFirst.mockResolvedValueOnce(makeTemplate({ objectType }));
+          mockPrisma.workflowStage.findMany.mockResolvedValueOnce([]);
+          const detail = await service.getTemplateById('template-1', ORG_A);
+          expect([objectType, detail.isProtected]).toEqual([objectType, PROTECTED_TEMPLATES.has(objectType)]);
+        }
+      });
+
+      // ACC-255 PR 4b-be (G4).
+      it('counts the records in each stage with ONE grouped query, scoped by organisation and template', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'COMMITTEE' }));
+        mockPrisma.workflowStage.findMany.mockResolvedValue([
+          { ...committeeStage({ id: 'st-a' }), transitionsFrom: [] },
+          { ...committeeStage({ id: 'st-b' }), transitionsFrom: [] },
+          { ...committeeStage({ id: 'st-c' }), transitionsFrom: [] },
+        ]);
+        mockPrisma.workflowInstance.groupBy.mockResolvedValueOnce([
+          { currentStageId: 'st-a', _count: { _all: 22 } },
+          { currentStageId: 'st-c', _count: { _all: 3 } },
+        ]);
+
+        const result = await service.getTemplateById('template-1', ORG_A);
+
+        expect(result.stages?.map((s) => [s.id, s.liveCount])).toEqual([
+          ['st-a', 22],
+          ['st-b', 0],
+          ['st-c', 3],
+        ]);
+        expect(mockPrisma.workflowInstance.groupBy).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.workflowInstance.groupBy).toHaveBeenCalledWith({
+          by: ['currentStageId'],
+          where: { organizationId: ORG_A, workflowTemplateId: 'template-1', currentStageId: { not: null }, status: { not: 'CANCELLED' } },
+          _count: { _all: true },
+        });
+      });
+
+      itEnforcesTenantIsolation("getTemplateById — another organisation's template is not found, and nothing is counted", async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(null);
+        await expect(service.getTemplateById('template-1', ORG_B)).rejects.toThrow(NotFoundException);
+        expect(mockPrisma.workflowTemplate.findFirst).toHaveBeenCalledWith({ where: { id: 'template-1', organizationId: ORG_B } });
+        expect(mockPrisma.workflowInstance.groupBy).not.toHaveBeenCalled();
       });
 
       it('a record type with no registry entry offers nothing to configure', async () => {
@@ -2210,21 +2283,33 @@ describe('WorkflowTemplateService', () => {
       const check = () => service as unknown as CardinalityCheck;
 
       it('passes when the flag sits on exactly one stage, and refuses 409 naming the stages otherwise', async () => {
-        mockPrisma.workflowStage.findMany.mockResolvedValueOnce([{ nameEn: 'Approved', nameAr: null }]);
+        mockPrisma.workflowStage.findMany.mockResolvedValueOnce([{ id: 'st-approved', nameEn: 'Approved', nameAr: null }]);
         await expect(check().assertFlagCardinality(mockPrisma, 'template-1', ['APPLIES_APPROVED_CHANGE'])).resolves.toBeUndefined();
         expect(mockPrisma.workflowStage.findMany).toHaveBeenCalledWith(
-          expect.objectContaining({ where: { workflowTemplateId: 'template-1', flags: { has: 'APPLIES_APPROVED_CHANGE' } } }),
+          expect.objectContaining({
+            where: { workflowTemplateId: 'template-1', flags: { has: 'APPLIES_APPROVED_CHANGE' } },
+            select: { id: true, nameEn: true, nameAr: true },
+          }),
         );
 
-        for (const holders of [[], [{ nameEn: 'Approved', nameAr: null }, { nameEn: 'Agreed', nameAr: 'موافق' }]]) {
+        const two = [
+          { id: 'st-approved', nameEn: 'Approved', nameAr: null },
+          { id: 'st-agreed', nameEn: 'Agreed', nameAr: 'موافق' },
+        ];
+        for (const holders of [[], two]) {
           mockPrisma.workflowStage.findMany.mockResolvedValueOnce(holders);
           const refusal = await check().assertFlagCardinality(mockPrisma, 'template-1', ['APPLIES_APPROVED_CHANGE']).catch((e: unknown) => e);
           expect((refusal as WorkflowRefusalException).getStatus()).toBe(409);
+          // ACC-255 PR 4b-be (G3) — stageNames keeps its shape (names only);
+          // stageIds sits beside it, in the same order.
           expect((refusal as WorkflowRefusalException).getResponse()).toMatchObject({
             code: 'STAGE_FLAG_EXACTLY_ONE',
             flag: 'APPLIES_APPROVED_CHANGE',
-            stageNames: holders,
+            stageNames: holders.map(({ nameEn, nameAr }) => ({ nameEn, nameAr })),
+            stageIds: holders.map((h) => h.id),
           });
+          const names = ((refusal as WorkflowRefusalException).getResponse() as { stageNames: object[] }).stageNames;
+          expect(names.every((n) => !('id' in n))).toBe(true);
         }
       });
 
