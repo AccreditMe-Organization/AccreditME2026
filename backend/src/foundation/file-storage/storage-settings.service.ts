@@ -265,6 +265,9 @@ export class StorageSettingsService {
     if (!org.storageConfirmedAt) throw new StorageRefusalException('STORAGE_NOT_CONFIRMED');
     const now = new Date();
     const message = dto.message?.trim() || null;
+    // ACC-260 (PR B2) — who AccreditMe talks to about the move. Kept in the
+    // audit row only (ACC-182 reads it from there), never on Organization.
+    const contact = { name: dto.contactName, email: dto.contactEmail, phone: dto.contactPhone };
     await this.prisma.organization.update({
       where: { id: organizationId },
       data: { storageChangeRequestedAt: now, storageChangeRequestedById: actorId },
@@ -276,10 +279,10 @@ export class StorageSettingsService {
       actorId,
       tenantId: organizationId,
       after: { storageChangeRequestedAt: now.toISOString() },
-      metadata: { event: 'storage_change_requested', message },
+      metadata: { event: 'storage_change_requested', message, contact },
     });
     // After the change is committed; a failed notice is logged inside.
-    await this.notices.storageChangeRequested(organizationId, actorId, now, message);
+    await this.notices.storageChangeRequested(organizationId, actorId, now, message, contact);
     return this.get(organizationId);
   }
 

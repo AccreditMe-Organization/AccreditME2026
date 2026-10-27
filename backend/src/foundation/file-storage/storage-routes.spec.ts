@@ -69,7 +69,7 @@ describe('Storage settings and recycle bin routes (ACC-177)', () => {
     ['get', '/tenant/storage', undefined],
     ['patch', '/tenant/storage', { provider: 'S3' }],
     ['post', '/tenant/storage/confirm', { provider: 'S3' }],
-    ['post', '/tenant/storage/change-request', { message: 'Please move us' }],
+    ['post', '/tenant/storage/change-request', { message: 'Please move us', contactName: 'Khalid', contactEmail: 'k@alnakheel.sa', contactPhone: '+965 2222 3333' }],
     ['post', '/tenant/storage/test', {}],
     ['get', '/tenant/recycle-bin', undefined],
     ['post', '/tenant/recycle-bin/f1/restore', undefined],
@@ -95,8 +95,9 @@ describe('Storage settings and recycle bin routes (ACC-177)', () => {
     permissions = ['tenant:manage_config'];
     await request(app.getHttpServer()).post('/tenant/storage/confirm').send({ provider: 'S3' });
     expect(settings.confirm).toHaveBeenCalledWith('org-a', { provider: 'S3' }, 'admin-1');
-    await request(app.getHttpServer()).post('/tenant/storage/change-request').send({});
-    expect(settings.requestChange).toHaveBeenCalledWith('org-a', {}, 'admin-1');
+    const contact = { contactName: 'Khalid', contactEmail: 'k@alnakheel.sa', contactPhone: '+965 2222 3333' };
+    await request(app.getHttpServer()).post('/tenant/storage/change-request').send(contact);
+    expect(settings.requestChange).toHaveBeenCalledWith('org-a', contact, 'admin-1');
   });
 
   it.each([
@@ -109,10 +110,54 @@ describe('Storage settings and recycle bin routes (ACC-177)', () => {
     expect(recycleBin.purge).not.toHaveBeenCalled();
   });
 
+  const CONTACT = { contactName: 'Khalid Al-Mansour', contactEmail: 'it.infra@alnakheel.sa', contactPhone: '+965 2222 3333' };
+
   it('a change-request message over 1,000 characters is refused', async () => {
     permissions = ['tenant:manage_config'];
-    const res = await request(app.getHttpServer()).post('/tenant/storage/change-request').send({ message: 'x'.repeat(1001) });
+    const res = await request(app.getHttpServer()).post('/tenant/storage/change-request').send({ ...CONTACT, message: 'x'.repeat(1001) });
     expect(res.status).toBe(400);
+  });
+
+  // ACC-260 (PR B2) — who AccreditMe talks to about the move: three required fields.
+  describe('change-request contact', () => {
+    beforeEach(() => {
+      permissions = ['tenant:manage_config'];
+    });
+    const send = (body: object) => request(app.getHttpServer()).post('/tenant/storage/change-request').send(body);
+
+    it('a valid contact is accepted, trimmed, the phone kept as typed', async () => {
+      const res = await send({ contactName: '  Khalid Al-Mansour ', contactEmail: ' it.infra@alnakheel.sa ', contactPhone: ' +965 2222-3333 ' });
+      expect(res.status).toBe(200);
+      expect(settings.requestChange).toHaveBeenCalledWith(
+        'org-a',
+        { contactName: 'Khalid Al-Mansour', contactEmail: 'it.infra@alnakheel.sa', contactPhone: '+965 2222-3333' },
+        'admin-1',
+      );
+    });
+
+    it.each(['contactName', 'contactEmail', 'contactPhone'])('refuses a request with no %s', async (field) => {
+      const body: Record<string, string> = { ...CONTACT };
+      delete body[field];
+      const res = await send(body);
+      expect(res.status).toBe(400);
+      expect(settings.requestChange).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an empty name', { contactName: '   ' }],
+      ['a name over 120 characters', { contactName: 'x'.repeat(121) }],
+      ['an email that is not one', { contactEmail: 'not-an-email' }],
+      ['an email over 254 characters', { contactEmail: `${'a'.repeat(250)}@x.sa` }],
+      ['a phone with no +', { contactPhone: '965 2222 3333' }],
+      ['a phone with letters', { contactPhone: '+965 2222 ABCD' }],
+      ['a phone under 8 characters', { contactPhone: '+96522' }],
+      ['a phone over 20 characters', { contactPhone: '+965 2222 3333 4444 55' }],
+      ['a phone ending in a dash', { contactPhone: '+965 2222 3333-' }],
+    ])('refuses %s', async (_label, bad) => {
+      const res = await send({ ...CONTACT, ...bad });
+      expect(res.status).toBe(400);
+      expect(settings.requestChange).not.toHaveBeenCalled();
+    });
   });
 
   it('an organisationId in the body is refused, never used', async () => {

@@ -272,7 +272,6 @@ export class OrgStructureService {
         nameAr: r.nameAr,
         stageNameEn: fact?.stageNameEn ?? null,
         stageNameAr: fact?.stageNameAr ?? null,
-        stageKey: fact?.stageKey ?? null,
       };
     });
   }

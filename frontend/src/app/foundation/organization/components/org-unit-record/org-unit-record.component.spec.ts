@@ -108,7 +108,7 @@ function summary(over: Partial<OrgUnitSummaryDto> = {}, unit: Partial<OrgUnitSum
     ],
     positions: [{ positionId: 'pos-dir', nameEn: 'Director', nameAr: 'مدير', grade: 10, isUnitHeadPosition: true, count: 1 }],
     people: [person('fahad', 'Dr. Fahad Al-Anazi', 'Director', true), person('salem', 'Salem Al-Dosari', 'Pharmacist'), person('mona', 'Mona Fathy', 'Technician')],
-    committees: { count: 1, items: [{ id: 'cm-pt', nameEn: 'Pharmacy & Therapeutics', nameAr: null, stageNameEn: 'Active', stageNameAr: 'نشطة', stageKey: 'active' }] },
+    committees: { count: 1, items: [{ id: 'cm-pt', nameEn: 'Pharmacy & Therapeutics', nameAr: null, stageNameEn: 'Active', stageNameAr: 'نشطة' }] },
     asOf: '2026-10-21T09:00:00.000Z',
     ...over,
   };

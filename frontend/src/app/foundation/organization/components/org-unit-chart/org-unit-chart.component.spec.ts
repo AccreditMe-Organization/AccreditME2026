@@ -36,7 +36,7 @@ function summaryFor(id: string): OrgUnitSummaryDto {
     children: [],
     positions: [{ positionId: 'p1', nameEn: 'Director', nameAr: 'مدير', grade: 10, isUnitHeadPosition: true, count: 1 }],
     people: [],
-    committees: { count: 1, items: [{ id: 'cm', nameEn: 'P&T', nameAr: null, stageNameEn: 'Active', stageNameAr: null, stageKey: 'active' }] },
+    committees: { count: 1, items: [{ id: 'cm', nameEn: 'P&T', nameAr: null, stageNameEn: 'Active', stageNameAr: null }] },
     asOf: '',
   };
 }

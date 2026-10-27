@@ -259,3 +259,32 @@ export const ACCESS_KEY_MIN = 3;
 export const SECRET_KEY_MIN = 8;
 export const KEY_MAX = 256;
 export const REQUEST_NOTE_MAX = 1000;
+
+// ── Request a change: who to contact (ACC-260, PR B2) ─────────────────────────
+// The server's StorageChangeRequestDto rules, so a refusal never surprises.
+
+export const CONTACT_NAME_MAX = 120;
+export const CONTACT_EMAIL_MAX = 254;
+/** "+" and a country code, then digits with optional spaces or dashes. */
+export const CONTACT_PHONE_PATTERN = /^\+\d[\d -]*\d$/;
+export const CONTACT_PHONE_MIN = 8;
+export const CONTACT_PHONE_MAX = 20;
+/** A local part, an @, and a domain with a dot: what the server's IsEmail accepts in practice. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+
+/** Required, and more than spaces. */
+export const notBlank: ValidatorFn = (control: AbstractControl): ValidationErrors | null =>
+  String(control.value ?? '').trim() ? null : { required: true };
+
+/** An email address, judged on the trimmed value (the server trims too). */
+export const contactEmail: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
+  const v = String(control.value ?? '').trim();
+  return !v || EMAIL_PATTERN.test(v) ? null : { email: true };
+};
+
+/** "+965 2222 3333": the pattern and 8–20 characters, judged on the trimmed value. */
+export const contactPhone: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
+  const v = String(control.value ?? '').trim();
+  if (!v) return null;
+  return CONTACT_PHONE_PATTERN.test(v) && v.length >= CONTACT_PHONE_MIN && v.length <= CONTACT_PHONE_MAX ? null : { phone: true };
+};

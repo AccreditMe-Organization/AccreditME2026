@@ -417,7 +417,7 @@ describe('OrgStructureService (ACC-120 slice 11)', () => {
       const summary = await service.summary(ORG_A, ['org:view', 'committees:view'], 'u3');
       expect(summary.committees).toEqual({
         count: 1,
-        items: [{ id: 'cm-1', nameEn: 'Pharmacy & Therapeutics', nameAr: 'لجنة الصيدلة', stageNameEn: 'Active', stageNameAr: 'نشطة', stageKey: 'active' }],
+        items: [{ id: 'cm-1', nameEn: 'Pharmacy & Therapeutics', nameAr: 'لجنة الصيدلة', stageNameEn: 'Active', stageNameAr: 'نشطة' }],
       });
     });
 

@@ -94,6 +94,14 @@ export interface IStorageCandidate {
   local?: { rootPath?: string };
 }
 
+/** POST /tenant/storage/change-request's contact (backend StorageChangeRequestDto). */
+export interface IStorageChangeContact {
+  contactName: string;
+  contactEmail: string;
+  /** "+" and a country code, then digits, spaces or dashes; sent as typed. */
+  contactPhone: string;
+}
+
 /** ACC-260 — the organisation's file storage settings. Every write answers with the whole settings again. */
 @Injectable({ providedIn: 'root' })
 export class StorageSettingsService {
@@ -119,9 +127,18 @@ export class StorageSettingsService {
     return this.http.patch<IStorageSettings>(this.baseUrl, candidate);
   }
 
-  /** Asks AccreditMe to move the organisation's files. The note goes to AccreditMe only. */
-  requestChange(message: string): Observable<IStorageSettings> {
+  /**
+   * Asks AccreditMe to move the organisation's files: who to contact about it
+   * (ACC-260, PR B2), and an optional note. Both go to AccreditMe only.
+   */
+  requestChange(contact: IStorageChangeContact, message: string): Observable<IStorageSettings> {
     const note = message.trim();
-    return this.http.post<IStorageSettings>(`${this.baseUrl}/change-request`, note ? { message: note } : {});
+    const body: IStorageChangeContact & { message?: string } = {
+      contactName: contact.contactName.trim(),
+      contactEmail: contact.contactEmail.trim(),
+      contactPhone: contact.contactPhone.trim(),
+    };
+    if (note) body.message = note;
+    return this.http.post<IStorageSettings>(`${this.baseUrl}/change-request`, body);
   }
 }
