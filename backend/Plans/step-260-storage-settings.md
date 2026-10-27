@@ -811,7 +811,8 @@ Frontend, plus this note. Read against `recycle-bin.controller.ts`,
   still in the DOM between the check and its re-check, so a search or a page
   that drops the first row threw NG0100. The bin passes `amListRowIndex`;
   every other list keeps the DOM check, and would log the same in a dev build
-  when a search or a page removes its first row. That wants its own ticket.
+  when a search or a page removes its first row: ACC-205 / ACC-153, already
+  open for them (SYSTEM-REFERENCE §10.13).
 
 **Layout spec** (EN and AR at 988, 358 and 328): nothing sideways, nothing
 past the frame, the long file name cut in its cell, headers over their columns
