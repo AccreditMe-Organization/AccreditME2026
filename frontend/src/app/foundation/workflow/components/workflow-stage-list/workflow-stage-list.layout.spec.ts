@@ -1,5 +1,6 @@
 import { Component, input } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -28,6 +29,10 @@ import { WorkflowStageListComponent } from './workflow-stage-list.component';
 //   - the actions cell (Edit and the ⋯) fits its track;
 //   - the transition table inside the expanded row stays inside its column.
 //
+// ACC-255 PR 4a — the rows as the Workflow Setup drawing has them (section 3):
+// # · Stage (meaning chips under the name) · Allows · Details, and one column
+// on a phone (390, less its 16px gutters: 358).
+//
 // What it caught as built (ACC-254): the actions cell — up, down, Edit and
 // remove — spilled out of data-list's 88px track into the scroller, which
 // scrolled sideways, and the expand track was 'auto', so header and rows
@@ -41,7 +46,28 @@ const CASES = [
   { name: 'at 1280', width: 988 },
   { name: 'at 1440', width: 1148 },
   { name: 'at 1920', width: 1628 },
+  { name: 'at 390', width: 358 },
 ] as const;
+
+/** The seeded committee stages' actions and meanings (Workflow Setup, section 2; ACC-255 PR 2). */
+const MEMBERS = ['add_member', 'remove_member', 'change_member_role'];
+const SEEDED: { actions: string[]; flags: string[] }[] = [
+  { actions: ['edit_details', ...MEMBERS], flags: [] },
+  { actions: [...MEMBERS], flags: [] },
+  { actions: [...MEMBERS, 'request_change'], flags: ['IN_FORCE'] },
+  { actions: [...MEMBERS, 'request_change'], flags: ['IN_FORCE'] },
+  { actions: [...MEMBERS], flags: ['DISSOLVING'] },
+  { actions: [], flags: ['DISSOLVING'] },
+];
+const RECORD_ACTIONS = ['edit_details', 'add_member', 'remove_member', 'change_member_role', 'request_change'].map((key) => ({
+  key,
+  labelKey: `workflow.recordAction.COMMITTEE.${key}`,
+}));
+const STAGE_FLAGS = [
+  { key: 'DISSOLVING', labelKey: 'workflow.stageFlag.DISSOLVING', cardinality: 'any' },
+  { key: 'IN_FORCE', labelKey: 'workflow.stageFlag.IN_FORCE', cardinality: 'any' },
+  { key: 'APPLIES_APPROVED_CHANGE', labelKey: 'workflow.stageFlag.APPLIES_APPROVED_CHANGE', cardinality: 'exactlyOne' },
+];
 
 const LONG = {
   en: 'Executive Committee Terms of Reference Review and Final Sign-off by the Board',
@@ -70,8 +96,11 @@ function stage(i: number, over: Record<string, unknown> = {}): Record<string, un
     assigneePositionId: null,
     assigneeOrgUnitId: null,
     escalationConfig: null,
-    actions: [],
-    flags: [],
+    actions: SEEDED[i - 1]!.actions,
+    flags: SEEDED[i - 1]!.flags,
+    // Stage 1 is the expanded one, and its Tasks on entry list reports its own
+    // count back to the row; stage 3 carries a count the row reads as sent.
+    taskDefinitionCount: i === 3 ? 1 : 0,
     transitions:
       i === 1
         ? [
@@ -89,6 +118,22 @@ function stage(i: number, over: Record<string, unknown> = {}): Record<string, un
               isApprovalPath: false,
               kind: 'RETURN',
             },
+            {
+              // The longest chips of each column (measured, ACC-255 PR 4a):
+              // "End the record" and "Any Authenticated User".
+              id: 't-2',
+              fromStageId: 'stage-1',
+              toStageId: 'stage-2',
+              labelEn: 'Withdraw the committee proposal before the Board has considered it',
+              labelAr: 'سحب مقترح اللجنة قبل أن ينظر فيه مجلس الإدارة',
+              requiredPermission: null,
+              triggerCondition: 'ANY_AUTHENTICATED',
+              triggerUserId: null,
+              triggerRoleId: null,
+              validatorConfig: null,
+              isApprovalPath: false,
+              kind: 'EXIT',
+            },
           ]
         : [],
     ...over,
@@ -103,8 +148,8 @@ const TEMPLATE = {
   objectType: 'COMMITTEE',
   isDefault: true,
   isActive: true,
-  recordActions: [],
-  stageFlags: [],
+  recordActions: RECORD_ACTIONS,
+  stageFlags: STAGE_FLAGS,
   recordFields: [],
   recordRoutes: { unit: false, committee: false },
   stages: [1, 2, 3, 4, 5, 6].map((i) => stage(i)),
@@ -126,7 +171,7 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
   let fixture: ComponentFixture<StagesHost>;
   let http: HttpTestingController;
 
-  async function render(width: number, lang: 'en' | 'ar'): Promise<HTMLElement> {
+  async function render(width: number, lang: 'en' | 'ar', over: Partial<typeof TEMPLATE> = {}): Promise<HTMLElement> {
     TestBed.configureTestingModule({
       imports: [StagesHost],
       providers: [
@@ -151,11 +196,14 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(StagesHost);
     fixture.componentRef.setInput('width', width);
+    // The phone layout follows the window's width; set it here, as the
+    // committees list spec does, so each case is the layout it names.
+    fixture.debugElement.query(By.directive(WorkflowStageListComponent)).componentInstance.phone.set(width < 400);
     fixture.detectChanges();
-    http.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(TEMPLATE);
+    http.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush({ ...TEMPLATE, ...over });
     fixture.detectChanges();
     // Expand the stage with the long transition, as a person does.
-    (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="stage-expand"] button')!.click();
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="stage-expand"]')!.click();
     fixture.detectChanges();
     drain();
     await document.fonts.ready;
@@ -197,7 +245,10 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
         expect(header).withContext('the header row').toBeDefined();
         expect(rows.length).withContext('one grid per stage').toBe(6);
         const headCells = Array.from(header.children) as HTMLElement[];
-        expect(headCells.length).withContext('expand, name, approval, assignee, SLA, actions').toBe(6);
+        const phone = c.width < 400;
+        expect(headCells.length)
+          .withContext(phone ? 'stage, actions' : '#, stage, allows, details, actions')
+          .toBe(phone ? 2 : 5);
         const starts = headCells.map(startOf);
         for (let i = 1; i < starts.length; i++) {
           const ahead = rtl ? starts[i - 1]! > starts[i]! : starts[i]! > starts[i - 1]!;
@@ -208,6 +259,9 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
         // ── No sideways scroll, anywhere in the page ──
         const sideways = [host, ...Array.from(host.querySelectorAll<HTMLElement>('*'))].filter((el) => {
           const ox = getComputedStyle(el).overflowX;
+          // The transition table's own frame may scroll on a phone (ACC-254's
+          // allowance); at desktop widths it must not either.
+          if (c.width < 400 && el.closest('[data-tr-scroll]')) return false;
           return (ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1;
         });
         expect(sideways.map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80))).withContext('scrolls sideways').toEqual([]);
@@ -233,48 +287,126 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
           }
         }
 
-        // ── ACC-265: the SLA, now a counted string, fits its column, uncut ──
-        const slaCells = Array.from(host.querySelectorAll<HTMLElement>('[data-cell="sla"]'));
-        expect(slaCells.length).withContext('one SLA cell per stage').toBe(6);
-        for (const cell of slaCells) {
-          // Non-vacuity: a real box (an inline span would measure 0 and pass for nothing).
-          expect(cell.clientWidth).withContext('SLA cell has a width').toBeGreaterThan(20);
-          expect(cell.scrollWidth).withContext(`SLA "${cell.textContent!.trim()}" fits`).toBeLessThanOrEqual(cell.clientWidth + 1);
+        // ── ACC-255 PR 4a: every Stage, Allows and Details cell fits its column ──
+        for (const key of ['stage', 'allows', 'details']) {
+          const cells = Array.from(host.querySelectorAll<HTMLElement>(`[data-cell="${key}"]`));
+          expect(cells.length).withContext(`one ${key} cell per stage`).toBe(6);
+          for (const cell of cells) {
+            const box = cell.getBoundingClientRect();
+            const column = cell.closest<HTMLElement>('[style*="grid-template-columns"]')!.getBoundingClientRect();
+            expect(box.left).withContext(`${key} inside its row (left)`).toBeGreaterThanOrEqual(column.left - 1);
+            expect(box.right).withContext(`${key} inside its row (right)`).toBeLessThanOrEqual(column.right + 1);
+          }
+        }
+        // The meaning chips stay on one line each.
+        for (const chip of Array.from(host.querySelectorAll<HTMLElement>('.am-stage-meaning'))) {
+          expect(chip.getBoundingClientRect().height).withContext(`chip "${chip.textContent!.trim()}" on one line`).toBeLessThan(24);
         }
 
         // ── The transition table stays inside its column ──
-        const table = host.querySelector<HTMLElement>('.am-tr-table table') ?? host.querySelector<HTMLElement>('.am-tr-table');
+        const table = host.querySelector<HTMLElement>('[data-tr-scroll]');
         expect(table).withContext('the expanded row shows its transitions').not.toBeNull();
         const column = table!.closest<HTMLElement>('app-workflow-transition-editor')!.getBoundingClientRect();
         const box = table!.getBoundingClientRect();
         expect(box.right).withContext('table right edge').toBeLessThanOrEqual(column.right + 1);
         expect(box.left).withContext('table left edge').toBeGreaterThanOrEqual(column.left - 1);
+
+        // ── ACC-255 PR 4a (ACC-265 item 3): the table reads whole ──
+        const labels = Array.from(host.querySelectorAll<HTMLElement>('[data-tr-label], [data-tr-to]'));
+        expect(labels.length).withContext('non-vacuity: two transitions, name and destination').toBe(4);
+        for (const cell of labels) {
+          // The whole text is drawn: it wraps, and nothing is clipped or cut.
+          expect(getComputedStyle(cell).textOverflow).withContext('no ellipsis').not.toBe('ellipsis');
+          expect(cell.scrollWidth).withContext(`"${cell.textContent!.trim()}" not clipped`).toBeLessThanOrEqual(cell.clientWidth + 1);
+          expect(cell.scrollHeight).withContext(`"${cell.textContent!.trim()}" not cut`).toBeLessThanOrEqual(cell.clientHeight + 1);
+        }
+        const oneLine = (el: HTMLElement) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const rects = Array.from(range.getClientRects());
+          const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || parseFloat(getComputedStyle(el).fontSize) * 1.5;
+          const spread = Math.max(...rects.map((r) => r.top)) - Math.min(...rects.map((r) => r.top));
+          return rects.length > 0 && spread < lineHeight / 2;
+        };
+        for (const chip of Array.from(host.querySelectorAll<HTMLElement>('[data-tr-trigger], [data-tr-kind]'))) {
+          expect(oneLine(chip)).withContext(`chip "${chip.textContent!.trim()}" on one line`).toBeTrue();
+          if (c.width < 400) continue;
+          const cell = chip.closest('td')!.getBoundingClientRect();
+          const r = chip.getBoundingClientRect();
+          expect(r.left).withContext(`chip "${chip.textContent!.trim()}" inside its cell (left)`).toBeGreaterThanOrEqual(cell.left - 1);
+          expect(r.right).withContext(`chip "${chip.textContent!.trim()}" inside its cell (right)`).toBeLessThanOrEqual(cell.right + 1);
+        }
+        // Transitions stack above Tasks on entry until each can be about 660px:
+        // side by side only at 1920 (Ahmad, Q4).
+        const editor = host.querySelector<HTMLElement>('app-workflow-transition-editor')!.getBoundingClientRect();
+        const tasks = host.querySelector<HTMLElement>('app-stage-task-list')!.getBoundingClientRect();
+        const sideBySide = Math.abs(editor.top - tasks.top) < 1;
+        expect(sideBySide).withContext('side by side only at 1920').toBe(c.width === 1628);
       });
     }
   }
 
-  it('the raw codes are gone: approval, assignee and trigger read in words', async () => {
+  it('the trigger reads in words, never its code', async () => {
     const host = await render(1148, 'en');
     const text = host.textContent!;
-    for (const code of ['SINGLE', 'SEQUENTIAL', 'POSITION_FIXED', 'ORG_UNIT_HEAD', 'ASSIGNEE_POOL']) {
+    for (const code of ['ASSIGNEE_POOL', 'ROLE_BASED', 'SINGLE', 'POSITION_FIXED']) {
       expect(text).withContext(code).not.toContain(code);
     }
-    expect(host.querySelector('[data-testid="stage-approval"]')!.textContent!.trim()).toBe('Sequential');
-    expect(text).toContain('Fixed position');
     expect(host.querySelector('[data-tr-trigger]')!.textContent!.trim()).toBe('Assignee pool');
   });
 
-  // ACC-265 item 2 — the SLA column read "40h" in both languages.
-  for (const [lang, hours] of [
-    ['en', '40 working hours'],
-    ['ar', '40 ساعة عمل'],
+  // ACC-255 PR 4a — the rows as drawn: meanings in words under the name, what
+  // the stage allows as a counted string (the action names as its tooltip and
+  // accessible name), and what the row expands to.
+  for (const [lang, want] of [
+    [
+      'en',
+      {
+        allows: ['Allows 4 of 5 actions', 'Allows 3 of 5 actions', 'Allows 4 of 5 actions', 'Allows 4 of 5 actions', 'Allows 3 of 5 actions', 'Allows nothing'],
+        meanings: [[], [], ['Record is in force'], ['Record is in force'], ['Dissolving'], ['Dissolving']],
+        tip: 'Allows: Edit details, Add member, Remove member, Change member role',
+        details: ['2 transitions', 'No exits', 'No exits · 1 task on entry', 'No exits', 'No exits', 'No exits'],
+      },
+    ],
+    [
+      'ar',
+      {
+        allows: ['يسمح بـ 4 من 5 إجراءات', 'يسمح بـ 3 من 5 إجراءات', 'يسمح بـ 4 من 5 إجراءات', 'يسمح بـ 4 من 5 إجراءات', 'يسمح بـ 3 من 5 إجراءات', 'لا يسمح بشيء'],
+        meanings: [[], [], ['السجل نافذ'], ['السجل نافذ'], ['قيد الحل'], ['قيد الحل']],
+        tip: 'يسمح بـ: تعديل التفاصيل، إضافة عضو، إزالة عضو، تغيير دور العضو',
+        details: ['انتقالان', 'لا مخارج', 'لا مخارج · مهمة واحدة عند الدخول', 'لا مخارج', 'لا مخارج', 'لا مخارج'],
+      },
+    ],
   ] as const) {
-    it(`the SLA reads as a counted string, never "40h" [${lang}]`, async () => {
+    it(`the rows say what each stage means and allows [${lang}]`, async () => {
       const host = await render(1148, lang);
-      const sla = Array.from(host.querySelectorAll<HTMLElement>('[data-cell="sla"]')).map((c) => c.textContent!.trim());
-      // Stages 1, 3 and 5 have a 40-hour SLA; the rest have none.
-      expect(sla).toEqual([hours, '—', hours, '—', hours, '—']);
-      expect(host.textContent).not.toContain('40h');
+      const cells = (key: string) => Array.from(host.querySelectorAll<HTMLElement>(`[data-cell="${key}"]`));
+      expect(cells('allows').map((c) => c.textContent!.trim())).toEqual([...want.allows]);
+      expect(cells('stage').map((c) => Array.from(c.querySelectorAll('.am-stage-meaning')).map((m) => m.textContent!.trim()))).toEqual(
+        want.meanings.map((m) => [...m]),
+      );
+      expect(cells('allows')[0]!.getAttribute('aria-label')).toBe(want.tip);
+      expect(cells('details').map((c) => c.textContent!.trim())).toEqual([...want.details]);
+      // Every count is in Latin digits (ACC-94).
+      expect(host.textContent).not.toMatch(/[\u0660-\u0669]/);
     });
   }
+
+  it('a record type with no actions shows nothing in Allows', async () => {
+    const host = await render(1148, 'en', { recordActions: [] });
+    const allows = Array.from(host.querySelectorAll<HTMLElement>('[data-cell="allows"]'));
+    expect(allows.length).withContext('non-vacuity').toBe(6);
+    expect(allows.every((c) => c.textContent!.trim() === '')).toBeTrue();
+  });
+
+  it('on a phone each stage is one column: number and name, chips, allows, details', async () => {
+    const host = await render(358, 'en');
+    const stage = host.querySelectorAll<HTMLElement>('[data-cell="stage"]')[2]!;
+    expect(stage.querySelector('[data-stage-number]')!.textContent!.trim()).withContext('the number, first').toBe('3');
+    expect(stage.querySelector('[data-stage-name]')!.textContent!.trim()).toBe('Stage 3');
+    expect(stage.querySelector('.am-stage-meaning')!.textContent!.trim()).toBe('Record is in force');
+    expect(stage.querySelector('[data-cell="allows"]')!.textContent!.trim()).toBe('Allows 4 of 5 actions');
+    expect(stage.querySelector('[data-cell="details"]')).not.toBeNull();
+    expect(host.querySelector('[data-cell="number"]')).withContext('no separate # column').toBeNull();
+  });
 });

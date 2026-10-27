@@ -23,6 +23,8 @@ import { ConfirmationService } from 'primeng/api';
 import { By } from '@angular/platform-browser';
 import { environment } from '../../../../../environments/environment';
 import { WorkflowStageListComponent } from './workflow-stage-list.component';
+import { LanguageService } from '../../../../core/services/language.service';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
 
 const TRANSITION = {
@@ -161,13 +163,15 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
   });
 });
 
-// ACC-160 — a dedicated Arabic-name slot in a list shows "—" when there is
-// no Arabic name, rather than a blank cell. Not the English name: that slot's
-// job is to report the Arabic one, and an English name there would lie.
-// GUARD FIRST: a list whose records all have Arabic names shows no "—" at all,
-// so the dash in the null case can only have come from that cell.
-describe('WorkflowStageList — the Arabic name under each stage (ACC-160)', () => {
-  function renderWith(stageNameAr: string | null): string[] {
+// ACC-160, as the drawn list shows it (ACC-255 PR 4a) — one name per stage, in
+// the reader's language. A stage is a record's identity there, so a stage with
+// no Arabic name reads in English in an Arabic session: never a blank, never
+// "null" (ACC-160's identity rule). The list no longer has a separate Arabic
+// slot (Workflow Setup, section 3).
+describe('WorkflowStageList — the stage name in the reader\'s language (ACC-160)', () => {
+  preserveDocumentLanguage();
+
+  function namesWith(stageNameAr: string | null, lang: 'en' | 'ar'): string[] {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [WorkflowStageListComponent],
@@ -182,34 +186,29 @@ describe('WorkflowStageList — the Arabic name under each stage (ACC-160)', () 
         },
       ],
     });
+    TestBed.inject(LanguageService).use(lang);
     const fixture = TestBed.createComponent(WorkflowStageListComponent);
     const http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
     const t = template();
     http
       .expectOne(`${environment.apiUrl}/workflow-templates/template-1`)
-      .flush({ ...t, stages: [{ ...t.stages[0], nameAr: stageNameAr }] });
+      .flush({ ...t, stages: [{ ...t.stages[0], nameEn: 'Formation', nameAr: stageNameAr }] });
     fixture.detectChanges();
     http.match(() => true).forEach((r) => r.flush([]));
-    return arabicSlots(fixture.nativeElement as HTMLElement);
+    return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-stage-name]')).map((e) =>
+      (e.textContent ?? '').trim(),
+    );
   }
 
-  it('shows no dash while the stage has an Arabic name', () => {
-    const slots = renderWith('التكوين');
-    expect(slots).toContain('التكوين');
-    expect(slots).not.toContain('—');
+  it('reads the Arabic name in Arabic and the English name in English', () => {
+    expect(namesWith('التكوين', 'ar')).toEqual(['التكوين']);
+    expect(namesWith('التكوين', 'en')).toEqual(['Formation']);
   });
 
-  it('shows "—" for a stage with no Arabic name, not a blank', () => {
-    const slots = renderWith(null);
-    expect(slots).toContain('—');
-    expect(slots).not.toContain('');
+  it('falls back to English in Arabic when the stage has no Arabic name, never a blank', () => {
+    const names = namesWith(null, 'ar');
+    expect(names).toEqual(['Formation']);
+    expect(names.join('')).not.toContain('null');
   });
 });
-
-// Reads the Arabic-name SLOTS themselves (dir="rtl"), not the page: a page can
-// show "—" elsewhere — the stage list's empty SLA column does — and a whole-page
-// assertion would then pass or fail for a reason that has nothing to do with
-// the Arabic name. That is exactly how this test's first draft went wrong.
-const arabicSlots = (root: HTMLElement): string[] =>
-  Array.from(root.querySelectorAll('[dir="rtl"]')).map((e) => (e.textContent ?? '').trim());

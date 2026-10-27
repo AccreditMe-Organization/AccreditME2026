@@ -1,13 +1,17 @@
-import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { AmCountPipe } from '../../../../core/formatting';
+import { AmNumberPipe, AmCountPipe, FormatService } from '../../../../core/formatting';
+import { SHELL_PHONE_BELOW_PX } from '../../../../layout/app-shell/app-shell.component';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import {
   WorkflowTemplateService,
   WorkflowTemplateDto,
   WorkflowStageDto,
+  WorkflowRecordActionDto,
+  WorkflowStageFlagDto,
 } from '../../services/workflow-template.service';
 import { WorkflowStageFormComponent } from '../workflow-stage-form/workflow-stage-form.component';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
@@ -29,7 +33,6 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
-import { workflowLabelKey } from '../../workflow-labels';
 
 /**
  * ACC-254 — the stages list's two fixed tracks. The actions cell holds the
@@ -40,7 +43,8 @@ import { workflowLabelKey } from '../../workflow-labels';
  * spilled out of data-list's 88px default. The expand track is the chevron's.
  */
 const ACTIONS_TRACK = '96px';
-const EXPAND_TRACK = '32px';
+/** ACC-255 PR 4a — the drawing's # column. */
+const NUMBER_TRACK = '32px';
 
 @Component({
   selector: 'app-workflow-stage-list',
@@ -48,6 +52,8 @@ const EXPAND_TRACK = '32px';
   imports: [PageHeaderComponent, 
     TranslatePipe,
     AmCountPipe,
+    AmNumberPipe,
+    NgTemplateOutlet,
     ButtonModule,
     TooltipModule,
     WorkflowStageFormComponent,
@@ -124,69 +130,47 @@ const EXPAND_TRACK = '32px';
                 class="grid items-center gap-3 px-3 py-2"
                 style="grid-template-columns: var(--am-list-cols)"
               >
-                @if (v('expand')) {
-                  <!-- ACC-254 — named, and says whether it is open. -->
-                  <p-button
-                    [icon]="isExpanded(stage.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
-                    [text]="true"
-                    size="small"
-                    [ariaLabel]="
-                      (isExpanded(stage.id) ? 'workflow.hideStageDetails' : 'workflow.showStageDetails')
-                        | translate: { name: stageDisplayName(stage) }
-                    "
-                    [attr.aria-expanded]="isExpanded(stage.id)"
-                    (onClick)="toggleExpanded(stage.id)"
-                    data-testid="stage-expand"
-                  />
+                <!-- ACC-255 PR 4a — the drawing's stages list (Workflow Setup,
+                     section 3): # · Stage, with its meanings as chips under the
+                     name · what it allows · the details it expands to. Every
+                     value is the server's: the stage's stored actions and flags,
+                     named from the template's registries. On a phone it is one
+                     column: number and name, chips, allows, details. -->
+                @if (!phone() && v('number')) {
+                  <span class="text-xs tabular-nums text-[var(--am-text-secondary)]" data-cell="number">
+                    {{ stageIndex(stage) + 1 | amNumber }}
+                  </span>
                 }
                 @if (v('name')) {
-                  <div class="min-w-0">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <span class="text-sm font-medium truncate">{{ stage.nameEn }}</span>
-                      @if (stage.isInitial) {
-                        <span
-                          class="text-[10.5px] font-semibold px-1.5 py-px rounded shrink-0"
-                          style="color: var(--am-status-approved);
-                                 background: color-mix(in srgb, var(--am-status-approved) 12%, transparent)"
-                        >
-                          {{ 'workflow.isInitial' | translate }}
-                        </span>
+                  <div class="min-w-0" data-cell="stage">
+                    <span
+                      class="block text-sm font-medium truncate"
+                      [pTooltip]="stageDisplayName(stage)"
+                      tooltipPosition="top"
+                    >
+                      @if (phone()) {
+                        <span class="tabular-nums text-[var(--am-text-secondary)] me-2" data-stage-number>{{ stageIndex(stage) + 1 | amNumber }}</span>
                       }
-                      @if (stage.isFinal) {
-                        <span
-                          class="text-[10.5px] font-semibold px-1.5 py-px rounded shrink-0 text-[var(--am-text-secondary)]"
-                          style="background: var(--am-surface)"
-                        >
-                          {{ 'workflow.isFinal' | translate }}
-                        </span>
-                      }
-                    </div>
-                    <!-- See role-list: dir on the span, not the block. -->
-                    <div class="text-xs text-[var(--am-text-secondary)] truncate">
-                      <span dir="rtl" style="unicode-bidi: isolate">{{ stage.nameAr || '—' }}</span>
-                    </div>
+                      <span data-stage-name>{{ stageDisplayName(stage) }}</span>
+                    </span>
+                    @if (meaningsOf(stage).length) {
+                      <span class="flex flex-wrap gap-1 mt-1" data-cell="meanings">
+                        @for (meaning of meaningsOf(stage); track meaning.key) {
+                          <span class="am-stage-meaning">{{ meaning.labelKey | translate }}</span>
+                        }
+                      </span>
+                    }
+                    @if (phone()) {
+                      <ng-container *ngTemplateOutlet="allowsTpl; context: { $implicit: stage }" />
+                      <ng-container *ngTemplateOutlet="detailsTpl; context: { $implicit: stage }" />
+                    }
                   </div>
                 }
-                @if (v('approval')) {
-                  <!-- ACC-254 — the mode in words, never the stored code. -->
-                  <span class="text-sm text-[var(--am-text-secondary)] truncate min-w-0" data-testid="stage-approval">
-                    {{ approvalLabelKey(stage.approvalMode) | translate }}
-                  </span>
+                @if (!phone() && v('allows')) {
+                  <ng-container *ngTemplateOutlet="allowsTpl; context: { $implicit: stage }" />
                 }
-                @if (v('assignee')) {
-                  <span class="text-sm text-[var(--am-text-secondary)] truncate min-w-0" data-testid="stage-assignee">
-                    {{ assigneeLabelKey(stage.assigneeStrategy) | translate }}
-                  </span>
-                }
-                @if (v('sla')) {
-                  <!-- ACC-265 — a counted string in the reader's language ("40 working
-                       hours" / «40 ساعة عمل»), in the page's own direction. -->
-                  <span
-                    data-cell="sla"
-                    class="text-sm tabular-nums text-[var(--am-text-secondary)] text-start"
-                  >
-                    {{ stage.slaWorkingHours ? (stage.slaWorkingHours | amCount: 'workflow.workingHours') : '—' }}
-                  </span>
+                @if (!phone() && v('details')) {
+                  <ng-container *ngTemplateOutlet="detailsTpl; context: { $implicit: stage }" />
                 }
 
                 <!-- ACC-123 — reorder, edit and remove are all
@@ -224,9 +208,10 @@ const EXPAND_TRACK = '32px';
                    pRowToggler and expandedRowKeys to coordinate two templates;
                    here the row owns its own disclosure, and the nested editor
                    is simply a child of it. -->
-              <!-- ACC-208 — two columns, read side by side (drawing decision 1):
-                   what makes a record move, and what must happen before it
-                   can. They stack below the width where both fit. -->
+              <!-- ACC-208 put these two side by side (drawing decision 1). ACC-255
+                   PR 4a replaces that (Ahmad, Q4): Transitions stack above Tasks on
+                   entry until each can be about 660px, so the transition table
+                   shows whole names — side by side only at 1920 (plan §17.5). -->
               @if (isExpanded(stage.id)) {
                 <div class="am-stage-expanded px-3 pb-3 bg-[var(--am-surface)]">
                   <app-workflow-transition-editor
@@ -249,6 +234,52 @@ const EXPAND_TRACK = '32px';
           </ng-template>
         </app-data-list>
       </div>
+
+      <!-- What the stage allows: "Allows n of 5 actions" (the action names as
+           its tooltip and in its accessible name), "Allows nothing", or nothing
+           at all for a record type with no actions a stage can limit. -->
+      <ng-template #allowsTpl let-stage>
+        @if (registryActions().length) {
+          <span
+            class="block text-sm truncate min-w-0"
+            [class.am-stage-allows-none]="!allowedActions(stage).length"
+            [pTooltip]="allowsTip(stage)"
+            tooltipPosition="top"
+            [attr.aria-label]="allowsTip(stage)"
+            data-cell="allows"
+          >
+            @if (allowedActions(stage).length) {
+              {{ registryActions().length | amCount: 'workflow.allowsActions' : { allowed: allowedActions(stage).length } }}
+            } @else {
+              {{ 'workflow.stageList.allowsNothing' | translate }}
+            }
+          </span>
+        } @else {
+          <span data-cell="allows"></span>
+        }
+      </ng-template>
+
+      <!-- The row's disclosure: what the expansion holds, as its label. -->
+      <ng-template #detailsTpl let-stage>
+        <button
+          type="button"
+          class="am-stage-details"
+          [attr.aria-expanded]="isExpanded(stage.id)"
+          [attr.aria-label]="
+            (isExpanded(stage.id) ? 'workflow.hideStageDetails' : 'workflow.showStageDetails')
+              | translate: { name: stageDisplayName(stage) }
+          "
+          (click)="toggleExpanded(stage.id)"
+          data-testid="stage-expand"
+          data-cell="details"
+        >
+          <i
+            [class]="isExpanded(stage.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right rtl:rotate-180'"
+            aria-hidden="true"
+          ></i>
+          <span class="truncate min-w-0">{{ detailsText(stage) }}</span>
+        </button>
+      </ng-template>
 
       <ng-template #formTpl>
         <app-workflow-stage-form
@@ -273,9 +304,47 @@ const EXPAND_TRACK = '32px';
     `
       .am-stage-expanded {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 660px), 1fr));
         gap: var(--am-space-16);
         align-items: start;
+      }
+      /* ACC-255 PR 4a — a stage's meaning, in words (the drawing's chip). */
+      .am-stage-meaning {
+        flex: none;
+        font-size: var(--am-type-micro-size);
+        font-weight: 600;
+        line-height: 18px;
+        white-space: nowrap;
+        color: var(--am-primary-700);
+        background: var(--am-card);
+        border: 1px solid var(--am-primary-600);
+        border-radius: var(--am-radius-control);
+        padding: 0 var(--am-space-6);
+      }
+      .am-stage-allows-none {
+        color: var(--am-text-secondary);
+      }
+      .am-stage-details {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--am-space-6);
+        min-width: 0;
+        max-width: 100%;
+        font-size: var(--am-type-meta-size);
+        color: var(--am-text-secondary);
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        text-align: start;
+      }
+      .am-stage-details:hover {
+        color: var(--am-primary-700);
+      }
+      .am-stage-details:focus-visible {
+        outline: 2px solid var(--am-primary-600);
+        outline-offset: 2px;
+        border-radius: var(--am-radius-control);
       }
     `,
   ],
@@ -340,13 +409,60 @@ export class WorkflowStageListComponent implements OnInit {
   readonly trackById = (stage: WorkflowStageDto): string => stage.id;
   readonly actionsTrack = ACTIONS_TRACK;
 
-  /** ACC-254 — the stored code in words. */
-  approvalLabelKey(mode: string | null | undefined): string {
-    return workflowLabelKey('approvalMode', mode);
+  private readonly format = inject(FormatService);
+  private readonly document = inject(DOCUMENT);
+
+  /** ACC-232's phone width: below it the list is one column (the drawing's phone frame). */
+  readonly phone = signal(false);
+
+  constructor() {
+    const media = this.document.defaultView?.matchMedia?.(`(max-width: ${SHELL_PHONE_BELOW_PX - 0.02}px)`);
+    if (media) {
+      this.phone.set(media.matches);
+      const onChange = (e: MediaQueryListEvent): void => this.phone.set(e.matches);
+      media.addEventListener('change', onChange);
+      inject(DestroyRef).onDestroy(() => media.removeEventListener('change', onChange));
+    }
   }
 
-  assigneeLabelKey(strategy: string | null | undefined): string {
-    return workflowLabelKey('assignee', strategy);
+  // ── ACC-255 PR 4a — what a stage allows and means, from the template ──────
+  // The registries come with the template (record-registry.ts on the server);
+  // each stage carries its stored action and flag keys. Nothing here decides a
+  // rule: it names and counts what the server sent.
+
+  /** The record actions a stage of this type may allow, in registry order. */
+  readonly registryActions = computed<WorkflowRecordActionDto[]>(() => this.template()?.recordActions ?? []);
+  private readonly registryFlags = computed<WorkflowStageFlagDto[]>(() => this.template()?.stageFlags ?? []);
+
+  /** The actions this stage allows, in registry order; a key the registry does not list is not shown. */
+  allowedActions(stage: WorkflowStageDto): WorkflowRecordActionDto[] {
+    const allowed = new Set(stage.actions ?? []);
+    return this.registryActions().filter((a) => allowed.has(a.key));
+  }
+
+  /** The stage's meanings, in registry order. */
+  meaningsOf(stage: WorkflowStageDto): WorkflowStageFlagDto[] {
+    const flags = new Set(stage.flags ?? []);
+    return this.registryFlags().filter((f) => flags.has(f.key));
+  }
+
+  /** The Allows cell's tooltip and accessible name: the action names, or that nothing is allowed. */
+  allowsTip(stage: WorkflowStageDto): string {
+    const names = this.allowedActions(stage).map((a) => this.translate.instant(a.labelKey) as string);
+    if (!names.length) return this.translate.instant('workflow.stageList.nothingAllowedTip');
+    const separator = this.languageService.isArabic() ? '، ' : ', ';
+    return this.translate.instant('workflow.stageList.allowsNamed', { names: names.join(separator) });
+  }
+
+  /** The Details cell: "2 transitions · 1 task on entry", or "No exits" for a stage that leads nowhere. */
+  detailsText(stage: WorkflowStageDto): string {
+    const transitions = stage.transitions?.length ?? 0;
+    const tasks = stage.taskDefinitionCount ?? 0;
+    const parts = [
+      transitions ? this.format.count('workflow.stageTransitions', transitions) : this.translate.instant('workflow.stageList.noExits'),
+    ];
+    if (tasks) parts.push(this.format.count('workflow.tasksOnEntry', tasks));
+    return parts.join(' · ');
   }
 
   /** The stage's name in the reader's language, for the controls that name it. */
@@ -376,25 +492,24 @@ export class WorkflowStageListComponent implements OnInit {
 
   // NO sortBy on any column, permanently — see the template comment. A header
   // is a label; labelling a column does not imply it sorts.
+  // ACC-255 PR 4a — the drawing's tracks: # · Stage · Allows · Details, every
+  // one fixed or fr (data-list's rule, ACC-234), so header and rows line up.
+  // On a phone, one column. The approval mode, assignee and deadline are the
+  // stage editor's, not the list's (Workflow Setup, section 3).
   readonly columns = computed<DataListColumn[]>(() => {
     this.translate.currentLang();
+    const stage: DataListColumn = {
+      key: 'name',
+      label: this.translate.instant('workflow.stageList.colStage'),
+      alwaysVisible: true,
+      width: 'minmax(0, 1.6fr)',
+    };
+    if (this.phone()) return [{ ...stage, width: 'minmax(0, 1fr)' }];
     return [
-      // ACC-254 — fixed: an 'auto' track sized each row to its own content, so
-      // header and rows misaligned (data-list's rule, ACC-234).
-      { key: 'expand', label: '', alwaysVisible: true, width: EXPAND_TRACK },
-      {
-        key: 'name',
-        label: this.translate.instant('workflow.stageName'),
-        alwaysVisible: true,
-        width: '2fr',
-      },
-      { key: 'approval', label: this.translate.instant('workflow.approvalMode'), width: '1fr' },
-      {
-        key: 'assignee',
-        label: this.translate.instant('workflow.assigneeStrategy'),
-        width: '1fr',
-      },
-      { key: 'sla', label: this.translate.instant('workflow.sla'), width: '0.6fr' },
+      { key: 'number', label: this.translate.instant('workflow.stageList.colNumber'), alwaysVisible: true, width: NUMBER_TRACK },
+      stage,
+      { key: 'allows', label: this.translate.instant('workflow.stageList.colAllows'), width: 'minmax(0, 1fr)' },
+      { key: 'details', label: this.translate.instant('workflow.stageList.colDetails'), width: 'minmax(0, 1.2fr)' },
     ];
   });
 

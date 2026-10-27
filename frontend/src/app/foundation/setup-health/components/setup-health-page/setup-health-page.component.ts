@@ -86,6 +86,9 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
       };
     case 'STAGE_WITHOUT_ASSIGNEE':
       // The template id is in the snapshot; without it there is no page to open.
+      // ACC-255 PR 4a (Q-D): the stages page itself needs workflows:manage
+      // (nav-items.ts), so a holder of workflows:view alone is never offered a
+      // link the route would refuse. workflows:view stays for the page's reads.
       return condition.subject.templateId
         ? {
             link: ['/workflows', condition.subject.templateId, 'stages'],

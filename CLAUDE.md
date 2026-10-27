@@ -4199,6 +4199,9 @@ SYSTEM-REFERENCE.md §1.14. Plan and Ahmad's answers (22 and 24 Oct):
   kept apart from the transition check: a transition may still REQUIRE the key.
   The next root-only key is one line there, with its own decision and backfill.
 - **Screens learn it from the catalogue's `rootRoleOnly`**; no screen names the key.
+- **The workflow setup PAGES are gated on it too (ACC-255 PR 4a, Q-D):** the
+  Workflows rail item and `/workflows` need `workflows:manage`, not
+  `workflows:view`, so no other role gets a setup page.
 - **`npm run backfill:acc258-revoke-workflows-manage`** removes any other grant,
   AFTER the deploy (dry run, execute, dry run 0). On 24 Oct's data it removes
   nothing.
@@ -4254,7 +4257,19 @@ for what the screens read). Plan, Ahmad's answers, and PR 2 and PR 3 as built:
   baseline was 3, all on lane A's screens; ACC-264 named them (the bell, AI
   feature costs, plans) and **the baseline is 0**, so a new unnamed icon-only
   control now fails CI.
-- **No migration in PR 2 or PR 3.**
+- **PR 4 is split** (plan §17.8 and §17.10, Ahmad, 26 Oct): **4a** (the
+  stages list, the Q-D gate, the transition table), then **4b-be** (G6
+  `isProtected`, G3 the refusal's stage ids, G1 each action's paired permission,
+  G4 live counts; deployed before 4b), then **4b** (the flow strip, the stage
+  editor as a page panel with "What can be done here" and "What this stage
+  means"). G2, the History card, waits for its own ticket.
+- **PR 4a:**
+  - **The stages list** reads each stage's meanings and allowed actions from
+    the template read: chips, "Allows n of 5 actions", Details.
+  - **The setup pages** need `workflows:manage` (Q-D).
+  - **The expanded row** stacks Transitions above Tasks on entry below about
+    660 px each, replacing ACC-208's side-by-side layout (Q4).
+- **No migration in PR 2, PR 3 or PR 4a.**
 
 ## Key Architecture Decisions (ACC-256, ACC-265)
 
@@ -4279,7 +4294,9 @@ SYSTEM-REFERENCE.md §3.17 (the committee read), the committees list section
   (the committee page's Stage history, with `contain: size`, only while it
   shares the Lifecycle card's row).
 - **The Arabic transition table (ACC-265 item 3) moved to ACC-255 PR 4**, with
-  the measurements in the ACC-255 plan's §16.7.
+  the measurements in the ACC-255 plan's §16.7. Built in PR 4a: whole names,
+  one-line chips, Transitions stacked above Tasks on entry below about 660 px
+  each.
 - **No migration.**
 
 ## Open / Deferred Items

@@ -677,6 +677,16 @@
     "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
   },
   "workflow": {
+    "stageList": {
+      "colNumber": "#",
+      "colStage": "Stage",
+      "colAllows": "Allows",
+      "colDetails": "Details",
+      "allowsNothing": "Allows nothing",
+      "nothingAllowedTip": "Nothing is allowed in this stage",
+      "noExits": "No exits",
+      "allowsNamed": "Allows: {{names}}"
+    },
     "error": {
       "updateFailed": "Couldn't save the change.",
       "removeFailed": "Couldn't remove it.",
@@ -714,17 +724,17 @@
     },
     "recordAction": {
       "COMMITTEE": {
-        "edit_details": "Edit the committee's details",
-        "add_member": "Add members",
-        "remove_member": "Remove members",
-        "change_member_role": "Change a member's role",
-        "request_change": "Request a change to the approved committee"
+        "edit_details": "Edit details",
+        "add_member": "Add member",
+        "remove_member": "Remove member",
+        "change_member_role": "Change member role",
+        "request_change": "Request a change"
       }
     },
     "stageFlag": {
-      "DISSOLVING": "The committee is being dissolved, or has been",
-      "IN_FORCE": "The committee is approved and in force",
-      "APPLIES_APPROVED_CHANGE": "Reaching this stage applies the approved change"
+      "DISSOLVING": "Dissolving",
+      "IN_FORCE": "Record is in force",
+      "APPLIES_APPROVED_CHANGE": "Applies the approved change"
     },
     "recordField": {
       "COMMITTEE": {
@@ -2523,6 +2533,18 @@
       }
     },
     "workflow": {
+      "tasksOnEntry": {
+        "one": "{{count}} task on entry",
+        "other": "{{count}} tasks on entry"
+      },
+      "stageTransitions": {
+        "one": "{{count}} transition",
+        "other": "{{count}} transitions"
+      },
+      "allowsActions": {
+        "one": "Allows {{allowed}} of {{count}} action",
+        "other": "Allows {{allowed}} of {{count}} actions"
+      },
       "workingHours": {
         "one": "{{count}} working hour",
         "other": "{{count}} working hours"

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1480px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 18 Oct 2026 · Workflow setup: routing, stage permissions and versions · on Templates 6b and template 2, Stage Tasks, Design System artboards 10 and 11</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Workflow setup · what's new</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 116ch; text-wrap: pretty;">Only the new and changed parts: the condition builder, the stage editor's two new sections, the transition editor's new top and automatic exits, the flow strip with branches, the workflow list's selection rules, New workflow, drafts, publishing and versions. Everything else is Templates 6b and Stage Tasks as accepted. Every drawing is marked <strong style="font-weight: 600;">Step 1</strong> (what may be done in a stage, stage meanings) or <strong style="font-weight: 600;">Step 2</strong> (choosing the workflow, conditional and automatic exits, versions). Example: Al Nakheel Specialist Hospital.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="8">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="{{ d.stepStyle }}">{{ d.step }}</span><span style="font-size: 12.5px; font-weight: 600;">{{ d.t }}</span></div><div style="font-size: 12px; color: #4A5568; margin-block-start: 3px; text-wrap: pretty;">{{ d.b }}</div></div>
+      </sc-for>
+    </div>
+  </section>
+
+  <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="7">
+    <section id="{{ sec.id }}" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">{{ sec.n }}</span>
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{{ sec.title }}</h2>
+        <span style="{{ sec.stepStyle }}">{{ sec.step }}</span>
+        <span style="font-size: 12.5px; color: #5A6779; text-wrap: pretty;">{{ sec.sub }}</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+        <sc-for list="{{ sec.cards }}" as="c" hint-placeholder-count="4">
+          <div style="{{ c.outer }}">
+            <div style="display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; margin-block-end: 6px;"><span style="{{ c.stepStyle }}">{{ c.step }}</span><span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">{{ c.cap }}</span></div>
+            <div dir="{{ c.dir }}" style="{{ c.frame }}">
+              <sc-if value="{{ c.hasHead }}" hint-placeholder-val="{{ false }}"><div style="{{ c.headStyle }}"><span style="min-width: 0;"><span style="{{ c.titleStyle }}">{{ c.title }}</span><sc-if value="{{ c.ctx }}" hint-placeholder-val="{{ false }}"><span style="{{ c.ctxStyle }}">{{ c.ctx }}</span></sc-if></span><sc-if value="{{ c.headBtns }}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; gap: 8px;"><sc-for list="{{ c.headBtns }}" as="hb" hint-placeholder-count="2"><button style="{{ hb.style }}">{{ hb.l }}</button></sc-for></span></sc-if><sc-if value="{{ c.isDialog }}" hint-placeholder-val="{{ false }}"><span aria-label="{{ c.closeAria }}" style="color: #5A6779; font-size: 13px;">✕</span></sc-if></div></sc-if>
+              <div style="{{ c.bodyStyle }}">
+                <sc-for list="{{ c.blocks }}" as="b" hint-placeholder-count="3">
+                  <div style="{{ b.wrap }}">
+                    <sc-if value="{{ b.isNote }}" hint-placeholder-val="{{ true }}"><div style="{{ b.style }}">{{ b.text }}</div></sc-if>
+                    <sc-if value="{{ b.isSecHead }}" hint-placeholder-val="{{ false }}"><div style="{{ b.style }}"><span style="{{ b.tStyle }}">{{ b.t }}</span><sc-if value="{{ b.s }}" hint-placeholder-val="{{ false }}"><span style="{{ b.sStyle }}">{{ b.s }}</span></sc-if></div></sc-if>
+                    <sc-if value="{{ b.isBanner }}" hint-placeholder-val="{{ false }}"><div role="{{ b.role }}" style="{{ b.box }}"><div style="{{ b.tStyle }}">{{ b.t }}</div><sc-if value="{{ b.b }}" hint-placeholder-val="{{ false }}"><div style="{{ b.bStyle }}">{{ b.b }}</div></sc-if><sc-if value="{{ b.btns }}" hint-placeholder-val="{{ false }}"><div style="display: flex; gap: 8px; margin-block-start: 8px;"><sc-for list="{{ b.btns }}" as="bb" hint-placeholder-count="1"><button style="{{ bb.style }}">{{ bb.l }}</button></sc-for></div></sc-if></div></sc-if>
+                    <sc-if value="{{ b.isFields }}" hint-placeholder-val="{{ false }}"><div style="{{ b.grid }}"><sc-for list="{{ b.cols }}" as="f" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ f.labStyle }}">{{ f.l }}<span style="font-weight: 400; color: #5A6779;">{{ f.tag }}</span></div><div style="{{ f.box }}"><span dir="{{ f.vdir }}" style="{{ f.vStyle }}">{{ f.v }}</span><sc-if value="{{ f.g }}" hint-placeholder-val="{{ false }}"><span style="{{ f.gStyle }}">{{ f.g }}</span></sc-if></div><div style="{{ f.helpStyle }}">{{ f.help }}</div></div></sc-for></div></sc-if>
+                    <sc-if value="{{ b.isSeg }}" hint-placeholder-val="{{ false }}"><div style="{{ b.labStyle }}">{{ b.l }}</div><div role="radiogroup" aria-label="{{ b.l }}" style="{{ b.segWrap }}"><sc-for list="{{ b.opts }}" as="o" hint-placeholder-count="2"><span role="radio" aria-checked="{{ o.on }}" style="{{ o.style }}">{{ o.l }}</span></sc-for></div><div style="{{ b.helpStyle }}">{{ b.help }}</div></sc-if>
+                    <sc-if value="{{ b.isCheck1 }}" hint-placeholder-val="{{ false }}"><div style="display: flex; gap: 9px; align-items: flex-start;"><span role="checkbox" aria-checked="{{ b.aria }}" style="{{ b.boxStyle }}">{{ b.mark }}</span><span style="min-width: 0;"><span style="{{ b.tStyle }}">{{ b.t }}</span><span style="{{ b.dStyle }}">{{ b.d }}</span></span></div></sc-if>
+                    <sc-if value="{{ b.isCond }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ b.frame }}">
+                        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px; padding: 8px 12px; border-block-end: 1px solid #E2E8F0; background: #FBFCFD;"><span style="{{ b.hStyle }}">{{ b.h }}</span><span style="{{ b.countStyle }}">{{ b.count }}</span></div>
+                        <sc-if value="{{ b.hasCols }}" hint-placeholder-val="{{ true }}"><div style="{{ b.colHead }}"><span style="flex: none; width: 44px;"></span><sc-for list="{{ b.colLabels }}" as="cl" hint-placeholder-count="3"><span style="{{ cl.style }}">{{ cl.l }}</span></sc-for><span style="flex: none; width: 30px;"></span></div></sc-if>
+                        <sc-for list="{{ b.lines }}" as="ln" hint-placeholder-count="2">
+                          <div style="{{ ln.wrap }}">
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                              <span style="flex: none; width: 44px; display: flex; align-items: center; gap: 5px;"><button aria-label="{{ ln.handleAria }}" style="width: 22px; height: 28px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #5A6779; font-size: 11px;">⣿</button><span style="{{ ln.nStyle }}">{{ ln.n }}</span></span>
+                              <span style="{{ ln.fBox }}"><span style="{{ ln.vStyle }}">{{ ln.f }}</span><span style="{{ ln.caret }}">▼</span></span>
+                              <span style="{{ ln.oBox }}"><span style="{{ ln.vStyle }}">{{ ln.o }}</span><span style="{{ ln.caret }}">▼</span></span>
+                              <span style="{{ ln.vBox }}"><sc-if value="{{ ln.chips }}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; padding-block: 3px;"><sc-for list="{{ ln.chips }}" as="ch" hint-placeholder-count="2"><span title="{{ ch.l }}" style="{{ ch.style }}">{{ ch.l }}</span></sc-for></span></sc-if><sc-if value="{{ ln.v }}" hint-placeholder-val="{{ false }}"><span style="{{ ln.vStyle }}">{{ ln.v }}</span></sc-if><sc-if value="{{ ln.vg }}" hint-placeholder-val="{{ false }}"><span style="{{ ln.caret }}">{{ ln.vg }}</span></sc-if></span>
+                              <button aria-label="{{ ln.removeAria }}" style="flex: none; width: 30px; height: 30px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #B42318; font-size: 12px;">✕</button>
+                            </div>
+                            <div style="{{ ln.msgStyle }}">{{ ln.msg }}</div>
+                          </div>
+                        </sc-for>
+                        <sc-if value="{{ b.emptyLine }}" hint-placeholder-val="{{ false }}"><div style="{{ b.emptyStyle }}">{{ b.emptyLine }}</div></sc-if>
+                        <sc-if value="{{ b.hasAdd }}" hint-placeholder-val="{{ true }}"><div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px;"><span style="{{ b.addStyle }}">{{ b.add }}</span><span style="{{ b.leftStyle }}">{{ b.left }}</span></div></sc-if>
+                        <sc-if value="{{ b.sentence }}" hint-placeholder-val="{{ false }}"><div role="status" style="{{ b.sentStyle }}"><span style="{{ b.sentLab }}">{{ b.sentL }}</span> {{ b.sentence }}</div></sc-if>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ b.isChecks }}" hint-placeholder-val="{{ false }}">
+                      <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+                        <sc-for list="{{ b.items }}" as="it" hint-placeholder-count="5">
+                          <div style="{{ it.row }}">
+                            <span role="checkbox" aria-checked="{{ it.aria }}" aria-label="{{ it.label }}" style="{{ it.boxStyle }}">{{ it.mark }}</span>
+                            <span style="flex: 1 1 auto; min-width: 0;"><span style="{{ it.tStyle }}">{{ it.t }}</span><span style="{{ it.dStyle }}">{{ it.d }}</span></span>
+                            <span style="{{ it.needStyle }}">{{ it.need }}</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ b.isRows }}" hint-placeholder-val="{{ false }}">
+                      <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+                        <sc-if value="{{ b.th }}" hint-placeholder-val="{{ false }}"><div style="{{ b.thRow }}"><sc-for list="{{ b.th }}" as="h" hint-placeholder-count="4"><span style="{{ h.style }}">{{ h.l }}</span></sc-for></div></sc-if>
+                        <sc-for list="{{ b.rows }}" as="r" hint-placeholder-count="3">
+                          <sc-if value="{{ r.group }}" hint-placeholder-val="{{ false }}"><div style="{{ b.groupStyle }}">{{ r.group }}</div></sc-if>
+                          <sc-if value="{{ r.cells }}" hint-placeholder-val="{{ true }}"><div style="{{ r.style }}"><sc-for list="{{ r.cells }}" as="cc" hint-placeholder-count="4"><span style="{{ cc.style }}"><sc-if value="{{ cc.handle }}" hint-placeholder-val="{{ false }}"><button aria-label="{{ cc.handle }}" style="flex: none; width: 22px; height: 28px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #5A6779; font-size: 11px;">⣿</button></sc-if><span style="min-width: 0; display: flex; flex-direction: column;"><span title="{{ cc.tip }}" style="{{ cc.vStyle }}">{{ cc.v }}</span><sc-if value="{{ cc.sub }}" hint-placeholder-val="{{ false }}"><span title="{{ cc.sub }}" style="{{ cc.subStyle }}">{{ cc.sub }}</span></sc-if><sc-if value="{{ cc.chips }}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; gap: 4px; margin-block-start: 3px;"><sc-for list="{{ cc.chips }}" as="ch" hint-placeholder-count="1"><span style="{{ ch.style }}">{{ ch.t }}</span></sc-for></span></sc-if></span><sc-if value="{{ cc.btns }}" hint-placeholder-val="{{ false }}"><sc-for list="{{ cc.btns }}" as="cb" hint-placeholder-count="1"><button aria-label="{{ cb.aria }}" style="{{ cb.style }}">{{ cb.l }}</button></sc-for></sc-if></span></sc-for></div></sc-if>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ b.isStrip }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ b.frame }}">
+                        <div style="display: flex; align-items: center; gap: 0; flex-wrap: nowrap;">
+                          <sc-for list="{{ b.lead }}" as="s" hint-placeholder-count="3"><sc-if value="{{ s.isStage }}" hint-placeholder-val="{{ true }}"><span style="{{ s.style }}"><span style="{{ s.nStyle }}">{{ s.n }}</span>{{ s.l }}</span></sc-if><sc-if value="{{ s.isConn }}" hint-placeholder-val="{{ false }}"><span style="{{ s.lineStyle }}"><span style="{{ s.labStyle }}">{{ s.l }}</span></span></sc-if></sc-for>
+                          <span style="flex: none; display: flex; flex-direction: column; gap: 8px; padding-inline-start: 0;">
+                            <sc-for list="{{ b.fan }}" as="br" hint-placeholder-count="3">
+                              <span style="display: flex; align-items: center;"><sc-for list="{{ br.chain }}" as="s" hint-placeholder-count="4"><sc-if value="{{ s.isStage }}" hint-placeholder-val="{{ true }}"><span style="{{ s.style }}"><span style="{{ s.nStyle }}">{{ s.n }}</span>{{ s.l }}</span></sc-if><sc-if value="{{ s.isConn }}" hint-placeholder-val="{{ false }}"><span style="{{ s.lineStyle }}"><span style="{{ s.labStyle }}">{{ s.l }}</span></span></sc-if></sc-for></span>
+                            </sc-for>
+                          </span>
+                        </div>
+                        <div style="{{ b.legendStyle }}"><sc-for list="{{ b.legend }}" as="lg" hint-placeholder-count="3"><span style="display: inline-flex; align-items: center; gap: 6px;"><span style="{{ lg.sw }}">{{ lg.g }}</span>{{ lg.l }}</span></sc-for></div>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ b.isPairs }}" hint-placeholder-val="{{ false }}"><div style="{{ b.grid }}"><sc-for list="{{ b.pairs }}" as="p" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ p.kStyle }}">{{ p.k }}</div><div dir="{{ p.dir }}" style="{{ p.vStyle }}">{{ p.v }}</div></div></sc-for></div></sc-if>
+                    <sc-if value="{{ b.isSkel }}" hint-placeholder-val="{{ false }}"><sc-for list="{{ b.bars }}" as="k" hint-placeholder-count="3"><div style="{{ k }}"></div></sc-for></sc-if>
+                    <sc-if value="{{ b.isCards }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 8px;"><sc-if value="{{ b.groupL }}" hint-placeholder-val="{{ false }}"><div style="{{ b.groupStyle }}">{{ b.groupL }}</div></sc-if><sc-for list="{{ b.cards }}" as="pc" hint-placeholder-count="3"><div style="{{ pc.box }}"><div style="display: flex; justify-content: space-between; gap: 8px; align-items: flex-start;"><span style="{{ pc.tStyle }}">{{ pc.t }}</span><button aria-label="{{ pc.aria }}" style="flex: none; width: 32px; height: 32px; border: 1px solid #E2E8F0; border-radius: 6px; background: #fff; color: #4A5568;">⋯</button></div><div style="{{ pc.sStyle }}">{{ pc.rule }}</div><div style="{{ pc.mStyle }}">{{ pc.meta }}</div></div></sc-for></div></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ c.foot }}" hint-placeholder-val="{{ false }}"><div style="{{ c.footStyle }}"><span style="{{ c.footLStyle }}">{{ c.footL }}</span><span style="display: flex; gap: 8px;"><sc-for list="{{ c.foot }}" as="fb" hint-placeholder-count="2"><button style="{{ fb.style }}">{{ fb.l }}</button></sc-for></span></div></sc-if>
+            </div>
+            <sc-if value="{{ c.note }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ c.note }}</div></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <sc-if value="{{ sec.notes }}" hint-placeholder-val="{{ false }}">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px; margin-block-start: 16px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 0 18px;"><sc-for list="{{ sec.notes }}" as="n" hint-placeholder-count="5"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for></div>
+        </div>
+      </sc-if>
+    </section>
+  </sc-for>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 600;">Dialog bodies, both languages · cap 420</h2>
+    <sc-for list="{{ measures }}" as="m" hint-placeholder-count="5"><div style="display: flex; gap: 10px; padding: 6px 0; border-block-end: 1px solid #F0F3F7; font-size: 12.5px;"><span style="flex: 1 1 0; min-width: 0; font-weight: 500;">{{ m.d }}</span><span style="flex: none; width: 120px; color: #5A6779;">{{ m.s }}</span><span style="flex: none; width: 50px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.en }}</span><span style="flex: none; width: 50px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.ar }}</span></div></sc-for>
+    <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Standard density constants from the Design System: field block EN 79, AR 84; segmented row the same as a field block; read-only pair EN 40, AR 44; sentence EN 21 and AR 24 a line (about 52 Latin characters at 420, 72 at 560); gaps 12. The stage editor, the transition editor and the Used for panel are page panels (Templates 6b moved them out of dialogs), so they carry no cap.</div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #FEDF89; padding-block-end: 10px; margin-block-end: 12px;"><h2 style="margin: 0; font-size: 20px; font-weight: 600;">Questions for the product owner</h2><span style="font-size: 12.5px; color: #5A6779;">Each with a recommendation; the recommendation is what's drawn.</span></div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="9"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for><div style="font-size: 12px; color: #1F5480; font-weight: 500; margin-block-start: 4px; text-wrap: pretty;">{{ q.rec }}</div></div></sc-for>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px;">
+    <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 600;">Changes to accepted screens</h2>
+    <sc-for list="{{ changes }}" as="c" hint-placeholder-count="10"><div style="display: grid; grid-template-columns: 70px minmax(0, 250px) 1fr; gap: 12px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;"><span style="{{ c.stepStyle }}">{{ c.step }}</span><span style="font-size: 12.5px; font-weight: 600;">{{ c.s }}</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ c.w }}</span></div></sc-for>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = " font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const ell = "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+    const stepChip = (s) => "flex: none; display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 7px; white-space: nowrap; " + (s === "Step 1" ? "color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3;" : "color: #4A5568; background: #fff; border: 1px dashed #5A6779;");
+    const BTN = (l, k, ar) => ({ l, style: "font-family: inherit; font-size: " + (ar ? 14 : 13) + "px; border-radius: 6px; padding: 6px 12px; white-space: nowrap; " + ({ primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;", secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;", text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;", danger: "background: #B42318; color: #fff; border: 1px solid #912018; font-weight: 600;", dangerText: "background: transparent; color: #B42318; border: 1px solid transparent; font-weight: 500;" })[k] });
+
+    const K = (ar) => {
+      const F = ar ? { lab: 13, labLh: 20, val: 14, help: 12.5, helpLh: 20, body: 14.5, bodyLh: 24 } : { lab: 12, labLh: 18, val: 13, help: 11.5, helpLh: 17, body: 14, bodyLh: 21 };
+      const wrap = (top) => "margin-block-start: " + (top || 0) + "px;";
+      const inkHelp = (t) => ({ error: "#B42318; font-weight: 500", warn: "#B54708; font-weight: 500", info: "#1F5480" })[t] || "#5A6779";
+      const box = (st) => "display: flex; align-items: center; gap: 6px; height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; " + ({ rest: "background: #fff; border: 1px solid #8A94A6;", ro: "background: #F4F7FA; border: 1px solid #E2E8F0;", error: "background: #fff; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);", focus: "background: #fff; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);" })[st || "rest"];
+      const api = {
+        F,
+        note: (text, top, tone) => ({ isNote: true, wrap: wrap(top), text, style: "font-size: " + (tone === "small" ? F.help : F.val) + "px; line-height: " + (tone === "small" ? F.helpLh : (ar ? 22 : 20)) + "px; text-wrap: pretty; color: " + ({ info: "#1F5480; font-weight: 500", danger: "#B42318; font-weight: 600", small: "#4A5568", strong: "#2D3748; font-weight: 600" })[tone] || "#2D3748" + ";" }),
+        head: (t, s, top) => ({ isSecHead: true, wrap: wrap(top), t, s: s || null, style: "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px; border-block-end: 1px solid #E2E8F0; padding-block-end: 6px;", tStyle: "font-size: " + (ar ? 15 : 14) + "px; font-weight: 600;", sStyle: "font-size: " + F.help + "px; color: #5A6779;" }),
+        banner: (tone, t, b, top, btns) => ({ isBanner: true, wrap: wrap(top), t, b: b || null, btns: btns || null, role: tone === "danger" ? "alert" : "status",
+          box: "border-radius: 6px; padding: 10px 12px; " + ({ info: "background: #F2F7FB; border: 1px solid #C5DAEA;", warn: "background: #FFFAEB; border: 1px solid #FEDF89;", danger: "background: #FEF3F2; border: 1px solid #FECDCA;", muted: "background: #F4F7FA; border: 1px solid #E2E8F0;", ok: "background: #ECFDF3; border: 1px solid #ABEFC6;" })[tone],
+          tStyle: "font-size: " + F.val + "px; font-weight: 600; text-wrap: pretty; color: " + ({ info: "#1F5480", warn: "#B54708", danger: "#B42318", muted: "#2D3748", ok: "#067647" })[tone] + ";", bStyle: "font-size: " + (F.val - 0.5) + "px; line-height: " + (ar ? 22 : 20) + "px; color: #2D3748; margin-block-start: 2px; text-wrap: pretty;" }),
+        fields: (cols, top) => ({ isFields: true, wrap: wrap(top), grid: "display: grid; grid-template-columns: repeat(" + cols.length + ", minmax(0, 1fr)); gap: 12px;",
+          cols: cols.map(c => ({ l: c.l, tag: c.req ? (ar ? " · مطلوب" : " · required") : c.opt ? (ar ? " · اختياري" : " · optional") : "", v: c.v, g: c.g || null, vdir: c.ltr ? "ltr" : "auto",
+            labStyle: "display: block; font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px; " + ell, box: box(c.st),
+            vStyle: "flex: 1 1 auto; min-width: 0; font-size: " + F.val + "px; text-align: start; unicode-bidi: isolate; " + ell + " color: " + (c.ph ? "#8A94A6" : "#2D3748") + ";",
+            gStyle: "flex: none; font-size: " + (c.g && c.g.length > 2 ? F.lab : 10) + "px; color: #5A6779;", help: c.help || "",
+            helpStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; min-height: " + F.helpLh + "px; margin-block-start: 4px; text-wrap: pretty; color: " + inkHelp(c.tone) + ";" })) }),
+        seg: (l, opts, sel, help, top) => ({ isSeg: true, wrap: wrap(top), l, help: help || "",
+          labStyle: "font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px;",
+          segWrap: "display: flex; height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; overflow: hidden; max-width: 420px;",
+          opts: opts.map((o, i) => ({ l: (o === sel ? "✓ " : "") + o, on: o === sel ? "true" : "false", style: "flex: 1 1 0; display: flex; align-items: center; justify-content: center; font-size: " + F.val + "px; white-space: nowrap;" + (i ? " border-inline-start: 1px solid #8A94A6;" : "") + (o === sel ? " font-weight: 600; color: #1F5480; background: #E4EEF6;" : " color: #2D3748; background: #fff;") })),
+          helpStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; min-height: " + F.helpLh + "px; margin-block-start: 4px; color: #5A6779; text-wrap: pretty;" }),
+        check1: (t, d, on, top) => ({ isCheck1: true, wrap: wrap(top), t, d, aria: on ? "true" : "false", mark: on ? "✓" : "",
+          boxStyle: "flex: none; width: 16px; height: 16px; box-sizing: border-box; margin-block-start: 3px; border-radius: 3px; font-size: 11px; line-height: 14px; text-align: center; " + (on ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;" : "background: #fff; border: 1px solid #8A94A6; color: transparent;"),
+          tStyle: "display: block; font-size: " + F.val + "px; font-weight: 500;", dStyle: "display: block; font-size: " + F.help + "px; color: #5A6779; text-wrap: pretty;" }),
+        checks: (items, top, ro) => ({ isChecks: true, wrap: wrap(top), items: items.map(i => ({ t: i.t, d: i.d, need: i.need, aria: i.on ? "true" : "false", label: i.t,
+          mark: ro ? (i.on ? "✓" : "–") : (i.on ? "✓" : ""),
+          row: "display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border-block-end: 1px solid #F0F3F7;" + (i.err ? " background: #FFFBFA;" : i.changed ? " background: #F2F7FB;" : ""),
+          boxStyle: ro ? "flex: none; width: 18px; margin-block-start: 2px; font-size: 13px; font-weight: 700; text-align: center; color: " + (i.on ? "#067647" : "#5A6779") + ";" : "flex: none; width: 16px; height: 16px; box-sizing: border-box; margin-block-start: 3px; border-radius: 3px; font-size: 11px; line-height: 14px; text-align: center; " + (i.on ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;" : "background: #fff; border: 1px solid " + (i.err ? "#B42318" : "#8A94A6") + "; color: transparent;"),
+          tStyle: "display: block; font-size: " + F.val + "px; font-weight: 500;" + (i.changed ? " color: #1F5480;" : ""), dStyle: "display: block; font-size: " + F.help + "px; line-height: " + F.helpLh + "px; text-wrap: pretty; color: " + (i.err ? "#B42318; font-weight: 500" : "#5A6779") + ";",
+          needStyle: "flex: none; max-width: 42%; font-size: " + F.help + "px; color: #4A5568; text-align: end; text-wrap: pretty;" })) }),
+        pairs: (list, top) => ({ isPairs: true, wrap: wrap(top), grid: "display: grid; grid-template-columns: repeat(" + list.length + ", minmax(0, 1fr)); gap: 12px;",
+          pairs: list.map(p => ({ k: p[0], v: p[1], dir: p[2] ? "ltr" : (ar ? "rtl" : "auto"), kStyle: "font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #5A6779;", vStyle: "font-size: " + F.val + "px; line-height: " + (ar ? 22 : 20) + "px; font-weight: 600; text-align: start; unicode-bidi: isolate; " + ell })) }),
+        skel: (n, top) => ({ isSkel: true, wrap: wrap(top), bars: Array.from({ length: n }, (_, i) => "height: " + (i % 3 === 0 ? 14 : 10) + "px; width: " + (85 - (i * 13) % 40) + "%; border-radius: 3px; background: #EDF1F6; margin-block-end: 10px;") }),
+        cond: (o, top) => {
+          const ccol = (w, flex) => (flex ? "flex: 1 1 0; min-width: 0;" : "flex: none; width: " + w + "px;");
+          const lines = (o.lines || []).map((l, i) => ({
+            n: (i + 1) + "", f: l.f, o: l.o, v: l.v || null, vg: l.vg || null, chips: l.chips ? l.chips.map(c => ({ l: c.l, style: "flex: none; font-size: " + (F.help) + "px; border-radius: 999px; padding: 1px 8px; white-space: nowrap; " + (c.stale ? "color: #B42318; background: #FEF3F2; border: 1px solid #B42318; text-decoration: line-through;" : "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;") })) : null,
+            msg: l.msg || "", handleAria: (ar ? "إعادة ترتيب السطر " : "Reorder line ") + (i + 1), removeAria: (ar ? "إزالة السطر " : "Remove line ") + (i + 1),
+            wrap: "padding: 8px 12px 4px; border-block-end: 1px solid #F0F3F7;" + (l.stale ? " background: #FFFBFA;" : ""),
+            nStyle: "font-size: " + F.help + "px; font-weight: 600; color: #5A6779; font-variant-numeric: tabular-nums;",
+            fBox: ccol(o.fw || 190) + " " + box("rest").replace("height: 36px", "height: 32px"), oBox: ccol(o.ow || 170) + " " + box("rest").replace("height: 36px", "height: 32px"),
+            vBox: ccol(0, 1) + " " + box(l.stale ? "error" : l.empty ? "ro" : "rest").replace("height: 36px", "min-height: 32px"),
+            vStyle: "flex: 1 1 auto; min-width: 0; font-size: " + F.val + "px; " + ell + (l.empty ? " color: #5A6779;" : ""), caret: "flex: none; font-size: 10px; color: #5A6779;",
+            msgStyle: "margin-inline-start: 52px; min-height: " + F.helpLh + "px; margin-block-start: 3px; font-size: " + F.help + "px; line-height: " + F.helpLh + "px; text-wrap: pretty; color: " + (l.stale ? "#B42318; font-weight: 500" : "#5A6779") + ";"
+          }));
+          return { isCond: true, wrap: wrap(top), h: o.h || (ar ? "يجب أن يتحقق كل ما يلي" : "All of these must be true"), count: o.count || "", lines,
+            hasCols: !!(o.lines && o.lines.length), colLabels: [[ar ? "الحقل" : "Field", ccol(o.fw || 190)], [ar ? "العامل" : "Operator", ccol(o.ow || 170)], [ar ? "القيمة" : "Value", ccol(0, 1)]].map(x => ({ l: x[0], style: x[1] + " font-size: " + (ar ? 12 : 10.5) + "px; font-weight: 700; color: #5A6779;" + (ar ? "" : " letter-spacing: 0.05em; text-transform: uppercase;") })),
+            colHead: "display: flex; gap: 8px; padding: 6px 12px 0;",
+            emptyLine: o.empty || null, emptyStyle: "padding: 12px; font-size: " + F.val + "px; color: #4A5568; text-wrap: pretty;",
+            hasAdd: o.add !== false, add: o.addL || (ar ? "+ إضافة سطر" : "+ Add line"), left: o.left || "",
+            addStyle: "font-size: " + F.val + "px; font-weight: 600; color: " + (o.addOff ? "#8A94A6" : "#2E6FA3") + "; border: 1px dashed " + (o.addOff ? "#CBD5E0" : "#8A94A6") + "; border-radius: 5px; padding: 4px 10px;", leftStyle: "font-size: " + F.help + "px; color: #5A6779;",
+            sentence: o.sentence || null, sentL: o.sentL || (ar ? "تُقرأ:" : "Reads:"), sentLab: "font-weight: 700; color: #1F5480;",
+            sentStyle: "margin: 0 12px 12px; padding: 8px 10px; border-radius: 6px; background: #F2F7FB; border: 1px solid #C5DAEA; font-size: " + F.val + "px; line-height: " + (ar ? 22 : 20) + "px; color: #2D3748; text-wrap: pretty;",
+            countStyle: "font-size: " + F.help + "px; color: #5A6779;", hStyle: "font-size: " + F.val + "px; font-weight: 600;",
+            frame: "border: 1px solid " + (o.stale ? "#FECDCA" : "#E2E8F0") + "; border-radius: 6px; overflow: hidden; background: #fff;" };
+        },
+        rows: (th, rows, top, o) => {
+          o = o || {};
+          const cellCss = (w) => (w === "flex" ? "flex: 1 1 0; min-width: 0;" : "flex: none; width: " + w + "px; min-width: 0;");
+          return { isRows: true, wrap: wrap(top),
+            th: th ? th.map(h => ({ l: h.l, style: cellCss(h.w) + " font-size: " + (ar ? 12 : 11) + "px; font-weight: 700; color: #5A6779; " + ell + (ar ? "" : " letter-spacing: 0.05em; text-transform: uppercase;") + (h.end ? " text-align: end;" : "") })) : null,
+            thRow: "display: flex; gap: 12px; align-items: center; height: 34px; padding: 0 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;",
+            groupStyle: "padding: 6px 12px; background: #FBFCFD; border-block-end: 1px solid #E2E8F0; font-size: " + (ar ? 12.5 : 11) + "px; font-weight: 700; color: #4A5568;" + (ar ? "" : " letter-spacing: 0.06em; text-transform: uppercase;"),
+            rows: rows.map(r => r.group ? { group: r.group, cells: null } : { group: null, style: "display: flex; gap: 12px; align-items: center; min-height: " + (ar ? 58 : 52) + "px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; box-sizing: border-box;" + (r.tint ? " background: " + r.tint + ";" : ""),
+              cells: r.c.map((c, i) => { const w = (th && th[i]) ? th[i].w : (c.w || "flex"); return { v: c.v, tip: c.tip || c.v, sub: c.sub || null,
+                chips: c.chips ? c.chips.map(t => ({ t, style: "flex: none; font-size: " + (ar ? 12 : 11) + "px; font-weight: 600; color: #1F5480; background: #fff; border: 1px solid #2E6FA3; border-radius: 4px; padding: 0 6px; line-height: 18px; white-space: nowrap;" })) : null, handle: c.handle || null, btns: c.btns ? c.btns.map(b => ({ l: b.l, aria: b.aria || b.l, style: b.dots ? "flex: none; width: 28px; height: 28px; border: 1px solid #E2E8F0; border-radius: 5px; background: #fff; color: #4A5568; font-size: 14px;" : "font-family: inherit; font-size: " + (ar ? 13 : 12.5) + "px; font-weight: 600; color: #2D3748; background: #fff; border: 1px solid #5A6779; border-radius: 5px; padding: 3px 10px; white-space: nowrap;" })) : null,
+                style: cellCss(w) + " display: flex; align-items: center; gap: 8px;" + ((th && th[i] && th[i].end) ? " justify-content: flex-end;" : ""),
+                vStyle: "font-size: " + (c.small ? F.help : F.val) + "px; " + (c.wrapText ? "text-wrap: pretty;" : ell) + " color: " + ({ strong: "#2D3748; font-weight: 600", info: "#1F5480; font-weight: 500", danger: "#B42318; font-weight: 600", muted: "#4A5568", warn: "#B54708; font-weight: 600" })[c.tone] || "#2D3748" + ";" + (c.mono ? " font-family: ui-monospace, Menlo, monospace;" : ""),
+                subStyle: "font-size: " + F.help + "px; color: " + (c.subTone === "info" ? "#1F5480" : "#5A6779") + "; " + (c.wrapSub ? "text-wrap: pretty;" : ell) }; }) }) };
+        },
+        strip: (lead, fan, top) => {
+          const st = (l, n, o) => ({ isStage: true, isConn: false, l, n: n || "", style: "flex: none; display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 6px; font-size: " + F.val + "px; white-space: nowrap; " + ((o && o.sel) ? "font-weight: 600; color: #1F5480; background: #E4EEF6; border: 2px solid #2E6FA3;" : (o && o.end) ? "color: #2D3748; background: #F4F7FA; border: 1px solid #5A6779;" : "color: #2D3748; background: #fff; border: 1px solid #8A94A6;"), nStyle: "font-size: " + (F.help - 1) + "px; color: #5A6779; font-variant-numeric: tabular-nums;" });
+          const cn = (l, kind, w) => ({ isStage: false, isConn: true, l, style: "", lineStyle: "flex: none; display: flex; align-items: center; justify-content: center; width: " + (w || 150) + "px; height: 34px; background: " + (kind === "auto" ? "repeating-linear-gradient(90deg, #5A6779 0 6px, transparent 6px 10px) center / 100% 2px no-repeat" : "linear-gradient(#2E6FA3, #2E6FA3) center / 100% 2px no-repeat") + ";",
+            labStyle: "display: inline-flex; align-items: center; gap: 4px; max-width: " + ((w || 150) - 10) + "px; padding: 1px 7px; border-radius: 999px; font-size: " + (F.help - 0.5) + "px; background: #fff; " + ell + " " + (kind === "auto" ? "color: #2D3748; border: 1px dashed #5A6779;" : kind === "cond" ? "color: #1F5480; border: 1px solid #2E6FA3; font-weight: 500;" : "color: #1F5480; border: 1px solid #2E6FA3;") });
+          return { isStrip: true, wrap: wrap(top), lead: lead.map(x => x.c ? cn(x.c, x.k, x.w) : st(x.s, x.n, x)), fan: fan.map(br => ({ chain: br.map(x => x.c ? cn(x.c, x.k, x.w) : st(x.s, x.n, x)) })),
+            frame: "border: 1px solid #E2E8F0; border-radius: 6px; padding: 16px; background: #FBFCFD; overflow-x: auto; overflow-y: hidden;",
+            legend: [{ g: "👤", l: ar ? "زر يضغطه شخص" : "A person's button", sw: "display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 0; border-block-start: 2px solid #2E6FA3;" }, { g: "", l: ar ? "زر يظهر بشرط" : "A button with a condition", sw: "display: inline-block; width: 30px; height: 0; border-block-start: 2px solid #2E6FA3; outline: 1px solid #2E6FA3; outline-offset: 3px;" }, { g: "", l: ar ? "⚙ خروج تلقائي (متقطع)" : "⚙ Automatic exit (dashed)", sw: "display: inline-block; width: 30px; height: 0; border-block-start: 2px dashed #5A6779;" }],
+            legendStyle: "display: flex; flex-wrap: wrap; gap: 8px 20px; margin-block-start: 14px; padding-block-start: 10px; border-block-start: 1px solid #E2E8F0; font-size: " + F.help + "px; color: #4A5568;" };
+        },
+        cards: (group, list, top) => ({ isCards: true, wrap: wrap(top), groupL: group, groupStyle: "font-size: " + (ar ? 12.5 : 11) + "px; font-weight: 700; color: #4A5568; padding-block-start: 4px;" + (ar ? "" : " letter-spacing: 0.06em; text-transform: uppercase;"),
+          cards: list.map(c => ({ t: c.t, rule: c.rule, meta: c.meta, aria: (ar ? "إجراءات " : "Actions for ") + c.t, box: "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;",
+            tStyle: "font-size: " + (ar ? 15 : 14) + "px; font-weight: 600;", sStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; color: #1F5480; margin-block-start: 2px; text-wrap: pretty;", mStyle: "font-size: " + F.help + "px; color: #4A5568; margin-block-start: 4px;" })) })
+      };
+      return api;
+    };
+    const E = K(false), A = K(true);
+
+    const card = (o) => {
+      const ar = !!o.ar, isD = !!o.dialog;
+      return { step: o.step, stepStyle: stepChip(o.step), cap: o.cap, dir: ar ? "rtl" : "ltr", note: o.note || null,
+        outer: "flex: " + (o.w ? "0 1 " + o.w + "px" : "1 1 100%") + "; min-width: 0;",
+        frame: (o.w ? "width: 100%; max-width: " + o.w + "px; " : "") + "background: #fff; border: 1px solid " + (isD ? "#CBD5E0" : "#E2E8F0") + "; border-radius: 8px; overflow: hidden;" + (isD ? " box-shadow: 0 12px 28px rgba(16,24,40,0.14);" : "") + (ar ? AF : ""),
+        hasHead: !!o.title, title: o.title || "", ctx: o.ctx || null, headBtns: o.headBtns || null, isDialog: isD, closeAria: ar ? "إغلاق" : "Close",
+        headStyle: "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px " + (isD ? 20 : 16) + "px; border-block-end: 1px solid #E2E8F0;" + (isD ? "" : " background: #FBFCFD;"),
+        titleStyle: "display: block; font-size: " + (ar ? 17 : 16) + "px; line-height: 1.4; font-weight: 600;", ctxStyle: "display: block; font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779; text-wrap: pretty;",
+        bodyStyle: "padding: " + (isD ? "16px 20px" : "14px 16px") + ";", blocks: o.blocks,
+        foot: o.foot || null, footL: o.footL || "", footLStyle: "font-size: 12px; color: #4A5568;",
+        footStyle: "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px " + (isD ? 20 : 16) + "px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;" };
+    };
+
+    // ---------- 1 condition builder
+    const condPolicyEn = { lines: [{ f: "Document type", o: "is", v: "Policy", vg: "▼" }, { f: "Owning unit", o: "is this unit or below", v: "Nursing", vg: "⌄ tree" }], count: "2 of 5 lines", left: "3 more allowed", sentence: "When the document type is Policy and the owning unit is Nursing or below." };
+    const condPolicyAr = { lines: [{ f: "نوع المستند", o: "يساوي", v: "سياسة", vg: "▼" }, { f: "الوحدة المالكة", o: "هي هذه الوحدة أو ما تحتها", v: "التمريض", vg: "⌄" }], count: iso("2") + " من " + iso("5") + " أسطر", left: "يمكن إضافة " + iso("3") + " أسطر أخرى", sentence: "عندما يكون نوع المستند سياسة والوحدة المالكة هي التمريض أو ما تحتها." };
+    const sec1 = { id: "w1", n: "1", title: "The condition builder", step: "Step 2", sub: "Shared by the Used for panel, the transition editor and automatic exits. A list of lines, all of which must hold; “or” is a second rule or a second exit, never nested.", cards: [
+      card({ step: "Step 2", cap: "Lookup and unit lines · English", w: 700, blocks: [E.cond(condPolicyEn)], note: "Fields come from the record type's list (Documents: Document type, Owning unit, Confidentiality); the admin never types a field name. Only the operators a field allows are offered. The unit value uses the shared overlay-select's hierarchy options." }),
+      card({ step: "Step 2", cap: "Arabic", ar: true, w: 700, blocks: [A.cond(condPolicyAr)], note: "Mirrored: the handle and line number on the right, Remove on the left. The live sentence is written in Arabic, not translated word by word." }),
+      card({ step: "Step 2", cap: "Operators: “is one of” and “is empty”", w: 700, blocks: [E.cond({ lines: [{ f: "Document type", o: "is one of", chips: [{ l: "Procedure" }, { l: "Form" }], vg: "▼" }, { f: "Confidentiality", o: "is empty", v: "No value needed: matches when no confidentiality is set.", empty: 1 }], count: "2 of 5 lines", left: "3 more allowed", sentence: "When the document type is Procedure or Form and no confidentiality is set." })], note: "“is one of” takes a multi-select; “is empty” takes nothing, so its slot holds a sentence (artboard 10's rule for a variant with no field)." }),
+      card({ step: "Step 2", cap: "A stale value · saving refused", w: 700, blocks: [E.cond({ stale: 1, lines: [{ f: "Document type", o: "is one of", chips: [{ l: "Procedure" }, { l: "Work instruction", stale: 1 }], vg: "▼", stale: 1, msg: "“Work instruction” was deactivated on 12 Oct 2026. Remove it or pick another value to save." }, { f: "Owning unit", o: "is this unit or below", v: "Infection Control Office (removed)", vg: "⌄", stale: 1, msg: "Infection Control Office was removed from the organisation on 9 Oct 2026. Pick another unit to save." }], count: "2 of 5 lines · 2 problems", left: "", sentence: "When the document type is Procedure or Work instruction and the owning unit is Infection Control Office or below." }), E.banner("danger", "This condition can't be saved yet", "2 lines use values that no longer exist. Fix them, then save.", 10)], note: "A stale value is struck through and named, with when it went, in its line's message slot. Save stays enabled; pressing it shows these and focuses line 1." }),
+      card({ step: "Step 2", cap: "A record type with no fields", w: 700, blocks: [E.cond({ lines: [], add: false, empty: "Committee change requests have no fields to test, so this workflow can't have a condition. It is used for every change request." })], note: "One line instead of the builder. Applies to the Used for panel and to transitions alike." }),
+      card({ step: "Step 2", cap: "At the maximum · 5 lines", w: 700, blocks: [E.cond({ lines: [{ f: "Document type", o: "is", v: "Policy", vg: "▼" }, { f: "Owning unit", o: "is this unit or below", v: "Nursing", vg: "⌄" }, { f: "Confidentiality", o: "is not", v: "Public", vg: "▼" }], count: "5 of 5 lines (2 not shown)", addL: "+ Add line", addOff: 1, left: "5 is the most. Use a second rule or exit for more.", sentence: null })], note: "Drawn with three of the five lines to save space. At five, Add line is disabled with its reason beside it." })
+    ], notes: [
+      { k: "All lines must hold.", v: "The header says “All of these must be true”. There is no “any of” switch and no nesting: an “or” is a second workflow rule, or a second exit, each with its own lines. One rule reads as one sentence, which is what an admin checks." },
+      { k: "Maximum 5 lines.", v: "Three fields exist per record type today (Documents has the most). Five covers every field with room for “is not”, keeps the sentence readable, and keeps the group inside the rule that a group longer than four belongs on a page (artboard 11): these editors are page panels, so it fits." },
+      { k: "Lines are an artboard-11 group.", v: "Handle and ordinal, labels once above the columns, named Remove (“Remove line 2”), + Add line inside the frame. Order doesn't change meaning (all must hold), so reordering is only for reading." },
+      { k: "The sentence is live.", v: "It rewrites as fields change and is announced politely, so a screen-reader user hears what the rule now says. It's the same sentence the workflow list and the strip show." },
+      { k: "Stale values block saving.", v: "A rule that silently skips a removed value would route records differently from what the admin sees. The line keeps the stored value, struck through, and says what happened and when." }
+    ] };
+
+    // ---------- 2 stage permissions
+    const permItems = (stage, ar) => {
+      const E1 = !ar;
+      const items = [
+        [E1 ? "Edit details" : "تعديل التفاصيل", E1 ? "Change the committee's name, purpose, quorum, frequency, unit and reporting line." : "تغيير اسم اللجنة والغرض والنصاب والدورية والوحدة وخط الرفع.", E1 ? "Also needs: Edit a committee's details and request changes" : "تتطلب أيضًا: تعديل تفاصيل اللجنة وطلب تغييرات", stage === "formation"],
+        [E1 ? "Add member" : "إضافة عضو", E1 ? "Add a person to a seat." : "إضافة شخص إلى مقعد.", E1 ? "Also needs: Add members to a committee" : "تتطلب أيضًا: إضافة أعضاء إلى اللجنة", stage !== "dissolved"],
+        [E1 ? "Remove member" : "إزالة عضو", E1 ? "End a person's membership; it stays in Membership history." : "إنهاء عضوية شخص؛ تبقى في سجل العضوية.", E1 ? "Also needs: Remove members from a committee" : "تتطلب أيضًا: إزالة أعضاء من اللجنة", stage !== "dissolved"],
+        [E1 ? "Change member role" : "تغيير دور العضو", E1 ? "Move a member to another seat (Chair, Secretary, Member…)." : "نقل عضو إلى مقعد آخر (الرئيس، أمين السر، عضو…).", E1 ? "Also needs: Change a member's role on a committee" : "تتطلب أيضًا: تغيير دور العضو في اللجنة", stage !== "dissolved"],
+        [E1 ? "Request a change" : "طلب تغيير", E1 ? "Open a committee change request with its own approval." : "فتح طلب تغيير للجنة بموافقته الخاصة.", E1 ? "Also needs: Edit a committee's details and request changes" : "تتطلب أيضًا: تعديل تفاصيل اللجنة وطلب تغييرات", stage === "active" || stage === "suspended"]
+      ];
+      const off = stage === "dpEdit" ? ["Add member", "Remove member"] : [];
+      return items.map(i => ({ t: i[0], d: i[1], need: i[2], on: off.includes(i[0]) ? false : i[3], changed: off.includes(i[0]) }));
+    };
+    const permTop = (ar) => ar ? "لا يستطيع شخص القيام بهذه إلا إذا سمحت بها هذه المرحلة ودوره معًا. المرحلة تُضيِّق فقط، ولا تمنح ما لا يمنحه الدور." : "A person can do these only when both this stage and their role allow it. A stage can only narrow; it never grants what a role doesn't.";
+    const histRows = [
+      { c: [{ v: "18 Oct 2026, 10:42", small: 1, tone: "muted" }, { v: "Add member: allowed → not allowed in Dissolution pending", sub: "Stage editor · What can be done here" }, { v: "Layla Al-Harbi", small: 1, tone: "muted" }] },
+      { c: [{ v: "18 Oct 2026, 10:42", small: 1, tone: "muted" }, { v: "Remove member: allowed → not allowed in Dissolution pending", sub: "Stage editor · What can be done here" }, { v: "Layla Al-Harbi", small: 1, tone: "muted" }] },
+      { c: [{ v: "18 Oct 2026, 10:40", small: 1, tone: "muted" }, { v: "Record is in force: removed from Suspended", sub: "Stage editor · What this stage means" }, { v: "Layla Al-Harbi", small: 1, tone: "muted" }] }
+    ];
+    const histTh = [{ l: "When", w: 140 }, { l: "Change", w: "flex" }, { l: "By", w: 130 }];
+    const sec2 = { id: "w2", n: "2", title: "Stage editor · What can be done to the record here", step: "Step 1", sub: "A new section in Templates 6b's stage editor, below the identity row. Committee lifecycle, seeded values.", cards: [
+      card({ step: "Step 1", cap: "Formation · English", w: 700, title: "Formation · What can be done to the record here", ctx: "Committee lifecycle · stage 1 of 6", blocks: [E.note(permTop(false), 0, "small"), E.checks(permItems("formation", false), 10)], note: "Edit details is allowed only here. Request a change isn't, because in Formation the committee is edited directly." }),
+      card({ step: "Step 1", cap: "Terms Review · seeded", w: 700, title: "Terms Review · What can be done to the record here", ctx: "Committee lifecycle · stage 2 of 6", blocks: [E.note(permTop(false), 0, "small"), E.checks(permItems("terms", false), 10)], note: "The seed as it is: Edit details unticked, the member actions ticked. Nothing changed, so nothing is tinted and there's no count." }),
+      card({ step: "Step 1", cap: "Dissolved · seeded", w: 700, title: "Dissolved · What can be done to the record here", ctx: "Committee lifecycle · stage 6 of 6", blocks: [E.note(permTop(false), 0, "small"), E.checks(permItems("dissolved", false), 10)], note: "The seed: nothing allowed. Membership is locked once a committee is dissolved (decided 22 Oct 2026). Nothing changed, so nothing is tinted." }),
+      card({ step: "Step 1", cap: "Dissolution pending · after unticking Add member and Remove member", w: 700, title: "Dissolution pending · What can be done to the record here", ctx: "Committee lifecycle · stage 5 of 6", blocks: [E.note(permTop(false), 0, "small"), E.checks(permItems("dpEdit", false), 10), E.note("Changed since saving: Add member, Remove member. Saved changes are recorded in the workflow's history.", 8, "info")], foot: [BTN("Cancel", "text"), BTN("Save stage", "primary")], footL: "2 changes", note: "The changed rows are tinted and their titles turn blue, so the change shows before Save; the footer counts them." }),
+      card({ step: "Step 1", cap: "Formation · Arabic", ar: true, w: 700, title: "التشكيل · ما يمكن فعله بالسجل هنا", ctx: "دورة حياة اللجنة · المرحلة " + iso("1") + " من " + iso("6"), blocks: [A.note(permTop(true), 0, "small"), A.checks(permItems("formation", true), 10)] }),
+      card({ step: "Step 1", cap: "The change, as the workflow's history shows it", w: 700, title: "History · Committee lifecycle", blocks: [E.rows(histTh, histRows, 0)], note: "One row per saved change, worded as “action: before → after in stage”, so an assessor can read the control without opening the editor." }),
+      card({ step: "Step 1", cap: "Read only · a viewer without Manage workflows", w: 700, title: "Terms Review · What can be done to the record here", ctx: "Read only", blocks: [E.checks(permItems("terms", false).map(i => Object.assign(i, { changed: false })), 0, true)], note: "Ticks become ✓ and –, with no boxes to press, as 6b's read-only rendering does." })
+    ], notes: [
+      { k: "Both must allow.", v: "Each action names the permission it pairs with on its own line (“Also needs: Edit committee details”), and the sentence at the top says both must allow it. A stage never grants: unticking narrows, ticking only stops narrowing." },
+      { k: "The record page doesn't change.", v: "Where a stage blocks an action, the record page simply doesn't offer it, as today. No new record-page drawing." },
+      { k: "Seeded as the Committee Changes rules.", v: "Formation: Edit details and the three member actions. Terms Review: the member actions. Active and Suspended: the member actions and Request a change. Dissolution pending: the member actions. Dissolved: nothing (membership is locked once dissolved, decided 22 Oct 2026)." },
+      { k: "Until versions ship.", v: "In step 1 a saved change applies to running committees at once (6b's live-record warning stays). From step 2 it's a draft change, published with the version." }
+    ] };
+
+    // ---------- 3 meanings
+    const meanItems = (stage) => [
+      { t: "Dissolving", d: "Committees here can't be a parent or be reported to.", need: "Any number", on: stage === "dp" || stage === "dissolved" },
+      { t: "Record is in force", d: "Counted as active in lists. Change requests can be submitted and decided here.", need: "Any number", on: stage === "active" || stage === "suspended" }
+    ];
+    const crMean = (stage, err) => [{ t: "Applies the approved change", d: err ? "Applies the approved change is already on Approved. A workflow has exactly one." : "A change request's values are applied to the committee when it reaches this stage. Exactly one stage.", need: "Exactly one stage", on: stage === "approved" || err, err }];
+
+    const STG = ["Formation","Terms Review","Active","Suspended","Dissolution pending","Dissolved"], SEED = {"Formation":[0,1,2,3],"Terms Review":[1,2,3],"Active":[1,2,3,4],"Suspended":[1,2,3,4],"Dissolution pending":[1,2,3],"Dissolved":[]}, MEAN = {"Active":["Record is in force"],"Suspended":["Record is in force"],"Dissolution pending":["Dissolving"],"Dissolved":["Dissolving"]}, ST_AR = {"Formation":"التشكيل","Terms Review":"مراجعة الشروط","Active":"نشطة","Suspended":"معلّقة","Dissolution pending":"بانتظار الحل","Dissolved":"محلولة"}, M_AR = {"Record is in force":"السجل نافذ","Dissolving":"قيد الحل","Applies the approved change":"يطبّق التغيير المعتمد"};
+    const ACT = ["Edit details","Add member","Remove member","Change member role","Request a change"], ACT_AR = ["تعديل التفاصيل","إضافة عضو","إزالة عضو","تغيير دور العضو","طلب تغيير"];
+    const allowTxt = (st, ar) => { const a = SEED[st]; if (!a.length) return ar ? "لا يسمح بشيء" : "Allows nothing"; return ar ? "يسمح بـ " + iso(String(a.length)) + " من " + iso("5") + " إجراءات" : "Allows " + a.length + " of 5 actions"; };
+    const allowTip = (st, ar) => { const a = SEED[st]; return a.length ? a.map(i => (ar ? ACT_AR : ACT)[i]).join(ar ? "، " : ", ") : (ar ? "لا شيء مسموح في هذه المرحلة" : "Nothing is allowed in this stage"); };
+    const stageRows = (ar, phone) => STG.map((st, i) => ({ c: phone ? [
+        { v: (i + 1) + "  " + (ar ? ST_AR[st] : st), chips: (MEAN[st] || []).map(m => ar ? M_AR[m] : m), sub: allowTxt(st, ar) }
+      ] : [
+        { v: String(i + 1), small: 1, tone: "muted" },
+        { v: ar ? ST_AR[st] : st, chips: (MEAN[st] || []).map(m => ar ? M_AR[m] : m) },
+        { v: allowTxt(st, ar), tip: allowTip(st, ar), tone: SEED[st].length ? null : "muted" },
+        { v: st === "Dissolved" ? (ar ? "لا مخارج" : "No exits") : (ar ? "انتقالات · مهام عند الدخول" : "Transitions · Tasks on entry"), small: 1, tone: "muted" }
+      ] }));
+    const stageTh = (ar) => [{ l: "#", w: 32 }, { l: ar ? "المرحلة" : "Stage", w: 260 }, { l: ar ? "ما تسمح به" : "Allows", w: 190 }, { l: ar ? "التفاصيل" : "Details", w: "flex" }];
+    const crRows = (ar) => [["Draft", "مسودة"], ["Under review", "قيد المراجعة"], ["Legal review", "المراجعة القانونية"], ["Approved", "معتمد"]].map((n, i) => ({ c: [
+        { v: String(i + 1), small: 1, tone: "muted" }, { v: ar ? n[1] : n[0], chips: n[0] === "Approved" ? [ar ? M_AR["Applies the approved change"] : "Applies the approved change"] : null }, { v: "", small: 1, tone: "muted" }, { v: n[0] === "Legal review" ? (ar ? "أضافها مستشفى النخيل التخصصي" : "Added by Al Nakheel Specialist Hospital") : "", small: 1, tone: "muted" } ] }));
+    const sec3 = { id: "w3", n: "3", title: "Stage editor · What this stage means", step: "Step 1", sub: "The second new section: the meanings the product relies on, one checkbox each.", cards: [
+      card({ step: "Step 1", cap: "Committee lifecycle · Dissolution pending", w: 640, title: "Dissolution pending · What this stage means", blocks: [E.note("The product relies on these. Their names are fixed; the stage's own name is yours.", 0, "small"), E.checks(meanItems("dp"), 10)] }),
+      card({ step: "Step 1", cap: "Change-request workflow with a tenant-added stage", w: 760, title: "Committee change request", ctx: "Legal review was added by Al Nakheel Specialist Hospital", blocks: [E.strip([{ s: "Draft", n: "1" }, { c: "👤 Submit", w: 110 }, { s: "Under review", n: "2" }, { c: "👤 Approve", w: 120 }, { s: "Legal review", n: "3", sel: 1 }, { c: "👤 Approve", w: 120 }, { s: "Approved", n: "4", end: 1 }], [], 0), E.checks(crMean("legal"), 12)], note: "Selecting Legal review: the meaning stays unticked, because it lives on Approved. Legal review after Under review's Approve needs Step 2's free Approve target (section 4). The meanings themselves are Step 1." }),
+      card({ step: "Step 1", cap: "Refused · ticking it on Legal review too", w: 640, title: "Legal review · What this stage means", blocks: [E.checks(crMean("legal", true), 0), E.banner("danger", "The workflow can't be saved", "Applies the approved change is already on Approved. A workflow has exactly one.", 10)], foot: [BTN("Cancel", "text"), BTN("Save stage", "primary")], note: "Refused on Save, in the row's own message slot and in a banner naming the other stage. Save stays enabled." }),
+      card({ step: "Step 1", cap: "Protected change-request workflow · read only", w: 640, title: "Approved · What this stage means", ctx: "Committee change request", blocks: [E.banner("muted", "Protected workflow", "AccreditMe keeps this workflow working: you can rename its stages and add new ones, but what its stages mean can't be changed.", 0), E.checks(crMean("approved"), 10, true)], note: "Section 3 rendered read-only (✓ and –) under the protected sentence. The banner wording stands in for the sentence as built; the build's own string wins." }),
+      card({ step: "Step 1", cap: "Arabic · the refusal", ar: true, w: 640, title: "المراجعة القانونية · ما تعنيه هذه المرحلة", blocks: [A.checks([{ t: "يطبّق التغيير المعتمد", d: "«يطبّق التغيير المعتمد» موجود بالفعل في مرحلة «معتمد». لسير العمل مرحلة واحدة فقط بهذا المعنى.", need: "مرحلة واحدة بالضبط", on: true, err: true }], 0), A.banner("danger", "تعذّر حفظ سير العمل", "«يطبّق التغيير المعتمد» موجود بالفعل في مرحلة «معتمد». لسير العمل مرحلة واحدة فقط بهذا المعنى.", 10)] })
+,
+      card({ step: "Step 1", cap: "Stages list · Committee lifecycle · English", w: 860, title: "Committee lifecycle · Stages", ctx: "Templates 6b's expanded stage rows, with meanings and what each stage allows", blocks: [E.rows(stageTh(false), stageRows(false), 0)], note: "Meanings are chips under the name, in words. “Allows n of 5 actions” has the action names as its tooltip. Stage names end in an ellipsis with a tooltip; chips wrap under the name; column widths don't move." }),
+      card({ step: "Step 1", cap: "Stages list · Committee lifecycle · Arabic", ar: true, w: 860, title: "دورة حياة اللجنة · المراحل", blocks: [A.rows(stageTh(true), stageRows(true), 0)] }),
+      card({ step: "Step 1", cap: "Stages list · Committee change request", w: 860, title: "Committee change request · Stages", ctx: "A record type with no actions: the Allows column is empty", blocks: [E.rows(stageTh(false), crRows(false), 0)], note: "Change requests have no record actions, so nothing is shown for what a stage allows. The only meaning sits on Approved." }),
+      card({ step: "Step 1", cap: "Stages list · Arabic · change request", ar: true, w: 860, title: "طلب تغيير اللجنة · المراحل", blocks: [A.rows(stageTh(true), crRows(true), 0)] }),
+      card({ step: "Step 1", cap: "Stages list · phone 390 · English", w: 390, title: "Committee lifecycle", blocks: [E.rows(null, stageRows(false, true), 0)], note: "One column: number and name, the meaning chips under it, then what the stage allows. Tapping a row opens its editor." }),
+      card({ step: "Step 1", cap: "Stages list · phone 390 · Arabic", ar: true, w: 390, title: "دورة حياة اللجنة", blocks: [A.rows(null, stageRows(true, true), 0)] })
+    ], notes: [
+      { k: "Stages list.", v: "Each stage row in 6b's list shows its meanings as chips under the name and “Allows n of 5 actions” (tooltip: the action names) or “Allows nothing”. A record type with no actions shows nothing there." },
+      { k: "Meanings, not names.", v: "Stage names are tenant data and can say anything; the product reads the meaning ticks. That is what lets a hospital add Legal review without the change being applied early." },
+      { k: "Exactly-one meanings are checked on Save.", v: "Only Applies the approved change must sit on exactly one stage; the refusal names the stage that already has it. Dissolving (seeded on Dissolution pending and Dissolved) and Record is in force (seeded on Active and Suspended) can be on any number." },
+      { k: "Missing a meaning is refused too.", v: "Removing the only Applies the approved change is refused the same way: “This workflow needs one stage that applies the approved change.”" }
+    ] };
+
+    // ---------- 4 transition editor
+    const sec4 = { id: "w4", n: "4", title: "Transition editor · how it moves", step: "Step 2", sub: "Its first choice is now “How it moves”: A person · Automatically. The rest of Templates 6b's editor (labels, from and to, required permission, actions) is as accepted.", cards: [
+      card({ step: "Step 2", cap: "A person · with “Show this button only when”", w: 700, title: "Send to Legal review", ctx: "Policy review · Under review → Legal review", blocks: [
+        E.seg("How it moves", ["A person", "Automatically"], "A person", "A person presses a button on the record"),
+        E.fields([{ l: "Who may press it", req: 1, v: "Position in a unit", g: "▼" }], 12),
+        E.fields([{ l: "Position", req: 1, v: "Quality Manager", g: "▼" }, { l: "In unit", req: 1, v: "Quality Department", g: "⌄" }], 4),
+        E.head("Show this button only when", "optional", 8),
+        E.cond({ lines: [{ f: "Confidentiality", o: "is", v: "Confidential", vg: "▼" }], count: "1 of 5 lines", left: "4 more allowed", sentence: "When the confidentiality is Confidential." }, 8),
+        E.note("The server checks this again when the button is pressed, so a record that changed since the page loaded can't slip through.", 8, "small")
+      ], note: "Trigger kinds without System automatic: Specific user · Position in a unit · Anyone signed in · Assignee pool. Position in a unit replaces Role-based, with the stage editor's position and unit pickers (ACC-136)." }),
+      card({ step: "Step 2", cap: "Automatically · a conditional exit", w: 700, title: "Route to Legal review", ctx: "Document review · Format check → Legal review", blocks: [
+        E.seg("How it moves", ["A person", "Automatically"], "Automatically", "No button. The system moves the record and is recorded as the actor."),
+        E.fields([{ l: "Name in history", req: 1, v: "Route to Legal review", help: "Shown in the record's stage history, never as a button" }], 12),
+        E.head("Move automatically when", null, 8),
+        E.cond({ lines: [{ f: "Confidentiality", o: "is", v: "Confidential", vg: "▼" }], count: "1 of 5 lines", left: "4 more allowed", sentence: "When the confidentiality is Confidential." }, 8),
+        E.check1("Otherwise", "Use this exit when no other automatic exit matches.", false, 12)
+      ] }),
+      card({ step: "Step 2", cap: "Automatically · the Otherwise exit", w: 700, title: "Route to Department review", ctx: "Document review · Format check → Department review", blocks: [
+        E.seg("How it moves", ["A person", "Automatically"], "Automatically", "No button. The system moves the record and is recorded as the actor."),
+        E.fields([{ l: "Name in history", req: 1, v: "Route to Department review" }], 12),
+        E.check1("Otherwise", "Use this exit when no other automatic exit matches.", true, 4),
+        E.banner("muted", "An Otherwise exit has no condition", "It's used when none of Format check's other automatic exits match. It is always checked last.", 10)
+      ] }),
+      card({ step: "Step 2", cap: "Arabic · automatically", ar: true, w: 700, title: "التوجيه إلى المراجعة القانونية", ctx: "مراجعة المستندات · فحص التنسيق ← المراجعة القانونية", blocks: [
+        A.seg("طريقة الانتقال", ["شخص", "تلقائيًا"], "تلقائيًا", "دون زر. ينقل النظام السجل ويُسجَّل بوصفه الفاعل."),
+        A.fields([{ l: "الاسم في السجل", req: 1, v: "التوجيه إلى المراجعة القانونية", help: "يظهر في سجل مراحل السجل، ولا يظهر زرًا أبدًا" }], 12),
+        A.head("الانتقال تلقائيًا عندما", null, 8),
+        A.cond({ lines: [{ f: "السرية", o: "يساوي", v: "سري", vg: "▼" }], count: iso("1") + " من " + iso("5") + " أسطر", left: "يمكن إضافة " + iso("4") + " أسطر أخرى", sentence: "عندما تكون السرية «سري»." }, 8),
+        A.check1("خلاف ذلك", "استخدم هذا الخروج عندما لا يطابق أي خروج تلقائي آخر.", false, 12)
+      ] }),
+      card({ step: "Step 2", cap: "Approval stage · Approve to a tenant-added stage", w: 700, title: "Under review · approval outcomes", ctx: "Committee change request · approval mode Single", blocks: [
+        E.fields([{ l: "Approve goes to", req: 1, v: "Legal review", g: "▼", help: "Any stage of this workflow" }, { l: "Return goes to", req: 1, v: "Draft", g: "▼" }], 0),
+        E.note("Approve and Return still fire on the deciding vote, as Templates 6b's approval modes define it. Only the target is now free.", 4, "small")
+      ] })
+    ], notes: [
+      { k: "Kind first.", v: "“How it moves” is the first field and never moves (artboard 10). A person shows the trigger kinds and the button label; Automatically hides both and asks only for the name history uses." },
+      { k: "Conditions on buttons.", v: "“Show this button only when” is optional and uses the shared builder. A hidden button is absent, not disabled, on the record." },
+      { k: "Otherwise.", v: "Ticking Otherwise removes the condition (an otherwise exit has none) and the slot says why, so the form never looks broken." }
+    ] };
+
+    // ---------- 5 automatic exits
+    const exitTh = [{ l: "Order", w: 70 }, { l: "Exit", w: "flex" }, { l: "When", w: 300 }, { l: "Goes to", w: 160 }, { l: "", w: 60, end: 1 }];
+    const exitRows = (third) => [
+      { c: [{ v: "1", handle: "Reorder exit 1", tone: "strong" }, { v: "Route to Legal review", sub: "⚙ Automatic" }, { v: "Confidentiality is Confidential", small: 1 }, { v: "Legal review" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Route to Legal review" }] }] },
+      { c: [{ v: "2", handle: "Reorder exit 2", tone: "strong" }, { v: "Route to Quality review", sub: "⚙ Automatic" }, { v: "Document type is one of Procedure, Form", small: 1 }, { v: "Quality review" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Route to Quality review" }] }] },
+      third === "none" ? null : { tint: "#FBFCFD", c: [{ v: "Last", tone: "muted", sub: "fixed" }, { v: third === "two" ? "Route to Department review" : "Route to Department review", sub: "⚙ Otherwise" }, { v: "When no exit above matches", small: 1, tone: "muted" }, { v: "Department review" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Route to Department review" }] }] },
+      third === "two" ? { tint: "#FFFBFA", c: [{ v: "Last", tone: "muted", sub: "fixed" }, { v: "Route to Quality review", sub: "⚙ Otherwise", subTone: "info" }, { v: "When no exit above matches", small: 1, tone: "muted" }, { v: "Quality review" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for the second Otherwise exit" }] }] } : null
+    ].filter(Boolean);
+    const when = "Checked in order once this stage's mandatory tasks are done, or on entry if it has none. The first that matches moves the record; the system is recorded as the actor.";
+    const sec5 = { id: "w5", n: "5", title: "A stage's automatic exits", step: "Step 2", sub: "In 6b's expanded stage row, beside Transitions and Tasks on entry (Stage Tasks).", cards: [
+      card({ step: "Step 2", cap: "Format check · three exits", w: 900, title: "Format check · Automatic exits", ctx: "Document review", blocks: [E.note(when, 0, "small"), E.rows(exitTh, exitRows(), 10), E.note("+ Add automatic exit", 10, "info")], note: "Otherwise is always last, has no handle and can't be moved; the order column says “Last · fixed”. Reorder 1 and 2 with the handle, or with Space, ↑/↓, Space on it (artboard 11)." }),
+      card({ step: "Step 2", cap: "Refused · no Otherwise exit", w: 900, title: "Format check · Automatic exits", blocks: [E.rows(exitTh, exitRows("none"), 0), E.banner("danger", "Format check has automatic exits but no Otherwise exit.", "Add one, so every record can leave this stage.", 10, [BTN("Add Otherwise exit", "secondary")])], note: "Refused on Save of the workflow, in words; the button opens the transition editor with Otherwise ticked." }),
+      card({ step: "Step 2", cap: "Refused · two Otherwise exits", w: 900, title: "Format check · Automatic exits", blocks: [E.rows(exitTh, exitRows("two"), 0), E.banner("danger", "Format check has two Otherwise exits (to Department review and to Quality review).", "Keep one: untick Otherwise on the other and give it a condition.", 10)] }),
+      card({ step: "Step 2", cap: "Arabic", ar: true, w: 900, title: "فحص التنسيق · المخارج التلقائية", blocks: [A.note("تُفحص بالترتيب بعد إنجاز المهام الإلزامية لهذه المرحلة، أو عند الدخول إن لم تكن لها مهام. أول خروج يطابق ينقل السجل، ويُسجَّل النظام بوصفه الفاعل.", 0, "small"), A.rows([{ l: "الترتيب", w: 70 }, { l: "الخروج", w: "flex" }, { l: "متى", w: 300 }, { l: "إلى", w: 160 }, { l: "", w: 60 }], [
+        { c: [{ v: iso("1"), handle: "إعادة ترتيب الخروج 1", tone: "strong" }, { v: "التوجيه إلى المراجعة القانونية", sub: "⚙ تلقائي" }, { v: "السرية تساوي «سري»", small: 1 }, { v: "المراجعة القانونية" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "إجراءات التوجيه إلى المراجعة القانونية" }] }] },
+        { c: [{ v: iso("2"), handle: "إعادة ترتيب الخروج 2", tone: "strong" }, { v: "التوجيه إلى مراجعة الجودة", sub: "⚙ تلقائي" }, { v: "نوع المستند أحد: إجراء، نموذج", small: 1 }, { v: "مراجعة الجودة" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "إجراءات التوجيه إلى مراجعة الجودة" }] }] },
+        { tint: "#FBFCFD", c: [{ v: "الأخير", tone: "muted", sub: "ثابت" }, { v: "التوجيه إلى مراجعة القسم", sub: "⚙ خلاف ذلك" }, { v: "عندما لا يطابق أي خروج أعلاه", small: 1, tone: "muted" }, { v: "مراجعة القسم" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "إجراءات التوجيه إلى مراجعة القسم" }] }] }
+      ], 10)] }),
+      card({ step: "Step 2", cap: "Runaway moves · the new line in Setup health (the list itself is as accepted)", w: 900, blocks: [E.rows(null, [{ c: [{ v: "● Blocks work", tone: "danger", small: 1, w: 110 }, { v: "Document POL-031 stopped in Format check after 10 automatic moves in a row.", sub: "Check the automatic exits of Format check and Legal review.", wrapText: 1 }, { v: "", w: 150, btns: [{ l: "Open Format check" }] }] }], 0)], note: "After 10 automatic moves in a row, the record stops where it is and this condition appears. It clears when the record moves again." })
+    ], notes: [
+      { k: "Why Otherwise is required.", v: "Without it, a record that matches no condition would sit in an automatic stage with nobody able to move it. Requiring one Otherwise per stage makes “no exit” impossible to save." },
+      { k: "The stop at 10.", v: "Two automatic stages whose conditions send records back and forth would loop forever. Ten moves is far more than any real route, and the Setup health line names both stages involved." }
+    ] };
+
+    // ---------- 6 strip
+    const sec6 = { id: "w6", n: "6", title: "The flow strip with branches", step: "Step 2", sub: "6b's strip, still generated, not authored. A stage with automatic exits fans out; clicking a connector opens its editor below, as before.", cards: [
+      card({ step: "Step 2", cap: "Document review · Format check fans out", w: 1240, blocks: [E.strip(
+        [{ s: "Draft", n: "1" }, { c: "👤 Submit", w: 110 }, { s: "Format check", n: "2", sel: 1 }],
+        [
+          [{ c: "⚙ Confidential", k: "auto", w: 150 }, { s: "Legal review", n: "3" }, { c: "👤 Send for approval", w: 170 }, { s: "Approval", n: "6" }, { c: "👤 Publish", w: 110 }, { s: "Published", n: "7", end: 1 }],
+          [{ c: "⚙ Procedure or Form", k: "auto", w: 150 }, { s: "Quality review", n: "4" }, { c: "👤 Send for approval", w: 170 }, { s: "Approval", n: "6" }],
+          [{ c: "⚙ otherwise", k: "auto", w: 150 }, { s: "Department review", n: "5" }, { c: "👤 Send to Legal review · Confidential", k: "cond", w: 260 }, { s: "Legal review", n: "3" }]
+        ], 0)], note: "Automatic connectors are dashed with ⚙ and the condition's short form; the otherwise branch says “otherwise”. A person's button is a solid line with 👤 and its label; a conditional button adds its condition after a dot. A stage reached twice (Approval, Legal review) repeats with its number, rather than drawing lines across." }),
+      card({ step: "Step 2", cap: "Arabic", ar: true, w: 1240, blocks: [A.strip(
+        [{ s: "مسودة", n: iso("1") }, { c: "👤 إرسال", w: 110 }, { s: "فحص التنسيق", n: iso("2"), sel: 1 }],
+        [
+          [{ c: "⚙ سري", k: "auto", w: 150 }, { s: "المراجعة القانونية", n: iso("3") }, { c: "👤 إرسال للاعتماد", w: 170 }, { s: "الاعتماد", n: iso("6") }, { c: "👤 نشر", w: 110 }, { s: "منشور", n: iso("7"), end: 1 }],
+          [{ c: "⚙ إجراء أو نموذج", k: "auto", w: 150 }, { s: "مراجعة الجودة", n: iso("4") }, { c: "👤 إرسال للاعتماد", w: 170 }, { s: "الاعتماد", n: iso("6") }],
+          [{ c: "⚙ خلاف ذلك", k: "auto", w: 150 }, { s: "مراجعة القسم", n: iso("5") }, { c: "👤 إرسال للمراجعة القانونية · سري", k: "cond", w: 260 }, { s: "المراجعة القانونية", n: iso("3") }]
+        ], 0)], note: "The strip mirrors: it reads right to left, and the fan opens to the left of Format check." })
+    ], notes: [
+      { k: "Still a strip.", v: "Each stage with automatic exits becomes a fan of rows, one per exit, in the order they're checked; everything after a branch continues on its row. Stages reached from two rows repeat with their number." },
+      { k: "At 8 stages with 3 branches.", v: "It still reads at 1130 px of content: the lead-in plus three rows of three or four stages, with the strip scrolling sideways inside its frame when it has to. Past that (a branch inside a branch), only the first level fans; deeper branches collapse to a “+2 branches” chip that opens that stage's exits list. If tenants routinely need more, that's the signal for the drawn flow editor (later phase; not drawn)." },
+      { k: "Not colour alone.", v: "Automatic vs person differs in line style (dashed vs solid), glyph (⚙ vs 👤) and words, and survives greyscale." }
+    ] };
+
+    // ---------- 7 list, record, new, drafts, versions
+    const wfTh = [{ l: "Order", w: 70 }, { l: "Workflow", w: "flex" }, { l: "Version", w: 190 }, { l: "Live records", w: 110 }, { l: "", w: 150, end: 1 }];
+    const wfRows = [
+      { group: "Committees" },
+      { c: [{ v: "1", handle: "Reorder Task force lifecycle", tone: "strong" }, { v: "Task force lifecycle", sub: "When the committee type is Task force", subTone: "info" }, { v: "Version 1 · published", small: 1 }, { v: "3" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Task force lifecycle" }] }] },
+      { tint: "#FBFCFD", c: [{ v: "Last", tone: "muted", sub: "pinned" }, { v: "Committee lifecycle", sub: "Used when no rule above matches." }, { v: "Version 3 · draft changes", small: 1, tone: "warn" }, { v: "24" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Committee lifecycle" }] }] },
+      { group: "Documents" },
+      { c: [{ v: "1", handle: "Reorder Policy review, Nursing", tone: "strong" }, { v: "Policy review, Nursing", sub: "When the document type is Policy and the owning unit is Nursing or below", subTone: "info" }, { v: "Version 1 · published", small: 1 }, { v: "0" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Policy review, Nursing" }] }] },
+      { c: [{ v: "2", handle: "Reorder Policy review", tone: "strong" }, { v: "Policy review", sub: "When the document type is Policy", subTone: "info" }, { v: "Version 2 · published", small: 1 }, { v: "0" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Policy review" }] }] },
+      { tint: "#FBFCFD", c: [{ v: "Last", tone: "muted", sub: "pinned" }, { v: "Document review", sub: "Used when no rule above matches." }, { v: "Version 1 · published", small: 1 }, { v: "0" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Document review" }] }] },
+      { group: "Committee change requests" },
+      { tint: "#FBFCFD", c: [{ v: "Last", tone: "muted", sub: "pinned" }, { v: "Committee change request", sub: "Used for every change request (no fields to test)." }, { v: "Version 2 · published", small: 1 }, { v: "1" }, { v: "", btns: [{ l: "⋯", dots: 1, aria: "Actions for Committee change request" }] }] }
+    ];
+    const usedForEn = card({ step: "Step 2", cap: "Workflow record · Used for · English", w: 700, title: "Used for", ctx: "Policy review, Nursing · Documents", blocks: [E.note("A new record uses the first workflow whose rule matches, in list order. Records already running keep the workflow and version they started with.", 0, "small"), E.cond(condPolicyEn, 10), E.note("Position in the list: 1 of 3 for Documents · Change order in the workflow list", 8, "small")], foot: [BTN("Save", "primary")], footL: "Applies to new records once saved. Not part of the draft." });
+    const usedForAr = card({ step: "Step 2", cap: "Used for · Arabic", ar: true, w: 700, title: "يُستخدم لـ", ctx: "مراجعة السياسات، التمريض · المستندات", blocks: [A.note("يستخدم السجل الجديد أول سير عمل تطابق قاعدته، بترتيب القائمة. وتحتفظ السجلات الجارية بسير العمل والإصدار اللذين بدأت بهما.", 0, "small"), A.cond(condPolicyAr, 10)], foot: [BTN("حفظ", "primary", true)], footL: "يُطبَّق على السجلات الجديدة بمجرد الحفظ. ليس جزءًا من المسودة." });
+    const usedForDefault = card({ step: "Step 2", cap: "Used for · the default workflow", w: 700, title: "Used for", ctx: "Committee lifecycle · Committees", blocks: [E.banner("muted", "No rule · used when no rule above matches", "Each record type has exactly one such workflow, pinned last in the list. To give this workflow a rule, first make another Committees workflow the default.", 0)] });
+    const draftHead = card({ step: "Step 2", cap: "Workflow record header · a draft open", w: 1000, title: "Committee lifecycle", ctx: "Committees · Draft · changes since version 3", headBtns: [BTN("Discard draft…", "dangerText"), BTN("Publish version 4…", "primary")], blocks: [E.banner("warn", "Draft · 3 changes since version 3", "Add member: not allowed in Dissolution pending · Remove member: not allowed in Dissolution pending · Record is in force: removed from Suspended. None of this reaches any committee until you publish.", 0)] });
+    const versions = card({ step: "Step 2", cap: "Version history panel", w: 700, title: "Versions", ctx: "Committee lifecycle", blocks: [E.rows([{ l: "Version", w: 110 }, { l: "Published", w: "flex" }, { l: "Running", w: 90 }, { l: "", w: 70, end: 1 }], [
+      { tint: "#FFFAEB", c: [{ v: "Draft", tone: "warn" }, { v: "3 changes since version 3", sub: "Layla Al-Harbi · 18 Oct 2026" }, { v: "—", tone: "muted" }, { v: "", btns: [{ l: "Open" }] }] },
+      { c: [{ v: "Version 3", tone: "strong" }, { v: "Layla Al-Harbi", sub: "2 Sep 2026" }, { v: "22" }, { v: "", btns: [{ l: "Open" }] }] },
+      { c: [{ v: "Version 2", tone: "strong" }, { v: "Layla Al-Harbi", sub: "14 May 2026" }, { v: "2" }, { v: "", btns: [{ l: "Open" }] }] },
+      { c: [{ v: "Version 1", tone: "strong" }, { v: "The workflow as it was when versions were switched on", sub: "1 Feb 2026" }, { v: "0" }, { v: "", btns: [{ l: "Open" }] }] }
+    ], 0)], note: "“Running” counts records still on each version. Opening an old version shows the stages page read-only with a banner: “Version 2 · read only · 2 committees still run on it.”" });
+    const oldVersion = card({ step: "Step 2", cap: "An old version, opened", w: 700, title: "Committee lifecycle · Version 2", ctx: "Read only", blocks: [E.banner("muted", "Version 2 · read only · 2 committees still run on it", "Published 14 May 2026 by Layla Al-Harbi. To change the workflow, edit the draft.", 0)] });
+
+    const newWf = (blank, ar) => {
+      const X = ar ? A : E;
+      const rt = X.fields([{ l: ar ? "نوع السجل" : "Record type", req: 1, v: ar ? "اللجان" : "Committees", g: "▼", help: ar ? "اختره أولًا: «نسخ من» يعرض سير عمل هذا النوع فقط" : "First: Copy from lists only this record type's workflows" }], 0);
+      return card({ step: "Step 2", ar, dialog: 1, w: 560, cap: (ar ? "سير عمل جديد · " : "New workflow · ") + (blank ? (ar ? "البدء من فراغ" : "Start blank") : (ar ? "نسخ من سير عمل" : "Copy from")) + " · Form 560", title: ar ? "سير عمل جديد" : "New workflow", blocks: [
+        rt,
+        X.seg(ar ? "البداية" : "Start from", ar ? ["نسخ من سير عمل", "البدء من فراغ"] : ["Copy from", "Start blank"], blank ? (ar ? "البدء من فراغ" : "Start blank") : (ar ? "نسخ من سير عمل" : "Copy from"), ""),
+        blank ? X.note(ar ? "يحتاج سير العمل إلى مرحلة أولى ومرحلة أخيرة وانتقال واحد قبل نشره. يُفتح على «إضافة المرحلة الأولى»." : "The workflow needs a first and a last stage and one transition before it can be published. It opens on “Add first stage”.", 12, "small")
+          : X.fields([{ l: ar ? "نسخ من" : "Copy from", req: 1, v: ar ? "دورة حياة اللجنة · الإصدار " + iso("3") : "Committee lifecycle · version 3", g: "▼", help: ar ? "سير عمل من نوع السجل نفسه" : "A workflow of the same record type" }], 12),
+        X.fields([{ l: ar ? "الاسم (بالإنجليزية)" : "Name (English)", req: 1, v: "Board committee lifecycle", ltr: ar }, { l: ar ? "الاسم (بالعربية)" : "Name (Arabic)", opt: 1, v: "دورة حياة لجنة مجلس الإدارة" }], 12)
+      ], foot: [BTN(ar ? "إلغاء" : "Cancel", "text", ar), BTN(ar ? "إنشاء مسودة" : "Create draft", "primary", ar)],
+        note: ar ? "" : (blank ? "Start blank: 79 + 12 + 42 + 12 + 79 + 12 + 79 = 315 EN; 84 + 12 + 48 + 12 + 84 + 12 + 84 = 336 AR." : "Copy from: 4 × 79 + 3 × 12 = 352 EN; 4 × 84 + 36 = 372 AR. The new workflow is a draft until published; it gets no rule and goes to the end of its record type's list, above the default.") });
+    };
+    const publish = (ar) => card({ step: "Step 2", ar, dialog: 1, w: 420, cap: ar ? "نشر · العربية" : "Publish · Confirm 420", title: ar ? "نشر الإصدار " + iso("4") + "؟" : "Publish version 4?", ctx: ar ? "دورة حياة اللجنة" : "Committee lifecycle", blocks: [
+      (ar ? A : E).note(ar ? "ستستخدم السجلات الجديدة الإصدار " + iso("4") + ". تُكمل اللجان الـ " + iso("22") + " الجارية على الإصدار " + iso("3") + " مسارها على الإصدار " + iso("3") + "." : "New records will use version 4. The 22 committees running on version 3 finish on version 3.", 0),
+      (ar ? A : E).pairs(ar ? [["التغييرات", iso("3")], ["ينشره", "ليلى الحربي"]] : [["Changes", "3"], ["Published by", "Layla Al-Harbi"]], 12)
+    ], foot: [BTN(ar ? "إلغاء" : "Cancel", "text", ar), BTN(ar ? "نشر" : "Publish", "primary", ar)], note: ar ? "" : "Sentence 42 (2 × 21) + 12 + pairs 40 = 94 EN; 48 + 12 + 44 = 104 AR." });
+    const noRule = (ar) => card({ step: "Step 2", ar, dialog: 1, w: 420, cap: ar ? "رفض النشر · بلا قاعدة · العربية" : "Publish refused · no rule · Confirm 420", title: ar ? "لا يمكن النشر بعد" : "Can't publish yet", ctx: ar ? "دورة حياة لجنة مجلس الإدارة" : "Board committee lifecycle", blocks: [
+      (ar ? A : E).note(ar ? "أعطِ «دورة حياة لجنة مجلس الإدارة» قاعدة في «يُستخدم لـ» قبل النشر. سير العمل الافتراضي وحده بلا قاعدة." : "Give Board committee lifecycle a rule in Used for before publishing. Only the default workflow has no rule.", 0)
+    ], foot: [BTN(ar ? "إغلاق" : "Close", "primary", ar)], note: ar ? "" : "Drawn in the Publish confirm's place, with only Close. Sentence 42 (2 × 21) EN; 48 AR." });
+    const discard = card({ step: "Step 2", dialog: 1, w: 420, cap: "Discard draft · Confirm 420", title: "Discard the draft?", ctx: "Committee lifecycle · 3 changes since version 3", blocks: [E.note("The 3 changes are removed. Version 3 stays as it is, and no record is affected.", 0), E.pairs([["Changes", "3"], ["Stays on", "Version 3"]], 12)], foot: [BTN("Keep draft", "text"), BTN("Discard", "danger")], note: "94 EN, 104 AR." });
+    const phoneList = (ar) => card({ step: "Step 2", ar, w: 390, cap: ar ? "قائمة سير العمل · هاتف · العربية" : "Workflow list · phone 390", title: ar ? "سير العمل" : "Workflows", blocks: [
+      (ar ? A : E).cards(ar ? "اللجان" : "Committees", ar ? [{ t: "دورة حياة فريق العمل", rule: iso("1") + " · عندما يكون نوع اللجنة فريق عمل", meta: "الإصدار " + iso("1") + " · منشور · " + iso("3") + " سجلات" }, { t: "دورة حياة اللجنة", rule: "الأخير · يُستخدم عندما لا تطابق أي قاعدة أعلاه", meta: "الإصدار " + iso("3") + " · تغييرات في المسودة · " + iso("24") + " سجلًا" }] : [{ t: "Task force lifecycle", rule: "1 · When the committee type is Task force", meta: "Version 1 · published · 3 records" }, { t: "Committee lifecycle", rule: "Last · Used when no rule above matches.", meta: "Version 3 · draft changes · 24 records" }], 0),
+      (ar ? A : E).cards(ar ? "المستندات" : "Documents", ar ? [{ t: "مراجعة السياسات، التمريض", rule: iso("1") + " · عندما يكون نوع المستند سياسة والوحدة المالكة هي التمريض أو ما تحتها", meta: "الإصدار " + iso("1") + " · منشور · لا سجلات" }] : [{ t: "Policy review, Nursing", rule: "1 · When the document type is Policy and the owning unit is Nursing or below", meta: "Version 1 · published · 0 records" }, { t: "Policy review", rule: "2 · When the document type is Policy", meta: "Version 2 · published · 0 records" }, { t: "Document review", rule: "Last · Used when no rule above matches.", meta: "Version 1 · published · 0 records" }], 12)
+    ], note: ar ? "" : "Cards instead of rows; the order is in each rule line (“1 ·”, “Last ·”). Reordering moves to the ⋯ menu (Move up, Move down), as artboard 11 does for touch. No sort menu: list order is meaningful." });
+    const states = [
+      card({ step: "Step 2", w: 340, cap: "Used for · loading", title: "Used for", blocks: [E.skel(4)] }),
+      card({ step: "Step 2", w: 340, cap: "Versions · error", title: "Versions", blocks: [E.banner("danger", "The versions couldn't be loaded.", "Nothing was changed.", 0, [BTN("Retry", "secondary")])] }),
+      card({ step: "Step 1", w: 340, cap: "What can be done · empty", title: "What can be done to the record here", blocks: [E.note("This record type has no actions a stage can limit yet.", 0, "small")] }),
+      card({ step: "Step 2", w: 340, cap: "Automatic exits · empty", title: "Automatic exits", blocks: [E.note("No automatic exits. Records leave this stage by a person's button.", 0, "small"), E.note("+ Add automatic exit", 8, "info")] }),
+      card({ step: "Step 2", w: 340, cap: "Read only · no Manage workflows", title: "Committee lifecycle", ctx: "Version 3 · read only", blocks: [E.note("Publish, Discard draft, handles and Add are absent. The draft isn't shown: people without Manage workflows see the published version.", 0, "small")] }),
+      card({ step: "Step 2", w: 340, cap: "Arabic · error", ar: true, title: "الإصدارات", blocks: [A.banner("danger", "تعذّر تحميل الإصدارات.", "لم يتغير شيء.", 0, [BTN("إعادة المحاولة", "secondary", true)])] })
+    ];
+    const sec7 = { id: "w7", n: "7", title: "Choosing the workflow · New workflow · drafts, publishing and versions", step: "Step 2", sub: "The workflow list (template 1) grouped by record type, in the order rules are tried; the workflow record (template 2) gains Used for, a draft header and Versions.", cards: [
+      card({ step: "Step 2", cap: "Workflow list · desktop", w: 1240, title: "Workflows", headBtns: [BTN("New workflow", "primary")], blocks: [E.rows(wfTh, wfRows, 0)], note: "Within a record type, rows are in the order they're tried; the default is pinned last with “Used when no rule above matches.”. Headers are plain text: the order is the meaning, so the list doesn't sort. A row in draft says so in amber words." }),
+      usedForEn, usedForAr, usedForDefault, draftHead, publish(false), publish(true), noRule(false), noRule(true), discard, newWf(false, false), newWf(true, false), newWf(false, true), versions, oldVersion, phoneList(false), phoneList(true)
+    ].concat(states), notes: [
+      { k: "First match wins, in list order.", v: "The same rule as automatic exits, so the admin learns one idea. The default (no rule) is pinned last, and a record type needs exactly one: making a workflow the default removes its rule, and removing the default is refused until another takes its place." },
+      { k: "Records keep their workflow and version.", v: "Changing a rule, the order or a stage never moves a running record. The Used for panel says so where the rule is set." },
+      { k: "Drafts.", v: "Editing a published workflow edits its draft; the header says “Draft · changes since version 3” with what changed, and nothing reaches a record until Publish. Discard draft confirms." },
+      { k: "Which of 6b's warnings change.", v: "Step 1 keeps 6b's live-record warnings (changes apply to running records at once). Once drafts exist, the warnings on changing a stage's assignee, approval mode, Tasks on entry or permissions move into the Publish confirm and say “new records only”. Removing a stage that holds records is no longer refused: those records finish on their version. The refusals that protect the workflow itself (missing Otherwise, meanings, the first and last stage) stay." },
+      { k: "Who.", v: "Editing and publishing need Manage workflows, as today. Others see the published version read-only, with no draft." }
+    ] };
+
+    return {
+      decisions: [
+        { step: "Step 1", t: "A stage can only narrow", b: "Each stage lists the record type's actions with an Allowed tick; a person needs both the stage and their role. Seeded: Edit details in Formation only." },
+        { step: "Step 1", t: "Meanings, not names", b: "Dissolving, Applies the approved change and Record is in force are ticks on a stage. Only Applies the approved change is exactly-one, checked on Save, naming the other stage." },
+        { step: "Step 2", t: "One condition builder", b: "Field · operator · value lines, all must hold, at most 5, a live sentence underneath, stale values block saving. Used by rules, buttons and automatic exits." },
+        { step: "Step 2", t: "“How it moves” comes first", b: "A person or Automatically. System automatic and Role-based go; Position in a unit replaces Role-based." },
+        { step: "Step 2", t: "Automatic exits, in order, with Otherwise last", b: "Checked once mandatory tasks are done. The first match moves the record. A missing or second Otherwise is refused. Ten moves in a row stops the record." },
+        { step: "Step 2", t: "The strip fans out", b: "Still generated: a stage with automatic exits becomes a fan of rows. Dashed ⚙ for automatic, solid 👤 for a person." },
+        { step: "Step 2", t: "First matching workflow wins", b: "The list is grouped by record type, in the order rules are tried, with the default pinned last." },
+        { step: "Step 2", t: "Drafts and versions", b: "Edits go to a draft; Publish makes a version for new records; running records finish on theirs." }
+      ].map(d => Object.assign(d, { stepStyle: stepChip(d.step) })),
+      sections: [sec1, sec2, sec3, sec4, sec5, sec6, sec7].map(s => Object.assign(s, { stepStyle: stepChip(s.step) })),
+      measures: [
+        { d: "New workflow · Copy from", s: "560 · form", en: "352", ar: "372" }, { d: "New workflow · Start blank", s: "560 · form", en: "315", ar: "336" },
+        { d: "Publish version 4", s: "420 · confirm", en: "94", ar: "104" }, { d: "Discard draft", s: "420 · confirm", en: "94", ar: "104" }
+      ],
+      questions: [
+        { n: "Q1", q: "The maximum number of lines in one condition.", opts: ["5 (drawn): covers every field today with room for “is not”, and the sentence stays readable.", "10: room for future record types with more fields; longer sentences, longer refusals."], rec: "Decided: as recommended (5, raised per record type when one needs more.)" },
+        { n: "Q2", q: "Should a record's page show which workflow version it runs on?", opts: ["Yes, as a line in the Stage history panel (“Committee lifecycle · version 3”): no new panel, and it explains why two committees behave differently.", "No: only the workflow record knows."], rec: "Decided: as recommended (yes, in Stage history.)" },
+        { n: "Q3", q: "Does the flow strip still work with branching, or should the drawn flow editor come sooner?", opts: ["Keep the strip (drawn): it reads at 8 stages with 3 branches; deeper branches collapse.", "Bring the flow editor forward: better for complex flows, a large build."], rec: "Decided: as recommended (keep the strip; revisit when a tenant needs branches inside branches.)" },
+        { n: "Q4", q: "When are a condition's fields read: at the moment of the check, or when the record entered the stage?", opts: ["At the check (drawn): a confidentiality changed during Format check is honoured.", "At entry: predictable, but a correction made in the stage is ignored."], rec: "Decided: as recommended (at the check.)" },
+        { n: "Q5", q: "A published version whose condition refers to a value later deactivated.", opts: ["Running records treat the stale line as not matching and fall through to Otherwise; Setup health reports the workflow.", "Running records stop in the stage until the workflow is fixed."], rec: "Decided: as recommended (fall through to Otherwise, with the Setup health line.)" },
+        { n: "Q6", q: "Can a workflow with running records be deleted?", opts: ["No: it can be retired (no new records) and disappears when its last record finishes.", "Yes, after moving its records to another workflow: a migration screen to build."], rec: "Decided: as recommended (retire only.)" },
+        { n: "Q7", q: "Is Otherwise required even when the conditions cover every value (for example Confidentiality is Public, Internal, Confidential)?", opts: ["Yes (drawn): new lookup values would otherwise strand records.", "No, when the system can prove full coverage: more logic, and it breaks when a value is added."], rec: "Decided earlier: Otherwise is always required." },
+        { n: "Q8", q: "Who publishes: the person who edited the draft, or a second person?", opts: ["Any holder of Manage workflows (drawn).", "A second holder must publish (four eyes): safer for audits, slower."], rec: "Decided earlier: any holder of Manage workflows publishes." },
+        { n: "Q9", q: "Should the stage permissions apply to members actions while a change request is open?", opts: ["Independent (drawn): members stay outside change requests, as the Committee Changes rules say.", "Block member changes while a request is open."], rec: "Decided earlier: members stay outside change requests." }
+      ],
+      changes: [
+        { s: "Workflow setup · round 3", w: "Dissolving is any number of stages; Record is in force line; section 2 drawn as the built seed (Dissolved allows nothing, the changed example on Dissolution pending); the stages list with meaning chips and “Allows n of 5”; the protected change-request workflow read only." },
+        { step: "Step 1", s: "Roles · permission sentence", w: "Edit details and Request a change pair with “Edit a committee's details and request changes”, which rewords today's sentence that mentions Formation." },
+        { step: "Both", s: "Workflow setup · round 2", w: "Per-action member permissions, member actions in all six stages, the change example on Dissolved, people named instead of roles, 24 live records, rules outside the draft with their own Save, New workflow record type first and its no-rule refusal, the Arabic strip completed, Arabic wording, the Step 1 strip caption, answers recorded." },
+        { step: "Step 1", s: "Templates 6b · stage editor", w: "Two new sections below the identity row: “What can be done to the record here” and “What this stage means”." },
+        { step: "Step 1", s: "Templates 6b · save refusals", w: "New refusals: an exactly-one meaning on two stages, or missing; worded in the row's slot and a banner naming the other stage." },
+        { step: "Step 1", s: "Workflow history", w: "Saved stage-permission and meaning changes appear as “action: before → after in stage, by, date” rows." },
+        { step: "Step 2", s: "Templates 6b · transition editor", w: "First field “How it moves” (A person · Automatically). System automatic is removed as a trigger kind; Role-based becomes Position in a unit (ACC-136). New optional “Show this button only when” condition; Automatically adds “Name in history” and Otherwise." },
+        { step: "Step 2", s: "Templates 6b · approval outcomes", w: "Approve may point at any stage of the workflow, not only the next." },
+        { step: "Step 2", s: "Templates 6b · expanded stage row", w: "A third list, Automatic exits, beside Transitions and Tasks on entry (Stage Tasks), in check order with Otherwise fixed last. New save refusals for a missing or second Otherwise." },
+        { step: "Step 2", s: "Templates 6b · flow strip", w: "Stages with automatic exits fan out; dashed ⚙ connectors with the condition's short form, solid 👤 for buttons, conditions shown on conditional buttons." },
+        { step: "Step 2", s: "Templates 6b · live-record warnings", w: "Once drafts exist, they move to the Publish confirm and speak of new records only; removing a stage with records is no longer refused." },
+        { step: "Step 2", s: "Template 1 · workflow list", w: "Grouped by record type, in rule order, with handles; the default pinned last; each row shows its rule sentence, version state and live records. Headers are not sortable." },
+        { step: "Step 2", s: "Template 2 · workflow record", w: "New Used for panel, a draft header with Publish and Discard draft, and a Versions panel." },
+        { step: "Step 2", s: "Setup health", w: "New condition: a record stopped after 10 automatic moves in a row." }
+      ].map(c => Object.assign(c, { stepStyle: stepChip(c.step) + " justify-self: start;" }))
+    };
+  }
+}
+</script>
+</body>
+</html>

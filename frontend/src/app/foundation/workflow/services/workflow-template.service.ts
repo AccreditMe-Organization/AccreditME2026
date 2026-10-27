@@ -19,6 +19,22 @@ export interface WorkflowTemplateDto {
   // no copy of it lives here), and each priority's due time in working hours.
   recordRoutes?: { unit: boolean; committee: boolean };
   taskDueHours?: TaskDueHours;
+  // ACC-255 — detail reads only, from the backend registries (record-registry.ts):
+  // the record actions a stage of this type may allow, and the meanings a stage
+  // may carry, in registry order. Served, never copied here.
+  recordActions?: WorkflowRecordActionDto[];
+  stageFlags?: WorkflowStageFlagDto[];
+}
+
+export interface WorkflowRecordActionDto {
+  key: string;
+  labelKey: string;
+}
+
+export interface WorkflowStageFlagDto {
+  key: string;
+  labelKey: string;
+  cardinality: 'any' | 'exactlyOne';
 }
 
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -56,6 +72,10 @@ export interface WorkflowStageDto {
   // and the longest one's due time in working hours (null with none).
   taskDefinitionCount?: number;
   longestTaskHours?: number | null;
+  // ACC-255 — the record actions this stage allows (keys, registry order) and
+  // what it means (flag keys).
+  actions?: string[];
+  flags?: string[];
 }
 
 export interface WorkflowTransitionDto {

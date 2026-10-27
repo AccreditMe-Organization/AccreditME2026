@@ -677,6 +677,16 @@
     "confirmDeactivateRoleUnknown": "يفقد كل من يحمله صلاحيات الدور الآن. ويبقى الدور مُسندًا كما هو، فإعادة تفعيله تعيدها."
   },
   "workflow": {
+    "stageList": {
+      "colNumber": "#",
+      "colStage": "المرحلة",
+      "colAllows": "ما تسمح به",
+      "colDetails": "التفاصيل",
+      "allowsNothing": "لا يسمح بشيء",
+      "nothingAllowedTip": "لا شيء مسموح في هذه المرحلة",
+      "noExits": "لا مخارج",
+      "allowsNamed": "يسمح بـ: {{names}}"
+    },
     "error": {
       "updateFailed": "تعذّر حفظ التغيير.",
       "removeFailed": "تعذّرت الإزالة.",
@@ -714,17 +724,17 @@
     },
     "recordAction": {
       "COMMITTEE": {
-        "edit_details": "تعديل بيانات اللجنة",
-        "add_member": "إضافة أعضاء",
-        "remove_member": "إزالة أعضاء",
-        "change_member_role": "تغيير دور عضو",
-        "request_change": "طلب تغيير على اللجنة المعتمدة"
+        "edit_details": "تعديل التفاصيل",
+        "add_member": "إضافة عضو",
+        "remove_member": "إزالة عضو",
+        "change_member_role": "تغيير دور العضو",
+        "request_change": "طلب تغيير"
       }
     },
     "stageFlag": {
-      "DISSOLVING": "اللجنة قيد الحل أو منحلّة",
-      "IN_FORCE": "اللجنة معتمدة وسارية",
-      "APPLIES_APPROVED_CHANGE": "بلوغ هذه المرحلة يطبّق التغيير المعتمد"
+      "DISSOLVING": "قيد الحل",
+      "IN_FORCE": "السجل نافذ",
+      "APPLIES_APPROVED_CHANGE": "يطبّق التغيير المعتمد"
     },
     "recordField": {
       "COMMITTEE": {
@@ -2751,6 +2761,30 @@
       }
     },
     "workflow": {
+      "tasksOnEntry": {
+        "zero": "لا مهام عند الدخول",
+        "one": "مهمة واحدة عند الدخول",
+        "two": "مهمتان عند الدخول",
+        "few": "{{count}} مهام عند الدخول",
+        "many": "{{count}} مهمة عند الدخول",
+        "other": "{{count}} مهمة عند الدخول"
+      },
+      "stageTransitions": {
+        "zero": "لا انتقالات",
+        "one": "انتقال واحد",
+        "two": "انتقالان",
+        "few": "{{count}} انتقالات",
+        "many": "{{count}} انتقالًا",
+        "other": "{{count}} انتقال"
+      },
+      "allowsActions": {
+        "zero": "يسمح بـ {{allowed}} من {{count}} إجراء",
+        "one": "يسمح بـ {{allowed}} من إجراء واحد",
+        "two": "يسمح بـ {{allowed}} من إجراءين",
+        "few": "يسمح بـ {{allowed}} من {{count}} إجراءات",
+        "many": "يسمح بـ {{allowed}} من {{count}} إجراءً",
+        "other": "يسمح بـ {{allowed}} من {{count}} إجراء"
+      },
       "workingHours": {
         "zero": "{{count}} ساعة عمل",
         "one": "ساعة عمل واحدة",

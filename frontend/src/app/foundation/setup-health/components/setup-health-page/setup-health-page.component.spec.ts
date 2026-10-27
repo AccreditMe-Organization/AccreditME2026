@@ -191,6 +191,20 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
       expect(rows['stage']!.fix).not.toBeNull();
     });
 
+    // ACC-255 PR 4a (Q-D) — the stages page needs workflows:manage, so a
+    // reader holding only workflows:view gets the note, never a link the
+    // route would refuse and redirect.
+    it('offers Review stage only with workflows:manage, which the stages page needs', () => {
+      permissions.delete('workflows:manage');
+
+      const rows = rowsById(render(health()));
+
+      expect(rows['stage']!.fix).toBeNull();
+      expect(rows['stage']!.fixNeeds).toBe('Fixing this needs permission to manage workflows.');
+      // Non-vacuity: the other rows still link, so the permission set is real.
+      expect(rows['unit']!.fix).not.toBeNull();
+    });
+
     // §13.2 — the condition does not record whether the assignee or a trigger
     // is the cause, so only the stage row tells the admin to check both.
     it('tells the admin to check both the assignee and the triggers on a stage row, and only there', () => {

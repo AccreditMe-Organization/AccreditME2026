@@ -1365,6 +1365,13 @@ workflow write, may be held by the root role (Organization Administrator,
   (`assignPermissions()` refuses it). **Platform Administrator also keeps it**
   through its own frozen seed (24 Oct, Q1); that role is never assignable
   inside a tenant. `role.seed.spec.ts` pins that no other seeded role holds it.
+- **The setup pages follow it (ACC-255 PR 4a, Ahmad's Q-D).** The Workflows
+  rail item, and so `/workflows` and every page under it, need
+  `workflows:manage` (with `admin:access`) instead of `workflows:view`. A
+  tenant-made admin role holding `workflows:view` still reads workflows through
+  the API (pickers, Setup health) but gets no setup page. Setup health's Review
+  stage Fix needs `workflows:manage` as well, so it never offers that role a
+  link the route would refuse (pinned in `setup-health-page.component.spec.ts`).
 - **The screens learn it from the server:** `GET /roles/permissions` answers
   `rootRoleOnly` per key. The permission matrix (`buildMatrix(…, { isRootRole })`)
   hides such a key on every role but the root role, whose read-only matrix
@@ -2706,12 +2713,38 @@ a copy of a server rule.
   "Unknown" (`workflow.valueUnknown`), never its code. `npm run
   check:workflow-enum-display` fails a template that prints one of those
   fields directly.
-- **The stages page (ACC-254)** fits its column: Edit is the row's next step,
-  Move up / Move down / Remove a worded ⋯ menu, the actions track a fixed 96 px
-  and the expand track 32 px; the transition table inside a stage has fixed
-  widths, ellipsis and the whole label in a tooltip.
-  `workflow-stage-list.layout.spec.ts` measures it at 1280, 1440 and 1920 in
-  both languages.
+- **The stages page (ACC-254; redrawn in ACC-255 PR 4a from the Workflow
+  Setup drawing, section 3)** fits its column:
+  - **Each row:** # · Stage, with the stage's meanings as chips under its name
+    · Allows · Details, plus the actions track (a fixed 96 px: Edit and a
+    worded ⋯ with Move up, Move down and Remove).
+  - **Allows** reads "Allows 4 of 5 actions" (`plural.workflow.allowsActions`),
+    with the action names as its tooltip and accessible name. It reads "Allows
+    nothing" when the stage allows none, and is empty for a record type with no
+    actions.
+  - **Details** is the row's disclosure ("2 transitions · 1 task on entry", or
+    "No exits").
+  - **Every value comes from the template read:** the registries
+    (`recordActions`, `stageFlags`) and each stage's stored `actions` and
+    `flags`, named by their `labelKey`. The screen holds no copy of a rule.
+  - **Left to the stage editor (ACC-255 PR 4b):** the approval mode, assignee,
+    deadline and the Initial / Final tags.
+  - **The name** shows in the reader's language, falling back to English
+    (ACC-160).
+  - **On a phone (below `SHELL_PHONE_BELOW_PX`)** the row is one column:
+    number and name, chips, Allows, Details.
+- **The expanded row (ACC-255 PR 4a, Ahmad's Q4; replaces ACC-208's
+  side-by-side layout):**
+  - Transitions stack above Tasks on entry until each can be about 660 px, so
+    they sit side by side only at 1920.
+  - The transition table's name and destination wrap, whole, with no ellipsis.
+  - Its Kind and trigger columns are sized to their longest chips, measured in
+    both languages ("End the record" 89 px; "Any Authenticated User" 173 px;
+    plus 16 px of cell padding on each side), so every chip sits on one line.
+  - On a phone the table scrolls inside its own frame (`data-tr-scroll`, a
+    44rem minimum), never the page.
+- **The spec:** `workflow-stage-list.layout.spec.ts` measures 1280, 1440, 1920
+  and 390 in both languages.
 
 ---
 

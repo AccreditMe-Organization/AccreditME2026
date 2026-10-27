@@ -173,6 +173,17 @@ describe('nav-items (ACC-79)', () => {
       ]);
     });
 
+    // ACC-255 PR 4a, Q-D: the Workflows item is the Organization
+    // Administrator's (workflows:manage, root-only since ACC-258). A tenant-made
+    // admin role with workflows:view but not workflows:manage gets no item.
+    it('shows Workflows only with workflows:manage, not workflows:view', () => {
+      const items = (permissions: string[]) =>
+        visibleNavGroups(access({ permissions: [ADMIN_ACCESS, 'lookups:view', ...permissions] })).flatMap((g) => g.items.map((i) => i.key));
+      expect(items(['workflows:view'])).withContext('non-vacuity: the admin group renders').toContain('lookups');
+      expect(items(['workflows:view'])).not.toContain('workflows');
+      expect(items(['workflows:view', 'workflows:manage'])).toContain('workflows');
+    });
+
     // The other direction, so the group permission is not quietly doing all
     // the work: admin:access on its own opens nothing.
     it('shows nothing in the section to a role holding admin:access and no page permission', () => {
