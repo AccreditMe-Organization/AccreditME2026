@@ -4527,7 +4527,9 @@ change request (§3.18; its screens are ACC-240).
 - **The ACC-233 refusals read as the dialog does.** `COMMITTEE_OWN_PARENT` and
   `COMMITTEE_PARENT_DISSOLVING` now say "parent committee".
 - **The two permission sentences** (`roles.matrix.sentence`):
-  - `committees:edit_details`: "Edit a committee in Formation and request changes after approval".
+  - `committees:edit_details`: "Edit a committee's details and request changes" (ACC-255 PR 4b,
+    Ahmad's Q3: since stage rules, the stage decides where editing is allowed, so
+    the sentence no longer names Formation).
   - `committees:approve`: "Approve terms, changes and dissolutions".
 - **The quorum input is `[fluid]="true"` (ACC-243).** Without it PrimeNG's
   number input kept its default width, 345px in a 251px column, and ran 94px

@@ -640,7 +640,7 @@
         "workflows:manage": "Change workflows and their stage tasks",
         "committees:view": "Open a committee record and its members",
         "committees:create": "Create a committee",
-        "committees:edit_details": "Edit a committee in Formation and request changes after approval",
+        "committees:edit_details": "Edit a committee's details and request changes",
         "committees:add_member": "Add members to a committee",
         "committees:remove_member": "Remove members from a committee",
         "committees:change_member_role": "Change a member’s role on a committee",

@@ -640,7 +640,7 @@
         "workflows:manage": "تعديل مسارات العمل ومهام مراحلها",
         "committees:view": "فتح سجل اللجنة وأعضائها",
         "committees:create": "إنشاء لجنة",
-        "committees:edit_details": "تعديل اللجنة في مرحلة التشكيل وطلب تغييرات بعد الاعتماد",
+        "committees:edit_details": "تعديل تفاصيل اللجنة وطلب تغييرات",
         "committees:add_member": "إضافة أعضاء إلى اللجنة",
         "committees:remove_member": "إزالة أعضاء من اللجنة",
         "committees:change_member_role": "تغيير دور العضو في اللجنة",
