@@ -677,6 +677,55 @@
     "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
   },
   "workflow": {
+    "editor": {
+      "identityTitle": "The stage",
+      "whoTitle": "Who the work lands on",
+      "approvalTitle": "How approval is reached",
+      "position": "Stage {{n}} of {{total}}",
+      "noDeadline": "No deadline",
+      "nameRequired": "Enter the stage's English name.",
+      "actionsTitle": "What can be done to the record here",
+      "actionsNote": "A person can do these only when both this stage and their role allow it. A stage can only narrow; it never grants what a role doesn't.",
+      "actionsEmpty": "This record type has no actions a stage can limit yet.",
+      "meaningsTitle": "What this stage means",
+      "meaningsNote": "The product relies on these. Their names are fixed; the stage's own name is yours.",
+      "meaningsEmpty": "This record type has no meanings a stage can carry yet.",
+      "addingNote": "You can set what this stage allows once it's added.",
+      "alsoNeeds": "Also needs: {{permission}}",
+      "anyNumber": "Any number",
+      "exactlyOne": "Exactly one stage",
+      "allowed": "Allowed",
+      "notAllowed": "Not allowed",
+      "meansThis": "Yes",
+      "doesNotMeanThis": "No",
+      "changedSince": "Changed since saving: {{names}}. Saved changes are recorded in the workflow's history.",
+      "saveStage": "Save stage",
+      "saved": "Stage saved",
+      "cantSave": "The workflow can't be saved",
+      "flagOnOther": "{{flag}} is already on {{stage}}. A workflow has exactly one.",
+      "flagMissing": "This workflow needs one stage that {{need}}.",
+      "flagMissingNamed": "This workflow needs one stage marked “{{flag}}”.",
+      "openStage": "Open {{name}}",
+      "protectedTitle": "Protected workflow",
+      "protectedBody": "AccreditMe keeps this workflow working: you can rename its stages and set their deadlines, but not change what they allow or mean."
+    },
+    "recordActionHint": {
+      "COMMITTEE": {
+        "edit_details": "Change the committee's name, purpose, quorum, frequency, unit and reporting line.",
+        "add_member": "Add a person to a seat.",
+        "remove_member": "End a person's membership; it stays in Membership history.",
+        "change_member_role": "Move a member to another seat (Chair, Secretary, Member…).",
+        "request_change": "Open a committee change request with its own approval."
+      }
+    },
+    "stageFlagHint": {
+      "DISSOLVING": "Committees here can't be a parent or be reported to.",
+      "IN_FORCE": "Counted as active in lists. Change requests can be submitted and decided here.",
+      "APPLIES_APPROVED_CHANGE": "A change request's values are applied to the committee when it reaches this stage. Exactly one stage."
+    },
+    "stageFlagNeed": {
+      "APPLIES_APPROVED_CHANGE": "applies the approved change"
+    },
     "strip": {
       "label": "Stages in order",
       "forward": "Moves the record on",
@@ -2538,6 +2587,10 @@
       }
     },
     "workflow": {
+      "editorChanges": {
+        "one": "{{count}} change",
+        "other": "{{count}} changes"
+      },
       "liveInStage": {
         "one": "{{count}} record here now",
         "other": "{{count}} records here now"

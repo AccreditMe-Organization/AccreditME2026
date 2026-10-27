@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -13,11 +13,10 @@ import {
   WorkflowRecordActionDto,
   WorkflowStageFlagDto,
 } from '../../services/workflow-template.service';
-import { WorkflowStageFormComponent } from '../workflow-stage-form/workflow-stage-form.component';
+import { StageEditorPanelComponent } from '../stage-editor-panel/stage-editor-panel.component';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
 import { WorkflowStripComponent } from '../workflow-strip/workflow-strip.component';
 import { StageTaskListComponent, StageTaskSummary } from '../stage-task-list/stage-task-list.component';
-import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { LanguageService } from '../../../../core/services/language.service';
@@ -33,17 +32,8 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
-import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
+import { RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 
-/**
- * ACC-254 — the stages list's two fixed tracks. The actions cell holds the
- * labelled Edit and the ⋯ (am-row-menu), which measure 84.3px in Arabic and
- * 77.3px in English at every width (workflow-stage-list.layout.spec.ts, at
- * 1280, 1440 and 1920); 96px leaves room for a slightly longer translation.
- * Before the ⋯ the cell held up, down, Edit and remove, about 150-160px, and
- * spilled out of data-list's 88px default. The expand track is the chevron's.
- */
-const ACTIONS_TRACK = '96px';
 /** ACC-255 PR 4a — the drawing's # column. */
 const NUMBER_TRACK = '32px';
 
@@ -57,12 +47,12 @@ const NUMBER_TRACK = '32px';
     NgTemplateOutlet,
     ButtonModule,
     TooltipModule,
-    WorkflowStageFormComponent,
+    StageEditorPanelComponent,
     DataListComponent,
     WorkflowTransitionEditorComponent,
     WorkflowStripComponent,
     StageTaskListComponent,
-    EditDialogComponent, RowMenuComponent],
+  ],
   template: `
     <div class="flex flex-col h-full gap-4">
 
@@ -71,7 +61,7 @@ const NUMBER_TRACK = '32px';
         [eyebrow]="'workflow.stagesEyebrow' | translate"
       >
         <div pageActions>
-          @if (canCreate()) {
+          @if (canCreate() && !template()?.isProtected) {
             <!-- [disabled] here is a TRANSIENT state (a reorder is in flight),
                  which is what disabled is for. Permission is not transient, so
                  it hides instead — ACC-118. The two coexist deliberately. -->
@@ -79,7 +69,7 @@ const NUMBER_TRACK = '32px';
               icon="pi pi-plus"
               [label]="'workflow.addStage' | translate"
               [disabled]="reordering()"
-              (onClick)="openAdd()"
+              (onClick)="openAdd($any($event)?.currentTarget ?? null)"
             />
           }
         </div>
@@ -96,7 +86,24 @@ const NUMBER_TRACK = '32px';
           [stages]="stages()"
           [selectedId]="editingStage()?.id ?? null"
           [interactive]="canManage()"
-          (opened)="openFromStrip($event.stageId)"
+          (opened)="openStage($event.stageId, $event.opener)"
+        />
+      }
+
+      <!-- ACC-255 PR 4b — the stage editor, a PAGE PANEL between the strip and
+           the list (Ahmad's Q1). It replaced the stage form dialog: the editor
+           measures over the 420px cap (Templates 6b), so the route scrolls as
+           the document and nothing in the panel scrolls. -->
+      @if (panelOpen() && template(); as t) {
+        <am-stage-editor-panel
+          [template]="t"
+          [stage]="editingStage()"
+          [nextOrder]="nextOrderForNewStage()"
+          [menu]="editingStage() ? menuFor(editingStage()!) : []"
+          (saved)="onPanelSaved($event)"
+          (closed)="closePanel()"
+          (openStage)="openStage($event, null)"
+          (menuPicked)="pick(editingStage()!, $event)"
         />
       }
 
@@ -123,7 +130,6 @@ const NUMBER_TRACK = '32px';
           [source]="source"
           [trackBy]="trackById"
           [columns]="columns()"
-          [gridSuffix]="actionsTrack"
           [showPager]="false"
           [searchPlaceholder]="'workflow.searchStages' | translate"
           [emptyTitle]="'workflow.noStages' | translate"
@@ -134,7 +140,6 @@ const NUMBER_TRACK = '32px';
                 <span>{{ column.label }}</span>
               }
             }
-            <span></span>
           </ng-template>
 
           <ng-template #listRow let-stage let-v="visible">
@@ -156,16 +161,32 @@ const NUMBER_TRACK = '32px';
                 }
                 @if (v('name')) {
                   <div class="min-w-0" data-cell="stage">
-                    <span
-                      class="block text-sm font-medium truncate"
-                      [pTooltip]="stageDisplayName(stage)"
-                      tooltipPosition="top"
-                    >
-                      @if (phone()) {
-                        <span class="tabular-nums text-[var(--am-text-secondary)] me-2" data-stage-number>{{ stageIndex(stage) + 1 | amNumber }}</span>
-                      }
-                      <span data-stage-name>{{ stageDisplayName(stage) }}</span>
-                    </span>
+                    <!-- ACC-255 PR 4b — the name opens the stage in the editor panel
+                         (Edit and the ⋯ moved there, as the drawing has them). -->
+                    @if (canManage()) {
+                      <button
+                        type="button"
+                        class="am-stage-open block text-sm font-medium truncate"
+                        [class.am-stage-open--current]="panelOpen() && editingStage()?.id === stage.id"
+                        [pTooltip]="stageDisplayName(stage)"
+                        tooltipPosition="top"
+                        [attr.aria-label]="'workflow.editStageNamed' | translate: { name: stageDisplayName(stage) }"
+                        (click)="openStage(stage.id, $any($event).currentTarget)"
+                        data-testid="stage-edit"
+                      >
+                        @if (phone()) {
+                          <span class="tabular-nums text-[var(--am-text-secondary)] me-2" data-stage-number>{{ stageIndex(stage) + 1 | amNumber }}</span>
+                        }
+                        <span data-stage-name>{{ stageDisplayName(stage) }}</span>
+                      </button>
+                    } @else {
+                      <span class="block text-sm font-medium truncate" [pTooltip]="stageDisplayName(stage)" tooltipPosition="top">
+                        @if (phone()) {
+                          <span class="tabular-nums text-[var(--am-text-secondary)] me-2" data-stage-number>{{ stageIndex(stage) + 1 | amNumber }}</span>
+                        }
+                        <span data-stage-name>{{ stageDisplayName(stage) }}</span>
+                      </span>
+                    }
                     @if (meaningsOf(stage).length) {
                       <span class="flex flex-wrap gap-1 mt-1" data-cell="meanings">
                         @for (meaning of meaningsOf(stage); track meaning.key) {
@@ -186,34 +207,6 @@ const NUMBER_TRACK = '32px';
                   <ng-container *ngTemplateOutlet="detailsTpl; context: { $implicit: stage }" />
                 }
 
-                <!-- ACC-123 — reorder, edit and remove are all
-                     workflows:manage. Gated as one block: they share a
-                     permission, and four separate @ifs would be four places to
-                     get it wrong. Note the Edit button carries a label rather
-                     than an icon, so check:action-gating cannot see it — a
-                     reason to gate the container, not each control. -->
-                <!-- ACC-254 — Edit is the row's next step; Move up, Move down and
-                     Remove are in a worded ⋯ menu (ACC-229's shape), so the cell
-                     fits its fixed track (ACTIONS_TRACK) in both languages and
-                     the page never scrolls sideways. -->
-                <div class="flex items-center justify-end gap-1 min-w-0" data-testid="stage-actions">
-                  @if (canManage()) {
-                    <p-button
-                      [label]="'common.edit' | translate"
-                      size="small"
-                      [text]="true"
-                      [disabled]="reordering()"
-                      [ariaLabel]="'workflow.editStageNamed' | translate: { name: stageDisplayName(stage) }"
-                      (onClick)="openEdit(stage)"
-                      data-testid="stage-edit"
-                    />
-                    <am-row-menu
-                      [groups]="menuFor(stage)"
-                      [label]="'workflow.stageActionsFor' | translate: { name: stageDisplayName(stage) }"
-                      (picked)="pick(stage, $event)"
-                    />
-                  }
-                </div>
               </div>
 
               <!-- The expansion lives INSIDE the projected row rather than in a
@@ -294,22 +287,6 @@ const NUMBER_TRACK = '32px';
         </button>
       </ng-template>
 
-      <ng-template #formTpl>
-        <app-workflow-stage-form
-          [stage]="editingStage()"
-          [templateId]="templateId()"
-          [nextOrder]="nextOrderForNewStage()"
-          (saved)="onStageSaved($event)"
-          (cancelled)="showFormDialog.set(false)"
-        />
-      </ng-template>
-      <app-edit-dialog
-        [visible]="showFormDialog()"
-        (visibleChange)="showFormDialog.set($event)"
-        [header]="(editingStage() ? 'workflow.editStage' : 'workflow.addStage') | translate"
-        [content]="formTpl"
-        width="560px"
-      />
 
     </div>
   `,
@@ -333,6 +310,27 @@ const NUMBER_TRACK = '32px';
         border: 1px solid var(--am-primary-600);
         border-radius: var(--am-radius-control);
         padding: 0 var(--am-space-6);
+      }
+      .am-stage-open {
+        max-width: 100%;
+        padding: 0;
+        background: none;
+        border: 0;
+        font: inherit;
+        color: var(--am-primary-700);
+        text-align: start;
+        cursor: pointer;
+      }
+      .am-stage-open:hover {
+        text-decoration: underline;
+      }
+      .am-stage-open:focus-visible {
+        outline: 2px solid var(--am-primary-600);
+        outline-offset: 2px;
+        border-radius: var(--am-radius-control);
+      }
+      .am-stage-open--current {
+        font-weight: 700;
       }
       .am-stage-allows-none {
         color: var(--am-text-secondary);
@@ -363,7 +361,7 @@ const NUMBER_TRACK = '32px';
   ],
 })
 export class WorkflowStageListComponent implements OnInit {
-  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+  @ViewChild(StageEditorPanelComponent) private panel?: StageEditorPanelComponent;
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly route = inject(ActivatedRoute);
@@ -383,8 +381,11 @@ export class WorkflowStageListComponent implements OnInit {
     return this.languageService.bilingual(template.nameEn, template.nameAr);
   });
   readonly error = signal<string | null>(null);
-  readonly showFormDialog = signal(false);
+  /** ACC-255 PR 4b — the editor panel: open, and on which stage (null while adding one). */
+  readonly panelOpen = signal(false);
   readonly editingStage = signal<WorkflowStageDto | null>(null);
+  /** Whatever opened the panel, so Cancel can return focus to it. */
+  private opener: HTMLElement | null = null;
   readonly expandedRowKeys = signal<Record<string, boolean>>({});
 
   private readonly translate = inject(TranslateService);
@@ -420,7 +421,6 @@ export class WorkflowStageListComponent implements OnInit {
   });
 
   readonly trackById = (stage: WorkflowStageDto): string => stage.id;
-  readonly actionsTrack = ACTIONS_TRACK;
 
   private readonly format = inject(FormatService);
   private readonly document = inject(DOCUMENT);
@@ -483,17 +483,28 @@ export class WorkflowStageListComponent implements OnInit {
     return this.languageService.bilingual(stage.nameEn, stage.nameAr);
   }
 
-  /** ACC-254 — the row's ⋯: reorder, then Remove apart (it is the one that deletes). */
+  /**
+   * ACC-254 — the stage's ⋯ (in the editor panel since ACC-255 PR 4b): reorder,
+   * then Remove apart (it is the one that deletes). On a protected workflow
+   * (the server's isProtected) a stage is neither moved nor removed: its order
+   * is not among the fields the server lets it change (editableStageFields),
+   * and removing a stage is refused outright, as the protected sentence says.
+   */
   menuFor(stage: WorkflowStageDto): RowMenuItem[][] {
+    const template = this.template();
     const index = this.stageIndex(stage);
     const busy = this.reordering();
-    return [
-      [
+    const groups: RowMenuItem[][] = [];
+    if (!template?.isProtected || (template.editableStageFields ?? []).includes('order')) {
+      groups.push([
         { id: 'moveUp', label: this.translate.instant('workflow.moveUp'), disabled: busy || index === 0 },
         { id: 'moveDown', label: this.translate.instant('workflow.moveDown'), disabled: busy || index === this.stages().length - 1 },
-      ],
-      [{ id: 'remove', label: this.translate.instant('common.remove'), danger: true, disabled: busy }],
-    ];
+      ]);
+    }
+    if (!template?.isProtected) {
+      groups.push([{ id: 'remove', label: this.translate.instant('common.remove'), danger: true, disabled: busy }]);
+    }
+    return groups;
   }
 
   pick(stage: WorkflowStageDto, id: string): void {
@@ -553,46 +564,66 @@ export class WorkflowStageListComponent implements OnInit {
     this.loadTemplate();
   }
 
-  openAdd(): void {
-    this.editingStage.set(null);
-    this.showFormDialog.set(true);
+  // ── ACC-255 PR 4b — the editor panel ──────────────────────────────────────
+
+  /** Add stage: the panel, empty. */
+  openAdd(opener: HTMLElement | null): void {
+    this.whenDiscarded(() => this.showPanel(null, opener));
   }
 
-  /** A strip card opens its stage. */
-  openFromStrip(stageId: string): void {
+  /** A strip card, a row's name, or a refusal's link opens that stage in the panel. */
+  openStage(stageId: string, opener: HTMLElement | null): void {
     const stage = this.stages().find((s) => s.id === stageId);
-    if (stage) this.openEdit(stage);
-  }
-
-  openEdit(stage: WorkflowStageDto): void {
-    this.editingStage.set(stage);
-    this.showFormDialog.set(true);
-  }
-
-  // ACC-54 — mirrors PositionListComponent.onSaved() exactly (ACC-43): when
-  // the config-time warning fires, the dialog STAYS OPEN so the warning is
-  // actually readable. Closing on save as usual rendered it for a fraction of
-  // a second before the dialog disappeared, which is no warning at all.
-  //
-  // Switching editingStage to the saved record matters for the same reason it
-  // did in position-form, and it was checked rather than assumed to carry
-  // over: workflow-stage-form picks its endpoint with `this.stage ?
-  // updateStage(...) : addStage(...)`, and `stage` is an @Input bound to
-  // editingStage() here. Leaving it null while the dialog stays open would
-  // make a second Save create a duplicate stage instead of updating the one
-  // just created.
-  //
-  // Unlike position-form this cannot clobber what the user is looking at:
-  // that component re-patches its form from an effect() on its position
-  // input, whereas this one patches only in ngOnInit(), so updating the input
-  // on an already-open dialog leaves the visible form untouched.
-  onStageSaved(result: { stage: WorkflowStageDto; hadNoHolderWarning: boolean }): void {
-    if (result.hadNoHolderWarning) {
-      this.editingStage.set(result.stage);
-    } else {
-      this.showFormDialog.set(false);
+    if (!stage) return;
+    if (this.panelOpen() && this.editingStage()?.id === stageId) {
+      this.panel?.focusHeading();
+      return;
     }
+    this.whenDiscarded(() => this.showPanel(stage, opener));
+  }
+
+  private showPanel(stage: WorkflowStageDto | null, opener: HTMLElement | null): void {
+    // A refusal's link keeps the first opener, so Cancel still returns there.
+    if (opener || !this.panelOpen()) this.opener = opener ?? (this.document.activeElement as HTMLElement | null);
+    this.editingStage.set(stage);
+    this.panelOpen.set(true);
+  }
+
+  /**
+   * Switching stages, or adding one, while the panel holds unsaved changes asks
+   * first (plan §17.6), through the one confirm.
+   */
+  private whenDiscarded(then: () => void): void {
+    if (!this.panelOpen() || !this.panel?.hasChanges()) {
+      then();
+      return;
+    }
+    this.amConfirm.ask({
+      tone: 'destructive',
+      header: this.translate.instant('dialog.discardHeader'),
+      message: this.translate.instant('dialog.discardMessage'),
+      acceptLabel: this.translate.instant('dialog.discard'),
+      accept: then,
+    });
+  }
+
+  /**
+   * Saved: the panel stays open on the stage (a stage just added reopens on
+   * itself, showing what the server stored), and the strip and list reload
+   * from the template read. The panel keeps focus on Save and says so.
+   */
+  onPanelSaved(stage: WorkflowStageDto): void {
+    this.editingStage.set(stage);
     this.loadTemplate();
+  }
+
+  /** Cancel: the panel closes and focus returns to whatever opened it. */
+  closePanel(): void {
+    this.panelOpen.set(false);
+    this.editingStage.set(null);
+    const opener = this.opener;
+    this.opener = null;
+    if (opener?.isConnected) opener.focus();
   }
 
   onRemove(stage: WorkflowStageDto): void {
@@ -607,7 +638,10 @@ export class WorkflowStageListComponent implements OnInit {
       acceptLabel: this.translate.instant('confirm.removeStage'),
       accept: () => {
         this.workflowTemplateService.removeStage(stage.id).subscribe({
-          next: () => this.loadTemplate(),
+          next: () => {
+            if (this.editingStage()?.id === stage.id) this.closePanel();
+            this.loadTemplate();
+          },
           error: (err: unknown) =>
             this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')),
         });
@@ -682,6 +716,12 @@ export class WorkflowStageListComponent implements OnInit {
     this.workflowTemplateService.getTemplate(id).subscribe({
       next: (template) => {
         this.template.set(template);
+        // The open stage, as the server now has it (the panel keeps unsaved work).
+        const editing = this.editingStage();
+        if (editing) {
+          const fresh = template.stages?.find((s) => s.id === editing.id);
+          if (fresh) this.editingStage.set(fresh);
+        }
         this.loading.set(false);
         this.reordering.set(false);
         const stageId = this.fixLinkStage();

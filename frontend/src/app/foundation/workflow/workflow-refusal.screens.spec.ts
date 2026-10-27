@@ -16,7 +16,7 @@ import { AmConfirmService } from '../../shared/components/confirm/am-confirm.ser
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { WorkflowTemplateListComponent } from './components/workflow-template-list/workflow-template-list.component';
 import { WorkflowStageListComponent } from './components/workflow-stage-list/workflow-stage-list.component';
-import { WorkflowStageFormComponent } from './components/workflow-stage-form/workflow-stage-form.component';
+import { StageEditorPanelComponent } from './components/stage-editor-panel/stage-editor-panel.component';
 import { WorkflowTransitionEditorComponent } from './components/workflow-transition-editor/workflow-transition-editor.component';
 import { WorkflowActionConfiguratorComponent } from './components/workflow-action-configurator/workflow-action-configurator.component';
 import { WorkflowStageDto, WorkflowTransitionActionDto, WorkflowTransitionDto } from './services/workflow-template.service';
@@ -189,8 +189,8 @@ describe('workflow screens say refusals in their own words (ACC-255 PR 3)', () =
         expectSentence(fixture, 'REMOVE_STAGE');
       });
 
-      it('the stage form: Save', () => {
-        const fixture = setup(WorkflowStageFormComponent, lang, { stage: STAGE, templateId: 'template-1' });
+      it('the stage editor panel: Save', () => {
+        const fixture = setup(StageEditorPanelComponent, lang, { stage: STAGE, template: { id: 'template-1', stages: [STAGE] } });
         drain(fixture);
         fixture.componentInstance.onSubmit();
         refuse(fixture, 'PATCH', `${API}/stages/stage-1`, 'STAGE_FIELD');
