@@ -513,6 +513,10 @@ describe('StorageSettings — SharePoint (ACC-260, PR C)', () => {
     expect(text('[data-testid="test-found"]')).toContain(`${SP_SITE_NAME} › ${SP_LIBRARY}`);
     expect(q('[data-testid="test-found-value"]')!.getAttribute('dir')).toBe('ltr');
     expect(q('#storage-sp-client')!.getAttribute('dir')).toBe('ltr');
+    // The picked date reads "14 Oct 2026" in an Arabic page too (the app's date inputs).
+    await pickExpiry(2027, 6, 30);
+    expect((q('#storage-sp-expiry') as HTMLInputElement).value).toBe('30 Jun 2027');
+    expect(q('#storage-sp-expiry')!.getAttribute('dir')).toBe('ltr');
     TestBed.resetTestingModule();
     await open(sharepoint({ filesStored: 2, disconnectAllowed: false }), 'ar');
     expect(text('[data-testid="sp-disconnect-why"]')).toContain('ملفان');

@@ -44,6 +44,7 @@ function dayOf(date: Date): string {
         <input
           pInputText
           readonly
+          dir="ltr"
           class="am-ef__text"
           [id]="inputId()"
           [value]="shown()"
