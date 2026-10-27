@@ -279,8 +279,8 @@ describe('StorageSettings — first-time setup and Request a change (ACC-260, PR
     radio.click();
     await settle();
     expect(q('[data-setup="LOCAL_FILESYSTEM"]')).toBeNull();
-    // SharePoint is listed as PR A shows it, and set up in PR C.
-    expect((q('[data-testid="choose-SHAREPOINT"]') as HTMLInputElement).disabled).toBeTrue();
+    // SharePoint can be chosen since PR C (D1).
+    expect((q('[data-testid="choose-SHAREPOINT"]') as HTMLInputElement).disabled).toBeFalse();
   });
 
   // ── Confirm ────────────────────────────────────────────────────────────────

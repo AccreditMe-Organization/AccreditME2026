@@ -80,7 +80,36 @@ export interface IStorageTestResult {
   /** A storage refusal code; the screen shows its own words for it, never `message`. */
   code: string | null;
   message: string | null;
-  sharepoint: unknown;
+  /** SharePoint only: what the test found once the library step passed, else null. */
+  sharepoint: ISharePointFound | null;
+}
+
+/**
+ * ACC-260 PR C — what a SharePoint test found in the customer's own tenant
+ * (backend sharepointView): theirs, so shown to them.
+ */
+export interface ISharePointFound {
+  tenantId: string;
+  siteId: string;
+  siteName: string | null;
+  siteWebUrl: string | null;
+  listId: string;
+  driveId: string;
+  libraryName: string;
+  libraryWebUrl: string | null;
+  resolvedBy: string;
+}
+
+/** SharePoint's values in a test, confirm or PATCH body (backend SharePointSettingsDto). */
+export interface ISharePointCandidate {
+  tenant?: string;
+  clientId?: string;
+  /** Only when typed (rule 2). */
+  clientSecret?: string;
+  siteUrl?: string;
+  libraryName?: string;
+  /** YYYY-MM-DD. */
+  secretExpiresOn?: string;
 }
 
 /**
@@ -92,6 +121,7 @@ export interface IStorageCandidate {
   provider: StorageKind;
   minio?: { endpoint?: string; region?: string; bucket?: string; accessKeyId?: string; secretAccessKey?: string };
   local?: { rootPath?: string };
+  sharepoint?: ISharePointCandidate;
 }
 
 /** POST /tenant/storage/change-request's contact (backend StorageChangeRequestDto). */
@@ -122,9 +152,22 @@ export class StorageSettingsService {
     return this.http.post<IStorageSettings>(`${this.baseUrl}/confirm`, candidate);
   }
 
-  /** After confirming: new MinIO keys for the same endpoint and bucket. The server tests them first. */
+  /**
+   * After confirming: new credentials for the same location — MinIO's two
+   * keys, or SharePoint's client ID, secret and expiry date. The server tests
+   * them first (a new expiry date alone needs no test).
+   */
   replaceKeys(candidate: IStorageCandidate): Observable<IStorageSettings> {
     return this.http.patch<IStorageSettings>(this.baseUrl, candidate);
+  }
+
+  /**
+   * ACC-260 PR C — leaves a confirmed SharePoint location: back to AccreditMe
+   * cloud, NOT confirmed. Refused (409 STORAGE_LOCKED_BY_FILES, with
+   * filesStored) while any file is stored there.
+   */
+  disconnect(): Observable<IStorageSettings> {
+    return this.http.post<IStorageSettings>(`${this.baseUrl}/disconnect`, {});
   }
 
   /**
