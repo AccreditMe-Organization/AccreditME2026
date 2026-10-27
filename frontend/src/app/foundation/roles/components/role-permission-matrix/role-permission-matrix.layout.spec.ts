@@ -107,7 +107,20 @@ describe('RolePermissionMatrixComponent layout (ACC-266)', () => {
   afterEach(() => {
     fixture?.nativeElement.remove();
     document.querySelectorAll('.p-dialog-mask, .p-dialog').forEach((n) => n.remove());
+    setViewport(null);
   });
+
+  // The specs run in Karma's iframe, so narrowing that iframe is a real
+  // viewport change: the sm breakpoint (640px) applies exactly as on a phone.
+  function setViewport(width: number | null): void {
+    const frame = window.frameElement as HTMLElement | null;
+    if (width === null) {
+      if (frame) frame.style.width = '';
+      return;
+    }
+    if (!frame) throw new Error('These specs narrow the viewport through Karma\'s iframe, and there is none');
+    frame.style.width = `${width}px`;
+  }
 
   const q = <T extends HTMLElement = HTMLElement>(sel: string): T => (fixture.nativeElement as HTMLElement).querySelector(sel) as T;
   const box = (el: Element): DOMRect => el.getBoundingClientRect();
@@ -248,4 +261,76 @@ describe('RolePermissionMatrixComponent layout (ACC-266)', () => {
     await press('ArrowLeft');
     expect(cellBox('13:2').left - box(s).left).withContext('clear of the frozen column').toBeGreaterThanOrEqual(300 - 0.5);
   });
+
+  // ── Phones (Ahmad, 27 Oct): below sm the frozen column is 160 and names wrap ─
+  // The page at 390 is <main> at 358 (its 16px padding each side).
+  for (const lang of ['en', 'ar'] as const) {
+    const rtl = lang === 'ar';
+    const startOf = (r: DOMRect): number => (rtl ? r.right : r.left);
+    const endOf = (r: DOMRect): number => (rtl ? r.left : r.right);
+    // How far `a` sits past `b` towards the end of the line (left in Arabic).
+    const past = (a: number, b: number): number => (rtl ? b - a : a - b);
+
+    it(`${lang} at 390: the frozen column is 160, names wrap without clipping, and a whole action column shows beside it`, async () => {
+      setViewport(390);
+      await render({ lang, width: 358, height: 700 });
+      // Non-vacuity: this really is a phone-width viewport.
+      expect(window.innerWidth).toBe(390);
+      const s = scroller();
+      const frozen = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('.pm-row:not(.pm-row--head) > .pm-frozen'));
+      expect(box(corner()).width).toBe(160);
+      for (const f of frozen) expect(box(f).width).toBe(160);
+      // Every frozen cell holds its text: nothing clipped, nothing cut short.
+      for (const f of [corner(), ...frozen]) {
+        expect(f.scrollHeight).withContext(`clipped: ${f.textContent?.trim()}`).toBeLessThanOrEqual(f.clientHeight);
+        expect(f.scrollWidth).withContext(`clipped: ${f.textContent?.trim()}`).toBeLessThanOrEqual(f.clientWidth);
+      }
+      // Names wrap instead: permission names and module descriptions run to more lines.
+      const lines = (sel: string, lineHeight: number): number =>
+        Math.max(...Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(sel)).map((e) => Math.round(box(e).height / lineHeight)));
+      expect(lines('.pm-perm-name', 22)).withContext('a permission name wraps').toBeGreaterThanOrEqual(2);
+      expect(lines('.pm-module-desc', 18)).withContext('a module description wraps').toBeGreaterThanOrEqual(2);
+      // Rows grow to fit, and never below 44.
+      for (const row of Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('.pm-row:not(.pm-row--head)'))) {
+        expect(row.offsetHeight).toBeGreaterThanOrEqual(44);
+        const f = row.querySelector<HTMLElement>('.pm-frozen')!;
+        expect(row.offsetHeight).toBeGreaterThanOrEqual(f.scrollHeight);
+      }
+      // The grid minimum follows: 160 + 6 × 150.
+      expect(Math.round(box(q('.pm-grid')).width)).toBe(1060);
+      // A whole action column fits beside the frozen column.
+      const first = box(head().querySelectorAll<HTMLElement>('.pm-cell')[0]);
+      expect(past(startOf(first), endOf(box(corner())))).toBeGreaterThanOrEqual(-0.5);
+      expect(past(endOf(box(s)), endOf(first))).withContext('the whole first action column shows').toBeGreaterThanOrEqual(-0.5);
+      expect(getComputedStyle(s).scrollPaddingInlineStart).toBe('160px');
+    });
+
+    it(`${lang} at 390: the arrow keys never leave the focused cell under the frozen column or the header`, async () => {
+      setViewport(390);
+      await render({ lang, width: 358, height: 700 });
+      expect(window.innerWidth).toBe(390);
+      const s = scroller();
+      const grid = q('[role="grid"]');
+      q('[data-pm-cell="0:0"]').focus();
+      const next = rtl ? 'ArrowLeft' : 'ArrowRight';
+      const back = rtl ? 'ArrowRight' : 'ArrowLeft';
+      const walk = [...Array(14).fill('ArrowDown'), ...Array(6).fill(next), ...Array(10).fill('ArrowDown'), ...Array(6).fill(back), ...Array(6).fill(next)];
+      let moved = 0;
+      for (const key of walk) {
+        grid.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        await settle();
+        const el = (document.activeElement as HTMLElement).closest<HTMLElement>('.pm-cell, .pm-frozen')!;
+        expect(el).withContext(`focus left the grid after ${key}`).not.toBeNull();
+        if (!el.classList.contains('pm-frozen')) {
+          moved++;
+          const b = box(el);
+          expect(past(startOf(b), endOf(box(bodyFrozen())))).withContext(`under the frozen column after ${key}`).toBeGreaterThanOrEqual(-0.5);
+          expect(past(endOf(box(s)), endOf(b))).withContext(`past the frame after ${key}`).toBeGreaterThanOrEqual(-0.5);
+        }
+        expect(box(el).top).withContext(`under the header after ${key}`).toBeGreaterThanOrEqual(box(head()).bottom - 0.5);
+      }
+      // Non-vacuity: most moves landed on action cells, the ones that could hide.
+      expect(moved).toBeGreaterThan(20);
+    });
+  }
 });
