@@ -157,7 +157,7 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
   it('SharePoint, healthy: site › library; tenant, site and library locked; client secret "Set"; the expiry date', () => {
     const el = answer(sharepoint());
     // The site › library is isolated left to right (PR C, U+2066 … U+2069).
-    expect(text(el, 'strip-detail')).toBe('⁦Quality Department › Quality Documents⁩ · Confirmed 3 Oct 2026 by Hessa Al-Dosari');
+    expect(text(el, 'strip-detail')).toBe('\u2066Quality Department › Quality Documents\u2069 · Confirmed 3 Oct 2026 by Hessa Al-Dosari');
     expect(field(el, 'spTenant')).toBe('alnakheel.example.test');
     expect(field(el, 'spLibrary')).toBe('Quality Documents');
     expect(el.querySelector('[data-field="spClientSecret"] [data-secret-state="set"]')).not.toBeNull();
@@ -169,7 +169,7 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
   it('SharePoint, access withdrawn: the strip says it can\'t be reached; the banner says why and what to fix', () => {
     const el = answer(sharepoint({ accessLostAt: '2026-10-05T10:00:00.000Z', accessLostReason: 'GRANT_REMOVED' }));
     expect(text(el, 'strip-chip')).toBe("✕ Can't be reached");
-    expect(text(el, 'strip-detail')).toBe('⁦Quality Department › Quality Documents⁩ · new uploads are refused');
+    expect(text(el, 'strip-detail')).toBe('\u2066Quality Department › Quality Documents\u2069 · new uploads are refused');
     expect(text(el, 'sp-withdrawn')).toContain("AccreditMe can't reach SharePoint");
     expect(text(el, 'sp-withdrawn')).toContain('The app no longer has access to “Quality Documents”.');
     expect(text(el, 'sp-withdrawn')).toContain('Since 5 Oct 2026.');

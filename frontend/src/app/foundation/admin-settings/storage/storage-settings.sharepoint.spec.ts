@@ -300,6 +300,12 @@ describe('StorageSettings — SharePoint (ACC-260, PR C)', () => {
     expect(q('[data-field="spClientSecret"] [data-secret-state="set"]')).not.toBeNull();
     expect(q('[data-field="spClientSecret"] input')).toBeNull();
     expect(text('[data-testid="sp-expiry"]')).toBe('30 Jun 2027');
+    // The credentials are live controls, each drawn once — never also a
+    // locked box beside the tenant, site and library.
+    for (const id of ['spClientId', 'spClientSecret', 'spSecretExpires']) {
+      expect(el().querySelectorAll(`[data-field="${id}"]`).length).withContext(id).toBe(1);
+      expect(q(`[data-field="${id}"] [data-testid="field-value"]`)).withContext(`${id} locked box`).toBeNull();
+    }
     expect(text('[data-testid="test-head"]')).toBe('Not tested yet');
   });
 
@@ -510,7 +516,7 @@ describe('StorageSettings — SharePoint (ACC-260, PR C)', () => {
     TestBed.resetTestingModule();
     await open(sharepoint({ filesStored: 2, disconnectAllowed: false }), 'ar');
     expect(text('[data-testid="sp-disconnect-why"]')).toContain('ملفان');
-    expect(text('[data-testid="strip-detail"]')).toContain(`⁦${SP_SITE_NAME} › ${SP_LIBRARY}⁩`);
+    expect(text('[data-testid="strip-detail"]')).toContain(`\u2066${SP_SITE_NAME} › ${SP_LIBRARY}\u2069`);
     expect(q('[data-testid="sp-client-id"]')!.getAttribute('dir')).toBe('ltr');
   });
 });
