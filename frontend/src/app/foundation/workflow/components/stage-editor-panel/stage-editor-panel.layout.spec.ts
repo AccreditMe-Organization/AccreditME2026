@@ -41,7 +41,44 @@ const CASES = [
   { name: 'at 1440', width: 1148 },
   { name: 'at 1920', width: 1628 },
   { name: 'at 390', width: 358 },
+  // CI's Linux runner overflowed the 390 case by 15px where a Windows machine
+  // did not. This case runs it again with a wide fallback font (what a Linux
+  // runner without the app's font draws), so a local run sees more of what CI
+  // sees.
+  { name: 'at 390, wide fallback font', width: 358, wideFont: true },
 ] as const;
+
+/** A wide sans font, as a Linux runner without the app's font falls back to. */
+const WIDE_FONT_CSS = `*, *::before, *::after { font-family: 'DejaVu Sans', 'Liberation Sans', Verdana, sans-serif !important; }`;
+
+/** Whether something between `el` and `host` clips it sideways (the strip's frame, a truncated cell). */
+function clippedBelow(el: HTMLElement, host: HTMLElement): boolean {
+  for (let p = el.parentElement; p && p !== host; p = p.parentElement) {
+    if (getComputedStyle(p).overflowX !== 'visible') return true;
+  }
+  return false;
+}
+
+/**
+ * Every element under the host whose right edge passes the host's, unclipped
+ * on the way: what to fix when the page-width check fails, named in the
+ * failure itself (CI's overflow could not be reproduced on a Windows machine).
+ */
+function pastTheEdge(host: HTMLElement): string {
+  const edge = host.getBoundingClientRect().right;
+  const found = Array.from(host.querySelectorAll<HTMLElement>('*'))
+    .map((el) => ({ el, r: el.getBoundingClientRect() }))
+    .filter(({ el, r }) => r.width > 0 && r.right > edge + 1 && !clippedBelow(el, host))
+    .map(({ el, r }) => {
+      const s = getComputedStyle(el);
+      const data = Array.from(el.attributes)
+        .filter((a) => a.name.startsWith('data-'))
+        .map((a) => (a.value ? `${a.name}=${a.value}` : a.name))
+        .join(' ');
+      return `${el.tagName.toLowerCase()}.${String(el.className).trim().replace(/\s+/g, '.').slice(0, 80)} [${data}] left=${Math.round(r.left)} right=${Math.round(r.right)} width=${Math.round(r.width)} css-width=${s.width} min-width=${s.minWidth}`;
+    });
+  return found.length ? `past the host's right edge (${Math.round(edge)}):\n  ${found.join('\n  ')}` : 'nothing past the host';
+}
 
 const LONG = {
   en: 'Executive Committee Terms of Reference Review and Final Sign-off by the Board',
@@ -114,7 +151,18 @@ describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)'
   let fixture: ComponentFixture<Host>;
   let http: HttpTestingController;
 
-  async function render(width: number, lang: 'en' | 'ar'): Promise<HTMLElement> {
+  let wideFontStyle: HTMLStyleElement | null = null;
+  afterEach(() => {
+    wideFontStyle?.remove();
+    wideFontStyle = null;
+  });
+
+  async function render(width: number, lang: 'en' | 'ar', wideFont = false): Promise<HTMLElement> {
+    if (wideFont) {
+      wideFontStyle = document.createElement('style');
+      wideFontStyle.textContent = WIDE_FONT_CSS;
+      document.head.appendChild(wideFontStyle);
+    }
     TestBed.configureTestingModule({
       imports: [Host],
       providers: [
@@ -163,7 +211,7 @@ describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)'
   for (const lang of ['en', 'ar'] as const) {
     for (const c of CASES) {
       it(`${c.name} [${lang}]: nothing in the panel scrolls, everything inside its box, no sideways page`, async () => {
-        const host = await render(c.width, lang);
+        const host = await render(c.width, lang, 'wideFont' in c && c.wideFont);
         const panel = host.querySelector<HTMLElement>('[data-stage-panel]');
 
         // ── Non-vacuity ──
@@ -194,7 +242,7 @@ describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)'
           return (ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1;
         });
         expect(sideways.map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80))).withContext('scrolls sideways').toEqual([]);
-        expect(host.scrollWidth).withContext('the page').toBeLessThanOrEqual(c.width + 1);
+        expect(host.scrollWidth).withContext(`the page; ${pastTheEdge(host)}`).toBeLessThanOrEqual(c.width + 1);
         expect(box.right).withContext('panel inside the column').toBeLessThanOrEqual(host.getBoundingClientRect().right + 1);
 
         // ── Everything inside its box ──
