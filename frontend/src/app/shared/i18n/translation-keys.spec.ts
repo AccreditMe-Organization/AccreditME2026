@@ -209,6 +209,8 @@ describe('translation keys (ACC-78)', () => {
       'taskList.foot.matchOf': '"3 of 16 match" — a position, no noun after the total',
       'taskList.foot.all': '"Showing all 16" — no noun after the total (Arabic brackets it after "the tasks")',
       'taskActions.viewEvidence': '"View evidence (2)" — a count in brackets after the noun, nothing to agree with',
+      // ACC-255 PR 4b — the stage editor panel's heading context.
+      'workflow.editor.position': '"Stage 2 of 6" — a position, no noun after the total',
     };
 
     // Time quantities never become plural objects: they go through the layer's
