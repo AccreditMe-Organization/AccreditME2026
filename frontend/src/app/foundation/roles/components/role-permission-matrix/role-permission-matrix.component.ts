@@ -89,7 +89,10 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
  * its floor (the header row, six rows, the legend and the page header) the
  * page stops shrinking and `<main>` scrolls it, so a short
  * window still shows a usable box. The grid is at least 1200 wide (300 + six
- * of 150); wider, the six action columns share the extra equally.
+ * of 150); wider, the six action columns share the extra equally. Below
+ * Tailwind's sm (640px) the frozen column is 160 and its names wrap (Ahmad,
+ * 27 Oct), so the grid is at least 1060 and a whole action column fits beside
+ * it at 390; the sticky offset and the scroll padding read the same width.
  *
  * ## The keyboard (D9)
  *
@@ -108,7 +111,11 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
 @Component({
   selector: 'app-role-permission-matrix',
   // ACC-266 — as tall as <main>, so the page below can share out its height.
-  host: { class: 'block h-full' },
+  // The frozen column is 300, and 160 below Tailwind's sm (640px), where names
+  // wrap instead (Ahmad, 27 Oct): at 390 that leaves room for a whole action
+  // column beside it. Set here, not in styles, so the breakpoint costs the
+  // component's 4kB style budget nothing and beats no :host rule.
+  host: { class: 'block h-full [--pm-frozen-width:300px] max-sm:[--pm-frozen-width:160px]' },
   standalone: true,
   imports: [NgClass, PageHeaderComponent, PermissionSaveConfirmComponent, TranslatePipe, AmCountPipe, ButtonModule, TagModule, MessageModule],
   template: `
@@ -294,7 +301,6 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
          — the header row, six permission rows and the legend, plus the page
          header — and <main> then scrolls it. */
       :host {
-        --pm-frozen-width: 300px;
         --pm-head-height: 35px;
       }
       .pm-frame {
