@@ -1194,6 +1194,28 @@ Recommended, three PRs in this order:
   columns alone (456 px) are wider than the panel. That is ACC-254's
   allowance; the page never scrolls sideways.
 
+**Ahmad's answers to the PR 4b pre-build questions (27 Oct), recorded here as
+he asked:**
+
+- **Q1 (a), a new stage:** while adding, the panel shows no action or meaning
+  checkboxes, only "You can set what this stage allows once it's added." /
+  «يمكن تحديد ما تسمح به هذه المرحلة بعد إضافتها.». The server applies its
+  defaults on save (`onNewStage`), and the panel reopens on the new stage
+  showing what was stored. No frontend copy of the defaults.
+- **Q2 (b), a protected workflow's other fields:** the template read gains
+  `editableStageFields`, on protected templates only, read from the same set
+  `updateStage()` checks (`PROTECTED_STAGE_EDITABLE`), never a second list.
+  The panel shows every other field read-only. A backend spec tries every
+  field the update DTO takes with a changed value and requires the refusal
+  exactly where the list leaves the field out; a frontend spec renders a
+  protected template and checks those fields are read-only.
+- **Q3 (a):** `committees:edit_details` reads "Edit a committee's details and
+  request changes" / «تعديل تفاصيل اللجنة وطلب تغييرات» wherever it is defined,
+  so the permission matrix shows it too.
+- **The smaller choices, approved:** strip connectors are labels, not buttons;
+  Save keeps the panel open with focus on Save and a polite "Stage saved";
+  Cancel closes the panel and returns focus to whatever opened it.
+
 ## 18. PR 4b-be as built (26 Oct)
 
 The backend reads the stage editor needs: gaps G6, G3, G1 and G4 from §17.7
@@ -1242,3 +1264,64 @@ No migration. It deploys before PR 4b.
   - cancelled instances counted;
   - one count per stage instead of one grouped query (the db-spec and the unit
     spec).
+
+## 19. PR 4b as built (27 Oct)
+
+| # | Commit |
+|---|---|
+| 1 | `editableStageFields` on a protected template's read (Q2), with the field-by-field backend spec |
+| 2 | The `committees:edit_details` sentence (Q3) |
+| 3 | The flow strip, `am-workflow-strip` |
+| 4 | The section rows (`am-stage-checks`) and the exactly-one refusal reader (`flagExactlyOne()`) |
+| 5 | The stage editor panel, `am-stage-editor-panel`, replacing the stage form dialog |
+| 6 | The dialogs that stay dialogs held to 400 px; the action configurator compacted |
+| 7 | The panel's layout spec |
+| 8 | This section, SYSTEM-REFERENCE and CLAUDE.md |
+
+**Departures, each deliberate:**
+
+- **Refusals and the protected state are in the panel's own commit** (5), not
+  their own commits. They live inside the one component, so splitting them
+  would have meant commits that never existed as working states. Each has its
+  own specs.
+- **The strip's connectors** carry the forward transitions from a stage to
+  the NEXT stage (solid) and the RETURN transitions back from it (dashed). A
+  transition to any other stage is named on its card's exits line only. The
+  drawing's sample strip is linear too; a branching strip is Step 2.
+- **Connectors are labels, not buttons** (approved, 27 Oct), so §17.2's
+  "a connector opens the existing transition dialog" is not built:
+  transitions are still edited from each stage's Details row.
+- **The stage name in the list is the button that opens the panel** (desktop
+  and phone). Edit and the ⋯ moved into the panel's header, as drawn; the
+  list has the drawing's four columns.
+- **A protected workflow offers no Add stage, Move or Remove.** Move follows
+  `editableStageFields` (`order` is not in it); Add and Remove are refused
+  outright on a protected template, as its sentence says.
+- **The action configurator's dialog measured 470 px** (a webhook with a save
+  error), over the 420 px cap and scrolling, the finding §17.6 asked for. It
+  was compacted per ACC-120 rather than stepped: Order and Enabled on one row,
+  the headers box two rows, and the actions in the footer. It measures 322 px.
+  The transition editor's steps measure 297–387 px and Add / Edit stage task
+  261–387 px; all now assert at most 400 px.
+- **Two new components exceed the 2 kB component-style warning budget**
+  (the panel 2.79 kB, the strip 2.76 kB), as a dozen existing ones do; the
+  4 kB error budget is not reached.
+- **The plural for the strip's count** reads "3 records here now" / «3 سجلات
+  هنا الآن», rather than the drawing's "3 live", which reads ambiguously
+  without the drawing beside it.
+
+**Mutation-checked, each red:**
+
+- **Strip:** returns not told apart from other backward transitions; the
+  frame not scrolling; no live count.
+- **Panel:**
+  - a protected workflow's fields all editable;
+  - a section sent unchanged;
+  - Escape ignoring an overlay above the panel;
+  - the sections shown while adding;
+  - an inner scroll container;
+  - a clipped "Also needs".
+- **Page:** switching stages without the discard question; Cancel not
+  returning focus.
+- **Dialogs:** a taller action configurator body; the 20 px room check.
+- **Backend:** the read dropping or adding an editable field.
