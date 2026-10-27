@@ -2736,6 +2736,16 @@
         "one": "{{count}} file in the bin; none match your search or filters.",
         "other": "{{count}} files in the bin; none match your search or filters."
       }
+    },
+    "storage": {
+      "spDisconnectLocked": {
+        "one": "Can't disconnect: {{count}} file is stored in SharePoint, counting the recycle bin. AccreditMe moves it first: request a change.",
+        "other": "Can't disconnect: {{count}} files are stored in SharePoint, counting the recycle bin. AccreditMe moves them first: request a change."
+      },
+      "spLockedByFiles": {
+        "one": "Nothing changed: {{count}} file is stored in SharePoint now. AccreditMe moves it first: request a change.",
+        "other": "Nothing changed: {{count}} files are stored in SharePoint now. AccreditMe moves them first: request a change."
+      }
     }
   },
   "datePicker": {
@@ -3403,7 +3413,46 @@
         "UNKNOWN": "Microsoft refused AccreditMe’s access. Ask your Microsoft administrator to check the app and its access to the library."
       },
       "expiring": "The client secret expires on {{date}}. Create a new one in Microsoft and replace it here.",
-      "expired": "The client secret expired on {{date}}. Create a new one in Microsoft and replace it here."
+      "expired": "The client secret expired on {{date}}. Create a new one in Microsoft and replace it here.",
+      "prepare": "Before you start, your organisation's Microsoft administrator registers an app with access to the site, and gives you the values below.",
+      "tenantHint": "The Directory (tenant) ID from the app's Overview page, or your organisation's Microsoft domain",
+      "tenantRequired": "Enter the tenant ID or domain.",
+      "tenantInvalid": "A tenant ID (five groups of letters and digits, joined by hyphens) or a domain.",
+      "clientIdHint": "The Application (client) ID, from the same page",
+      "clientIdRequired": "Enter the client ID.",
+      "clientIdInvalid": "The Application (client) ID: five groups of letters and digits, joined by hyphens.",
+      "secretHint": "The secret's Value, not its Secret ID. Never shown again after saving",
+      "secretRequired": "Enter the client secret.",
+      "secretShort": "At least 8 characters.",
+      "expiryOptional": "Secret expires on · optional",
+      "expiryHint": "AccreditMe reminds you 30 days before",
+      "expiryPlaceholder": "Choose a date",
+      "expiryChoose": "Choose the date the secret expires",
+      "expiryClear": "Clear",
+      "expiryInvalid": "Choose a date.",
+      "siteUrlHint": "The site's address, such as https://….sharepoint.com/sites/Quality",
+      "siteUrlRequired": "Enter the site's address.",
+      "siteUrlInvalid": "A SharePoint site address: https:// on sharepoint.com, then /sites/ or /teams/ and the site's name.",
+      "libraryHint": "Exactly as SharePoint shows it",
+      "libraryRequired": "Enter the library name.",
+      "withdrawnTest": "Fixed it in Microsoft? Test the connection below: a pass ends this warning at once.",
+      "newClientHint": "The new app's Application (client) ID. That app's secret is needed too",
+      "newSecretHint": "The saved secret stays in use until you save",
+      "newExpiryOptional": "New secret expires on · optional",
+      "changeClient": "Change client ID",
+      "changeExpiry": "Change date",
+      "expiryNoTest": "No test needed: the date is a reminder only",
+      "saveSecret": "Save new secret",
+      "saveClient": "Save new app",
+      "saveExpiry": "Save date",
+      "saveFailed": "Couldn't save. The saved credentials are still in use.",
+      "changeByPlatform": "These credentials reach a different tenant, site or library from the confirmed one, so nothing was saved. Use an app with access to “{{library}}”, or ask AccreditMe to move your files.",
+      "disconnectOpen": "Disconnect SharePoint…",
+      "disconnectAllowed": "No files are stored in SharePoint. Disconnecting blocks uploads until a location is confirmed again.",
+      "disconnectHeader": "Disconnect SharePoint?",
+      "disconnectMessage": "Uploads are blocked for everyone until a location is confirmed again. The app and its access stay in your Microsoft tenant: your Microsoft administrator removes them there.",
+      "disconnect": "Disconnect",
+      "disconnectFailed": "Couldn't disconnect. Nothing changed."
     },
     "usage": {
       "title": "Usage",
@@ -3466,7 +3515,10 @@
         "write": "Write a small test file",
         "read": "Read it back",
         "verify": "Check it's the same file",
-        "delete": "Delete it"
+        "delete": "Delete it",
+        "token": "Sign in to Microsoft",
+        "site": "Find the site",
+        "library": "Find the library"
       },
       "state": {
         "done": "passed",
@@ -3480,7 +3532,10 @@
         "read": "Wrote the file but couldn't read it back",
         "verify": "The file read back didn't match",
         "delete": "Couldn't delete the test file",
-        "generic": "The test didn't pass"
+        "generic": "The test didn't pass",
+        "token": "Couldn't sign in to Microsoft",
+        "site": "Couldn't find the site",
+        "library": "Couldn't find the library"
       },
       "fail": {
         "MINIO": {
@@ -3497,8 +3552,26 @@
           "verify": "The file read back wasn't the file written. Check the folder's drive or share.",
           "delete": "The test file couldn't be deleted. AccreditMe must be able to delete files when the recycle bin empties. A small test file may be left in the folder."
         },
-        "generic": "This step didn't pass."
-      }
+        "generic": "This step didn't pass.",
+        "SHAREPOINT": {
+          "SHAREPOINT_TENANT_NOT_FOUND": "Microsoft doesn't know this tenant. Copy the Directory (tenant) ID from the app's Overview page in Microsoft Entra, or use your organisation's primary Microsoft domain.",
+          "SHAREPOINT_CLIENT_NOT_FOUND": "Microsoft can't find an app with this client ID in that tenant. Copy the Application (client) ID from the app's Overview page, and check the app is registered in the same tenant.",
+          "SHAREPOINT_SECRET_INVALID": "Microsoft refused the client secret: it is wrong or has expired. Copy the secret's Value, not its Secret ID, or create a new secret under Certificates & secrets.",
+          "SHAREPOINT_APP_DISABLED": "The app is disabled in your Microsoft tenant. Ask your Microsoft administrator to enable it under Enterprise applications.",
+          "SHAREPOINT_SITE_URL_INVALID": "This isn't a SharePoint site address. Use the site's address: https:// on sharepoint.com, then /sites/ or /teams/ and the site's name.",
+          "SHAREPOINT_SITE_NOT_FOUND": "The app can't find this site. Check the site URL, and ask your Microsoft administrator whether the app's permission was approved and it was given access to the library.",
+          "SHAREPOINT_LIBRARY_NOT_FOUND": "The app can't find this library on the site. Check the library name exactly as SharePoint shows it, and that the app was given access to it.",
+          "SHAREPOINT_NO_WRITE_ACCESS": "The app can see the library but can't add files. Ask your Microsoft administrator to give it write access to the library.",
+          "verify": "The file read back wasn't the file written. Ask your Microsoft administrator whether a rule on the library changes new files.",
+          "delete": "The test file couldn't be deleted. AccreditMe must be able to delete files when the recycle bin empties, which write access allows. A small test file may be left in the library.",
+          "STORAGE_UNAVAILABLE": "Microsoft didn't answer in time, or answered with an error. This is usually temporary: try again in a few minutes."
+        }
+      },
+      "idleNoteSharePoint": "Signs in as your app, finds the site and library, then writes a small test file, reads it back and deletes it.",
+      "runningNoteSharePoint": "Each step can take up to a minute while Microsoft answers.",
+      "timedOut": "The test took too long and was stopped. Microsoft may be busy: try again in a few minutes.",
+      "spCredentialsPassed": "✓ New credentials work · tested {{time}}",
+      "found": "Found"
     },
     "save": {
       "blocked": "Uploads are blocked until a location is confirmed",
@@ -3511,14 +3584,17 @@
       "confirm": {
         "S3": "Confirm AccreditMe cloud…",
         "MINIO": "Confirm MinIO…",
-        "LOCAL_FILESYSTEM": "Confirm local folder…"
-      }
+        "LOCAL_FILESYSTEM": "Confirm local folder…",
+        "SHAREPOINT": "Confirm SharePoint…"
+      },
+      "spTested": "Tested with the new credentials, same site and library"
     },
     "confirm": {
       "title": {
         "S3": "Confirm AccreditMe cloud?",
         "MINIO": "Confirm MinIO?",
-        "LOCAL_FILESYSTEM": "Confirm the local folder?"
+        "LOCAL_FILESYSTEM": "Confirm the local folder?",
+        "SHAREPOINT": "Confirm SharePoint?"
       },
       "context": "File storage · first-time setup",
       "body": "Uploads open for everyone as soon as you confirm. After this, only AccreditMe can change where files are stored.",
