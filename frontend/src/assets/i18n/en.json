@@ -677,6 +677,11 @@
     "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
   },
   "workflow": {
+    "strip": {
+      "label": "Stages in order",
+      "forward": "Moves the record on",
+      "back": "Sends the record back"
+    },
     "stageList": {
       "colNumber": "#",
       "colStage": "Stage",
@@ -2533,6 +2538,10 @@
       }
     },
     "workflow": {
+      "liveInStage": {
+        "one": "{{count}} record here now",
+        "other": "{{count}} records here now"
+      },
       "tasksOnEntry": {
         "one": "{{count}} task on entry",
         "other": "{{count}} tasks on entry"

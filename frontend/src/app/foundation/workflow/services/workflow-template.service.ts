@@ -11,6 +11,12 @@ export interface WorkflowTemplateDto {
   objectType: string;
   isDefault: boolean;
   isActive: boolean;
+  // ACC-255 PR 4b-be (G6) — whether AccreditMe keeps this template's shape
+  // fixed. The server's own rule (PROTECTED_TEMPLATES), on every template read.
+  isProtected?: boolean;
+  // ACC-255 PR 4b (Q2) — on a protected template only: the stage fields its
+  // stages may still change, from the set the server's update checks.
+  editableStageFields?: string[];
   createdAt: string;
   updatedAt: string;
   stages?: WorkflowStageDto[];
@@ -29,6 +35,9 @@ export interface WorkflowTemplateDto {
 export interface WorkflowRecordActionDto {
   key: string;
   labelKey: string;
+  // ACC-255 PR 4b-be (G1) — the permission the action's own endpoint checks,
+  // which a person needs as well as the stage's allowance ("Also needs").
+  permissionKey?: string;
 }
 
 export interface WorkflowStageFlagDto {
@@ -72,6 +81,9 @@ export interface WorkflowStageDto {
   // and the longest one's due time in working hours (null with none).
   taskDefinitionCount?: number;
   longestTaskHours?: number | null;
+  // ACC-255 PR 4b-be (G4) — on a template read: how many of the organisation's
+  // records stand in this stage now (final stages count, cancelled ones don't).
+  liveCount?: number;
   // ACC-255 — the record actions this stage allows (keys, registry order) and
   // what it means (flag keys).
   actions?: string[];
@@ -236,6 +248,10 @@ export interface CreateWorkflowStageDto {
   assigneePositionId?: string | null;
   assigneeOrgUnitId?: string | null;
   escalationConfig?: Record<string, unknown>[];
+  // ACC-255 — the record actions the stage allows and the meanings it carries,
+  // as registry keys. Sent only when the stage editor changed them.
+  actions?: string[];
+  flags?: string[];
 }
 
 export type UpdateWorkflowStageDto = Partial<CreateWorkflowStageDto>;

@@ -15,6 +15,7 @@ import {
 } from '../../services/workflow-template.service';
 import { WorkflowStageFormComponent } from '../workflow-stage-form/workflow-stage-form.component';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
+import { WorkflowStripComponent } from '../workflow-strip/workflow-strip.component';
 import { StageTaskListComponent, StageTaskSummary } from '../stage-task-list/stage-task-list.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -59,6 +60,7 @@ const NUMBER_TRACK = '32px';
     WorkflowStageFormComponent,
     DataListComponent,
     WorkflowTransitionEditorComponent,
+    WorkflowStripComponent,
     StageTaskListComponent,
     EditDialogComponent, RowMenuComponent],
   template: `
@@ -85,6 +87,17 @@ const NUMBER_TRACK = '32px';
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>
+      }
+
+      <!-- ACC-255 PR 4b — the flow strip (Templates 6b), generated from the
+           stages and transitions, with how many records stand in each stage. -->
+      @if (stages().length) {
+        <am-workflow-strip
+          [stages]="stages()"
+          [selectedId]="editingStage()?.id ?? null"
+          [interactive]="canManage()"
+          (opened)="openFromStrip($event.stageId)"
+        />
       }
 
       <!-- ACC-78 - page mode, and the hardest of the three proving tables:
@@ -543,6 +556,12 @@ export class WorkflowStageListComponent implements OnInit {
   openAdd(): void {
     this.editingStage.set(null);
     this.showFormDialog.set(true);
+  }
+
+  /** A strip card opens its stage. */
+  openFromStrip(stageId: string): void {
+    const stage = this.stages().find((s) => s.id === stageId);
+    if (stage) this.openEdit(stage);
   }
 
   openEdit(stage: WorkflowStageDto): void {

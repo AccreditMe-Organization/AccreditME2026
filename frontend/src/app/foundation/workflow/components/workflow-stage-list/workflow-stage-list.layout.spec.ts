@@ -262,6 +262,9 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
           // The transition table's own frame may scroll on a phone (ACC-254's
           // allowance); at desktop widths it must not either.
           if (c.width < 400 && el.closest('[data-tr-scroll]')) return false;
+          // ACC-255 PR 4b — the flow strip scrolls sideways inside its own frame
+          // at any width (Templates 6b); its own spec holds the page to that.
+          if (el.hasAttribute('data-strip-frame')) return false;
           return (ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1;
         });
         expect(sideways.map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80))).withContext('scrolls sideways').toEqual([]);
