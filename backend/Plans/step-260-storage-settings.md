@@ -857,3 +857,155 @@ with one skipped 94 / 104, Purge 127 / 140, all under the 420 cap.
 - The guard aborted 0 other writes; no NG0 error in the console.
 - Non-GETs: sign-in and refresh, 2 (expected); everything else reaching the
   server, 0.
+
+### PR C as built (CC-157, 27 Oct)
+
+Branch `feature/ACC-260-sharepoint`, from `dev` at `dbd0ce2` (#226). Frontend,
+one backend change (D5), this note and three corrections in SYSTEM-REFERENCE
+§16. No migration. The last PR of ACC-260.
+
+**Built, by decision:**
+- **D1, the six fields in MinIO's layout.** SharePoint is selectable before
+  Confirm. Tenant ID and Client ID side by side; the client secret
+  (`am-secret-field`, write-only) beside the optional expiry; then Site URL and
+  Library name. Validators are the server's `SharePointSettingsDto` and
+  `parseSiteUrl()`: a GUID or a domain; a GUID; 8–512 characters; https on
+  `*.sharepoint.com` (or `-my`), the root site or `/sites/` or `/teams/` and a
+  name, no port or sign-in; not blank; a real calendar day. Test is never
+  disabled (rule 5.2): pressed with invalid fields it shows every error and
+  sends nothing. A secret is sent only when typed, and a SharePoint draft saved
+  through the API is picked up with its stored secret making typing optional.
+- **The test box** shows seven rows: Check the settings, Sign in to Microsoft,
+  Find the site, Find the library, Write, Read back, Delete. The API's `verify`
+  is inside Read back. Every code has its own sentence saying what to fix in
+  Microsoft, in EN and AR:
+  - `SHAREPOINT_TENANT_NOT_FOUND`, `_CLIENT_NOT_FOUND`, `_SECRET_INVALID`,
+    `_APP_DISABLED`, `_SITE_URL_INVALID`, `_SITE_NOT_FOUND`,
+    `_LIBRARY_NOT_FOUND` and `_NO_WRITE_ACCESS`;
+  - `STORAGE_UNAVAILABLE` (Microsoft failed or a step ran out of time), with
+    its own sentences at verify and delete;
+  - a gateway timeout (408 / 504) gets its own head line.
+
+  On a pass the box shows "Found: {site} › {library}" (left to right), and the
+  confirm dialog's Location is that line. Confirm sends the expiry date too.
+- **D3, the expiry date and the 30-day line.** The date is picked from the
+  product's calendar (`am-inline-calendar`), opening below the field on the
+  page, and shown left to right. It is not in the test body, so picking one
+  never makes a pass stale. The 30-day line (PR A) shows from 30 days before,
+  and the expired line after the date.
+- **After Confirm** (`StorageSharePointManageComponent`):
+  - the tenant, site and library are locked;
+  - Replace secret sends only the secret;
+  - Change client ID sends the new ID AND that app's secret, since a secret
+    belongs to one app;
+  - each is tested first, and Save opens only on a pass for exactly what was
+    typed;
+  - `STORAGE_CHANGE_BY_PLATFORM` has its own sentence;
+  - Change date alone sends only the date, with no test;
+  - Test connection tests the stored settings (body `{ provider }` only).
+- **D5.** A passing stored test while access is withdrawn reads the page again,
+  so the banner goes. The banner adds "Fixed it in Microsoft? Test the
+  connection below: a pass ends this warning at once."
+- **Backend (G5, D5).** `StorageSettingsService.test()` calls
+  `SharePointAccessService.markRestored()` only when all of these hold:
+  - the test passed and ran on SharePoint;
+  - the organisation is confirmed on SharePoint with access withdrawn;
+  - the body carried no SharePoint value (an omitted or `''` field keeps its
+    stored value, so it does not count);
+  - the test reached the tenant, site, list and drive Confirm recorded.
+
+  The comment on `test()` names this one exception. The existing SharePoint
+  specs are unit specs against a fake Microsoft, so no db-spec was added; the
+  write itself is `markRestored()`'s existing guarded `updateMany`.
+- **D2, Disconnect, for SharePoint only.**
+  - It goes through `AmConfirmService`: destructive, "Disconnect SharePoint?",
+    with an accept labelled "Disconnect".
+  - It is disabled with the reason and the count while `disconnectAllowed` is
+    false.
+  - A 409 `STORAGE_LOCKED_BY_FILES` says the response's `filesStored` and reads
+    the page again.
+  - A success returns to unconfirmed AccreditMe cloud.
+  - The other locations have none.
+- **D12.** The customer guide is not published, so there is no link. The setup
+  body has one sentence ("Before you start, your organisation's Microsoft
+  administrator registers an app with access to the site, and gives you the
+  values below."), and a code note says the link comes once the guide is
+  published.
+- **Arabic.** The GUID, address and secret inputs, the client ID, the found
+  line, the confirm Location and the date are left to right. The strip's site ›
+  library is isolated with U+2066 … U+2069.
+
+**Built differently from the brief, or decided here:**
+- **Write, Read back and Delete keep MinIO's labels** ("Write a small test
+  file", "Read it back", "Delete it"), so the page has one vocabulary for a
+  test.
+- **Check the settings is shown as the first row.** A site address refused at
+  configure (`SHAREPOINT_SITE_URL_INVALID`) needs a row to fail on.
+- **The SharePoint fixture is made up.** It was `alnakheel.onmicrosoft.com`.
+  The tenant is now `alnakheel.example.test`, with made-up GUIDs. A site URL
+  must be on `sharepoint.com` to pass the rules, so its label is made up
+  (`example-test`); nothing in a spec or the browser reaches Microsoft.
+- **SYSTEM-REFERENCE §16 was corrected in three places**, although no shared
+  pattern was added:
+  - `test()` "writes nothing";
+  - the probe as the only thing that clears the flag;
+  - "SharePoint is set up in PR C".
+
+  §16 also gained a PR C paragraph. Each statement had become untrue.
+
+**Layout spec** (EN and AR at 988, 358 and 328, ten SharePoint states): nothing
+sideways and nothing past the frame. The states are:
+- setup: a pass with a long site › library, refused at sign-in, the calendar
+  open;
+- confirmed: healthy, expiring, withdrawn, Disconnect locked, replacing the
+  secret, changing the client ID with errors, and a long site and library.
+
+The confirm dialog's body at desktop width is 94 / 104 (the cap is 420), with a
+long site › library cut on one line.
+
+**Tests:**
+- **Backend:** 12 new in `storage-settings.sharepoint.spec.ts`. They clear for
+  three bodies with no SharePoint value, and do not clear for:
+  - three typed candidates;
+  - a fail at sign-in, and a fail at write in the confirmed library;
+  - another provider;
+  - an organisation confirmed elsewhere or not confirmed;
+  - a different library;
+  - access never withdrawn.
+
+  3,926 in all, every one passing; tenant isolation 242.
+- **Frontend:** 120 new, 3,192 in all, every one passing.
+  - `storage-sharepoint.spec.ts`: the rules, every step and code, the bodies
+    and the validators.
+  - `storage-settings.sharepoint.spec.ts`: every fixture through the page.
+  - `storage-sharepoint.layout.spec.ts`: 62.
+
+  Seven PR A / B assertions moved with the behaviour (SharePoint selectable,
+  the strip's isolates, the secret drawn by `am-secret-field`).
+
+**Mutation checks:** 12 backend and 39 frontend.
+- Backend: 11 red. The survivor (dropping the "ran on SharePoint" condition)
+  is equivalent: a non-SharePoint test never returns a SharePoint location, so
+  the location condition already refuses it.
+- Frontend: all 39 red. One survived at first (the client secret back among
+  the locked boxes), and its test was strengthened before re-running.
+
+**Browser check** (local, as Hessa, EN and AR at 1280, plus 390 for setup and
+the confirmed panel):
+- Every storage write was fulfilled from a literal, 18 in all, and never
+  continued. The guard aborted 0.
+- Walked through:
+  - setup with the date picked from the calendar;
+  - a test refused `SHAREPOINT_SECRET_INVALID`, then a pass with the found
+    line;
+  - Confirm (body 94 / 104);
+  - Disconnect locked;
+  - Replace secret, refused `STORAGE_CHANGE_BY_PLATFORM` and then saved;
+  - the 30-day line;
+  - withdrawn, then ended by a passing stored test;
+  - Disconnect refused 409, then allowed;
+  - nothing sideways at 390.
+- Found and fixed in the browser: the expiry date read "Oct 2026 14" in Arabic.
+- Console errors: 0.
+- Non-GETs: sign-in and refresh, 2 (expected); everything else reaching the
+  server, 0.
