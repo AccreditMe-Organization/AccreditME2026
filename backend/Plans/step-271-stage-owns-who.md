@@ -413,6 +413,54 @@ with the tenant admin. Nothing in flight is re-decided: there are no open
 stage tasks and no approval rows (measured). A backfill that finds either
 reports it and refuses (Q8).
 
+
+### 6.4 The shared dev database before PR 2 (measured 28 Oct, read-only, counts only)
+
+Measured from `D:\Accredit-me-2\backend` with a READ ONLY transaction,
+after PR 1 deployed (`a580a00`). **The plan's "60 stages" was per
+organisation; PR 1's 120 is the two together.** The platform organisation has
+no workflows. Both organisations are identical, so each backfill's expected
+counts are these numbers per organisation, and anything else refuses.
+
+| | al-nakheel | al-manara |
+|---|---|---|
+| Templates | 9 | 9 |
+| Stages | 60 | 60 |
+| — ROLE | 46 | 46 |
+| — SELF (Creator) | 12 | 12 |
+| — ORG_UNIT_HEAD | 2 (Document request, Change request) | 2 |
+| — SPECIFIC_USER, POSITION_FIXED, COMMITTEE, ROUND_ROBIN | 0 | 0 |
+| — with a committee, user or position set | 0 | 0 |
+| SINGLE / PARALLEL ALL | 56 / 4 | 56 / 4 |
+| PARALLEL MAJORITY or ANY, SEQUENTIAL, COMMITTEE | 0 | 0 |
+| Multi-person stages: forward moves / already on the approval path | 4 / 4 | 4 / 4 |
+| Transitions | 75 | 75 |
+| — ROLE_BASED (all with a permission) | 65 | 65 |
+| — ANY_AUTHENTICATED | 2 | 2 |
+| — SYSTEM_AUTOMATIC | 8 | 8 |
+| Open records (all COMMITTEE, on ROLE stages, SINGLE) | 5 | 3 |
+| Open stage entries (incl. final stages of completed records) | 7 | 3 |
+| Open stage tasks | 0 | 0 |
+| Approval rows | 0 | 0 |
+| ACTIVE TENANT_ADMIN holders / INVITED | 1 / 0 | 1 / 0 |
+| Stage assignees, converted stages, movers | 0 | 0 |
+
+**What each backfill therefore expects, per organisation:**
+
+- **Stages** (`backfill-acc271-stage-assignees`): 60 stages converted; 46
+  starting assignments (the ROLE stages), 12 CREATOR entries, 2 ORG_UNIT_HEAD
+  entries for the record's unit; 56 Any one of them and 4 All of them; 0
+  approval-path marks (the 4 are already marked); 0 approvals reset and 0
+  tasks cancelled.
+- **Transitions** (`backfill-acc271-transition-movers`): 75 marked, 8 APP and
+  67 PERSON; 65 of the PERSON moves carry a permission, listed by key.
+
+**Finding against PR 1's note:** the seeded committee moves are not on the
+approval path, but that does not matter: every committee stage is SINGLE and
+becomes Any one of them, which never reads the approval path. The rule is
+still enforced in the seed spec and the backfill, for the four multi-person
+stages and any a tenant adds.
+
 ---
 
 ## 7. The three closed-task notices (in-app only)
