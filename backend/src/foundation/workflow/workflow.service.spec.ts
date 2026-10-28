@@ -3796,6 +3796,63 @@ describe('WorkflowService', () => {
       });
     });
 
+    // ACC-271 PR 2 — what the record page's buttons show comes from here.
+    describe('getMovesForViewer', () => {
+      const moves = [
+        { id: 'move-approve', requiredPermission: 'committees:approve', triggerCondition: 'ROLE_BASED', mover: null },
+        { id: 'move-app', requiredPermission: null, triggerCondition: 'SYSTEM_AUTOMATIC', mover: null },
+        { id: 'move-open', requiredPermission: null, triggerCondition: 'ANY_AUTHENTICATED', mover: 'PERSON' },
+      ];
+      function arrangeMoves(stage: Record<string, unknown>) {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(stage);
+        mockPrisma.workflowTransition.findMany.mockResolvedValue(moves);
+      }
+      const ask = (permissions: string[] = []) => service.getMovesForViewer('instance-1', ORG_A, permissions, ACTOR);
+
+      it("a converted stage: a pool member gets the person's moves, whatever they require, and never the app's", async () => {
+        arrangeMoves(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+
+        expect(await ask([])).toEqual({ transitionIds: ['move-approve', 'move-open'] });
+      });
+
+      it('a converted stage: someone outside the pool gets nothing, whatever permissions they hold', async () => {
+        arrangeMoves(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf(['user-nora']));
+
+        expect(await ask(['committees:approve'])).toEqual({ transitionIds: [] });
+      });
+
+      it('an unconverted stage: today\'s rule, unchanged (no permission, or one held)', async () => {
+        arrangeMoves(SINGLE_STAGE);
+
+        expect(await ask([])).toEqual({ transitionIds: ['move-app', 'move-open'] });
+        expect(await ask(['committees:approve'])).toEqual({ transitionIds: ['move-approve', 'move-app', 'move-open'] });
+        expect(mockStagePool.resolve).not.toHaveBeenCalled();
+      });
+
+      it("reads the stage and its moves in the caller's organisation", async () => {
+        arrangeMoves(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+
+        await ask();
+
+        expect(mockPrisma.workflowStage.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: 'stage-pool', workflowTemplate: { organizationId: ORG_A } } }),
+        );
+        expect(mockPrisma.workflowTransition.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { fromStageId: 'stage-pool', fromStage: { workflowTemplate: { organizationId: ORG_A } } } }),
+        );
+      });
+
+      it('a record that is missing, or another organisation\'s, is the same 404', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(null);
+
+        await expect(ask()).rejects.toThrow(NotFoundException);
+      });
+    });
+
     describe('the move the app runs (the marker)', () => {
       it('triggerSystemTransition looks for mover APP, or SYSTEM_AUTOMATIC with no mover', async () => {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);

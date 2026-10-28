@@ -1,6 +1,7 @@
 // ACC-22 (extension) — proves the three behaviors this reusable component
-// exists for: (1) a transition button only renders when the caller holds
-// its requiredPermission, (2) clicking a button calls the real
+// exists for: (1) a transition button renders only when the server says the
+// caller may press it (ACC-271 PR 2; it was the caller's requiredPermission,
+// read on the client), (2) clicking a button calls the real
 // triggerTransition() endpoint with the correct payload, (3) a successful
 // transition emits the updated instance, which is what drives any
 // consumer's displayed-stage refresh (CommitteeDetailComponent.
@@ -14,7 +15,6 @@ import { By } from '@angular/platform-browser';
 import { environment } from '../../../../../environments/environment';
 import { WorkflowTransitionActionsComponent } from './workflow-transition-actions.component';
 import { WorkflowInstanceDto } from '../../services/workflow.service';
-import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { provideRouter } from '@angular/router';
 import { ConfirmationService } from 'primeng/api';
 import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
@@ -107,7 +107,9 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
   let component: WorkflowTransitionActionsComponent;
   let httpMock: HttpTestingController;
 
-  function setup(hasPermission: boolean): void {
+  /** `pressable`: the transition ids GET /moves answers with. */
+  function setup(pressable: boolean | string[]): void {
+    const transitionIds = pressable === true ? [TRANSITION.id] : pressable === false ? [] : pressable;
     TestBed.configureTestingModule({
       imports: [WorkflowTransitionActionsComponent],
       providers: [
@@ -117,10 +119,6 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
         // ACC-208 — the "Can't move yet" dialog: links, and the dialog shell.
         provideRouter([]),
         ConfirmationService,
-        {
-          provide: NavigationAccessService,
-          useValue: { hasPermission: jasmine.createSpy('hasPermission').and.returnValue(hasPermission) },
-        },
       ],
     });
 
@@ -131,12 +129,46 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
     fixture.detectChanges();
 
     httpMock.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(TEMPLATE_RESPONSE);
+    httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/moves`).flush({ transitionIds });
     fixture.detectChanges();
   }
 
   afterEach(() => httpMock.verify());
 
-  it('does not render a transition button when the caller lacks the required permission', () => {
+  // ACC-271 PR 2 — on a converted stage the move's requiredPermission is not
+  // read: whoever works the stage may press it. The screen takes the server's
+  // answer and keeps no copy of either rule.
+  describe('takes what the server says the caller may press (ACC-271)', () => {
+    it('shows a move the server allows, though the person holds none of its requiredPermission', () => {
+      // TRANSITION requires committees:manage; nothing here grants it.
+      setup([TRANSITION.id]);
+
+      expect(component.availableTransitions().map((t) => t.id)).toEqual([TRANSITION.id]);
+      expect(fixture.debugElement.queryAll(By.css('p-button')).length).toBe(1);
+    });
+
+    it('shows nothing the server leaves out, whatever the move requires', () => {
+      setup([]);
+
+      expect(component.availableTransitions()).toEqual([]);
+      expect(fixture.debugElement.queryAll(By.css('p-button')).length).toBe(0);
+    });
+
+    it('asks the server again when the record moves, and shows nothing until it answers', () => {
+      setup([TRANSITION.id]);
+
+      fixture.componentRef.setInput('instance', { ...INSTANCE, currentStageId: 'stage-terms-review', updatedAt: '2026-01-02T00:00:00.000Z' });
+      fixture.detectChanges();
+
+      expect(component.availableTransitions()).toEqual([]);
+      httpMock.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(TEMPLATE_RESPONSE);
+      httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/moves`).flush({ transitionIds: [] });
+      fixture.detectChanges();
+      expect(fixture.debugElement.queryAll(By.css('p-button')).length).toBe(0);
+    });
+  });
+
+  it('does not render a transition button when the server does not offer it', () => {
     setup(false);
 
     expect(component.availableTransitions().length).toBe(0);
@@ -144,7 +176,7 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
     expect(buttons.length).toBe(0);
   });
 
-  it("renders a transition button using the transition's own labelEn when the caller holds the required permission", () => {
+  it("renders a transition button using the transition's own labelEn when the server offers it", () => {
     setup(true);
 
     expect(component.availableTransitions().length).toBe(1);
