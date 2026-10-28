@@ -38,6 +38,8 @@ import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
 import { assertTransitionPreconditions } from './transition-preconditions';
+import { StagePool, StagePoolRequest, StagePoolService } from './stage-pool.service';
+import { APP_MOVER_WHERE, isConvertedStage, transitionMover } from './workflow-pool';
 
 // The client inside this.prisma.$transaction(async (tx) => …) — read off
 // PrismaService, whose extended client has its own transaction type.
@@ -111,6 +113,8 @@ export class WorkflowService {
     @InjectQueue('workflow-actions') private readonly workflowActionsQueue: Queue,
     // ACC-190 — the tasks a stage creates when a record enters it.
     private readonly stageTaskDefinitions: StageTaskDefinitionService,
+    // ACC-271 — who works a converted stage (its assignee entries).
+    private readonly stagePool: StagePoolService,
   ) {}
 
   // ── Instance lifecycle ───────────────────────────────────────────────────────
@@ -170,7 +174,7 @@ export class WorkflowService {
       enteredAt,
       organizationId,
     );
-    const quorumCount = await this.quorumSnapshot(initialStage, organizationId);
+    const quorumCount = await this.quorumSnapshot(initialStage, organizationId, { objectType: template.objectType, objectId });
     return { template, initialStage, enteredAt, slaDueAt, entryTasks, quorumCount };
   }
 
@@ -529,26 +533,40 @@ export class WorkflowService {
       throw new NotFoundException("This transition is not available from the instance's current stage");
     }
 
-    if (transition.requiredPermission && !userPermissions.includes(transition.requiredPermission)) {
-      throw new ForbiddenException(`Missing required permission: ${transition.requiredPermission}`);
-    }
+    const fromStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.fromStageId } });
 
-    if (transition.triggerCondition === 'SYSTEM_AUTOMATIC') {
-      throw new ForbiddenException('This transition can only be fired by a system process');
-    }
-    if (transition.triggerCondition === 'SPECIFIC_USER' && transition.triggerUserId !== actorId) {
-      throw new ForbiddenException('Only the specifically configured user may trigger this transition');
-    }
-    if (transition.triggerCondition === 'ROLE_BASED' && transition.triggerRoleId) {
-      const holdsRole = await this.prisma.userRole.findFirst({
-        where: { userId: actorId, roleId: transition.triggerRoleId },
-      });
-      if (!holdsRole) {
-        throw new ForbiddenException('You do not hold the role required to trigger this transition');
+    // ACC-271 — a converted stage says who may move the record out of it: its
+    // pool (decision 1). The transition's requiredPermission, triggerCondition,
+    // triggerRoleId and triggerUserId are not read for it. An unconverted stage
+    // keeps every check below, unchanged (plan §4.6).
+    let pool: StagePool | undefined;
+    if (fromStage && isConvertedStage(fromStage)) {
+      if (transitionMover(transition) !== 'PERSON') {
+        throw new ForbiddenException('This transition can only be fired by a system process');
+      }
+      pool = await this.stagePool.resolve(organizationId, fromStage.id, instance);
+      this.assertInStagePool(pool, fromStage, actorId);
+    } else {
+      if (transition.requiredPermission && !userPermissions.includes(transition.requiredPermission)) {
+        throw new ForbiddenException(`Missing required permission: ${transition.requiredPermission}`);
+      }
+
+      if (transition.triggerCondition === 'SYSTEM_AUTOMATIC') {
+        throw new ForbiddenException('This transition can only be fired by a system process');
+      }
+      if (transition.triggerCondition === 'SPECIFIC_USER' && transition.triggerUserId !== actorId) {
+        throw new ForbiddenException('Only the specifically configured user may trigger this transition');
+      }
+      if (transition.triggerCondition === 'ROLE_BASED' && transition.triggerRoleId) {
+        const holdsRole = await this.prisma.userRole.findFirst({
+          where: { userId: actorId, roleId: transition.triggerRoleId },
+        });
+        if (!holdsRole) {
+          throw new ForbiddenException('You do not hold the role required to trigger this transition');
+        }
       }
     }
 
-    const fromStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.fromStageId } });
     if (!fromStage) throw new NotFoundException('Current stage not found');
 
     // ASSIGNEE_POOL (ACC-28) — placed after fromStage resolves, unlike the
@@ -560,9 +578,9 @@ export class WorkflowService {
     // resolveAssigneeRaw() — fixed per ACC-40 Section 2.6.1: an
     // out-of-office holder's acting user must be able to trigger this
     // transition too, same as they'd receive the task/notification for it.
-    if (transition.triggerCondition === 'ASSIGNEE_POOL') {
-      const pool = await this.resolveAssignee(fromStage, instance, organizationId);
-      if (!pool.includes(actorId)) {
+    if (!pool && transition.triggerCondition === 'ASSIGNEE_POOL') {
+      const assigneePool = await this.resolveAssignee(fromStage, instance, organizationId);
+      if (!assigneePool.includes(actorId)) {
         throw new ForbiddenException('You are not in the resolved assignee pool for this stage');
       }
     }
@@ -584,19 +602,23 @@ export class WorkflowService {
     // the authoritative one.
     if (transition.kind === 'ADVANCE') {
       const fires =
-        fromStage.approvalMode === 'SINGLE' ||
+        this.decidesAlone(fromStage) ||
         !transition.isApprovalPath ||
-        (await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId, instance, {
-          approverId: actorId,
-          approved: true,
-        }));
+        (await this.isApprovalThresholdMet(
+          fromStage,
+          currentInstanceStage,
+          organizationId,
+          instance,
+          { approverId: actorId, approved: true },
+          pool,
+        ));
       if (fires) await this.assertMandatoryTasksDone(this.prisma, currentInstanceStage.id, organizationId);
       // ACC-238 — the record's own preconditions (a committee's quorum), early
       // for the same reason; checked again under the lock.
       if (fires) await this.assertPreconditions(this.prisma, instance, fromStage, transition.kind, organizationId);
     }
 
-    if (fromStage.approvalMode === 'SINGLE') {
+    if (this.decidesAlone(fromStage)) {
       return this.performTransition(
         instance,
         currentInstanceStage,
@@ -606,6 +628,7 @@ export class WorkflowService {
         dto.comment,
         'APPROVED',
         fromStage,
+        { pool },
       );
     }
 
@@ -616,7 +639,7 @@ export class WorkflowService {
     // ACC-40 Section 2.6.3 — stamped on both branches (create AND update)
     // so a re-vote by the same actor always reflects their CURRENT
     // delegation status, never a stale first-vote snapshot.
-    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId);
+    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId, pool);
 
     await this.prisma.workflowApproval.upsert({
       where: {
@@ -657,10 +680,11 @@ export class WorkflowService {
         dto.comment,
         'REJECTED',
         fromStage,
+        { pool },
       );
     }
 
-    const satisfied = await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId, instance);
+    const satisfied = await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId, instance, undefined, pool);
     if (!satisfied) {
       // Threshold not yet met — approval recorded, instance unchanged.
       return this.mapInstance(instance);
@@ -675,6 +699,7 @@ export class WorkflowService {
       dto.comment,
       'APPROVED',
       fromStage,
+      { pool },
     );
   }
 
@@ -716,19 +741,28 @@ export class WorkflowService {
     // a multi-approver stage is a pre-existing, separately-tracked
     // config-error case (see resolveApproverPool()'s own comment), not one
     // this check newly blocks.
-    const approverPool = await this.resolveApproverPool(stage, organizationId, instance);
-    if (approverPool.length > 0 && !approverPool.includes(actorId)) {
-      throw new ForbiddenException('You are not an eligible approver for this stage');
+    //
+    // ACC-271 — a converted stage asks its pool instead, and an EMPTY pool now
+    // refuses everyone (plan gap 3: today an empty pool lets anyone vote).
+    let pool: StagePool | undefined;
+    if (isConvertedStage(stage)) {
+      pool = await this.stagePool.resolve(organizationId, stage.id, instance);
+      this.assertInStagePool(pool, stage, actorId);
+    } else {
+      const approverPool = await this.resolveApproverPool(stage, organizationId, instance);
+      if (approverPool.length > 0 && !approverPool.includes(actorId)) {
+        throw new ForbiddenException('You are not an eligible approver for this stage');
+      }
     }
 
     // ACC-190 (Ahmad, 9 Oct, J) — the approval path is gated too, and a deciding
     // vote is refused BEFORE it is recorded.
-    await this.assertDecidingVoteMayAdvance(stage, instanceStage, organizationId, instance, actorId, dto.decision);
+    await this.assertDecidingVoteMayAdvance(stage, instanceStage, organizationId, instance, actorId, dto.decision, pool);
 
     // ACC-40 Section 2.6.3 — stamped on both branches, same reasoning as
     // triggerTransition()'s own upsert: a re-submitted approval always
     // reflects the actor's CURRENT delegation status.
-    const delegationStamp = await this.resolveDelegationStamp(actorId, stage, instance, organizationId);
+    const delegationStamp = await this.resolveDelegationStamp(actorId, stage, instance, organizationId, pool);
 
     const approval = await this.prisma.workflowApproval.upsert({
       where: {
@@ -761,7 +795,7 @@ export class WorkflowService {
       after: { decision: approval.decision },
     });
 
-    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto, instance);
+    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto, instance, pool);
 
     return this.mapApproval(approval);
   }
@@ -779,6 +813,8 @@ export class WorkflowService {
     // than this method re-fetching the same row a second time in the same
     // request.
     instance: PrismaWorkflowInstance,
+    // ACC-271 — a converted stage's pool, already resolved by the caller.
+    pool?: StagePool,
   ): Promise<void> {
     // ABSTAINED never auto-routes — per module-designs.md, majority-abstained
     // requires Quality Officer escalation, not automatic advancement.
@@ -802,11 +838,12 @@ export class WorkflowService {
         dto.comment,
         'REJECTED',
         stage,
+        { pool },
       );
       return;
     }
 
-    const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance);
+    const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, undefined, pool);
     if (!satisfied) return;
 
     const approveTransition = await this.prisma.workflowTransition.findFirst({
@@ -824,6 +861,7 @@ export class WorkflowService {
       dto.comment,
       'APPROVED',
       stage,
+      { pool },
     );
   }
 
@@ -837,12 +875,15 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     actorId: string,
     decision: SubmitApprovalDto['decision'],
+    pool?: StagePool,
   ): Promise<void> {
     if (decision === 'ABSTAINED') return;
     const approved = decision === 'APPROVED' || decision === 'APPROVED_WITH_COMMENTS';
     // A return fires at once; an approval only when this vote completes the
     // threshold — asked first, so a vote that decides nothing costs no lookup.
-    const fires = !approved || (await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, { approverId: actorId, approved }));
+    const fires =
+      !approved ||
+      (await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, { approverId: actorId, approved }, pool));
     if (!fires) return;
     const transition = await this.prisma.workflowTransition.findFirst({
       where: { fromStageId: stage.id, isApprovalPath: approved },
@@ -880,11 +921,13 @@ export class WorkflowService {
     if (!instance) throw new NotFoundException('Workflow instance not found');
     if (!instance.currentStageId) throw new ConflictException('Workflow instance has no current stage');
 
+    // ACC-271 — the move the app runs: mover APP, or (until the backfill writes
+    // the marker) a SYSTEM_AUTOMATIC transition with none.
     const transition = await this.prisma.workflowTransition.findFirst({
       where: {
         fromStageId: instance.currentStageId,
-        triggerCondition: 'SYSTEM_AUTOMATIC',
         toStage: { key: toStageKey, workflowTemplateId: instance.workflowTemplateId },
+        ...APP_MOVER_WHERE,
       },
     });
     if (!transition) {
@@ -924,6 +967,8 @@ export class WorkflowService {
     organizationId: string,
     instance: PrismaWorkflowInstance,
     assumedVote?: { approverId: string; approved: boolean },
+    // ACC-271 — a converted stage's pool, when the caller already has it.
+    pool?: StagePool,
   ): Promise<boolean> {
     const recorded = await this.prisma.workflowApproval.findMany({
       where: { workflowInstanceStageId: currentInstanceStage.id },
@@ -937,6 +982,39 @@ export class WorkflowService {
     const approvedCount = approvals.filter(
       (a) => a.decision === 'APPROVED' || a.decision === 'APPROVED_WITH_COMMENTS',
     ).length;
+
+    // ACC-271 — a converted stage decides by its who mode (plan §4.3).
+    if (isConvertedStage(fromStage)) {
+      const stagePool = pool ?? (await this.stagePool.resolve(organizationId, fromStage.id, instance));
+      if (fromStage.whoMode === 'ANY_ONE') return approvedCount >= 1;
+      if (fromStage.whoMode === 'COMMITTEE_VOTE') {
+        // The committee's own quorum and majority. A stage whose committee
+        // resolves to none decides nothing (plan gap 5: today one approval does).
+        const committeeId = stagePool.voteCommitteeId;
+        if (!committeeId) return false;
+        const quorum =
+          currentInstanceStage.quorumCount ??
+          (await this.prisma.committee.findFirst({ where: { id: committeeId, organizationId } }))?.quorumCount ??
+          null;
+        if (quorum === null || approvals.length < quorum) return false;
+        return approvedCount > approvals.length / 2;
+      }
+      // ALL: every CURRENT member of the pool has approved — someone who left
+      // is no longer waited for, and their earlier approval harms nothing (Q6).
+      // An acting user's place is filled by their own approval or by the
+      // approval of the absent member they stand in for. An empty pool decides
+      // nothing (gap 3: today it is met by the first approval).
+      if (stagePool.members.length === 0) return false;
+      const approvedBy = new Set(
+        approvals
+          .filter((a) => a.decision === 'APPROVED' || a.decision === 'APPROVED_WITH_COMMENTS')
+          .map((a) => a.approverId),
+      );
+      return stagePool.members.every((member) => {
+        const covered = stagePool.coveringFor.get(member);
+        return approvedBy.has(member) || (covered !== undefined && approvedBy.has(covered));
+      });
+    }
 
     if (fromStage.approvalMode === 'COMMITTEE') {
       if (!fromStage.committeeId) return approvedCount > 0;
@@ -956,8 +1034,8 @@ export class WorkflowService {
       return approvedCount > approvals.length / 2;
     }
 
-    const pool = await this.resolveApproverPool(fromStage, organizationId, instance);
-    const poolSize = pool.length || Math.max(approvals.length, 1);
+    const approverPool = await this.resolveApproverPool(fromStage, organizationId, instance);
+    const poolSize = approverPool.length || Math.max(approvals.length, 1);
     // SEQUENTIAL has no dedicated ordered-roster mechanism in the current
     // schema — treated as PARALLEL+ALL until a real sequence concept exists.
     const threshold = fromStage.approvalMode === 'SEQUENTIAL' ? 'ALL' : (fromStage.parallelThreshold ?? 'ALL');
@@ -982,7 +1060,8 @@ export class WorkflowService {
     // through rather than re-derived here.
     fromStage: PrismaWorkflowStage,
     // ACC-239 — a module's write, inside this transaction (triggerSystemTransition()).
-    hook: { inTx?: (tx: EngineTx) => Promise<void> } = {},
+    // ACC-271 — `pool`: the from-stage's pool, when the caller resolved it.
+    hook: { inTx?: (tx: EngineTx) => Promise<void>; pool?: StagePool } = {},
   ): Promise<IWorkflowInstance> {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) throw new NotFoundException('Target stage not found');
@@ -992,7 +1071,7 @@ export class WorkflowService {
     // definitions, placed and timed from `enteredAt`).
     const enteredAt = new Date();
     const slaDueAt = await this.computeSlaDueAt(toStage, organizationId, enteredAt);
-    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId);
+    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId, hook.pool);
     const entryTasks = await this.stageTaskDefinitions.prepareEntryTasks(
       toStage,
       instance,
@@ -1006,7 +1085,7 @@ export class WorkflowService {
       workflowInstanceStageId: currentInstanceStage.id,
     };
     // ACC-239 — the quorum a committee-approval stage's vote will count against.
-    const quorumCount = await this.quorumSnapshot(toStage, organizationId);
+    const quorumCount = await this.quorumSnapshot(toStage, organizationId, instance);
 
     // ACC-190 — the stage change itself, all or nothing, under the instance's
     // row lock (the engine's first). Two people pressing at once can no longer
@@ -1031,7 +1110,8 @@ export class WorkflowService {
 
       // ACC-239 — the module's own write, under this same lock and transaction.
       if (hook.inTx) {
-        if (transition.triggerCondition !== 'SYSTEM_AUTOMATIC') {
+        // ACC-271 — the move the app runs (mover APP, or SYSTEM_AUTOMATIC with none).
+        if (transitionMover(transition) !== 'APP') {
           throw new Error('Only a SYSTEM_AUTOMATIC transition takes a write of its own');
         }
         await hook.inTx(tx);
@@ -1141,10 +1221,24 @@ export class WorkflowService {
    * the stage's committee's quorum now. Null for any other stage. Read before
    * the transaction, with every other read, scoped by organisation.
    */
-  private async quorumSnapshot(stage: PrismaWorkflowStage, organizationId: string): Promise<number | null> {
-    if (stage.approvalMode !== 'COMMITTEE' || !stage.committeeId) return null;
+  //
+  // ACC-271 — on a converted stage: a Committee vote's committee, the stage's
+  // COMMITTEE entry's own or the record's.
+  private async quorumSnapshot(
+    stage: PrismaWorkflowStage,
+    organizationId: string,
+    record: Pick<StagePoolRequest['instance'], 'objectType' | 'objectId'>,
+  ): Promise<number | null> {
+    const committeeId = isConvertedStage(stage)
+      ? stage.whoMode === 'COMMITTEE_VOTE'
+        ? await this.stagePool.voteCommitteeId(organizationId, stage.id, record)
+        : null
+      : stage.approvalMode === 'COMMITTEE'
+        ? stage.committeeId
+        : null;
+    if (!committeeId) return null;
     const committee = await this.prisma.committee.findFirst({
-      where: { id: stage.committeeId, organizationId },
+      where: { id: committeeId, organizationId },
       select: { quorumCount: true },
     });
     return committee?.quorumCount ?? null;
@@ -1343,7 +1437,7 @@ export class WorkflowService {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) return 'Skipped — target stage not found';
 
-    const assigneeIds = await this.resolveAssignee(toStage, instance, organizationId);
+    const assigneeIds = await this.whoWorks(toStage, instance, organizationId);
     // TODO(event-bus): migrate to event emitter if/when NotificationService
     // moves to a pub/sub model (see Step 7 plan Section 8/12).
     for (const userId of assigneeIds) {
@@ -1366,7 +1460,7 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<void> {
-    const assigneeIds = await this.resolveAssignee(initialStage, instance, organizationId);
+    const assigneeIds = await this.whoWorks(initialStage, instance, organizationId);
     // TODO(event-bus): migrate to event emitter if/when NotificationService
     // moves to a pub/sub model (see Step 7 plan Section 8/12).
     for (const userId of assigneeIds) {
@@ -1465,7 +1559,49 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<string[]> {
+    return this.whoWorks(stage, instance, organizationId);
+  }
+
+  // ACC-271 — the people a stage's work and notices go to: a converted stage's
+  // pool, or the old strategy's assignees (with its out-of-office notices) for
+  // a stage not converted yet. A pool resolves without notices: it is read on
+  // every decision, and a notice per read would repeat.
+  private async whoWorks(
+    stage: PrismaWorkflowStage,
+    instance: PrismaWorkflowInstance,
+    organizationId: string,
+  ): Promise<string[]> {
+    if (isConvertedStage(stage)) {
+      return (await this.stagePool.resolve(organizationId, stage.id, instance)).members;
+    }
     return this.resolveAssignee(stage, instance, organizationId);
+  }
+
+  /**
+   * ACC-271 — many converted stages' pools at once (StagePoolService.
+   * resolveMany(), one query per kind), for the 15-minute sweep. Public for the
+   * same reason resolveUnassignedBlockingTransitions() is: the sweep reuses the
+   * engine's resolution rather than a copy.
+   */
+  async resolveStagePools(organizationId: string, requests: StagePoolRequest[]): Promise<Map<string, StagePool>> {
+    return this.stagePool.resolveMany(organizationId, requests);
+  }
+
+  // ACC-271 — who may act on a converted stage: the pool's members, or someone
+  // the pool names directly who is away (they may still act themselves). An
+  // empty pool refuses everyone, worded from the stage.
+  private assertInStagePool(pool: StagePool, stage: PrismaWorkflowStage, actorId: string): void {
+    const stageNames = { stageNameEn: stage.nameEn, stageNameAr: stage.nameAr };
+    if (pool.members.length === 0) throw new WorkflowRefusalException('STAGE_HAS_NO_ONE', stageNames);
+    if (!pool.members.includes(actorId) && !pool.direct.includes(actorId)) {
+      throw new WorkflowRefusalException('NOT_IN_STAGE_POOL', stageNames);
+    }
+  }
+
+  // Whether one person's action decides the stage: a converted stage worked by
+  // Any one of them, or an unconverted SINGLE stage.
+  private decidesAlone(stage: PrismaWorkflowStage): boolean {
+    return isConvertedStage(stage) ? stage.whoMode === 'ANY_ONE' : stage.approvalMode === 'SINGLE';
   }
 
   private async resolveAssigneeRaw(
@@ -1668,7 +1804,21 @@ export class WorkflowService {
     stage: PrismaWorkflowStage,
     instance: PrismaWorkflowInstance,
     organizationId: string,
+    // ACC-271 — a converted stage's pool, when the caller already has it.
+    pool?: StagePool,
   ): Promise<{ delegationReason: 'ACTING_HEAD' | 'OUT_OF_OFFICE_COVERAGE'; delegationContextId: string } | null> {
+    // ACC-271 — a converted stage's pool already knows why each person is in
+    // it: acting head of a unit an Org unit head entry names, or standing in
+    // for an absent member. Same precedence as below.
+    if (isConvertedStage(stage)) {
+      const stagePool = pool ?? (await this.stagePool.resolve(organizationId, stage.id, instance));
+      const actingFor = stagePool.actingHeadOf.get(userId);
+      if (actingFor) return { delegationReason: 'ACTING_HEAD', delegationContextId: actingFor };
+      const coveredFor = stagePool.coveringFor.get(userId);
+      if (coveredFor) return { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: coveredFor };
+      return null;
+    }
+
     if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
       // Same instance.orgUnitId defensive read as resolveAssigneeRaw()'s
       // own ORG_UNIT_HEAD case — see that case's own comment.
@@ -1882,9 +2032,16 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<void> {
-    const poolBlocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
-    const triggerBlocking = await this.resolveUnreachableTriggerConditionTransitions(stage, organizationId);
-    if (poolBlocking.length === 0 && triggerBlocking.length === 0) return;
+    // ACC-271 — a converted stage is unassigned when its pool is empty (plan
+    // §4.5); the two old detectors read transition fields it does not use.
+    if (isConvertedStage(stage)) {
+      const pool = await this.stagePool.resolve(organizationId, stage.id, instance);
+      if (pool.members.length > 0) return;
+    } else {
+      const poolBlocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
+      const triggerBlocking = await this.resolveUnreachableTriggerConditionTransitions(stage, organizationId);
+      if (poolBlocking.length === 0 && triggerBlocking.length === 0) return;
+    }
 
     await this.prisma.workflowInstanceStage.update({
       where: { id: instanceStageId },

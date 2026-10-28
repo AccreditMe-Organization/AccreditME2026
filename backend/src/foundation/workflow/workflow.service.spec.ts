@@ -15,6 +15,7 @@ import { OrganizationService } from '../organization/organization.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
+import { StagePool, StagePoolService } from './stage-pool.service';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -231,6 +232,17 @@ const mockStageTaskDefinitions = { prepareEntryTasks: jest.fn() };
 const mockRoleService = { getUserPermissions: jest.fn() };
 const mockOrganizationService = { resolveActingHeadForOrgUnit: jest.fn() };
 const mockQueue = { add: jest.fn() };
+// ACC-271 — who works a converted stage. Every fixture stage above has no
+// whoMode, so the engine never asks; the converted-stage tests set a pool.
+const mockStagePool = { resolve: jest.fn(), resolveMany: jest.fn(), voteCommitteeId: jest.fn() };
+const poolOf = (members: string[], extra: Partial<StagePool> = {}): StagePool => ({
+  members,
+  direct: members,
+  coveringFor: new Map(),
+  actingHeadOf: new Map(),
+  voteCommitteeId: null,
+  ...extra,
+});
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -325,6 +337,7 @@ describe('WorkflowService', () => {
         { provide: OrganizationService, useValue: mockOrganizationService },
         { provide: getQueueToken('workflow-actions'), useValue: mockQueue },
         { provide: StageTaskDefinitionService, useValue: mockStageTaskDefinitions },
+        { provide: StagePoolService, useValue: mockStagePool },
       ],
     }).compile();
 
@@ -3422,6 +3435,345 @@ describe('WorkflowService', () => {
         expect.objectContaining({ titleEn: expect.stringContaining('unreachable') }),
         ORG_A,
       );
+    });
+  });
+
+  // ── ACC-271: a converted stage (whoMode set) is worked by its pool ────────────
+  describe('converted stages (ACC-271)', () => {
+    // approvalMode is left at SINGLE / PARALLEL on purpose: on a converted
+    // stage the who mode decides, and the old columns are not read.
+    const POOL_STAGE = { ...SINGLE_STAGE, id: 'stage-pool', nameEn: 'Quality review', nameAr: 'مراجعة الجودة', whoMode: 'ANY_ONE' };
+    const ALL_STAGE = { ...POOL_STAGE, whoMode: 'ALL' };
+    const VOTE_STAGE = { ...POOL_STAGE, whoMode: 'COMMITTEE_VOTE', approvalMode: 'PARALLEL' };
+    const POOL_INSTANCE_STAGE = makeInstanceStage({ stageId: 'stage-pool' });
+
+    function arrange(fromStage: Record<string, unknown>, transition: Record<string, unknown> = {}, toStage: Record<string, unknown> = TARGET_STAGE) {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
+      mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve({ 'stage-pool': fromStage, [String(toStage['id'])]: toStage }[where.id] ?? null),
+      );
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ fromStageId: 'stage-pool', toStageId: String(toStage['id']), ...transition }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(POOL_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: String(toStage['id']) }));
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
+    }
+    const trigger = (permissions: string[] = []) =>
+      service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, permissions);
+    const refusal = async (promise: Promise<unknown>) => {
+      const error = await promise.catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(WorkflowRefusalException);
+      return (error as WorkflowRefusalException).getResponse() as { code: string; statusCode: number; stageNameEn: string; stageNameAr: string };
+    };
+    const moved = () =>
+      expect(mockPrisma.workflowInstance.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ currentStageId: 'stage-target' }) }),
+      );
+
+    describe('who may press a move (decision 1)', () => {
+      it("lets a member of the stage's pool move it, without the transition's permission, role or user", async () => {
+        arrange(POOL_STAGE, {
+          requiredPermission: 'committees:approve',
+          triggerCondition: 'SPECIFIC_USER',
+          triggerUserId: 'someone-else',
+          triggerRoleId: 'role-x',
+        });
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+
+        await trigger([]);
+
+        moved();
+        expect(mockStagePool.resolve).toHaveBeenCalledWith(ORG_A, 'stage-pool', expect.objectContaining({ id: 'instance-1' }));
+        expect(mockPrisma.userRole.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('refuses someone outside the pool with NOT_IN_STAGE_POOL (403), whatever permissions they hold', async () => {
+        arrange(POOL_STAGE, { requiredPermission: 'committees:approve' });
+        mockStagePool.resolve.mockResolvedValue(poolOf(['user-nora']));
+
+        const body = await refusal(trigger(['committees:approve']));
+
+        expect(body).toMatchObject({ statusCode: 403, code: 'NOT_IN_STAGE_POOL', stageNameEn: 'Quality review', stageNameAr: 'مراجعة الجودة' });
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses everyone when the pool is empty: STAGE_HAS_NO_ONE (409), never "anyone may act"', async () => {
+        arrange(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf([]));
+
+        const body = await refusal(trigger(['committees:approve']));
+
+        expect(body).toMatchObject({ statusCode: 409, code: 'STAGE_HAS_NO_ONE', stageNameEn: 'Quality review' });
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      });
+
+      it("lets a member who is away still act themselves, beside their acting user", async () => {
+        arrange(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf(['stand-in'], { direct: [ACTOR], coveringFor: new Map([['stand-in', ACTOR]]) }));
+
+        await trigger();
+
+        moved();
+      });
+
+      it.each([
+        ['mover APP', { mover: 'APP' }],
+        ['SYSTEM_AUTOMATIC with no mover', { triggerCondition: 'SYSTEM_AUTOMATIC' }],
+        ['mover AUTOMATIC', { mover: 'AUTOMATIC' }],
+      ])('refuses a move a person does not make (%s), even to a pool member', async (_label, transition) => {
+        arrange(POOL_STAGE, transition);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+
+        await expect(trigger()).rejects.toThrow(ForbiddenException);
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      });
+
+      it("a mover PERSON on a SYSTEM_AUTOMATIC row is a person's move: the marker wins over the old field", async () => {
+        arrange(POOL_STAGE, { triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'PERSON' });
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+
+        await trigger();
+
+        moved();
+      });
+
+      it("still holds the stage's mandatory tasks (the gate runs on a converted stage too)", async () => {
+        arrange(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+        mockPrisma.task.findMany.mockResolvedValue([
+          {
+            id: 'task-a',
+            title: 'Check the terms',
+            titleAr: null,
+            status: 'PENDING',
+            dueAt: null,
+            requiresEvidence: false,
+            assignees: [],
+            assignedOrgUnit: null,
+            assignedPosition: null,
+            assignedCommittee: null,
+            assignedCommitteeRoleValue: null,
+          },
+        ]);
+
+        const body = await refusal(trigger());
+
+        expect(body.code).toBe('STAGE_TASKS_OPEN');
+      });
+
+      it('stamps the delegation from the pool: an acting user standing in for an absent member', async () => {
+        arrange(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf(['stand-in', ACTOR], { coveringFor: new Map([[ACTOR, 'away-user']]) }));
+
+        await trigger();
+
+        expect(mockPrisma.workflowInstanceStage.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: 'away-user' }),
+          }),
+        );
+        // Resolved once for the whole move, not again for the stamp.
+        expect(mockStagePool.resolve).toHaveBeenCalledTimes(1);
+      });
+
+      it('an unconverted stage never asks for a pool: every old check is unchanged (plan §4.6)', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+          Promise.resolve({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE }[where.id] ?? null),
+        );
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ requiredPermission: 'committees:approve' }));
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+
+        await expect(
+          service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
+        ).rejects.toThrow('Missing required permission: committees:approve');
+        expect(mockStagePool.resolve).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('how the people decide (plan §4.3)', () => {
+      const approve = { isApprovalPath: true };
+      const approved = (approverId: string) => makeApproval({ approverId, decision: 'APPROVED' });
+
+      it('Any one of them: the first press decides, whatever approvalMode the row still carries', async () => {
+        arrange({ ...POOL_STAGE, approvalMode: 'PARALLEL', parallelThreshold: 'ALL' }, approve);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2', 'user-3']));
+
+        await trigger();
+
+        moved();
+        expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+      });
+
+      it('All of them: records the approval and waits while a current member has not approved', async () => {
+        arrange(ALL_STAGE, approve);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2']));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([approved(ACTOR)]);
+
+        await trigger();
+
+        expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      });
+
+      it('All of them: moves once every current member has approved', async () => {
+        arrange(ALL_STAGE, approve);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2']));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([approved('user-2'), approved(ACTOR)]);
+
+        await trigger();
+
+        moved();
+      });
+
+      it('All of them: someone who left is no longer waited for, and their earlier approval still stands (Q6)', async () => {
+        arrange(ALL_STAGE, approve);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([approved('user-who-left'), approved(ACTOR)]);
+
+        await trigger();
+
+        moved();
+      });
+
+      it("All of them: an acting user's place is filled by the absent member's own approval", async () => {
+        arrange(ALL_STAGE, approve);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'stand-in'], { coveringFor: new Map([['stand-in', 'away-user']]) }));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([approved('away-user'), approved(ACTOR)]);
+
+        await trigger();
+
+        moved();
+      });
+
+      it('All of them: a send-back by any member fires at once', async () => {
+        arrange(ALL_STAGE, { isApprovalPath: false, kind: 'RETURN' });
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2', 'user-3']));
+
+        await trigger();
+
+        moved();
+      });
+
+      it("Committee vote: the committee's quorum (saved at entry) and majority decide", async () => {
+        arrange(VOTE_STAGE, approve);
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(makeInstanceStage({ stageId: 'stage-pool', quorumCount: 2 } as never));
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2', 'user-3'], { voteCommitteeId: 'committee-a' }));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([approved('user-2'), approved(ACTOR)]);
+
+        await trigger();
+
+        moved();
+      });
+
+      it('Committee vote: below the quorum, the vote is recorded and nothing moves', async () => {
+        arrange(VOTE_STAGE, approve);
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(makeInstanceStage({ stageId: 'stage-pool', quorumCount: 3 } as never));
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2', 'user-3'], { voteCommitteeId: 'committee-a' }));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([approved('user-2'), approved(ACTOR)]);
+
+        await trigger();
+
+        expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      });
+
+      it('Committee vote with no committee to count against decides nothing (plan gap 5)', async () => {
+        arrange(VOTE_STAGE, approve);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR], { voteCommitteeId: null }));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([approved(ACTOR)]);
+
+        await trigger();
+
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('submitApproval', () => {
+      function arrangeVote(stage: Record<string, unknown>) {
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(POOL_INSTANCE_STAGE);
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(stage);
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
+        mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+      }
+      const vote = () => service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+      it('records the vote of a pool member', async () => {
+        arrangeVote(ALL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2']));
+
+        await vote();
+
+        expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+      });
+
+      it('refuses a vote from outside the pool with NOT_IN_STAGE_POOL', async () => {
+        arrangeVote(ALL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf(['user-2']));
+
+        expect((await refusal(vote())).code).toBe('NOT_IN_STAGE_POOL');
+        expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+      });
+
+      it('refuses every vote on an empty pool (plan gap 3: today an empty pool lets anyone vote)', async () => {
+        arrangeVote(ALL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf([]));
+
+        expect((await refusal(vote())).code).toBe('STAGE_HAS_NO_ONE');
+        expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('entering a converted stage', () => {
+      it('flags the entry unassigned when its pool is empty (plan §4.5)', async () => {
+        arrange(POOL_STAGE, {}, { ...TARGET_STAGE, whoMode: 'ALL' });
+        mockStagePool.resolve.mockImplementation((_org: string, stageId: string) =>
+          Promise.resolve(stageId === 'stage-pool' ? poolOf([ACTOR]) : poolOf([])),
+        );
+
+        await trigger();
+
+        expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ isUnassigned: true }) }),
+        );
+        // The old detectors read transition fields a converted stage does not use.
+        expect(mockPrisma.workflowTransition.findMany).not.toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ fromStageId: 'stage-target' }) }),
+        );
+      });
+
+      it("saves the Committee vote's quorum, from the stage's committee, when the record enters", async () => {
+        arrange(POOL_STAGE, {}, { ...TARGET_STAGE, whoMode: 'COMMITTEE_VOTE' });
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+        mockStagePool.voteCommitteeId.mockResolvedValue('committee-9');
+        mockPrisma.committee.findFirst.mockResolvedValue({ quorumCount: 3 });
+
+        await trigger();
+
+        expect(mockStagePool.voteCommitteeId).toHaveBeenCalledWith(ORG_A, 'stage-target', expect.objectContaining({ objectId: 'object-1' }));
+        expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'committee-9', organizationId: ORG_A } }));
+        expect(mockPrisma.workflowInstanceStage.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ quorumCount: 3 }) }),
+        );
+      });
+    });
+
+    describe('the move the app runs (the marker)', () => {
+      it('triggerSystemTransition looks for mover APP, or SYSTEM_AUTOMATIC with no mover', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
+
+        await expect(service.triggerSystemTransition('instance-1', 'approved', ORG_A, ACTOR)).rejects.toThrow(ConflictException);
+
+        expect(mockPrisma.workflowTransition.findFirst).toHaveBeenCalledWith({
+          where: {
+            fromStageId: 'stage-single',
+            toStage: { key: 'approved', workflowTemplateId: 'template-1' },
+            OR: [{ mover: 'APP' }, { mover: null, triggerCondition: 'SYSTEM_AUTOMATIC' }],
+          },
+        });
+      });
     });
   });
 });

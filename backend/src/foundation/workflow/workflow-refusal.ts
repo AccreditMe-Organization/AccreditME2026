@@ -28,7 +28,10 @@ export type WorkflowRefusalCode =
   | 'STAGE_ACTION_NOT_ALLOWED'
   | 'STAGE_ACTION_UNKNOWN'
   | 'STAGE_FLAG_UNKNOWN'
-  | 'STAGE_FLAG_EXACTLY_ONE';
+  | 'STAGE_FLAG_EXACTLY_ONE'
+  // ACC-271 — who works a converted stage (StagePoolService).
+  | 'STAGE_HAS_NO_ONE'
+  | 'NOT_IN_STAGE_POOL';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -52,6 +55,8 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_ACTION_UNKNOWN: HttpStatus.BAD_REQUEST,
   STAGE_FLAG_UNKNOWN: HttpStatus.BAD_REQUEST,
   STAGE_FLAG_EXACTLY_ONE: HttpStatus.CONFLICT,
+  STAGE_HAS_NO_ONE: HttpStatus.CONFLICT,
+  NOT_IN_STAGE_POOL: HttpStatus.FORBIDDEN,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -77,6 +82,8 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   STAGE_ACTION_UNKNOWN: 'This kind of record has no such action',
   STAGE_FLAG_UNKNOWN: 'This kind of record has no such stage meaning',
   STAGE_FLAG_EXACTLY_ONE: 'Exactly one stage of this workflow must carry this meaning',
+  STAGE_HAS_NO_ONE: "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it",
+  NOT_IN_STAGE_POOL: 'Only whoever works this stage can do this',
 };
 
 export class WorkflowRefusalException extends HttpException {
