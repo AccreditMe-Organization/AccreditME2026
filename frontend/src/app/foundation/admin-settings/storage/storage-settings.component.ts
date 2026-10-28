@@ -304,7 +304,9 @@ export class StorageSettingsComponent {
     if (!st.kind) return t('storage.current.noneDetail');
     const parts: string[] = [];
     if (st.managed) parts.push(t('storage.current.managed'));
-    if (st.location) parts.push(st.location);
+    // SharePoint's "site › library" is isolated left to right (U+2066 … U+2069),
+    // so an Arabic site name cannot reorder it inside an Arabic line (PR C).
+    if (st.location) parts.push(st.kind === 'SHAREPOINT' ? `\u2066${st.location}\u2069` : st.location);
     if (st.refused) parts.push(t('storage.current.refused'));
     else if (st.confirmed) {
       const date = this.format.date(st.confirmed.at);

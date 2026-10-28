@@ -11,17 +11,28 @@ import { AuthService } from '../../../core/services/auth.service';
 import { FieldComponent } from '../../../shared/components/field/field.component';
 import { SecretFieldComponent } from '../../../shared/components/secret-field/secret-field.component';
 import { FilesService } from '../../../shared/files/files.service';
-import { IStorageSettings, StorageKind, StorageSettingsService, StorageTestStep } from './storage-settings.service';
+import { IStorageSettings, StorageKind, StorageSettingsService } from './storage-settings.service';
 import { FieldView, SharePointHealth, ValuePart, currentFields, currentKind, optionsView, sharePointHealth } from './storage-view';
+import { StorageSharePointManageComponent } from './storage-sharepoint-manage.component';
+import { StorageExpiryFieldComponent, noonOf } from './storage-expiry-field.component';
+import { isTimeout, refusalCode, storageRefusalText } from './storage-refusal-text';
 import {
   ACCESS_KEY_MIN,
   BUCKET_PATTERN,
+  GUID_PATTERN,
   KEY_MAX,
+  LIBRARY_MAX,
   REGION_PATTERN,
   ROOT_PATH_PATTERN,
   SECRET_KEY_MIN,
+  SITE_URL_MAX,
+  SP_SECRET_MAX,
+  SP_SECRET_MIN,
   SetupKind,
+  TENANT_MAX,
+  TENANT_PATTERN,
   TestState,
+  calendarDay,
   choosable,
   confirmBar,
   confirmLocation,
@@ -29,18 +40,25 @@ import {
   initialSelection,
   keysBar,
   keysCandidate,
+  notBlank,
   setupCandidate,
-  stepFailureKey,
+  sharePointSiteUrl,
   testView,
+  withExpiry,
 } from './storage-setup';
 import { StorageTestBoxComponent } from './storage-test-box.component';
 import { StorageConfirmDialogComponent } from './storage-confirm-dialog.component';
 
-/** MinIO's keys: replaced together, never shown back (rule 2, design L1054). */
-const KEY_FIELDS = new Set(['accessKey', 'secretKey']);
+/**
+ * Drawn as live controls rather than locked boxes: MinIO's keys (replaced
+ * together, never shown back, rule 2, design L1054), and SharePoint's client
+ * ID, secret and expiry date (PR C, StorageSharePointManageComponent).
+ */
+const KEY_FIELDS = new Set(['accessKey', 'secretKey', 'spClientId', 'spClientSecret', 'spSecretExpires']);
 
 type TestsByKind = Record<SetupKind, TestState>;
 const IDLE: TestState = { status: 'idle' };
+const NO_TESTS: TestsByKind = { S3: IDLE, MINIO: IDLE, LOCAL_FILESYSTEM: IDLE, SHAREPOINT: IDLE };
 
 /**
  * ACC-260 — the "Where files are kept" card (design L70–140).
@@ -50,8 +68,7 @@ const IDLE: TestState = { status: 'idle' };
  * AccreditMe manages it (rule 1).
  *
  * PR B, before confirming: a real choice. AccreditMe cloud and MinIO always, a
- * local folder where this installation offers it; SharePoint is listed as PR A
- * shows it and set up in PR C.
+ * local folder where this installation offers it, and (PR C) SharePoint.
  * - AccreditMe cloud: "Nothing to set up", then Confirm. No test.
  * - MinIO and a local folder: their fields, then Test, then Confirm, which
  *   opens only after a pass for EXACTLY the values on screen.
@@ -60,13 +77,29 @@ const IDLE: TestState = { status: 'idle' };
  * PR B, once confirmed on MinIO: Replace on either key opens both; Test, then
  * "Save new key" sends PATCH /tenant/storage with the two keys only.
  *
+ * PR C, SharePoint (Ahmad's D1, D12): the API's six fields in MinIO's layout,
+ * the test with SharePoint's steps, and the "site › library" it found before
+ * Confirm. Once confirmed: StorageSharePointManageComponent.
+ *
  * A secret is sent only when typed, and the form is emptied after a save
  * (rule 2). Every write ends in `saved`, and the page reloads GET.
  */
 @Component({
   selector: 'am-storage-location',
   standalone: true,
-  imports: [NgTemplateOutlet, ReactiveFormsModule, TranslatePipe, ButtonModule, InputTextModule, FieldComponent, SecretFieldComponent, StorageTestBoxComponent, StorageConfirmDialogComponent],
+  imports: [
+    NgTemplateOutlet,
+    ReactiveFormsModule,
+    TranslatePipe,
+    ButtonModule,
+    InputTextModule,
+    FieldComponent,
+    SecretFieldComponent,
+    StorageTestBoxComponent,
+    StorageConfirmDialogComponent,
+    StorageSharePointManageComponent,
+    StorageExpiryFieldComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="am-sl rounded-card border border-rule bg-surface-raised" data-testid="storage-location">
@@ -117,10 +150,11 @@ const IDLE: TestState = { status: 'idle' };
                       <div class="font-semibold text-body text-danger">{{ 'storage.sp.withdrawnTitle' | translate }}</div>
                       <div class="text-value">{{ withdrawnBody(h) }}</div>
                       <div class="text-value">{{ 'storage.sp.withdrawnSince' | translate: { date: format.date(h.since) } }}</div>
+                      <div class="text-value">{{ 'storage.sp.withdrawnTest' | translate }}</div>
                     </div>
                   } @else if (h.state === 'expiring' || h.state === 'expired') {
                     <div class="am-sl__banner am-sl__banner--warn" role="status" data-testid="sp-expiring">
-                      <div class="text-value">{{ (h.state === 'expiring' ? 'storage.sp.expiring' : 'storage.sp.expired') | translate: { date: format.date(h.on) } }}</div>
+                      <div class="text-value">{{ (h.state === 'expiring' ? 'storage.sp.expiring' : 'storage.sp.expired') | translate: { date: format.date(noon(h.on)) } }}</div>
                     </div>
                   }
                 }
@@ -172,6 +206,9 @@ const IDLE: TestState = { status: 'idle' };
                   @if (replacing()) {
                     <am-storage-test-box [view]="keysTestView()" passHeadKey="storage.test.keysPassed" (run)="runKeysTest()" />
                   }
+                }
+                @if (o.kind === 'SHAREPOINT') {
+                  <am-storage-sharepoint-manage [settings]="settings()" (saved)="saved.emit()" />
                 }
               </div>
             } @else if (!confirmed() && isSelected(o.kind)) {
@@ -250,6 +287,75 @@ const IDLE: TestState = { status: 'idle' };
                     >
                       <input pInputText id="storage-local-path" dir="ltr" class="w-full" [formControl]="localForm.controls.rootPath" autocomplete="off" spellcheck="false" data-testid="local-path" />
                     </am-field>
+                    <am-storage-test-box [view]="setupTestView()" (run)="runTest()" />
+                  }
+                  @case ('SHAREPOINT') {
+                    <!-- D12: "How to prepare SharePoint" links to the customer guide
+                         (docs/customer/sharepoint-storage-setup.md) once it is published
+                         where a customer can open it. Until then, this sentence. -->
+                    <p class="m-0 text-value text-ink-700" data-testid="sp-prepare">{{ 'storage.sp.prepare' | translate }}</p>
+                    <div class="flex flex-col gap-3" data-testid="sp-form">
+                      <div class="am-sl__grid">
+                        <am-field
+                          [label]="'storage.field.spTenant' | translate"
+                          [control]="spForm.controls.tenant"
+                          inputId="storage-sp-tenant"
+                          [hint]="'storage.sp.tenantHint' | translate"
+                          [forceShowErrors]="showErrors()"
+                          [errorMessages]="{ required: 'storage.sp.tenantRequired', pattern: 'storage.sp.tenantInvalid', maxlength: 'validation.maxLength' }"
+                        >
+                          <input pInputText id="storage-sp-tenant" dir="ltr" class="w-full" [formControl]="spForm.controls.tenant" autocomplete="off" spellcheck="false" />
+                        </am-field>
+                        <am-field
+                          [label]="'storage.field.spClientId' | translate"
+                          [control]="spForm.controls.clientId"
+                          inputId="storage-sp-client"
+                          [hint]="'storage.sp.clientIdHint' | translate"
+                          [forceShowErrors]="showErrors()"
+                          [errorMessages]="{ required: 'storage.sp.clientIdRequired', pattern: 'storage.sp.clientIdInvalid' }"
+                        >
+                          <input pInputText id="storage-sp-client" dir="ltr" class="w-full" [formControl]="spForm.controls.clientId" autocomplete="off" spellcheck="false" />
+                        </am-field>
+                      </div>
+                      <div class="am-sl__grid">
+                        <am-secret-field
+                          [label]="'storage.field.spClientSecret' | translate"
+                          inputId="storage-sp-secret"
+                          [control]="spForm.controls.clientSecret"
+                          [isSet]="settings().sharepoint.clientSecret === 'set'"
+                          [hint]="'storage.sp.secretHint' | translate"
+                          [errorMessages]="spSecretErrors"
+                          [forceShowErrors]="showErrors()"
+                        />
+                        <am-storage-expiry-field
+                          [control]="spForm.controls.secretExpiresOn"
+                          [label]="'storage.sp.expiryOptional' | translate"
+                          inputId="storage-sp-expiry"
+                          [hint]="'storage.sp.expiryHint' | translate"
+                          [forceShowErrors]="showErrors()"
+                        />
+                      </div>
+                      <am-field
+                        [label]="'storage.field.spSiteUrl' | translate"
+                        [control]="spForm.controls.siteUrl"
+                        inputId="storage-sp-site"
+                        [hint]="'storage.sp.siteUrlHint' | translate"
+                        [forceShowErrors]="showErrors()"
+                        [errorMessages]="{ required: 'storage.sp.siteUrlRequired', siteUrl: 'storage.sp.siteUrlInvalid', maxlength: 'validation.maxLength' }"
+                      >
+                        <input pInputText id="storage-sp-site" dir="ltr" class="w-full" [formControl]="spForm.controls.siteUrl" autocomplete="off" spellcheck="false" placeholder="https://" />
+                      </am-field>
+                      <am-field
+                        [label]="'storage.field.spLibrary' | translate"
+                        [control]="spForm.controls.libraryName"
+                        inputId="storage-sp-library"
+                        [hint]="'storage.sp.libraryHint' | translate"
+                        [forceShowErrors]="showErrors()"
+                        [errorMessages]="{ required: 'storage.sp.libraryRequired', maxlength: 'validation.maxLength' }"
+                      >
+                        <input pInputText id="storage-sp-library" class="w-full" [formControl]="spForm.controls.libraryName" autocomplete="off" spellcheck="false" />
+                      </am-field>
+                    </div>
                     <am-storage-test-box [view]="setupTestView()" (run)="runTest()" />
                   }
                 }
@@ -362,6 +468,7 @@ export class StorageLocationComponent {
 
   readonly keyErrors = { required: 'storage.setup.keyRequired', minlength: 'storage.setup.keyShort', maxlength: 'validation.maxLength' };
   readonly secretErrors = { required: 'storage.setup.secretRequired', minlength: 'storage.setup.secretShort', maxlength: 'validation.maxLength' };
+  readonly spSecretErrors = { required: 'storage.sp.secretRequired', minlength: 'storage.sp.secretShort', maxlength: 'validation.maxLength' };
 
   // ── first-time setup ───────────────────────────────────────────────────────
 
@@ -372,7 +479,7 @@ export class StorageLocationComponent {
   readonly confirmError = signal<string | null>(null);
   private reloadOnClose = false;
   private applied = false;
-  private readonly tests = signal<TestsByKind>({ S3: IDLE, MINIO: IDLE, LOCAL_FILESYSTEM: IDLE });
+  private readonly tests = signal<TestsByKind>(NO_TESTS);
 
   readonly minioForm = this.fb.nonNullable.group({
     endpoint: ['', [Validators.required, endpointUrl, Validators.maxLength(500)]],
@@ -384,6 +491,18 @@ export class StorageLocationComponent {
   readonly localForm = this.fb.nonNullable.group({
     rootPath: ['', [Validators.required, Validators.pattern(ROOT_PATH_PATTERN), Validators.maxLength(255)]],
   });
+  /** SharePoint's six fields (D1): the server's SharePointSettingsDto rules. */
+  readonly spForm = this.fb.nonNullable.group({
+    tenant: ['', [Validators.required, Validators.pattern(TENANT_PATTERN), Validators.maxLength(TENANT_MAX)]],
+    clientId: ['', [Validators.required, Validators.pattern(GUID_PATTERN)]],
+    clientSecret: ['', [Validators.minLength(SP_SECRET_MIN), Validators.maxLength(SP_SECRET_MAX)]],
+    siteUrl: ['', [Validators.required, sharePointSiteUrl, Validators.maxLength(SITE_URL_MAX)]],
+    libraryName: ['', [notBlank, Validators.maxLength(LIBRARY_MAX)]],
+    secretExpiresOn: ['', [calendarDay]],
+  });
+  private readonly spValue = toSignal(this.spForm.valueChanges.pipe(map(() => this.spForm.getRawValue())), {
+    initialValue: this.spForm.getRawValue(),
+  });
   private readonly minioValue = toSignal(this.minioForm.valueChanges.pipe(map(() => this.minioForm.getRawValue())), {
     initialValue: this.minioForm.getRawValue(),
   });
@@ -392,10 +511,10 @@ export class StorageLocationComponent {
   });
 
   /** The body Test and Confirm send: exactly the values on screen. */
-  readonly candidate = computed(() => setupCandidate(this.selected(), this.minioValue(), this.localValue()));
+  readonly candidate = computed(() => setupCandidate(this.selected(), this.minioValue(), this.localValue(), this.spValue()));
   readonly setupTestView = computed(() => testView(this.selected(), this.tests()[this.selected()], this.candidate()));
   readonly setupBar = computed(() => confirmBar(this.selected(), this.tests()[this.selected()], this.candidate()));
-  readonly confirmedLocation = computed(() => confirmLocation(this.selected(), this.candidate()));
+  readonly confirmedLocation = computed(() => confirmLocation(this.selected(), this.candidate(), this.tests()[this.selected()]));
 
   // ── replacing the MinIO keys ───────────────────────────────────────────────
 
@@ -426,8 +545,17 @@ export class StorageLocationComponent {
         this.selected.set(initialSelection(s));
         this.minioForm.patchValue({ endpoint: s.minio.endpoint ?? '', bucket: s.minio.bucket ?? '', region: s.minio.region ?? '' });
         this.localForm.patchValue({ rootPath: s.local.rootPath ?? '' });
+        const sp = s.sharepoint;
+        this.spForm.patchValue({
+          tenant: sp.tenant ?? '',
+          clientId: sp.clientId ?? '',
+          siteUrl: sp.siteUrl ?? '',
+          libraryName: sp.libraryName ?? '',
+          secretExpiresOn: sp.secretExpiresOn ?? '',
+        });
         this.requireUnlessStored(this.minioForm.controls.accessKeyId, s.minio.accessKeyId === 'set');
         this.requireUnlessStored(this.minioForm.controls.secretAccessKey, s.minio.secretAccessKey === 'set');
+        this.requireUnlessStored(this.spForm.controls.clientSecret, sp.clientSecret === 'set');
       });
     });
   }
@@ -461,6 +589,11 @@ export class StorageLocationComponent {
     return f.value.map((p: ValuePart) => ('text' in p ? p.text : 'date' in p ? this.format.date(p.date) : this.translate.instant(p.key))).join(' · ');
   }
 
+  /** A YYYY-MM-DD day as an instant no time zone moves to another day. */
+  noon(day: string): string {
+    return noonOf(day);
+  }
+
   withdrawnBody(h: Extract<SharePointHealth, { state: 'withdrawn' }>): string {
     return this.translate.instant(`storage.sp.withdrawn.${h.reason ?? 'UNKNOWN'}`, { library: this.settings().sharepoint.libraryName ?? '' });
   }
@@ -470,7 +603,7 @@ export class StorageLocationComponent {
   runTest(): void {
     const kind = this.selected();
     if (kind === 'S3') return;
-    const form = kind === 'MINIO' ? this.minioForm : this.localForm;
+    const form = kind === 'MINIO' ? this.minioForm : kind === 'SHAREPOINT' ? this.spForm : this.localForm;
     if (form.invalid) {
       form.markAllAsTouched();
       this.showErrors.set(true);
@@ -480,7 +613,7 @@ export class StorageLocationComponent {
     this.setTest(kind, { status: 'running', candidate });
     this.storage.test(candidate).subscribe({
       next: (result) => this.setTest(kind, { status: 'done', candidate, result, at: new Date().toISOString() }),
-      error: () => this.setTest(kind, { status: 'error', candidate }),
+      error: (err: unknown) => this.setTest(kind, { status: 'error', candidate, timedOut: isTimeout(err) }),
     });
   }
 
@@ -509,7 +642,8 @@ export class StorageLocationComponent {
     if (this.busy()) return;
     this.busy.set(true);
     this.confirmError.set(null);
-    this.storage.confirm(this.candidate()).subscribe({
+    // The expiry date rides along (D3): it is a reminder, not something the test checks.
+    this.storage.confirm(withExpiry(this.candidate(), this.spValue().secretExpiresOn)).subscribe({
       next: () => {
         this.busy.set(false);
         this.confirmOpen.set(false);
@@ -519,8 +653,8 @@ export class StorageLocationComponent {
       error: (err: unknown) => {
         this.busy.set(false);
         // The values stay on the page; the dialog says why and that nothing changed.
-        this.confirmError.set(this.refusalText(err, this.selected(), 'storage.confirm.failed'));
-        if (codeOf(err) === 'STORAGE_ALREADY_CONFIRMED') this.reloadOnClose = true;
+        this.confirmError.set(storageRefusalText(err, this.selected(), 'storage.confirm.failed', this.files, this.translate));
+        if (refusalCode(err) === 'STORAGE_ALREADY_CONFIRMED') this.reloadOnClose = true;
       },
     });
   }
@@ -529,7 +663,8 @@ export class StorageLocationComponent {
   private clearSetup(): void {
     this.minioForm.reset();
     this.localForm.reset();
-    this.tests.set({ S3: IDLE, MINIO: IDLE, LOCAL_FILESYSTEM: IDLE });
+    this.spForm.reset();
+    this.tests.set(NO_TESTS);
     this.showErrors.set(false);
   }
 
@@ -561,7 +696,7 @@ export class StorageLocationComponent {
     this.keysTest.set({ status: 'running', candidate });
     this.storage.test(candidate).subscribe({
       next: (result) => this.keysTest.set({ status: 'done', candidate, result, at: new Date().toISOString() }),
-      error: () => this.keysTest.set({ status: 'error', candidate }),
+      error: (err: unknown) => this.keysTest.set({ status: 'error', candidate, timedOut: isTimeout(err) }),
     });
   }
 
@@ -577,27 +712,8 @@ export class StorageLocationComponent {
       },
       error: (err: unknown) => {
         this.busy.set(false);
-        this.keysError.set(this.refusalText(err, 'MINIO', 'storage.keys.failed'));
+        this.keysError.set(storageRefusalText(err, 'MINIO', 'storage.keys.failed', this.files, this.translate));
       },
     });
   }
-
-  /**
-   * A refusal in the reader's words, never the server's message. A failed test
-   * at confirm or save also says which step failed and what to check.
-   */
-  private refusalText(err: unknown, kind: StorageKind, fallbackKey: string): string {
-    const said = this.files.refusal(err) ?? this.translate.instant(fallbackKey);
-    const body = (err as { error?: { code?: unknown; failedStep?: unknown; cause?: unknown } })?.error;
-    if (body?.code === 'STORAGE_TEST_FAILED' && typeof body.failedStep === 'string') {
-      const cause = typeof body.cause === 'string' ? body.cause : null;
-      return `${said} ${this.translate.instant(stepFailureKey(kind, body.failedStep as StorageTestStep, cause))}`;
-    }
-    return said;
-  }
-}
-
-function codeOf(err: unknown): string | null {
-  const code = (err as { error?: { code?: unknown } })?.error?.code;
-  return typeof code === 'string' ? code : null;
 }

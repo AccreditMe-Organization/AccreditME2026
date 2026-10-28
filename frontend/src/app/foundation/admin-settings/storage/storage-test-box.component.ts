@@ -40,6 +40,13 @@ const GLYPH: Record<StepState, string> = { done: '✓', fail: '✕', wait: '○'
           data-testid="test-run"
         />
       </div>
+      @if (view().found; as found) {
+        <!-- ACC-260 PR C: what a passing SharePoint test reached, before Confirm.
+             The customer's own names, isolated left to right (rule 6). -->
+        <p class="am-tb__found" data-testid="test-found">
+          {{ 'storage.test.found' | translate }}: <bdi dir="ltr" data-testid="test-found-value">{{ found }}</bdi>
+        </p>
+      }
       @if (view().steps; as steps) {
         <ol class="am-tb__steps" [attr.aria-label]="'storage.test.stepsLabel' | translate">
           @for (s of steps; track s.step) {
@@ -83,6 +90,7 @@ const GLYPH: Record<StepState, string> = { done: '✓', fail: '✕', wait: '○'
       .am-tb__name--fail{font-weight:600;color:var(--am-danger-ink)}
       .am-tb__name--quiet{color:var(--am-ink-500)}
       .am-tb__detail{display:block;font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);color:var(--am-ink-900)}
+      .am-tb__found{margin:var(--am-space-4) 0 0;font-size:var(--am-type-value-size);line-height:var(--am-type-value-line);font-weight:500;color:var(--am-ink-900);overflow-wrap:anywhere}
       .am-tb__note{margin:var(--am-space-6) 0 0;font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);color:var(--am-ink-700)}
     `,
   ],

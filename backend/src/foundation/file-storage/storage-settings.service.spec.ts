@@ -6,6 +6,7 @@ import { StorageSettingsService } from './storage-settings.service';
 import { StorageResolverService } from './storage-resolver.service';
 import { StoredFileService } from './stored-file.service';
 import { StorageNoticesService } from './storage-notices.service';
+import { SharePointAccessService } from './sharepoint-access.service';
 import { StorageRefusalException } from './storage-refusal';
 import { readStorageConfig, writeStorageConfig } from './storage-config';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -47,6 +48,7 @@ describe('StorageSettingsService (ACC-177)', () => {
     storedFiles as unknown as StoredFileService,
     auditLog as unknown as AuditLogService,
     notices as unknown as StorageNoticesService,
+    { markRestored: jest.fn() } as unknown as SharePointAccessService,
   );
   const ENV = ['ENCRYPTION_KEY', 'LOCAL_STORAGE_BASE', 'STORAGE_ALLOW_PRIVATE_ENDPOINTS', 'AWS_REGION', 'AWS_S3_BUCKET', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'];
   const saved: Record<string, string | undefined> = {};
