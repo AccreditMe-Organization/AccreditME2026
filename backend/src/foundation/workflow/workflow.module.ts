@@ -17,6 +17,7 @@ import { WorkflowService } from './workflow.service';
 import { WorkflowActionProcessor } from './workflow-action.processor';
 import { SlaMonitorProcessor } from './sla-monitor.processor';
 import { workersEnabled } from '../../common/queue/workers.config';
+import { StagePoolModule } from './stage-pool.module';
 
 // Not @Global() — unlike RolesModule, nothing outside this module needs
 // WorkflowTemplateService/WorkflowService injected via a guard; future
@@ -62,6 +63,8 @@ import { workersEnabled } from '../../common/queue/workers.config';
     // detection (2.5) needs it to check whether a resolved assignee pool
     // holds a transition's requiredPermission.
     RolesModule,
+    // ACC-271 — who works a converted stage; depends on Prisma alone.
+    StagePoolModule,
   ],
   controllers: [WorkflowTemplateController, WorkflowController],
   // ACC-92 — both processors are gated. SlaMonitorProcessor also SCHEDULES

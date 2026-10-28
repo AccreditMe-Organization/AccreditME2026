@@ -36,6 +36,7 @@ import { TaskSlaService } from '../task/task-sla.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageTaskDefinitionService } from '../workflow/stage-task-definition.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
+import { StagePoolService } from '../workflow/stage-pool.service';
 import { applyWorkflowSeed } from '../workflow/workflow-seed-apply';
 import { SYSTEM_WORKFLOW_SEED } from '../workflow/workflow.seed';
 import { CommitteesService } from './committees.service';
@@ -68,7 +69,7 @@ describe("A committee's direct writes, decided by its stage, against a real data
   const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
   const organizations = { resolveActingHeadForOrgUnit: async () => null } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks);
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, new StagePoolService(prisma));
   const committees = new CommitteesService(prisma, audit, workflow, new StageRulesService(prisma));
 
   interface Org {

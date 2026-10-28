@@ -13,6 +13,11 @@ import { OrgPositionService } from '../org-position/org-position.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { resolveAppLinkConfig } from '../../common/config/app-url.config';
 import { renderEmailHtml } from '../notification/email-html';
+import type { StagePoolService } from '../workflow/stage-pool.service';
+
+// ACC-271 — deactivation reads the stage pools a person leaves; none here.
+const noStagePools = (): StagePoolService =>
+  ({ openEntriesWithMember: jest.fn().mockResolvedValue([]), recordPoolMemberLeftInTx: jest.fn() }) as unknown as StagePoolService;
 
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
@@ -58,6 +63,8 @@ describe('UserService', () => {
     getHeadStatus: jest.Mock;
     assignHead: jest.Mock;
   };
+  // ACC-271 — the stage pools a departing person leaves.
+  let mockStagePool: { openEntriesWithMember: jest.Mock; recordPoolMemberLeftInTx: jest.Mock };
   let mockOrgPositionService: {
     listAvailablePositionsForUser: jest.Mock;
     hasAnyHeadConferringHolder: jest.Mock;
@@ -170,6 +177,7 @@ describe('UserService', () => {
       hasAnyHeadConferringHolder: jest.fn().mockResolvedValue(false),
     };
 
+    mockStagePool = { openEntriesWithMember: jest.fn().mockResolvedValue([]), recordPoolMemberLeftInTx: jest.fn() };
     service = new UserService(
       mockPrisma as unknown as PrismaService,
       mockAuditLog as unknown as AuditLogService,
@@ -180,6 +188,7 @@ describe('UserService', () => {
       mockAuthProvider as unknown as AuthProvider,
       mockOrgUnitHeadService as unknown as OrgUnitHeadService,
       mockOrgPositionService as unknown as OrgPositionService,
+      mockStagePool as unknown as StagePoolService,
     );
   });
 
@@ -2841,6 +2850,32 @@ describe('UserService', () => {
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
     });
 
+    // ACC-271 decision 7 — the stage pools the person leaves are read BEFORE
+    // the status flip (afterwards no pool holds them) and recorded INSIDE the
+    // flip's transaction, so a refused deactivation records nothing.
+    it('records POOL_MEMBER_LEFT on every open converted stage entry whose pool held the person, with the flip', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A, status: 'ACTIVE' });
+      mockPrisma.user.update.mockResolvedValue({});
+      const order: string[] = [];
+      mockStagePool.openEntriesWithMember.mockImplementation(async () => {
+        order.push('read pools');
+        return ['entry-1', 'entry-2'];
+      });
+      mockPrisma.user.update.mockImplementation(async () => {
+        order.push('flip');
+        return {};
+      });
+      mockStagePool.recordPoolMemberLeftInTx.mockImplementation(async () => {
+        order.push('record');
+      });
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockStagePool.openEntriesWithMember).toHaveBeenCalledWith(ORG_A, 'user-1');
+      expect(mockStagePool.recordPoolMemberLeftInTx).toHaveBeenCalledWith(mockPrisma, ORG_A, ['entry-1', 'entry-2'], 'user-1', 'DEACTIVATED');
+      expect(order).toEqual(['read pools', 'flip', 'record']);
+    });
+
     // ACC-40 Section 2.5.1 — refreshOrgUnitHeadVacancy() wiring.
 
     it('refreshes the departing user\'s own primary org unit after the status flip', async () => {
@@ -3613,6 +3648,7 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
       realMockAuthProvider as unknown as AuthProvider,
       {} as OrgUnitHeadService, // placeholder, patched below
       realMockOrgPositionService as unknown as OrgPositionService,
+      noStagePools(),
     );
     const realOrgUnitHeadService = new OrgUnitHeadService(
       realMockPrisma as unknown as PrismaService,

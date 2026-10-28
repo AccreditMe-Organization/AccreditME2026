@@ -1011,6 +1011,8 @@
       "stageActionUnknown": "This kind of record has no such action.",
       "stageFlagUnknown": "This kind of record has no such stage meaning.",
       "stageFlagExactlyOne": "Exactly one stage of this workflow must carry this meaning.",
+      "stageHasNoOne": "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it.",
+      "notInStagePool": "Only whoever works this stage can do this.",
       "protected": {
         "CREATE_TEMPLATE": "There is already a committee change request workflow, and there can be only one. Rename its stages or set their deadlines instead.",
         "REPLACE_DEFAULT": "The committee change request workflow cannot be replaced by another workflow.",

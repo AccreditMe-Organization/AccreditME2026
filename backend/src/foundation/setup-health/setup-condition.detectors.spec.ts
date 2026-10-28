@@ -74,8 +74,11 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   // the detector fails `tsc` on three Record<ActiveSetupConditionType> maps AND
   // fails this test, which asserts the EXACT list rather than membership. That
   // is deliberate: membership would have let the two halves land apart.
-  it('defers POSITION_WITHOUT_ROLE, and gives no deferred type a detector', () => {
-    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
+  //
+  // ACC-271 — STAGE_ON_STARTING_ASSIGNMENT is ON the list until PR 3 adds its
+  // detector, the same split ACTING_HEAD_OPEN_ENDED made.
+  it('defers POSITION_WITHOUT_ROLE and STAGE_ON_STARTING_ASSIGNMENT, and gives no deferred type a detector', () => {
+    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE', 'STAGE_ON_STARTING_ASSIGNMENT']);
     for (const type of DEFERRED_SETUP_CONDITION_TYPES) {
       expect(Object.keys(detectors.byType)).not.toContain(type);
     }

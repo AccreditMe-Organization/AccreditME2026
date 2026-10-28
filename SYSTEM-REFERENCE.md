@@ -2815,6 +2815,76 @@ a copy of a server rule.
   the transition editor's steps, Add / Edit stage task, and the action
   configurator (compacted in PR 4b from 470 px to 322 px).
 
+### 2.19 Who works a stage — the stage's pool (ACC-271, PR 1: the engine)
+
+Plan, Ahmad's answers (28 Oct, §13.1) and the PR split:
+`backend/Plans/step-271-stage-owns-who.md`. PR 1 is the schema and the engine;
+**nothing writes the new shape yet** (the backfill is PR 2, the screens PR 3), so
+every stage on every database is still unconverted and behaves as §2.4–§2.8 say.
+
+- **The transition window (plan §4.6).** A stage with `WorkflowStage.whoMode`
+  set is CONVERTED: its `WorkflowStageAssignee` entries say who works it, and
+  the old columns (`assigneeStrategy`, `approvalMode`, `parallelThreshold`,
+  `committeeId`, the transition's `requiredPermission`, `triggerCondition`,
+  `triggerRoleId`, `triggerUserId`) are not read for it. A stage with
+  `whoMode` null takes every old branch, unchanged. One predicate,
+  `isConvertedStage()` (`workflow-pool.ts`), loose `!= null`.
+- **The pool** (`StagePoolService`, `stage-pool.service.ts`, its own
+  `StagePoolModule` on Prisma alone, imported by WorkflowModule and UserModule).
+  Entries join with "or"; each resolves to **ACTIVE** users at read time, never
+  stored; then an away member (window in force, acting user ACTIVE) is replaced
+  by their acting user (`members`); `direct` is before that routing.
+  | Kind | Resolves to |
+  |---|---|
+  | SPECIFIC_USER | that user |
+  | POSITION_IN_UNIT | the holder rule (position + primary unit) |
+  | ORG_UNIT_HEAD | the unit's head holders AND its acting cover in force, from the period table; no unit = the record's unit (`RECORD_ROUTES`, fail closed); **no walk up to a parent** |
+  | CREATOR | the actor of the instance's first stage entry (today's SELF) |
+  | COMMITTEE | the committee's active members, in the role if set; no committee = the record's; the user must be ACTIVE too |
+- **Batched (Ahmad's performance rule).** `resolveMany(org, requests)` answers
+  any number of (stage, record) pairs with one query per kind: the entries, the
+  records' units, the records' committees, the creators, the position holders,
+  the head holders, the covers, the committee members, and one users read for
+  status and absence. Pinned by `stage-pool.service.spec.ts` (12 stages, one
+  call each). Nothing is on the per-request guard path.
+- **Who may press (decision 1).** On a converted from-stage, a PERSON move needs
+  the actor in `members` or `direct` (an away member may still act
+  themselves). Empty pool: 409 `STAGE_HAS_NO_ONE`; outside it: 403
+  `NOT_IN_STAGE_POOL`, both carrying `stageNameEn`/`stageNameAr`. A move
+  whose mover is APP or AUTOMATIC is refused as SYSTEM_AUTOMATIC is today. The
+  mandatory-task gate and `TRANSITION_PRECONDITIONS` run as before.
+- **The mover** (`WorkflowTransition.mover`, `transitionMover()`): null reads
+  as APP for SYSTEM_AUTOMATIC, PERSON otherwise. `triggerSystemTransition`
+  looks for `APP_MOVER_WHERE`; the in-transaction write requires APP.
+- **Deciding (plan §4.3).** ANY_ONE: one action decides (the SINGLE path). ALL:
+  every current member has approved, or the absent member an acting user stands
+  in for has; a leaver's earlier approval harms nothing (Q6); an empty pool
+  decides nothing. COMMITTEE_VOTE: the vote committee (`voteCommitteeId`, the
+  first COMMITTEE entry's or the record's), against the quorum saved at entry;
+  no committee decides nothing. `submitApproval` refuses as the trigger does,
+  including an empty pool (today an empty pool lets anyone vote).
+- **Unassigned (plan §4.5).** A converted entry is unassigned when its pool is
+  empty, at entry and in the 15-minute sweep, which resolves every converted
+  open entry of an organisation in one `resolveStagePools()` call and hands
+  that pool to recovery.
+- **The delegation stamp** on a converted stage comes from the pool:
+  `actingHeadOf` (ACTING_HEAD), then `coveringFor` (OUT_OF_OFFICE_COVERAGE).
+- **The leaver (decision 7).** `UserService.deactivate()` reads
+  `openEntriesWithMember()` before the status flip and writes one
+  `WorkflowInstanceStageEvent` (`POOL_MEMBER_LEFT`, reason DEACTIVATED) per
+  entry inside the flip's transaction. Leaving a position or a committee is the
+  sweep's to record (PR 2+).
+- **Not yet:** `STAGE_ON_STARTING_ASSIGNMENT` is in the enum and deferred
+  (`DEFERRED_SETUP_CONDITION_TYPES`) until PR 3's detector;
+  `WorkflowTransitionActionsComponent` still hides a button by
+  `requiredPermission`, which must stop for converted stages before PR 2
+  converts any; the initial-assignee and SEND_NOTIFICATION notices go to the
+  pool without the old per-call out-of-office notices.
+- **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
+  block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
+  `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
+  Postgres).
+
 ---
 
 ## 3. Task System

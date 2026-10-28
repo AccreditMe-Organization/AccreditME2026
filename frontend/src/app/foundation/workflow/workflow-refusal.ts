@@ -35,7 +35,10 @@ export type WorkflowRefusalCode =
   | 'STAGE_ACTION_NOT_ALLOWED'
   | 'STAGE_ACTION_UNKNOWN'
   | 'STAGE_FLAG_UNKNOWN'
-  | 'STAGE_FLAG_EXACTLY_ONE';
+  | 'STAGE_FLAG_EXACTLY_ONE'
+  // ACC-271 — who works a converted stage: nobody, or not the caller.
+  | 'STAGE_HAS_NO_ONE'
+  | 'NOT_IN_STAGE_POOL';
 
 /**
  * The refusals whose words need nothing but the code. Literal keys, so the
@@ -62,6 +65,10 @@ const PLAIN_REFUSAL_KEYS: Partial<Record<WorkflowRefusalCode, string>> = {
   STAGE_ACTION_UNKNOWN: 'workflow.refusal.stageActionUnknown',
   STAGE_FLAG_UNKNOWN: 'workflow.refusal.stageFlagUnknown',
   STAGE_FLAG_EXACTLY_ONE: 'workflow.refusal.stageFlagExactlyOne',
+  // The record page's transition buttons say these; the stage is the one the
+  // record is at, so the sentence says "this stage".
+  STAGE_HAS_NO_ONE: 'workflow.refusal.stageHasNoOne',
+  NOT_IN_STAGE_POOL: 'workflow.refusal.notInStagePool',
 };
 
 /**

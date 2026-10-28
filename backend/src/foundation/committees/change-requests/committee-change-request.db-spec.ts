@@ -40,6 +40,7 @@ import { COMMITTEE_STAGE_KEYS } from '../../workflow/workflow-stage-keys';
 import { runBackfill } from '../../../../prisma/backfill-acc239-change-request-workflow';
 import { ChangeRequestViewer, CommitteeChangeRequestService } from './committee-change-request.service';
 import { StageRulesService } from '../../workflow/stage-rules.service';
+import { StagePoolService } from '../../workflow/stage-pool.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -79,7 +80,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
   const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
   const organizations = { resolveActingHeadForOrgUnit: async () => null } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks);
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, new StagePoolService(prisma));
   const templates = new WorkflowTemplateService(prisma, audit, stageTasks);
   const requests = new CommitteeChangeRequestService(prisma, workflow, tasks, audit, notifications, new StageRulesService(prisma));
 

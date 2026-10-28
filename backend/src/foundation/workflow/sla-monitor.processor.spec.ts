@@ -115,7 +115,10 @@ const mockWorkflowService = {
   // reachable. Safe no-op default (empty pool = nothing to recover) set in
   // beforeEach; recovery tests override it per-case.
   resolveAssigneeForStage: jest.fn(),
+  // ACC-271 — converted stages' pools, one batch per organisation.
+  resolveStagePools: jest.fn(),
 };
+const poolOf = (members: string[]) => ({ members, direct: members, coveringFor: new Map(), actingHeadOf: new Map(), voteCommitteeId: null });
 // ACC-51 — recovery hands the resolved pool to TaskService, which owns the
 // actual assignment/notification logic (tested in task.service.spec.ts).
 const mockTaskService = {
@@ -180,6 +183,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // recovers nothing, so every pre-existing test is unaffected by the new
     // recovery branch. Recovery tests override both per-case.
     mockWorkflowService.resolveAssigneeForStage.mockResolvedValue([]);
+    mockWorkflowService.resolveStagePools.mockResolvedValue(new Map());
     mockTaskService.attachAssigneesToUnassignedStageTasks.mockResolvedValue(0);
     // ACC-52 — default: nothing orphaned, so recovery short-circuits before
     // pool resolution. Recovery tests override this per-case.
@@ -226,6 +230,70 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       data: { isUnassigned: true, unassignedAt: expect.any(Date) },
     });
     expect(mockNotificationService.create).not.toHaveBeenCalled();
+  });
+
+  describe('converted stages (ACC-271, plan §4.5)', () => {
+    const CONVERTED = { ...BASE_STAGE, whoMode: 'ALL' };
+
+    it('flags a converted stage whose pool is empty, without the old transition-field detectors', async () => {
+      mockPrisma.workflowInstanceStage.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([makeOpenInstanceStage({ stage: CONVERTED })]);
+      mockWorkflowService.resolveStagePools.mockResolvedValue(new Map([['instance-stage-1', poolOf([])]]));
+
+      await runProcess();
+
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+        where: { id: 'instance-stage-1' },
+        data: { isUnassigned: true, unassignedAt: expect.any(Date) },
+      });
+      expect(mockWorkflowService.resolveUnassignedBlockingTransitions).not.toHaveBeenCalled();
+      expect(mockWorkflowService.resolveUnreachableTriggerConditionTransitions).not.toHaveBeenCalled();
+    });
+
+    it('resolves every converted entry of an organisation in ONE call, and leaves unconverted ones to the old detectors', async () => {
+      const ORG_B = 'org-b-id';
+      const inB = { ...BASE_INSTANCE, id: 'instance-b', organizationId: ORG_B };
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        makeOpenInstanceStage({ id: 'a1', stage: CONVERTED }),
+        makeOpenInstanceStage({ id: 'a2', stage: { ...CONVERTED, id: 'stage-2' } }),
+        makeOpenInstanceStage({ id: 'a3', stage: CONVERTED }),
+        makeOpenInstanceStage({ id: 'b1', stage: CONVERTED, workflowInstance: inB }),
+        makeOpenInstanceStage({ id: 'old', stage: BASE_STAGE }),
+      ]);
+      mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue([]);
+      mockWorkflowService.resolveStagePools.mockImplementation((_org: string, requests: { key: string }[]) =>
+        Promise.resolve(new Map(requests.map((r) => [r.key, poolOf(['someone'])]))),
+      );
+
+      await runProcess();
+
+      expect(mockWorkflowService.resolveStagePools).toHaveBeenCalledTimes(2);
+      const keysFor = (org: string) =>
+        (mockWorkflowService.resolveStagePools.mock.calls.find((c) => c[0] === org)![1] as { key: string }[]).map((r) => r.key);
+      expect(keysFor(ORG_A)).toEqual(['a1', 'a2', 'a3']);
+      expect(keysFor(ORG_B)).toEqual(['b1']);
+      // Only the unconverted entry reaches the old per-entry detectors.
+      expect(mockWorkflowService.resolveUnassignedBlockingTransitions).toHaveBeenCalledTimes(1);
+      expect(mockWorkflowService.resolveUnassignedBlockingTransitions).toHaveBeenCalledWith(BASE_STAGE, BASE_INSTANCE, ORG_A);
+    });
+
+    it("on recovery, hands the batch's pool to the orphaned task without resolving it again", async () => {
+      mockPrisma.workflowInstanceStage.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([makeOpenInstanceStage({ stage: CONVERTED, isUnassigned: true, unassignedAt: new Date('2026-01-01') })]);
+      mockWorkflowService.resolveStagePools.mockResolvedValue(new Map([['instance-stage-1', poolOf(['user-in-pool'])]]));
+      mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true);
+
+      await runProcess();
+
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+        where: { id: 'instance-stage-1' },
+        data: { isUnassigned: false, unassignedAt: null },
+      });
+      expect(mockWorkflowService.resolveAssigneeForStage).not.toHaveBeenCalled();
+      expect(mockTaskService.attachAssigneesToUnassignedStageTasks).toHaveBeenCalledWith('instance-1', 'stage-1', ['user-in-pool'], ORG_A);
+    });
   });
 
   it('clears isUnassigned on a previously-flagged stage once the pool is qualifying again, without notifying', async () => {

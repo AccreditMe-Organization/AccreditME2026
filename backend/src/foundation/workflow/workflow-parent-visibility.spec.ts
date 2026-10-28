@@ -35,6 +35,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { WorkflowController } from './workflow.controller';
 import { WorkflowService } from './workflow.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
+import { StagePoolService } from './stage-pool.service';
 
 const TENANT_ID = 'org-a';
 const COMMITTEE_ID = 'committee-1';
@@ -107,6 +108,8 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
       controllers: [WorkflowController],
       providers: [
         WorkflowService,
+        // ACC-271 — real: it runs only for converted workflow stages.
+        StagePoolService,
         DelegationLabelService,
         // REAL — the refusal under test is this service's.
         ObjectVisibilityService,
