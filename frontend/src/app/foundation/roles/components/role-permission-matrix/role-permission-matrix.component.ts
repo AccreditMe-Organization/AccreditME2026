@@ -1,4 +1,4 @@
-import { Component, DestroyRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, HostListener, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -113,7 +113,9 @@ interface ModuleView {
  * <main> (`p-4`, 16px): Chrome measures a sticky top from inside that
  * padding, and at 0 the rows showed through a 16px strip above the heading. Below 768px it is one
  * column, sentences wrap, and the header's save controls move to a bar fixed
- * at the bottom of the screen.
+ * at the bottom of the screen. The room under the list is the bar's MEASURED
+ * height (a ResizeObserver), never a fixed size: the bar wraps to two lines on
+ * a phone, and a longer translation or a larger font makes it taller still.
  *
  * ## The keyboard
  *
@@ -349,9 +351,9 @@ interface ModuleView {
     </div>
 
     @if (showPhoneBar()) {
-      <!-- Room under the last row, so the fixed bar never covers it. -->
-      <div class="h-[calc(var(--am-space-40)*2)] md:hidden" aria-hidden="true"></div>
-      <div class="fixed inset-x-0 bottom-0 z-[5] flex flex-wrap items-center justify-between gap-[var(--am-space-8)] px-[var(--am-space-12)] py-[var(--am-space-8)] bg-surface-raised border-t border-[var(--am-border-strong)] md:hidden" data-pm-phone-bar>
+      <!-- Room under the last row, exactly the fixed bar's height, so it never covers it. -->
+      <div class="md:hidden" [style.height.px]="phoneBarHeight()" aria-hidden="true" data-pm-phone-room></div>
+      <div #phoneBar class="fixed inset-x-0 bottom-0 z-[5] flex flex-wrap items-center justify-between gap-[var(--am-space-8)] px-[var(--am-space-12)] py-[var(--am-space-8)] bg-surface-raised border-t border-[var(--am-border-strong)] md:hidden" data-pm-phone-bar>
         <span class="pm-unsaved">{{ changeCount() | amCount: 'role.unsaved' }}</span>
         <span class="flex gap-2">
           <p-button [label]="'common.discard' | translate" severity="secondary" [outlined]="true" (onClick)="discard()" />
@@ -540,6 +542,25 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   readonly changes = computed(() => changesOf(this.modules(), this.selected(), this.loaded()));
   readonly changeCount = computed(() => this.changes().added.length + this.changes().removed.length);
   readonly showPhoneBar = computed(() => !this.readOnly() && this.changeCount() > 0);
+
+  /** The phone bar, while it is rendered, and its measured height for the room under the list. */
+  private readonly phoneBar = viewChild<ElementRef<HTMLElement>>('phoneBar');
+  readonly phoneBarHeight = signal(0);
+
+  constructor() {
+    // One observer per rendered bar, disconnected when the bar goes (or the page
+    // does): effect cleanup runs on both.
+    effect((onCleanup) => {
+      const bar = this.phoneBar()?.nativeElement;
+      if (!bar || typeof ResizeObserver === 'undefined') {
+        this.phoneBarHeight.set(0);
+        return;
+      }
+      const observer = new ResizeObserver(() => this.phoneBarHeight.set(Math.ceil(bar.getBoundingClientRect().height)));
+      observer.observe(bar);
+      onCleanup(() => observer.disconnect());
+    });
+  }
 
   /** The confirmation's two headings, each line "Module · sentence" (3b). */
   readonly confirmGroups = computed<PermissionChangeGroup[]>(() => {

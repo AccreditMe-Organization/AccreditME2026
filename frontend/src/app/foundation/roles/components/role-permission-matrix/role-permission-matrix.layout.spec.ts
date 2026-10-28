@@ -33,6 +33,19 @@ const perm = (key: string): PermissionDto => {
 };
 const CATALOGUE = Object.keys(SENTENCES).map(perm);
 
+/**
+ * The translation files with the phone bar's "n changes unsaved" three times
+ * its length, in every plural form: what a longer translation or a larger font
+ * does to the bar's height.
+ */
+type Plurals = Record<string, string>;
+function withLongUnsaved<T>(file: T): T {
+  const copy = JSON.parse(JSON.stringify(file)) as T & { plural: { role: { unsaved: Plurals } } };
+  const forms = copy.plural.role.unsaved;
+  for (const k of Object.keys(forms)) forms[k] = [forms[k], forms[k], forms[k]].join(' · ');
+  return copy;
+}
+
 @Component({
   selector: 'am-test-main',
   standalone: true,
@@ -70,7 +83,7 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
     frame.style.width = `${width}px`;
   }
 
-  async function render(lang: 'en' | 'ar', width: number, viewport: number): Promise<HTMLElement> {
+  async function render(lang: 'en' | 'ar', width: number, viewport: number, longUnsaved = false): Promise<HTMLElement> {
     setViewport(viewport);
     TestBed.resetTestingModule();
     const role: RoleDto = {
@@ -93,7 +106,7 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
         { provide: NavigationAccessService, useValue: { hasPermission: () => true, isPlatformOrg: () => false } },
       ],
     });
-    loadTranslationsForTest({ en, ar });
+    loadTranslationsForTest(longUnsaved ? { en: withLongUnsaved(en), ar: withLongUnsaved(ar) } : { en, ar });
     TestBed.inject(TranslateService).use(lang);
     TestBed.inject(LanguageService).use(lang);
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
@@ -214,12 +227,13 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
       });
     }
 
-    for (const [width, viewport] of [
-      [390, 390],
-      [328, 360],
+    for (const [width, viewport, longUnsaved] of [
+      [390, 390, false],
+      [328, 360, false],
+      [328, 360, true],
     ] as const) {
-      it(`${lang} at ${width}: scrolled to the end with changes, the phone bar never covers the last row`, async () => {
-        const main = await render(lang, width, viewport);
+      it(`${lang} at ${width}${longUnsaved ? ', with an "unsaved" label three times as long' : ''}: scrolled to the end with changes, the phone bar never covers the last row`, async () => {
+        const main = await render(lang, width, viewport, longUnsaved);
         // <main> spans the screen from top to bottom, as the app shell's does.
         // Pinned, because in the full suite other specs leave content above the
         // fixture and it would otherwise start far down the page.
@@ -242,7 +256,12 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
         await settle();
         expect(main.scrollTop + main.clientHeight).withContext('scrolled to the end').toBeGreaterThanOrEqual(main.scrollHeight - 1);
         expect(box(last).bottom).withContext(`the last row (${last.getAttribute('data-pm-row')}) clears the bar`).toBeLessThanOrEqual(box(bar).top + 0.5);
-        measured.push(`  ${lang} ${width}: phone bar ${Math.round(box(bar).height)}px, last row bottom ${Math.round(box(last).bottom)}, bar top ${Math.round(box(bar).top)}`);
+        // The room under the list is the bar's own height, whatever it is.
+        const room = main.querySelector<HTMLElement>('[data-pm-phone-room]')!;
+        expect(Math.round(box(room).height)).withContext('room = bar height').toBe(Math.ceil(box(bar).height));
+        measured.push(
+          `  ${lang} ${width}${longUnsaved ? ' long label' : ''}: phone bar ${Math.round(box(bar).height)}px, gap last row to bar ${Math.round(box(bar).top - box(last).bottom)}px`,
+        );
       });
     }
 
