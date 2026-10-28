@@ -256,6 +256,8 @@ enum SetupConditionType { ... STAGE_ON_STARTING_ASSIGNMENT }
 
 ## 4. The engine
 
+**The performance rule (Ahmad, 28 Oct, standing until go-live):** no query is added to TenantGuard, PermissionGuard, ModuleGuard, the throttler, the global interceptors, middleware or `verifySessionIdentity()`. `StagePoolService` resolves pools **in batches**: one query per assignee kind for many stages and instances, never one per row or per stage in a loop (unassigned detection, lists, Setup health). Independent reads go through `Promise.all`. No new polling. A new list endpoint pages on the server, or (a small setup list) has a hard cap noted in its PR description. Anything that touches the per-request path is named in the PR description.
+
 ### 4.1 One pool resolver
 
 `StagePoolService.resolve(stage, instance, tx?)` replaces the two resolvers
@@ -552,7 +554,7 @@ UI beyond the wording.
 |---|---|---|---|
 | **1 — schema + pool engine (read path)** | The migration (§3); `StagePoolService`; the engine reads entries when a stage has them, old columns otherwise (§4.6); `mover` read with SYSTEM_AUTOMATIC fallback; the empty-pool refusals; the leaver event table written by deactivation. No screen change. | yes, additive | Behaviour unchanged for every unconverted stage. |
 | **2 — the backfills** | `backfill-acc271-stage-assignees`, `backfill-acc271-transition-movers`, and the seed + `assignStartingAssignments` for new tenants. | no | Run after PR 1 deploys: dry run, execute, dry run 0. After it, every stage is converted. |
-| **3 — the APIs** | Stage save takes `who: { mode, entries }` (validated, tenant-checked, audited field by field like ACC-255's stage audit); the template read returns entries, the read-back sentence, the kinds per record type and `APP_MOVES`; transition save drops the people fields (still accepted and ignored for one release, then refused); `keep-starting-assignment`; Setup health's new condition and reconciler. | no (enum value from PR 1) | Old screens still work against it. |
+| **3 — the APIs** | Stage save takes `who: { mode, entries }` (validated, tenant-checked, audited field by field like ACC-255's stage audit); the template read returns entries, the read-back sentence, the kinds per record type and `APP_MOVES`; transition save drops the people fields: **an old-screen save of a field the engine no longer reads for a converted stage is refused with a translated sentence, never silently ignored** (Ahmad, 28 Oct, condition b); `keep-starting-assignment`; Setup health's new condition and reconciler. | no (enum value from PR 1) | Old screens still work against it. |
 | **4 — the notices** | `TaskClosedNoticeService` and the three wordings, wired into stage exit, ANY_ONE decisions and pool completion. | no | Independent of the screens. |
 | **5 — the screens** | Section 8 in the stage editor panel; the transition editor as a page panel (sections 9, 10); Setup health's row and confirm (section 11). Both languages, phone. | no | Reads PR 3. ACC-268 closes here. |
 | **6 — contract cleanup (later)** | Drop the old branch in the engine and, in a later release, the old columns and enum values (`triggerCondition`, `triggerRoleId`, `triggerUserId`, `requiredPermission` on transitions, `assigneeStrategy`, `assigneeRoleId`, `approvalMode`, `parallelThreshold`, ROLE/ROUND_ROBIN/SEQUENTIAL/MAJORITY). | contracting | Only after a scan shows nothing reads them; its own ticket. |
@@ -643,3 +645,27 @@ admin sees.
     side by side, so both keep the ~660 px each needs.
 12. **When does PR 6 (dropping the old columns) happen?** **Recommended:** its
     own ticket, after one release in which a scan shows nothing reads them.
+
+### 13.1 Ahmad's answers (28 Oct)
+
+**All twelve recommendations are accepted, with two changes:**
+
+- **Q7 (changed): PARALLEL MAJORITY** becomes **Committee vote** on a stage
+  assigned to a committee, and **All of them** on any other stage — never
+  Any one. The dry run reports each.
+- **Q8 (changed): a backfill that finds an open stage task or an approval in
+  flight** resets that stage's in-flight approvals and tasks and reports it,
+  instead of refusing (this is a development environment). Nothing else is
+  cleared or deleted: the 8 open committees and their instances stay and are
+  converted.
+
+**Two extra conditions:**
+
+- **(a) The performance rule** (standing until go-live), recorded at the top
+  of §4: nothing added to the per-request guards, interceptors or middleware;
+  pools resolved in batches (one query per kind); `Promise.all` for
+  independent reads; no new polling; new lists paged on the server or capped
+  and noted.
+- **(b) PR 3:** an old-screen save of a field the engine no longer reads for a
+  converted stage is refused with a translated sentence, not silently
+  ignored (recorded in §11's PR 3 row).
