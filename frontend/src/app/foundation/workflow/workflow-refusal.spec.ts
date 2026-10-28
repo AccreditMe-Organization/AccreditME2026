@@ -41,6 +41,20 @@ describe('workflow refusals (ACC-208)', () => {
     }
   });
 
+  // ACC-271 — the two refusals of a converted stage's pool, said on the record
+  // page's transition buttons in either language, never the server's English.
+  it('words the stage-pool refusals from their codes, in both languages', () => {
+    const cases: [number, string, string][] = [
+      [409, 'STAGE_HAS_NO_ONE', 'workflow.refusal.stageHasNoOne'],
+      [403, 'NOT_IN_STAGE_POOL', 'workflow.refusal.notInStagePool'],
+    ];
+    for (const [status, code, key] of cases) {
+      expect(plainWorkflowRefusalKey(refusal(status, { code, stageNameEn: 'Quality review', stageNameAr: null }))).withContext(code).toBe(key);
+      expect(typeof lookup(en, key)).withContext(`en ${key}`).toBe('string');
+      expect(typeof lookup(ar, key)).withContext(`ar ${key}`).toBe('string');
+    }
+  });
+
   it('gives no plain key to a refusal whose words carry numbers, or to anything else', () => {
     expect(plainWorkflowRefusalKey(refusal(409, { code: 'STAGE_TASK_DUE_AFTER_STAGE_DEADLINE' }))).toBeNull();
     expect(plainWorkflowRefusalKey(refusal(409, { code: 'STAGE_TASKS_OPEN' }))).toBeNull();
