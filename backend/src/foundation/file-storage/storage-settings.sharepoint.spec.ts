@@ -6,6 +6,7 @@ import { StorageSettingsService } from './storage-settings.service';
 import { StorageResolverService } from './storage-resolver.service';
 import { StoredFileService } from './stored-file.service';
 import { StorageNoticesService } from './storage-notices.service';
+import { SharePointAccessService } from './sharepoint-access.service';
 import { StorageRefusalException } from './storage-refusal';
 import { readStorageConfig, writeStorageConfig } from './storage-config';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -56,6 +57,8 @@ describe('StorageSettingsService — SharePoint, and only Confirm writes the pro
   const storedFiles = { cloudUsageBytes: jest.fn().mockResolvedValue(0) };
   const auditLog = { log: jest.fn().mockResolvedValue(undefined) };
   const notices = { storageChangeRequested: jest.fn().mockResolvedValue(undefined) };
+  // ACC-260 PR C (D5) — what a passing test of the stored settings calls.
+  const access = { markRestored: jest.fn().mockResolvedValue(undefined) };
   let base: string;
   const savedEnv: Record<string, string | undefined> = {};
 
@@ -69,10 +72,11 @@ describe('StorageSettingsService — SharePoint, and only Confirm writes the pro
       storedFiles as unknown as StoredFileService,
       auditLog as unknown as AuditLogService,
       notices as unknown as StorageNoticesService,
+      access as unknown as SharePointAccessService,
     );
     return { ms, service };
   };
-  const org = (storageProvider: string, config: object | null, confirmed = false) =>
+  const org = (storageProvider: string, config: object | null, confirmed = false, lostReason: string | null = null) =>
     prisma.organization.findFirst.mockResolvedValue({
       storageProvider,
       storageConfig: config ? writeStorageConfig(config) : null,
@@ -81,8 +85,8 @@ describe('StorageSettingsService — SharePoint, and only Confirm writes the pro
       storageConfirmedBy: confirmed ? { id: 'admin-1', name: 'Hessa' } : null,
       storageChangeRequestedAt: null,
       storageChangeRequestedBy: null,
-      storageAccessLostAt: null,
-      storageAccessLostReason: null,
+      storageAccessLostAt: lostReason ? new Date('2026-10-20T08:00:00Z') : null,
+      storageAccessLostReason: lostReason,
     });
   /** Every `data` object the organisation was written with, by any method. */
   const organisationWrites = (): Array<Record<string, unknown>> =>
@@ -452,6 +456,102 @@ describe('StorageSettingsService — SharePoint, and only Confirm writes the pro
         expect.objectContaining({ tenantId: FAKE_TENANT_ID, siteName: 'Quality', filesStored: 3, disconnectAllowed: false }),
       );
       expect(prisma.storedFile.count).toHaveBeenCalledWith({ where: { organizationId: 'org-a', provider: 'SHAREPOINT', purgedAt: null } });
+    });
+  });
+
+  describe('D5 — a passing test of the stored settings ends "access withdrawn" (ACC-260 PR C)', () => {
+    const RESOLVED = {
+      tenantId: FAKE_TENANT_ID,
+      siteId: FAKE_SITE_ID,
+      siteName: 'Quality',
+      siteWebUrl: null,
+      listId: FAKE_LIST_ID,
+      driveId: FAKE_DRIVE_ID,
+      libraryName: 'AccreditMe Files',
+      libraryWebUrl: null,
+      resolvedAt: '2026-10-08T00:00:00.000Z',
+    };
+    const STORED = { sharepoint: { ...SHAREPOINT, resolved: RESOLVED } };
+    /** Confirmed on SharePoint, with access withdrawn. */
+    const withdrawn = () => org('SHAREPOINT', STORED, true, 'SECRET_INVALID');
+
+    it.each([
+      ['no body', {}],
+      ['SharePoint named', { provider: 'SHAREPOINT' as const }],
+      ['an empty field, which keeps its stored value', { provider: 'SHAREPOINT' as const, sharepoint: { clientSecret: '' } }],
+    ])('clears it when the stored settings pass and reach the confirmed library (%s)', async (_label, body) => {
+      const { service } = serviceWith();
+      withdrawn();
+      const result = await service.test('org-a', body);
+      expect(result.ok).toBe(true);
+      expect(access.markRestored).toHaveBeenCalledTimes(1);
+      expect(access.markRestored).toHaveBeenCalledWith('org-a');
+      // markRestored is the ONE write; test() writes nothing itself.
+      expect(organisationWrites()).toEqual([]);
+    });
+
+    it.each([
+      ['a typed secret', { clientSecret: 'a-typed-but-unsaved-secret' }],
+      ['a typed client ID', { clientId: '11111111-2222-3333-4444-555555555555' }],
+      ['a typed expiry date', { secretExpiresOn: '2027-09-30' }],
+    ])('does NOT clear it for a candidate that passes (%s): the stored credentials may still fail', async (_label, sharepoint) => {
+      const { service } = serviceWith();
+      withdrawn();
+      const result = await service.test('org-a', { provider: 'SHAREPOINT', sharepoint });
+      expect(result.ok).toBe(true);
+      expect(access.markRestored).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['at sign-in', { tokenErrorCodes: [7000215] }, 'token'],
+      // After the library was found: the confirmed location IS reached, so
+      // only the failure itself keeps the stamp.
+      ['at write, in the confirmed library', { writeStatuses: [403] }, 'write'],
+    ] as Array<[string, FakeMicrosoftOptions, string]>)('does NOT clear it when the test fails (%s)', async (_label, microsoft, step) => {
+      const { service } = serviceWith(microsoft);
+      withdrawn();
+      const result = await service.test('org-a', { provider: 'SHAREPOINT' });
+      expect(result.ok).toBe(false);
+      expect(result.failedStep).toBe(step);
+      if (step === 'write') expect(result.sharepoint?.listId).toBe(FAKE_LIST_ID);
+      expect(access.markRestored).not.toHaveBeenCalled();
+    });
+
+    it('does NOT clear it for a test of another provider', async () => {
+      const { service } = serviceWith();
+      withdrawn();
+      const result = await service.test('org-a', { provider: 'LOCAL_FILESYSTEM', local: { rootPath: 'org-a' } });
+      expect(result.ok).toBe(true);
+      expect(access.markRestored).not.toHaveBeenCalled();
+    });
+
+    it('does NOT clear it for an organisation confirmed elsewhere, or not confirmed yet', async () => {
+      const { service } = serviceWith();
+      org('MINIO', { ...STORED, minio: MINIO }, true, 'SECRET_INVALID');
+      expect((await service.test('org-a', { provider: 'SHAREPOINT' })).ok).toBe(true);
+      org('S3', { ...STORED, draftProvider: 'SHAREPOINT' }, false, 'SECRET_INVALID');
+      expect((await service.test('org-a', { provider: 'SHAREPOINT' })).ok).toBe(true);
+      // The provider column alone says SharePoint, with no confirmation: still
+      // not the confirmed location.
+      org('SHAREPOINT', STORED, false, 'SECRET_INVALID');
+      expect((await service.test('org-a', { provider: 'SHAREPOINT' })).ok).toBe(true);
+      expect(access.markRestored).not.toHaveBeenCalled();
+    });
+
+    it('does NOT clear it when the test reaches a different library from the one Confirm recorded', async () => {
+      const { service } = serviceWith({ lists: [{ id: 'other-list', displayName: 'AccreditMe Files', template: 'documentLibrary', driveId: 'b!other-drive' }] });
+      withdrawn();
+      const result = await service.test('org-a', { provider: 'SHAREPOINT' });
+      expect(result.ok).toBe(true);
+      expect(result.sharepoint?.listId).toBe('other-list');
+      expect(access.markRestored).not.toHaveBeenCalled();
+    });
+
+    it('calls nothing when access was never withdrawn', async () => {
+      const { service } = serviceWith();
+      org('SHAREPOINT', STORED, true);
+      expect((await service.test('org-a', { provider: 'SHAREPOINT' })).ok).toBe(true);
+      expect(access.markRestored).not.toHaveBeenCalled();
     });
   });
 

@@ -34,19 +34,20 @@ const done = (candidate: IStorageCandidate, result = testPassed()): TestState =>
 
 describe('storage setup (ACC-260, PR B)', () => {
   describe('choosing', () => {
-    it('AccreditMe cloud and MinIO always; a local folder only where offered; SharePoint not here (PR C)', () => {
+    it('AccreditMe cloud, MinIO and SharePoint always (SharePoint since PR C); a local folder only where offered', () => {
       expect(choosable(unconfirmed(), 'S3')).toBeTrue();
       expect(choosable(unconfirmed(), 'MINIO')).toBeTrue();
       expect(choosable(unconfirmed(), 'LOCAL_FILESYSTEM')).toBeFalse();
       expect(choosable(unconfirmedOnPrem(), 'LOCAL_FILESYSTEM')).toBeTrue();
-      expect(choosable(unconfirmedOnPrem(), 'SHAREPOINT')).toBeFalse();
+      expect(choosable(unconfirmedOnPrem(), 'SHAREPOINT')).toBeTrue();
+      expect(choosable(unconfirmed({ offeredProviders: ['S3', 'MINIO'] }), 'SHAREPOINT')).withContext('only where offered').toBeFalse();
     });
 
     it('arrives on AccreditMe cloud, or on a draft that can be chosen', () => {
       expect(initialSelection(unconfirmed())).toBe('S3');
       expect(initialSelection(unconfirmed({ draftProvider: 'MINIO' }))).toBe('MINIO');
       expect(initialSelection(unconfirmed({ draftProvider: 'LOCAL_FILESYSTEM' }))).toBe('S3');
-      expect(initialSelection(unconfirmed({ draftProvider: 'SHAREPOINT' }))).toBe('S3');
+      expect(initialSelection(unconfirmed({ draftProvider: 'SHAREPOINT' }))).toBe('SHAREPOINT');
     });
   });
 
@@ -130,7 +131,8 @@ describe('storage setup (ACC-260, PR B)', () => {
         expect(stepFailureKey('MINIO', 'configure', code)).toBe(`files.refusal.${code}`);
       }
       expect(stepFailureKey('LOCAL_FILESYSTEM', 'write', 'STORAGE_UNAVAILABLE')).toBe('storage.test.fail.LOCAL_FILESYSTEM.write');
-      expect(stepFailureKey('SHAREPOINT', 'token', 'SHAREPOINT_SECRET_INVALID')).toBe('storage.test.fail.generic');
+      expect(stepFailureKey('SHAREPOINT', 'token', 'SHAREPOINT_SECRET_INVALID')).toBe('storage.test.fail.SHAREPOINT.SHAREPOINT_SECRET_INVALID');
+      expect(stepFailureKey('SHAREPOINT', 'configure', 'STORAGE_SETTINGS_INCOMPLETE')).toBe('files.refusal.STORAGE_SETTINGS_INCOMPLETE');
     });
 
     it('stale: a result for other values is out of date, pass or fail', () => {

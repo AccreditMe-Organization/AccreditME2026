@@ -12039,7 +12039,7 @@ all five routes each.
 | `POST /tenant/storage/confirm` | ONCE (`STORAGE_ALREADY_CONFIRMED` after, including the loser of a race). AccreditMe cloud: no test. MinIO / local folder: the connection test must pass (`STORAGE_TEST_FAILED`, naming the step). Stamps who and when; audited. |
 | `PATCH /tenant/storage` | Before confirmation: a draft, which unlocks nothing and records the option as `draftProvider` — **it never writes `storageProvider`** (ACC-185, Q6; only Confirm does). After: only new keys for the SAME MinIO endpoint, region and bucket, after a passing test; anything else is 403 `STORAGE_CHANGE_BY_PLATFORM` (SharePoint: 16.14). Audited by field NAME. |
 | `POST /tenant/storage/change-request` | Only once confirmed. Optional message ≤ 1,000. Stamps who and when (a repeat moves the date), audits the message, and after commit tells every ACTIVE `PLATFORM_ADMIN` of the platform organisation in-app, EN/AR. The switch itself: ACC-182. |
-| `POST /tenant/storage/test` | Candidate or stored settings; probe written, read back, compared, deleted; reports `configure \| write \| read \| verify \| delete` (SharePoint adds `token \| site \| library` after `configure`); saves nothing and writes nothing to the organisation. |
+| `POST /tenant/storage/test` | Candidate or stored settings; probe written, read back, compared, deleted; reports `configure \| write \| read \| verify \| delete` (SharePoint adds `token \| site \| library` after `configure`); saves nothing and writes nothing to the organisation — except that a passing test of a confirmed SharePoint location's STORED settings, reaching the confirmed library, ends a withdrawal (ACC-260 PR C, D5; 16.14). |
 | `POST /tenant/storage/disconnect` | ACC-185, SharePoint only (16.14). |
 
 `GET /tenant/config` reports each provider config as "set" or null.
@@ -12104,7 +12104,7 @@ own error text is logged, never returned — it can name a host or bucket.
   spec feeds it platform-looking values).
 
   **PR B, before confirming** — a radio list: AccreditMe cloud and MinIO always,
-  a local folder where offered; SharePoint is listed and set up in PR C.
+  a local folder where offered, and SharePoint (since PR C, below).
   - AccreditMe cloud: "Nothing to set up", then Confirm, no test.
   - MinIO (endpoint, bucket, optional region, both keys as `am-secret-field`)
     and a local folder (a path relative to the installation's storage folder):
@@ -12127,8 +12127,29 @@ own error text is logged, never returned — it can name a host or bucket.
   of the button. On MinIO, Replace on either key opens both, then Test, then
   "Save new key" (`PATCH /tenant/storage` with the two keys only).
 
-  The setup rules are pure functions in `storage-setup.ts`. PRs C and D add
-  SharePoint and the recycle bin.
+  The setup rules are pure functions in `storage-setup.ts`. PR D added the
+  recycle bin.
+
+  **PR C, SharePoint** (Ahmad's D1–D3, D5, D12; the drawn consent flow is not
+  built):
+  - Before Confirm: the API's six fields in MinIO's layout (the secret as
+    `am-secret-field`, the optional expiry picked from `am-inline-calendar`),
+    and one sentence that the organisation's Microsoft admin registers an app
+    first — no guide link until the customer guide is published.
+  - Test shows seven rows (the API's `verify` inside Read back), a sentence per
+    `SHAREPOINT_*` code saying what to fix in Microsoft, and on a pass the
+    "site › library" it reached, which the confirm dialog shows as the
+    Location. The expiry date is not in the test body, so picking one never
+    makes a pass stale; Confirm adds it.
+  - Once confirmed (`StorageSharePointManageComponent`): Replace secret, or
+    Change client ID with that app's secret, tested before saving
+    (`STORAGE_CHANGE_BY_PLATFORM` in its own sentence); the expiry date alone,
+    no test; Test of the stored settings, which ends a withdrawal (D5); and
+    Disconnect through `AmConfirmService`, disabled with the file count while
+    `disconnectAllowed` is false, and saying the count on a 409
+    `STORAGE_LOCKED_BY_FILES`. The other locations have no Disconnect.
+  - GUIDs, addresses and the "site › library" line are isolated left to right
+    in both languages.
 - The task evidence dialog's **admin variant (G13)**: an upload refused
   `STORAGE_NOT_CONFIRMED` tells a holder of `tenant:manage_config` that
   uploads are blocked for everyone, with "Set up file storage" to the page.
@@ -12275,7 +12296,11 @@ file whose `msDriveId` is not the organisation's library.
 - Test steps: `configure → token → site → library → write → read → verify →
   delete`, each failure a plain reason (`SHAREPOINT_*` codes, 16.8). Saves
   nothing; the result includes what was found (the customer's own tenant,
-  site and library).
+  site and library). **One exception (ACC-260 PR C, Ahmad's D5):** a pass that
+  tested the STORED settings (no SharePoint value in the body) of an
+  organisation confirmed on SharePoint with access withdrawn, and reached the
+  tenant, site, list and drive Confirm recorded, calls `markRestored()`. A
+  typed candidate never does: the stored credentials may still fail.
 - Confirm records what the passing test found as the location and writes
   `SHAREPOINT` — the one place a provider is chosen (Q6).
 - After Confirm only the client ID, client secret and expiry date change. A
@@ -12307,7 +12332,9 @@ file whose `msDriveId` is not the organisation's library.
   job, `probe-sharepoint`, on the `storage-purge` queue): one token request and
   one `GET /drives/{id}` per confirmed SharePoint organisation; it sets the
   flag on a withdrawal and CLEARS it when access works again. A check that
-  could not run never clears it.
+  could not run never clears it. It is also cleared sooner by a passing
+  credential replacement, Confirm, Disconnect, and a passing Test of the
+  stored settings (ACC-260 PR C).
 - Setup health `STORAGE_ACCESS_WITHDRAWN` (`BLOCKS_WORK`, opened at
   `storageAccessLostAt`) reads that flag.
 
