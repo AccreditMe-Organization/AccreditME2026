@@ -16,6 +16,11 @@ export interface IWorkflowTemplate {
   // nothing else. On every template read, list and detail, so a screen renders
   // the protected state from the server's own rule rather than a copy of it.
   isProtected: boolean;
+  // ACC-255 PR 4b (Ahmad's Q2) — on a protected template only: the stage fields
+  // its stages may still change, read from the same set updateStage() checks
+  // (PROTECTED_STAGE_EDITABLE), so the stage editor shows every other field
+  // read-only instead of offering a change the server refuses.
+  editableStageFields?: string[];
   createdAt: Date;
   updatedAt: Date;
   stages?: IWorkflowStage[]; // populated when requested with detail

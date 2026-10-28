@@ -34,6 +34,9 @@ import { StageTaskDefinitionFormComponent } from './stage-task-definition-form.c
 
 const API = environment.apiUrl;
 const CAP = 420;
+// ACC-255 PR 4b (plan §17.6) — a dialog that stays a dialog keeps at least
+// 20px of room under the cap, which is never raised.
+const ROOM = 20;
 const FLOOR = 150;
 
 const STAGE = {
@@ -125,7 +128,7 @@ describe('StageTaskDefinitionForm — the 420px body cap (ACC-208)', () => {
     const height = bodyHeight();
     measured.push(`${label} [${language}]: ${height}px`);
     expect(height).withContext(`${label} [${language}] is not laid out`).toBeGreaterThan(FLOOR);
-    expect(height).withContext(`${label} [${language}] body ${height}px against the ${CAP}px cap`).toBeLessThanOrEqual(CAP);
+    expect(height).withContext(`${label} [${language}] body ${height}px against the ${CAP}px cap, with ${ROOM}px of room`).toBeLessThanOrEqual(CAP - ROOM);
   }
 
   async function stepTwo(f: StageTaskDefinitionFormComponent): Promise<void> {

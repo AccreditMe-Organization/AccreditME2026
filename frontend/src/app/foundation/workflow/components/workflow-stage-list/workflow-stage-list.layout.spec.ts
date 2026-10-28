@@ -246,9 +246,11 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
         expect(rows.length).withContext('one grid per stage').toBe(6);
         const headCells = Array.from(header.children) as HTMLElement[];
         const phone = c.width < 400;
+        // ACC-255 PR 4b — Edit and the ⋯ moved into the stage editor panel,
+        // so the list has no actions track (the drawing's four columns).
         expect(headCells.length)
-          .withContext(phone ? 'stage, actions' : '#, stage, allows, details, actions')
-          .toBe(phone ? 2 : 5);
+          .withContext(phone ? 'stage' : '#, stage, allows, details')
+          .toBe(phone ? 1 : 4);
         const starts = headCells.map(startOf);
         for (let i = 1; i < starts.length; i++) {
           const ahead = rtl ? starts[i - 1]! > starts[i]! : starts[i]! > starts[i - 1]!;
@@ -262,6 +264,9 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
           // The transition table's own frame may scroll on a phone (ACC-254's
           // allowance); at desktop widths it must not either.
           if (c.width < 400 && el.closest('[data-tr-scroll]')) return false;
+          // ACC-255 PR 4b — the flow strip scrolls sideways inside its own frame
+          // at any width (Templates 6b); its own spec holds the page to that.
+          if (el.hasAttribute('data-strip-frame')) return false;
           return (ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1;
         });
         expect(sideways.map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80))).withContext('scrolls sideways').toEqual([]);
@@ -276,16 +281,7 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
           });
         }
 
-        // ── The actions cell fits its track ──
-        for (const cell of Array.from(host.querySelectorAll<HTMLElement>('[data-testid="stage-actions"]'))) {
-          expect(cell.scrollWidth).withContext('actions cell').toBeLessThanOrEqual(cell.clientWidth + 1);
-          const track = cell.getBoundingClientRect();
-          for (const child of Array.from(cell.children)) {
-            const r = child.getBoundingClientRect();
-            expect(r.left).withContext('actions inside the track (left)').toBeGreaterThanOrEqual(track.left - 1);
-            expect(r.right).withContext('actions inside the track (right)').toBeLessThanOrEqual(track.right + 1);
-          }
-        }
+        expect(host.querySelector('[data-testid="stage-actions"]')).withContext('no actions cell in the list').toBeNull();
 
         // ── ACC-255 PR 4a: every Stage, Allows and Details cell fits its column ──
         for (const key of ['stage', 'allows', 'details']) {

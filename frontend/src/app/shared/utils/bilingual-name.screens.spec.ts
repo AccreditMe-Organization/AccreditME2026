@@ -29,7 +29,7 @@ import { CommitteeListComponent } from '../../foundation/committees/components/c
 import { CommitteeFormComponent } from '../../foundation/committees/components/committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../../foundation/committees/components/committee-member-form/committee-member-form.component';
 import { WorkflowStageIndicatorComponent } from '../../foundation/workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
-import { WorkflowStageFormComponent } from '../../foundation/workflow/components/workflow-stage-form/workflow-stage-form.component';
+import { StageEditorPanelComponent } from '../../foundation/workflow/components/stage-editor-panel/stage-editor-panel.component';
 import { WorkflowTransitionActionsComponent } from '../../foundation/workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { WorkflowStageListComponent } from '../../foundation/workflow/components/workflow-stage-list/workflow-stage-list.component';
 import { WorkflowTransitionEditorComponent } from '../../foundation/workflow/components/workflow-transition-editor/workflow-transition-editor.component';
@@ -193,9 +193,9 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
     });
   });
 
-  describe('workflow-stage-form', () => {
+  describe('stage-editor-panel', () => {
     it('offers committee roles with a label, never a blank option', () => {
-      const c = build(WorkflowStageFormComponent);
+      const c = build(StageEditorPanelComponent);
       c.committeeRoles.set([
         as({ id: 'r1', labelEn: 'Chairman', labelAr: 'رئيس' }),
         as({ id: 'r2', labelEn: 'Observer', labelAr: null }),
@@ -392,7 +392,7 @@ describe('every form accepts an empty Arabic name (ACC-160)', () => {
     ['role-form', () => build(RoleFormComponent).form as never, 'nameEn', 'nameAr', 100],
     ['lookup-value-form', () => build(LookupValueFormComponent).form as never, 'labelEn', 'labelAr', 255],
     ['lookup-value-list override', () => build(LookupValueListComponent).overrideForm as never, 'labelEn', 'labelAr', 255],
-    ['workflow-stage-form', () => build(WorkflowStageFormComponent).form as never, 'nameEn', 'nameAr', 100],
+    ['stage-editor-panel', () => build(StageEditorPanelComponent).form as never, 'nameEn', 'nameAr', 100],
     ['transition editor (add)', () => build(WorkflowTransitionEditorComponent).addForm as never, 'labelEn', 'labelAr', 100],
     ['transition editor (edit)', () => build(WorkflowTransitionEditorComponent).editForm as never, 'labelEn', 'labelAr', 100],
   ];

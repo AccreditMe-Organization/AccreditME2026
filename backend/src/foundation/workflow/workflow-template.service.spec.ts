@@ -8,6 +8,8 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
+import { getMetadataStorage } from 'class-validator';
+import { UpdateWorkflowStageDto } from './dto/update-workflow-stage.dto';
 import { WorkflowObjectType } from '../../../generated/prisma/enums';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -2099,6 +2101,71 @@ describe('WorkflowTemplateService', () => {
         const result = await service.getTemplateById('template-1', ORG_A);
         expect(result).toMatchObject({ recordActions: [], stageFlags: [], recordFields: [] });
         expect(result.stages?.[0]).toMatchObject({ actions: [], flags: [] });
+      });
+    });
+
+    // ACC-255 PR 4b (Ahmad's Q2) — a protected template says which stage fields
+    // its stages may still change, and the list IS what updateStage() accepts:
+    // every field the update DTO takes is tried with a changed value, and is
+    // refused exactly when the read leaves it out.
+    describe('editableStageFields', () => {
+      const CHANGED: Record<string, unknown> = {
+        nameEn: 'Agreed',
+        nameAr: 'موافق',
+        description: 'A new description',
+        order: 99,
+        slaWorkingHours: 16,
+        isInitial: false,
+        isFinal: true,
+        approvalMode: 'PARALLEL',
+        parallelThreshold: 'ALL',
+        committeeId: 'committee-a',
+        assigneeStrategy: 'ROLE',
+        assigneeUserId: 'user-a',
+        assigneeRoleId: 'role-x',
+        assigneeCommitteeRoleValueId: 'lookup-chairman-id',
+        assigneePositionId: 'position-x',
+        assigneeOrgUnitId: 'unit-x',
+        escalationConfig: [{ afterHours: 8 }],
+        actions: ['edit_details'],
+        flags: [],
+      };
+      const dtoFields = (): string[] => [
+        ...new Set(getMetadataStorage().getTargetValidationMetadatas(UpdateWorkflowStageDto, '', true, false).map((m) => m.propertyName)),
+      ].sort();
+
+      it('is served on a protected template only, list and detail', async () => {
+        mockPrisma.workflowTemplate.findMany.mockResolvedValue([
+          makeTemplate({ id: 't-c', objectType: 'COMMITTEE' }),
+          makeTemplate({ id: 't-r', objectType: 'COMMITTEE_CHANGE_REQUEST' }),
+        ]);
+        const [committee, request] = await service.getTemplates(ORG_A);
+        expect(committee).not.toHaveProperty('editableStageFields');
+        expect(request!.editableStageFields?.length).toBeGreaterThan(0);
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValueOnce(makeTemplate({ objectType: 'COMMITTEE_CHANGE_REQUEST' }));
+        mockPrisma.workflowStage.findMany.mockResolvedValueOnce([]);
+        expect((await service.getTemplateById('template-1', ORG_A)).editableStageFields).toEqual(request!.editableStageFields);
+      });
+
+      it('matches what the update path accepts on a protected stage, field by field', async () => {
+        // Non-vacuity: every field the DTO takes has a changed value here.
+        expect(Object.keys(CHANGED).sort()).toEqual(dtoFields());
+        mockPrisma.workflowTemplate.findMany.mockResolvedValue([makeTemplate({ objectType: 'COMMITTEE_CHANGE_REQUEST' })]);
+        const editable = new Set((await service.getTemplates(ORG_A))[0]!.editableStageFields);
+
+        const verdicts: Record<string, string> = {};
+        for (const [field, value] of Object.entries(CHANGED)) {
+          mockPrisma.workflowStage.findFirst.mockResolvedValue(
+            makeStage({ workflowTemplate: { objectType: 'COMMITTEE_CHANGE_REQUEST' }, flags: ['APPLIES_APPROVED_CHANGE'] } as never),
+          );
+          mockPrisma.workflowStage.update.mockResolvedValue(makeStage());
+          const code = await codeOf(service.updateStage('stage-1', { [field]: value } as never, ORG_A, ACTOR));
+          verdicts[field] = code === 'WORKFLOW_TEMPLATE_PROTECTED' ? 'refused' : 'accepted';
+        }
+        const expected = Object.fromEntries(Object.keys(CHANGED).map((f) => [f, editable.has(f) ? 'accepted' : 'refused']));
+        expect(verdicts).toEqual(expected);
+        // Both outcomes occur, so the comparison means something.
+        expect(Object.values(verdicts)).toEqual(expect.arrayContaining(['accepted', 'refused']));
       });
     });
 
