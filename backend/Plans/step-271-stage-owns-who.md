@@ -562,6 +562,60 @@ UI beyond the wording.
 PRs 3 and 4 can be built in parallel after 2. Only PR 5 changes what a tenant
 admin sees.
 
+### 11.1 PR 1 as built (28 Oct)
+
+Commits on `feature/ACC-271-stage-owns-who`: the migration
+(`acc271_stage_assignees`, additive only); `StagePoolService` (+
+`StagePoolModule`, `workflow-pool.ts`, batched `RECORD_ROUTES` lookups);
+the engine's converted branch; the leaver events in `UserService.deactivate()`;
+a real-database spec; the two refusals worded in English and Arabic. Full
+mechanism: SYSTEM-REFERENCE §2.19.
+
+**Departures from the plan, each small, each Ahmad's to overrule:**
+
+1. **Org unit head, both forms, has no walk up to a parent and reads the period
+   table.** §4.1 named `resolveActingHeadForOrgUnit()`, which walks up the
+   tree and reads the `actingHeadUserId` cache. Q3's "no walk up" is applied
+   to a named unit as well as the record's unit, and the head is the unit's
+   head holders plus its acting cover in force (ACC-173's rule: the period
+   table, never the cache), so it can be batched. A walk for a named unit is a
+   one-place change if wanted.
+2. **An away member may still act themselves**, beside their acting user. The
+   pool's `members` has the acting user in their place (what All of them waits
+   for); `direct` keeps the person, and the trigger accepts either. An acting
+   user's place in All of them is filled by their own approval or the absent
+   member's.
+3. **The refusals say "this stage", not its name, on screen.** The record
+   page's transition buttons show a translation key with no parameters, so the
+   sentence is "Only whoever works this stage can do this." The response
+   carries `stageNameEn`/`stageNameAr` for PR 5 to name it.
+4. **The pool's notices carry no out-of-office routing notices.** A converted
+   stage's initial-assignee and SEND_NOTIFICATION notices go to the pool's
+   members; the old "routed to your acting user" notices were sent on every
+   resolution, and a pool is resolved on every decision.
+5. **Leaving a position or committee mid-stage is not recorded yet** (§8 gives
+   it to the sweep). PR 1 records deactivation only, as §11's row says; the
+   sweep's comparison belongs with PR 2 or PR 4.
+
+**Two things PR 2 must do before it converts any stage, or behaviour changes:**
+
+- **Mark the forward move of every stage converted to All of them or Committee
+  vote as its approval path** (`isApprovalPath`). The seeded committee moves
+  are not, and on a multi-person stage a press of a move that is not on the
+  approval path sends the record on at once. Today's SINGLE stages never asked.
+- **Stop `WorkflowTransitionActionsComponent` hiding a button by
+  `requiredPermission` on a converted stage.** The engine no longer reads it
+  there, so a pool member without the permission would be refused nothing and
+  shown nothing.
+
+**Mutation checks (all caught):** drop the ACTIVE filter (unit 2, db 2); let an
+empty pool pass (unit 2, db 1); read `requiredPermission` again on a converted
+stage (unit 1); All of them met by any approval (unit 1, db 1); resolve each
+converted entry on its own in the sweep (unit 1); read the leaver's pools after
+the status flip (unit 1 — the db-spec cannot see it: that read sits outside the
+uncommitted flip); committee members read without the organisation (unit 4);
+an unconverted stage asks for a pool (unit 66).
+
 ---
 
 ## 12. Tests per PR

@@ -4323,6 +4323,37 @@ SYSTEM-REFERENCE.md §3.17 (the committee read), the committees list section
   each.
 - **No migration.**
 
+## Key Architecture Decisions (ACC-271)
+
+The stage owns who works it. Full mechanism: SYSTEM-REFERENCE.md §2.19. Plan,
+Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
+`backend/Plans/step-271-stage-owns-who.md`. Briefly, as of PR 1:
+
+- **A CONVERTED STAGE (`whoMode` set) IS WORKED BY ITS POOL; ANY OTHER STAGE
+  TAKES THE OLD BRANCH, UNCHANGED.** `isConvertedStage()` is the one test. For
+  a converted stage the transition's `requiredPermission`,
+  `triggerCondition`, `triggerRoleId` and `triggerUserId` are not read:
+  whoever is in the pool may press a person's move. Empty pool: 409
+  `STAGE_HAS_NO_ONE`; outside it: 403 `NOT_IN_STAGE_POOL`.
+- **THE POOL IS `StagePoolService`, RESOLVED AT READ TIME, ACTIVE ONLY, AND
+  IN BATCHES** — one query per assignee kind for any number of stages and
+  records. Never resolve pools one per row or per stage in a loop.
+- **THE PERFORMANCE RULE (Ahmad, 28 Oct, standing until go-live):** no query
+  is added to TenantGuard, PermissionGuard, ModuleGuard, the throttler, the
+  global interceptors, middleware or `verifySessionIdentity()`; independent
+  reads go through `Promise.all`; no new polling; a new list pages on the
+  server or has a hard cap noted in its PR; anything touching the per-request
+  path is named in the PR description.
+- **`WorkflowTransition.mover`** says who moves the record (PERSON, APP,
+  AUTOMATIC reserved); null reads as APP for SYSTEM_AUTOMATIC, else PERSON
+  (`transitionMover()`).
+- **A deactivated pool member is recorded** (`POOL_MEMBER_LEFT`) inside the
+  deactivation, and All of them no longer waits for them.
+- **Nothing is converted until PR 2's backfill**, which must first mark each
+  multi-person stage's forward move as its approval path and stop the
+  transition buttons filtering by `requiredPermission` (plan §11.1).
+- **One additive migration** (`acc271_stage_assignees`).
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require
