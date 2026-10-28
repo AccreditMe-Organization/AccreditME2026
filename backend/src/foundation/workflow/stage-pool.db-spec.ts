@@ -158,6 +158,44 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     expect(pool.members).toEqual([unitHead]);
   });
 
+  // Ahmad, 28 Oct (Q1 before PR 1's review): the acting head covering a unit
+  // TODAY is in the pool beside the substantive head, read from the period
+  // table (runningActingCoverWhere). The window is compared as instants, so the
+  // dates are built in UTC; a cover that ended yesterday or starts tomorrow is
+  // not in it.
+  it("an Org unit head pool holds the acting head covering the unit today, beside the substantive head, and no cover outside its dates", async () => {
+    const o = await org();
+    const headPost = await prisma.orgPosition.create({ data: { organizationId: o.id, nameEn: 'Head', grade: 1, isUnitHeadPosition: true } });
+    const head = await o.person('Quality head (away)', { positionId: headPost.id, primaryOrgUnitId: o.unitId });
+    const cover = await o.person('Acting head today');
+    const ended = await o.person('Acting head until yesterday');
+    const future = await o.person('Acting head from tomorrow');
+    const now = new Date();
+    const utcDay = (offset: number) =>
+      new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + offset));
+    const period = (userId: string, validFrom: Date, validTo: Date | null, endedAt: Date | null = null) =>
+      prisma.orgUnitHeadAssignment.create({
+        data: { organizationId: o.id, orgUnitId: o.unitId, userId, kind: 'ACTING', reason: 'ABSENCE', validFrom, validTo, endedAt, createdById: head },
+      });
+    await period(cover, utcDay(-1), utcDay(2));
+    await period(ended, utcDay(-10), utcDay(-1));
+    await period(future, utcDay(1), null);
+    const stageId = await convert(o, 'terms_review', 'ANY_ONE', [{ kind: 'ORG_UNIT_HEAD' }]);
+    const c = await o.committeeAt('terms_review', head);
+
+    const pool = await pools.resolve(o.id, stageId, { id: c.instanceId, objectType: 'COMMITTEE', objectId: c.id });
+
+    expect([...pool.members].sort()).toEqual([cover, head].sort());
+    // The cover is there as ACTING head of the unit (the delegation stamp), the head is not.
+    expect(pool.actingHeadOf.get(cover)).toBe(o.unitId);
+    expect(pool.actingHeadOf.has(head)).toBe(false);
+    // And may move the record.
+    const approve = await prisma.workflowTransition.findFirstOrThrow({ where: { fromStageId: stageId, toStage: { key: 'active' } } });
+    await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, cover, []);
+    const moved = await prisma.workflowInstanceStage.findFirstOrThrow({ where: { workflowInstanceId: c.instanceId, actorId: cover } });
+    expect(moved).toMatchObject({ delegationReason: 'ACTING_HEAD', delegationContextId: o.unitId });
+  });
+
   it('a deactivated pool member is recorded as having left, and "All of them" then decides without them', async () => {
     const o = await org();
     const stays = await o.person('Stays');

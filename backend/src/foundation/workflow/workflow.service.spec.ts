@@ -3759,6 +3759,43 @@ describe('WorkflowService', () => {
       });
     });
 
+    // Ahmad, 28 Oct (Q2 before PR 1's review): the old per-call "routed to your
+    // acting user" notices are gone, so the acting user must still get the
+    // stage's ordinary notice, in the absent member's place.
+    describe("an away member's acting user still gets the stage's notice", () => {
+      const awayPool = () =>
+        poolOf(['stand-in'], { direct: ['away-user'], coveringFor: new Map([['stand-in', 'away-user']]) });
+      const noticesTo = (title: string) =>
+        (mockNotificationService.create.mock.calls as [{ userId: string; titleEn: string }, string][])
+          .filter(([n]) => n.titleEn === title)
+          .map(([n]) => n.userId);
+
+      it('when the record starts in a converted stage: "New workflow assignment" to the acting user, not the absent member', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+        mockPrisma.workflowStage.findFirst.mockResolvedValue({ ...POOL_STAGE, isInitial: true });
+        mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE);
+        mockStagePool.resolve.mockResolvedValue(awayPool());
+
+        await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
+
+        expect(noticesTo('New workflow assignment')).toEqual(['stand-in']);
+      });
+
+      it("when a move's Send notification reaches a converted stage: to the acting user, not the absent member", async () => {
+        arrange(POOL_STAGE, {}, { ...TARGET_STAGE, whoMode: 'ALL' });
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'SEND_NOTIFICATION', order: 10, isEnabled: true },
+        ]);
+        mockStagePool.resolve.mockImplementation((_org: string, stageId: string) =>
+          Promise.resolve(stageId === 'stage-pool' ? poolOf([ACTOR]) : awayPool()),
+        );
+
+        await trigger();
+
+        expect(noticesTo(BASE_TRANSITION.labelEn)).toEqual(['stand-in']);
+      });
+    });
+
     describe('the move the app runs (the marker)', () => {
       it('triggerSystemTransition looks for mover APP, or SYSTEM_AUTOMATIC with no mover', async () => {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
