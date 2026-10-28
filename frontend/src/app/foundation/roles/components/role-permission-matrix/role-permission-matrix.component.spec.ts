@@ -330,6 +330,19 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     expect(moduleBox('committees').getAttribute('aria-description')).toBeNull();
   });
 
+  it('under a filter a group box acts only on its visible rows too', () => {
+    render();
+    find('member');
+    // Committee records shows one row, "view", which is held: the box revokes
+    // that row only, never the group's other four.
+    const b = groupBox('records');
+    expect(b.getAttribute('aria-description')).toBe('Acts only on the 1 row shown by the current filter.');
+    expect(b.getAttribute('aria-checked')).toBe('mixed');
+    click(b);
+    expect(component.changes().removed.map((p) => p.key)).toEqual(['committees:view']);
+    expect(component.changes().added).toEqual([]);
+  });
+
   it('no match: "No permissions match. Clear the search." and the link clears both filters', () => {
     render();
     click(q('[data-pm-granted-only] input'));
