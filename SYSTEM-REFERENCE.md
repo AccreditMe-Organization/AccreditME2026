@@ -406,7 +406,9 @@ elsewhere.**
     so «5 من 12» reads in the page's direction.
   - **Phone (below 768px):** one column, sentences wrap, the heading stays
     sticky, and the header's save controls move to a bar fixed at the bottom
-    (the count and "Review n changes…").
+    (the count and "Review n changes…"). The room under the list is the bar's
+    MEASURED height (a ResizeObserver), never a fixed size: the bar wraps to two
+    lines on a phone, and a longer translation or a larger font makes it taller.
   - **The data model** (modules and groups, tri-state, counts, toggling, the
     filter, marks, the changes for the confirm) is pure functions in
     `permission-matrix.model.ts`.
