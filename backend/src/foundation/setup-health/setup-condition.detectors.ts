@@ -83,8 +83,14 @@ export type SetupConditionDetector = (
 // Record<ActiveSetupConditionType> map stayed exhaustive with no detector in
 // existence, so removing the line without adding the detector could not
 // compile. This PR removes it and adds the detector in the same change.
+//
+// ACC-271 — STAGE_ON_STARTING_ASSIGNMENT is deferred the same way, for the same
+// reason: its value ships in PR 1's migration, and its detector (and the Keep
+// this assignment action) in PR 3, which removes this line. Nothing writes the
+// value before then.
 export const DEFERRED_SETUP_CONDITION_TYPES = [
   'POSITION_WITHOUT_ROLE',
+  'STAGE_ON_STARTING_ASSIGNMENT',
 ] as const satisfies readonly SetupConditionType[];
 
 export type ActiveSetupConditionType = Exclude<
