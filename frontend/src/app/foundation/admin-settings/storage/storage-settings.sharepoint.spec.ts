@@ -519,7 +519,10 @@ describe('StorageSettings — SharePoint (ACC-260, PR C)', () => {
     expect(q('#storage-sp-expiry')!.getAttribute('dir')).toBe('ltr');
     TestBed.resetTestingModule();
     await open(sharepoint({ filesStored: 2, disconnectAllowed: false }), 'ar');
-    expect(text('[data-testid="sp-disconnect-why"]')).toContain('ملفان');
+    // The dual form, addressing the reader in the singular as the app does.
+    expect(text('[data-testid="sp-disconnect-why"]')).toBe(
+      'لا يمكن الفصل: ملفان محفوظان في SharePoint، بما فيها سلة المحذوفات. تنقلهما AccreditMe أولًا: اطلب تغييرًا.',
+    );
     expect(text('[data-testid="strip-detail"]')).toContain(`\u2066${SP_SITE_NAME} › ${SP_LIBRARY}\u2069`);
     expect(q('[data-testid="sp-client-id"]')!.getAttribute('dir')).toBe('ltr');
   });
