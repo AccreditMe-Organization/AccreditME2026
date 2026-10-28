@@ -82,9 +82,9 @@ export const COMMITTEES_PERMISSIONS = {
 
 // ACC-244 — what a person may do with the TASKS on committee records, per
 // record type rather than the flat tasks:* keys (the task screens' decision 3,
-// Ahmad 18 Oct). The module is the record's, so the matrix shows them in the
-// Committees block; the actions are the names permission-columns.ts already
-// places (view_all_tasks → View, create_tasks → Create, manage_tasks → whole row).
+// Ahmad 18 Oct). The module is the record's, so the role permissions list shows
+// them under Committees, in its "Tasks on committees" group (permission-groups.ts,
+// ACC-272).
 //
 // Its own group, not COMMITTEES_PERMISSIONS: QUALITY_MANAGER is seeded with
 // every value of that group, and ACC-28's umbrella rule (committees:manage holds

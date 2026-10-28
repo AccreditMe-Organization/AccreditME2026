@@ -211,6 +211,10 @@ describe('translation keys (ACC-78)', () => {
       'taskActions.viewEvidence': '"View evidence (2)" — a count in brackets after the noun, nothing to agree with',
       // ACC-255 PR 4b — the stage editor panel's heading context.
       'workflow.editor.position': '"Stage 2 of 6" — a position, no noun after the total',
+      // ACC-272 — the role permissions list: how many of a module's rows are granted, or match.
+      'roles.matrix.ofCount': '"5 of 12" beside a module or group name — no noun after the total',
+      'roles.matrix.matchCount': '"2 of 12 match" — a position, no noun after the total',
+      'roles.matrix.moduleBox': '"All Committees permissions, 5 of 12 granted" — the noun comes before the counts, which take none',
     };
 
     // Time quantities never become plural objects: they go through the layer's

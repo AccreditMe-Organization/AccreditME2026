@@ -519,37 +519,9 @@
     "title": "Roles & Permissions",
     "matrixFrozenRootRole": "This is your organization’s root role. Its permissions are fixed so that someone can always administer the organization. You can rename it, and you can give any permissions you like to other roles.",
     "matrix": {
-      "columnHeader": "Module / permission",
-      "col": {
-        "view": "View",
-        "create": "Create",
-        "edit": "Edit",
-        "delete": "Delete",
-        "approve": "Approve",
-        "audit": "Audit"
-      },
       "subtitle": "Permissions",
       "affects": "changing this affects them as soon as it's saved",
       "reviewChanges": "Review changes…",
-      "legend": {
-        "grantedSaved": "granted, saved",
-        "grantedUnsaved": "granted, not saved yet",
-        "revokedUnsaved": "revoked, not saved yet",
-        "notApplicable": "not applicable to this permission",
-        "granted": "granted",
-        "notGranted": "not granted",
-        "some": "some granted"
-      },
-      "state": {
-        "granted": "granted",
-        "notGranted": "not granted",
-        "grantedUnsaved": "granted, not saved",
-        "revokedUnsaved": "revoked, not saved",
-        "some": "some granted",
-        "notApplicable": "not applicable"
-      },
-      "wholeModule": "Whole module",
-      "gridLabel": "Permissions of {{name}}",
       "confirmTitle": "Save changes to {{name}}?",
       "saveChanges": "Save changes",
       "tryAgain": "Try again",
@@ -564,7 +536,6 @@
       "leave": "Leave",
       "stay": "Stay",
       "frozenPlatformRole": "This is the Platform Administrator role. Its permissions are fixed in every organization, so they can't be changed here.",
-      "loadFailed": "This role's permissions couldn't load.",
       "noneShown": "No permissions to show.",
       "module": {
         "tenant": {
@@ -657,6 +628,35 @@
         "positions:manage": "Add and change positions",
         "setup:view": "See Setup health",
         "admin:access": "Open the Administration area"
+      },
+      "find": "Find a permission",
+      "clearSearch": "Clear the search",
+      "grantedOnly": "Show granted only",
+      "noMatch": "No permissions match.",
+      "noMatchClear": "Clear the search.",
+      "ofCount": "{{held}} of {{total}}",
+      "matchCount": "{{shown}} of {{total}} match",
+      "moduleBox": "All {{name}} permissions, {{held}} of {{total}} granted",
+      "collapse": "Collapse {{name}}",
+      "expand": "Expand {{name}}",
+      "held": "Held",
+      "notHeld": "Not held",
+      "newlyGranted": "Newly granted · not saved",
+      "newlyRevoked": "Newly revoked · not saved",
+      "grantedTag": "Granted · not saved",
+      "revokedTag": "Revoked · not saved",
+      "rootRoleOnlyTag": "Organization Administrator only",
+      "loadFailedTitle": "Couldn't load this role's permissions",
+      "loadFailedBody": "Nothing has changed. Check your connection and try again.",
+      "sentenceNote": {
+        "admin:access": "Each admin page also needs its own permission."
+      },
+      "group": {
+        "committees": {
+          "records": "Committee records",
+          "members": "Members",
+          "tasks": "Tasks on committees"
+        }
       }
     },
     "actionError": {
@@ -2391,6 +2391,10 @@
       "deactivateHolders": {
         "one": "{{count}} person holds it and loses its permissions now.",
         "other": "{{count}} people hold it and lose its permissions now."
+      },
+      "filterActs": {
+        "one": "Acts only on the {{count}} row shown by the current filter.",
+        "other": "Acts only on the {{count}} rows shown by the current filter."
       }
     },
     "committee": {
