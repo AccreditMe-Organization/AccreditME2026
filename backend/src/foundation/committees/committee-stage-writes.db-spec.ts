@@ -38,6 +38,7 @@ import { StageTaskDefinitionService } from '../workflow/stage-task-definition.se
 import { StageRulesService } from '../workflow/stage-rules.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
 import { applyWorkflowSeed } from '../workflow/workflow-seed-apply';
+import { writeStartingAssignments } from '../workflow/workflow-who';
 import { SYSTEM_WORKFLOW_SEED } from '../workflow/workflow.seed';
 import { CommitteesService } from './committees.service';
 
@@ -94,6 +95,8 @@ describe("A committee's direct writes, decided by its stage, against a real data
     const actor = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}-a@example.test`, name: 'Committee editor', status: 'ACTIVE' } });
     const member = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}-m@example.test`, name: 'Member', status: 'ACTIVE' } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R-${slug}` } });
+    // ACC-271 — as a new organisation's first admin: the seeded stages start on them.
+    await writeStartingAssignments(prisma, o.id, actor.id, actor.id);
 
     const committeeAt = async (key: string) => {
       const stage = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key } });

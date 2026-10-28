@@ -2,6 +2,7 @@ import { Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { SeedWorkflow } from './workflow.seed';
 import { KEYED_SEED_TEMPLATES } from './workflow-stage-keys';
+import { moverForTrigger } from './workflow-who';
 
 /**
  * Writes seed workflows into one organisation: each template, its stages, its
@@ -16,7 +17,13 @@ import { KEYED_SEED_TEMPLATES } from './workflow-stage-keys';
  */
 export type WorkflowSeedDb = Pick<
   Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
-  'role' | 'workflowTemplate' | 'workflowStage' | 'workflowTransition' | 'workflowTransitionAction' | 'workflowStageRecordAction'
+  | 'role'
+  | 'workflowTemplate'
+  | 'workflowStage'
+  | 'workflowTransition'
+  | 'workflowTransitionAction'
+  | 'workflowStageRecordAction'
+  | 'workflowStageAssignee'
 >;
 
 export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: string, seeds: readonly SeedWorkflow[]): Promise<void> {
@@ -104,14 +111,29 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
       // configured. This is how a NEW organisation gets the rules (bootstrap
       // runs this same code); existing ones got them from the ACC-255
       // backfill, which refuses customer organisations.
+      //
+      // ACC-271 — who works the stage, by the same rule: written when the seed
+      // creates it (whoMode, and a CREATOR entry where the seed names one). A
+      // stage the seed marks for a starting assignment gets its entry from
+      // assignStartingAssignments() once the first admin is invited.
       const stage = existingStage
         ? await db.workflowStage.update({ where: { id: existingStage.id }, data: stageData })
         : await db.workflowStage.create({
-            data: { workflowTemplateId: template.id, ...stageData, flags: [...(seedStage.flags ?? [])] },
+            data: {
+              workflowTemplateId: template.id,
+              ...stageData,
+              flags: [...(seedStage.flags ?? [])],
+              whoMode: seedStage.who.mode,
+            },
           });
       if (!existingStage && seedStage.actions?.length) {
         await db.workflowStageRecordAction.createMany({
           data: seedStage.actions.map((actionKey) => ({ organizationId, stageId: stage.id, actionKey })),
+        });
+      }
+      if (!existingStage && 'entries' in seedStage.who && seedStage.who.entries.length > 0) {
+        await db.workflowStageAssignee.createMany({
+          data: seedStage.who.entries.map((entry, i) => ({ organizationId, stageId: stage.id, order: i + 1, kind: entry.kind })),
         });
       }
 
@@ -148,7 +170,8 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
             data: transitionData,
           })
         : await db.workflowTransition.create({
-            data: { fromStageId, toStageId, ...transitionData },
+            // ACC-271 — who moves the record, written with the transition, like who works a stage.
+            data: { fromStageId, toStageId, ...transitionData, mover: moverForTrigger(seedTransition.triggerCondition) },
           });
 
       for (const seedAction of seedTransition.actions) {

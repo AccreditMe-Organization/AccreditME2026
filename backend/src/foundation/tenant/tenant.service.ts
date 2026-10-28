@@ -535,6 +535,13 @@ export class TenantService {
     });
   }
 
+  // ACC-271 — the seeded workflows' starting assignments, once the first
+  // admin exists. Here so PlatformTenantService reaches the workflow seed the
+  // way bootstrap() does, with no new module edge.
+  async assignWorkflowStartingAssignments(organizationId: string, adminUserId: string, actorId: string): Promise<void> {
+    await this.workflowTemplateService.assignStartingAssignments(organizationId, adminUserId, actorId);
+  }
+
   // ACC-40 Section 2.4 — bootstrap() itself never creates a User (the
   // tenant's first admin is created separately, via
   // PlatformTenantService.createTenant()'s own UserService.invite() call,

@@ -160,6 +160,11 @@ export class PlatformTenantService {
       actorId,
     );
 
+    // ACC-271 (plan §5) — the seeded workflows start on the first admin: one
+    // starting assignment per stage the seed marked. The admin is INVITED, so
+    // those stages read as unassigned until they accept.
+    await this.tenantService.assignWorkflowStartingAssignments(org.id, invitedUser.id, actorId);
+
     return this.getTenantDetail(org.id);
   }
 
