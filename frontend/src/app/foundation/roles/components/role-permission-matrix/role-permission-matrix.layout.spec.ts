@@ -214,6 +214,35 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
       });
     }
 
+    for (const [width, viewport] of [
+      [390, 390],
+      [328, 360],
+    ] as const) {
+      it(`${lang} at ${width}: scrolled to the end with changes, the phone bar never covers the last row`, async () => {
+        const main = await render(lang, width, viewport);
+        // <main> ends at the bottom of the screen, as the app shell's does.
+        fixture.componentRef.setInput('height', Math.floor(document.documentElement.clientHeight - box(main).top));
+        const c = page();
+        c.toggle(['committees:approve']);
+        c.toggle(['committees:view']);
+        c.toggle(['lookups:view']);
+        await settle();
+        const bar = document.querySelector<HTMLElement>('[data-pm-phone-bar]')!;
+        const rows = main.querySelectorAll<HTMLElement>('[data-pm-row]');
+        const last = rows[rows.length - 1]!;
+        // Non-vacuity: the bar is showing, the page scrolls, and the last row is real.
+        expect(getComputedStyle(bar).display).not.toBe('none');
+        expect(box(bar).height).toBeGreaterThan(0);
+        expect(main.scrollHeight).toBeGreaterThan(main.clientHeight);
+        expect(Math.round(box(main).bottom)).withContext('<main> ends at the bottom of the screen').toBe(document.documentElement.clientHeight);
+        main.scrollTop = main.scrollHeight;
+        await settle();
+        expect(main.scrollTop + main.clientHeight).withContext('scrolled to the end').toBeGreaterThanOrEqual(main.scrollHeight - 1);
+        expect(box(last).bottom).withContext(`the last row (${last.getAttribute('data-pm-row')}) clears the bar`).toBeLessThanOrEqual(box(bar).top + 0.5);
+        measured.push(`  ${lang} ${width}: phone bar ${Math.round(box(bar).height)}px, last row bottom ${Math.round(box(last).bottom)}, bar top ${Math.round(box(bar).top)}`);
+      });
+    }
+
     it(`${lang} at 328: a filter, its match line and a changed row's tag stay inside the frame`, async () => {
       const main = await render(lang, 328, 360);
       const c = page();
