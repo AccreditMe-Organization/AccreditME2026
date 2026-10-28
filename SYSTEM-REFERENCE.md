@@ -2880,6 +2880,31 @@ every stage on every database is still unconverted and behaves as §2.4–§2.8 
   `requiredPermission`, which must stop for converted stages before PR 2
   converts any; the initial-assignee and SEND_NOTIFICATION notices go to the
   pool without the old per-call out-of-office notices.
+- **PR 2 — the seed, the starting assignments, the moves read, the backfills.**
+  - **The seed says who** (`SeedStage.who`, pinned stage by stage in
+    `workflow.seed.spec.ts`): 12 CREATOR stages, 48 marked for a starting
+    assignment; SINGLE → ANY_ONE, PARALLEL ALL → ALL. `applyWorkflowSeed()`
+    writes `whoMode`, the CREATOR entries and every move's `mover` when it
+    CREATES the stage or move, never on an existing one. So **a new
+    organisation is converted from the start.**
+  - **Starting assignments** (`writeStartingAssignments()` in
+    `workflow-who.ts`, `WorkflowTemplateService.assignStartingAssignments()`):
+    one SPECIFIC_USER entry with `isStartingAssignment` on every converted
+    stage that has no entry — that absence IS the seed's mark; no column
+    stores it. `createTenant()` calls it after the first admin's invite,
+    through `TenantService.assignWorkflowStartingAssignments()` (no new
+    module edge). Two queries; a second run writes nothing. The INVITED admin
+    is in no pool until they accept.
+  - **`GET /workflows/instances/:id/moves`** (`getMovesForViewer()`,
+    `workflows:view` and the instance read's visibility): the ids of the
+    moves out of the current stage this viewer may press — a converted
+    stage's PERSON moves for whoever works it, today's permission rule on any
+    other. `WorkflowTransitionActionsComponent` shows exactly those; it no
+    longer reads `requiredPermission`.
+  - **`whoFromLegacy()`** (`workflow-who.ts`) is the one mapping from the old
+    columns, used by `backfill-acc271-stage-assignees`; `moverForTrigger()`
+    by `backfill-acc271-transition-movers`. Both backfills run after the
+    deploy (plan §6, §6.4).
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real

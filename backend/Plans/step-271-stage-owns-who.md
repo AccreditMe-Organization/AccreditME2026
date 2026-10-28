@@ -664,6 +664,47 @@ the status flip (unit 1 — the db-spec cannot see it: that read sits outside th
 uncommitted flip); committee members read without the organisation (unit 4);
 an unconverted stage asks for a pool (unit 66).
 
+
+### 11.2 PR 2 as built (28 Oct)
+
+The seed's `who` per stage; `assignStartingAssignments()` after the first
+admin's invite; `GET /workflows/instances/:id/moves` and the transition
+buttons reading it (PR 1's second must-do); the two backfills, with plan §6.4's
+counts as their expected ones. SYSTEM-REFERENCE §2.19.
+
+**Departures, each Ahmad's to overrule:**
+
+1. **Org unit head differs between a new and an existing organisation, as
+   instructed.** The seed starts the two Org unit head stages (Document request
+   and Change request "Unit Manager Review") on the tenant admin (item 1); the
+   backfill turns them into "the head of the record's unit" (item 3). Neither
+   record type has a `RECORD_ROUTES` entry yet, so on an existing
+   organisation those two stages resolve to nobody, and are flagged
+   unassigned, until Documents add their route. No such records exist.
+2. **The seed writes each move's `mover` too** (not asked for in item 1), by
+   the same rule as the backfill, so a new organisation is consistent from the
+   start.
+3. **"Marked for a starting assignment" is not stored.** It is a converted
+   stage with no entry, which is exactly what the seed leaves; a re-run finds
+   none.
+4. **`createTenant()` reaches `assignStartingAssignments()` through
+   `TenantService`** (`assignWorkflowStartingAssignments()`), the path it
+   already uses for `bootstrap()`, rather than a new PlatformModule →
+   WorkflowModule edge.
+5. **The approval-path worry did not apply to committees** (§6.4): every
+   committee stage becomes Any one of them. The backfill still enforces the
+   rule and expects 0 marks; the seed spec pins the four multi-person stages.
+6. **Reset tasks are cancelled like the engine's own cancels**: status
+   CANCELLED with a time, no reason, no notice. Expected count 0.
+7. **The moves read is a new endpoint** (one stage's moves, no paging, not on
+   the per-request guard path).
+
+**Between this deploy and PR 3:** a new organisation (and every existing one
+once the backfill runs) has converted stages, while the old stage and
+transition editors still show and save the old fields, which the engine no
+longer reads for them. PR 3 refuses such a save with a translated sentence
+(condition b).
+
 ---
 
 ## 12. Tests per PR
