@@ -1,5 +1,13 @@
 # ACC-120 slice 5 — the permission matrix (`/roles/:id/permissions`)
 
+> **REPLACED (ACC-272, 28 Oct 2026).** The six-column grid this plan built —
+> the columns and `permission-columns.ts`, the module row's column toggles, the
+> hatch, grid keyboard navigation and the Arabic frozen column — was replaced
+> by a grouped list (`AccreditMe Role Permissions.dc.html`). PR A's saving
+> rules (R1, R1c, R2, F1), the save confirmation, the leave guard and the
+> read-only rules still hold. Current shape: SYSTEM-REFERENCE.md §1, "The role
+> permissions screen".
+
 Plan written 13 Oct 2026 (CC-90), approved with D1–D14 and amendments R1–R4
 in CC-91, and R1c in CC-91a. Delivered as TWO PRs (D13):
 

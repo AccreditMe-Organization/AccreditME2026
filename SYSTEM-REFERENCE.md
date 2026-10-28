@@ -359,46 +359,69 @@ elsewhere.**
   9. After commit, one audit row: `before.permissions`,
      `after.permissions` (sorted), and `metadata.added` / `.removed`.
   The codes and messages live in `role-permission-refusal.ts`.
-- **The permission matrix screen** (`/roles/:id/permissions`, ACC-120 slice
-  5 PR B; plan `backend/Plans/step-120-5-permission-matrix.md`).
+- **The role permissions screen** (`/roles/:id/permissions`). Built as a
+  six-column grid in ACC-120 slice 5 PR B (plan
+  `backend/Plans/step-120-5-permission-matrix.md`); **ACC-272 replaced the
+  grid with a grouped LIST** (design `frontend/design-reference/AccreditMe Role
+  Permissions.dc.html`, sections 1 and 2). The columns, the module row's
+  column toggles, the hatch, grid keyboard navigation and the Arabic frozen
+  column are gone, and so is `permission-columns.ts` (`placementOf()`).
   - **Shown:** only `inUse` keys, no `platform:*` inside a tenant
     (`NavigationAccessService.isPlatformOrg`), and no `rootRoleOnly` key on any
-    role but the root role (§1.14). Each row is labelled with a
-    sentence, never its key (`roles.matrix.sentence.<key>` in both i18n
-    files).
-  - **Placement:** ONE function, `permission-matrix/permission-columns.ts`
-    `placementOf()`, puts every key in one of six columns or makes it a
-    whole-row grant. Modules come in a fixed order (`MODULE_ORDER`).
-  - **The data model** (rows, the tri-state, marks, changes) is pure
-    functions in `permission-matrix.model.ts`.
+    role but the root role (§1.14), where it carries the "Organization
+    Administrator only" tag. Each row is labelled with a sentence, never its
+    key (`roles.matrix.sentence.<key>` in both i18n files).
+  - **The list:** one section per module in a fixed order (`MODULE_ORDER`, in
+    `permission-matrix.model.ts`), with its name, description, a tri-state box
+    and "n of N"; under it one row per key, a checkbox and its sentence, in
+    catalogue order. Sections open expanded and fold; the module heading is
+    sticky inside `<main>`, so its box stays in reach while the rows scroll.
+    **No row implies another**: a box grants only its own keys.
+  - **Groups:** a module with more than `GROUP_THRESHOLD` (6) shown keys is
+    split into labelled groups, each with its own tri-state box and count.
+    The ONE table is `permission-matrix/permission-groups.ts`; today only
+    Committees (records 5, members 3, tasks on committees 4). Group names are
+    `roles.matrix.group.<module>.<id>`. `permission-groups.spec.ts` fails when a
+    module over six shown keys has no groups, or its groups do not cover its
+    shown keys exactly once. A key a group table leaves out is never dropped:
+    it is listed last, unnamed.
+  - **Find and filter:** "Find a permission" matches the sentence in the
+    reader's language; "Show granted only" keeps the rows held as EDITED now
+    and every changed row. Both change what is shown, never what is saved.
+    While a filter is on, a box acts on its VISIBLE rows only (and its tooltip
+    and `aria-description` say so), the module count reads "n of N match", and
+    the box state, its accessible name and the group counts still count the
+    whole module. No match at all offers "Clear the search", which clears both.
+  - **Marks:** held, not held, newly granted and newly revoked (not saved), told
+    apart by glyph and words as well as colour; a changed row is tinted. A
+    read-only reader sees ✓ / a muted "·", with no checkboxes, no boxes and no
+    save bar.
+  - **Accessibility:** rows are native checkboxes named by their sentence, in
+    tab order; module and group boxes are `role="checkbox"` buttons with
+    `aria-checked="mixed"` when some are granted, named "All {module}
+    permissions, n of N granted". No grid navigation.
+  - **Arabic counts** are isolated (LRI … PDI around each number, Latin digits),
+    so «5 من 12» reads in the page's direction.
+  - **Phone (below 768px):** one column, sentences wrap, the heading stays
+    sticky, and the header's save controls move to a bar fixed at the bottom
+    (the count and "Review n changes…").
+  - **The data model** (modules and groups, tri-state, counts, toggling, the
+    filter, marks, the changes for the confirm) is pure functions in
+    `permission-matrix.model.ts`.
   - **A save sends the FULL set**, held hidden keys included, plus
     `expectedPermissionKeys`. A 409 offers only "Reload role".
   - **Read-only:** the root role, Platform Administrator, and any reader
     without `roles:manage`.
-  - **Layout (ACC-266).** The grid scrolls both ways inside its frame.
-    - The header row is sticky at the top (z 3). Its corner is sticky on both
-      axes, above the header and the frozen column (z 4). The frozen column is
-      `inset-inline-start`, with its shadow flipped by direction.
-    - The page is as tall as `<main>`, and the frame shrinks into what the
-      page header leaves, never past its content. Below a floor, `<main>`
-      scrolls the page.
-    - The grid is at least 1200 wide; wider, the six action columns share the
-      extra. The frozen column is 300, and 160 below Tailwind's `sm` (640px),
-      where names wrap (Ahmad, 27 Oct).
-    - **Arrow keys scroll the CELL with `scrollIntoView({ block: 'nearest',
-      inline: 'nearest' })` after `focus({ preventScroll: true })`**, so both
-      scroll paddings (frozen column, header) hold. Chrome's own focus scroll
-      leaves an element alone once 32px of it shows, which kept a cell half
-      under the frozen column. Any grid with a sticky column needs the same.
   - **Leaving with unsaved changes asks first.** This is
     `permission-matrix/leave-guard.ts`, the app's first `canDeactivate`: a
     screen implements `canLeave()`, plus its own `beforeunload`.
   - **`check:permission-sentences`** reads the in-use keys from the backend
     catalogue and fails on any key or module without English and Arabic
-    text. Add the sentence in the same change that takes a key off
-    `PERMISSIONS_NOT_YET_CHECKED`. `permissions-in-use.spec.ts` treats
-    `permission-columns.ts` as a declaring file: it places every key and
-    decides nothing.
+    text, and (since ACC-272) on a sentence for a key that is NOT in use, so
+    the sentence table is exactly the in-use list. Add the sentence in the
+    same change that takes a key off `PERMISSIONS_NOT_YET_CHECKED`.
+    `permissions-in-use.spec.ts` treats `permission-groups.ts` as a
+    declaring file: it groups keys and decides nothing.
 - **`PERMISSIONS_NOT_YET_CHECKED`** (`common/constants/permissions.ts`) —
   the catalogue keys no code decides with today: no backend check, no
   frontend gate, and no `requiredPermission` on a seeded transition of a
@@ -1373,9 +1396,9 @@ workflow write, may be held by the root role (Organization Administrator,
   stage Fix needs `workflows:manage` as well, so it never offers that role a
   link the route would refuse (pinned in `setup-health-page.component.spec.ts`).
 - **The screens learn it from the server:** `GET /roles/permissions` answers
-  `rootRoleOnly` per key. The permission matrix (`buildMatrix(…, { isRootRole })`)
-  hides such a key on every role but the root role, whose read-only matrix
-  shows it as held. The transition editor still lists it. No screen names the
+  `rootRoleOnly` per key. The role permissions list (`buildMatrix(…, { isRootRole })`)
+  hides such a key on every role but the root role, whose read-only list
+  shows it as held, tagged "Organization Administrator only" (ACC-272). The transition editor still lists it. No screen names the
   key.
 - **Counts on the shared database, 24 Oct:** no custom or other system role
   held it; all three Organization Administrator roles and all three Platform
