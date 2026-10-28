@@ -375,7 +375,9 @@ elsewhere.**
     `permission-matrix.model.ts`), with its name, description, a tri-state box
     and "n of N"; under it one row per key, a checkbox and its sentence, in
     catalogue order. Sections open expanded and fold; the module heading is
-    sticky inside `<main>`, so its box stays in reach while the rows scroll.
+    sticky inside `<main>`, so its box stays in reach while the rows scroll. Its
+    `top` is minus the shell's padding on `<main>` (`p-4`): Chrome measures a
+    sticky top from inside that padding, and at 0 rows showed through above it.
     **No row implies another**: a box grants only its own keys.
   - **Groups:** a module with more than `GROUP_THRESHOLD` (6) shown keys is
     split into labelled groups, each with its own tri-state box and count.
