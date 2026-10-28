@@ -220,8 +220,11 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
     ] as const) {
       it(`${lang} at ${width}: scrolled to the end with changes, the phone bar never covers the last row`, async () => {
         const main = await render(lang, width, viewport);
-        // <main> ends at the bottom of the screen, as the app shell's does.
-        fixture.componentRef.setInput('height', Math.floor(document.documentElement.clientHeight - box(main).top));
+        // <main> spans the screen from top to bottom, as the app shell's does.
+        // Pinned, because in the full suite other specs leave content above the
+        // fixture and it would otherwise start far down the page.
+        (fixture.nativeElement as HTMLElement).style.cssText = 'position:fixed;inset-block-start:0;inset-inline-start:0';
+        fixture.componentRef.setInput('height', document.documentElement.clientHeight);
         const c = page();
         c.toggle(['committees:approve']);
         c.toggle(['committees:view']);
