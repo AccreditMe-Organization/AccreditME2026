@@ -79,7 +79,7 @@ function dayOf(date: Date): string {
       :host{display:block;min-inline-size:0}
       .am-ef{display:flex;align-items:center;gap:var(--am-space-4)}
       .am-ef__text{flex:1 1 auto;min-inline-size:0;cursor:pointer}
-      .am-ef__cal{margin-block-start:var(--am-space-8);max-inline-size:320px}
+      .am-ef__cal{margin-block-start:var(--am-space-8);max-inline-size:calc(var(--am-space-40) * 8)}
     `,
   ],
 })

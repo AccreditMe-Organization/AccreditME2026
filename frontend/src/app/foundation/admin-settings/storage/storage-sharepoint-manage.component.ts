@@ -136,7 +136,7 @@ const IDLE: TestState = { status: 'idle' };
 
       @if (edit() === 'view') {
         <div class="am-spm__leave" data-testid="sp-disconnect-row">
-          <span class="min-w-0 flex-[1_1_240px] text-meta text-ink-700" data-testid="sp-disconnect-why">{{ disconnectWhy() }}</span>
+          <span class="min-w-0 flex-[1_1_calc(var(--am-space-40)*6)] text-meta text-ink-700" data-testid="sp-disconnect-why">{{ disconnectWhy() }}</span>
           <p-button
             type="button"
             severity="danger"
@@ -157,7 +157,7 @@ const IDLE: TestState = { status: 'idle' };
   `,
   styles: [
     `
-      .am-spm__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:var(--am-space-12)}
+      .am-spm__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(var(--am-space-40) * 6)),1fr));gap:var(--am-space-12)}
       .am-spm__box{display:flex;align-items:center;min-block-size:var(--am-form-control-height);box-sizing:border-box;padding:0 var(--am-space-8);border-radius:var(--am-radius-control);border:1px solid var(--am-border);background:var(--am-surface)}
       .am-spm__value{min-inline-size:0;font-size:var(--am-type-value-size);font-weight:500;color:var(--am-ink-900);overflow-wrap:anywhere;unicode-bidi:isolate}
       .am-spm__bar,.am-spm__leave{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--am-space-8)}
