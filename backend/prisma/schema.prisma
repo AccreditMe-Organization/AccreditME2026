@@ -283,6 +283,42 @@ enum SetupConditionType {
   STORAGE_ACCESS_WITHDRAWN
   // ACC-185 — the SharePoint client secret expires within 30 days.
   STORAGE_SECRET_EXPIRING
+  // ACC-271 — a workflow stage still worked by its seeded starting assignment
+  // (the tenant admin). Expand first: written by PR 3's detector, never before
+  // this value is deployed (ACC-173's rule).
+  STAGE_ON_STARTING_ASSIGNMENT
+}
+
+// ACC-271 — who works a stage, one kind per entry; entries join with "or".
+// Role and Round robin are not kinds: the stage names where the work sits.
+enum StageAssigneeKind {
+  SPECIFIC_USER
+  POSITION_IN_UNIT // "Fixed position": a position in a named unit
+  ORG_UNIT_HEAD // the head (or acting head) of a unit; no unit = the record's unit
+  CREATOR // whoever moved the record into its first stage (was SELF)
+  COMMITTEE // a committee's members, optionally one member role; no committee = the record's committee
+}
+
+// ACC-271 — how the stage's people decide, when there are several.
+enum StageWhoMode {
+  ANY_ONE // "Any one of them": the first to act decides
+  ALL // "All of them": every current member of the pool approves
+  COMMITTEE_VOTE // only with exactly one COMMITTEE entry: its quorum and majority
+}
+
+// ACC-271 — who moves the record along a transition. PERSON: whoever works the
+// from-stage presses it. APP: the module's own code runs it ("Done by the app",
+// was SYSTEM_AUTOMATIC). AUTOMATIC: reserved for a tenant's conditional exit
+// (engine step 2); nothing may write it yet.
+enum TransitionMover {
+  PERSON
+  APP
+  AUTOMATIC
+}
+
+// ACC-271 — what the stage history records beyond moves.
+enum InstanceStageEventKind {
+  POOL_MEMBER_LEFT // someone in the stage's pool left it mid-stage
 }
 
 // No HYGIENE tier yet: the only hygiene condition (stale invitations) was
@@ -424,13 +460,15 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   users                    User[]
-  storageConfirmedBy       User?                   @relation("OrganizationStorageConfirmedBy", fields: [storageConfirmedById], references: [id], onDelete: SetNull)
-  storageChangeRequestedBy User?                   @relation("OrganizationStorageChangeRequestedBy", fields: [storageChangeRequestedById], references: [id], onDelete: SetNull)
+  storageConfirmedBy       User?                        @relation("OrganizationStorageConfirmedBy", fields: [storageConfirmedById], references: [id], onDelete: SetNull)
+  storageChangeRequestedBy User?                        @relation("OrganizationStorageChangeRequestedBy", fields: [storageChangeRequestedById], references: [id], onDelete: SetNull)
   roles                    Role[]
   lookupValues             LookupValue[]
   lookupCategories         LookupCategory[]
   workflowTemplates        WorkflowTemplate[]
   stageRecordActions       WorkflowStageRecordAction[] // ACC-255
+  stageAssignees           WorkflowStageAssignee[] // ACC-271
+  instanceStageEvents      WorkflowInstanceStageEvent[] // ACC-271
   workflowInstances        WorkflowInstance[]
   workflowActionLogs       WorkflowActionLog[]
   workingCalendar          WorkingCalendar?
@@ -1217,7 +1255,7 @@ model WorkflowStage {
   // no DTO carries it, the seed writes it (COMMITTEE template only, today) and
   // `npm run backfill:acc233-committee-stage-keys` wrote it for existing
   // organisations. Unique within one workflow; Postgres lets the nulls repeat.
-  key                String?
+  key String?
 
   approvalMode      WorkflowApprovalMode       @default(SINGLE)
   parallelThreshold WorkflowParallelThreshold?
@@ -1263,6 +1301,12 @@ model WorkflowStage {
   // internal identity.
   flags String[] @default([])
 
+  // ACC-271 — how the stage's people decide. NULL means the stage is not
+  // converted yet: the engine reads the old columns above (assigneeStrategy,
+  // approvalMode, ...) exactly as before. Set together with the stage's
+  // `assignees` by the backfill (PR 2) and the stage editor (PR 3).
+  whoMode StageWhoMode?
+
   workflowTemplate WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
   transitionsFrom  WorkflowTransition[]    @relation("TransitionFrom")
   transitionsTo    WorkflowTransition[]    @relation("TransitionTo")
@@ -1271,7 +1315,8 @@ model WorkflowStage {
   assigneeOrgUnit  OrgUnit?                @relation("WorkflowStageAssigneeOrgUnit", fields: [assigneeOrgUnitId], references: [id])
 
   taskDefinitions WorkflowStageTaskDefinition[] // ACC-190
-  recordActions   WorkflowStageRecordAction[]   // ACC-255 — the record actions this stage allows
+  recordActions   WorkflowStageRecordAction[] // ACC-255 — the record actions this stage allows
+  assignees       WorkflowStageAssignee[] // ACC-271 — who works this stage, joined by "or"
 
   @@unique([workflowTemplateId, key]) // ACC-233
   @@index([workflowTemplateId])
@@ -1296,6 +1341,36 @@ model WorkflowStageRecordAction {
   @@index([organizationId])
 }
 
+// ACC-271 — one entry of who works a stage. The stage's pool is the union of
+// its entries, each resolved to ACTIVE users at read time (never stored), then
+// routed through out-of-office acting users. Ids are plain columns, checked
+// against the organisation on write, as the stage's old assignee columns are.
+model WorkflowStageAssignee {
+  id                   String            @id @default(cuid())
+  organizationId       String
+  stageId              String
+  order                Int
+  kind                 StageAssigneeKind
+  userId               String? // SPECIFIC_USER
+  positionId           String? // POSITION_IN_UNIT
+  orgUnitId            String? // POSITION_IN_UNIT; ORG_UNIT_HEAD (null = the record's unit)
+  committeeId          String? // COMMITTEE (null = the record's committee)
+  committeeRoleValueId String? // COMMITTEE: only members in this role
+  // The seeded tenant-admin assignment (decision 5): Setup health lists the
+  // stage until someone replaces it or keeps it.
+  isStartingAssignment Boolean           @default(false)
+  createdAt            DateTime          @default(now())
+  createdById          String?
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  stage        WorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([stageId])
+  @@index([organizationId, userId])
+  @@index([organizationId, isStartingAssignment])
+}
+
 model WorkflowTransition {
   id                 String                   @id @default(cuid())
   fromStageId        String
@@ -1309,6 +1384,10 @@ model WorkflowTransition {
   validatorConfig    Json?
   isApprovalPath     Boolean                  @default(false)
   kind               WorkflowTransitionKind   @default(ADVANCE) // ACC-190
+  // ACC-271 — who moves the record along it. NULL until backfilled, and read
+  // as APP when triggerCondition is SYSTEM_AUTOMATIC, PERSON otherwise
+  // (transitionMover() in workflow-pool.ts).
+  mover              TransitionMover?
 
   fromStage WorkflowStage              @relation("TransitionFrom", fields: [fromStageId], references: [id])
   toStage   WorkflowStage              @relation("TransitionTo", fields: [toStageId], references: [id])
@@ -1371,11 +1450,31 @@ model WorkflowInstanceStage {
   stage            WorkflowStage      @relation(fields: [stageId], references: [id])
   approvals        WorkflowApproval[]
 
-  tasks Task[] // ACC-190 — the tasks this stage entry created
+  tasks  Task[] // ACC-190 — the tasks this stage entry created
+  events WorkflowInstanceStageEvent[] // ACC-271 — e.g. a pool member who left mid-stage
 
   @@index([workflowInstanceId])
   @@index([stageId])
   @@index([slaDueAt])
+}
+
+// ACC-271 — an event in a stage entry that is not a move: today only a pool
+// member who left mid-stage (deactivated), so the history can say who left and
+// why an "All of them" stage decided without them. Append-only.
+model WorkflowInstanceStageEvent {
+  id                      String                 @id @default(cuid())
+  organizationId          String
+  workflowInstanceStageId String
+  kind                    InstanceStageEventKind
+  userId                  String
+  reason                  String // e.g. DEACTIVATED
+  at                      DateTime               @default(now())
+
+  organization          Organization          @relation(fields: [organizationId], references: [id])
+  workflowInstanceStage WorkflowInstanceStage @relation(fields: [workflowInstanceStageId], references: [id])
+
+  @@index([organizationId])
+  @@index([workflowInstanceStageId])
 }
 
 model WorkflowApproval {
