@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 27 Oct 2026 · Role permissions as a grouped list · replaces Templates 6a's grid</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Role permissions · /roles/:id/permissions</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 108ch; text-wrap: pretty;">One checkbox and one sentence per permission, grouped by module, with no columns. The server stores a plain list, and the page now shows it as one. The save confirmation, the 3c save states (saving, failed, 403, 409 “Reload role”) and the leave-page guard apply unchanged and aren't redrawn.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="6">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div><div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div></div>
+      </sc-for>
+    </div>
+  </section>
+
+  <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="5">
+    <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">{{ sec.n }}</span>
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{{ sec.t }}</h2>
+        <span style="font-size: 12.5px; color: #5A6779;">{{ sec.s }}</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+        <sc-for list="{{ sec.pages }}" as="p" hint-placeholder-count="2">
+          <div style="{{ p.outer }}">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ p.cap }}</div>
+            <div dir="{{ p.dir }}" style="{{ p.frame }}">
+              <div style="{{ p.headWrap }}">
+                <div style="min-width: 0; flex: 1 1 300px;">
+                  <div style="{{ p.crumbStyle }}">{{ p.crumbs }}</div>
+                  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;"><span style="{{ p.titleStyle }}">{{ p.title }}</span><sc-if value="{{ p.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ p.chipStyle }}">{{ p.chip }}</span></sc-if></div>
+                  <div style="{{ p.subStyle }}">{{ p.sub }}</div>
+                </div>
+                <sc-if value="{{ p.actions }}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;"><span role="status" style="{{ p.unsavedStyle }}">{{ p.unsaved }}</span><button style="{{ p.discardStyle }}">{{ p.discard }}</button><button style="{{ p.reviewStyle }}">{{ p.review }}</button></div>
+                </sc-if>
+              </div>
+              <sc-if value="{{ p.notice }}" hint-placeholder-val="{{ false }}"><div style="{{ p.noticeStyle }}">{{ p.notice }}</div></sc-if>
+              <sc-if value="{{ p.toolbar }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;">
+                  <span role="searchbox" aria-label="{{ p.findLabel }}" style="{{ p.findStyle }}"><span style="color: #5A6779;">⌕</span><span style="{{ p.findValStyle }}">{{ p.findVal }}</span><sc-if value="{{ p.findClear }}" hint-placeholder-val="{{ false }}"><span aria-label="{{ p.clearLabel }}" style="color: #5A6779; font-size: 12px;">✕</span></sc-if></span>
+                  <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 13px; white-space: nowrap;"><span role="switch" aria-checked="{{ p.gAria }}" style="{{ p.gSw }}"><span style="{{ p.gKnob }}"></span></span>{{ p.gLabel }}</span>
+                  <span style="{{ p.legendWrap }}"><sc-for list="{{ p.legend }}" as="l" hint-placeholder-count="4"><span style="display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;"><span style="{{ l.s }}">{{ l.m }}</span>{{ l.t }}</span></sc-for></span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ p.isLoading }}" hint-placeholder-val="{{ false }}">
+                <sc-for list="{{ p.skel }}" as="k" hint-placeholder-count="3"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;"><span style="{{ k.h }}"></span><span style="{{ k.a }}"></span><span style="{{ k.b }}"></span><span style="{{ k.c }}"></span></div></sc-for>
+              </sc-if>
+              <sc-if value="{{ p.isError }}" hint-placeholder-val="{{ false }}">
+                <div role="alert" style="border: 1px solid #FECDCA; background: #FEF3F2; border-radius: 8px; padding: 14px 16px;"><div style="{{ p.errTStyle }}">{{ p.errT }}</div><div style="{{ p.errBStyle }}">{{ p.errB }}</div><button style="{{ p.retryStyle }}">{{ p.retry }}</button></div>
+              </sc-if>
+              <sc-if value="{{ p.noMatch }}" hint-placeholder-val="{{ false }}">
+                <div role="status" style="border: 1px dashed #CBD5E0; border-radius: 8px; padding: 22px 16px; text-align: center; background: #FBFCFD;"><span style="{{ p.nmStyle }}">{{ p.nmT }}</span> <a href="#" style="{{ p.nmLinkStyle }}">{{ p.nmLink }}</a></div>
+              </sc-if>
+              <sc-for list="{{ p.modules }}" as="m" hint-placeholder-count="4">
+                <div style="{{ m.card }}">
+                  <div style="{{ m.headStyle }}">
+                    <sc-if value="{{ m.edit }}" hint-placeholder-val="{{ true }}"><span role="checkbox" aria-checked="{{ m.ariaChecked }}" aria-label="{{ m.aria }}" tabindex="0" style="{{ m.box }}">{{ m.boxMark }}</span></sc-if>
+                    <span style="flex: 1 1 200px; min-width: 0;"><span style="{{ m.nameStyle }}">{{ m.name }}</span><span style="{{ m.descStyle }}">{{ m.desc }}</span></span>
+                    <span style="{{ m.countStyle }}">{{ m.count }}</span>
+                    <button aria-expanded="{{ m.expanded }}" aria-label="{{ m.colAria }}" style="{{ m.colStyle }}">{{ m.chev }}</button>
+                  </div>
+                  <sc-if value="{{ m.tip }}" hint-placeholder-val="{{ false }}"><div style="padding: 0 16px 8px;"><span role="tooltip" style="display: inline-block; max-width: 300px; background: #1E2A38; color: #fff; font-size: 12px; line-height: 1.4; border-radius: 6px; padding: 6px 9px;">{{ m.tip }}</span></div></sc-if>
+                  <sc-for list="{{ m.groups }}" as="g" hint-placeholder-count="1">
+                    <sc-if value="{{ g.label }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ g.headStyle }}"><sc-if value="{{ m.edit }}" hint-placeholder-val="{{ true }}"><span role="checkbox" aria-checked="{{ g.ariaChecked }}" aria-label="{{ g.aria }}" tabindex="0" style="{{ g.box }}">{{ g.boxMark }}</span></sc-if><span style="{{ g.labelStyle }}">{{ g.label }}</span><span style="{{ g.countStyle }}">{{ g.count }}</span></div>
+                    </sc-if>
+                    <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+                      <div style="{{ r.rowStyle }}">
+                        <sc-if value="{{ r.edit }}" hint-placeholder-val="{{ true }}"><span role="checkbox" aria-checked="{{ r.ariaChecked }}" aria-label="{{ r.sent }}" tabindex="0" style="{{ r.box }}">{{ r.boxMark }}</span></sc-if>
+                        <sc-if value="{{ r.read }}" hint-placeholder-val="{{ false }}"><span aria-label="{{ r.glyphAria }}" style="{{ r.glyphStyle }}">{{ r.glyph }}</span></sc-if>
+                        <span style="flex: 1 1 220px; min-width: 0;"><span style="{{ r.sentStyle }}">{{ r.sent }}</span><sc-if value="{{ r.sec }}" hint-placeholder-val="{{ false }}"><span style="{{ r.secStyle }}">{{ r.sec }}</span></sc-if></span>
+                        <sc-if value="{{ r.tag }}" hint-placeholder-val="{{ false }}"><span style="{{ r.tagStyle }}">{{ r.tag }}</span></sc-if>
+                      </div>
+                    </sc-for>
+                  </sc-for>
+                </div>
+              </sc-for>
+              <sc-if value="{{ p.phoneBar }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ p.barStyle }}"><span style="{{ p.unsavedStyle }}">{{ p.unsaved }}</span><span style="display: flex; gap: 8px;"><button style="{{ p.discardStyle }}">{{ p.discard }}</button><button style="{{ p.reviewStyle }}">{{ p.review }}</button></span></div>
+              </sc-if>
+            </div>
+            <sc-if value="{{ p.note }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty; max-width: 900px;">{{ p.note }}</div></sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </sc-for>
+
+
+  <sc-for list="{{ userSections }}" as="sec" hint-placeholder-count="3">
+    <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">{{ sec.n }}</span>
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{{ sec.t }}</h2>
+        <span style="font-size: 12.5px; color: #5A6779;">{{ sec.s }}</span>
+      </div>
+      <sc-if value="{{ sec.callouts }}" hint-placeholder-val="{{ false }}">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 16px;">
+          <div><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Roles list · header</div>
+            <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; padding: 14px 16px;"><span><span style="display: block; font-size: 11.5px; color: #5A6779;">Administration / Roles</span><span style="font-size: 22px; font-weight: 600;">Roles</span></span><span style="display: flex; gap: 8px; flex-wrap: wrap;"><button style="font-family: inherit; font-size: 13px; background: #fff; color: #2D3748; border: 2px solid #2E6FA3; border-radius: 6px; padding: 5px 11px; font-weight: 500;">Look up a user's permissions</button><button style="font-family: inherit; font-size: 13px; background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 6px 12px; font-weight: 600;">New role</button></span></div>
+            <div dir="rtl" style="margin-block-start: 8px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; padding: 14px 16px; font-family: 'IBM Plex Sans Arabic', sans-serif;"><span><span style="display: block; font-size: 12.5px; color: #5A6779;">الإدارة / الأدوار</span><span style="font-size: 23px; font-weight: 600;">الأدوار</span></span><span style="display: flex; gap: 8px; flex-wrap: wrap;"><button style="font-family: inherit; font-size: 14px; background: #fff; color: #2D3748; border: 2px solid #2E6FA3; border-radius: 6px; padding: 5px 11px;">الاطلاع على صلاحيات مستخدم</button><button style="font-family: inherit; font-size: 14px; background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 6px 12px; font-weight: 600;">دور جديد</button></span></div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px;">New: the secondary button (outlined here to mark it). It opens /roles/user-permissions with no one chosen.</div></div>
+          <div><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">User record · Roles panel header</div>
+            <div style="border: 1px solid #E2E8F0; border-radius: 8px; background: #fff;"><div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="display: flex; gap: 7px; align-items: center;"><span style="font-size: 13px; font-weight: 600;">Roles</span><span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px;">4</span></span><span style="display: flex; gap: 14px;"><a href="#" style="font-size: 12.5px; font-weight: 600; text-decoration: none; outline: 2px solid #2E6FA3; outline-offset: 2px; border-radius: 3px;">See permissions</a><a href="#" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">Manage roles</a></span></div><div style="padding: 9px 12px; font-size: 12px; color: #5A6779;">Rows as built: head positions first, then direct, then inactive.</div></div>
+            <div dir="rtl" style="margin-block-start: 8px; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; font-family: 'IBM Plex Sans Arabic', sans-serif;"><div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px;"><span style="font-size: 14px; font-weight: 600;">الأدوار</span><span style="display: flex; gap: 14px;"><a href="#" style="font-size: 13.5px; font-weight: 600; text-decoration: none; outline: 2px solid #2E6FA3; outline-offset: 2px; border-radius: 3px;">عرض الصلاحيات</a><a href="#" style="font-size: 13.5px; font-weight: 600; text-decoration: none;">إدارة الأدوار</a></span></div></div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px;">New: “See permissions” (outlined here to mark it), opening the page with this person chosen.</div></div>
+        </div>
+      </sc-if>
+      <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+        <sc-for list="{{ sec.pages }}" as="u" hint-placeholder-count="2">
+          <div style="{{ u.outer }}">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ u.cap }}</div>
+            <div dir="{{ u.dir }}" style="{{ u.frame }}">
+              <div><div style="{{ u.crumbStyle }}">{{ u.crumbs }}</div><div style="{{ u.titleStyle }}">{{ u.title }}</div></div>
+              <div><div style="{{ u.labStyle }}">{{ u.pickLabel }}</div><div role="combobox" aria-label="{{ u.pickLabel }}" style="{{ u.pickBox }}"><span style="color: #5A6779;">⌕</span><span style="{{ u.pickValStyle }}">{{ u.pickVal }}</span><span style="color: #5A6779; font-size: 10px;">▼</span></div></div>
+              <sc-if value="{{ u.intro }}" hint-placeholder-val="{{ false }}"><div style="{{ u.introStyle }}">{{ u.intro }}</div></sc-if>
+              <sc-if value="{{ u.isLoading }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 10px;"><span style="display: block; height: 72px; border-radius: 8px; background: #E2E8F0;"></span><span style="display: block; height: 110px; border-radius: 8px; background: #EDF1F6;"></span><span style="display: block; height: 160px; border-radius: 8px; background: #EDF1F6;"></span></div></sc-if>
+              <sc-if value="{{ u.isError }}" hint-placeholder-val="{{ false }}"><div role="alert" style="border: 1px solid #FECDCA; background: #FEF3F2; border-radius: 8px; padding: 14px 16px;"><div style="font-size: 14px; font-weight: 600; color: #B42318;">{{ u.errT }}</div><div style="font-size: 13px; margin-block: 2px 10px;">{{ u.errB }}</div><button style="font-family: inherit; font-size: 13px; background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 6px 12px;">{{ u.retry }}</button></div></sc-if>
+              <sc-if value="{{ u.card }}" hint-placeholder-val="{{ true }}">
+                <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 16px;">
+                  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;"><span style="font-size: 17px; font-weight: 600;">{{ u.card.name }}</span><span style="{{ u.card.statusStyle }}">{{ u.card.status }}</span><a href="#" style="margin-inline-start: auto; font-size: 12.5px; font-weight: 600; text-decoration: none;">{{ u.card.link }}</a></div>
+                  <div style="font-size: 13px; color: #4A5568;">{{ u.card.meta }}</div>
+                  <div style="font-size: 13.5px; font-weight: 600; margin-block-start: 6px;">{{ u.card.summary }}</div>
+                  <sc-if value="{{ u.card.deact }}" hint-placeholder-val="{{ false }}"><div style="margin-block-start: 8px; padding: 7px 10px; border: 1px solid #CBD5E0; border-radius: 6px; background: #F1F4F8; font-size: 13px; color: #2D3748;">{{ u.card.deact }}</div></sc-if>
+                </div>
+              </sc-if>
+              <sc-if value="{{ u.roles }}" hint-placeholder-val="{{ true }}">
+                <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+                  <div style="padding: 10px 16px; font-size: 15px; font-weight: 600;">{{ u.roles.title }}</div>
+                  <sc-for list="{{ u.roles.rows }}" as="r" hint-placeholder-count="4">
+                    <div style="{{ r.rowStyle }}">
+                      <span style="flex: 1 1 260px; min-width: 0;"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;"><a href="#" style="{{ r.nameStyle }}">{{ r.name }}</a><sc-if value="{{ r.system }}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 600; color: #4A5568; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 6px;">{{ r.system }}</span></sc-if><sc-if value="{{ r.inactive }}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #F1F4F8; border: 1px solid #CBD5E0; border-radius: 4px; padding: 0 6px;">{{ r.inactive }}</span></sc-if></span><span style="{{ r.srcStyle }}">{{ r.src }}</span></span>
+                      <span style="{{ r.givesStyle }}">{{ r.gives }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ u.perms }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <div style="font-size: 15px; font-weight: 600;">{{ u.perms.title }}</div>
+                  <div style="{{ u.perms.smallStyle }}">{{ u.perms.ro }}</div>
+                  <span role="searchbox" style="{{ u.perms.findStyle }}"><span style="color: #5A6779;">⌕</span><span style="{{ u.perms.findValStyle }}">{{ u.perms.findVal }}</span></span>
+                  <sc-if value="{{ u.perms.noActive }}" hint-placeholder-val="{{ false }}"><div style="border: 1px dashed #CBD5E0; border-radius: 8px; padding: 18px 16px; background: #fff;"><span style="{{ u.perms.txtStyle }}">{{ u.perms.noActive }}</span></div></sc-if>
+                  <sc-if value="{{ u.perms.noMatch }}" hint-placeholder-val="{{ false }}"><div role="status" style="border: 1px dashed #CBD5E0; border-radius: 8px; padding: 18px 16px; text-align: center; background: #FBFCFD;"><span style="{{ u.perms.txtStyle }}">{{ u.perms.noMatch }}</span> <a href="#" style="font-weight: 600; text-decoration: none;">{{ u.perms.nmLink }}</a></div></sc-if>
+                  <sc-for list="{{ u.perms.modules }}" as="m" hint-placeholder-count="4">
+                    <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding-block-end: 4px;">
+                      <div style="{{ u.perms.headStyle }}"><span style="{{ u.perms.nameStyle }}">{{ m.name }}</span><span style="{{ u.perms.descStyle }}">{{ m.desc }}</span><span style="{{ u.perms.countStyle }}">{{ m.count }}</span></div>
+                      <sc-for list="{{ m.groups }}" as="g" hint-placeholder-count="1">
+                        <sc-if value="{{ g.label }}" hint-placeholder-val="{{ false }}"><div style="{{ g.labelStyle }}">{{ g.label }}</div></sc-if>
+                        <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                          <div style="{{ r.rowStyle }}"><span aria-label="Held" style="flex: none; width: 16px; text-align: center; font-weight: 700; color: #1F5480; line-height: 22px;">✓</span><span style="min-width: 0;"><span style="{{ r.sentStyle }}">{{ r.sent }}</span><sc-if value="{{ r.sec }}" hint-placeholder-val="{{ false }}"><span style="{{ r.secStyle }}">{{ r.sec }}</span></sc-if><span style="{{ r.fromStyle }}">{{ r.from }}</span></span></div>
+                        </sc-for>
+                      </sc-for>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ u.perms.nothing }}" hint-placeholder-val="{{ false }}"><div style="{{ u.perms.smallStyle }}">{{ u.perms.nothing }}</div></sc-if>
+                </div>
+              </sc-if>
+            </div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; max-width: 900px; text-wrap: pretty;">Address: {{ u.route }}<sc-if value="{{ u.note }}" hint-placeholder-val="{{ false }}"> · {{ u.note }}</sc-if></div>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </sc-for>
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 600;">Reasoning</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 0 20px;">
+      <sc-for list="{{ notes }}" as="n" hint-placeholder-count="10"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12.5px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong style="color: #2D3748;">{{ n.k }}</strong> {{ n.v }}</span></div></sc-for>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 600;">Changes to accepted screens</h2>
+    <sc-for list="{{ changes }}" as="c" hint-placeholder-count="5"><div style="display: grid; grid-template-columns: minmax(0, 260px) 1fr; gap: 12px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12.5px; font-weight: 600;">{{ c.s }}</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ c.w }}</span></div></sc-for>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px;">
+    <h2 style="margin: 0 0 12px; font-size: 20px; font-weight: 600;">Questions for the product owner</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="5">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for><div style="font-size: 12px; color: #1F5480; font-weight: 500; margin-block-start: 5px;">{{ q.rec }}</div></div>
+      </sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = "font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const P = (k, en, ar, o) => Object.assign({ k, en, ar }, o || {});
+    const MODS = [
+      { en: "Organization settings", ar: "إعدادات المنشأة", dEn: "The organization's profile and how it is set up", dAr: "الملف التعريفي للمنشأة وطريقة إعدادها", perms: [P("orgView", "See the organization's profile and settings", "عرض الملف التعريفي للمنشأة وإعداداتها"), P("orgEdit", "Change the organization's profile", "تعديل الملف التعريفي للمنشأة"), P("orgSetup", "Set up email, storage, deadlines and AI", "ضبط البريد والتخزين والمهل والذكاء الاصطناعي"), P("orgLoad", "Load the organization's starting setup", "تحميل الإعداد الأولي للمنشأة")] },
+      { en: "Organization structure", ar: "الهيكل التنظيمي", dEn: "Units, their heads and the working calendar", dAr: "الوحدات ورؤساؤها والتقويم الرسمي", perms: [P("unitView", "See units and their heads", "عرض الوحدات ورؤسائها"), P("unitEdit", "Change units, heads and the calendar", "تعديل الوحدات ورؤسائها والتقويم")] },
+      { en: "Users", ar: "المستخدمون", dEn: "Who may invite, transfer and deactivate people", dAr: "من يدعو الأشخاص وينقلهم ويعطّل حساباتهم", perms: [P("uView", "See users and their records", "عرض المستخدمين وسجلاتهم"), P("uInvite", "Invite new users", "دعوة مستخدمين جدد"), P("uEdit", "Edit other people's profiles and out-of-office", "تعديل ملفات الآخرين وفترات «خارج المكتب»"), P("uMove", "Move someone to a new unit or position", "نقل شخص إلى وحدة أو منصب جديد"), P("uDeact", "Deactivate a user", "تعطيل حساب مستخدم"), P("uReact", "Reactivate a deactivated user", "إعادة تنشيط حساب معطّل")] },
+      { en: "Roles", ar: "الأدوار", dEn: "Roles, and what each one allows", dAr: "الأدوار وما يسمح به كل منها", perms: [P("rView", "See roles and what they allow", "عرض الأدوار وما تسمح به"), P("rEdit", "Create, change and assign roles", "إنشاء الأدوار وتعديلها وإسنادها")] },
+      { en: "Lookups", ar: "القوائم المرجعية", dEn: "The values the product's lists offer", dAr: "القيم التي تعرضها قوائم النظام", perms: [P("lView", "See lookup lists and their values", "عرض القوائم المرجعية وقيمها"), P("lEdit", "Add, rename and reorder lookup values", "إضافة القيم المرجعية وإعادة تسميتها وترتيبها")] },
+      { en: "Workflows", ar: "مسارات العمل", dEn: "How records move from stage to stage", dAr: "كيف تنتقل السجلات بين المراحل", perms: [P("wView", "See workflows, their stages and transitions", "عرض مسارات العمل ومراحلها وانتقالاتها"), P("wEdit", "Change workflows and their stage tasks", "تعديل مسارات العمل ومهام مراحلها", { oa: 1 })] },
+      { en: "Committees", ar: "اللجان", dEn: "Who may see, run and sign off committees", dAr: "من يرى اللجان ويديرها ويعتمدها", groups: [
+        { en: "Committee records", ar: "سجلات اللجان", perms: [P("cOpen", "Open a committee record and its members", "فتح سجل اللجنة وأعضائها"), P("cCreate", "Create a committee", "إنشاء لجنة"), P("cEdit", "Edit a committee's details and request changes", "تعديل تفاصيل اللجنة وطلب تغييرات"), P("cApprove", "Approve terms, changes and dissolutions", "اعتماد اللائحة والتغييرات وحلّ اللجان"), P("cManage", "Submit, suspend, reactivate, dissolve", "إرسال اللجان وتعليقها وإعادة تفعيلها وحلّها")] },
+        { en: "Members", ar: "الأعضاء", perms: [P("cAdd", "Add members to a committee", "إضافة أعضاء إلى اللجنة"), P("cRem", "Remove members from a committee", "إزالة أعضاء من اللجنة"), P("cRole", "Change a member's role on a committee", "تغيير دور العضو في اللجنة")] },
+        { en: "Tasks on committees", ar: "المهام على اللجان", perms: [P("tAll", "See every task on committees", "عرض جميع مهام اللجان"), P("tUnit", "See tasks on committees your unit or its sub-units own", "عرض مهام اللجان التابعة لوحدتك ووحداتها الفرعية"), P("tCreate", "Create tasks on committees", "إنشاء مهام على اللجان"), P("tManage", "Reassign committee tasks and decide their requests", "إعادة إسناد مهام اللجان والبتّ في طلباتها")] }
+      ] },
+      { en: "Meetings", ar: "الاجتماعات", dEn: "Committee meetings and the work they produce", dAr: "اجتماعات اللجان وما ينتج عنها من أعمال", perms: [P("mView", "See meetings and their tasks", "عرض الاجتماعات ومهامها")] },
+      { en: "Org positions", ar: "المسميات الوظيفية", dEn: "The positions people hold", dAr: "المسميات الوظيفية التي يشغلها الأشخاص", perms: [P("pView", "See the organization's positions", "عرض المسميات الوظيفية للمنشأة"), P("pEdit", "Add and change positions", "إضافة المسميات الوظيفية وتعديلها")] },
+      { en: "Setup health", ar: "سلامة الإعداد", dEn: "Gaps in the organization's setup that need fixing", dAr: "ثغرات في إعداد المنشأة تحتاج إلى إصلاح", perms: [P("hView", "See Setup health", "عرض سلامة الإعداد")] },
+      { en: "Administration", ar: "الإدارة", dEn: "Access to the Administration area", dAr: "الوصول إلى قسم الإدارة", perms: [P("aOpen", "Open the Administration area", "فتح قسم الإدارة", { sEn: "Each admin page also needs its own permission.", sAr: "كل صفحة إدارية تحتاج أيضًا إلى صلاحيتها الخاصة." })] }
+    ].map(m => Object.assign(m, { groups: m.groups || [{ en: null, ar: null, perms: m.perms }] }));
+    const HELD = new Set(["orgView", "unitView", "uView", "lView", "wView", "cOpen", "cCreate", "cEdit", "cAdd", "cRole", "tAll", "tCreate", "mView", "pView"]);
+    const CHG = { cApprove: "+", cRole: "-", lView: "-" };
+
+    const box = (st, ar, sm) => "flex: none; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; box-sizing: border-box; border-radius: 3px; font-size: 11px; font-weight: 700; line-height: 1; margin-block-start: " + (sm ? 1 : 2) + "px; " + (st === "off" ? "background: #fff; border: 1px solid #8A94A6; color: transparent;" : "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;");
+    const mark = (st) => st === "on" ? "✓" : st === "mixed" ? "–" : "";
+    const tri = (n, tot) => n === 0 ? "off" : n === tot ? "on" : "mixed";
+    const num = (x, ar) => ar ? iso(String(x)) : String(x);
+
+    const page = (o) => {
+      const ar = !!o.ar, ph = !!o.phone, edit = o.mode === "edit", oa = o.mode === "oa";
+      const T = (en, a) => ar ? a : en;
+      const fs = ar ? 14 : 13.5, fsS = ar ? 12.5 : 11.5;
+      const has = (k) => oa ? true : HELD.has(k);
+      const ch = (k) => edit ? (o.changes || {})[k] : null;
+      const draft = (k) => { const c = ch(k); return c === "+" ? true : c === "-" ? false : has(k); };
+      const q = (o.q || "").toLowerCase();
+      const filtering = !!q || !!o.grantedOnly;
+      const collapsed = o.collapsed || [];
+      let anyVisible = false;
+      const modules = MODS.map(m => {
+        const all = [].concat(...m.groups.map(g => g.perms)).filter(p => oa || !p.oa);
+        const heldN = all.filter(p => draft(p.k)).length;
+        const groups = m.groups.map(g => {
+          const ps = g.perms.filter(p => oa || !p.oa);
+          const vis = ps.filter(p => (!q || (ar ? p.ar : p.en).toLowerCase().includes(q)) && (!o.grantedOnly || draft(p.k) || ch(p.k)));
+          const gh = ps.filter(p => draft(p.k)).length;
+          const gst = tri(gh, ps.length);
+          return { vis, total: ps.length, out: {
+            label: g.en ? T(g.en, g.ar) : null,
+            count: filtering ? T(vis.length + " of " + ps.length, num(vis.length, 1) + " من " + num(ps.length, 1)) : T(gh + " of " + ps.length, num(gh, 1) + " من " + num(ps.length, 1)),
+            box: box(gst, ar, 1), boxMark: mark(gst), ariaChecked: gst === "mixed" ? "mixed" : gst === "on" ? "true" : "false",
+            aria: T("All " + (g.en || "") + " permissions, " + gh + " of " + ps.length + " granted", "كل صلاحيات " + (g.ar || "") + "، " + num(gh, 1) + " من " + num(ps.length, 1) + " ممنوحة"),
+            headStyle: "display: flex; align-items: center; gap: 10px; padding: 8px " + (ph ? 12 : 16) + "px 4px; padding-inline-start: " + (ph ? 20 : 28) + "px; border-block-start: 1px solid #F0F3F7;",
+            labelStyle: "flex: 1 1 auto; font-size: " + (ar ? 13 : 11.5) + "px; font-weight: 700; " + (ar ? "" : "letter-spacing: 0.05em; text-transform: uppercase; ") + "color: #4A5568;",
+            countStyle: "flex: none; font-size: " + fsS + "px; color: #5A6779; font-variant-numeric: tabular-nums;",
+            rows: vis.map(p => {
+              const c = ch(p.k), d = draft(p.k), st = d ? "on" : "off";
+              const indent = g.en ? (ph ? 46 : 54) : (ph ? 20 : 28);
+              return {
+                edit, read: !edit, sent: T(p.en, p.ar), sec: p.sEn ? T(p.sEn, p.sAr) : null,
+                box: box(st, ar), boxMark: mark(st), ariaChecked: d ? "true" : "false",
+                glyph: has(p.k) ? "✓" : "·", glyphAria: has(p.k) ? T("Held", "ممنوحة") : T("Not held", "غير ممنوحة"),
+                glyphStyle: "flex: none; width: 16px; text-align: center; font-size: 13px; font-weight: 700; line-height: 22px; color: " + (has(p.k) ? "#1F5480" : "#8A94A6") + ";",
+                tag: c === "+" ? T("＋ Granted · not saved", "＋ ممنوحة · غير محفوظة") : c === "-" ? T("− Revoked · not saved", "− مسحوبة · غير محفوظة") : (p.oa && oa ? T("Organization Administrator only", "لمسؤول المنشأة فقط") : null),
+                tagStyle: "flex: none; font-size: " + (ar ? 12 : 11) + "px; font-weight: 600; border-radius: 4px; padding: 1px 7px; white-space: nowrap; " + (c === "+" ? "color: #067647; background: #fff; border: 1px solid #067647;" : c === "-" ? "color: #B54708; background: #fff; border: 1px solid #B54708;" : "color: #4A5568; background: #F1F4F8; border: 1px solid #CBD5E0;"),
+                rowStyle: "display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 10px; padding: 7px " + (ph ? 12 : 16) + "px; padding-inline-start: " + indent + "px; " + (c === "+" ? "background: #ECFDF3;" : c === "-" ? "background: #FFFAEB;" : ""),
+                sentStyle: "display: block; font-size: " + fs + "px; line-height: " + (ar ? 22 : 20) + "px; color: " + (!edit && !has(p.k) ? "#4A5568" : "#2D3748") + ";" + (!edit && has(p.k) ? " font-weight: 500;" : "") + (c === "-" ? " text-decoration: line-through; text-decoration-color: #B54708;" : "") + " text-wrap: pretty;",
+                secStyle: "display: block; font-size: " + fsS + "px; color: #5A6779; margin-block-start: 1px;"
+              };
+            })
+          } };
+        });
+        const visN = groups.reduce((a, g) => a + g.vis.length, 0);
+        if (filtering && !visN) return null;
+        anyVisible = true;
+        const isCol = !filtering && collapsed.includes(m.en);
+        const mst = tri(heldN, all.length);
+        return {
+          edit, name: T(m.en, m.ar), desc: T(m.dEn, m.dAr),
+          count: filtering ? T(visN + " of " + all.length + " match", num(visN, 1) + " من " + num(all.length, 1) + " مطابقة") : T(heldN + " of " + all.length, num(heldN, 1) + " من " + num(all.length, 1)),
+          box: box(mst, ar), boxMark: mark(mst), ariaChecked: mst === "mixed" ? "mixed" : mst === "on" ? "true" : "false",
+          aria: T("All " + m.en + " permissions, " + heldN + " of " + all.length + " granted", "كل صلاحيات " + m.ar + "، " + num(heldN, 1) + " من " + num(all.length, 1) + " ممنوحة"),
+          expanded: isCol ? "false" : "true", chev: isCol ? (ar ? "◂" : "▸") : "▾", colAria: (isCol ? T("Expand ", "توسيع ") : T("Collapse ", "طي ")) + T(m.en, m.ar),
+          groups: isCol ? [] : groups.map(g => g.out).filter(g => g.rows.length),
+          tip: o.tipOn === m.en ? T("Acts only on the " + visN + " rows shown by the current filter.", "يؤثر فقط في " + num(visN, 1) + " صفوف تظهر بالتصفية الحالية.") : null,
+          card: "border: 1px solid #E2E8F0; border-radius: 8px; background: #fff;" + (isCol ? "" : " padding-block-end: 4px;"),
+          headStyle: "position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; padding: 10px " + (ph ? 12 : 16) + "px; background: #fff; border-radius: 8px 8px 0 0;" + (isCol ? "" : " border-block-end: 1px solid #E2E8F0;"),
+          nameStyle: "display: block; font-size: " + (ar ? 15.5 : 15) + "px; font-weight: 600;", descStyle: "display: block; font-size: " + fsS + "px; color: #5A6779;",
+          countStyle: "flex: none; font-size: " + (ar ? 13 : 12.5) + "px; font-weight: 500; color: #4A5568; font-variant-numeric: tabular-nums; margin-block-start: 2px;",
+          colStyle: "flex: none; width: 28px; height: 28px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; color: #4A5568; font-size: 12px; cursor: pointer;"
+        };
+      }).filter(Boolean);
+      const nCh = edit ? Object.keys(o.changes || {}).length : 0;
+      const btn = (k) => "font-family: inherit; font-size: " + (ar ? 14 : 13) + "px; border-radius: 6px; padding: 6px 12px; white-space: nowrap; " + (k === "p" ? "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;" : "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;");
+      const legend = edit ? [
+        { m: "✓", t: T("Held", "ممنوحة"), s: box("on", ar, 1) }, { m: "", t: T("Not held", "غير ممنوحة"), s: box("off", ar, 1) },
+        { m: "＋", t: T("Newly granted · not saved", "ممنوحة حديثًا · غير محفوظة"), s: "font-weight: 700; color: #067647; padding: 0 5px; border: 1px solid #067647; border-radius: 4px; background: #ECFDF3; font-size: 11px;" },
+        { m: "−", t: T("Newly revoked · not saved", "مسحوبة حديثًا · غير محفوظة"), s: "font-weight: 700; color: #B54708; padding: 0 5px; border: 1px solid #B54708; border-radius: 4px; background: #FFFAEB; font-size: 11px;" }
+      ] : [{ m: "✓", t: T("Held", "ممنوحة"), s: "font-weight: 700; color: #1F5480;" }, { m: "·", t: T("Not held", "غير ممنوحة"), s: "font-weight: 700; color: #8A94A6;" }];
+      const role = o.role || T("Quality Editor", "محرر الجودة");
+      const users = o.users || 14;
+      return {
+        cap: o.cap, note: o.note || null, dir: ar ? "rtl" : "ltr",
+        outer: "flex: 0 1 " + (ph ? 390 : 1130) + "px; min-width: 0;",
+        frame: "position: relative; width: 100%; max-width: " + (ph ? 390 : 1130) + "px; box-sizing: border-box; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: " + (ph ? 18 : 8) + "px; padding: " + (ph ? "14px 12px " + (o.phoneBar ? "76px" : "14px") : "16px 18px") + "; display: flex; flex-direction: column; gap: 12px;" + (ar ? " " + AF : ""),
+        headWrap: "display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px;",
+        crumbs: T("Administration / Roles / ", "الإدارة / الأدوار / ") + role, crumbStyle: "font-size: " + fsS + "px; color: #5A6779;",
+        title: role, titleStyle: "font-size: " + (ph ? (ar ? 20 : 19) : (ar ? 23 : 22)) + "px; line-height: 1.3; font-weight: 600;",
+        chip: o.system ? T("System", "نظام") : null, chipStyle: "font-size: " + (ar ? 12 : 11) + "px; font-weight: 600; color: #4A5568; background: #fff; border: 1px solid #8A94A6; border-radius: 4px; padding: 1px 7px;",
+        sub: T("Permissions · held by " + users + " users · changing this affects them as soon as it's saved", "الصلاحيات · يحملها " + num(users, 1) + " مستخدمًا · يؤثر التغيير عليهم بمجرد حفظه"), subStyle: "font-size: " + (ar ? 13.5 : 12.5) + "px; color: #4A5568; text-wrap: pretty;",
+        actions: !ph && nCh > 0, phoneBar: ph && nCh > 0,
+        unsaved: nCh === 1 ? T("1 change unsaved", "تغيير واحد غير محفوظ") : T(nCh + " changes unsaved", num(nCh, 1) + " تغييرات غير محفوظة"), unsavedStyle: "font-size: " + (ar ? 13.5 : 13) + "px; font-weight: 600; color: #B54708;",
+        discard: T("Discard", "تجاهل"), review: nCh === 1 ? T("Review 1 change…", "مراجعة تغيير واحد…") : T("Review " + nCh + " changes…", "مراجعة " + num(nCh, 1) + " تغييرات…"), discardStyle: btn("s"), reviewStyle: btn("p"),
+        barStyle: "position: absolute; inset-inline: 0; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; background: #fff; border-block-start: 1px solid #CBD5E0; box-shadow: 0 -6px 16px rgba(16,24,40,0.08); border-radius: 0 0 18px 18px;",
+        notice: o.notice || null, noticeStyle: "font-size: " + (ar ? 13.5 : 12.5) + "px; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 12px; text-wrap: pretty;",
+        toolbar: !o.loading && !o.error,
+        findLabel: T("Find a permission", "ابحث عن صلاحية"), findVal: o.q || T("Find a permission", "ابحث عن صلاحية"), findClear: !!o.q, clearLabel: T("Clear the search", "مسح البحث"),
+        findStyle: "display: inline-flex; align-items: center; gap: 8px; height: 34px; box-sizing: border-box; flex: 0 1 " + (ph ? "100%" : "300px") + "; padding: 0 10px; border: 1px solid " + (o.q ? "#2E6FA3" : "#8A94A6") + "; border-radius: 4px; background: #fff; font-size: " + (ar ? 14 : 13) + "px;",
+        findValStyle: "flex: 1 1 auto; min-width: 0; color: " + (o.q ? "#2D3748" : "#8A94A6") + ";",
+        gLabel: T("Show granted only", "إظهار الممنوحة فقط"), gAria: o.grantedOnly ? "true" : "false",
+        gSw: "position: relative; flex: none; width: 30px; height: 18px; box-sizing: border-box; border-radius: 999px; " + (o.grantedOnly ? "background: #2E6FA3;" : "background: #fff; border: 1px solid #8A94A6;"),
+        gKnob: "position: absolute; top: " + (o.grantedOnly ? 2 : 1) + "px; width: 14px; height: 14px; border-radius: 50%; " + (o.grantedOnly ? "background: #fff; inset-inline-end: 2px;" : "background: #8A94A6; inset-inline-start: 1px;"),
+        legend, legendWrap: "display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: " + fsS + "px; color: #4A5568;" + (ph ? "" : " margin-inline-start: auto;"),
+        isLoading: !!o.loading, skel: [0, 1, 2].map(() => ({ h: "display: block; width: 40%; height: 14px; border-radius: 3px; background: #E2E8F0;", a: "display: block; width: 78%; height: 11px; border-radius: 3px; background: #EDF1F6;", b: "display: block; width: 64%; height: 11px; border-radius: 3px; background: #EDF1F6;", c: "display: block; width: 70%; height: 11px; border-radius: 3px; background: #EDF1F6;" })),
+        isError: !!o.error, errT: T("Couldn't load this role's permissions", "تعذّر تحميل صلاحيات هذا الدور"), errB: T("Nothing has changed. Check your connection and try again.", "لم يتغير شيء. تحقق من الاتصال وحاول مرة أخرى."), retry: T("Retry", "إعادة المحاولة"),
+        errTStyle: "font-size: " + (ar ? 15 : 14) + "px; font-weight: 600; color: #B42318;", errBStyle: "font-size: " + (ar ? 13.5 : 13) + "px; color: #2D3748; margin-block: 2px 10px;", retryStyle: btn("s"),
+        noMatch: filtering && !anyVisible && !o.loading && !o.error, nmT: T("No permissions match.", "لا توجد صلاحيات مطابقة."), nmLink: T("Clear the search.", "امسح البحث."), nmStyle: "font-size: " + fs + "px; color: #2D3748;", nmLinkStyle: "font-size: " + fs + "px; font-weight: 600; text-decoration: none;",
+        modules: (o.loading || o.error) ? [] : modules
+      };
+    };
+
+    const col = (keep) => MODS.map(m => m.en).filter(n => !keep.includes(n));
+    const roNotice = (ar) => ar ? "يمكنك الاطلاع على ما يسمح به هذا الدور، لكن لا يمكنك تغييره. التغيير يتطلب صلاحية إدارة الأدوار." : "You can see what this role is allowed to do, but not change it. Changing it needs permission to manage roles.";
+    const oaNotice = (ar) => ar ? "هذا هو الدور الجذري لمنشأتك. صلاحياته ثابتة حتى يبقى هناك من يدير المنشأة دائمًا. يمكنك تغيير اسمه، ويمكنك منح أي صلاحيات تريدها لأدوار أخرى." : "This is your organization's root role. Its permissions are fixed so that someone can always administer the organization. You can rename it, and you can give any permissions you like to other roles.";
+
+    const sections = [
+      { n: "2.1", t: "Editing · Quality Editor, 3 unsaved changes", s: "roles:manage · one granted, two revoked, in Committees and Lookups · every module expanded (the default)", pages: [
+        page({ mode: "edit", changes: CHG, cap: "English · desktop 1130", note: "After the 3 changes: Organization settings 1 of 4, Organization structure 1 of 2, Users 1 of 6, Roles 0 of 2, Lookups 0 of 2, Workflows 1 of 1, Committees 7 of 12 (groups 4 of 5, 1 of 3, 2 of 4), Meetings 1 of 1, Org positions 1 of 2, Setup health 0 of 1, Administration 0 of 1. “Review 3 changes…” opens the accepted save confirmation." }),
+        page({ ar: true, mode: "edit", changes: CHG, cap: "Arabic · desktop 1130", note: "The checkbox sits at the start (right), the tag at the end. Sentences are the product's Arabic strings; the module and group counts use Latin digits in isolated runs." })
+      ] },
+      { n: "2.2–2.4", t: "Read-only, the Organization Administrator, and a system role", s: "Some modules collapsed in these drawings to save space; the page opens expanded", pages: [
+        page({ mode: "read", notice: roNotice(false), collapsed: col(["Users", "Lookups", "Committees", "Administration"]), cap: "2.2 Read-only viewer · English", note: "No checkboxes, no module or group boxes, no save bar, no Find-hint about changes. ✓ held in blue weight 500, a muted “·” not held: they differ by glyph and weight in greyscale." }),
+        page({ ar: true, mode: "read", notice: roNotice(true), collapsed: col(["Users", "Lookups", "Committees", "Administration"]), cap: "2.2 Read-only viewer · Arabic" }),
+        page({ mode: "oa", role: "Organization Administrator", users: 2, system: true, notice: oaNotice(false), collapsed: col(["Workflows", "Committees", "Administration"]), cap: "2.3 Organization Administrator · English", note: "Read-only with the built frozen-set sentence. “Change workflows and their stage tasks” appears only here, tagged “Organization Administrator only”; on every other role the row is absent, so Workflows reads 1 of 1 there." }),
+        page({ ar: true, mode: "oa", role: "مسؤول المنشأة", users: 2, system: true, notice: oaNotice(true), collapsed: col(["Workflows", "Committees", "Administration"]), cap: "2.3 Organization Administrator · Arabic" }),
+        page({ mode: "edit", role: "Quality Manager", users: 6, system: true, changes: { tManage: "+" }, collapsed: col(["Committees"]), cap: "2.4 A system role being edited · English", note: "Same page with the System chip. One change shown (Reassign committee tasks… newly granted): “1 change unsaved” and “Review 1 change…”." })
+      ] },
+      { n: "2.5", t: "Finding a permission", s: "Filters only what's shown, never what's saved · a changed row always stays visible", pages: [
+        page({ mode: "edit", changes: CHG, q: "member", grantedOnly: true, tipOn: "Committees", cap: "English · “member” + Show granted only · the Committees box's tooltip", note: "The Committees box's tooltip, shown on hover and focus: it acts only on the visible rows (Q5). Only Committees has matches: “3 of 12 match”. Change a member's role is not held after the change, but it stays visible because an unsaved change is never hidden by a filter. Users has no match, so it's gone." }),
+        page({ ar: true, mode: "edit", changes: CHG, q: "أعضاء", cap: "Arabic · «أعضاء»", note: "Matches the reader's language only: «أعضاء» finds the two member rows (2 of 12)." }),
+        page({ mode: "edit", changes: CHG, q: "invoice", cap: "English · no match" }),
+        page({ ar: true, mode: "edit", changes: CHG, q: "فاتورة", cap: "Arabic · no match" })
+      ] },
+      { n: "2.6", t: "Loading and error", s: "Skeleton module sections; the standard error state with Retry", pages: [
+        page({ mode: "edit", loading: true, cap: "Loading · English" }), page({ ar: true, mode: "edit", loading: true, cap: "Loading · Arabic" }),
+        page({ mode: "edit", error: true, cap: "Error · English" }), page({ ar: true, mode: "edit", error: true, cap: "Error · Arabic" })
+      ] },
+      { n: "2.7", t: "Phone · 390", s: "One column, sentences wrap, sticky module heading, save bar at the bottom", pages: [
+        page({ phone: true, mode: "edit", changes: CHG, phoneBar: true, collapsed: col(["Lookups", "Committees"]), cap: "English · phone", note: "Collapsed modules here only to fit the drawing. The bar is fixed to the bottom of the screen; the tag wraps under its sentence." }),
+        page({ phone: true, ar: true, mode: "edit", changes: CHG, phoneBar: true, collapsed: col(["Lookups", "Committees"]), cap: "Arabic · phone" })
+      ] }
+    ];
+
+
+    const QE = [...HELD];
+    const ROLES = [
+      { k: "uh", en: "Unit Head", ar: "رئيس وحدة", src: "unit", pEn: "Quality Director", pAr: "مدير الجودة", uEn: "Quality Department", uAr: "إدارة الجودة", perms: ["unitView", "uView", "cOpen", "tUnit", "tCreate", "mView"] },
+      { k: "psr", en: "Patient Safety Reviewer", ar: "مراجع سلامة المرضى", src: "unit", pEn: "Patient Safety Lead", pAr: "رئيس سلامة المرضى", uEn: "Patient Safety Unit", uAr: "وحدة سلامة المرضى", perms: ["cOpen", "cApprove", "tUnit"] },
+      { k: "qe", en: "Quality Editor", ar: "محرر الجودة", src: "direct", dEn: "3 Oct 2026", dAr: iso("3") + " أكتوبر 2026", perms: QE },
+      { k: "cs", en: "Committee Secretary", ar: "أمين سر اللجنة", src: "direct", dEn: "12 Aug 2026", dAr: iso("12") + " أغسطس 2026", inactive: 1, perms: [] }
+    ];
+    const FROM = ["qe", "uh", "psr", "oa"];
+    const OAROLE = { k: "oa", en: "Organization Administrator", ar: "مسؤول المنشأة", src: "direct", dEn: "1 Jan 2026", dAr: iso("1") + " يناير 2026", system: 1, all: 1 };
+    const permWord = (n, ar) => ar ? (n >= 3 && n <= 10 ? "صلاحيات" : "صلاحية") : (n === 1 ? "permission" : "permissions");
+    const userPage = (o) => {
+      const ar = !!o.ar, ph = !!o.phone, T = (en, a) => ar ? a : en;
+      const fs = ar ? 14 : 13.5, fsS = ar ? 12.5 : 11.5;
+      const roles = o.roles || ROLES;
+      const active = roles.filter(r => !r.inactive);
+      const holds = (r, k) => r.all ? true : r.perms.includes(k);
+      const q = (o.q || "").toLowerCase();
+      const isOA = active.some(r => r.all);
+      const person = o.person || { en: "Noura Al-Mutairi", ar: "نورة المطيري", uEn: "Quality Department", uAr: "إدارة الجودة", pEn: "Quality Director", pAr: "مدير الجودة", email: "n.almutairi@alnakheel.example" };
+      const status = o.deactivated ? T("Deactivated", "معطّل") : T("Active", "نشط");
+      let nGranted = 0, anyVis = false;
+      const empty = [];
+      const modules = MODS.map(m => {
+        const all = [].concat(...m.groups.map(g => g.perms)).filter(p => isOA || !p.oa);
+        const gr = all.filter(p => active.some(r => holds(r, p.k)));
+        nGranted += gr.length;
+        if (!gr.length) { empty.push(T(m.en, m.ar)); return null; }
+        const groups = m.groups.map(g => {
+          const rows = g.perms.filter(p => (isOA || !p.oa) && active.some(r => holds(r, p.k)) && (!q || (ar ? p.ar : p.en).toLowerCase().includes(q))).map(p => {
+            const from = FROM.map(k => active.find(r => r.k === k)).filter(r => r && holds(r, p.k)).map(r => T(r.en, r.ar));
+            return { sent: T(p.en, p.ar), from: T("From ", "من: ") + from.join(ar ? "، " : ", "), sec: p.sEn ? T(p.sEn, p.sAr) : null,
+              rowStyle: "display: flex; align-items: flex-start; gap: 10px; padding: 6px " + (ph ? 12 : 16) + "px; padding-inline-start: " + (g.en ? (ph ? 30 : 40) : (ph ? 12 : 16)) + "px;",
+              sentStyle: "display: block; font-size: " + fs + "px; line-height: " + (ar ? 22 : 20) + "px; font-weight: 500; text-wrap: pretty;",
+              fromStyle: "display: block; font-size: " + fsS + "px; color: #4A5568; text-wrap: pretty;", secStyle: "display: block; font-size: " + fsS + "px; color: #5A6779;" };
+          });
+          return { label: g.en ? T(g.en, g.ar) : null, rows, labelStyle: "padding: 8px " + (ph ? 12 : 16) + "px 2px; font-size: " + (ar ? 13 : 11.5) + "px; font-weight: 700; " + (ar ? "" : "letter-spacing: 0.05em; text-transform: uppercase; ") + "color: #4A5568;" };
+        }).filter(g => g.rows.length);
+        if (!groups.length) return null;
+        anyVis = true;
+        return { name: T(m.en, m.ar), desc: T(m.dEn, m.dAr), count: ar ? num(gr.length, 1) + " من " + num(all.length, 1) : gr.length + " of " + all.length, groups };
+      }).filter(Boolean);
+      const joinList = (xs) => ar ? xs.join("، ") : (xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1] : xs[0]);
+      const chosen = o.state !== "pick" && o.state !== "loading" && o.state !== "error";
+      const noActive = chosen && !active.length;
+      const pickVal = chosen ? T(person.en + " · " + person.uEn + " · " + person.pEn, person.ar + " · " + person.uAr + " · " + person.pAr) : T("Find a user by name or email", "ابحث عن مستخدم بالاسم أو البريد");
+      return {
+        cap: o.cap, note: o.note || null, dir: ar ? "rtl" : "ltr",
+        outer: "flex: 0 1 " + (ph ? 390 : 1130) + "px; min-width: 0;",
+        frame: "width: 100%; max-width: " + (ph ? 390 : 1130) + "px; box-sizing: border-box; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: " + (ph ? 18 : 8) + "px; padding: " + (ph ? "14px 12px" : "16px 18px") + "; display: flex; flex-direction: column; gap: 12px;" + (ar ? " " + AF : ""),
+        crumbs: T("Administration / Roles / A user's permissions", "الإدارة / الأدوار / صلاحيات مستخدم"), title: T("A user's permissions", "صلاحيات مستخدم"),
+        crumbStyle: "font-size: " + fsS + "px; color: #5A6779;", titleStyle: "font-size: " + (ph ? 20 : (ar ? 23 : 22)) + "px; font-weight: 600;",
+        route: chosen ? "/roles/user-permissions/7f3c…" : "/roles/user-permissions",
+        pickLabel: T("Find a user", "ابحث عن مستخدم"), pickVal, pickValStyle: "flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: " + (ar ? 14 : 13) + "px; color: " + (chosen ? "#2D3748" : "#8A94A6") + ";",
+        pickBox: "display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; max-width: " + (ph ? "100%" : "520px") + ";",
+        labStyle: "font-size: " + (ar ? 13 : 12) + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px;",
+        intro: o.state === "pick" ? T("Choose a user to see what they can do and which role gives each permission.", "اختر مستخدمًا لترى ما يستطيع فعله والدور الذي يمنحه كل صلاحية.") : null,
+        introStyle: "font-size: " + fs + "px; color: #4A5568; padding: 18px 0;",
+        isLoading: o.state === "loading", isError: o.state === "error",
+        card: chosen ? { name: T(person.en, person.ar), meta: T(person.uEn + " · " + person.pEn, person.uAr + " · " + person.pAr), status, link: T("Open user record", "فتح سجل المستخدم"),
+          summary: isOA ? T("Every permission, through Organization Administrator", "كل الصلاحيات، من خلال مسؤول المنشأة") : noActive ? T("No permissions · no active roles", "لا صلاحيات · لا أدوار نشطة") : T(nGranted + " permissions through " + active.length + " active roles", num(nGranted, 1) + " صلاحية من خلال " + num(active.length, 1) + " أدوار نشطة"),
+          deact: o.deactivated ? T("Deactivated. These permissions apply only if the account is reactivated.", "الحساب معطّل. لا تسري هذه الصلاحيات إلا إذا أعيد تنشيطه.") : null,
+          statusStyle: "font-size: " + (ar ? 12.5 : 12) + "px; font-weight: " + (o.deactivated ? 600 : 400) + "; color: " + (o.deactivated ? "#4A5568" : "#2D3748") + "; border: 1px solid " + (o.deactivated ? "#8A94A6" : "#CBD5E0") + "; background: " + (o.deactivated ? "#F1F4F8" : "#fff") + "; border-radius: 999px; padding: 1px 9px;" } : null,
+        roles: chosen ? { title: T("Roles", "الأدوار"), rows: roles.map(r => {
+          const n = r.all ? null : r.perms.length;
+          const src = r.src === "unit" ? T("Comes with the head position " + r.pEn + " · " + r.uEn, "مرتبط بمنصب الرئاسة " + r.pAr + " · " + r.uAr) : r.src === "org" ? T("Comes with the head position " + r.pEn + " · organisation-wide", "مرتبط بمنصب الرئاسة " + r.pAr + " · على مستوى المنشأة") : T("Granted directly · " + r.dEn, "ممنوحة مباشرة · " + r.dAr);
+          return { name: T(r.en, r.ar), system: r.system ? T("System", "نظام") : null, inactive: r.inactive ? T("Inactive", "غير نشط") : null, src,
+            gives: r.inactive ? T("Gives no permissions while inactive", "لا يمنح أي صلاحية ما دام غير نشط") : r.all ? T("Gives every permission", "يمنح كل الصلاحيات") : T("Gives " + n + " " + permWord(n), "يمنح " + num(n, 1) + " " + permWord(n, 1)),
+            rowStyle: "display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 9px " + (ph ? 12 : 16) + "px; border-block-start: 1px solid #F0F3F7;" + (r.inactive ? " background: #FBFCFD;" : ""),
+            nameStyle: "font-size: " + (ar ? 14.5 : 14) + "px; font-weight: 600; text-decoration: none; color: " + (r.inactive ? "#4A5568" : "#2E6FA3") + ";",
+            srcStyle: "display: block; font-size: " + fsS + "px; color: " + (r.inactive ? "#5A6779" : "#4A5568") + "; text-wrap: pretty;",
+            givesStyle: "flex: none; font-size: " + (ar ? 13 : 12.5) + "px; color: " + (r.inactive ? "#5A6779" : "#2D3748") + "; font-weight: 500;" + (ph ? " flex-basis: 100%;" : " margin-inline-start: auto;") };
+        }) } : null,
+        perms: chosen ? { title: T("Permissions", "الصلاحيات"), ro: T("Read-only. To change what this person can do, change their roles on the user record, or change a role's permissions.", "للاطلاع فقط. لتغيير ما يستطيع هذا الشخص فعله، عدّل أدواره من سجل المستخدم، أو عدّل صلاحيات الدور."),
+          findVal: o.q || T("Find a permission", "ابحث عن صلاحية"), findValStyle: "flex: 1 1 auto; color: " + (o.q ? "#2D3748" : "#8A94A6") + ";",
+          findStyle: "display: inline-flex; align-items: center; gap: 8px; height: 34px; box-sizing: border-box; width: " + (ph ? "100%" : "300px") + "; padding: 0 10px; border: 1px solid " + (o.q ? "#2E6FA3" : "#8A94A6") + "; border-radius: 4px; background: #fff; font-size: " + (ar ? 14 : 13) + "px;",
+          noActive: noActive ? T(person.en + " has no active roles, so can sign in but can't do anything yet.", "لا توجد لدى " + person.ar + " أدوار نشطة، لذا يمكن الدخول إلى النظام دون القدرة على فعل أي شيء بعد.") : null,
+          noMatch: !noActive && q && !anyVis ? T("No permissions match.", "لا توجد صلاحيات مطابقة.") : null, nmLink: T("Clear the search.", "امسح البحث."),
+          modules: noActive ? [] : modules,
+          nothing: !noActive && !q && empty.length ? T("Nothing granted in " + joinList(empty) + ".", "لا شيء ممنوح في: " + joinList(empty) + ".") : null,
+          headStyle: "display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px " + (ph ? 12 : 16) + "px; border-block-end: 1px solid #E2E8F0;",
+          nameStyle: "font-size: " + (ar ? 15.5 : 15) + "px; font-weight: 600;", descStyle: "flex: 1 1 200px; font-size: " + fsS + "px; color: #5A6779;", countStyle: "flex: none; font-size: " + (ar ? 13 : 12.5) + "px; color: #4A5568; font-variant-numeric: tabular-nums;",
+          txtStyle: "font-size: " + fs + "px; color: #2D3748; text-wrap: pretty;", smallStyle: "font-size: " + (ar ? 13 : 12.5) + "px; color: #4A5568; text-wrap: pretty;" } : null,
+        errT: T("Couldn't load this person's permissions", "تعذّر تحميل صلاحيات هذا الشخص"), errB: T("Nothing has changed. Check your connection and try again.", "لم يتغير شيء. تحقق من الاتصال وحاول مرة أخرى."), retry: T("Retry", "إعادة المحاولة")
+      };
+    };
+    const noRoles = [ROLES[3]];
+    const oaPerson = { en: "Layla Al-Harbi", ar: "ليلى الحربي", uEn: "Administration", uAr: "الإدارة", pEn: "Systems Administrator", pAr: "مسؤول الأنظمة" };
+    const userSections = [
+      { n: "B1", t: "Two ways in · call-outs on existing screens", s: "Present only for admin:access + roles:view + users:view; absent otherwise", callouts: true, pages: [] },
+      { n: "B2–B6", t: "A user's permissions · Noura Al-Mutairi", s: "Read-only · /roles/user-permissions/:userId", pages: [
+        userPage({ cap: "English · desktop 1130", note: "16 permissions through 3 active roles: Quality Editor's 14, plus “See tasks on committees your unit or its sub-units own” from Unit Head and “Approve terms…” from Patient Safety Reviewer. Committees 9 of 12. The acting headship reads the same as a held one." }),
+        userPage({ ar: true, cap: "Arabic · desktop 1130" })
+      ] },
+      { n: "B7", t: "States", s: "Each in English and Arabic unless noted", pages: [
+        userPage({ state: "pick", cap: "Before a choice · English" }), userPage({ ar: true, state: "pick", cap: "Before a choice · Arabic" }),
+        userPage({ roles: noRoles, cap: "No active roles · English" }), userPage({ ar: true, roles: noRoles, cap: "No active roles · Arabic" }),
+        userPage({ roles: [OAROLE], person: oaPerson, cap: "Organization Administrator holder · English", note: "Every row is listed, including “Change workflows and their stage tasks”, each “From Organization Administrator”." }),
+        userPage({ ar: true, roles: [OAROLE], person: oaPerson, cap: "Organization Administrator holder · Arabic" }),
+        userPage({ deactivated: true, cap: "Deactivated · English" }), userPage({ ar: true, deactivated: true, cap: "Deactivated · Arabic" }),
+        userPage({ q: "invoice", cap: "Find with no match · English" }), userPage({ ar: true, q: "فاتورة", cap: "Find with no match · Arabic" }),
+        userPage({ state: "loading", cap: "Loading · English" }), userPage({ state: "error", cap: "Error · English" }),
+        userPage({ phone: true, cap: "Phone 390 · English" }), userPage({ phone: true, ar: true, cap: "Phone 390 · Arabic" })
+      ] }
+    ];
+    return {
+      sections, userSections,
+      decisions: [
+        { t: "1 · No columns", b: "A permission is a checkbox and its sentence. The six columns, the hatch, the column toggles and grid navigation are gone; the server's plain list is shown as a list." },
+        { t: "2 · Modules, then small groups", b: "Each module is a section with a tri-state box and “n of N”. A module with more than six permissions splits into labelled groups with their own tri-state box (Committees: records, members, tasks)." },
+        { t: "3 · Tasks are one pattern", b: "“Tasks on committees” has the four task rows every task-bearing module will get: see every task, see your unit's, create, reassign and decide." },
+        { t: "4 · Four marks, no colour alone", b: "✓ box held, empty box not held, ＋ tag newly granted, − tag newly revoked (with the sentence struck through). Changed rows are tinted as well." },
+        { t: "5 · Find, and Show granted only", b: "Filter what's shown in the reader's language; never change what's saved. An unsaved change always stays visible." },
+        { t: "6 · Sticky module heading", b: "While a module's rows scroll, its heading (name, box, count, collapse) stays at the top, so “all of Committees” is always one click away." }
+      ],
+      notes: [
+        { k: "A user's permissions.", v: "A read-only answer to “what can this person do, and why”: the roles with where each came from, then the granted rows only, each naming the roles that give it. A permission from several roles is listed once." },
+        { k: "Sources, as the product has them.", v: "Granted directly, or with a head position in one unit or organisation-wide. Ordinary positions carry no role; an inactive role gives nothing; nothing subtracts, and a unit headship doesn't narrow its role to that unit." },
+        { k: "Nothing to click that changes anything.", v: "No checkboxes, no clickable counts, no save bar. Role names link to that role's permissions page; “Open user record” links to the person. The address carries the person, so it can be shared." },
+        { k: "Why a list.", v: "The columns grouped permissions by verb, but the product's permissions aren't verbs: Committees alone has four kinds of edit. A list with the product's own sentence shows exactly what each grants, with nothing to decode." },
+        { k: "Sentences.", v: "Every module name, description and sentence is the product's own, in both languages. The Arabic word for the organization is «المنشأة»." },
+        { k: "No row implies another.", v: "Ticking “Submit, suspend, reactivate, dissolve” grants only that. No extra line is needed: each sentence says exactly what it allows, and nothing ticks itself." },
+        { k: "Module and group boxes.", v: "Real tri-state checkboxes (aria-checked mixed). Clicking a mixed box grants every row; clicking a full one revokes every row. Each change still shows per row as ＋ or −, and the count in the header bar counts rows, not clicks." },
+        { k: "Growth.", v: "34 rows in 11 modules today, about 70 later with four task rows per task-bearing module. Collapsible modules, the sticky heading and Find keep that readable without paging." },
+        { k: "Administration.", v: "“Open the Administration area” carries its second line, so a role with people pickers (See users) isn't mistaken for an admin role." },
+        { k: "Keyboard and screen readers.", v: "Plain checkboxes in tab order, Space toggles. The module box reads “All Committees permissions, 7 of 12 granted”. The collapse button reads “Collapse Committees”. No arrow-key grid." },
+        { k: "Read-only.", v: "No controls at all, so nothing looks clickable. Held is ✓ in blue weight 500; not held is a muted dot with regular text." },
+        { k: "Arabic.", v: "No frozen column to mirror any more: the list simply runs right to left, box first. That removes the open RTL risk recorded in Design System Rev 8." },
+        { k: "Unchanged.", v: "The save confirmation (Templates 6a's “Review n changes…” dialog), the 3c save states (saving, failed, 403, 409 “Reload role”) and the leave-page guard apply unchanged." }
+      ],
+      changes: [
+        { s: "Role permissions · round 2", w: "The product's own modules, descriptions and sentences in both languages; «المنشأة» throughout; the built Organization Administrator and read-only sentences; Q1–Q5 decided, with the filtered box tooltip in 2.5; the new read-only “A user's permissions” page." },
+        { s: "Roles list · header", w: "Adds a secondary button “Look up a user's permissions”, for holders of admin:access, roles:view and users:view." },
+        { s: "User record · Roles panel", w: "Adds the panel action “See permissions”, opening the page with that person chosen. The panel's role order matches: head positions, then direct, then inactive." },
+        { s: "Templates 6a · the grid's columns", w: "Replaced by one checkbox and sentence per permission under its module." },
+        { s: "Templates 6a · the module row's column toggles", w: "Replaced by one tri-state box per module, and per group in modules with more than six permissions." },
+        { s: "Templates 6a · the “not applicable” hatch", w: "Gone: there are no empty cells. The legend has four items." },
+        { s: "Templates 6a · grid keyboard navigation", w: "Replaced by plain checkboxes in tab order; Space toggles." },
+        { s: "Users and Roles §3 · Arabic frozen column", w: "No longer needed: the Arabic page is the same list, right to left. The frozen-column risk in Design System Rev 8 is closed." }
+      ],
+      questions: [
+        { n: "Q1 · decided", q: "Groups inside a module", opts: ["From more than six permissions (as drawn)."], rec: "" },
+        { n: "Q2 · decided", q: "Find a permission and Show granted only", opts: ["Now (as drawn)."], rec: "" },
+        { n: "Q3 · decided", q: "Collapsed modules", opts: ["Modules always open expanded. Revisit when the list grows."], rec: "" },
+        { n: "Q4 · decided", q: "Does Discard ask?", opts: ["No (as drawn)."], rec: "" },
+        { n: "Q5 · decided", q: "Module or group box under a filter", opts: ["Acts only on the visible rows; its tooltip says so (drawn in 2.5)."], rec: "" },
+        { n: "Q6", q: "A user's permissions: show that a headship is acting, and until when?", opts: ["No, an acting headship reads the same as a held one (drawn, as the brief says).", "Yes: “· acting until 30 Oct 2026” on the source line, from the head assignment."], rec: "Recommended: yes, later; it explains why a role will disappear on a date." },
+        { n: "Q7", q: "Is looking up a user's permissions recorded in the audit log?", opts: ["No: it changes nothing (drawn).", "Yes, as a view event: useful for privacy reviews, more audit rows."], rec: "Recommended: no." },
+        { n: "Q8", q: "Compare two users side by side?", opts: ["Not now (drawn): pick one person at a time.", "Later: a second picker and a two-column list."], rec: "Recommended: later, if admins ask." }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
