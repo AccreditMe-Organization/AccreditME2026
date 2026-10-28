@@ -1,58 +1,101 @@
 import { PermissionDto } from '../services/role.service';
-import { MATRIX_COLUMNS, MatrixColumn, Placement, moduleRank, placementOf } from './permission-columns';
+import { GROUP_THRESHOLD, PERMISSION_GROUPS } from './permission-groups';
 
 /**
- * ACC-120 slice 5, PR B — the matrix as data, apart from the screen.
+ * ACC-272 — a role's permissions as a grouped LIST, as data apart from the
+ * screen (it replaced ACC-120 slice 5's six-column grid).
  *
  * Pure functions over the catalogue and two key sets — the set the page
- * LOADED and the set as edited now — so the rules (what is shown, what a click
- * toggles, what counts as a change) are tested without rendering anything.
+ * LOADED and the set as edited now — so the rules (what is shown, what a box
+ * toggles, what a filter shows, what counts as a change) are tested without
+ * rendering anything. No row implies another: a box grants only its own keys.
  */
 
 export interface MatrixPermission {
   key: string;
   module: string;
   action: string;
-  placement: Placement;
+}
+
+/** A module's rows, under a group name, or under none (`id` null). */
+export interface MatrixGroup {
+  id: string | null;
+  permissions: MatrixPermission[];
+  keys: string[];
 }
 
 export interface MatrixModule {
   module: string;
+  /** One unnamed group, or the module's named groups from PERMISSION_GROUPS. */
+  groups: MatrixGroup[];
+  /** Every row of the module, in the order shown. */
   permissions: MatrixPermission[];
-  /** Every key of the module, whole-row grants included. */
   keys: string[];
-  /** The module's keys in each column. Empty where the module has none: that cell is hatched. */
-  byColumn: Record<MatrixColumn, string[]>;
 }
-
-export type MatrixRow =
-  | { kind: 'module'; module: MatrixModule }
-  | { kind: 'permission'; module: MatrixModule; permission: MatrixPermission };
 
 /** All, some or none of a set of keys granted. */
 export type TriState = 'all' | 'some' | 'none';
 
-/** A single key's cell: saved on or off, or changed and not saved yet. */
-export type CellMark = 'on' | 'off' | 'granted' | 'revoked';
+/** A row's mark: held or not, as saved, or changed and not saved yet. */
+export type RowMark = 'on' | 'off' | 'granted' | 'revoked';
 
-/** The column-0 slot, before the six action columns. Cells are numbered 0–6. */
-export const LABEL_CELL = 0;
-export const CELL_COUNT = 1 + MATRIX_COLUMNS.length;
+/** What the list shows: never what is saved (the design's decision 5). */
+export interface ListFilter {
+  /** Matched against each row's sentence in the reader's language. */
+  query: string;
+  /** Held rows (as edited now), and every changed row. */
+  grantedOnly: boolean;
+}
+
+export const NO_FILTER: ListFilter = { query: '', grantedOnly: false };
 
 /**
- * The modules and permissions the matrix shows.
+ * D3 — modules in a FIXED product order. A module not listed (one added
+ * later) comes after every listed one, in the order the catalogue gives it,
+ * so a new module is appended rather than shuffled into the middle.
+ */
+export const MODULE_ORDER: readonly string[] = [
+  'tenant',
+  'org',
+  'users',
+  'roles',
+  'lookups',
+  'workflows',
+  'tasks',
+  'committees',
+  'notifications',
+  'meetings',
+  'documents',
+  'standards',
+  'audits',
+  'incidents',
+  'billing',
+  'reports',
+  'positions',
+  'setup',
+  'kpi',
+  'admin',
+  'platform',
+];
+
+/** Sort key for a module: its place in MODULE_ORDER, else after all of them. */
+export function moduleRank(module: string): number {
+  const i = MODULE_ORDER.indexOf(module);
+  return i === -1 ? MODULE_ORDER.length : i;
+}
+
+/**
+ * The modules and permissions the list shows.
  *
  * ONLY keys some code checks today (`inUse`, R2): a key nothing decides with
  * would be a checkbox that does nothing, and the server keeps those as the
  * role holds them whatever is sent. Platform keys are hidden INSIDE A TENANT
- * (D2): they mean nothing there, and a tenant role may not gain one (R1).
- * ACC-258: a `rootRoleOnly` key (workflows:manage) is shown only on the root
- * role, whose matrix is read-only; no other role may hold it, so it is never
- * offered there. Which keys are root-only is the server's answer.
+ * (D2). ACC-258: a `rootRoleOnly` key (workflows:manage) is shown only on the
+ * root role, whose list is read-only.
  *
- * Modules come in the fixed product order (D3). Inside a module, rows follow
- * the columns left to right, then the whole-row grants; within one column,
- * catalogue order.
+ * Modules come in the fixed product order. A module over GROUP_THRESHOLD rows
+ * is split into the groups of PERMISSION_GROUPS, in the table's order; every
+ * other module keeps catalogue order under one unnamed group.
  */
 export function buildMatrix(catalogue: readonly PermissionDto[], opts: { isTenant: boolean; isRootRole?: boolean }): MatrixModule[] {
   const firstSeen = new Map<string, number>();
@@ -62,85 +105,102 @@ export function buildMatrix(catalogue: readonly PermissionDto[], opts: { isTenan
     if (opts.isTenant && p.module === 'platform') return;
     if (p.rootRoleOnly && !opts.isRootRole) return;
     if (!firstSeen.has(p.module)) firstSeen.set(p.module, i);
-    const key = `${p.module}:${p.action}`;
     const list = byModule.get(p.module) ?? [];
-    list.push({ key, module: p.module, action: p.action, placement: placementOf(key) });
+    list.push({ key: `${p.module}:${p.action}`, module: p.module, action: p.action });
     byModule.set(p.module, list);
   });
-
-  const placementRank = (pl: Placement): number =>
-    pl === 'row' ? MATRIX_COLUMNS.length : MATRIX_COLUMNS.indexOf(pl);
 
   return [...byModule.entries()]
     .sort(([a], [b]) => moduleRank(a) - moduleRank(b) || (firstSeen.get(a) ?? 0) - (firstSeen.get(b) ?? 0))
     .map(([module, perms]) => {
-      // A stable sort keeps catalogue order within a column.
-      const permissions = [...perms].sort((x, y) => placementRank(x.placement) - placementRank(y.placement));
-      const byColumn = Object.fromEntries(
-        MATRIX_COLUMNS.map((c) => [c, permissions.filter((p) => p.placement === c).map((p) => p.key)]),
-      ) as Record<MatrixColumn, string[]>;
-      return { module, permissions, keys: permissions.map((p) => p.key), byColumn };
+      const groups = groupsOf(module, perms);
+      const permissions = groups.flatMap((g) => g.permissions);
+      return { module, groups, permissions, keys: permissions.map((p) => p.key) };
     });
 }
 
-/** The rows in reading order: each module's header row, then its permissions. */
-export function matrixRows(modules: readonly MatrixModule[]): MatrixRow[] {
-  return modules.flatMap((module) => [
-    { kind: 'module' as const, module },
-    ...module.permissions.map((permission) => ({ kind: 'permission' as const, module, permission })),
-  ]);
+function groupsOf(module: string, perms: MatrixPermission[]): MatrixGroup[] {
+  const defs = PERMISSION_GROUPS[module];
+  const group = (id: string | null, list: MatrixPermission[]): MatrixGroup => ({ id, permissions: list, keys: list.map((p) => p.key) });
+  if (!defs || perms.length <= GROUP_THRESHOLD) return [group(null, perms)];
+  const byKey = new Map(perms.map((p) => [p.key, p]));
+  const placed = new Set<string>();
+  const named = defs
+    .map((d) => {
+      const list = d.keys.map((k) => byKey.get(k)).filter((p): p is MatrixPermission => !!p && !placed.has(p.key));
+      list.forEach((p) => placed.add(p.key));
+      return group(d.id, list);
+    })
+    .filter((g) => g.permissions.length > 0);
+  // A shown key no group names is never dropped: it keeps catalogue order at
+  // the end (permission-groups.spec.ts fails the table before it gets here).
+  const rest = perms.filter((p) => !placed.has(p.key));
+  return rest.length ? [...named, group(null, rest)] : named;
 }
 
-/**
- * The keys a cell toggles, or null where the cell toggles nothing (hatched, or
- * a column-placed permission's label).
- *
- * - A module row: its label toggles the WHOLE module (the tri-state checkbox);
- *   each column toggles that module's keys in the column.
- * - A whole-row grant: its label is the toggle, and all six cells are hatched.
- * - Any other permission: exactly one column is its toggle.
- */
-export function cellKeys(row: MatrixRow, cell: number): string[] | null {
-  if (row.kind === 'module') {
-    if (cell === LABEL_CELL) return row.module.keys.length > 0 ? row.module.keys : null;
-    const keys = row.module.byColumn[MATRIX_COLUMNS[cell - 1]];
-    return keys.length > 0 ? keys : null;
-  }
-  const { permission } = row;
-  if (cell === LABEL_CELL) return permission.placement === 'row' ? [permission.key] : null;
-  return MATRIX_COLUMNS[cell - 1] === permission.placement ? [permission.key] : null;
-}
-
-/** What Shift+Space toggles: the module's every key, or the permission's one. */
-export function rowKeys(row: MatrixRow): string[] {
-  return row.kind === 'module' ? row.module.keys : [row.permission.key];
+export function heldCount(keys: readonly string[], selected: ReadonlySet<string>): number {
+  return keys.filter((k) => selected.has(k)).length;
 }
 
 export function triState(keys: readonly string[], selected: ReadonlySet<string>): TriState {
-  const held = keys.filter((k) => selected.has(k)).length;
+  const held = heldCount(keys, selected);
   if (held === 0) return 'none';
   return held === keys.length ? 'all' : 'some';
 }
 
-export function markOf(key: string, selected: ReadonlySet<string>, loaded: ReadonlySet<string>): CellMark {
+export function markOf(key: string, selected: ReadonlySet<string>, loaded: ReadonlySet<string>): RowMark {
   const now = selected.has(key);
   if (now === loaded.has(key)) return now ? 'on' : 'off';
   return now ? 'granted' : 'revoked';
 }
 
 /**
- * Toggle a group of keys the way a tri-state checkbox does: if every one is
- * granted, revoke them all; otherwise grant them all. A partial group is
- * completed, never emptied, by one press.
+ * Toggle a group of keys the way a tri-state box does: if every one is
+ * granted, revoke them all; otherwise grant them all. A mixed or empty box
+ * grants every row; a full one revokes every row.
  */
 export function toggleKeys(keys: readonly string[], selected: ReadonlySet<string>): Set<string> {
   const next = new Set(selected);
-  const allHeld = keys.every((k) => next.has(k));
+  const allHeld = keys.length > 0 && keys.every((k) => next.has(k));
   for (const k of keys) {
     if (allHeld) next.delete(k);
     else next.add(k);
   }
   return next;
+}
+
+export function filterActive(filter: ListFilter): boolean {
+  return filter.query.trim() !== '' || filter.grantedOnly;
+}
+
+/**
+ * Whether a row shows under the filter. The query matches the row's sentence
+ * in the reader's language, ignoring case; "Show granted only" keeps the rows
+ * held as edited now AND every changed row, so an unsaved revocation is never
+ * hidden by the filter that would otherwise drop it.
+ */
+export function rowVisible(
+  key: string,
+  sentence: string,
+  filter: ListFilter,
+  selected: ReadonlySet<string>,
+  loaded: ReadonlySet<string>,
+): boolean {
+  const query = filter.query.trim().toLocaleLowerCase();
+  if (query && !sentence.toLocaleLowerCase().includes(query)) return false;
+  if (filter.grantedOnly && !selected.has(key) && !loaded.has(key)) return false;
+  return true;
+}
+
+/** The keys of `permissions` that show under the filter, in order. */
+export function visibleKeys(
+  permissions: readonly MatrixPermission[],
+  sentenceOf: (key: string) => string,
+  filter: ListFilter,
+  selected: ReadonlySet<string>,
+  loaded: ReadonlySet<string>,
+): string[] {
+  return permissions.filter((p) => rowVisible(p.key, sentenceOf(p.key), filter, selected, loaded)).map((p) => p.key);
 }
 
 export interface MatrixChanges {
@@ -149,7 +209,7 @@ export interface MatrixChanges {
 }
 
 /**
- * What a save would change, in the matrix's own row order. Only shown keys can
+ * What a save would change, in the list's own row order. Only shown keys can
  * be changed, so a held hidden key never appears here; it is sent back as held.
  */
 export function changesOf(
@@ -167,9 +227,4 @@ export function changesOf(
     }
   }
   return { added, removed };
-}
-
-/** Whether any key in a group differs from what was loaded. */
-export function groupChanged(keys: readonly string[], selected: ReadonlySet<string>, loaded: ReadonlySet<string>): boolean {
-  return keys.some((k) => selected.has(k) !== loaded.has(k));
 }

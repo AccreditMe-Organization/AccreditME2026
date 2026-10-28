@@ -1,12 +1,15 @@
-import { Component, DestroyRef, ElementRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, HostListener, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { NgClass } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
+import { InputTextModule } from 'primeng/inputtext';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { TooltipModule } from 'primeng/tooltip';
 import { RoleService, RoleDto, PermissionDto } from '../../services/role.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
@@ -18,23 +21,20 @@ import {
   PermissionSaveConfirmComponent,
   PermissionSaveState,
 } from './permission-save-confirm.component';
-import { MATRIX_COLUMNS } from '../../permission-matrix/permission-columns';
 import {
-  CELL_COUNT,
-  LABEL_CELL,
+  ListFilter,
   MatrixModule,
   MatrixPermission,
-  MatrixRow,
+  RowMark,
   TriState,
   buildMatrix,
-  cellKeys,
   changesOf,
-  groupChanged,
+  filterActive,
+  heldCount,
   markOf,
-  matrixRows,
-  rowKeys,
   toggleKeys,
   triState,
+  visibleKeys,
 } from '../../permission-matrix/permission-matrix.model';
 import { LeaveGuarded } from '../../permission-matrix/leave-guard';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -52,74 +52,103 @@ const CONFIRM_LINES = 4;
 /** How long "Saved · n changes" stays in the header (3c). */
 const SAVED_NOTICE_MS = 5000;
 
-/** What a cell draws. `na` is the hatch; `some` the tri-state dash. */
-type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
+/** Left-to-right isolates (LRI … PDI): a number keeps its own order inside an Arabic line. */
+const iso = (text: string): string => `⁦${text}⁩`;
+
+interface RowView {
+  key: string;
+  sentence: string;
+  /** Administration's second line ("Each admin page also needs its own permission"). */
+  note: string | null;
+  mark: RowMark;
+  held: boolean;
+  /** workflows:manage on the root role: "Organization Administrator only". */
+  rootOnly: boolean;
+}
+
+interface GroupView {
+  id: string | null;
+  label: string | null;
+  rows: RowView[];
+  keys: string[];
+  visible: string[];
+  held: number;
+  tri: TriState;
+}
+
+interface ModuleView {
+  module: string;
+  name: string;
+  description: string;
+  groups: GroupView[];
+  keys: string[];
+  visible: string[];
+  held: number;
+  tri: TriState;
+  collapsed: boolean;
+}
 
 /**
- * ACC-120 slice 5, PR B — the permission matrix, `/roles/:id/permissions`.
+ * ACC-272 — a role's permissions, `/roles/:id/permissions`, as a GROUPED LIST.
  *
- * Built against Templates 6a and Users and Roles section 3. The plan is
- * backend/Plans/step-120-5-permission-matrix.md (sections A, C–G).
+ * Built against "AccreditMe Role Permissions.dc.html" (sections 1 and 2). It
+ * replaced ACC-120 slice 5's six-column grid: the server stores a plain list
+ * of keys, and the page shows it as one. Each module is a section with its
+ * name, description, a tri-state box and "n of N"; a module of more than six
+ * rows splits into the groups of permission-groups.ts, each with its own box.
+ * One row per permission: a checkbox and its sentence, never the raw key. No
+ * row implies another.
  *
- * ## The layout (F)
+ * ## Find, and Show granted only
  *
- * A grid of rows: a header, then each module's header row followed by one row
- * per permission. The first column is FROZEN with `position: sticky;
- * inset-inline-start: 0`, never `pFrozenColumn`, which writes a physical
- * `left` and so pins to the wrong side in Arabic. One declaration,
- * `.pm-frozen`, serves the header corner, module rows and permission rows.
- * Its shadow's x-offset is physical, so it flips by direction through two
- * tokens.
+ * Both filter what is SHOWN, never what is saved. "Show granted only" reads
+ * the set as edited now, and keeps every changed row in view. While a filter
+ * is on, a module or group box acts only on its visible rows, and its tooltip
+ * says so; its state and its spoken count are still the whole module's.
  *
- * Nothing reads or writes `scrollLeft` or `scrollTop`: an RTL scroller starts
- * at its right edge and browsers disagree on the sign. Focus keeps the focused
- * cell in view, and the scroll padding keeps it clear of the frozen column
- * (`scroll-padding-inline-start`) and of the header row
- * (`scroll-padding-block-start`). Columns are never reordered for Arabic;
- * `dir` mirrors them.
+ * ## The layout
  *
- * ACC-266 — the grid scrolls in BOTH directions inside `.pm-scroll`, so the
- * header row is `position: sticky; top: 0` above the body, and its corner
- * cell is sticky on both axes, above the header and the frozen column. The
- * frame fills what is left of the window under the top bar and the page
- * header (the page is the height of `<main>`, and the frame shrinks into
- * it), and is never taller than its content. That is a LAYOUT height, not a
- * calc: the page header's own height changes with its purpose line, its
- * buttons and the language, so no fixed number could subtract it. Below
- * its floor (the header row, six rows, the legend and the page header) the
- * page stops shrinking and `<main>` scrolls it, so a short
- * window still shows a usable box. The grid is at least 1200 wide (300 + six
- * of 150); wider, the six action columns share the extra equally. Below
- * Tailwind's sm (640px) the frozen column is 160 and its names wrap (Ahmad,
- * 27 Oct), so the grid is at least 1060 and a whole action column fits beside
- * it at 390; the sticky offset and the scroll padding read the same width.
+ * The page scrolls in <main>; each module heading is sticky, so its box stays
+ * in reach while its rows scroll. Its `top` is minus the shell's padding on
+ * <main> (`p-4`, 16px): Chrome measures a sticky top from inside that
+ * padding, and at 0 the rows showed through a 16px strip above the heading. Below 768px it is one
+ * column, sentences wrap, and the header's save controls move to a bar fixed
+ * at the bottom of the screen. The room under the list is the bar's MEASURED
+ * height (a ResizeObserver), never a fixed size: the bar wraps to two lines on
+ * a phone, and a longer translation or a larger font makes it taller still.
  *
- * ## The keyboard (D9)
+ * ## The keyboard
  *
- * One roving tab stop. Arrows follow the eye, so in Arabic ← moves to the next
- * action column. Home and End go to the row's ends; Space toggles the focused
- * cell; Shift+Space toggles the row (a module row: the whole module).
+ * Plain checkboxes in tab order; Space toggles. The module and group boxes are
+ * buttons with role="checkbox" and aria-checked "mixed" while some are
+ * granted, named "All Committees permissions, 5 of 12 granted".
  *
  * ## Saving (D4, D, G)
  *
- * Cells change locally and ring themselves. The header counts the changes,
- * and "Review n changes…" opens a one-column confirmation listing them in
- * words. Save sends the edited set AND the set as loaded; a 409 means someone
- * else saved this role first, and the only way on is "Reload role", because
- * retrying would overwrite their change unseen.
+ * Unchanged from the grid: the header counts the changes, and "Review n
+ * changes…" opens a one-column confirmation listing them in words. Save sends
+ * the edited set AND the set as loaded; a 409 means someone else saved this
+ * role first, and the only way on is "Reload role".
  */
 @Component({
   selector: 'app-role-permission-matrix',
-  // ACC-266 — as tall as <main>, so the page below can share out its height.
-  // The frozen column is 300, and 160 below Tailwind's sm (640px), where names
-  // wrap instead (Ahmad, 27 Oct): at 390 that leaves room for a whole action
-  // column beside it. Set here, not in styles, so the breakpoint costs the
-  // component's 4kB style budget nothing and beats no :host rule.
-  host: { class: 'block h-full [--pm-frozen-width:300px] max-sm:[--pm-frozen-width:160px]' },
+  host: { class: 'block' },
   standalone: true,
-  imports: [NgClass, PageHeaderComponent, PermissionSaveConfirmComponent, TranslatePipe, AmCountPipe, ButtonModule, TagModule, MessageModule],
+  imports: [
+    FormsModule,
+    PageHeaderComponent,
+    PermissionSaveConfirmComponent,
+    TranslatePipe,
+    AmCountPipe,
+    ButtonModule,
+    TagModule,
+    MessageModule,
+    InputTextModule,
+    ToggleSwitchModule,
+    TooltipModule,
+  ],
   template: `
-    <div class="flex flex-col gap-4 h-full min-h-[calc(var(--pm-head-height)+6*44px+4*var(--am-space-40))]">
+    <div class="flex flex-col gap-4">
       @if (role(); as r) {
         <app-page-header [title]="roleName()" [purpose]="subtitle()" [eyebrow]="'roles.permissionMatrix' | translate">
           <div pageActions class="flex flex-wrap items-center gap-2">
@@ -128,20 +157,13 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
             }
             @if (!readOnly()) {
               @if (changeCount() > 0) {
-                <span class="pm-unsaved" data-pm-unsaved>{{ changeCount() | amCount: 'role.unsaved' }}</span>
-                <p-button
-                  [label]="'common.discard' | translate"
-                  severity="secondary"
-                  [outlined]="true"
-                  (onClick)="discard()"
-                />
-                <p-button
-                  [label]="changeCount() | amCount: 'role.review'"
-                  (onClick)="openConfirm()"
-                  data-pm-review
-                />
+                <span class="contents max-md:hidden">
+                  <span class="pm-unsaved" data-pm-unsaved>{{ changeCount() | amCount: 'role.unsaved' }}</span>
+                  <p-button [label]="'common.discard' | translate" severity="secondary" [outlined]="true" (onClick)="discard()" />
+                  <p-button [label]="changeCount() | amCount: 'role.review'" (onClick)="openConfirm()" data-pm-review />
+                </span>
               } @else if (savedCount() > 0) {
-                <span class="pm-saved" role="status" data-pm-saved>{{ savedCount() | amCount: 'role.saved' }}</span>
+                <span class="text-meta font-semibold text-[var(--am-success-ink)]" role="status" data-pm-saved>{{ savedCount() | amCount: 'role.saved' }}</span>
               }
             }
           </div>
@@ -153,129 +175,192 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
       }
 
       @if (loadError()) {
-        <div class="flex items-center gap-3" role="alert">
-          <span class="text-sm text-[var(--am-danger-ink)]">{{ 'roles.matrix.loadFailed' | translate }}</span>
-          <p-button [label]="'common.retry' | translate" severity="secondary" [outlined]="true" (onClick)="load()" />
+        <div class="flex flex-col items-start gap-[var(--am-space-6)] px-[var(--am-space-16)] py-[var(--am-space-12)] border border-[var(--am-danger-border)] rounded-card bg-[var(--am-danger-bg)]" role="alert" data-pm-error>
+          <p class="m-0 font-semibold text-[var(--am-danger-ink)]">{{ 'roles.matrix.loadFailedTitle' | translate }}</p>
+          <p class="m-0 text-value">{{ 'roles.matrix.loadFailedBody' | translate }}</p>
+          <p-button [label]="'common.retry' | translate" severity="secondary" [outlined]="true" (onClick)="load()" data-pm-retry />
         </div>
       } @else if (loading()) {
-        <p class="text-sm text-[var(--am-ink-500)]">{{ 'common.loading' | translate }}</p>
-      } @else if (rows().length === 0) {
+        @for (s of [1, 2, 3]; track s) {
+          <div class="pm-mod flex flex-col gap-3 p-4" data-pm-skeleton aria-hidden="true">
+            <span class="am-skeleton-bar w-2/5"></span>
+            <span class="am-skeleton-bar w-4/5"></span>
+            <span class="am-skeleton-bar w-3/5"></span>
+          </div>
+        }
+      } @else if (modules().length === 0) {
         <p class="text-sm text-[var(--am-ink-500)]">{{ 'roles.matrix.noneShown' | translate }}</p>
       } @else {
-        <div class="pm-frame flex flex-col flex-[0_1_auto] min-h-0" [class.pm--rtl]="isRtl()">
-          <div class="pm-scroll flex-[0_1_auto] min-h-0 overflow-auto">
-            <div
-              class="pm-grid"
-              role="grid"
-              [attr.aria-label]="'roles.matrix.gridLabel' | translate: { name: nameInSentence() }"
-              [attr.aria-readonly]="readOnly() ? 'true' : null"
-              [attr.aria-rowcount]="rows().length + 1"
-              [attr.aria-colcount]="cellCount"
-              (keydown)="onGridKeydown($event)"
-              (focusin)="onGridFocusIn($event)"
-            >
-              <div role="row" class="pm-row pm-row--head sticky top-0 z-3" aria-rowindex="1">
-                <div role="columnheader" class="pm-frozen pm-head">{{ 'roles.matrix.columnHeader' | translate }}</div>
-                @for (col of columns; track col) {
-                  <div role="columnheader" class="pm-cell pm-head">{{ 'roles.matrix.col.' + col | translate }}</div>
-                }
-              </div>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-pm-toolbar>
+          <span class="relative flex-[0_1_calc(var(--am-space-40)*7.5)] max-md:flex-[1_1_100%]">
+            <input
+              pInputText
+              type="search"
+              class="w-full pe-[var(--am-space-32)] [&::-webkit-search-cancel-button]:hidden"
+              [ngModel]="query()"
+              (ngModelChange)="query.set($event)"
+              [placeholder]="'roles.matrix.find' | translate"
+              [attr.aria-label]="'roles.matrix.find' | translate"
+              autocomplete="off"
+              data-pm-find
+            />
+            @if (query()) {
+              <button
+                type="button"
+                class="pm-focus absolute inset-y-0 end-[var(--am-space-8)] my-auto h-fit border-0 bg-transparent p-0 text-ink-500 cursor-pointer"
+                [attr.aria-label]="'roles.matrix.clearSearch' | translate"
+                (click)="query.set('')"
+                data-pm-find-clear
+              >✕</button>
+            }
+          </span>
+          <label class="inline-flex items-center gap-2 text-value whitespace-nowrap">
+            <p-toggleswitch [ngModel]="grantedOnly()" (ngModelChange)="grantedOnly.set($event)" inputId="pm-granted-only" data-pm-granted-only />
+            <span>{{ 'roles.matrix.grantedOnly' | translate }}</span>
+          </label>
+          <span class="flex flex-wrap gap-x-4 gap-y-1 text-meta text-ink-700 md:ms-auto" data-pm-legend>
+            @if (readOnly()) {
+              <span class="inline-flex items-center gap-[var(--am-space-6)] whitespace-nowrap"><span class="pm-ro pm-ro--on" aria-hidden="true">✓</span>{{ 'roles.matrix.held' | translate }}</span>
+              <span class="inline-flex items-center gap-[var(--am-space-6)] whitespace-nowrap"><span class="pm-ro" aria-hidden="true">·</span>{{ 'roles.matrix.notHeld' | translate }}</span>
+            } @else {
+              <span class="inline-flex items-center gap-[var(--am-space-6)] whitespace-nowrap"><span class="pm-box pm-box--on !m-0" aria-hidden="true">✓</span>{{ 'roles.matrix.held' | translate }}</span>
+              <span class="inline-flex items-center gap-[var(--am-space-6)] whitespace-nowrap"><span class="pm-box !m-0" aria-hidden="true"></span>{{ 'roles.matrix.notHeld' | translate }}</span>
+              <span class="inline-flex items-center gap-[var(--am-space-6)] whitespace-nowrap"><span class="pm-tag pm-tag--granted" aria-hidden="true">＋</span>{{ 'roles.matrix.newlyGranted' | translate }}</span>
+              <span class="inline-flex items-center gap-[var(--am-space-6)] whitespace-nowrap"><span class="pm-tag pm-tag--revoked" aria-hidden="true">−</span>{{ 'roles.matrix.newlyRevoked' | translate }}</span>
+            }
+          </span>
+        </div>
 
-              @for (row of rows(); track rowId(row); let r = $index) {
-                <div
-                  role="row"
-                  class="pm-row"
-                  [class.pm-row--module]="row.kind === 'module'"
-                  [attr.aria-rowindex]="r + 2"
-                  [attr.data-pm-row]="row.kind"
-                >
-                  <div
-                    role="rowheader"
-                    class="pm-frozen pm-label"
-                    [class.pm-label--toggle]="isToggle(r, 0)"
-                    [attr.data-pm-cell]="isToggle(r, 0) ? null : r + ':0'"
-                    [attr.tabindex]="isToggle(r, 0) ? null : tabIndexOf(r, 0)"
-                    [attr.aria-label]="isToggle(r, 0) ? null : cellLabel(r, 0)"
-                    (click)="activate(r, 0)"
-                  >
-                    @if (isToggle(r, 0)) {
-                      <span
-                        role="checkbox"
-                        class="pm-box"
-                        [ngClass]="'pm-glyph--' + glyphOf(r, 0)"
-                        [attr.data-pm-cell]="r + ':0'"
-                        [attr.tabindex]="tabIndexOf(r, 0)"
-                        [attr.aria-checked]="ariaChecked(r, 0)"
-                        [attr.aria-label]="cellLabel(r, 0)"
-                        >{{ glyphText(r, 0) }}</span
-                      >
-                    } @else if (row.kind === 'module' || row.permission.placement === 'row') {
-                      <!-- read-only: the glyph only, no checkbox ("absent, not disabled", 3c) -->
-                      @if (!readOnly() || row.kind === 'permission') {
-                        <span class="pm-ro" [ngClass]="'pm-glyph--' + glyphOf(r, 0)" aria-hidden="true">{{ glyphText(r, 0) }}</span>
-                      } @else {
-                        <span class="pm-slot" aria-hidden="true"></span>
-                      }
-                    } @else {
-                      <span class="pm-slot" aria-hidden="true"></span>
-                    }
-                    <span class="pm-label-text">
-                      @if (row.kind === 'module') {
-                        <span class="pm-module-name">{{ moduleName(row.module.module) }}</span>
-                        <span class="pm-module-desc">{{ moduleDescription(row.module.module) }}</span>
-                      } @else {
-                        <span class="pm-perm-name">{{ sentence(row.permission.key) }}</span>
-                      }
-                    </span>
-                  </div>
-                  @for (col of columns; track col; let c = $index) {
-                    <div
-                      role="gridcell"
-                      class="pm-cell"
-                      [class.pm-cell--toggle]="isToggle(r, c + 1)"
-                      [attr.data-pm-cell]="isToggle(r, c + 1) ? null : r + ':' + (c + 1)"
-                      [attr.tabindex]="isToggle(r, c + 1) ? null : tabIndexOf(r, c + 1)"
-                      [attr.aria-label]="isToggle(r, c + 1) ? null : cellLabel(r, c + 1)"
-                      (click)="activate(r, c + 1)"
-                    >
-                      @if (isToggle(r, c + 1)) {
-                        <span
-                          role="checkbox"
-                          class="pm-box"
-                          [ngClass]="'pm-glyph--' + glyphOf(r, c + 1)"
-                          [attr.data-pm-cell]="r + ':' + (c + 1)"
-                          [attr.tabindex]="tabIndexOf(r, c + 1)"
-                          [attr.aria-checked]="ariaChecked(r, c + 1)"
-                          [attr.aria-label]="cellLabel(r, c + 1)"
-                          >{{ glyphText(r, c + 1) }}</span
-                        >
-                      } @else {
-                        <span class="pm-ro" [ngClass]="'pm-glyph--' + glyphOf(r, c + 1)" aria-hidden="true">{{
-                          glyphText(r, c + 1)
-                        }}</span>
-                      }
-                    </div>
-                  }
-                </div>
+        @if (noMatch()) {
+          <div class="text-center px-[var(--am-space-16)] py-[var(--am-space-24)] border border-dashed border-[var(--am-border-strong)] rounded-card bg-surface-raised" role="status" data-pm-no-match>
+            {{ 'roles.matrix.noMatch' | translate }}
+            <button type="button" class="pm-focus border-0 bg-transparent p-0 font-semibold text-[var(--am-primary-700)] cursor-pointer" (click)="clearFilter()" data-pm-clear>{{ 'roles.matrix.noMatchClear' | translate }}</button>
+          </div>
+        }
+
+        @for (m of view(); track m.module) {
+          <section class="pm-mod" [attr.data-pm-module]="m.module" [attr.aria-label]="m.name">
+            <div class="pm-head" [class.pm-head--open]="!m.collapsed" data-pm-head>
+              @if (!readOnly()) {
+                <button
+                  type="button"
+                  role="checkbox"
+                  class="pm-box"
+                  [class.pm-box--on]="m.tri !== 'none'"
+                  [attr.aria-checked]="aria(m.tri)"
+                  [attr.aria-label]="boxLabel(m.name, m.held, m.keys.length)"
+                  [attr.aria-description]="filtering() ? tip(m.visible.length) : null"
+                  [pTooltip]="filtering() ? tip(m.visible.length) : ''"
+                  tooltipEvent="both"
+                  (click)="toggle(m.visible)"
+                  data-pm-module-box
+                >{{ boxGlyph(m.tri) }}</button>
+              }
+              <span class="min-w-0 flex-[1_1_calc(var(--am-space-40)*5)]">
+                <span class="block font-semibold text-body">{{ m.name }}</span>
+                <span class="block text-meta text-ink-500">{{ m.description }}</span>
+              </span>
+              <span class="flex-none text-value text-ink-700 tabular-nums" data-pm-count>{{
+                filtering() ? matchCount(m.visible.length, m.keys.length) : ofCount(m.held, m.keys.length)
+              }}</span>
+              @if (!filtering()) {
+                <button
+                  type="button"
+                  class="pm-fold pm-focus"
+                  [attr.aria-expanded]="!m.collapsed"
+                  [attr.aria-label]="(m.collapsed ? 'roles.matrix.expand' : 'roles.matrix.collapse') | translate: { name: m.name }"
+                  (click)="toggleCollapsed(m.module)"
+                  data-pm-fold
+                >{{ m.collapsed ? (isRtl() ? '◂' : '▸') : '▾' }}</button>
               }
             </div>
-          </div>
-
-          <div class="pm-legend flex-none">
-            @if (readOnly()) {
-              <span><span class="pm-ro pm-glyph--on" aria-hidden="true">✓</span>{{ 'roles.matrix.legend.granted' | translate }}</span>
-              <span><span class="pm-ro pm-glyph--off" aria-hidden="true">·</span>{{ 'roles.matrix.legend.notGranted' | translate }}</span>
-            } @else {
-              <span><span class="pm-box pm-glyph--on" aria-hidden="true">✓</span>{{ 'roles.matrix.legend.grantedSaved' | translate }}</span>
-              <span><span class="pm-box pm-glyph--granted" aria-hidden="true">✓</span>{{ 'roles.matrix.legend.grantedUnsaved' | translate }}</span>
-              <span><span class="pm-box pm-glyph--revoked" aria-hidden="true">✕</span>{{ 'roles.matrix.legend.revokedUnsaved' | translate }}</span>
+            @if (!m.collapsed) {
+              @for (g of m.groups; track g.id ?? '') {
+                @if (g.label) {
+                  <div class="pm-group" [attr.data-pm-group]="g.id">
+                    @if (!readOnly()) {
+                      <button
+                        type="button"
+                        role="checkbox"
+                        class="pm-box"
+                        [class.pm-box--on]="g.tri !== 'none'"
+                        [attr.aria-checked]="aria(g.tri)"
+                        [attr.aria-label]="boxLabel(g.label, g.held, g.keys.length)"
+                        [attr.aria-description]="filtering() ? tip(g.visible.length) : null"
+                        [pTooltip]="filtering() ? tip(g.visible.length) : ''"
+                        tooltipEvent="both"
+                        (click)="toggle(g.visible)"
+                        data-pm-group-box
+                      >{{ boxGlyph(g.tri) }}</button>
+                    }
+                    <span class="flex-auto font-semibold text-meta text-ink-700">{{ g.label }}</span>
+                    <span class="flex-none text-meta text-ink-500 tabular-nums" data-pm-count>{{ ofCount(g.held, g.keys.length) }}</span>
+                  </div>
+                }
+                @for (r of g.rows; track r.key) {
+                  <div
+                    class="pm-row"
+                    [class.pm-row--in]="!!g.label"
+                    [class.pm-row--granted]="r.mark === 'granted'"
+                    [class.pm-row--revoked]="r.mark === 'revoked'"
+                    [attr.data-pm-row]="r.key"
+                    [attr.data-pm-mark]="r.mark"
+                  >
+                    @if (!readOnly()) {
+                      <input
+                        type="checkbox"
+                        class="pm-check"
+                        [id]="rowId(r.key)"
+                        [checked]="r.held"
+                        (change)="toggle([r.key])"
+                        [attr.aria-label]="r.sentence"
+                        [attr.aria-describedby]="r.note || r.mark === 'granted' || r.mark === 'revoked' ? rowId(r.key) + '-d' : null"
+                      />
+                    } @else {
+                      <span class="pm-ro" [class.pm-ro--on]="r.held" role="img" [attr.aria-label]="(r.held ? 'roles.matrix.held' : 'roles.matrix.notHeld') | translate" data-pm-glyph>{{
+                        r.held ? '✓' : '·'
+                      }}</span>
+                    }
+                    <span class="min-w-0 flex-[1_1_calc(var(--am-space-40)*5.5)]">
+                      <label class="pm-sentence" [class.font-medium]="readOnly() && r.held" [attr.for]="readOnly() ? null : rowId(r.key)">{{ r.sentence }}</label>
+                      <span [id]="rowId(r.key) + '-d'" class="contents">
+                        @if (r.note) {
+                          <span class="block text-meta text-ink-500">{{ r.note }}</span>
+                        }
+                        @if (r.mark === 'granted') {
+                          <span class="sr-only">{{ 'roles.matrix.newlyGranted' | translate }}</span>
+                        } @else if (r.mark === 'revoked') {
+                          <span class="sr-only">{{ 'roles.matrix.newlyRevoked' | translate }}</span>
+                        }
+                      </span>
+                    </span>
+                    @if (r.mark === 'granted') {
+                      <span class="pm-tag pm-tag--granted" aria-hidden="true" data-pm-tag>＋ {{ 'roles.matrix.grantedTag' | translate }}</span>
+                    } @else if (r.mark === 'revoked') {
+                      <span class="pm-tag pm-tag--revoked" aria-hidden="true" data-pm-tag>− {{ 'roles.matrix.revokedTag' | translate }}</span>
+                    } @else if (r.rootOnly) {
+                      <span class="pm-tag" data-pm-tag>{{ 'roles.matrix.rootRoleOnlyTag' | translate }}</span>
+                    }
+                  </div>
+                }
+              }
             }
-            <span><span class="pm-box pm-glyph--some" aria-hidden="true">–</span>{{ 'roles.matrix.legend.some' | translate }}</span>
-            <span><span class="pm-box pm-glyph--na" aria-hidden="true"></span>{{ 'roles.matrix.legend.notApplicable' | translate }}</span>
-          </div>
-        </div>
+          </section>
+        }
       }
     </div>
+
+    @if (showPhoneBar()) {
+      <!-- Room under the last row, exactly the fixed bar's height, so it never covers it. -->
+      <div class="md:hidden" [style.height.px]="phoneBarHeight()" aria-hidden="true" data-pm-phone-room></div>
+      <div #phoneBar class="fixed inset-x-0 bottom-0 z-[5] flex flex-wrap items-center justify-between gap-[var(--am-space-8)] px-[var(--am-space-12)] py-[var(--am-space-8)] bg-surface-raised border-t border-[var(--am-border-strong)] md:hidden" data-pm-phone-bar>
+        <span class="pm-unsaved">{{ changeCount() | amCount: 'role.unsaved' }}</span>
+        <span class="flex gap-2">
+          <p-button [label]="'common.discard' | translate" severity="secondary" [outlined]="true" (onClick)="discard()" />
+          <p-button [label]="changeCount() | amCount: 'role.review'" (onClick)="openConfirm()" data-pm-phone-review />
+        </span>
+      </div>
+    }
 
     <app-permission-save-confirm
       [visible]="confirmOpen()"
@@ -293,262 +378,29 @@ type CellGlyph = 'on' | 'off' | 'granted' | 'revoked' | 'some' | 'na';
   `,
   styles: [
     `
-      /* The grid's own sizes, named once so the sticky offsets, the scroll
-         padding and the minimum width cannot drift from the cells. The page
-         (h-full) is as tall as <main>; the frame (flex 0 1 auto) never grows
-         past its content and shrinks into what the page header leaves; the
-         scroller scrolls both ways. The page stops shrinking at its min-h
-         — the header row, six permission rows and the legend, plus the page
-         header — and <main> then scrolls it. */
-      :host {
-        --pm-head-height: 35px;
-      }
-      .pm-frame {
-        border: 1px solid var(--am-border-strong);
-        border-radius: var(--am-radius-card);
-        overflow: hidden;
-        background: var(--am-surface-raised);
-        --pm-frozen-shadow: var(--am-frozen-shadow-ltr);
-      }
-      .pm-frame.pm--rtl {
-        --pm-frozen-shadow: var(--am-frozen-shadow-rtl);
-      }
-      .pm-scroll {
-        /* Focus scrolls a cell into view; this keeps it out from under the
-           frozen column and the header row instead of behind them. */
-        scroll-padding-inline-start: var(--pm-frozen-width);
-        scroll-padding-block-start: var(--pm-head-height);
-      }
-      .pm-grid {
-        min-width: calc(var(--pm-frozen-width) + 6 * 150px);
-      }
-      .pm-row {
-        display: flex;
-        align-items: stretch;
-        box-sizing: border-box;
-        min-height: 44px; /* on the ROW; the whole cell is the control */
-        background: var(--am-surface-raised);
-        border-block-end: 1px solid var(--am-row-rule);
-      }
-      .pm-row--module {
-        min-height: 56px;
-        background: var(--am-surface);
-        border-block-end-color: var(--am-border);
-      }
-      /* ACC-266 — sticky top-0 z-3 in the template: at the top of the scroller,
-         above the frozen column (2); its corner is 4. */
-      .pm-row--head {
-        height: var(--pm-head-height);
-        background: var(--am-surface);
-        border-block-end-color: var(--am-border);
-      }
-
-      /* THE ONE frozen-cell declaration — header corner, module rows and
-         permission rows all use it, so the column cannot drift between them. */
-      .pm-frozen {
-        flex: none;
-        width: var(--pm-frozen-width);
-        box-sizing: border-box;
-        padding: 7px 12px;
-        border-inline-end: 1px solid var(--am-border-strong);
-        box-shadow: var(--pm-frozen-shadow);
-        z-index: 2;
-        position: sticky;
-        inset-inline-start: 0;
-        background: inherit;
-      }
-      /* The corner: frozen inline (above) inside the sticky header row, so
-         pinned on both axes, and above both the header and the column. */
-      .pm-row--head > .pm-frozen {
-        z-index: 4;
-      }
-
-      .pm-head {
-        font-size: 12px;
-        line-height: 19px;
-        font-weight: 700;
-        color: var(--am-ink-500);
-        padding-block: 7px;
-      }
-      .pm-cell.pm-head {
-        justify-content: center;
-      }
-      .pm-cell {
-        /* Six equal shares of whatever is wider than 1200 (ACC-266). */
-        flex: 1 0 150px;
-        min-width: 0;
-        box-sizing: border-box;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 6px;
-      }
-      .pm-cell--toggle,
-      .pm-label--toggle {
-        cursor: pointer;
-      }
-
-      .pm-label {
-        display: flex;
-        align-items: flex-start;
-        gap: 9px;
-      }
-      .pm-label-text {
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-      }
-      /* Type sizes from the drawings: English per 6a (13 / 11.5 / 12.5), Arabic
-         per 3a (14 / 12 / 14). Line heights are the same in both, so the row
-         geometry — 56 for a module, 44 for a permission — does not change
-         with the language. */
-      .pm-module-name {
-        font-size: 13px;
-        line-height: 22px;
-        font-weight: 600;
-        color: var(--am-ink-900);
-      }
-      .pm-module-desc {
-        font-size: 11.5px;
-        line-height: 18px;
-        color: var(--am-ink-500);
-      }
-      .pm-perm-name {
-        font-size: 12.5px;
-        line-height: 22px;
-        color: var(--am-ink-900);
-        padding-block-start: 1px;
-      }
-      .pm--rtl .pm-module-name,
-      .pm--rtl .pm-perm-name {
-        font-size: 14px;
-      }
-      .pm--rtl .pm-module-desc {
-        font-size: 12px;
-      }
-
-      /* Marks — 6a's own: a filled tick, an empty box, a success-ringed tick
-         for a grant not saved yet, a danger-ringed cross for a revocation not
-         saved yet, and the hatch for "not applicable". Granted and not granted
-         differ by GLYPH, so the grid passes greyscale (R3). */
-      .pm-box,
-      .pm-slot {
-        flex: none;
-        box-sizing: border-box;
-        width: 17px;
-        height: 17px;
-        margin-block-start: 3px;
-        border-radius: 3px;
-        font-size: 11px;
-        line-height: 15px;
-        text-align: center;
-      }
-      .pm-cell .pm-box {
-        margin-block-start: 0;
-      }
-      .pm-slot {
-        visibility: hidden;
-      }
-      .pm-glyph--on,
-      .pm-glyph--some {
-        border: 1px solid var(--am-primary-700);
-        background: var(--am-primary-600);
-        color: var(--am-surface-raised);
-      }
-      .pm-glyph--off {
-        border: 1px solid var(--am-control-border);
-        background: var(--am-surface-raised);
-        color: transparent;
-      }
-      .pm-glyph--granted {
-        border: 1px solid var(--am-success-ink);
-        background: var(--am-success-ink);
-        color: var(--am-surface-raised);
-        box-shadow:
-          0 0 0 3px var(--am-success-bg),
-          0 0 0 4px var(--am-success-ink);
-      }
-      .pm-glyph--revoked {
-        border: 1px solid var(--am-danger-ink);
-        background: var(--am-surface-raised);
-        color: var(--am-danger-ink);
-        box-shadow:
-          0 0 0 3px var(--am-danger-bg),
-          0 0 0 4px var(--am-danger-ink);
-      }
-      .pm-glyph--na {
-        border: 1px dashed var(--am-restricted-border);
-        background: var(--am-restricted-hatch);
-        color: transparent;
-      }
-      /* Read-only: glyphs, not checkboxes (3c). */
-      .pm-ro {
-        flex: none;
-        min-width: 17px;
-        text-align: center;
-        font-size: 14px;
-        line-height: 22px;
-      }
-      .pm-ro.pm-glyph--on,
-      .pm-ro.pm-glyph--some {
-        border: none;
-        background: none;
-        color: var(--am-primary-700);
-        font-weight: 700;
-      }
-      .pm-ro.pm-glyph--off {
-        border: none;
-        background: none;
-        color: var(--am-ink-300);
-      }
-      .pm-ro.pm-glyph--na {
-        display: inline-block;
-        width: 17px;
-        height: 17px;
-        min-width: 0;
-        box-sizing: border-box;
-        border-radius: 3px;
-      }
-
-      [data-pm-cell]:focus-visible {
-        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
-        outline-offset: var(--am-focus-ring-offset);
-      }
-
-      .pm-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 14px;
-        padding: 9px 14px;
-        background: var(--am-surface);
-        border-block-start: 1px solid var(--am-border);
-        font-size: 12.5px;
-        color: var(--am-ink-700);
-      }
-      .pm-legend > span {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-      }
-      .pm-legend .pm-box {
-        margin-block-start: 0;
-      }
-
-      .pm-unsaved {
-        font-size: 12.5px;
-        font-weight: 600;
-        color: var(--am-warning-ink);
-        background: var(--am-warning-bg);
-        border: 1px solid var(--am-warning-border);
-        border-radius: 4px;
-        padding: 3px 8px;
-      }
-      .pm-saved {
-        font-size: 12.5px;
-        font-weight: 600;
-        color: var(--am-success-ink);
-      }
-
+      .pm-mod{border:1px solid var(--am-border);border-radius:var(--am-radius-card);background:var(--am-surface-raised);padding-block-end:var(--am-space-4)}
+      .pm-head{position:sticky;top:calc(var(--am-space-16) * -1);z-index:1;display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--am-space-6) var(--am-space-12);padding:var(--am-space-12) var(--am-space-16);background:var(--am-surface-raised);border-radius:var(--am-radius-card)}
+      .pm-head--open{border-end-start-radius:0;border-end-end-radius:0;border-block-end:1px solid var(--am-border)}
+      .pm-group,.pm-row{display:flex;align-items:flex-start;gap:var(--am-space-4) var(--am-space-12);padding:var(--am-space-8) var(--am-space-16);padding-inline-start:var(--am-space-24)}
+      .pm-group{border-block-start:1px solid var(--am-row-rule)}
+      .pm-row{flex-wrap:wrap}
+      .pm-row--in{padding-inline-start:calc(var(--am-space-24) * 2 + var(--am-space-4))}
+      .pm-row--granted{background:var(--am-success-bg)}
+      .pm-row--revoked{background:var(--am-warning-bg)}
+      .pm-row--revoked .pm-sentence{text-decoration:line-through;text-decoration-color:var(--am-warning-ink)}
+      .pm-sentence{display:block;font-size:var(--am-type-value-size);line-height:var(--am-type-body-line);color:var(--am-ink-900)}
+      .pm-box,.pm-check{flex:none;box-sizing:border-box;inline-size:var(--am-space-16);block-size:var(--am-space-16);margin:var(--am-space-2) 0 0;padding:0;border-radius:var(--am-radius-control)}
+      .pm-box{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--am-control-border);background:var(--am-surface-raised);color:var(--am-surface-raised);font-size:var(--am-type-micro-size);font-weight:700;line-height:1;cursor:pointer}
+      .pm-box--on{border-color:var(--am-primary-700);background:var(--am-primary-600)}
+      .pm-check{accent-color:var(--am-primary-600);cursor:pointer}
+      .pm-box:focus-visible,.pm-check:focus-visible,.pm-focus:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
+      .pm-ro{flex:none;inline-size:var(--am-space-16);text-align:center;font-weight:700;line-height:var(--am-type-body-line);color:var(--am-ink-300)}
+      .pm-ro--on{color:var(--am-primary-700)}
+      .pm-tag{flex:none;font-size:var(--am-type-micro-size);font-weight:600;border-radius:var(--am-radius-control);padding:0 var(--am-space-6);border:1px solid var(--am-border-strong);background:var(--am-surface);color:var(--am-ink-700)}
+      .pm-tag--granted{color:var(--am-success-ink);border-color:var(--am-success-ink);background:var(--am-surface-raised)}
+      .pm-tag--revoked{color:var(--am-warning-ink);border-color:var(--am-warning-ink);background:var(--am-surface-raised)}
+      .pm-fold{flex:none;inline-size:calc(var(--am-space-24) + var(--am-space-4));block-size:calc(var(--am-space-24) + var(--am-space-4));border:1px solid var(--am-control-border);border-radius:var(--am-radius-button);background:var(--am-surface-raised);color:var(--am-ink-700);cursor:pointer}
+      .pm-unsaved{font-size:var(--am-type-meta-size);font-weight:600;color:var(--am-warning-ink);background:var(--am-warning-bg);border:1px solid var(--am-warning-border);border-radius:var(--am-radius-control);padding:var(--am-space-2) var(--am-space-8)}
     `,
   ],
 })
@@ -560,11 +412,7 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly amConfirm = inject(AmConfirmService);
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);
-
-  readonly columns = MATRIX_COLUMNS;
-  readonly cellCount = CELL_COUNT;
 
   private roleId = '';
   private savedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -583,8 +431,11 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   readonly saveState = signal<PermissionSaveState>('idle');
   readonly savedCount = signal(0);
 
-  /** The roving tab stop: [row, cell]. */
-  readonly focusAt = signal<[number, number]>([0, 0]);
+  // Find and Show granted only: what is SHOWN, never what is saved.
+  readonly query = signal('');
+  readonly grantedOnly = signal(false);
+  /** Modules folded by hand. Every module opens expanded (the design's Q3). */
+  readonly collapsed = signal<ReadonlySet<string>>(new Set());
 
   readonly isRtl = computed(() => this.languageService.isRtl());
 
@@ -594,7 +445,7 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   readonly isRootRole = computed(() => this.role()?.key === ROOT_ROLE_KEY);
   readonly isPlatformRole = computed(() => this.role()?.key === PLATFORM_ROLE_KEY);
 
-  // ONE flag the template reads, so the grid and the save controls cannot
+  // ONE flag the template reads, so the list and the save controls cannot
   // disagree about whether the page is editable.
   readonly readOnly = computed(() => !this.canManage() || this.isRootRole() || this.isPlatformRole());
 
@@ -619,9 +470,7 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
 
   /**
    * The name as it goes INTO a sentence: wrapped in Unicode isolates (FSI …
-   * PDI), so an English name inside an Arabic sentence keeps its own order. A
-   * bare "Matrix check (delete me)" between « » in Arabic otherwise renders
-   * with its brackets and guillemets on the wrong sides.
+   * PDI), so an English name inside an Arabic sentence keeps its own order.
    */
   readonly nameInSentence = computed(() => `⁨${this.roleName()}⁩`);
 
@@ -631,22 +480,87 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   /** "Permissions · held by N users", plus the consequence while editable (D). */
   readonly subtitle = computed(() => {
     if (!this.role()) return null;
-    const parts = [
-      this.translate.instant('roles.matrix.subtitle'),
-      this.format.count('role.heldBy', this.activeHolders()),
-    ];
+    const parts = [this.translate.instant('roles.matrix.subtitle'), this.format.count('role.heldBy', this.activeHolders())];
     if (!this.readOnly()) parts.push(this.translate.instant('roles.matrix.affects'));
     return parts.join(' · ');
   });
 
-  /** D2 — platform keys are hidden inside a tenant. */
+  /** D2 — platform keys are hidden inside a tenant; workflows:manage shows on the root role only. */
   readonly modules = computed<MatrixModule[]>(() =>
     buildMatrix(this.catalogue(), { isTenant: !this.navigationAccess.isPlatformOrg(), isRootRole: this.isRootRole() }),
   );
-  readonly rows = computed<MatrixRow[]>(() => matrixRows(this.modules()));
+
+  readonly filter = computed<ListFilter>(() => ({ query: this.query(), grantedOnly: this.grantedOnly() }));
+  readonly filtering = computed(() => filterActive(this.filter()));
+
+  /**
+   * What the list draws: each module with its groups and visible rows. While
+   * a filter is on, a module with nothing visible is left out, and folded
+   * modules are shown open (a match is never hidden in a fold).
+   */
+  readonly view = computed<ModuleView[]>(() => {
+    // Read so the sentences follow a language switch.
+    this.isRtl();
+    const selected = this.selected();
+    const loaded = this.loaded();
+    const filter = this.filter();
+    const filtering = this.filtering();
+    const collapsed = this.collapsed();
+    const sentenceOf = (key: string) => this.sentence(key);
+    return this.modules()
+      .map((m): ModuleView => {
+        const groups = m.groups.map((g): GroupView => {
+          const visible = visibleKeys(g.permissions, sentenceOf, filter, selected, loaded);
+          return {
+            id: g.id,
+            label: g.id ? this.translateOr(`roles.matrix.group.${m.module}.${g.id}`, g.id) : null,
+            rows: g.permissions.filter((p) => visible.includes(p.key)).map((p) => this.rowOf(p, selected, loaded)),
+            keys: g.keys,
+            visible,
+            held: heldCount(g.keys, selected),
+            tri: triState(g.keys, selected),
+          };
+        });
+        return {
+          module: m.module,
+          name: this.moduleName(m.module),
+          description: this.moduleDescription(m.module),
+          groups: groups.filter((g) => !filtering || g.rows.length > 0),
+          keys: m.keys,
+          visible: groups.flatMap((g) => g.visible),
+          held: heldCount(m.keys, selected),
+          tri: triState(m.keys, selected),
+          collapsed: !filtering && collapsed.has(m.module),
+        };
+      })
+      .filter((m) => !filtering || m.visible.length > 0);
+  });
+
+  /** "No permissions match." — a filter is on and leaves nothing. */
+  readonly noMatch = computed(() => this.filtering() && this.view().length === 0);
 
   readonly changes = computed(() => changesOf(this.modules(), this.selected(), this.loaded()));
   readonly changeCount = computed(() => this.changes().added.length + this.changes().removed.length);
+  readonly showPhoneBar = computed(() => !this.readOnly() && this.changeCount() > 0);
+
+  /** The phone bar, while it is rendered, and its measured height for the room under the list. */
+  private readonly phoneBar = viewChild<ElementRef<HTMLElement>>('phoneBar');
+  readonly phoneBarHeight = signal(0);
+
+  constructor() {
+    // One observer per rendered bar, disconnected when the bar goes (or the page
+    // does): effect cleanup runs on both.
+    effect((onCleanup) => {
+      const bar = this.phoneBar()?.nativeElement;
+      if (!bar || typeof ResizeObserver === 'undefined') {
+        this.phoneBarHeight.set(0);
+        return;
+      }
+      const observer = new ResizeObserver(() => this.phoneBarHeight.set(Math.ceil(bar.getBoundingClientRect().height)));
+      observer.observe(bar);
+      onCleanup(() => observer.disconnect());
+    });
+  }
 
   /** The confirmation's two headings, each line "Module · sentence" (3b). */
   readonly confirmGroups = computed<PermissionChangeGroup[]>(() => {
@@ -654,9 +568,7 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
     const group = (kind: 'added' | 'removed', list: MatrixPermission[]): PermissionChangeGroup => ({
       kind,
       total: list.length,
-      lines: list
-        .slice(0, CONFIRM_LINES)
-        .map((p) => ({ key: p.key, text: `${this.moduleName(p.module)} · ${this.sentence(p.key)}` })),
+      lines: list.slice(0, CONFIRM_LINES).map((p) => ({ key: p.key, text: `${this.moduleName(p.module)} · ${this.sentence(p.key)}` })),
       more: Math.max(0, list.length - CONFIRM_LINES),
     });
     return [group('added', added), group('removed', removed)].filter((g) => g.total > 0);
@@ -666,9 +578,7 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   readonly primaryLabel = computed(() => {
     if (this.saveState() === 'failed') return this.translate.instant('roles.matrix.tryAgain');
     const truncated = this.confirmGroups().some((g) => g.more > 0);
-    return truncated
-      ? this.format.count('role.saveN', this.changeCount())
-      : this.translate.instant('roles.matrix.saveChanges');
+    return truncated ? this.format.count('role.saveN', this.changeCount()) : this.translate.instant('roles.matrix.saveChanges');
   });
 
   ngOnInit(): void {
@@ -723,207 +633,78 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
     return typeof value === 'string' && value !== key ? value : fallback;
   }
 
-  rowId(row: MatrixRow): string {
-    return row.kind === 'module' ? `m:${row.module.module}` : `p:${row.permission.key}`;
+  private rowOf(p: MatrixPermission, selected: ReadonlySet<string>, loaded: ReadonlySet<string>): RowView {
+    const note = this.translateOr(`roles.matrix.sentenceNote.${p.key}`, '');
+    const permission = this.catalogue().find((c) => `${c.module}:${c.action}` === p.key);
+    return {
+      key: p.key,
+      sentence: this.sentence(p.key),
+      note: note || null,
+      mark: markOf(p.key, selected, loaded),
+      held: selected.has(p.key),
+      rootOnly: !!permission?.rootRoleOnly,
+    };
   }
 
-  // ── Cells ─────────────────────────────────────────────────────────────────
-
-  /** Whether the cell is an editable toggle (a checkbox). Never in read-only. */
-  isToggle(r: number, cell: number): boolean {
-    if (this.readOnly()) return false;
-    const row = this.rows()[r];
-    return !!row && cellKeys(row, cell) !== null;
+  rowId(key: string): string {
+    return `pm-${key.replace(/[^a-z0-9_-]/gi, '-')}`;
   }
 
-  glyphOf(r: number, cell: number): CellGlyph {
-    const row = this.rows()[r];
-    if (!row) return 'na';
-    const keys = cellKeys(row, cell);
-    if (keys === null) {
-      // A column-placed permission's label slot is not a cell with a value.
-      return 'na';
-    }
-    const selected = this.selected();
-    const loaded = this.loaded();
-    if (keys.length === 1) {
-      const mark = markOf(keys[0], selected, loaded);
-      return this.readOnly() ? (mark === 'on' ? 'on' : 'off') : mark;
-    }
-    const tri: TriState = triState(keys, selected);
-    if (!this.readOnly() && groupChanged(keys, selected, loaded)) return tri === 'none' ? 'revoked' : 'granted';
-    return tri === 'all' ? 'on' : tri === 'some' ? 'some' : 'off';
+  /** A count as a person reads it: digits in an isolated run in Arabic, so «5 من 12» keeps its order. */
+  private num(n: number): string {
+    const text = this.format.number(n);
+    return this.isRtl() ? iso(text) : text;
   }
 
-  glyphText(r: number, cell: number): string {
-    switch (this.glyphOf(r, cell)) {
-      case 'on':
-      case 'granted':
-        return this.isAggregate(r, cell) && triState(this.cellKeysAt(r, cell), this.selected()) === 'some' ? '–' : '✓';
-      case 'revoked':
-        return '✕';
-      case 'some':
-        return '–';
-      case 'off':
-        return this.readOnly() ? '·' : '';
-      default:
-        return '';
-    }
+  ofCount(held: number, total: number): string {
+    return this.translate.instant('roles.matrix.ofCount', { held: this.num(held), total: this.num(total) });
   }
 
-  ariaChecked(r: number, cell: number): 'true' | 'false' | 'mixed' {
-    const tri = triState(this.cellKeysAt(r, cell), this.selected());
+  matchCount(shown: number, total: number): string {
+    return this.translate.instant('roles.matrix.matchCount', { shown: this.num(shown), total: this.num(total) });
+  }
+
+  /** "All Committees permissions, 5 of 12 granted": always the WHOLE module's count. */
+  boxLabel(name: string, held: number, total: number): string {
+    return this.translate.instant('roles.matrix.moduleBox', { name, held: this.num(held), total: this.num(total) });
+  }
+
+  /** The tooltip while a filter is on: the box acts only on the rows shown. */
+  tip(visible: number): string {
+    return this.format.count('role.filterActs', visible);
+  }
+
+  aria(tri: TriState): 'true' | 'false' | 'mixed' {
     return tri === 'all' ? 'true' : tri === 'some' ? 'mixed' : 'false';
   }
 
-  /** "Committees · Approve · granted, not saved" — the cell read in order. */
-  cellLabel(r: number, cell: number): string {
-    const row = this.rows()[r];
-    if (!row) return '';
-    const t = (k: string): string => this.translate.instant(k);
-    const name = row.kind === 'module' ? this.moduleName(row.module.module) : this.sentence(row.permission.key);
-    const keys = cellKeys(row, cell);
-    if (cell === LABEL_CELL) {
-      if (keys === null) return name;
-      const scope = row.kind === 'module' ? [t('roles.matrix.wholeModule')] : [];
-      return [name, ...scope, this.stateWord(keys)].join(' · ');
-    }
-    const column = t(`roles.matrix.col.${MATRIX_COLUMNS[cell - 1]}`);
-    if (keys === null) return [name, column, t('roles.matrix.state.notApplicable')].join(' · ');
-    return [name, column, this.stateWord(keys)].join(' · ');
-  }
-
-  private stateWord(keys: string[]): string {
-    const t = (k: string): string => this.translate.instant(k);
-    const selected = this.selected();
-    if (keys.length === 1) {
-      const mark = markOf(keys[0], selected, this.loaded());
-      if (this.readOnly()) return t(selected.has(keys[0]) ? 'roles.matrix.state.granted' : 'roles.matrix.state.notGranted');
-      return t(
-        mark === 'on'
-          ? 'roles.matrix.state.granted'
-          : mark === 'off'
-            ? 'roles.matrix.state.notGranted'
-            : mark === 'granted'
-              ? 'roles.matrix.state.grantedUnsaved'
-              : 'roles.matrix.state.revokedUnsaved',
-      );
-    }
-    const tri = triState(keys, selected);
-    return t(
-      tri === 'all' ? 'roles.matrix.state.granted' : tri === 'some' ? 'roles.matrix.state.some' : 'roles.matrix.state.notGranted',
-    );
-  }
-
-  private isAggregate(r: number, cell: number): boolean {
-    return this.cellKeysAt(r, cell).length > 1;
-  }
-
-  private cellKeysAt(r: number, cell: number): string[] {
-    const row = this.rows()[r];
-    return (row && cellKeys(row, cell)) ?? [];
-  }
-
-  tabIndexOf(r: number, cell: number): 0 | -1 {
-    const [fr, fc] = this.focusAt();
-    return r === fr && cell === fc ? 0 : -1;
+  boxGlyph(tri: TriState): string {
+    return tri === 'all' ? '✓' : tri === 'some' ? '–' : '';
   }
 
   // ── Changing ──────────────────────────────────────────────────────────────
 
-  /** A click: the whole cell is the hit area. */
-  activate(r: number, cell: number): void {
-    this.moveFocus(r, cell);
-    this.toggleCell(r, cell);
-  }
-
-  toggleCell(r: number, cell: number): void {
-    if (this.readOnly()) return;
-    const row = this.rows()[r];
-    const keys = row ? cellKeys(row, cell) : null;
-    if (!keys) return;
+  /** A row, or a module or group box: under a filter, only the rows shown. */
+  toggle(keys: readonly string[]): void {
+    if (this.readOnly() || keys.length === 0) return;
     this.selected.set(toggleKeys(keys, this.selected()));
   }
 
-  toggleRow(r: number): void {
-    if (this.readOnly()) return;
-    const row = this.rows()[r];
-    if (!row) return;
-    this.selected.set(toggleKeys(rowKeys(row), this.selected()));
+  toggleCollapsed(module: string): void {
+    const next = new Set(this.collapsed());
+    if (next.has(module)) next.delete(module);
+    else next.add(module);
+    this.collapsed.set(next);
+  }
+
+  /** "Clear the search." clears both filters. */
+  clearFilter(): void {
+    this.query.set('');
+    this.grantedOnly.set(false);
   }
 
   discard(): void {
     this.selected.set(new Set(this.loaded()));
-  }
-
-  // ── Keyboard (D9) ─────────────────────────────────────────────────────────
-
-  onGridKeydown(event: KeyboardEvent): void {
-    const [r, c] = this.focusAt();
-    const lastRow = this.rows().length - 1;
-    const lastCell = CELL_COUNT - 1;
-    // Arrows follow the EYE: in Arabic the next action column is to the left.
-    const forward = this.isRtl() ? 'ArrowLeft' : 'ArrowRight';
-    const back = this.isRtl() ? 'ArrowRight' : 'ArrowLeft';
-
-    let next: [number, number] | null = null;
-    switch (event.key) {
-      case forward:
-        next = [r, Math.min(lastCell, c + 1)];
-        break;
-      case back:
-        next = [r, Math.max(0, c - 1)];
-        break;
-      case 'ArrowDown':
-        next = [Math.min(lastRow, r + 1), c];
-        break;
-      case 'ArrowUp':
-        next = [Math.max(0, r - 1), c];
-        break;
-      case 'Home':
-        next = event.ctrlKey ? [0, 0] : [r, 0];
-        break;
-      case 'End':
-        next = event.ctrlKey ? [lastRow, lastCell] : [r, lastCell];
-        break;
-      case ' ':
-      case 'Spacebar':
-        event.preventDefault();
-        if (event.shiftKey) this.toggleRow(r);
-        else this.toggleCell(r, c);
-        return;
-      default:
-        return;
-    }
-    event.preventDefault();
-    this.moveFocus(next[0], next[1]);
-  }
-
-  /**
-   * Focus can arrive without an arrow key — Tab into the grid, a click on the
-   * glyph rather than the cell, a screen reader's own cursor. The roving stop
-   * follows wherever focus lands, so Space always acts on the cell that is
-   * actually focused, never on the last one the arrows reached.
-   */
-  onGridFocusIn(event: FocusEvent): void {
-    const at = (event.target as HTMLElement | null)?.closest('[data-pm-cell]')?.getAttribute('data-pm-cell');
-    if (!at) return;
-    const [r, c] = at.split(':').map(Number);
-    const [fr, fc] = this.focusAt();
-    if (r !== fr || c !== fc) this.focusAt.set([r, c]);
-  }
-
-  private moveFocus(r: number, cell: number): void {
-    this.focusAt.set([r, cell]);
-    const el = this.host.nativeElement.querySelector<HTMLElement>(`[data-pm-cell="${r}:${cell}"]`);
-    // The CELL is scrolled into view, and scroll-padding keeps it clear of the
-    // frozen column and the sticky header row. Not focus()'s own scroll:
-    // Chrome leaves an element alone once 32px of it shows, so a cell half
-    // under the frozen column stayed there (ACC-266). 'nearest' moves only as
-    // far as the whole cell needs. scrollLeft and scrollTop are never touched
-    // (see the header).
-    el?.focus({ preventScroll: true });
-    el?.closest<HTMLElement>('.pm-cell, .pm-frozen')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   // ── Saving ────────────────────────────────────────────────────────────────
@@ -957,7 +738,7 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
       error: (err: unknown) => {
         if (err instanceof HttpErrorResponse && err.status === 403) this.saveState.set('forbidden');
         else if (refusalCode(err) === 'ROLE_PERMISSIONS_CHANGED') this.saveState.set('conflict');
-        // ACC-258 — only reachable from a stale catalogue: the matrix no longer offers the key.
+        // ACC-258 — only reachable from a stale catalogue: the list no longer offers the key.
         else if (refusalCode(err) === 'PERMISSION_ROOT_ROLE_ONLY') this.saveState.set('rootRoleOnly');
         else this.saveState.set('failed');
       },
