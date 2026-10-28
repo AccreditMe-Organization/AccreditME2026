@@ -159,7 +159,7 @@ class Component extends DCLogic {
     const iso = (t) => "\u2066" + t + "\u2069";
     const AF = " font-family: 'IBM Plex Sans Arabic', sans-serif;";
     const ell = "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
-    const stepChip = (s) => "flex: none; display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 7px; white-space: nowrap; " + (s === "Step 1" ? "color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3;" : "color: #4A5568; background: #fff; border: 1px dashed #5A6779;");
+    const stepChip = (s) => "flex: none; display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 7px; white-space: nowrap; " + (s === "Step 1" ? "color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3;" : s === "Round 4" ? "color: #2D3748; background: #FFFAEB; border: 1px solid #B54708;" : "color: #4A5568; background: #fff; border: 1px dashed #5A6779;");
     const BTN = (l, k, ar) => ({ l, style: "font-family: inherit; font-size: " + (ar ? 14 : 13) + "px; border-radius: 6px; padding: 6px 12px; white-space: nowrap; " + ({ primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;", secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;", text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;", danger: "background: #B42318; color: #fff; border: 1px solid #912018; font-weight: 600;", dangerText: "background: transparent; color: #B42318; border: 1px solid transparent; font-weight: 500;" })[k] });
 
     const K = (ar) => {
@@ -360,15 +360,15 @@ class Component extends DCLogic {
     ] };
 
     // ---------- 4 transition editor
-    const sec4 = { id: "w4", n: "4", title: "Transition editor · how it moves", step: "Step 2", sub: "Its first choice is now “How it moves”: A person · Automatically. The rest of Templates 6b's editor (labels, from and to, required permission, actions) is as accepted.", cards: [
+    const sec4 = { id: "w4", n: "4", title: "Transition editor · how it moves", step: "Step 2", sub: "Its first choice is now “How it moves”: A person · Automatically. The rest of Templates 6b's editor (names, from and to, kind, automatic actions) is as accepted; Required permission is removed (round 4).", cards: [
       card({ step: "Step 2", cap: "A person · with “Show this button only when”", w: 700, title: "Send to Legal review", ctx: "Policy review · Under review → Legal review", blocks: [
         E.seg("How it moves", ["A person", "Automatically"], "A person", "A person presses a button on the record"),
-        E.fields([{ l: "Who may press it", req: 1, v: "Position in a unit", g: "▼" }], 12),
-        E.fields([{ l: "Position", req: 1, v: "Quality Manager", g: "▼" }, { l: "In unit", req: 1, v: "Quality Department", g: "⌄" }], 4),
+        E.pairs([["Pressed by", "whoever works Under review"]], 12),
+        E.note("Round 4: the stage says who works it; a transition says nothing about people. “Under review” opens that stage's editor.", 4, "small"),
         E.head("Show this button only when", "optional", 8),
         E.cond({ lines: [{ f: "Confidentiality", o: "is", v: "Confidential", vg: "▼" }], count: "1 of 5 lines", left: "4 more allowed", sentence: "When the confidentiality is Confidential." }, 8),
         E.note("The server checks this again when the button is pressed, so a record that changed since the page loaded can't slip through.", 8, "small")
-      ], note: "Trigger kinds without System automatic: Specific user · Position in a unit · Anyone signed in · Assignee pool. Position in a unit replaces Role-based, with the stage editor's position and unit pickers (ACC-136)." }),
+      ], note: "Round 4 removed “Who may press it” and its trigger kinds: a person's button is pressed by the stage's own people (section 9)." }),
       card({ step: "Step 2", cap: "Automatically · a conditional exit", w: 700, title: "Route to Legal review", ctx: "Document review · Format check → Legal review", blocks: [
         E.seg("How it moves", ["A person", "Automatically"], "Automatically", "No button. The system moves the record and is recorded as the actor."),
         E.fields([{ l: "Name in history", req: 1, v: "Route to Legal review", help: "Shown in the record's stage history, never as a button" }], 12),
@@ -389,12 +389,12 @@ class Component extends DCLogic {
         A.cond({ lines: [{ f: "السرية", o: "يساوي", v: "سري", vg: "▼" }], count: iso("1") + " من " + iso("5") + " أسطر", left: "يمكن إضافة " + iso("4") + " أسطر أخرى", sentence: "عندما تكون السرية «سري»." }, 8),
         A.check1("خلاف ذلك", "استخدم هذا الخروج عندما لا يطابق أي خروج تلقائي آخر.", false, 12)
       ] }),
-      card({ step: "Step 2", cap: "Approval stage · Approve to a tenant-added stage", w: 700, title: "Under review · approval outcomes", ctx: "Committee change request · approval mode Single", blocks: [
+      card({ step: "Step 2", cap: "Approval stage · Approve to a tenant-added stage", w: 700, title: "Under review · approval outcomes", ctx: "Policy review · Any one of them", blocks: [
         E.fields([{ l: "Approve goes to", req: 1, v: "Legal review", g: "▼", help: "Any stage of this workflow" }, { l: "Return goes to", req: 1, v: "Draft", g: "▼" }], 0),
-        E.note("Approve and Return still fire on the deciding vote, as Templates 6b's approval modes define it. Only the target is now free.", 4, "small")
-      ] })
+        E.note("Approve and Return fire on the deciding action, as the stage's choice (Any one of them, All of them, Committee vote) decides. Only the target is now free.", 4, "small")
+      ], note: "Approve and Return fire on the deciding action, as the stage's choice (Any one of them, All of them, Committee vote) decides. Only the target is now free." })
     ], notes: [
-      { k: "Kind first.", v: "“How it moves” is the first field and never moves (artboard 10). A person shows the trigger kinds and the button label; Automatically hides both and asks only for the name history uses." },
+      { k: "Kind first.", v: "“How it moves” is the first field and never moves (artboard 10). A person shows the button label and who presses it (the stage's people); Automatically hides both and asks only for the name history uses." },
       { k: "Conditions on buttons.", v: "“Show this button only when” is optional and uses the shared builder. A hidden button is absent, not disabled, on the record." },
       { k: "Otherwise.", v: "Ticking Otherwise removes the condition (an otherwise exit has none) and the slot says why, so the form never looks broken." }
     ] };
@@ -513,23 +513,130 @@ class Component extends DCLogic {
       { k: "Who.", v: "Editing and publishing need Manage workflows, as today. Others see the published version read-only, with no draft." }
     ] };
 
+
+    // ---------- Round 4
+    const A4 = K(true);
+    const asTh = (ar) => [{ l: ar ? "النوع" : "Kind", w: 170 }, { l: ar ? "من" : "Who", w: "flex" }, { l: "", w: 40, end: 1 }];
+    const asRow = (kind, who, sub, ar, o) => { o = o || {}; return { tint: o.err ? "#FFFBFA" : null, c: [{ v: kind + " ▾", tone: "strong" }, { v: who, sub: sub || null, chips: o.chip ? [o.chip] : null, tone: o.err ? "danger" : null, wrapText: 1 }, { v: "", btns: [{ l: "✕", dots: 1, aria: (ar ? "إزالة " : "Remove ") + (o.n || "") }] }] }; };
+    const OR = (ar) => ({ group: ar ? "أو" : "or" });
+    const three = (ar) => [
+      asRow(ar ? "رئيس الوحدة" : "Org unit head", ar ? "إدارة الجودة" : "Quality Department", null, ar, { n: ar ? "الإسناد 1" : "assignee 1" }), OR(ar),
+      asRow(ar ? "منصب محدد" : "Fixed position", ar ? "قائد فريق · إدارة الجودة" : "Team Leader · Quality Department", ar ? "يشغله 3 أشخاص" : "Held by 3 people", ar, { n: ar ? "الإسناد 2" : "assignee 2" }), OR(ar),
+      asRow(ar ? "منصب محدد" : "Fixed position", ar ? "قائد فريق · وحدة سلامة المرضى" : "Team Leader · Patient Safety Unit", ar ? "يشغله شخصان" : "Held by 2 people", ar, { n: ar ? "الإسناد 3" : "assignee 3" })
+    ];
+    const readBack = (ar, turn) => ar ? (turn ? "أيٌّ منهم بالتناوب: " : "أيٌّ من: ") + "رئيس إدارة الجودة، أو شاغل منصب قائد فريق في إدارة الجودة، أو شاغل منصب قائد فريق في وحدة سلامة المرضى." : (turn ? "Any one of them, in turn: " : "Any one of: ") + "the head of Quality Department, or whoever holds Team Leader in Quality Department, or whoever holds Team Leader in Patient Safety Unit.";
+    const TURN_LINE = (ar) => ar ? "يُتخطّى من كان خارج المكتب. ويعود السجل المُعاد إلى هذه المرحلة إلى من تولّاه سابقًا. ومن ينضم حديثًا يأخذ دوره في آخر الترتيب." : "Anyone out of office is skipped. A record sent back to this stage returns to the person who handled it before. Someone new to the pool joins the end of the turn.";
+    const whoCard = (o) => { const ar = !!o.ar, X = ar ? A4 : E;
+      const b = [X.head(ar ? "من يعمل على هذه المرحلة" : "Who works this stage", null, 0), X.rows(asTh(ar), o.rows, 6), X.note(ar ? "+ إضافة آخر" : "+ Add another", 6, "info")];
+      if (o.mode) {
+        b.push(X.seg(ar ? "عند وجود أكثر من شخص" : "When there are several people", o.committee ? (ar ? ["أيٌّ منهم", "جميعهم", "تصويت اللجنة"] : ["Any one of them", "All of them", "Committee vote"]) : (ar ? ["أيٌّ منهم", "جميعهم"] : ["Any one of them", "All of them"]), o.mode, o.modeHelp || (o.mode === (ar ? "أيٌّ منهم" : "Any one of them") ? (ar ? "أول من يتصرف يقرر، وتُغلق مهام الآخرين." : "The first to act decides; the others' tasks close.") : ""), 12));
+        if (o.dist) b.push(X.seg(ar ? "طريقة توزيع السجلات الجديدة" : "How new records are given out", ar ? ["إرسال إلى الجميع", "التوزيع بالتناوب"] : ["Send to all of them", "Share in turn"], o.dist, o.turn ? TURN_LINE(ar) : (ar ? "يصل كل سجل جديد إلى كل من في المجموعة، وأول من يتصرف يقرر." : "Each new record goes to everyone in the pool, and the first to act decides."), 8));
+      }
+      if (o.read) b.push(X.banner("muted", o.read, null, 12));
+      (o.extra || []).forEach(x => b.push(x));
+      return card({ step: "Round 4", ar, w: o.w || 760, cap: o.cap, title: o.title, ctx: o.ctx, blocks: b, foot: [BTN(ar ? "إلغاء" : "Cancel", "text", ar), BTN(ar ? "حفظ المرحلة" : "Save stage", "primary", ar)], note: o.note || null }); };
+    const phoneWho = (ar) => { const X = ar ? A4 : E;
+      const pr = (kind, who, sub, n) => ({ c: [{ v: kind + " ▾", tone: "strong", sub: who + (sub ? " · " + sub : ""), wrapSub: 1 }, { v: "", w: 40, btns: [{ l: "✕", dots: 1, aria: (ar ? "إزالة " : "Remove ") + n }] }] });
+      const rows = ar ? [pr("رئيس الوحدة", "إدارة الجودة", null, "الإسناد 1"), OR(true), pr("منصب محدد", "قائد فريق · إدارة الجودة", "يشغله 3 أشخاص", "الإسناد 2"), OR(true), pr("منصب محدد", "قائد فريق · وحدة سلامة المرضى", "يشغله شخصان", "الإسناد 3")]
+        : [pr("Org unit head", "Quality Department", null, "assignee 1"), OR(false), pr("Fixed position", "Team Leader · Quality Department", "Held by 3 people", "assignee 2"), OR(false), pr("Fixed position", "Team Leader · Patient Safety Unit", "Held by 2 people", "assignee 3")];
+      return card({ step: "Round 4", ar, w: 390, cap: ar ? "التوزيع بالتناوب · هاتف 390 · العربية" : "Share in turn · phone 390", title: ar ? "قيد المراجعة" : "Under review", ctx: ar ? "مراجعة السياسات · المرحلة 2" : "Policy review · stage 2", blocks: [
+        X.head(ar ? "من يعمل على هذه المرحلة" : "Who works this stage", null, 0), X.rows(null, rows, 6), X.note(ar ? "+ إضافة آخر" : "+ Add another", 6, "info"),
+        X.seg(ar ? "عند وجود أكثر من شخص" : "When there are several people", ar ? ["أيٌّ منهم", "جميعهم"] : ["Any one of them", "All of them"], ar ? "أيٌّ منهم" : "Any one of them", ar ? "أول من يتصرف يقرر، وتُغلق مهام الآخرين." : "The first to act decides; the others' tasks close.", 12),
+        X.seg(ar ? "طريقة توزيع السجلات الجديدة" : "How new records are given out", ar ? ["إرسال إلى الجميع", "التوزيع بالتناوب"] : ["Send to all of them", "Share in turn"], ar ? "التوزيع بالتناوب" : "Share in turn", TURN_LINE(ar), 8),
+        X.banner("muted", readBack(ar, 1), null, 12)
+      ], foot: [BTN(ar ? "إلغاء" : "Cancel", "text", ar), BTN(ar ? "حفظ المرحلة" : "Save stage", "primary", ar)], note: ar ? null : "Below 768 px each row stacks its kind above its pickers, with ✕ at the row's end; the separators, both choices and the read-back wrap, nothing cut." }); };
+    const sec8 = { id: "w8", n: "8", title: "Stage editor · who works this stage", step: "Round 4", sub: "The stage editor's assignee field (Templates 6b) becomes a section: a list of assignees combined with “or”, how several people share the work, and a read-back sentence.", cards: [
+      whoCard({ cap: "One entry · Policy review · Under review", title: "Under review", ctx: "Policy review · stage 2", rows: [asRow("Fixed position", "Quality Manager · Quality Department", "Held by Omar Haddad", false, { n: "assignee 1" })], read: "Whoever holds Quality Manager in Quality Department.", note: "One entry that isn't a committee: no “When there are several people” choice, because one person is simply any one." }),
+      whoCard({ cap: "Three entries · Any one of them · Send to all of them", title: "Under review", ctx: "Policy review · stage 2", rows: three(false), mode: "Any one of them", dist: "Send to all of them", read: readBack(false) }),
+      whoCard({ cap: "Three entries · Share in turn", title: "Under review", ctx: "Policy review · stage 2", rows: three(false), mode: "Any one of them", dist: "Share in turn", turn: 1, read: readBack(false, 1) }),
+      whoCard({ ar: true, cap: "ثلاثة إسنادات · العربية", title: "قيد المراجعة", ctx: "مراجعة السياسات · المرحلة 2", rows: three(true), mode: "أيٌّ منهم", dist: "إرسال إلى الجميع", read: readBack(true) }),
+      whoCard({ ar: true, cap: "التوزيع بالتناوب · العربية", title: "قيد المراجعة", ctx: "مراجعة السياسات · المرحلة 2", rows: three(true), mode: "أيٌّ منهم", dist: "التوزيع بالتناوب", turn: 1, read: readBack(true, 1) }),
+      whoCard({ w: 560, cap: "One Committee entry · Committee vote", title: "Committee decision", ctx: "Policy review · stage 4", rows: [asRow("Committee", "Patient Safety Committee", "All members · no role filter", false, { n: "assignee 1" })], mode: "Committee vote", committee: 1, modeHelp: "The committee's members vote; the committee's own quorum and voting rules decide.", read: "The Patient Safety Committee decides by vote.", note: "“Committee vote” appears only when the list is exactly one Committee entry. “Share in turn” is hidden for All of them and Committee vote." }),
+      whoCard({ ar: true, w: 560, cap: "إسناد لجنة واحد · تصويت اللجنة · العربية", title: "قرار اللجنة", ctx: "مراجعة السياسات · المرحلة 4", rows: [asRow("لجنة", "لجنة سلامة المرضى", "جميع الأعضاء · دون تصفية حسب الدور", true, { n: "الإسناد 1" })], mode: "تصويت اللجنة", committee: 1, modeHelp: "يصوّت أعضاء اللجنة، ويحسم النصاب وقواعد التصويت الخاصة باللجنة.", read: "تقرر لجنة سلامة المرضى بالتصويت." }),
+      phoneWho(false), phoneWho(true),
+      whoCard({ cap: "The starting assignment · seeded", title: "Under review", ctx: "Policy review · stage 2", rows: [asRow("Specific user", "Layla Al-Harbi", null, false, { n: "assignee 1", chip: "Starting assignment" })], read: "Layla Al-Harbi.", extra: [E.note("Seeded workflows start here so every stage has someone. Replace it with the people who should do this work.", 8, "small")] }),
+      whoCard({ ar: true, cap: "الإسناد الأولي · العربية", title: "قيد المراجعة", ctx: "مراجعة السياسات · المرحلة 2", rows: [asRow("مستخدم محدد", "ليلى الحربي", null, true, { n: "الإسناد 1", chip: "إسناد أولي" })], read: "ليلى الحربي.", extra: [A4.note("تبدأ مسارات العمل المهيأة مسبقًا بهذا الإسناد حتى يكون لكل مرحلة من يعمل عليها. استبدله بمن ينبغي أن يقوم بهذا العمل.", 8, "small")] }),
+      card({ step: "Round 4", w: 760, cap: "Errors in their slots · Save pressed", title: "Under review", ctx: "Policy review · stage 2", blocks: [
+        E.head("Who works this stage", null, 0),
+        E.banner("danger", "A stage needs at least one assignee.", "Shown in the section's slot when the list is empty.", 6),
+        E.fields([{ l: "Kind", v: "Fixed position", g: "▼" }, { l: "Position", req: 1, v: "Choose a position", ph: 1, g: "▼", st: "error", help: "Choose a position.", tone: "error" }, { l: "In unit", req: 1, v: "Quality Department", g: "⌄" }], 10),
+        E.fields([{ l: "Kind", v: "Org unit head", g: "▼" }, { l: "Unit", req: 1, v: "Quality Department", g: "⌄", st: "error", help: "This entry is already in the list.", tone: "error" }], 10),
+        E.fields([{ l: "Kind", v: "Fixed position", g: "▼" }, { l: "Position", req: 1, v: "Infection Control Lead", g: "▼" }, { l: "In unit", req: 1, v: "Patient Safety Unit", g: "⌄", help: "Nobody holds this position in this unit yet.", tone: "warn" }], 10)
+      ], foot: [BTN("Cancel", "text"), BTN("Save stage", "primary")], note: "Each row carries its own slot; the empty-list message sits under the section. The existing “nobody holds this position” warning stays, per row, and doesn't block Save." })
+    ], notes: [
+      { k: "Only the stage says who.", v: "A record's work goes to the stage's people; transitions only name the move. One place to look when work goes to the wrong person, and one place to fix it." },
+      { k: "Kinds, in order.", v: "Specific user · Fixed position · Org unit head · Creator (Self) · Committee. Role-based is gone (ACC-136), and Round robin is now “Share in turn” under Any one of them." },
+      { k: "“Or” is the only join.", v: "Entries pool together; there is no “and” between them. “All of them” is the choice that asks everyone to act." },
+      { k: "The read-back.", v: "One sentence under the section says the whole setup in words, so an admin can check it without reading the pickers." }
+    ] };
+    const personCard = (ar) => { const X = ar ? A4 : E; return card({ step: "Round 4", ar, w: 700, cap: ar ? "شخص · مع «أظهر هذا الزر فقط عندما» · العربية" : "A person · with “Show this button only when”", title: ar ? "إرسال إلى المراجعة القانونية" : "Send to Legal review", ctx: ar ? "مراجعة السياسات · قيد المراجعة ← المراجعة القانونية" : "Policy review · Under review → Legal review", blocks: [
+      X.fields([{ l: ar ? "الاسم (الإنجليزية)" : "Name (English)", req: 1, v: "Send to Legal review" }, { l: ar ? "الاسم (العربية)" : "Name (Arabic)", opt: 1, v: "إرسال إلى المراجعة القانونية" }], 0),
+      X.fields([{ l: ar ? "من" : "From", v: ar ? "قيد المراجعة" : "Under review", st: "ro" }, { l: ar ? "إلى" : "To", req: 1, v: ar ? "المراجعة القانونية" : "Legal review", g: "▼" }, { l: ar ? "النوع" : "Kind", req: 1, v: ar ? "تقدّم" : "Advance", g: "▼" }], 12),
+      X.seg(ar ? "طريقة الانتقال" : "How it moves", ar ? ["شخص", "تلقائيًا"] : ["A person", "Automatically"], ar ? "شخص" : "A person", ar ? "يضغطه من يعمل على مرحلة «قيد المراجعة»." : "Pressed by whoever works Under review.", 12),
+      X.note(ar ? "«قيد المراجعة» رابط يفتح محرر تلك المرحلة." : "“Under review” is a link that opens that stage's editor.", 2, "small"),
+      X.head(ar ? "أظهر هذا الزر فقط عندما" : "Show this button only when", ar ? "اختياري" : "optional", 10),
+      X.cond({ lines: [{ f: ar ? "السرية" : "Confidentiality", o: ar ? "هي" : "is", v: ar ? "سري" : "Confidential", vg: "▼" }], count: ar ? "1 من 5 أسطر" : "1 of 5 lines", left: ar ? "يمكن إضافة 4 أخرى" : "4 more allowed", sentence: ar ? "عندما تكون السرية «سري»." : "When the confidentiality is Confidential." }, 8),
+      X.head(ar ? "إجراءات تلقائية" : "Automatic actions", null, 10), X.note(ar ? "إرسال إشعار إلى مالك المستند · تسجيل في سجل التدقيق" : "Notify the document's owner · Log in the audit trail", 4)
+    ], foot: [BTN(ar ? "إلغاء" : "Cancel", "text", ar), BTN(ar ? "حفظ الانتقال" : "Save transition", "primary", ar)] }); };
+    const sec9 = { id: "w9", n: "9", title: "Transition editor · no people", step: "Round 4", sub: "“Who may press it”, its trigger kinds and “Required permission” are removed everywhere. A transition keeps its names, from, to, kind, how it moves, its button condition and its automatic actions. The Automatically drawings in section 4 don't change.", cards: [personCard(false), personCard(true)], notes: [
+      { k: "Pressed by the stage's people.", v: "The read-only line names the from-stage as a link, so the answer to “who can press this” is one click away and never set in two places." },
+      { k: "No Required permission.", v: "Whoever works the stage can act on it. A stage's own narrowing (section 2) still decides what may be done to the record there." }
+    ] };
+    const CR = [["Submit for review", "إرسال للمراجعة", "Draft → Under review", "مسودة ← قيد المراجعة", "Advance", "تقدّم"], ["Submit again", "إعادة الإرسال", "Returned → Under review", "مُعاد ← قيد المراجعة", "Advance", "تقدّم"], ["Approve and apply", "اعتماد وتطبيق", "Under review → Approved", "قيد المراجعة ← معتمد", "Advance", "تقدّم"], ["Return for changes", "إعادة للتعديل", "Under review → Returned", "قيد المراجعة ← مُعاد", "Send back", "إعادة"], ["Reject", "رفض", "Under review → Rejected", "قيد المراجعة ← مرفوض", "End", "إنهاء"], ["Withdraw", "سحب", "Draft → Withdrawn", "مسودة ← مسحوب", "End", "إنهاء"], ["Withdraw", "سحب", "Under review → Withdrawn", "قيد المراجعة ← مسحوب", "End", "إنهاء"], ["Withdraw", "سحب", "Returned → Withdrawn", "مُعاد ← مسحوب", "End", "إنهاء"]];
+    const appRows = (ar) => CR.map(r => ({ c: [{ v: ar ? r[1] : r[0], tone: "strong", chips: [ar ? "يُنفّذها النظام" : "Done by the app"] }, { v: ar ? r[3] : r[2] }, { v: ar ? r[5] : r[4], tone: "muted" }] }));
+    const appTh = (ar) => [{ l: ar ? "الانتقال" : "Transition", w: "flex" }, { l: ar ? "من ← إلى" : "From → to", w: 230 }, { l: ar ? "النوع" : "Kind", w: 100 }];
+    const appOpen = (ar) => { const X = ar ? A4 : E; return card({ step: "Round 4", ar, w: 640, cap: ar ? "مفتوح · للاطلاع فقط · العربية" : "Opened · read only · Approve and apply", title: ar ? "اعتماد وتطبيق" : "Approve and apply", ctx: ar ? "طلب تغيير اللجنة · قيد المراجعة ← معتمد" : "Committee change request · Under review → Approved", blocks: [
+      X.banner("muted", ar ? "تُنفَّذ عند اعتماد طلب التغيير من تبويب «التغييرات» في سجل اللجنة." : "Runs when the change request is approved on the committee's Changes tab.", ar ? "ينفّذ النظام هذا الانتقال بنفسه، لذا لا يمكن تعديله هنا." : "The app runs this move itself, so it can't be changed here.", 0),
+      X.pairs([[ar ? "الاسم (الإنجليزية)" : "Name (English)", "Approve and apply", 1], [ar ? "الاسم (العربية)" : "Name (Arabic)", "اعتماد وتطبيق"]], 12),
+      X.pairs([[ar ? "من" : "From", ar ? "قيد المراجعة" : "Under review"], [ar ? "إلى" : "To", ar ? "معتمد" : "Approved"], [ar ? "النوع" : "Kind", ar ? "تقدّم" : "Advance"]], 10),
+      X.pairs([[ar ? "إجراءات تلقائية" : "Automatic actions", ar ? "إشعار مقدّم الطلب · تسجيل في سجل التدقيق" : "Notify the requester · Log in the audit trail"]], 10)
+    ], foot: [BTN(ar ? "إغلاق" : "Close", "secondary", ar)] }); };
+    const sec10 = { id: "w10", n: "10", title: "Transitions the app runs", step: "Round 4", sub: "Shown in Templates 6b's transitions list so the whole flow is visible, but never editable: a chip, no Edit button, no ⋯ menu, and a read-only panel on click.", cards: [
+      card({ step: "Round 4", w: 760, cap: "Transitions list · Committee change request · all 8 seeded", blocks: [E.rows(appTh(false), appRows(false), 0)], note: "“Done by the app” is its own chip and has no edit at all. A tenant's automatic exit (⚙, section 5) is different: editable, with a condition." }),
+      card({ step: "Round 4", ar: true, w: 760, cap: "قائمة الانتقالات · العربية", blocks: [A4.rows(appTh(true), appRows(true), 0)] }),
+      appOpen(false), appOpen(true)
+    ], notes: [
+      { k: "Why show them at all.", v: "An admin reading the flow needs to see every move a record can make, including the ones a module makes itself. Hiding them would make the strip lie." },
+      { k: "Why they can't be edited.", v: "The module's own screen (the committee's Changes tab) is where these happen; editing the move here would break that screen." }
+    ] };
+    const shRow = (wf, st, ar, perm) => ({ c: [{ v: ar ? "● معرّض للخطر" : "● At risk", tone: "warn", small: 1 }, { v: ar ? "مرحلة في مسار العمل ما زالت على الإسناد الأولي" : "Workflow stage still on its starting assignment", sub: (ar ? "مسار العمل: " + wf + " · المرحلة: " + st + " · يذهب عملها إلى ليلى الحربي إلى أن يُستبدل هذا الإسناد." : "Workflow: " + wf + " · Stage: " + st + " · Its work goes to Layla Al-Harbi until someone replaces this assignment."), wrapSub: 1 }, perm === false ? { v: ar ? "الإصلاح يتطلب صلاحية إدارة مسارات العمل." : "Fixing this needs permission to manage workflows.", small: 1, tone: "muted", wrapText: 1 } : { v: "", btns: [{ l: ar ? "مراجعة المرحلة" : "Review stage" }, { l: ar ? "الإبقاء على هذا الإسناد" : "Keep this assignment" }] }] });
+    const shTh = (ar) => [{ l: ar ? "الخطورة" : "Severity", w: 110 }, { l: ar ? "الحالة" : "Condition", w: "flex" }, { l: "", w: 330, end: 1 }];
+    const shList = (ar, perm) => [{ group: ar ? "مراجعة السياسات · 4 مراحل" : "Policy review · 4 stages" }].concat((ar ? ["قيد المراجعة", "المراجعة القانونية", "مراجعة الجودة", "مراجعة القسم"] : ["Under review", "Legal review", "Quality review", "Department review"]).map(x => shRow(ar ? "مراجعة السياسات" : "Policy review", x, ar, perm)), [{ group: ar ? "دورة حياة فريق العمل · مرحلتان" : "Task force lifecycle · 2 stages" }], (ar ? ["التشكيل", "نشط"] : ["Formation", "Active"]).map(x => shRow(ar ? "دورة حياة فريق العمل" : "Task force lifecycle", x, ar, perm)));
+    const keep = (ar) => card({ step: "Round 4", ar, dialog: 1, w: 420, cap: ar ? "الإبقاء · العربية" : "Keep · Confirm 420", title: ar ? "الإبقاء على ليلى الحربي في «قيد المراجعة»؟" : "Keep Layla Al-Harbi on Under review?", blocks: [(ar ? A4 : E).note(ar ? "ستتوقف «سلامة الإعداد» عن التنبيه إليها." : "Setup health will stop flagging it.", 0)], foot: [BTN(ar ? "إلغاء" : "Cancel", "text", ar), BTN(ar ? "إبقاء" : "Keep", "primary", ar)], note: ar ? null : "Body: one line, 21 EN / 24 AR of 420. Keep removes the “Starting assignment” chip and closes the condition." });
+    const sec11 = { id: "w11", n: "11", title: "Setup health · stages on their starting assignment", step: "Round 4", sub: "One new condition on the built Setup health page, grouped by workflow as the existing list groups. The list itself is as accepted.", cards: [
+      card({ step: "Round 4", w: 1000, cap: "6 stages across 2 workflows · Manage workflows", blocks: [E.rows(shTh(false), shList(false), 0)] }),
+      card({ step: "Round 4", ar: true, w: 1000, cap: "العربية", blocks: [A4.rows(shTh(true), shList(true), 0)] }),
+      keep(false), keep(true),
+      card({ step: "Round 4", w: 1000, cap: "Without permission to manage workflows", blocks: [E.rows(shTh(false), shList(false, false).slice(0, 3), 0)], note: "The built line replaces the actions; the condition still shows." })
+    ], notes: [{ k: "At risk, not Blocks work.", v: "Work still reaches someone, the organization's administrator. The risk is that it piles up with one person." }, { k: "Keep is a real answer.", v: "A small organization may want the administrator on a stage. Keeping it closes the condition and removes the chip, and the choice is recorded." }] };
+    const NOTI = [
+      ["Your task “Review the policy” is closed. Omar Haddad approved Infection Control Policy, so it moved to Legal review.", "أُغلقت مهمتك «مراجعة السياسة»: انتقلت «سياسة مكافحة العدوى» إلى «المراجعة القانونية» باعتماد من عمر حداد."],
+      ["Your task “Review the policy” is closed. Infection Control Policy was sent back to Draft by Omar Haddad.", "أُغلقت مهمتك «مراجعة السياسة»: أُعيدت «سياسة مكافحة العدوى» إلى «المسودة» بقرار من عمر حداد."],
+      ["Your task “Review the policy” is closed. Infection Control Policy was ended (Reject) by Omar Haddad.", "أُغلقت مهمتك «مراجعة السياسة»: أُنهيت «سياسة مكافحة العدوى» («رفض») بقرار من عمر حداد."]
+    ];
+    const notiCard = (ar, phone) => card({ step: "Round 4", ar, w: phone ? 390 : 520, cap: (ar ? "قائمة الإشعارات · " : "Notification list · ") + (phone ? (ar ? "هاتف 390" : "phone 390") : (ar ? "سطح المكتب" : "desktop")), blocks: [(ar ? A4 : E).rows(null, NOTI.map((n, i) => ({ c: [{ v: ar ? n[1] : n[0], sub: ["27 Oct 2026, 10:42", "27 Oct 2026, 09:15", "26 Oct 2026, 16:03"][i], wrapText: 1 }, { v: "", w: phone ? 92 : 120, btns: [{ l: ar ? "فتح السجل" : "Open record" }] }] })), 0)] });
+    const sec12 = { id: "w12", n: "12", title: "“Your task was closed” notification", step: "Round 4", sub: "In the built in-app notification list, no email. When one person in a pool acts, or a Send back or End closes open tasks, the others are told and their tasks close.", cards: [notiCard(false), notiCard(true), notiCard(false, true), notiCard(true, true)], notes: [{ k: "Gender-neutral Arabic.", v: "Each Arabic line is built so no verb or pronoun agrees with the reader or the actor: passive «أُغلقت مهمتك», and the actor after «باعتماد من» or «بقرار من»." }, { k: "Absences.", v: "A person who is out of office is still covered by the stage's acting user. A stuck record is fixed by reassigning the stage, never through a transition." }] };
     return {
       decisions: [
         { step: "Step 1", t: "A stage can only narrow", b: "Each stage lists the record type's actions with an Allowed tick; a person needs both the stage and their role. Seeded: Edit details in Formation only." },
         { step: "Step 1", t: "Meanings, not names", b: "Dissolving, Applies the approved change and Record is in force are ticks on a stage. Only Applies the approved change is exactly-one, checked on Save, naming the other stage." },
         { step: "Step 2", t: "One condition builder", b: "Field · operator · value lines, all must hold, at most 5, a live sentence underneath, stale values block saving. Used by rules, buttons and automatic exits." },
-        { step: "Step 2", t: "“How it moves” comes first", b: "A person or Automatically. System automatic and Role-based go; Position in a unit replaces Role-based." },
+        { step: "Step 2", t: "“How it moves” comes first", b: "A person or Automatically. A person's button is pressed by whoever works the stage; transitions name no people (round 4)." },
         { step: "Step 2", t: "Automatic exits, in order, with Otherwise last", b: "Checked once mandatory tasks are done. The first match moves the record. A missing or second Otherwise is refused. Ten moves in a row stops the record." },
         { step: "Step 2", t: "The strip fans out", b: "Still generated: a stage with automatic exits becomes a fan of rows. Dashed ⚙ for automatic, solid 👤 for a person." },
         { step: "Step 2", t: "First matching workflow wins", b: "The list is grouped by record type, in the order rules are tried, with the default pinned last." },
         { step: "Step 2", t: "Drafts and versions", b: "Edits go to a draft; Publish makes a version for new records; running records finish on theirs." }
       ].map(d => Object.assign(d, { stepStyle: stepChip(d.step) })),
-      sections: [sec1, sec2, sec3, sec4, sec5, sec6, sec7].map(s => Object.assign(s, { stepStyle: stepChip(s.step) })),
+      sections: [sec1, sec2, sec3, sec4, sec5, sec6, sec7, sec8, sec9, sec10, sec11, sec12].map(s => Object.assign(s, { stepStyle: stepChip(s.step) })),
       measures: [
         { d: "New workflow · Copy from", s: "560 · form", en: "352", ar: "372" }, { d: "New workflow · Start blank", s: "560 · form", en: "315", ar: "336" },
         { d: "Publish version 4", s: "420 · confirm", en: "94", ar: "104" }, { d: "Discard draft", s: "420 · confirm", en: "94", ar: "104" }
       ],
       questions: [
+        { n: "Q10 · Decided", q: "“All of them” when someone in the pool leaves the organization or is deactivated mid-stage.", opts: ["Their share drops out and the others still decide (recommended): no record waits on someone who can't act.", "The stage waits until the stage is reassigned: stricter, but records stall."], rec: "Decided: someone who leaves or is deactivated mid-stage drops out of “All of them”, and the stage history records it." },
+        { n: "Q11 · Decided", q: "Share in turn when the next person is out of office and has no acting user.", opts: ["Skip to the next person (drawn): work keeps moving.", "Send to everyone in the pool for that record only: nothing is missed, but it isn't a turn."], rec: "Decided: Share in turn skips a person who is out of office with no acting user." },
+        { n: "Q12 · Decided", q: "Does “Keep this assignment” need a reason?", opts: ["No (drawn): the confirm is enough, and the choice is recorded.", "Yes, a short reason: better audit trail, one more field."], rec: "Decided: “Keep this assignment” needs no reason." },
+        { n: "Q13 · Decided", q: "Should the record page say who works its current stage?", opts: ["Yes, a line in the stage indicator (“With: Quality Manager, Quality Department”): answers “who has this?” without opening tasks.", "No: the tasks panel already shows assignees."], rec: "Decided: the record page will say who works its current stage, later. Not drawn now." },
         { n: "Q1", q: "The maximum number of lines in one condition.", opts: ["5 (drawn): covers every field today with room for “is not”, and the sentence stays readable.", "10: room for future record types with more fields; longer sentences, longer refusals."], rec: "Decided: as recommended (5, raised per record type when one needs more.)" },
         { n: "Q2", q: "Should a record's page show which workflow version it runs on?", opts: ["Yes, as a line in the Stage history panel (“Committee lifecycle · version 3”): no new panel, and it explains why two committees behave differently.", "No: only the workflow record knows."], rec: "Decided: as recommended (yes, in Stage history.)" },
         { n: "Q3", q: "Does the flow strip still work with branching, or should the drawn flow editor come sooner?", opts: ["Keep the strip (drawn): it reads at 8 stages with 3 branches; deeper branches collapse.", "Bring the flow editor forward: better for complex flows, a large build."], rec: "Decided: as recommended (keep the strip; revisit when a tenant needs branches inside branches.)" },
@@ -541,13 +648,22 @@ class Component extends DCLogic {
         { n: "Q9", q: "Should the stage permissions apply to members actions while a change request is open?", opts: ["Independent (drawn): members stay outside change requests, as the Committee Changes rules say.", "Block member changes while a request is open."], rec: "Decided earlier: members stay outside change requests." }
       ],
       changes: [
+        { step: "Round 4", s: "Workflow setup · round 5", w: "Leftover role and “who may press” wording removed; the approval-outcomes example moved to Policy review · Any one of them; Arabic committee case and phone Share in turn added to section 8; Q10–Q13 decided." },
+        { step: "Round 4", s: "Templates 6b · stage editor's assignee field", w: "Round 4: replaced by the “Who works this stage” section (section 8): a list of assignees combined with “or”, and a read-back sentence." },
+        { step: "Round 4", s: "Templates 6b · approval modes", w: "Single, Sequential, Parallel (All / Majority / Any) and Committee vote become Any one of them, All of them, and Committee vote for a single Committee entry." },
+        { step: "Round 4", s: "Templates 6b · Round robin assignee kind", w: "Becomes “Share in turn” under Any one of them; Role-based is removed from the kinds." },
+        { step: "Round 4", s: "Templates 6b · transition editor", w: "“Who can trigger” and “Required permission” are removed; a person's button is pressed by whoever works the from-stage (section 9)." },
+        { step: "Round 4", s: "Workflow Setup · round 1 trigger kinds", w: "“Specific user · Position in a unit · Anyone signed in · Assignee pool” and the Step 2 “who may press it” fields are removed; section 4's A person card now reads “Pressed by whoever works Under review”." },
+        { step: "Round 4", s: "Templates 6b · transitions list", w: "Rows the app runs show “Done by the app”, no Edit and no ⋯, and open read-only (section 10)." },
+        { step: "Round 4", s: "Setup health", w: "A new At risk condition, “Workflow stage still on its starting assignment”, with Review stage and Keep this assignment (section 11)." },
+        { step: "Round 4", s: "Notifications", w: "A new in-app notification, “Your task … is closed”, in three wordings (section 12)." },
         { s: "Workflow setup · round 3", w: "Dissolving is any number of stages; Record is in force line; section 2 drawn as the built seed (Dissolved allows nothing, the changed example on Dissolution pending); the stages list with meaning chips and “Allows n of 5”; the protected change-request workflow read only." },
         { step: "Step 1", s: "Roles · permission sentence", w: "Edit details and Request a change pair with “Edit a committee's details and request changes”, which rewords today's sentence that mentions Formation." },
         { step: "Both", s: "Workflow setup · round 2", w: "Per-action member permissions, member actions in all six stages, the change example on Dissolved, people named instead of roles, 24 live records, rules outside the draft with their own Save, New workflow record type first and its no-rule refusal, the Arabic strip completed, Arabic wording, the Step 1 strip caption, answers recorded." },
         { step: "Step 1", s: "Templates 6b · stage editor", w: "Two new sections below the identity row: “What can be done to the record here” and “What this stage means”." },
         { step: "Step 1", s: "Templates 6b · save refusals", w: "New refusals: an exactly-one meaning on two stages, or missing; worded in the row's slot and a banner naming the other stage." },
         { step: "Step 1", s: "Workflow history", w: "Saved stage-permission and meaning changes appear as “action: before → after in stage, by, date” rows." },
-        { step: "Step 2", s: "Templates 6b · transition editor", w: "First field “How it moves” (A person · Automatically). System automatic is removed as a trigger kind; Role-based becomes Position in a unit (ACC-136). New optional “Show this button only when” condition; Automatically adds “Name in history” and Otherwise." },
+        { step: "Step 2", s: "Templates 6b · transition editor", w: "First field “How it moves” (A person · Automatically). Who can trigger and Required permission are removed (round 4). New optional “Show this button only when” condition; Automatically adds “Name in history” and Otherwise." },
         { step: "Step 2", s: "Templates 6b · approval outcomes", w: "Approve may point at any stage of the workflow, not only the next." },
         { step: "Step 2", s: "Templates 6b · expanded stage row", w: "A third list, Automatic exits, beside Transitions and Tasks on entry (Stage Tasks), in check order with Otherwise fixed last. New save refusals for a missing or second Otherwise." },
         { step: "Step 2", s: "Templates 6b · flow strip", w: "Stages with automatic exits fan out; dashed ⚙ connectors with the condition's short form, solid 👤 for buttons, conditions shown on conditional buttons." },
