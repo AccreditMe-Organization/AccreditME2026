@@ -37,6 +37,7 @@ import { RoleService } from '../roles/role.service';
 import { TaskService } from '../task/task.service';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
+import { StagePoolService } from '../workflow/stage-pool.service';
 
 const TENANT_ID = 'org-a';
 const CALLER_ID = 'user-caller';
@@ -61,6 +62,8 @@ describe("A user's roles are gated by that user's own visibility (ACC-101)", () 
       controllers: [UserController],
       providers: [
         UserService,
+        // ACC-271 — real: it runs only for converted workflow stages.
+        StagePoolService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: { log: jest.fn() } },
         { provide: NotificationService, useValue: { create: jest.fn() } },

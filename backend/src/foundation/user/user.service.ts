@@ -38,6 +38,7 @@ import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 // same TenantModule/OrganizationModule graph. Verified via a real
 // start:dev boot, not just tsc/jest.
 import { OrgPositionService } from '../org-position/org-position.service';
+import { StagePoolService } from '../workflow/stage-pool.service';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
@@ -171,6 +172,8 @@ export class UserService {
     // needed at the constructor-injection level — only the module-level
     // import edge above needs it.
     private readonly orgPositionService: OrgPositionService,
+    // ACC-271 — the stage pools a departing person leaves (decision 7).
+    private readonly stagePool: StagePoolService,
   ) {}
 
   // ACC-78 — counts per status for the list's filter chips.
@@ -1445,14 +1448,21 @@ export class UserService {
       : [];
 
 
+    // ACC-271 decision 7 — the open entries of converted stages whose pool
+    // holds this person, read while they are still ACTIVE (afterwards no pool
+    // contains them). Batched: one query per assignee kind for all of them.
+    const leftPoolEntryIds = await this.stagePool.openEntriesWithMember(organizationId, id);
+
     // ACC-120 — the flip and the invariant commit or roll back together. The
     // side effects below stay OUTSIDE the transaction, matching this file's own
     // convention (2.6.h): a refused deactivation must not have invalidated the
     // person's sessions or moved their tasks on the way to being refused.
+    // ACC-271 — the "left the stage's pool" events commit with the flip.
     await this.prisma.$transaction(async (tx) => {
       const baseline = await captureAdministratorBaseline(organizationId, tx);
       await tx.user.update({ where: { id }, data: { status: 'INACTIVE' } });
       await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
+      await this.stagePool.recordPoolMemberLeftInTx(tx, organizationId, leftPoolEntryIds, id, 'DEACTIVATED');
     });
 
     await this.authProvider.invalidateUserSessions(id);

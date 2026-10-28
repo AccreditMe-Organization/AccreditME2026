@@ -7,6 +7,7 @@ import { OrganizationModule } from '../organization/organization.module';
 import { OrgPositionModule } from '../org-position/org-position.module';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
+import { StagePoolModule } from '../workflow/stage-pool.module';
 
 // TaskModule closes a transitive cycle the same shape as Step 8's own
 // TaskModule -> forwardRef TenantModule edge (UserModule -> forwardRef
@@ -41,6 +42,9 @@ import { UserService } from './user.service';
     // here too, same discipline as every other edge in this codebase
     // touching that graph. Verified via a real start:dev boot.
     forwardRef(() => OrgPositionModule),
+    // ACC-271 — deactivation records the stage pools a person leaves.
+    // StagePoolModule depends on Prisma alone, so this edge closes no cycle.
+    StagePoolModule,
   ],
   controllers: [UserController],
   providers: [UserService],
