@@ -22,7 +22,8 @@ import ar from '../../../../../assets/i18n/ar.json';
 // bottom of the screen in place of the header's controls.
 //
 // The host box stands in for the app shell's <main>: a sized box that scrolls,
-// with the page inside it. The viewport is Karma's iframe, narrowed for the
+// padded as the shell pads it (`p-4`, 16px), with the page inside it. The
+// padding matters: Chrome measures a sticky top from inside it. The viewport is Karma's iframe, narrowed for the
 // phone widths, so the 768px breakpoint applies as it does on a phone.
 
 const SENTENCES = (en as { roles: { matrix: { sentence: Record<string, string> } } }).roles.matrix.sentence;
@@ -36,7 +37,7 @@ const CATALOGUE = Object.keys(SENTENCES).map(perm);
   selector: 'am-test-main',
   standalone: true,
   imports: [RolePermissionMatrixComponent],
-  template: `<div data-main [style.width.px]="width()" [style.height.px]="height()" style="overflow:auto;box-sizing:border-box">
+  template: `<div data-main [style.width.px]="width()" [style.height.px]="height()" style="overflow:auto;box-sizing:border-box;padding:1rem">
     <app-role-permission-matrix />
   </div>`,
 })
@@ -166,6 +167,13 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
         expect(Math.round(box(head).top)).withContext('heading at the top of <main>').toBe(Math.round(box(main).top));
         const firstRow = committees.querySelector<HTMLElement>('[data-pm-row]')!;
         expect(box(firstRow).top).withContext('rows scroll under it').toBeLessThan(box(head).top);
+        // No row shows through above the heading, inside <main>'s padding.
+        const peeking = Array.from(committees.querySelectorAll<HTMLElement>('[data-pm-row]')).filter((r) => {
+          // The part of the row between the top of <main> and the top of the heading.
+          const b = box(r);
+          return Math.min(b.bottom, box(head).top) - Math.max(b.top, box(main).top) > 1;
+        });
+        expect(peeking.map((r) => r.getAttribute('data-pm-row'))).withContext('rows showing above the heading').toEqual([]);
         // Its box stays in reach.
         const modBox = head.querySelector<HTMLElement>('[data-pm-module-box]')!;
         expect(box(modBox).top).toBeGreaterThanOrEqual(box(main).top);

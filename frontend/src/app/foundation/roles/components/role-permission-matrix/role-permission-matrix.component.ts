@@ -108,8 +108,10 @@ interface ModuleView {
  *
  * ## The layout
  *
- * The page scrolls in <main>; each module heading is `position: sticky; top:
- * 0`, so its box stays in reach while its rows scroll. Below 768px it is one
+ * The page scrolls in <main>; each module heading is sticky, so its box stays
+ * in reach while its rows scroll. Its `top` is minus the shell's padding on
+ * <main> (`p-4`, 16px): Chrome measures a sticky top from inside that
+ * padding, and at 0 the rows showed through a 16px strip above the heading. Below 768px it is one
  * column, sentences wrap, and the header's save controls move to a bar fixed
  * at the bottom of the screen.
  *
@@ -375,7 +377,7 @@ interface ModuleView {
   styles: [
     `
       .pm-mod{border:1px solid var(--am-border);border-radius:var(--am-radius-card);background:var(--am-surface-raised);padding-block-end:var(--am-space-4)}
-      .pm-head{position:sticky;top:0;z-index:1;display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--am-space-6) var(--am-space-12);padding:var(--am-space-12) var(--am-space-16);background:var(--am-surface-raised);border-radius:var(--am-radius-card)}
+      .pm-head{position:sticky;top:calc(var(--am-space-16) * -1);z-index:1;display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--am-space-6) var(--am-space-12);padding:var(--am-space-12) var(--am-space-16);background:var(--am-surface-raised);border-radius:var(--am-radius-card)}
       .pm-head--open{border-end-start-radius:0;border-end-end-radius:0;border-block-end:1px solid var(--am-border)}
       .pm-group,.pm-row{display:flex;align-items:flex-start;gap:var(--am-space-4) var(--am-space-12);padding:var(--am-space-8) var(--am-space-16);padding-inline-start:var(--am-space-24)}
       .pm-group{border-block-start:1px solid var(--am-row-rule)}
