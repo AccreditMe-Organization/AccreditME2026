@@ -14,7 +14,9 @@
  * WHAT IT CHANGES, per non-platform organisation, on every stage with no
  * whoMode yet (whoFromLegacy() is the mapping, in one place):
  *   - the stage's whoMode, and its entries: SELF → Creator, ORG_UNIT_HEAD → the
- *     head of the record's unit, a set user / position / committee → itself,
+ *     head of the record's unit where the record type has a unit route
+ *     (RECORD_ROUTES), else the starting assignment as for a new organisation
+ *     (Ahmad, 29 Oct), a set user / position / committee → itself,
  *     ROLE and ROUND_ROBIN → the tenant admin's starting assignment (the
  *     organisation's earliest-assigned ACTIVE TENANT_ADMIN holder);
  *   - the forward move of a stage now decided by All of them or Committee vote
@@ -37,6 +39,7 @@ import 'dotenv/config';
 import { PrismaService } from '../src/prisma/prisma.service';
 import type { StageAssigneeKind, StageWhoMode } from '../generated/prisma/client';
 import { decidesTogether, whoFromLegacy, type WhoEntryDraft } from '../src/foundation/workflow/workflow-who';
+import { RECORD_ROUTES } from '../src/foundation/workflow/stage-task-record-routes';
 import { HOSPITAL_FIXTURE } from './seed/fixtures/hospital.fixture';
 import { UNIVERSITY_FIXTURE } from './seed/fixtures/university.fixture';
 
@@ -66,11 +69,15 @@ const zeroEntries = (): Record<StageAssigneeKind, number> => ({
   COMMITTEE: 0,
 });
 
-/** Plan §6.4: both fixture organisations, measured 28 Oct. */
+/**
+ * Plan §6.4: both fixture organisations, measured 28 Oct. The 2 Org unit head
+ * stages (Unit Manager Review, on document requests and change requests) have
+ * no unit route, so they start on the tenant admin with the 46 Role stages.
+ */
 const SECTION_6_4: StageCounts = {
   stages: 60,
-  startingAssignments: 46,
-  entries: { ...zeroEntries(), CREATOR: 12, ORG_UNIT_HEAD: 2 },
+  startingAssignments: 48,
+  entries: { ...zeroEntries(), CREATOR: 12 },
   modes: { ANY_ONE: 56, ALL: 4, COMMITTEE_VOTE: 0 },
   approvalPathMarks: 0,
   approvalsReset: 0,
@@ -123,6 +130,7 @@ export async function planOrganization(db: Db, organizationId: string): Promise<
       select: {
         id: true,
         workflowTemplateId: true,
+        workflowTemplate: { select: { objectType: true } },
         nameEn: true,
         assigneeStrategy: true,
         approvalMode: true,
@@ -155,7 +163,7 @@ export async function planOrganization(db: Db, organizationId: string): Promise<
     tasksCancelled: 0,
   };
   const stages: StagePlan[] = rows.map((row) => {
-    const who = whoFromLegacy(row);
+    const who = whoFromLegacy(row, RECORD_ROUTES[row.workflowTemplate.objectType] !== undefined);
     let markApprovalPath: string | null = null;
     if (decidesTogether(who.whoMode) && !row.transitionsFrom.some((t) => t.isApprovalPath)) {
       if (row.transitionsFrom.length === 1) markApprovalPath = row.transitionsFrom[0]!.id;

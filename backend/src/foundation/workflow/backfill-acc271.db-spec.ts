@@ -120,11 +120,10 @@ describe('backfill:acc271-stage-assignees and -transition-movers, on a real data
       expect(first.changed).toEqual([{ slug: o.slug, counts: SECTION_6_4 }]);
       const entries = await prisma.workflowStageAssignee.findMany({ where: { organizationId: o.id } });
       const byKind = (kind: string) => entries.filter((e) => e.kind === kind);
-      expect(byKind('SPECIFIC_USER')).toHaveLength(46);
+      expect(byKind('SPECIFIC_USER')).toHaveLength(48);
       expect(byKind('SPECIFIC_USER').every((e) => e.userId === o.adminId && e.isStartingAssignment && e.order === 1)).toBe(true);
       expect(byKind('CREATOR')).toHaveLength(12);
-      expect(byKind('ORG_UNIT_HEAD')).toHaveLength(2);
-      expect(byKind('ORG_UNIT_HEAD').every((e) => e.orgUnitId === null && !e.isStartingAssignment)).toBe(true);
+      expect(byKind('ORG_UNIT_HEAD')).toHaveLength(0);
       expect(entries).toHaveLength(60);
       expect(await prisma.workflowStage.count({ where: { ...stagesScope(o), whoMode: 'ANY_ONE' } })).toBe(56);
       expect(await prisma.workflowStage.count({ where: { ...stagesScope(o), whoMode: 'ALL' } })).toBe(4);
@@ -140,6 +139,41 @@ describe('backfill:acc271-stage-assignees and -transition-movers, on a real data
       expect(executedAgain.changed).toEqual([]);
       expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id } })).toBe(60);
       expect(await audits(o.id, STAGES_SCRIPT)).toBe(1);
+    });
+
+    // Ahmad, 29 Oct — an Org unit head stage becomes "the head of the record's
+    // unit" only where the record type can name its unit (RECORD_ROUTES);
+    // elsewhere it starts on the tenant admin, as the seed gives a new one.
+    describe("Org unit head stages", () => {
+      it("on a record type with no unit route (document requests): the tenant admin's starting assignment", async () => {
+        const o = await legacyOrg();
+        const unitManager = await prisma.workflowStage.findFirstOrThrow({
+          where: { nameEn: 'Unit Manager Review', workflowTemplate: { organizationId: o.id, objectType: 'DOCUMENT_REQUEST' } },
+        });
+        expect(unitManager.assigneeStrategy).toBe('ORG_UNIT_HEAD');
+
+        await runStages(prisma, { execute: true, organizationIds: [o.id], isFixture, expected: expectFor(o) });
+
+        const entries = await prisma.workflowStageAssignee.findMany({ where: { stageId: unitManager.id } });
+        expect(entries.map((e) => [e.kind, e.userId, e.isStartingAssignment])).toEqual([['SPECIFIC_USER', o.adminId, true]]);
+      });
+
+      it("on a record type with a unit route (committees): the head of the record's unit", async () => {
+        const o = await legacyOrg();
+        const terms = (await stageAt(o, 'COMMITTEE', 'terms_review'))!;
+        await prisma.workflowStage.update({ where: { id: terms.id }, data: { assigneeStrategy: 'ORG_UNIT_HEAD', assigneeRoleId: null } });
+
+        const result = await runStages(prisma, {
+          execute: true,
+          organizationIds: [o.id],
+          isFixture,
+          expected: expectFor(o, { ...SECTION_6_4, startingAssignments: 47, entries: { ...SECTION_6_4.entries, ORG_UNIT_HEAD: 1 } }),
+        });
+
+        expect(result.refused).toEqual([]);
+        const entries = await prisma.workflowStageAssignee.findMany({ where: { stageId: terms.id } });
+        expect(entries.map((e) => [e.kind, e.orgUnitId, e.isStartingAssignment])).toEqual([['ORG_UNIT_HEAD', null, false]]);
+      });
     });
 
     it('starts the stages on the earliest-assigned ACTIVE tenant admin: an earlier INVITED or INACTIVE one does not count', async () => {

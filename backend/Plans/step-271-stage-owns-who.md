@@ -447,11 +447,16 @@ counts are these numbers per organisation, and anything else refuses.
 
 **What each backfill therefore expects, per organisation:**
 
-- **Stages** (`backfill-acc271-stage-assignees`): 60 stages converted; 46
-  starting assignments (the ROLE stages), 12 CREATOR entries, 2 ORG_UNIT_HEAD
-  entries for the record's unit; 56 Any one of them and 4 All of them; 0
-  approval-path marks (the 4 are already marked); 0 approvals reset and 0
-  tasks cancelled.
+- **Stages** (`backfill-acc271-stage-assignees`): 60 stages converted; 48
+  starting assignments (the 46 ROLE stages and the 2 ORG_UNIT_HEAD ones), 12
+  CREATOR entries, 0 "head of the record's unit" entries; 56 Any one of them
+  and 4 All of them; 0 approval-path marks (the 4 are already marked); 0
+  approvals reset and 0 tasks cancelled. **Changed 29 Oct (Ahmad):** an Org
+  unit head stage becomes "the head of the record's unit" only where its
+  record type has a unit route in `RECORD_ROUTES`; the two here (Unit Manager
+  Review, on document requests and change requests) have none, so they start
+  on the tenant admin, exactly as the seed gives a new organisation. It was
+  46 / 12 / 2 before.
 - **Transitions** (`backfill-acc271-transition-movers`): 75 marked, 8 APP and
   67 PERSON; 65 of the PERSON moves carry a permission, listed by key.
 
@@ -674,13 +679,14 @@ counts as their expected ones. SYSTEM-REFERENCE §2.19.
 
 **Departures, each Ahmad's to overrule:**
 
-1. **Org unit head differs between a new and an existing organisation, as
-   instructed.** The seed starts the two Org unit head stages (Document request
-   and Change request "Unit Manager Review") on the tenant admin (item 1); the
-   backfill turns them into "the head of the record's unit" (item 3). Neither
-   record type has a `RECORD_ROUTES` entry yet, so on an existing
-   organisation those two stages resolve to nobody, and are flagged
-   unassigned, until Documents add their route. No such records exist.
+1. **Org unit head (settled 29 Oct, Ahmad): "the head of the record's unit"
+   only where the record type has a unit route.** On a record type with none
+   (today the two Unit Manager Review stages, on document requests and change
+   requests) the backfill gives the tenant admin's starting assignment, as the
+   seed does for a new organisation. So an existing organisation now ends
+   exactly where a new one starts: the seed spec checks the mapping against
+   all 60 seeded stages with no exception. A record type that gains a unit
+   route later keeps its Org unit head stages as "the record's unit".
 2. **The seed writes each move's `mover` too** (not asked for in item 1), by
    the same rule as the backfill, so a new organisation is consistent from the
    start.

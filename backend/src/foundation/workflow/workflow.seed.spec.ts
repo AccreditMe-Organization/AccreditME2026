@@ -1,5 +1,6 @@
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import { moverForTrigger, whoFromLegacy, decidesTogether } from './workflow-who';
+import { RECORD_ROUTES } from './stage-task-record-routes';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 
 // ACC-271 PR 2 (plan §5) — who works each seeded stage, pinned stage by stage.
@@ -78,13 +79,14 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
   });
 
   // The backfill's mapping applied to the seed's own old columns gives the
-  // seed's `who` — with one stated exception: an Org unit head stage becomes
-  // "the head of the record's unit" for an EXISTING organisation (Ahmad, 28 Oct,
-  // PR 2 item 3), while a NEW one starts it on the tenant admin (item 1).
-  it('agrees with the backfill mapping, except Org unit head stages', () => {
+  // seed's `who`, stage for stage: an existing organisation ends where a new
+  // one starts. The seed's two Org unit head stages are on record types with no
+  // unit route, so both start on the tenant admin (Ahmad, 29 Oct).
+  it('agrees with the backfill mapping on every stage', () => {
     for (const workflow of SYSTEM_WORKFLOW_SEED) {
       for (const stage of workflow.stages) {
-        const mapped = whoFromLegacy({
+        const mapped = whoFromLegacy(
+          {
           assigneeStrategy: stage.assigneeStrategy,
           approvalMode: stage.approvalMode,
           parallelThreshold: stage.parallelThreshold ?? null,
@@ -93,10 +95,11 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
           assigneeOrgUnitId: null,
           committeeId: null,
           assigneeCommitteeRoleValueId: null,
-        });
+          },
+          RECORD_ROUTES[workflow.objectType] !== undefined,
+        );
         const asPin = `${mapped.whoMode}:${mapped.startingAssignment ? 'START' : mapped.entries.map((e) => e.kind).join('+')}`;
-        const expected = stage.assigneeStrategy === 'ORG_UNIT_HEAD' ? `${stage.who.mode}:ORG_UNIT_HEAD` : pin(stage.who);
-        expect([`${workflow.objectType}.${stage.key}`, asPin]).toEqual([`${workflow.objectType}.${stage.key}`, expected]);
+        expect([`${workflow.objectType}.${stage.key}`, asPin]).toEqual([`${workflow.objectType}.${stage.key}`, pin(stage.who)]);
       }
     }
   });
@@ -117,15 +120,29 @@ describe('whoFromLegacy (the backfill mapping, plan §6.1)', () => {
   it.each([
     ['SPECIFIC_USER', { assigneeUserId: 'u1' }, [{ kind: 'SPECIFIC_USER', userId: 'u1' }]],
     ['POSITION_FIXED', { assigneePositionId: 'p1', assigneeOrgUnitId: 'ou1' }, [{ kind: 'POSITION_IN_UNIT', positionId: 'p1', orgUnitId: 'ou1' }]],
-    ['ORG_UNIT_HEAD', {}, [{ kind: 'ORG_UNIT_HEAD', orgUnitId: null }]],
+
     ['SELF', {}, [{ kind: 'CREATOR' }]],
     ['COMMITTEE', { committeeId: 'c1', assigneeCommitteeRoleValueId: 'chair' }, [{ kind: 'COMMITTEE', committeeId: 'c1', committeeRoleValueId: 'chair' }]],
     ['ROLE', {}, []],
     ['ROUND_ROBIN', {}, []],
   ])('%s', (strategy, extra, entries) => {
-    const mapped = whoFromLegacy({ ...base, assigneeStrategy: strategy, ...extra });
+    const mapped = whoFromLegacy({ ...base, assigneeStrategy: strategy, ...extra }, true);
     expect(mapped.entries).toEqual(entries);
     expect(mapped.startingAssignment).toBe(entries.length === 0);
+  });
+
+  // Ahmad, 29 Oct — "the record's unit" only where the record type can name one.
+  it("ORG_UNIT_HEAD on a record type with a unit route: the head of the record's unit", () => {
+    const mapped = whoFromLegacy({ ...base, assigneeStrategy: 'ORG_UNIT_HEAD' }, true);
+    expect(mapped.entries).toEqual([{ kind: 'ORG_UNIT_HEAD', orgUnitId: null }]);
+    expect(mapped.startingAssignment).toBe(false);
+  });
+
+  it('ORG_UNIT_HEAD on a record type with no unit route: the starting assignment, said in the notes', () => {
+    const mapped = whoFromLegacy({ ...base, assigneeStrategy: 'ORG_UNIT_HEAD' }, false);
+    expect(mapped.entries).toEqual([]);
+    expect(mapped.startingAssignment).toBe(true);
+    expect(mapped.notes).toEqual(["Org unit head on a record type with no unit of its own yet: starting assignment"]);
   });
 
   it.each([
@@ -138,12 +155,12 @@ describe('whoFromLegacy (the backfill mapping, plan §6.1)', () => {
     ['COMMITTEE', null, 'COMMITTEE', 'COMMITTEE_VOTE'],
     ['COMMITTEE', null, 'ROLE', 'ANY_ONE'],
   ])('%s %s on a %s stage → %s', (approvalMode, parallelThreshold, assigneeStrategy, whoMode) => {
-    expect(whoFromLegacy({ ...base, approvalMode, parallelThreshold, assigneeStrategy, committeeId: 'c1' }).whoMode).toBe(whoMode);
+    expect(whoFromLegacy({ ...base, approvalMode, parallelThreshold, assigneeStrategy, committeeId: 'c1' }, true).whoMode).toBe(whoMode);
   });
 
   it('reports what it decided for the rare modes, so the dry run can name them', () => {
-    expect(whoFromLegacy({ ...base, approvalMode: 'PARALLEL', parallelThreshold: 'MAJORITY' }).notes).toEqual(['Majority became All of them']);
-    expect(whoFromLegacy({ ...base, approvalMode: 'COMMITTEE' }).notes).toEqual([
+    expect(whoFromLegacy({ ...base, approvalMode: 'PARALLEL', parallelThreshold: 'MAJORITY' }, true).notes).toEqual(['Majority became All of them']);
+    expect(whoFromLegacy({ ...base, approvalMode: 'COMMITTEE' }, true).notes).toEqual([
       'Committee approval with no single Committee entry became Any one of them',
     ]);
   });

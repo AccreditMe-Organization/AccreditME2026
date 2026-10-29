@@ -2904,7 +2904,11 @@ every stage on every database is still unconverted and behaves as §2.4–§2.8 
   - **`whoFromLegacy()`** (`workflow-who.ts`) is the one mapping from the old
     columns, used by `backfill-acc271-stage-assignees`; `moverForTrigger()`
     by `backfill-acc271-transition-movers`. Both backfills run after the
-    deploy (plan §6, §6.4).
+    deploy (plan §6, §6.4). An Org unit head stage maps to "the head of the
+    record's unit" only where its record type has a unit route
+    (`RECORD_ROUTES`); elsewhere it gets the starting assignment, as the seed
+    gives a new organisation (29 Oct), so the mapping matches the seed on all
+    60 stages.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real

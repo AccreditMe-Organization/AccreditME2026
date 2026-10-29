@@ -42,7 +42,9 @@ export interface ConvertedWho {
  * |-----------------------|------------------------------------------------------------|
  * | SPECIFIC_USER         | that user (none set → the starting assignment)             |
  * | POSITION_FIXED        | the position in that unit (either missing → starting)      |
- * | ORG_UNIT_HEAD         | the head of the record's unit (entry with no unit)         |
+ * | ORG_UNIT_HEAD         | the head of the record's unit (entry with no unit), when   |
+ * |                       | the record type has a unit route; else the starting        |
+ * |                       | assignment, as the seed gives a new organisation           |
  * | SELF                  | the record's creator                                       |
  * | COMMITTEE             | the committee (none set → the record's), with its role     |
  * | ROLE, ROUND_ROBIN     | the tenant admin's starting assignment                     |
@@ -55,7 +57,15 @@ export interface ConvertedWho {
  * | SEQUENTIAL            | ALL (what the engine already did)                          |
  * | COMMITTEE             | COMMITTEE_VOTE with exactly one Committee entry, else ANY_ONE |
  */
-export function whoFromLegacy(stage: LegacyStageWho): ConvertedWho {
+export function whoFromLegacy(
+  stage: LegacyStageWho,
+  /**
+   * Whether the stage's record type can say what its unit is (RECORD_ROUTES).
+   * Without a route "the record's unit" resolves to nobody, so an Org unit head
+   * stage there starts on the tenant admin instead (Ahmad, 29 Oct).
+   */
+  recordHasUnitRoute: boolean,
+): ConvertedWho {
   const notes: string[] = [];
   const entries: WhoEntryDraft[] = [];
   switch (stage.assigneeStrategy) {
@@ -71,7 +81,8 @@ export function whoFromLegacy(stage: LegacyStageWho): ConvertedWho {
       }
       break;
     case 'ORG_UNIT_HEAD':
-      entries.push({ kind: 'ORG_UNIT_HEAD', orgUnitId: null });
+      if (recordHasUnitRoute) entries.push({ kind: 'ORG_UNIT_HEAD', orgUnitId: null });
+      else notes.push("Org unit head on a record type with no unit of its own yet: starting assignment");
       break;
     case 'SELF':
       entries.push({ kind: 'CREATOR' });
