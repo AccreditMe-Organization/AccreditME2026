@@ -441,16 +441,30 @@ export function visibleNavGroups(access: NavAccess): NavGroup[] {
     .filter((group) => group.items.length > 0);
 }
 
+/**
+ * ACC-272 — "A user's permissions" (/roles/user-permissions[/:userId]): who
+ * may open it, and who sees its two ways in (the Roles list header button and
+ * the user record's "See permissions"). ONE list, read by the route map below
+ * and by both entry points, so a way in can never be shown to someone the
+ * route then refuses. users:view as well as the Roles page's two: the page
+ * reads other people's records.
+ */
+export const USER_PERMISSIONS_LOOKUP: readonly string[] = [ADMIN_ACCESS, 'roles:view', 'users:view'];
+
 // Permission-gated routes that have NO nav item. Without an entry here, such a
 // route would be the one gated screen the guard silently allowed through.
 //
-// Empty since ACC-229: /tasks/all, the one entry, became a rail item ("All
-// tasks", now committees:view_all_tasks), so its permission now comes from the item like every
-// other. It was listed here while it was an unlinked stopgap that never loaded
-// a task. Its route still carries its own canActivate (tasks.routes.ts),
-// because /tasks itself is ungated and a child without one never runs the
-// guard.
-export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>();
+// /tasks/all was the one entry until ACC-229, when it became a rail item ("All
+// tasks", now committees:view_all_tasks). Its route still carries its own
+// canActivate (tasks.routes.ts), because /tasks itself is ungated and a child
+// without one never runs the guard.
+//
+// ACC-272 — roles/user-permissions, a child of Roles with a stricter list than
+// Roles' own; the :userId child walks up to it. Both routes carry their own
+// canActivate (roles.routes.ts), which is what makes the guard read this entry.
+export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
+  ['roles/user-permissions', USER_PERMISSIONS_LOOKUP],
+]);
 
 // Route path -> the permissions required to open it, ALL of which must be held.
 // Keyed by the route path WITHOUT its leading slash, matching how app.routes.ts

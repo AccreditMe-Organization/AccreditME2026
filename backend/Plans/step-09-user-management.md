@@ -644,6 +644,7 @@ PATCH  /users/:id/profile           @Permissions(USERS_PERMISSIONS.MANAGE) — o
 PATCH  /users/:id/out-of-office     @Permissions(USERS_PERMISSIONS.MANAGE) — or self, see note
 POST   /users/:id/deactivate        @Permissions(USERS_PERMISSIONS.MANAGE)
 GET    /users/:userId/roles         @Permissions(ROLES_PERMISSIONS.VIEW)      — MOVED from RoleController
+GET    /users/:userId/permissions   @Permissions(ROLES_PERMISSIONS.VIEW)      — ACC-272: each grant with its role's keys; users:view unless self, as /roles
 POST   /users/:userId/roles         @Permissions(ROLES_PERMISSIONS.MANAGE)    — MOVED
 DELETE /users/:userId/roles/:roleId @Permissions(ROLES_PERMISSIONS.MANAGE)    — MOVED
 ```

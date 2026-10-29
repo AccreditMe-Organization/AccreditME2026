@@ -240,6 +240,41 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     expect(order).toEqual(['derived', 'direct']);
   });
 
+  // ── ACC-272 — "See permissions", a way in to "A user's permissions" ────
+  const LOOKUP = ['admin:access', 'roles:view', 'users:view'];
+  for (const missing of LOOKUP) {
+    it(`ACC-272 · "See permissions" is absent without ${missing}`, () => {
+      const ctx = render({ permissions: LOOKUP.filter((p) => p !== missing) });
+      flushUser(ctx, record());
+      ctx.http.match((r) => r.url.endsWith(`/users/${OTHER}/roles`)).forEach((r) => r.flush([]));
+      ctx.fixture.detectChanges();
+      expect(ctx.el.querySelector('[data-action="seePermissions"]')).toBeNull();
+    });
+  }
+
+  it("ACC-272 · 'See permissions' opens 'A user's permissions' with this person chosen", () => {
+    const ctx = render({ permissions: LOOKUP });
+    flushUser(ctx, record());
+    ctx.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/roles`)).flush([]);
+    ctx.fixture.detectChanges();
+    const link = ctx.el.querySelector<HTMLAnchorElement>('[data-panel="roles"] [data-action="seePermissions"]')!;
+    expect(link.textContent!.trim()).toBe('See permissions');
+    expect(link.getAttribute('href')).toBe(`/roles/user-permissions/${OTHER}`);
+  });
+
+  it('ACC-272 · the Roles panel lists an inactive role last, after direct grants', () => {
+    const ctx = render({ permissions: ['users:view', 'roles:view'] });
+    flushUser(ctx, record());
+    ctx.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/roles`)).flush([
+      { id: 'g-old', role: { id: 'r0', nameEn: 'Old Role', nameAr: null, isActive: false }, grantedAt: '2026-01-01T09:00:00.000Z', source: 'DIRECT', grantedViaHeadPositionId: null, grantedViaHeadPositionOrgUnitId: null },
+      { id: 'g-direct', role: { id: 'r1', nameEn: 'Auditor', nameAr: null, isActive: true }, grantedAt: '2026-10-03T09:00:00.000Z', source: 'DIRECT', grantedViaHeadPositionId: null, grantedViaHeadPositionOrgUnitId: null },
+      { id: 'g-head', role: { id: 'r2', nameEn: 'Unit Head', nameAr: null, isActive: true }, grantedAt: '2026-09-01T09:00:00.000Z', source: 'HEAD_POSITION_UNIT', grantedViaHeadPositionId: 'pos-senior', grantedViaHeadPositionOrgUnitId: 'unit-im' },
+    ]);
+    ctx.fixture.detectChanges();
+    const names = Array.from(ctx.el.querySelectorAll('[data-role-row] .font-medium')).map((e) => e.textContent!.trim());
+    expect(names).toEqual(['Unit Head', 'Auditor', 'Old Role']);
+  });
+
   // ── Test 6 ──────────────────────────────────────────────────────────────
   it('6 · without roles:view the Roles panel is absent and makes no request', () => {
     const ctx = render({ permissions: ['users:view'] });
