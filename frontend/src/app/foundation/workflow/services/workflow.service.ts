@@ -124,6 +124,15 @@ export class WorkflowService {
     return this.http.get<WorkflowInstanceDto[]>(`${this.base}/instances`, { params });
   }
 
+  /**
+   * ACC-271 PR 2 — the moves out of the record's current stage the signed-in
+   * person may press, as the server decides it (a converted stage's pool, or
+   * today's permission rule). The record page's buttons show exactly these.
+   */
+  getMoves(instanceId: string): Observable<{ transitionIds: string[] }> {
+    return this.http.get<{ transitionIds: string[] }>(`${this.base}/instances/${instanceId}/moves`);
+  }
+
   triggerTransition(instanceId: string, dto: TriggerTransitionDto): Observable<WorkflowInstanceDto> {
     return this.http.post<WorkflowInstanceDto>(`${this.base}/instances/${instanceId}/transitions`, dto);
   }

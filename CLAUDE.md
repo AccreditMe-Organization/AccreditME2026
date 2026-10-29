@@ -4349,10 +4349,16 @@ Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
   (`transitionMover()`).
 - **A deactivated pool member is recorded** (`POOL_MEMBER_LEFT`) inside the
   deactivation, and All of them no longer waits for them.
-- **Nothing is converted until PR 2's backfill**, which must first mark each
-  multi-person stage's forward move as its approval path and stop the
-  transition buttons filtering by `requiredPermission` (plan §11.1).
-- **One additive migration** (`acc271_stage_assignees`).
+- **A NEW ORGANISATION IS CONVERTED FROM THE START (PR 2).** The seed states
+  each stage's `who` and writes it with the stage; `createTenant()` then puts
+  the first admin on every stage without an entry
+  (`assignStartingAssignments()`). Existing organisations are converted by
+  `npm run backfill:acc271-stage-assignees` and `-transition-movers`, AFTER
+  the deploy (dry run, `-- --execute`, dry run 0), with plan §6.4's counts.
+- **The record page's buttons show what the server says**
+  (`GET /workflows/instances/:id/moves`); no screen reads a move's
+  `requiredPermission` any more.
+- **One additive migration** (`acc271_stage_assignees`, PR 1).
 
 ## Open / Deferred Items
 

@@ -27,6 +27,7 @@ import { CreateWorkflowTransitionActionDto } from './dto/create-workflow-transit
 import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transition-action.dto';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import { applyWorkflowSeed } from './workflow-seed-apply';
+import { writeStartingAssignments } from './workflow-who';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
@@ -135,6 +136,32 @@ export class WorkflowTemplateService {
 
   async seedDefaultWorkflows(organizationId: string): Promise<void> {
     await applyWorkflowSeed(this.prisma, organizationId, SYSTEM_WORKFLOW_SEED);
+  }
+
+  /**
+   * ACC-271 (plan §5) — the tenant admin's starting assignment on every stage
+   * the seed marked (a converted stage with no entry), once the first admin
+   * exists: PlatformTenantService.createTenant() calls it right after the
+   * invite. Running it again writes nothing. The admin is usually still
+   * INVITED here, and an INVITED person is in no pool until they accept, so
+   * those stages read as unassigned until then (Q5).
+   */
+  async assignStartingAssignments(organizationId: string, adminUserId: string, actorId: string): Promise<{ stageIds: string[] }> {
+    const admin = await this.prisma.user.findFirst({ where: { id: adminUserId, organizationId }, select: { id: true } });
+    if (!admin) throw new NotFoundException('User not found');
+    const written = await writeStartingAssignments(this.prisma, organizationId, adminUserId, actorId);
+    if (written.stageIds.length > 0) {
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'CREATE',
+        objectType: 'WorkflowStageAssignee',
+        objectId: adminUserId,
+        after: { kind: 'SPECIFIC_USER', userId: adminUserId, isStartingAssignment: true, stageCount: written.stageIds.length },
+        metadata: { event: 'starting_assignments', stageIds: written.stageIds },
+      });
+    }
+    return written;
   }
 
   // ── Templates ────────────────────────────────────────────────────────────────
