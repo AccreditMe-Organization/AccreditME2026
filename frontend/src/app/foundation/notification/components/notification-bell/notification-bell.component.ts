@@ -65,7 +65,7 @@ const POLL_INTERVAL_MS = 30000;
               <!-- ACC-228 — a task's notification opens the task's own page.
                    A real link, so it is reachable by keyboard and opens in a
                    new tab like any link; it still marks the item read. -->
-              @if (taskLink(item); as link) {
+              @if (itemLink(item); as link) {
                 <a
                   class="am-bell-item flex flex-col gap-0.5 p-2 rounded hover:bg-surface-50"
                   [class.font-semibold]="item.status === 'UNREAD'"
@@ -88,6 +88,10 @@ const POLL_INTERVAL_MS = 30000;
               <span class="text-sm">
                 {{ isArabic() && item.titleAr ? item.titleAr : item.titleEn }}
               </span>
+              <!-- ACC-271 PR 4 — a closed-task notice opens the record it is about. -->
+              @if (isRecordLink(item)) {
+                <span class="text-xs text-primary">{{ 'notification.openRecord' | translate }}</span>
+              }
               <span class="text-xs text-surface-400">{{ item.createdAt | amDateTime }}</span>
             </ng-template>
           </div>
@@ -156,9 +160,20 @@ export class NotificationBellComponent implements OnInit {
     this.loadRecent();
   }
 
-  /** ACC-228 — every task notification carries the task (objectType 'Task'). */
-  taskLink(item: NotificationDto): string[] | null {
-    return item.objectType === 'Task' && item.objectId ? ['/tasks', item.objectId] : null;
+  /**
+   * ACC-228 — every task notification carries the task (objectType 'Task').
+   * ACC-271 PR 4 — a closed-task notice carries its record, for a reader who
+   * may open it (the server leaves it out for anyone else): a committee.
+   */
+  itemLink(item: NotificationDto): string[] | null {
+    if (!item.objectId) return null;
+    if (item.objectType === 'Task') return ['/tasks', item.objectId];
+    if (item.objectType === 'COMMITTEE') return ['/committees', item.objectId];
+    return null;
+  }
+
+  isRecordLink(item: NotificationDto): boolean {
+    return item.objectType === 'COMMITTEE' && !!item.objectId;
   }
 
   onItemClick(item: NotificationDto): void {

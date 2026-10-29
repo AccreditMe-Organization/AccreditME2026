@@ -1052,6 +1052,7 @@
     "confirmRemoveTransitionHeader": "Remove the transition “{{name}}”?"
   },
   "notification": {
+    "openRecord": "Open record",
     "title": "Notifications",
     "markAllRead": "Mark All as Read",
     "noNotifications": "No notifications yet.",
