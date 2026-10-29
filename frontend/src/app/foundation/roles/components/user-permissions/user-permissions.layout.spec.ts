@@ -176,6 +176,12 @@ describe('UserPermissionsComponent layout (ACC-272)', () => {
           // A role's "Gives" line takes its own row below 768px.
           const gives = roles[0]!.querySelector<HTMLElement>('[data-up-gives]')!;
           expect(Math.round(box(gives).top)).withContext('gives on its own row').toBeGreaterThanOrEqual(Math.round(box(headSource).bottom));
+          // ...a whole row of its own, as wide as the role row's content.
+          for (const row of Array.from(roles)) {
+            const g = row.querySelector<HTMLElement>('[data-up-gives]')!;
+            const pad = parseFloat(getComputedStyle(row).paddingInlineStart) + parseFloat(getComputedStyle(row).paddingInlineEnd);
+            expect(Math.round(box(g).width)).withContext('gives spans the row').toBeGreaterThanOrEqual(Math.floor(box(row).width - pad - 1));
+          }
         } else {
           const gives = roles[0]!.querySelector<HTMLElement>('[data-up-gives]')!;
           expect(Math.round(box(gives).top)).withContext('gives beside the name').toBeLessThan(Math.round(box(headSource).bottom));
