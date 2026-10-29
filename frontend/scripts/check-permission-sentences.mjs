@@ -20,6 +20,9 @@
 //   roles.matrix.sentence["<module>:<action>"]   for every in-use key
 //   roles.matrix.module.<module>.name            for every module with one
 //   roles.matrix.module.<module>.description
+// and NO sentence for a key that is not in use (ACC-272): the sentence table is
+// then exactly the in-use list, which is what permission-groups.spec.ts reads
+// to check the groups table against the catalogue from inside the frontend.
 // Each must be a non-empty string, and in ar.json it must contain Arabic
 // letters. An English sentence pasted into the Arabic file is the likeliest
 // way this goes wrong, and an "exists" check would wave it through.
@@ -75,6 +78,9 @@ for (const [lang, file] of Object.entries(I18N)) {
     else if (lang === 'ar' && !ARABIC_LETTER.test(value)) fail(`${lang}: ${label} is not in Arabic: "${value}"`);
   };
   for (const key of inUse) check(`sentence for ${key}`, matrix.sentence?.[key]);
+  for (const key of Object.keys(matrix.sentence ?? {})) {
+    if (!inUse.includes(key)) fail(`${lang}: a sentence for ${key}, which is not an in-use catalogue key`);
+  }
   for (const m of modules) {
     check(`module name for ${m}`, matrix.module?.[m]?.name);
     check(`module description for ${m}`, matrix.module?.[m]?.description);

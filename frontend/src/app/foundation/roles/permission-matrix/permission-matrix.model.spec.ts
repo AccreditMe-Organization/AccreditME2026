@@ -1,127 +1,188 @@
+import en from '../../../../assets/i18n/en.json';
 import { PermissionDto } from '../services/role.service';
 import {
+  NO_FILTER,
   buildMatrix,
-  cellKeys,
   changesOf,
+  filterActive,
+  heldCount,
   markOf,
-  matrixRows,
-  rowKeys,
+  rowVisible,
   toggleKeys,
   triState,
+  visibleKeys,
 } from './permission-matrix.model';
 
-// ACC-120 slice 5, PR B — the matrix's rules, apart from the screen.
+// ACC-272 — the list's rules, apart from the screen.
 const perm = (key: string, inUse = true): PermissionDto => {
   const [module, action] = key.split(':');
   return { id: key, module, action, description: null, inUse, rootRoleOnly: key === 'workflows:manage' };
 };
 
-const CATALOGUE: PermissionDto[] = [
-  perm('committees:manage'),
-  perm('committees:view'),
-  perm('committees:approve'),
-  perm('committees:create'),
-  perm('users:view'),
-  perm('users:deactivate'),
-  perm('platform:admin'),
-  perm('documents:view', false),
-  perm('kpi:verify', false),
-];
+const SENTENCES = (en as { roles: { matrix: { sentence: Record<string, string> } } }).roles.matrix.sentence;
+// The product's in-use keys: the sentence table is exactly that list
+// (check:permission-sentences fails on a missing or a stray sentence). Given
+// in a shuffled order, so the order the list shows is proved to be its own.
+const IN_USE = Object.keys(SENTENCES).reverse();
+const CATALOGUE: PermissionDto[] = [...IN_USE.map((k) => perm(k)), perm('documents:view', false), perm('kpi:verify', false)];
+const sentenceOf = (key: string): string => SENTENCES[key] ?? key;
 
-describe('buildMatrix', () => {
-  it('shows only keys in use (R2) and hides platform keys inside a tenant (D2)', () => {
-    const keys = buildMatrix(CATALOGUE, { isTenant: true }).flatMap((m) => m.keys);
+const tenant = () => buildMatrix(CATALOGUE, { isTenant: true });
+const committees = () => tenant().find((m) => m.module === 'committees')!;
+
+describe('buildMatrix (ACC-272)', () => {
+  it('shows only keys in use (R2), and no platform key inside a tenant (D2)', () => {
+    const keys = tenant().flatMap((m) => m.keys);
     expect(keys).not.toContain('documents:view');
     expect(keys).not.toContain('kpi:verify');
-    expect(keys).not.toContain('platform:admin');
-    expect(keys).toContain('users:view');
+    expect(keys.some((k) => k.startsWith('platform:'))).toBeFalse();
+    expect(buildMatrix(CATALOGUE, { isTenant: false }).some((m) => m.module === 'platform')).toBeTrue();
   });
 
-  // ACC-258 — which keys are root-only is the catalogue's answer (rootRoleOnly).
-  it('hides a rootRoleOnly key on every role but the root role, whose read-only matrix shows it', () => {
-    const catalogue = [perm('workflows:view'), perm('workflows:manage')];
-    const keysOf = (isRootRole?: boolean) => buildMatrix(catalogue, { isTenant: true, isRootRole }).flatMap((m) => m.keys);
-    expect(keysOf()).toEqual(['workflows:view']);
-    expect(keysOf(false)).toEqual(['workflows:view']);
-    expect(keysOf(true).sort()).toEqual(['workflows:manage', 'workflows:view']);
+  it('shows workflows:manage only on the root role (ACC-258)', () => {
+    expect(tenant().flatMap((m) => m.keys)).not.toContain('workflows:manage');
+    expect(buildMatrix(CATALOGUE, { isTenant: true, isRootRole: true }).flatMap((m) => m.keys)).toContain('workflows:manage');
   });
 
-  it('shows platform keys in the platform organisation', () => {
-    const modules = buildMatrix(CATALOGUE, { isTenant: false }).map((m) => m.module);
-    expect(modules).toContain('platform');
-  });
-
-  it('orders modules by the product order (D3), not the catalogue order', () => {
-    expect(buildMatrix(CATALOGUE, { isTenant: false }).map((m) => m.module)).toEqual([
+  it('orders modules by the product order (D3), whatever order the catalogue gives', () => {
+    expect(tenant().map((m) => m.module)).toEqual([
+      'tenant',
+      'org',
       'users',
+      'roles',
+      'lookups',
+      'workflows',
       'committees',
-      'platform',
+      'meetings',
+      'positions',
+      'setup',
+      'admin',
     ]);
   });
 
-  it('orders a module\'s rows by column, whole-row grants last', () => {
-    const committees = buildMatrix(CATALOGUE, { isTenant: true }).find((m) => m.module === 'committees');
-    expect(committees?.keys).toEqual(['committees:view', 'committees:create', 'committees:approve', 'committees:manage']);
-    expect(committees?.byColumn.delete).toEqual([]);
-    expect(committees?.byColumn.approve).toEqual(['committees:approve']);
+  it('splits Committees into its three groups in the table order; a module of six or fewer has one unnamed group', () => {
+    const c = committees();
+    expect(c.groups.map((g) => g.id)).toEqual(['records', 'members', 'tasks']);
+    expect(c.groups.map((g) => g.keys)).toEqual([
+      ['committees:view', 'committees:create', 'committees:edit_details', 'committees:approve', 'committees:manage'],
+      ['committees:add_member', 'committees:remove_member', 'committees:change_member_role'],
+      ['committees:view_all_tasks', 'committees:view_unit_tasks', 'committees:create_tasks', 'committees:manage_tasks'],
+    ]);
+    expect(c.keys).toEqual(c.groups.flatMap((g) => g.keys));
+    const users = tenant().find((m) => m.module === 'users')!;
+    expect(users.keys.length).toBe(6);
+    expect(users.groups.map((g) => g.id)).toEqual([null]);
+  });
+
+  it('keeps catalogue order outside groups', () => {
+    const cat = [perm('users:view'), perm('users:invite'), perm('users:deactivate')];
+    expect(buildMatrix(cat, { isTenant: true })[0]!.keys).toEqual(['users:view', 'users:invite', 'users:deactivate']);
+    expect(buildMatrix([...cat].reverse(), { isTenant: true })[0]!.keys).toEqual(['users:deactivate', 'users:invite', 'users:view']);
+  });
+
+  it('a grouped module showing six or fewer keys is not split', () => {
+    const cat = ['committees:view', 'committees:create', 'committees:add_member'].map((k) => perm(k));
+    expect(buildMatrix(cat, { isTenant: true })[0]!.groups.map((g) => g.id)).toEqual([null]);
+  });
+
+  it('never drops a shown key the table does not name: it follows the groups, unnamed', () => {
+    const cat = [...IN_USE.filter((k) => k.startsWith('committees:')).map((k) => perm(k)), perm('committees:archive')];
+    const c = buildMatrix(cat, { isTenant: true })[0]!;
+    expect(c.groups.map((g) => g.id)).toEqual(['records', 'members', 'tasks', null]);
+    expect(c.groups.at(-1)!.keys).toEqual(['committees:archive']);
   });
 });
 
-describe('cellKeys and rowKeys', () => {
-  const rows = matrixRows(buildMatrix(CATALOGUE, { isTenant: true }));
-  const rowOf = (key: string) => rows.find((r) => r.kind === 'permission' && r.permission.key === key)!;
-  const moduleRow = (m: string) => rows.find((r) => r.kind === 'module' && r.module.module === m)!;
-
-  it('a whole-row grant toggles from its LABEL cell and has no column cell (D1)', () => {
-    const row = rowOf('committees:manage');
-    expect(cellKeys(row, 0)).toEqual(['committees:manage']);
-    for (let c = 1; c <= 6; c++) expect(cellKeys(row, c)).toBeNull();
+describe('tri-state and counts', () => {
+  it('reads all, some and none, for a module and for a group', () => {
+    const c = committees();
+    const records = c.groups[0]!;
+    const all = new Set(records.keys);
+    expect(triState(records.keys, all)).toBe('all');
+    expect(triState(c.keys, all)).toBe('some');
+    expect(triState(c.keys, new Set())).toBe('none');
+    expect(heldCount(c.keys, all)).toBe(5);
+    expect(heldCount(c.keys, new Set(['committees:view', 'users:view']))).toBe(1);
   });
 
-  it('a column permission toggles from exactly one cell, and its label from none', () => {
-    const row = rowOf('committees:approve');
-    expect(cellKeys(row, 0)).toBeNull();
-    expect([1, 2, 3, 4, 5, 6].filter((c) => cellKeys(row, c) !== null)).toEqual([5]);
-  });
-
-  it('a module row\'s label is the whole module, each column that column\'s keys, empty columns hatched', () => {
-    const row = moduleRow('committees');
-    expect(cellKeys(row, 0)).toEqual(['committees:view', 'committees:create', 'committees:approve', 'committees:manage']);
-    expect(cellKeys(row, 5)).toEqual(['committees:approve']);
-    expect(cellKeys(row, 4)).toBeNull();
-    expect(rowKeys(row)).toEqual(cellKeys(row, 0)!);
+  it('a press on a mixed or empty box grants every key; on a full one revokes every key', () => {
+    const keys = ['committees:view', 'committees:create'];
+    expect([...toggleKeys(keys, new Set(['committees:view']))].sort()).toEqual(keys.sort());
+    expect([...toggleKeys(keys, new Set())].sort()).toEqual(keys.sort());
+    expect([...toggleKeys(keys, new Set(keys))]).toEqual([]);
+    // Nothing else moves: no row implies another.
+    expect([...toggleKeys(['committees:manage'], new Set(['users:view']))].sort()).toEqual(['committees:manage', 'users:view']);
+    // An empty set of visible keys does nothing.
+    expect([...toggleKeys([], new Set(['users:view']))]).toEqual(['users:view']);
   });
 });
 
-describe('the tri-state', () => {
-  it('reads all, some and none', () => {
-    expect(triState(['a', 'b'], new Set(['a', 'b']))).toBe('all');
-    expect(triState(['a', 'b'], new Set(['a']))).toBe('some');
-    expect(triState(['a', 'b'], new Set())).toBe('none');
+describe('the filter (shows, never saves)', () => {
+  const loaded = new Set(['committees:view', 'committees:change_member_role']);
+  // Edited: approve granted, change_member_role revoked.
+  const selected = new Set(['committees:view', 'committees:approve']);
+
+  it('is off by default; a query or Show granted only turns it on', () => {
+    expect(filterActive(NO_FILTER)).toBeFalse();
+    expect(filterActive({ query: '  ', grantedOnly: false })).toBeFalse();
+    expect(filterActive({ query: 'member', grantedOnly: false })).toBeTrue();
+    expect(filterActive({ query: '', grantedOnly: true })).toBeTrue();
   });
 
-  it('one press completes a partial group, and empties only a full one', () => {
-    expect([...toggleKeys(['a', 'b'], new Set(['a', 'x']))].sort()).toEqual(['a', 'b', 'x']);
-    expect([...toggleKeys(['a', 'b'], new Set(['a', 'b', 'x']))]).toEqual(['x']);
+  it('matches the sentence in the reader language, ignoring case and outer spaces', () => {
+    const f = { query: '  MEMBER ', grantedOnly: false };
+    // "Open a committee record and its members" matches too.
+    expect(visibleKeys(committees().permissions, sentenceOf, f, selected, loaded)).toEqual([
+      'committees:view',
+      'committees:add_member',
+      'committees:remove_member',
+      'committees:change_member_role',
+    ]);
+    // The reader's language only: an Arabic sentence matches Arabic, never English.
+    expect(rowVisible('committees:add_member', 'إضافة أعضاء إلى اللجنة', { query: 'أعضاء', grantedOnly: false }, selected, loaded)).toBeTrue();
+    expect(rowVisible('committees:add_member', 'إضافة أعضاء إلى اللجنة', { query: 'member', grantedOnly: false }, selected, loaded)).toBeFalse();
+    // «أعضاء» is not «وأعضائها»: the design finds the two member rows only.
+    expect(rowVisible('committees:view', 'فتح سجل اللجنة وأعضائها', { query: 'أعضاء', grantedOnly: false }, selected, loaded)).toBeFalse();
+  });
+
+  it('Show granted only uses the edited set, and keeps every changed row, a revocation included', () => {
+    const f = { query: '', grantedOnly: true };
+    expect(visibleKeys(committees().permissions, sentenceOf, f, selected, loaded)).toEqual([
+      'committees:view',
+      'committees:approve',
+      'committees:change_member_role',
+    ]);
+  });
+
+  it('both together: "member" and granted only', () => {
+    expect(visibleKeys(committees().permissions, sentenceOf, { query: 'member', grantedOnly: true }, selected, loaded)).toEqual([
+      'committees:view',
+      'committees:change_member_role',
+    ]);
+  });
+
+  it('a box under a filter acts only on the visible rows', () => {
+    const visible = visibleKeys(committees().permissions, sentenceOf, { query: 'member', grantedOnly: false }, new Set(), new Set());
+    const next = toggleKeys(visible, new Set(['committees:view']));
+    expect([...next].sort()).toEqual(['committees:add_member', 'committees:change_member_role', 'committees:remove_member', 'committees:view']);
   });
 });
 
-describe('changes', () => {
-  const modules = buildMatrix(CATALOGUE, { isTenant: true });
+describe('marks and the change list', () => {
+  const loaded = new Set(['committees:view', 'lookups:view', 'committees:change_member_role']);
+  const selected = new Set(['committees:view', 'committees:approve']);
 
-  it('marks unsaved grants and revocations against the LOADED set', () => {
-    const loaded = new Set(['users:view']);
-    expect(markOf('users:view', new Set(['users:view']), loaded)).toBe('on');
-    expect(markOf('users:view', new Set(), loaded)).toBe('revoked');
-    expect(markOf('committees:view', new Set(['committees:view']), loaded)).toBe('granted');
-    expect(markOf('committees:view', new Set(), loaded)).toBe('off');
+  it('marks held, not held, newly granted and newly revoked against the LOADED set', () => {
+    expect(markOf('committees:view', selected, loaded)).toBe('on');
+    expect(markOf('users:view', selected, loaded)).toBe('off');
+    expect(markOf('committees:approve', selected, loaded)).toBe('granted');
+    expect(markOf('lookups:view', selected, loaded)).toBe('revoked');
   });
 
-  it('lists changes in row order, never a hidden key', () => {
-    const loaded = new Set(['users:view', 'documents:view']);
-    const selected = new Set(['committees:approve', 'committees:view', 'documents:view']);
-    const { added, removed } = changesOf(modules, selected, loaded);
-    expect(added.map((p) => p.key)).toEqual(['committees:view', 'committees:approve']);
-    expect(removed.map((p) => p.key)).toEqual(['users:view']);
+  it('lists the changes for the save confirmation in the list order, never a hidden key', () => {
+    const changes = changesOf(tenant(), new Set([...selected, 'documents:view']), loaded);
+    expect(changes.added.map((p) => p.key)).toEqual(['committees:approve']);
+    // Lookups comes before Committees in the product order.
+    expect(changes.removed.map((p) => p.key)).toEqual(['lookups:view', 'committees:change_member_role']);
   });
 });
