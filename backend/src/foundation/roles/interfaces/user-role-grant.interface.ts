@@ -1,4 +1,5 @@
 import { IRole } from './role.interface';
+import { IBilingualName } from '../../user/interfaces/user.interface';
 
 /**
  * How a user came to hold a role.
@@ -76,6 +77,32 @@ export interface IUserRoleGrant {
    * leaving a client to read two nulls and guess which case it is in.
    */
   grantedViaHeadPositionOrgUnitId: string | null;
+}
+
+/**
+ * ACC-272 — one grant with the keys its role holds, for GET
+ * /users/:userId/permissions ("A user's permissions").
+ *
+ * The keys are the role's as STORED (`module:action`), whether or not the role
+ * is active: an inactive role is returned with `role.isActive` false, and the
+ * page gives nothing for it. The union, and which keys are SHOWN (in use, no
+ * platform key in a tenant, the root-only key only from the root role), are the
+ * page's, the same rules the role permissions page applies, so the two cannot
+ * disagree. Nothing here is what a guard decides with: that stays
+ * getUserPermissions(), unchanged.
+ */
+export interface IUserPermissionGrant extends IUserRoleGrant {
+  /** The role's permission keys, `module:action`, sorted. */
+  permissions: string[];
+  /**
+   * The head position a head grant comes with, named (the shape
+   * IUserReferenceNames uses). Null on a DIRECT grant, and null when the id is
+   * not a position of this organisation. Read for EVERY head grant, not only
+   * the person's own position: an acting headship's position is the unit's.
+   */
+  headPosition: IBilingualName | null;
+  /** The unit a unit-scoped head grant covers, named. Null for DIRECT and org-wide grants, and when not found here. */
+  headUnit: IBilingualName | null;
 }
 
 /**

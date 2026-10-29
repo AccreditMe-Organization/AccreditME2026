@@ -18,7 +18,7 @@ import { IUser, IUserReferenceNames } from './interfaces/user.interface';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { IRole } from '../roles/interfaces/role.interface';
-import { IUserRoleGrant } from '../roles/interfaces/user-role-grant.interface';
+import { IUserPermissionGrant, IUserRoleGrant } from '../roles/interfaces/user-role-grant.interface';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 
@@ -259,6 +259,20 @@ export class UserController {
     @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IUserRoleGrant[]> {
     return this.userService.getUserRolesForViewer(userId, tenantId, actorId, actorPermissions);
+  }
+
+  // ACC-272 — "A user's permissions" (read-only): each grant with its role's
+  // keys. The same gate as GET :userId/roles: roles:view here, and users:view
+  // unless the caller is reading themselves, checked in the service.
+  @Get(':userId/permissions')
+  @Permissions(ROLES_PERMISSIONS.VIEW)
+  getUserPermissions(
+    @Param('userId') userId: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<IUserPermissionGrant[]> {
+    return this.userService.getUserPermissionsForViewer(userId, tenantId, actorId, actorPermissions);
   }
 
   @Post(':userId/roles')

@@ -1,5 +1,5 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
@@ -21,6 +21,8 @@ import { IOrgPositionDto, OrgPositionService } from '../../../org-position/servi
 import { OrgUnitDto, OrgUnitService, orgUnitDisplayName } from '../../../organization/services/org-unit.service';
 import { ManageRolesComponent } from '../../../roles/components/manage-roles/manage-roles.component';
 import { RoleService, UserRoleGrantDto } from '../../../roles/services/role.service';
+import { orderGrants } from '../../../roles/permission-matrix/user-permissions.model';
+import { USER_PERMISSIONS_LOOKUP } from '../../../../core/navigation/nav-items';
 import { IBilingualNameDto, IUserDto, UserService } from '../../services/user.service';
 import { UserStatusActionsService, statusActionFor } from '../../services/user-status-actions.service';
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
@@ -91,6 +93,7 @@ interface Fact {
   selector: 'app-user-record',
   standalone: true,
   imports: [
+    RouterLink,
     TranslatePipe,
     ButtonModule,
     MessageModule,
@@ -250,6 +253,17 @@ interface Fact {
               [emptyTitle]="'userRecord.roles.empty' | translate"
               [emptyMessage]="'userRecord.roles.emptyBody' | translate"
             >
+              <!-- ACC-272 — "See permissions": this person, on "A user's permissions". -->
+              @if (canSeePermissions()) {
+                <a
+                  panelActions
+                  class="text-[12.5px] font-semibold text-[var(--am-blue-primary)] hover:underline"
+                  [routerLink]="['/roles/user-permissions', user()?.id]"
+                  data-action="seePermissions"
+                >
+                  {{ 'roles.userPermissions.seePermissions' | translate }}
+                </a>
+              }
               @if (canManageRoles()) {
                 <button
                   panelActions
@@ -479,6 +493,7 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly canRevokeInvitation = computed(() => this.statusAction() === 'revokeInvitation');
   readonly canViewRoles = computed(() => this.can('roles:view'));
   readonly canManageRoles = computed(() => this.can('roles:manage'));
+  readonly canSeePermissions = computed(() => USER_PERMISSIONS_LOOKUP.every((p) => this.can(p)));
   /** The two-step endpoints act on the CALLER, so only on your own record. */
   readonly canManageTwoStep = computed(() => this.isOwn());
 
@@ -496,17 +511,18 @@ export class UserRecordComponent implements OnInit, OnDestroy {
     this.translate.currentLang();
     const outcome = this.rolesHandle()?.outcome();
     if (outcome?.status !== 'rows') return [];
-    const grants = [...outcome.data];
-    const derived = grants.filter((g) => g.source !== 'DIRECT').map((g) => this.derivedRow(g));
-    const direct = grants
-      .filter((g) => g.source === 'DIRECT')
-      .map((g) => ({
-        id: g.id,
-        name: this.languageService.bilingual(g.role.nameEn, g.role.nameAr),
-        detail: this.translate.instant('manageRoles.grantedOn', { date: this.format.date(g.grantedAt) }),
-        derived: false,
-      }));
-    return [...derived, ...direct];
+    // ACC-272 — head positions, then direct, then inactive: the order "A
+    // user's permissions" shows, from one shared function.
+    return orderGrants(outcome.data).map((g) =>
+      g.source !== 'DIRECT'
+        ? this.derivedRow(g)
+        : {
+            id: g.id,
+            name: this.languageService.bilingual(g.role.nameEn, g.role.nameAr),
+            detail: this.translate.instant('manageRoles.grantedOn', { date: this.format.date(g.grantedAt) }),
+            derived: false,
+          },
+    );
   });
 
   /**

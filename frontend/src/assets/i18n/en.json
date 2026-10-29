@@ -675,7 +675,41 @@
     },
     "deactivateHeader": "Deactivate the role “{{name}}”?",
     "confirmDeactivateRoleNoHolders": "Nobody holds it now, so nobody loses anything. You can reactivate it later.",
-    "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back."
+    "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back.",
+    "userPermissions": {
+      "title": "A user's permissions",
+      "lookUp": "Look up a user's permissions",
+      "seePermissions": "See permissions",
+      "findUser": "Find a user",
+      "findUserPlaceholder": "Find a user by name or email",
+      "intro": "Choose a user to see what they can do and which role gives each permission.",
+      "openRecord": "Open user record",
+      "status": {
+        "ACTIVE": "Active",
+        "INACTIVE": "Deactivated",
+        "INVITED": "Invited",
+        "SUSPENDED": "Suspended"
+      },
+      "summary": "{{permissions}} through {{roles}}",
+      "summaryRoot": "Every permission, through {{role}}",
+      "summaryNone": "No permissions · no active roles",
+      "deactivated": "Deactivated. These permissions apply only if the account is reactivated.",
+      "rolesTitle": "Roles",
+      "inactive": "Inactive",
+      "grantedDirectly": "Granted directly · {{date}}",
+      "givesInactive": "Gives no permissions while inactive",
+      "givesAll": "Gives every permission",
+      "permissionsTitle": "Permissions",
+      "readOnly": "Read-only. To change what this person can do, change their roles on the user record, or change a role's permissions.",
+      "noActive": "{{name}} has no active roles, so can sign in but can't do anything yet.",
+      "from": "From {{roles}}",
+      "nothingGranted": "Nothing granted in {{modules}}.",
+      "listSeparator": ", ",
+      "listLast": "{{rest}} and {{last}}",
+      "loadFailedTitle": "Couldn't load this person's permissions",
+      "notFound": "This user isn't in your organization",
+      "closePicker": "Close"
+    }
   },
   "workflow": {
     "editor": {
@@ -2397,6 +2431,18 @@
       "filterActs": {
         "one": "Acts only on the {{count}} row shown by the current filter.",
         "other": "Acts only on the {{count}} rows shown by the current filter."
+      },
+      "permissionCount": {
+        "one": "{{count}} permission",
+        "other": "{{count}} permissions"
+      },
+      "activeRoleCount": {
+        "one": "{{count}} active role",
+        "other": "{{count}} active roles"
+      },
+      "gives": {
+        "one": "Gives {{count}} permission",
+        "other": "Gives {{count}} permissions"
       }
     },
     "committee": {

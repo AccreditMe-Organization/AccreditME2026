@@ -14,6 +14,7 @@ import { Role as PrismaRole } from '../../../generated/prisma/client';
 import { IRole } from './interfaces/role.interface';
 import {
   IUserRoleGrant,
+  IUserPermissionGrant,
   resolveGrantSource,
 } from './interfaces/user-role-grant.interface';
 import { IPermission } from './interfaces/permission.interface';
@@ -675,6 +676,60 @@ export class RoleService {
       ),
       grantedViaHeadPositionId: ur.grantedViaHeadPositionId,
       grantedViaHeadPositionOrgUnitId: ur.grantedViaHeadPositionOrgUnitId,
+    }));
+  }
+
+  // ACC-272 — each grant with its role's permission keys, for the read-only
+  // "A user's permissions" page. ONE query: the grants, their roles and each
+  // role's keys come back together through include, scoped on BOTH sides like
+  // getUserRoles(). The caller has already confirmed the user is in this tenant.
+  //
+  // Then the head grants' position and unit NAMES, in one Promise.all of two
+  // reads (each skipped when it has no ids), scoped to this organisation, so an
+  // id from another organisation reads as no name. A person with direct grants
+  // only costs nothing more: no head grant, no second round trip.
+  async getUserPermissionGrants(userId: string, organizationId: string): Promise<IUserPermissionGrant[]> {
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { userId, user: { organizationId }, role: { organizationId } },
+      include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const heads = userRoles.filter((ur) => ur.grantedViaHeadPositionId);
+    const positionIds = [...new Set(heads.map((ur) => ur.grantedViaHeadPositionId as string))];
+    const unitIds = [
+      ...new Set(heads.map((ur) => ur.grantedViaHeadPositionOrgUnitId).filter((id): id is string => !!id)),
+    ];
+    const nameSelect = { id: true, nameEn: true, nameAr: true } as const;
+    // Each read is skipped when it has no ids, so a person with no head grant
+    // costs no query here.
+    const [positions, units] = await Promise.all([
+      positionIds.length
+        ? this.prisma.orgPosition.findMany({ where: { id: { in: positionIds }, organizationId }, select: nameSelect })
+        : Promise.resolve([]),
+      unitIds.length
+        ? this.prisma.orgUnit.findMany({ where: { id: { in: unitIds }, organizationId }, select: nameSelect })
+        : Promise.resolve([]),
+    ]);
+    const named = (rows: { id: string; nameEn: string; nameAr: string | null }[]) =>
+      new Map(rows.map((r) => [r.id, { nameEn: r.nameEn, nameAr: r.nameAr }]));
+    const positionNames = named(positions);
+    const unitNames = named(units);
+    return userRoles.map((ur) => ({
+      id: ur.id,
+      role: this.mapRole(ur.role),
+      grantedAt: ur.createdAt,
+      source: resolveGrantSource(
+        ur.grantedViaHeadPositionId,
+        ur.grantedViaHeadPositionOrgUnitId,
+      ),
+      grantedViaHeadPositionId: ur.grantedViaHeadPositionId,
+      grantedViaHeadPositionOrgUnitId: ur.grantedViaHeadPositionOrgUnitId,
+      permissions: ur.role.rolePermissions.map((rp) => `${rp.permission.module}:${rp.permission.action}`).sort(),
+      headPosition: ur.grantedViaHeadPositionId ? (positionNames.get(ur.grantedViaHeadPositionId) ?? null) : null,
+      headUnit:
+        ur.grantedViaHeadPositionId && ur.grantedViaHeadPositionOrgUnitId
+          ? (unitNames.get(ur.grantedViaHeadPositionOrgUnitId) ?? null)
+          : null,
     }));
   }
 

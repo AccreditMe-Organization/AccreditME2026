@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { of } from 'rxjs';
@@ -62,6 +62,29 @@ describe('RoleListComponent row actions (ACC-123)', () => {
     Array.from((f.nativeElement as HTMLElement).querySelectorAll('button')).map((b) =>
       (b.textContent ?? '').trim() || (b.getAttribute('aria-label') ?? ''),
     );
+
+  // ACC-272 — the way in to "A user's permissions": only for readers its
+  // route admits (admin:access, roles:view AND users:view).
+  describe("'Look up a user's permissions'", () => {
+    const LOOKUP = ['admin:access', 'roles:view', 'users:view'];
+    const lookUp = (f: ReturnType<typeof render>) =>
+      (f.nativeElement as HTMLElement).querySelector('[data-roles-look-up-user] button');
+
+    for (const missing of LOOKUP) {
+      it(`is absent without ${missing}`, () => {
+        expect(lookUp(render(LOOKUP.filter((p) => p !== missing)))).toBeNull();
+      });
+    }
+
+    it('is present with all three, and opens the page', () => {
+      const f = render(LOOKUP);
+      const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+      const button = lookUp(f) as HTMLButtonElement;
+      expect(button.textContent!.trim()).toBe('roles.userPermissions.lookUp');
+      button.click();
+      expect(navigate).toHaveBeenCalledWith(['user-permissions'], jasmine.objectContaining({ relativeTo: jasmine.anything() }));
+    });
+  });
 
   describe('with roles:view only', () => {
     it('renders no Edit', () => {

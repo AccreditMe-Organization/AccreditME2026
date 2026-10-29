@@ -10,6 +10,22 @@ export const ROLES_ROUTES: Routes = [
         (m) => m.RoleListComponent,
       ),
   },
+  // ACC-272 — "A user's permissions", read-only. The address carries the
+  // person, so it can be shared. Each route runs the guard itself: the entry
+  // 'roles/user-permissions' (nav-items.ts) is stricter than Roles' own, and a
+  // child without a canActivate would only ever be checked against its parent.
+  {
+    path: 'user-permissions',
+    canActivate: [permissionGuard],
+    loadComponent: () =>
+      import('./components/user-permissions/user-permissions.component').then((m) => m.UserPermissionsComponent),
+  },
+  {
+    path: 'user-permissions/:userId',
+    canActivate: [permissionGuard],
+    loadComponent: () =>
+      import('./components/user-permissions/user-permissions.component').then((m) => m.UserPermissionsComponent),
+  },
   // CORRECTED — this guard is DEFENCE IN DEPTH, not a fix. The comment here
   // previously claimed the matrix "was reachable by URL to anyone signed in"
   // before it was added. That was false, and the correction is kept rather than

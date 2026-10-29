@@ -20,6 +20,7 @@ import { StatusChipComponent } from '../../../../shared/components/status-chip/s
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { AmCountPipe, FormatService } from '../../../../core/formatting';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { USER_PERMISSIONS_LOOKUP } from '../../../../core/navigation/nav-items';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 @Component({
@@ -40,7 +41,18 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
     <div class="flex flex-col h-full gap-4">
 
       <app-page-header [title]="'roles.title' | translate">
-        <div pageActions>
+        <div pageActions class="flex flex-wrap gap-2">
+          <!-- ACC-272 — a way in to "A user's permissions", for exactly the
+               readers its route admits (USER_PERMISSIONS_LOOKUP). -->
+          @if (canLookUpUser()) {
+            <p-button
+              [label]="'roles.userPermissions.lookUp' | translate"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="openUserPermissions()"
+              data-roles-look-up-user
+            />
+          }
           @if (canCreate()) {
             <p-button
               icon="pi pi-plus"
@@ -264,6 +276,11 @@ export class RoleListComponent {
   // users:manage already is) must not have to disentangle one computed doing
   // two jobs.
   readonly canManage = computed(() => this.navigationAccess.hasPermission('roles:manage'));
+  readonly canLookUpUser = computed(() => USER_PERMISSIONS_LOOKUP.every((p) => this.navigationAccess.hasPermission(p)));
+
+  openUserPermissions(): void {
+    void this.router.navigate(['user-permissions'], { relativeTo: this.route });
+  }
 
   /** A row action that failed: what to say, and how to try it again if that could work. */
   readonly actionError = signal<{ key: string; retry: (() => void) | null } | null>(null);
