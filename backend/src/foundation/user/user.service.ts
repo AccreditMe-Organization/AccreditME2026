@@ -49,7 +49,7 @@ import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IBilingualName, IUser, IUserReferenceNames } from './interfaces/user.interface';
 import { IRole } from '../roles/interfaces/role.interface';
-import { IUserRoleGrant } from '../roles/interfaces/user-role-grant.interface';
+import { IUserPermissionGrant, IUserRoleGrant } from '../roles/interfaces/user-role-grant.interface';
 import {
   TENANT_ADMIN_KEY,
   assertTenantRetainsAnActiveAdministrator,
@@ -1839,6 +1839,25 @@ export class UserService {
     // that reads as "this person holds no roles".
     await this.getById(userId, organizationId);
     return this.getUserRoles(userId, organizationId);
+  }
+
+  // ACC-272 — "A user's permissions": the grants, each with its role's keys.
+  // The SAME rule as getUserRolesForViewer() above, in the same order: the
+  // permission first (existence-neutral, so it may name users:view), then the
+  // user confirmed in this tenant (a foreign user is a 404, never an empty
+  // list), then one read.
+  async getUserPermissionsForViewer(
+    userId: string,
+    organizationId: string,
+    actorId: string,
+    actorPermissions: readonly string[],
+  ): Promise<IUserPermissionGrant[]> {
+    const isSelf = actorId === userId;
+    if (!isSelf && !actorPermissions.includes(USERS_PERMISSIONS.VIEW)) {
+      throw new ForbiddenException(`Required permission: ${USERS_PERMISSIONS.VIEW}`);
+    }
+    await this.getById(userId, organizationId);
+    return this.roleService.getUserPermissionGrants(userId, organizationId);
   }
 
   async assignRoleToUser(

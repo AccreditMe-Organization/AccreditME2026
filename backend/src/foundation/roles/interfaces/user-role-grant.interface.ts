@@ -79,6 +79,23 @@ export interface IUserRoleGrant {
 }
 
 /**
+ * ACC-272 — one grant with the keys its role holds, for GET
+ * /users/:userId/permissions ("A user's permissions").
+ *
+ * The keys are the role's as STORED (`module:action`), whether or not the role
+ * is active: an inactive role is returned with `role.isActive` false, and the
+ * page gives nothing for it. The union, and which keys are SHOWN (in use, no
+ * platform key in a tenant, the root-only key only from the root role), are the
+ * page's, the same rules the role permissions page applies, so the two cannot
+ * disagree. Nothing here is what a guard decides with: that stays
+ * getUserPermissions(), unchanged.
+ */
+export interface IUserPermissionGrant extends IUserRoleGrant {
+  /** The role's permission keys, `module:action`, sorted. */
+  permissions: string[];
+}
+
+/**
  * The single place the discriminator rule lives.
  *
  * Exported and used by the service rather than inlined there, so a reader
