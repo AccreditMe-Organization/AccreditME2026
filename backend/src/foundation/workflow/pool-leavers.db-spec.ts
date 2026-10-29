@@ -36,6 +36,10 @@ import { TaskAuthorityService } from '../task/task-authority.service';
 import { TaskAssignmentService } from '../task/task-assignment.service';
 import { TaskSlaService } from '../task/task-sla.service';
 import { TaskClosedNoticeService } from '../task/task-closed-notice.service';
+import { UserService } from '../user/user.service';
+import { OrgUnitHeadService } from '../organization/org-unit-head.service';
+import { OrgPositionService } from '../org-position/org-position.service';
+import type { AuthProvider } from '../../providers/auth/auth.provider';
 import { WorkflowService } from './workflow.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
@@ -72,7 +76,20 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
   const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
   const organizations = { resolveActingHeadForOrgUnit: async () => [], refreshOrgUnitHeadVacancy: async () => undefined } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, new StagePoolService(prisma));
+  const pools = new StagePoolService(prisma);
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, pools);
+  const users = new UserService(
+    prisma,
+    audit,
+    notifications,
+    roles,
+    tasks,
+    organizations,
+    { invalidateUserSessions: async () => undefined } as unknown as AuthProvider,
+    {} as OrgUnitHeadService,
+    {} as OrgPositionService,
+    pools,
+  );
 
   interface Org {
     id: string;
@@ -176,6 +193,68 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     const active = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: o.templateId, key: 'active' } });
     expect(after.currentStageId).toBe(active.id);
     expect(await prisma.workflowApproval.count({ where: { workflowInstanceStageId: c.entryId, approverId: leaves } })).toBe(1);
+  });
+
+  // An entry opened before PR 4 deployed has no events at all. The sweep's
+  // first look records the pool as it is (JOINED) and nobody as having left.
+  it('an entry opened before the deploy, with no events: the first sweep records the pool as the baseline and no leavers', async () => {
+    const o = await org();
+    const post = await prisma.orgPosition.create({ data: { organizationId: o.id, nameEn: 'Reviewer', grade: 3 } });
+    const a = await o.person('A', { positionId: post.id, primaryOrgUnitId: o.unitId });
+    const b = await o.person('B', { positionId: post.id, primaryOrgUnitId: o.unitId });
+    const t = await termsReviewAll(o, [{ kind: 'POSITION_IN_UNIT', positionId: post.id, orgUnitId: o.unitId }]);
+    // Written directly, as an entry from before the deploy: no JOINED events.
+    const c = await prisma.committee.create({
+      data: { organizationId: o.id, nameEn: 'Old committee', typeValueId: 'type', orgUnitId: o.unitId, quorumCount: 1, meetingFrequency: 'MONTHLY' },
+    });
+    const instance = await prisma.workflowInstance.create({
+      data: { organizationId: o.id, workflowTemplateId: o.templateId, objectType: 'COMMITTEE', objectId: c.id, status: 'IN_PROGRESS', currentStageId: t.stageId },
+    });
+    const entry = await prisma.workflowInstanceStage.create({ data: { workflowInstanceId: instance.id, stageId: t.stageId, actorId: o.adminId } });
+    expect(await events(entry.id)).toEqual([]);
+
+    expect(await sweep(o)).toEqual({ joined: 2, left: 0 });
+    expect((await events(entry.id)).map((e) => `${e.kind}:${e.userId}`).sort()).toEqual([`POOL_MEMBER_JOINED:${a}`, `POOL_MEMBER_JOINED:${b}`].sort());
+
+    // From then on it is an ordinary entry.
+    await prisma.user.update({ where: { id: a }, data: { positionId: null } });
+    expect(await sweep(o)).toEqual({ joined: 0, left: 1 });
+  });
+
+  it('someone who leaves and later comes back joins again, with a new JOINED event', async () => {
+    const o = await org();
+    const post = await prisma.orgPosition.create({ data: { organizationId: o.id, nameEn: 'Reviewer', grade: 3 } });
+    const back = await o.person('Comes back', { positionId: post.id, primaryOrgUnitId: o.unitId });
+    await o.person('Stays', { positionId: post.id, primaryOrgUnitId: o.unitId });
+    await termsReviewAll(o, [{ kind: 'POSITION_IN_UNIT', positionId: post.id, orgUnitId: o.unitId }]);
+    const c = await committeeEnteringTermsReview(o);
+
+    await prisma.user.update({ where: { id: back }, data: { positionId: null } });
+    expect(await sweep(o)).toEqual({ joined: 0, left: 1 });
+    await prisma.user.update({ where: { id: back }, data: { positionId: post.id } });
+    expect(await sweep(o)).toEqual({ joined: 1, left: 0 });
+
+    expect((await events(c.entryId)).filter((e) => e.userId === back).map((e) => e.kind)).toEqual([
+      'POOL_MEMBER_JOINED',
+      'POOL_MEMBER_LEFT',
+      'POOL_MEMBER_JOINED',
+    ]);
+  });
+
+  it('a deactivated member, already recorded by the deactivation, is not recorded again by the sweep', async () => {
+    const o = await org();
+    const post = await prisma.orgPosition.create({ data: { organizationId: o.id, nameEn: 'Reviewer', grade: 3 } });
+    const leaver = await o.person('Deactivated', { positionId: post.id, primaryOrgUnitId: o.unitId });
+    await o.person('Stays', { positionId: post.id, primaryOrgUnitId: o.unitId });
+    await termsReviewAll(o, [{ kind: 'POSITION_IN_UNIT', positionId: post.id, orgUnitId: o.unitId }]);
+    const c = await committeeEnteringTermsReview(o);
+
+    await users.deactivate(leaver, o.id, o.adminId);
+
+    expect(await sweep(o)).toEqual({ joined: 0, left: 0 });
+    expect(await sweep(o)).toEqual({ joined: 0, left: 0 });
+    const left = (await events(c.entryId)).filter((e) => e.kind === 'POOL_MEMBER_LEFT');
+    expect(left.map((e) => [e.userId, e.reason])).toEqual([[leaver, 'DEACTIVATED']]);
   });
 
   it("a committee member whose seat ends is recorded as having left the record's committee pool", async () => {
