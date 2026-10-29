@@ -504,10 +504,13 @@ describe('AuthService', () => {
       return `${head}.${body}.${sig}`;
     };
     const rowOwner = { userId: 'user-row', organizationId: ORG_B };
-    const clearedPaths = (res: { clearCookie: jest.Mock }, name: string) =>
-      res.clearCookie.mock.calls
-        .filter((c) => c[0] === name)
-        .map((c) => (c[1] as { path: string }).path);
+    // Every clear, as [name, path] — so a test can require exactly the two
+    // current clears and nothing at the pre-ACC-203 path (ACC-207).
+    const clears = (res: { clearCookie: jest.Mock }) =>
+      res.clearCookie.mock.calls.map((c) => [
+        c[0],
+        (c[1] as { path: string }).path,
+      ]);
 
     it('with no access cookie and a live refresh cookie: 200, the row revoked, every session cookie cleared', async () => {
       mockPrisma.refreshToken.updateManyAndReturn.mockResolvedValue([rowOwner]);
@@ -542,11 +545,14 @@ describe('AuthService', () => {
         sameSite: 'strict',
         path: '/api/v1/auth',
       });
-      // The change-over clear: a cookie left at the pre-ACC-203 path goes too.
-      expect(clearedPaths(res, 'refresh_token')).toEqual([
-        '/api/v1/auth',
-        '/api/v1/auth/refresh',
+      // Exactly the two current clears (ACC-207), and nothing at the old path.
+      expect(clears(res)).toEqual([
+        ['access_token', '/'],
+        ['refresh_token', '/api/v1/auth'],
       ]);
+      expect(clears(res).map(([, path]) => path)).not.toContain(
+        '/api/v1/auth/refresh',
+      );
     });
 
     it('with no cookies at all: 200, nothing revoked, no audit entry, no throw', async () => {
@@ -558,11 +564,15 @@ describe('AuthService', () => {
         mockPrisma.refreshToken.updateManyAndReturn,
       ).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
-      // Still clears: whatever the browser holds goes, including the old path.
-      expect(clearedPaths(res, 'refresh_token')).toEqual([
-        '/api/v1/auth',
-        '/api/v1/auth/refresh',
+      // Still clears whatever the browser holds: the two current cookies, and
+      // nothing at the old path (ACC-207).
+      expect(clears(res)).toEqual([
+        ['access_token', '/'],
+        ['refresh_token', '/api/v1/auth'],
       ]);
+      expect(clears(res).map(([, path]) => path)).not.toContain(
+        '/api/v1/auth/refresh',
+      );
     });
 
     it('with a valid access cookie: the audit names the person the token proves, even when a row was revoked too', async () => {
@@ -769,11 +779,11 @@ describe('AuthService', () => {
     });
   });
 
-  // ACC-203 — the change-over: every set of the refresh cookie also deletes
-  // one left at the old /api/v1/auth/refresh path, or the browser would send
-  // both to /refresh, old first, and the next refresh would sign them out.
-  describe('refresh cookie change-over (ACC-203)', () => {
-    it('setting the refresh cookie also clears the pre-ACC-203 path', async () => {
+  // ACC-207 — the ACC-203 change-over is over: setting the session cookies
+  // writes exactly the two current cookies, and clears nothing, at the old
+  // /api/v1/auth/refresh path or anywhere else.
+  describe('setting the session cookies (ACC-207)', () => {
+    it('sets exactly the two current cookies and touches nothing at /api/v1/auth/refresh', async () => {
       mockPrisma.refreshToken.findFirst.mockResolvedValue({
         id: 'rt-1',
         userId: 'user-1',
@@ -796,24 +806,22 @@ describe('AuthService', () => {
         res,
       );
 
-      expect(res.cookie).toHaveBeenCalledWith(
-        'refresh_token',
-        expect.any(String),
-        expect.objectContaining({ path: '/api/v1/auth' }),
-      );
-      expect(res.clearCookie).toHaveBeenCalledWith(
-        'refresh_token',
-        expect.objectContaining({
-          path: '/api/v1/auth/refresh',
-          secure: true,
-          httpOnly: true,
-          sameSite: 'strict',
-        }),
-      );
-      expect(res.clearCookie).not.toHaveBeenCalledWith(
-        'refresh_token',
-        expect.objectContaining({ path: '/api/v1/auth' }),
-      );
+      const sets = (res.cookie as jest.Mock).mock.calls.map((c) => [
+        c[0],
+        (c[2] as { path: string }).path,
+      ]);
+      const cleared = (res.clearCookie as jest.Mock).mock.calls.map((c) => [
+        c[0],
+        (c[1] as { path: string }).path,
+      ]);
+      expect(sets).toEqual([
+        ['access_token', '/'],
+        ['refresh_token', '/api/v1/auth'],
+      ]);
+      expect(cleared).toEqual([]);
+      expect(
+        [...sets, ...cleared].map(([, path]) => path),
+      ).not.toContain('/api/v1/auth/refresh');
     });
   });
 

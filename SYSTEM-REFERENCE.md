@@ -11704,19 +11704,8 @@ stays httpOnly, Secure, `SameSite=Strict` and host-only. Moving both routes unde
 a narrower shared path was considered and not taken: a breaking route change for
 little gain, since a cookie's Path is not a security boundary (RFC 6265 §8.6).
 
-**The change-over clears the old path on every SET as well as every clear.** A
-browser that signed in before the deploy keeps its `/api/v1/auth/refresh` cookie.
-After its first refresh it would hold two cookies that both match `/refresh`,
-the browser sends the longer path FIRST, `cookie-parser` keeps the first value —
-the old, already-rotated token — and the next refresh would sign the person out.
-Clearing the old path in `setSessionCookies()` as well as
-`clearSessionCookies()` removes it on the first refresh or sign-in after the
-deploy. **Both clears are removable once 7 days (the refresh-token life) have
-passed since ACC-203 deployed** (dated comments beside each). One harmless gap: a
-browser with only an old-path cookie that signs out before its first refresh
-does not send it to `/logout`, so its row is not revoked — but the clear deletes
-the cookie, nothing can present that token again, and the row expires within 7
-days.
+**The clear of the old `/api/v1/auth/refresh` path ran on every set and every
+clear from 10 Oct 2026 to 29 Oct 2026, and was removed by ACC-207.**
 
 **ACC-148's feared exposure was verified absent (8 Oct), for three independent
 reasons** — a forged `Host` could not have pointed a reset link at an attacker:
