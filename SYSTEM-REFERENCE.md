@@ -436,10 +436,17 @@ elsewhere.**
     (403 naming `users:view`, existence-neutral). Then `getById()` confirms the user
     is in this tenant (a foreign user is a 404, never an empty list), then ONE
     `userRole.findMany`, scoped on both `user.organizationId` and
-    `role.organizationId`, including role → rolePermissions → permission. It returns
-    `IUserPermissionGrant[]`: the `IUserRoleGrant` shape (id, role, grantedAt,
-    source, the two grantedVia ids) plus `permissions: string[]` (`module:action`,
-    sorted, as stored). Inactive roles are returned with `role.isActive` false.
+    `role.organizationId`, including role → rolePermissions → permission. Then the
+    head grants' names: ONE `Promise.all` of `orgPosition.findMany` and
+    `orgUnit.findMany` over the distinct ids, each scoped by `organizationId` and
+    skipped when it has no ids, so a person with direct grants only costs the one
+    query. It returns `IUserPermissionGrant[]`: the `IUserRoleGrant` shape (id,
+    role, grantedAt, source, the two grantedVia ids) plus `permissions: string[]`
+    (`module:action`, sorted, as stored), `headPosition` and `headUnit`
+    (`IBilingualName | null`, the shape `IUserReferenceNames` uses: null on a
+    DIRECT grant, `headUnit` null on an org-wide one, and either null when its id
+    is not this organisation's). Inactive roles are returned with `role.isActive`
+    false.
     The union is NOT computed on the server, and `getUserPermissions()` and every
     guard are unchanged: this read decides nothing.
   - **What is shown** is `permission-matrix/user-permissions.model.ts`: each ACTIVE
@@ -454,10 +461,12 @@ elsewhere.**
     panel), each with its source line and what it gives, then the granted rows
     only, each with "From" every active role that gives it, and Find. No
     checkboxes and no save. The address carries the person.
-  - **Names** come from `GET /users/:id`'s `references`, the way the user record
-    names them: a head grant's position and unit are named when they are the
-    record's own (its position; its primary or acting unit), generically
-    otherwise ("Comes with a head position"). No request per row. The picker's
+  - **Names** of a head grant's position and unit come from the grant itself
+    (`headPosition`, `headUnit`), so an acting headship's position, which is
+    the unit's and not the person's, is named too. If the server has no name,
+    the page tries the record's own `references` (its position; its primary or
+    acting unit), then a generic line ("Comes with a head position"). No request
+    per row. The user record's Roles panel still names only the record's own. The picker's
     unit and position names come from the org-unit and position lists, as on the
     Users list; a reader without them sees "—" there.
   - **Who may open it**: `admin:access` + `roles:view` + `users:view`

@@ -14,7 +14,28 @@ const ORG_B = 'org-b';
 
 describe('RoleService.getUserPermissionGrants (ACC-272)', () => {
   let service: RoleService;
-  let prisma: { userRole: { findMany: jest.Mock } } & Record<string, unknown>;
+  let prisma: { userRole: { findMany: jest.Mock }; orgPosition: { findMany: jest.Mock }; orgUnit: { findMany: jest.Mock } };
+
+  // Names, in two organisations. The mocks honour the where's id list AND its
+  // organizationId, as the database would, so an id from another organisation
+  // is not found.
+  const POSITIONS = [
+    { id: 'pos-psl', organizationId: ORG_A, nameEn: 'Patient Safety Lead', nameAr: 'رئيس سلامة المرضى' },
+    { id: 'pos-qd', organizationId: ORG_A, nameEn: 'Quality Director', nameAr: 'مدير الجودة' },
+    { id: 'pos-foreign', organizationId: ORG_B, nameEn: 'Foreign Head', nameAr: null },
+  ];
+  const UNITS = [
+    { id: 'unit-ps', organizationId: ORG_A, nameEn: 'Patient Safety Unit', nameAr: 'وحدة سلامة المرضى' },
+    { id: 'unit-foreign', organizationId: ORG_B, nameEn: 'Foreign Ward', nameAr: null },
+  ];
+  const byIdsInOrg =
+    (table: { id: string; organizationId: string; nameEn: string; nameAr: string | null }[]) =>
+    ({ where }: { where: { id: { in: string[] }; organizationId?: string } }) =>
+      Promise.resolve(
+        table
+          .filter((r) => where.id.in.includes(r.id) && (where.organizationId === undefined || r.organizationId === where.organizationId))
+          .map(({ id, nameEn, nameAr }) => ({ id, nameEn, nameAr })),
+      );
 
   const perm = (key: string) => {
     const [module, action] = key.split(':');
@@ -46,9 +67,13 @@ describe('RoleService.getUserPermissionGrants (ACC-272)', () => {
   });
 
   beforeEach(async () => {
-    // Only userRole.findMany exists: any other read would throw, which is how
-    // "one query, nothing per grant" is held, not only asserted.
-    prisma = { userRole: { findMany: jest.fn().mockResolvedValue([]) } };
+    // Only these three reads exist: any other would throw, which is how "no
+    // query per grant" is held, not only asserted.
+    prisma = {
+      userRole: { findMany: jest.fn().mockResolvedValue([]) },
+      orgPosition: { findMany: jest.fn(byIdsInOrg(POSITIONS)) },
+      orgUnit: { findMany: jest.fn(byIdsInOrg(UNITS)) },
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         RoleService,
@@ -88,6 +113,8 @@ describe('RoleService.getUserPermissionGrants (ACC-272)', () => {
       grantedViaHeadPositionId: null,
       grantedViaHeadPositionOrgUnitId: null,
       permissions: ['committees:view', 'users:view'],
+      headPosition: null,
+      headUnit: null,
     });
     // The role is mapped, never passed through with its rolePermissions.
     expect(Object.keys(grant!.role)).not.toContain('rolePermissions');
@@ -125,6 +152,70 @@ describe('RoleService.getUserPermissionGrants (ACC-272)', () => {
     const [grant] = await service.getUserPermissionGrants('user-1', ORG_A);
 
     expect(grant!.permissions).toEqual([]);
+  });
+
+  // ── The head grants' names (CC-165) ─────────────────────────────────────────
+
+  it("(a) names an acting head grant: a position and unit that are not the person's own, in one Promise.all", async () => {
+    // The acting headship of Patient Safety Unit: its head position is the
+    // unit's, neither the person's positionId nor their primary or acting unit.
+    prisma.userRole.findMany.mockResolvedValue([
+      grantRow({ id: 'ur-psr', grantedViaHeadPositionId: 'pos-psl', grantedViaHeadPositionOrgUnitId: 'unit-ps' }),
+      grantRow({ id: 'ur-qe' }),
+    ]);
+
+    const [acting, direct] = await service.getUserPermissionGrants('user-1', ORG_A);
+
+    expect(acting!.headPosition).toEqual({ nameEn: 'Patient Safety Lead', nameAr: 'رئيس سلامة المرضى' });
+    expect(acting!.headUnit).toEqual({ nameEn: 'Patient Safety Unit', nameAr: 'وحدة سلامة المرضى' });
+    expect(direct!.headPosition).toBeNull();
+    expect(direct!.headUnit).toBeNull();
+    // Three queries in all: the grants, then one read each for the names.
+    expect(prisma.userRole.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.orgPosition.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.orgUnit.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.orgPosition.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ['pos-psl'] }, organizationId: ORG_A },
+      select: { id: true, nameEn: true, nameAr: true },
+    });
+  });
+
+  it('reads each distinct id once, and an org-wide grant reads no unit', async () => {
+    prisma.userRole.findMany.mockResolvedValue([
+      grantRow({ id: 'ur-1', grantedViaHeadPositionId: 'pos-qd', grantedViaHeadPositionOrgUnitId: null }),
+      grantRow({ id: 'ur-2', grantedViaHeadPositionId: 'pos-qd', grantedViaHeadPositionOrgUnitId: null }),
+    ]);
+
+    const grants = await service.getUserPermissionGrants('user-1', ORG_A);
+
+    expect(grants.map((g) => g.headPosition?.nameEn)).toEqual(['Quality Director', 'Quality Director']);
+    expect(grants.map((g) => g.headUnit)).toEqual([null, null]);
+    expect(prisma.orgPosition.findMany.mock.calls[0][0].where.id.in).toEqual(['pos-qd']);
+    expect(prisma.orgUnit.findMany).not.toHaveBeenCalled();
+  });
+
+  it('(b) a person with direct grants only costs exactly one query, with no name reads', async () => {
+    prisma.userRole.findMany.mockResolvedValue([grantRow(), grantRow({ id: 'ur-2' })]);
+
+    await service.getUserPermissionGrants('user-1', ORG_A);
+
+    expect(prisma.userRole.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.orgPosition.findMany).not.toHaveBeenCalled();
+    expect(prisma.orgUnit.findMany).not.toHaveBeenCalled();
+  });
+
+  it('(c) should NOT return records belonging to a different tenant: a foreign position or unit id is named null', async () => {
+    prisma.userRole.findMany.mockResolvedValue([
+      grantRow({ id: 'ur-x', grantedViaHeadPositionId: 'pos-foreign', grantedViaHeadPositionOrgUnitId: 'unit-foreign' }),
+    ]);
+
+    const [grant] = await service.getUserPermissionGrants('user-1', ORG_A);
+
+    expect(grant!.headPosition).toBeNull();
+    expect(grant!.headUnit).toBeNull();
+    // Both name reads are scoped to this organisation.
+    expect(prisma.orgPosition.findMany.mock.calls[0][0].where.organizationId).toBe(ORG_A);
+    expect(prisma.orgUnit.findMany.mock.calls[0][0].where.organizationId).toBe(ORG_A);
   });
 
   it('should NOT return records belonging to a different tenant', async () => {

@@ -1,4 +1,5 @@
 import { IRole } from './role.interface';
+import { IBilingualName } from '../../user/interfaces/user.interface';
 
 /**
  * How a user came to hold a role.
@@ -93,6 +94,15 @@ export interface IUserRoleGrant {
 export interface IUserPermissionGrant extends IUserRoleGrant {
   /** The role's permission keys, `module:action`, sorted. */
   permissions: string[];
+  /**
+   * The head position a head grant comes with, named (the shape
+   * IUserReferenceNames uses). Null on a DIRECT grant, and null when the id is
+   * not a position of this organisation. Read for EVERY head grant, not only
+   * the person's own position: an acting headship's position is the unit's.
+   */
+  headPosition: IBilingualName | null;
+  /** The unit a unit-scoped head grant covers, named. Null for DIRECT and org-wide grants, and when not found here. */
+  headUnit: IBilingualName | null;
 }
 
 /**

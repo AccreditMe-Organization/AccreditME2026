@@ -39,6 +39,9 @@ export interface GrantFixture {
   positionId?: string | null;
   unitId?: string | null;
   grantedAt?: string;
+  /** The names the server reads for a head grant; null when it found none. */
+  headPosition?: { nameEn: string; nameAr: string | null } | null;
+  headUnit?: { nameEn: string; nameAr: string | null } | null;
 }
 
 export function grant(over: GrantFixture): UserPermissionGrantDto {
@@ -63,6 +66,8 @@ export function grant(over: GrantFixture): UserPermissionGrantDto {
     grantedViaHeadPositionId: source === 'DIRECT' ? null : (over.positionId ?? 'pos-qd'),
     grantedViaHeadPositionOrgUnitId: source === 'HEAD_POSITION_UNIT' ? (over.unitId ?? 'unit-qd') : null,
     permissions: [...over.permissions].sort(),
+    headPosition: source === 'DIRECT' ? null : (over.headPosition ?? null),
+    headUnit: source === 'HEAD_POSITION_UNIT' ? (over.headUnit ?? null) : null,
   };
 }
 
@@ -81,6 +86,8 @@ export function nouraGrants(): UserPermissionGrantDto[] {
       name: 'Unit Head',
       nameAr: 'رئيس وحدة',
       source: 'HEAD_POSITION_UNIT',
+      headPosition: { nameEn: 'Quality Director', nameAr: 'مدير الجودة' },
+      headUnit: { nameEn: 'Quality Department', nameAr: 'إدارة الجودة' },
       permissions: ['org:view', 'users:view', 'committees:view', 'committees:view_unit_tasks', 'committees:create_tasks', 'meetings:view'],
     }),
     grant({
@@ -91,6 +98,8 @@ export function nouraGrants(): UserPermissionGrantDto[] {
       // position is that unit's, not the person's own.
       positionId: 'pos-psl',
       unitId: 'unit-ps',
+      headPosition: { nameEn: 'Patient Safety Lead', nameAr: 'رئيس سلامة المرضى' },
+      headUnit: { nameEn: 'Patient Safety Unit', nameAr: 'وحدة سلامة المرضى' },
       permissions: ['committees:view', 'committees:approve', 'committees:view_unit_tasks'],
     }),
   ];

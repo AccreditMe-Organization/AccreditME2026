@@ -69,6 +69,10 @@ export interface UserRoleGrantDto {
 export interface UserPermissionGrantDto extends UserRoleGrantDto {
   /** `module:action`, sorted. */
   permissions: string[];
+  /** The head position a head grant comes with, named; null on a direct grant or when not found. */
+  headPosition: { nameEn: string; nameAr: string | null } | null;
+  /** The unit a unit-scoped head grant covers, named; null for direct and org-wide grants. */
+  headUnit: { nameEn: string; nameAr: string | null } | null;
 }
 
 export interface CreateRoleDto {

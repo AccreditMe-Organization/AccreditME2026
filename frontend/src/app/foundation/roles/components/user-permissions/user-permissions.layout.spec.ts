@@ -38,7 +38,8 @@ const CATALOGUE = Object.keys(SENTENCES).map(perm);
 const LONG_POSITION = { nameEn: 'Director of Clinical Quality Improvement and Accreditation Readiness', nameAr: 'مدير تحسين الجودة السريرية والجاهزية للاعتماد وسلامة المرضى' };
 const LONG_UNIT = { nameEn: 'Department of Quality, Patient Safety and Clinical Governance', nameAr: 'إدارة الجودة وسلامة المرضى والحوكمة السريرية' };
 const GRANTS = [
-  ...nouraGrants(),
+  // The head grants carry the long names, as the server sends them (CC-165).
+  ...nouraGrants().map((g) => (g.source === 'DIRECT' ? g : { ...g, headPosition: LONG_POSITION, headUnit: LONG_UNIT })),
   grant({
     name: 'Accreditation Programme Coordinator for the Joint Commission Survey',
     nameAr: 'منسق برنامج الاعتماد لزيارة اللجنة الدولية المشتركة للمستشفيات',

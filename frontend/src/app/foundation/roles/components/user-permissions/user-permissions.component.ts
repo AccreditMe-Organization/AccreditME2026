@@ -414,10 +414,11 @@ export class UserPermissionsComponent implements OnInit {
   });
 
   /**
-   * Where a role came from, named the way the user record names it: a head
-   * grant's position and unit are named when they are the record's own (its
-   * position, its primary or acting unit, from `references`), generically
-   * otherwise. No request per row.
+   * Where a role came from. The server names every head grant's position and
+   * unit (`headPosition`, `headUnit`, read with the grants), an acting
+   * headship's included; if a name is missing, the record's own references are
+   * tried (its position, its primary or acting unit), then a generic line. No
+   * request per row.
    */
   private sourceLine(r: UserRoleLine): string {
     const g = r.grant;
@@ -426,10 +427,12 @@ export class UserPermissionsComponent implements OnInit {
     }
     const u = this.user();
     const refs = u?.references;
-    const position = g.grantedViaHeadPositionId && g.grantedViaHeadPositionId === u?.positionId ? refs?.position : null;
+    const position =
+      g.headPosition ?? (g.grantedViaHeadPositionId && g.grantedViaHeadPositionId === u?.positionId ? refs?.position : null);
     const unitId = g.grantedViaHeadPositionOrgUnitId;
     const unit =
-      unitId && unitId === u?.primaryOrgUnitId ? refs?.primaryOrgUnit : unitId && unitId === u?.actingOrgUnitId ? refs?.actingOrgUnit : null;
+      g.headUnit ??
+      (unitId && unitId === u?.primaryOrgUnitId ? refs?.primaryOrgUnit : unitId && unitId === u?.actingOrgUnitId ? refs?.actingOrgUnit : null);
     const lead = position
       ? this.translate.instant('userRecord.roles.fromPosition', { position: this.name(position) })
       : this.translate.instant('userRecord.roles.fromPositionUnnamed');

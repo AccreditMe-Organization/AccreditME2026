@@ -705,9 +705,9 @@
       "from": "من: {{roles}}",
       "nothingGranted": "لا شيء ممنوح في: {{modules}}.",
       "listSeparator": "، ",
-      "listLast": "{{rest}}، {{last}}",
+      "listLast": "{{rest}} و{{last}}",
       "loadFailedTitle": "تعذّر تحميل صلاحيات هذا الشخص",
-      "notFound": "هذا المستخدم ليس ضمن منشأتك",
+      "notFound": "هذا المستخدم ليس ضمن مؤسستك",
       "closePicker": "إغلاق"
     }
   },

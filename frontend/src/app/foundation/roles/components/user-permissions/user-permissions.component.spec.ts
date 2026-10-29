@@ -12,7 +12,7 @@ import { OrgPositionService } from '../../../org-position/services/org-position.
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
-import { layla, noActiveGrants, nouraGrants, person, rootGrants } from '../../permission-matrix/user-permissions.fixtures';
+import { grant, layla, noActiveGrants, nouraGrants, person, rootGrants } from '../../permission-matrix/user-permissions.fixtures';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
@@ -143,9 +143,8 @@ describe("UserPermissionsComponent (ACC-272, A user's permissions)", () => {
     expect(rows.map((r) => t('[data-up-role-link]', r))).toEqual(['Unit Head', 'Patient Safety Reviewer', 'Quality Editor', 'Committee Secretary']);
     expect(rows.map((r) => t('[data-up-source]', r))).toEqual([
       'Comes with the head position Quality Director · Quality Department',
-      // An acting headship: the unit is the record's acting unit, named; the
-      // head position is not the person's own, so it is named generically.
-      'Comes with a head position · Patient Safety Unit',
+      // An acting headship: the server names the unit's head position and the unit.
+      'Comes with the head position Patient Safety Lead · Patient Safety Unit',
       'Granted directly · 3 Oct 2026',
       'Granted directly · 12 Aug 2026',
     ]);
@@ -162,6 +161,33 @@ describe("UserPermissionsComponent (ACC-272, A user's permissions)", () => {
     expect(t('[data-up-inactive]', rows[3]!)).toBe('Inactive');
     expect(q('[data-up-inactive]', rows[0]!)).toBeNull();
     expect(q('[data-up-system]')).toBeNull();
+  });
+
+  it("en: an acting head's line names the head position and the unit, though neither is the person's own", () => {
+    // The person's own position and units are elsewhere: only the server's names can say these.
+    const acting = grant({
+      name: 'Ward Head',
+      source: 'HEAD_POSITION_UNIT',
+      positionId: 'pos-ward-head',
+      unitId: 'unit-ward-7',
+      headPosition: { nameEn: 'Ward Manager', nameAr: 'مدير الجناح' },
+      headUnit: { nameEn: 'Ward 7', nameAr: 'الجناح 7' },
+      permissions: ['org:view'],
+    });
+    render({ grants: [acting] });
+    expect(t('[data-up-role] [data-up-source]')).toBe('Comes with the head position Ward Manager · Ward 7');
+  });
+
+  it('without names from the server, the record\'s own references, then a generic line', () => {
+    const withoutNames = nouraGrants().map((g) => ({ ...g, headPosition: null, headUnit: null }));
+    render({ grants: withoutNames });
+    const sources = all('[data-up-role]').map((r) => t('[data-up-source]', r));
+    expect(sources.slice(0, 2)).toEqual([
+      // The person's own position and primary unit, from references.
+      'Comes with the head position Quality Director · Quality Department',
+      // Not the person's own position; the unit is their acting unit.
+      'Comes with a head position · Patient Safety Unit',
+    ]);
   });
 
   it('en: granted rows only, each module "n of N", each row "From" every active role that gives it', () => {
@@ -208,12 +234,12 @@ describe("UserPermissionsComponent (ACC-272, A user's permissions)", () => {
     const rows = all('[data-up-role]');
     expect(rows.map((r) => t('[data-up-role-link]', r))).toEqual(['رئيس وحدة', 'مراجع سلامة المرضى', 'محرر الجودة', 'أمين سر اللجنة']);
     expect(t('[data-up-source]', rows[0]!)).toBe('مرتبط بمنصب الرئاسة مدير الجودة · إدارة الجودة');
-    expect(t('[data-up-source]', rows[1]!)).toBe('مرتبط بمنصب رئاسة · وحدة سلامة المرضى');
+    expect(t('[data-up-source]', rows[1]!)).toBe('مرتبط بمنصب الرئاسة رئيس سلامة المرضى · وحدة سلامة المرضى');
     expect(text(q('[data-up-source]', rows[2]!))).toContain('⁦3⁩');
     expect(rows.map((r) => t('[data-up-gives]', r))).toEqual(['يمنح 6 صلاحيات', 'يمنح 3 صلاحيات', 'يمنح 14 صلاحية', 'لا يمنح أي صلاحية ما دام غير نشط']);
     expect(text(q('[data-up-module="committees"] [data-up-count]'))).toBe('⁦9⁩ من ⁦12⁩');
     expect(t('[data-up-row="committees:view"] [data-up-from]')).toBe('من: رئيس وحدة، مراجع سلامة المرضى، محرر الجودة');
-    expect(t('[data-up-nothing]')).toBe(`لا شيء ممنوح في: ${moduleName('ar', 'roles')}، ${moduleName('ar', 'setup')}، ${moduleName('ar', 'admin')}.`);
+    expect(t('[data-up-nothing]')).toBe(`لا شيء ممنوح في: ${moduleName('ar', 'roles')}، ${moduleName('ar', 'setup')} و${moduleName('ar', 'admin')}.`);
   });
 
   // ── Find ────────────────────────────────────────────────────────────────────
@@ -321,7 +347,7 @@ describe("UserPermissionsComponent (ACC-272, A user's permissions)", () => {
 
     it(`${lang}: a user from another organisation is a 404: "This user isn't in your organization"`, () => {
       render({ lang, getById: () => throwError(() => new HttpErrorResponse({ status: 404 })) });
-      expect(t('[data-up-not-found]')).toBe(lang === 'en' ? "This user isn't in your organization" : 'هذا المستخدم ليس ضمن منشأتك');
+      expect(t('[data-up-not-found]')).toBe(lang === 'en' ? "This user isn't in your organization" : 'هذا المستخدم ليس ضمن مؤسستك');
       expect(q('[data-up-error]')).toBeNull();
       expect(q('[data-up-card]')).toBeNull();
     });
