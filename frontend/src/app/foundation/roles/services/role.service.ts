@@ -61,6 +61,16 @@ export interface UserRoleGrantDto {
   grantedViaHeadPositionOrgUnitId: string | null;
 }
 
+/**
+ * ACC-272 — one grant with its role's keys (GET /users/:userId/permissions),
+ * hand-maintained against the backend's IUserPermissionGrant. The keys are the
+ * role's as stored, inactive roles included; the page decides what is shown.
+ */
+export interface UserPermissionGrantDto extends UserRoleGrantDto {
+  /** `module:action`, sorted. */
+  permissions: string[];
+}
+
 export interface CreateRoleDto {
   nameEn: string;
   nameAr: string;
@@ -146,6 +156,12 @@ export class RoleService {
   // there is no generated client (CLAUDE.md, API Versioning — ACC-150).
   getUserRoles(userId: string): Observable<UserRoleGrantDto[]> {
     return this.http.get<UserRoleGrantDto[]>(`${this.usersBase}/${userId}/roles`);
+  }
+
+  // ACC-272 — "A user's permissions": each grant with its role's keys. Same
+  // gate as getUserRoles(): roles:view, and users:view unless it is the caller.
+  getUserPermissions(userId: string): Observable<UserPermissionGrantDto[]> {
+    return this.http.get<UserPermissionGrantDto[]>(`${this.usersBase}/${userId}/permissions`);
   }
 
   assignRoleToUser(userId: string, roleId: string): Observable<void> {
