@@ -1208,6 +1208,14 @@ export class WorkflowService {
 
     // ── After commit: audit rows, notices, actions. ──
     await this.taskService.auditStageExitCancellation(cancellation, exitScope, organizationId, actorId);
+    // ACC-271 PR 4 — whoever was still on a task this move closed is told, now
+    // that it has committed (a move that rolled back never gets here).
+    await this.taskService.noticeStageExitClosures(cancellation, organizationId, actorId, {
+      kind: transition.kind,
+      record: { objectType: instance.objectType, objectId: instance.objectId },
+      toStage: { nameEn: toStage.nameEn, nameAr: toStage.nameAr },
+      transition: { labelEn: transition.labelEn, labelAr: transition.labelAr },
+    });
     await this.announceEntryTasks(createdTasks, organizationId, actorId);
 
     // ACC-28 Section 2.5 — same check as startInstance(), for the stage this
@@ -1636,6 +1644,11 @@ export class WorkflowService {
    */
   async resolveStagePools(organizationId: string, requests: StagePoolRequest[]): Promise<Map<string, StagePool>> {
     return this.stagePool.resolveMany(organizationId, requests);
+  }
+
+  /** ACC-271 PR 4 — the sweep's leaver rule on "All of them" entries (StagePoolService.recordPoolChanges()). */
+  async recordPoolChanges(organizationId: string, pools: ReadonlyMap<string, StagePool>): Promise<{ joined: number; left: number }> {
+    return this.stagePool.recordPoolChanges(organizationId, pools);
   }
 
   // ACC-271 — who may act on a converted stage: the pool's members, or someone
@@ -2087,6 +2100,9 @@ export class WorkflowService {
     // §4.5); the two old detectors read transition fields it does not use.
     if (isConvertedStage(stage)) {
       const pool = await this.stagePool.resolve(organizationId, stage.id, instance);
+      // ACC-271 PR 4 — who an "All of them" stage starts with, so the sweep can
+      // tell when someone leaves it (plan §8).
+      if (stage.whoMode === 'ALL') await this.stagePool.recordPoolChanges(organizationId, new Map([[instanceStageId, pool]]));
       if (pool.members.length > 0) return;
     } else {
       const poolBlocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);

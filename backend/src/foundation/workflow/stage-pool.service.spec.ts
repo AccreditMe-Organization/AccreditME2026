@@ -422,3 +422,83 @@ describe('StagePoolService (ACC-271)', () => {
     });
   });
 });
+
+// ACC-271 PR 4 (plan §8) — the sweep's leaver rule: the pool now against the
+// entry's own JOINED / LEFT events.
+describe('StagePoolService.recordPoolChanges (ACC-271 PR 4)', () => {
+  type Ev = { workflowInstanceStageId: string; userId: string; kind: string; organizationId: string };
+  function client(events: Ev[], owned: { id: string; organizationId: string }[]) {
+    const written: Ev[] = [];
+    const db = {
+      workflowInstanceStage: {
+        findMany: jest.fn(async ({ where }: { where: { id: { in: string[] }; workflowInstance: { organizationId: string } } }) =>
+          owned.filter((o) => where.id.in.includes(o.id) && o.organizationId === where.workflowInstance.organizationId).map((o) => ({ id: o.id })),
+        ),
+      },
+      workflowInstanceStageEvent: {
+        findMany: jest.fn(async ({ where }: { where: { organizationId: string; workflowInstanceStageId: { in: string[] } } }) =>
+          [...events, ...written].filter((e) => e.organizationId === where.organizationId && where.workflowInstanceStageId.in.includes(e.workflowInstanceStageId)),
+        ),
+        createMany: jest.fn(async ({ data }: { data: Ev[] }) => {
+          written.push(...data);
+          return { count: data.length };
+        }),
+      },
+    };
+    return { db, written };
+  }
+  const pool = (ids: string[]) => ({ members: ids, direct: ids, coveringFor: new Map(), actingHeadOf: new Map(), voteCommitteeId: null });
+  const svc = new StagePoolService({} as PrismaService);
+  const run = (db: ReturnType<typeof client>['db'], pools: [string, string[]][], org = ORG) =>
+    svc.recordPoolChanges(org, new Map(pools.map(([id, ids]) => [id, pool(ids)])), db as unknown as PrismaService);
+
+  it("first look: everyone in the pool has joined; nothing has left", async () => {
+    const { db, written } = client([], [{ id: 'e1', organizationId: ORG }]);
+
+    expect(await run(db, [['e1', ['a', 'b']]])).toEqual({ joined: 2, left: 0 });
+    expect(written.map((w) => `${w.kind}:${w.userId}`)).toEqual(['POOL_MEMBER_JOINED:a', 'POOL_MEMBER_JOINED:b']);
+  });
+
+  it('someone no longer in the pool has left, once: a second look writes nothing', async () => {
+    const { db, written } = client([], [{ id: 'e1', organizationId: ORG }]);
+    await run(db, [['e1', ['a', 'b']]]);
+
+    expect(await run(db, [['e1', ['b']]])).toEqual({ joined: 0, left: 1 });
+    expect(await run(db, [['e1', ['b']]])).toEqual({ joined: 0, left: 0 });
+    expect(written.filter((w) => w.kind === 'POOL_MEMBER_LEFT').map((w) => w.userId)).toEqual(['a']);
+  });
+
+  it('a leaver already recorded by their deactivation is not recorded again', async () => {
+    const { db, written } = client(
+      [
+        { workflowInstanceStageId: 'e1', userId: 'a', kind: 'POOL_MEMBER_JOINED', organizationId: ORG },
+        { workflowInstanceStageId: 'e1', userId: 'a', kind: 'POOL_MEMBER_LEFT', organizationId: ORG },
+      ],
+      [{ id: 'e1', organizationId: ORG }],
+    );
+
+    await run(db, [['e1', []]]);
+
+    expect(written).toEqual([]);
+  });
+
+  it('someone who comes back joins again', async () => {
+    const { db } = client(
+      [
+        { workflowInstanceStageId: 'e1', userId: 'a', kind: 'POOL_MEMBER_JOINED', organizationId: ORG },
+        { workflowInstanceStageId: 'e1', userId: 'a', kind: 'POOL_MEMBER_LEFT', organizationId: ORG },
+      ],
+      [{ id: 'e1', organizationId: ORG }],
+    );
+
+    expect(await run(db, [['e1', ['a']]])).toEqual({ joined: 1, left: 0 });
+  });
+
+  itEnforcesTenantIsolation("StagePoolService.recordPoolChanges — another organisation's entries are never written under this one", async () => {
+    const { db, written } = client([], [{ id: 'e-other', organizationId: 'org-b' }]);
+
+    expect(await run(db, [['e-other', ['a']]], ORG)).toEqual({ joined: 0, left: 0 });
+    expect(written).toEqual([]);
+    expect(db.workflowInstanceStageEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG }) }));
+  });
+});

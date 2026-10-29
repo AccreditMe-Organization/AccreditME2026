@@ -222,6 +222,8 @@ const mockNotificationService = { create: jest.fn() };
 const mockTaskService = {
   cancelStageExitTasksInTx: jest.fn(),
   auditStageExitCancellation: jest.fn(),
+  // ACC-271 PR 4 — the closed-task notices, after the stage change commits.
+  noticeStageExitClosures: jest.fn(),
   insertPrepared: jest.fn(),
   announceCreated: jest.fn(),
   cancelForInstance: jest.fn(),
@@ -234,7 +236,7 @@ const mockOrganizationService = { resolveActingHeadForOrgUnit: jest.fn() };
 const mockQueue = { add: jest.fn() };
 // ACC-271 — who works a converted stage. Every fixture stage above has no
 // whoMode, so the engine never asks; the converted-stage tests set a pool.
-const mockStagePool = { resolve: jest.fn(), resolveMany: jest.fn(), voteCommitteeId: jest.fn() };
+const mockStagePool = { resolve: jest.fn(), resolveMany: jest.fn(), voteCommitteeId: jest.fn(), recordPoolChanges: jest.fn() };
 const poolOf = (members: string[], extra: Partial<StagePool> = {}): StagePool => ({
   members,
   direct: members,
@@ -3797,6 +3799,50 @@ describe('WorkflowService', () => {
     });
 
     // ACC-271 PR 2 — what the record page's buttons show comes from here.
+    // ACC-271 PR 4 — the closed-task notices go out after the stage change
+    // commits, never inside it: a change that fails tells nobody.
+    describe('closed-task notices', () => {
+      function arrangeSingle() {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+          Promise.resolve({ 'stage-single': SINGLE_STAGE, 'stage-target': { ...TARGET_STAGE, nameAr: 'الهدف' } }[where.id] ?? null),
+        );
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ kind: 'RETURN' }));
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+        const cancellation = { open: [{ id: 'task-x', assignees: [] }], cancelledRequests: [] };
+        mockTaskService.cancelStageExitTasksInTx.mockResolvedValue(cancellation);
+        return cancellation;
+      }
+      const press = () => service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      it('tells whoever was on a closed task, with the move, after the transaction', async () => {
+        const cancellation = arrangeSingle();
+
+        await press();
+
+        expect(mockTaskService.noticeStageExitClosures).toHaveBeenCalledWith(cancellation, ORG_A, ACTOR, {
+          kind: 'RETURN',
+          record: { objectType: 'DOCUMENT', objectId: 'object-1' },
+          toStage: { nameEn: TARGET_STAGE.nameEn, nameAr: 'الهدف' },
+          transition: { labelEn: BASE_TRANSITION.labelEn, labelAr: BASE_TRANSITION.labelAr },
+        });
+        expect(mockTaskService.noticeStageExitClosures.mock.invocationCallOrder[0]).toBeGreaterThan(
+          mockPrisma.workflowInstance.update.mock.invocationCallOrder[0] ?? Infinity,
+        );
+      });
+
+      it('tells nobody when the stage change fails inside its transaction', async () => {
+        arrangeSingle();
+        mockPrisma.workflowInstanceStage.create.mockRejectedValueOnce(new Error('the write failed'));
+
+        await expect(press()).rejects.toThrow('the write failed');
+
+        expect(mockTaskService.cancelStageExitTasksInTx).toHaveBeenCalled();
+        expect(mockTaskService.noticeStageExitClosures).not.toHaveBeenCalled();
+      });
+    });
+
     describe('getMovesForViewer', () => {
       const moves = [
         { id: 'move-approve', requiredPermission: 'committees:approve', triggerCondition: 'ROLE_BASED', mover: null },

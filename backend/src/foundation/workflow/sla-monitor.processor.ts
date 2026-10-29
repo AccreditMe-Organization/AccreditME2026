@@ -417,6 +417,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // §4.5). Every converted entry's pool is resolved up front, one batch per
     // organisation (one query per assignee kind), never one per entry.
     const pools = await this.resolveConvertedPools(openStages);
+    // ACC-271 PR 4 (plan §8) — who left an "All of them" pool since the last
+    // look: one recomputer, from the pools just resolved.
+    await this.recordPoolLeavers(openStages, pools);
 
     for (const instanceStage of openStages) {
       const organizationId = instanceStage.workflowInstance.organizationId;
@@ -491,6 +494,24 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         await this.recoverUnassignedStageTasks(instanceStage, organizationId, pool?.members);
       }
     }
+  }
+
+  // ACC-271 PR 4 — the "All of them" entries' pool changes, one call per
+  // organisation, from the batch already resolved above.
+  private async recordPoolLeavers(
+    openStages: { id: string; stage: PrismaWorkflowStage; workflowInstance: PrismaWorkflowInstance }[],
+    pools: ReadonlyMap<string, StagePool>,
+  ): Promise<void> {
+    const byOrg = new Map<string, Map<string, StagePool>>();
+    for (const entry of openStages) {
+      const pool = pools.get(entry.id);
+      if (!pool || entry.stage.whoMode !== 'ALL') continue;
+      const organizationId = entry.workflowInstance.organizationId;
+      const map = byOrg.get(organizationId) ?? new Map<string, StagePool>();
+      map.set(entry.id, pool);
+      byOrg.set(organizationId, map);
+    }
+    for (const [organizationId, orgPools] of byOrg) await this.workflowService.recordPoolChanges(organizationId, orgPools);
   }
 
   // ACC-271 — the pools of the open entries whose stage is converted, keyed by
