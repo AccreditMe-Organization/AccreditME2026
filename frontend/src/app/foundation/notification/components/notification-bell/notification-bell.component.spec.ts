@@ -48,14 +48,26 @@ describe('NotificationBellComponent — task notifications open the task page (A
   beforeEach(() => markRead.calls.reset());
 
   it('links a task notification to /tasks/:id', () => {
-    expect(create().taskLink(item({}))).toEqual(['/tasks', 'task-1']);
+    const bell = create();
+    expect(bell.itemLink(item({}))).toEqual(['/tasks', 'task-1']);
+    expect(bell.isRecordLink(item({}))).toBe(false);
+  });
+
+  // ACC-271 PR 4 — a closed-task notice carries its record for a reader who may
+  // open it; the server sends no object for anyone else.
+  it("opens a closed-task notice's committee, and marks it as opening the record", () => {
+    const bell = create();
+    expect(bell.itemLink(item({ objectType: 'COMMITTEE', objectId: 'c-1' }))).toEqual(['/committees', 'c-1']);
+    expect(bell.isRecordLink(item({ objectType: 'COMMITTEE', objectId: 'c-1' }))).toBe(true);
   });
 
   it('leaves every other notification without a link, as before', () => {
     const bell = create();
-    expect(bell.taskLink(item({ objectType: 'COMMITTEE', objectId: 'c-1' }))).toBeNull();
-    expect(bell.taskLink(item({ objectType: null, objectId: null }))).toBeNull();
-    expect(bell.taskLink(item({ objectType: 'Task', objectId: null }))).toBeNull();
+    expect(bell.itemLink(item({ objectType: 'MEETING', objectId: 'm-1' }))).toBeNull();
+    expect(bell.itemLink(item({ objectType: null, objectId: null }))).toBeNull();
+    expect(bell.itemLink(item({ objectType: 'Task', objectId: null }))).toBeNull();
+    expect(bell.itemLink(item({ objectType: 'COMMITTEE', objectId: null }))).toBeNull();
+    expect(bell.isRecordLink(item({ objectType: null, objectId: null }))).toBe(false);
   });
 
   it('still marks the notification read when it is opened', () => {

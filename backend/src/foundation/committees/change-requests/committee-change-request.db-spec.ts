@@ -31,6 +31,7 @@ import { TaskService } from '../../task/task.service';
 import { TaskAuthorityService } from '../../task/task-authority.service';
 import { TaskAssignmentService } from '../../task/task-assignment.service';
 import { TaskSlaService } from '../../task/task-sla.service';
+import { TaskClosedNoticeService } from '../../task/task-closed-notice.service';
 import { WorkflowService } from '../../workflow/workflow.service';
 import { WorkflowTemplateService } from '../../workflow/workflow-template.service';
 import { StageTaskDefinitionService } from '../../workflow/stage-task-definition.service';
@@ -69,13 +70,14 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       notices.push({ userId: dto.userId, titleEn: dto.titleEn, organizationId });
       return { id: randomUUID() };
     },
+    createInAppMany: async () => 0,
   } as unknown as NotificationService;
   const tenant = { getTaskSla: async () => null } as unknown as TenantService;
   const authority = new TaskAuthorityService(prisma);
   const lookups = { getValues: async () => [] } as unknown as LookupService;
   const assignment = new TaskAssignmentService(prisma, authority, lookups);
   const sla = new TaskSlaService(prisma, calendar);
-  const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla);
+  const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla, new TaskClosedNoticeService(prisma, notifications));
   const stageTasks = new StageTaskDefinitionService(prisma, audit, tasks);
   const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
   const organizations = { resolveActingHeadForOrgUnit: async () => null } as unknown as OrganizationService;

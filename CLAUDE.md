@@ -4355,6 +4355,13 @@ Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
   (`assignStartingAssignments()`). Existing organisations are converted by
   `npm run backfill:acc271-stage-assignees` and `-transition-movers`, AFTER
   the deploy (dry run, `-- --execute`, dry run 0), with plan §6.4's counts.
+- **A TASK CLOSED BY SOMEONE ELSE'S ACTION IS TOLD, AFTER THE COMMIT (PR 4).**
+  `TaskClosedNoticeService`: in-app, never the actor, through an away member's
+  acting user; four wordings (moved on, sent back, ended, completed by another
+  assignee); the record named and linked only for someone who may open it. One
+  batched write per move. Never send it inside a transaction.
+- **WHO LEFT AN "ALL OF THEM" POOL IS THE SWEEP'S TO RECORD (PR 4)**, from the
+  entry's own POOL_MEMBER_JOINED / LEFT events; deactivation records its own.
 - **The record page's buttons show what the server says**
   (`GET /workflows/instances/:id/moves`); no screen reads a move's
   `requiredPermission` any more.

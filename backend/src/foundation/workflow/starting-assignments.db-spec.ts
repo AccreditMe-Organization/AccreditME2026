@@ -27,6 +27,7 @@ import { TaskService } from '../task/task.service';
 import { TaskAuthorityService } from '../task/task-authority.service';
 import { TaskAssignmentService } from '../task/task-assignment.service';
 import { TaskSlaService } from '../task/task-sla.service';
+import { TaskClosedNoticeService } from '../task/task-closed-notice.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowTemplateService } from './workflow-template.service';
 import { StagePoolService } from './stage-pool.service';
@@ -47,13 +48,13 @@ describe("A new organisation's workflows start on its first admin, against a rea
   const labels = new DelegationLabelService(prisma);
   const visibility = new ObjectVisibilityService(prisma);
   const calendar = new WorkingCalendarService(prisma, audit);
-  const notifications = { create: async () => ({ id: randomUUID() }) } as unknown as NotificationService;
+  const notifications = { create: async () => ({ id: randomUUID() }), createInAppMany: async () => 0 } as unknown as NotificationService;
   const tenant = { getTaskSla: async () => null } as unknown as TenantService;
   const authority = new TaskAuthorityService(prisma);
   const lookups = { getValues: async () => [] } as unknown as LookupService;
   const assignment = new TaskAssignmentService(prisma, authority, lookups);
   const sla = new TaskSlaService(prisma, calendar);
-  const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla);
+  const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla, new TaskClosedNoticeService(prisma, notifications));
   const templates = new WorkflowTemplateService(prisma, audit, new StageTaskDefinitionService(prisma, audit, tasks));
   const pools = new StagePoolService(prisma);
 
