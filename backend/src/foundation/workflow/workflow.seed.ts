@@ -44,6 +44,15 @@ export interface SeedTransition {
   actions: SeedAction[];
 }
 
+/**
+ * ACC-271 — how a seeded stage's people decide, and who they are. SINGLE
+ * becomes Any one of them; PARALLEL ALL becomes All of them. A Committee vote
+ * is never seeded: it needs a committee, and a seed names none.
+ */
+export type SeedWho =
+  | { mode: 'ANY_ONE' | 'ALL'; entries: readonly { kind: 'CREATOR' }[] }
+  | { mode: 'ANY_ONE' | 'ALL'; startingAssignment: true };
+
 export interface SeedStage {
   key: string; // stable key within this template only — wires transitions below
   nameEn: string;
@@ -56,6 +65,13 @@ export interface SeedStage {
   parallelThreshold?: 'ALL' | 'MAJORITY' | 'ANY';
   assigneeStrategy: 'SPECIFIC_USER' | 'ROLE' | 'ORG_UNIT_HEAD' | 'SELF' | 'COMMITTEE' | 'ROUND_ROBIN';
   assigneeRoleKey?: string; // resolved to Role.id at seed time
+  // ACC-271 — who works the stage (plan §5). A stage the record's creator
+  // drives seeds a CREATOR entry; every other stage seeds NO entry and is
+  // marked for a starting assignment: the tenant admin, written by
+  // WorkflowTemplateService.assignStartingAssignments() once the first admin
+  // is invited (the admin does not exist when the seed runs). Written only
+  // when the seed CREATES the stage, like the record actions below.
+  who: SeedWho;
   // ACC-255 — the record actions this stage allows (RECORD_ACTIONS keys) and
   // what it means (STAGE_FLAGS keys). Written only when the seed CREATES the
   // stage: a stage that already exists keeps what its tenant configured.
@@ -104,11 +120,11 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Document Request',
     nameAr: 'طلب وثيقة',
     stages: [
-      { key: 'submitted', nameEn: 'Submitted', nameAr: 'مقدّم', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'unit_manager_review', nameEn: 'Unit Manager Review', nameAr: 'مراجعة مدير الوحدة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ORG_UNIT_HEAD', slaWorkingHours: 16 },
-      { key: 'quality_review', nameEn: 'Quality Review', nameAr: 'مراجعة الجودة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16 },
-      { key: 'approved', nameEn: 'Approved', nameAr: 'مقبول', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
-      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
+      { key: 'submitted', nameEn: 'Submitted', nameAr: 'مقدّم', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'unit_manager_review', nameEn: 'Unit Manager Review', nameAr: 'مراجعة مدير الوحدة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ORG_UNIT_HEAD', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'quality_review', nameEn: 'Quality Review', nameAr: 'مراجعة الجودة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'approved', nameEn: 'Approved', nameAr: 'مقبول', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
       { fromStageKey: 'submitted', toStageKey: 'unit_manager_review', labelEn: 'Submit Request', labelAr: 'تقديم الطلب', triggerCondition: 'ANY_AUTHENTICATED', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
@@ -125,13 +141,13 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Document Lifecycle',
     nameAr: 'دورة حياة الوثيقة',
     stages: [
-      { key: 'drafting', nameEn: 'Drafting', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'owners_review', nameEn: 'Owners Review', nameAr: 'مراجعة المُلاك', order: 20, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40 },
-      { key: 'stakeholders_review', nameEn: 'Stakeholders Review', nameAr: 'مراجعة أصحاب المصلحة', order: 30, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40 },
-      { key: 'final_approval', nameEn: 'Final Approval', nameAr: 'الموافقة النهائية', order: 40, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 24 },
-      { key: 'publish_approval', nameEn: 'Publish Approval', nameAr: 'موافقة النشر', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16 },
-      { key: 'published', nameEn: 'Published', nameAr: 'منشورة', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
-      { key: 'obsolete', nameEn: 'Obsolete', nameAr: 'ملغاة', order: 70, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
+      { key: 'drafting', nameEn: 'Drafting', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'owners_review', nameEn: 'Owners Review', nameAr: 'مراجعة المُلاك', order: 20, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40, who: { mode: 'ALL', startingAssignment: true } },
+      { key: 'stakeholders_review', nameEn: 'Stakeholders Review', nameAr: 'مراجعة أصحاب المصلحة', order: 30, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40, who: { mode: 'ALL', startingAssignment: true } },
+      { key: 'final_approval', nameEn: 'Final Approval', nameAr: 'الموافقة النهائية', order: 40, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 24, who: { mode: 'ALL', startingAssignment: true } },
+      { key: 'publish_approval', nameEn: 'Publish Approval', nameAr: 'موافقة النشر', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'published', nameEn: 'Published', nameAr: 'منشورة', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'obsolete', nameEn: 'Obsolete', nameAr: 'ملغاة', order: 70, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
       { fromStageKey: 'drafting', toStageKey: 'owners_review', labelEn: 'Submit for Review', labelAr: 'إرسال للمراجعة', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:submit', validatorConfig: { requiredFields: ['title', 'content'] }, actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
@@ -153,11 +169,11 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Incident Management',
     nameAr: 'إدارة الحوادث',
     stages: [
-      { key: 'reported', nameEn: 'Reported', nameAr: 'مُبلَّغ', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 8 },
-      { key: 'investigating', nameEn: 'Investigating', nameAr: 'قيد التحقيق', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40 },
-      { key: 'root_cause_identified', nameEn: 'Root Cause Identified', nameAr: 'تحديد السبب الجذري', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 16 },
-      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
-      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
+      { key: 'reported', nameEn: 'Reported', nameAr: 'مُبلَّغ', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'investigating', nameEn: 'Investigating', nameAr: 'قيد التحقيق', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'root_cause_identified', nameEn: 'Root Cause Identified', nameAr: 'تحديد السبب الجذري', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
       { fromStageKey: 'reported', toStageKey: 'investigating', labelEn: 'Start Investigation', labelAr: 'بدء التحقيق', triggerCondition: 'ROLE_BASED', requiredPermission: 'incidents:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
@@ -175,16 +191,16 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Audit Management',
     nameAr: 'إدارة المراجعات',
     stages: [
-      { key: 'planning', nameEn: 'Planning', nameAr: 'التخطيط', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
-      { key: 'announced', nameEn: 'Announced', nameAr: 'الإعلان', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40 },
-      { key: 'fieldwork', nameEn: 'Fieldwork', nameAr: 'العمل الميداني', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40 },
-      { key: 'findings_draft', nameEn: 'Findings Draft', nameAr: 'مسودة النتائج', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 24 },
-      { key: 'auditee_response', nameEn: 'Auditee Response', nameAr: 'رد المدقق عليه', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40 },
-      { key: 'report_review', nameEn: 'Report Review', nameAr: 'مراجعة التقرير', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16 },
-      { key: 'report_approved', nameEn: 'Report Approved', nameAr: 'اعتماد التقرير', order: 70, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16 },
-      { key: 'corrective_action', nameEn: 'Corrective Action', nameAr: 'الإجراء التصحيحي', order: 80, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 240 },
-      { key: 'verification', nameEn: 'Verification', nameAr: 'التحقق', order: 90, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 240 },
-      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 100, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
+      { key: 'planning', nameEn: 'Planning', nameAr: 'التخطيط', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'announced', nameEn: 'Announced', nameAr: 'الإعلان', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'fieldwork', nameEn: 'Fieldwork', nameAr: 'العمل الميداني', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'findings_draft', nameEn: 'Findings Draft', nameAr: 'مسودة النتائج', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 24, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'auditee_response', nameEn: 'Auditee Response', nameAr: 'رد المدقق عليه', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'report_review', nameEn: 'Report Review', nameAr: 'مراجعة التقرير', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'report_approved', nameEn: 'Report Approved', nameAr: 'اعتماد التقرير', order: 70, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'corrective_action', nameEn: 'Corrective Action', nameAr: 'الإجراء التصحيحي', order: 80, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'verification', nameEn: 'Verification', nameAr: 'التحقق', order: 90, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 100, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
       { fromStageKey: 'planning', toStageKey: 'announced', labelEn: 'Announce Audit', labelAr: 'الإعلان عن المراجعة', triggerCondition: 'ROLE_BASED', requiredPermission: 'audits:create', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
@@ -208,16 +224,16 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Corrective Action',
     nameAr: 'الإجراء التصحيحي',
     stages: [
-      { key: 'detection', nameEn: 'Detection', nameAr: 'الاكتشاف', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 8 },
-      { key: 'investigation', nameEn: 'Investigation', nameAr: 'التحقيق', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40 },
-      { key: 'root_cause_approved', nameEn: 'Root Cause Approved', nameAr: 'اعتماد السبب الجذري', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16 },
-      { key: 'action_planning', nameEn: 'Action Planning', nameAr: 'تخطيط الإجراء', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 24 },
-      { key: 'plan_approved', nameEn: 'Plan Approved', nameAr: 'اعتماد الخطة', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16 },
-      { key: 'implementation', nameEn: 'Implementation', nameAr: 'التنفيذ', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 240 },
-      { key: 'implementation_verified', nameEn: 'Implementation Verified', nameAr: 'التحقق من التنفيذ', order: 70, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 16 },
-      { key: 'effectiveness_check', nameEn: 'Effectiveness Check', nameAr: 'فحص الفاعلية', order: 80, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 240 },
-      { key: 'effectiveness_approved', nameEn: 'Effectiveness Approved', nameAr: 'اعتماد الفاعلية', order: 90, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16 },
-      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 100, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
+      { key: 'detection', nameEn: 'Detection', nameAr: 'الاكتشاف', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'investigation', nameEn: 'Investigation', nameAr: 'التحقيق', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'root_cause_approved', nameEn: 'Root Cause Approved', nameAr: 'اعتماد السبب الجذري', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'action_planning', nameEn: 'Action Planning', nameAr: 'تخطيط الإجراء', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 24, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'plan_approved', nameEn: 'Plan Approved', nameAr: 'اعتماد الخطة', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'implementation', nameEn: 'Implementation', nameAr: 'التنفيذ', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'implementation_verified', nameEn: 'Implementation Verified', nameAr: 'التحقق من التنفيذ', order: 70, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'effectiveness_check', nameEn: 'Effectiveness Check', nameAr: 'فحص الفاعلية', order: 80, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'effectiveness_approved', nameEn: 'Effectiveness Approved', nameAr: 'اعتماد الفاعلية', order: 90, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 100, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
       { fromStageKey: 'detection', toStageKey: 'investigation', labelEn: 'Start Investigation', labelAr: 'بدء التحقيق', triggerCondition: 'ROLE_BASED', requiredPermission: 'capa:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
@@ -242,12 +258,12 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Meeting Management',
     nameAr: 'إدارة الاجتماعات',
     stages: [
-      { key: 'planned', nameEn: 'Planned', nameAr: 'مجدول', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'agenda_ready', nameEn: 'Agenda Ready', nameAr: 'الأجندة جاهزة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'minutes_draft', nameEn: 'Minutes Draft', nameAr: 'مسودة المحضر', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', slaWorkingHours: 16 },
-      { key: 'minutes_review', nameEn: 'Minutes Review', nameAr: 'مراجعة المحضر', order: 40, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'BASE_USER', slaWorkingHours: 16 },
-      { key: 'minutes_approved', nameEn: 'Minutes Approved', nameAr: 'اعتماد المحضر', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 8 },
-      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 60, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
+      { key: 'planned', nameEn: 'Planned', nameAr: 'مجدول', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'agenda_ready', nameEn: 'Agenda Ready', nameAr: 'الأجندة جاهزة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'minutes_draft', nameEn: 'Minutes Draft', nameAr: 'مسودة المحضر', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', slaWorkingHours: 16, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'minutes_review', nameEn: 'Minutes Review', nameAr: 'مراجعة المحضر', order: 40, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'BASE_USER', slaWorkingHours: 16, who: { mode: 'ALL', startingAssignment: true } },
+      { key: 'minutes_approved', nameEn: 'Minutes Approved', nameAr: 'اعتماد المحضر', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 60, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
       { fromStageKey: 'planned', toStageKey: 'agenda_ready', labelEn: 'Prepare Agenda', labelAr: 'إعداد الأجندة', triggerCondition: 'ROLE_BASED', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
@@ -267,14 +283,14 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Committee Management',
     nameAr: 'إدارة اللجان',
     stages: [
-      { key: 'formation', nameEn: 'Formation', nameAr: 'التأسيس', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [COMMITTEE_ACTIONS.EDIT_DETAILS, ...MEMBERS] },
-      { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, actions: [...MEMBERS] },
-      { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE] },
-      { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE] },
-      { key: 'dissolution_pending', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, actions: [...MEMBERS], flags: [STAGE_FLAG.DISSOLVING] },
+      { key: 'formation', nameEn: 'Formation', nameAr: 'التأسيس', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [COMMITTEE_ACTIONS.EDIT_DETAILS, ...MEMBERS], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, actions: [...MEMBERS], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'dissolution_pending', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, actions: [...MEMBERS], flags: [STAGE_FLAG.DISSOLVING], who: { mode: 'ANY_ONE', startingAssignment: true } },
       // ACC-255 PR 2 (Ahmad, Q-A): a dissolved committee's members can't be changed;
       // Dissolution Pending still allows it. Existing organisations: backfill:acc255-dissolved-membership.
-      { key: 'dissolved', nameEn: 'Dissolved', nameAr: 'محلولة', order: 60, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [], flags: [STAGE_FLAG.DISSOLVING] },
+      { key: 'dissolved', nameEn: 'Dissolved', nameAr: 'محلولة', order: 60, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [], flags: [STAGE_FLAG.DISSOLVING], who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
       { fromStageKey: 'formation', toStageKey: 'terms_review', labelEn: 'Submit for Approval', labelAr: 'إرسال للاعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
@@ -303,12 +319,12 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Committee Change Request',
     nameAr: 'طلب تغيير اللجنة',
     stages: [
-      { key: 'draft', nameEn: 'Draft', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'under_review', nameEn: 'Under review', nameAr: 'قيد المراجعة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'returned', nameEn: 'Returned', nameAr: 'مُعاد', order: 25, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'approved', nameEn: 'Approved', nameAr: 'معتمد', order: 30, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', flags: [STAGE_FLAG.APPLIES_APPROVED_CHANGE] },
-      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'withdrawn', nameEn: 'Withdrawn', nameAr: 'مسحوب', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+      { key: 'draft', nameEn: 'Draft', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'under_review', nameEn: 'Under review', nameAr: 'قيد المراجعة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'returned', nameEn: 'Returned', nameAr: 'مُعاد', order: 25, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'approved', nameEn: 'Approved', nameAr: 'معتمد', order: 30, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', flags: [STAGE_FLAG.APPLIES_APPROVED_CHANGE], who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'withdrawn', nameEn: 'Withdrawn', nameAr: 'مسحوب', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
     ],
     transitions: [
       { fromStageKey: 'draft', toStageKey: 'under_review', labelEn: 'Submit for review', labelAr: 'إرسال للمراجعة', triggerCondition: 'SYSTEM_AUTOMATIC', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
@@ -328,11 +344,11 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Change Request',
     nameAr: 'طلب تغيير',
     stages: [
-      { key: 'submitted', nameEn: 'Submitted', nameAr: 'مقدّم', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
-      { key: 'unit_manager_review', nameEn: 'Unit Manager Review', nameAr: 'مراجعة مدير الوحدة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ORG_UNIT_HEAD', slaWorkingHours: 16 },
-      { key: 'quality_review', nameEn: 'Quality Review', nameAr: 'مراجعة الجودة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16 },
-      { key: 'approved', nameEn: 'Approved', nameAr: 'مقبول', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
-      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER' },
+      { key: 'submitted', nameEn: 'Submitted', nameAr: 'مقدّم', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'unit_manager_review', nameEn: 'Unit Manager Review', nameAr: 'مراجعة مدير الوحدة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ORG_UNIT_HEAD', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'quality_review', nameEn: 'Quality Review', nameAr: 'مراجعة الجودة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'approved', nameEn: 'Approved', nameAr: 'مقبول', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
       { fromStageKey: 'submitted', toStageKey: 'unit_manager_review', labelEn: 'Submit Change Request', labelAr: 'تقديم طلب التغيير', triggerCondition: 'ANY_AUTHENTICATED', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },

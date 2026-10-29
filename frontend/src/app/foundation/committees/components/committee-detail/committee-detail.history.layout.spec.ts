@@ -162,7 +162,7 @@ describe('CommitteeDetailComponent — Stage history beside the Lifecycle card (
         { provide: UserService, useValue: { listAllUsers: () => of([]) } },
         {
           provide: WorkflowService,
-          useValue: { getInstancesByObject: () => of([INSTANCE]), getStageHistory: () => of(history(visits)) },
+          useValue: { getInstancesByObject: () => of([INSTANCE]), getStageHistory: () => of(history(visits)), getMoves: () => of({ transitionIds: [] }) },
         },
       ],
     });

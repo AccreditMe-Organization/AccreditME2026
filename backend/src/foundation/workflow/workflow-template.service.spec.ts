@@ -122,6 +122,10 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  // ACC-271 — who works a seeded stage (a CREATOR entry where the seed names one).
+  workflowStageAssignee: {
+    createMany: jest.fn().mockResolvedValue({ count: 0 }),
+  },
   // ACC-255 — the record actions a stage allows.
   workflowStageRecordAction: {
     createMany: jest.fn().mockResolvedValue({ count: 0 }),

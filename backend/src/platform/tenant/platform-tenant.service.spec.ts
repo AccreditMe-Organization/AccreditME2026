@@ -34,7 +34,7 @@ describe('PlatformTenantService', () => {
   let service: PlatformTenantService;
   let mockPrisma: any;
   let mockAuditLog: { log: jest.Mock };
-  let mockTenantService: { bootstrap: jest.Mock; resolveDefaultTenantAdminAssignment: jest.Mock };
+  let mockTenantService: { bootstrap: jest.Mock; resolveDefaultTenantAdminAssignment: jest.Mock; assignWorkflowStartingAssignments: jest.Mock };
   let mockUserService: { invite: jest.Mock };
   let mockRoleService: { assignRoleToUser: jest.Mock };
   let mockAiAllocation: { setAllocation: jest.Mock };
@@ -55,6 +55,8 @@ describe('PlatformTenantService', () => {
       resolveDefaultTenantAdminAssignment: jest
         .fn()
         .mockResolvedValue({ positionId: 'pos-director', primaryOrgUnitId: 'unit-root' }),
+      // ACC-271 — the seeded workflows' starting assignments, after the invite.
+      assignWorkflowStartingAssignments: jest.fn().mockResolvedValue(undefined),
     };
     mockUserService = { invite: jest.fn() };
     mockRoleService = { assignRoleToUser: jest.fn().mockResolvedValue(undefined) };
@@ -173,6 +175,12 @@ describe('PlatformTenantService', () => {
         { roleId: 'tenant-admin-role-1' },
         TENANT_ID,
         ACTOR_ID,
+      );
+      // ACC-271 (plan §5) — the seeded stages start on the invited admin, and
+      // only once the admin exists: after the invite, in the same flow.
+      expect(mockTenantService.assignWorkflowStartingAssignments).toHaveBeenCalledWith(TENANT_ID, 'invited-user-1', ACTOR_ID);
+      expect(mockTenantService.assignWorkflowStartingAssignments.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mockUserService.invite.mock.invocationCallOrder[0] ?? Infinity,
       );
     });
 

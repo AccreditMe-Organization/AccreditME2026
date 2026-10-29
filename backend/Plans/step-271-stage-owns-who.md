@@ -413,6 +413,59 @@ with the tenant admin. Nothing in flight is re-decided: there are no open
 stage tasks and no approval rows (measured). A backfill that finds either
 reports it and refuses (Q8).
 
+
+### 6.4 The shared dev database before PR 2 (measured 28 Oct, read-only, counts only)
+
+Measured from `D:\Accredit-me-2\backend` with a READ ONLY transaction,
+after PR 1 deployed (`a580a00`). **The plan's "60 stages" was per
+organisation; PR 1's 120 is the two together.** The platform organisation has
+no workflows. Both organisations are identical, so each backfill's expected
+counts are these numbers per organisation, and anything else refuses.
+
+| | al-nakheel | al-manara |
+|---|---|---|
+| Templates | 9 | 9 |
+| Stages | 60 | 60 |
+| — ROLE | 46 | 46 |
+| — SELF (Creator) | 12 | 12 |
+| — ORG_UNIT_HEAD | 2 (Document request, Change request) | 2 |
+| — SPECIFIC_USER, POSITION_FIXED, COMMITTEE, ROUND_ROBIN | 0 | 0 |
+| — with a committee, user or position set | 0 | 0 |
+| SINGLE / PARALLEL ALL | 56 / 4 | 56 / 4 |
+| PARALLEL MAJORITY or ANY, SEQUENTIAL, COMMITTEE | 0 | 0 |
+| Multi-person stages: forward moves / already on the approval path | 4 / 4 | 4 / 4 |
+| Transitions | 75 | 75 |
+| — ROLE_BASED (all with a permission) | 65 | 65 |
+| — ANY_AUTHENTICATED | 2 | 2 |
+| — SYSTEM_AUTOMATIC | 8 | 8 |
+| Open records (all COMMITTEE, on ROLE stages, SINGLE) | 5 | 3 |
+| Open stage entries (incl. final stages of completed records) | 7 | 3 |
+| Open stage tasks | 0 | 0 |
+| Approval rows | 0 | 0 |
+| ACTIVE TENANT_ADMIN holders / INVITED | 1 / 0 | 1 / 0 |
+| Stage assignees, converted stages, movers | 0 | 0 |
+
+**What each backfill therefore expects, per organisation:**
+
+- **Stages** (`backfill-acc271-stage-assignees`): 60 stages converted; 48
+  starting assignments (the 46 ROLE stages and the 2 ORG_UNIT_HEAD ones), 12
+  CREATOR entries, 0 "head of the record's unit" entries; 56 Any one of them
+  and 4 All of them; 0 approval-path marks (the 4 are already marked); 0
+  approvals reset and 0 tasks cancelled. **Changed 29 Oct (Ahmad):** an Org
+  unit head stage becomes "the head of the record's unit" only where its
+  record type has a unit route in `RECORD_ROUTES`; the two here (Unit Manager
+  Review, on document requests and change requests) have none, so they start
+  on the tenant admin, exactly as the seed gives a new organisation. It was
+  46 / 12 / 2 before.
+- **Transitions** (`backfill-acc271-transition-movers`): 75 marked, 8 APP and
+  67 PERSON; 65 of the PERSON moves carry a permission, listed by key.
+
+**Finding against PR 1's note:** the seeded committee moves are not on the
+approval path, but that does not matter: every committee stage is SINGLE and
+becomes Any one of them, which never reads the approval path. The rule is
+still enforced in the seed spec and the backfill, for the four multi-person
+stages and any a tenant adds.
+
 ---
 
 ## 7. The three closed-task notices (in-app only)
@@ -615,6 +668,48 @@ converted entry on its own in the sweep (unit 1); read the leaver's pools after
 the status flip (unit 1 — the db-spec cannot see it: that read sits outside the
 uncommitted flip); committee members read without the organisation (unit 4);
 an unconverted stage asks for a pool (unit 66).
+
+
+### 11.2 PR 2 as built (28 Oct)
+
+The seed's `who` per stage; `assignStartingAssignments()` after the first
+admin's invite; `GET /workflows/instances/:id/moves` and the transition
+buttons reading it (PR 1's second must-do); the two backfills, with plan §6.4's
+counts as their expected ones. SYSTEM-REFERENCE §2.19.
+
+**Departures, each Ahmad's to overrule:**
+
+1. **Org unit head (settled 29 Oct, Ahmad): "the head of the record's unit"
+   only where the record type has a unit route.** On a record type with none
+   (today the two Unit Manager Review stages, on document requests and change
+   requests) the backfill gives the tenant admin's starting assignment, as the
+   seed does for a new organisation. So an existing organisation now ends
+   exactly where a new one starts: the seed spec checks the mapping against
+   all 60 seeded stages with no exception. A record type that gains a unit
+   route later keeps its Org unit head stages as "the record's unit".
+2. **The seed writes each move's `mover` too** (not asked for in item 1), by
+   the same rule as the backfill, so a new organisation is consistent from the
+   start.
+3. **"Marked for a starting assignment" is not stored.** It is a converted
+   stage with no entry, which is exactly what the seed leaves; a re-run finds
+   none.
+4. **`createTenant()` reaches `assignStartingAssignments()` through
+   `TenantService`** (`assignWorkflowStartingAssignments()`), the path it
+   already uses for `bootstrap()`, rather than a new PlatformModule →
+   WorkflowModule edge.
+5. **The approval-path worry did not apply to committees** (§6.4): every
+   committee stage becomes Any one of them. The backfill still enforces the
+   rule and expects 0 marks; the seed spec pins the four multi-person stages.
+6. **Reset tasks are cancelled like the engine's own cancels**: status
+   CANCELLED with a time, no reason, no notice. Expected count 0.
+7. **The moves read is a new endpoint** (one stage's moves, no paging, not on
+   the per-request guard path).
+
+**Between this deploy and PR 3:** a new organisation (and every existing one
+once the backfill runs) has converted stages, while the old stage and
+transition editors still show and save the old fields, which the engine no
+longer reads for them. PR 3 refuses such a save with a translated sentence
+(condition b).
 
 ---
 

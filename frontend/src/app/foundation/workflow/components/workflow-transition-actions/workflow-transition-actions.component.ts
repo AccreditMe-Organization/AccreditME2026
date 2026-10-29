@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { forkJoin } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -6,18 +7,17 @@ import { WorkflowService, WorkflowInstanceDto } from '../../services/workflow.se
 import { WorkflowStageDto, WorkflowTemplateService, WorkflowTransitionDto } from '../../services/workflow-template.service';
 import { OpenStageTask, openStageTasks, plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
-import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 // Generic, reusable across every WorkflowObjectType (Committee, and later
 // Document, Incident, CAPA, Gap, Audit, KPI, ...) — contains zero
 // object-type-specific logic. Renders one button per transition available
-// FROM the instance's current stage that the caller holds requiredPermission
-// for. Permission filtering here is a UX nicety only, not a security
-// boundary — it just avoids showing a button that would 403 on click;
-// WorkflowService.triggerTransition() re-validates requiredPermission
-// server-side regardless (see workflow.service.ts's triggerTransition()).
+// FROM the instance's current stage that the SERVER says the caller may press
+// (ACC-271 PR 2: GET /workflows/instances/:id/moves). On a converted stage
+// that is whoever works it, whatever permission the move once required, so
+// this screen keeps no copy of the rule. Still not a security boundary:
+// WorkflowService.triggerTransition() decides again on every press.
 //
 // Transition labels (labelEn/labelAr) are rendered directly, NOT through
 // the | translate pipe — transitions are tenant-editable data (a tenant
@@ -77,7 +77,6 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 export class WorkflowTransitionActionsComponent {
   private readonly workflowService = inject(WorkflowService);
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
-  private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly languageService = inject(LanguageService);
 
   readonly instance = input.required<WorkflowInstanceDto>();
@@ -86,6 +85,8 @@ export class WorkflowTransitionActionsComponent {
   readonly transitioned = output<WorkflowInstanceDto>();
 
   readonly transitionsFromCurrentStage = signal<WorkflowTransitionDto[]>([]);
+  /** ACC-271 — the ids the server says this person may press. */
+  private readonly pressable = signal<ReadonlySet<string>>(new Set());
   readonly triggeringId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
   readonly warnings = signal<string[]>([]);
@@ -102,9 +103,7 @@ export class WorkflowTransitionActionsComponent {
   });
 
   readonly availableTransitions = computed(() =>
-    this.transitionsFromCurrentStage().filter(
-      (t) => !t.requiredPermission || this.navigationAccessService.hasPermission(t.requiredPermission),
-    ),
+    this.transitionsFromCurrentStage().filter((t) => this.pressable().has(t.id)),
   );
 
   constructor() {
@@ -171,13 +170,20 @@ export class WorkflowTransitionActionsComponent {
     // triggerTransition() rejects a transition whose fromStageId no longer
     // matches the instance's current stage.
     this.transitionsFromCurrentStage.set([]);
+    this.pressable.set(new Set());
 
     if (!instance.currentStageId) return;
 
-    this.workflowTemplateService.getTemplate(instance.workflowTemplateId).subscribe({
-      next: (template) => {
+    // ACC-271 PR 2 — the template for the labels and stages, and the server's
+    // answer for which moves this person may press. Neither alone shows a button.
+    forkJoin({
+      template: this.workflowTemplateService.getTemplate(instance.workflowTemplateId),
+      moves: this.workflowService.getMoves(instance.id),
+    }).subscribe({
+      next: ({ template, moves }) => {
         this.stages.set(template.stages ?? []);
         const stage = template.stages?.find((s) => s.id === instance.currentStageId);
+        this.pressable.set(new Set(moves.transitionIds));
         this.transitionsFromCurrentStage.set(stage?.transitions ?? []);
       },
     });

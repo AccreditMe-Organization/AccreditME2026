@@ -36,6 +36,7 @@ import { WorkflowController } from './workflow.controller';
 import { WorkflowService } from './workflow.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const TENANT_ID = 'org-a';
 const COMMITTEE_ID = 'committee-1';
@@ -61,7 +62,11 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
   let callerPermissions: string[];
   // Held so a test can make the same id resolve to nothing, for the
   // hidden-versus-missing comparison below.
-  let prismaRef: { workflowInstance: { findFirst: jest.Mock; findMany: jest.Mock } };
+  let prismaRef: {
+    workflowInstance: { findFirst: jest.Mock; findMany: jest.Mock };
+    workflowStage: { findFirst: jest.Mock };
+    workflowTransition: { findMany: jest.Mock };
+  };
 
   beforeEach(async () => {
     callerPermissions = [];
@@ -92,6 +97,8 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
         findMany: jest
           .fn()
           .mockResolvedValue([{ id: 'stage-1', nameEn: 'Formation', nameAr: 'التكوين', order: 1 }]),
+        // ACC-271 — the moves read: an unconverted stage, so no pool is resolved.
+        findFirst: jest.fn().mockResolvedValue({ id: 'stage-1', whoMode: null }),
       },
       workflowTransition: { findMany: jest.fn().mockResolvedValue([]) },
       // The actor name the history discloses — asserted absent on refusal.
@@ -154,6 +161,8 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
   const stageHistory = () =>
     request(app.getHttpServer()).get(`/workflows/instances/${INSTANCE_ID}/stage-history`);
   const instanceById = () => request(app.getHttpServer()).get(`/workflows/instances/${INSTANCE_ID}`);
+  // ACC-271 PR 2 — which moves the caller may press: it says what the record's stage allows.
+  const moves = () => request(app.getHttpServer()).get(`/workflows/instances/${INSTANCE_ID}/moves`);
 
   describe('a caller holding workflows:view but NOT committees:view', () => {
     beforeEach(() => {
@@ -183,6 +192,15 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
       expect(JSON.stringify(response.body)).not.toContain(COMMITTEE_ID);
       expect(JSON.stringify(response.body)).not.toContain('committees:view');
     });
+
+    it("refuses the record's moves, before reading its stage or moves", async () => {
+      const response = await moves();
+
+      expect(response.status).toBe(404);
+      expect(JSON.stringify(response.body)).not.toContain('committees:view');
+      expect(prismaRef.workflowStage.findFirst).not.toHaveBeenCalled();
+      expect(prismaRef.workflowTransition.findMany).not.toHaveBeenCalled();
+    });
   });
 
   // THE ORACLE TEST. Both reads above must load the row before they can learn
@@ -204,6 +222,16 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
       // Same caller, same endpoint, an id with nothing behind it.
       prismaRef.workflowInstance.findFirst.mockResolvedValue(null);
       const missing = await request(app.getHttpServer()).get('/workflows/instances/no-such-instance');
+
+      expect(hidden.status).toBe(missing.status);
+      expect(hidden.body).toEqual(missing.body);
+    });
+
+    it("answers identically for a record's moves, hidden versus missing", async () => {
+      const hidden = await moves();
+
+      prismaRef.workflowInstance.findFirst.mockResolvedValue(null);
+      const missing = await request(app.getHttpServer()).get('/workflows/instances/no-such-instance/moves');
 
       expect(hidden.status).toBe(missing.status);
       expect(hidden.body).toEqual(missing.body);
@@ -234,15 +262,51 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
     expect(response.body.message).not.toContain('committees:view');
   });
 
+  it("refuses the moves to a caller without workflows:view, at the child gate", async () => {
+    callerPermissions = ['committees:view'];
+
+    const response = await moves();
+
+    expect(response.status).toBe(403);
+    expect(response.body.message).toContain('workflows:view');
+  });
+
+  // ACC-271 PR 2 — the moves read is the instance read's: the row is looked up
+  // with the caller's organisation, so another organisation's record is the
+  // same 404 as a missing one and nothing past it is read.
+  itEnforcesTenantIsolation("GET /workflows/instances/:id/moves — another organisation's record", async () => {
+    callerPermissions = ['workflows:view', 'committees:view'];
+    // The row exists, but only in another organisation.
+    prismaRef.workflowInstance.findFirst.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+      Promise.resolve(where.organizationId === 'org-b' ? { ...INSTANCE_ROW, organizationId: 'org-b' } : null),
+    );
+
+    const response = await moves();
+
+    expect(response.status).toBe(404);
+    expect(prismaRef.workflowInstance.findFirst).toHaveBeenCalledWith({ where: { id: INSTANCE_ID, organizationId: TENANT_ID } });
+    expect(prismaRef.workflowStage.findFirst).not.toHaveBeenCalled();
+    expect(prismaRef.workflowTransition.findMany).not.toHaveBeenCalled();
+  });
+
   // CONTROL — the harness can return 200, so the refusals above are real.
   it('serves a caller holding both the child and the parent permission', async () => {
     callerPermissions = ['workflows:view', 'committees:view'];
 
-    const [instances, history] = await Promise.all([instancesByObject(), stageHistory()]);
+    const [instances, history, pressable] = await Promise.all([instancesByObject(), stageHistory(), moves()]);
 
     expect(instances.status).toBe(200);
     expect(instances.body).toHaveLength(1);
     expect(history.status).toBe(200);
     expect(history.body.visits[0].actorName).toBe('Dr. Hessa Al-Dosari');
+    expect(pressable.status).toBe(200);
+    expect(pressable.body).toEqual({ transitionIds: [] });
+    // Read with the caller's organisation, both of them.
+    expect(prismaRef.workflowStage.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'stage-1', workflowTemplate: { organizationId: TENANT_ID } } }),
+    );
+    expect(prismaRef.workflowTransition.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { fromStageId: 'stage-1', fromStage: { workflowTemplate: { organizationId: TENANT_ID } } } }),
+    );
   });
 });

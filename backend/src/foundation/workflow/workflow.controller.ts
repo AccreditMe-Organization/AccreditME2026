@@ -65,6 +65,20 @@ export class WorkflowController {
     return this.workflowService.getStageHistory(id, tenantId, actorPermissions, actorId);
   }
 
+  // ACC-271 PR 2 — the moves this viewer may press from the record's current
+  // stage, for the record page's buttons. Same gate and visibility as the
+  // instance read above; a small answer (the moves of one stage), no paging.
+  @Get('instances/:id/moves')
+  @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
+  getMoves(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+    @CurrentUser() actorId: string,
+  ): Promise<{ transitionIds: string[] }> {
+    return this.workflowService.getMovesForViewer(id, tenantId, actorPermissions, actorId);
+  }
+
   // No class-level @Permissions — the required permission is data-driven
   // (whatever the specific WorkflowTransition.requiredPermission says), not a
   // fixed string known at compile time. TenantGuard/PermissionGuard still run

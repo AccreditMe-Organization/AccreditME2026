@@ -280,6 +280,57 @@ export class WorkflowService {
     return instance;
   }
 
+  /**
+   * ACC-271 PR 2 — which moves out of the record's current stage this viewer
+   * may press: what the record page's buttons show, so no screen keeps its own
+   * copy of the rule. Behind the same visibility check as the instance read
+   * (the identical 404 for a hidden record).
+   *
+   * A converted stage answers from its pool: a person's moves for whoever works
+   * it (out-of-office aware), nothing for anyone else and nothing at all while
+   * the pool is empty. An unconverted stage answers with today's rule, unchanged:
+   * a move with no permission, or one the viewer holds. Pressing is still
+   * decided by triggerTransition(); this only stops a screen offering what the
+   * server would refuse. At most the moves of one stage, one pool resolution.
+   */
+  async getMovesForViewer(
+    id: string,
+    organizationId: string,
+    viewerPermissions: readonly string[],
+    viewerId: string,
+  ): Promise<{ transitionIds: string[] }> {
+    const instance = await this.getInstanceByIdForViewer(id, organizationId, viewerPermissions, viewerId);
+    if (!instance.currentStageId) return { transitionIds: [] };
+    const [stage, transitions] = await Promise.all([
+      this.prisma.workflowStage.findFirst({
+        where: { id: instance.currentStageId, workflowTemplate: { organizationId } },
+        select: { id: true, whoMode: true },
+      }),
+      this.prisma.workflowTransition.findMany({
+        where: { fromStageId: instance.currentStageId, fromStage: { workflowTemplate: { organizationId } } },
+        select: { id: true, requiredPermission: true, triggerCondition: true, mover: true },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+    if (!stage) return { transitionIds: [] };
+    if (!isConvertedStage(stage)) {
+      return {
+        transitionIds: transitions
+          .filter((t) => !t.requiredPermission || viewerPermissions.includes(t.requiredPermission))
+          .map((t) => t.id),
+      };
+    }
+    const byPerson = transitions.filter((t) => transitionMover(t) === 'PERSON');
+    if (byPerson.length === 0) return { transitionIds: [] };
+    const pool = await this.stagePool.resolve(organizationId, stage.id, {
+      id: instance.id,
+      objectType: instance.objectType as WorkflowObjectType,
+      objectId: instance.objectId,
+    });
+    const works = pool.members.includes(viewerId) || pool.direct.includes(viewerId);
+    return { transitionIds: works ? byPerson.map((t) => t.id) : [] };
+  }
+
   // ACC-76 — the real path an object took through its workflow.
   //
   // Returns BOTH views — see IWorkflowStageHistory for why neither substitutes
