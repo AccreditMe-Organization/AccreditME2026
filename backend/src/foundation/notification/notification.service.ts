@@ -88,6 +88,36 @@ export class NotificationService {
     return notification;
   }
 
+  /**
+   * ACC-271 PR 4 — many in-app notices at once (the closed-task notices of one
+   * move): one read to confirm every recipient belongs to the organisation,
+   * one createMany, one audit row naming how many. A recipient outside the
+   * organisation is dropped, never written — create()'s ACC-17 rule, batched.
+   */
+  async createInAppMany(
+    rows: { userId: string; titleEn: string; titleAr: string | null; bodyEn: string; bodyAr: string | null; objectType: string | null; objectId: string | null }[],
+    organizationId: string,
+    source: string,
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+    const users = await this.prisma.user.findMany({
+      where: { organizationId, id: { in: [...new Set(rows.map((r) => r.userId))] } },
+      select: { id: true },
+    });
+    const known = new Set(users.map((u) => u.id));
+    const data = rows.filter((r) => known.has(r.userId)).map((r) => ({ organizationId, channel: 'IN_APP' as const, ...r }));
+    if (data.length === 0) return 0;
+    const { count } = await this.prisma.notification.createMany({ data });
+    await this.auditLog.log({
+      action: 'CREATE',
+      objectType: 'Notification',
+      objectId: source,
+      tenantId: organizationId,
+      metadata: { event: 'notifications_created', source, count, recipients: data.map((r) => r.userId) },
+    });
+    return count;
+  }
+
   // Personal inbox — always scoped to the CALLING user, never another
   // user's, regardless of any permission the caller holds (see plan
   // Business Rules — Permission Model for the Personal Inbox).

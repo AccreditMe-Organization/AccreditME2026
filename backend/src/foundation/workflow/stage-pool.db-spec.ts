@@ -33,6 +33,7 @@ import { TaskService } from '../task/task.service';
 import { TaskAuthorityService } from '../task/task-authority.service';
 import { TaskAssignmentService } from '../task/task-assignment.service';
 import { TaskSlaService } from '../task/task-sla.service';
+import { TaskClosedNoticeService } from '../task/task-closed-notice.service';
 import { UserService } from '../user/user.service';
 import type { AuthProvider } from '../../providers/auth/auth.provider';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
@@ -59,13 +60,13 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
   const labels = new DelegationLabelService(prisma);
   const visibility = new ObjectVisibilityService(prisma);
   const calendar = new WorkingCalendarService(prisma, audit);
-  const notifications = { create: async () => ({ id: randomUUID() }) } as unknown as NotificationService;
+  const notifications = { create: async () => ({ id: randomUUID() }), createInAppMany: async () => 0 } as unknown as NotificationService;
   const tenant = { getTaskSla: async () => null } as unknown as TenantService;
   const authority = new TaskAuthorityService(prisma);
   const lookups = { getValues: async () => [] } as unknown as LookupService;
   const assignment = new TaskAssignmentService(prisma, authority, lookups);
   const sla = new TaskSlaService(prisma, calendar);
-  const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla);
+  const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla, new TaskClosedNoticeService(prisma, notifications));
   const stageTasks = new StageTaskDefinitionService(prisma, audit, tasks);
   const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
   const organizations = {

@@ -3,6 +3,9 @@ import { TaskSlaService } from './task-sla.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
+import { TaskClosedNoticeService } from './task-closed-notice.service';
+// ACC-271 PR 4 — the closed-task notices, told after a completion.
+const mockClosedNotices = { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) };
 import { TaskAssignmentService } from './task-assignment.service';
 import { LookupService } from '../lookup/lookup.service';
 import { TaskAuthorityService } from './task-authority.service';
@@ -186,7 +189,9 @@ describe('TaskService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TaskService,
+        TaskService,
+
+        { provide: TaskClosedNoticeService, useValue: mockClosedNotices },
         // ACC-167 — REAL, over the same mockPrisma: it decides where a chosen
         // target lands, and a stub would leave those tests asserting a mock.
         TaskAssignmentService,
@@ -558,7 +563,78 @@ describe('TaskService', () => {
     });
   });
 
+  // ACC-271 PR 4 — a stage change's closed tasks, told after the engine commits.
+  describe('noticeStageExitClosures', () => {
+    it('passes each closed task with only its active assignees, and the move', async () => {
+      const open = [
+        {
+          ...BASE_TASK,
+          id: 'task-1',
+          title: 'Check the terms',
+          titleAr: null,
+          assignees: [
+            { id: 'ta-1', taskId: 'task-1', userId: USER_A, assignedAt: new Date(), assignedById: ACTOR, removedAt: null },
+            { id: 'ta-2', taskId: 'task-1', userId: USER_B, assignedAt: new Date(), assignedById: ACTOR, removedAt: new Date() },
+          ],
+        },
+      ];
+      const moveArgs = {
+        kind: 'RETURN' as const,
+        record: { objectType: 'COMMITTEE', objectId: 'c-1' },
+        toStage: { nameEn: 'Formation', nameAr: null },
+        transition: { labelEn: 'Revise Terms', labelAr: null },
+      };
+
+      await service.noticeStageExitClosures({ open, cancelledRequests: [] } as never, ORG_A, ACTOR, moveArgs);
+
+      expect(mockClosedNotices.afterStageExit).toHaveBeenCalledWith(ORG_A, ACTOR, {
+        ...moveArgs,
+        closed: [{ id: 'task-1', title: 'Check the terms', titleAr: null, assigneeUserIds: [USER_A] }],
+      });
+    });
+
+    it('does nothing when the move closed no task', async () => {
+      await service.noticeStageExitClosures({ open: [], cancelledRequests: [] }, ORG_A, ACTOR, {
+        kind: 'ADVANCE',
+        record: { objectType: 'COMMITTEE', objectId: 'c-1' },
+        toStage: { nameEn: 'Active', nameAr: null },
+        transition: { labelEn: 'Approve', labelAr: null },
+      });
+
+      expect(mockClosedNotices.afterStageExit).not.toHaveBeenCalled();
+    });
+  });
+
   describe('complete', () => {
+    // ACC-271 PR 4 — the others still on it are told after the commit (the
+    // 4th wording); never the one who completed it, nor anyone already off it.
+    it('tells the other active assignees, not the completer and not anyone removed earlier', async () => {
+      const assignees = [
+        { id: 'ta-1', taskId: 'task-1', userId: USER_A, assignedAt: new Date(), assignedById: ACTOR, removedAt: null },
+        { id: 'ta-2', taskId: 'task-1', userId: USER_B, assignedAt: new Date(), assignedById: ACTOR, removedAt: null },
+        { id: 'ta-3', taskId: 'task-1', userId: 'user-gone', assignedAt: new Date(), assignedById: ACTOR, removedAt: new Date() },
+      ];
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, assignees });
+      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'COMPLETED', completedById: USER_A });
+
+      await service.complete('task-1', USER_A, ORG_A);
+
+      expect(mockClosedNotices.afterCompletion).toHaveBeenCalledWith(
+        ORG_A,
+        USER_A,
+        expect.objectContaining({ id: 'task-1', sourceType: BASE_TASK.sourceType, sourceId: BASE_TASK.sourceId, assigneeUserIds: [USER_B] }),
+      );
+    });
+
+    it('tells nobody when the completer was the only one on it', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'COMPLETED', completedById: USER_A });
+
+      await service.complete('task-1', USER_A, ORG_A);
+
+      expect(mockClosedNotices.afterCompletion).not.toHaveBeenCalled();
+    });
+
     it('marks the task COMPLETED when called by an active assignee', async () => {
       mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
       mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'COMPLETED', completedById: USER_A });

@@ -3,6 +3,7 @@ import { TaskSlaService } from './task-sla.service';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
+import { TaskClosedNoticeService } from './task-closed-notice.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { LookupService } from '../lookup/lookup.service';
 import { TaskAuthorityService } from './task-authority.service';
@@ -164,7 +165,9 @@ describe('TaskService — pools (ACC-167)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TaskService,
+        TaskService,
+
+        { provide: TaskClosedNoticeService, useValue: { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) } },
         TaskAssignmentService,
 
         // ACC-208 — TaskAssignmentService's catalogue dependency; not reached here.

@@ -44,6 +44,7 @@ import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskSlaService, latest, priorityWords } from './task-sla.service';
+import { TaskClosedNoticeService } from './task-closed-notice.service';
 import { CancelTaskDto, ReopenTaskDto, UpdateTaskDto } from './dto/update-task.dto';
 import { aTaskThatIs } from './task-status-label';
 import {
@@ -185,6 +186,8 @@ export class TaskService {
     private readonly assignment: TaskAssignmentService,
     private readonly authority: TaskAuthorityService,
     private readonly sla: TaskSlaService,
+    // ACC-271 PR 4 — tells the people whose task closed because of someone else.
+    private readonly closedNotices: TaskClosedNoticeService,
   ) {}
 
   /**
@@ -744,6 +747,20 @@ export class TaskService {
     });
     await auditCancelledRequests(this.auditLog, cancelled, organizationId, userId);
 
+    // ACC-271 PR 4 — the others who were still on it, after the commit: their
+    // part closed with it (the 4th wording; no stage moved).
+    const others = existing.assignees.filter((a) => a.removedAt === null && a.userId !== userId).map((a) => a.userId);
+    if (others.length > 0) {
+      await this.closedNotices.afterCompletion(organizationId, userId, {
+        id: existing.id,
+        title: existing.title,
+        titleAr: existing.titleAr,
+        sourceType: existing.sourceType,
+        sourceId: existing.sourceId,
+        assigneeUserIds: others,
+      });
+    }
+
     return task;
   }
 
@@ -1295,6 +1312,34 @@ export class TaskService {
       });
     }
     await auditCancelledRequests(this.auditLog, result.cancelledRequests, organizationId, actorId);
+  }
+
+  /**
+   * ACC-271 PR 4 — after a stage change commits: tells everyone still on a task
+   * the change closed (plan §7). The engine calls it beside
+   * auditStageExitCancellation(), never inside its transaction.
+   */
+  async noticeStageExitClosures(
+    result: StageExitCancellation,
+    organizationId: string,
+    actorId: string,
+    move: {
+      kind: 'ADVANCE' | 'RETURN' | 'EXIT';
+      record: { objectType: string; objectId: string };
+      toStage: { nameEn: string; nameAr: string | null };
+      transition: { labelEn: string; labelAr: string | null };
+    },
+  ): Promise<void> {
+    if (result.open.length === 0) return;
+    await this.closedNotices.afterStageExit(organizationId, actorId, {
+      ...move,
+      closed: result.open.map((t) => ({
+        id: t.id,
+        title: t.title,
+        titleAr: t.titleAr,
+        assigneeUserIds: t.assignees.filter((a) => a.removedAt === null).map((a) => a.userId),
+      })),
+    });
   }
 
   // ACC-68 — cancels every open task across EVERY stage of one instance, for
