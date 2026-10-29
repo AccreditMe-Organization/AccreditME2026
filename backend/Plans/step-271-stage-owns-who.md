@@ -711,6 +711,49 @@ transition editors still show and save the old fields, which the engine no
 longer reads for them. PR 3 refuses such a save with a translated sentence
 (condition b).
 
+
+### 11.4 PR 4 as built (29 Oct)
+
+The closed-task notices (§7) and the sweep half of the leaver rule (§8).
+SYSTEM-REFERENCE §2.19.
+
+**Ahmad's two answers (29 Oct), recorded here as asked:**
+
+1. **A 4th wording**, for a task completed by another assignee with no stage
+   move: "Your task "{task}" on {record} is closed: {actor} completed it." /
+   «أُغلقت مهمتك «{task}» في «{record}»: أُنجزت من قِبل {actor}.» Same rules as
+   the other three. For a reader who may not open the record it reads "on the
+   committee" / «في اللجنة»; with no record type to say, the "on …" part is
+   dropped. The first wording ("approved … moved to {stage}") is used only for
+   a stage decision that moved the record.
+2. **Leavers follow §8, not the earlier instruction**: leaving a position or a
+   committee (or an acting cover ending) is recorded by the 15-minute sweep;
+   deactivation stays in its own transaction (PR 1). **No lane A code was
+   touched** (no position-assignment file). The mutation checks are "the sweep
+   records a leaver twice" and "the sweep misses an acting cover that ended",
+   in place of "skip the leaver event on a position change".
+
+**Departures and decisions, each Ahmad's to overrule:**
+
+1. **One additive migration**, `acc271_pool_member_joined`: §8's sweep needs to
+   know who WAS in the pool to see who left, and nothing stored that. An
+   entry's own events now do: POOL_MEMBER_JOINED at stage entry and when the
+   sweep first sees someone, POOL_MEMBER_LEFT when they go. Only "All of them"
+   entries are tracked, as §8 says.
+2. **The notice text is stored as the title as well as the body**, because the
+   bell shows titles only.
+3. **The bell was touched** (`notification-bell.component.ts`): a
+   notification about a committee links to its page, with "Open record" under
+   it. A change request links to its committee's page (its own page needs the
+   committee id); meetings have no page yet, so no link.
+4. **Arabic record words**: for a reader who may not open the record, the
+   committee reads «اللجنة», which agrees with the table's feminine verbs. A
+   module whose record is a masculine noun (meetings, documents) needs its own
+   verb forms when it first sends these notices.
+5. **`recordPoolChanges()` checks the entries are the organisation's own**
+   (one batched read), so a wrong pairing writes nothing rather than events
+   under the wrong organisation.
+
 ---
 
 ## 12. Tests per PR

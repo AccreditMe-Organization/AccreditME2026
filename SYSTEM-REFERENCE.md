@@ -2936,6 +2936,36 @@ every stage on every database is still unconverted and behaves as §2.4–§2.8 
     (`RECORD_ROUTES`); elsewhere it gets the starting assignment, as the seed
     gives a new organisation (29 Oct), so the mapping matches the seed on all
     60 stages.
+- **PR 4 — closed-task notices and the sweep's leaver rule.**
+  - **`TaskClosedNoticeService`** (`foundation/task/`, wording in
+    `task-closed-notice.ts`): in-app only, one notice per person whose task
+    closed because of someone else, never the actor; an away member is told
+    through their ACTIVE acting user. Four wordings, both languages, stored as
+    the notification's title and body: **moved on** (an ADVANCE — Any one
+    deciding, or optional work closed by a forward move), **sent back**
+    (RETURN), **ended** (EXIT), and **completed** (another assignee completed a
+    shared task; no stage moved — Ahmad, 29 Oct). Sent only AFTER the change
+    commits: the engine calls `TaskService.noticeStageExitClosures()` beside
+    the stage-exit audit, and `complete()` after its own transaction.
+  - **The record is named, and "Open record" linked, only for someone who may
+    open it** (holds `RECORD_VIEW_PERMISSION` for its type, ACC-228's rule);
+    anyone else reads the record type ("the committee") and gets no link. A
+    committee links to its page and a change request to its committee's
+    (`recordLinkTarget()`); the bell renders that link. An APP move's actor
+    is whoever decided on the Changes tab (the module passes them).
+  - **Batched:** one read of the people, then the record's name and who may
+    open it together, then one `NotificationService.createInAppMany()` (one
+    user check, one createMany, one audit row) per move.
+  - **The leaver rule's sweep half** (plan §8): entering an "All of them"
+    stage records who its pool starts with (`POOL_MEMBER_JOINED`); the
+    15-minute sweep then compares each open "All of them" entry's pool with
+    the entry's own JOINED / LEFT events (`StagePoolService.recordPoolChanges()`)
+    — whoever left a position, a committee seat or an acting cover gets ONE
+    `POOL_MEMBER_LEFT` (reason LEFT_POOL), and someone who returns joins
+    again. Deactivation still writes its own LEFT (DEACTIVATED) inside its
+    transaction (PR 1). One read and one write per organisation, from the
+    pools the sweep already resolved; only the organisation's own open entries
+    are written.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
