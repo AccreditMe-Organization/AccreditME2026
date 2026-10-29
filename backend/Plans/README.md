@@ -4,7 +4,7 @@ Every file in `backend/Plans/`, with the ticket it plans, whether it is built,
 and the pull requests that merged it into `dev`. Sorted by ticket number;
 files with no ticket (reviews and references) come last.
 
-Status, as of `dev` at `e9e1db3` (29 Oct 2026):
+Status, as of `dev` at `487a0a8` (29 Oct 2026):
 
 - **Built:** everything the plan asks for has merged.
 - **Partly built:** some of it has merged; the rest is named.
@@ -78,8 +78,8 @@ checked: `git show <sha>` on `dev`.
 | `step-255-workflow-stage-rules.md` | ACC-255 | Built | #212 (f617304), #215 (341545f), #219 (3ddbe58), #223 (45c6bd6), #225 (70af292), #227 (d8a7af4); G2, the History card, moved to ACC-267 |
 | `step-258-lock-workflows-manage.md` | ACC-258 | Built | #213 (bab1c02) |
 | `step-260-storage-settings.md` | ACC-260 | Built | #214 (e658b0a), #218 (780d9b3), #222 (8acda92), #226 (dbd0ce2), #228 (75d9e0d) |
-| `step-271-stage-owns-who.md` | ACC-271 | Partly built | #230 (a580a00, PR 1), #231 (5a4d2d9, PR 2). Not started: PRs 3 to 6. This plan's own Status line is lane B's to keep. |
-| `website-plan-2026-10-10.md` | ACC-213 and lane split | Partly built | #161 (e4cc4d8), the scaffold on its preview address; the cut-over of the apex and `www` is not started |
+| `step-271-stage-owns-who.md` | ACC-271 | Partly built | #230 (a580a00, PR 1), #231 (5a4d2d9, PR 2), #233 (487a0a8, PR 4). Not started: PR 3 (the APIs) and PR 5 (the screens); PR 6, the contract cleanup, is later and its own ticket. Its own Status line is kept by ACC-271's PRs. |
+| `website-plan-2026-10-10.md` | ACC-213 | Partly built | #161 (e4cc4d8), the scaffold on its preview address; the cut-over of the apex and `www` is not started |
 | `module-designs.md` | — | Reference | The business rules per module. Task and Committee match what is built; the other modules are design intent. |
 | `audit-backend-frontend-coverage.md` | — | Plan only | The coverage audit has not been run |
 | `accreditme-handover.md` | — | Reference | Handover brief |
