@@ -2,7 +2,9 @@
 
 Linear: **ACC-197** (lane B, Medium, Feature; after ACC-193, on ACC-194's gateway and ACC-195's drawing).
 Branch: `feat/ACC-197-task-drafting`, from `origin/dev` at `7948f37`.
-Status: **APPROVED (Ahmad, 13 Oct) with the recommendations on Q1 to Q12, and one addition to Q1 (§2.2). For Q8, the summary and the briefing must behave exactly as today: their existing tests stay unchanged and green. Building.**
+**Status:** BUILT — merged as #172 (74bab36), 14 Oct.
+
+When written: **APPROVED (Ahmad, 13 Oct) with the recommendations on Q1 to Q12, and one addition to Q1 (§2.2). For Q8, the summary and the briefing must behave exactly as today: their existing tests stay unchanged and green. Building.**
 
 **Read for this plan:**
 - ACC-197 in Linear, and `module-designs.md` (Task Module AI, point 5);

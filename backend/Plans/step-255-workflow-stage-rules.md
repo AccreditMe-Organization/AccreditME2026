@@ -4,7 +4,9 @@
 (Ahmad, 18 Oct). Step 2 (selection rules, conditional and automatic transitions,
 versions, the New workflow screen) must land before the Documents module.
 
-**Status:** PR 1 merged (#212, `f617304`), its backfill run on the shared
+**Status:** BUILT — merged as #212 (f617304), 24 Oct (PR 1); #215 (341545f), 25 Oct (PR 2); #219 (3ddbe58), 25 Oct (PR 3); #223 (45c6bd6), 27 Oct (PR 4a); #225 (70af292), 27 Oct (PR 4b-be); #227 (d8a7af4), 27 Oct (PR 4b). Not built: G2, the History card, moved to its own ticket (ACC-267).
+
+When written: PR 1 merged (#212, `f617304`), its backfill run on the shared
 database. PR 2 built on `feature/ACC-255-stage-rules-switch` from `dev`
 `bab1c02` (24 Oct); what it built and where it departs from this plan is §16.5.
 PRs 3 and 4 are not started. Originally written against `dev` at `6b2c026`

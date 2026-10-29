@@ -1,6 +1,8 @@
 # ACC-244 — task permissions per record type, plus unit scope (plan)
 
-**Status: PLAN, answered by Ahmad on 20 Oct (§10). PR 1 shipped (#200, #201); PR 2 built on `feature/ACC-244-task-permissions-2` (§9, "PR 2 as built").** PR 1's branch was
+**Status:** BUILT — merged as #200 (8dae79e), 20 Oct and #201 (3b36e85), 20 Oct (PR 1); #204 (86c4296), 21 Oct (PR 2).
+
+When written: **PLAN, answered by Ahmad on 20 Oct (§10). PR 1 shipped (#200, #201); PR 2 built on `feature/ACC-244-task-permissions-2` (§9, "PR 2 as built").** PR 1's branch was
 `feature/ACC-244-task-permissions`, cut from `origin/dev` at `8fa444e`.
 Every database read behind this plan was read-only (`BEGIN READ ONLY`, then
 `ROLLBACK`). Nothing was granted, revoked or written.

@@ -2,7 +2,9 @@
 
 Linear: **ACC-194** (High, lane B). **ACC-156** is its sub-issue and closes with it.
 Branch: `feature/ACC-194-ai-foundation`, from `origin/dev` at `361b84c`.
-Status: **PLAN, revised with Ahmad's answers (12 Oct). No code yet.**
+**Status:** BUILT — merged as #163 (4aa860c), 12 Oct.
+
+When written: **PLAN, revised with Ahmad's answers (12 Oct). No code yet.**
 
 The brief is the ticket's scope (items 1–9) and its out-of-scope list:
 - no provider choice;

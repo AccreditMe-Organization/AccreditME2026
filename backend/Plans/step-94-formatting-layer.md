@@ -1,6 +1,8 @@
 # ACC-94 — One Formatting Layer for Dates, Numbers and Plurals
 
-**Status: IMPLEMENTED on 2026-09-15, 14 commits as approved (§10), plus 3 the
+**Status:** BUILT — merged as #79 (596b9d4), 16 Sep.
+
+When written: **IMPLEMENTED on 2026-09-15, 14 commits as approved (§10), plus 3 the
 browser pass added — 17 on the branch.** The plan was approved with conditions
 (§0), and the sequence with four more (§12). §12 also records where the
 implementation deviated from this plan, and why.

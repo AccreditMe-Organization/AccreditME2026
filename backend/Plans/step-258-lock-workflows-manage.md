@@ -1,6 +1,8 @@
 # Step 258 — Workflow editing for the Organization Administrator only (ACC-258)
 
-**Status:** planned 24 Oct 2026; Ahmad answered Q1–Q3 the same day (§8), and it is being built.
+**Status:** BUILT — merged as #213 (bab1c02), 24 Oct.
+
+When written: planned 24 Oct 2026; Ahmad answered Q1–Q3 the same day (§8), and it is being built.
 **Decision behind it:** Ahmad, 22 Oct (ACC-255 Q-D). Only the tenant admin can
 change a workflow: its stages, stage rules, flags and transitions. Every other
 role sees a running workflow's progress only on the record it runs on. The
