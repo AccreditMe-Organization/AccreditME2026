@@ -1,6 +1,8 @@
 # Step 199 — AI workload hint when assigning a task (ACC-199)
 
-**Status: APPROVED 14 Oct 2026 with Ahmad's changes (Q2, Q4, Q10, Q12). BUILT — results in §17.**
+**Status:** BUILT — merged as #175 (3df989e), 14 Oct; #176 (44a68dd), 14 Oct.
+
+When written: **APPROVED 14 Oct 2026 with Ahmad's changes (Q2, Q4, Q10, Q12). BUILT — results in §17.**
 Branch: `feat/ACC-199-workload-hint`, from `origin/dev` at `74bab36`.
 
 Sources read:

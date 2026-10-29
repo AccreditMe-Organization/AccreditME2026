@@ -38,6 +38,36 @@ The four single-screen files came before the two consolidated files and are kept
 for the detail they carry. **Where one of them and the Templates file disagree, the
 Templates file is the later decision.**
 
+### Every design file, and what built it
+
+All 20 `.dc.html` files in `design-reference/`, as of `dev` at `e9e1db3`
+(29 Oct 2026). "Built by" is the ticket whose screens follow the file; the
+file arrived in the same PR unless noted. The table above stays the rule for
+which file wins.
+
+| File | Screen | Built by |
+| -- | -- | -- |
+| `AccreditMe AI for Users.dc.html` | The AI places: Home's briefing, Summarize in the file viewer, Draft with AI on New task, the workload hint | ACC-198, ACC-193, ACC-197, ACC-199 |
+| `AccreditMe App Shell.dc.html` | The rail, the top bar and the content column | ACC-79 |
+| `AccreditMe Committee Changes.dc.html` | Editing a committee in Formation, and the change request screens | ACC-238, ACC-240 |
+| `AccreditMe Committee Record.dc.html` | The record page, drawn on Committee | ACC-76 (the file arrived with ACC-78) |
+| `AccreditMe Compact List Panel.dc.html` | The compact list inside a record page | ACC-76 (the file arrived with ACC-78); capped panels ACC-229, ACC-230 |
+| `AccreditMe Design System.dc.html` | Tokens, components, states | ACC-111 (the file arrived with ACC-110) |
+| `AccreditMe File Viewer.dc.html` | The in-app file viewer | ACC-189 |
+| `AccreditMe Head Management.dc.html` | A unit's headship panel | ACC-133 (built in #199; the file arrived in #93) |
+| `AccreditMe Organization Structure.dc.html` | The tree, the chart, the unit record, the unit dialog | ACC-120 slice 11 |
+| `AccreditMe Record Tasks Panel.dc.html` | A record's Tasks panel and the All tasks list | ACC-229, ACC-230 (the file arrived with ACC-228) |
+| `AccreditMe Role Permissions.dc.html` | A role's permissions as a grouped list, and "A user's permissions" | ACC-272 |
+| `AccreditMe Settings Screens.dc.html` | The settings screens: organisation profile, email provider, AI credits, the working calendar's holiday helper, Task SLA | ACC-120 (its settings slices; AI credits is slice 8), ACC-181 (email provider) |
+| `AccreditMe Stage Tasks.dc.html` | A stage's task definitions | ACC-208 |
+| `AccreditMe Storage Settings.dc.html` | File storage settings, first-time setup, SharePoint, the recycle bin | ACC-260 |
+| `AccreditMe Task Screens.dc.html` | The task screens: the task page, its actions, requests and evidence | ACC-177, ACC-228, ACC-244 |
+| `AccreditMe Templates.dc.html` | 7 page templates, the icon set, the notification panel, the task record page | ACC-111, ACC-120 (the file arrived with ACC-110) |
+| `AccreditMe Users List.dc.html` | The full list page | ACC-78 |
+| `AccreditMe Users and Roles.dc.html` | The user record, Manage roles, and the permission matrix | ACC-120 slice 5; its matrix was replaced by Role Permissions (ACC-272) |
+| `AccreditMe Website.dc.html` | The public website | Not built: only the scaffold on a preview address exists (ACC-213) |
+| `AccreditMe Workflow Setup.dc.html` | The workflow stages page, the flow strip and the stage editor | ACC-255 (PR 4) |
+
 ## Templates was HAND-PATCHED at Rev 8 — an export will silently revert it
 
 **This section exists because the patch below lives inside a folder that the

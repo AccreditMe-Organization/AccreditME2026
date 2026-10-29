@@ -2,7 +2,9 @@
 
 Linear: **ACC-193** (lane B, High).
 Branch: `feature/ACC-193-ai-summary`, from `origin/dev` at `d4d9dec`.
-Status: **APPROVED (Ahmad, 13 Oct), with all seven recommendations in §12 (Q1 hide,
+**Status:** BUILT — merged as #168 (2ac8174), 13 Oct.
+
+When written: **APPROVED (Ahmad, 13 Oct), with all seven recommendations in §12 (Q1 hide,
 Q2 save, Q3 not charged via the gateway's opt-in `accept()`, Q4 the proposed
 wording, Q5 an opt-in `collapsible`, Q6 `pdfjs-dist` in a worker thread, Q7 an
 audit row with no text) and THREE ADDITIONS, recorded in §14. Being built.**

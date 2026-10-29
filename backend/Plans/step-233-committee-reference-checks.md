@@ -3,7 +3,9 @@
 Lane B, Bug, High. Branch `fix/ACC-233-committee-reference-checks` from `dev`
 at `4638b5f`.
 
-**Status: built (16 Oct), waiting for `/ready-to-pr`.** Ahmad decided both
+**Status:** BUILT — merged as #183 (23a5649), 16 Oct.
+
+When written: **built (16 Oct), waiting for `/ready-to-pr`.** Ahmad decided both
 scope findings on 15 Oct (§2), **including approving the migration** (§2.1
 option A). §9 records where the build differs from this plan.
 

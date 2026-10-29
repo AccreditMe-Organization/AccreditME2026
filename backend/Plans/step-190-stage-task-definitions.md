@@ -1,6 +1,8 @@
 # Step 190 — Task definitions on workflow stages (ACC-190, CF-07)
 
-**Status: PLAN ONLY.** No code and no migration until Ahmad approves.
+**Status:** BUILT — merged as #154 (5f775d3), 10 Oct; #155 (0d76047), 10 Oct.
+
+When written: **PLAN ONLY.** No code and no migration until Ahmad approves.
 - Branch: `feature/ACC-190-stage-task-definitions`, from `origin/dev` at `b9d76d3`.
 - Backend only. §11 lists what the settings screen must show, for the design
   thread.

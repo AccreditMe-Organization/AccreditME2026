@@ -13,7 +13,9 @@ below (`L…`) are that file's.
 **Built on:** `origin/dev` at `6a1d728`, which includes ACC-239 (`8fa444e`)
 and ACC-244 (`86c4296`).
 
-**Status:** PLAN ONLY. Nothing is built until Ahmad answers §12.
+**Status:** BUILT — merged as #205 (45e8f56), 23 Oct; #209 (91828ea), 24 Oct.
+
+When written: PLAN ONLY. Nothing is built until Ahmad answers §12.
 
 Every database read behind this plan was read-only (`BEGIN READ ONLY`, then
 `ROLLBACK`). Nothing was written.

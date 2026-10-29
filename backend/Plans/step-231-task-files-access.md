@@ -4,7 +4,9 @@ Lane B, Bug, High. Branch `fix/ACC-231-task-files-follow-task-page` from `dev` a
 `23a5649`. Found while planning ACC-228 (`step-228-record-tasks-panel.md` §0.3,
 Q5), filed by Ahmad on 14 Oct.
 
-**Status: built (16 Oct), waiting for `/ready-to-pr`.** Ahmad decided all five
+**Status:** BUILT — merged as #185 (c81c25e), 16 Oct.
+
+When written: **built (16 Oct), waiting for `/ready-to-pr`.** Ahmad decided all five
 questions on 16 Oct, as picked (§6). §8 records where the build differs.
 
 ## 1. The two rules today

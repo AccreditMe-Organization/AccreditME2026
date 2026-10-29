@@ -1,6 +1,8 @@
 # ACC-120 slice 11: organisation structure, plan
 
-Plan only. No code, no commits, no database writes. Written 19 Oct 2026 against `origin/dev` at `5ca8065`.
+**Status:** BUILT — merged as #196 (6e93a52), 20 Oct (PR A); #202 (6d315ce), 20 Oct (PR B); #203 (6a1d728), 21 Oct (PR C); #206 (954f1a3), 23 Oct (PR D); #208 (3336c6e), 24 Oct (PR E); #211 (c1a86ff), 24 Oct (PR F).
+
+When written: plan only. No code, no commits, no database writes. Written 19 Oct 2026 against `origin/dev` at `5ca8065`.
 
 ## The surfaces
 

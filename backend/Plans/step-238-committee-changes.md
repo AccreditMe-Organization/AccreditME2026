@@ -12,7 +12,9 @@
 
 **Rules:** Ahmad's, accepted on 15 Oct. They are restated in §2 and are not reopened here.
 
-**Status:** PLAN ONLY. Nothing is built until Ahmad answers §10.
+**Status:** BUILT — merged as #191 (08bd1bf), 18 Oct (PR 1, ACC-238); #198 (8fa444e), 20 Oct (PR 2, ACC-239); #205 (45e8f56), 23 Oct and #209 (91828ea), 24 Oct (PR 3, ACC-240); #215 (341545f), 25 Oct (ACC-241, folded into ACC-255 PR 2).
+
+When written: PLAN ONLY. Nothing is built until Ahmad answers §10.
 
 ---
 

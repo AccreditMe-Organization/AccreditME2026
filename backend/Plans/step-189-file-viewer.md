@@ -1,6 +1,8 @@
 # Step 189 — File viewer for attachments (ACC-189)
 
-**Status: APPROVED, BUILDING (10 Oct).** D1–D5 answered (§10); the drawing
+**Status:** BUILT — merged as #157 (048c887), 11 Oct.
+
+When written: **APPROVED, BUILDING (10 Oct).** D1–D5 answered (§10); the drawing
 was accepted in the design review and is built to once it is copied into
 `frontend/design-reference/` on this branch — where it and this plan differ,
 the drawing wins on anything visual.

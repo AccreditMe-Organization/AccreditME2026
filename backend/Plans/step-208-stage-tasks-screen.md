@@ -1,6 +1,8 @@
 # Step 208 — Stage Tasks settings screen (ACC-208)
 
-**Status: APPROVED, BUILDING (12 Oct).** Ahmad's answers are in §9. The
+**Status:** BUILT — merged as #160 (361b84c), 12 Oct.
+
+When written: **APPROVED, BUILDING (12 Oct).** Ahmad's answers are in §9. The
 drawing is on the branch and was read in full first (§8b).
 - Branch: `feature/ACC-208-stage-tasks-screen`, from `origin/dev` at `048c887`.
 - Lane B, High. This is the frontend for ACC-190's task definitions

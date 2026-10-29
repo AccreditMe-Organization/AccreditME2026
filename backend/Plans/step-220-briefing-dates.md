@@ -2,7 +2,9 @@
 
 Linear: **ACC-220** (lane B, Medium, Bug; related to ACC-198 and ACC-219).
 Branch: `fix/ACC-220-briefing-dates`, from `origin/dev` at `df16243`.
-Status: **APPROVED as written (Ahmad, 13 Oct), including the recommendations on
+**Status:** BUILT — merged as #166 (d4d9dec), 13 Oct.
+
+When written: **APPROVED as written (Ahmad, 13 Oct), including the recommendations on
 Q1, Q2 and Q3 (§6). Built; waiting for Ahmad to push.**
 
 **Scope:**

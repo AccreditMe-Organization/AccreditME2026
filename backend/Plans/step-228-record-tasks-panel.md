@@ -1,6 +1,8 @@
 # Step 228 — The task page, the record Tasks panel, and capped record panels (ACC-228, ACC-229, ACC-230)
 
-**Status: APPROVED 14 Oct (Ahmad), with the recommended answers to Q1–Q13 except Q5 (§4). PR 1 is being built; PRs 2 and 3 wait until PR 1 is merged and proven live.**
+**Status:** BUILT — merged as #178 (e9aaed7), 14 Oct (PR 1, ACC-228); #179 (ff3266f), 15 Oct (PR 2, ACC-229); #181 (4638b5f), 15 Oct (PR 3, ACC-230).
+
+When written: **APPROVED 14 Oct (Ahmad), with the recommended answers to Q1–Q13 except Q5 (§4). PR 1 is being built; PRs 2 and 3 wait until PR 1 is merged and proven live.**
 
 Lane B. Three PRs, in this order, one plan:
 

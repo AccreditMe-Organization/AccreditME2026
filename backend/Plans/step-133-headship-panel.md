@@ -1,6 +1,8 @@
 # ACC-133 — the six-state Headship panel (plan)
 
-**Status: building (CC-127a, 20 Oct 2026).** The stop below was answered: option
+**Status:** BUILT — merged as #199 (f351e74), 20 Oct.
+
+When written: **building (CC-127a, 20 Oct 2026).** The stop below was answered: option
 A, in this same PR, with the D7 names rule applied to this panel.
 
 Spec: ACC-133's description in Linear. Drawing:
