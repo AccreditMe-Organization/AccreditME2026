@@ -1,6 +1,6 @@
 # AccreditMe public website: plan and lane split
 
-**Date:** 10 Oct 2026 · **Status:** plan only, nothing built or changed
+**Date:** 10 Oct 2026 · **Status:** PARTLY BUILT — merged as #161 (e4cc4d8), 12 Oct: the website scaffold on its preview address (ACC-213). Not started: the cut-over of the apex and `www` to the website. When written: plan only, nothing built or changed
 
 ## What is true today (checked)
 

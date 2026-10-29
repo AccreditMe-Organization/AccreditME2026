@@ -2,7 +2,9 @@
 
 Linear: **ACC-224** (lane B, High, Bug; related to ACC-193).
 Branch: `fix/ACC-224-arabic-pdf-order`, from `origin/dev` at `2ac8174`.
-Status: **APPROVED as written (Ahmad, 13 Oct), with the recommendations on Q1, Q2 and Q3 (§11). The short mixed-fragment case (§3) stays a recorded known limit. Building.**
+**Status:** BUILT — merged as #170 (7948f37), 13 Oct.
+
+When written: **APPROVED as written (Ahmad, 13 Oct), with the recommendations on Q1, Q2 and Q3 (§11). The short mixed-fragment case (§3) stays a recorded known limit. Building.**
 
 **Scope:**
 - **What changes:** how a PDF page's text is assembled before the model reads it, how a key point is cut, and one word in the AI log's description.

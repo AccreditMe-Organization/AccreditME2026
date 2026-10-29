@@ -3,7 +3,9 @@
 Linear: ACC-185 (CF-06b, High). Branch: `feature/ACC-185-sharepoint-storage`,
 cut from `origin/dev` at `562b019`.
 
-**Status: APPROVED by Ahmad on 8 Oct, with every §9 recommendation (Q1–Q6) as
+**Status:** BUILT — merged as #151 (73c15a1), 9 Oct.
+
+When written: **APPROVED by Ahmad on 8 Oct, with every §9 recommendation (Q1–Q6) as
 written.** Work runs in four stages with two stop points (§10): the setup half,
 then STOP 1 (a live Test on al-manara, never confirmed), then the rest, then
 STOP 2 (full checks, before `/ready-to-pr`).

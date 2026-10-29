@@ -303,6 +303,9 @@ Consider adding AUDITOR as a system role in Step 4 data.
 
 ## Task Management Module (Step 8)
 
+Corrected to what is built on `dev` at `e9e1db3` (ACC-273): the shape below is
+the schema and the code; rules not built are marked. Mechanism: SYSTEM-REFERENCE §3.
+
 ### Core Principle
 Tasks are cross-module. Every task MUST have sourceType 
 and sourceId — no standalone tasks allowed.
@@ -311,7 +314,10 @@ Tasks are always linked to a quality event.
 ### Task Source Types
 MEETING, DOCUMENT, AUDIT, CAPA, INCIDENT,
 CORRECTIVE_ACTION, STANDARD, KPI,
-GAP, QUALITY_IMPROVEMENT_PLAN
+GAP, QUALITY_IMPROVEMENT_PLAN, COMMITTEE
+
+COMMITTEE is a committee's own tasks. It is the only source type with a built
+record today, so it is the only one with task keys (see Task Permission Model).
 
 ### Multi-Assignee Design
 Tasks support multiple assignees via TaskAssignee junction.
@@ -319,22 +325,44 @@ Completion rule: ANY one assignee completes → task marked
 COMPLETED and removed from all other assignees' task lists.
 Record of who completed it kept in TaskAssignee.
 
+### Assignment: where the work sits (ACC-167)
+A task is assigned to where the work sits, not to a list of people:
+a unit, then a position, then optionally a person; or, on a committee's
+own task, the committee, then a member role, then optionally a person.
+A chosen person gets the task; a position with one holder goes to that
+holder; anything else is a POOL task that nobody holds until a member
+picks it up (and can release it back). Pools are resolved at read time
+from the holder rule, never stored. ROLE is never a task target.
+A task can also be UNASSIGNED; Setup health lists it.
+Mechanism: SYSTEM-REFERENCE §3.9.
+
+### Statuses (ACC-163)
+PENDING (shown as Assigned), IN_PROGRESS, ON_HOLD, COMPLETED,
+REJECTED, CANCELLED, UNASSIGNED.
+Overdue is a FLAG, not a status: an open task whose dueAt has passed.
+A task can be In progress and overdue at once.
+OVERDUE and DELEGATED are still enum values but are never written;
+removing them is a later contracting migration.
+A rejected task goes back to its creator, who reassigns it.
+Mechanism: SYSTEM-REFERENCE §3.1, §3.2.
+
 ### SLA Configuration
 Task SLAs are TENANT-CONFIGURABLE — not hardcoded.
-Stored in Organization.settings JSON:
+Stored in Organization.settings JSON, working hours per priority:
 {
   "taskSla": {
-    "CRITICAL": 4,
-    "HIGH": 16,
-    "MEDIUM": 40,
-    "LOW": 80
+    "CRITICAL": { "dueAfterHours": 4,  "managerEscalationAfterHours": 2,  "headEscalationAfterHours": 4 },
+    "HIGH":     { "dueAfterHours": 16, "managerEscalationAfterHours": 8,  "headEscalationAfterHours": 16 },
+    "MEDIUM":   { "dueAfterHours": 40, "managerEscalationAfterHours": 24, "headEscalationAfterHours": 48 },
+    "LOW":      { "dueAfterHours": 80, "managerEscalationAfterHours": 48, "headEscalationAfterHours": 96 }
   }
 }
 Platform defaults shown above — tenant admin can override.
-When task created without explicit due date:
-  Read organization.settings.taskSla for priority
-  Call WorkingCalendarService.calculateDeadline(now, hours)
-  Set task.dueDate
+Every task has an SLA limit (ACC-174): the priority's dueAfterHours from the
+task's SLA start, counted through WorkingCalendarService. A person's due date
+may not pass it; only an approved request for more time moves it.
+A stage task's window counts from the stage entry (ACC-190).
+Mechanism: SYSTEM-REFERENCE §3.3, §3.11.
 
 NOTE: ALL SLAs in AccreditMe are tenant-configurable.
   Workflow stage SLAs: configurable per stage (slaWorkingHours) ✅
@@ -343,6 +371,15 @@ NOTE: ALL SLAs in AccreditMe are tenant-configurable.
   Document review cycles: document_type lookup attributes ✅
 
 ### Escalation Rules (org structure aware)
+As built (ACC-46): when a task's SLA is breached, it escalates to the
+assignee's manager, then to the head of their unit, after the priority's
+managerEscalationAfterHours and headEscalationAfterHours. Each step is
+stamped (managerEscalatedAt, headEscalatedAt) so it fires once. A pool task
+nobody picks up escalates once, to the unit head or the committee chair, on
+its own clock (poolEscalateAt). A held task is never escalated.
+Mechanism: SYSTEM-REFERENCE §3.4, §3.4.1.
+
+**Not built** — design intent: a creator-chosen escalation user.
 Creator optionally sets escalationUserId and 
 escalationAfterHours when creating a task.
 
@@ -354,11 +391,19 @@ Validation on escalation target:
      
 This prevents escalating to peers or subordinates.
 
+### More time and holds (ACC-173, ACC-174)
+An assignee ASKS for more time (EXTENSION) or a hold (ON_HOLD); the
+creator, or whoever acts for them, DECIDES. Approve means approve as asked.
+One open request per task. A hold moves the task's window at approval and
+pauses it in working time; a held task is never overdue or escalated.
+Only the creator (or whoever acts for them) edits, cancels and reopens.
+Mechanism: SYSTEM-REFERENCE §3.10, §3.11.
+
 ### Evidence of Completion
 Tasks support multiple evidence items via TaskEvidence model.
 Evidence types:
   TEXT               ← free text description
-  ATTACHMENT         ← file uploaded to S3
+  ATTACHMENT         ← a stored file (shown as "File", ACC-177)
   LINK               ← external URL with optional title
   INTERNAL_REFERENCE ← reference to AccreditMe business object
 
@@ -369,54 +414,85 @@ INTERNAL_REFERENCE refType values:
 refDisplay field caches display name at creation time
 for performance (e.g. "POL-ICU-2024 v2.0")
 
+Evidence is soft-deleted by its uploader while the task is open; every
+evidence count excludes deleted evidence. requiresEvidence makes Complete
+refuse until some exists. Mechanism: SYSTEM-REFERENCE §16.6.
+
 Back-references: referenced objects can show which tasks 
 reference them — computed on demand via query, no extra schema.
 
-### Task Permission Model
-tasks:create — who can create tasks (tenant admin assigns to roles)
-tasks:reassign — who can reassign tasks
-tasks:complete — who can mark tasks complete
-  [RETIRED, ACC-162: completing a task and attaching evidence are
-   self-scoped to an active assignee, so this permission gated nothing]
-tasks:manage — full task management
+### Task Permission Model (ACC-244)
+A RELATIONSHIP always counts, with no key: the creator (or whoever acts for
+them), anyone ever on the task, and a member of its pool while it waits.
+Beyond that, task keys are PER RECORD TYPE, registered in
+foundation/task/task-record-types.ts. For committees:
+  committees:view_all_tasks  — see every task on committees
+  committees:view_unit_tasks — see tasks on committees your unit or its
+                               sub-units own
+  committees:create_tasks    — create tasks on committees
+  committees:manage_tasks    — reassign tasks and decide their requests
+A key counts only on a record type the viewer may see.
+The flat keys tasks:view, tasks:create, tasks:reassign and tasks:manage are
+RETIRED (ACC-244), as is tasks:complete (ACC-162).
+Mechanism: SYSTEM-REFERENCE §3.19, §3.6.
 
 ### No Subtasks
 Deferred to Phase 3. Multi-assignee covers most use cases.
 
-### Data Models
+### Data Models (as built, schema.prisma)
 
 Task:
   id, organizationId
-  title, description
-  sourceType (TaskSourceType enum)
-  sourceId
-  sourceStageId (optional — workflow stage that created it)
+  title, titleAr, description
+  sourceType (TaskSourceType enum), sourceId
+  sourceStageId, workflowInstanceId (a workflow-created task)
+  workflowInstanceStageId (the stage ENTRY a stage task belongs to),
+    stageTaskDefinitionId, isMandatory (ACC-190)
   meetingId (optional — cross-meeting tracking)
-  priority: CRITICAL | HIGH | MEDIUM | LOW
-  status: PENDING | IN_PROGRESS | COMPLETED | OVERDUE | CANCELLED
-  dueDate (calculated from priority SLA or manually set)
-  dueDateOverridden: Boolean (was it manually set?)
   createdById
+  priority: CRITICAL | HIGH | MEDIUM | LOW
+  status (TaskStatus, see Statuses)
+  dueAt, dueDateOverridden
+  slaStartAt, slaLimitAt, slaExtendedTo, slaBreachedAt (ACC-174)
+  requiresEvidence
   completedAt, completedById
-  escalationUserId (optional)
-  escalationAfterHours (optional)
+  rejectedReason, rejectedAt, rejectedById
+  cancelledReason, cancelledAt, cancelledById
+  reopenedReason, reopenedAt, reopenedById
+  managerEscalatedAt, headEscalatedAt
+  assignedOrgUnitId, assignedPositionId,
+    assignedCommitteeId, assignedCommitteeRoleValueId (the target, ACC-167)
+  pooledAt, poolEscalateAt, poolEscalatedAt
+  heldAt, onHoldUntil, heldFromStatus
   createdAt, updatedAt
 
 TaskAssignee (junction — multi-assignee support):
   id, taskId, userId
   assignedAt, assignedById
-  removedAt (when task completed by someone else)
+  removedAt (when task completed by someone else, or the person left it)
+  pickedAt (picked up from a pool)
+  delegationReason, delegationContextId (ACTING_HEAD | OUT_OF_OFFICE_COVERAGE)
 
 TaskEvidence:
   id, organizationId, taskId
   type: TEXT | ATTACHMENT | LINK | INTERNAL_REFERENCE
   content (for TEXT)
-  s3Key, fileName, fileSize, mimeType (for ATTACHMENT)
+  s3Key, fileName, fileSize, mimeType, storedFileId (for ATTACHMENT)
   url, linkTitle (for LINK)
   refType: TaskEvidenceRefType? (for INTERNAL_REFERENCE)
   refId: String? (ID of referenced record)
   refDisplay: String? (cached display name)
   uploadedById, uploadedAt
+  deletedAt, deletedById
+
+TaskRequest (ACC-173):
+  id, organizationId, taskId
+  type: EXTENSION | ON_HOLD
+  requestedById, reason
+  requestedDueAt (EXTENSION), holdUntil (ON_HOLD)
+  status: PENDING | APPROVED | DECLINED | WITHDRAWN | CANCELLED
+  decidedById, decidedAt, decisionNote
+  createdAt, updatedAt
 
 ### Cross-Meeting Task Chain
 Tasks created on meeting MINUTES_APPROVED:
@@ -448,6 +524,9 @@ Secretary records in MINUTES_DRAFT:
    Status: stub in Step 8, activate in Step 17+
 
 2. WORKLOAD_BALANCING (during task assignment)
+   **Built** (ACC-199): "Suggest someone" in the assignee picker, on a press;
+   counts are the record's, and the model picks a label, never a name.
+   SYSTEM-REFERENCE §17.11.
    AI warns if assignee is overloaded:
    "Ahmad has 12 open tasks with 3 overdue.
     Consider reassigning to Sara (4 open tasks)"
@@ -473,7 +552,8 @@ Secretary records in MINUTES_DRAFT:
 5. TASK_DESCRIPTION_DRAFTING (manual task creation)
    User provides brief description
    AI expands to clear actionable task with context
-   Status: defer to Phase 3
+   **Built** (ACC-197): "Draft with AI" on New task; a suggestion only,
+   accepted, edited or discarded. SYSTEM-REFERENCE §17.10.
 
 All AI context strictly tenant-scoped (organizationId filter)
 
@@ -790,26 +870,46 @@ All AI context strictly tenant-scoped (organizationId filter)
 
 ## Committee Module (Step 10)
 
+Corrected to what is built on `dev` at `e9e1db3` (ACC-273): the shape below is
+the schema and the seed; rules not built are marked. Mechanism: SYSTEM-REFERENCE
+§3.14 to §3.18 and §2.18.
+
 ### Committee Lifecycle
 Separate from individual meeting lifecycle:
 FORMATION → TERMS_REVIEW → ACTIVE → DISSOLUTION_PENDING → DISSOLVED
 Optional path: ACTIVE → SUSPENDED → ACTIVE (or DISSOLUTION_PENDING)
 
 ### Committee Workflow (6 Stages)
+Who works each stage is set per tenant: the stage's assignees. The seed
+starts each stage on the organisation's administrator, as a specific user
+marked as the starting assignment (ACC-271; see
+backend/Plans/step-271-stage-owns-who.md).
+
+What each stage ALLOWS to be done to the committee, and what it MEANS, is
+the stage's own configuration (ACC-255): record actions (edit_details,
+add_member, remove_member, change_member_role, request_change; a row means
+allowed) and flags (DISSOLVING, IN_FORCE). A stage only narrows what a role
+allows: the permission is checked first. A refused action is
+STAGE_ACTION_NOT_ALLOWED, naming the stage. The seeded rules are shown per
+stage below. Mechanism: SYSTEM-REFERENCE §2.18.
+
 1. FORMATION (initial)
    Committee record created
    Name, type, purpose defined
-   Terms of Reference drafted (as Document module document)
+   Terms of Reference drafted (as Document module document) —
+     **Not built** — design intent (see Terms of Reference)
    Initial members nominated
-   Assignee: QUALITY_MANAGER
+   As seeded: allows edit_details and the three member actions; no flag.
+   It is the only stage where the committee is edited directly (ACC-238).
+   Leaving it needs a quorum of at least 1 (COMMITTEE_QUORUM_NOT_SET).
 
 2. TERMS_REVIEW
    Terms of Reference reviewed by establishing authority
    Quorum requirements set
    Meeting frequency configured
-   approvalMode: SINGLE or COMMITTEE
-   Assignee: QUALITY_MANAGER or senior authority
+   approvalMode: SINGLE or COMMITTEE (seeded SINGLE)
    SLA: 40h
+   As seeded: allows the three member actions; no flag.
 
 3. ACTIVE
    Committee formally constituted and operational
@@ -817,42 +917,84 @@ Optional path: ACTIVE → SUSPENDED → ACTIVE (or DISSOLUTION_PENDING)
    First meeting can be scheduled
    Long-running operational state (not final)
    Membership changes recorded as MembershipEvents (not transitions)
+   As seeded: allows the three member actions and request_change;
+   flag IN_FORCE. A change to its details goes through a change request.
 
 4. SUSPENDED
    Temporarily inactive (reorganization, regulatory change)
    Reason documented, members notified
    Can reactivate to ACTIVE
+   As seeded: allows the three member actions and request_change;
+   flag IN_FORCE.
 
 5. DISSOLUTION_PENDING
    Being wound down
    Outstanding items resolved or transferred
    Final report prepared
-   Assignee: QUALITY_MANAGER
    SLA: 40h
+   As seeded: allows the three member actions; flag DISSOLVING (no parent
+   or reports-to may point at it).
 
 6. DISSOLVED (final)
    Formally closed, all records archived
    Outstanding items transferred to other committees
+   As seeded: allows nothing (its members can't be changed); flag DISSOLVING.
 
-### Transitions
+A committee's status on screen is read from its stage's flags, never the
+stage's name: no flag → Not yet in force; IN_FORCE → In force;
+DISSOLVING → Being dissolved; an inactive record → Inactive (ACC-256).
+
+### Transitions (as seeded)
 FORMATION → TERMS_REVIEW          "Submit for Approval"    committees:manage
 TERMS_REVIEW → ACTIVE             "Approve Committee"      committees:approve
-TERMS_REVIEW → FORMATION          "Revise Terms"           committees:approve
+TERMS_REVIEW → FORMATION          "Revise Terms"           committees:manage   (RETURN)
 ACTIVE → SUSPENDED                "Suspend Committee"      committees:manage
 SUSPENDED → ACTIVE                "Reactivate Committee"   committees:manage
 ACTIVE → DISSOLUTION_PENDING      "Initiate Dissolution"   committees:manage
-SUSPENDED → DISSOLUTION_PENDING   "Dissolve"               committees:manage
+SUSPENDED → DISSOLUTION_PENDING   "Dissolve Committee"     committees:manage
 DISSOLUTION_PENDING → DISSOLVED   "Confirm Dissolution"    committees:approve
 
-### Membership Changes (within ACTIVE stage)
-NOT workflow stage transitions — recorded as events:
-MembershipEvent:
-  committeeId, userId, role
+### Membership Changes
+NOT workflow stage transitions — recorded as events, in every stage that
+allows the member actions (all but DISSOLVED, as seeded):
+CommitteeMembershipEvent:
+  committeeId, userId, roleValueId
   action: JOINED | LEFT | ROLE_CHANGED
   effectiveDate, reason, approvedBy
-Provides complete audit trail of membership at any point in time
+Provides complete audit trail of membership at any point in time.
+A member who rejoins reuses their CommitteeMember row; the event ledger keeps
+every period. Mechanism: SYSTEM-REFERENCE §3.14, §3.16.
+
+### What a committee may point at (ACC-233)
+A committee can't be its own parent or reports-to, close a loop, or point at
+a dissolving or dissolved committee; its owning unit must be active. Another
+organisation's committee or unit is refused exactly as an invented id is.
+Mechanism: SYSTEM-REFERENCE §3.15.
+
+### Committee Change Requests (ACC-238, ACC-239, ACC-240)
+Once a committee has left Formation, its details change only through a change
+request. One person proposes; someone else with committees:approve decides;
+the requester never decides their own. One open request per committee.
+
+Workflow COMMITTEE_CHANGE_REQUEST, six stages, fixed shape (tenants may rename
+the stages and set their deadlines, nothing else):
+  draft → under_review                  "Submit for review"
+  under_review → approved               "Approve and apply"  (flag APPLIES_APPROVED_CHANGE)
+  under_review → returned               "Return for changes" (RETURN)
+  returned → under_review               "Submit again"
+  under_review → rejected               "Reject"             (EXIT)
+  draft | under_review | returned → withdrawn  "Withdraw"   (EXIT)
+Every transition is SYSTEM_AUTOMATIC: a request moves only through the
+change request endpoints. Raising one needs committees:edit_details, in a
+stage that allows request_change.
+Approve is all or nothing, and refuses drift: a value that changed since
+Submit is refused with nothing applied. Otherwise every value, the reference
+checks and a "Revise the terms of reference" task for the requester commit
+together. Mechanism: SYSTEM-REFERENCE §3.17, §3.18, §2.17.
 
 ### Terms of Reference
+**Not built** — design intent. Document Management is not built, so the
+committee's termsOfReferenceDocumentId column exists and is never populated.
 Formal document in the Document module (not a text field)
 Document type: terms_of_reference (TOR prefix, annual review)
 Created when committee enters FORMATION
@@ -860,26 +1002,40 @@ Goes through document approval workflow
 Linked to committee record
 When revised → new version through document approval workflow
 
-### Data Models (Step 10)
+### Data Models (as built, schema.prisma)
 Committee:
   id, organizationId, nameEn, nameAr
-  type (from lookup: committee_type)
+  typeValueId (lookup: committee_type)
   purpose, quorumCount
   meetingFrequency: WEEKLY|MONTHLY|QUARTERLY|BIANNUAL|ANNUAL|AS_NEEDED
   parentCommitteeId (optional — sub-committees)
-  termsOfReferenceDocumentId
-  reportingToId (committee or role it reports to)
+  orgUnitId (required — the owning unit)
+  reportingToCommitteeId (optional; a committee only, no role)
+  termsOfReferenceDocumentId (unpopulated, see Terms of Reference)
   formedAt, dissolvedAt
+  isActive (soft deactivation, independent of the workflow stage)
+  createdAt, updatedAt
 
 CommitteeMember:
-  id, committeeId, userId
-  role (from lookup: committee_member_role)
+  id, organizationId, committeeId, userId
+  roleValueId (lookup: committee_member_role)
   joinedAt, leftAt, isActive
 
 CommitteeMembershipEvent:
-  id, committeeId, userId, role
+  id, organizationId, committeeId, userId, roleValueId
   action: JOINED|LEFT|ROLE_CHANGED
-  effectiveDate, reason, approvedBy
+  effectiveDate, reason, approvedBy, createdAt
+
+CommitteeChangeRequest (ACC-239):
+  id, organizationId, committeeId, number
+  requestedById, reason
+  changes, fromValues (the values at Submit)
+  submittedAt, returnNote, rejectionReason
+  decidedById, decidedAt, appliedAt
+  termsTaskId (the "Revise the terms of reference" task)
+  withdrawnById, withdrawnAt
+  createdAt, updatedAt
+  Its state is its workflow stage; there is no status column.
 
 ### What Accreditation Surveyors Check
 - Terms of Reference document (approved and current)

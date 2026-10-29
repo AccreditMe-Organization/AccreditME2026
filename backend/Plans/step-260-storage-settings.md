@@ -1,5 +1,7 @@
 # Step 260 — the Storage settings screen (ACC-260)
 
+**Status:** BUILT — merged as #214 (e658b0a), 25 Oct; #218 (780d9b3), 25 Oct; #222 (8acda92), 26 Oct; #226 (dbd0ce2), 27 Oct; #228 (75d9e0d), 28 Oct.
+
 **Lane A** (screens). Plan only; no code is built from it until the open decisions in §8 are answered.
 
 The backend has been live since ACC-177 and ACC-185 (SYSTEM-REFERENCE §16, §16.14), but no screen uses it, so a tenant admin can't see or set their storage. Until a location is confirmed, every upload in every organisation is refused `STORAGE_NOT_CONFIRMED`. Today nobody can confirm one without calling the API by hand.

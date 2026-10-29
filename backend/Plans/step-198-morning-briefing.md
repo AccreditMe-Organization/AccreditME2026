@@ -2,7 +2,9 @@
 
 Linear: **ACC-198** (lane B for this build; High for the demo).
 Branch: `feature/ACC-198-morning-briefing`, from `origin/dev` at `6505a15`.
-Status: **APPROVED (`c1e29f0`), being built.** Ahmad decided D1–D12 as
+**Status:** BUILT — merged as #164 (df16243), 13 Oct.
+
+When written: **APPROVED (`c1e29f0`), being built.** Ahmad decided D1–D12 as
 recommended and added D13 (13 Oct, §11). On 13 Oct he also confirmed that
 `ANTHROPIC_API_KEY` is set on Railway, so the live proof runs on the LIVE site
 after the deploy (§8).

@@ -1,6 +1,8 @@
 # ACC-62 — Realistic Seed Data: Two Tenants
 
-**Status:** IMPLEMENTED and LIVE-VERIFIED (2026-09-07). All five Section 8
+**Status:** BUILT — merged as #62 (96a7630), 7 Sep.
+
+When written: IMPLEMENTED and LIVE-VERIFIED (2026-09-07). All five Section 8
 checks pass against the real seeded database.
 **Branch:** `feature/ACC-62-realistic-seed-data`
 **Pending Discussions:** all five resolved — see Section 7.
