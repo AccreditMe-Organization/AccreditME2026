@@ -426,6 +426,47 @@ elsewhere.**
     same change that takes a key off `PERMISSIONS_NOT_YET_CHECKED`.
     `permissions-in-use.spec.ts` treats `permission-groups.ts` as a
     declaring file: it groups keys and decides nothing.
+- **"A user's permissions"** (`/roles/user-permissions[/:userId]`, ACC-272 PR 2;
+  design section B of `AccreditMe Role Permissions.dc.html`). A READ-ONLY
+  answer to "what can this person do, and why".
+  - **The read: `GET /users/:userId/permissions`** (`UserController` →
+    `UserService.getUserPermissionsForViewer()` → `RoleService.getUserPermissionGrants()`).
+    The SAME gate as `GET /users/:userId/roles`: `roles:view` at the route, and
+    `users:view` unless the caller is reading themselves, checked BEFORE any read
+    (403 naming `users:view`, existence-neutral). Then `getById()` confirms the user
+    is in this tenant (a foreign user is a 404, never an empty list), then ONE
+    `userRole.findMany`, scoped on both `user.organizationId` and
+    `role.organizationId`, including role → rolePermissions → permission. It returns
+    `IUserPermissionGrant[]`: the `IUserRoleGrant` shape (id, role, grantedAt,
+    source, the two grantedVia ids) plus `permissions: string[]` (`module:action`,
+    sorted, as stored). Inactive roles are returned with `role.isActive` false.
+    The union is NOT computed on the server, and `getUserPermissions()` and every
+    guard are unchanged: this read decides nothing.
+  - **What is shown** is `permission-matrix/user-permissions.model.ts`: each ACTIVE
+    role gives exactly what ITS permissions page shows as held (`buildMatrix`, role
+    by role: in use only, no `platform:*` in a tenant, `workflows:manage` only from
+    the root role). The union of those is the person's set; every count on the
+    page ("16 permissions", "Gives n", "n of N") counts it. An inactive role gives
+    nothing. Modules with nothing granted are named on one line at the end.
+  - **The page**: a picker over every person (any status), the person's card
+    (status chip, "Open user record"), the roles ordered head positions, then
+    direct, then inactive (`orderGrants()`, shared with the user record's Roles
+    panel), each with its source line and what it gives, then the granted rows
+    only, each with "From" every active role that gives it, and Find. No
+    checkboxes and no save. The address carries the person.
+  - **Names** come from `GET /users/:id`'s `references`, the way the user record
+    names them: a head grant's position and unit are named when they are the
+    record's own (its position; its primary or acting unit), generically
+    otherwise ("Comes with a head position"). No request per row. The picker's
+    unit and position names come from the org-unit and position lists, as on the
+    Users list; a reader without them sees "—" there.
+  - **Who may open it**: `admin:access` + `roles:view` + `users:view`
+    (`USER_PERMISSIONS_LOOKUP` in `nav-items.ts`), read by the route map
+    (`STANDALONE_ROUTE_PERMISSIONS`) and by both ways in: the Roles list header's
+    "Look up a user's permissions" and the user record Roles panel's "See
+    permissions". Both routes carry their own `canActivate`.
+  - **Not built** (design Q6 to Q8): "acting until {date}", audit logging of a
+    lookup, comparing two users.
 - **`PERMISSIONS_NOT_YET_CHECKED`** (`common/constants/permissions.ts`) —
   the catalogue keys no code decides with today: no backend check, no
   frontend gate, and no `requiredPermission` on a seeded transition of a
@@ -828,7 +869,7 @@ richer payload.
 
 | Shape | Endpoints | Order | Refusal |
 | -- | -- | -- | -- |
-| **(a) Request NAMES the parent** | `GET /tasks?sourceType&sourceId`, `GET /workflows/instances?objectType&objectId`, `GET /users/:userId/roles` | permission checked **before** any read | **403, naming the permission** |
+| **(a) Request NAMES the parent** | `GET /tasks?sourceType&sourceId`, `GET /workflows/instances?objectType&objectId`, `GET /users/:userId/roles`, `GET /users/:userId/permissions` (ACC-272) | permission checked **before** any read | **403, naming the permission** |
 | **(b) Parent knowable only FROM THE ROW** | `GET /tasks/:id`, `GET /workflows/instances/:id`, `…/stage-history` | row read first of necessity | **404, indistinguishable from not-found** |
 
 Why the two differ, since one rule with two answers invites
