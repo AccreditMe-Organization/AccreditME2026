@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
+import { TaskClosedNoticeService } from './task-closed-notice.service';
 import { TaskSlaService } from './task-sla.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { LookupService } from '../lookup/lookup.service';
@@ -168,7 +169,9 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TaskService,
+        TaskService,
+
+        { provide: TaskClosedNoticeService, useValue: { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) } },
         TaskSlaService,
         TaskAssignmentService,
 

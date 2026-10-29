@@ -117,6 +117,8 @@ const mockWorkflowService = {
   resolveAssigneeForStage: jest.fn(),
   // ACC-271 — converted stages' pools, one batch per organisation.
   resolveStagePools: jest.fn(),
+  // ACC-271 PR 4 — the leaver sweep on All of them entries.
+  recordPoolChanges: jest.fn().mockResolvedValue({ joined: 0, left: 0 }),
 };
 const poolOf = (members: string[]) => ({ members, direct: members, coveringFor: new Map(), actingHeadOf: new Map(), voteCommitteeId: null });
 // ACC-51 — recovery hands the resolved pool to TaskService, which owns the
@@ -276,6 +278,30 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       // Only the unconverted entry reaches the old per-entry detectors.
       expect(mockWorkflowService.resolveUnassignedBlockingTransitions).toHaveBeenCalledTimes(1);
       expect(mockWorkflowService.resolveUnassignedBlockingTransitions).toHaveBeenCalledWith(BASE_STAGE, BASE_INSTANCE, ORG_A);
+    });
+
+    // ACC-271 PR 4 (plan §8) — the leaver rule: the "All of them" entries'
+    // pools, from the batch already resolved, one call per organisation.
+    it('records pool changes for the All of them entries only, one call per organisation', async () => {
+      const inB = { ...BASE_INSTANCE, id: 'instance-b', organizationId: 'org-b-id' };
+      const ALL = { ...CONVERTED, whoMode: 'ALL' };
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        makeOpenInstanceStage({ id: 'a-all', stage: ALL }),
+        makeOpenInstanceStage({ id: 'a-any', stage: { ...CONVERTED, whoMode: 'ANY_ONE' } }),
+        makeOpenInstanceStage({ id: 'b-all', stage: ALL, workflowInstance: inB }),
+        makeOpenInstanceStage({ id: 'old', stage: BASE_STAGE }),
+      ]);
+      mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue([]);
+      mockWorkflowService.resolveStagePools.mockImplementation((_org: string, requests: { key: string }[]) =>
+        Promise.resolve(new Map(requests.map((r) => [r.key, poolOf(['someone'])]))),
+      );
+
+      await runProcess();
+
+      expect(mockWorkflowService.recordPoolChanges).toHaveBeenCalledTimes(2);
+      const keysFor = (org: string) => [...(mockWorkflowService.recordPoolChanges.mock.calls.find((c) => c[0] === org)![1] as Map<string, unknown>).keys()];
+      expect(keysFor(ORG_A)).toEqual(['a-all']);
+      expect(keysFor('org-b-id')).toEqual(['b-all']);
     });
 
     it("on recovery, hands the batch's pool to the orphaned task without resolving it again", async () => {

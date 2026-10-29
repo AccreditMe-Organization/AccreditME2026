@@ -9,6 +9,7 @@ import { TaskAssignmentService } from './task-assignment.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskRequestService } from './task-request.service';
 import { TaskSlaService } from './task-sla.service';
+import { TaskClosedNoticeService } from './task-closed-notice.service';
 import { TaskEvidenceService } from './task-evidence.service';
 import { FileStorageModule } from '../file-storage/file-storage.module';
 import { AiFileSummaryModule } from '../ai-file-summary/ai-file-summary.module';
@@ -64,6 +65,8 @@ import { TaskVisibilityService } from './task-visibility.service';
   // ACC-177 — TaskEvidenceService: file evidence, the evidence list, downloads, deletes.
   providers: [
     TaskService,
+    // ACC-271 PR 4 — the closed-task notices.
+    TaskClosedNoticeService,
     TaskAssignmentService,
     TaskAuthorityService,
     TaskRequestService,

@@ -1086,6 +1086,7 @@
     "confirmRemoveTransitionHeader": "إزالة الانتقال «{{name}}»؟"
   },
   "notification": {
+    "openRecord": "فتح السجل",
     "title": "الإشعارات",
     "markAllRead": "تعليم الكل كمقروء",
     "noNotifications": "لا توجد إشعارات حتى الآن.",

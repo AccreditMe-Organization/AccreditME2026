@@ -319,6 +319,10 @@ enum TransitionMover {
 // ACC-271 — what the stage history records beyond moves.
 enum InstanceStageEventKind {
   POOL_MEMBER_LEFT // someone in the stage's pool left it mid-stage
+  // ACC-271 PR 4 — someone entered an "All of them" stage's pool, at stage entry or
+  // found by the 15-minute sweep. With POOL_MEMBER_LEFT it is the entry's record of
+  // who was in the pool, which the sweep compares the current pool with (plan §8).
+  POOL_MEMBER_JOINED
 }
 
 // No HYGIENE tier yet: the only hygiene condition (stale invitations) was

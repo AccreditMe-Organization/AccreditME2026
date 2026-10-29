@@ -357,6 +357,65 @@ export class StagePoolService {
     });
   }
 
+  /**
+   * ACC-271 PR 4 (plan §8) — the 15-minute sweep's leaver rule, and the record of
+   * who is in an "All of them" stage's pool. For each open entry, the pool as it
+   * is now is compared with the entry's own events: whoever's latest event is
+   * JOINED and is no longer in the pool has left (POOL_MEMBER_LEFT, reason
+   * LEFT_POOL — a position, a committee seat or an acting cover that ended);
+   * whoever is in the pool and has no JOINED as their latest event has joined.
+   * A deactivation already wrote its own LEFT (DEACTIVATED), so it is not
+   * written again. One read of the events and one write, for all the entries.
+   */
+  async recordPoolChanges(
+    organizationId: string,
+    pools: ReadonlyMap<string, StagePool>,
+    client: Pick<PrismaService, 'workflowInstanceStageEvent' | 'workflowInstanceStage'> = this.prisma,
+  ): Promise<{ joined: number; left: number }> {
+    if (pools.size === 0) return { joined: 0, left: 0 };
+    // Only this organisation's open entries: an entry from anywhere else is
+    // never written under this organisation's name.
+    const [owned, events] = await Promise.all([
+      client.workflowInstanceStage.findMany({
+        where: { id: { in: [...pools.keys()] }, exitedAt: null, workflowInstance: { organizationId } },
+        select: { id: true },
+      }),
+      client.workflowInstanceStageEvent.findMany({
+        where: { organizationId, workflowInstanceStageId: { in: [...pools.keys()] } },
+        orderBy: [{ at: 'asc' }, { id: 'asc' }],
+        select: { workflowInstanceStageId: true, userId: true, kind: true },
+      }),
+    ]);
+    const ownedIds = new Set(owned.map((o) => o.id));
+    const latest = new Map<string, Map<string, string>>();
+    for (const e of events) {
+      const perEntry = latest.get(e.workflowInstanceStageId) ?? new Map<string, string>();
+      perEntry.set(e.userId, e.kind);
+      latest.set(e.workflowInstanceStageId, perEntry);
+    }
+    const data: { organizationId: string; workflowInstanceStageId: string; kind: 'POOL_MEMBER_JOINED' | 'POOL_MEMBER_LEFT'; userId: string; reason: string }[] = [];
+    for (const [entryId, pool] of pools) {
+      if (!ownedIds.has(entryId)) continue;
+      const now = new Set([...pool.direct, ...pool.members]);
+      const seen = latest.get(entryId) ?? new Map<string, string>();
+      for (const [userId, kind] of seen) {
+        if (kind === 'POOL_MEMBER_JOINED' && !now.has(userId)) {
+          data.push({ organizationId, workflowInstanceStageId: entryId, kind: 'POOL_MEMBER_LEFT', userId, reason: 'LEFT_POOL' });
+        }
+      }
+      for (const userId of now) {
+        if (seen.get(userId) !== 'POOL_MEMBER_JOINED') {
+          data.push({ organizationId, workflowInstanceStageId: entryId, kind: 'POOL_MEMBER_JOINED', userId, reason: 'IN_POOL' });
+        }
+      }
+    }
+    if (data.length > 0) await client.workflowInstanceStageEvent.createMany({ data });
+    return {
+      joined: data.filter((d) => d.kind === 'POOL_MEMBER_JOINED').length,
+      left: data.filter((d) => d.kind === 'POOL_MEMBER_LEFT').length,
+    };
+  }
+
   private async recordRefs(
     client: PoolClient,
     needed: Map<WorkflowObjectType, Set<string>>,
