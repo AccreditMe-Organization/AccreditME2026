@@ -45,21 +45,26 @@ Tier 3 — On-premises / private cloud (future)
 ## Tech Stack
 
 ### Backend
+**Corrected (ACC-274), against dev `487a0a8`:** an entry marked "chosen, not
+used yet" is installed or planned, but nothing in `backend/src` or
+`frontend/src` imports it (grep, 0 files).
 - Runtime: Node.js with TypeScript — strict mode always
 - Framework: NestJS
 - ORM: Prisma
 - Database: PostgreSQL (Supabase — eu-central-1, Frankfurt)
 - Auth: Better Auth (self-hostable, runs inside NestJS app)
 - Job queues: BullMQ with Redis
-- Real-time: NestJS WebSocket gateway (Socket.io)
+- Real-time: NestJS WebSocket gateway (Socket.io) — chosen, not used yet (no gateway exists)
 - Workflow engine: Custom WorkflowService, database-driven (not XState — see Architecture Rules → Workflow Engine)
 - Email: Resend
-- Payments: Stripe
-- Error tracking: Sentry
-- Logging: Winston (structured JSON logs)
+- Payments: Stripe — chosen, not used yet (Phase 2)
+- Error tracking: Sentry — chosen, not used yet (deferred since ACC-27)
+- Logging: Winston (structured JSON logs) — chosen, not used yet (the Nest logger writes to stdout)
 - Security: Helmet.js, @nestjs/throttler, class-validator, class-transformer
-- PDF generation: LibreOffice headless (Docker sidecar)
-- Virus scanning: ClamAV (Docker sidecar)
+- PDF generation: LibreOffice headless (Docker sidecar) — not built; the
+  GENERATE_PDF action is a stub
+- Virus scanning: ClamAV (Docker sidecar) — not built (ACC-178); the sidecar is
+  in `docker-compose.yml` and nothing calls it
 - Date handling: Luxon (all timezone operations)
 - Hijri calendar: the platform's Intl (`islamic-umalqura`) through the display
   formatting layer — no library. moment-hijri was listed here from scaffold,
@@ -67,6 +72,7 @@ Tier 3 — On-premises / private cloud (future)
 
 ### Frontend
 - Framework: Angular 18+ (standalone components)
+  Corrected (ACC-274): Angular ^21 and PrimeNG ^21 (`frontend/package.json`).
 - UI components: PrimeNG (free MIT license) — one deliberate,
   evidence-based exception, now the REQUIRED pattern rather than a
   narrow one-off: `OverlaySelectComponent`
@@ -108,12 +114,13 @@ Tier 3 — On-premises / private cloud (future)
   `@theme inline` (v4 has no tailwind.config); the PrimeNG preset
   (`core/theme/accreditme-preset.ts`) holds no colour literal, only `var()`
   references. A component never carries a literal colour, size or radius.
-- Global styles: One SCSS file for app shell only
-- State management: NgRx Signals
+- Global styles: One SCSS file for app shell only (`frontend/src/styles.scss`)
+- State management: NgRx Signals — chosen, not used yet (installed, 0 imports;
+  components use Angular signals directly)
 - Forms: Angular Reactive Forms
 - i18n: ngx-translate (English + Arabic)
-- Charts: PrimeNG Charts
-- Diagrams: draw.io embedded (iframe embed)
+- Charts: PrimeNG Charts — chosen, not used yet (`chart.js` installed, 0 imports)
+- Diagrams: draw.io embedded (iframe embed) — chosen, not used yet (Phase 3)
 - Excel export: **library choice OPEN, not settled** (ACC-75) — was
   listed as SheetJS from scaffold, but `xlsx` was removed: npm's newest
   is 0.18.5 with two HIGH advisories whose fixes (0.19.3, 0.20.2) exist
@@ -229,65 +236,80 @@ around; anything above it may be used freely.
 
 ## Project Structure
 
+**Corrected (ACC-274), against dev `487a0a8`.** The tree below used to show
+folders that do not exist (`foundation/meetings/`, `src/modules/`,
+`common/interceptors/`) and the wrong names for three that do (`tasks`, `users`,
+`notifications`). No functional module has its own folder yet: committees live
+under `foundation/`, and Meetings, Documents and the quality modules are not
+built.
+
 ```
 accreditme/
 ├── backend/
 │   ├── src/
-│   │   ├── foundation/               # All foundation modules
-│   │   │   ├── tenant/               # Tenant provisioning + config
-│   │   │   ├── organization/         # Org units + hierarchy
+│   │   ├── foundation/               # Every module built so far
+│   │   │   ├── ai/                   # AiService.run() — the one AI gateway (ACC-194)
+│   │   │   ├── ai-briefing/          # Home briefing (ACC-198)
+│   │   │   ├── ai-file-summary/      # File summary (ACC-193)
+│   │   │   ├── ai-task-draft/        # Task drafting (ACC-197)
+│   │   │   ├── auth/                 # Sign-in, sessions, invitations
+│   │   │   ├── committees/           # Committees + change requests
+│   │   │   ├── file-storage/         # StoredFileService, StorageResolverService (ACC-177)
 │   │   │   ├── lookup/               # Lookup system
+│   │   │   ├── notification/         # Notification service
+│   │   │   ├── org-position/         # Positions
+│   │   │   ├── organization/         # Org units + hierarchy + headship
 │   │   │   ├── roles/                # Roles + permissions
+│   │   │   ├── seed/                 # Spec over the realistic seed fixtures only
+│   │   │   ├── setup-health/         # Setup health conditions (ACC-82)
+│   │   │   ├── task/                 # Task management
+│   │   │   ├── tenant/               # Tenant provisioning + config
+│   │   │   ├── user/                 # User management
 │   │   │   ├── workflow/             # Workflow engine (custom, database-driven)
-│   │   │   ├── notifications/        # Notification service
-│   │   │   ├── tasks/                # Task management
-│   │   │   ├── users/                # User management
-│   │   │   ├── committees/           # Committee management
-│   │   │   └── meetings/             # Meeting management
-│   │   ├── modules/                  # Functional modules
-│   │   │   ├── standards/            # Module 1 — Standards management (build first)
-│   │   │   ├── documents/            # Module 2 — Quality documentation
-│   │   │   ├── quality-improvement/  # Module 3 — Quality improvement
-│   │   │   └── audit/                # Module 4 — Audit management (build last)
-│   │   ├── platform/                 # Super admin portal
+│   │   │   └── working-calendar/     # WorkingCalendarService
+│   │   ├── platform/                 # Super admin portal (plan/, settings/, tenant/)
 │   │   ├── providers/                # Pluggable provider implementations
-│   │   │   ├── auth/                 # Better Auth + Azure AD
-│   │   │   ├── storage/              # S3 + MinIO + Local filesystem
-│   │   │   └── ai/                   # Anthropic + Azure OpenAI + OpenAI
-│   │   ├── common/                   # Shared guards, decorators, filters, pipes
-│   │   │   ├── guards/               # TenantGuard, PermissionGuard (rate limiter: common/throttle/)
-│   │   │   ├── interceptors/         # AuditLogInterceptor, ResponseTransformer
-│   │   │   ├── decorators/           # @Permissions(), @CurrentTenant(), @CurrentUser()
-│   │   │   └── filters/              # GlobalExceptionFilter
+│   │   │   ├── auth/                 # Better Auth
+│   │   │   ├── storage/              # S3-compatible (S3 + MinIO), local folder, SharePoint
+│   │   │   └── ai/                   # Anthropic
+│   │   ├── common/                   # config, constants, decorators, dto, filters, guards,
+│   │   │                             # health, interfaces, queue, services, tenant, testing,
+│   │   │                             # throttle, utils (no interceptors/ folder)
 │   │   ├── prisma/                   # PrismaService
+│   │   ├── app.module.ts
 │   │   └── main.ts
 │   ├── prisma/
 │   │   ├── schema.prisma             # Single source of truth for DB schema
-│   │   └── migrations/               # Never edit manually
-│   ├── Dockerfile
-│   └── docker-compose.yml
+│   │   ├── migrations/               # Never edit manually
+│   │   ├── seed/                     # Realistic seed fixtures (seed-realistic.ts)
+│   │   └── backfill-*.ts, demo-seed.ts, …  # Seeds and one-off backfills, run after a deploy
+│   ├── scripts/                      # check-*.mjs scans, pre-deploy.sh
+│   ├── Plans/                        # Per-ticket plans
+│   └── Dockerfile
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── core/                 # App-wide services, guards, interceptors
+│   │   │   ├── core/                 # App-wide services, guards, interceptors, formatting
 │   │   │   ├── shared/               # Shared components, directives, pipes
-│   │   │   ├── layout/               # App shell, sidebar, topbar
+│   │   │   ├── layout/               # App shell, rail, top bar
 │   │   │   ├── foundation/           # Foundation module UIs
-│   │   │   └── modules/              # Functional module UIs
-│   │   ├── assets/
-│   │   │   └── i18n/
-│   │   │       ├── en.json
-│   │   │       └── ar.json
-│   │   ├── styles/
-│   │   │   ├── styles.scss           # Global — app shell only
-│   │   │   └── tokens.scss           # AccreditMe design tokens
+│   │   │   └── platform/             # Super admin portal UI
+│   │   ├── assets/i18n/              # en.json, ar.json
+│   │   ├── styles/                   # design-tokens.scss, tokens.scss, typography, fonts
+│   │   ├── styles.scss               # Global — app shell only
 │   │   └── environments/
+│   ├── scripts/                      # check-*.mjs scans
 │   └── Dockerfile
-├── .mcp.json                         # MCP server config (gitignored if contains secrets)
-├── .env                              # Local env vars — NEVER commit
+├── website/                          # Public website (Astro), its own package (ACC-213)
+├── docs/customer/                    # Customer-facing guides
+├── .railway/                         # railway.ts — deployment configuration (ACC-127)
+├── .github/workflows/ci.yml
+├── docker-compose.yml
+├── .env                              # Local env vars — NEVER commit (gitignored)
 ├── .env.example                      # Committed template — no real values
-├── .gitignore
-└── CLAUDE.md                         # This file
+├── .gitignore                        # also ignores .mcp.json
+├── CLAUDE.md                         # This file
+└── SYSTEM-REFERENCE.md
 ```
 
 ---
@@ -398,7 +420,7 @@ ACC-25: acceptInvitation() surfaces real backend error messages ✅
                 any failure (e.g. Better Auth's password-compromised
                 check).
 
-### Governance Modules (In Progress)
+### Governance Modules (Committee Management shipped; Meeting Management not started)
 ACC-22: Committee Management ✅ (merged to dev)
                 Full CRUD, membership management
                 (CommitteeMembershipEvent audit trail, not workflow
@@ -434,6 +456,21 @@ ACC-27: Global HttpExceptionFilter ✅ (merged to dev)
                 delegates to this filter instead of its own local
                 check), Sentry wiring deliberately deferred (TODO
                 placeholder only).
+
+### Shipped since ACC-27 (added ACC-274)
+One line per area, each with its ticket. Detail is in that ticket's Key
+Architecture Decisions section below and in SYSTEM-REFERENCE.md.
+ACC-120: Design migration of every screen and dialog — In progress; its
+                slices, Organisation among them, are merged
+ACC-177, ACC-185, ACC-260: File storage per organisation, SharePoint, and the
+                tenant admin's File storage page and Recycle bin ✅
+ACC-194: AI foundation — metering, credit periods, platform key only ✅
+ACC-213: Public website (preview address) ✅
+ACC-239, ACC-240: Committee change requests, backend and screens ✅
+ACC-244: Task visibility rule and per-record-type task keys ✅
+ACC-255: What each workflow stage allows, and stage flags ✅
+ACC-271: Stage pools (PRs 1, 2, 4 merged; 3 and 5 to come)
+ACC-272: Role permissions as a grouped list, and "A user's permissions" ✅
 
 ### Onboarding
 Tenant Onboarding wizard
@@ -1056,31 +1093,46 @@ Example — document_type attributes:
 
 Permission strings follow {module}:{action} pattern.
 
+**Regenerated (ACC-274) from `backend/src/common/constants/permissions.ts`** on
+dev `487a0a8`: every `*_PERMISSIONS` group, which is exactly what
+`permission.seed.ts` seeds (74 keys). A key marked `*` is in
+`PERMISSIONS_NOT_YET_CHECKED`: no code decides anything with it yet, so a role
+cannot gain it (ACC-120 slice 5). That file is the source; this list is a copy.
+
 ```
-documents:view              documents:create          documents:submit
-documents:review            documents:approve         documents:publish
-documents:manage_templates  documents:manage_numbering
-standards:view              standards:manage          standards:link_evidence
-audits:view                 audits:create             audits:execute
-audits:report               audits:close
-incidents:view              incidents:report          incidents:investigate
-incidents:approve_plan      incidents:close
-meetings:view               meetings:manage           meetings:record_minutes
-meetings:approve_minutes
+tenant:view                 tenant:update             tenant:manage_config
+tenant:bootstrap
+admin:access
+org:view                    org:manage
+positions:view              positions:manage
+users:view                  users:manage              users:invite
+users:deactivate            users:reactivate          users:transfer
+roles:view                  roles:manage
+lookups:view                lookups:manage
+workflows:view              workflows:manage
+setup:view
+notifications:view *        notifications:manage *
 committees:view              committees:manage          committees:approve
 committees:create            committees:edit_details    committees:add_member
 committees:remove_member     committees:change_member_role
 committees:view_all_tasks    committees:view_unit_tasks
 committees:create_tasks      committees:manage_tasks
-org:view                    org:manage
-users:view                  users:manage              users:invite
-roles:view                  roles:manage
-lookups:view                lookups:manage
-workflows:view              workflows:manage
-billing:view                billing:manage
-reports:view                reports:export
-setup:view
-platform:admin              platform:impersonate
+meetings:view               meetings:manage *         meetings:record_minutes *
+meetings:approve_minutes *
+documents:view *            documents:create *        documents:submit *
+documents:review *          documents:approve *       documents:publish *
+documents:manage_templates * documents:manage_numbering *
+standards:view *            standards:manage *        standards:link_evidence *
+audits:view *               audits:create *           audits:execute *
+audits:report *             audits:close *
+incidents:view *            incidents:report *        incidents:investigate *
+incidents:approve_plan *    incidents:close *
+kpi:view_own *              kpi:view_department *     kpi:view_all *
+kpi:enter_data *            kpi:verify *              kpi:manage *
+kpi:manage_system *
+billing:view *              billing:manage *
+reports:view *              reports:export *
+platform:admin              platform:impersonate *
 ```
 
 The flat `tasks:view` / `tasks:create` / `tasks:reassign` / `tasks:manage`
@@ -1090,6 +1142,7 @@ flat key describe the rule as it was.
 
 Every API endpoint decorated with @Permissions('module:action').
 PermissionGuard checks JWT permissions on every request after TenantGuard.
+Superseded (ACC-101): the JWT carries no permissions; `TenantGuard` resolves them per request (see Key Architecture Decisions (ACC-101)).
 
 Task delegation via out-of-office acting assignment — see Absence Management
 section in module-designs.md
@@ -1543,12 +1596,14 @@ Language:           All AI outputs in user's preferred language (Arabic/English)
 Never block API requests with long-running tasks.
 Always run as background jobs:
 
+**Corrected (ACC-274), against dev `487a0a8`:** exactly six queues have a
+processor (`grep -rn "@Processor(" backend/src`). The other seven below are
+planned and NOT built — nothing enqueues them and nothing consumes them.
+
+Built:
+
 ```
-pdf-generation      DOCX to PDF via LibreOffice headless
-ai-processing       All AI API calls for document generation
 email-delivery      All outbound emails via Resend
-file-processing     Virus scan + MIME validation after upload
-data-retention      Nightly check for records approaching retention expiry
 sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations,
                     recompute cached org-unit vacancy and stage-reachability flags
 setup-health        Hourly — reconcile Setup health conditions (ACC-82)
@@ -1558,6 +1613,20 @@ storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177
                     and clearing "access withdrawn" (ACC-185)
 ai-credits          Hourly — renew each organisation's AI credit period once its
                     renewal time has passed (ACC-194)
+workflow-actions    Each WEBHOOK transition action, enqueued by
+                    WorkflowService.fireTransitionActions(); every attempt is
+                    logged in WorkflowActionLog
+```
+
+Planned, not built:
+
+```
+pdf-generation      DOCX to PDF via LibreOffice headless
+ai-processing       All AI API calls for document generation (today's AI calls
+                    run in the request, through AiService.run())
+file-processing     Virus scan + MIME validation after upload (MIME and type
+                    checks run in the upload request today; no virus scan)
+data-retention      Nightly check for records approaching retention expiry
 notification-digest Daily digest emails for digest-mode users
 data-export         Tenant data export packages (async, notified when ready)
 report-scheduler    Scheduled automated report generation and email delivery
@@ -4328,6 +4397,7 @@ SYSTEM-REFERENCE.md §3.17 (the committee read), the committees list section
 The stage owns who works it. Full mechanism: SYSTEM-REFERENCE.md §2.19. Plan,
 Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
 `backend/Plans/step-271-stage-owns-who.md`. Briefly, as of PR 1:
+Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230, #231, #233); PR 3 and PR 5 are not started.
 
 - **A CONVERTED STAGE (`whoMode` set) IS WORKED BY ITS POOL; ANY OTHER STAGE
   TAKES THE OLD BRANCH, UNCHANGED.** `isConvertedStage()` is the one test. For
@@ -4355,6 +4425,8 @@ Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
   (`assignStartingAssignments()`). Existing organisations are converted by
   `npm run backfill:acc271-stage-assignees` and `-transition-movers`, AFTER
   the deploy (dry run, `-- --execute`, dry run 0), with plan §6.4's counts.
+  **Both have been executed on the shared database (29 Oct)**: every stage in
+  every organisation is converted, and every transition has a `mover`.
 - **A TASK CLOSED BY SOMEONE ELSE'S ACTION IS TOLD, AFTER THE COMMIT (PR 4).**
   `TaskClosedNoticeService`: in-app, never the actor, through an away member's
   acting user; four wordings (moved on, sent back, ended, completed by another
@@ -4366,6 +4438,76 @@ Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
   (`GET /workflows/instances/:id/moves`); no screen reads a move's
   `requiredPermission` any more.
 - **One additive migration** (`acc271_stage_assignees`, PR 1).
+  Superseded (ACC-274): two additive migrations — PR 4 added `acc271_pool_member_joined` (the `POOL_MEMBER_JOINED` event kind).
+
+## Key Architecture Decisions (ACC-260)
+
+The tenant admin's File storage page and Recycle bin, in five PRs (#214, #218,
+#222, #226, #228). Full mechanism: SYSTEM-REFERENCE.md §16 (§16.7 settings,
+§16.9 the screens, §16.11 the bin, §16.14 SharePoint). Recorded here in
+ACC-274; briefly:
+
+- **File storage is `/admin-settings/storage` (`tenant:manage_config`)**, read
+  from one `GET /tenant/storage` and read again after every write.
+  AccreditMe cloud shows no location and no field, whatever the response holds.
+- **Confirm opens only after a passing test of exactly the values on screen**
+  (MinIO, a local folder, SharePoint); AccreditMe cloud needs no test.
+- **A secret is write-only**: sent only when typed, the form emptied after
+  saving, shown as "Set".
+- **Request a change names who to contact** (name, email, phone, all
+  required). The platform admins get it by email and in-app; the contact goes
+  in the audit metadata, never on the organisation.
+- **The Recycle bin is `/admin-settings/recycle-bin` (`tenant:manage_config`)**.
+  The whole bin is read once, then searched, filtered, sorted and paged in
+  memory.
+- **SharePoint after Confirm (PR C):**
+  - tenant, site and library are locked;
+  - a new secret or client ID is tested before it is saved;
+  - a passing test of the STORED settings ends a withdrawal;
+  - Disconnect is refused while SharePoint files remain.
+
+## Key Architecture Decisions (ACC-133)
+
+The organisation tree's headship panel. Full mechanism: SYSTEM-REFERENCE.md
+§5.15. Plan: `backend/Plans/step-133-headship-panel.md`. Recorded here in
+ACC-274; briefly:
+
+- **Six states, and only the actions that will work.** The tree's Manage head
+  dialog became the Headship panel, with Appoint head and Appoint successor.
+- **`GET /organization/units/:id/head` was extended additively** (start
+  dates, the last vacancy, cover in force and scheduled, recently ended
+  covers): same route, same `org:view` gate, no migration.
+- **Never reconstructed from `AuditLog`**: where the ledger has no row the
+  field is null, and the panel says what is not recorded.
+- **Names need `users:view`**; ids, dates and position titles do not.
+- **`unit-headship.ts` is the one place "who is head" and "who covers" are
+  read** (§5.15.2).
+
+## Key Architecture Decisions (ACC-266)
+
+The permission matrix's column headings and corner stayed in view while it
+scrolled, and its frame filled the page (#224). Recorded here in ACC-274.
+Superseded (ACC-272): the grid it made sticky was replaced by a grouped list; what stays sticky is each module heading (SYSTEM-REFERENCE.md §1, "The role permissions screen").
+
+## Key Architecture Decisions (ACC-272)
+
+Role permissions as a grouped list, and a read-only "A user's permissions"
+page (#229, #232). Full mechanism: SYSTEM-REFERENCE.md §1 ("The role
+permissions screen" and "A user's permissions") and §12.6. Recorded here in
+ACC-274; briefly:
+
+- **One section per module, one row per key, labelled by its sentence, never
+  its key.** A module over six shown keys splits into groups; the one table is
+  `permission-groups.ts`.
+- **No row implies another**: a box grants only its own keys.
+- **A save sends the full set** with `expectedPermissionKeys`; a 409 offers
+  only "Reload role".
+- **`check:permission-sentences` keeps the sentence table exactly the in-use
+  keys**: every in-use key needs one, and a key not in use may not have one.
+- **"A user's permissions" reads `GET /users/:userId/permissions`**: each
+  grant with its role's keys. The gate is the same as `GET
+  /users/:userId/roles`: `roles:view`, plus `users:view` unless reading
+  yourself, checked before any read.
 
 ## Open / Deferred Items
 
@@ -4432,13 +4574,6 @@ Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
   `metadata` is null on those rows) — real, and confirmed in ACC-94's
   browser pass, but it is evidence on ACC-99, not a gap to close, since
   the feature is going away.
-- **RESOLVED (ACC-130)** — was: *"Resend email domain (`accreditme.com`) is
-  not verified."* The sending domain is `accreditme.app`: Resend's DKIM
-  record (`resend._domainkey`) and `send` record are on it, and Railway's
-  `RESEND_FROM_EMAIL` is `noreply@accreditme.app`, so the two match.
-  `accreditme.com` was never ours — it is listed for sale — and the code's
-  fallback to it is gone. Resend's dashboard showing `accreditme.app` as
-  Verified is checked again after the DNS move (ACC-130 runbook step 6).
 - **`angular-component` skill's templates are stale against current
   project conventions** — `@if` not `*ngIf`, standalone `TranslatePipe`
   imports, `EditDialogComponent`/`OverlaySelectComponent` not
@@ -4487,17 +4622,6 @@ Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
   accessibility standard, this is a visual-correctness pass over
   every screen in Arabic. Worth scoping them together when either is
   picked up, so the same screens are not walked twice.
-- **RESOLVED (ACC-42)** — **`p-cascadeSelect` adopted in exactly one
-  place, not consistently** — was: `org-unit-form.component.ts`'s
-  `parentId` got the hierarchy-aware `p-cascadeSelect` widget while
-  every other org-unit picker (`invite-user.primaryOrgUnitId`,
-  `user-profile.primaryOrgUnitId`/`actingOrgUnitId`) used a flat
-  `p-select`. Now: all 4 use `OverlaySelectComponent`'s hierarchy mode
-  uniformly — `p-cascadeSelect` removed from the codebase entirely,
-  and the 3 previously-flat pickers gained real tree display for the
-  first time via a shared `buildOrgUnitCascadeOptions()` helper
-  (`org-unit.service.ts`). No longer an inconsistency to track. Full
-  detail: SYSTEM-REFERENCE.md Section 10.7.
 - **Task creation has no real, business-appropriate home today.**
   `TaskListComponent` was deliberately designed, from its own original
   build, as an embeddable list meant to live inside a future business
@@ -4574,21 +4698,6 @@ Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
   Document, Incident, CAPA and Audit will all want one, and
   discovering that five times is the expensive way. Not scoped or
   sized; recorded here so the next record page doesn't re-derive it.
-- **RESOLVED (ACC-79)** — the platform rail lists all five built
-  platform screens, and the investigation below found no others:
-  every route in `platform.routes.ts` is either a rail item, a child
-  of one (create/detail pages), or the bare path redirecting to
-  Tenants. Kept for the history.
-  **Platform Admin has no real navigation structure** — confirmed
-  while testing ACC-39: `ai-feature-costs` and `ai-credit-packs` are
-  only reachable by typing their URLs directly after a platform-admin
-  login; `sidebar.component.ts` shows platform admins exactly one link
-  ("Super Admin" to `/platform`), with no sub-navigation, tab bar, or
-  layout component to hold links to either screen. Same class of gap
-  as ACC-35 (Working Calendar) and the task-creation navigation note
-  above, but likely broader — worth a real investigation into whether
-  Platform Admin has OTHER unreachable screens beyond these two before
-  scoping a fix, rather than patching just these two in isolation.
 - **`OverlaySelectComponent` has no filter-search capability**
   (ACC-42) — `committee-member-form.userId` lost `p-select`'s
   `[filter]="true" filterBy="name,email"` (a visible search box, not
@@ -5135,26 +5244,6 @@ complete, not just the currently-in-review ones.
   it is understood as a known consequence of this open question rather than
   rediscovered as a performance bug, which is exactly what ACC-60 was before
   it was measured. Measurements are in ACC-60's closing comment.
-- **RESOLVED (ACC-111, completed ACC-120)** — was: *no form in this app
-  has a per-field inline error-message pattern (confirmed via full grep,
-  zero matches); every form relies solely on a disabled submit button as
-  its only invalid-state feedback.* Found during ACC-46's review of
-  `invite-user`. Now: `am-field`
-  (`frontend/src/app/shared/components/field/`) is the required wrapper,
-  it owns per-field error text and `aria-invalid`, and the decision this
-  entry asked for was made with the rigor it asked for —
-  SYSTEM-REFERENCE.md Section 10.12.
-  **Two things worth carrying forward rather than rediscovering:**
-  - A field wrapped WITHOUT `[control]` cannot show an error at all —
-    `showError` bails on a missing control before `forceShowErrors` is
-    consulted — so "is this field wrapped?" is not the question to ask
-    of a migrated form. `npm run check:field-control` asks the real one.
-  - A SUBMIT reveals its own errors with nothing passed by the caller,
-    because the wrapper reads the enclosing form's own `submitted`.
-    `forceShowErrors` survives only for an advance that is not a submit
-    (a stepped dialog's Next), which has no form event to read.
-  **The disabled-submit half is NOT fully closed**: a Save disabled with
-  no statement of why is a separate app-wide gap, owned by ACC-114.
 - **Bulk user import (CSV/Excel)** — flagged by Ahmad as a real,
   separate feature: for organizations with 100+ users, inviting one
   by one is impractical. Imported users should be created ACTIVE
@@ -5201,6 +5290,65 @@ complete, not just the currently-in-review ones.
   adding and removing a stage record the whole stage (SYSTEM-REFERENCE
   §2.18). Still open: `WorkflowStage` has no `updatedAt`, and scripts
   writing through Prisma directly still bypass the audit.
+
+## Resolved items (history)
+
+Moved here unchanged by ACC-274 from Open / Deferred Items above, in their
+original order. Each was already marked RESOLVED; it is kept for its reasoning.
+
+- **RESOLVED (ACC-130)** — was: *"Resend email domain (`accreditme.com`) is
+  not verified."* The sending domain is `accreditme.app`: Resend's DKIM
+  record (`resend._domainkey`) and `send` record are on it, and Railway's
+  `RESEND_FROM_EMAIL` is `noreply@accreditme.app`, so the two match.
+  `accreditme.com` was never ours — it is listed for sale — and the code's
+  fallback to it is gone. Resend's dashboard showing `accreditme.app` as
+  Verified is checked again after the DNS move (ACC-130 runbook step 6).
+- **RESOLVED (ACC-42)** — **`p-cascadeSelect` adopted in exactly one
+  place, not consistently** — was: `org-unit-form.component.ts`'s
+  `parentId` got the hierarchy-aware `p-cascadeSelect` widget while
+  every other org-unit picker (`invite-user.primaryOrgUnitId`,
+  `user-profile.primaryOrgUnitId`/`actingOrgUnitId`) used a flat
+  `p-select`. Now: all 4 use `OverlaySelectComponent`'s hierarchy mode
+  uniformly — `p-cascadeSelect` removed from the codebase entirely,
+  and the 3 previously-flat pickers gained real tree display for the
+  first time via a shared `buildOrgUnitCascadeOptions()` helper
+  (`org-unit.service.ts`). No longer an inconsistency to track. Full
+  detail: SYSTEM-REFERENCE.md Section 10.7.
+- **RESOLVED (ACC-79)** — the platform rail lists all five built
+  platform screens, and the investigation below found no others:
+  every route in `platform.routes.ts` is either a rail item, a child
+  of one (create/detail pages), or the bare path redirecting to
+  Tenants. Kept for the history.
+  **Platform Admin has no real navigation structure** — confirmed
+  while testing ACC-39: `ai-feature-costs` and `ai-credit-packs` are
+  only reachable by typing their URLs directly after a platform-admin
+  login; `sidebar.component.ts` shows platform admins exactly one link
+  ("Super Admin" to `/platform`), with no sub-navigation, tab bar, or
+  layout component to hold links to either screen. Same class of gap
+  as ACC-35 (Working Calendar) and the task-creation navigation note
+  above, but likely broader — worth a real investigation into whether
+  Platform Admin has OTHER unreachable screens beyond these two before
+  scoping a fix, rather than patching just these two in isolation.
+- **RESOLVED (ACC-111, completed ACC-120)** — was: *no form in this app
+  has a per-field inline error-message pattern (confirmed via full grep,
+  zero matches); every form relies solely on a disabled submit button as
+  its only invalid-state feedback.* Found during ACC-46's review of
+  `invite-user`. Now: `am-field`
+  (`frontend/src/app/shared/components/field/`) is the required wrapper,
+  it owns per-field error text and `aria-invalid`, and the decision this
+  entry asked for was made with the rigor it asked for —
+  SYSTEM-REFERENCE.md Section 10.12.
+  **Two things worth carrying forward rather than rediscovering:**
+  - A field wrapped WITHOUT `[control]` cannot show an error at all —
+    `showError` bails on a missing control before `forceShowErrors` is
+    consulted — so "is this field wrapped?" is not the question to ask
+    of a migrated form. `npm run check:field-control` asks the real one.
+  - A SUBMIT reveals its own errors with nothing passed by the caller,
+    because the wrapper reads the enclosing form's own `submitted`.
+    `forceShowErrors` survives only for an advance that is not a submit
+    (a stepped dialog's Next), which has no form event to read.
+  **The disabled-submit half is NOT fully closed**: a Save disabled with
+  no statement of why is a separate app-wide gap, owned by ACC-114.
 
 ---
 
@@ -5258,10 +5406,26 @@ Seed scripts:       Prisma seed with realistic anonymized data per module
 Never hardcode secrets. All in .env (gitignored).
 .env.example committed with placeholder values only.
 
+**Corrected (ACC-274), against dev `487a0a8`.**
+- **The template is `backend/.env.example`.** The root `.env.example` only
+  points to it.
+- **Added below:** every variable `.railway/railway.ts` sets that this list
+  missed.
+- **`CORS_ORIGIN` is NOT one of them.** `.railway/railway.ts` records that it
+  was removed (a placeholder the code never read); `FRONTEND_URL` replaced it.
+- **Set but not read by any code:** `JWT_EXPIRY`, `REFRESH_TOKEN_EXPIRY`,
+  `SENTRY_DSN` and the `STRIPE_*` keys (a grep of `backend/src` finds no
+  reader).
+
 ```env
 DATABASE_URL=postgresql://user:password@host:5432/accreditme
+# Prisma's migration connection (prisma.config.ts); falls back to DATABASE_URL.
+DIRECT_URL=
 BETTER_AUTH_SECRET=
 JWT_SECRET=
+# Set in Railway; not read by any code yet.
+JWT_EXPIRY=
+REFRESH_TOKEN_EXPIRY=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 # AccreditMe cloud storage (ACC-177): the S3 provider against the Supabase
@@ -5286,10 +5450,19 @@ ANTHROPIC_MODEL_STANDARD=
 ANTHROPIC_MODEL_PREMIUM=
 # The API's own origin — Better Auth's base URL. REQUIRED at boot (ACC-148).
 API_ORIGIN=http://localhost:3000
+# The exact frontend origin allowed credentialed CORS; REQUIRED at boot.
+FRONTEND_URL=
 RESEND_API_KEY=
+# The sender on the domain Resend verified; no fallback (ACC-130).
+RESEND_FROM_EMAIL=
+# Not read yet — billing is Phase 2.
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 REDIS_URL=
+# Only the exact string "true" runs the queue workers (ACC-92). A deployment
+# must set it; leave it unset locally (shared Redis).
+RUN_WORKERS=
+# Not read yet — Sentry wiring is deferred (ACC-27).
 SENTRY_DSN=
 ENCRYPTION_KEY=
 PLATFORM_ADMIN_EMAIL=
@@ -5478,7 +5651,9 @@ ORGANIZATIONAL — defined by quality dept or department managers
 - Run long tasks as BullMQ background jobs — never block API requests
 - Encrypt all tenant secrets before database storage
 - Log all AI interactions with actor, model, prompt summary, and timestamp
-- Check that file uploads pass MIME validation and ClamAV scan before storing
+  Superseded (ACC-194): no prompt or answer text is logged — a caller-written description, sizes, credit cost, provider, tier and tokens (Key Architecture Decisions (ACC-194)).
+- Check that file uploads pass MIME validation before storing, and the ClamAV
+  scan when scanning ships — it is not built (File Upload Security, ACC-178)
 - Use signed URLs for all file access — never direct S3 paths
 
 ## What Claude Must Never Do
