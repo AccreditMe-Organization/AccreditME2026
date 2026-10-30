@@ -744,12 +744,6 @@ export class WorkflowTemplateService {
     const stored = stage as unknown as Record<string, unknown>;
     const { who: sentWho, ...fields } = dto;
 
-    // ACC-271 PR 3 — once a stage is converted (or this save converts it), the
-    // old people fields are not read: re-sending one unchanged is accepted, a
-    // CHANGED one is refused (WHO_MOVED_TO_STAGE).
-    if (isConvertedStage(stage) || sentWho !== undefined) {
-      refuseChangedOldPeopleField(stored, fields as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
-    }
     // ACC-271 PR 3 — the `who` sent, checked for shape before anything is read.
     const recordRoute = RECORD_ROUTES[objectType];
     const wantedWho =
@@ -778,6 +772,14 @@ export class WorkflowTemplateService {
         return (stored[field] ?? null) !== (value ?? null);
       });
       if (changed.length > 0 || whoChanged) refuseProtected('STAGE_FIELD');
+    }
+    // ACC-271 PR 3 — once a stage is converted (or this save converts it), the
+    // old people fields are not read: re-sending one unchanged is accepted, a
+    // CHANGED one is refused (WHO_MOVED_TO_STAGE). After the protected check:
+    // on a protected template nothing may be reshaped at all, which is the
+    // truer answer.
+    if (isConvertedStage(stage) || sentWho !== undefined) {
+      refuseChangedOldPeopleField(stored, fields as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
     }
     // Every id the new `who` names is this organisation's, and no chosen person is deactivated.
     if (whoChanged && wantedWho) await this.assertWhoReferences(wantedWho, organizationId);

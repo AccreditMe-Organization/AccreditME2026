@@ -349,6 +349,16 @@ describe('WorkflowTemplateService — who works a stage (ACC-271 PR 3)', () => {
         service.updateStage('stage-1', { who: { mode: 'ANY_ONE', entries: [{ kind: 'SPECIFIC_USER', userId: 'admin-1' }] } } as never, ORG, ACTOR),
       ).resolves.toBeDefined();
     });
+
+    it('on a protected template, a changed old people field gets the protected refusal, not WHO_MOVED_TO_STAGE', async () => {
+      const { prisma, service } = build();
+      prisma.workflowStage.findFirst.mockResolvedValue({ ...STAGE, workflowTemplate: { objectType: 'COMMITTEE_CHANGE_REQUEST' } });
+      prisma.workflowStageAssignee.findMany.mockResolvedValue([STARTING]);
+      expect(await refusal(service.updateStage('stage-1', { approvalMode: 'COMMITTEE' } as never, ORG, ACTOR))).toEqual(
+        expect.objectContaining({ code: 'WORKFLOW_TEMPLATE_PROTECTED', edit: 'STAGE_FIELD' }),
+      );
+      expect(prisma.workflowStage.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('the template read', () => {
