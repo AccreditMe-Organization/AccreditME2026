@@ -146,6 +146,9 @@ export class PlatformTenantService {
       actorId,
     );
 
+    // ACC-221 — the person created with the tenant is its account owner.
+    await this.prisma.organization.update({ where: { id: org.id }, data: { ownerUserId: invitedUser.id } });
+
     const tenantAdminRole = await this.prisma.role.findFirst({
       where: { organizationId: org.id, key: 'TENANT_ADMIN' },
     });
