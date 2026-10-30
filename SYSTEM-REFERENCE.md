@@ -58,7 +58,7 @@ audit's starting point, not be mistaken for having already done it.
 
 ## Table of Contents
 
-1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal and the idle rule, ACC-122; 1.2 corrected — a revocation applies on the next request)
+1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal and the idle rule, ACC-122; 1.15 = the account owner, ACC-221; 1.2 corrected — a revocation applies on the next request)
 2. Workflow Engine — ✅ complete
 3. Task System — ✅ complete
 4. Notification System — ✅ complete
@@ -1473,6 +1473,37 @@ workflow write, may be held by the root role (Organization Administrator,
   credentials, after Railway shows the deploy live and `GET /api/v1/health`
   reports it. Never before: until the server refuses the grant, a tenant admin
   could give it back between the run and the deploy.
+
+### 1.15 The account owner — `Organization.ownerUserId` (ACC-221)
+
+Ahmad's rule (29 Oct, on ACC-221): each organisation has one **account owner**,
+whom nobody inside the tenant can remove Organization Administrator from, or
+deactivate, suspend or offboard. Only a platform admin moves the ownership.
+
+- **The column.** `Organization.ownerUserId`, nullable, relation
+  `"OrganizationOwner"` to `User` (back-relation `User.ownedOrganizations`),
+  indexed. On delete it is SET NULL: users are only soft-offboarded (INACTIVE),
+  so a User row is deleted only when a tenant is torn down, and RESTRICT would
+  fail that teardown. Migration `acc221_organization_owner`, additive.
+- **Set at creation.** `PlatformTenantService.createTenant()` sets it to the
+  `adminEmail` user right after `invite()`, by id. `createTenant()` is not one
+  transaction, as before. When billing ships, the website order path must set
+  it too.
+- **Existing organisations.** `npm run backfill:acc221-organization-owner` (dry
+  run, `-- --execute`, then a dry run that plans 0), after the deploy:
+  - It sets the owner to the organisation's single ACTIVE holder of the active
+    `TENANT_ADMIN` role, the rule `tenant-administrator.invariant.ts` counts
+    by.
+  - It skips, and reports by slug and count, an organisation with none or
+    with several.
+  - It never touches the platform organisation or an owner already set.
+  - It reads in two queries, and writes one audit row per organisation in a
+    single transaction under the rows' locks.
+- **Nothing reads it yet.** The protections (role removal, deactivation,
+  suspension and offboarding of the owner; refusing to deactivate the
+  Organization Administrator role), the "Manage roles" warning, and the
+  platform transfer screen and endpoint are ACC-221's follow-up. No query was
+  added to the per-request path.
 
 ---
 
