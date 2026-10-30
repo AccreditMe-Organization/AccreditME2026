@@ -4509,6 +4509,29 @@ ACC-274; briefly:
   /users/:userId/roles`: `roles:view`, plus `users:view` unless reading
   yourself, checked before any read.
 
+## Key Architecture Decisions (ACC-221)
+
+The organisation's account owner. Full mechanism: SYSTEM-REFERENCE.md §1.15.
+The rule is Ahmad's 29 Oct comment on ACC-221. Briefly:
+
+- **`Organization.ownerUserId` RECORDS THE ACCOUNT OWNER** — nullable, SET NULL
+  on delete (users are only soft-offboarded; RESTRICT would break tenant
+  teardown), indexed. Additive migration `acc221_organization_owner`.
+- **Set at creation** to the `adminEmail` user (`createTenant()`, after
+  `invite()`). The website order path must set it too, when billing ships.
+- **Existing organisations: `npm run backfill:acc221-organization-owner`**,
+  AFTER the deploy (dry run, `-- --execute`, dry run 0). It sets each owner to
+  the organisation's single ACTIVE Organization Administrator, and skips one
+  with none or several, reporting the slug and count. It never touches the
+  platform organisation or an owner already set.
+- **Nothing reads it yet. The protections are lane A's follow-up**:
+  - the owner can't lose Organization Administrator, or be deactivated,
+    suspended or offboarded, from inside the tenant;
+  - the Organization Administrator role can't be deactivated;
+  - the "Manage roles" warning;
+  - the platform screen and endpoint that transfer ownership.
+- **No query on the per-request path.**
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

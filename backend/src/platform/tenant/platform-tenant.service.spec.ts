@@ -184,6 +184,43 @@ describe('PlatformTenantService', () => {
       );
     });
 
+    it('sets the account owner to the adminEmail user, by id, after the invite (ACC-221)', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.organization.create.mockResolvedValue({ id: TENANT_ID, slug: 'acme' });
+      mockUserService.invite.mockResolvedValue({ id: 'invited-user-1' });
+      mockPrisma.role.findFirst.mockResolvedValue(null); // stop after the owner is set
+
+      await expect(service.createTenant(dto, ACTOR_ID)).rejects.toThrow();
+
+      expect(mockUserService.invite).toHaveBeenCalledWith(
+        expect.objectContaining({ email: dto.adminEmail }),
+        TENANT_ID,
+        ACTOR_ID,
+      );
+      expect(mockPrisma.organization.update).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith({ where: { id: TENANT_ID }, data: { ownerUserId: 'invited-user-1' } });
+      expect(mockPrisma.organization.update.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mockUserService.invite.mock.invocationCallOrder[0] ?? Infinity,
+      );
+      // One audit row, in the new organisation's own trail, after the update.
+      const ownerRows = mockAuditLog.log.mock.calls.filter(([e]) => e.after && 'ownerUserId' in e.after);
+      expect(ownerRows).toHaveLength(1);
+      expect(ownerRows[0]![0]).toEqual({
+        tenantId: TENANT_ID,
+        actorId: ACTOR_ID,
+        action: 'UPDATE',
+        objectType: 'Organization',
+        objectId: TENANT_ID,
+        before: { ownerUserId: null },
+        after: { ownerUserId: 'invited-user-1' },
+        metadata: expect.objectContaining({ source: 'tenant_creation', ticket: 'ACC-221' }),
+      });
+      const auditCall = mockAuditLog.log.mock.calls.indexOf(ownerRows[0]!);
+      expect(mockAuditLog.log.mock.invocationCallOrder[auditCall]).toBeGreaterThan(
+        mockPrisma.organization.update.mock.invocationCallOrder[0] ?? Infinity,
+      );
+    });
+
     it("a plan set at creation sets the AI allocation to the plan's credits, after bootstrap (ACC-194, D3)", async () => {
       mockPrisma.organization.findUnique.mockResolvedValueOnce(null);
       mockPrisma.organization.create.mockResolvedValue({ id: TENANT_ID, slug: 'acme' });
