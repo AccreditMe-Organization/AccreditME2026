@@ -3091,7 +3091,8 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
     "1. whoever holds Team Leader in Quality", "2. Hessa (starting
     assignment)"). Saving the same who again writes nothing.
   - **A protected template** (`PROTECTED_TEMPLATES`) refuses a changed who
-    with `WORKFLOW_TEMPLATE_PROTECTED`; an unchanged one passes.
+    with `WORKFLOW_TEMPLATE_PROTECTED`; an unchanged one passes. On a
+    protected template this refusal comes before `WHO_MOVED_TO_STAGE`.
   - **The old people fields.** On a stage these are `assigneeStrategy`,
     `assigneeUserId`, `assigneeRoleId`, `approvalMode`, `parallelThreshold`,
     `committeeId`, `assigneeCommitteeRoleValueId`, `assigneePositionId` and
