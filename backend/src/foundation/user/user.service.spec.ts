@@ -454,9 +454,9 @@ describe('UserService', () => {
 
   describe('getByIdForViewer', () => {
     it('allows self-view with zero permissions (ACC-43)', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [] });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u1', []);
-      expect(result).toEqual({ id: 'u1', organizationId: ORG_A });
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false });
     });
 
     it('rejects viewing another user without users:view', async () => {
@@ -465,9 +465,22 @@ describe('UserService', () => {
     });
 
     it('allows viewing another user with users:view', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [] });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
-      expect(result).toEqual({ id: 'u1', organizationId: ORG_A });
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false });
+    });
+
+    // ACC-221 — whether the person is the account owner comes with the same
+    // query, and only THIS organisation's row can make it true.
+    it('says the account owner is the account owner, from the same query (ACC-221)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [{ id: ORG_A }] });
+      const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: true });
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'u1', organizationId: ORG_A },
+        include: { ownedOrganizations: { where: { id: ORG_A }, select: { id: true } } },
+      });
     });
   });
 
@@ -2829,6 +2842,48 @@ describe('UserService', () => {
     });
   });
 
+  // ACC-221 — the account owner is never deactivated inside the tenant.
+  describe('deactivate — the account owner (ACC-221)', () => {
+    const owned = (ownerUserId: string | null) =>
+      mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: false, ownerUserId });
+
+    it('refuses to deactivate the account owner, before the flip and before any side effect', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A, status: 'ACTIVE' });
+      owned('user-1');
+
+      await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toMatchObject({
+        response: { code: 'ACCOUNT_OWNER_PROTECTED', statusCode: 409 },
+      });
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+      expect(mockPrisma.organization.findFirst).toHaveBeenCalledWith({
+        where: { id: ORG_A },
+        select: { ownerUserId: true },
+      });
+    });
+
+    it('deactivates an administrator who is not the owner', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-2', organizationId: ORG_A, status: 'ACTIVE' });
+      mockPrisma.user.update.mockResolvedValue({});
+      owned('user-1');
+
+      await service.deactivate('user-2', ORG_A, 'admin-1');
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({ where: { id: 'user-2' }, data: { status: 'INACTIVE' } });
+    });
+
+    it('protects nobody when no owner is recorded', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A, status: 'ACTIVE' });
+      mockPrisma.user.update.mockResolvedValue({});
+      owned(null);
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { status: 'INACTIVE' } });
+    });
+  });
+
   describe('deactivate', () => {
     it('sets status INACTIVE, invalidates sessions, and logs the audit trail', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A, status: 'ACTIVE' });
@@ -3445,6 +3500,38 @@ describe('UserService', () => {
       await expect(service.revokeInvitation('user-9', ORG_A, ACTOR)).rejects.toThrow(
         /already has activity recorded/,
       );
+    });
+
+    // ACC-221 — the person a tenant is created with is INVITED until they
+    // accept, and is already its account owner: their invitation is protected.
+    it('refuses to revoke the account owner\'s invitation, and says so rather than "activity" (ACC-221)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(INVITED);
+      mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: false, ownerUserId: 'user-9' });
+
+      await expect(service.revokeInvitation('user-9', ORG_A, ACTOR)).rejects.toMatchObject({
+        response: { code: 'ACCOUNT_OWNER_PROTECTED', statusCode: 409 },
+      });
+      expect(mockPrisma.notification.deleteMany).not.toHaveBeenCalled();
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('revokes an invitation that is not the owner\'s (ACC-221)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(INVITED);
+      mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: false, ownerUserId: 'user-1' });
+
+      await service.revokeInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: 'user-9' } });
+    });
+
+    it('revokes when no owner is recorded (ACC-221)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(INVITED);
+      mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: false, ownerUserId: null });
+
+      await service.revokeInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: 'user-9' } });
     });
 
     itEnforcesTenantIsolation('revokeInvitation', async () => {

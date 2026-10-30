@@ -124,6 +124,14 @@ describe('UserController', () => {
     expect(service.getByIdForViewer).toHaveBeenCalledWith(USER_ID, TENANT_ID, USER_ID, ['users:view']);
   });
 
+  // ACC-221 — the record says whether this person is the account owner, from
+  // the service's own read; true and false both reach the response.
+  it.each([true, false])('getById passes isAccountOwner %s through', async (isAccountOwner) => {
+    service.getByIdForViewer.mockResolvedValue({ id: USER_ID, isAccountOwner });
+    const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view']);
+    expect(result.isAccountOwner).toBe(isAccountOwner);
+  });
+
   // ACC-46 Section 2.6.b Step 2
   it('getTransferContext delegates to UserService.getTransferContext', async () => {
     await controller.getTransferContext(USER_ID, 'unit-dest', TENANT_ID);

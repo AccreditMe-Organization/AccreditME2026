@@ -88,13 +88,14 @@ export class UserController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
-  ): Promise<IUser & { references: IUserReferenceNames }> {
+  ): Promise<IUser & { references: IUserReferenceNames; isAccountOwner: boolean }> {
     // ACC-45 — see listUsers() above.
     const user = await this.userService.getByIdForViewer(id, tenantId, actorId, actorPermissions);
     // ACC-79 — names for the ids on the record, so a read-only profile can show
     // them without the permission-gated lists (see IUserReferenceNames).
     const references = await this.userService.resolveReferenceNames(user, tenantId);
-    return { ...toSafeUser(user), references };
+    // ACC-221 — read in getByIdForViewer()'s own query, not a second request.
+    return { ...toSafeUser(user), isAccountOwner: user.isAccountOwner, references };
   }
 
   @Post('invite')
