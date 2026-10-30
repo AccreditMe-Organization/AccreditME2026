@@ -4,7 +4,7 @@
 **Drawing:** `frontend/design-reference/AccreditMe Workflow Setup.dc.html`
 (27 Oct 14:05 export, rounds 4 and 5, accepted), sections 8–12, copied
 unchanged as this branch's first commit.
-**Status:** PLAN ONLY. No code, no migration. Questions for Ahmad at §13.
+**Status:** PR 1 (#230), PR 2 (#231) and PR 4 (#233) merged; PR 3 and PR 5 not started.
 
 Out of scope, by the ticket: Share in turn (ACC-270), the History card
 (ACC-267), "Who works the current stage" on the record page, and the step 2

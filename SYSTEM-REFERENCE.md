@@ -73,6 +73,7 @@ audit's starting point, not be mistaken for having already done it.
 13. Setup Health — standing conditions (ACC-82) — ✅ built (13.10 = the cached-state rule)
 14. Queue workers — which process runs them (ACC-92) — ✅ built
 15. Deployment — Railway IaC and migrations (ACC-127) — ✅ built (15.3 = what survives an apply; 15.5 = the migration step)
+16. File storage — per organisation, and file evidence (ACC-177; SharePoint ACC-185; the screens ACC-260) — ✅ built (16.11 = the recycle bin; 16.14 = SharePoint)
 17. AI foundation — metering, credit periods, switches, platform key only (ACC-194) — ✅ built
 
 ---
@@ -154,20 +155,20 @@ comment (lines 19–25) claims a mismatch can come from "deactivation,
 password-change, or role-change." That comment overstates what's
 actually wired. `tokenVersion` is only ever incremented in one place —
 `BetterAuthProvider.invalidateUserSessions()`
-(`backend/src/providers/auth/better-auth.provider.ts:69–73`,
+(`backend/src/providers/auth/better-auth.provider.ts`, `invalidateUserSessions()`,
 `prisma.user.update({ data: { tokenVersion: { increment: 1 } } } )`)
 — and that method is only ever called from one place in application
 code: `UserService.deactivate()`
-(`backend/src/foundation/user/user.service.ts:242`), the departure
+(`backend/src/foundation/user/user.service.ts`, `deactivate()`), the departure
 flow. Confirmed by direct grep:
 - `invalidateUserSessions()`'s own code comment
-  (`better-auth.provider.ts:64–68`) states password-change wiring is
+  (the comment on `invalidateUserSessions()` in `better-auth.provider.ts`) states password-change wiring is
   planned "in a later step" — **not yet implemented**.
 - `RoleService.assignRoleToUser()`/`removeRoleFromUser()`
-  (`role.service.ts:307–377`) contain zero reference to `tokenVersion`
+  (`role.service.ts`) contain zero reference to `tokenVersion`
   or `invalidateUserSessions` anywhere — confirmed via grep, zero
   matches. `UserService.assignRoleToUser()`/`removeRoleFromUser()`
-  (`user.service.ts:305–320`) are pure pass-through delegations to
+  (`user.service.ts`) are pure pass-through delegations to
   those same methods, adding nothing.
 - **Net effect: a user's existing JWT remains VALID — the session is not
   terminated — after their role is changed or their permissions are
@@ -254,7 +255,7 @@ structurally cannot express.
 
 ### 1.3 `getUserPermissions()` — Exact Resolution and Its Limitation
 
-`RoleService.getUserPermissions()` (`backend/src/foundation/roles/role.service.ts:381–400`),
+`RoleService.getUserPermissions()` (`backend/src/foundation/roles/role.service.ts`, `getUserPermissions()`),
 bound to `TenantGuard` via the `PERMISSION_RESOLVER` DI token
 (`useExisting: RoleService`, in `roles.module.ts`). Verbatim behavior:
 
@@ -1633,7 +1634,7 @@ model WorkflowActionLog {
 }
 ```
 
-### 2.2 Enums (Verbatim, `schema.prisma:59–137`)
+### 2.2 Enums (Verbatim, `schema.prisma`, the workflow enums)
 
 ```
 WorkflowObjectType         DOCUMENT_REQUEST, DOCUMENT, CHANGE_REQUEST, INCIDENT,
@@ -1649,7 +1650,7 @@ WorkflowApprovalDecision    PENDING, APPROVED, APPROVED_WITH_COMMENTS, RETURNED,
 WorkflowInstanceStageOutcome PENDING, APPROVED, REJECTED, SKIPPED
 ```
 
-**Code comment worth preserving verbatim** (`workflow.service.ts:39–43`):
+**Code comment worth preserving verbatim** (`workflow.service.ts`, the "NOTE on SEQUENTIAL/COMMITTEE" comment):
 *"none of the 8 seeded workflows currently use SEQUENTIAL or COMMITTEE
 approvalMode (only SINGLE and PARALLEL+ALL are exercised by real seed
 data) — the logic below implements them per the plan's Business Rules,
@@ -1685,7 +1686,7 @@ seed data.
   instances over its lifetime (e.g. a document's periodic review
   cycles each start a fresh instance).
 
-### 2.4 `triggerTransition()` — Full Gating Trace (`workflow.service.ts:176–293`)
+### 2.4 `triggerTransition()` — Full Gating Trace (`workflow.service.ts`, `triggerTransition()`)
 
 > **ACC-190 — two steps added to this trace.** (1) After the validator check,
 > an `ADVANCE` this request would actually fire (always on a SINGLE stage; on a
@@ -1742,7 +1743,7 @@ the user actually assigned the resulting task. `ASSIGNEE_POOL` is
 opt-in per transition, not a change to the other four conditions'
 existing behavior.
 
-### 2.5 `resolveAssigneeRaw()` — All 7 Strategies (`workflow.service.ts:720–776`)
+### 2.5 `resolveAssigneeRaw()` — All 7 Strategies (`workflow.service.ts`, `resolveAssigneeRaw()`)
 
 Used for `CREATE_TASK`/`SEND_NOTIFICATION` targeting and the initial-
 stage notification. The raw resolver itself is never called directly
@@ -1817,7 +1818,7 @@ the same query `POSITION_FIXED` always used. Three kinds of coverage are
 Committee pools follow the same shape: active `CommitteeMember` rows with
 that role, whose user is ACTIVE.
 
-### 2.6 `resolveApproverPool()` — Threshold Sizing Only (`workflow.service.ts:861–883`)
+### 2.6 `resolveApproverPool()` — Threshold Sizing Only (`workflow.service.ts`, `resolveApproverPool()`)
 
 Deliberately separate from `resolveAssigneeRaw()` (needs a *stage*
 only, not a full instance — not meaningful for `SELF`). Only handles
@@ -1874,7 +1875,7 @@ Tier 2 tracker entry below. Called from `isApprovalThresholdMet()`
 `submitApproval()`'s own eligibility gate (2.8) — both callers get the
 fix from this one change.
 
-### 2.7 Approval Mode / Threshold Logic — `isApprovalThresholdMet()` (`workflow.service.ts:401–435`)
+### 2.7 Approval Mode / Threshold Logic — `isApprovalThresholdMet()` (`workflow.service.ts`, `isApprovalThresholdMet()`)
 
 - **`COMMITTEE` approvalMode** (distinct enum from `assigneeStrategy:
   COMMITTEE`, though both key off the same `stage.committeeId`): if no
@@ -1932,7 +1933,7 @@ was deactivated) is tracked, not fixed, in Section 11.
 
 **A second, adjacent gap found in the same investigation — since
 CLOSED (ACC-33), verified directly against both files**
-(`workflow.controller.ts:56–65`, `workflow.service.ts:315–346`):
+(`workflow.controller.ts`, `submitApproval()`; `workflow.service.ts`, `submitApproval()`):
 
 ```ts
 // Same deliberate exception as triggerTransition() above.
@@ -1973,7 +1974,7 @@ case (2.6's own documented fallback), not a gap ACC-33 introduced or
 was expected to close. See Section 11 for the still-open, structurally
 different `ROLE_BASED`/`SPECIFIC_USER` `triggerCondition` gaps.
 
-### 2.9 Transition Actions — `fireTransitionActions()` (`workflow.service.ts:485–550`)
+### 2.9 Transition Actions — `fireTransitionActions()` (`workflow.service.ts`, `fireTransitionActions()`)
 
 > **ACC-190 — `CREATE_TASK` is RETIRED.** `executeCreateTask()` is deleted; a
 > stored `CREATE_TASK` action is skipped, logged at warn, and recorded in
@@ -1996,7 +1997,7 @@ Fires in `order` after a successful transition. Per `actionType`:
   mapping** — the function returns `null` for it, and
   `executeCreateTask()` skips task creation with a logged reason rather
   than writing an invalid enum value. This is real and currently live:
-  confirmed in `workflow.seed.ts:261`, the seeded `COMMITTEE` workflow's
+  confirmed in `workflow.seed.ts` (the COMMITTEE `formation → terms_review` transition), the seeded `COMMITTEE` workflow's
   `formation → terms_review` transition is configured with
   `actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }]`
   — **`CREATE_TASK` is the only non-`LOG_AUDIT` action on this
@@ -2006,26 +2007,26 @@ Fires in `order` after a successful transition. Per `actionType`:
 
   **Correction to a prior draft of this section**: `formation →
   terms_review` does **not** configure a `SEND_NOTIFICATION` action at
-  all (verified against `workflow.seed.ts:261` directly — only
+  all (verified against `workflow.seed.ts`, the COMMITTEE `formation → terms_review` transition, directly — only
   `CREATE_TASK`/`LOG_AUDIT`) — there is nothing to trace on that
   specific transition beyond what's already stated. Checked instead
   whether `SEND_NOTIFICATION` genuinely works for `COMMITTEE` object
   type on a transition that *does* configure it —
   `terms_review → active` ("Approve Committee",
-  `workflow.seed.ts:262`: `actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }]`,
+  `workflow.seed.ts` (the next COMMITTEE transition): `actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }]`,
   and in fact every other seeded `COMMITTEE` transition follows this
   same `SEND_NOTIFICATION` + `LOG_AUDIT` shape — `CREATE_TASK` is
   configured on exactly one `COMMITTEE` transition, `formation →
   terms_review`). Traced `executeSendNotification()`
-  (`workflow.service.ts:624–648`) directly: unlike `executeCreateTask()`,
+  (`workflow.service.ts`, `executeSendNotification()`) directly: unlike `executeCreateTask()`,
   it never calls `mapObjectTypeToTaskSourceType()` — it resolves
   assignees the same way, then calls `NotificationService.create()`
   passing `objectType: instance.objectType` straight through. Confirmed
-  in `schema.prisma:892–903`: `Notification.objectType` is a plain
+  in `schema.prisma`, `model Notification`: `Notification.objectType` is a plain
   `String?`, **not** a closed Prisma enum the way `Task.sourceType` is
   — so `'COMMITTEE'` (or any string) is accepted without constraint.
   Also confirmed `NotificationService.create()`'s own tenant-scoping
-  check (`notification.service.ts:36–41`, the ACC-17 fix) passes
+  check (`notification.service.ts`, `create()`, the ACC-17 fix) passes
   cleanly, since `resolveAssignee()`'s `COMMITTEE` case already returns
   only org-scoped user ids. **Conclusion: `SEND_NOTIFICATION` genuinely
   works correctly for `COMMITTEE` object type today** — this action
@@ -2043,7 +2044,7 @@ Fires in `order` after a successful transition. Per `actionType`:
   path recorded for non-webhook actions (only webhook retries produce
   `FAILED`/`RETRYING` status via the separate processor).
 
-### 2.10 Validator Config — `checkValidatorConfig()` (`workflow.service.ts:860`)
+### 2.10 Validator Config — `checkValidatorConfig()` (`workflow.service.ts`, `checkValidatorConfig()`)
 
 **Two** of the four validator conditions CLAUDE.md documents are now
 enforced: `minApprovals` (checked against the transition's own
@@ -2150,7 +2151,7 @@ enforced one, has never been configured anywhere.
 
 **Exactly one real caller of `startInstance()` exists in application
 code today**: `CommitteesService.createCommittee()`
-(`committees.service.ts:87`), starting a `COMMITTEE`-type instance.
+(`committees.service.ts`, `createCommittee()`), starting a `COMMITTEE`-type instance.
 Confirmed via grep — every other reference to `startInstance()` in the
 codebase is inside `workflow.service.spec.ts`. No Document, Incident,
 Audit, CAPA, or Meeting instance has ever been created through this
@@ -2170,8 +2171,8 @@ actual component callers, not just the service definition:
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
 | `getInstance()` | `GET /workflows/instances/:id` | **ZERO frontend callers found** |
-| `getInstancesByObject()` | `GET /workflows/instances` | `committee-detail.component.ts:372` |
-| `triggerTransition()` | `POST /workflows/instances/:id/transitions` | `workflow-transition-actions.component.ts:92` (the generic, reusable component — see Section 10) |
+| `getInstancesByObject()` | `GET /workflows/instances` | `committee-detail.component.ts`, `loadCurrentStage()` |
+| `triggerTransition()` | `POST /workflows/instances/:id/transitions` | `workflow-transition-actions.component.ts`, `onTrigger()` (the generic, reusable component — see Section 10) |
 | `submitApproval()` | `POST /workflows/instance-stages/:id/approvals` | **ZERO frontend callers found** |
 | `cancelInstance()` | `POST /workflows/instances/:id/cancel` | **ZERO frontend callers found** |
 
@@ -2898,6 +2899,7 @@ Plan, Ahmad's answers (28 Oct, §13.1) and the PR split:
 `backend/Plans/step-271-stage-owns-who.md`. PR 1 is the schema and the engine;
 **nothing writes the new shape yet** (the backfill is PR 2, the screens PR 3), so
 every stage on every database is still unconverted and behaves as §2.4–§2.8 say.
+Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts a new organisation, and both PR 2 backfills ran on the shared database on 29 Oct, so every stage is converted. §2.4–§2.8 describe only a stage whose `whoMode` is null. PR 3 (the screens) and PR 5 are not started.
 
 - **The transition window (plan §4.6).** A stage with `WorkflowStage.whoMode`
   set is CONVERTED: its `WorkflowStageAssignee` entries say who works it, and
@@ -2951,12 +2953,14 @@ every stage on every database is still unconverted and behaves as §2.4–§2.8 
   `WorkflowInstanceStageEvent` (`POOL_MEMBER_LEFT`, reason DEACTIVATED) per
   entry inside the flip's transaction. Leaving a position or a committee is the
   sweep's to record (PR 2+).
+  Superseded (ACC-274): built in PR 4 — see "PR 4" below (`recordPoolChanges()`).
 - **Not yet:** `STAGE_ON_STARTING_ASSIGNMENT` is in the enum and deferred
   (`DEFERRED_SETUP_CONDITION_TYPES`) until PR 3's detector;
   `WorkflowTransitionActionsComponent` still hides a button by
   `requiredPermission`, which must stop for converted stages before PR 2
   converts any; the initial-assignee and SEND_NOTIFICATION notices go to the
   pool without the old per-call out-of-office notices.
+  Superseded (ACC-274): the button half is done — since PR 2 the component shows the moves `GET /workflows/instances/:id/moves` returns. `STAGE_ON_STARTING_ASSIGNMENT` is still deferred until PR 3.
 - **PR 2 — the seed, the starting assignments, the moves read, the backfills.**
   - **The seed says who** (`SeedStage.who`, pinned stage by stage in
     `workflow.seed.spec.ts`): 12 CREATOR stages, 48 marked for a starting
@@ -3310,7 +3314,7 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   A reassigned task is therefore often already overdue, and an escalation
   tier that already fired does not fire again for the new assignee.
 - **`reassignAllForUser()`** — the bulk version, called from exactly one
-  place: `UserService.deactivate()` (`user.service.ts:244`, the
+  place: `UserService.deactivate()` (`user.service.ts`, the
   departure flow) — confirmed via grep, no other caller exists. For
   every task the departing user is still an active assignee on: if a
   valid `toUserId` (their `actingUserId`, resolved and re-validated by
@@ -3423,7 +3427,7 @@ the span between ACC-46's Commit 1 (dead-field removal) and Commit 2a
 **`Organization.settings.taskSla` is a real, live-written key now**
 (ACC-46 Section 2.7.d) — the settings-UI half of the "confirmed never
 written by any code path" gap this same ticket's own Context section
-named. `TenantService.getTaskSla(id)` (`tenant.service.ts:264`) reads
+named. `TenantService.getTaskSla(id)` (`tenant.service.ts`) reads
 it, falling back to a module-level `DEFAULT_TASK_SLA_SETTINGS`
 constant (`:37`) when the key is absent — covers an absent key
 functionally forever, but `TenantService.bootstrap()` also writes
@@ -3512,7 +3516,7 @@ Items). The old query excluded `status: 'OVERDUE'`, so a task was
 evaluated exactly once — the instant it first went overdue, before
 enough hours could plausibly have elapsed for any threshold — then
 permanently skipped forever after. `sweepOverdueTasks()`
-(`sla-monitor.processor.ts:361`) now queries
+(`sla-monitor.processor.ts`) now queries
 `status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED'] }` —
 `OVERDUE` no longer excluded — so an overdue task stays eligible for
 re-evaluation on every subsequent sweep until both escalation tiers
@@ -3763,16 +3767,16 @@ task surface reads the same helper.
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `getMyTasks()` | `GET /tasks/my-tasks` | `my-tasks.component.ts:144` |
+| `getMyTasks()` | `GET /tasks/my-tasks` | `my-tasks.component.ts`, `loadTasks()` |
 | `getForSource()` | `GET /tasks` | `task-list.component.ts` (routed page) **+ `committee-detail.component.ts` directly** (ACC-76) |
 | `getUnassigned()` | `GET /tasks/unassigned` | `unassigned-tasks.component.ts` (ACC-34) |
 | `getById()` | `GET /tasks/:id` | **ZERO frontend callers found** |
-| `create()` | `POST /tasks` | `task-form.component.ts:124` (rendered from `task-list.component.ts`, confirmed referenced there) |
+| `create()` | `POST /tasks` | `task-form.component.ts`, `onSubmit()` (rendered from `task-list.component.ts`, confirmed referenced there) |
 | `complete()` | `POST /tasks/:id/complete` | `my-tasks.component.ts` **+ `committee-detail.component.ts`** (ACC-76) |
 | `start()` | `POST /tasks/:id/start` | `my-tasks.component.ts` (ACC-163) |
 | `reject()` | `POST /tasks/:id/reject` | `task-reject-dialog.component.ts`, hosted by My tasks (ACC-163) |
 | `reassign()` | `POST /tasks/:id/reassign` | `task-reassign-dialog.component.ts` (ACC-163, extracted), hosted by Unassigned tasks and the committee record |
-| `addEvidence()` | `POST /tasks/:id/evidence` | `task-link-evidence-dialog.component.ts`, hosted by My tasks (ACC-163) — LINK only |
+| `addEvidence()` | `POST /tasks/:id/evidence` | `task-add-evidence-dialog.component.ts` (Link; a File uploads separately, §16.6). Corrected ACC-274: it replaced `task-link-evidence-dialog.component.ts`, deleted in ACC-177 (§16.9) |
 | `getAvailable()` | `GET /tasks/available` | `my-tasks.component.ts` — "Available to pick up" (ACC-167) |
 | `pick()` | `POST /tasks/:id/pick` | `my-tasks.component.ts` (ACC-167) |
 | `release()` | `POST /tasks/:id/release` | `task-release-dialog.component.ts`, hosted by My tasks (ACC-167) |
@@ -5253,10 +5257,10 @@ calls it yet — none of those modules exist.
 
 | Method | Endpoint | Caller |
 |---|---|---|
-| `list()` | `GET /notifications` | `notification-bell.component.ts:144` |
-| `getUnreadCount()` | `GET /notifications/unread-count` | `notification-bell.component.ts:97` (the 30s poll) |
-| `markRead()` | `PATCH /notifications/:id/read` | `notification-bell.component.ts:124` |
-| `markAllRead()` | `POST /notifications/mark-all-read` | `notification-bell.component.ts:133` |
+| `list()` | `GET /notifications` | `notification-bell.component.ts`, `loadRecent()` |
+| `getUnreadCount()` | `GET /notifications/unread-count` | `notification-bell.component.ts`, `ngOnInit()` (the 30s poll) |
+| `markRead()` | `PATCH /notifications/:id/read` | `notification-bell.component.ts`, `onItemClick()` |
+| `markAllRead()` | `POST /notifications/mark-all-read` | `notification-bell.component.ts`, `onMarkAllRead()` |
 
 No dead endpoints. The entire Notification frontend surface is one
 component — consistent with there being no dedicated "Notifications"
@@ -5346,10 +5350,10 @@ implied by per-unit scoping: whether more than one person may hold it
 *within a given unit* at once, and whether holding it confers Head
 authority. `isUnitHeadPosition: true` always implies
 `isSingleAssignee: true` — enforced server-side
-(`org-position.service.ts:233` `validateHeadFlagPairing()`), not
+(`org-position.service.ts`, `validateHeadFlagPairing()`), not
 trusted to the frontend alone. `roleId` (nullable) is the position-to-
 role mapping (5.9) — validated to reject `PLATFORM_ADMIN`/
-`TENANT_ADMIN` (`org-position.service.ts:247`).
+`TENANT_ADMIN` (`org-position.service.ts`, `validateRoleReference()`).
 
 ```prisma
 model OrgUnit {
@@ -5462,7 +5466,7 @@ only once the tenant has at least one active `OrgUnit`.
   service method with **zero UI entry point** until ACC-43 wired a
   Reactivate button into `position-list.component.ts` — confirmed via
   the same live-verification pass, closed in the same ticket.
-- **`UserService.validatePositionAssignment()`** (`user.service.ts:423`)
+- **`UserService.validatePositionAssignment()`** (`user.service.ts`)
   — as of ACC-43, rejects with `ConflictException` when the target
   position's `isActive` is `false`, checked before the existing
   single-assignee-cap (5.2 above) and cross-position Head-uniqueness
@@ -5478,11 +5482,12 @@ only once the tenant has at least one active `OrgUnit`.
   on top of `listPositions()`'s still-unfiltered raw result — the same
   client-side convention already used for role pickers elsewhere,
   e.g. `user-role-assignment.component.ts`).
+  Corrected (ACC-274): `user-role-assignment.component.ts` was deleted in ACC-120 slice 5; roles are now assigned in Manage roles (`manage-roles.component.ts`).
 
 ### 5.3 "Who Is This Unit's Head" — Derived, Never Stored
 
 `OrganizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId)`
-(`organization.service.ts:74`) is the one real derivation query,
+(`organization.service.ts`) is the one real derivation query,
 despite its name being written for its role as `ORG_UNIT_HEAD`'s
 workflow-assignee resolver (5.8) — it answers "who currently has Head
 authority here" generally, not just for workflow purposes:
@@ -5537,7 +5542,7 @@ no special-casing anywhere else in the system.
   to this unit (`primaryOrgUnitId` match — never silently moved as a
   side effect). Grants the incoming successor the same `positionId` via
   `UserService.validatePositionAssignment(..., isDeclaredHandoverBypass: true)`
-  (`user.service.ts:390`) — the **only** call site in the codebase that
+  (called from `org-unit-head.service.ts`, `declareHandover()`) — the **only** call site in the codebase that
   ever passes `isDeclaredHandoverBypass: true`, deliberately violating
   both the single-assignee cap and the cross-position Head-uniqueness
   check, only for this one pair, only through this one path. Writes
@@ -5666,7 +5671,7 @@ assignment purposes.
 
 ### 5.6 Acting Head — Coverage, Not Position-Holding
 
-`assignActingHead()`/`clearActingHead()` (`org-unit-head.service.ts:525`/`:651`)
+`assignActingHead()`/`clearActingHead()` (`org-unit-head.service.ts`)
 cover Head-of-unit **authority** during an absence or unresolved
 vacancy — never a position grant (no `positionId` written anywhere in
 either method, unlike `assignHead()`). Only assignable when the unit
@@ -5714,10 +5719,11 @@ Fully independent of everything above — a user can be flagged as
 acting for an entire *different* org unit (`actingOrgUnitId` +
 `actingOrgUnitUntil`), unrelated to Head authority, position-holding,
 or role grants. Set via `UserService.updateProfile()`
-(`user.service.ts:228`, no referential-integrity check against
+(`user.service.ts`, no referential-integrity check against
 `OrgUnit`, matching that block's existing `positionId`/
 `primaryOrgUnitId`/`managerId` precedent), wired into
-`user-profile.component.ts`. Cleared by
+`user-profile.component.ts` (since ACC-120 slice 5, the user record page's
+`edit-profile-dialog.component.ts`; `user-profile` is deleted). Cleared by
 `sweepExpiredActingOrgUnitAssignments()` (5.5) on expiry, with a
 courtesy notification to the user — no vacancy/role side effects,
 since this axis feeds nothing in Head derivation (5.3) at all. Nothing
@@ -5729,7 +5735,7 @@ confirmed via grep to have no consumer beyond the sweep that clears it.
 
 Cross-referenced from Section 2 (Workflow Engine), not duplicated here:
 `WorkflowService.resolveAssigneeRaw()`'s and `resolveApproverPool()`'s
-`ORG_UNIT_HEAD` cases (`workflow.service.ts:920`, `:1368`) both call
+`ORG_UNIT_HEAD` cases (`workflow.service.ts`) both call
 `OrganizationService.resolveActingHeadForOrgUnit()` (5.3) against
 `instance.orgUnitId`. **Ships "wired, not yet reachable in practice,"
 explicitly disclosed**: no workflow-driven object (`Committee`,
@@ -5742,7 +5748,7 @@ before ACC-28 gave it a real consumer.
 ### 5.9 The Unified Delegation-Reason Stamp
 
 Cross-referenced from Section 2 (Workflow Engine — `resolveDelegationStamp()`,
-`workflow.service.ts:1055`), not duplicated here: `WorkflowInstanceStage`,
+`workflow.service.ts`), not duplicated here: `WorkflowInstanceStage`,
 `WorkflowApproval`, and `TaskAssignee` each carry a nullable
 `delegationReason`/`delegationContextId` pair, stamped once at write
 time, recording *why* an actor was eligible (`ACTING_HEAD` via 5.6, or
@@ -5755,7 +5761,7 @@ cross-reference to exactly where this picks back up).
 ### 5.10 Position-to-Role Mapping — Real Position-Holding Grants a Role
 
 `OrgPosition.roleId` (5.1) is the mapping; `UserService.syncHeadAuthorityRoleGrant()`
-(`user.service.ts:331`) is the one shared sync point, called from
+(`user.service.ts`) is the one shared sync point, called from
 `invite()`, `updateProfile()`, and every Head-management method in 5.4/
 5.6 that changes a `(positionId, orgUnitId)` pairing. Revokes against
 the OLD pairing first (if ever granted via this mechanism), then grants
@@ -5765,7 +5771,7 @@ against the NEW one. Applies to **real position-holding only** —
 `coveringForUserId` resolves to a real position. Org-wide
 (`primaryOrgUnitId: null`) head-conferring positions are supported
 without a carve-out — `RoleService.grantRoleViaHeadAuthority()`/
-`revokeRoleViaHeadAuthority()` (`role.service.ts:409`/`:463`) key the
+`revokeRoleViaHeadAuthority()` (`role.service.ts`) key the
 revoke off `grantedViaHeadPositionOrgUnitId` when unit-scoped, falling
 back to `grantedViaHeadPositionId` only for the org-wide case (the one
 case where matching on a null `orgUnitId` would be unsafe — it would
@@ -5810,7 +5816,7 @@ tenant has zero units until an admin creates one).
 **Existing active users are explicitly NOT retroactively blocked** —
 no data migration forces this. Instead,
 `UserService.notifyTenantAdminsOfIncompleteProfiles()`
-(`user.service.ts:185`) is a remediation **report**, not a
+(`user.service.ts`) is a remediation **report**, not a
 transformation script (a real difference from every other
 `backfill-*.ts` precedent in this codebase, where the target state
 *was* programmatically derivable) — counts active users missing
@@ -5819,6 +5825,7 @@ Admins once via the same admin-notification chain used throughout this
 section. The actual fix happens through the already-wired
 `user-profile.component.ts` edit form — no new UI needed for the fix
 itself.
+Corrected (ACC-274): that form is now `edit-profile-dialog.component.ts` on the user record page (ACC-120 slice 5).
 
 ### 5.12 Escalation — Superseded, No Longer Cross-References `validateEscalationTarget()`
 
@@ -5844,7 +5851,7 @@ org:manage        — OrgUnitHeadController: assignHead, vacateHead, declareHand
 ```
 
 Head-management actions are gated by `org:manage`, **not**
-`positions:manage` — a deliberate split (`org-unit-head.controller.ts:13-20`):
+`positions:manage` — a deliberate split (`org-unit-head.controller.ts`, the comment above `OrgUnitHeadController`):
 `positions:manage` governs the tenant-wide position catalog itself;
 Head-management doesn't edit the catalog, it changes who leads a
 specific org unit, the same kind of OrgUnit-scoped action `org:manage`
@@ -5858,7 +5865,7 @@ controller — no special-casing.
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `listPositions()` | `GET /org-positions` | `position-list.component.ts`, `user-profile.component.ts`, `user-list.component.ts`, `invite-user.component.ts`, `headship-panel.component.ts` (ACC-133) |
+| `listPositions()` | `GET /org-positions` | Re-checked ACC-274: `position-list`, `user-list`, `invite-user`, `user-record`, `headship-actions` (ACC-133), `manage-roles`, `user-permissions`, `stage-editor-panel`, `stage-task-definition-form` (each `.component.ts`). `user-profile.component.ts` was deleted in ACC-120 slice 5 |
 | `getById()` | `GET /org-positions/:id` | **ZERO frontend callers found** (unchanged from pre-ACC-40) |
 | `create()` / `update()` | `POST` / `PATCH /org-positions/:id` | `position-form.component.ts` — form includes `isSingleAssignee`/`isUnitHeadPosition` (with the head-implies-single constraint mirrored client-side, unchecking one clears the other) /`roleId` |
 | `deactivate()` / `reactivate()` | `POST /org-positions/:id/(de)activate` | `position-list.component.ts` |
@@ -5873,6 +5880,7 @@ below.
 `user-profile.component.ts` — `actingOrgUnitId`/`actingOrgUnitUntil`
 (5.7) fully wired as an optional profile field, distinct from the
 position/org-unit picker above it.
+Corrected (ACC-274): now `edit-profile-dialog.component.ts` on the user record page; `user-profile.component.ts` was deleted in ACC-120 slice 5.
 
 ### 5.15 The Headship panel (ACC-133)
 
@@ -6130,7 +6138,7 @@ values.
 This is the mechanism CLAUDE.md's "Layer 2 — Tenant lookups... Tenant
 admins add values, define attributes, reorder, activate/deactivate"
 and "Can be hidden or label-overridden" actually resolves to at read
-time (`lookup.service.ts:207–263`):
+time (`lookup.service.ts`, `getValues()`):
 
 1. Fetch every active SYSTEM `LookupValue` for the category
    (`organizationId: null`).
@@ -6207,18 +6215,18 @@ methods, one per `LookupController` endpoint:
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `getCategories()` | `GET /lookups/categories` | `lookup-category-list.component.ts:113` |
-| `getCategoryByKey()` | `GET /lookups/categories/:key` | `lookup-value-list.component.ts:352`, `lookup-value-form.component.ts:213` |
+| `getCategories()` | `GET /lookups/categories` | `lookup-category-list.component.ts`, `source` |
+| `getCategoryByKey()` | `GET /lookups/categories/:key` | `lookup-value-list.component.ts`, `loadCategory()`; `lookup-value-form.component.ts`, `loadCategory()` |
 | `updateCategory()` | `PATCH /lookups/categories/:key` | **ZERO frontend callers found** |
 | `deactivateCategory()` | `POST /lookups/categories/:key/deactivate` | **ZERO frontend callers found** |
-| `getValues()` | `GET /lookups/categories/:key/values` | `committee-member-form`, `committee-list`, `committee-form`, `committee-detail` (×2), `lookup-value-list.component.ts:361` |
-| `addValue()` | `POST /lookups/categories/:key/values` | `lookup-value-form.component.ts:191` |
+| `getValues()` | `GET /lookups/categories/:key/values` | `committee-member-form`, `committee-list`, `committee-form`, `committee-detail` (×2), `lookup-value-list.component.ts`, `source` |
+| `addValue()` | `POST /lookups/categories/:key/values` | `lookup-value-form.component.ts`, `onSubmit()` |
 | `suggestValues()` | `POST /lookups/categories/:key/suggest` | **ZERO frontend callers found** |
-| `updateValue()` | `PATCH /lookups/values/:id` | `lookup-value-form.component.ts:184` |
-| `removeValue()` | `DELETE /lookups/values/:id` | `lookup-value-list.component.ts:315` |
-| `hideSystemValue()` | `POST /lookups/values/:id/hide` | `lookup-value-list.component.ts:298` |
-| `unhideSystemValue()` | `DELETE /lookups/values/:id/hide` | `lookup-value-list.component.ts:306` |
-| `overrideLabel()` | `POST /lookups/values/:id/override-label` | `lookup-value-list.component.ts:328` (`onSaveOverride()`, a dedicated `p-dialog` with `labelEn`/`labelAr` inputs) |
+| `updateValue()` | `PATCH /lookups/values/:id` | `lookup-value-form.component.ts`, `onSubmit()` |
+| `removeValue()` | `DELETE /lookups/values/:id` | `lookup-value-list.component.ts`, `onDelete()` |
+| `hideSystemValue()` | `POST /lookups/values/:id/hide` | `lookup-value-list.component.ts`, `onHide()` |
+| `unhideSystemValue()` | `DELETE /lookups/values/:id/hide` | `lookup-value-list.component.ts`, `onUnhide()` |
+| `overrideLabel()` | `POST /lookups/values/:id/override-label` | `lookup-value-list.component.ts`, `onSaveOverride()` ( a dedicated `p-dialog` with `labelEn`/`labelAr` inputs) |
 
 **Correction to an earlier pass of this section**: `overrideLabel()`
 was initially flagged as having zero frontend callers — a false
@@ -6414,9 +6422,9 @@ page reads it for its Edit dialog (`getById()`).
 | `getTree()` | `GET /organization/units` | **none since ACC-120 slice 11 PR C**: the tree reads `getStructure()` (7.9) |
 | `getFlat()` | `GET /organization/units/flat` | `position-list`, `position-form`, `invite-user`, `org-unit-form`, `user-list`, `user-profile` |
 | `getById()` | `GET /organization/units/:id` | `org-unit-record.component.ts` (Edit, 7.10) |
-| `create()` | `POST /organization/units` | `org-unit-form.component.ts:234` |
-| `update()` | `PATCH /organization/units/:id` | `org-unit-form.component.ts:233` |
-| `deactivate()` | `POST /organization/units/:id/deactivate` | `org-unit-tree.component.ts:170` |
+| `create()` | `POST /organization/units` | `org-unit-form.component.ts`, `onSubmit()` |
+| `update()` | `PATCH /organization/units/:id` | `org-unit-form.component.ts`, `onSubmit()` |
+| `deactivate()` | `POST /organization/units/:id/deactivate` | `org-unit-tree.component.ts`, `deactivate()` |
 | `getStructure()` | `GET /organization/units/structure` | `org-unit-tree.component.ts` (7.9) |
 | `getChart()` | `GET /organization/units/chart` | `org-unit-chart.component.ts` (7.12) |
 | `getSummary()` | `GET /organization/units/:id/summary` | `org-unit-record.component.ts` (7.10) |
@@ -7208,7 +7216,7 @@ convention**, not a framework guarantee — and it's worth being precise
 about how thin this actually is, not just naming it:
 
 ```yaml
-# .github/workflows/ci.yml:113-135 — the "Tenant Isolation Tests" job, verbatim mechanism
+# .github/workflows/ci.yml — the "Tenant Isolation Tests" job, verbatim mechanism
 run: npx jest --testNamePattern="should NOT return records belonging to a different tenant" --passWithNoTests
 ```
 
@@ -7329,7 +7337,7 @@ patched file by file at least five times before.
 ### 9.2 Resolution Chain — Backend and Frontend, Precisely
 
 **Backend** (`AuthService.resolveLanguage()`,
-`backend/src/foundation/auth/auth.service.ts:612–623`) — matches
+`backend/src/foundation/auth/auth.service.ts`) — matches
 CLAUDE.md's documented order exactly, confirmed directly:
 
 ```ts
@@ -7352,7 +7360,7 @@ chains only **two** top-level calls —
 `authService.restoreSession() → navigationAccessService.loadAccess()`.
 Language resolution is not a separate third step in that chain; it's
 **nested inside `restoreSession()` itself**
-(`auth.service.ts:149–165`, `switchMap` into
+(the frontend `auth.service.ts`, `switchMap` into
 `languageService.use(response.language)` before the `currentUser`
 signal is set). The *effective order* CLAUDE.md describes is still
 correct — language does resolve before `loadAccess()` runs, since it's
@@ -8670,7 +8678,7 @@ is well past coincidence:
 | String | Asserted | Reality when found |
 |---|---|---|
 | `assigneePickerUnavailable` | User Management not built | It had shipped (ACC-76) |
-| `committee-detail.component.ts:59` | A design-reference path | Folder restructured (ACC-78) |
+| `committee-detail.component.ts` (its header comment) | A design-reference path | Folder restructured (ACC-78) |
 | List footer | Preferences persist *per user* | localStorage — per browser |
 | PR #75's own diagnosis | Every table below the threshold | Users had 25 rows and a search box |
 
@@ -9859,6 +9867,7 @@ Purpose section, written directly in response to the ACC-28 incident.
   risk this entry originally flagged is fully closed: a tenant
   configuring this strategy today gets `[]` (an empty, correctly-handled
   pool), never a crash.
+  Corrected (ACC-274): `workflow-stage-form.component.ts` was deleted in ACC-255 (#227); the strategy is chosen in the stage editor panel (`stage-editor-panel.component.ts`). `Committee.orgUnitId` exists and is required since ACC-135.
 - **CLOSED (ACC-33)** — **Unassigned-transition detection (Section 2.13) covers `ASSIGNEE_POOL`
   only — `ROLE_BASED`/`SPECIFIC_USER` have the same underlying risk,
   undetected** (ACC-28, deliberately scoped out — see the plan's
@@ -10360,7 +10369,17 @@ users:deactivate — UserController: deactivate. Deliberately separate
 users:transfer   — UserController: getTransferContext,
                    validateTransferReplacement, validateTransferPosition,
                    transferUser (all four — ACC-46, Section 12.9)
+users:reactivate — UserController: reactivate (ACC-83; the mirror of
+                   users:deactivate, a separate key)
 ```
+
+**A user's roles and permissions are read on the user's routes, gated as roles
+(ACC-272, added ACC-274).** `GET /users/:userId/roles` and
+`GET /users/:userId/permissions` (each grant with its role's keys) carry
+`roles:view`, plus `users:view` unless the caller reads themselves, checked
+before any read. The second is called by `RoleService.getUserPermissions()` in
+`frontend/src/app/foundation/roles/services/role.service.ts`, for the "A user's
+permissions" page. Full mechanism: §1, "A user's permissions".
 
 ### 12.7 Frontend Consumption (Static Check)
 
@@ -10372,7 +10391,7 @@ from the start (per Section 11's standing rule):
 |---|---|---|
 | `listUsers()` | `GET /users` | `committee-detail`, `committee-member-form`, `user-record`, `user-list`, `invite-user` |
 | `getById()` | `GET /users/:id` | `user-record.component.ts` (and the transfer wizard) |
-| `invite()` | `POST /users/invite` | `invite-user.component.ts:136` |
+| `invite()` | `POST /users/invite` | `invite-user.component.ts`, `onSubmit()` |
 | `updateProfile()` | `PATCH /users/:id/profile` | `edit-profile-dialog.component.ts` |
 | `updateOutOfOffice()` | `PATCH /users/:id/out-of-office` | `out-of-office-dialog.component.ts` |
 | `deactivate()` / `reactivate()` / `revokeInvitation()` | `POST /users/:id/…` | `user-status-actions.service.ts`, called by `user-list` and `user-record` |
@@ -10439,7 +10458,7 @@ way `OrgUnitHeadEvent`'s nullable field is, since this redesign never
 included a formal approval step).
 
 **Three variants, one method** — `UserService.transferUser()`
-(`user.service.ts:272`):
+(`user.service.ts`):
 
 - **Ordinary transfer** — `newManagerId` required, must resolve to an
   `ACTIVE` user already in the destination unit.
