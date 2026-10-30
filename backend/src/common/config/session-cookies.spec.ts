@@ -1,9 +1,7 @@
 import {
-  LEGACY_REFRESH_TOKEN_COOKIE_PATH,
   REFRESH_TOKEN_COOKIE_PATH,
   accessTokenClearOptions,
   accessTokenCookieOptions,
-  legacyRefreshTokenClearOptions,
   refreshTokenClearOptions,
   refreshTokenCookieOptions,
   twoFactorCookieClearOptions,
@@ -24,7 +22,6 @@ describe('session cookie options (ACC-186)', () => {
         refreshTokenCookieOptions(1000),
         accessTokenClearOptions(),
         refreshTokenClearOptions(),
-        legacyRefreshTokenClearOptions(),
       ]) {
         expect([nodeEnv, options]).toEqual([
           nodeEnv,
@@ -52,14 +49,6 @@ describe('session cookie options (ACC-186)', () => {
       ]).toEqual([route, true]);
     }
     expect(accessTokenCookieOptions(1000).path).toBe('/');
-  });
-
-  it('clears the pre-ACC-203 path during the change-over, with the same attributes', () => {
-    expect(LEGACY_REFRESH_TOKEN_COOKIE_PATH).toBe('/api/v1/auth/refresh');
-    expect(legacyRefreshTokenClearOptions()).toEqual({
-      ...refreshTokenClearOptions(),
-      path: LEGACY_REFRESH_TOKEN_COOKIE_PATH,
-    });
   });
 
   it('clears with exactly what it set, apart from the lifetime', () => {

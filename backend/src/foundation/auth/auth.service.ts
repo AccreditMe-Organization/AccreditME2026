@@ -70,7 +70,6 @@ import {
   REFRESH_TOKEN_COOKIE,
   accessTokenClearOptions,
   accessTokenCookieOptions,
-  legacyRefreshTokenClearOptions,
   refreshTokenClearOptions,
   refreshTokenCookieOptions,
   twoFactorCookieClearOptions,
@@ -263,23 +262,11 @@ export class AuthService {
       refreshToken,
       refreshTokenCookieOptions(REFRESH_TOKEN_TTL_SECONDS * 1000),
     );
-    // ACC-203 CHANGE-OVER (written 10 Oct 2026): delete a cookie left at the
-    // pre-ACC-203 path. Without this, a browser that signed in before the
-    // deploy would send BOTH cookies to /refresh, the old one first, and its
-    // next refresh would read the old, already-rotated token and sign the
-    // person out. Remove once 7 days (the refresh-token life) have passed since
-    // ACC-203 deployed.
-    res.clearCookie(REFRESH_TOKEN_COOKIE, legacyRefreshTokenClearOptions());
   }
 
   private clearSessionCookies(res: ExpressResponse): void {
     res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenClearOptions());
     res.clearCookie(REFRESH_TOKEN_COOKIE, refreshTokenClearOptions());
-    // ACC-203 CHANGE-OVER (written 10 Oct 2026): a refresh cookie at the
-    // pre-ACC-203 path is cleared too, so signing out removes it from browsers
-    // that still hold one. Remove once 7 days (the refresh-token life) have
-    // passed since ACC-203 deployed.
-    res.clearCookie(REFRESH_TOKEN_COOKIE, legacyRefreshTokenClearOptions());
   }
 
   // Shared tail for both the no-MFA login path and the post-verifyMfa path —

@@ -11651,8 +11651,8 @@ is the relative `/api/v1`. That is required, not convenient: the session cookies
 are `SameSite=Strict`, and `al-nakheel.localhost` and `localhost` are different
 sites, so a page on a tenant subdomain calling `localhost:3000` directly would
 never send them. Through the proxy every call is same-origin, and the cookies
-are host-only per subdomain. The refresh cookie's path, `/api/v1/auth/refresh`,
-is unchanged, so it still matches.
+are host-only per subdomain. The refresh cookie's path, `/api/v1/auth`, is under
+the same `/api/v1` prefix, so it still matches.
 
 **A second checkout** running its own backend on 3001 starts its frontend with
 `$env:API_PROXY_TARGET='http://localhost:3001'; npx ng serve --port 4201` and
@@ -11723,19 +11723,9 @@ stays httpOnly, Secure, `SameSite=Strict` and host-only. Moving both routes unde
 a narrower shared path was considered and not taken: a breaking route change for
 little gain, since a cookie's Path is not a security boundary (RFC 6265 §8.6).
 
-**The change-over clears the old path on every SET as well as every clear.** A
-browser that signed in before the deploy keeps its `/api/v1/auth/refresh` cookie.
-After its first refresh it would hold two cookies that both match `/refresh`,
-the browser sends the longer path FIRST, `cookie-parser` keeps the first value —
-the old, already-rotated token — and the next refresh would sign the person out.
-Clearing the old path in `setSessionCookies()` as well as
-`clearSessionCookies()` removes it on the first refresh or sign-in after the
-deploy. **Both clears are removable once 7 days (the refresh-token life) have
-passed since ACC-203 deployed** (dated comments beside each). One harmless gap: a
-browser with only an old-path cookie that signs out before its first refresh
-does not send it to `/logout`, so its row is not revoked — but the clear deletes
-the cookie, nothing can present that token again, and the row expires within 7
-days.
+**From 10 Oct 2026 the old `/api/v1/auth/refresh` path was also cleared on every
+set and every clear, so browsers signed in before ACC-203 lost their stale copy.
+ACC-207 removed that change-over once the 7-day refresh-token life had passed.**
 
 **ACC-148's feared exposure was verified absent (8 Oct), for three independent
 reasons** — a forged `Host` could not have pointed a reset link at an attacker:

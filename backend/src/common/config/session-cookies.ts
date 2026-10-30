@@ -45,21 +45,6 @@ export const REFRESH_TOKEN_COOKIE = 'refresh_token';
 /** Covers both routes that read the refresh token: refresh and sign-out (ACC-203). */
 export const REFRESH_TOKEN_COOKIE_PATH = '/api/v1/auth';
 
-/**
- * The path the refresh cookie had before ACC-203 — CHANGE-OVER ONLY.
- *
- * Browsers that signed in before the deploy still hold a cookie at this path.
- * Left alone it does harm: it also matches /api/v1/auth/refresh, a browser
- * sends the longer-path cookie FIRST, and cookie-parser keeps the first value —
- * so after the first refresh the server would read the old, already-rotated
- * token and sign the person out. So it is cleared on every set AND every clear.
- *
- * Written 10 Oct 2026. Remove this, and both clears that use it, once 7 days
- * (the refresh-token life) have passed since ACC-203 deployed: no browser can
- * hold a live cookie at this path after that.
- */
-export const LEGACY_REFRESH_TOKEN_COOKIE_PATH = '/api/v1/auth/refresh';
-
 const SESSION_COOKIE_BASE: Readonly<CookieOptions> = {
   httpOnly: true,
   secure: true,
@@ -87,11 +72,6 @@ export function accessTokenClearOptions(): CookieOptions {
 
 export function refreshTokenClearOptions(): CookieOptions {
   return { ...SESSION_COOKIE_BASE, path: REFRESH_TOKEN_COOKIE_PATH };
-}
-
-/** Clearing a refresh cookie left at the pre-ACC-203 path. Change-over only. */
-export function legacyRefreshTokenClearOptions(): CookieOptions {
-  return { ...SESSION_COOKIE_BASE, path: LEGACY_REFRESH_TOKEN_COOKIE_PATH };
 }
 
 /**
