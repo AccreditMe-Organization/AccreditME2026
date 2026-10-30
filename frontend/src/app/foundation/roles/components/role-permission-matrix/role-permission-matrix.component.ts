@@ -314,7 +314,7 @@ interface ModuleView {
                         [checked]="r.held"
                         (change)="toggle([r.key])"
                         [attr.aria-label]="r.sentence"
-                        [attr.aria-describedby]="r.note || r.mark === 'granted' || r.mark === 'revoked' ? rowId(r.key) + '-d' : null"
+                        [attr.aria-describedby]="r.note || r.mark === 'granted' || r.mark === 'revoked' || warnsSelfElevation(r) ? rowId(r.key) + '-d' : null"
                       />
                     } @else {
                       <span class="pm-ro" [class.pm-ro--on]="r.held" role="img" [attr.aria-label]="(r.held ? 'roles.matrix.held' : 'roles.matrix.notHeld') | translate" data-pm-glyph>{{
@@ -326,6 +326,11 @@ interface ModuleView {
                       <span [id]="rowId(r.key) + '-d'" class="contents">
                         @if (r.note) {
                           <span class="block text-meta text-ink-500">{{ r.note }}</span>
+                        }
+                        <!-- ACC-221 — allowed, and said: whoever holds it can give
+                             themselves Organization Administrator. Not a refusal. -->
+                        @if (warnsSelfElevation(r)) {
+                          <span class="pm-warn" data-pm-self-elevation><span aria-hidden="true">⚠ </span>{{ 'roles.matrix.manageRolesWarning' | translate }}</span>
                         }
                         @if (r.mark === 'granted') {
                           <span class="sr-only">{{ 'roles.matrix.newlyGranted' | translate }}</span>
@@ -400,6 +405,7 @@ interface ModuleView {
       .pm-tag--granted{color:var(--am-success-ink);border-color:var(--am-success-ink);background:var(--am-surface-raised)}
       .pm-tag--revoked{color:var(--am-warning-ink);border-color:var(--am-warning-ink);background:var(--am-surface-raised)}
       .pm-fold{flex:none;inline-size:calc(var(--am-space-24) + var(--am-space-4));block-size:calc(var(--am-space-24) + var(--am-space-4));border:1px solid var(--am-control-border);border-radius:var(--am-radius-button);background:var(--am-surface-raised);color:var(--am-ink-700);cursor:pointer}
+      .pm-warn{display:block;font-size:var(--am-type-meta-size);line-height:var(--am-type-body-line);font-weight:600;color:var(--am-warning-ink)}
       .pm-unsaved{font-size:var(--am-type-meta-size);font-weight:600;color:var(--am-warning-ink);background:var(--am-warning-bg);border:1px solid var(--am-warning-border);border-radius:var(--am-radius-control);padding:var(--am-space-2) var(--am-space-8)}
     `,
   ],
@@ -443,6 +449,15 @@ export class RolePermissionMatrixComponent implements OnInit, LeaveGuarded {
   // admin:access + roles:view, so a reader reaches this page and reads it.
   readonly canManage = computed(() => this.navigationAccess.hasPermission('roles:manage'));
   readonly isRootRole = computed(() => this.role()?.key === ROOT_ROLE_KEY);
+
+  /**
+   * ACC-221 — "Manage roles" ticked on a role other than Organization
+   * Administrator: anyone holding it can give themselves that role. Ticking it
+   * is allowed and the save is not blocked; the row says what it means.
+   */
+  warnsSelfElevation(row: { key: string; held: boolean }): boolean {
+    return row.key === 'roles:manage' && row.held && !this.isRootRole() && !this.isPlatformRole();
+  }
   readonly isPlatformRole = computed(() => this.role()?.key === PLATFORM_ROLE_KEY);
 
   // ONE flag the template reads, so the list and the save controls cannot

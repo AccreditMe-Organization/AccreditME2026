@@ -330,12 +330,15 @@ export class RoleListComponent {
 
   /** The row's ⋯ items: the same two the p-menu offered, in the same order. */
   menuFor(role: RoleDto): RowMenuItem[] {
-    return [
-      { id: 'permissions', label: this.translate.instant('roles.managePermissions') },
-      role.isActive
-        ? { id: 'deactivate', label: this.translate.instant('roles.deactivateRole'), danger: true }
-        : { id: 'activate', label: this.translate.instant('roles.activateRole') },
-    ];
+    const items: RowMenuItem[] = [{ id: 'permissions', label: this.translate.instant('roles.managePermissions') }];
+    // ACC-221 — Organization Administrator is never deactivated (the server
+    // refuses ROOT_ROLE_CANNOT_BE_DEACTIVATED), so it is not offered.
+    if (role.isActive && role.key !== 'TENANT_ADMIN') {
+      items.push({ id: 'deactivate', label: this.translate.instant('roles.deactivateRole'), danger: true });
+    } else if (!role.isActive) {
+      items.push({ id: 'activate', label: this.translate.instant('roles.activateRole') });
+    }
+    return items;
   }
 
   pick(role: RoleDto, id: string): void {
@@ -444,6 +447,8 @@ export class RoleListComponent {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
     if (refusalCode(err) === 'LAST_ACTIVE_ADMINISTRATOR') {
       this.actionError.set({ key: 'roles.refusal.lastAdministrator', retry: null });
+    } else if (refusalCode(err) === 'ROOT_ROLE_CANNOT_BE_DEACTIVATED') {
+      this.actionError.set({ key: 'roles.refusal.rootRoleCannotBeDeactivated', retry: null });
     } else if (status === 404) {
       this.actionError.set({ key: 'roles.actionError.notFound', retry: null });
       this.list().reload();
