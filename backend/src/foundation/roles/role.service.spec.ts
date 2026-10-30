@@ -745,33 +745,33 @@ describe('RoleService', () => {
       );
     });
 
-    // The MECHANISM, not just the outcome. countActiveAdministrators() requires
-    // isActive: true on the role, and that clause is what lets ONE assertion
-    // placed after the update catch a deactivation at all: the holder rows are
-    // untouched by it, so a holder count alone would see nothing wrong.
-    it('catches the deactivation by re-reading the role as INACTIVE, not by inspecting the request', async () => {
+    // ACC-221 — the root role is never deactivated, whoever holds it, and the
+    // refusal comes BEFORE any write: with five active holders nothing about
+    // the holders is in question, only the role. (This replaced the test that
+    // the invariant caught the deactivation by re-reading the role as
+    // INACTIVE: deactivateRole() no longer reaches the invariant for it.)
+    it('refuses to deactivate the root role before any write, with ROOT_ROLE_CANNOT_BE_DEACTIVATED', async () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
-      // FIVE active holders, none of them touched by this mutation. A holder
-      // count alone sees nothing wrong; the isActive clause is what bites.
       stageAdministrators({ actedOnRole: adminRole, activeHolders: 5 });
 
-      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toThrow(
-        ConflictException,
-      );
-      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ key: 'TENANT_ADMIN', isActive: true }),
-        }),
-      );
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        response: { code: 'ROOT_ROLE_CANNOT_BE_DEACTIVATED', statusCode: 409 },
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      expect(mockPrisma.role.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
 
-    it('allows deactivating the root role when nobody active holds it', async () => {
+    // ACC-221 — was "allows deactivating the root role when nobody active holds
+    // it". The rule is now unconditional: no holder count makes it allowed.
+    it('refuses to deactivate the root role even when nobody active holds it (ACC-221)', async () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
       stageAdministrators({ actedOnRole: adminRole, activeHolders: 0 });
 
-      await service.deactivateRole('role-1', ORG_A, ACTOR);
-
-      expect(mockPrisma.role.update).toHaveBeenCalled();
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        response: { code: 'ROOT_ROLE_CANNOT_BE_DEACTIVATED' },
+      });
+      expect(mockPrisma.role.update).not.toHaveBeenCalled();
     });
 
     // A tenant already in breach is not punished for an unrelated mutation —
@@ -789,16 +789,20 @@ describe('RoleService', () => {
     // design — its people hold PLATFORM_ADMIN. Measured on dev before this
     // shipped: platform activeHolders=0, both real tenants 1. Without the
     // exemption the assertion would throw on every platform-org mutation.
+    //
+    // ACC-221 — deactivating the root role is now refused before the invariant
+    // runs, so the exemption is exercised through removeRoleFromUser instead:
+    // the same configuration as "refuses to remove the root role from its last
+    // ACTIVE holder", with only isPlatformOrg different.
     it('exempts the platform organization entirely', async () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
-      // Exactly the configuration refused above — one active holder, and the
-      // mutation takes the role away. Only isPlatformOrg differs.
       stageAdministrators({ actedOnRole: adminRole, activeHolders: 1 });
-      mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: true });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
+      mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: true, ownerUserId: null });
 
-      await service.deactivateRole('role-1', ORG_A, ACTOR);
+      await service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR);
 
-      expect(mockPrisma.role.update).toHaveBeenCalled();
+      expect(mockPrisma.userRole.delete).toHaveBeenCalledWith({ where: { id: 'ur-1' } });
     });
 
     it('throws NotFoundException when role does not exist for this tenant', async () => {
@@ -1711,6 +1715,65 @@ describe('RoleService', () => {
       const r = await refusal(service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR));
       expect(r.status).toBe(409);
       expect(r.code).toBe('LAST_ACTIVE_ADMINISTRATOR');
+    });
+  });
+
+  // ACC-221 — nobody takes Organization Administrator from the account owner.
+  describe('removeRoleFromUser — the account owner (ACC-221)', () => {
+    const owned = (ownerUserId: string | null) =>
+      mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: false, ownerUserId });
+
+    it('refuses to take Organization Administrator from the account owner, before any write', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 3 });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
+      owned('user-1');
+
+      await expect(service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        response: { code: 'ACCOUNT_OWNER_PROTECTED', statusCode: 409 },
+      });
+      expect(mockPrisma.userRole.delete).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+      // One read of one column, scoped to this organisation.
+      expect(mockPrisma.organization.findFirst).toHaveBeenCalledWith({
+        where: { id: ORG_A },
+        select: { ownerUserId: true },
+      });
+    });
+
+    it('allows taking Organization Administrator from an admin who is not the owner', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 3 });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-2', userId: 'user-2', roleId: 'role-1' });
+      owned('user-1');
+
+      await service.removeRoleFromUser('user-2', 'role-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.userRole.delete).toHaveBeenCalledWith({ where: { id: 'ur-2' } });
+    });
+
+    it('protects nobody when no owner is recorded', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 3 });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
+      owned(null);
+
+      await service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.userRole.delete).toHaveBeenCalledWith({ where: { id: 'ur-1' } });
+    });
+
+    it("leaves the owner's other roles alone: only Organization Administrator is protected", async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-9', userId: 'user-1', roleId: 'role-1' });
+      owned('user-1');
+
+      await service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.userRole.delete).toHaveBeenCalledWith({ where: { id: 'ur-9' } });
+      expect(mockPrisma.organization.findFirst).not.toHaveBeenCalledWith(
+        expect.objectContaining({ select: { ownerUserId: true } }),
+      );
     });
   });
 
