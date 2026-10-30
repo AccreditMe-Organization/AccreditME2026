@@ -146,8 +146,23 @@ export class PlatformTenantService {
       actorId,
     );
 
-    // ACC-221 — the person created with the tenant is its account owner.
+    // ACC-221 — the person created with the tenant is its account owner, in
+    // the new organisation's own trail, in the shape the backfill writes.
     await this.prisma.organization.update({ where: { id: org.id }, data: { ownerUserId: invitedUser.id } });
+    await this.auditLog.log({
+      tenantId: org.id,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'Organization',
+      objectId: org.id,
+      before: { ownerUserId: null },
+      after: { ownerUserId: invitedUser.id },
+      metadata: {
+        source: 'tenant_creation',
+        ticket: 'ACC-221',
+        reason: "The organisation's account owner (ACC-221) is the person it was created with.",
+      },
+    });
 
     const tenantAdminRole = await this.prisma.role.findFirst({
       where: { organizationId: org.id, key: 'TENANT_ADMIN' },

@@ -202,6 +202,23 @@ describe('PlatformTenantService', () => {
       expect(mockPrisma.organization.update.mock.invocationCallOrder[0]).toBeGreaterThan(
         mockUserService.invite.mock.invocationCallOrder[0] ?? Infinity,
       );
+      // One audit row, in the new organisation's own trail, after the update.
+      const ownerRows = mockAuditLog.log.mock.calls.filter(([e]) => e.after && 'ownerUserId' in e.after);
+      expect(ownerRows).toHaveLength(1);
+      expect(ownerRows[0]![0]).toEqual({
+        tenantId: TENANT_ID,
+        actorId: ACTOR_ID,
+        action: 'UPDATE',
+        objectType: 'Organization',
+        objectId: TENANT_ID,
+        before: { ownerUserId: null },
+        after: { ownerUserId: 'invited-user-1' },
+        metadata: expect.objectContaining({ source: 'tenant_creation', ticket: 'ACC-221' }),
+      });
+      const auditCall = mockAuditLog.log.mock.calls.indexOf(ownerRows[0]!);
+      expect(mockAuditLog.log.mock.invocationCallOrder[auditCall]).toBeGreaterThan(
+        mockPrisma.organization.update.mock.invocationCallOrder[0] ?? Infinity,
+      );
     });
 
     it("a plan set at creation sets the AI allocation to the plan's credits, after bootstrap (ACC-194, D3)", async () => {
