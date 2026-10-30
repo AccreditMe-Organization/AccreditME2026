@@ -131,12 +131,13 @@ export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | '
             <span></span>
           </ng-template>
 
-          <ng-template #listRow let-committee let-v="visible">
+          <ng-template #listRow let-committee let-i="index" let-v="visible">
             <!-- amListRow carries the keyboard contract: one tab stop for the
                  table, arrows between rows, Enter opens the committee. -->
             <div
               amListRow
               [amListRowKey]="committee.id"
+              [amListRowIndex]="i"
               (rowOpen)="onOpen(committee)"
               class="grid items-center gap-3 px-3 py-2 cursor-pointer"
               style="grid-template-columns: var(--am-list-cols)"

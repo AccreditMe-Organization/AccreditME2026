@@ -4604,7 +4604,7 @@ is in `CommitteeListsService`:
   `RecordPanelComponent` blocks, their inline Change role and Remove icons, and
   the page's filter of the whole committees list for children. With the
   `ListRowDirective` rows gone, no NG0100 was measured on the page
-  (ACC-205 / ACC-153 stay open for the directive's other users).
+  (ACC-269 then fixed it in the directive for every list, §10.13).
 - **Measured** in `committee-panels.layout.spec.ts`, both languages:
   - Panels at 0, 3, 5 and 12 rows: 294 / 328, rows 52 / 58, never overflowing.
   - The popup body at 720 × 560: only the list scrolls, with rows at least 44.
@@ -9124,16 +9124,25 @@ restore-by-index path passes the delete test and silently mis-focuses every
 edit that re-sorts. Rows opt in by binding `amListRowKey` to the same value
 the list tracks by.
 
-**`amListRowIndex`: the first row by the list's count, not the DOM's (ACC-260
-PR D).** The roving tab stop's `tabindex` binding asks "am I the first row?".
-Asked of the DOM, the answer changes between Angular's check and its re-check
-whenever a search or a page removes the first row: with the app's animations, a
-removed row is still in the DOM for the first pass and gone for the second, so
-the next row's `tabindex` flips from -1 to 0 and the page throws NG0100 in a dev
-build. A row bound with `[amListRowIndex]="i"` (the row template's
-`let-i="index"`) answers from the list instead. Opt in; a row without it keeps
-the DOM check. **The Recycle bin is the first to pass it**; the directive's
-other users are still open under ACC-205 / ACC-153.
+**`amListRowIndex`: the first row by the list's count, never the DOM's
+(ACC-260 PR D, required since ACC-269).** The roving tab stop's `tabindex`
+binding asks "am I the first row?". Asked of the DOM, the answer changes between
+Angular's check and its re-check whenever a search or a page removes the first
+row: with the animation renderer, a removed row is still in the DOM for the
+first pass and gone for the second, so the next row's `tabindex` flips from -1
+to 0 and the page throws NG0100 in a dev build. So the row answers from the
+list: `amListRowIndex` is a REQUIRED input, bound `[amListRowIndex]="i"` from
+the row template's `let-i="index"`, and `isFirstRow()` reads nothing else. A row
+without one fails `ng build`. Users, Committees, Lookup categories and the
+Recycle bin all pass it. `siblings()` still reads the DOM, but only in the key
+handlers and `ngOnDestroy`, never in a binding.
+**The guard is `list-row.ng0100.spec.ts`**, which renders a real data list
+with the animation renderer loaded and searches the first row away. A browser
+check cannot see the defect in today's app: `provideAnimationsAsync()` loads its
+animation renderer only when a component with `animations` metadata renders,
+and no component in the app or in PrimeNG 21.1.9 has any, so removed rows leave
+the DOM at once (measured on ACC-269: the old DOM check logged no NG0100 in the
+dev build either).
 
 **Selection's first user is the Recycle bin** (ACC-260 PR D): the page owns the
 selected ids, binds `amListRowSelected` and flips them on `rowToggleSelect`
