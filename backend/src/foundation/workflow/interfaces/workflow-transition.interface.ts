@@ -11,6 +11,11 @@ export interface IWorkflowTransition {
   validatorConfig: Record<string, unknown> | null;
   isApprovalPath: boolean;
   kind: string; // WorkflowTransitionKind — ACC-190
+  // ACC-271 PR 3 — who moves the record: PERSON (whoever works the from-stage)
+  // or APP (the module's own code), read through transitionMover().
+  mover: string; // TransitionMover
+  // ACC-271 PR 3 — on an APP move, on a template read: when the app runs it (APP_MOVES).
+  appMove?: { key: string; en: string; ar: string };
   actions?: IWorkflowTransitionAction[];
 }
 
