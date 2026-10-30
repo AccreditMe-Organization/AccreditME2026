@@ -460,6 +460,25 @@ model Organization {
   planId        String? // FK to the new DB-driven Plan catalog — nullable: pre-ACC-13 tenants have none yet
   planCatalog   Plan?   @relation(fields: [planId], references: [id])
 
+  // ACC-221 — the organisation's ACCOUNT OWNER (Ahmad, 29 Oct): the one person
+  // nobody inside the tenant can remove Organization Administrator from, nor
+  // deactivate, suspend or offboard. Only a platform admin moves it.
+  //
+  // Set at tenant creation (PlatformTenantService.createTenant(), the adminEmail
+  // user); the website order path must set it too when billing ships. Existing
+  // organisations get it from backfill-acc221-organization-owner (their single
+  // ACTIVE Organization Administrator).
+  //
+  // This column only RECORDS the owner. The protections are the role, user and
+  // offboarding guards built on top of it (ACC-221's follow-up); until those
+  // ship, nothing reads it.
+  //
+  // onDelete: SetNull, not Restrict: users are only ever soft-offboarded
+  // (status INACTIVE), so a User row is deleted only when a whole tenant is torn
+  // down, and Restrict would make that teardown fail on its own owner row.
+  ownerUserId String?
+  owner       User?   @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -502,6 +521,7 @@ model Organization {
   @@index([status])
   @@index([isPlatformOrg])
   @@index([planId])
+  @@index([ownerUserId]) // ACC-221
 }
 
 // ---------------------------------------------------------------------------
@@ -632,6 +652,7 @@ model User {
   storedFilesRestored             StoredFile[]               @relation("StoredFileRestoredBy")
   storageConfirmedOrgs            Organization[]             @relation("OrganizationStorageConfirmedBy")
   storageChangeRequestedOrgs      Organization[]             @relation("OrganizationStorageChangeRequestedBy")
+  ownedOrganizations              Organization[]             @relation("OrganizationOwner") // ACC-221
   taskRequestsMade                TaskRequest[]              @relation("TaskRequestRequestedBy")
   taskRequestsDecided             TaskRequest[]              @relation("TaskRequestDecidedBy")
   notifications                   Notification[]
