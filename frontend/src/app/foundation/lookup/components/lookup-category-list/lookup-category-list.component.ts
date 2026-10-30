@@ -93,10 +93,11 @@ import { ListRowDirective } from '../../../../shared/components/data-list/list-r
           <span></span>
         </ng-template>
 
-        <ng-template #listRow let-category let-visible="visible">
+        <ng-template #listRow let-category let-i="index" let-visible="visible">
           <div
             amListRow
             [amListRowKey]="category.key"
+            [amListRowIndex]="i"
             (rowOpen)="open(category)"
             (click)="open(category)"
             class="grid cursor-pointer items-center gap-3 border-b border-[var(--am-border)] px-3 py-2"

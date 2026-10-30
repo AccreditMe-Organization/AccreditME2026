@@ -12,9 +12,10 @@ import { ListRowDirective } from './list-row.directive';
   imports: [ListRowDirective],
   template: `
     <div class="rows" [attr.dir]="dir">
-      @for (row of rows; track row.id) {
+      @for (row of rows; track row.id; let i = $index) {
         <div
           amListRow
+          [amListRowIndex]="i"
           [amListRowSelected]="selected.has(row.id)"
           [amListRowDisabled]="row.id === 'c'"
           (rowOpen)="opened.push(row.id)"

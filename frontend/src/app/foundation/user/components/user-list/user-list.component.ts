@@ -183,7 +183,7 @@ export type RowAction =
             <span></span>
           </ng-template>
 
-          <ng-template #listRow let-user let-v="visible">
+          <ng-template #listRow let-user let-i="index" let-v="visible">
             <!-- ACC-111 — the row's keyboard contract lives in amListRow: one
                  tab stop for the table, arrows between rows, Enter opens,
                  →/← reach the row's own actions. The key is what lets focus
@@ -191,6 +191,7 @@ export type RowAction =
             <div
               amListRow
               [amListRowKey]="user.id"
+              [amListRowIndex]="i"
               (rowOpen)="onView(user)"
               class="grid items-center gap-3 px-3 py-2 cursor-pointer"
               style="grid-template-columns: var(--am-list-cols)"
