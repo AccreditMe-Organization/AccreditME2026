@@ -148,6 +148,52 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     });
   }
 
+  // ── ACC-221 — the account owner ─────────────────────────────────────────
+  describe('the account owner (ACC-221)', () => {
+    it('shows the chip and the owner line on the Roles panel, and offers no Deactivate', () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, record({ isAccountOwner: true }));
+      // The owner holds Organization Administrator; an empty panel shows its empty state instead.
+      ctx.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/roles`)).flush([
+        { id: 'g-admin', role: { id: 'r-admin', key: 'TENANT_ADMIN', nameEn: 'Organization Administrator', nameAr: 'مسؤول المؤسسة', isActive: true }, grantedAt: '2026-10-01T09:00:00.000Z', source: 'DIRECT', grantedViaHeadPositionId: null, grantedViaHeadPositionOrgUnitId: null },
+      ]);
+      ctx.fixture.detectChanges();
+
+      expect(ctx.el.querySelector('[data-user-account-owner]')!.textContent!.trim()).toBe('Account owner');
+      expect(actions(ctx.el)).not.toContain('deactivate');
+      expect(ctx.el.querySelector('[data-user-account-owner-line]')!.textContent!.trim()).toBe(
+        'This is the account owner. Only AccreditMe support can transfer ownership.',
+      );
+    });
+
+    it("does not offer Revoke invitation on the owner's pending invitation", () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, record({ isAccountOwner: true, status: 'INVITED' }));
+      expect(actions(ctx.el)).not.toContain('revokeInvitation');
+    });
+
+    it('an administrator who is not the owner still has every action, and no chip', () => {
+      const ctx = render({ permissions: ADMIN });
+      flushUser(ctx, record({ isAccountOwner: false }));
+      ctx.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/roles`)).flush([]);
+      ctx.fixture.detectChanges();
+
+      expect(actions(ctx.el)).toContain('deactivate');
+      expect(ctx.el.querySelector('[data-user-account-owner]')).toBeNull();
+      expect(ctx.el.querySelector('[data-user-account-owner-line]')).toBeNull();
+
+      const invited = render({ permissions: ADMIN });
+      flushUser(invited, record({ isAccountOwner: false, status: 'INVITED' }));
+      expect(actions(invited.el)).toContain('revokeInvitation');
+    });
+
+    it('Arabic: «مالك الحساب»', () => {
+      const ctx = render({ permissions: ADMIN, arabic: true });
+      flushUser(ctx, record({ isAccountOwner: true }));
+      expect(ctx.el.querySelector('[data-user-account-owner]')!.textContent!.trim()).toBe('مالك الحساب');
+    });
+  });
+
   it('1 · Manage roles needs roles:manage, on the Roles panel', () => {
     const without = render({ permissions: ADMIN.filter((p) => p !== 'roles:manage') });
     flushUser(without, record());
