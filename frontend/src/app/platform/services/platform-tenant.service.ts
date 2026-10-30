@@ -18,7 +18,10 @@ export interface IPlatformTenantDetail extends IPlatformTenantSummary {
   userCount: number;
   modules: Record<string, boolean>;
   ai: IAiBalance;
-  tenantAdmins: { id: string; name: string; email: string }[];
+  // ACC-221 — isOwner marks the account owner among the administrators.
+  tenantAdmins: { id: string; name: string; email: string; isOwner: boolean }[];
+  // ACC-221 — the account owner, or null when none is recorded.
+  owner: { id: string; name: string; email: string } | null;
 }
 
 export interface CreateTenantDto {
@@ -67,6 +70,12 @@ export class PlatformTenantService {
   // renewal, and the next plan change replaces it. No overage value (D19).
   allocateAiCredits(id: string, monthlyCredits: number): Observable<void> {
     return this.http.patch<void>(`${this.baseUrl}/tenants/${id}/ai-credits`, { monthlyCredits });
+  }
+
+  // ACC-221 — move the account owner to another active Organization
+  // Administrator of this tenant (400 OWNER_MUST_BE_ACTIVE_ADMINISTRATOR otherwise).
+  transferOwnership(tenantId: string, userId: string): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/tenants/${tenantId}/owner`, { userId });
   }
 
   startImpersonation(tenantId: string, userId: string): Observable<void> {

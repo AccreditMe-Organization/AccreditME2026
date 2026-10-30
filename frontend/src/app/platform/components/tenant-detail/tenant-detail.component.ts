@@ -1,8 +1,8 @@
 import { LANDING_ROUTE } from '../../../core/navigation/landing-route';
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -14,12 +14,17 @@ import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { AmDatePipe, FormatService } from '../../../core/formatting';
 import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
+import { OverlaySelectComponent } from '../../../shared/components/overlay-select/overlay-select.component';
+import { AmConfirmService } from '../../../shared/components/confirm/am-confirm.service';
+import { refusalCode } from '../../../core/http/refusal';
 
 @Component({
   selector: 'app-tenant-detail',
   standalone: true,
   imports: [PageHeaderComponent, 
     ReactiveFormsModule,
+    FormsModule,
+    OverlaySelectComponent,
     TranslatePipe,
     AmDatePipe,
     ButtonModule,
@@ -72,6 +77,48 @@ import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
             </p>
           </app-card>
         </div>
+
+        <hr />
+
+        <!-- ACC-221 — the account owner, and moving it. Only here: inside the
+             tenant the owner is protected. -->
+        <h3 class="text-lg font-medium">{{ 'platform.accountOwner.heading' | translate }}</h3>
+        <p class="text-sm m-0" data-tenant-owner>
+          @if (t.owner; as owner) {
+            {{ 'platform.accountOwner.line' | translate: { name: owner.name, email: owner.email } }}
+          } @else {
+            {{ 'platform.accountOwner.none' | translate }}
+          }
+        </p>
+        @if (transferCandidates().length > 0) {
+          <div class="flex flex-wrap items-end gap-2" data-tenant-transfer>
+            <div class="flex flex-col gap-1 min-w-[260px]">
+              <label class="text-sm font-medium" id="transferOwnerLabel">{{ 'platform.accountOwner.newOwner' | translate }}</label>
+              <app-overlay-select
+                [options]="transferCandidates()"
+                optionLabel="label"
+                optionValue="id"
+                [placeholder]="'platform.accountOwner.choose' | translate"
+                [ariaLabel]="'platform.accountOwner.newOwner' | translate"
+                [(ngModel)]="transferTo"
+                data-tenant-transfer-picker
+              />
+            </div>
+            <p-button
+              [label]="'platform.accountOwner.transfer' | translate"
+              size="small"
+              [outlined]="true"
+              [disabled]="!transferTo()"
+              [loading]="transferring()"
+              (onClick)="confirmTransfer(t.id)"
+              data-action="transferOwnership"
+            />
+          </div>
+        } @else {
+          <p class="text-sm text-[var(--am-text-secondary)] m-0" data-tenant-transfer-none>
+            {{ 'platform.accountOwner.noOtherAdmin' | translate }}
+          </p>
+        }
 
         <hr />
 
@@ -137,6 +184,8 @@ export class TenantDetailComponent implements OnInit {
   private readonly platformTenantService = inject(PlatformTenantService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly amConfirm = inject(AmConfirmService);
+  private readonly translate = inject(TranslateService);
 
   readonly tenantId = this.route.snapshot.paramMap.get('id')!;
   readonly moduleKeys = KNOWN_MODULE_KEYS;
@@ -146,6 +195,18 @@ export class TenantDetailComponent implements OnInit {
   readonly savedMessage = signal<string | null>(null);
   readonly savingModules = signal(false);
   readonly savingAi = signal(false);
+
+  /**
+   * ACC-221 — who ownership can move to: the tenant's OTHER active
+   * Organization Administrators (tenantAdmins is active TENANT_ADMIN holders).
+   */
+  readonly transferCandidates = computed(() =>
+    (this.tenant()?.tenantAdmins ?? [])
+      .filter((admin) => !admin.isOwner)
+      .map((admin) => ({ id: admin.id, label: `${admin.name} · ${admin.email}`, name: admin.name })),
+  );
+  readonly transferTo = signal<string | null>(null);
+  readonly transferring = signal(false);
 
   readonly modulesForm = this.fb.group(
     Object.fromEntries(this.moduleKeys.map((key) => [key, [false]])),
@@ -206,6 +267,43 @@ export class TenantDetailComponent implements OnInit {
       error: () => {
         this.savingAi.set(false);
         this.error.set('platform.errorAction');
+      },
+    });
+  }
+
+  confirmTransfer(tenantId: string): void {
+    const candidate = this.transferCandidates().find((c) => c.id === this.transferTo());
+    if (!candidate) return;
+    const current = this.tenant()?.owner?.name ?? null;
+    this.amConfirm.ask({
+      tone: 'neutral',
+      header: this.translate.instant('platform.accountOwner.confirmHeader', { name: candidate.name }),
+      message: current
+        ? this.translate.instant('platform.accountOwner.confirmMessage', { name: candidate.name, current })
+        : this.translate.instant('platform.accountOwner.confirmMessageNoOwner', { name: candidate.name }),
+      acceptLabel: this.translate.instant('platform.accountOwner.transfer'),
+      accept: () => this.runTransfer(tenantId, candidate.id),
+    });
+  }
+
+  private runTransfer(tenantId: string, userId: string): void {
+    this.transferring.set(true);
+    this.error.set(null);
+    this.savedMessage.set(null);
+    this.platformTenantService.transferOwnership(tenantId, userId).subscribe({
+      next: () => {
+        this.transferring.set(false);
+        this.transferTo.set(null);
+        this.savedMessage.set('platform.accountOwner.transferred');
+        this.load();
+      },
+      error: (err: unknown) => {
+        this.transferring.set(false);
+        this.error.set(
+          refusalCode(err) === 'OWNER_MUST_BE_ACTIVE_ADMINISTRATOR'
+            ? 'platform.accountOwner.refusalMustBeAdmin'
+            : 'platform.errorAction',
+        );
       },
     });
   }
