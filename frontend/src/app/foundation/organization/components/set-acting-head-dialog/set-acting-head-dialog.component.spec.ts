@@ -7,6 +7,7 @@ import { ConfirmationService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
 import { IOrgUnitHeadStatus } from '../../services/org-unit-head.service';
 import { SetActingHeadDialogComponent } from './set-acting-head-dialog.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 /**
  * ACC-120 slice 2 — what these tests are for.
@@ -91,6 +92,7 @@ describe('SetActingHeadDialogComponent (ACC-120 slice 2)', () => {
 
   // ACC-172 — two people with one name are told apart by their position.
   describe('the person picker shows each position (ACC-172)', () => {
+    preserveDocumentLanguage();
     let fixture: ComponentFixture<HostComponent>;
 
     /** The person picker's open list: [name, the quieter line under it]. */

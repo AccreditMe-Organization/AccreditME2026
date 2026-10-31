@@ -13,6 +13,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { IOrgUnitHeadStatus } from '../../services/org-unit-head.service';
 import { AppointSuccessorDialogComponent } from './appoint-successor-dialog.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-133 — Appoint successor (dialog C): POST /handover. Head access starts
 // when it is SAVED, and the dialog says so in the header line, the button and
@@ -98,6 +99,7 @@ describe('AppointSuccessorDialogComponent (ACC-133)', () => {
 
   // ACC-172 — two people with one name are told apart by their position.
   describe('the person picker shows each position (ACC-172)', () => {
+    preserveDocumentLanguage();
 
     /** The person picker's open list: [name, the quieter line under it]. */
     const openPersonOptions = (): [string, string][] => {

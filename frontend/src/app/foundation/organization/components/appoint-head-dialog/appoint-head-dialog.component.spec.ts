@@ -10,6 +10,7 @@ import { environment } from '../../../../../environments/environment';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { AppointHeadDialogComponent } from './appoint-head-dialog.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-133 — Appoint head (dialog A, Horizon 1): POST /assign with the person and
 // the position; From is read-only "Now, when you save"; no note field; the
@@ -68,6 +69,7 @@ describe('AppointHeadDialogComponent (ACC-133)', () => {
 
   // ACC-172 — two people with one name are told apart by their position.
   describe('the person picker shows each position (ACC-172)', () => {
+    preserveDocumentLanguage();
 
     /** The person picker's open list: [name, the quieter line under it]. */
     const openPersonOptions = (): [string, string][] => {
