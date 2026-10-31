@@ -1,5 +1,6 @@
 import { IWorkflowStage } from './workflow-stage.interface';
 import { TaskDueHours } from './stage-task-definition.interface';
+import type { WhoRules } from '../stage-who';
 
 export interface IWorkflowTemplate {
   id: string;
@@ -32,6 +33,12 @@ export interface IWorkflowTemplate {
   // ACC-271 PR 3 — detail only. The assignee kinds a stage of this record type
   // may be worked by (STAGE_ASSIGNEE_KINDS), so no screen keeps a copy.
   assigneeKinds?: string[];
+  // ACC-271 PR 5-be — detail only. The rules a stage's `who` must meet, built
+  // from the constants the save validates against (stage-who.ts): the fields
+  // each kind uses and requires, the modes (Committee vote only with a single
+  // Committee entry), when the mode choice is shown, and the mode sent when it
+  // is not. So the stage screen keeps no copy of a rule.
+  whoRules?: WhoRules;
   taskDueHours?: TaskDueHours;
   // ACC-255 — detail only. What this template's record type offers a stage,
   // read from the registries (record-registry.ts) so no screen keeps a copy:

@@ -3187,13 +3187,49 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
   - **Nothing on the per-request path** (guards, throttler, interceptors,
     middleware, `verifySessionIdentity()`); no polling; no query inside a row
     loop.
+- **PR 5-be: the backend for the stage screens** (deployed before the screens;
+  today's screens keep working).
+  - **`whoRules` on the template read:** each kind's `uses` and `requires`,
+    the `modes` (Committee vote carries `onlyWithSingle: 'COMMITTEE'`),
+    `modeChoiceShownWhen` (two or more entries, or a single Committee entry)
+    and `defaultMode` (ANY_ONE, sent when no choice is shown). It is built
+    from the constants `assertWhoShape()` checks against (`KIND_FIELDS`,
+    `STAGE_WHO_MODES`, `MODE_ONLY_WITH_SINGLE` in `stage-who.ts`), and
+    `stage-who.rules.spec.ts` asks the validator about every kind and mode
+    of every record type, so the served rules and the save cannot disagree.
+  - **`holderCount` on each Fixed position entry** (null on every other
+    kind): ACTIVE people holding the position with that unit as their primary
+    unit, the assignment picker's holder rule. ONE grouped count per read,
+    scoped by the organisation, whatever the number of entries; none when no
+    entry is a Fixed position.
+  - **Creating a stage with `who`** (`POST /workflow-templates/:id/stages`):
+    `approvalMode` and `assigneeStrategy` are required only without `who`.
+    With it, the stage is converted in the transaction that creates it,
+    after the same shape and tenant checks as a who save, and its CREATE
+    audit row carries `whoMode` and `whoEntries`. An old people field sent
+    beside `who` (set, not null or empty) is 400 `WHO_MOVED_TO_STAGE`. A
+    stage created with the old fields only is created exactly as before.
+  - **Creating a move out of a converted stage** needs no `triggerCondition`.
+    Sent, it must be the column's default, ROLE_BASED (what the old Add dialog
+    sends). Any other trigger, or a role, person or permission, is
+    `WHO_MOVED_TO_STAGE`, never stored unread. This replaces PR 3's rule,
+    which accepted any trigger but SYSTEM_AUTOMATIC. A move out of a stage
+    still on the old columns must name its trigger (400 otherwise).
+  - **The Committee vote sentence is the drawn wording:** "The {committee}
+    decides by vote." / «تقرر {committee} بالتصويت.», and for the record's
+    committee "The record's committee decides by vote." / «تقرر لجنة السجل
+    بالتصويت.». A committee's Arabic name already begins with «لجنة», so the
+    verb is followed by the whole name.
+  - **A Specific user may be ACTIVE or INVITED** (an invited person joins the
+    pool when they accept); INACTIVE and SUSPENDED are `WHO_USER_NOT_ACTIVE`.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
   Postgres). PR 3: `stage-who.spec.ts`, `app-moves.spec.ts`,
   `workflow-template.who.spec.ts`,
   `setup-condition.starting-assignment.spec.ts` and `stage-who.db-spec.ts`
-  (real Postgres).
+  (real Postgres). PR 5-be: `stage-who.rules.spec.ts`,
+  `workflow-template.pr5be.spec.ts`, and more cases in `stage-who.db-spec.ts`.
 
 ---
 

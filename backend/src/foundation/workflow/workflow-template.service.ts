@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import {
@@ -54,6 +54,7 @@ import {
   entryKey,
   normalizeEntry,
   whoAuditEntries,
+  whoRulesFor,
   whoSentence,
   type WhoEntryField,
   type WhoEntryForSentence,
@@ -153,6 +154,24 @@ export const OLD_STAGE_WHO_FIELDS = [
 ] as const;
 export const OLD_TRANSITION_WHO_FIELDS = ['triggerCondition', 'triggerRoleId', 'triggerUserId', 'requiredPermission'] as const;
 
+/**
+ * ACC-271 PR 5-be — what a NEW move's people fields are compared with, out of a
+ * converted stage: the column's own default trigger (schema.prisma) and no role,
+ * person or permission. Sending nothing, or exactly what the column would store
+ * anyway (the old Add dialog's ROLE_BASED), says nothing and is accepted; any
+ * other value names people the stage now decides, and is refused
+ * (WHO_MOVED_TO_STAGE), never silently ignored.
+ */
+const NEW_MOVE_PEOPLE_BASELINE: Readonly<Record<(typeof OLD_TRANSITION_WHO_FIELDS)[number], string | null>> = {
+  triggerCondition: 'ROLE_BASED',
+  triggerRoleId: null,
+  triggerUserId: null,
+  requiredPermission: null,
+};
+
+/** ACC-271 PR 5-be — a stage created with `who` names no old people field at all. */
+const NO_OLD_STAGE_PEOPLE: Readonly<Record<string, null>> = Object.fromEntries(OLD_STAGE_WHO_FIELDS.map((f) => [f, null]));
+
 /** An empty string and null both mean "not set". */
 const oldValue = (value: unknown): unknown => (typeof value === 'string' && value.trim() === '' ? null : (value ?? null));
 
@@ -204,6 +223,9 @@ function entryForSentence(entry: WhoEntryInput, refs: WhoReferences): WhoEntryFo
 
 /** A stored entry row, as the read and the audit see it. */
 type StoredWhoEntry = WhoEntryInput & { id: string; order: number; isStartingAssignment: boolean };
+
+/** ACC-271 PR 5-be — a Fixed position entry's key in the holder counts. */
+const holderKey = (positionId: string, orgUnitId: string): string => `${positionId}|${orgUnitId}`;
 
 /** ACC-255 — the exactly-one flags of a record type (STAGE_FLAG_EXACTLY_ONE guards them). */
 function exactlyOneFlags(objectType: WorkflowObjectType): string[] {
@@ -282,11 +304,15 @@ export class WorkflowTemplateService {
     // stage creates (ACC-190), the live counts (ACC-255), the priorities' due
     // times (ACC-208), and the names every stage's entries are read with — one
     // query per kind for the whole template (ACC-271 PR 3), never per row.
-    const [stageTasks, liveCounts, taskDueHours, refs] = await Promise.all([
+    // ACC-271 PR 5-be — and how many hold each Fixed position entry's position
+    // in its unit: one grouped count for the whole template.
+    const allEntries = stages.flatMap((s) => s.assignees ?? []);
+    const [stageTasks, liveCounts, taskDueHours, refs, holders] = await Promise.all([
       this.stageTasks.summaryForStages(stages.map((s) => s.id), organizationId),
       this.liveCountsByStage(id, organizationId),
       this.stageTasks.taskDueHours(organizationId),
-      this.loadWhoReferences(stages.flatMap((s) => s.assignees ?? []), organizationId),
+      this.loadWhoReferences(allEntries, organizationId),
+      this.holderCountsFor(allEntries, organizationId),
     ]);
     const recordRoute = RECORD_ROUTES[template.objectType];
     const stageKeys = new Map(stages.map((s) => [s.id, s.key]));
@@ -298,6 +324,9 @@ export class WorkflowTemplateService {
       taskDueHours,
       // ACC-271 PR 3 — the kinds a stage of this record type may be worked by.
       assigneeKinds: assigneeKindsFor(template.objectType),
+      // ACC-271 PR 5-be — the rules a stage's who must meet, from the constants
+      // the save validates against.
+      whoRules: whoRulesFor(template.objectType),
       // ACC-255 — what a stage of this record type may allow and mean.
       recordActions: recordActionsFor(template.objectType).map(({ key, labelKey, permissionKey }) => ({ key, labelKey, permissionKey })),
       stageFlags: stageFlagsFor(template.objectType).map(({ key, labelKey, cardinality }) => ({ key, labelKey, cardinality })),
@@ -315,7 +344,7 @@ export class WorkflowTemplateService {
         taskDefinitionCount: stageTasks.get(s.id)?.taskDefinitionCount ?? 0,
         longestTaskHours: stageTasks.get(s.id)?.longestTaskHours ?? null,
         liveCount: liveCounts.get(s.id) ?? 0,
-        ...this.whoRead(s.whoMode, s.assignees ?? [], refs),
+        ...this.whoRead(s.whoMode, s.assignees ?? [], refs, holders),
       })),
     };
   }
@@ -376,10 +405,36 @@ export class WorkflowTemplateService {
   }
 
   /**
-   * Refuses an entry that names anything outside this organisation (or nothing
-   * at all), and a person who can no longer sign in. One read per kind.
+   * ACC-271 PR 5-be — how many hold each Fixed position entry's position in its
+   * unit, by the holder rule the assignment picker counts with (ACTIVE, that
+   * position, that unit as their primary unit). ONE grouped count for any
+   * number of entries, scoped by the organisation; none when there are no
+   * Fixed position entries.
    */
-  private async assertWhoReferences(entries: Required<WhoEntryInput>[], organizationId: string): Promise<void> {
+  private async holderCountsFor(entries: WhoEntryInput[], organizationId: string): Promise<Map<string, number>> {
+    const fixed = entries.filter((e) => e.kind === 'POSITION_IN_UNIT' && e.positionId && e.orgUnitId);
+    if (fixed.length === 0) return new Map();
+    const groups = await this.prisma.user.groupBy({
+      by: ['positionId', 'primaryOrgUnitId'],
+      where: {
+        organizationId,
+        status: 'ACTIVE',
+        positionId: { in: idsOf(fixed, 'positionId') },
+        primaryOrgUnitId: { in: idsOf(fixed, 'orgUnitId') },
+      },
+      _count: { _all: true },
+    });
+    return new Map(
+      groups.flatMap((g) => (g.positionId && g.primaryOrgUnitId ? [[holderKey(g.positionId, g.primaryOrgUnitId), g._count._all] as const] : [])),
+    );
+  }
+
+  /**
+   * Refuses an entry that names anything outside this organisation (or nothing
+   * at all), and a person who can no longer sign in. One read per kind; returns
+   * what it read, so a caller names the entries without reading them again.
+   */
+  private async assertWhoReferences(entries: Required<WhoEntryInput>[], organizationId: string): Promise<WhoReferences> {
     const refs = await this.loadWhoReferences(entries, organizationId);
     const known: Record<WhoEntryField, Map<string, unknown>> = {
       userId: refs.users,
@@ -400,6 +455,7 @@ export class WorkflowTemplateService {
       const status = entry.userId ? refs.users.get(entry.userId)?.status : undefined;
       if (status === 'INACTIVE' || status === 'SUSPENDED') throw new WorkflowRefusalException('WHO_USER_NOT_ACTIVE', { index });
     });
+    return refs;
   }
 
   /** A stage's `who` and its sentence, from its stored entries and the batched names. */
@@ -407,6 +463,7 @@ export class WorkflowTemplateService {
     whoMode: PrismaWorkflowStage['whoMode'],
     entries: StoredWhoEntry[],
     refs: WhoReferences,
+    holders: Map<string, number>,
   ): { who: IStageWho | null; whoSentence: { en: string; ar: string } | null } {
     if (!isConvertedStage({ whoMode }) || whoMode === null) return { who: null, whoSentence: null };
     const named = entries.map((e) => entryForSentence(e, refs));
@@ -430,6 +487,8 @@ export class WorkflowTemplateService {
             committeeRoleValueId: n.committeeRoleValueId,
             committeeRole: n.committeeRoleValueId ? (refs.roles.get(n.committeeRoleValueId) ?? null) : null,
             isStartingAssignment: e.isStartingAssignment,
+            holderCount:
+              n.kind === 'POSITION_IN_UNIT' && n.positionId && n.orgUnitId ? (holders.get(holderKey(n.positionId, n.orgUnitId)) ?? 0) : null,
           };
         }),
       },
@@ -658,6 +717,24 @@ export class WorkflowTemplateService {
     const actions = rules.actions ?? newStageActionKeys(template.objectType);
     const flags = rules.flags ?? [];
 
+    // ACC-271 PR 5-be — a stage created with `who` is converted in the same
+    // transaction that creates it, checked exactly as a who save is: its shape
+    // first, then every id it names against this organisation. It names no old
+    // people field beside `who` (WHO_MOVED_TO_STAGE); a stage created the old
+    // way, without `who`, is created exactly as before.
+    const { who: sentWho } = dto;
+    let wantedWho: Required<WhoEntryInput>[] | undefined;
+    let whoRefs: WhoReferences | undefined;
+    if (sentWho !== undefined) {
+      refuseChangedOldPeopleField(NO_OLD_STAGE_PEOPLE, dto as unknown as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
+      const recordRoute = RECORD_ROUTES[template.objectType];
+      wantedWho = assertWhoShape(template.objectType, sentWho, {
+        unit: typeof recordRoute?.unit === 'function',
+        committee: typeof recordRoute?.committee === 'function',
+      });
+      whoRefs = await this.assertWhoReferences(wantedWho, organizationId);
+    }
+
     if (dto.assigneeUserId) {
       await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
     }
@@ -687,12 +764,15 @@ export class WorkflowTemplateService {
         slaWorkingHours: dto.slaWorkingHours ?? null,
         isInitial: dto.isInitial ?? false,
         isFinal: dto.isFinal ?? false,
-        approvalMode: dto.approvalMode,
+        // Absent only on a stage created with `who` (the DTO requires them
+        // otherwise): the columns then keep their defaults, which a converted
+        // stage never reads.
+        ...(dto.approvalMode !== undefined && { approvalMode: dto.approvalMode }),
         parallelThreshold: dto.parallelThreshold ?? null,
         // Org-validated above (ACC-22, closing the ACC-17 deferred gap) —
         // mirrors validateAssigneeUserId() for assigneeUserId just above.
         committeeId: dto.committeeId ?? null,
-        assigneeStrategy: dto.assigneeStrategy,
+        ...(dto.assigneeStrategy !== undefined && { assigneeStrategy: dto.assigneeStrategy }),
         assigneeUserId: dto.assigneeUserId ?? null,
         assigneeRoleId: dto.assigneeRoleId ?? null,
         assigneeCommitteeRoleValueId: dto.assigneeCommitteeRoleValueId ?? null,
@@ -700,6 +780,8 @@ export class WorkflowTemplateService {
         assigneeOrgUnitId: dto.assigneeOrgUnitId ?? null,
         escalationConfig: this.toJson(dto.escalationConfig),
         flags,
+        // ACC-271 PR 5-be — how the new stage's people decide; setting it converts the stage.
+        ...(sentWho !== undefined && { whoMode: sentWho.mode }),
       },
       });
       if (actions.length > 0) {
@@ -707,21 +789,41 @@ export class WorkflowTemplateService {
           data: actions.map((actionKey) => ({ organizationId, stageId: created.id, actionKey })),
         });
       }
+      // ACC-271 PR 5-be — the entries, in the transaction that creates the stage.
+      if (wantedWho) await this.replaceStageWho(tx, created.id, organizationId, wantedWho, actorId);
       await this.assertFlagCardinality(tx, templateId, counted);
       return created;
     });
 
-    // ACC-255 — the whole new stage, its actions and flags included.
+    // ACC-271 PR 5-be — the new stage's who, named once for the audit and the
+    // response from the references its check already read.
+    const entries: StoredWhoEntry[] = wantedWho
+      ? await this.prisma.workflowStageAssignee.findMany({ where: { organizationId, stageId: stage.id }, orderBy: { order: 'asc' } })
+      : [];
+    const holders = await this.holderCountsFor(entries, organizationId);
+    const refsRead = whoRefs;
+    const named = refsRead
+      ? {
+          whoMode: stage.whoMode ?? null,
+          whoEntries: whoAuditEntries(entries.map((e) => ({ ...entryForSentence(e, refsRead), isStartingAssignment: e.isStartingAssignment }))),
+        }
+      : {};
+
+    // ACC-255 — the whole new stage, its actions and flags included; ACC-271
+    // PR 5-be — and who works it, as a who save records it.
     await this.auditLog.log({
       tenantId: organizationId,
       actorId,
       action: 'CREATE',
       objectType: 'WorkflowStage',
       objectId: stage.id,
-      after: stageSnapshot(stage, actions),
+      after: { ...stageSnapshot(stage, actions), ...named },
     });
 
-    return this.mapStage(stage, undefined, actions);
+    return {
+      ...this.mapStage(stage, undefined, actions),
+      ...(refsRead ? this.whoRead(stage.whoMode, entries, refsRead, holders) : {}),
+    };
   }
 
   async updateStage(
@@ -870,7 +972,10 @@ export class WorkflowTemplateService {
     const entriesAfter: StoredWhoEntry[] = whoChanged
       ? await this.prisma.workflowStageAssignee.findMany({ where: { organizationId, stageId: id }, orderBy: { order: 'asc' } })
       : storedEntries;
-    const refs = await this.loadWhoReferences([...storedEntries, ...entriesAfter], organizationId);
+    const [refs, holders] = await Promise.all([
+      this.loadWhoReferences([...storedEntries, ...entriesAfter], organizationId),
+      this.holderCountsFor(entriesAfter, organizationId),
+    ]);
     const whoAudit = (mode: PrismaWorkflowStage['whoMode'], entries: StoredWhoEntry[]): Record<string, unknown> => ({
       whoMode: mode ?? null,
       whoEntries: whoAuditEntries(entries.map((e) => ({ ...entryForSentence(e, refs), isStartingAssignment: e.isStartingAssignment }))),
@@ -897,7 +1002,7 @@ export class WorkflowTemplateService {
 
     return {
       ...this.mapStage(updated, undefined, orderedActionKeys(objectType, actionsAfter)),
-      ...this.whoRead(updated.whoMode, entriesAfter, refs),
+      ...this.whoRead(updated.whoMode, entriesAfter, refs, holders),
     };
   }
 
@@ -1051,17 +1156,18 @@ export class WorkflowTemplateService {
       throw new ConflictException('A transition must connect two stages of the same template');
     }
     this.assertNoRetiredValidator(dto.validatorConfig);
-    // ACC-271 PR 3 — from a converted stage, whoever works it presses the move:
-    // a new move names no role, person or permission (nothing would read them),
-    // and is never the app's (only seeds write those, plan §4.4). The trigger
-    // condition an old screen sends is kept, unread; the mover is PERSON.
+    // ACC-271 PR 3 / 5-be — from a converted stage, whoever works it presses the
+    // move: a new move names no role, person or permission (nothing would read
+    // them), and is never the app's (only seeds write those, plan §4.4). Its
+    // trigger is optional; sent, it must be what the column stores anyway
+    // (NEW_MOVE_PEOPLE_BASELINE), or it is refused, never silently ignored. The
+    // mover is PERSON. A move out of a stage still on the old columns names its
+    // trigger, as before.
     const converted = isConvertedStage(fromStage);
     if (converted) {
-      refuseChangedOldPeopleField(
-        { triggerCondition: dto.triggerCondition === 'SYSTEM_AUTOMATIC' ? null : dto.triggerCondition, triggerRoleId: null, triggerUserId: null, requiredPermission: null },
-        dto as unknown as Record<string, unknown>,
-        OLD_TRANSITION_WHO_FIELDS,
-      );
+      refuseChangedOldPeopleField(NEW_MOVE_PEOPLE_BASELINE, dto as unknown as Record<string, unknown>, OLD_TRANSITION_WHO_FIELDS);
+    } else if (dto.triggerCondition === undefined) {
+      throw new BadRequestException(['triggerCondition is required for a move out of a stage that is not converted yet']);
     }
     await this.assertTransitionPermissionGrantable(dto.requiredPermission, organizationId);
 
@@ -1072,7 +1178,8 @@ export class WorkflowTemplateService {
         labelEn: dto.labelEn,
         labelAr: dto.labelAr,
         requiredPermission: dto.requiredPermission ?? null,
-        triggerCondition: dto.triggerCondition,
+        // Absent only on a move out of a converted stage: the column's default.
+        ...(dto.triggerCondition !== undefined && { triggerCondition: dto.triggerCondition }),
         triggerUserId: dto.triggerUserId ?? null,
         triggerRoleId: dto.triggerRoleId ?? null,
         validatorConfig: this.toJson(dto.validatorConfig),

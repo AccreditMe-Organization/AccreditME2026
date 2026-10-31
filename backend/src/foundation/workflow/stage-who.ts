@@ -48,7 +48,7 @@ export type WhoEntryField = 'userId' | 'positionId' | 'orgUnitId' | 'committeeId
 const ENTRY_FIELDS: readonly WhoEntryField[] = ['userId', 'positionId', 'orgUnitId', 'committeeId', 'committeeRoleValueId'];
 
 /** What each kind uses, and which of those it must have. */
-const KIND_FIELDS: Readonly<Record<StageAssigneeKind, { uses: readonly WhoEntryField[]; requires: readonly WhoEntryField[] }>> = {
+export const KIND_FIELDS: Readonly<Record<StageAssigneeKind, { uses: readonly WhoEntryField[]; requires: readonly WhoEntryField[] }>> = {
   SPECIFIC_USER: { uses: ['userId'], requires: ['userId'] },
   POSITION_IN_UNIT: { uses: ['positionId', 'orgUnitId'], requires: ['positionId', 'orgUnitId'] },
   // No unit = the record's unit (Q3).
@@ -57,6 +57,51 @@ const KIND_FIELDS: Readonly<Record<StageAssigneeKind, { uses: readonly WhoEntryF
   // No committee = the record's committee (Q3); the role narrows its members.
   COMMITTEE: { uses: ['committeeId', 'committeeRoleValueId'], requires: [] },
 };
+
+/**
+ * ACC-271 PR 5-be — a mode that only one shape of list may use: Committee vote
+ * needs exactly one entry, and it must be a Committee. assertWhoShape() refuses
+ * by this map, and whoRulesFor() serves it, so the two cannot disagree.
+ */
+export const MODE_ONLY_WITH_SINGLE: Readonly<Partial<Record<StageWhoMode, StageAssigneeKind>>> = { COMMITTEE_VOTE: 'COMMITTEE' };
+
+/** The mode a save sends when the screen shows no choice (one entry that isn't a committee). */
+export const DEFAULT_WHO_MODE: StageWhoMode = 'ANY_ONE';
+
+/**
+ * When the screen shows "When there are several people" (drawing section 8):
+ * two or more entries, or a single entry of this kind. One entry of any other
+ * kind is simply "any one", so there is nothing to choose.
+ */
+export const MODE_CHOICE_SHOWN_WHEN = { minEntries: 2, orSingleKind: 'COMMITTEE' } as const satisfies {
+  minEntries: number;
+  orSingleKind: StageAssigneeKind;
+};
+
+/** The rules the stage screens read (served on the template read), so no screen keeps a copy. */
+export interface WhoRules {
+  kinds: Partial<Record<StageAssigneeKind, { uses: WhoEntryField[]; requires: WhoEntryField[] }>>;
+  modes: { key: StageWhoMode; onlyWithSingle?: StageAssigneeKind }[];
+  modeChoiceShownWhen: { minEntries: number; orSingleKind: StageAssigneeKind };
+  defaultMode: StageWhoMode;
+}
+
+/** The rules for a record type's stages, built from the constants assertWhoShape() checks against. */
+export function whoRulesFor(objectType: WorkflowObjectType): WhoRules {
+  const kinds: WhoRules['kinds'] = {};
+  for (const kind of STAGE_ASSIGNEE_KINDS[objectType] ?? []) {
+    kinds[kind] = { uses: [...KIND_FIELDS[kind].uses], requires: [...KIND_FIELDS[kind].requires] };
+  }
+  return {
+    kinds,
+    modes: STAGE_WHO_MODES.map((key) => {
+      const only = MODE_ONLY_WITH_SINGLE[key];
+      return only ? { key, onlyWithSingle: only } : { key };
+    }),
+    modeChoiceShownWhen: { ...MODE_CHOICE_SHOWN_WHEN },
+    defaultMode: DEFAULT_WHO_MODE,
+  };
+}
 
 /** An empty id ('' or blank) and null mean the same thing: not set. */
 function idOrNull(value: string | null | undefined): string | null {
@@ -116,8 +161,10 @@ export function assertWhoShape(
     seen.add(key);
     return n;
   });
-  // A vote is a committee's: exactly one entry, and it is a Committee.
-  if (who.mode === 'COMMITTEE_VOTE' && !(entries.length === 1 && entries[0]!.kind === 'COMMITTEE')) {
+  // A vote is a committee's: exactly one entry, and it is a Committee
+  // (MODE_ONLY_WITH_SINGLE, the map the screens are served).
+  const onlyWith = MODE_ONLY_WITH_SINGLE[who.mode];
+  if (onlyWith !== undefined && !(entries.length === 1 && entries[0]!.kind === onlyWith)) {
     throw new WorkflowRefusalException('COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE');
   }
   return entries;
@@ -196,7 +243,9 @@ const capitalise = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
  * built here so the words and the engine cannot disagree:
  * - Any one of them: one entry reads as itself; several as "Any one of: a, b, or c".
  * - All of them: "All of: a, b, and c".
- * - Committee vote: "A vote of <committee>".
+ * - Committee vote: "The <committee> decides by vote." / «تقرر <committee> بالتصويت.»
+ *   (the drawn wording, PR 5-be). A committee's Arabic name already begins with
+ *   «لجنة», so the verb is followed by the whole name, as the drawing writes it.
  */
 export function whoSentence(mode: StageWhoMode, entries: WhoEntryForSentence[]): { en: string; ar: string } {
   const phrases = entries.map(entryPhrase);
@@ -206,9 +255,9 @@ export function whoSentence(mode: StageWhoMode, entries: WhoEntryForSentence[]):
   switch (mode) {
     case 'COMMITTEE_VOTE': {
       const c = entries[0]!;
-      const committeeEn = c.committeeId === null ? "the record's committee" : (c.committeeNameEn ?? 'a removed committee');
-      const committeeAr = c.committeeId === null ? 'لجنة السجل' : (ar(c.committeeNameAr, c.committeeNameEn) ?? 'لجنة أُزيلت');
-      return { en: `A vote of ${committeeEn}.`, ar: `تصويت ${committeeAr}.` };
+      if (c.committeeId === null) return { en: "The record's committee decides by vote.", ar: 'تقرر لجنة السجل بالتصويت.' };
+      if (!c.committeeNameEn) return { en: 'A removed committee decides by vote.', ar: 'تقرر لجنة أُزيلت بالتصويت.' };
+      return { en: `The ${c.committeeNameEn} decides by vote.`, ar: `تقرر ${ar(c.committeeNameAr, c.committeeNameEn)} بالتصويت.` };
     }
     case 'ALL':
       return { en: `All of: ${joinEn(en, 'and')}.`, ar: `كلٌّ من: ${joinAr(arParts, 'و')}.` };
