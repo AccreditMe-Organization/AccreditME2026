@@ -212,6 +212,18 @@ function main() {
   const { exitCode, out, err } = evaluate({ report, allowlist, workspace: label, today, label });
   out.forEach((line) => console.log(line));
   err.forEach((line) => console.error(line));
+  // In GitHub Actions, the reasons also become annotations: they show on the
+  // PR's checks and can be read without the job log, which needs admin rights.
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    for (const line of [...out, ...err]) {
+      const text = line.trim();
+      if (/^\S+ \(\w+\) — /.test(text) || text.includes('expired: reviewBy')) {
+        if (!text.includes('accepted (reviewBy')) console.log(`::error title=Audit gate (${label})::${text}`);
+      } else if (text.includes('WARNING: allowlist entry')) {
+        console.log(`::warning title=Audit gate (${label})::${text}`);
+      }
+    }
+  }
   process.exit(exitCode);
 }
 
