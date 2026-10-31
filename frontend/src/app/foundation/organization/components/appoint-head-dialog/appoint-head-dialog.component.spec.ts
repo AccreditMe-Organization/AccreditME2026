@@ -10,6 +10,7 @@ import { environment } from '../../../../../environments/environment';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { AppointHeadDialogComponent } from './appoint-head-dialog.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-133 — Appoint head (dialog A, Horizon 1): POST /assign with the person and
 // the position; From is read-only "Now, when you save"; no note field; the
@@ -65,6 +66,65 @@ describe('AppointHeadDialogComponent (ACC-133)', () => {
   });
 
   const body = () => document.querySelector<HTMLElement>('.p-dialog')!;
+
+  // ACC-172 — two people with one name are told apart by their position.
+  describe('the person picker shows each position (ACC-172)', () => {
+    preserveDocumentLanguage();
+
+    /** The person picker's open list: [name, the quieter line under it]. */
+    const openPersonOptions = (): [string, string][] => {
+      const trigger = document.querySelector<HTMLElement>('app-overlay-select[formcontrolname="userId"] .am-overlay-select-trigger')!;
+      trigger.click();
+      fixture.detectChanges();
+      return Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).map((o) => [
+        (o.querySelector('.truncate')?.textContent ?? '').trim(),
+        (o.querySelector('[data-person-meta]')?.textContent ?? '').trim(),
+      ]);
+    };
+
+    afterEach(() => document.querySelectorAll('.cdk-overlay-container').forEach((c) => (c.innerHTML = '')));
+
+    it('renders two same-name people as two options told apart by position; no position shows the email', () => {
+      open([position('dir', 'Director')]);
+      fixture.componentRef.setInput('people', [
+      { id: 'sara-1', name: 'Dr. Sara Al-Qahtani', email: 'sara.q@example.com', positionId: 'p-nurse', positionName: { nameEn: 'Nurse Manager', nameAr: 'مديرة التمريض' } },
+      { id: 'sara-2', name: 'Dr. Sara Al-Qahtani', email: 'sara.a@example.com', positionId: 'p-pharm', positionName: { nameEn: 'Clinical Pharmacist', nameAr: null } },
+      { id: 'noor', name: 'Noor Al-Dossary', email: 'noor@example.com', positionId: null, positionName: null },
+    ]);
+      fixture.detectChanges();
+      expect(openPersonOptions()).toEqual([
+        ['Dr. Sara Al-Qahtani', 'Nurse Manager'],
+        ['Dr. Sara Al-Qahtani', 'Clinical Pharmacist'],
+        ['Noor Al-Dossary', 'noor@example.com'],
+      ]);
+    });
+
+    it('shows the Arabic position name in Arabic, and the English one where there is none', () => {
+      open([position('dir', 'Director')]);
+      TestBed.inject(TranslateService).use('ar');
+      fixture.componentRef.setInput('people', [
+      { id: 'sara-1', name: 'Dr. Sara Al-Qahtani', email: 'sara.q@example.com', positionId: 'p-nurse', positionName: { nameEn: 'Nurse Manager', nameAr: 'مديرة التمريض' } },
+      { id: 'sara-2', name: 'Dr. Sara Al-Qahtani', email: 'sara.a@example.com', positionId: 'p-pharm', positionName: { nameEn: 'Clinical Pharmacist', nameAr: null } },
+      { id: 'noor', name: 'Noor Al-Dossary', email: 'noor@example.com', positionId: null, positionName: null },
+    ]);
+      fixture.detectChanges();
+      expect(openPersonOptions().map(([, meta]) => meta)).toEqual(['مديرة التمريض', 'Clinical Pharmacist', 'noor@example.com']);
+    });
+
+    it("the hint under the field names the chosen person's position", () => {
+      const dialog = open([position('dir', 'Director')]);
+      fixture.componentRef.setInput('people', [
+      { id: 'sara-1', name: 'Dr. Sara Al-Qahtani', email: 'sara.q@example.com', positionId: 'p-nurse', positionName: { nameEn: 'Nurse Manager', nameAr: 'مديرة التمريض' } },
+      { id: 'sara-2', name: 'Dr. Sara Al-Qahtani', email: 'sara.a@example.com', positionId: 'p-pharm', positionName: { nameEn: 'Clinical Pharmacist', nameAr: null } },
+      { id: 'noor', name: 'Noor Al-Dossary', email: 'noor@example.com', positionId: null, positionName: null },
+    ]);
+      fixture.detectChanges();
+      dialog.form.controls.userId.setValue('sara-2');
+      expect(dialog.personHint()).toBe('Clinical Pharmacist');
+      dialog.form.controls.userId.setValue('noor');
+      expect(dialog.personHint()).toBe('noor@example.com');
+    });
+  });
 
   it('titles itself by the unit, says it has no head, and From reads "Now, when you save"', () => {
     open([position('dir', 'Director')]);

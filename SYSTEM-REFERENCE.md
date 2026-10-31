@@ -6270,6 +6270,14 @@ continues.
   the Vacancy strip from the ledger and warning, when the chosen person had a
   cover here that ended in the last 7 days, that a new cover "starts a new
   90-day period".
+- **Each person picker names the position (ACC-172).** In all three dialogs,
+  each row shows the person's name, then their position in the reader's
+  language (`bilingual()`, so the English name when there is no Arabic one),
+  or their email when they hold no position. Both lines truncate. The hint
+  under the field says the same thing about the chosen person. One helper,
+  `personMeta()` (`appoint-head-dialog.component.ts`). The names come from
+  `GET /users`'s `position` (§12.8), which `am-headship-actions` maps to
+  `HeadshipPerson.positionName`; no extra request.
 
 Measured in `headship-dialogs.layout.spec.ts` (EN / AR, 1280 and 390, the long
 real position name): Appoint head 265–279; Appoint successor 347–368 EN and
@@ -8465,6 +8473,14 @@ real-consumer proof, ACC-42 Phase 3), `user-profile.managerId`,
 `out-of-office-dialog.actingUserId`; `user-role-assignment`'s `[(ngModel)]`
 role picker (§10.7.4) went with that component.*
 
+*Corrected (ACC-172), against the code, not the list above: 8 consumers in 7
+components (`grep '[itemTemplate]'`, specs excluded). `invite-user` and
+`committee-member-form` no longer use it.*
+- `edit-profile-dialog` (manager) and `out-of-office-dialog` (cover);
+- `task-assignee-picker` (two pickers) and `stage-task-definition-form`;
+- the three headship person pickers (ACC-172, §5.15.5): `appoint-head-dialog`,
+  `appoint-successor-dialog` and `set-acting-head-dialog`.
+
 #### 10.7.4 `ngModel` binding support
 
 Every field through ACC-42 Phase 4 bound via `formControlName`
@@ -10650,6 +10666,14 @@ future one of those methods might need a currently-excluded field off
 the full row — mapping only at the controller boundary keeps every
 internal caller on the full, trusted object, confirmed via a full
 call-site audit that none of them currently reads an excluded field.
+
+**`GET /users` adds two fields BESIDE the allowlist, never by spreading the
+row** (`UserController.listUsers()`): `isAccountOwner` (ACC-221, §1.15) and
+`position: { nameEn, nameAr } | null` (ACC-172). Both come from includes on
+the list's own `findMany` (`ownedOrganizations` scoped to this organisation,
+and `position` selecting only the two names), so there is no second query and
+no per-row query. `toSafeUser()` itself is unchanged, and so is
+`GET /users/:id`.
 
 `platform-tenant.service.ts`'s internal call to `invite()` (tenant
 provisioning, creating the first `TENANT_ADMIN`) was never a leak path
