@@ -24,6 +24,9 @@ export interface IUserReferenceNamesDto {
 export interface IUserDto {
   // Present only on GET /users/:id — list, invite and save responses omit it.
   references?: IUserReferenceNamesDto;
+  // ACC-221 — whether this person is the organisation's account owner. Only
+  // GET /users/:id sends it; absent elsewhere, which reads as "not the owner".
+  isAccountOwner?: boolean;
   id: string;
   organizationId: string;
   email: string;

@@ -57,6 +57,8 @@ describe('ManageRolesComponent (ACC-120)', () => {
     failWith?: unknown;
     /** What a failing load throws (default: a bare Error). */
     loadFailWith?: unknown;
+    /** ACC-221 — the person is the organisation's account owner. */
+    isAccountOwner?: boolean;
   }
 
   function render(opts: Opts = {}): void {
@@ -112,6 +114,7 @@ describe('ManageRolesComponent (ACC-120)', () => {
     fixture = TestBed.createComponent(ManageRolesComponent);
     fixture.componentRef.setInput('userId', 'user-1');
     fixture.componentRef.setInput('userName', 'Fatima Al-Anazi');
+    if (opts.isAccountOwner !== undefined) fixture.componentRef.setInput('isAccountOwner', opts.isAccountOwner);
     fixture.detectChanges();
     component = fixture.componentInstance;
   }
@@ -353,6 +356,52 @@ describe('ManageRolesComponent (ACC-120)', () => {
   // BEFORE the click, because the server rolls the transaction back either way:
   // a checkbox that 409s on Save is the dead Next button rebuilt somewhere more
   // expensive, and that one cost two days.
+  // ACC-221 — the account owner keeps Organization Administrator, however many
+  // other administrators there are.
+  describe('the account owner (ACC-221)', () => {
+    const rootRole = (activeHolderCount: number): RoleDto =>
+      ({
+        ...role('r-admin', 'Organization Administrator', 'مسؤول المؤسسة'),
+        key: 'TENANT_ADMIN',
+        isSystem: true,
+        activeHolderCount,
+      }) as RoleDto;
+    const adminRow = (): HTMLLIElement | undefined =>
+      Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('li')).find((li) =>
+        (li.textContent ?? '').includes('Organization Administrator'),
+      );
+
+    it("locks the owner's Organization Administrator row, with the owner sentence, even with three active holders", () => {
+      const r = rootRole(3);
+      render({ roles: [...ROLES, r], grants: [grant({ role: r })], isAccountOwner: true });
+
+      expect(adminRow()!.querySelector('input[type=checkbox]')).toBeNull();
+      expect(adminRow()!.querySelector('.pi-lock')).toBeTruthy();
+      expect(adminRow()!.querySelector('[data-mr-lock-reason]')!.textContent!.trim()).toBe('userRecord.accountOwnerLine');
+    });
+
+    it("ignores a programmatic toggle of the owner's Organization Administrator", () => {
+      const r = rootRole(3);
+      render({ roles: [...ROLES, r], grants: [grant({ role: r })], isAccountOwner: true });
+      component.toggle(component.rows().find((x) => x.role.key === 'TENANT_ADMIN')!);
+      expect(component.changeCount()).toBe(0);
+    });
+
+    it('leaves the same row a checkbox for an administrator who is not the owner', () => {
+      const r = rootRole(3);
+      render({ roles: [...ROLES, r], grants: [grant({ role: r })], isAccountOwner: false });
+      expect(adminRow()!.querySelector('input[type=checkbox]')).toBeTruthy();
+      expect(adminRow()!.querySelector('.pi-lock')).toBeNull();
+    });
+
+    it("leaves the owner's other roles changeable", () => {
+      const r = rootRole(3);
+      render({ roles: [...ROLES, r], grants: [grant({ role: r }), grant({ role: ROLES[0]! })], isAccountOwner: true });
+      component.toggle(component.rows().find((x) => x.role.id === 'r1')!);
+      expect(component.changeCount()).toBe(1);
+    });
+  });
+
   describe('the root role, held by the last active administrator', () => {
     const rootRole = (activeHolderCount: number): RoleDto =>
       ({

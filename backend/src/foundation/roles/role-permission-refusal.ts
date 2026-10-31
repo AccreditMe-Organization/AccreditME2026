@@ -184,3 +184,36 @@ export class LastActiveAdministratorException extends ConflictException {
     });
   }
 }
+
+// ACC-221 — the account owner. Each organisation has one (Organization
+// .ownerUserId); inside the tenant nobody may take Organization Administrator
+// from them, deactivate them or revoke their invitation. Only a platform
+// administrator moves ownership (POST /platform/tenants/:id/owner).
+/** The person is the organisation's account owner (ACC-221). */
+export const ACCOUNT_OWNER_PROTECTED = 'ACCOUNT_OWNER_PROTECTED';
+/** The Organization Administrator role itself cannot be deactivated (ACC-221). */
+export const ROOT_ROLE_CANNOT_BE_DEACTIVATED = 'ROOT_ROLE_CANNOT_BE_DEACTIVATED';
+
+export class AccountOwnerProtectedException extends ConflictException {
+  constructor() {
+    super({
+      statusCode: 409,
+      message:
+        "This person is the organization's account owner. Their Organization Administrator role, " +
+        'their account and their invitation cannot be changed here. Only AccreditMe support can transfer ownership.',
+      error: 'Conflict',
+      code: ACCOUNT_OWNER_PROTECTED,
+    });
+  }
+}
+
+export class RootRoleCannotBeDeactivatedException extends ConflictException {
+  constructor() {
+    super({
+      statusCode: 409,
+      message: 'The Organization Administrator role cannot be deactivated.',
+      error: 'Conflict',
+      code: ROOT_ROLE_CANNOT_BE_DEACTIVATED,
+    });
+  }
+}

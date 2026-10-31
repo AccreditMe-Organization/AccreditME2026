@@ -187,6 +187,27 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
     expect(text).not.toContain('Cancelled');
   });
 
+  // ACC-221 — Organization Administrator is never deactivated.
+  it('Organization Administrator offers no Deactivate; any other role still does', async () => {
+    await setup();
+    const ids = (r: RoleDto) => fixture.componentInstance.menuFor(r).map((i) => i.id);
+    expect(ids(role('root', { key: 'TENANT_ADMIN', isSystem: true }))).toEqual(['permissions']);
+    expect(ids(role('other'))).toEqual(['permissions', 'deactivate']);
+  });
+
+  it('ROOT_ROLE_CANNOT_BE_DEACTIVATED is said from its code (ACC-221)', async () => {
+    await setup();
+    service.deactivateRole.and.returnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'ROOT_ROLE_CANNOT_BE_DEACTIVATED', message: 'server text' } })),
+    );
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    confirm.calls.mostRecent().args[0].accept!();
+    fixture.detectChanges();
+    const box = el.querySelector('[data-testid="role-action-error"]')!;
+    expect(box.textContent).toContain("Organization Administrator can't be deactivated.");
+    expect(box.textContent).not.toContain('server text');
+  });
+
   it('a refused deactivate is said from its code, with no Try again when trying again cannot help', async () => {
     await setup();
     service.deactivateRole.and.returnValue(

@@ -152,15 +152,15 @@ interface DerivedRow {
                        rows above: a row that cannot be changed looks the same
                        whatever makes it so. The reason is on the row, because a
                        lock with no sentence reads as a bug. -->
-                  @if (isLastRootRoleHolder(row)) {
+                  @if (lockReason(row); as reason) {
                     <i
                       class="pi pi-lock shrink-0 text-[var(--am-text-secondary)]"
                       aria-hidden="true"
                     ></i>
                     <span class="flex min-w-0 grow flex-col">
                       <span class="truncate text-[13px] font-medium">{{ roleName(row.role) }}</span>
-                      <span class="text-[11.5px] text-[var(--am-text-secondary)]">
-                        {{ 'manageRoles.lastAdministratorLocked' | translate }}
+                      <span class="text-[11.5px] text-[var(--am-text-secondary)]" data-mr-lock-reason>
+                        {{ reason | translate }}
                       </span>
                     </span>
                   } @else {
@@ -240,6 +240,13 @@ export class ManageRolesComponent implements OnInit {
    */
   readonly userId = input.required<string>();
   readonly userName = input<string>('');
+  /**
+   * ACC-221 — this person is the organisation's account owner, so their
+   * Organization Administrator row is locked: the server refuses removing it
+   * (ACCOUNT_OWNER_PROTECTED). The user record passes it from GET /users/:id;
+   * the Users list does not know it, and the refusal is then said in words.
+   */
+  readonly isAccountOwner = input<boolean>(false);
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
@@ -287,6 +294,18 @@ export class ManageRolesComponent implements OnInit {
     return (
       row.role.key === 'TENANT_ADMIN' && row.held && (row.role.activeHolderCount ?? 0) <= 1
     );
+  }
+
+  /**
+   * Why this row is locked, as a translation key, or null for a checkbox. The
+   * account owner's Organization Administrator comes first (ACC-221): it stays
+   * locked however many other administrators there are.
+   */
+  lockReason(row: RoleRow): string | null {
+    if (row.role.key === 'TENANT_ADMIN' && row.held && this.isAccountOwner()) {
+      return 'userRecord.accountOwnerLine';
+    }
+    return this.isLastRootRoleHolder(row) ? 'manageRoles.lastAdministratorLocked' : null;
   }
 
   readonly added = computed(() => this.rows().filter((r) => r.pending === 'add'));
@@ -408,7 +427,7 @@ export class ManageRolesComponent implements OnInit {
     // The row renders a lock rather than a checkbox, so this is not the gate —
     // it is here because a template condition is a rendering, and this handler
     // stays reachable from code.
-    if (this.isLastRootRoleHolder(row)) return;
+    if (this.lockReason(row)) return;
     const next = this.rows().map((r) => {
       if (r.role.id !== row.role.id) return r;
       const currentlyOn = r.pending === 'add' || (r.held && r.pending !== 'remove');

@@ -198,7 +198,18 @@ export type RowAction =
               (click)="onView(user)"
             >
               @if (v('name')) {
-                <span class="text-[13px] font-medium truncate">{{ user.name }}</span>
+                <span class="flex min-w-0 items-center gap-2">
+                  <span class="text-[13px] font-medium truncate">{{ user.name }}</span>
+                  <!-- ACC-221 — the account owner; its row offers no Deactivate or Revoke invitation. -->
+                  @if (user.isAccountOwner) {
+                    <span
+                      class="shrink-0 text-[10.5px] font-semibold px-1.5 py-px rounded text-[var(--am-blue-primary)] bg-[color-mix(in_srgb,var(--am-blue-primary)_12%,transparent)]"
+                      data-user-account-owner
+                    >
+                      {{ 'userRecord.accountOwner' | translate }}
+                    </span>
+                  }
+                </span>
               }
               @if (v('email')) {
                 <span
@@ -357,6 +368,7 @@ export type RowAction =
         <app-manage-roles
           [userId]="u.id"
           [userName]="u.name"
+          [isAccountOwner]="!!u.isAccountOwner"
           (saved)="onRolesSaved()"
           (cancelled)="rolesDialog.requestClose()"
           (dirtyChange)="rolesDirty.set($event)"

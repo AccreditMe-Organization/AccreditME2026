@@ -55,6 +55,8 @@ import {
   assertTenantRetainsAnActiveAdministrator,
   captureAdministratorBaseline,
 } from '../roles/tenant-administrator.invariant';
+import { assertNotAccountOwner } from '../roles/account-owner';
+import { AccountOwnerProtectedException } from '../roles/role-permission-refusal';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 import { buildTenantUrl } from '../../common/config/app-url.config';
@@ -214,7 +216,7 @@ export class UserService {
   async listUsers(
     organizationId: string,
     filters?: ListUsersFilters,
-  ): Promise<IPaginatedResponse<IUser>> {
+  ): Promise<IPaginatedResponse<IUser & { isAccountOwner: boolean }>> {
     const { skip, take, page, pageSize } = toSkipTake(filters?.page, filters?.pageSize);
 
     const where = {
@@ -237,15 +239,22 @@ export class UserService {
         : {}),
     };
 
-    const [data, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
         orderBy: USER_SORT.resolve(filters?.sortBy, filters?.sortDir),
         skip,
         take,
+        // ACC-221 — whether each row is the account owner, in the same query
+        // (as GET /users/:id does), scoped to this organisation.
+        include: { ownedOrganizations: { where: { id: organizationId }, select: { id: true } } },
       }),
       this.prisma.user.count({ where }),
     ]);
+    const data = rows.map(({ ownedOrganizations, ...user }) => ({
+      ...user,
+      isAccountOwner: ownedOrganizations.length > 0,
+    }));
 
     return paginated(data, total, page, pageSize);
   }
@@ -280,11 +289,21 @@ export class UserService {
     organizationId: string,
     actorId: string,
     actorPermissions: string[],
-  ): Promise<IUser> {
+  ): Promise<IUser & { isAccountOwner: boolean }> {
     const isSelf = actorId === id;
     const canView = actorPermissions.includes('users:view');
     if (!isSelf && !canView) throw new ForbiddenException();
-    return this.getById(id, organizationId);
+    // ACC-221 — whether this person is the organisation's account owner, read
+    // in the same query as the user (no second request). Only this
+    // organisation's own row can match, so another tenant's ownership never
+    // shows here.
+    const found = await this.prisma.user.findFirst({
+      where: { id, organizationId },
+      include: { ownedOrganizations: { where: { id: organizationId }, select: { id: true } } },
+    });
+    if (!found) throw new NotFoundException('User not found');
+    const { ownedOrganizations, ...user } = found;
+    return { ...user, isAccountOwner: ownedOrganizations.length > 0 };
   }
 
   // ACC-79 — the display names for the ids on a record the caller has already
@@ -1459,6 +1478,8 @@ export class UserService {
     // person's sessions or moved their tasks on the way to being refused.
     // ACC-271 — the "left the stage's pool" events commit with the flip.
     await this.prisma.$transaction(async (tx) => {
+      // ACC-221 — the account owner is never deactivated inside the tenant.
+      await assertNotAccountOwner(tx, organizationId, id);
       const baseline = await captureAdministratorBaseline(organizationId, tx);
       await tx.user.update({ where: { id }, data: { status: 'INACTIVE' } });
       await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
@@ -1757,10 +1778,14 @@ export class UserService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        // ACC-221 — the account owner's invitation is never revoked inside the
+        // tenant: the person a tenant is created with is invited, not active.
+        await assertNotAccountOwner(tx, organizationId, id);
         await tx.notification.deleteMany({ where: { userId: id, organizationId } });
         await tx.user.delete({ where: { id } });
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof AccountOwnerProtectedException) throw error;
       throw new ConflictException(
         'This invitation cannot be revoked because the account already has activity ' +
           'recorded against it. Deactivate the user instead.',

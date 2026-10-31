@@ -128,6 +128,132 @@ describe('PlatformTenantService', () => {
     });
   });
 
+  // ACC-221 — the account owner, on the detail and moved by a platform admin.
+  describe('account owner (ACC-221)', () => {
+    const ORG = {
+      id: TENANT_ID, name: 'Acme', slug: 'acme', status: 'ACTIVE', planId: null,
+      planCatalog: null, settings: null, createdAt: new Date(), bootstrappedAt: null,
+      aiMonthlyCredits: 0, aiPendingMonthlyCredits: null, aiCreditsUsed: 0,
+      aiCreditsPeriodStart: null, aiCreditsRenewsAt: null,
+    };
+
+    beforeEach(() => {
+      mockPrisma.$transaction = jest.fn((fn: (tx: unknown) => unknown) => fn(mockPrisma));
+    });
+
+    it('the detail names the owner from the organisation read itself, and marks them among the admins', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({
+        ...ORG,
+        ownerUserId: 'u-owner',
+        owner: { id: 'u-owner', name: 'Layla', email: 'layla@acme.test' },
+      });
+      mockPrisma.user.count.mockResolvedValue(2);
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'u-owner', name: 'Layla', email: 'layla@acme.test' },
+        { id: 'u-two', name: 'Omar', email: 'omar@acme.test' },
+      ]);
+
+      const result = await service.getTenantDetail(TENANT_ID);
+
+      expect(result.owner).toEqual({ id: 'u-owner', name: 'Layla', email: 'layla@acme.test' });
+      expect(result.tenantAdmins).toEqual([
+        { id: 'u-owner', name: 'Layla', email: 'layla@acme.test', isOwner: true },
+        { id: 'u-two', name: 'Omar', email: 'omar@acme.test', isOwner: false },
+      ]);
+      expect(mockPrisma.organization.findUnique).toHaveBeenCalledWith({
+        where: { id: TENANT_ID },
+        include: { planCatalog: true, owner: { select: { id: true, name: true, email: true } } },
+      });
+    });
+
+    it('the detail says null when no owner is recorded', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ ...ORG, ownerUserId: null, owner: null });
+      mockPrisma.user.count.mockResolvedValue(1);
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u-two', name: 'Omar', email: 'omar@acme.test' }]);
+
+      const result = await service.getTenantDetail(TENANT_ID);
+
+      expect(result.owner).toBeNull();
+      expect(result.tenantAdmins[0]?.isOwner).toBe(false);
+    });
+
+    it('transfers ownership to an active Organization Administrator of the tenant, with one audit row in its trail', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ ownerUserId: 'u-owner' });
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u-two' });
+
+      await service.transferOwnership(TENANT_ID, 'u-two', ACTOR_ID);
+
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'u-two',
+          organizationId: TENANT_ID,
+          status: 'ACTIVE',
+          userRoles: { some: { role: { organizationId: TENANT_ID, key: 'TENANT_ADMIN', isActive: true } } },
+        },
+        select: { id: true },
+      });
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith({ where: { id: TENANT_ID }, data: { ownerUserId: 'u-two' } });
+      expect(mockAuditLog.log).toHaveBeenCalledTimes(1);
+      expect(mockAuditLog.log).toHaveBeenCalledWith(expect.objectContaining({
+        tenantId: TENANT_ID,
+        actorId: ACTOR_ID,
+        action: 'UPDATE',
+        objectType: 'Organization',
+        objectId: TENANT_ID,
+        before: { ownerUserId: 'u-owner' },
+        after: { ownerUserId: 'u-two' },
+      }));
+    });
+
+    it('naming the current owner again changes nothing and writes no audit row', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ ownerUserId: 'u-owner' });
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u-owner' });
+
+      await service.transferOwnership(TENANT_ID, 'u-owner', ACTOR_ID);
+
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    // The candidate query requires ACTIVE and the tenant's active TENANT_ADMIN
+    // role, so an inactive user and a non-administrator both find nothing.
+    it.each([
+      ['someone who does not hold Organization Administrator'],
+      ['an INACTIVE user'],
+    ])('refuses %s with OWNER_MUST_BE_ACTIVE_ADMINISTRATOR, writing nothing', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ ownerUserId: 'u-owner' });
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.transferOwnership(TENANT_ID, 'u-x', ACTOR_ID)).rejects.toMatchObject({
+        response: { code: 'OWNER_MUST_BE_ACTIVE_ADMINISTRATOR', statusCode: 400 },
+      });
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant — a user of another tenant cannot become the owner', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ ownerUserId: 'u-owner' });
+      // The user exists, but in another tenant: the query is scoped to this
+      // tenant's id, so it finds nothing and the refusal is the same 400.
+      mockPrisma.user.findFirst.mockImplementation((args: { where: { organizationId: string } }) =>
+        Promise.resolve(args.where.organizationId === 'tenant-b' ? { id: 'u-other' } : null),
+      );
+
+      await expect(service.transferOwnership(TENANT_ID, 'u-other', ACTOR_ID)).rejects.toMatchObject({
+        response: { code: 'OWNER_MUST_BE_ACTIVE_ADMINISTRATOR' },
+      });
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: 'u-other', organizationId: TENANT_ID }) }),
+      );
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException for an unknown tenant', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue(null);
+      await expect(service.transferOwnership('missing', 'u-two', ACTOR_ID)).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('createTenant', () => {
     const dto = {
       name: 'Acme', slug: 'acme', country: 'SA',

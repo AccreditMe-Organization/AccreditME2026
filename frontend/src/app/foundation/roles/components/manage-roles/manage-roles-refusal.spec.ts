@@ -14,6 +14,7 @@ describe('manageRolesRefusalKey (ACC-120 slice 5b)', () => {
       ['ROLE_ALREADY_HELD', 409, 'manageRoles.refusal.alreadyHeld'],
       ['ROLE_FROM_HEAD_POSITION', 409, 'manageRoles.refusal.fromHeadPosition'],
       ['LAST_ACTIVE_ADMINISTRATOR', 409, 'manageRoles.refusal.lastAdministrator'],
+      ['ACCOUNT_OWNER_PROTECTED', 409, 'manageRoles.refusal.accountOwnerProtected'],
       ['ROLE_NOT_FOUND', 404, 'manageRoles.refusal.roleNotFound'],
       ['USER_NOT_FOUND', 404, 'manageRoles.refusal.userNotFound'],
       ['ROLE_ASSIGNMENT_NOT_FOUND', 404, 'manageRoles.refusal.assignmentNotFound'],
