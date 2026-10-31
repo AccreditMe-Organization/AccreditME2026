@@ -170,6 +170,9 @@ function evaluate({ report, allowlist, workspace, today, label = workspace }) {
       for (const item of v.via || []) {
         if (item && typeof item === 'object') err.push(`      ${item.title}  ${item.url || ''}`);
       }
+      // A package that only inherits a finding names where it comes from.
+      const through = (v.via || []).filter((item) => typeof item === 'string');
+      if (through.length > 0) err.push(`      comes through: ${through.join(', ')}`);
     }
     err.push('');
     err.push('These cannot be patched by upgrading. Each is a decision about');
@@ -217,7 +220,7 @@ function main() {
   if (process.env.GITHUB_ACTIONS === 'true') {
     for (const line of [...out, ...err]) {
       const text = line.trim();
-      if (/^\S+ \(\w+\) — /.test(text) || text.includes('expired: reviewBy')) {
+      if (/^\S+ \(\w+\) — /.test(text) || text.includes('expired: reviewBy') || text.startsWith('comes through:')) {
         if (!text.includes('accepted (reviewBy')) console.log(`::error title=Audit gate (${label})::${text}`);
       } else if (text.includes('WARNING: allowlist entry')) {
         console.log(`::warning title=Audit gate (${label})::${text}`);
