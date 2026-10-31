@@ -25,9 +25,12 @@
  * finding is ACCEPTED when every entry in its `via` is accepted:
  *   - an advisory object, by an unexpired entry for this workspace naming that
  *     advisory and package;
- *   - a package name (string), when that package is itself an accepted
- *     unfixable finding. This is how a package that only inherits an advisory
- *     appears (karma and rimraf, through glob and minimatch).
+ *   - a package name (string), when that package is itself a finding in the
+ *     report whose own `via` is accepted, by these same rules. This is how a
+ *     package that only inherits an advisory appears (karma and rimraf,
+ *     through glob and minimatch). Whether npm marks the named package
+ *     fixable does not matter: on CI's Linux install karma-jasmine-html-
+ *     reporter named karma-jasmine, marked fixable, which reached only karma.
  * Accepted findings are printed with their review date and do not fail.
  * EVERYTHING ELSE IS AS BEFORE: a new unfixable finding, one not on the list,
  * still fails. An entry whose reviewBy has passed FAILS the gate, naming it:
@@ -103,9 +106,12 @@ function evaluate({ report, allowlist, workspace, today, label = workspace }) {
     live.find((e) => e.advisory === advisoryId(via) && e.package === (via.name || finding));
 
   // The earliest review date that accepts this finding, or null when it is not
-  // accepted. `seen` stops a cycle of package names accepting itself.
+  // accepted. A package named in a `via` must itself be in the report and
+  // reach only accepted advisories; whether npm marks IT fixable does not
+  // matter (CI's Linux install marked karma-jasmine fixable while it reached
+  // only karma). `seen` stops a cycle of package names accepting itself.
   function acceptedUntil(name, seen = new Set()) {
-    if (!isUnfixable(name) || seen.has(name)) return null;
+    if (!vulnerabilities[name] || seen.has(name)) return null;
     const via = vulnerabilities[name].via || [];
     if (via.length === 0) return null;
     seen.add(name);

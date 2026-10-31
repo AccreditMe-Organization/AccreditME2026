@@ -75,6 +75,36 @@ test('a karma-style string via passes only when every package it names is accept
   assert.ok(result.err.some((l) => l.startsWith('  rimraf (moderate)')));
 });
 
+// The shape CI's Linux install gave on 31 Oct: the reporter has no fix and
+// names karma (accepted) and karma-jasmine, which npm marks fixable and which
+// itself only names karma. What it reaches is all accepted, so it passes.
+test('a named package that is fixable but reaches only accepted advisories does not block', () => {
+  const tree = {
+    ...KARMA_TREE,
+    'karma-jasmine': finding(['karma'], true),
+    'karma-jasmine-html-reporter': finding(['karma', 'karma-jasmine']),
+  };
+  const result = run(tree, BOTH);
+  assert.equal(result.exitCode, 0);
+  assert.ok(result.out.some((l) => l.includes('karma-jasmine-html-reporter (moderate) — accepted (reviewBy 2027-01-31)')));
+
+  // The same chain reaching an advisory that is NOT on the list still fails.
+  const leaking = {
+    ...tree,
+    'karma-jasmine': finding(['karma', advisory('karma-jasmine', 'GHSA-9999-8888-7777')], true),
+  };
+  const refused = run(leaking, BOTH);
+  assert.equal(refused.exitCode, 1);
+  assert.ok(refused.err.some((l) => l.startsWith('  karma-jasmine-html-reporter (moderate)')));
+  assert.ok(refused.err.some((l) => l.includes('comes through: karma, karma-jasmine')));
+});
+
+test('a named package that is not a finding at all blocks', () => {
+  const result = run({ ...KARMA_TREE, reporter: finding(['karma', 'not-in-the-report']) }, BOTH);
+  assert.equal(result.exitCode, 1);
+  assert.ok(result.err.some((l) => l.startsWith('  reporter (moderate)')));
+});
+
 test('an entry that matches nothing warns, without failing', () => {
   const stale = entry('left-pad', 'GHSA-dddd-eeee-ffff');
   const result = run(KARMA_TREE, [...BOTH, stale]);
