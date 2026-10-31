@@ -4397,7 +4397,7 @@ SYSTEM-REFERENCE.md §3.17 (the committee read), the committees list section
 The stage owns who works it. Full mechanism: SYSTEM-REFERENCE.md §2.19. Plan,
 Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
 `backend/Plans/step-271-stage-owns-who.md`. Briefly, as of PR 1:
-Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230, #231, #233); PR 3 and PR 5 are not started.
+Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230, #231, #233); PR 3 is built (below); PR 5 is not started.
 
 - **A CONVERTED STAGE (`whoMode` set) IS WORKED BY ITS POOL; ANY OTHER STAGE
   TAKES THE OLD BRANCH, UNCHANGED.** `isConvertedStage()` is the one test. For
@@ -4437,6 +4437,7 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
 - **The record page's buttons show what the server says**
   (`GET /workflows/instances/:id/moves`); no screen reads a move's
   `requiredPermission` any more.
+- **PR 3 BUILT THE APIS (no screens):** a stage save takes `who: { mode, entries }`, the template read returns each stage's `who` and `whoSentence`, `assigneeKinds` and each APP move's `appMove`, Keep this assignment has its own route, and a CHANGED old people field is 400 `WHO_MOVED_TO_STAGE` — SYSTEM-REFERENCE §2.19.
 - **One additive migration** (`acc271_stage_assignees`, PR 1).
   Superseded (ACC-274): two additive migrations — PR 4 added `acc271_pool_member_joined` (the `POOL_MEMBER_JOINED` event kind).
 

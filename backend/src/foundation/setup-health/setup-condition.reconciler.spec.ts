@@ -225,6 +225,7 @@ describe('SetupConditionReconciler (ACC-82)', () => {
       STORAGE_ALMOST_FULL: jest.fn().mockResolvedValue([]),
       STORAGE_ACCESS_WITHDRAWN: jest.fn().mockResolvedValue([]),
       STORAGE_SECRET_EXPIRING: jest.fn().mockResolvedValue([]),
+      STAGE_ON_STARTING_ASSIGNMENT: jest.fn().mockResolvedValue([]),
     };
     reconciler = new SetupConditionReconciler(
       db.prisma as unknown as PrismaService,
@@ -516,6 +517,8 @@ describe('SetupConditionReconciler (ACC-82)', () => {
         ['STORAGE_ALMOST_FULL', 'SUCCEEDED'],
         ['STORAGE_ACCESS_WITHDRAWN', 'SUCCEEDED'],
         ['STORAGE_SECRET_EXPIRING', 'SUCCEEDED'],
+        // ACC-271 PR 3 — reconciled from PR 3, reported from PR 5.
+        ['STAGE_ON_STARTING_ASSIGNMENT', 'SUCCEEDED'],
       ]);
       expect(db.rows()).toEqual([
         expect.objectContaining({ objectId: 'task-1' }),

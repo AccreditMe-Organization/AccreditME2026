@@ -4,7 +4,7 @@
 **Drawing:** `frontend/design-reference/AccreditMe Workflow Setup.dc.html`
 (27 Oct 14:05 export, rounds 4 and 5, accepted), sections 8–12, copied
 unchanged as this branch's first commit.
-**Status:** PR 1 (#230), PR 2 (#231) and PR 4 (#233) merged; PR 3 and PR 5 not started.
+**Status:** PR 1 (#230), PR 2 (#231) and PR 4 (#233) merged; PR 3 built (the APIs, `feature/ACC-271-pr3-apis`); PR 5 not started.
 
 Out of scope, by the ticket: Share in turn (ACC-270), the History card
 (ACC-267), "Who works the current stage" on the record page, and the step 2
@@ -860,4 +860,7 @@ SYSTEM-REFERENCE §2.19.
   and noted.
 - **(b) PR 3:** an old-screen save of a field the engine no longer reads for a
   converted stage is refused with a translated sentence, not silently
-  ignored (recorded in §11's PR 3 row).
+  ignored (recorded in §11's PR 3 row). **Built (PR 3):** 400
+  `WHO_MOVED_TO_STAGE` for a CHANGED value, with `messageAr`; today's stage
+  panel and transition dialog show the server's sentence in the reader's
+  language. An unchanged value is still accepted and ignored.

@@ -57,6 +57,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       'ACTING_HEAD_OPEN_ENDED',
       'ORG_UNIT_WITHOUT_HEAD',
       'ORG_UNIT_WITHOUT_TYPE',
+      'STAGE_ON_STARTING_ASSIGNMENT',
       'STAGE_WITHOUT_ASSIGNEE',
       'STORAGE_ACCESS_WITHDRAWN',
       'STORAGE_ALMOST_FULL',
@@ -75,10 +76,10 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   // fails this test, which asserts the EXACT list rather than membership. That
   // is deliberate: membership would have let the two halves land apart.
   //
-  // ACC-271 — STAGE_ON_STARTING_ASSIGNMENT is ON the list until PR 3 adds its
-  // detector, the same split ACTING_HEAD_OPEN_ENDED made.
-  it('defers POSITION_WITHOUT_ROLE and STAGE_ON_STARTING_ASSIGNMENT, and gives no deferred type a detector', () => {
-    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE', 'STAGE_ON_STARTING_ASSIGNMENT']);
+  // ACC-271 — STAGE_ON_STARTING_ASSIGNMENT was on the list from PR 1 until PR 3
+  // added its detector, the same split ACTING_HEAD_OPEN_ENDED made.
+  it('defers POSITION_WITHOUT_ROLE only, and gives no deferred type a detector', () => {
+    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
     for (const type of DEFERRED_SETUP_CONDITION_TYPES) {
       expect(Object.keys(detectors.byType)).not.toContain(type);
     }

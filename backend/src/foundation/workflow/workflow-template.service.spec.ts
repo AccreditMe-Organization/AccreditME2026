@@ -125,6 +125,10 @@ const mockPrisma = {
   // ACC-271 — who works a seeded stage (a CREATOR entry where the seed names one).
   workflowStageAssignee: {
     createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    // ACC-271 PR 3 — a stage save reads, replaces and keeps its entries.
+    findMany: jest.fn().mockResolvedValue([]),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
   // ACC-255 — the record actions a stage allows.
   workflowStageRecordAction: {
@@ -142,21 +146,27 @@ const mockPrisma = {
   role: {
     findMany: jest.fn(),
   },
+  // findMany on each (ACC-271 PR 3): the batched reads a `who` is checked and named with.
   user: {
     findFirst: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
   },
   committee: {
     findFirst: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
   },
   lookupValue: {
     findFirst: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
   },
   // ACC-54 — POSITION_FIXED's two write-time tenant validators.
   orgPosition: {
     findFirst: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
   },
   orgUnit: {
     findFirst: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
   },
   // ACC-55 — resolvePermissionWarning()'s two queries. Both transition write
   // paths call it, so EVERY addTransition/updateTransition test needs these
@@ -545,6 +555,8 @@ describe('WorkflowTemplateService', () => {
             transitionsFrom: { include: { actions: { orderBy: { order: 'asc' } } } },
             // ACC-255 — each stage's action rows, read with the caller's organisation.
             recordActions: { where: { organizationId: ORG_A }, select: { actionKey: true } },
+            // ACC-271 PR 3 — who works each stage, in order, in the same query.
+            assignees: { where: { organizationId: ORG_A }, orderBy: { order: 'asc' } },
           },
         }),
       );
@@ -2133,6 +2145,8 @@ describe('WorkflowTemplateService', () => {
         escalationConfig: [{ afterHours: 8 }],
         actions: ['edit_details'],
         flags: [],
+        // ACC-271 PR 3 — a changed who is refused on a protected stage like any shape field.
+        who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] },
       };
       const dtoFields = (): string[] => [
         ...new Set(getMetadataStorage().getTargetValidationMetadatas(UpdateWorkflowStageDto, '', true, false).map((m) => m.propertyName)),

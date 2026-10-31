@@ -29,6 +29,9 @@ export interface IWorkflowTemplate {
   // of the registry (B2); and each priority's due time, for the stage task
   // dialog (B3), which a workflows:manage holder may not otherwise read.
   recordRoutes?: { unit: boolean; committee: boolean };
+  // ACC-271 PR 3 — detail only. The assignee kinds a stage of this record type
+  // may be worked by (STAGE_ASSIGNEE_KINDS), so no screen keeps a copy.
+  assigneeKinds?: string[];
   taskDueHours?: TaskDueHours;
   // ACC-255 — detail only. What this template's record type offers a stage,
   // read from the registries (record-registry.ts) so no screen keeps a copy:

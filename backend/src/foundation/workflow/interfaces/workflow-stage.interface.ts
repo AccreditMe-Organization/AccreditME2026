@@ -1,5 +1,31 @@
 import { IWorkflowTransition } from './workflow-transition.interface';
 
+/** ACC-271 PR 3 — one entry of who works a stage, with the names a picker shows. */
+export interface IStageWhoEntry {
+  id: string;
+  order: number;
+  kind: string; // StageAssigneeKind
+  userId: string | null;
+  user: { id: string; name: string } | null;
+  positionId: string | null;
+  position: { id: string; nameEn: string; nameAr: string | null } | null;
+  // Null on an Org unit head entry: the record's unit.
+  orgUnitId: string | null;
+  orgUnit: { id: string; nameEn: string; nameAr: string | null } | null;
+  // Null on a Committee entry: the record's committee.
+  committeeId: string | null;
+  committee: { id: string; nameEn: string; nameAr: string | null } | null;
+  committeeRoleValueId: string | null;
+  committeeRole: { id: string; labelEn: string; labelAr: string | null } | null;
+  isStartingAssignment: boolean;
+}
+
+/** ACC-271 PR 3 — who works a stage: how they decide, and the entries joined by "or". */
+export interface IStageWho {
+  mode: string; // StageWhoMode
+  entries: IStageWhoEntry[];
+}
+
 export interface IWorkflowStage {
   id: string;
   workflowTemplateId: string;
@@ -35,4 +61,9 @@ export interface IWorkflowStage {
   // A record at a final stage counts (a dissolved committee is at Dissolved);
   // a cancelled instance does not.
   liveCount?: number;
+  // ACC-271 PR 3 — on a template read and a stage save. Null on a stage still on
+  // the old assignee columns (whoMode null).
+  who?: IStageWho | null;
+  // ACC-271 PR 3 — the read-back sentence, built by the server (stage-who.ts).
+  whoSentence?: { en: string; ar: string } | null;
 }
