@@ -216,7 +216,7 @@ export class UserService {
   async listUsers(
     organizationId: string,
     filters?: ListUsersFilters,
-  ): Promise<IPaginatedResponse<IUser>> {
+  ): Promise<IPaginatedResponse<IUser & { isAccountOwner: boolean }>> {
     const { skip, take, page, pageSize } = toSkipTake(filters?.page, filters?.pageSize);
 
     const where = {
@@ -239,15 +239,22 @@ export class UserService {
         : {}),
     };
 
-    const [data, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
         orderBy: USER_SORT.resolve(filters?.sortBy, filters?.sortDir),
         skip,
         take,
+        // ACC-221 — whether each row is the account owner, in the same query
+        // (as GET /users/:id does), scoped to this organisation.
+        include: { ownedOrganizations: { where: { id: organizationId }, select: { id: true } } },
       }),
       this.prisma.user.count({ where }),
     ]);
+    const data = rows.map(({ ownedOrganizations, ...user }) => ({
+      ...user,
+      isAccountOwner: ownedOrganizations.length > 0,
+    }));
 
     return paginated(data, total, page, pageSize);
   }

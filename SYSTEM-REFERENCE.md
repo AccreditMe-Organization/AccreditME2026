@@ -1528,19 +1528,23 @@ deactivate, suspend or offboard. Only a platform admin moves the ownership.
   previous owner keeps every role; they are simply no longer protected.
 - **Who reads it.** `GET /users/:id` says `isAccountOwner`, from
   `getByIdForViewer()`'s own query (`include: { ownedOrganizations }` scoped to
-  this organisation), not a second request. `GET /platform/tenants/:id` adds
+  this organisation), not a second request. `GET /users` says it on every row
+  the same way, from the list query's own include: no second query and no
+  per-row query. `GET /platform/tenants/:id` adds
   `owner { id, name, email } | null` from the organisation read's include, and
   `isOwner` on each of `tenantAdmins`.
 - **Queries added, per path.** removeRoleFromUser of TENANT_ADMIN,
   deactivate and revokeInvitation: one single-column read each, inside a
-  transaction that was already writing. GET /users/:id and the platform
-  detail: none (an include on an existing read). Nothing on the per-request
+  transaction that was already writing. GET /users, GET /users/:id and the
+  platform detail: none (an include on an existing read). Nothing on the per-request
   path (guards, interceptors, middleware).
 - **The screens.** The user record shows an "Account owner" chip by the name,
   offers neither Deactivate nor Revoke invitation for the owner, says why on
   the Roles panel, and Manage roles locks the owner's Organization
-  Administrator row with that sentence. The Users list does not know who the
-  owner is, so it still offers them, and the refusal is said in words. The
+  Administrator row with that sentence. The Users list does the same from each
+  row's flag: the chip on the owner's row, neither action in its menu, and the
+  owner's Organization Administrator locked in Manage roles. Wherever the server
+  refuses anyway (a stale page), the refusal is said in words. The
   Roles list offers no Deactivate on Organization Administrator. The role
   permissions page warns, without blocking the save, when "Manage roles" is
   ticked on any other role: anyone with it can make themselves Organization

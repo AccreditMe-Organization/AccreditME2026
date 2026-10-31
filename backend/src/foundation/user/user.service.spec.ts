@@ -204,7 +204,7 @@ describe('UserService', () => {
     it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
         Promise.resolve(
-          [{ id: 'u1', organizationId: ORG_A }, { id: 'u2', organizationId: ORG_B }].filter(
+          [{ id: 'u1', organizationId: ORG_A, ownedOrganizations: [] }, { id: 'u2', organizationId: ORG_B, ownedOrganizations: [] }].filter(
             (u) => u.organizationId === where.organizationId,
           ),
         ),
@@ -214,6 +214,35 @@ describe('UserService', () => {
       // ACC-78 — the envelope, not a bare array.
       expect(result.data).toHaveLength(1);
       expect(result.data[0]?.organizationId).toBe(ORG_A);
+    });
+
+    // ACC-221 — each row says whether it is the account owner, from the list
+    // query itself: no second query, no per-row query, and only THIS
+    // organisation's ownership counts.
+    it('flags the account owner on its row only, from the same list query (ACC-221)', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'u-owner', organizationId: ORG_A, ownedOrganizations: [{ id: ORG_A }] },
+        { id: 'u-other', organizationId: ORG_A, ownedOrganizations: [] },
+      ]);
+      mockPrisma.user.count.mockResolvedValue(2);
+      mockPrisma.user.findFirst.mockClear();
+      mockPrisma.organization.findFirst.mockClear();
+
+      const result = await service.listUsers(ORG_A);
+
+      expect(result.data.map((u) => [u.id, u.isAccountOwner])).toEqual([
+        ['u-owner', true],
+        ['u-other', false],
+      ]);
+      expect(result.data[0]).not.toHaveProperty('ownedOrganizations');
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: { ownedOrganizations: { where: { id: ORG_A }, select: { id: true } } },
+        }),
+      );
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.organization.findFirst).not.toHaveBeenCalled();
     });
 
     // Tenant scoping has to hold on the COUNT as well as the page. If it only
@@ -282,7 +311,7 @@ describe('UserService', () => {
     // ── ACC-78: pagination ─────────────────────────────────────────────────
 
     it('returns the envelope with total from count()', async () => {
-      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', organizationId: ORG_A }]);
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', organizationId: ORG_A, ownedOrganizations: [] }]);
       mockPrisma.user.count.mockResolvedValue(140);
 
       const result = await service.listUsers(ORG_A, { page: 3, pageSize: 20 });

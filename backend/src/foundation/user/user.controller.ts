@@ -37,7 +37,7 @@ export class UserController {
   async listUsers(
     @CurrentTenant() tenantId: string,
     @Query() query: ListUsersQueryDto,
-  ): Promise<IPaginatedResponse<IUser>> {
+  ): Promise<IPaginatedResponse<IUser & { isAccountOwner: boolean }>> {
     const result = await this.userService.listUsers(tenantId, {
       status: query.status,
       orgUnitId: query.orgUnitId,
@@ -57,7 +57,11 @@ export class UserController {
     // order ever changed, which is exactly the silent-leak shape ACC-45 exists
     // to prevent: the raw Prisma row satisfies IUser structurally, so a missed
     // mapping compiles cleanly and leaks invitationToken at runtime.
-    return { ...result, data: result.data.map(toSafeUser) };
+    // ACC-221 — isAccountOwner is added beside the allowlist, never by spreading the row.
+    return {
+      ...result,
+      data: result.data.map((user) => ({ ...toSafeUser(user), isAccountOwner: user.isAccountOwner })),
+    };
   }
 
   // ACC-78 — counts for the list's filter chips.
