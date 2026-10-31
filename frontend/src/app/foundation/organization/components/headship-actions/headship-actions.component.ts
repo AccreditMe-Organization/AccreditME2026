@@ -103,7 +103,16 @@ export class HeadshipActionsComponent implements OnInit {
     // head-conferring positions. Read only for a viewer who may act.
     this.userService.listAllUsers({ status: 'ACTIVE', orgUnitId: this.orgUnitId() }).subscribe({
       next: (users) =>
-        this.people.set(users.map((u) => ({ id: u.id, name: u.name, email: u.email, positionId: u.positionId }))),
+        this.people.set(
+          users.map((u) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            positionId: u.positionId,
+            // ACC-172 — both names; each dialog picks the reader's language.
+            positionName: u.position ?? null,
+          })),
+        ),
       error: () => this.people.set([]),
     });
     this.positionService.listPositions().subscribe({

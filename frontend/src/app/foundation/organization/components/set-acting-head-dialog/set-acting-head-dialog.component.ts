@@ -13,6 +13,8 @@ import { FormatService } from '../../../../core/formatting';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
+import { LanguageService } from '../../../../core/services/language.service';
+import { HeadshipPerson, personMeta } from '../appoint-head-dialog/appoint-head-dialog.component';
 import {
   IOrgUnitHeadStatus,
   OrgUnitActingReason,
@@ -218,9 +220,10 @@ import {
         >
           <app-overlay-select
             formControlName="userId"
-            [options]="people()"
+            [options]="personOptions()"
             optionLabel="name"
             optionValue="id"
+            [itemTemplate]="personItem"
             [placeholder]="'orgUnitHead.cover.actingHeadPlaceholder' | translate"
           />
         </am-field>
@@ -345,6 +348,17 @@ import {
       size="form"
     />
 
+    <!-- ACC-172 — a person and, beneath, their position (or their email when
+         they hold none): two people with one name are told apart. Both lines
+         truncate, so a long position name cannot widen the dialog. -->
+    <ng-template #personItem let-option>
+      <span class="flex min-w-0 flex-col">
+        <span class="truncate">{{ option.label ?? option.name }}</span>
+        @if (option.meta) {
+          <span class="truncate text-meta text-[var(--am-ink-500)]" data-person-meta>{{ option.meta }}</span>
+        }
+      </span>
+    </ng-template>
   `,
   styles: [
     `
@@ -528,7 +542,7 @@ export class SetActingHeadDialogComponent {
   readonly orgUnitId = input.required<string>();
   readonly unitName = input.required<string>();
   readonly status = input.required<IOrgUnitHeadStatus>();
-  readonly people = input.required<{ id: string; name: string; email?: string }[]>();
+  readonly people = input.required<HeadshipPerson[]>();
   readonly visible = input.required<boolean>();
 
   readonly visibleChange = output<boolean>();
@@ -539,6 +553,7 @@ export class SetActingHeadDialogComponent {
   private readonly translate = inject(TranslateService);
   private readonly headService = inject(OrgUnitHeadService);
   private readonly layers = inject(LayerStackService);
+  private readonly language = inject(LanguageService);
   private readonly destroyRef = inject(DestroyRef);
 
   private static nextId = 0;
@@ -679,16 +694,27 @@ export class SetActingHeadDialogComponent {
       : 'orgUnitHead.cover.stripNobodyCovered',
   );
 
+  /** ACC-172 — each person with their position (else email) beneath the name. */
+  readonly personOptions = computed(() =>
+    this.people().map((p) => ({ id: p.id, name: p.name, meta: this.meta(p) })),
+  );
+
   readonly personHint = computed(() => {
-    const id = this.form.controls.userId.value;
+    // The chosen id as a SIGNAL (see chosenUserId): a FormControl value is not
+    // one, so reading it here left the hint stuck on its first answer.
+    const id = this.chosenUserId();
     const person = this.people().find((p) => p.id === id);
-    // The design's meta line is "position · unit". The user LIST endpoint
-    // returns neither name — only positionId, and `references` comes back
-    // solely from GET /users/:id — so the email stands in: it is real, it is
-    // present, and it does the same job of telling two people with one name
-    // apart. Stated rather than fabricated, per the design's own rule.
-    return person?.email ?? this.translate.instant('orgUnitHead.cover.actingHeadHint');
+    // The design's meta line is "position · unit". Since ACC-172 the user LIST
+    // endpoint returns each person's position names, so the position is shown;
+    // a person with no position falls back to their email, which still tells
+    // two people with one name apart. The unit is not shown: every person here
+    // is already in this unit.
+    return person ? this.meta(person) || this.translate.instant('orgUnitHead.cover.actingHeadHint') : this.translate.instant('orgUnitHead.cover.actingHeadHint');
   });
+
+  private meta(person: HeadshipPerson): string {
+    return personMeta(person, (en, ar) => this.language.bilingual(en, ar));
+  }
 
   readonly untilHint = computed(() =>
     this.actingReason() === 'ABSENCE'
