@@ -18,6 +18,11 @@ export interface IStageWhoEntry {
   committeeRoleValueId: string | null;
   committeeRole: { id: string; labelEn: string; labelAr: string | null } | null;
   isStartingAssignment: boolean;
+  // ACC-271 PR 5-be — on a Fixed position entry, how many ACTIVE people hold the
+  // position with this unit as their primary unit (the holder rule); null on
+  // every other kind. From one grouped count per read, so the screen can warn
+  // "Nobody holds this position in this unit yet." without a call per row.
+  holderCount: number | null;
 }
 
 /** ACC-271 PR 3 — who works a stage: how they decide, and the entries joined by "or". */
