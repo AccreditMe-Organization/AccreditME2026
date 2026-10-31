@@ -1,0 +1,16 @@
+[
+  {
+    "workspace": "frontend",
+    "advisory": "GHSA-3g3m-2fjr-6pw4",
+    "package": "glob",
+    "reason": "Reaches us only through Karma, the test runner, which never ships; no fixed version exists yet.",
+    "reviewBy": "2027-01-31"
+  },
+  {
+    "workspace": "frontend",
+    "advisory": "GHSA-g3hv-75wg-m249",
+    "package": "minimatch",
+    "reason": "Reaches us only through Karma, the test runner, which never ships; no fixed version exists yet.",
+    "reviewBy": "2027-01-31"
+  }
+]
