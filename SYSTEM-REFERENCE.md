@@ -8924,6 +8924,25 @@ screens remain unmigrated** — a deliberate split; a follow-up migrates
 the rest. `p-table` is not deprecated by this: it remains correct for a
 nested editor grid that is not a list page.
 
+*Corrected (ACC-120 slice 7), against the code (`grep '<app-data-list'`,
+specs excluded): 10 consumers — `user-list`, `role-list`,
+`workflow-stage-list`, `committee-list`, `lookup-category-list`,
+`lookup-value-list`, `position-list`, `public-holiday-list`, `recycle-bin`,
+and `workflow-template-list` (the Workflows list).*
+
+**The Workflows list adds two shapes other consumers can copy:**
+- **Group headings are rows of their own.** Its source returns a heading row,
+  then that group's workflows (each record type, its default last). A heading
+  carries no `amListRow`, so ↑/↓ skip it, and its `amListRowIndex` counts
+  workflow rows only, so the first tab stop is never a heading. A search keeps
+  the headings of groups that still match.
+- **The page owns its load** when the shared states don't say what it needs.
+  It reads `GET /workflow-templates` once and shows its own skeletons, its own
+  alert ("…couldn't be loaded. Nothing was changed." with Retry) and its own
+  empty sentence. It renders `app-data-list` only on a successful read with
+  rows, over a source built from them (a `computed()`, so a re-read is a new
+  source and the list reloads).
+
 ---
 
 ### 10.11 The Application Shell — Rail, Breadcrumb, Page Header, Tab Title (ACC-79)
@@ -9289,8 +9308,10 @@ to 0 and the page throws NG0100 in a dev build. So the row answers from the
 list: `amListRowIndex` is a REQUIRED input, bound `[amListRowIndex]="i"` from
 the row template's `let-i="index"`, and `isFirstRow()` reads nothing else. A row
 without one fails `ng build`. Users, Committees, Lookup categories and the
-Recycle bin all pass it. `siblings()` still reads the DOM, but only in the key
-handlers and `ngOnDestroy`, never in a binding.
+Recycle bin all pass it, and so does the Workflows list, whose index counts
+its workflow rows only, never its group headings (§10.10). `siblings()` still
+reads the DOM, but only in the key handlers and `ngOnDestroy`, never in a
+binding.
 **The guard is `list-row.ng0100.spec.ts`**, which renders a real data list
 with the animation renderer loaded and searches the first row away. A browser
 check cannot see the defect in today's app: `provideAnimationsAsync()` loads its
