@@ -1499,11 +1499,57 @@ deactivate, suspend or offboard. Only a platform admin moves the ownership.
   - It never touches the platform organisation or an owner already set.
   - It reads in two queries, and writes one audit row per organisation in a
     single transaction under the rows' locks.
-- **Nothing reads it yet.** The protections (role removal, deactivation,
-  suspension and offboarding of the owner; refusing to deactivate the
-  Organization Administrator role), the "Manage roles" warning, and the
-  platform transfer screen and endpoint are ACC-221's follow-up. No query was
-  added to the per-request path.
+- **What it protects (built in ACC-221's last PR).** One helper,
+  `assertNotAccountOwner(tx, organizationId, userId)`
+  (`foundation/roles/account-owner.ts`), reads `ownerUserId` (that one column)
+  inside the caller's transaction, before the write, and refuses with 409
+  `ACCOUNT_OWNER_PROTECTED`. A null owner protects nobody. It is called in
+  exactly three places:
+  - `RoleService.removeRoleFromUser`, only when the role is `TENANT_ADMIN`:
+    the owner's other roles stay removable;
+  - `UserService.deactivate`, always;
+  - `UserService.revokeInvitation`, always (the person a tenant is created with
+    is INVITED until they accept). Its "activity" catch passes the owner
+    refusal through instead of rewording it.
+  - Suspension and offboarding have no in-tenant path for a user (no feature
+    produces SUSPENDED), so deactivation is the departure that is protected.
+- **The root role itself.** `RoleService.deactivateRole` refuses the
+  `TENANT_ADMIN` role for everyone, owner or not, before any write:
+  409 `ROOT_ROLE_CANNOT_BE_DEACTIVATED` (no owner read). Both new codes are in
+  `role-permission-refusal.ts`.
+- **Moving it.** `POST /platform/tenants/:id/owner { userId }`, behind
+  `TenantGuard` and `PlatformGuard` like the other platform tenant routes.
+  In one transaction the user must be an ACTIVE member of that tenant holding
+  its active `TENANT_ADMIN` role, else 400 `OWNER_MUST_BE_ACTIVE_ADMINISTRATOR`
+  (`platform/tenant/platform-tenant-refusal.ts`); a user of another tenant
+  gets the same 400 as an invented id. It writes one UPDATE audit row in the
+  TENANT's trail (before/after `ownerUserId`, actor = the platform admin).
+  Naming the current owner again changes nothing and writes no row. The
+  previous owner keeps every role; they are simply no longer protected.
+- **Who reads it.** `GET /users/:id` says `isAccountOwner`, from
+  `getByIdForViewer()`'s own query (`include: { ownedOrganizations }` scoped to
+  this organisation), not a second request. `GET /users` says it on every row
+  the same way, from the list query's own include: no second query and no
+  per-row query. `GET /platform/tenants/:id` adds
+  `owner { id, name, email } | null` from the organisation read's include, and
+  `isOwner` on each of `tenantAdmins`.
+- **Queries added, per path.** removeRoleFromUser of TENANT_ADMIN,
+  deactivate and revokeInvitation: one single-column read each, inside a
+  transaction that was already writing. GET /users, GET /users/:id and the
+  platform detail: none (an include on an existing read). Nothing on the per-request
+  path (guards, interceptors, middleware).
+- **The screens.** The user record shows an "Account owner" chip by the name,
+  offers neither Deactivate nor Revoke invitation for the owner, says why on
+  the Roles panel, and Manage roles locks the owner's Organization
+  Administrator row with that sentence. The Users list does the same from each
+  row's flag: the chip on the owner's row, neither action in its menu, and the
+  owner's Organization Administrator locked in Manage roles. Wherever the server
+  refuses anyway (a stale page), the refusal is said in words. The
+  Roles list offers no Deactivate on Organization Administrator. The role
+  permissions page warns, without blocking the save, when "Manage roles" is
+  ticked on any other role: anyone with it can make themselves Organization
+  Administrator. The platform tenant page names the owner and transfers it to
+  another active Organization Administrator after a confirm.
 
 ---
 

@@ -23,6 +23,7 @@ import { UpdateTenantModulesDto } from './dto/update-tenant-modules.dto';
 import { AllocateAiCreditsDto } from './dto/allocate-ai-credits.dto';
 import { ChangeTenantPlanDto } from './dto/change-tenant-plan.dto';
 import { ExtendTrialDto } from './dto/extend-trial.dto';
+import { TransferOwnershipDto } from './dto/transfer-ownership.dto';
 
 @Controller('platform')
 export class PlatformTenantController {
@@ -104,6 +105,19 @@ export class PlatformTenantController {
     @CurrentUser() actorId: string,
   ) {
     return this.platformTenantService.changePlan(id, dto.planId, actorId);
+  }
+
+  // ACC-221 — move the account owner to another active Organization
+  // Administrator of this tenant. 204 whether it changed or was already them.
+  @Post('tenants/:id/owner')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(TenantGuard, PlatformGuard)
+  transferOwnership(
+    @Param('id') id: string,
+    @Body() dto: TransferOwnershipDto,
+    @CurrentUser() actorId: string,
+  ) {
+    return this.platformTenantService.transferOwnership(id, dto.userId, actorId);
   }
 
   @Post('tenants/:id/impersonate/:userId')

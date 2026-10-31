@@ -210,6 +210,43 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     expect(text(q('[data-pm-tag]', row('workflows:manage')!))).toBe('Organization Administrator only');
   });
 
+  // ── ACC-221 — "Manage roles" on another role is a warning, never a block ──
+  describe('"Manage roles" on a role other than Organization Administrator (ACC-221)', () => {
+    const warning = () => q('[data-pm-self-elevation]', row('roles:manage')!);
+
+    it('ticking it shows the warning under the row, part of its description', () => {
+      render();
+      expect(warning()).toBeNull();
+      click(box('roles:manage'));
+      expect(plain(text(warning()))).toBe('⚠ Anyone with this can make themselves Organization Administrator.');
+      expect(box('roles:manage').getAttribute('aria-describedby')).toBe(q('[data-pm-self-elevation]')!.parentElement!.id);
+    });
+
+    it('a role that already holds it shows the warning on load', () => {
+      render({ held: [...HELD, 'roles:manage'] });
+      expect(warning()).not.toBeNull();
+    });
+
+    it('Organization Administrator itself shows no warning', () => {
+      render({ roleKey: 'TENANT_ADMIN', isSystem: true, held: [...HELD, 'roles:manage'] });
+      expect(warning()).toBeNull();
+    });
+
+    it('the save is not blocked: ticking it saves', () => {
+      render();
+      click(box('roles:manage'));
+      click(q('[data-pm-review] button'));
+      buttonByAttr('data-pm-save')!.click();
+      expect(assign).toHaveBeenCalledTimes(1);
+      expect(assign.calls.mostRecent().args[1]).toContain('roles:manage');
+    });
+
+    it('Arabic: «أي شخص لديه هذه الصلاحية يستطيع أن يجعل نفسه مسؤول المؤسسة.»', () => {
+      render({ lang: 'ar', held: [...HELD, 'roles:manage'] });
+      expect(plain(text(warning()))).toBe('⚠ أي شخص لديه هذه الصلاحية يستطيع أن يجعل نفسه مسؤول المؤسسة.');
+    });
+  });
+
   // ── Changing ───────────────────────────────────────────────────────────────
 
   it('a row is a plain checkbox named by its sentence; ticking it grants only that row and marks it', () => {

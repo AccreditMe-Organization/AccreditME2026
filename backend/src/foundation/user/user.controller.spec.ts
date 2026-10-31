@@ -124,6 +124,14 @@ describe('UserController', () => {
     expect(service.getByIdForViewer).toHaveBeenCalledWith(USER_ID, TENANT_ID, USER_ID, ['users:view']);
   });
 
+  // ACC-221 — the record says whether this person is the account owner, from
+  // the service's own read; true and false both reach the response.
+  it.each([true, false])('getById passes isAccountOwner %s through', async (isAccountOwner) => {
+    service.getByIdForViewer.mockResolvedValue({ id: USER_ID, isAccountOwner });
+    const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view']);
+    expect(result.isAccountOwner).toBe(isAccountOwner);
+  });
+
   // ACC-46 Section 2.6.b Step 2
   it('getTransferContext delegates to UserService.getTransferContext', async () => {
     await controller.getTransferContext(USER_ID, 'unit-dest', TENANT_ID);
@@ -244,6 +252,19 @@ describe('UserController', () => {
       'tosAcceptedAt',
       'tosVersion',
     ] as const;
+
+    // ACC-221 — the owner flag rides beside the allowlist; the secrets still go.
+    it('listUsers passes isAccountOwner through, and still strips every internal-only field', async () => {
+      service.listUsers.mockResolvedValue({
+        data: [{ ...RAW_USER_WITH_SECRETS, isAccountOwner: true }],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+      });
+      const result = await controller.listUsers(TENANT_ID, {});
+      expect(result.data[0]?.isAccountOwner).toBe(true);
+      for (const field of SENSITIVE_FIELDS) expect(result.data[0]).not.toHaveProperty(field);
+    });
 
     it('listUsers strips invitationToken and every other internal-only field from each returned user', async () => {
       service.listUsers.mockResolvedValue({

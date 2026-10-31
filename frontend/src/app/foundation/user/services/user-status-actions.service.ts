@@ -3,6 +3,7 @@ import { TranslateService } from '@ngx-translate/core';
 import { FormatService } from '../../../core/formatting';
 import { LanguageService } from '../../../core/services/language.service';
 import { extractErrorMessage } from '../../../shared/utils/http-error.util';
+import { refusalCode } from '../../../core/http/refusal';
 import { RoleService, UserRoleGrantDto } from '../../roles/services/role.service';
 import { IUserDto, UserService } from './user.service';
 import { AmConfirmService } from '../../../shared/components/confirm/am-confirm.service';
@@ -28,19 +29,24 @@ export type UserStatusAction = 'deactivate' | 'reactivate' | 'revokeInvitation';
  * and A1). The backend allows it, subject only to the last-administrator rule,
  * and the first thing it does is end the caller's own sessions: offering it as
  * one click among the actions on your own profile is offering a lockout.
+ *
+ * ACC-221 — nor for the organisation's ACCOUNT OWNER: neither Deactivate nor
+ * Revoke invitation, which the server refuses for them (ACCOUNT_OWNER_PROTECTED).
+ * Only GET /users/:id says who the owner is, so the Users list still offers
+ * them; the refusal is then said in words (refusalMessage below).
  */
 export function statusActionFor(
-  user: Pick<IUserDto, 'id' | 'status'>,
+  user: Pick<IUserDto, 'id' | 'status' | 'isAccountOwner'>,
   hasPermission: (permission: string) => boolean,
   viewerId: string | null | undefined,
 ): UserStatusAction | null {
   switch (user.status) {
     case 'ACTIVE':
-      return hasPermission('users:deactivate') && user.id !== viewerId ? 'deactivate' : null;
+      return hasPermission('users:deactivate') && user.id !== viewerId && !user.isAccountOwner ? 'deactivate' : null;
     case 'INACTIVE':
       return hasPermission('users:reactivate') ? 'reactivate' : null;
     case 'INVITED':
-      return hasPermission('users:invite') ? 'revokeInvitation' : null;
+      return hasPermission('users:invite') && !user.isAccountOwner ? 'revokeInvitation' : null;
     default:
       // SUSPENDED: no feature produces it, and no action is defined for it.
       return null;
@@ -99,7 +105,7 @@ export class UserStatusActionsService {
                 flagged: this.format.count('user.tasksFlaggedUnassigned', unassignedCount),
               }),
             ),
-          error: (err: unknown) => result.failed(extractErrorMessage(err, 'Deactivate failed')),
+          error: (err: unknown) => result.failed(this.refusalMessage(err, 'Deactivate failed')),
         });
       },
     });
@@ -189,9 +195,21 @@ export class UserStatusActionsService {
         this.userService.revokeInvitation(user.id).subscribe({
           next: () =>
             result.succeeded(this.translate.instant('user.revokeInvitationSummary', { name: user.name })),
-          error: (err: unknown) => result.failed(extractErrorMessage(err, 'Revoke failed')),
+          error: (err: unknown) => result.failed(this.refusalMessage(err, 'Revoke failed')),
         });
       },
     });
+  }
+
+  /**
+   * ACC-221 — the account owner's refusal, in the reader's language, for a
+   * page that offered the action without knowing (the Users list, a stale tab).
+   * Anything else keeps the existing message.
+   */
+  private refusalMessage(err: unknown, fallback: string): string {
+    if (refusalCode(err) === 'ACCOUNT_OWNER_PROTECTED') {
+      return this.translate.instant('user.refusal.accountOwnerProtected');
+    }
+    return extractErrorMessage(err, fallback);
   }
 }

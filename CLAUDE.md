@@ -4525,13 +4525,23 @@ The rule is Ahmad's 29 Oct comment on ACC-221. Briefly:
   the organisation's single ACTIVE Organization Administrator, and skips one
   with none or several, reporting the slug and count. It never touches the
   platform organisation or an owner already set.
-- **Nothing reads it yet. The protections are lane A's follow-up**:
-  - the owner can't lose Organization Administrator, or be deactivated,
-    suspended or offboarded, from inside the tenant;
-  - the Organization Administrator role can't be deactivated;
-  - the "Manage roles" warning;
-  - the platform screen and endpoint that transfer ownership.
-- **No query on the per-request path.**
+- **THE PROTECTIONS ARE BUILT** (ACC-221's last PR):
+  - inside the tenant nobody takes Organization Administrator from the owner,
+    deactivates them or revokes their invitation: 409
+    `ACCOUNT_OWNER_PROTECTED`, from ONE helper, `assertNotAccountOwner()`
+    (`foundation/roles/account-owner.ts`), called inside each existing
+    transaction before the write. A null owner protects nobody;
+  - nobody deactivates the Organization Administrator role itself, owner or
+    not: 409 `ROOT_ROLE_CANNOT_BE_DEACTIVATED`;
+  - the role permissions page warns, without blocking the save, when "Manage
+    roles" is ticked on any other role.
+- **ONLY A PLATFORM ADMIN MOVES IT**: `POST /platform/tenants/:id/owner`
+  `{ userId }`, to an ACTIVE Organization Administrator of that tenant (else
+  400 `OWNER_MUST_BE_ACTIVE_ADMINISTRATOR`, another tenant's user included),
+  with one audit row in the tenant's trail; a repeat changes nothing. The
+  previous owner keeps their roles.
+- **`GET /users/:id` says `isAccountOwner`** and the platform detail `owner`,
+  each from an existing read. **No query on the per-request path.**
 
 ## Open / Deferred Items
 

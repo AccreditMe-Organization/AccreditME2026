@@ -152,6 +152,19 @@ describe('UserListComponent row actions (ACC-79)', () => {
     expect(create(ADMIN).rowActionsFor(own)).toEqual(['transfer', 'deactivate']);
   });
 
+  // ACC-221 — the list knows the account owner (GET /users sends isAccountOwner).
+  it("offers neither Deactivate nor Revoke invitation on the account owner's row", () => {
+    const list = create(ADMIN);
+    expect(list.rowActionsFor(user({ isAccountOwner: true }))).toEqual(['transfer']);
+    expect(list.rowActionsFor(user({ isAccountOwner: true, status: 'INVITED' }))).toEqual([]);
+  });
+
+  it("offers both on another administrator's row", () => {
+    const list = create(ADMIN);
+    expect(list.rowActionsFor(user({ isAccountOwner: false }))).toEqual(['transfer', 'deactivate']);
+    expect(list.rowActionsFor(user({ isAccountOwner: false, status: 'INVITED' }))).toContain('revokeInvitation');
+  });
+
   it('offers nothing to a user who can only view the list', () => {
     expect(create(['users:view']).rowActionsFor(user({}))).toEqual([]);
   });

@@ -519,6 +519,7 @@
     "title": "Roles & Permissions",
     "matrixFrozenRootRole": "This is your organization’s root role. Its permissions are fixed so that someone can always administer the organization. You can rename it, and you can give any permissions you like to other roles.",
     "matrix": {
+      "manageRolesWarning": "Anyone with this can make themselves Organization Administrator.",
       "subtitle": "Permissions",
       "affects": "changing this affects them as soon as it's saved",
       "reviewChanges": "Review changes…",
@@ -666,6 +667,7 @@
       "forbidden": "You can't change roles any more. Ask your administrator."
     },
     "refusal": {
+      "rootRoleCannotBeDeactivated": "Organization Administrator can't be deactivated.",
       "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first."
     },
     "form": {
@@ -1853,6 +1855,9 @@
     }
   },
   "user": {
+    "refusal": {
+      "accountOwnerProtected": "This person is the account owner, so they can't be deactivated and their invitation can't be revoked. Only AccreditMe support can transfer ownership."
+    },
     "title": "Users",
     "myProfile": "My Profile",
     "invite": "Invite User",
@@ -1964,6 +1969,20 @@
     "revokeInvitationHeader": "Revoke {{name}}'s invitation?"
   },
   "platform": {
+    "accountOwner": {
+      "refusalMustBeAdmin": "The new account owner must be an active Organization Administrator of this organization.",
+      "transferred": "Ownership transferred.",
+      "confirmMessageNoOwner": "Ownership, and the protection that comes with it, goes to {{name}}.",
+      "confirmMessage": "Ownership, and the protection that comes with it, moves to {{name}}. {{current}}'s roles stay as they are.",
+      "confirmHeader": "Transfer ownership to {{name}}?",
+      "noOtherAdmin": "Give someone else Organization Administrator first.",
+      "transfer": "Transfer ownership",
+      "choose": "Choose an Organization Administrator",
+      "newOwner": "New account owner",
+      "none": "No account owner recorded",
+      "line": "Account owner: {{name}} · {{email}}",
+      "heading": "Account owner"
+    },
     "tenants": "Tenants",
     "createTenant": "Create Tenant",
     "tenantName": "Organization Name",
@@ -2938,6 +2957,7 @@
     "willBeRemoved": "− will be removed",
     "lastAdministratorLocked": "The organization’s only active administrator. Give this role to someone else first, then you can remove it here.",
     "refusal": {
+      "accountOwnerProtected": "This is the account owner, so Organization Administrator can't be removed from them. Only AccreditMe support can transfer ownership.",
       "loadForbidden": "You can't see this person's roles. That needs permission to view users and roles.",
       "saveForbidden": "You no longer have permission to change roles. Nothing was saved.",
       "platformRoleNotAssignable": "The Platform Administrator role can't be given inside an organization.",
@@ -3160,6 +3180,8 @@
     "errorId": "Error ID: {{id}}"
   },
   "userRecord": {
+    "accountOwnerLine": "This is the account owner. Only AccreditMe support can transfer ownership.",
+    "accountOwner": "Account owner",
     "actingIn": "Acting in",
     "actingUntil": "{{unit}}, until {{date}}",
     "outOfOffice": "Out of office",

@@ -23,6 +23,7 @@ import { AiAllocationService } from '../../foundation/ai/ai-allocation.service';
 import { aiBalanceOf } from '../../foundation/ai/ai-balance';
 import { IPlatformTenantDetail, IPlatformTenantSummary } from './interfaces/platform-tenant.interface';
 import { isOrganizationOpen } from '../../common/tenant/organization-status';
+import { OwnerMustBeActiveAdministratorException } from './platform-tenant-refusal';
 import {
   ACCESS_TOKEN_COOKIE,
   accessTokenCookieOptions,
@@ -72,9 +73,11 @@ export class PlatformTenantService {
   }
 
   async getTenantDetail(id: string): Promise<IPlatformTenantDetail> {
+    // ACC-221 — the owner comes with the organisation read itself (include),
+    // not a separate query.
     const org = await this.prisma.organization.findUnique({
       where: { id },
-      include: { planCatalog: true },
+      include: { planCatalog: true, owner: { select: { id: true, name: true, email: true } } },
     });
     if (!org) throw new NotFoundException('Tenant not found');
 
@@ -104,8 +107,53 @@ export class PlatformTenantService {
       userCount,
       modules: settings.modules ?? {},
       ai: aiBalanceOf(org),
-      tenantAdmins,
+      tenantAdmins: tenantAdmins.map((admin) => ({ ...admin, isOwner: admin.id === org.ownerUserId })),
+      owner: org.owner,
     };
+  }
+
+  /**
+   * ACC-221 — move the account owner to another ACTIVE Organization
+   * Administrator of the same tenant. Only a platform administrator can do this
+   * (the route's PlatformGuard); inside the tenant the owner is protected.
+   *
+   * The checks and the write share one transaction. A user who is not in this
+   * tenant, not ACTIVE, or not holding its active TENANT_ADMIN role is the same
+   * 400, so another tenant's user is indistinguishable from an invented id.
+   * Naming the current owner again changes nothing and writes no audit row. The
+   * previous owner keeps every role; they are simply no longer protected.
+   */
+  async transferOwnership(id: string, userId: string, actorId: string): Promise<void> {
+    const change = await this.prisma.$transaction(async (tx) => {
+      const org = await tx.organization.findUnique({ where: { id }, select: { ownerUserId: true } });
+      if (!org) throw new NotFoundException('Tenant not found');
+      const candidate = await tx.user.findFirst({
+        where: {
+          id: userId,
+          organizationId: id,
+          status: 'ACTIVE',
+          userRoles: { some: { role: { organizationId: id, key: 'TENANT_ADMIN', isActive: true } } },
+        },
+        select: { id: true },
+      });
+      if (!candidate) throw new OwnerMustBeActiveAdministratorException();
+      if (org.ownerUserId === userId) return null;
+      await tx.organization.update({ where: { id }, data: { ownerUserId: userId } });
+      return { before: org.ownerUserId };
+    });
+    if (!change) return;
+
+    // In the TENANT's own trail, so the customer's record says who moved it.
+    await this.auditLog.log({
+      tenantId: id,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'Organization',
+      objectId: id,
+      before: { ownerUserId: change.before },
+      after: { ownerUserId: userId },
+      metadata: { event: 'owner_transferred', ticket: 'ACC-221' },
+    });
   }
 
   // Orchestrates 3 already-built services — see step-12-admin-portal.md

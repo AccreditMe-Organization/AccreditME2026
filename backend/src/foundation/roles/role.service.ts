@@ -38,7 +38,9 @@ import {
   UserNotFoundForRoleException,
   PlatformRoleNotEditableException,
   RolePermissionsChangedException,
+  RootRoleCannotBeDeactivatedException,
 } from './role-permission-refusal';
+import { assertNotAccountOwner } from './account-owner';
 import {
   assertGrantable,
   assertNotRootRoleOnly,
@@ -437,6 +439,10 @@ export class RoleService {
   async deactivateRole(id: string, organizationId: string, actorId: string): Promise<void> {
     const role = await this.prisma.role.findFirst({ where: { id, organizationId } });
     if (!role) throw new NotFoundException('Role not found');
+    // ACC-221 — Organization Administrator, the tenant's root role, is never
+    // deactivated, whoever holds it: an inactive role grants nothing, so this
+    // would take administration from the account owner along with everyone.
+    if (role.key === TENANT_ADMIN_KEY) throw new RootRoleCannotBeDeactivatedException();
     if (!role.isActive) return;
 
     // ACC-120 — the local assignment count that stood here is gone. It asked
@@ -820,6 +826,8 @@ export class RoleService {
     // nobody?" is a question about the state the commit would produce, and
     // asking it beforehand is how an off-by-one creeps in.
     await this.prisma.$transaction(async (tx) => {
+      // ACC-221 — nobody takes Organization Administrator from the account owner.
+      if (role.key === TENANT_ADMIN_KEY) await assertNotAccountOwner(tx, organizationId, userId);
       const baseline = await captureAdministratorBaseline(organizationId, tx);
       await tx.userRole.delete({ where: { id: assignment.id } });
       await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);

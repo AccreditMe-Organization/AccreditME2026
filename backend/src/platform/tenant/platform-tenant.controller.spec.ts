@@ -35,6 +35,7 @@ describe('PlatformTenantController', () => {
     updateTenantModules: jest.Mock;
     allocateAiCredits: jest.Mock;
     changePlan: jest.Mock;
+    transferOwnership: jest.Mock;
     startImpersonation: jest.Mock;
     endImpersonation: jest.Mock;
   };
@@ -50,6 +51,7 @@ describe('PlatformTenantController', () => {
       updateTenantModules: jest.fn().mockResolvedValue(undefined),
       allocateAiCredits: jest.fn().mockResolvedValue(undefined),
       changePlan: jest.fn().mockResolvedValue(undefined),
+      transferOwnership: jest.fn().mockResolvedValue(undefined),
       startImpersonation: jest.fn().mockResolvedValue(undefined),
       endImpersonation: jest.fn().mockResolvedValue(undefined),
     };
@@ -121,6 +123,14 @@ describe('PlatformTenantController', () => {
 
   it('changePlan is behind TenantGuard and PlatformGuard, like its siblings', () => {
     const guards = Reflect.getMetadata('__guards__', PlatformTenantController.prototype.changePlan) as unknown[];
+    expect(guards).toEqual([TenantGuard, PlatformGuard]);
+  });
+
+  // ACC-221 — only a platform administrator moves the account owner.
+  it('transferOwnership delegates the tenant, the new owner and the actor, behind TenantGuard and PlatformGuard', async () => {
+    await controller.transferOwnership(TENANT_ID, { userId: 'u-two' }, ACTOR_ID);
+    expect(service.transferOwnership).toHaveBeenCalledWith(TENANT_ID, 'u-two', ACTOR_ID);
+    const guards = Reflect.getMetadata('__guards__', PlatformTenantController.prototype.transferOwnership) as unknown[];
     expect(guards).toEqual([TenantGuard, PlatformGuard]);
   });
 

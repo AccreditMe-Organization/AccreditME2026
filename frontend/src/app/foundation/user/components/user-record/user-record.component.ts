@@ -138,7 +138,18 @@ interface Fact {
                 >{{ initials() }}</span
               >
               <div class="min-w-0">
-                <h1 class="text-2xl font-semibold leading-tight tracking-tight">{{ u.name }}</h1>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h1 class="text-2xl font-semibold leading-tight tracking-tight">{{ u.name }}</h1>
+                  <!-- ACC-221 — the organisation's account owner. -->
+                  @if (u.isAccountOwner) {
+                    <span
+                      class="text-[10.5px] font-semibold px-1.5 py-px rounded text-[var(--am-blue-primary)] bg-[color-mix(in_srgb,var(--am-blue-primary)_12%,transparent)]"
+                      data-user-account-owner
+                    >
+                      {{ 'userRecord.accountOwner' | translate }}
+                    </span>
+                  }
+                </div>
                 <div class="flex flex-wrap items-center gap-2 mt-1">
                   <span
                     dir="ltr"
@@ -288,6 +299,13 @@ interface Fact {
                   </li>
                 }
               </ul>
+              <!-- ACC-221 — why Deactivate, Revoke invitation and removing
+                   Organization Administrator are not offered for this person. -->
+              @if (user()?.isAccountOwner) {
+                <p class="m-0 px-4 py-2 text-[11.5px] text-[var(--am-text-secondary)]" data-user-account-owner-line>
+                  {{ 'userRecord.accountOwnerLine' | translate }}
+                </p>
+              }
             </app-record-panel>
           }
 
@@ -385,6 +403,7 @@ interface Fact {
         <app-manage-roles
           [userId]="u.id"
           [userName]="u.name"
+          [isAccountOwner]="!!u.isAccountOwner"
           (saved)="onRolesSaved()"
           (cancelled)="rolesDialog.requestClose()"
           (dirtyChange)="rolesDirty.set($event)"
