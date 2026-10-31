@@ -88,11 +88,12 @@ function setup(status: IOrgUnitHeadStatus): {
 const DAY = 24 * 60 * 60 * 1000;
 
 describe('SetActingHeadDialogComponent (ACC-120 slice 2)', () => {
+  // First, so it runs last: after the verify below (ACC-172 switches to Arabic).
+  preserveDocumentLanguage();
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   // ACC-172 — two people with one name are told apart by their position.
   describe('the person picker shows each position (ACC-172)', () => {
-    preserveDocumentLanguage();
     let fixture: ComponentFixture<HostComponent>;
 
     /** The person picker's open list: [name, the quieter line under it]. */
