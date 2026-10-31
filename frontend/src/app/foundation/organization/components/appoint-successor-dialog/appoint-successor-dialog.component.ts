@@ -17,7 +17,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { IOrgUnitHeadStatus, OrgUnitHeadService } from '../../services/org-unit-head.service';
-import { HeadshipPerson } from '../appoint-head-dialog/appoint-head-dialog.component';
+import { HeadshipPerson, personMeta } from '../appoint-head-dialog/appoint-head-dialog.component';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const SUCCESSOR_NOTE_MAX = 500;
@@ -118,6 +118,7 @@ export const SUCCESSOR_NOTE_MAX = 500;
               [options]="personOptions()"
               optionLabel="label"
               optionValue="value"
+              [itemTemplate]="personItem"
               [ariaLabel]="'headship.successor.nextHead' | translate"
               [placeholder]="(personOptions().length ? 'headship.appoint.personPlaceholder' : 'headship.appoint.nobody') | translate"
             />
@@ -209,6 +210,18 @@ export const SUCCESSOR_NOTE_MAX = 500;
       size="form"
       density="compact"
     />
+
+    <!-- ACC-172 — a person and, beneath, their position (or their email when
+         they hold none): two people with one name are told apart. Both lines
+         truncate, so a long position name cannot widen the dialog. -->
+    <ng-template #personItem let-option>
+      <span class="flex min-w-0 flex-col">
+        <span class="truncate">{{ option.label ?? option.name }}</span>
+        @if (option.meta) {
+          <span class="truncate text-meta text-[var(--am-ink-500)]" data-person-meta>{{ option.meta }}</span>
+        }
+      </span>
+    </ng-template>
   `,
   styles: [
     `
@@ -386,13 +399,19 @@ export class AppointSuccessorDialogComponent {
     const headPositionIds = new Set((this.positions() ?? []).map((p) => p.id));
     return this.people()
       .filter((p) => p.id !== outgoingId && !(p.positionId && headPositionIds.has(p.positionId)))
-      .map((p) => ({ label: p.name, value: p.id }));
+      .map((p) => ({ label: p.name, value: p.id, meta: this.meta(p) }));
   });
 
+  /** ACC-172 — the chosen person's position, else their email. */
   readonly personHint = computed(() => {
     const id = this.incomingValue();
-    return this.people().find((p) => p.id === id)?.email ?? '';
+    const person = this.people().find((p) => p.id === id);
+    return person ? this.meta(person) : '';
   });
+
+  private meta(person: HeadshipPerson): string {
+    return personMeta(person, (en, ar) => this.language.bilingual(en, ar));
+  }
 
   readonly dateHint = computed(() => {
     const last = this.lastDay();

@@ -19,6 +19,19 @@ export interface HeadshipPerson {
   name: string;
   email?: string;
   positionId?: string | null;
+  /** ACC-172 — the position's two names, shown under the person in the pickers. */
+  positionName?: { nameEn: string; nameAr: string | null } | null;
+}
+
+/**
+ * ACC-172 — the quieter second line of a person option: their position in the
+ * reader's language, else their email, else nothing.
+ */
+export function personMeta(
+  person: Pick<HeadshipPerson, 'email' | 'positionName'>,
+  bilingual: (en: string, ar: string | null) => string,
+): string {
+  return person.positionName ? bilingual(person.positionName.nameEn, person.positionName.nameAr) : (person.email ?? '');
 }
 
 /**
@@ -56,6 +69,7 @@ export interface HeadshipPerson {
             [options]="personOptions()"
             optionLabel="label"
             optionValue="value"
+            [itemTemplate]="personItem"
             [ariaLabel]="'headship.appoint.head' | translate"
             [placeholder]="(people().length ? 'headship.appoint.personPlaceholder' : 'headship.appoint.nobody') | translate"
           />
@@ -132,6 +146,18 @@ export interface HeadshipPerson {
       [saving]="saving()"
       size="form"
     />
+
+    <!-- ACC-172 — a person and, beneath, their position (or their email when
+         they hold none): two people with one name are told apart. Both lines
+         truncate, so a long position name cannot widen the dialog. -->
+    <ng-template #personItem let-option>
+      <span class="flex min-w-0 flex-col">
+        <span class="truncate">{{ option.label ?? option.name }}</span>
+        @if (option.meta) {
+          <span class="truncate text-meta text-[var(--am-ink-500)]" data-person-meta>{{ option.meta }}</span>
+        }
+      </span>
+    </ng-template>
   `,
   styles: [
     `
@@ -182,13 +208,19 @@ export class AppointHeadDialogComponent {
   readonly today = computed(() => this.format.date(new Date()));
 
   readonly personOptions = computed(() =>
-    this.people().map((p) => ({ label: p.name, value: p.id })),
+    this.people().map((p) => ({ label: p.name, value: p.id, meta: this.meta(p) })),
   );
 
+  /** ACC-172 — the chosen person's position, else their email. */
   readonly personHint = computed(() => {
     const id = this.userIdValue();
-    return this.people().find((p) => p.id === id)?.email ?? '';
+    const person = this.people().find((p) => p.id === id);
+    return person ? this.meta(person) : '';
   });
+
+  private meta(person: HeadshipPerson): string {
+    return personMeta(person, (en, ar) => this.language.bilingual(en, ar));
+  }
 
   readonly positionOptions = computed(() =>
     (this.positions() ?? []).map((p) => ({ label: this.language.bilingual(p.nameEn, p.nameAr), value: p.id })),

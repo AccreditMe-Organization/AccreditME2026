@@ -96,6 +96,50 @@ describe('AppointSuccessorDialogComponent (ACC-133)', () => {
     return d;
   };
 
+  // ACC-172 — two people with one name are told apart by their position.
+  describe('the person picker shows each position (ACC-172)', () => {
+
+    /** The person picker's open list: [name, the quieter line under it]. */
+    const openPersonOptions = (): [string, string][] => {
+      const trigger = document.querySelector<HTMLElement>('app-overlay-select[formcontrolname="incomingUserId"] .am-overlay-select-trigger')!;
+      trigger.click();
+      fixture.detectChanges();
+      return Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).map((o) => [
+        (o.querySelector('.truncate')?.textContent ?? '').trim(),
+        (o.querySelector('[data-person-meta]')?.textContent ?? '').trim(),
+      ]);
+    };
+
+    afterEach(() => document.querySelectorAll('.cdk-overlay-container').forEach((c) => (c.innerHTML = '')));
+
+    it('renders two same-name people as two options told apart by position; no position shows the email', () => {
+      open();
+      fixture.componentRef.setInput('people', [
+      { id: 'sara-1', name: 'Dr. Sara Al-Qahtani', email: 'sara.q@example.com', positionId: 'p-nurse', positionName: { nameEn: 'Nurse Manager', nameAr: 'مديرة التمريض' } },
+      { id: 'sara-2', name: 'Dr. Sara Al-Qahtani', email: 'sara.a@example.com', positionId: 'p-pharm', positionName: { nameEn: 'Clinical Pharmacist', nameAr: null } },
+      { id: 'noor', name: 'Noor Al-Dossary', email: 'noor@example.com', positionId: null, positionName: null },
+    ]);
+      fixture.detectChanges();
+      expect(openPersonOptions()).toEqual([
+        ['Dr. Sara Al-Qahtani', 'Nurse Manager'],
+        ['Dr. Sara Al-Qahtani', 'Clinical Pharmacist'],
+        ['Noor Al-Dossary', 'noor@example.com'],
+      ]);
+    });
+
+    it('shows the Arabic position name in Arabic, and the English one where there is none', () => {
+      open();
+      TestBed.inject(TranslateService).use('ar');
+      fixture.componentRef.setInput('people', [
+      { id: 'sara-1', name: 'Dr. Sara Al-Qahtani', email: 'sara.q@example.com', positionId: 'p-nurse', positionName: { nameEn: 'Nurse Manager', nameAr: 'مديرة التمريض' } },
+      { id: 'sara-2', name: 'Dr. Sara Al-Qahtani', email: 'sara.a@example.com', positionId: 'p-pharm', positionName: { nameEn: 'Clinical Pharmacist', nameAr: null } },
+      { id: 'noor', name: 'Noor Al-Dossary', email: 'noor@example.com', positionId: null, positionName: null },
+    ]);
+      fixture.detectChanges();
+      expect(openPersonOptions().map(([, meta]) => meta)).toEqual(['مديرة التمريض', 'Clinical Pharmacist', 'noor@example.com']);
+    });
+  });
+
   it('says head access starts when it is saved: the header line, the button, the date label', () => {
     open();
     expect(dialogEl().querySelector('.p-dialog-title')!.textContent).toContain('Appoint the next head of Pharmacy');

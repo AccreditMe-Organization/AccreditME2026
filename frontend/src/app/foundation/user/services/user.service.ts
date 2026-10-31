@@ -27,6 +27,9 @@ export interface IUserDto {
   // ACC-221 — whether this person is the organisation's account owner. Only
   // GET /users/:id sends it; absent elsewhere, which reads as "not the owner".
   isAccountOwner?: boolean;
+  // ACC-172 — the person's position names. Only GET /users (the list) sends
+  // it; absent elsewhere. nameAr is null when the position has no Arabic name.
+  position?: { nameEn: string; nameAr: string | null } | null;
   id: string;
   organizationId: string;
   email: string;

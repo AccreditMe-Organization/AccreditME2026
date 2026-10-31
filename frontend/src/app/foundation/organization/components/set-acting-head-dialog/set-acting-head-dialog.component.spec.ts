@@ -2,7 +2,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideTranslateService } from '@ngx-translate/core';
+import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
 import { IOrgUnitHeadStatus } from '../../services/org-unit-head.service';
@@ -88,6 +88,57 @@ const DAY = 24 * 60 * 60 * 1000;
 
 describe('SetActingHeadDialogComponent (ACC-120 slice 2)', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  // ACC-172 — two people with one name are told apart by their position.
+  describe('the person picker shows each position (ACC-172)', () => {
+    let fixture: ComponentFixture<HostComponent>;
+
+    /** The person picker's open list: [name, the quieter line under it]. */
+    const openPersonOptions = (): [string, string][] => {
+      const trigger = document.querySelector<HTMLElement>('.am-cover-person app-overlay-select .am-overlay-select-trigger')!;
+      trigger.click();
+      fixture.detectChanges();
+      return Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).map((o) => [
+        (o.querySelector('.truncate')?.textContent ?? '').trim(),
+        (o.querySelector('[data-person-meta]')?.textContent ?? '').trim(),
+      ]);
+    };
+
+    const withPeople = (): SetActingHeadDialogComponent => {
+      const made = setup(VACANT);
+      fixture = made.fixture;
+      (fixture.componentInstance as unknown as { people: unknown }).people = [
+      { id: 'sara-1', name: 'Dr. Sara Al-Qahtani', email: 'sara.q@example.com', positionId: 'p-nurse', positionName: { nameEn: 'Nurse Manager', nameAr: 'مديرة التمريض' } },
+      { id: 'sara-2', name: 'Dr. Sara Al-Qahtani', email: 'sara.a@example.com', positionId: 'p-pharm', positionName: { nameEn: 'Clinical Pharmacist', nameAr: null } },
+      { id: 'noor', name: 'Noor Al-Dossary', email: 'noor@example.com', positionId: null, positionName: null },
+    ];
+      fixture.detectChanges();
+      return made.dialog;
+    };
+    afterEach(() => document.querySelectorAll('.cdk-overlay-container').forEach((c) => (c.innerHTML = '')));
+
+    it('renders two same-name people as two options told apart by position; no position shows the email', () => {
+      withPeople();
+      expect(openPersonOptions()).toEqual([
+        ['Dr. Sara Al-Qahtani', 'Nurse Manager'],
+        ['Dr. Sara Al-Qahtani', 'Clinical Pharmacist'],
+        ['Noor Al-Dossary', 'noor@example.com'],
+      ]);
+    });
+
+    it('shows the Arabic position name in Arabic, and the English one where there is none', () => {
+      withPeople();
+      TestBed.inject(TranslateService).use('ar');
+      fixture.detectChanges();
+      expect(openPersonOptions().map(([, meta]) => meta)).toEqual(['مديرة التمريض', 'Clinical Pharmacist', 'noor@example.com']);
+    });
+
+    it("the hint under the field names the chosen person's position", () => {
+      const dialog = withPeople();
+      dialog.form.controls.userId.setValue('sara-1');
+      expect(dialog.personHint()).toBe('Nurse Manager');
+    });
+  });
 
   describe('the reason is derived from the unit, never chosen', () => {
     it('is VACANCY on a unit with no head, and covers for nobody', () => {
