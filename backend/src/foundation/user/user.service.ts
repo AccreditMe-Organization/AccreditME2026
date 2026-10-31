@@ -216,7 +216,7 @@ export class UserService {
   async listUsers(
     organizationId: string,
     filters?: ListUsersFilters,
-  ): Promise<IPaginatedResponse<IUser & { isAccountOwner: boolean }>> {
+  ): Promise<IPaginatedResponse<IUser & { isAccountOwner: boolean; position: { nameEn: string; nameAr: string | null } | null }>> {
     const { skip, take, page, pageSize } = toSkipTake(filters?.page, filters?.pageSize);
 
     const where = {
@@ -247,13 +247,19 @@ export class UserService {
         take,
         // ACC-221 — whether each row is the account owner, in the same query
         // (as GET /users/:id does), scoped to this organisation.
-        include: { ownedOrganizations: { where: { id: organizationId }, select: { id: true } } },
+        // ACC-172 — each row's position name, for the headship pickers, from
+        // the same query (no second query, no per-row query).
+        include: {
+          ownedOrganizations: { where: { id: organizationId }, select: { id: true } },
+          position: { select: { nameEn: true, nameAr: true } },
+        },
       }),
       this.prisma.user.count({ where }),
     ]);
-    const data = rows.map(({ ownedOrganizations, ...user }) => ({
+    const data = rows.map(({ ownedOrganizations, position, ...user }) => ({
       ...user,
       isAccountOwner: ownedOrganizations.length > 0,
+      position: position ? { nameEn: position.nameEn, nameAr: position.nameAr } : null,
     }));
 
     return paginated(data, total, page, pageSize);

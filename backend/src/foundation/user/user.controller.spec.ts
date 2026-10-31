@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserController } from './user.controller';
-import { UserService } from './user.service';
+import { UserService, toSafeUser } from './user.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 
@@ -264,6 +264,23 @@ describe('UserController', () => {
       const result = await controller.listUsers(TENANT_ID, {});
       expect(result.data[0]?.isAccountOwner).toBe(true);
       for (const field of SENSITIVE_FIELDS) expect(result.data[0]).not.toHaveProperty(field);
+    });
+
+    // ACC-172 — position rides beside the allowlist; nothing else from the row.
+    it('listUsers passes position through, and the row carries only the allowlist plus isAccountOwner and position', async () => {
+      service.listUsers.mockResolvedValue({
+        data: [{ ...RAW_USER_WITH_SECRETS, isAccountOwner: false, position: { nameEn: 'Head Nurse', nameAr: null } }],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+      });
+      const result = await controller.listUsers(TENANT_ID, {});
+      const row = result.data[0]!;
+      expect(row.position).toEqual({ nameEn: 'Head Nurse', nameAr: null });
+      expect(Object.keys(row).sort()).toEqual(
+        [...Object.keys(toSafeUser(RAW_USER_WITH_SECRETS)), 'isAccountOwner', 'position'].sort(),
+      );
+      for (const field of SENSITIVE_FIELDS) expect(row).not.toHaveProperty(field);
     });
 
     it('listUsers strips invitationToken and every other internal-only field from each returned user', async () => {

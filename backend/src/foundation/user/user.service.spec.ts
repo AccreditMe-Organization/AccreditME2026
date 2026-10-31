@@ -238,11 +238,44 @@ describe('UserService', () => {
       expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
       expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          include: { ownedOrganizations: { where: { id: ORG_A }, select: { id: true } } },
+          include: expect.objectContaining({
+            ownedOrganizations: { where: { id: ORG_A }, select: { id: true } },
+          }),
         }),
       );
       expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.organization.findFirst).not.toHaveBeenCalled();
+    });
+
+    // ACC-172 — the headship pickers show each person's position, read by the
+    // same list query: one findMany and one count, nothing per row.
+    it("returns each row's position name from the same list query, and null with no position (ACC-172)", async () => {
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'u-1', organizationId: ORG_A, ownedOrganizations: [], position: { nameEn: 'Head Nurse', nameAr: 'رئيسة التمريض' } },
+        { id: 'u-2', organizationId: ORG_A, ownedOrganizations: [], position: { nameEn: 'Pharmacist', nameAr: null } },
+        { id: 'u-3', organizationId: ORG_A, ownedOrganizations: [], position: null },
+      ]);
+      mockPrisma.user.count.mockResolvedValue(3);
+      mockPrisma.orgPosition.findFirst.mockClear();
+
+      const result = await service.listUsers(ORG_A);
+
+      expect(result.data.map((u) => [u.id, u.position])).toEqual([
+        ['u-1', { nameEn: 'Head Nurse', nameAr: 'رئيسة التمريض' }],
+        ['u-2', { nameEn: 'Pharmacist', nameAr: null }],
+        ['u-3', null],
+      ]);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.count).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            ownedOrganizations: { where: { id: ORG_A }, select: { id: true } },
+            position: { select: { nameEn: true, nameAr: true } },
+          },
+        }),
+      );
+      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
     });
 
     // Tenant scoping has to hold on the COUNT as well as the page. If it only
