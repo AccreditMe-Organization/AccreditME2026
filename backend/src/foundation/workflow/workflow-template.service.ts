@@ -61,6 +61,7 @@ import {
   type WhoEntryInput,
 } from './stage-who';
 import { appMoveFor } from './app-moves';
+import { auditSecretsOf, headerChanges, maskActionConfig, mergeActionConfig } from './webhook-config-secrets';
 import { isConvertedStage, transitionMover } from './workflow-pool';
 
 /** Stage fields a protected template's stage may still change (names, description, deadline and its escalation). */
@@ -1326,23 +1327,26 @@ export class WorkflowTemplateService {
     if (PROTECTED_TEMPLATES.has(transition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
     if (dto.actionType === 'CREATE_TASK') throw new WorkflowRefusalException('ACTION_TYPE_RETIRED');
 
+    // ACC-277 — stored as sent, less the read-only markers a client may echo back.
+    const configJson = dto.configJson === undefined ? undefined : mergeActionConfig(null, dto.configJson);
     const action = await this.prisma.workflowTransitionAction.create({
       data: {
         workflowTransitionId: transitionId,
         actionType: dto.actionType,
         order: dto.order,
         isEnabled: dto.isEnabled ?? true,
-        configJson: this.toJson(dto.configJson),
+        configJson: this.toJson(configJson),
       },
     });
 
+    // ACC-277 — header names and whether a signing secret is set; never a value.
     await this.auditLog.log({
       tenantId: organizationId,
       actorId,
       action: 'CREATE',
       objectType: 'WorkflowTransitionAction',
       objectId: action.id,
-      after: { actionType: action.actionType, order: action.order },
+      after: { actionType: action.actionType, order: action.order, ...auditSecretsOf(configJson ?? null) },
     });
 
     return this.mapTransitionAction(action);
@@ -1362,24 +1366,40 @@ export class WorkflowTemplateService {
     if (PROTECTED_TEMPLATES.has(action.workflowTransition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
     if (dto.actionType === 'CREATE_TASK') throw new WorkflowRefusalException('ACTION_TYPE_RETIRED');
 
+    // ACC-277 — a secret sent empty keeps its stored value, a value replaces
+    // it, and a header left out is removed (mergeActionConfig).
+    const storedConfig = action.configJson as Record<string, unknown> | null;
+    const configJson = dto.configJson === undefined ? undefined : mergeActionConfig(storedConfig, dto.configJson);
     const updated = await this.prisma.workflowTransitionAction.update({
       where: { id },
       data: {
         ...(dto.actionType !== undefined && { actionType: dto.actionType }),
         ...(dto.order !== undefined && { order: dto.order }),
         ...(dto.isEnabled !== undefined && { isEnabled: dto.isEnabled }),
-        ...(dto.configJson !== undefined && { configJson: this.toJson(dto.configJson) }),
+        ...(configJson !== undefined && { configJson: this.toJson(configJson) }),
       },
     });
 
+    // ACC-277 — header names, and which a save added, removed or changed;
+    // never a value.
+    const afterConfig = configJson ?? storedConfig;
     await this.auditLog.log({
       tenantId: organizationId,
       actorId,
       action: 'UPDATE',
       objectType: 'WorkflowTransitionAction',
       objectId: id,
-      before: { actionType: action.actionType, order: action.order, isEnabled: action.isEnabled },
-      after: { actionType: updated.actionType, order: updated.order, isEnabled: updated.isEnabled },
+      before: { actionType: action.actionType, order: action.order, isEnabled: action.isEnabled, ...auditSecretsOf(storedConfig) },
+      after: {
+        actionType: updated.actionType,
+        order: updated.order,
+        isEnabled: updated.isEnabled,
+        ...auditSecretsOf(afterConfig),
+        ...(configJson !== undefined && {
+          headersChanged: headerChanges(storedConfig, configJson),
+          signingSecretChanged: (storedConfig?.['signingSecret'] ?? null) !== (configJson['signingSecret'] ?? null),
+        }),
+      },
     });
 
     return this.mapTransitionAction(updated);
@@ -1651,7 +1671,8 @@ export class WorkflowTemplateService {
       actionType: action.actionType,
       order: action.order,
       isEnabled: action.isEnabled,
-      configJson: action.configJson as Record<string, unknown> | null,
+      // ACC-277 — the one way an action leaves this service: secrets masked.
+      configJson: maskActionConfig(action.configJson as Record<string, unknown> | null),
     };
   }
 }
