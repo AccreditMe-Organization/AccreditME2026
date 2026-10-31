@@ -1,6 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
+import { redactSecrets } from './webhook-config-secrets';
 
 interface WebhookActionJobData {
   workflowTransitionActionId: string;
@@ -63,12 +64,14 @@ export class WorkflowActionProcessor extends WorkerHost {
         workflowInstanceId,
         job.attemptsMade + 1,
         'SUCCESS',
-        bodyText.slice(0, 500),
+        // ACC-277 — an endpoint may echo a header back; no stored secret is logged.
+        redactSecrets(bodyText, config).slice(0, 500),
       );
     } catch (err) {
       const totalAttempts = job.opts.attempts ?? 1;
       const isFinalAttempt = job.attemptsMade + 1 >= totalAttempts;
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      // ACC-277 — fetch quotes a malformed header's value in its error.
+      const errorMessage = redactSecrets(err instanceof Error ? err.message : 'Unknown error', config);
 
       await this.logAttempt(
         organizationId,
@@ -81,8 +84,10 @@ export class WorkflowActionProcessor extends WorkerHost {
       );
 
       // Re-throw so BullMQ's own retry mechanism (attempts + backoff,
-      // configured in QueueModule) handles the next attempt.
-      throw err;
+      // configured in QueueModule) handles the next attempt. ACC-277: as a new
+      // error carrying the redacted message, because BullMQ keeps the thrown
+      // error's message and stack with the job in Redis.
+      throw new Error(errorMessage);
     }
   }
 
