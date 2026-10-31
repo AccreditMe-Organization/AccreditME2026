@@ -2976,7 +2976,7 @@ Plan, Ahmad's answers (28 Oct, §13.1) and the PR split:
 `backend/Plans/step-271-stage-owns-who.md`. PR 1 is the schema and the engine;
 **nothing writes the new shape yet** (the backfill is PR 2, the screens PR 3), so
 every stage on every database is still unconverted and behaves as §2.4–§2.8 say.
-Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts a new organisation, and both PR 2 backfills ran on the shared database on 29 Oct, so every stage is converted. §2.4–§2.8 describe only a stage whose `whoMode` is null. PR 3 (the screens) and PR 5 are not started.
+Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts a new organisation, and both PR 2 backfills ran on the shared database on 29 Oct, so every stage is converted. §2.4–§2.8 describe only a stage whose `whoMode` is null. PR 3, the APIs, is built (see "PR 3" below); PR 5, the screens, is not started.
 
 - **The transition window (plan §4.6).** A stage with `WorkflowStage.whoMode`
   set is CONVERTED: its `WorkflowStageAssignee` entries say who works it, and
@@ -3037,7 +3037,7 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
   `requiredPermission`, which must stop for converted stages before PR 2
   converts any; the initial-assignee and SEND_NOTIFICATION notices go to the
   pool without the old per-call out-of-office notices.
-  Superseded (ACC-274): the button half is done — since PR 2 the component shows the moves `GET /workflows/instances/:id/moves` returns. `STAGE_ON_STARTING_ASSIGNMENT` is still deferred until PR 3.
+  Superseded (ACC-274): the button half is done — since PR 2 the component shows the moves `GET /workflows/instances/:id/moves` returns. Since PR 3 its detector runs (see "PR 3" below).
 - **PR 2 — the seed, the starting assignments, the moves read, the backfills.**
   - **The seed says who** (`SeedStage.who`, pinned stage by stage in
     `workflow.seed.spec.ts`): 12 CREATOR stages, 48 marked for a starting
@@ -3097,10 +3097,103 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
     transaction (PR 1). One read and one write per organisation, from the
     pools the sweep already resolved; only the organisation's own open entries
     are written.
+- **PR 3: the APIs (no screen changes; the screens are PR 5).**
+  - **Saving who works a stage.** `PATCH /workflow-templates/stages/:stageId`
+    (`workflows:manage`) accepts `who: { mode, entries }`. `mode` is
+    `ANY_ONE`, `ALL` or `COMMITTEE_VOTE`. Each entry has a `kind` and only the
+    fields that kind uses:
+    | Kind | Fields |
+    |---|---|
+    | SPECIFIC_USER | `userId` (required) |
+    | POSITION_IN_UNIT | `positionId`, `orgUnitId` (both required) |
+    | ORG_UNIT_HEAD | `orgUnitId`, or null for the record's unit |
+    | CREATOR | nothing |
+    | COMMITTEE | `committeeId`, or null for the record's committee; optional `committeeRoleValueId` |
+  - **The shape rules** (`stage-who.ts`, `assertWhoShape()`, all 400):
+    - `WHO_MODE_UNKNOWN`;
+    - `WHO_ENTRIES_REQUIRED` (at least one entry, at most 20);
+    - `WHO_KIND_NOT_ALLOWED`: the kind is not in the record type's list
+      (`STAGE_ASSIGNEE_KINDS`, served on the read as `assigneeKinds`);
+    - `WHO_ENTRY_FIELD_NOT_USED`: a field the kind does not use;
+    - `WHO_ENTRY_INCOMPLETE`: a field the kind requires is missing;
+    - `WHO_RECORD_ROUTE_NOT_AVAILABLE`: "the record's unit" or "the record's
+      committee" on a type with no such route (`RECORD_ROUTES`);
+    - `WHO_ENTRY_DUPLICATE`: two identical entries;
+    - `COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE`: a vote needs exactly one entry,
+      and it must be a Committee.
+  - **The reference rules.** Every id must be this organisation's. The read is
+    one query per kind, all in one `Promise.all`; a committee role may also be
+    the SYSTEM value. Anything else is 404 `WHO_REFERENCE_NOT_FOUND`, naming
+    the entry's index and field. Another organisation's id gets exactly the
+    answer an invented one does. A person who is INACTIVE or SUSPENDED is 400
+    `WHO_USER_NOT_ACTIVE`; an INVITED person may be chosen.
+  - **The write is one transaction**: `whoMode` and the entries together (one
+    read, one `deleteMany`, one `createMany`). An entry that survives keeps its
+    row. One that moves position is recreated with its own
+    `isStartingAssignment`. A new or replaced entry has the flag cleared, so
+    replacing or removing the starting entry clears it.
+  - **The audit is field by field**, beside the stage's other fields:
+    `whoMode`, and `whoEntries` as numbered, readable phrases (e.g.
+    "1. whoever holds Team Leader in Quality", "2. Hessa (starting
+    assignment)"). Saving the same who again writes nothing.
+  - **A protected template** (`PROTECTED_TEMPLATES`) refuses a changed who
+    with `WORKFLOW_TEMPLATE_PROTECTED`; an unchanged one passes. On a
+    protected template this refusal comes before `WHO_MOVED_TO_STAGE`.
+  - **The old people fields.** On a stage these are `assigneeStrategy`,
+    `assigneeUserId`, `assigneeRoleId`, `approvalMode`, `parallelThreshold`,
+    `committeeId`, `assigneeCommitteeRoleValueId`, `assigneePositionId` and
+    `assigneeOrgUnitId`. On a transition they are `triggerCondition`,
+    `triggerRoleId`, `triggerUserId` and `requiredPermission`. On a converted
+    stage, or a save that sends `who`, and on a move out of a converted stage:
+    - an unchanged value is accepted and ignored;
+    - a CHANGED value is 400 `WHO_MOVED_TO_STAGE`, "Who works this stage is
+      now set on the stage, not here.", naming the `field`. The Arabic travels
+      with it as `messageAr` («يُحدَّد من يعمل على هذه المرحلة الآن في المرحلة
+      نفسها، لا هنا.»).
+
+    This deliberately departs from the plan's "accepted and ignored":
+    ignoring a changed value would look saved and do nothing. A move ADDED out
+    of a converted stage names no people fields and is not SYSTEM_AUTOMATIC;
+    its `mover` is PERSON.
+  - **The template read** (`GET /workflow-templates/:id`), from the same
+    `include` plus one batched read of the names, one query per kind:
+    - each stage's `who: { mode, entries }` (null on an unconverted stage).
+      Each entry carries its ids, `isStartingAssignment`, and the names a
+      picker shows: `user { name }`, `position` / `orgUnit` / `committee`
+      `{ nameEn, nameAr }`, `committeeRole { labelEn, labelAr }`;
+    - each stage's `whoSentence { en, ar }`, built by the server from the
+      entries and mode. Examples: "Any one of: the head of Quality, or whoever
+      holds Team Leader in Quality." and «أيٌّ من: من يرأس الجودة، أو من يشغل
+      وظيفة قائد الفريق في الجودة.». The Arabic is gender-neutral;
+    - `assigneeKinds` on the template;
+    - `mover` on every transition, and `appMove { key, en, ar }` on every APP
+      one, from `APP_MOVES` (`app-moves.ts`). An APP move in the seed with no
+      entry fails `app-moves.spec.ts`; it is never a runtime null.
+  - **Keep this assignment.**
+    `POST /workflow-templates/stages/:stageId/keep-starting-assignment`
+    (`workflows:manage`; another organisation's stage is 404) clears
+    `isStartingAssignment` on the stage's entries. It writes one audit row,
+    with no reason, and answers `{ kept: true }`. A stage with no starting
+    entry answers `{ kept: false }` and writes nothing.
+  - **Setup health `STAGE_ON_STARTING_ASSIGNMENT`** (At risk, one per stage
+    with a starting entry, on active workflows). It reads in one query and
+    carries the stage, the workflow and the admin's name in both languages.
+    The hourly reconciler is its only writer, so Keep closes it on the next
+    run. **It is reconciled but NOT reported yet:** it stays out of
+    `SETUP_CONDITION_TYPES` until PR 5 adds its row and its Fix (the stages
+    page, `?stage=<id>`), so the live page shows no unlabelled rows.
+    `STAGE_WITHOUT_ASSIGNEE` was already pool-driven on converted stages
+    (PR 1's flag), and is unchanged.
+  - **Nothing on the per-request path** (guards, throttler, interceptors,
+    middleware, `verifySessionIdentity()`); no polling; no query inside a row
+    loop.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
-  Postgres).
+  Postgres). PR 3: `stage-who.spec.ts`, `app-moves.spec.ts`,
+  `workflow-template.who.spec.ts`,
+  `setup-condition.starting-assignment.spec.ts` and `stage-who.db-spec.ts`
+  (real Postgres).
 
 ---
 

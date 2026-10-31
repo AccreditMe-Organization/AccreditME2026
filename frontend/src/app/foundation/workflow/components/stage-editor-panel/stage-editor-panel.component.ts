@@ -20,7 +20,7 @@ import { catchError, map } from 'rxjs/operators';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { AmCountPipe, FormatService } from '../../../../core/formatting';
-import { deadlineBeforeTasks, finalStageTaskCount, flagExactlyOne, plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { deadlineBeforeTasks, finalStageTaskCount, flagExactlyOne, plainWorkflowRefusalKey, whoMovedToStageMessage } from '../../workflow-refusal';
 import { WorkflowEnumKind, workflowLabelKey, workflowOptionKeys } from '../../workflow-labels';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
@@ -949,6 +949,10 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
           : this.translate.instant('workflow.editor.flagMissingNamed', { flag: flagLabel }),
       };
     }
+    // ACC-271 PR 3 — a changed old people field: the server's own sentence, in
+    // the reader's language. Shown as it is, never looked up as a key.
+    const whoMoved = whoMovedToStageMessage(err, this.languageService.isArabic());
+    if (whoMoved) return { body: whoMoved };
     const key = plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed');
     return { body: this.translate.instant(key) };
   }

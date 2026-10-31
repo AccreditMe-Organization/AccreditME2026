@@ -84,13 +84,10 @@ export type SetupConditionDetector = (
 // existence, so removing the line without adding the detector could not
 // compile. This PR removes it and adds the detector in the same change.
 //
-// ACC-271 — STAGE_ON_STARTING_ASSIGNMENT is deferred the same way, for the same
-// reason: its value ships in PR 1's migration, and its detector (and the Keep
-// this assignment action) in PR 3, which removes this line. Nothing writes the
-// value before then.
+// ACC-271 — STAGE_ON_STARTING_ASSIGNMENT was deferred the same way from PR 1 to
+// PR 3, which adds its detector (and Keep this assignment) and removes it here.
 export const DEFERRED_SETUP_CONDITION_TYPES = [
   'POSITION_WITHOUT_ROLE',
-  'STAGE_ON_STARTING_ASSIGNMENT',
 ] as const satisfies readonly SetupConditionType[];
 
 export type ActiveSetupConditionType = Exclude<
@@ -123,7 +120,61 @@ export class SetupConditionDetectors {
       this.storageAccessWithdrawn(organizationId),
     STORAGE_SECRET_EXPIRING: (organizationId, now) =>
       this.storageSecretExpiring(organizationId, now),
+    STAGE_ON_STARTING_ASSIGNMENT: (organizationId) =>
+      this.stagesOnStartingAssignment(organizationId),
   };
+
+  /**
+   * ACC-271 PR 3 (plan §9) — a stage still worked by its seeded starting
+   * assignment (the tenant admin). One condition per stage, AT_RISK: the work
+   * reaches someone, just not someone chosen for it. Grouped by workflow through
+   * the template in the snapshot. Read in ONE query whatever the number of
+   * stages: the assignee row names its stage and user by id only, so the names
+   * come from joins, every table scoped by the organisation. Only an active
+   * workflow's stages are listed: a switched-off workflow moves nothing.
+   * Opened at the starting entry's own creation (OBJECT age).
+   */
+  async stagesOnStartingAssignment(organizationId: string): Promise<DetectedCondition[]> {
+    const rows = await this.prisma.$queryRaw<
+      {
+        stageId: string;
+        stageNameEn: string;
+        stageNameAr: string | null;
+        templateId: string;
+        templateNameEn: string;
+        templateNameAr: string | null;
+        adminName: string | null;
+        since: Date;
+      }[]
+    >`
+      SELECT s.id AS "stageId", s."nameEn" AS "stageNameEn", s."nameAr" AS "stageNameAr",
+             t.id AS "templateId", t."nameEn" AS "templateNameEn", t."nameAr" AS "templateNameAr",
+             MIN(u.name) AS "adminName", MIN(a."createdAt") AS "since"
+        FROM "WorkflowStageAssignee" a
+        JOIN "WorkflowStage" s ON s.id = a."stageId"
+        JOIN "WorkflowTemplate" t ON t.id = s."workflowTemplateId" AND t."organizationId" = ${organizationId}
+        LEFT JOIN "User" u ON u.id = a."userId" AND u."organizationId" = ${organizationId}
+       WHERE a."organizationId" = ${organizationId}
+         AND a."isStartingAssignment" = true
+         AND t."isActive" = true
+       GROUP BY s.id, s."nameEn", s."nameAr", t.id, t."nameEn", t."nameAr"
+       ORDER BY t."nameEn", s.id`;
+    return rows.map((row) => ({
+      objectId: row.stageId,
+      severity: 'AT_RISK' as const,
+      openedAt: row.since,
+      subject: {
+        nameEn: row.stageNameEn,
+        nameAr: row.stageNameAr,
+        templateId: row.templateId,
+        templateNameEn: row.templateNameEn,
+        templateNameAr: row.templateNameAr,
+        // Whose the work is until someone replaces the assignment ("Its work
+        // goes to {admin}"). A person's name, the same in both languages.
+        adminName: row.adminName,
+      },
+    }));
+  }
 
   // Vacant (no head position holder) ACTIVE units. Severity follows coverage:
   // BLOCKS_WORK only when escalation also resolves no one; AT_RISK when an

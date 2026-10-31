@@ -64,6 +64,7 @@ const MOCK_TRANSITION: IWorkflowTransition = {
   validatorConfig: null,
   isApprovalPath: false,
   kind: 'ADVANCE',
+  mover: 'PERSON',
 };
 
 const MOCK_ACTION: IWorkflowTransitionAction = {

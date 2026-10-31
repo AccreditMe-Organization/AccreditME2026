@@ -168,6 +168,20 @@ export class WorkflowTemplateController {
     return this.workflowTemplateService.removeStage(stageId, tenantId, actorId);
   }
 
+  // ACC-271 PR 3 (plan §9) — Setup health's "Keep this assignment": the stage's
+  // starting entry stays and stops being flagged. 200 either way; a stage with no
+  // starting entry is left as it is.
+  @Post('stages/:stageId/keep-starting-assignment')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
+  keepStartingAssignment(
+    @Param('stageId') stageId: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<{ kept: boolean }> {
+    return this.workflowTemplateService.keepStartingAssignment(stageId, tenantId, actorId);
+  }
+
   // ── Stage task definitions (ACC-190) ─────────────────────────────────────────
   // The same people who edit stages and transitions (Ahmad, 9 Oct, F).
 

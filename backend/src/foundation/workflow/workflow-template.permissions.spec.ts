@@ -19,8 +19,10 @@ import { WorkflowTemplateController } from './workflow-template.controller';
 // and workflows:view: running committees, and reading the workflow, are not
 // changing it. Who can hold workflows:manage today is the plan's §16.1.
 
-type StageWrite = 'updateStage' | 'addStage' | 'removeStage';
-const STAGE_WRITES: StageWrite[] = ['updateStage', 'addStage', 'removeStage'];
+// ACC-271 PR 3 — who works a stage rides updateStage, and Keep this assignment
+// is its own route: both are workflow edits, so both need workflows:manage.
+type StageWrite = 'updateStage' | 'addStage' | 'removeStage' | 'keepStartingAssignment' | 'updateTransition' | 'addTransition';
+const STAGE_WRITES: StageWrite[] = ['updateStage', 'addStage', 'removeStage', 'keepStartingAssignment', 'updateTransition', 'addTransition'];
 
 const EVERY_COMMITTEE_KEY = [
   ...Object.values(COMMITTEES_PERMISSIONS),

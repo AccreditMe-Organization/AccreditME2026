@@ -38,7 +38,9 @@ export type WorkflowRefusalCode =
   | 'STAGE_FLAG_EXACTLY_ONE'
   // ACC-271 — who works a converted stage: nobody, or not the caller.
   | 'STAGE_HAS_NO_ONE'
-  | 'NOT_IN_STAGE_POOL';
+  | 'NOT_IN_STAGE_POOL'
+  // ACC-271 PR 3 — a CHANGED old people field on a converted stage or its moves.
+  | 'WHO_MOVED_TO_STAGE';
 
 /**
  * The refusals whose words need nothing but the code. Literal keys, so the
@@ -102,6 +104,22 @@ export function plainWorkflowRefusalKey(err: unknown): string | null {
 
 function bodyIf(err: unknown, code: WorkflowRefusalCode): Record<string, unknown> | null {
   return refusalCode(err) === code ? refusalBody(err) : null;
+}
+
+/**
+ * ACC-271 PR 3 — who works a converted stage is now set on the stage, so a
+ * save that CHANGES one of the old people fields (a stage's assignee or
+ * approval fields, a move's trigger or permission) is refused. This one
+ * refusal is shown in the server's own words, in the reader's language — the
+ * body's `message`, or `messageAr` in Arabic — so no copy of the sentence
+ * lives here. Null for any other refusal, or a body without a sentence.
+ */
+export function whoMovedToStageMessage(err: unknown, arabic: boolean): string | null {
+  const body = bodyIf(err, 'WHO_MOVED_TO_STAGE');
+  if (!body) return null;
+  const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() !== '' ? value : null);
+  const en = text(body['message']);
+  return arabic ? (text(body['messageAr']) ?? en) : en;
 }
 
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);

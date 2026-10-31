@@ -24,7 +24,7 @@ import {
 import { RoleService, RoleDto, PermissionDto } from '../../../roles/services/role.service';
 import { WorkflowActionConfiguratorComponent } from '../workflow-action-configurator/workflow-action-configurator.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { plainWorkflowRefusalKey, whoMovedToStageMessage } from '../../workflow-refusal';
 // ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on these fields:
 // raw p-dialog context. See CLAUDE.md's PrimeNG-components-only exception
 // note and overlay-select.component.ts for the full mechanism.
@@ -1115,7 +1115,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         }
       },
       error: (err: unknown) => {
-        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed'));
+        this.saveError.set(this.saveRefusal(err));
         this.saving.set(false);
       },
     });
@@ -1166,10 +1166,24 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         }
       },
       error: (err: unknown) => {
-        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed'));
+        this.saveError.set(this.saveRefusal(err));
         this.saving.set(false);
       },
     });
+  }
+
+  /**
+   * What the footer says when a save is refused. ACC-271 PR 3: a changed
+   * trigger or permission on a move out of a converted stage is said in the
+   * server's own sentence, in the reader's language; anything else by its
+   * code, or the generic line.
+   */
+  private saveRefusal(err: unknown): string {
+    return (
+      whoMovedToStageMessage(err, this.languageService.isArabic()) ??
+      plainWorkflowRefusalKey(err) ??
+      extractErrorMessage(err, 'workflow.error.saveFailed')
+    );
   }
 
   onRemove(transition: WorkflowTransitionDto): void {
