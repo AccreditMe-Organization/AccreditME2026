@@ -60,6 +60,12 @@ jobs:
         # script decide. `|| true` keeps the step green so the script runs.
         run: npm audit --json > audit.json || true
 
+      - name: Audit gate tests
+        # ACC-275 — the gate's own tests (node:test, no dependencies), before it
+        # decides anything. A glob, not the directory: Node 22's test runner
+        # treats a directory argument as a file to run.
+        run: node --test ".github/scripts/*.test.js"
+
       - name: Audit gate — fail only on findings with no fix available
         # ONE script for both workspaces, run from the repo root rather than
         # copied into each. See CLAUDE.md's note on skill verification
