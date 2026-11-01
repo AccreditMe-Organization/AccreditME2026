@@ -26,6 +26,7 @@ import type { TaskService } from '../task/task.service';
 import { SetupConditionDetectors } from '../setup-health/setup-condition.detectors';
 import { SetupConditionReconciler } from '../setup-health/setup-condition.reconciler';
 import { SetupHealthService } from '../setup-health/setup-health.service';
+import { StageWhoOptionsService } from './stage-who-options.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -42,6 +43,7 @@ describe('Who works a stage, saved and kept, against a real database (ACC-271 PR
   const templates = new WorkflowTemplateService(prisma, audit, new StageTaskDefinitionService(prisma, audit, {} as TaskService));
   const reconciler = new SetupConditionReconciler(prisma, new SetupConditionDetectors(prisma));
   const health = new SetupHealthService(prisma);
+  const whoOptions = new StageWhoOptionsService(prisma);
 
   /** The refusal's code and body, or undefined when it did not throw. */
   async function refusal(p: Promise<unknown>): Promise<Record<string, unknown> | undefined> {
@@ -232,8 +234,8 @@ describe('Who works a stage, saved and kept, against a real database (ACC-271 PR
         subject: expect.objectContaining({ nameEn: 'Terms Review', templateId: o.template, templateNameEn: 'Committee Management', adminName: 'Hessa' }),
       }),
     );
-    // Reconciled, but not reported until the screens that show it ship (PR 5).
-    expect((await health.getHealth(o.id)).open.map((c) => c.type)).not.toContain('STAGE_ON_STARTING_ASSIGNMENT');
+    // Reported since PR 5a, in the same change as its row on the page.
+    expect((await health.getHealth(o.id)).open.map((c) => c.type)).toContain('STAGE_ON_STARTING_ASSIGNMENT');
 
     await expect(templates.keepStartingAssignment(o.stage, o.id, o.admin)).resolves.toEqual({ kept: true });
     await expect(templates.keepStartingAssignment(o.stage, o.id, o.admin)).resolves.toEqual({ kept: false });
@@ -356,5 +358,31 @@ describe('Who works a stage, saved and kept, against a real database (ACC-271 PR
     );
     expect(body).toEqual(expect.objectContaining({ code: 'WHO_MOVED_TO_STAGE', field: 'triggerCondition' }));
     expect(await prisma.workflowTransition.count({ where: { fromStageId: o.stage, labelEn: 'Anyone' } })).toBe(0);
+  });
+
+  // ── ACC-271 PR 5a — the stage editor's pickers ─────────────────────────────
+
+  it("should NOT return records belonging to a different tenant — the person picker offers this organisation's ACTIVE and INVITED people only", async () => {
+    const a = await org();
+    const b = await org();
+    await prisma.user.create({ data: { organizationId: a.id, email: `${a.slug}-inv@example.test`, name: 'Invited One', status: 'INVITED' } });
+    await prisma.user.create({ data: { organizationId: a.id, email: `${a.slug}-off@example.test`, name: 'Gone One', status: 'INACTIVE' } });
+    const page = await whoOptions.people(a.id, { take: 50 });
+    const names = page.items.map((p) => p.name).sort();
+    expect(names).toEqual(['Hessa', 'Huda', 'Invited One']);
+    expect(page.total).toBe(3);
+    expect(page.items.map((p) => p.id)).not.toContain(b.admin);
+    const searched = await whoOptions.people(a.id, { q: 'invited' });
+    expect(searched).toEqual(expect.objectContaining({ total: 3, matching: 1 }));
+  });
+
+  it("should NOT return records belonging to a different tenant — the committee picker offers this organisation's active committees only", async () => {
+    const a = await org();
+    const b = await org();
+    await prisma.committee.update({ where: { id: b.committee }, data: { nameEn: 'Quality Committee B' } });
+    const page = await whoOptions.committees(a.id, { take: 50, lang: 'en' });
+    expect(page.items.map((c) => c.id)).toEqual([a.committee]);
+    await prisma.committee.update({ where: { id: a.committee }, data: { isActive: false } });
+    expect((await whoOptions.committees(a.id, {})).items).toEqual([]);
   });
 });

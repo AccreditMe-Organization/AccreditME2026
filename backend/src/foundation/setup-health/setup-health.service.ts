@@ -25,15 +25,15 @@ export const RECENTLY_CLEARED_DAYS = 7;
 // enum object, which does not exist under Jest's generated-client stub; typed
 // so that listing a deferred type here is a compile error.
 //
-// ACC-271 PR 3 — STAGE_ON_STARTING_ASSIGNMENT is reconciled (the hourly run
-// opens and closes its rows) but NOT reported yet: the page in production has no
-// row, label or Fix for it, and showing its rows there would put dozens of
-// unlabelled entries on every tenant's page and badge. ACC-271 PR 5 adds the
-// row and the confirm, and adds the type here in the same change.
+// ACC-271 PR 5a — STAGE_ON_STARTING_ASSIGNMENT is reported, in the same change
+// that gives the page its row, its Review stage link and its Keep confirm (it
+// was reconciled but hidden since PR 3). It sits beside the other stage
+// condition.
 export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
   'ORG_UNIT_WITHOUT_HEAD',
   'ORG_UNIT_WITHOUT_TYPE',
   'STAGE_WITHOUT_ASSIGNEE',
+  'STAGE_ON_STARTING_ASSIGNMENT',
   'TASK_WITHOUT_OWNER',
   'ACTING_HEAD_OPEN_ENDED',
   'STORAGE_ALMOST_FULL',

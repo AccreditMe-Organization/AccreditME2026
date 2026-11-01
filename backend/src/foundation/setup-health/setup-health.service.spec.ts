@@ -357,6 +357,7 @@ describe('SetupHealthService (ACC-82)', () => {
         'ORG_UNIT_WITHOUT_HEAD',
         'ORG_UNIT_WITHOUT_TYPE',
         'STAGE_WITHOUT_ASSIGNEE',
+        'STAGE_ON_STARTING_ASSIGNMENT',
         'TASK_WITHOUT_OWNER',
         'ACTING_HEAD_OPEN_ENDED',
         'STORAGE_ALMOST_FULL',
@@ -370,6 +371,20 @@ describe('SetupHealthService (ACC-82)', () => {
         open: 1,
         blocksWork: 0,
       });
+    });
+  });
+
+  // ACC-271 PR 5a — reported now, with its row on the page.
+  describe('a stage still on its starting assignment', () => {
+    beforeEach(() => {
+      rows = [row({ id: 'starting', type: 'STAGE_ON_STARTING_ASSIGNMENT', severity: 'AT_RISK' })];
+      runs = [];
+    });
+
+    it('is reported as an open condition, and counted in the badge', async () => {
+      const { open } = await service.getHealth(ORG_A, NOW);
+      expect(open.map((c) => [c.id, c.type])).toEqual([['starting', 'STAGE_ON_STARTING_ASSIGNMENT']]);
+      expect(await service.getSummary(ORG_A)).toEqual({ open: 1, blocksWork: 0 });
     });
   });
 
