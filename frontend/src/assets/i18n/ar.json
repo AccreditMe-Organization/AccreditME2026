@@ -714,6 +714,32 @@
     }
   },
   "workflow": {
+    "actionsDialog": {
+      "editTitle": "تعديل الإجراء",
+      "stepAction": "الإجراء",
+      "stepHeaders": "الترويسات",
+      "steps": "الخطوات",
+      "headerLimit": "حتى 5 ترويسات.",
+      "state": "الحالة",
+      "alwaysRuns": "يعمل دائمًا",
+      "enabledNamed": "مُفعّل: {{name}}",
+      "on": "مُفعّل",
+      "off": "متوقف",
+      "readOnly": "يحدد التطبيق سير العمل هذا، لذا لا يمكن تغيير إجراءاته هنا.",
+      "headers": "الترويسات",
+      "headerName": "الاسم",
+      "headerValue": "القيمة",
+      "headerNameNumbered": "اسم الترويسة {{n}}",
+      "headerValueFor": "قيمة {{name}}",
+      "addHeader": "إضافة ترويسة",
+      "removeHeader": "إزالة الترويسة {{name}}",
+      "removeHeaderUnnamed": "إزالة هذه الترويسة",
+      "valueSetHint": "القيمة محفوظة، وتُستبدل عند إدخال قيمة جديدة.",
+      "headerNameRequired": "اسم الترويسة مطلوب.",
+      "headerNameDuplicate": "لكل ترويسة اسم مختلف.",
+      "headerValueRequired": "قيمة الترويسة الجديدة مطلوبة.",
+      "urlRequired": "رابط استدعاء الويب مطلوب."
+    },
     "list": {
       "colWorkflow": "سير العمل",
       "colState": "الحالة",
