@@ -240,6 +240,11 @@ interface Option {
         flex-direction: column;
         min-inline-size: 0;
       }
+      /* A picked committee's name (and "The record's committee") needs the
+         row's width beside its search button; the role filter goes beneath. */
+      .am-who-entry__field[data-slot='committeeId'] {
+        grid-column: 1 / -1;
+      }
       .am-who-entry__remove {
         margin-block-start: 22px;
         inline-size: 36px;
