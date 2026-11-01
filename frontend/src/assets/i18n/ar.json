@@ -1115,7 +1115,91 @@
     "confirmRemoveStageHeader": "إزالة المرحلة «{{name}}»؟",
     "confirmDeactivateTemplateHeader": "تعطيل القالب «{{name}}»؟",
     "confirmDeactivateDefaultTemplate": "تستمر السجلات الموجودة عليه. ولأنه القالب الافتراضي، لن تبدأ سجلات جديدة من نوعه حتى يُعيَّن قالب آخر افتراضيًا.",
-    "confirmRemoveTransitionHeader": "إزالة الانتقال «{{name}}»؟"
+    "confirmRemoveTransitionHeader": "إزالة الانتقال «{{name}}»؟",
+    "who": {
+      "title": "من يعمل على هذه المرحلة",
+      "or": "أو",
+      "nobody": "لا أحد يعمل على هذه المرحلة بعد.",
+      "addAnother": "+ إضافة آخر",
+      "startingChip": "إسناد أولي",
+      "startingNote": "تبدأ مسارات العمل المهيأة مسبقًا بهذا الإسناد حتى يكون لكل مرحلة من يعمل عليها. استبدله بمن ينبغي أن يقوم بهذا العمل.",
+      "modesLegend": "عند وجود أكثر من شخص",
+      "readbackPending": "تظهر صياغة هذا الإعداد بعد حفظ المرحلة.",
+      "fallback": "لا يمكن استخدام «{{mode}}» مع هذه القائمة، لذا ستستخدم المرحلة «{{fallback}}».",
+      "assigneeN": "الإسناد {{n}}",
+      "removeN": "إزالة الإسناد {{n}}",
+      "kindLabel": "النوع",
+      "chooseKind": "اختيار النوع",
+      "choosePerson": "اختيار شخص",
+      "chooseCommittee": "اختيار لجنة",
+      "choosePosition": "اختيار منصب",
+      "chooseUnit": "اختيار وحدة",
+      "recordUnit": "وحدة السجل",
+      "recordCommittee": "لجنة السجل",
+      "useRecordCommittee": "استخدام لجنة السجل بدلًا من ذلك",
+      "allMembers": "جميع الأعضاء",
+      "roleNamed": "الدور: {{role}}",
+      "creatorValue": "من أنشأ السجل",
+      "noHolder": "لا أحد يشغل هذا المنصب في هذه الوحدة بعد.",
+      "field": {
+        "userId": "الشخص",
+        "positionId": "المنصب",
+        "orgUnitId": "الوحدة",
+        "inUnit": "في الوحدة",
+        "committeeId": "اللجنة",
+        "committeeRoleValueId": "الدور"
+      },
+      "kind": {
+        "SPECIFIC_USER": "مستخدم محدد",
+        "POSITION_IN_UNIT": "منصب محدد",
+        "ORG_UNIT_HEAD": "رئيس الوحدة",
+        "CREATOR": "منشئ السجل",
+        "COMMITTEE": "لجنة"
+      },
+      "mode": {
+        "ANY_ONE": "أيٌّ منهم",
+        "ALL": "جميعهم",
+        "COMMITTEE_VOTE": "تصويت اللجنة"
+      },
+      "modeHelp": {
+        "ANY_ONE": "أول من يتصرف يقرر، وتُغلق مهام الآخرين.",
+        "ALL": "لا تنتقل المرحلة إلا بعد تصرّف كلٍّ منهم.",
+        "COMMITTEE_VOTE": "يصوّت أعضاء اللجنة، ويحسم النصاب وقواعد التصويت الخاصة باللجنة."
+      },
+      "error": {
+        "required": "تحتاج المرحلة إلى إسناد واحد على الأقل.",
+        "mode": "يلزم تحديد طريقة اتخاذ القرار في هذه المرحلة.",
+        "voteNeedsOne": "يتطلب تصويت اللجنة إسنادًا واحدًا فقط، ويجب أن يكون لجنة.",
+        "duplicate": "هذا الإسناد موجود في القائمة بالفعل.",
+        "kindNotAllowed": "لا يمكن لهذا النوع من الإسناد العمل على مرحلة من هذا النوع من السجلات.",
+        "fieldNotUsed": "هذا النوع من الإسناد لا يستخدم إحدى القيم المرسلة. يلزم اختيار النوع مرة أخرى.",
+        "noRecordUnit": "ليس لهذا النوع من السجلات وحدة خاصة به. يلزم اختيار وحدة.",
+        "noRecordCommittee": "ليس لهذا النوع من السجلات لجنة خاصة به. يلزم اختيار لجنة.",
+        "removed": "أُزيل هذا الاختيار. يلزم الاختيار مرة أخرى.",
+        "userNotActive": "حساب هذا الشخص غير نشط. يلزم اختيار شخص آخر.",
+        "choose": {
+          "kind": "يلزم اختيار النوع.",
+          "userId": "يلزم اختيار شخص.",
+          "positionId": "يلزم اختيار منصب.",
+          "orgUnitId": "يلزم اختيار وحدة.",
+          "committeeId": "يلزم اختيار لجنة.",
+          "committeeRoleValueId": "يلزم اختيار دور."
+        }
+      },
+      "searchPeople": "البحث عن الأشخاص",
+      "searchCommittees": "البحث عن اللجان",
+      "noPeople": "لا يوجد أشخاص للاختيار.",
+      "noCommittees": "لا توجد لجان للاختيار.",
+      "noMatch": "لا شيء يطابق «{{q}}».",
+      "invited": "دعوة معلّقة",
+      "active": "حساب نشط",
+      "closePicker": "إغلاق",
+      "col": {
+        "name": "الاسم",
+        "status": "الحالة",
+        "committee": "اللجنة"
+      }
+    }
   },
   "notification": {
     "openRecord": "فتح السجل",
@@ -2222,7 +2306,8 @@
       "STORAGE_ALMOST_FULL": "مساحة تخزين الملفات توشك على الامتلاء",
       "STORAGE_ACCESS_WITHDRAWN": "تعذّر الوصول إلى تخزين SharePoint",
       "STORAGE_SECRET_EXPIRING": "سرّ عميل SharePoint ينتهي قريبًا",
-      "ACTING_HEAD_OPEN_ENDED": "رئيس بالإنابة دون تاريخ انتهاء"
+      "ACTING_HEAD_OPEN_ENDED": "رئيس بالإنابة دون تاريخ انتهاء",
+      "STAGE_ON_STARTING_ASSIGNMENT": "مرحلة في مسار العمل ما زالت على الإسناد الأولي"
     },
     "context": {
       "template": "سير العمل: {{name}}"
@@ -2241,7 +2326,8 @@
         "UNKNOWN": "رفع الملفات المخزّنة في SharePoint وتنزيلها متوقفان."
       },
       "sharePointSecretExpiring": "ينتهي سرّ العميل في {{date}}. بعد ذلك يتوقف رفع الملفات المخزّنة في SharePoint وتنزيلها.",
-      "actingOpenEnded": "رئيس بالإنابة منذ {{date}}، دون تاريخ انتهاء."
+      "actingOpenEnded": "رئيس بالإنابة منذ {{date}}، دون تاريخ انتهاء.",
+      "startingAssignment": "مسار العمل: {{workflow}} · المرحلة: {{stage}} · يذهب عملها إلى {{admin}} إلى أن يُستبدل هذا الإسناد."
     },
     "hint": {
       "STAGE_WITHOUT_ASSIGNEE": "السبب غير مسجّل: راجع المسؤول عن المرحلة، والشرط الذي يفعّل كل انتقال خارج منها.",
@@ -2263,7 +2349,8 @@
       "ACTING_HEAD_OPEN_ENDED": "فتح الوحدة",
       "STORAGE_ACCESS_WITHDRAWN": "فتح تخزين الملفات",
       "STORAGE_SECRET_EXPIRING": "فتح تخزين الملفات",
-      "STORAGE_ALMOST_FULL": "فتح سلة المحذوفات"
+      "STORAGE_ALMOST_FULL": "فتح سلة المحذوفات",
+      "STAGE_ON_STARTING_ASSIGNMENT": "مراجعة المرحلة"
     },
     "fixNeeds": {
       "ORG_UNIT_WITHOUT_HEAD": "إصلاح هذا يتطلب صلاحية إدارة الهيكل التنظيمي.",
@@ -2273,7 +2360,8 @@
       "ACTING_HEAD_OPEN_ENDED": "يتطلّب إصلاح هذا صلاحية إدارة الهيكل التنظيمي.",
       "STORAGE_ACCESS_WITHDRAWN": "إصلاح هذا يتطلب صلاحية ضبط البريد والتخزين والمهل والذكاء الاصطناعي.",
       "STORAGE_SECRET_EXPIRING": "إصلاح هذا يتطلب صلاحية ضبط البريد والتخزين والمهل والذكاء الاصطناعي.",
-      "STORAGE_ALMOST_FULL": "إصلاح هذا يتطلب صلاحية ضبط البريد والتخزين والمهل والذكاء الاصطناعي."
+      "STORAGE_ALMOST_FULL": "إصلاح هذا يتطلب صلاحية ضبط البريد والتخزين والمهل والذكاء الاصطناعي.",
+      "STAGE_ON_STARTING_ASSIGNMENT": "إصلاح هذا يتطلب صلاحية إدارة سير العمل."
     },
     "freshness": {
       "failed": "{{type}}: فشل آخر فحص. الصفوف كما تأكدت آخر مرة في {{when}}.",
@@ -2293,7 +2381,17 @@
     "objectFilter": "عرض {{name}} فقط",
     "objectFilterNone": "عرض وحدة واحدة فقط",
     "showAll": "عرض الكل",
-    "emptyObject": "لا توجد حالات قائمة لهذه الوحدة."
+    "emptyObject": "لا توجد حالات قائمة لهذه الوحدة.",
+    "keep": {
+      "button": "الإبقاء على هذا الإسناد",
+      "buttonFor": "الإبقاء على هذا الإسناد: {{stage}}",
+      "header": "الإبقاء على {{admin}} في «{{stage}}»؟",
+      "message": "ستتوقف «سلامة الإعداد» عن التنبيه إليها.",
+      "accept": "إبقاء",
+      "kept": "تم الإبقاء، وتُغلق في الفحص التالي",
+      "failed": "تعذّر الإبقاء على الإسناد. يُرجى المحاولة مرة أخرى.",
+      "someone": "من يدير حساب المؤسسة"
+    }
   },
   "format": {
     "lessThanMinute": "أقل من دقيقة",
@@ -3007,6 +3105,48 @@
         "few": "{{count}} مهام",
         "many": "{{count}} مهمة",
         "other": "{{count}} مهمة"
+      },
+      "who": {
+        "heldBy": {
+          "zero": "لا يشغله أحد",
+          "one": "يشغله شخص واحد",
+          "two": "يشغله شخصان",
+          "few": "يشغله {{count}} أشخاص",
+          "many": "يشغله {{count}} شخصًا",
+          "other": "يشغله {{count}} شخص"
+        },
+        "people": {
+          "zero": "لا أشخاص",
+          "one": "شخص واحد",
+          "two": "شخصان",
+          "few": "{{count}} أشخاص",
+          "many": "{{count}} شخصًا",
+          "other": "{{count}} شخص"
+        },
+        "peopleMatch": {
+          "zero": "لا يوجد أشخاص مطابقون",
+          "one": "شخص واحد مطابق",
+          "two": "شخصان مطابقان",
+          "few": "{{count}} أشخاص مطابقين",
+          "many": "{{count}} شخصًا مطابقًا",
+          "other": "{{count}} شخص مطابق"
+        },
+        "committees": {
+          "zero": "لا لجان",
+          "one": "لجنة واحدة",
+          "two": "لجنتان",
+          "few": "{{count}} لجان",
+          "many": "{{count}} لجنة",
+          "other": "{{count}} لجنة"
+        },
+        "committeesMatch": {
+          "zero": "لا توجد لجان مطابقة",
+          "one": "لجنة واحدة مطابقة",
+          "two": "لجنتان مطابقتان",
+          "few": "{{count}} لجان مطابقة",
+          "many": "{{count}} لجنة مطابقة",
+          "other": "{{count}} لجنة مطابقة"
+        }
       }
     },
     "home": {

@@ -137,6 +137,9 @@ export class StageWhoDraft {
    * the server's to say.
    */
   validate(): boolean {
+    // The last refusal is the server's answer to the last Save; this Save asks
+    // again, so it must not be held back by it.
+    this.clearRefusals();
     let ok = true;
     for (const row of this.rows()) {
       row.group.markAllAsTouched();

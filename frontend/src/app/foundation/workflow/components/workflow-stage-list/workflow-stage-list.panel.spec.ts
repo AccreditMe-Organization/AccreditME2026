@@ -87,7 +87,7 @@ describe('WorkflowStageListComponent — the stage editor panel (ACC-255 PR 4b)'
   let http: HttpTestingController;
   let confirm: jasmine.Spy;
 
-  async function render(opts: { template?: object; manage?: boolean } = {}): Promise<HTMLElement> {
+  async function render(opts: { template?: object; manage?: boolean; query?: Record<string, string> } = {}): Promise<HTMLElement> {
     confirm = jasmine.createSpy('ask');
     TestBed.configureTestingModule({
       imports: [WorkflowStageListComponent],
@@ -103,7 +103,7 @@ describe('WorkflowStageListComponent — the stage editor panel (ACC-255 PR 4b)'
         { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => p !== 'workflows:manage' || (opts.manage ?? true) } },
         {
           provide: ActivatedRoute,
-          useValue: { snapshot: { paramMap: convertToParamMap({ templateId: 'template-1' }), queryParamMap: convertToParamMap({}) } },
+          useValue: { snapshot: { paramMap: convertToParamMap({ templateId: 'template-1' }), queryParamMap: convertToParamMap(opts.query ?? {}) } },
         },
       ],
     });
@@ -151,6 +151,20 @@ describe('WorkflowStageListComponent — the stage editor panel (ACC-255 PR 4b)'
     expect(panel()!.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(document.activeElement).toBe(el().querySelector('[data-panel-heading]'));
     expect(card(1).getAttribute('aria-current')).toBe('true');
+  });
+
+  // ACC-271 PR 5a — Setup health's "Review stage" (?stage=<id>) opens that
+  // stage in the panel, where who works it is set; an unknown id opens nothing.
+  it('?stage=<id> opens that stage in the panel, with focus on its heading', async () => {
+    await render({ query: { stage: 'stage-2' } });
+    expect(heading()).toBe('Stage 2');
+    expect(panel()!.querySelector('[data-section="who"]')).not.toBeNull();
+    expect(document.activeElement).toBe(el().querySelector('[data-panel-heading]'));
+  });
+
+  it('?stage= naming no stage of this workflow opens nothing', async () => {
+    await render({ query: { stage: 'stage-elsewhere' } });
+    expect(panel()).toBeNull();
   });
 
   it('a stage’s name in the list opens it too; the list has no Edit or ⋯ of its own', async () => {
