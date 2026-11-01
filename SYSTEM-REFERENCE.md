@@ -2066,6 +2066,33 @@ Fires in `order` after a successful transition. Per `actionType`:
 - **`WEBHOOK`** — enqueued to BullMQ (`workflow-actions` queue) and
   returns immediately; the `WorkflowActionLog` row is written later by
   a separate processor once the attempt resolves, not inline here.
+  The job carries ids and the record payload only, never the action's config.
+- **A webhook action's secrets are write-once (ACC-277,
+  `webhook-config-secrets.ts`).** Every header value is a secret, and so is a
+  `signingSecret` (none is stored today).
+  - **Reads:** no read returns a value. Every action leaves the service through
+    `mapTransitionAction()` (the template read, and the add and update action
+    responses), which returns `headers` as name → `""` with
+    `headersValueSet: { name: boolean }` beside it, and `signingSecret` as `""`
+    with `signingSecretSet`. The map keeps today's Actions dialog working: it
+    shows the names with blank values.
+  - **Saves** (`mergeActionConfig()`): a header sent empty (or null) keeps its
+    stored value; a non-empty value replaces it; a header left out is removed,
+    and no header list at all removes them all. The signing secret follows the
+    same rule. The read-only markers are never stored. An update that sends no
+    config leaves it untouched. Server-side copying must use the stored config,
+    never a masked read; none exists today.
+  - **Audit:** an action's rows record header names, whether a signing secret
+    is set, and on update `headersChanged` (`added` / `removed` / `changed`) and
+    `signingSecretChanged`, never a value. Before ACC-277 they recorded only
+    type, order and enabled, so no earlier audit row holds a value.
+  - **The sender** reads the stored config directly, so a masked read saved
+    back untouched sends identical headers (pinned by a spec). What it logs (the
+    error message, the 500-character response summary) and the error it rethrows
+    to BullMQ have every stored secret replaced by `[redacted]`: fetch quotes a
+    malformed header's value, and an endpoint may echo a header back.
+  - **The `webhookUrl` is returned as it is.** A URL that embeds a token (an
+    incoming-webhook URL) is not masked; that is outside ACC-277.
 - **`CREATE_TASK`** — resolves `toStage`'s assignees via
   `resolveAssignee()` (full array, not just the first — an explicitly
   fixed prior bug), maps `instance.objectType` → `TaskSourceType` via
