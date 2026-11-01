@@ -192,9 +192,32 @@ describe('stage-who (ACC-271 PR 3)', () => {
       expect(whoSentence('ALL', [position]).en).toBe('All of: whoever holds Team Leader in Quality Department.');
     });
 
-    it("names the committee for a Committee vote, or the record's", () => {
-      expect(whoSentence('COMMITTEE_VOTE', [committee])).toEqual({ en: 'A vote of Quality Committee.', ar: 'تصويت لجنة الجودة.' });
-      expect(whoSentence('COMMITTEE_VOTE', [recordCommittee])).toEqual({ en: "A vote of the record's committee.", ar: 'تصويت لجنة السجل.' });
+    // ACC-271 PR 5-be — the drawn wording. The committee's Arabic name already
+    // begins with «لجنة», so the verb is followed by the whole name.
+    it("names the committee for a Committee vote, or the record's, in the drawn wording", () => {
+      expect(whoSentence('COMMITTEE_VOTE', [committee])).toEqual({
+        en: 'The Quality Committee decides by vote.',
+        ar: 'تقرر لجنة الجودة بالتصويت.',
+      });
+      expect(whoSentence('COMMITTEE_VOTE', [recordCommittee])).toEqual({
+        en: "The record's committee decides by vote.",
+        ar: 'تقرر لجنة السجل بالتصويت.',
+      });
+    });
+
+    it('a Committee vote with a role filter reads the same: the committee votes', () => {
+      expect(whoSentence('COMMITTEE_VOTE', [{ ...committee, committeeRoleValueId: 'r1', roleLabelEn: 'Chairman', roleLabelAr: 'رئيس' }])).toEqual({
+        en: 'The Quality Committee decides by vote.',
+        ar: 'تقرر لجنة الجودة بالتصويت.',
+      });
+    });
+
+    it('a Committee vote on a removed committee, or one with no Arabic name, still reads', () => {
+      expect(whoSentence('COMMITTEE_VOTE', [{ ...committee, committeeNameEn: null, committeeNameAr: null }])).toEqual({
+        en: 'A removed committee decides by vote.',
+        ar: 'تقرر لجنة أُزيلت بالتصويت.',
+      });
+      expect(whoSentence('COMMITTEE_VOTE', [{ ...committee, committeeNameAr: null }]).ar).toBe('تقرر Quality Committee بالتصويت.');
     });
 
     it('falls back to English for a missing Arabic name, and says what was removed', () => {

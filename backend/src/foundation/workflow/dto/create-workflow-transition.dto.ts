@@ -53,8 +53,13 @@ export class CreateWorkflowTransitionDto {
   @IsOptional()
   requiredPermission?: string | null;
 
+  // ACC-271 PR 5-be — optional: a move out of a converted stage names no people
+  // (whoever works the stage presses it), so it needs no trigger. A move out of
+  // a stage still on the old columns must say it; the service refuses one that
+  // does not.
   @IsIn(WORKFLOW_TRIGGER_CONDITIONS)
-  triggerCondition!: (typeof WORKFLOW_TRIGGER_CONDITIONS)[number];
+  @IsOptional()
+  triggerCondition?: (typeof WORKFLOW_TRIGGER_CONDITIONS)[number];
 
   @IsString()
   @IsOptional()

@@ -9,8 +9,11 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { StageWhoDto } from './stage-who.dto';
 import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
 const WORKFLOW_APPROVAL_MODES = ['SINGLE', 'SEQUENTIAL', 'PARALLEL', 'COMMITTEE'] as const;
@@ -62,8 +65,12 @@ export class CreateWorkflowStageDto {
   @IsOptional()
   isFinal?: boolean;
 
+  // ACC-271 PR 5-be — required only when a stage is created the old way. A stage
+  // created with `who` is converted at once and names no old people field (the
+  // service refuses one sent beside `who`).
+  @ValidateIf((o: CreateWorkflowStageDto) => o.who === undefined)
   @IsIn(WORKFLOW_APPROVAL_MODES)
-  approvalMode!: (typeof WORKFLOW_APPROVAL_MODES)[number];
+  approvalMode?: (typeof WORKFLOW_APPROVAL_MODES)[number];
 
   @IsIn(WORKFLOW_PARALLEL_THRESHOLDS)
   @IsOptional()
@@ -73,8 +80,9 @@ export class CreateWorkflowStageDto {
   @IsOptional()
   committeeId?: string;
 
+  @ValidateIf((o: CreateWorkflowStageDto) => o.who === undefined)
   @IsIn(WORKFLOW_ASSIGNEE_STRATEGIES)
-  assigneeStrategy!: (typeof WORKFLOW_ASSIGNEE_STRATEGIES)[number];
+  assigneeStrategy?: (typeof WORKFLOW_ASSIGNEE_STRATEGIES)[number];
 
   @IsString()
   @IsOptional()
@@ -128,4 +136,13 @@ export class CreateWorkflowStageDto {
   @ArrayMaxSize(20)
   @IsString({ each: true })
   flags?: string[];
+
+  // ACC-271 PR 3 / 5-be — who works the stage. On create it converts the new
+  // stage in the same transaction that creates it; on update (inherited by
+  // UpdateWorkflowStageDto) it REPLACES the stage's entries and sets how they
+  // decide, and omitted leaves them.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => StageWhoDto)
+  who?: StageWhoDto;
 }

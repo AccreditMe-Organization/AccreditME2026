@@ -261,4 +261,100 @@ describe('Who works a stage, saved and kept, against a real database (ACC-271 PR
     await expect(templates.keepStartingAssignment(b.stage, a.id, a.admin)).rejects.toThrow('Workflow stage not found');
     expect((await entries(b.stage)).map((e) => e.isStartingAssignment)).toEqual([true]);
   });
+
+  // ── ACC-271 PR 5-be ────────────────────────────────────────────────────────
+
+  const stageCount = (templateId: string) => prisma.workflowStage.count({ where: { workflowTemplateId: templateId } });
+
+  it('creating a stage with who converts it in the same transaction, audits it, and reads back with holder counts', async () => {
+    const o = await org();
+    // Two people hold Team Leader with Quality as their primary unit; a third is deactivated (not counted).
+    await prisma.user.updateMany({ where: { id: { in: [o.admin, o.person] } }, data: { positionId: o.position, primaryOrgUnitId: o.unit } });
+    await prisma.user.create({
+      data: { organizationId: o.id, email: `${o.slug}-gone@example.test`, name: 'Gone', status: 'INACTIVE', positionId: o.position, primaryOrgUnitId: o.unit },
+    });
+
+    const created = await templates.addStage(
+      o.template,
+      {
+        nameEn: 'Legal review',
+        order: 30,
+        who: { mode: 'ANY_ONE', entries: [{ kind: 'POSITION_IN_UNIT', positionId: o.position, orgUnitId: o.unit }, { kind: 'COMMITTEE', committeeId: o.committee }] },
+      } as never,
+      o.id,
+      o.admin,
+    );
+
+    const stored = await prisma.workflowStage.findUniqueOrThrow({ where: { id: created.id } });
+    expect(stored.whoMode).toBe('ANY_ONE');
+    expect(await entries(created.id)).toEqual([
+      { kind: 'POSITION_IN_UNIT', userId: null, order: 1, isStartingAssignment: false },
+      { kind: 'COMMITTEE', userId: null, order: 2, isStartingAssignment: false },
+    ]);
+    const auditRow = await prisma.auditLog.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'WorkflowStage', objectId: created.id } });
+    expect(auditRow.action).toBe('CREATE');
+    expect(auditRow.after).toEqual(
+      expect.objectContaining({ whoMode: 'ANY_ONE', whoEntries: ['1. whoever holds Team Leader in Quality', '2. the members of Quality Committee'] }),
+    );
+
+    const read = (await templates.getTemplateById(o.template, o.id)).stages!.find((s) => s.id === created.id)!;
+    expect(read.who!.entries.map((e) => [e.kind, e.holderCount])).toEqual([
+      ['POSITION_IN_UNIT', 2],
+      ['COMMITTEE', null],
+    ]);
+  });
+
+  it('a Committee vote reads back in the drawn wording, on a real database', async () => {
+    const o = await org();
+    const created = await templates.addStage(
+      o.template,
+      { nameEn: 'Vote', order: 40, who: { mode: 'COMMITTEE_VOTE', entries: [{ kind: 'COMMITTEE', committeeId: o.committee }] } } as never,
+      o.id,
+      o.admin,
+    );
+    expect(created.whoSentence).toEqual({ en: 'The Quality Committee decides by vote.', ar: 'تقرر لجنة الجودة بالتصويت.' });
+  });
+
+  it.each([
+    ['a person', (b: Awaited<ReturnType<typeof org>>) => ({ kind: 'SPECIFIC_USER', userId: b.person })],
+    ['a position', (b: Awaited<ReturnType<typeof org>>) => ({ kind: 'POSITION_IN_UNIT', positionId: b.position })],
+    ['a unit', (b: Awaited<ReturnType<typeof org>>) => ({ kind: 'ORG_UNIT_HEAD', orgUnitId: b.unit })],
+    ['a committee', (b: Awaited<ReturnType<typeof org>>) => ({ kind: 'COMMITTEE', committeeId: b.committee })],
+  ])('should NOT return records belonging to a different tenant — creating a stage with %s of another organisation is refused, and no stage is created', async (_what, entryOf) => {
+    const a = await org();
+    const b = await org();
+    let entry = entryOf(b) as Record<string, unknown>;
+    // A position needs a unit; give it this organisation's, so only the position is foreign.
+    if (entry['kind'] === 'POSITION_IN_UNIT') entry = { ...entry, orgUnitId: a.unit };
+    const before = await stageCount(a.template);
+    const body = await refusal(templates.addStage(a.template, { nameEn: 'Foreign', order: 50, who: { mode: 'ANY_ONE', entries: [entry] } } as never, a.id, a.admin));
+    expect(body).toEqual(expect.objectContaining({ status: 404, code: 'WHO_REFERENCE_NOT_FOUND' }));
+    expect(await stageCount(a.template)).toBe(before);
+  });
+
+  it('who sent with an old people field is refused, and no stage is created', async () => {
+    const o = await org();
+    const before = await stageCount(o.template);
+    const body = await refusal(
+      templates.addStage(o.template, { nameEn: 'Mixed', order: 60, approvalMode: 'SINGLE', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never, o.id, o.admin),
+    );
+    expect(body).toEqual(expect.objectContaining({ status: 400, code: 'WHO_MOVED_TO_STAGE', field: 'approvalMode' }));
+    expect(await stageCount(o.template)).toBe(before);
+  });
+
+  it('a move out of a converted stage needs no trigger, and a people value is refused', async () => {
+    const o = await org();
+    const to = await prisma.workflowStage.create({
+      data: { workflowTemplateId: o.template, nameEn: 'Active', order: 70, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', whoMode: 'ANY_ONE' },
+    });
+    const made = await templates.addTransition({ fromStageId: o.stage, toStageId: to.id, labelEn: 'Activate' } as never, o.id, o.admin);
+    const stored = await prisma.workflowTransition.findUniqueOrThrow({ where: { id: made.transition.id } });
+    expect(stored).toEqual(expect.objectContaining({ mover: 'PERSON', triggerCondition: 'ROLE_BASED', requiredPermission: null }));
+
+    const body = await refusal(
+      templates.addTransition({ fromStageId: o.stage, toStageId: to.id, labelEn: 'Anyone', triggerCondition: 'ANY_AUTHENTICATED' } as never, o.id, o.admin),
+    );
+    expect(body).toEqual(expect.objectContaining({ code: 'WHO_MOVED_TO_STAGE', field: 'triggerCondition' }));
+    expect(await prisma.workflowTransition.count({ where: { fromStageId: o.stage, labelEn: 'Anyone' } })).toBe(0);
+  });
 });
