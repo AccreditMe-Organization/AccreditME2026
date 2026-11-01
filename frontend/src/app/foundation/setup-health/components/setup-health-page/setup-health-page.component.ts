@@ -7,6 +7,8 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
+import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
+import { WorkflowTemplateService } from '../../../workflow/services/workflow-template.service';
 import {
   SetupConditionDto,
   SetupConditionFreshnessDto,
@@ -40,6 +42,7 @@ const TYPE_ORDER: SetupConditionType[] = [
   'ORG_UNIT_WITHOUT_TYPE',
   'ACTING_HEAD_OPEN_ENDED',
   'STAGE_WITHOUT_ASSIGNEE',
+  'STAGE_ON_STARTING_ASSIGNMENT',
   'TASK_WITHOUT_OWNER',
   'STORAGE_ACCESS_WITHDRAWN',
   'STORAGE_SECRET_EXPIRING',
@@ -85,6 +88,9 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         permissions: ['org:view', 'org:manage'],
       };
     case 'STAGE_WITHOUT_ASSIGNEE':
+    // ACC-271 PR 5a — "Review stage": the same page, the stage open in its
+    // editor panel, where who works it is set.
+    case 'STAGE_ON_STARTING_ASSIGNMENT':
       // The template id is in the snapshot; without it there is no page to open.
       // ACC-255 PR 4a (Q-D): the stages page itself needs workflows:manage
       // (nav-items.ts), so a holder of workflows:view alone is never offered a
@@ -137,6 +143,9 @@ export interface ConditionRow {
   fix: { label: string; link: string[]; queryParams: Record<string, string> } | null;
   // Shown instead of a Fix the viewer could not use. Never a disabled button.
   fixNeeds: string | null;
+  // ACC-271 PR 5a — "Keep this assignment", beside Review stage, for a stage on
+  // its starting assignment; only where the Fix is offered (workflows:manage).
+  keep: { stageId: string; stageName: string; adminName: string } | null;
 }
 
 export interface ConditionGroup {
@@ -264,11 +273,29 @@ const DAY_MS = 24 * 60 * 60 * 1000;
                       tooltipPosition="top"
                       >{{ row.age }}</span
                     >
-                    <span class="flex-none">
+                    <span class="flex-none flex flex-wrap items-center gap-2">
                       @if (row.fix; as fix) {
                         <a class="am-health-fix" [routerLink]="fix.link" [queryParams]="fix.queryParams">{{
                           fix.label
                         }}</a>
+                        @if (row.keep; as keep) {
+                          @if (kept().has(keep.stageId)) {
+                            <span class="text-[11.5px] text-[var(--am-text-secondary)]" role="status" data-testid="health-kept">{{
+                              'setupHealth.keep.kept' | translate
+                            }}</span>
+                          } @else {
+                            <button
+                              type="button"
+                              class="am-health-keep"
+                              [disabled]="keeping() === keep.stageId"
+                              [attr.aria-label]="'setupHealth.keep.buttonFor' | translate: { stage: keep.stageName }"
+                              (click)="askKeep(keep, $event)"
+                              data-testid="health-keep"
+                            >
+                              {{ 'setupHealth.keep.button' | translate }}
+                            </button>
+                          }
+                        }
                       } @else if (row.fixNeeds) {
                         <span class="block max-w-[220px] text-[11.5px] text-[var(--am-text-secondary)] text-pretty">{{
                           row.fixNeeds
@@ -348,7 +375,21 @@ const DAY_MS = 24 * 60 * 60 * 1000;
         color: var(--am-blue-primary);
         font-weight: 600;
       }
+      .am-health-keep {
+        display: inline-block;
+        border: 1px solid var(--am-control-border, var(--am-border));
+        background: var(--am-card);
+        color: var(--am-text-primary);
+        border-radius: 5px;
+        padding: 4px 11px;
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+      }
       .am-health-filter:focus-visible,
+      .am-health-keep:focus-visible,
       .am-health-fix:focus-visible {
         outline: 2px solid var(--am-blue-primary);
         outline-offset: 1px;
@@ -388,6 +429,46 @@ export class SetupHealthPageComponent implements OnInit {
   private readonly files = inject(FilesService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly confirm = inject(AmConfirmService);
+  private readonly workflows = inject(WorkflowTemplateService);
+
+  /**
+   * ACC-271 PR 5a — stages kept on their starting assignment this visit. The
+   * condition stays open until the next hourly check closes it, so the row
+   * says "Kept, closes on the next check" instead of offering Keep again.
+   */
+  readonly kept = signal<ReadonlySet<string>>(new Set());
+  /** The stage whose Keep is being saved. */
+  readonly keeping = signal<string | null>(null);
+
+  /**
+   * "Keep this assignment" (drawing section 11): asks through the one confirm,
+   * then keeps it and reads the page again once.
+   */
+  askKeep(keep: { stageId: string; stageName: string; adminName: string }, event: Event): void {
+    this.confirm.ask({
+      tone: 'neutral',
+      header: this.translate.instant('setupHealth.keep.header', { admin: keep.adminName, stage: keep.stageName }),
+      message: this.translate.instant('setupHealth.keep.message'),
+      acceptLabel: this.translate.instant('setupHealth.keep.accept'),
+      opener: event.currentTarget as HTMLElement | null,
+      accept: () => {
+        this.keeping.set(keep.stageId);
+        this.error.set(null);
+        this.workflows.keepStartingAssignment(keep.stageId).subscribe({
+          next: () => {
+            this.keeping.set(null);
+            this.kept.update((s) => new Set(s).add(keep.stageId));
+            this.load();
+          },
+          error: () => {
+            this.keeping.set(null);
+            this.error.set('setupHealth.keep.failed');
+          },
+        });
+      },
+    });
+  }
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -547,7 +628,12 @@ export class SetupHealthPageComponent implements OnInit {
     return {
       id: condition.id,
       severity: condition.severity,
-      objectName: this.objectName(condition),
+      // ACC-271 PR 5a — drawn (section 11): the row's title is the condition
+      // itself, and its sub-line names the workflow, the stage and whose the work is.
+      objectName:
+        condition.type === 'STAGE_ON_STARTING_ASSIGNMENT'
+          ? this.translate.instant(`setupHealth.types.${condition.type}`)
+          : this.objectName(condition),
       context: this.context(condition),
       consequence: this.consequence(condition),
       // A stage is unreachable because of its assignee OR a transition's
@@ -571,7 +657,16 @@ export class SetupHealthPageComponent implements OnInit {
             }
           : null,
       fixNeeds: target && !permitted ? this.translate.instant(`setupHealth.fixNeeds.${condition.type}`) : null,
+      keep:
+        condition.type === 'STAGE_ON_STARTING_ASSIGNMENT' && target && permitted
+          ? { stageId: condition.objectId, stageName: this.objectName(condition), adminName: this.adminName(condition) }
+          : null,
     };
+  }
+
+  /** Whose the work is: a person's name, the same in both languages. */
+  private adminName(condition: SetupConditionDto): string {
+    return condition.subject.adminName || this.translate.instant('setupHealth.keep.someone');
   }
 
   // Tenant data: chosen by language, never translated (SYSTEM-REFERENCE §9.3).
@@ -619,6 +714,12 @@ export class SetupHealthPageComponent implements OnInit {
         return t('sharePointSecretExpiring', { date: this.format.date(s.expiresOn ?? null) });
       case 'ACTING_HEAD_OPEN_ENDED':
         return t('actingOpenEnded', { date: this.format.date(s.validFrom ?? null) });
+      case 'STAGE_ON_STARTING_ASSIGNMENT':
+        return t('startingAssignment', {
+          workflow: (this.languageService.isArabic() && s.templateNameAr) || s.templateNameEn || '—',
+          stage: this.objectName(condition),
+          admin: this.adminName(condition),
+        });
     }
   }
 

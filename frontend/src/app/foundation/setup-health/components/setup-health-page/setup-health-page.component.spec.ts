@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { ConfirmationService } from 'primeng/api';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, provideRouter } from '@angular/router';
@@ -63,6 +64,7 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     TestBed.configureTestingModule({
       imports: [SetupHealthPageComponent],
       providers: [
+        ConfirmationService,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -382,6 +384,7 @@ describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
     TestBed.configureTestingModule({
       imports: [SetupHealthPageComponent],
       providers: [
+        ConfirmationService,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -452,6 +455,7 @@ describe('SetupHealthPageComponent — SharePoint storage Fix (ACC-260)', () => 
     TestBed.configureTestingModule({
       imports: [SetupHealthPageComponent],
       providers: [
+        ConfirmationService,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -525,6 +529,7 @@ describe('SetupHealthPageComponent — the org unit record (ACC-120 slice 11, PR
   async function render(url: string) {
     TestBed.configureTestingModule({
       providers: [
+        ConfirmationService,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([{ path: 'setup-health', component: SetupHealthPageComponent }]),
