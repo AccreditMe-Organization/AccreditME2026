@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -38,6 +39,8 @@ import {
   UpdateStageTaskDefinitionDto,
 } from './dto/stage-task-definition.dto';
 import { IStageTaskDefinitionListItem, IStageTaskDefinitionSaved } from './interfaces/stage-task-definition.interface';
+import { StageWhoOptionsService, WhoCommitteeOption, WhoOptionsPage, WhoPersonOption } from './stage-who-options.service';
+import { WhoOptionsQueryDto } from './dto/who-options-query.dto';
 
 // Route order is deliberate: static segments (transitions, stages) are
 // declared before the dynamic '/:id' routes below them — Nest matches routes
@@ -49,6 +52,7 @@ export class WorkflowTemplateController {
   constructor(
     private readonly workflowTemplateService: WorkflowTemplateService,
     private readonly stageTaskDefinitions: StageTaskDefinitionService,
+    private readonly whoOptions: StageWhoOptionsService,
   ) {}
 
   // ── Templates (list/create) ──────────────────────────────────────────────────
@@ -57,6 +61,22 @@ export class WorkflowTemplateController {
   @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
   getTemplates(@CurrentTenant() tenantId: string): Promise<IWorkflowTemplate[]> {
     return this.workflowTemplateService.getTemplates(tenantId);
+  }
+
+  // ── ACC-271 PR 5a — the stage editor's person and committee pickers ──────────
+  // Searched and paged on the server. workflows:manage, like every assignment
+  // picker a workflow editor opens (ACC-208, Q1). Static segments, before '/:id'.
+
+  @Get('who-options/people')
+  @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
+  getWhoPeople(@Query() query: WhoOptionsQueryDto, @CurrentTenant() tenantId: string): Promise<WhoOptionsPage<WhoPersonOption>> {
+    return this.whoOptions.people(tenantId, query);
+  }
+
+  @Get('who-options/committees')
+  @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
+  getWhoCommittees(@Query() query: WhoOptionsQueryDto, @CurrentTenant() tenantId: string): Promise<WhoOptionsPage<WhoCommitteeOption>> {
+    return this.whoOptions.committees(tenantId, query);
   }
 
   @Post()

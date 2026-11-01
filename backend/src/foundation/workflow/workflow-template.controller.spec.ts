@@ -7,7 +7,14 @@ import { IWorkflowTemplate } from './interfaces/workflow-template.interface';
 import { IWorkflowStage } from './interfaces/workflow-stage.interface';
 import { IWorkflowTransition, IWorkflowTransitionAction } from './interfaces/workflow-transition.interface';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
+import { StageWhoOptionsService } from './stage-who-options.service';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
+
+// ACC-271 PR 5a — the stage editor's pickers; only the delegation is asserted here.
+const whoOptions = {
+  people: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
+  committees: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
+};
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -131,6 +138,7 @@ describe('WorkflowTemplateController', () => {
       providers: [
         { provide: WorkflowTemplateService, useValue: service },
         { provide: StageTaskDefinitionService, useValue: stageTaskDefinitions },
+        { provide: StageWhoOptionsService, useValue: whoOptions },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -300,6 +308,21 @@ describe('WorkflowTemplateController', () => {
     ] as const)('%s requires %s', (method, permission) => {
       const handler = WorkflowTemplateController.prototype[method];
       expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual([permission]);
+    });
+  });
+
+  // ACC-271 PR 5a — the stage editor's person and committee pickers.
+  describe('who options', () => {
+    it('pass the tenant from the request and the query through', async () => {
+      const query = { q: 'hu', take: 50, skip: 0 } as never;
+      await controller.getWhoPeople(query, TENANT_ID);
+      await controller.getWhoCommittees(query, TENANT_ID);
+      expect(whoOptions.people).toHaveBeenCalledWith(TENANT_ID, query);
+      expect(whoOptions.committees).toHaveBeenCalledWith(TENANT_ID, query);
+    });
+
+    it.each(['getWhoPeople', 'getWhoCommittees'] as const)('%s requires workflows:manage', (method) => {
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, WorkflowTemplateController.prototype[method])).toEqual(['workflows:manage']);
     });
   });
 });
