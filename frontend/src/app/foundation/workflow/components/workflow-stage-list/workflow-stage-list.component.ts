@@ -33,6 +33,7 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
+import { StageWhoOptionsStore } from '../stage-who/stage-who-options.store';
 
 /** ACC-255 PR 4a — the drawing's # column. */
 const NUMBER_TRACK = '32px';
@@ -40,6 +41,8 @@ const NUMBER_TRACK = '32px';
 @Component({
   selector: 'app-workflow-stage-list',
   standalone: true,
+  // ACC-271 PR 5a — the stage editor's who lists, loaded once and kept for the page.
+  providers: [StageWhoOptionsStore],
   imports: [PageHeaderComponent, 
     TranslatePipe,
     AmCountPipe,
@@ -702,10 +705,10 @@ export class WorkflowStageListComponent implements OnInit {
     );
   }
 
-  // ACC-82 — a Setup health Fix link (?stage=<id>) expands that stage's row.
-  // Expanded, not its edit dialog: the condition does not record whether the
-  // stage is unreachable because of its assignee (the edit dialog) or a
-  // transition's trigger (the expanded panel), and the row shows both.
+  // ACC-82 — a Setup health link (?stage=<id>) names a stage. ACC-271 PR 5a —
+  // it opens that stage in the editor panel: who works a stage is set there now
+  // ("Review stage" for a stage on its starting assignment, or with nobody to
+  // work it), and the panel's heading takes focus.
   private readonly fixLinkStage = injectFixLinkParam('stage');
 
   loadTemplate(): void {
@@ -725,9 +728,8 @@ export class WorkflowStageListComponent implements OnInit {
         this.loading.set(false);
         this.reordering.set(false);
         const stageId = this.fixLinkStage();
-        if (stageId && template.stages?.some((s) => s.id === stageId)) {
-          this.expandedRowKeys.update((keys) => ({ ...keys, [stageId]: true }));
-        }
+        const linked = stageId ? template.stages?.find((s) => s.id === stageId) : undefined;
+        if (linked) this.showPanel(linked, null);
       },
       error: () => {
         this.error.set('workflow.errorLoad');

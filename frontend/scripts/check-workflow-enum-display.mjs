@@ -17,6 +17,13 @@
 // A field passed to a function or a pipe is not matched — that is the fix:
 //       {{ approvalLabelKey(stage.approvalMode) | translate }}
 //
+// ACC-271 PR 5a — widened to who works a stage: a who entry's kind
+// (SPECIFIC_USER, POSITION_IN_UNIT …) and a stage's who mode (ANY_ONE, ALL,
+// COMMITTEE_VOTE). Those field names are generic (a storage option has a
+// `kind` too, bound as a radio's value), so they are matched only on the
+// objects that carry them: `who.mode`, a draft's `mode()`, and the `kind` of
+// an `entry`, a `saved` entry or a `whoEntry`.
+//
 // A PREDICATE, not a baseline (CLAUDE.md, ACC-120): what puts a template in
 // scope is what makes it a defect, so a screen written tomorrow is covered.
 // NON-VACUITY: the patterns are checked against known-bad and known-good
@@ -33,8 +40,11 @@ const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
 const FIELDS = 'approvalMode|assigneeStrategy|triggerCondition|objectType|actionType';
-const INTERPOLATION = new RegExp(`\\{\\{\\s*[\\w$.?!]*\\.(?:${FIELDS})\\s*\\}\\}`, 'g');
-const BINDING = new RegExp(`\\[(?:value|label|text)\\]\\s*=\\s*"\\s*[\\w$.?!]*\\.(?:${FIELDS})\\s*"`, 'g');
+// ACC-271 PR 5a — the who fields, on the objects that carry them (see above).
+const WHO = String.raw`(?:\bwho\??\.mode|\b(?:draft|whoDraft|d)(?:\(\))?\.mode\(\)|\b(?:entry|saved|whoEntry)\??\.kind)`;
+const EXPR = String.raw`[\w$.?!()]*?(?:\.(?:${FIELDS})|${WHO})`;
+const INTERPOLATION = new RegExp(String.raw`\{\{\s*${EXPR}\s*\}\}`, 'g');
+const BINDING = new RegExp(String.raw`\[(?:value|label|text)\]\s*=\s*"\s*${EXPR}\s*"`, 'g');
 
 function findings(source) {
   return [...source.matchAll(INTERPOLATION), ...source.matchAll(BINDING)].map((m) => m[0]);
@@ -48,6 +58,14 @@ const MUST_FLAG = [
   '<p-tag [value]="template.objectType" />',
   '<p-tag [value]="action.actionType" severity="info" />',
   '[label]="row.approvalMode"',
+  // ACC-271 PR 5a — a who entry's kind, and a stage's who mode.
+  '{{ entry.kind }}',
+  '{{ row().saved?.kind }}',
+  '[value]="whoEntry.kind"',
+  '{{ stage.who.mode }}',
+  '{{ stage.who?.mode }}',
+  '{{ d.mode() }}',
+  '[label]="whoDraft.mode()"',
 ];
 const MUST_PASS = [
   '{{ approvalLabelKey(stage.approvalMode) | translate }}',
@@ -55,6 +73,11 @@ const MUST_PASS = [
   '[value]="actionTypeName(action.actionType)"',
   "{{ 'workflow.approvalMode' | translate }}",
   '@if (form.value.approvalMode === "PARALLEL") {',
+  // ACC-271 PR 5a — in words, and a storage option's kind bound as a radio's value.
+  "{{ workflowLabelKey('stageAssignee', entry.kind) | translate }}",
+  '{{ modeLabel(d.mode()) }}',
+  '[value]="o.kind"',
+  '@if (entry.kind === "CREATOR") {',
 ];
 const selftest = [];
 for (const s of MUST_FLAG) if (findings(s).length !== 1) selftest.push(`should flag: ${s}`);

@@ -1,5 +1,5 @@
 import { refusalBody, refusalCode } from '../../core/http/refusal';
-import type { TaskPriority } from './services/workflow-template.service';
+import type { TaskPriority, WhoEntryField } from './services/workflow-template.service';
 
 /**
  * ACC-208 — reading the workflow engine's refusals (ACC-190's
@@ -40,7 +40,75 @@ export type WorkflowRefusalCode =
   | 'STAGE_HAS_NO_ONE'
   | 'NOT_IN_STAGE_POOL'
   // ACC-271 PR 3 — a CHANGED old people field on a converted stage or its moves.
-  | 'WHO_MOVED_TO_STAGE';
+  | 'WHO_MOVED_TO_STAGE'
+  // ACC-271 PR 3 — a stage's `who` refused; said in its slot (whoRefusal() below).
+  | WhoRefusalCode;
+
+export type WhoRefusalCode =
+  | 'WHO_MODE_UNKNOWN'
+  | 'WHO_ENTRIES_REQUIRED'
+  | 'WHO_ENTRY_DUPLICATE'
+  | 'WHO_KIND_NOT_ALLOWED'
+  | 'WHO_ENTRY_INCOMPLETE'
+  | 'WHO_ENTRY_FIELD_NOT_USED'
+  | 'WHO_RECORD_ROUTE_NOT_AVAILABLE'
+  | 'COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE'
+  | 'WHO_REFERENCE_NOT_FOUND'
+  | 'WHO_USER_NOT_ACTIVE';
+
+/**
+ * Where a refused `who` is said (drawing section 8, "Errors in their slots"):
+ * under the whole section, under the mode choice, or in one entry's row, by its
+ * index and, where the server names one, its field. `field: null` means the row
+ * itself (the screen chooses the row's slot: its kind for a kind the record type
+ * doesn't take, its last field for a duplicate).
+ */
+export type WhoRefusalSlot =
+  | { slot: 'section' }
+  | { slot: 'mode' }
+  | { slot: 'entry'; index: number; field: WhoEntryField | null };
+
+export interface WhoRefusal {
+  code: WhoRefusalCode;
+  where: WhoRefusalSlot;
+  /** WHO_RECORD_ROUTE_NOT_AVAILABLE's kind, which says which route was missing. */
+  kind: string | null;
+}
+
+const WHO_ENTRY_FIELDS: readonly WhoEntryField[] = ['userId', 'positionId', 'orgUnitId', 'committeeId', 'committeeRoleValueId'];
+
+/** A refused `who`, placed in its slot from its code and details; null for any other refusal. */
+export function whoRefusal(err: unknown): WhoRefusal | null {
+  const code = refusalCode(err) as WhoRefusalCode | null;
+  const body = refusalBody(err) ?? {};
+  const kind = typeof body['kind'] === 'string' ? body['kind'] : null;
+  const index = body['index'];
+  const fieldOf = (value: unknown): WhoEntryField | null =>
+    typeof value === 'string' && (WHO_ENTRY_FIELDS as readonly string[]).includes(value) ? (value as WhoEntryField) : null;
+  const entry = (field: WhoEntryField | null): WhoRefusal | null =>
+    typeof index === 'number' && Number.isInteger(index) && index >= 0 && code
+      ? { code, where: { slot: 'entry', index, field }, kind }
+      : null;
+  switch (code) {
+    case 'WHO_ENTRIES_REQUIRED':
+      return { code, where: { slot: 'section' }, kind };
+    case 'WHO_MODE_UNKNOWN':
+    case 'COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE':
+      return { code, where: { slot: 'mode' }, kind };
+    case 'WHO_ENTRY_INCOMPLETE':
+    case 'WHO_REFERENCE_NOT_FOUND':
+      return entry(fieldOf(body['field']));
+    case 'WHO_USER_NOT_ACTIVE':
+      return entry('userId');
+    case 'WHO_ENTRY_DUPLICATE':
+    case 'WHO_KIND_NOT_ALLOWED':
+    case 'WHO_ENTRY_FIELD_NOT_USED':
+    case 'WHO_RECORD_ROUTE_NOT_AVAILABLE':
+      return entry(null);
+    default:
+      return null;
+  }
+}
 
 /**
  * The refusals whose words need nothing but the code. Literal keys, so the

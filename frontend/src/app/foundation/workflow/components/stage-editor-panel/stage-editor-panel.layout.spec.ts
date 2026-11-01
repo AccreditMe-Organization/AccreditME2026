@@ -17,6 +17,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowStageListComponent } from '../workflow-stage-list/workflow-stage-list.component';
+import { ALL_KINDS, WHO_RULES, storedEntry } from '../stage-who/stage-who-options.testing';
 
 // ACC-255 PR 4b (plan §17.6) — the stages page with the stage editor panel
 // open, MEASURED in the real theme, font and translations, at the content
@@ -29,12 +30,16 @@ import { WorkflowStageListComponent } from '../workflow-stage-list/workflow-stag
 //     frame;
 //   - every card, every row of the two sections, and the footer sit inside the
 //     panel, and every row's title, description and aside inside the row;
+//   - ACC-271 PR 5a — "Who works this stage", with one entry of every kind
+//     (the drawing shows three; Creator, the record's unit, the record's
+//     committee and a role filter are the rows it does not), the mode choice
+//     and the read-back: every entry, field and Remove inside the section;
 //   - the "Also needs" column mirrors: after the title in English, before it
 //     in Arabic.
 //
-// NON-VACUITY FIRST (ACC-120): the panel, its three cards and its eight rows
-// exist and are laid out, before "inside" or "does not scroll" may mean
-// anything.
+// NON-VACUITY FIRST (ACC-120): the panel, its card, its who section with its
+// six entries, and its eight rows exist and are laid out, before "inside" or
+// "does not scroll" may mean anything.
 
 const CASES = [
   { name: 'at 1280', width: 988 },
@@ -87,6 +92,27 @@ const LONG = {
   ar: 'مراجعة النظام الداخلي للجنة التنفيذية والاعتماد النهائي من مجلس الإدارة',
 };
 
+const UNIT = { id: 'unit-q', nameEn: 'Quality and Patient Safety Directorate', nameAr: 'إدارة الجودة وسلامة المرضى' };
+const POSITION = { id: 'pos-tl', nameEn: 'Senior Infection Prevention Team Leader', nameAr: 'قائد فريق أول للوقاية من العدوى' };
+const ROLE = { id: 'role-chair', labelEn: 'Chairman', labelAr: 'رئيس' };
+
+/** One entry of every kind, the record's unit and committee, and a role filter. */
+const WHO_ALL_KINDS = {
+  mode: 'ALL',
+  entries: [
+    storedEntry({ kind: 'ORG_UNIT_HEAD', orgUnitId: UNIT.id, orgUnit: UNIT }),
+    storedEntry({ kind: 'ORG_UNIT_HEAD' }),
+    storedEntry({ kind: 'POSITION_IN_UNIT', positionId: POSITION.id, position: POSITION, orgUnitId: UNIT.id, orgUnit: UNIT, holderCount: 0 }),
+    storedEntry({ kind: 'SPECIFIC_USER', userId: 'u-1', user: { id: 'u-1', name: 'Dr. Abdulrahman Al-Mutairi Al-Shammari' }, isStartingAssignment: true }),
+    storedEntry({ kind: 'CREATOR' }),
+    storedEntry({ kind: 'COMMITTEE', committeeRoleValueId: ROLE.id, committeeRole: ROLE }),
+  ],
+};
+const LONG_SENTENCE = {
+  en: "All of: the head of Quality and Patient Safety Directorate, the head of the record's unit, whoever holds Senior Infection Prevention Team Leader in Quality and Patient Safety Directorate, Dr. Abdulrahman Al-Mutairi Al-Shammari, whoever created the record, and the members of the record's committee in the role Chairman.",
+  ar: 'كلٌّ من: من يرأس إدارة الجودة وسلامة المرضى، ومن يرأس وحدة السجل، ومن يشغل وظيفة قائد فريق أول للوقاية من العدوى في إدارة الجودة وسلامة المرضى، وDr. Abdulrahman Al-Mutairi Al-Shammari، ومن أنشأ السجل، وأعضاء لجنة السجل بدور رئيس.',
+};
+
 const stage = (i: number): Record<string, unknown> => ({
   id: `stage-${i}`,
   workflowTemplateId: 'template-1',
@@ -111,6 +137,8 @@ const stage = (i: number): Record<string, unknown> => ({
   flags: i === 1 ? ['IN_FORCE'] : [],
   liveCount: i * 3,
   transitions: [],
+  who: i === 1 ? WHO_ALL_KINDS : { mode: 'ANY_ONE', entries: [storedEntry({ kind: 'CREATOR' })] },
+  whoSentence: i === 1 ? LONG_SENTENCE : { en: 'Whoever created the record.', ar: 'من أنشأ السجل.' },
 });
 
 const TEMPLATE = {
@@ -135,7 +163,9 @@ const TEMPLATE = {
     { key: 'APPLIES_APPROVED_CHANGE', labelKey: 'workflow.stageFlag.APPLIES_APPROVED_CHANGE', cardinality: 'exactlyOne' },
   ],
   recordFields: [],
-  recordRoutes: { unit: false, committee: false },
+  recordRoutes: { unit: true, committee: true },
+  assigneeKinds: ALL_KINDS,
+  whoRules: WHO_RULES,
   stages: [1, 2, 3, 4, 5, 6].map(stage),
 };
 
@@ -196,7 +226,14 @@ describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)'
     // Open the first stage, as a person does: its strip card.
     (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-strip-card]')!.click();
     fixture.detectChanges();
-    http.match(() => true).forEach((r) => r.flush(r.request.url.endsWith('/roles') ? { data: [], total: 0, page: 1, pageSize: 200 } : []));
+    // The who lists, loaded together when the panel opens.
+    http.match(() => true).forEach((r) => {
+      const url = r.request.url;
+      if (url.endsWith('/tasks/assignment/units')) r.flush([{ ...UNIT, parentId: null }]);
+      else if (url.endsWith('/org-positions')) r.flush([{ ...POSITION, isActive: true }]);
+      else if (url.endsWith('/tasks/assignment/committee-roles')) r.flush([{ ...ROLE, memberCount: null }]);
+      else r.flush([]);
+    });
     fixture.detectChanges();
     await fixture.whenStable();
     await document.fonts.ready;
@@ -225,8 +262,15 @@ describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)'
         const box = panel!.getBoundingClientRect();
         expect(box.width).withContext('the panel is laid out').toBeGreaterThan(300);
         expect(box.height).withContext('the panel is laid out').toBeGreaterThan(400);
-        const cards = Array.from(panel!.querySelectorAll<HTMLElement>('[data-card]'));
-        expect(cards.length).withContext('three cards').toBe(3);
+        const cards = Array.from(panel!.querySelectorAll<HTMLElement>('[data-card], [data-section="who"]'));
+        expect(cards.length).withContext('the stage card and "Who works this stage"').toBe(2);
+        const who = panel!.querySelector<HTMLElement>('[data-section="who"]')!;
+        const entries = Array.from(who.querySelectorAll<HTMLElement>('am-stage-who-entry'));
+        expect(entries.length).withContext('one entry of every kind, and the record forms').toBe(6);
+        expect(who.querySelector('[data-who-modes]')).withContext('the mode choice').not.toBeNull();
+        expect(who.querySelector('[data-starting-chip]')).withContext('the starting chip').not.toBeNull();
+        expect(who.querySelector('[data-no-holder]')).withContext('the no-holder warning').not.toBeNull();
+        expect(who.querySelectorAll('[data-who-role]').length).withContext('the role filter').toBe(1);
         const rows = Array.from(panel!.querySelectorAll<HTMLElement>('[data-check-row]'));
         expect(rows.length).withContext('five actions and three meanings').toBe(8);
 
@@ -263,6 +307,22 @@ describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)'
             expect(part.scrollWidth).withContext(`row ${row.dataset['checkRow']}: ${part.className} not clipped`).toBeLessThanOrEqual(part.clientWidth + 1);
           }
         }
+        // ── "Who works this stage": every entry, field, chip and Remove inside ──
+        const whoBox = who.getBoundingClientRect();
+        for (const [i, entry] of entries.entries()) {
+          const r = entry.getBoundingClientRect();
+          expect(r.height).withContext(`entry ${i} laid out`).toBeGreaterThan(30);
+          expect(inside(r, whoBox)).withContext(`entry ${i} inside the section`).toBeTrue();
+          const parts = entry.querySelectorAll<HTMLElement>('[data-slot], [data-who-remove], [data-starting-chip], [data-no-holder], .am-overlay-select-trigger, input');
+          for (const part of Array.from(parts)) {
+            expect(inside(part.getBoundingClientRect(), r)).withContext(`entry ${i}: ${part.className || part.tagName} inside the entry`).toBeTrue();
+          }
+        }
+        for (const part of Array.from(who.querySelectorAll<HTMLElement>('[data-who-modes], [data-who-readback], [data-who-add], [data-starting-note]'))) {
+          expect(inside(part.getBoundingClientRect(), whoBox)).withContext(`${part.className} inside the section`).toBeTrue();
+          expect(part.scrollWidth).withContext(`${part.className} not clipped`).toBeLessThanOrEqual(part.clientWidth + 1);
+        }
+
         const foot = panel!.querySelector<HTMLElement>('.am-sep__foot')!;
         expect(inside(foot.getBoundingClientRect(), box)).withContext('footer inside the panel').toBeTrue();
         for (const button of Array.from(foot.querySelectorAll<HTMLElement>('button'))) {

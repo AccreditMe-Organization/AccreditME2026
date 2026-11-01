@@ -1,3 +1,5 @@
+import { StageWhoDraft } from '../stage-who/stage-who-draft';
+import { ALL_KINDS, WHO_RULES } from '../stage-who/stage-who-options.testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -66,6 +68,8 @@ const TEMPLATE = {
   stageFlags: [{ key: 'DISSOLVING', labelKey: 'workflow.stageFlag.DISSOLVING', cardinality: 'any' }],
   recordFields: [],
   recordRoutes: { unit: false, committee: false },
+  assigneeKinds: ALL_KINDS,
+  whoRules: WHO_RULES,
   stages: [1, 2, 3].map((i) => stage(i)),
 };
 
@@ -202,8 +206,14 @@ describe('WorkflowStageListComponent — the stage editor panel (ACC-255 PR 4b)'
     await settle();
     expect(heading()).toBe('Add Stage');
     expect(el().querySelector('[data-adding-note]')).not.toBeNull();
-    const panelCmp = fixture.componentInstance as unknown as { panel: { form: { controls: { nameEn: { setValue(v: string): void } } }; onSubmit(): void } };
+    const panelCmp = fixture.componentInstance as unknown as {
+      panel: { form: { controls: { nameEn: { setValue(v: string): void } } }; onSubmit(): void; whoDraft: StageWhoDraft };
+    };
     panelCmp.panel.form.controls.nameEn.setValue('Stage 4');
+    // ACC-271 PR 5a — the new stage's first entry, a Fixed position, filled in.
+    const row = panelCmp.panel.whoDraft.rows()[0]!;
+    row.group.controls.positionId.setValue('pos-1');
+    row.group.controls.orgUnitId.setValue('unit-1');
     panelCmp.panel.onSubmit();
     http.expectOne({ method: 'POST', url: `${API}/template-1/stages` }).flush(stage(4, { actions: ['add_member'] }));
     http.expectOne(`${API}/template-1`).flush({ ...TEMPLATE, stages: [...TEMPLATE.stages, stage(4)] });

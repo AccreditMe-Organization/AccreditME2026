@@ -7,9 +7,33 @@
  * `npm run check:workflow-enum-display` fails a template that prints one of
  * those fields directly.
  */
-export type WorkflowEnumKind = 'approvalMode' | 'threshold' | 'assignee' | 'trigger' | 'objectType';
+export type WorkflowEnumKind = 'approvalMode' | 'threshold' | 'assignee' | 'trigger' | 'objectType' | WhoEnumKind;
+
+/**
+ * ACC-271 PR 5a — who works a stage: an entry's kind, and how several people
+ * decide. Its own block (the stage editor's "Who works this stage"); which
+ * kinds and modes a stage may use is the server's (assigneeKinds, whoRules),
+ * never this list.
+ */
+export type WhoEnumKind = 'stageAssignee' | 'whoMode';
+
+const WHO_KEYS: Readonly<Record<WhoEnumKind, Readonly<Record<string, string>>>> = {
+  stageAssignee: {
+    SPECIFIC_USER: 'workflow.who.kind.SPECIFIC_USER',
+    POSITION_IN_UNIT: 'workflow.who.kind.POSITION_IN_UNIT',
+    ORG_UNIT_HEAD: 'workflow.who.kind.ORG_UNIT_HEAD',
+    CREATOR: 'workflow.who.kind.CREATOR',
+    COMMITTEE: 'workflow.who.kind.COMMITTEE',
+  },
+  whoMode: {
+    ANY_ONE: 'workflow.who.mode.ANY_ONE',
+    ALL: 'workflow.who.mode.ALL',
+    COMMITTEE_VOTE: 'workflow.who.mode.COMMITTEE_VOTE',
+  },
+};
 
 const KEYS: Readonly<Record<WorkflowEnumKind, Readonly<Record<string, string>>>> = {
+  ...WHO_KEYS,
   approvalMode: {
     SINGLE: 'workflow.approvalModeSingle',
     SEQUENTIAL: 'workflow.approvalModeSequential',
