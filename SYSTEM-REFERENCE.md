@@ -3304,6 +3304,19 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
     `check:workflow-enum-display` fails a template that prints either raw.
   - **Nothing on the per-request path; no polling;** the panel's lists are one
     batch per page, and no row reads anything for itself.
+  - **One vertical scroll (Ahmad's review, 2 Nov).** The shell's `<main>` is
+    the page's only vertical scroll AND the containing block of anything
+    absolutely positioned in the page (`relative`): visually hidden text and
+    inputs, and the list's live region, used to sit against the wrapper around
+    `<main>`, escape its scroll and make the whole window scroll, leaving blank
+    space under the rail. The Stages page's column is no longer held to the
+    window's height, so an open panel no longer squeezes the stages list into
+    a second, hidden scroll; the strip keeps its own horizontal scroll.
+    `workflow-stage-list.scroll.spec.ts` renders the real shell with the page
+    inside it and fails on either.
+  - **"What this stage means" labels only a meaning that must sit on exactly
+    one stage** ("Exactly one stage"); one that any number of stages may carry
+    has no label.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
