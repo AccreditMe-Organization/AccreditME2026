@@ -1,4 +1,4 @@
-import { Component, DestroyRef, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
+import { Component, DestroyRef, Injector, OnInit, afterNextRender, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Observable } from 'rxjs';
@@ -125,7 +125,10 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
-      <app-page-header [title]="'task.myTasks' | translate" />
+      <!-- ACC-120 slice 3 — inside the /tasks shell, the shell's "Tasks" is the page's one H1. -->
+      @if (showHeader()) {
+        <app-page-header [title]="'task.myTasks' | translate" />
+      }
 
       <!-- ACC-173 — requests the viewer may decide: on tasks they created, or
            created by someone they cover. Renders nothing when empty. -->
@@ -498,6 +501,9 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
   ],
 })
 export class MyTasksComponent implements OnInit {
+  /** False inside the /tasks shell, which draws the page header and the view switcher. */
+  readonly showHeader = input(true);
+
   private readonly taskService = inject(TaskService);
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
