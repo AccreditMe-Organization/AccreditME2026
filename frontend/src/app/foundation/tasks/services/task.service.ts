@@ -736,10 +736,6 @@ export class TaskService {
     return this.http.get<ITaskViewsDto>(`${this.base}/views`);
   }
 
-  getUnassigned(): Observable<ITaskDto[]> {
-    return this.http.get<ITaskDto[]>(`${this.base}/unassigned`);
-  }
-
   // ACC-228 — the task page. No permission: who may open a task is decided by
   // the server from the task; everyone else gets the same not-found.
   getPage(id: string): Observable<ITaskPageViewDto> {
