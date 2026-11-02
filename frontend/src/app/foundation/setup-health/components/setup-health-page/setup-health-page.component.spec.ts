@@ -175,7 +175,8 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
         link: ['/workflows', 'tpl-1', 'stages'],
         queryParams: { stage: 'stage-1' },
       });
-      expect(rows['task']!.fix).toEqual({ label: 'Reassign', link: ['/tasks/unassigned'], queryParams: { reassign: 'task-1' } });
+      // ACC-120 slice 3 — Unassigned is a saved view of /tasks.
+      expect(rows['task']!.fix).toEqual({ label: 'Reassign', link: ['/tasks'], queryParams: { view: 'unassigned', reassign: 'task-1' } });
       expect(Object.values(rows).every((r) => r.fixNeeds === null)).toBe(true);
     });
 

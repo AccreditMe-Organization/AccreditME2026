@@ -104,8 +104,10 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         : null;
     case 'TASK_WITHOUT_OWNER':
       return {
-        link: ['/tasks/unassigned'],
-        queryParams: { reassign: condition.objectId },
+        // ACC-120 slice 3 — Unassigned is a saved view of /tasks; its row opens
+        // Reassign for the task named here, when the server offers it.
+        link: ['/tasks'],
+        queryParams: { view: 'unassigned', reassign: condition.objectId },
         // ACC-244 — Manage tasks opens Unassigned AND reassigns from it.
         permissions: ['committees:manage_tasks'],
       };

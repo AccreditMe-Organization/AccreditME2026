@@ -187,7 +187,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
   // primeng-multiselect.mjs uses 'p-multiselect-list-container' — not a
   // shared base class either selector could catch alone) — ACC-36 found
   // the original single-selector rule left every p-multiSelect-in-dialog
-  // screen (e.g. UnassignedTasksComponent's Reassign form) unprotected.
+  // screen (e.g. the old Unassigned tasks page's Reassign form) unprotected.
   // Both listed explicitly rather than relying on a wildcard, so a
   // future third overlay type (e.g. p-cascadeselect, which shares the
   // same 'listContainer' class-key convention) is a deliberate addition

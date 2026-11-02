@@ -17,13 +17,16 @@ describe('resolveNavLocation (ACC-79)', () => {
     expect(resolveNavLocation('/tasks-archive', access())).toBeNull();
   });
 
-  it('prefers the longest matching route', () => {
-    const loc = resolveNavLocation(
-      '/tasks/unassigned',
-      access([ADMIN_ACCESS, 'committees:manage_tasks']),
-    );
-    expect(loc?.item.key).toBe('unassignedTasks');
-    expect(loc?.isSectionPage).toBe(true);
+  // ACC-120 slice 3 — the views of /tasks are one item: the query names the
+  // view and is dropped, so every view is the Tasks section page. (The
+  // longest-match rule stays for nested items; since All tasks and Unassigned
+  // left the rail there are none, which nav-items.spec pins.)
+  it('resolves every view of /tasks to Tasks, as the section page', () => {
+    for (const url of ['/tasks', '/tasks?view=all', '/tasks?view=unit', '/tasks?view=unassigned&reassign=t-1']) {
+      const loc = resolveNavLocation(url, access([ADMIN_ACCESS, 'committees:manage_tasks', 'committees:view_all_tasks']));
+      expect(loc?.item.key).withContext(url).toBe('tasks');
+      expect(loc?.isSectionPage).withContext(url).toBe(true);
+    }
   });
 
   it('marks a page below its section as not the section page', () => {

@@ -86,25 +86,35 @@ describe('nav-items (ACC-79)', () => {
     // it — and nothing he cannot use.
     it('sees My work, and no empty headings for the groups he cannot use', () => {
       expect(keysOf(visibleNavGroups(access({})))).toEqual([
-        { group: 'work', items: ['home', 'myTasks'] },
+        { group: 'work', items: ['home', 'tasks'] },
       ]);
     });
   });
 
-  // ACC-229 — All tasks sits beside My tasks, for View all tasks holders only
-  // (committees:view_all_tasks since ACC-244).
-  describe('All tasks', () => {
-    it('shows after My tasks to a holder of committees:view_all_tasks, and opens /tasks/all', () => {
-      const work = visibleNavGroups(access({ permissions: ['committees:view_all_tasks'] })).find((g) => g.key === 'work');
-      expect(work?.items.map((i) => i.key)).toEqual(['home', 'myTasks', 'allTasks']);
-      expect(work?.items[2]).toEqual(jasmine.objectContaining({ route: '/tasks/all', labelKey: 'task.allTasks' }));
+  // ACC-120 slice 3 — ONE rail item for every view of /tasks. All tasks and
+  // Unassigned became saved views of the list (Task Screens: "The Unassigned
+  // rail item goes"), so no permission brings either back.
+  describe('Tasks', () => {
+    const taskItems = (permissions: string[]) =>
+      visibleNavGroups(access({ permissions }))
+        .flatMap((g) => g.items)
+        .filter((i) => i.route.startsWith('/tasks'))
+        .map((i) => `${i.key}:${i.route}:${i.labelKey}`);
+
+    it('is one item, "Tasks" at /tasks, for a user with no permissions', () => {
+      expect(taskItems([])).toEqual(['tasks:/tasks:nav.tasks']);
     });
 
-    it('is absent without committees:view_all_tasks', () => {
-      const items = visibleNavGroups(access({ permissions: ['committees:create_tasks', 'committees:manage_tasks', 'committees:view', 'committees:view_unit_tasks'] })).flatMap((g) =>
-        g.items.map((i) => i.key),
-      );
-      expect(items).not.toContain('allTasks');
+    it('stays one item for the holders of View all tasks and Manage tasks', () => {
+      expect(taskItems(['committees:view_all_tasks', 'committees:manage_tasks', ADMIN_ACCESS])).toEqual(['tasks:/tasks:nav.tasks']);
+      expect(taskItems(ALL_TENANT_PERMISSIONS)).toEqual(['tasks:/tasks:nav.tasks']);
+    });
+
+    it('has no All tasks or Unassigned item anywhere', () => {
+      const keys = TENANT_NAV_GROUPS.flatMap((g) => g.items.map((i) => i.key));
+      expect(keys).withContext('non-vacuity: the tasks item is there').toContain('tasks');
+      expect(keys).not.toContain('allTasks');
+      expect(keys).not.toContain('unassignedTasks');
     });
   });
 
@@ -151,7 +161,7 @@ describe('nav-items (ACC-79)', () => {
         access({ permissions: [ADMIN_ACCESS, 'lookups:view'] }),
       );
       expect(keysOf(groups)).toEqual([
-        { group: 'work', items: ['home', 'myTasks'] },
+        { group: 'work', items: ['home', 'tasks'] },
         { group: 'admin', items: ['lookups'] },
       ]);
     });
@@ -168,7 +178,7 @@ describe('nav-items (ACC-79)', () => {
       // ACC-120 slice 11, PR F — his org:view now opens the read-only
       // Organisation page under Quality management, never Administration.
       expect(keysOf(groups)).toEqual([
-        { group: 'work', items: ['home', 'myTasks'] },
+        { group: 'work', items: ['home', 'tasks'] },
         { group: 'quality', items: ['organizationReadOnly'] },
       ]);
     });
@@ -189,7 +199,7 @@ describe('nav-items (ACC-79)', () => {
     it('shows nothing in the section to a role holding admin:access and no page permission', () => {
       const groups = visibleNavGroups(access({ permissions: [ADMIN_ACCESS] }));
       expect(keysOf(groups)).toEqual([
-        { group: 'work', items: ['home', 'myTasks'] },
+        { group: 'work', items: ['home', 'tasks'] },
       ]);
     });
 
@@ -237,7 +247,7 @@ describe('nav-items (ACC-79)', () => {
     it('a quality manager (org:view, no admin:access) gets it under Quality management, and no Administration', () => {
       const groups = visibleNavGroups(access({ permissions: ['org:view', 'users:view', 'committees:view'] }));
       expect(keysOf(groups)).toEqual([
-        { group: 'work', items: ['home', 'myTasks'] },
+        { group: 'work', items: ['home', 'tasks'] },
         { group: 'quality', items: ['committees', 'organizationReadOnly'] },
       ]);
       expect(orgItems(groups)).toEqual(['quality:/org']);
@@ -331,14 +341,12 @@ describe('nav-items (ACC-79)', () => {
       expect(ROUTE_PERMISSIONS.has('tasks')).toBe(false);
     });
 
-    it('still gates the task routes that are not self-scoped', () => {
-      // /tasks/all is the All tasks rail item (ACC-229), not an Administration
-      // screen, so it is View all tasks alone — from the item now, not a standalone entry.
-      expect(ROUTE_PERMISSIONS.get('tasks/all')).toEqual(['committees:view_all_tasks']);
-      expect(ROUTE_PERMISSIONS.get('tasks/unassigned')).toEqual([
-        ADMIN_ACCESS,
-        'committees:manage_tasks',
-      ]);
+    // ACC-120 slice 3 — /tasks/all and /tasks/unassigned are redirects to saved
+    // views now; a view a viewer lacks is refused by its own list, so neither
+    // path is a route the guard maps.
+    it('maps neither old task path: both are redirects to saved views', () => {
+      expect(ROUTE_PERMISSIONS.has('tasks/all')).toBe(false);
+      expect(ROUTE_PERMISSIONS.has('tasks/unassigned')).toBe(false);
     });
 
     // ACC-79 — the hub is gone. Its four screens are rail items, so they are
@@ -385,8 +393,10 @@ describe('nav-items (ACC-79)', () => {
           .withContext(item.key)
           .toContain(ADMIN_ACCESS);
       }
-      // ACC-260 — File storage is the fourteenth, the Recycle bin (PR D) the fifteenth.
-      expect(admin.items.length).withContext('the section is not empty').toBe(15);
+      // ACC-260 — File storage is the fourteenth, the Recycle bin (PR D) the
+      // fifteenth; ACC-120 slice 3 — Unassigned tasks left the section (a saved
+      // view of /tasks now), so there are fourteen.
+      expect(admin.items.length).withContext('the section is not empty').toBe(14);
     });
 
     it('holds no platform routes — /platform is guarded as a whole', () => {
@@ -400,15 +410,20 @@ describe('nav-items (ACC-79)', () => {
   });
 });
 
-// ACC-228 — My tasks is the rail item of a task's own page, and of nothing else
-// below /tasks: the two other task screens have items, or are not linked.
-describe('My tasks owns /tasks/:id (ACC-228)', () => {
-  const myTasks = TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === 'myTasks')!;
+// ACC-228, ACC-120 slice 3 — Tasks is the rail item of every view of /tasks
+// and of a task's own page. It is lit by PREFIX, which is only safe while no
+// other item lives under /tasks: an item there would make the rail fall back to
+// an exact match, and every view (?view=) and /tasks/:id would go dark.
+describe('Tasks owns everything under /tasks (ACC-228, ACC-120 slice 3)', () => {
+  const tasks = TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === 'tasks')!;
 
-  for (const path of ['/tasks/task-1', '/tasks/cmv7vd2lt000401tf9l6n6jg0']) {
-    it(`lights My tasks on ${path}`, () => expect(myTasks.alsoActiveFor!.test(path)).toBe(true));
-  }
-  for (const path of ['/tasks', '/tasks/all', '/tasks/unassigned', '/tasks/task-1/extra', '/tasksx/1', '/committees/abc']) {
-    it(`leaves ${path} alone`, () => expect(myTasks.alsoActiveFor!.test(path)).toBe(false));
-  }
+  it('is the only item whose route is /tasks or below it', () => {
+    const under = TENANT_NAV_GROUPS.flatMap((g) => g.items).filter((i) => i.route === '/tasks' || i.route.startsWith('/tasks/'));
+    expect(under.map((i) => i.key)).toEqual(['tasks']);
+  });
+
+  it('needs no alsoActiveFor pattern: the prefix covers /tasks/:id', () => {
+    expect(tasks.route).toBe('/tasks');
+    expect(tasks.alsoActiveFor).toBeUndefined();
+  });
 });

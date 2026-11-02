@@ -19,10 +19,11 @@ export interface NavLocation {
 /**
  * The nav item this path belongs to, among the items THIS user can see.
  *
- * Longest route wins, compared segment by segment: /tasks/unassigned resolves to
- * Unassigned tasks (Administration), not to My tasks (My work), even though
- * '/tasks' is a prefix of it. Matching is on whole segments, so /tasks-archive
- * would never match /tasks.
+ * Longest route wins, compared segment by segment: an item at /a/b owns
+ * /a/b/c even though the item at /a is a prefix of it (so the old
+ * /tasks/unassigned resolved to Administration until ACC-120 slice 3; every
+ * view of /tasks is Tasks now). Matching is on whole segments, so
+ * /tasks-archive would never match /tasks.
  *
  * Returns null when the path belongs to no item the user can see. That is
  * deliberate, not a miss: a user without users:view viewing their OWN profile at

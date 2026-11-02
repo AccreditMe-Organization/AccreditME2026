@@ -1,0 +1,548 @@
+<!DOCTYPE
+        { s: "Unit tasks view · round 2", w: "Neutral Arabic acting line, caption rows corrected, closed tasks limited to 90 days with Closed earlier, primary-unit notice, Q2–Q7 decided." }, html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1480px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 18 Oct 2026 · A unit view on the task list · on Task Screens, Record Tasks Panel and Design System · List patterns</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">My unit · the unit view on /tasks</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 112ch; text-wrap: pretty;">One saved view added to the Task Screens list, after My tasks and before All tasks. It shows every task on records owned by the viewer's unit and its sub-units. Only the new parts are drawn: the view switcher with the new view in it, the view's toolbar, its Unit filter and Unit column, its states, and the phone sheet. Everything else (the page header, the other views, the task page, the dialogs) is Task Screens as accepted. Today is 18 Oct 2026.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="6">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div><div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div></div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="u1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The view switcher, per person</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">My tasks · My unit · All tasks · Unassigned. A view the person has no scope for is absent, not walled.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 14px;">
+      <sc-for list="{{ switchers }}" as="w" hint-placeholder-count="10">
+        <div style="min-width: 0;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ w.cap }}</div>
+          <div dir="{{ w.dir }}" style="{{ w.frame }}">
+            <div role="tablist" aria-label="{{ w.tabsAria }}" style="display: flex; flex-wrap: wrap; gap: 4px; border-block-end: 1px solid #E2E8F0;"><sc-for list="{{ w.views }}" as="v" hint-placeholder-count="4"><span role="tab" aria-selected="{{ v.sel }}" style="{{ v.style }}">{{ v.l }}</span></sc-for></div>
+            <sc-if value="{{ w.sub }}" hint-placeholder-val="{{ false }}"><div style="{{ w.subStyle }}">{{ w.sub }}</div></sc-if>
+            <sc-if value="{{ w.acting }}" hint-placeholder-val="{{ false }}"><div style="{{ w.actingStyle }}">{{ w.acting }}</div></sc-if>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ w.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="u2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The unit view · desktop</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The All tasks toolbar and columns, plus a Unit filter and a Unit column. Opens with ▲ on Due, open tasks first. Drawn at 1320 px of content.</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 22px;">
+      <sc-for list="{{ frames }}" as="fr" hint-placeholder-count="6">
+        <div style="min-width: 0;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ fr.cap }}</div>
+          <div style="overflow-x: auto; padding-block-end: 4px;">
+            <div dir="{{ fr.dir }}" style="{{ fr.frame }}">
+              <div style="{{ fr.crumbStyle }}">{{ fr.crumb }}</div>
+              <div style="{{ fr.h1Style }}">{{ fr.h1 }}</div>
+              <div role="tablist" aria-label="{{ fr.tabsAria }}" style="display: flex; flex-wrap: wrap; gap: 4px; border-block-end: 1px solid #E2E8F0; margin-block-start: 8px;"><sc-for list="{{ fr.views }}" as="v" hint-placeholder-count="4"><span role="tab" aria-selected="{{ v.sel }}" style="{{ v.style }}">{{ v.l }}</span></sc-for></div>
+              <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-block-start: 8px;">
+                <span style="min-width: 0;"><span style="{{ fr.subStyle }}">{{ fr.sub }}</span><sc-if value="{{ fr.acting }}" hint-placeholder-val="{{ false }}"><span style="{{ fr.actingStyle }}">{{ fr.acting }}</span></sc-if></span>
+                <span role="status" style="{{ fr.liveStyle }}">{{ fr.live }}</span>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block-start: 10px;">
+                <span style="{{ fr.searchStyle }}"><span aria-hidden="true">⌕</span><span>{{ fr.search }}</span></span>
+                <sc-for list="{{ fr.filters }}" as="fl" hint-placeholder-count="7"><span style="{{ fl.style }}">{{ fl.l }}</span></sc-for>
+              </div>
+              <sc-if value="{{ fr.hasChips }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block-start: 8px;"><sc-for list="{{ fr.chips }}" as="c" hint-placeholder-count="1"><span style="{{ c.style }}">{{ c.l }} <span aria-label="{{ c.aria }}" style="font-weight: 700;">✕</span></span></sc-for><a href="#u2" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">{{ fr.clearAll }}</a></div>
+              </sc-if>
+              <div style="position: relative; background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; margin-block-start: 10px;">
+                <div role="row" style="{{ fr.headStyle }}"><sc-for list="{{ fr.th }}" as="h" hint-placeholder-count="8"><span role="{{ h.role }}" aria-sort="{{ h.sort }}" aria-label="{{ h.aria }}" style="{{ h.style }}">{{ h.l }}</span></sc-for></div>
+                <sc-for list="{{ fr.rows }}" as="r" hint-placeholder-count="11">
+                  <div role="row" style="{{ r.row }}">
+                    <span style="{{ r.cTask }}"><a href="#u2" title="{{ r.t }}" style="{{ r.tStyle }}">{{ r.t }}</a><span title="{{ r.rec }}" style="{{ r.subStyle }}">{{ r.rec }}</span></span>
+                    <span title="{{ r.unit }}" style="{{ r.cUnit }}">{{ r.unit }}</span>
+                    <span style="{{ r.cSt }}"><span title="{{ r.st }}" style="{{ r.stStyle }}"><sc-if value="{{ r.dot }}" hint-placeholder-val="{{ false }}"><span style="{{ r.dotStyle }}"></span></sc-if>{{ r.st }}</span></span>
+                    <span style="{{ r.cWho }}"><span title="{{ r.who }}" style="{{ r.l1Style }}">{{ r.who }}</span><sc-if value="{{ r.who2 }}" hint-placeholder-val="{{ false }}"><span style="{{ r.subStyle }}">{{ r.who2 }}</span></sc-if></span>
+                    <span style="{{ r.cDue }}"><span style="{{ r.dueStyle }}">{{ r.due1 }}</span><span style="{{ r.subStyle }}">{{ r.due2 }}</span></span>
+                    <span title="{{ r.by }}" style="{{ r.cBy }}">{{ r.by }}</span>
+                    <span style="{{ r.cUpd }}">{{ r.upd }}</span>
+                    <span style="{{ r.cAct }}"><sc-if value="{{ r.btn }}" hint-placeholder-val="{{ false }}"><button style="{{ r.btnStyle }}">{{ r.btn }}</button></sc-if><button aria-label="{{ r.aria }}" style="{{ r.dotsStyle }}">⋯</button></span>
+                  </div>
+                </sc-for>
+                <div style="{{ fr.footStyle }}">{{ fr.foot }}</div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; max-width: 120ch; text-wrap: pretty;">{{ fr.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="u3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The Unit filter · shared overlay-select, hierarchy options</h2>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 16px; align-items: start;">
+      <sc-for list="{{ trees }}" as="tr" hint-placeholder-count="3">
+        <div style="min-width: 0;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ tr.cap }}</div>
+          <div dir="{{ tr.dir }}" style="{{ tr.frame }}">
+            <span style="{{ tr.triggerStyle }}">{{ tr.trigger }}</span>
+            <div role="listbox" aria-label="{{ tr.listAria }}" style="margin-block-start: 6px; width: 320px; max-width: 100%; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+              <div style="{{ tr.searchStyle }}">⌕ {{ tr.search }}</div>
+              <sc-for list="{{ tr.items }}" as="it" hint-placeholder-count="5">
+                <div role="option" aria-selected="{{ it.sel }}" style="{{ it.style }}"><span style="{{ it.markStyle }}">{{ it.mark }}</span><span style="flex: 1 1 auto; min-width: 0;"><span style="{{ it.lStyle }}">{{ it.l }}</span><sc-if value="{{ it.sub }}" hint-placeholder-val="{{ false }}"><span style="{{ it.subStyle }}">{{ it.sub }}</span></sc-if></span><span style="{{ it.nStyle }}">{{ it.n }}</span></div>
+              </sc-for>
+              <div style="{{ tr.onlyStyle }}"><span role="checkbox" aria-checked="{{ tr.onlyAria }}" style="{{ tr.boxStyle }}">{{ tr.boxMark }}</span><span>{{ tr.only }}</span></div>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ tr.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="u4" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Dr. Fahad's ⋯ menu · seeing is not acting</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Crops of the table's last columns (Task, Due, the 150 px action column). The menu opens under its ⋯, on the ⋯'s end edge.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap: 16px;">
+      <sc-for list="{{ crops }}" as="cr" hint-placeholder-count="3">
+        <div style="min-width: 0;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ cr.cap }}</div>
+          <div dir="{{ cr.dir }}" style="{{ cr.frame }}">
+            <sc-for list="{{ cr.rows }}" as="r" hint-placeholder-count="2">
+              <div style="{{ r.row }}">
+                <span style="flex: 1 1 auto; min-width: 0;"><span style="{{ r.tStyle }}">{{ r.t }}</span><span style="{{ r.subStyle }}">{{ r.sub }}</span></span>
+                <span style="flex: none; width: 140px;"><span style="{{ r.dueStyle }}">{{ r.due1 }}</span><span style="{{ r.subStyle }}">{{ r.due2 }}</span></span>
+                <span style="flex: none; width: 150px; display: flex; justify-content: flex-end; align-items: center; gap: 8px;"><sc-if value="{{ r.btn }}" hint-placeholder-val="{{ false }}"><button style="{{ r.btnStyle }}">{{ r.btn }}</button></sc-if><button aria-expanded="{{ r.open }}" aria-label="{{ r.aria }}" style="{{ r.dotsStyle }}">⋯</button></span>
+              </div>
+            </sc-for>
+            <div role="menu" aria-label="{{ cr.menuAria }}" style="{{ cr.menuStyle }}"><sc-for list="{{ cr.items }}" as="m" hint-placeholder-count="4"><sc-if value="{{ m.div }}" hint-placeholder-val="{{ false }}"><div role="separator" style="height: 1px; background: #E2E8F0; margin: 4px 0;"></div></sc-if><sc-if value="{{ m.l }}" hint-placeholder-val="{{ true }}"><div role="menuitem" style="{{ m.style }}">{{ m.l }}</div></sc-if></sc-for></div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ cr.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="u5" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">States · English and Arabic</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The view's body only, under its switcher; the toolbar sits above it as in section 2. Populated is section 2.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 600px), 1fr)); gap: 16px;">
+      <sc-for list="{{ states }}" as="s" hint-placeholder-count="12">
+        <div style="min-width: 0;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ s.cap }}</div>
+          <div dir="{{ s.dir }}" style="{{ s.frame }}">
+            <div role="tablist" style="display: flex; flex-wrap: wrap; gap: 4px; border-block-end: 1px solid #E2E8F0;"><sc-for list="{{ s.views }}" as="v" hint-placeholder-count="2"><span role="tab" aria-selected="{{ v.sel }}" style="{{ v.style }}">{{ v.l }}</span></sc-for></div>
+            <sc-if value="{{ s.sub }}" hint-placeholder-val="{{ false }}"><div style="{{ s.subStyle }}">{{ s.sub }}</div></sc-if>
+            <sc-if value="{{ s.notice }}" hint-placeholder-val="{{ false }}"><div role="status" style="{{ s.noticeStyle }}">{{ s.notice }}</div></sc-if>
+            <div style="{{ s.bodyStyle }}">
+              <sc-if value="{{ s.skeleton }}" hint-placeholder-val="{{ false }}"><sc-for list="{{ s.skel }}" as="k" hint-placeholder-count="5"><div style="display: flex; gap: 12px; align-items: center; height: 52px; padding: 0 12px; border-block-end: 1px solid #F0F3F7;"><span style="{{ k.a }}"></span><span style="{{ k.b }}"></span><span style="{{ k.c }}"></span></div></sc-for></sc-if>
+              <sc-if value="{{ s.msg }}" hint-placeholder-val="{{ false }}"><div style="{{ s.msgBox }}"><div style="{{ s.msgTStyle }}">{{ s.msg }}</div><sc-if value="{{ s.msg2 }}" hint-placeholder-val="{{ false }}"><div style="{{ s.msg2Style }}">{{ s.msg2 }}</div></sc-if><sc-if value="{{ s.act }}" hint-placeholder-val="{{ false }}"><div style="margin-block-start: 10px; display: flex; justify-content: center; gap: 10px;"><button style="{{ s.actStyle }}">{{ s.act }}</button></div></sc-if></div></sc-if>
+              <sc-if value="{{ s.myRows }}" hint-placeholder-val="{{ false }}"><sc-for list="{{ s.myRows }}" as="m" hint-placeholder-count="2"><div style="display: flex; gap: 12px; align-items: center; height: 52px; padding: 0 12px; border-block-end: 1px solid #F0F3F7;"><span style="flex: 1 1 auto; min-width: 0;"><span style="{{ m.tStyle }}">{{ m.t }}</span><span style="{{ m.subStyle }}">{{ m.sub }}</span></span><span style="{{ m.dueStyle }}">{{ m.due }}</span></div></sc-for></sc-if>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ s.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="u6" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">6</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Phone · below 768 px · drawn at 390</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The saved views as a scrollable chip row, with My unit added. The Unit filter sits in the Filters sheet. Cards show the unit name. The sort chip is the phone sort menu.</span>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+      <sc-for list="{{ phones }}" as="p" hint-placeholder-count="4">
+        <div style="flex: none; width: 390px; max-width: 100%;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ p.cap }}</div>
+          <div dir="{{ p.dir }}" style="{{ p.frame }}">
+            <div style="{{ p.h1Style }}">{{ p.h1 }}</div>
+            <div role="tablist" aria-label="{{ p.tabsAria }}" style="display: flex; gap: 6px; overflow-x: auto; padding: 8px 14px; white-space: nowrap;"><sc-for list="{{ p.views }}" as="v" hint-placeholder-count="3"><span role="tab" aria-selected="{{ v.sel }}" style="{{ v.style }}">{{ v.l }}</span></sc-for></div>
+            <div style="{{ p.subStyle }}">{{ p.sub }}</div>
+            <sc-if value="{{ p.isList }}" hint-placeholder-val="{{ true }}">
+              <div style="display: flex; gap: 8px; align-items: center; padding: 8px 14px;"><span style="{{ p.searchStyle }}">⌕ {{ p.search }}</span><span style="{{ p.filtStyle }}">{{ p.filt }}</span><span style="{{ p.sortStyle }}">{{ p.sort }}</span></div>
+              <div style="padding: 0 14px 14px; display: flex; flex-direction: column; gap: 8px;">
+                <sc-for list="{{ p.cards }}" as="c" hint-placeholder-count="4">
+                  <div style="{{ c.box }}">
+                    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: flex-start;"><span style="{{ c.tStyle }}">{{ c.t }}</span><button aria-label="{{ c.aria }}" style="flex: none; width: 32px; height: 32px; border: 1px solid #E2E8F0; border-radius: 6px; background: #fff; color: #4A5568;">⋯</button></div>
+                    <div style="{{ c.subStyle }}">{{ c.rec }}</div>
+                    <div style="{{ c.unitStyle }}">{{ c.unit }}</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; margin-block-start: 4px;"><span style="{{ c.dueStyle }}">{{ c.due }}</span><span style="{{ c.stStyle }}">{{ c.st }}</span><span style="{{ c.subStyle }}">{{ c.who }}</span></div>
+                    <sc-if value="{{ c.btn }}" hint-placeholder-val="{{ false }}"><button style="{{ c.btnStyle }}">{{ c.btn }}</button></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ p.isSheet }}" hint-placeholder-val="{{ false }}">
+              <div style="margin: 10px 0 0; border-start-start-radius: 14px; border-start-end-radius: 14px; background: #fff; border-block-start: 1px solid #CBD5E0; box-shadow: 0 -8px 24px rgba(16,24,40,0.14);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-block-end: 1px solid #E2E8F0;"><span style="{{ p.sheetTStyle }}">{{ p.sheetT }}</span><button aria-label="{{ p.closeAria }}" style="border: none; background: none; color: #5A6779; font-size: 14px;">✕</button></div>
+                <div style="padding: 10px 16px;">
+                  <div style="{{ p.groupStyle }}">{{ p.group }}</div>
+                  <sc-for list="{{ p.items }}" as="it" hint-placeholder-count="5"><div role="option" aria-selected="{{ it.sel }}" style="{{ it.style }}"><span style="{{ it.markStyle }}">{{ it.mark }}</span><span style="flex: 1 1 auto; min-width: 0;"><span style="{{ it.lStyle }}">{{ it.l }}</span><sc-if value="{{ it.sub }}" hint-placeholder-val="{{ false }}"><span style="{{ it.subStyle }}">{{ it.sub }}</span></sc-if></span><span style="{{ it.nStyle }}">{{ it.n }}</span></div></sc-for>
+                  <div style="{{ p.onlyStyle }}"><span role="checkbox" aria-checked="false" style="flex: none; width: 18px; height: 18px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 3px; background: #fff;"></span><span>{{ p.only }}</span></div>
+                  <div style="{{ p.groupStyle }}">{{ p.more }}</div>
+                </div>
+                <div style="display: flex; gap: 8px; padding: 12px 16px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;"><button style="{{ p.clearStyle }}">{{ p.clear }}</button><button style="{{ p.showStyle }}">{{ p.show }}</button></div>
+              </div>
+            </sc-if>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ p.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 600;">Reasoning</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 0 18px;">
+      <sc-for list="{{ notes }}" as="n" hint-placeholder-count="10"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12.5px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #FEDF89; padding-block-end: 10px; margin-block-end: 12px;"><h2 style="margin: 0; font-size: 20px; font-weight: 600;">Questions for the product owner</h2><span style="font-size: 12.5px; color: #5A6779;">Each with a recommendation; the recommendation is what's drawn.</span></div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="7">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for><div style="font-size: 12px; color: #1F5480; font-weight: 500; margin-block-start: 4px; text-wrap: pretty;">{{ q.rec }}</div></div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px;">
+    <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 600;">Changes to accepted screens</h2>
+    <sc-for list="{{ changes }}" as="c" hint-placeholder-count="4"><div style="display: grid; grid-template-columns: minmax(0, 240px) 1fr; gap: 12px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12.5px; font-weight: 600;">{{ c.s }}</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ c.w }}</span></div></sc-for>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = " font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const U = { ph: ["Pharmacy", "الصيدلية"], ip: ["Inpatient Pharmacy", "صيدلية المرضى المنومين"], op: ["Outpatient Pharmacy", "صيدلية العيادات الخارجية"], ps: ["Pharmacy Stores", "مستودعات الصيدلية"], cn: ["Clinical Nutrition", "التغذية العلاجية"] };
+    const C = { pt: ["Pharmacy & Therapeutics Committee", "لجنة الصيدلة والعلاج"], ms: ["Medication Safety Committee", "لجنة سلامة الأدوية"], ns: ["Nutrition Support Committee", "لجنة دعم التغذية"] };
+    const P = { fahad: ["Dr. Fahad Al-Anazi", "د. فهد العنزي"], omar: ["Omar Haddad", "عمر حداد"], sara: ["Dr. Sara Al-Qahtani", "د. سارة القحطاني"], rana: ["Rana Al-Mutairi", "رنا المطيري"], hessa: ["Hessa Al-Dossari", "حصة الدوسري"], yousef: ["Dr. Yousef Barakat", "د. يوسف بركات"], mona: ["Dr. Mona Al-Shehri", "د. منى الشهري"], abd: ["Abdullah Al-Ghamdi", "عبدالله الغامدي"], pool: ["Quality Officer, Pharmacy", "مسؤول الجودة، الصيدلية"] };
+    const ST = { asg: ["Assigned", "مُسندة", null, "#2D3748", 400], prog: ["In progress", "قيد التنفيذ", "#2E6FA3", "#1F5480", 500], pool: ["Waiting to be picked up", "بانتظار الاستلام", "#2E6FA3", "#1F5480", 500], done: ["Completed", "مكتملة", "#8A94A6", "#4A5568", 400], canc: ["Cancelled", "ملغاة", "#8A94A6", "#4A5568", 400] };
+    const T = [
+      { id: 1, t: ["Audit stock of high-alert medications", "تدقيق مخزون الأدوية عالية الخطورة"], c: "pt", u: "ph", st: "prog", who: "omar", due: ["⚠ 5 days overdue", "13 Oct", "⚠ متأخرة 5 أيام", "danger"], by: "fahad", upd: "16 Oct" },
+      { id: 2, t: ["Update the look-alike, sound-alike list", "تحديث قائمة الأدوية المتشابهة شكلًا ونطقًا"], c: "ms", u: "ip", st: "asg", who: "sara", due: ["⚠ 2 days overdue", "16 Oct", "⚠ متأخرة يومين", "danger"], by: "rana", upd: "14 Oct" },
+      { id: 3, t: ["Review antibiotic formulary additions", "مراجعة إضافات المضادات الحيوية إلى الدليل الدوائي"], c: "pt", u: "ph", st: "asg", who: "fahad", due: ["In 2 days", "20 Oct", "خلال يومين"], by: "rana", upd: "12 Oct", fBtn: ["Start", "بدء"] },
+      { id: 12, t: ["Update the enteral feeding protocol", "تحديث بروتوكول التغذية المعوية"], c: "ns", u: "cn", st: "asg", who: "mona", due: ["In 5 days", "23 Oct", "خلال 5 أيام"], by: "abd", upd: "14 Oct", acting: 1 },
+      { id: 4, t: ["Narcotics count audit, Q4 2026", "تدقيق عدّ المواد المخدرة، الربع الرابع " + iso("2026")], c: "pt", u: "ph", st: "pool", who: "pool", pool: 1, due: ["In 6 days", "24 Oct", "خلال 6 أيام"], by: "fahad", upd: "15 Oct" },
+      { id: 5, t: ["Report September's medication errors", "الإبلاغ عن أخطاء الأدوية لشهر سبتمبر"], c: "ms", u: "ip", st: "prog", who: "hessa", due: ["In 9 days", "27 Oct", "خلال 9 أيام"], by: "sara", upd: "17 Oct" },
+      { id: 6, t: ["Draft smart-pump drug library changes", "إعداد تعديلات مكتبة أدوية المضخات الذكية"], c: "ms", u: "ip", st: "asg", who: "fahad", due: ["In 12 days", "30 Oct", "خلال 12 يومًا"], by: "sara", upd: "13 Oct", fBtn: ["Start", "بدء"] },
+      { id: 13, t: ["Audit malnutrition screening, Ward 6A", "تدقيق فحص سوء التغذية، الجناح 6A"], c: "ns", u: "cn", st: "prog", who: "abd", due: ["In 13 days", "31 Oct", "خلال 13 يومًا"], by: "mona", upd: "16 Oct", acting: 1 },
+      { id: 7, t: ["Prepare the November P&T agenda", "إعداد جدول أعمال لجنة الصيدلة والعلاج لشهر نوفمبر"], c: "pt", u: "ph", st: "prog", who: "rana", due: ["In 16 days", "3 Nov", "خلال 16 يومًا"], by: "fahad", upd: "17 Oct", rBtn: ["Complete", "إكمال"] },
+      { id: 8, t: ["Update the unit-dose dispensing procedure", "تحديث إجراء صرف الجرعة الواحدة"], c: "pt", u: "ph", st: "asg", who: "yousef", due: ["In 23 days", "10 Nov", "خلال 23 يومًا"], by: "fahad", upd: "11 Oct" },
+      { id: 9, t: ["Review the high-alert medication list", "مراجعة قائمة الأدوية عالية الخطورة"], c: "ms", u: "ip", st: "done", who: "sara", due: ["Done", "9 Oct", "أُنجزت"], by: "rana", upd: "9 Oct" },
+      { id: 14, t: ["Follow up the September nutrition minutes", "متابعة محضر لجنة دعم التغذية لشهر سبتمبر"], c: "ns", u: "cn", st: "done", who: "mona", due: ["Done", "30 Sep", "أُنجزت"], by: "abd", upd: "30 Sep", acting: 1 },
+      { id: 10, t: ["Follow up the September P&T minutes", "متابعة محضر لجنة الصيدلة والعلاج لشهر سبتمبر"], c: "pt", u: "ph", st: "done", who: "omar", due: ["Done", "2 Oct", "أُنجزت"], by: "rana", upd: "2 Oct" },
+      { id: 11, t: ["Order new crash-cart labels", "طلب ملصقات جديدة لعربة الطوارئ"], c: "pt", u: "ph", st: "canc", who: "hessa", due: ["Cancelled", "5 Oct", "أُلغيت"], by: "fahad", upd: "5 Oct" }
+    ];
+    const base = T.filter(t => !t.acting);
+
+    const W = { unit: 150, st: 184, who: 170, due: 140, by: 120, upd: 72, act: 150 };
+    const col = (w) => "flex: none; width: " + w + "px; min-width: 0;";
+    const TASKCOL = "flex: 1 1 0; min-width: 200px;";
+    const ell = "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+
+    const tabStyle = (sel, ar) => "display: inline-flex; align-items: center; height: 36px; padding: 0 12px; margin-block-end: -1px; font-size: " + (ar ? 14 : 13.5) + "px; white-space: nowrap; " + (sel ? "font-weight: 600; color: #1F5480; border-block-end: 2px solid #2E6FA3;" : "color: #4A5568; border-block-end: 2px solid transparent;");
+    const VIEWS = { mine: ["My tasks", "مهامي"], unit: ["My unit", "وحدتي"], units: ["My units", "وحداتي"], all: ["All tasks", "كل المهام"], un: ["Unassigned", "غير المُسندة"] };
+    const views = (keys, sel, ar) => keys.map(k => ({ l: VIEWS[k][ar ? 1 : 0], sel: k === sel ? "true" : "false", style: tabStyle(k === sel, ar) }));
+
+    const fs = (ar, en) => (ar ? en + 1 : en);
+    const btnStyle = (ar) => "font-family: inherit; font-size: " + (ar ? 13 : 12.5) + "px; font-weight: 600; color: #2D3748; background: #fff; border: 1px solid #5A6779; border-radius: 5px; padding: 3px 10px; white-space: nowrap;";
+    const dotsStyle = "flex: none; width: 28px; height: 28px; border: 1px solid #E2E8F0; border-radius: 5px; background: #fff; color: #4A5568; font-size: 14px;";
+
+    const row = (t, ar, viewer) => {
+      const L = ar ? 1 : 0, s = ST[t.st];
+      const closed = t.st === "done" || t.st === "canc";
+      const tone = t.due[3];
+      const btn = viewer === "fahad" ? t.fBtn : viewer === "rana" ? t.rBtn : null;
+      return {
+        t: t.t[L], rec: C[t.c][L], unit: U[t.u][L], st: s[L], dot: !!s[2], who: P[t.who][L],
+        who2: t.pool ? (ar ? "مجموعة · يمكن لـ " + iso("4") + " الاستلام" : "Pool · 4 can pick up") : null,
+        due1: ar ? t.due[2] : t.due[0], due2: ar ? iso(t.due[1]) : t.due[1], by: P[t.by][L], upd: ar ? iso(t.upd) : t.upd,
+        btn: btn ? btn[L] : null, btnStyle: btnStyle(ar), dotsStyle,
+        aria: (ar ? "إجراءات " : "Actions for ") + t.t[L],
+        row: "display: flex; align-items: center; gap: 12px; height: " + (ar ? 58 : 52) + "px; padding: 0 12px; border-block-end: 1px solid #F0F3F7;" + (closed ? " background: #FBFCFD;" : ""),
+        cTask: TASKCOL + " display: flex; flex-direction: column;",
+        tStyle: "font-size: " + fs(ar, 13) + "px; font-weight: 500; text-decoration: none; color: #2D3748; " + ell + (t.st === "canc" ? " text-decoration: line-through; color: #4A5568;" : ""),
+        subStyle: "font-size: " + fs(ar, 11.5) + "px; color: #5A6779; " + ell,
+        cUnit: col(W.unit) + " font-size: " + fs(ar, 12.5) + "px; color: #2D3748; " + ell,
+        cSt: col(W.st), stStyle: "display: flex; align-items: center; gap: 6px; font-size: " + fs(ar, 12.5) + "px; color: " + s[3] + "; font-weight: " + s[4] + "; " + ell,
+        dotStyle: "flex: none; width: 6px; height: 6px; border-radius: 50%; background: " + (s[2] || "transparent") + ";",
+        cWho: col(W.who) + " display: flex; flex-direction: column;", l1Style: "font-size: " + fs(ar, 12.5) + "px; color: #2D3748; " + ell + (t.pool ? " font-weight: 500; color: #1F5480;" : ""),
+        cDue: col(W.due) + " display: flex; flex-direction: column;",
+        dueStyle: "font-size: " + fs(ar, 12.5) + "px; white-space: nowrap; font-variant-numeric: tabular-nums; " + (tone === "danger" ? "font-weight: 600; color: #B42318;" : closed ? "color: #4A5568;" : "color: #2D3748;"),
+        cBy: col(W.by) + " font-size: " + fs(ar, 12) + "px; color: #4A5568; " + ell,
+        cUpd: col(W.upd) + " font-size: " + fs(ar, 12) + "px; color: #4A5568; white-space: nowrap; font-variant-numeric: tabular-nums;",
+        cAct: col(W.act) + " display: flex; justify-content: flex-end; align-items: center; gap: 8px;"
+      };
+    };
+    const COLS = (ar) => [
+      { l: ar ? "المهمة" : "Task", s: 1, css: TASKCOL }, { l: ar ? "الوحدة" : "Unit", css: col(W.unit) }, { l: ar ? "الحالة" : "Status", s: 1, css: col(W.st) },
+      { l: ar ? "المُسند إليه أو المجموعة" : "Assignee or pool", css: col(W.who) }, { l: ar ? "الاستحقاق" : "Due", s: 1, on: 1, css: col(W.due) },
+      { l: ar ? "أنشأها" : "Created by", css: col(W.by) }, { l: ar ? "آخر تحديث" : "Updated", s: 1, css: col(W.upd) }, { l: "", css: col(W.act), act: 1 }
+    ].map(c => ({ l: c.l + (c.on ? " ▲" : ""), role: c.s ? "button" : "columnheader", sort: c.on ? "ascending" : "none",
+      aria: c.s ? (ar ? "الترتيب حسب " : "Sort by ") + c.l : (c.act ? (ar ? "الإجراءات" : "Actions") : c.l),
+      style: c.css + " font-size: " + (ar ? 12 : 11) + "px; font-weight: " + (c.on ? 800 : 700) + "; " + ell + (ar ? "" : " letter-spacing: 0.05em; text-transform: uppercase;") + (c.s ? " color: #1F5480; cursor: pointer;" : " color: #5A6779;") }));
+
+    const filt = (l, ar, on) => ({ l, style: "display: inline-flex; align-items: center; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; font-size: " + fs(ar, 12.5) + "px; white-space: nowrap; " + (on ? "color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3; font-weight: 600;" : "color: #2D3748; background: #fff; border: 1px solid #8A94A6;") });
+    const toolbar = (ar, o) => {
+      o = o || {};
+      const L = ar ? ["الحالة ▾", "المتأخرة فقط", "المُسند إليه أو المجموعة ▾", "نوع السجل ▾", "الاستحقاق ▾", "المُسندة إليّ", "الوحدة ▾"] : ["Status ▾", "Overdue only", "Assignee or pool ▾", "Record type ▾", "Due ▾", "Assigned to me", "Unit ▾"];
+      return L.concat(o.closed ? [ar ? "المغلقة: آخر " + iso("90") + " يومًا ▾" : "Closed: last 90 days ▾"] : []).filter((l, i) => !(o.noRecordType && i === 3)).map((l, i, arr) => filt(o.unitOn && l === arr[arr.length - 1] ? (ar ? "الوحدة: صيدلية المرضى المنومين ▾" : "Unit: Inpatient Pharmacy ▾") : l, ar, o.unitOn && i === arr.length - 1));
+    };
+    const frame = (o) => {
+      const ar = o.ar, L = ar ? 1 : 0;
+      return Object.assign({
+        dir: ar ? "rtl" : "ltr", hasChips: !!(o.chips && o.chips.length), chips: o.chips || [], acting: null,
+        frame: "width: 1320px; box-sizing: border-box; padding: 18px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 8px;" + (ar ? AF : ""),
+        crumbStyle: "font-size: " + fs(ar, 11.5) + "px; color: #5A6779;", crumb: ar ? "المهام" : "Tasks",
+        h1Style: "font-size: " + (ar ? 23 : 22) + "px; line-height: 1.3; font-weight: 600;", h1: ar ? "المهام" : "Tasks",
+        tabsAria: ar ? "طرق العرض المحفوظة" : "Saved views",
+        subStyle: "font-size: " + fs(ar, 13) + "px; font-weight: 500; color: #2D3748;",
+        actingStyle: "display: block; font-size: " + fs(ar, 12.5) + "px; color: #1F5480; font-weight: 500;",
+        liveStyle: "font-size: " + fs(ar, 12.5) + "px; color: #4A5568; font-variant-numeric: tabular-nums;",
+        searchStyle: "display: inline-flex; align-items: center; gap: 6px; height: 32px; box-sizing: border-box; padding: 0 10px; width: 260px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; font-size: " + fs(ar, 12.5) + "px; color: #8A94A6;",
+        search: ar ? "ابحث في عنوان المهمة أو المُسند إليه…" : "Search task title or assignee…",
+        clearAll: ar ? "مسح الكل" : "Clear all",
+        headStyle: "display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; border-start-start-radius: 8px; border-start-end-radius: 8px;",
+        th: COLS(ar), filters: toolbar(ar, o.tb),
+        footStyle: "padding: 8px 12px; font-size: " + fs(ar, 12) + "px; color: #5A6779;"
+      }, o, { rows: o.list.map(t => row(t, ar, o.viewer)) });
+    };
+    const chip = (l, aria, ar) => ({ l, aria, style: "display: inline-flex; align-items: center; gap: 6px; font-size: " + fs(ar, 12) + "px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 999px; padding: 3px 10px;" });
+    const ip = base.filter(t => t.u === "ip");
+
+    const frames = [
+      frame({ ar: false, viewer: "fahad", cap: "Populated · English · Dr. Fahad Al-Anazi, head of Pharmacy", views: views(["mine", "unit"], "unit"), sub: "Pharmacy · 3 sub-units", live: "11 tasks · 8 open · 2 overdue", list: base, foot: "Showing all 11 · Closed in the last 90 days · Closed earlier", tb: { closed: 1 },
+        note: "Closed tasks (completed and cancelled) are those closed in the last 90 days, listed after the open ones; all three here are within 90 days. The Closed filter, and “Closed earlier” in the footer, reach older ones. Dr. Fahad has unit scope only, so the switcher is My tasks · My unit. Rows 3 and 6 are assigned to Dr. Fahad, so their Start button shows; on every other row the button cell is empty, because seeing a task through the unit isn't a part in it. Rows 2, 5, 6 and 9 are Inpatient Pharmacy's (the Medication Safety Committee): the row names its own unit, not Pharmacy. Unit is plain header text." }),
+      frame({ ar: true, viewer: "fahad", cap: "Populated · Arabic", views: views(["mine", "unit"], "unit", true), sub: "الصيدلية · " + iso("3") + " وحدات فرعية", live: iso("11") + " مهمة · " + iso("8") + " مفتوحة · " + iso("2") + " متأخرتان", list: base, tb: { closed: 1 }, foot: "عرض كل المهام: " + iso("11") + " · المغلقة في آخر " + iso("90") + " يومًا · المغلقة قبل ذلك",
+        note: "Mirrored: Task at the right, the 150 px action column at the left. The arrow sits after “الاستحقاق”. Dates stay Latin and isolated." }),
+      frame({ ar: false, viewer: "fahad", cap: "Filtered · Unit: Inpatient Pharmacy · 4 results", views: views(["mine", "unit"], "unit"), sub: "Pharmacy · 3 sub-units", live: "4 tasks match", list: ip, foot: "Showing 4 of 11", tb: { unitOn: 1 },
+        chips: [chip("Unit: Inpatient Pharmacy, with sub-units", "Remove the Unit filter")], note: "The Unit filter and its chip say the same thing. Inpatient Pharmacy has no sub-units of its own, so “with sub-units” changes nothing here, but the chip states the rule. The live region announces “4 tasks match”." }),
+      frame({ ar: true, viewer: "fahad", cap: "Filtered · Arabic", views: views(["mine", "unit"], "unit", true), sub: "الصيدلية · " + iso("3") + " وحدات فرعية", live: iso("4") + " مهام مطابقة", list: ip, foot: "عرض " + iso("4") + " من " + iso("11"), tb: { unitOn: 1 },
+        chips: [chip("الوحدة: صيدلية المرضى المنومين، مع الوحدات الفرعية", "إزالة عامل تصفية الوحدة", true)], note: "" }),
+      frame({ ar: false, viewer: "fahad", cap: "Acting head · Dr. Fahad is also acting head of Clinical Nutrition until 30 Oct 2026 · 14 tasks", views: views(["mine", "units"], "units"), sub: "Pharmacy · 3 sub-units, and Clinical Nutrition", acting: "Acting head of Clinical Nutrition until 30 Oct 2026", live: "14 tasks · 10 open · 2 overdue", list: T, foot: "Showing all 14",
+        note: "Two units in scope, so the view is “My units”. The three Nutrition Support Committee rows belong to Clinical Nutrition through the acting appointment. When it ends, the view is “My unit” again at the next load, with these three rows gone." }),
+      frame({ ar: false, viewer: "rana", cap: "View unit tasks holder · Rana Al-Mutairi, Pharmacy quality coordinator (Committees only)", views: views(["mine", "unit"], "unit"), sub: "Pharmacy · 3 sub-units", live: "11 tasks · 8 open · 2 overdue", list: base, foot: "Showing all 11", tb: { noRecordType: 1 },
+        note: "The same view and the same rows, with no acting line. Rana's permission covers one record type (Committees), so the Record type filter is absent. Row 7 is Rana's own task, so it shows Complete." })
+    ];
+
+    const trItem = (l, n, depth, sel, ar, sub) => ({ l, n: ar ? iso(n) : n, sub: sub || null, sel: sel ? "true" : "false", mark: sel ? "✓" : "",
+      style: "display: flex; align-items: center; gap: 8px; min-height: " + (sub ? 46 : 36) + "px; padding: 4px 12px; padding-inline-start: " + (12 + depth * 20) + "px;" + (sel ? " background: #E4EEF6;" : ""),
+      markStyle: "flex: none; width: 14px; color: #1F5480; font-weight: 700;", lStyle: "display: block; font-size: " + fs(ar, 13) + "px; " + (sel ? "font-weight: 600; color: #1F5480;" : "color: #2D3748;") + (depth ? "" : " font-weight: 600;"),
+      subStyle: "display: block; font-size: " + fs(ar, 11.5) + "px; color: #1F5480;", nStyle: "flex: none; font-size: " + fs(ar, 12) + "px; color: #5A6779; font-variant-numeric: tabular-nums;" });
+    const tree = (ar, acting, cap, note) => {
+      const L = ar ? 1 : 0;
+      const items = [trItem(U.ph[L], "11", 0, false, ar), trItem(U.ip[L], "4", 1, !acting, ar), trItem(U.op[L], "0", 1, false, ar), trItem(U.ps[L], "0", 1, false, ar)];
+      if (acting) items.push(trItem(U.cn[L], "3", 0, false, ar, ar ? "بالإنابة حتى " + iso("30 Oct 2026") : "Acting until 30 Oct 2026"));
+      return { cap, note, dir: ar ? "rtl" : "ltr", frame: "padding: 12px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 8px;" + (ar ? AF : ""),
+        trigger: acting ? (ar ? "الوحدة ▴" : "Unit ▴") : (ar ? "الوحدة: صيدلية المرضى المنومين ▴" : "Unit: Inpatient Pharmacy ▴"),
+        triggerStyle: "display: inline-flex; align-items: center; height: 32px; padding: 0 10px; border-radius: 6px; font-size: " + fs(ar, 12.5) + "px; color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3; font-weight: 600;",
+        listAria: ar ? "الوحدات" : "Units", search: ar ? "اكتب لتصفية الوحدات" : "Type to filter units",
+        searchStyle: "padding: 8px 12px; border-block-end: 1px solid #E2E8F0; font-size: " + fs(ar, 12.5) + "px; color: #8A94A6;", items,
+        only: ar ? "هذه الوحدة فقط" : "This unit only", onlyAria: "false", boxMark: "",
+        onlyStyle: "display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 12px; border-block-start: 1px solid #E2E8F0; background: #FBFCFD; font-size: " + fs(ar, 12.5) + "px;",
+        boxStyle: "flex: none; width: 16px; height: 16px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 3px; background: #fff;" };
+    };
+    const trees = [
+      tree(false, false, "English · Inpatient Pharmacy picked", "Indented under Pharmacy as the org tree has it. Counts include sub-units (Pharmacy 11 = its own 7 + Inpatient Pharmacy's 4). “This unit only” is unchecked by default, so a pick includes the unit's sub-units."),
+      tree(true, false, "Arabic", "Indentation runs from the right. Counts are Latin, isolated."),
+      tree(false, true, "English · Dr. Fahad as acting head: two units in scope", "Clinical Nutrition is a second root, labelled with the acting end date, so the tree shows where the extra scope comes from and when it goes.")
+    ];
+
+    const crop = (ar, menuKind) => {
+      const L = ar ? 1 : 0;
+      const t1 = T.find(t => t.id === 1), t2 = T.find(t => t.id === 2);
+      const mk = (t, open) => ({ t: t.t[L], sub: C[t.c][L] + " · " + U[t.u][L], due1: ar ? t.due[2] : t.due[0], due2: ar ? iso(t.due[1]) : t.due[1], btn: null, btnStyle: btnStyle(ar), open: open ? "true" : "false",
+        aria: (ar ? "إجراءات " : "Actions for ") + t.t[L], row: "display: flex; align-items: center; gap: 12px; height: " + (ar ? 58 : 52) + "px; padding: 0 12px; border-block-end: 1px solid #F0F3F7;",
+        tStyle: "display: block; font-size: " + fs(ar, 13) + "px; font-weight: 500; " + ell, subStyle: "display: block; font-size: " + fs(ar, 11.5) + "px; color: #5A6779; " + ell,
+        dueStyle: "display: block; font-size: " + fs(ar, 12.5) + "px; font-weight: 600; color: #B42318; white-space: nowrap;",
+        dotsStyle: dotsStyle + (open ? " border-color: #2E6FA3; background: #E4EEF6; color: #1F5480;" : "") });
+      const other = menuKind === "other";
+      const rows = other ? [mk(t1, false), mk(t2, true)] : [mk(t1, true), mk(t2, false)];
+      const it = (l, danger) => ({ l, div: false, style: "padding: 8px 14px; font-size: " + fs(ar, 13) + "px;" + (danger ? " color: #B42318;" : "") });
+      const items = other ? [it(ar ? "فتح المهمة" : "Open task")] : [it(ar ? "فتح المهمة" : "Open task"), { div: true, l: null, style: "" }, it(ar ? "تعديل…" : "Edit…"), it(ar ? "إعادة الإسناد…" : "Reassign…"), it(ar ? "إلغاء المهمة…" : "Cancel task…", true)];
+      const rowH = ar ? 58 : 52;
+      return { dir: ar ? "rtl" : "ltr", rows, items, menuAria: rows[other ? 1 : 0].aria,
+        cap: other ? (ar ? "العربية · مهمة شخص آخر" : "Someone else's task · Dr. Sara Al-Qahtani's, created by Rana Al-Mutairi") : (ar ? "العربية · مهمة أنشأها د. فهد" : "A task Dr. Fahad created · assigned to Omar Haddad"),
+        frame: "position: relative; height: " + (other ? 220 : 300) + "px; background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;" + (ar ? AF : ""),
+        menuStyle: "position: absolute; top: " + ((other ? rowH * 2 : rowH) - 8) + "px; inset-inline-end: 12px; width: 200px; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); padding: 4px 0; z-index: 2;",
+        note: other ? (ar ? "" : "Dr. Fahad is neither assignee nor creator and doesn't hold Manage tasks: the button cell is empty and the menu has Open task only. The unit gives sight of the task, not a part in it.") : (ar ? "" : "Dr. Fahad created this task, so the creator's actions come from that relationship, not from the unit: Edit, Reassign and Cancel task, after Open task. Still no button: the next step is the assignee's.") };
+    };
+    const crops = [crop(false, "other"), crop(false, "creator"), crop(true, "creator")];
+
+    const stV = (ar, sel, keys) => views(keys || ["mine", "unit"], sel || "unit", ar);
+    const st = (o) => {
+      const ar = o.ar;
+      return Object.assign({ notice: null, skeleton: false, skel: [], msg: null, msg2: null, act: null, myRows: null, sub: null }, o, {
+        dir: ar ? "rtl" : "ltr", frame: "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0 14px 14px;" + (ar ? AF : ""),
+        subStyle: "font-size: " + fs(ar, 13) + "px; font-weight: 500; color: #2D3748; margin-block-start: 8px;",
+        noticeStyle: "margin-block-start: 10px; padding: 8px 12px; border-radius: 6px; background: #F2F7FB; border: 1px solid #C5DAEA; font-size: " + fs(ar, 13) + "px; color: #1F5480; font-weight: 500; text-wrap: pretty;",
+        bodyStyle: "margin-block-start: 10px; border: 1px solid #E2E8F0; border-radius: 6px; min-height: 140px;",
+        msgBox: "padding: 28px 16px; text-align: center;" + (o.err ? " background: #FEF3F2;" : ""),
+        msgTStyle: "font-size: " + fs(ar, 13.5) + "px; font-weight: 600; text-wrap: pretty;" + (o.err ? " color: #B42318;" : ""),
+        msg2Style: "font-size: " + fs(ar, 12.5) + "px; color: #4A5568; margin-block-start: 4px; text-wrap: pretty;",
+        actStyle: "font-family: inherit; font-size: 13px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #5A6779; border-radius: 6px; padding: 6px 12px;",
+        skel: o.skeleton ? [0, 1, 2, 3, 4].map(i => ({ a: "flex: 1 1 auto; height: 12px; border-radius: 3px; background: #EDF1F6; max-width: " + (60 - i * 6) + "%;", b: "flex: none; width: 120px; height: 10px; border-radius: 3px; background: #EDF1F6;", c: "flex: none; width: 90px; height: 10px; border-radius: 3px; background: #EDF1F6;" })) : []
+      });
+    };
+    const subEn = "Pharmacy · 3 sub-units", subAr = "الصيدلية · " + iso("3") + " وحدات فرعية";
+    const my = (ar) => [
+      { t: ar ? "مراجعة إضافات المضادات الحيوية إلى الدليل الدوائي" : "Review antibiotic formulary additions", sub: ar ? "لجنة الصيدلة والعلاج" : "Pharmacy & Therapeutics Committee", due: ar ? "خلال يومين · " + iso("20 Oct") : "In 2 days · 20 Oct" },
+      { t: ar ? "إعداد خطة تدريب الصيادلة" : "Prepare the pharmacist training plan", sub: ar ? "لجنة الصيدلة والعلاج" : "Pharmacy & Therapeutics Committee", due: ar ? "خلال 9 أيام · " + iso("27 Oct") : "In 9 days · 27 Oct" }
+    ].map(m => Object.assign(m, { tStyle: "display: block; font-size: " + fs(ar, 13) + "px; font-weight: 500;", subStyle: "display: block; font-size: " + fs(ar, 11.5) + "px; color: #5A6779;", dueStyle: "flex: none; font-size: " + fs(ar, 12.5) + "px; color: #2D3748;" }));
+    const states = [
+      st({ ar: false, cap: "Loading · English", views: stV(false), sub: subEn, skeleton: true, note: "Skeleton rows as in Task Screens, at the final row height. The subtitle is known before the rows arrive." }),
+      st({ ar: true, cap: "Loading · Arabic", views: stV(true), sub: subAr, skeleton: true, note: "" }),
+      st({ ar: false, cap: "Empty · nothing open in scope", views: stV(false), sub: subEn, msg: "Nothing open in Pharmacy or its sub-units.", msg2: "Tasks on records your unit owns appear here.", note: "No action: a head doesn't create tasks from this view; tasks are created on their records." }),
+      st({ ar: true, cap: "Empty · Arabic", views: stV(true), sub: subAr, msg: "لا توجد مهام مفتوحة في الصيدلية أو وحداتها الفرعية.", msg2: "تظهر هنا مهام السجلات التي تملكها وحدتك.", note: "" }),
+      st({ ar: false, cap: "Empty · the unit owns no records yet", views: stV(false), sub: "Outpatient Pharmacy", msg: "Outpatient Pharmacy doesn't own any records yet.", msg2: "When a committee names Outpatient Pharmacy as its owning unit, its tasks appear here.", note: "Drawn for the acting head of Outpatient Pharmacy, a unit with no committees. No action." }),
+      st({ ar: true, cap: "Empty · no records · Arabic", views: stV(true), sub: "صيدلية العيادات الخارجية", msg: "لا تملك صيدلية العيادات الخارجية أي سجلات بعد.", msg2: "عندما تُسمّى صيدلية العيادات الخارجية وحدةً مالكة للجنة، تظهر مهامها هنا.", note: "" }),
+      st({ ar: false, cap: "Filtered empty", views: stV(false), sub: subEn, msg: "No tasks match.", act: "Clear filters", note: "The chips stay above, so the visitor sees what's filtering. Clear filters keeps the view." }),
+      st({ ar: true, cap: "Filtered empty · Arabic", views: stV(true), sub: subAr, msg: "لا توجد مهام مطابقة.", act: "مسح عوامل التصفية", note: "" }),
+      st({ ar: false, cap: "Error", views: stV(false), sub: subEn, err: 1, msg: "The tasks couldn't be loaded.", msg2: "Nothing was changed. Check your connection, then try again.", act: "Retry", note: "The standard error state with Retry: a load failure is the case where retrying can help." }),
+      st({ ar: true, cap: "Error · Arabic", views: stV(true), sub: subAr, err: 1, msg: "تعذّر تحميل المهام.", msg2: "لم يتغير شيء. تحقق من الاتصال ثم أعد المحاولة.", act: "إعادة المحاولة", note: "" }),
+      st({ ar: false, cap: "Scope ended · a saved link opened on 2 Nov 2026", views: stV(false, "mine", ["mine"]), notice: "You no longer have a unit view: your acting appointment for Outpatient Pharmacy ended on 30 Oct 2026.", myRows: my(false), note: "Dr. Huda Zahrani was acting head of Outpatient Pharmacy until 30 Oct. The saved link opens My tasks with this one line; My unit is absent from the switcher. The line goes when the person moves to another view." }),
+      st({ ar: false, cap: "Primary unit changed · View unit tasks holder · next load after 2 Nov 2026", views: stV(false), sub: "Outpatient Pharmacy", notice: "Your unit view now shows Outpatient Pharmacy: your primary unit changed on 2 Nov 2026.", msg: "Outpatient Pharmacy doesn't own any records yet.", msg2: "When a committee names Outpatient Pharmacy as its owning unit, its tasks appear here.", note: "Rana Al-Mutairi moved to Outpatient Pharmacy. The view follows the new primary unit and says so once, on the next load; the line doesn't come back." }),
+      st({ ar: true, cap: "Primary unit changed · Arabic", views: stV(true), sub: "صيدلية العيادات الخارجية", notice: "يعرض عرض وحدتك الآن صيدلية العيادات الخارجية: تغيّرت وحدتك الأساسية في " + iso("2 Nov 2026") + ".", msg: "لا تملك صيدلية العيادات الخارجية أي سجلات بعد.", msg2: "عندما تُسمّى صيدلية العيادات الخارجية وحدةً مالكة للجنة، تظهر مهامها هنا.", note: "" }),
+      st({ ar: true, cap: "Scope ended · Arabic", views: stV(true, "mine", ["mine"]), notice: "لم يعد لديك عرض للوحدة: انتهى تكليفك بالإنابة لصيدلية العيادات الخارجية في " + iso("30 Oct 2026") + ".", myRows: my(true), note: "" })
+    ];
+
+    const sw = (ar, keys, sel, sub, acting, cap, note) => ({ cap, note, dir: ar ? "rtl" : "ltr", views: views(keys, sel, ar), sub, acting, tabsAria: ar ? "طرق العرض المحفوظة" : "Saved views",
+      frame: "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 4px 14px 12px;" + (ar ? AF : ""),
+      subStyle: "font-size: " + fs(ar, 13) + "px; font-weight: 500; color: #2D3748; margin-block-start: 8px;", actingStyle: "font-size: " + fs(ar, 12.5) + "px; color: #1F5480; font-weight: 500;" });
+    const switchers = [
+      sw(false, ["mine", "unit"], "unit", "Pharmacy · 3 sub-units", null, "Head of one unit · Dr. Fahad Al-Anazi", "Unit scope only: My tasks and My unit."),
+      sw(true, ["mine", "unit"], "unit", "الصيدلية · " + iso("3") + " وحدات فرعية", null, "Arabic", ""),
+      sw(false, ["mine", "units"], "units", "Pharmacy · 3 sub-units, and Clinical Nutrition", "Acting head of Clinical Nutrition until 30 Oct 2026", "Several units · head of one, acting head of another", "Proposed: “My units” / «وحداتي», one view, with the units listed in the subtitle and the acting line under it."),
+      sw(true, ["mine", "units"], "units", "الصيدلية · " + iso("3") + " وحدات فرعية، والتغذية العلاجية", "تكليف بالإنابة: التغذية العلاجية حتى " + iso("30 Oct 2026"), "Arabic", ""),
+      sw(false, ["mine", "unit", "all", "un"], "unit", "Quality Department · 2 sub-units", null, "Unit scope, View all tasks and Manage tasks · A. Al-Harbi, Quality Manager", "All four views, in the fixed order. My unit and All tasks overlap; both stay because they answer different questions."),
+      sw(false, ["mine", "all"], "mine", null, null, "No unit scope · a quality officer with View all tasks", "My unit is absent, not walled: there's no unit to show."),
+      sw(true, ["mine", "all"], "mine", null, null, "No unit scope · Arabic", "")
+    ];
+
+    const pCard = (t, ar, viewer) => {
+      const L = ar ? 1 : 0, s = ST[t.st], btn = viewer === "fahad" ? t.fBtn : null;
+      return { t: t.t[L], rec: C[t.c][L], unit: (ar ? "الوحدة: " : "Unit: ") + U[t.u][L], due: (ar ? t.due[2] : t.due[0]) + " · " + (ar ? iso(t.due[1]) : t.due[1]), st: s[L], who: P[t.who][L], btn: btn ? btn[L] : null,
+        aria: (ar ? "إجراءات " : "Actions for ") + t.t[L],
+        box: "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px;",
+        tStyle: "font-size: " + fs(ar, 14) + "px; font-weight: 600; line-height: 1.35; text-wrap: pretty;", subStyle: "font-size: " + fs(ar, 12) + "px; color: #5A6779;",
+        unitStyle: "font-size: " + fs(ar, 12) + "px; color: #2D3748; font-weight: 500;",
+        dueStyle: "font-size: " + fs(ar, 12.5) + "px; " + (t.due[3] === "danger" ? "font-weight: 600; color: #B42318;" : "color: #2D3748;"),
+        stStyle: "font-size: " + fs(ar, 12) + "px; color: " + s[3] + "; font-weight: " + s[4] + ";",
+        btnStyle: "align-self: flex-start; margin-block-start: 6px; min-height: 44px; font-family: inherit; font-size: 13.5px; font-weight: 600; color: #2D3748; background: #fff; border: 1px solid #5A6779; border-radius: 6px; padding: 0 16px;" };
+    };
+    const phone = (ar, sheet) => {
+      const L = ar ? 1 : 0;
+      const o = { dir: ar ? "rtl" : "ltr", isList: !sheet, isSheet: !!sheet,
+        frame: "width: 390px; max-width: 100%; box-sizing: border-box; background: #F4F7FA; border: 1px solid #CBD5E0; border-radius: 22px; overflow: hidden; min-height: 760px;" + (ar ? AF : ""),
+        h1: ar ? "المهام" : "Tasks", h1Style: "padding: 14px 14px 0; font-size: " + (ar ? 21 : 20) + "px; font-weight: 600;",
+        tabsAria: ar ? "طرق العرض المحفوظة" : "Saved views",
+        views: ["mine", "unit"].map(k => ({ l: VIEWS[k][L], sel: k === "unit" ? "true" : "false", style: "display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: " + fs(ar, 13) + "px; " + (k === "unit" ? "font-weight: 600; color: #fff; background: #2E6FA3;" : "color: #2D3748; background: #fff; border: 1px solid #8A94A6;") })),
+        sub: ar ? "الصيدلية · " + iso("3") + " وحدات فرعية · " + iso("11") + " مهمة" : "Pharmacy · 3 sub-units · 11 tasks", subStyle: "padding: 0 14px; font-size: " + fs(ar, 12.5) + "px; font-weight: 500; color: #2D3748;",
+        search: ar ? "ابحث…" : "Search…", searchStyle: "flex: 1 1 auto; min-width: 0; display: flex; align-items: center; height: 40px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; font-size: " + fs(ar, 13) + "px; color: #8A94A6;",
+        filt: ar ? "التصفية" : "Filters", filtStyle: "flex: none; display: inline-flex; align-items: center; height: 40px; padding: 0 12px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; font-size: " + fs(ar, 13) + "px;",
+        sort: ar ? "الاستحقاق ▲ ▾" : "Due ▲ ▾", sortStyle: "flex: none; display: inline-flex; align-items: center; height: 40px; padding: 0 12px; border: 1px solid #C5DAEA; border-radius: 6px; background: #E4EEF6; color: #1F5480; font-weight: 600; font-size: " + fs(ar, 12.5) + "px;",
+        cards: base.slice(0, 4).map(t => pCard(t, ar, "fahad")),
+        cap: sheet ? (ar ? "ورقة التصفية · العربية" : "Filters sheet · English · the Unit filter") : (ar ? "القائمة · العربية" : "The list · English"),
+        note: sheet ? (ar ? "" : "The Unit tree is the same overlay-select options as desktop, at 44 px rows, with “This unit only” under it. The other filters follow, collapsed.") : (ar ? "" : "Cards name the unit on its own line. The sort chip opens the phone sort menu (Design System · List patterns, rule 1.6): Due, Task, Status and Updated, both ways.")
+      };
+      if (sheet) {
+        Object.assign(o, { sheetT: ar ? "التصفية" : "Filters", sheetTStyle: "font-size: " + fs(ar, 16) + "px; font-weight: 600;", closeAria: ar ? "إغلاق" : "Close",
+          group: ar ? "الوحدة" : "Unit", groupStyle: "font-size: " + fs(ar, 12) + "px; font-weight: 700; color: #5A6779; padding: 8px 0 4px;" + (ar ? "" : " letter-spacing: 0.05em; text-transform: uppercase;"),
+          items: [trItem(U.ph[L], "11", 0, false, ar), trItem(U.ip[L], "4", 1, true, ar), trItem(U.op[L], "0", 1, false, ar), trItem(U.ps[L], "0", 1, false, ar)].map(i => Object.assign(i, { style: i.style.replace(/min-height: \d+px/, "min-height: 44px") })),
+          only: ar ? "هذه الوحدة فقط" : "This unit only", onlyStyle: "display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: " + fs(ar, 13) + "px; border-block-end: 1px solid #E2E8F0;",
+          more: ar ? "الحالة · المتأخرة فقط · المُسند إليه · نوع السجل · الاستحقاق · المُسندة إليّ · المغلقة: آخر " + iso("90") + " يومًا (أو قبل ذلك)" : "Status · Overdue only · Assignee or pool · Record type · Due · Assigned to me · Closed: last 90 days (or Closed earlier)",
+          clear: ar ? "مسح الكل" : "Clear all", clearStyle: "flex: 1 1 0; min-height: 44px; font-family: inherit; font-size: 13.5px; color: #2E6FA3; background: transparent; border: 1px solid transparent; border-radius: 6px;",
+          show: ar ? "عرض " + iso("4") + " مهام" : "Show 4 tasks", showStyle: "flex: 2 1 0; min-height: 44px; font-family: inherit; font-size: 13.5px; font-weight: 600; color: #fff; background: #2E6FA3; border: 1px solid #1F5480; border-radius: 6px;" });
+      }
+      return o;
+    };
+    const phones = [phone(false, false), phone(true, false), phone(false, true), phone(true, true)];
+
+    return {
+      frames, trees, crops, states, switchers, phones,
+      decisions: [
+        { t: "1 · One saved view, “My unit”", b: "After My tasks and before All tasks. Present only for people with unit scope; absent for everyone else, like Unassigned." },
+        { t: "2 · The subtitle says whose unit", b: "“Pharmacy · 3 sub-units”. An acting appointment adds a line with its end date. Two units in scope make the view “My units”." },
+        { t: "3 · All tasks, plus Unit", b: "The same toolbar and columns as All tasks, plus a Unit filter (the org tree) and a Unit column naming the record's owning unit. Unit is plain header text." },
+        { t: "4 · Seeing isn't acting", b: "Actions stay by relationship and status. A head with no part in a task gets an empty button cell and Open task only." },
+        { t: "5 · A pick includes sub-units", b: "Picking Pharmacy shows Pharmacy and its three sub-units. “This unit only” under the tree narrows it." },
+        { t: "6 · When scope ends, the view goes", b: "The view disappears at the next load. A saved link lands on My tasks with one line saying why." }
+      ],
+      notes: [
+        { k: "Who sees it.", v: "The unit's head (substantive, or acting while the appointment runs) and holders of View unit tasks, for their own primary unit and its sub-units. Own links to a task (assignee, creator, cover, pool member) still count everywhere, with no permission." },
+        { k: "Several units: one view.", v: "A person with two units in scope gets one “My units” view, not one view per unit: the Unit filter already splits it, and a switcher of five or six tabs would wrap on smaller screens." },
+        { k: "Why the subtitle and not the tab.", v: "The tab stays short and stable (“My unit”), so the switcher doesn't change width as people move between units. The unit's name and the acting end date sit under it, where they have room." },
+        { k: "Unit column, plain text.", v: "It names the record's owning unit, so a sub-unit's row reads “Inpatient Pharmacy”, not “Pharmacy”. It isn't sortable: the server can't sort by it, so it carries no button look (List patterns, rule 1.4). Long names end in an ellipsis with a tooltip." },
+        { k: "Default sort.", v: "▲ on Due, open tasks first, closed tasks after: the head opens the view to see what's late, as in All tasks." },
+        { k: "Record type filter.", v: "Heads see every record type that has an owning unit; today that is Committees only. A View unit tasks holder sees only the types given to them; with one, the filter is absent (Rana)." },
+        { k: "Button cell.", v: "The 150 px action column stays the same width on every row (List patterns, rule 2.2), so an empty button cell doesn't move the columns. The next-step button appears only where the viewer has a part (Dr. Fahad's own Start)." },
+        { k: "Home and the record.", v: "No change to Home. A committee's Tasks panel needs no new drawing: for a viewer whose unit owns the committee it is the full panel; otherwise it stays “Your tasks on this committee”." },
+        { k: "Seeing a task never overrides seeing its record.", v: "If a head can't open a record, its tasks aren't in the view, and the counts don't include them." },
+        { k: "Keyboard and screen readers.", v: "The switcher is a tablist (arrow keys move, Enter opens). The Unit tree is the overlay-select's hierarchy listbox (arrow keys, type-ahead). Results are announced (“4 tasks match”), and a new saved view announces its subtitle." }
+      ],
+      questions: [
+        { n: "Q1 · decided", q: "The view's name when a person's scope is several units.", opts: ["One “My units” view; a head may also be acting head of another unit."], rec: "" },
+        { n: "Q2 · decided", q: "Is “This unit only” worth having?", opts: ["As recommended."], rec: "" },
+        { n: "Q3 · decided", q: "Should the Unit column also appear in All tasks?", opts: ["The Unit column is an optional All tasks column, off by default, through the column chooser."], rec: "" },
+        { n: "Q4 · decided", q: "Record type filter for heads while only Committees has an owning unit.", opts: ["Keep the Record type filter for heads (as drawn)."], rec: "" },
+        { n: "Q5 · decided", q: "An acting appointment for a sub-unit of a unit the person already heads (for example Dr. Fahad acting for Outpatient Pharmacy).", opts: ["As recommended."], rec: "" },
+        { n: "Q6 · decided", q: "Closed tasks in the unit view.", opts: ["Closed tasks from the last 90 days only, after the open ones, with a “Closed earlier” filter (drawn)."], rec: "" },
+        { n: "Q7 · decided", q: "A View unit tasks holder moves to another primary unit.", opts: ["Show a one-line notice on the next load (drawn beside Scope ended)."], rec: "" },      ],
+      changes: [
+        { s: "Task Screens · view switcher", w: "Adds “My unit” (or “My units”) between My tasks and All tasks, for people with unit scope only; absent for everyone else." },
+        { s: "Task Screens · the list toolbar", w: "In the unit view only, a Unit filter (overlay-select hierarchy options, with “This unit only”) and the Closed filter (“Closed in the last 90 days · Closed earlier”). The other views' toolbars don't change." },
+        { s: "Task Screens · the list columns", w: "In the unit view, a Unit column, plain header text, after Task. In All tasks, the same Unit column as an optional column, off by default, through the column chooser (Q3)." },
+        { s: "Task Screens · phone", w: "The saved-view chip row gains My unit; the Filters sheet gains the Unit tree and the Closed filter in the unit view." }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

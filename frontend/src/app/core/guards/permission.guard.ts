@@ -27,15 +27,16 @@ export const permissionGuard: CanActivateFn = (route) => {
   // hierarchy — not routeConfig.path alone, and not the resolved URL.
   //
   // Both simpler options are wrong in a way that matters:
-  //   - routeConfig.path alone yields 'unassigned' for /tasks/unassigned,
-  //     which is not a key in the map, so the stricter Unassigned entry
-  //     would be silently skipped.
+  //   - routeConfig.path alone yields only the last segment of a child
+  //     ('unassigned' for the old /tasks/unassigned, until ACC-120 slice 3),
+  //     which is not a key in the map, so a child's stricter entry would be
+  //     silently skipped.
   //   - the resolved URL yields '/committees/abc123', which matches nothing,
   //     so a deep child would be treated as unmapped and allowed.
   //
-  // Joining the configured segments gives 'tasks/unassigned' and
-  // 'committees/:id' respectively. The first matches exactly; the second
-  // falls back below to its guarded parent.
+  // Joining the configured segments gives the child's full path (matched
+  // exactly) and 'committees/:id' (which falls back below to its guarded
+  // parent).
   const fullPath = route.pathFromRoot
     .map((r) => r.routeConfig?.path ?? '')
     .filter((p) => p.length > 0)

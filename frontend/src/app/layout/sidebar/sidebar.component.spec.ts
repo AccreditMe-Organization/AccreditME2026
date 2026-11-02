@@ -244,9 +244,9 @@ describe('SidebarComponent (ACC-79)', () => {
   });
 });
 
-// ACC-228 — a task's own page lights My tasks, which an exact match alone would
-// not (/tasks needs one, because /tasks/unassigned is another item's).
-describe('SidebarComponent — the task page lights My tasks (ACC-228)', () => {
+// ACC-228, ACC-120 slice 3 — Tasks is lit on every view of /tasks and on a
+// task's own page: All tasks and Unassigned are saved views now, not items.
+describe('SidebarComponent — Tasks is lit on every view and on a task page (ACC-228, ACC-120 slice 3)', () => {
   @Component({ template: '', standalone: true })
   class StubPageComponent {}
 
@@ -289,23 +289,21 @@ describe('SidebarComponent — the task page lights My tasks (ACC-228)', () => {
   const active = (el: HTMLElement) =>
     Array.from(el.querySelectorAll('a.am-rail-item--active')).map((a) => a.getAttribute('href'));
 
-  it('on /tasks/:id, My tasks is the current item', async () => {
-    const el = await railAt('/tasks/task-1');
-    expect(active(el)).toEqual(['/tasks']);
-    expect(el.querySelector('a[href="/tasks"]')!.getAttribute('aria-current')).toBe('page');
-  });
+  for (const url of ['/tasks', '/tasks?view=all', '/tasks?view=unit', '/tasks?view=unassigned', '/tasks/task-1']) {
+    it(`on ${url}, Tasks is the one current item`, async () => {
+      const el = await railAt(url);
+      expect(active(el)).toEqual(['/tasks']);
+      expect(el.querySelector('a[href="/tasks"]')!.getAttribute('aria-current')).toBe('page');
+    });
+  }
 
-  it('on /tasks/unassigned, My tasks is NOT lit — Unassigned is', async () => {
-    const el = await railAt('/tasks/unassigned');
-    expect(active(el)).toEqual(['/tasks/unassigned']);
-  });
-
-  // The defect this ticket found: RouterLinkActive removed aria-current after
-  // the template wrote it, so no current rail item was ever announced as the
-  // current page. An ordinary section page, below its route.
-  it("announces the current item's page as the current page (aria-current kept)", async () => {
-    const el = await railAt('/tasks/unassigned');
-    expect(el.querySelector('a[href="/tasks/unassigned"]')!.getAttribute('aria-current')).toBe('page');
-    expect(el.querySelector('a[href="/tasks"]')!.getAttribute('aria-current')).toBeNull();
+  // The defect ACC-228 found: RouterLinkActive removed aria-current after the
+  // template wrote it, so no current rail item was ever announced. And the rail
+  // links no view of its own: the views are on the page.
+  it('announces only Tasks as the current page, and links nothing below /tasks', async () => {
+    const el = await railAt('/tasks?view=unassigned');
+    const current = Array.from(el.querySelectorAll('a[aria-current="page"]')).map((a) => a.getAttribute('href'));
+    expect(current).toEqual(['/tasks']);
+    expect(el.querySelector('a[href^="/tasks/"]')).toBeNull();
   });
 });

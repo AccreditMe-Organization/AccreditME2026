@@ -43,8 +43,6 @@ import { PositionListComponent } from '../../foundation/org-position/components/
 import { OrgPositionService } from '../../foundation/org-position/services/org-position.service';
 import { RoleListComponent } from '../../foundation/roles/components/role-list/role-list.component';
 import { RoleService } from '../../foundation/roles/services/role.service';
-import { TaskListComponent } from '../../foundation/tasks/components/task-list/task-list.component';
-import { TaskService } from '../../foundation/tasks/services/task.service';
 import { WorkflowStageListComponent } from '../../foundation/workflow/components/workflow-stage-list/workflow-stage-list.component';
 import { WorkflowTemplateService } from '../../foundation/workflow/services/workflow-template.service';
 import { PublicHolidayListComponent } from '../../foundation/working-calendar/components/public-holiday-list/public-holiday-list.component';
@@ -155,20 +153,9 @@ const CASES: readonly Case[] = [
     permission: 'roles:manage',
     services: [RoleService],
   },
-  {
-    page: 'task-list',
-    component: TaskListComponent,
-    permission: 'committees:create_tasks',
-    services: [TaskService],
-    // ACC-229 — the page hosts the All tasks list, whose read returns a page
-    // object, not an array: an empty one, so the list renders with no rows.
-    overrides: new Map<Type<unknown>, unknown>([
-      [
-        TaskService,
-        { getRecordList: () => of({ items: [], total: 0, matching: 0, scope: 'all', view: 'all', facets: null, aroundIndex: null }) },
-      ],
-    ]),
-  },
+  // ACC-120 slice 3 — the task list's New task moved to the /tasks shell and
+  // follows GET /tasks/views' create.types, not a permission; its spec pins it
+  // (tasks-shell.component.spec.ts).
   {
     page: 'workflow-stage-list',
     component: WorkflowStageListComponent,

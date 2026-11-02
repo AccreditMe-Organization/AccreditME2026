@@ -110,29 +110,15 @@ describe('permissionGuard', () => {
     expect(run('tasks')).toBe(true);
   });
 
-  // The hazard that unmapping 'tasks' created. /tasks/all can return ANY task
-  // in the tenant, so it must not inherit the parent's new absence of a gate.
-  it('still gates /tasks/all on committees:view_all_tasks now that its parent is ungated', () => {
+  // ACC-120 slice 3 — /tasks/all and /tasks/unassigned are redirects to saved
+  // views of /tasks, not pages, so the guard maps neither and lets them through
+  // to the shell. Which views a viewer has is GET /tasks/views' answer, and a
+  // view they lack is refused by its own list with the server's sentence — the
+  // data stays the server's to gate, as it always was.
+  it('maps neither old task path: both pass through to /tasks, where the views decide', () => {
     setup({ permissions: [] });
-    expect(run('tasks', 'all')).toEqual(router.parseUrl(LANDING_ROUTE));
-
-    setup({ permissions: ['committees:view_all_tasks'] });
-    expect(run('tasks', 'all')).toBe(true);
-  });
-
-  it('gates /tasks/unassigned on committees:manage_tasks, not on View all tasks as well', () => {
-    setup({ permissions: [ADMIN_ACCESS, 'committees:manage_tasks'] });
-    expect(run('tasks', 'unassigned')).toBe(true);
-  });
-
-  it('applies a nested route’s OWN stricter permission (/tasks/unassigned needs committees:manage_tasks)', () => {
-    setup({ permissions: [ADMIN_ACCESS, 'committees:view_all_tasks'] });
-
     expect(run('tasks')).toBe(true);
-    // View all tasks is not enough for the unassigned view.
-    expect(run('tasks', 'unassigned')).toEqual(router.parseUrl(LANDING_ROUTE));
-
-    setup({ permissions: [ADMIN_ACCESS, 'committees:view_all_tasks', 'committees:manage_tasks'] });
+    expect(run('tasks', 'all')).toBe(true);
     expect(run('tasks', 'unassigned')).toBe(true);
   });
 
@@ -220,7 +206,6 @@ describe('permissionGuard', () => {
       ['workflows'],
       ['lookups'],
       ['working-calendar'],
-      ['tasks', 'unassigned'],
       ['admin-settings', 'task-sla'],
       ['admin-settings', 'organization-profile'],
       ['admin-settings', 'email-provider'],
@@ -389,9 +374,8 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
       'lookups',
       'org-positions',
       'committees',
-      // ACC-79 — /tasks (My tasks) is self-scoped and ungated; its gated
-      // child stands in for it here.
-      'tasks/all',
+      // ACC-120 slice 3 — no task route is here: /tasks is self-scoped, and
+      // /tasks/all is a redirect to a saved view the server gates.
       'working-calendar',
       // ACC-79 — the hub is gone; each of its four screens is mapped itself.
       'admin-settings/organization-profile',
@@ -420,9 +404,8 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
       'lookups',
       'org-positions',
       'committees',
-      // ACC-79 — /tasks (My tasks) is self-scoped and ungated; its gated
-      // child stands in for it here.
-      'tasks/all',
+      // ACC-120 slice 3 — no task route is here: /tasks is self-scoped, and
+      // /tasks/all is a redirect to a saved view the server gates.
       'working-calendar',
       // ACC-79 — the hub is gone; each of its four screens is mapped itself.
       'admin-settings/organization-profile',
