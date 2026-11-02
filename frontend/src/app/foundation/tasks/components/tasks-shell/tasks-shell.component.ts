@@ -4,7 +4,6 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
-import { FormatService } from '../../../../core/formatting';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
@@ -33,7 +32,12 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
  * else: a view is null exactly when its list would refuse (SYSTEM-REFERENCE
  * §3.19), so the screen never re-derives a permission. My tasks is always
  * there and is the default with no ?view. The view lives in the URL, so Back,
- * Forward and a copied link land on it.
+ * Forward and a copied link land on it. A viewer with My tasks alone gets no
+ * switcher: one tab is noise.
+ *
+ * The open view's total is the list's own, in its header row; the page adds
+ * none. A view the server refuses (403) shows only its denied state, so New
+ * task goes too.
  *
  * My tasks is today's MyTasksComponent, unchanged but for its header (this
  * page's "Tasks" is the one H1). The other views are the shared task list,
@@ -67,7 +71,7 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
         </div>
       </app-page-header>
 
-      @if (viewsState() === 'ready') {
+      @if (viewsState() === 'ready' && switcher().length > 1) {
         <nav class="am-ts__views" [attr.aria-label]="'tasks.views.label' | translate" data-testid="task-views">
           @for (v of switcher(); track v.key) {
             <a
@@ -91,9 +95,6 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
       @if (notice()) {
         <p class="m-0 text-meta text-[var(--am-ink-700)]" role="status" data-testid="task-view-notice">{{ notice()! | translate }}</p>
       }
-      @if (current() !== 'mine' && total() !== null) {
-        <p class="m-0 text-meta text-[var(--am-ink-700)]" data-testid="task-view-total">{{ totalText() }}</p>
-      }
 
       @switch (current()) {
         @case ('mine') {
@@ -108,7 +109,7 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
           }
         }
         @case ('all') {
-          <app-task-list-view variant="page" view="all" [recordType]="recordTypeParam()" (totalChange)="total.set($event.total)" />
+          <app-task-list-view variant="page" view="all" [recordType]="recordTypeParam()" (deniedChange)="listDenied.set($event)" />
         }
         @case ('unit') {
           <app-task-list-view
@@ -117,7 +118,7 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
             [recordType]="recordTypeParam()"
             [unit]="unitParam()"
             [unitFilter]="unitFilter()"
-            (totalChange)="total.set($event.total)"
+            (deniedChange)="listDenied.set($event)"
           />
         }
         @case ('unassigned') {
@@ -126,7 +127,7 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
             view="unassigned"
             [around]="reassignId()"
             [openAction]="reassignId() ? 'reassign' : null"
-            (totalChange)="total.set($event.total)"
+            (deniedChange)="listDenied.set($event)"
           />
         }
       }
@@ -224,14 +225,13 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
 export class TasksShellComponent {
   private readonly tasks = inject(TaskService);
   private readonly route = inject(ActivatedRoute);
-  private readonly format = inject(FormatService);
 
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   readonly views = signal<ITaskViewsDto | null>(null);
   readonly viewsState = signal<'loading' | 'ready' | 'error'>('loading');
-  /** The open list view's own total, from its response. */
-  readonly total = signal<number | null>(null);
+  /** The open list view was refused by the server (a 403). */
+  readonly listDenied = signal(false);
   readonly formVisible = signal(false);
   readonly formDirty = signal(false);
   readonly taskFormRef = signal<TaskFormComponent | null>(null);
@@ -273,20 +273,19 @@ export class TasksShellComponent {
   );
 
   readonly createTypes = computed(() => this.views()?.create.types ?? []);
-  readonly canCreate = computed(() => this.createTypes().length > 0);
+  readonly canCreate = computed(() => this.createTypes().length > 0 && !(this.current() !== 'mine' && this.listDenied()));
   /** The Unit filter, when the viewer's unit scope holds more than one top-level unit (plan §6). */
   readonly unitFilter = computed(() => (this.views()?.unit?.units.length ?? 0) > 1);
-  readonly totalText = computed(() => this.format.count('taskList.live.total', this.total() ?? 0));
 
   private readonly list = viewChild(TaskListViewComponent);
   private readonly fixLinkReassign = injectFixLinkParam('reassign');
 
   constructor() {
     this.loadViews();
-    // A view switch starts the count again.
+    // A view switch starts fresh: the new list says whether it is refused.
     effect(() => {
       this.current();
-      untracked(() => this.total.set(null));
+      untracked(() => this.listDenied.set(false));
     });
     // ?reassign=<id> belongs to the Unassigned view: read it once that view is
     // open (the views have loaded), so the list loads to the task and its row

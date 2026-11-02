@@ -39,6 +39,7 @@ class ListStub {
   readonly around = input<string | null>(null);
   readonly openAction = input<string | null>(null);
   readonly totalChange = output<{ total: number; scope: 'all' | 'own' }>();
+  readonly deniedChange = output<boolean>();
   reload(): void {}
 }
 
@@ -95,9 +96,15 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
   const list = () => harness.fixture.debugElement.query((d) => d.componentInstance instanceof ListStub)?.componentInstance as ListStub | undefined;
 
   describe('the switcher', () => {
-    it('shows My tasks alone to a plain member', async () => {
+    // ACC-120 slice 3 — one tab is noise: a viewer with My tasks alone gets no switcher.
+    it('draws no switcher for a plain member, who has My tasks alone', async () => {
       const root = await open('/tasks', MEMBER);
-      expect(switcher(root)).toEqual(['My tasks']);
+      expect(root.querySelector('[data-testid="stub-my-tasks"]')).withContext('non-vacuity: the page rendered').not.toBeNull();
+      expect(root.querySelector('[data-testid="task-views"]')).toBeNull();
+    });
+
+    it('draws the switcher once there are two views', async () => {
+      expect(switcher(await open('/tasks', HEAD))).toEqual(['My tasks', 'Unit tasks']);
     });
 
     it('shows exactly the non-null views, in their fixed order', async () => {
@@ -151,8 +158,8 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
 
     it('opens My tasks, and says so, for a view this viewer does not have', async () => {
       const root = await open('/tasks?view=unassigned', MEMBER);
-      expect(currentView(root)).toBe('mine');
       expect(root.querySelector('[data-testid="stub-my-tasks"]')).not.toBeNull();
+      expect(list()).toBeUndefined();
       expect(text(root.querySelector('[data-testid="task-view-notice"]'))).toBe("That view isn't available to you, so these are your own tasks.");
     });
 
@@ -166,11 +173,14 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
       expect(list()!.view()).toBe('all');
     });
 
-    it("shows the open view's own total from its list", async () => {
+    // ACC-120 slice 3 — the total is shown once, in the list's own header row.
+    it('draws no total of its own: the list says it', async () => {
       const root = await open('/tasks?view=all', MANAGER);
       list()!.totalChange.emit({ total: 11, scope: 'all' });
       harness.detectChanges();
-      expect(text(root.querySelector('[data-testid="task-view-total"]'))).toBe('11 tasks');
+      expect(list()).withContext('non-vacuity: the list view is open').toBeDefined();
+      expect(root.querySelector('[data-testid="task-view-total"]')).toBeNull();
+      expect(text(root)).not.toContain('11 tasks');
     });
   });
 
@@ -178,6 +188,18 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
     it('shows only when views.create names a record type', async () => {
       expect((await open('/tasks', MEMBER)).querySelector('[data-testid="task-new"]')).toBeNull();
       expect((await open('/tasks', MANAGER)).querySelector('[data-testid="task-new"]')).not.toBeNull();
+    });
+
+    // ACC-120 slice 3 — a view the server refuses offers nothing to do, New task included.
+    it('is hidden while the open view is denied, and back on another view', async () => {
+      const root = await open('/tasks?view=unassigned', MANAGER);
+      expect(root.querySelector('[data-testid="task-new"]')).withContext('non-vacuity').not.toBeNull();
+      list()!.deniedChange.emit(true);
+      harness.detectChanges();
+      expect(root.querySelector('[data-testid="task-new"]')).toBeNull();
+      await harness.navigateByUrl('/tasks');
+      harness.detectChanges();
+      expect(root.querySelector('[data-testid="task-new"]')).not.toBeNull();
     });
   });
 
