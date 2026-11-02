@@ -2093,6 +2093,21 @@ Fires in `order` after a successful transition. Per `actionType`:
     malformed header's value, and an endpoint may echo a header back.
   - **The `webhookUrl` is returned as it is.** A URL that embeds a token (an
     incoming-webhook URL) is not masked; that is outside ACC-277.
+  - **The Actions dialog keeps these rules on screen (ACC-120 slice 7,
+    `workflow-action-configurator`).** A webhook is two steps: the action, then
+    its headers.
+    - **A stored header** shows its name, fixed, and an empty password field
+      that is never refilled, with "Set. Type a new value to replace it." Left
+      empty it is sent as `""` and kept.
+    - **Its name is fixed** because a rename would send `""` under a name with
+      nothing stored, which stores `""`: to rename, remove it and add it again.
+    - **A removed row** is left out of the save, which removes it. The save
+      never sends `headersValueSet`, and sends a stored `signingSecret` as `""`.
+    - **At most 5 headers.** A stored action with more shows them all, in a list
+      that scrolls inside the step.
+    - **`isProtected`** makes the whole dialog read-only.
+    - **Log to the audit trail** says "Always runs", with no Enabled box,
+      because the engine ignores `isEnabled` for it.
 - **`CREATE_TASK`** — resolves `toStage`'s assignees via
   `resolveAssignee()` (full array, not just the first — an explicitly
   fixed prior bug), maps `instance.objectType` → `TaskSourceType` via

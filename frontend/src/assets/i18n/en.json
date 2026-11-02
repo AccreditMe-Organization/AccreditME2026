@@ -714,6 +714,32 @@
     }
   },
   "workflow": {
+    "actionsDialog": {
+      "editTitle": "Edit action",
+      "stepAction": "Action",
+      "stepHeaders": "Headers",
+      "steps": "Steps",
+      "headerLimit": "Up to 5 headers.",
+      "state": "State",
+      "alwaysRuns": "Always runs",
+      "enabledNamed": "Enabled: {{name}}",
+      "on": "Enabled",
+      "off": "Off",
+      "readOnly": "The app sets this workflow, so its actions can't be changed here.",
+      "headers": "Headers",
+      "headerName": "Name",
+      "headerValue": "Value",
+      "headerNameNumbered": "Header name {{n}}",
+      "headerValueFor": "Value for {{name}}",
+      "addHeader": "Add header",
+      "removeHeader": "Remove header {{name}}",
+      "removeHeaderUnnamed": "Remove this header",
+      "valueSetHint": "Set. Type a new value to replace it.",
+      "headerNameRequired": "Enter a header name.",
+      "headerNameDuplicate": "Each header needs its own name.",
+      "headerValueRequired": "Enter a value for the new header.",
+      "urlRequired": "Enter the webhook URL."
+    },
     "list": {
       "colWorkflow": "Workflow",
       "colState": "State",
