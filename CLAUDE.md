@@ -4438,6 +4438,14 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
   (`GET /workflows/instances/:id/moves`); no screen reads a move's
   `requiredPermission` any more.
 - **PR 3 BUILT THE APIS (no screens):** a stage save takes `who: { mode, entries }`, the template read returns each stage's `who` and `whoSentence`, `assigneeKinds` and each APP move's `appMove`, Keep this assignment has its own route, and a CHANGED old people field is 400 `WHO_MOVED_TO_STAGE` — SYSTEM-REFERENCE §2.19.
+- **WHO WORKS A STAGE IS SET ON THE STAGE'S PANEL, FROM THE SERVER'S RULES
+  (PR 5a).** `am-stage-who` replaced the assignee and approval cards; the
+  panel sends `who`, never the old fields. Kinds, fields, modes and the
+  record's unit/committee are `assigneeKinds`, `whoRules` and `recordRoutes`:
+  no screen keeps a copy. People and committees are picked from
+  `who-options/people|committees`, paged on the server; the other lists load
+  once for the stages page (`StageWhoOptionsStore`). Setup health reports
+  `STAGE_ON_STARTING_ASSIGNMENT`, with Review stage and Keep.
 - **One additive migration** (`acc271_stage_assignees`, PR 1).
   Superseded (ACC-274): two additive migrations — PR 4 added `acc271_pool_member_joined` (the `POOL_MEMBER_JOINED` event kind).
 

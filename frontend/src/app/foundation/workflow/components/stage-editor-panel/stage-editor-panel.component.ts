@@ -14,20 +14,22 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { Observable, forkJoin, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { AmCountPipe, FormatService } from '../../../../core/formatting';
-import { deadlineBeforeTasks, finalStageTaskCount, flagExactlyOne, plainWorkflowRefusalKey, whoMovedToStageMessage } from '../../workflow-refusal';
-import { WorkflowEnumKind, workflowLabelKey, workflowOptionKeys } from '../../workflow-labels';
+import {
+  deadlineBeforeTasks,
+  finalStageTaskCount,
+  flagExactlyOne,
+  plainWorkflowRefusalKey,
+  whoMovedToStageMessage,
+  whoRefusal,
+} from '../../workflow-refusal';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
-import { MessageModule } from 'primeng/message';
 import {
   WorkflowTemplateService,
   WorkflowTemplateDto,
@@ -35,15 +37,12 @@ import {
   CreateWorkflowStageDto,
   UpdateWorkflowStageDto,
 } from '../../services/workflow-template.service';
-import { RoleService, RoleDto } from '../../../roles/services/role.service';
-import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
-import { OrgUnitService, OrgUnitDto, buildOrgUnitCascadeOptions } from '../../../organization/services/org-unit.service';
-import { UserService } from '../../../user/services/user.service';
-import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
+import { StageWhoComponent } from '../stage-who/stage-who.component';
+import { StageWhoDraft } from '../stage-who/stage-who-draft';
+import { StageWhoOptionsStore } from '../stage-who/stage-who-options.store';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
@@ -58,13 +57,6 @@ const FIELD_LABELS: Record<string, string> = {
   slaWorkingHours: 'workflow.slaWorkingHours',
   isInitial: 'workflow.isInitial',
   isFinal: 'workflow.isFinal',
-  assigneeStrategy: 'workflow.assigneeStrategy',
-  assigneeRoleId: 'workflow.assigneeRole',
-  assigneeCommitteeRoleValueId: 'workflow.assigneeCommitteeRole',
-  assigneePositionId: 'workflow.assigneePosition',
-  assigneeOrgUnitId: 'workflow.assigneeOrgUnit',
-  approvalMode: 'workflow.approvalMode',
-  parallelThreshold: 'workflow.parallelThreshold',
 };
 
 /** A label key's companion: the one-line description the drawing gives each row. */
@@ -89,6 +81,11 @@ interface PanelRefusal {
  * stage form dialog: the editor measures over the 420px cap, so per the
  * template-3 rule it is a page panel, and the route scrolls as the document —
  * nothing in here scrolls.
+ *
+ * ACC-271 PR 5a — "Who works this stage" (drawing section 8, am-stage-who)
+ * replaced the "Who the work lands on" and "How approval is reached" cards: the
+ * panel sends `who`, never the old assignee or approval fields. A new stage's
+ * first entry starts on Fixed position (ACC-136).
  *
  * It holds today's fields (in am-field wrappers), and the drawing's two new
  * sections, built from the template's registries and the stage's stored keys:
@@ -119,9 +116,8 @@ interface PanelRefusal {
     InputNumberModule,
     InputNumberLatinDigits,
     CheckboxModule,
-    MessageModule,
-    OverlaySelectComponent,
     FieldComponent,
+    StageWhoComponent,
     RowMenuComponent,
     StageChecksComponent,
   ],
@@ -201,64 +197,15 @@ interface PanelRefusal {
             }
           </div>
 
-          <!-- Axis 1: who the work lands on. -->
-          <div class="am-sep__card" data-card="assignee">
-            <h3 class="am-sep__card-title">{{ 'workflow.editor.whoTitle' | translate }}</h3>
-            <am-field [label]="'workflow.assigneeStrategy' | translate" [control]="form.controls.assigneeStrategy" inputId="sep-strategy"
-              [readonly]="!editable('assigneeStrategy')" [readonlyText]="optionText('assignee', assigneeStrategy())">
-              <app-overlay-select formControlName="assigneeStrategy" [options]="assigneeStrategies()" optionLabel="label" optionValue="value" />
-            </am-field>
-            @if (assigneeStrategy() === 'ROLE' || assigneeStrategy() === 'ROUND_ROBIN') {
-              <am-field [label]="'workflow.assigneeRole' | translate" [control]="form.controls.assigneeRoleId" inputId="sep-role"
-                [readonly]="!editable('assigneeRoleId')" [readonlyText]="roleName()">
-                <app-overlay-select formControlName="assigneeRoleId" [options]="roleOptions()" optionLabel="label" optionValue="id" />
-              </am-field>
-            }
-            @if (assigneeStrategy() === 'COMMITTEE') {
-              <am-field [label]="'workflow.assigneeCommitteeRole' | translate" [control]="form.controls.assigneeCommitteeRoleValueId"
-                inputId="sep-committee-role" [hint]="'workflow.assigneeCommitteeRoleHint' | translate"
-                [readonly]="!editable('assigneeCommitteeRoleValueId')" [readonlyText]="committeeRoleName()">
-                <app-overlay-select formControlName="assigneeCommitteeRoleValueId" [options]="committeeRoleOptions()" optionLabel="label" optionValue="id" [showClear]="true" />
-              </am-field>
-            }
-            @if (assigneeStrategy() === 'SPECIFIC_USER') {
-              <p-message severity="info" [text]="'workflow.userPickerUnavailable' | translate" />
-            }
-            @if (assigneeStrategy() === 'POSITION_FIXED') {
-              <am-field [label]="'workflow.assigneePosition' | translate" [control]="form.controls.assigneePositionId" inputId="sep-position"
-                [readonly]="!editable('assigneePositionId')" [readonlyText]="positionName()">
-                <app-overlay-select formControlName="assigneePositionId" [options]="positionOptions()" optionLabel="label" optionValue="id" [showClear]="true" />
-              </am-field>
-              <am-field [label]="'workflow.assigneeOrgUnit' | translate" [control]="form.controls.assigneeOrgUnitId" inputId="sep-unit"
-                [hint]="'workflow.assigneePositionHint' | translate"
-                [readonly]="!editable('assigneeOrgUnitId')" [readonlyText]="orgUnitName()">
-                <app-overlay-select formControlName="assigneeOrgUnitId" [options]="orgUnitCascadeOptions()" optionLabel="label" optionValue="value"
-                  optionGroupLabel="label" optionGroupChildren="items" [showClear]="true" />
-              </am-field>
-              <!-- ACC-54 — directly beneath the two pickers it is about. -->
-              @if (showNoHolderWarning()) {
-                <p-message severity="warn" [text]="'workflow.noPositionHolderWarning' | translate" data-no-holder />
-              }
-            }
-          </div>
-
-          <!-- Axis 2: how approval is reached. -->
-          <div class="am-sep__card" data-card="approval">
-            <h3 class="am-sep__card-title">{{ 'workflow.editor.approvalTitle' | translate }}</h3>
-            <am-field [label]="'workflow.approvalMode' | translate" [control]="form.controls.approvalMode" inputId="sep-approval"
-              [readonly]="!editable('approvalMode')" [readonlyText]="optionText('approvalMode', approvalMode())">
-              <app-overlay-select formControlName="approvalMode" [options]="approvalModes()" optionLabel="label" optionValue="value" />
-            </am-field>
-            @if (approvalMode() === 'PARALLEL') {
-              <am-field [label]="'workflow.parallelThreshold' | translate" [control]="form.controls.parallelThreshold" inputId="sep-threshold"
-                [readonly]="!editable('parallelThreshold')" [readonlyText]="optionText('threshold', form.controls.parallelThreshold.value)">
-                <app-overlay-select formControlName="parallelThreshold" [options]="parallelThresholds()" optionLabel="label" optionValue="value" />
-              </am-field>
-            }
-            @if (approvalMode() === 'COMMITTEE') {
-              <p-message severity="info" [text]="'workflow.committeePickerUnavailable' | translate" />
-            }
-          </div>
+          <!-- ACC-271 PR 5a — who works the stage, and how several of them decide. -->
+          <am-stage-who
+            class="am-sep__who"
+            [draft]="whoDraft"
+            [template]="templateSig()"
+            [stage]="stageSig()"
+            [readonly]="!editable('who')"
+            [submitted]="submitted()"
+          />
         </div>
 
         @if (!stage) {
@@ -373,11 +320,24 @@ interface PanelRefusal {
         flex-direction: column;
         gap: var(--am-space-16);
       }
+      .am-sep__form {
+        container-type: inline-size;
+      }
+      /* The stage's card beside "Who works this stage" where there is room
+         (the list needs the wider column); one above the other otherwise. */
       .am-sep__cards {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+        grid-template-columns: minmax(0, 1fr);
         gap: var(--am-space-16);
         align-items: start;
+      }
+      @container (min-width: 900px) {
+        .am-sep__cards {
+          grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr);
+        }
+      }
+      .am-sep__who {
+        min-inline-size: 0;
       }
       .am-sep__card {
         display: flex;
@@ -509,13 +469,9 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
   readonly boolFields = ['isInitial', 'isFinal'];
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
-  private readonly roleService = inject(RoleService);
-  private readonly lookupService = inject(LookupService);
   private readonly languageService = inject(LanguageService);
   private readonly fb = inject(FormBuilder);
-  private readonly orgPositionService = inject(OrgPositionService);
-  private readonly orgUnitService = inject(OrgUnitService);
-  private readonly userService = inject(UserService);
+  private readonly whoOptions = inject(StageWhoOptionsStore);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly layers = inject(LayerStackService);
@@ -529,12 +485,8 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
   // ACC-208 — a refusal shown under its own field; cleared when that field changes.
   readonly slaRefusal = signal<string | null>(null);
   readonly finalRefusal = signal<string | null>(null);
-  readonly roles = signal<RoleDto[]>([]);
-  readonly committeeRoles = signal<LookupValueDto[]>([]);
-  readonly positions = signal<IOrgPositionDto[]>([]);
-  readonly orgUnits = signal<OrgUnitDto[]>([]);
-  // ACC-54 — non-blocking config-time warning, set alongside the save, cleared once it no longer applies.
-  readonly showNoHolderWarning = signal(false);
+  /** ACC-271 PR 5a — "Who works this stage" while it is edited; loaded with the stage. */
+  readonly whoDraft = new StageWhoDraft();
 
   /** The stage's record actions and meanings as ticked now, and as loaded or last saved. */
   readonly actions = signal<ReadonlySet<string>>(new Set());
@@ -545,33 +497,8 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
   /** Bumped on every form change, so the computeds below re-read the form. */
   private readonly formTick = signal(0);
   /** The inputs, as signals for the computeds. */
-  private readonly templateSig = signal<WorkflowTemplateDto | null>(null);
-  private readonly stageSig = signal<WorkflowStageDto | null>(null);
-
-  readonly orgUnitCascadeOptions = computed(() => buildOrgUnitCascadeOptions(this.orgUnits(), null, null));
-
-  // ACC-160 — options carry a RESOLVED label, never a field name; a computed over
-  // the options AND the language, so a switch relabels the list.
-  readonly committeeRoleOptions = computed(() =>
-    this.committeeRoles().map((v) => ({ ...v, label: this.languageService.bilingual(v.labelEn, v.labelAr) })),
-  );
-  readonly roleOptions = computed(() =>
-    this.roles().map((r) => ({ ...r, label: this.languageService.bilingual(r.nameEn, r.nameAr ?? null) })),
-  );
-  readonly positionOptions = computed(() =>
-    this.positions()
-      .filter((p) => p.isActive)
-      .map((p) => ({ ...p, label: this.languageService.bilingual(p.nameEn, p.nameAr ?? null) })),
-  );
-
-  /** ACC-254 — each list in the reader's words; follows a language switch. */
-  private optionsOf(kind: WorkflowEnumKind): { value: string; label: string }[] {
-    this.translate.currentLang();
-    return workflowOptionKeys(kind).map(({ value, labelKey }) => ({ value, label: this.translate.instant(labelKey) }));
-  }
-  readonly approvalModes = computed(() => this.optionsOf('approvalMode'));
-  readonly parallelThresholds = computed(() => this.optionsOf('threshold'));
-  readonly assigneeStrategies = computed(() => this.optionsOf('assignee'));
+  readonly templateSig = signal<WorkflowTemplateDto | null>(null);
+  readonly stageSig = signal<WorkflowStageDto | null>(null);
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(100)]],
@@ -581,18 +508,6 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     slaWorkingHours: [null as number | null, [Validators.min(0)]],
     isInitial: [false],
     isFinal: [false],
-    approvalMode: ['SINGLE', [Validators.required]],
-    parallelThreshold: [null as string | null],
-    assigneeStrategy: ['ROLE', [Validators.required]],
-    assigneeRoleId: [null as string | null],
-    assigneeCommitteeRoleValueId: [null as string | null],
-    assigneePositionId: [null as string | null],
-    assigneeOrgUnitId: [null as string | null],
-  });
-
-  readonly approvalMode = toSignal(this.form.controls.approvalMode.valueChanges, { initialValue: this.form.controls.approvalMode.value });
-  readonly assigneeStrategy = toSignal(this.form.controls.assigneeStrategy.valueChanges, {
-    initialValue: this.form.controls.assigneeStrategy.value,
   });
 
   readonly isProtected = computed(() => !!this.templateSig()?.isProtected);
@@ -663,7 +578,9 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
       key: f.key,
       title: this.translate.instant(f.labelKey) as string,
       description: this.optional(hintKey(f.labelKey)),
-      aside: this.translate.instant(f.cardinality === 'exactlyOne' ? 'workflow.editor.exactlyOne' : 'workflow.editor.anyNumber') as string,
+      // Only a meaning that must sit on exactly one stage says so; "any number"
+      // is the ordinary case and carries no label (Ahmad, 2 Nov).
+      aside: f.cardinality === 'exactlyOne' ? (this.translate.instant('workflow.editor.exactlyOne') as string) : '',
       checked: on.has(f.key),
       changed: on.has(f.key) !== base.has(f.key),
       error: refusal?.flagKey === f.key ? refusal.body : '',
@@ -679,8 +596,9 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     const fields = Object.keys(FIELD_LABELS)
       .filter((f) => normal(now[f]) !== normal(base[f]))
       .map((f) => this.translate.instant(FIELD_LABELS[f]!) as string);
+    const who = this.editable('who') && this.whoDraft.hasChanges() ? [this.translate.instant('workflow.who.title') as string] : [];
     const rows = [...this.actionRows(), ...this.meaningRows()].filter((r) => r.changed).map((r) => r.title);
-    return [...fields, ...rows];
+    return [...fields, ...who, ...rows];
   });
   readonly changeCount = computed(() => this.changedNames().length);
   readonly hasChanges = computed(() => this.changeCount() > 0);
@@ -692,20 +610,14 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
       this.formTick.update((n) => n + 1);
       this.savedNotice.set(false);
     });
-    // ACC-54 — a shown warning clears as soon as it no longer applies.
-    this.form.controls.assigneePositionId.valueChanges.subscribe(() => this.showNoHolderWarning.set(false));
-    this.form.controls.assigneeOrgUnitId.valueChanges.subscribe(() => this.showNoHolderWarning.set(false));
-    this.form.controls.assigneeStrategy.valueChanges.subscribe(() => this.showNoHolderWarning.set(false));
     // ACC-208 — a refusal stands only until the field it is about changes.
     this.form.controls.slaWorkingHours.valueChanges.subscribe(() => this.slaRefusal.set(null));
     this.form.controls.isFinal.valueChanges.subscribe(() => this.finalRefusal.set(null));
   }
 
   ngOnInit(): void {
-    this.roleService.listAllRoles().subscribe({ next: (roles) => this.roles.set(roles) });
-    this.lookupService.getValues('committee_member_role').subscribe({ next: (values) => this.committeeRoles.set(values) });
-    this.orgPositionService.listPositions().subscribe({ next: (positions) => this.positions.set(positions) });
-    this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
+    // ACC-271 PR 5a — the who section's lists, together, once for the page.
+    if (this.editable('who')) this.whoOptions.ensureLoaded();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -739,15 +651,9 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
       slaWorkingHours: stage?.slaWorkingHours ?? null,
       isInitial: stage?.isInitial ?? false,
       isFinal: stage?.isFinal ?? false,
-      approvalMode: stage?.approvalMode ?? 'SINGLE',
-      parallelThreshold: stage?.parallelThreshold ?? null,
-      assigneeStrategy: stage?.assigneeStrategy ?? 'ROLE',
-      assigneeRoleId: stage?.assigneeRoleId ?? null,
-      assigneeCommitteeRoleValueId: stage?.assigneeCommitteeRoleValueId ?? null,
-      assigneePositionId: stage?.assigneePositionId ?? null,
-      assigneeOrgUnitId: stage?.assigneeOrgUnitId ?? null,
     });
     this.baseForm.set(this.form.getRawValue() as Record<string, unknown>);
+    this.whoDraft.load(stage, this.templateSig());
     const actions = new Set(stage?.actions ?? []);
     const flags = new Set(stage?.flags ?? []);
     this.actions.set(actions);
@@ -756,7 +662,6 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     this.baseFlags.set(flags);
     this.slaRefusal.set(null);
     this.finalRefusal.set(null);
-    this.showNoHolderWarning.set(false);
   }
 
   toggleAction(key: string, checked: boolean): void {
@@ -772,31 +677,6 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
 
   fieldLabel(field: string): string {
     return FIELD_LABELS[field] ?? field;
-  }
-
-  optionText(kind: WorkflowEnumKind, value: string | null | undefined): string {
-    return value ? (this.translate.instant(workflowLabelKey(kind, value)) as string) : '—';
-  }
-
-  roleName(): string {
-    const id = this.form.controls.assigneeRoleId.value;
-    return this.roleOptions().find((r) => r.id === id)?.label ?? '—';
-  }
-
-  committeeRoleName(): string {
-    const id = this.form.controls.assigneeCommitteeRoleValueId.value;
-    return this.committeeRoleOptions().find((r) => r.id === id)?.label ?? '—';
-  }
-
-  positionName(): string {
-    const id = this.form.controls.assigneePositionId.value;
-    return this.positionOptions().find((p) => p.id === id)?.label ?? '—';
-  }
-
-  orgUnitName(): string {
-    const id = this.form.controls.assigneeOrgUnitId.value;
-    const unit = this.orgUnits().find((u) => u.id === id);
-    return unit ? this.languageService.bilingual(unit.nameEn, unit.nameAr ?? null) : '—';
   }
 
   /** Escape cancels, but only when no overlay above the panel is open (a select, a menu, a confirm). */
@@ -822,31 +702,20 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     return text === key ? '' : text;
   }
 
-  // ACC-54 — the config-time holder check, against existing API surface. A failed
-  // lookup yields NO warning: "nobody holds this" when the truth is "I wasn't
-  // allowed to look" would be worse than staying silent.
-  private noHolderWarning$(raw: {
-    assigneeStrategy: string | null;
-    assigneePositionId: string | null;
-    assigneeOrgUnitId: string | null;
-  }): Observable<boolean> {
-    if (raw.assigneeStrategy !== 'POSITION_FIXED' || !raw.assigneePositionId || !raw.assigneeOrgUnitId) return of(false);
-    const positionId = raw.assigneePositionId;
-    return this.userService.listAllUsers({ orgUnitId: raw.assigneeOrgUnitId, status: 'ACTIVE' }).pipe(
-      map((users) => !users.some((u) => u.positionId === positionId)),
-      catchError(() => of(false)),
-    );
-  }
-
   onSubmit(): void {
     this.submitted.set(true);
-    if (this.form.invalid) return;
+    // Both checked, so every missing value shows at once (Save is never disabled).
+    const whoComplete = !this.editable('who') || this.whoDraft.validate();
+    if (this.form.invalid || !whoComplete) return;
     this.saving.set(true);
     this.refusal.set(null);
     this.savedNotice.set(false);
 
     const raw = this.form.getRawValue();
     const stage = this.stage;
+    // ACC-271 PR 5a — `who`, never the old assignee or approval fields: sent
+    // when adding, and when the stage editor changed it.
+    const sendWho = this.editable('who') && (!stage || this.whoDraft.hasChanges());
     const shared = {
       nameEn: raw.nameEn!,
       nameAr: raw.nameAr!,
@@ -854,18 +723,7 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
       ...(raw.slaWorkingHours != null ? { slaWorkingHours: raw.slaWorkingHours } : {}),
       isInitial: raw.isInitial!,
       isFinal: raw.isFinal!,
-      approvalMode: raw.approvalMode!,
-      ...(raw.approvalMode === 'PARALLEL' && raw.parallelThreshold ? { parallelThreshold: raw.parallelThreshold } : {}),
-      assigneeStrategy: raw.assigneeStrategy!,
-      ...(raw.assigneeRoleId ? { assigneeRoleId: raw.assigneeRoleId } : {}),
-      // On update an explicit null clears a previously set value; on create it is omitted.
-      ...(raw.assigneeCommitteeRoleValueId
-        ? { assigneeCommitteeRoleValueId: raw.assigneeCommitteeRoleValueId }
-        : stage?.assigneeCommitteeRoleValueId
-          ? { assigneeCommitteeRoleValueId: null }
-          : {}),
-      ...(raw.assigneePositionId ? { assigneePositionId: raw.assigneePositionId } : stage?.assigneePositionId ? { assigneePositionId: null } : {}),
-      ...(raw.assigneeOrgUnitId ? { assigneeOrgUnitId: raw.assigneeOrgUnitId } : stage?.assigneeOrgUnitId ? { assigneeOrgUnitId: null } : {}),
+      ...(sendWho ? { who: this.whoDraft.write() } : {}),
     };
     // ACC-255 — the two sections are sent only when the stage editor changed
     // them, in registry order, and never where the workflow keeps them fixed.
@@ -884,16 +742,16 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
       ? this.workflowTemplateService.updateStage(stage.id, { ...shared, ...rules } satisfies UpdateWorkflowStageDto)
       : this.workflowTemplateService.addStage(this.template?.id ?? '', { ...shared, order: this.nextOrder } satisfies CreateWorkflowStageDto);
 
-    forkJoin({ saved: request$, hadNoHolderWarning: this.noHolderWarning$(raw) }).subscribe({
-      next: ({ saved, hadNoHolderWarning }) => {
+    request$.subscribe({
+      next: (saved) => {
         this.saving.set(false);
         this.submitted.set(false);
         // What was just saved is the new baseline: the changed tint clears.
         this.baseForm.set(this.form.getRawValue() as Record<string, unknown>);
         this.baseActions.set(this.actions());
         this.baseFlags.set(this.flags());
+        this.whoDraft.markSaved();
         this.savedNotice.set(true);
-        this.showNoHolderWarning.set(hadNoHolderWarning);
         this.saved.emit(saved);
       },
       error: (err: unknown) => {
@@ -906,6 +764,9 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
 
   /** The refusals with a field to stand under (ACC-208): worded from the code and numbers. True when shown. */
   private showFieldRefusal(err: unknown): boolean {
+    // ACC-271 PR 5a — a refused `who` lands in its slot: the section, the mode, or a row's field.
+    const who = whoRefusal(err);
+    if (who && this.whoDraft.applyRefusal(who)) return true;
     const deadline = deadlineBeforeTasks(err);
     if (deadline) {
       this.slaRefusal.set(

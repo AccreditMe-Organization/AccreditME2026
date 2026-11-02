@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, finalize, shareReplay } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import type { SimpleListPage, SimpleListQuery } from '../../../shared/components/simple-list/simple-list.component';
 
 export interface WorkflowTemplateDto {
   id: string;
@@ -30,6 +31,81 @@ export interface WorkflowTemplateDto {
   // may carry, in registry order. Served, never copied here.
   recordActions?: WorkflowRecordActionDto[];
   stageFlags?: WorkflowStageFlagDto[];
+  // ACC-271 — detail reads only, from the backend's stage-who.ts: the kinds a
+  // stage of this record type may be worked by (PR 3), and the rules a stage's
+  // who must meet (PR 5-be). Served, never copied here.
+  assigneeKinds?: StageAssigneeKind[];
+  whoRules?: WhoRulesDto;
+}
+
+// ── ACC-271 — who works a stage ─────────────────────────────────────────────
+
+export type StageAssigneeKind = 'SPECIFIC_USER' | 'POSITION_IN_UNIT' | 'ORG_UNIT_HEAD' | 'CREATOR' | 'COMMITTEE';
+export type StageWhoMode = 'ANY_ONE' | 'ALL' | 'COMMITTEE_VOTE';
+export type WhoEntryField = 'userId' | 'positionId' | 'orgUnitId' | 'committeeId' | 'committeeRoleValueId';
+
+/** The server's whoRulesFor(): what each kind uses and needs, the modes, when the mode choice shows. */
+export interface WhoRulesDto {
+  kinds: Partial<Record<StageAssigneeKind, { uses: WhoEntryField[]; requires: WhoEntryField[] }>>;
+  modes: { key: StageWhoMode; onlyWithSingle?: StageAssigneeKind }[];
+  modeChoiceShownWhen: { minEntries: number; orSingleKind: StageAssigneeKind };
+  defaultMode: StageWhoMode;
+}
+
+/** One stored entry as the template read returns it, with its names. */
+export interface StageWhoEntryDto {
+  id: string;
+  order: number;
+  kind: StageAssigneeKind;
+  userId: string | null;
+  user: { id: string; name: string } | null;
+  positionId: string | null;
+  position: NamedRef | null;
+  /** Null on an Org unit head entry: the record's unit. */
+  orgUnitId: string | null;
+  orgUnit: NamedRef | null;
+  /** Null on a Committee entry: the record's committee. */
+  committeeId: string | null;
+  committee: NamedRef | null;
+  committeeRoleValueId: string | null;
+  committeeRole: { id: string; labelEn: string; labelAr: string | null } | null;
+  isStartingAssignment: boolean;
+  /** On a Fixed position entry: how many hold the position in the unit (null on other kinds). */
+  holderCount: number | null;
+}
+
+export interface StageWhoDto {
+  mode: StageWhoMode;
+  entries: StageWhoEntryDto[];
+}
+
+/** An entry as a stage save sends it: the kind, and only the fields it uses. */
+export interface StageWhoEntryWriteDto {
+  kind: StageAssigneeKind;
+  userId?: string | null;
+  positionId?: string | null;
+  orgUnitId?: string | null;
+  committeeId?: string | null;
+  committeeRoleValueId?: string | null;
+}
+
+export interface StageWhoWriteDto {
+  mode: StageWhoMode;
+  entries: StageWhoEntryWriteDto[];
+}
+
+/** A row of the stage editor's person picker: ACTIVE and INVITED people. */
+export interface WhoPersonOptionDto {
+  id: string;
+  name: string;
+  status: 'ACTIVE' | 'INVITED';
+}
+
+/** A row of the stage editor's committee picker: active committees. */
+export interface WhoCommitteeOptionDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
 }
 
 export interface WorkflowRecordActionDto {
@@ -88,6 +164,10 @@ export interface WorkflowStageDto {
   // what it means (flag keys).
   actions?: string[];
   flags?: string[];
+  // ACC-271 PR 3 — who works the stage (null on a stage not yet converted) and
+  // the server's read-back sentence, in both languages.
+  who?: StageWhoDto | null;
+  whoSentence?: { en: string; ar: string } | null;
 }
 
 export interface WorkflowTransitionDto {
@@ -231,10 +311,12 @@ export interface CreateWorkflowStageDto {
   slaWorkingHours?: number;
   isInitial?: boolean;
   isFinal?: boolean;
-  approvalMode: string;
+  // ACC-271 PR 5a — optional: the stage screens send `who` instead, and never
+  // an old people field beside it (the server refuses that, WHO_MOVED_TO_STAGE).
+  approvalMode?: string;
   parallelThreshold?: string;
   committeeId?: string;
-  assigneeStrategy: string;
+  assigneeStrategy?: string;
   assigneeUserId?: string;
   assigneeRoleId?: string;
   // string | null (not just string | undefined) — null is a genuine,
@@ -252,6 +334,9 @@ export interface CreateWorkflowStageDto {
   // as registry keys. Sent only when the stage editor changed them.
   actions?: string[];
   flags?: string[];
+  // ACC-271 — who works the stage. Sent when the stage editor changed it, and
+  // always when adding a stage.
+  who?: StageWhoWriteDto;
 }
 
 export type UpdateWorkflowStageDto = Partial<CreateWorkflowStageDto>;
@@ -371,6 +456,25 @@ export class WorkflowTemplateService {
     return this.http.delete<void>(`${this.base}/stages/${stageId}`);
   }
 
+  // ── Who works a stage (ACC-271) ───────────────────────────────────────────
+
+  /** The person picker: ACTIVE and INVITED people, searched, sorted and paged on the server. */
+  getWhoPeople(query: SimpleListQuery): Observable<SimpleListPage<WhoPersonOptionDto>> {
+    return this.http.get<SimpleListPage<WhoPersonOptionDto>>(`${this.base}/who-options/people`, { params: whoParams(query) });
+  }
+
+  /** The committee picker: active committees, sorted by the name the reader sees. */
+  getWhoCommittees(query: SimpleListQuery, lang: 'en' | 'ar'): Observable<SimpleListPage<WhoCommitteeOptionDto>> {
+    return this.http.get<SimpleListPage<WhoCommitteeOptionDto>>(`${this.base}/who-options/committees`, {
+      params: { ...whoParams(query), lang },
+    });
+  }
+
+  /** Setup health's "Keep this assignment": the stage's starting entry stays and stops being flagged. */
+  keepStartingAssignment(stageId: string): Observable<{ kept: boolean }> {
+    return this.http.post<{ kept: boolean }>(`${this.base}/stages/${stageId}/keep-starting-assignment`, {});
+  }
+
   // ── Transitions ──────────────────────────────────────────────────────────────
 
   // ACC-55 — both return { transition, permissionWarning }. The permission
@@ -438,4 +542,15 @@ export class WorkflowTemplateService {
   reorderStageTaskDefinitions(stageId: string, ids: string[]): Observable<StageTaskDefinitionListItemDto[]> {
     return this.http.post<StageTaskDefinitionListItemDto[]>(`${this.base}/stages/${stageId}/task-definitions/order`, { ids });
   }
+}
+
+/** A picker query as the who-options routes read it; the sort is always the name. */
+function whoParams(query: SimpleListQuery): Record<string, string> {
+  return {
+    ...(query.q?.trim() ? { q: query.q.trim() } : {}),
+    sort: 'name',
+    dir: query.dir,
+    take: String(query.take),
+    skip: String(query.skip),
+  };
 }

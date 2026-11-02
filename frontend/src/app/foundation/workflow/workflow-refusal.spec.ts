@@ -8,6 +8,7 @@ import {
   openStageTasks,
   plainWorkflowRefusalKey,
   taskSlaStageConflicts,
+  whoRefusal,
 } from './workflow-refusal';
 
 // ACC-208 — the screens read the engine's refusals by CODE and details, never
@@ -189,5 +190,41 @@ describe('workflow refusals (ACC-255 PR 3)', () => {
       expect(typeof lookup(en, `workflow.error.${key}`)).withContext(`en ${key}`).toBe('string');
       expect(typeof lookup(ar, `workflow.error.${key}`)).withContext(`ar ${key}`).toBe('string');
     }
+  });
+});
+
+// ACC-271 PR 5a — a refused `who`, placed in its slot from its code and details.
+describe('whoRefusal (ACC-271 PR 5a)', () => {
+  it('places each refusal: the section, the mode, or a row by index and field', () => {
+    expect(whoRefusal(refusal(400, { code: 'WHO_ENTRIES_REQUIRED' }))?.where).toEqual({ slot: 'section' });
+    expect(whoRefusal(refusal(400, { code: 'WHO_MODE_UNKNOWN', mode: 'X' }))?.where).toEqual({ slot: 'mode' });
+    expect(whoRefusal(refusal(400, { code: 'COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE' }))?.where).toEqual({ slot: 'mode' });
+    expect(whoRefusal(refusal(400, { code: 'WHO_ENTRY_INCOMPLETE', index: 2, kind: 'POSITION_IN_UNIT', field: 'positionId' }))?.where).toEqual({
+      slot: 'entry',
+      index: 2,
+      field: 'positionId',
+    });
+    expect(whoRefusal(refusal(404, { code: 'WHO_REFERENCE_NOT_FOUND', index: 0, field: 'committeeId' }))?.where).toEqual({
+      slot: 'entry',
+      index: 0,
+      field: 'committeeId',
+    });
+    expect(whoRefusal(refusal(400, { code: 'WHO_USER_NOT_ACTIVE', index: 1 }))?.where).toEqual({ slot: 'entry', index: 1, field: 'userId' });
+    for (const code of ['WHO_ENTRY_DUPLICATE', 'WHO_KIND_NOT_ALLOWED', 'WHO_ENTRY_FIELD_NOT_USED', 'WHO_RECORD_ROUTE_NOT_AVAILABLE']) {
+      expect(whoRefusal(refusal(400, { code, index: 3, kind: 'COMMITTEE' }))?.where).withContext(code).toEqual({ slot: 'entry', index: 3, field: null });
+    }
+    expect(whoRefusal(refusal(400, { code: 'WHO_RECORD_ROUTE_NOT_AVAILABLE', index: 0, kind: 'COMMITTEE' }))?.kind).toBe('COMMITTEE');
+  });
+
+  it('is null for any other refusal, a row refusal without a usable index, or a field it does not know', () => {
+    expect(whoRefusal(refusal(409, { code: 'STAGE_FLAG_EXACTLY_ONE' }))).toBeNull();
+    expect(whoRefusal(refusal(400, { code: 'WHO_ENTRY_DUPLICATE' }))).toBeNull();
+    expect(whoRefusal(refusal(400, { code: 'WHO_ENTRY_DUPLICATE', index: -1 }))).toBeNull();
+    expect(whoRefusal(refusal(400, { code: 'WHO_ENTRY_INCOMPLETE', index: 0, field: 'somethingElse' }))?.where).toEqual({
+      slot: 'entry',
+      index: 0,
+      field: null,
+    });
+    expect(whoRefusal(new HttpErrorResponse({ status: 0 }))).toBeNull();
   });
 });

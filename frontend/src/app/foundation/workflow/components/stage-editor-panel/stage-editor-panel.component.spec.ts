@@ -13,6 +13,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 import { WorkflowStageDto, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { StageEditorPanelComponent } from './stage-editor-panel.component';
+import { ALL_KINDS, WHO_OPTIONS, WHO_RULES, fakeStageWhoOptions, storedEntry } from '../stage-who/stage-who-options.testing';
 
 // ACC-255 PR 4b — the stage editor as a page panel (plan §17; Workflow Setup,
 // sections 2 and 3), and ACC-208's refusals under their own fields, moved with
@@ -44,6 +45,12 @@ const STAGE: WorkflowStageDto = {
   escalationConfig: null,
   actions: ['add_member', 'remove_member', 'change_member_role'],
   flags: [],
+  // ACC-271 — a converted stage: who works it, and the server's sentence.
+  who: {
+    mode: 'ANY_ONE',
+    entries: [storedEntry({ kind: 'ORG_UNIT_HEAD', orgUnitId: 'unit-q', orgUnit: { id: 'unit-q', nameEn: 'Quality Department', nameAr: 'إدارة الجودة' } })],
+  },
+  whoSentence: { en: 'The head of Quality Department.', ar: 'من يرأس إدارة الجودة.' },
 };
 
 const RECORD_ACTIONS = [
@@ -74,6 +81,9 @@ const COMMITTEE: WorkflowTemplateDto = {
   stages: [STAGE, OTHER],
   recordActions: RECORD_ACTIONS,
   stageFlags: COMMITTEE_FLAGS,
+  assigneeKinds: ALL_KINDS,
+  whoRules: WHO_RULES,
+  recordRoutes: { unit: true, committee: true },
 };
 
 const REQUEST_STAGE: WorkflowStageDto = { ...STAGE, id: 'cr-approved', nameEn: 'Approved', nameAr: 'معتمد', actions: [], flags: ['APPLIES_APPROVED_CHANGE'] };
@@ -109,6 +119,7 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
         provideTranslateService({ lang: 'en' }),
         provideFormatTesting(),
         { provide: AmConfirmService, useValue: { ask: confirm } },
+        fakeStageWhoOptions(WHO_OPTIONS),
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -119,8 +130,6 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
     fixture.componentRef.setInput('template', opts.template ?? COMMITTEE);
     fixture.componentRef.setInput('stage', opts.stage === undefined ? STAGE : opts.stage);
     fixture.detectChanges();
-    // The pickers' lists; the roles list is the paginated envelope.
-    http.match(() => true).forEach((r) => r.flush(r.request.url.endsWith('/roles') ? { data: [], total: 0, page: 1, pageSize: 200 } : []));
     fixture.detectChanges();
     // ngModel writes the boxes' values after a turn.
     await fixture.whenStable();
@@ -174,14 +183,35 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
       "Committees here can't be a parent or be reported to.",
       'Counted as active in lists. Change requests can be submitted and decided here.',
     ]);
-    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual(['Any number', 'Any number']);
+    // A meaning any number of stages may carry has no label on the right (Ahmad, 2 Nov).
+    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual([]);
+  });
+
+  it('a meaning that must sit on exactly one stage says so, in both languages', async () => {
+    const template: WorkflowTemplateDto = {
+      ...COMMITTEE,
+      stageFlags: [...COMMITTEE_FLAGS, { key: 'APPLIES_APPROVED_CHANGE', labelKey: 'workflow.stageFlag.APPLIES_APPROVED_CHANGE', cardinality: 'exactlyOne' }],
+    };
+    await setup({ template });
+    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual(['Exactly one stage']);
+    expect(text('[data-check-row="APPLIES_APPROVED_CHANGE"] [data-check-aside]')).toBe('Exactly one stage');
+    expect(el().querySelector('[data-check-row="IN_FORCE"] [data-check-aside]')).toBeNull();
+  });
+
+  it('says "Exactly one stage" in Arabic', async () => {
+    const template: WorkflowTemplateDto = {
+      ...COMMITTEE,
+      stageFlags: [{ key: 'APPLIES_APPROVED_CHANGE', labelKey: 'workflow.stageFlag.APPLIES_APPROVED_CHANGE', cardinality: 'exactlyOne' }],
+    };
+    await setup({ template, language: 'ar' });
+    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual(['مرحلة واحدة بالضبط']);
   });
 
   it('reads in Arabic, with the Arabic permission sentence', async () => {
     await setup({ language: 'ar' });
     expect(rowTitles('actions')[0]).toBe('تعديل التفاصيل');
     expect(texts('[data-section="actions"] [data-check-aside]')[0]).toBe('تتطلب أيضًا: تعديل تفاصيل اللجنة وطلب تغييرات');
-    expect(texts('[data-section="meanings"] [data-check-aside]')[0]).toBe('أي عدد');
+    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual([]);
     expect(text('[data-panel-heading]')).toBe('مراجعة الشروط');
   });
 
@@ -259,14 +289,22 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
   // ── Adding a stage (Ahmad's Q1) ────────────────────────────────────────────
 
   it('while adding, shows no action or meaning boxes, only the line, and sends neither', async () => {
-    await setup({ stage: null });
-    expect(el().querySelector('[data-section]')).toBeNull();
+    const panel = await setup({ stage: null });
+    expect(el().querySelector('[data-section="actions"]')).toBeNull();
+    expect(el().querySelector('[data-section="meanings"]')).toBeNull();
     expect(text('[data-adding-note]')).toBe("You can set what this stage allows once it's added.");
-    fixture.componentInstance.form.controls.nameEn.setValue('Board review');
+    panel.form.controls.nameEn.setValue('Board review');
+    // ACC-271 PR 5a — a new stage's first entry is a Fixed position (ACC-136).
+    const row = panel.whoDraft.rows()[0]!;
+    expect(row.group.controls.kind.value).toBe('POSITION_IN_UNIT');
+    row.group.controls.positionId.setValue('pos-qm');
+    row.group.controls.orgUnitId.setValue('unit-q');
     const req = submit();
     expect(req.request.method).toBe('POST');
     expect('actions' in req.request.body).toBeFalse();
     expect('flags' in req.request.body).toBeFalse();
+    expect(req.request.body.who).toEqual({ mode: 'ANY_ONE', entries: [{ kind: 'POSITION_IN_UNIT', positionId: 'pos-qm', orgUnitId: 'unit-q' }] });
+    for (const old of ['approvalMode', 'assigneeStrategy', 'assigneeRoleId', 'parallelThreshold']) expect(old in req.request.body).withContext(old).toBeFalse();
     req.flush({ ...STAGE, id: 'stage-new' });
   });
 
@@ -290,8 +328,12 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
     for (const id of ['sep-nameEn', 'sep-nameAr', 'sep-description', 'sep-sla']) {
       expect(el().querySelector(`#${id}`)).withContext(id).not.toBeNull();
     }
-    expect(el().querySelector('[data-card="approval"] app-overlay-select')).toBeNull();
-    expect(el().querySelector('[data-card="assignee"] app-overlay-select')).toBeNull();
+    // ACC-271 PR 5a — who works it, read-only: no Kind, no Add another, no Remove.
+    expect(el().querySelector('[data-section="who"] [data-who-kind]')).toBeNull();
+    expect(el().querySelector('[data-who-add]')).toBeNull();
+    expect(el().querySelector('[data-who-remove]')).toBeNull();
+    expect(text('[data-section="who"] [data-who-row="0"]')).toContain('Org unit head');
+    expect(text('[data-section="who"] [data-who-row="0"]')).toContain('Quality Department');
     expect(el().querySelector('[data-readonly-field="isInitial"]')).not.toBeNull();
     expect(el().querySelector('[data-readonly-field="isFinal"]')).not.toBeNull();
     expect(el().querySelector('#sep-isFinal')).toBeNull();
@@ -299,6 +341,7 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
     fixture.componentInstance.flags.set(new Set());
     const req = submit();
     expect('flags' in req.request.body).toBeFalse();
+    expect('who' in req.request.body).toBeFalse();
     req.flush(REQUEST_STAGE);
   });
 
