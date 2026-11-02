@@ -64,8 +64,8 @@ export interface NavItem {
   moduleKey?: string;
   // ACC-228 — paths BELOW this item's route that are this item's own pages,
   // where an exact match is otherwise needed (a sibling item's route starts
-  // with this one's). /tasks/:id is My tasks' task page; /tasks/unassigned is
-  // not, so the pattern names the page, never a prefix.
+  // with this one's). The pattern names the page, never a prefix. (Tasks used
+  // it until ACC-120 slice 3 left it the only item under /tasks.)
   alsoActiveFor?: RegExp;
   // ACC-120 slice 11, PR F — the item is shown only to a viewer who does NOT
   // hold this permission. It exists for one pair: the read-only Organisation
@@ -110,30 +110,14 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
     labelKey: 'nav.groups.work',
     items: [
       { key: 'home', labelKey: 'nav.home', icon: 'pi pi-home', route: '/home' },
-      // NO requiredPermission, matching the endpoint behind it. /tasks renders
-      // MyTasksComponent, which reads GET /tasks/my-tasks — ungated in ACC-70
-      // because it can only return work assigned to the caller.
-      {
-        key: 'myTasks',
-        labelKey: 'nav.myTasks',
-        icon: 'pi pi-check-square',
-        route: '/tasks',
-        // A task's own page (/tasks/:id) — not /tasks/all or /tasks/unassigned.
-        alsoActiveFor: /^\/tasks\/(?!all$|unassigned$)[^/]+$/,
-      },
-      // ACC-229 — the organisation's tasks: the All tasks list without a
-      // record, every task in the record types the viewer may see. Gated like
-      // its endpoint, so the item, the route guard and the API agree. ACC-244 —
-      // that is View all tasks on a record type now; committees are the only
-      // type with task keys, so it is committees:view_all_tasks. Lane A's
-      // slice 3 replaces this item with a saved view read from GET /tasks/views.
-      {
-        key: 'allTasks',
-        labelKey: 'task.allTasks',
-        icon: 'pi pi-list',
-        route: '/tasks/all',
-        requiredPermission: 'committees:view_all_tasks',
-      },
+      // NO requiredPermission. /tasks is the one task list (ACC-120 slice 3):
+      // My tasks reads GET /tasks/my-tasks, ungated in ACC-70 because it can
+      // only return the caller's own work, and which other views a viewer has
+      // is GET /tasks/views' answer, shown on the page. ONE rail item for every
+      // view: All tasks and Unassigned were rail items until they became saved
+      // views of this list, and Tasks stays lit on all of them, and on a task's
+      // own page (/tasks/:id), by prefix — no other item starts with /tasks now.
+      { key: 'tasks', labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks' },
     ],
   },
   {
@@ -277,18 +261,6 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-clock',
         route: '/admin-settings/task-sla',
         requiredPermission: 'tenant:manage_config',
-      },
-      // Not in the design reference. A triage view for Manage tasks (ACC-244:
-      // committees:manage_tasks, the only type with task keys): the reference's
-      // nearest equivalent, "Awaiting my action", is unbuilt. Kept here rather
-      // than dropped, because removing a working screen from the rail would
-      // orphan it the way Platform Admin's screens once were.
-      {
-        key: 'unassignedTasks',
-        labelKey: 'nav.unassignedTasks',
-        icon: 'pi pi-exclamation-triangle',
-        route: '/tasks/unassigned',
-        requiredPermission: 'committees:manage_tasks',
       },
       // tenant:view, not manage_config — the page reads GET /tenant. Its save
       // is PATCH /tenant, which needs tenant:update, so a custom role holding
@@ -455,9 +427,8 @@ export const USER_PERMISSIONS_LOOKUP: readonly string[] = [ADMIN_ACCESS, 'roles:
 // route would be the one gated screen the guard silently allowed through.
 //
 // /tasks/all was the one entry until ACC-229, when it became a rail item ("All
-// tasks", now committees:view_all_tasks). Its route still carries its own
-// canActivate (tasks.routes.ts), because /tasks itself is ungated and a child
-// without one never runs the guard.
+// tasks"). Since ACC-120 slice 3 it is a redirect to /tasks?view=all, a saved
+// view whose list is refused by the server for a viewer without it.
 //
 // ACC-272 — roles/user-permissions, a child of Roles with a stricter list than
 // Roles' own; the :userId child walks up to it. Both routes carry their own

@@ -157,14 +157,15 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
     ]);
   });
 
-  // Longest route wins: '/tasks' is a prefix of '/tasks/unassigned', but the
-  // unassigned view belongs to Administration, not to My work.
-  it('resolves /tasks/unassigned to Administration, not to My tasks', async () => {
+  // ACC-120 slice 3 — Unassigned is a saved view of /tasks, so it sits under
+  // My work like every view: the page is Tasks (the H1), and the trail stops at
+  // its group. It was under Administration while it was its own rail item.
+  it('resolves /tasks?view=unassigned to My work, like every view of Tasks', async () => {
     configure({ permissions: [ADMIN_ACCESS, 'committees:manage_tasks'] });
-    const { crumb } = await trailAt('/tasks/unassigned');
+    const { crumb } = await trailAt('/tasks?view=unassigned');
     expect(crumb.items()).toEqual([
       { text: TENANT, url: '/home' },
-      { labelKey: 'nav.groups.admin', url: null },
+      { labelKey: 'nav.groups.work', url: null },
     ]);
   });
 
@@ -184,13 +185,13 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
       ]);
     });
 
-    it('falls back to My tasks when no record is named (the viewer may not open it)', async () => {
+    it('falls back to Tasks when no record is named (the viewer may not open it)', async () => {
       configure({ permissions: [] });
       const { crumb } = await trailAt('/tasks/task-1');
       expect(crumb.items()).toEqual([
         { text: TENANT, url: '/home' },
         { labelKey: 'nav.groups.work', url: null },
-        { labelKey: 'nav.myTasks', url: '/tasks' },
+        { labelKey: 'nav.tasks', url: '/tasks' },
       ]);
     });
 

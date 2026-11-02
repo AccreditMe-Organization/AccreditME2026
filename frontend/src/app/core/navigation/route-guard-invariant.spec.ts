@@ -175,7 +175,9 @@ describe('Route guard invariant — a mapped route is guarded somewhere in its c
       walked.some((r) => r.fullPath === path && r.guardedInChain);
 
     expect(chainGuarded('admin-settings/task-sla')).toBe(true);
-    expect(chainGuarded('tasks/all')).toBe(true);
+    // ACC-120 slice 3 — tasks/all is a redirect to a saved view now (walk()
+    // skips redirects), so the task page, which keeps its own guard, stands in.
+    expect(chainGuarded('tasks/:id')).toBe(true);
     // The one that was never actually broken. Pinned so the correction cannot
     // quietly reverse.
     expect(chainGuarded('roles/:id/permissions')).toBe(true);
