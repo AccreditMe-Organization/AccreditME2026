@@ -699,11 +699,11 @@ permission anywhere else**; change the entry instead.
 **`permissionGuard`** (`core/guards/permission.guard.ts`) is applied to
 10 routes: `organization`, `working-calendar`, `lookups`, `roles`,
 `workflows`, `org-positions`, `committees`, `tasks`, `users`,
-`admin-settings`, plus the `tasks/unassigned` child which declares a
-stricter `tasks:manage`. It rebuilds the configured path from
-`pathFromRoot` and matches longest-prefix-first, so `/committees/:id`
-resolves to its guarded parent and `tasks/unassigned` gets its own
-stricter entry. **An unmapped route is allowed** — absence is not
+`admin-settings`. (The `tasks/unassigned` child and its stricter entry
+went in ACC-120 slice 3: `/tasks/all` and `/tasks/unassigned` are redirects
+to saved views of `/tasks` now, and `tasks/:id` carries the guard — §3.20.)
+It rebuilds the configured path from `pathFromRoot` and matches
+longest-prefix-first, so `/committees/:id` resolves to its guarded parent. **An unmapped route is allowed** — absence is not
 denial, or every future route added without a nav entry would silently
 break. Denial redirects to `LANDING_ROUTE`.
 
@@ -1043,6 +1043,9 @@ Administration screen. When this was written it was a stopgap route with no nav
 item. It became a real list in ACC-229, and a rail item in ACC-230: "All
 Tasks", in My work after My Tasks, gated on `tasks:view` by its nav entry
 (§3.13). `STANDALONE_ROUTE_PERMISSIONS` is now empty.
+**Superseded (ACC-120 slice 3):** `/tasks/all` is a redirect to
+`/tasks?view=all`, and has no rail item of its own; the view exists exactly
+when `GET /tasks/views` names it (§3.20).
 
 **Backfill, and why its ordering differs from every earlier one.**
 `backfill-admin-access-permission.ts` grants `admin:access` to each existing
@@ -4017,7 +4020,7 @@ task surface reads the same helper.
 |---|---|---|
 | `getMyTasks()` | `GET /tasks/my-tasks` | `my-tasks.component.ts`, `loadTasks()` |
 | `getForSource()` | `GET /tasks` | `task-list.component.ts` (routed page) **+ `committee-detail.component.ts` directly** (ACC-76) |
-| `getUnassigned()` | `GET /tasks/unassigned` | `unassigned-tasks.component.ts` (ACC-34) |
+| `getUnassigned()` | `GET /tasks/unassigned` | **Removed (ACC-120 slice 3)** with `unassigned-tasks.component.ts`; the Unassigned view reads `GET /tasks/record-list?view=unassigned` (§3.20). The backend route is left in place |
 | `getById()` | `GET /tasks/:id` | **ZERO frontend callers found** |
 | `create()` | `POST /tasks` | `task-form.component.ts`, `onSubmit()` (rendered from `task-list.component.ts`, confirmed referenced there) |
 | `complete()` | `POST /tasks/:id/complete` | `my-tasks.component.ts` **+ `committee-detail.component.ts`** (ACC-76) |
@@ -4495,8 +4498,10 @@ dialog is reused unchanged.
   several records, top first, ending with the parent (an org unit's parent
   units, §7.10); the section is resolved from the top one. An empty trail
   clears the page's entry.
-- **Rail:** `NavItem.alsoActiveFor` — My tasks lights on `/tasks/:id`, never on
-  `/tasks/all` or `/tasks/unassigned`. **The rail now decides "current" itself
+- **Rail:** `NavItem.alsoActiveFor` — My tasks lit on `/tasks/:id`, never on
+  `/tasks/all` or `/tasks/unassigned`. **Superseded (ACC-120 slice 3):** one
+  "Tasks" item, lit by prefix on every view of `/tasks` and on `/tasks/:id`,
+  with no `alsoActiveFor` (§3.20). **The rail now decides "current" itself
   (`isActive()`):** `RouterLinkActive` removed `aria-current` in a microtask
   after every check unless its own `ariaCurrentWhenActive` was set, so no rail
   item ever kept `aria-current="page"`. Found by this ticket's spec, fixed in
@@ -4713,6 +4718,8 @@ state and an action's failure are separate signals.
 **`/tasks/all` is in the rail** (ACC-230): "All Tasks" / «كل المهام»
 (`task.allTasks`), after My Tasks, shown to `committees:view_all_tasks` holders (ACC-244; was `tasks:view`). Its nav entry
 carries the permission, so the route guard derives from the same line.
+**Superseded (ACC-120 slice 3):** All tasks is a saved view of `/tasks`
+(`?view=all`), not a rail item; §3.20.
 
 ### 3.14 Capped record panels: Members and Sub-committees (ACC-230)
 
@@ -5338,7 +5345,8 @@ real number of files and match the retire backfill, which has to name them.
 **Today's screens moved to the new keys, with no redesign:** All tasks on
 `committees:view_all_tasks`; Unassigned, its Reassign and Setup health's Fix on
 `committees:manage_tasks`; New task on `committees:create_tasks`. Slice 3
-replaces them with views read from `GET /tasks/views`.
+replaces them with views read from `GET /tasks/views`. **Done (ACC-120 slice
+3):** §3.20.
 
 **What changed for people (dry run on the shared database, 20 Oct):** only the
 three VIEWERs — al-manara's Badr, al-nakheel's Fatima and Nasser — each from
@@ -5354,6 +5362,57 @@ visible-task count by the rule before and after the revocation, and refuses
 `--execute` for a customer organisation (ACC-101), a transition gated on a
 retired key, or any count that would change. Dry run, 20 Oct: 51 grants across
 the three organisations, 47 users, 0 changed.
+
+### 3.20 One /tasks list with saved views (ACC-120 slice 3)
+
+`/tasks` is one page, "Tasks" / «المهام», with saved views. Frontend only:
+it renders `GET /tasks/views` and `GET /tasks/record-list` (§3.19), and adds
+no endpoint. The design reference is
+`frontend/design-reference/AccreditMe Unit Tasks View.dc.html`.
+
+- **Which views exist is `GET /tasks/views`, read once per page load, and
+  nothing else** (`TasksShellComponent`). The order is fixed: My tasks, All
+  tasks, Unit tasks, Unassigned. A view shows exactly when it is non-null, so
+  the screen re-derives no permission. **One view draws no switcher**: a
+  viewer with My tasks alone sees the page without a tab row.
+- **The view lives in the URL**: no `?view` is My tasks (the default);
+  `?view=all|unit|unassigned` the others. A link to a view this viewer lacks
+  opens My tasks and says so in one line.
+- **My tasks is `MyTasksComponent`, unchanged** but for `showHeader`: the
+  page's "Tasks" is the one H1. Its `?task=` and `?request=` links work as
+  before.
+- **The other three are `TaskListViewComponent`, organisation-wide**, sending
+  `view`, and `recordType` / `unit` when chosen. The Record type filter
+  (All tasks, Unit tasks) comes from `facets.recordTypes`; the Unit filter
+  (Unit tasks) from `facets.units`, and only when the viewer's unit scope
+  holds more than one top-level unit. Unassigned has neither.
+- **The total is shown once, in the list's own header row.** The page adds
+  none.
+- **A 403 is the denied state**: "You can't open this view." with the
+  server's sentence and no Retry. The toolbar, search, filters, chips, column
+  headers, the phone sort menu and New task are all hidden; the switcher
+  stays. The list tells the page through `deniedChange`.
+- **Empty says why, per view** (`taskList.emptyView.*`); a filtered empty
+  list offers Clear filters; a failed read offers Retry.
+- **New task follows `views.create`**: shown only when it names a record
+  type, and offering only those types (`TaskFormComponent.allowedSourceTypes`).
+- **Unassigned rows offer Reassign through the server's row actions**
+  (`actions.reassign`, §3.13); the screen gates nothing itself.
+- **Old addresses redirect, keeping their query**: `/tasks/all` to
+  `?view=all`, `/tasks/unassigned` to `?view=unassigned`. Setup health's
+  "Task with no actionable owner" Fix opens
+  `/tasks?view=unassigned&reassign=<id>`: the list loads around that task
+  (`around`), and its row opens Reassign when the server offers it there
+  (`openAction`). The parameter is read once and taken out of the address.
+- **The rail has one Tasks item**, lit by prefix on every view and on
+  `/tasks/:id`. `nav-items.spec.ts` pins that no other item sits under
+  `/tasks`, because one there would turn the rail to exact matching and every
+  view would go dark.
+- **Deleted:** `UnassignedTasksComponent`, `TaskListComponent` and
+  `TaskService.getUnassigned()`. The backend's `GET /tasks/unassigned` is
+  left in place, with no frontend caller.
+- **Not built here:** a rebuilt My tasks, a "Created by me" view, and Home's
+  task lines.
 
 ## 4. Notification System
 
@@ -9057,8 +9116,9 @@ Its one use is the read-only Organisation item (7.13), hidden from
 comes from `requiredPermission`.
 
 **Resolution** (`resolveNavLocation`): longest route wins, matched on whole
-segments, among items THIS user can see — so `/tasks/unassigned` resolves to
-Administration, and `/users/:id` for a user without `users:view` resolves to
+segments, among items THIS user can see — so every view of `/tasks`
+resolves to Tasks in My work (it was `/tasks/unassigned` to Administration
+until ACC-120 slice 3), and `/users/:id` for a user without `users:view` resolves to
 nothing rather than to a section they are not in.
 
 #### The guard rule the hub removal exposed
@@ -10985,7 +11045,7 @@ opening creates no bell entry; the rail badge is the signal.
 | -- | -- | -- | -- | -- |
 | `ORG_UNIT_WITHOUT_HEAD` | `OrgUnit.id` | `BLOCKS_WORK` if `isHeadFullyUnresolved` (escalation resolves no one); else `AT_RISK` (vacant but covered) | `OrgUnit.headVacantSince` | `/organization?head=<id>` — that unit's head panel |
 | `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages?stage=<id>` — the stage list with that stage expanded |
-| `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks/unassigned?reassign=<id>` — that task's reassign dialog |
+| `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks?view=unassigned&reassign=<id>` — the Unassigned view, opened around that task, with Reassign open on its row when the server offers it (ACC-120 slice 3; was `/tasks/unassigned?reassign=<id>`) |
 | `STORAGE_ALMOST_FULL` (ACC-177) | the organisation | `AT_RISK` | first detection | **no Fix yet** — the recycle bin screen is lane A's; the row's hint says to purge deleted files or ask AccreditMe for more storage. Section 16.12 |
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
