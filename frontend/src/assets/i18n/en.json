@@ -759,7 +759,6 @@
       "meaningsEmpty": "This record type has no meanings a stage can carry yet.",
       "addingNote": "You can set what this stage allows once it's added.",
       "alsoNeeds": "Also needs: {{permission}}",
-      "anyNumber": "Any number",
       "exactlyOne": "Exactly one stage",
       "allowed": "Allowed",
       "notAllowed": "Not allowed",

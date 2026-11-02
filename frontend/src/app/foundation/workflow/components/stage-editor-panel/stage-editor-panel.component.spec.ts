@@ -183,14 +183,35 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
       "Committees here can't be a parent or be reported to.",
       'Counted as active in lists. Change requests can be submitted and decided here.',
     ]);
-    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual(['Any number', 'Any number']);
+    // A meaning any number of stages may carry has no label on the right (Ahmad, 2 Nov).
+    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual([]);
+  });
+
+  it('a meaning that must sit on exactly one stage says so, in both languages', async () => {
+    const template: WorkflowTemplateDto = {
+      ...COMMITTEE,
+      stageFlags: [...COMMITTEE_FLAGS, { key: 'APPLIES_APPROVED_CHANGE', labelKey: 'workflow.stageFlag.APPLIES_APPROVED_CHANGE', cardinality: 'exactlyOne' }],
+    };
+    await setup({ template });
+    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual(['Exactly one stage']);
+    expect(text('[data-check-row="APPLIES_APPROVED_CHANGE"] [data-check-aside]')).toBe('Exactly one stage');
+    expect(el().querySelector('[data-check-row="IN_FORCE"] [data-check-aside]')).toBeNull();
+  });
+
+  it('says "Exactly one stage" in Arabic', async () => {
+    const template: WorkflowTemplateDto = {
+      ...COMMITTEE,
+      stageFlags: [{ key: 'APPLIES_APPROVED_CHANGE', labelKey: 'workflow.stageFlag.APPLIES_APPROVED_CHANGE', cardinality: 'exactlyOne' }],
+    };
+    await setup({ template, language: 'ar' });
+    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual(['مرحلة واحدة بالضبط']);
   });
 
   it('reads in Arabic, with the Arabic permission sentence', async () => {
     await setup({ language: 'ar' });
     expect(rowTitles('actions')[0]).toBe('تعديل التفاصيل');
     expect(texts('[data-section="actions"] [data-check-aside]')[0]).toBe('تتطلب أيضًا: تعديل تفاصيل اللجنة وطلب تغييرات');
-    expect(texts('[data-section="meanings"] [data-check-aside]')[0]).toBe('أي عدد');
+    expect(texts('[data-section="meanings"] [data-check-aside]')).toEqual([]);
     expect(text('[data-panel-heading]')).toBe('مراجعة الشروط');
   });
 

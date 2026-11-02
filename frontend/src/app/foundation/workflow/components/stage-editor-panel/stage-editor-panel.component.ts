@@ -578,7 +578,9 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
       key: f.key,
       title: this.translate.instant(f.labelKey) as string,
       description: this.optional(hintKey(f.labelKey)),
-      aside: this.translate.instant(f.cardinality === 'exactlyOne' ? 'workflow.editor.exactlyOne' : 'workflow.editor.anyNumber') as string,
+      // Only a meaning that must sit on exactly one stage says so; "any number"
+      // is the ordinary case and carries no label (Ahmad, 2 Nov).
+      aside: f.cardinality === 'exactlyOne' ? (this.translate.instant('workflow.editor.exactlyOne') as string) : '',
       checked: on.has(f.key),
       changed: on.has(f.key) !== base.has(f.key),
       error: refusal?.flagKey === f.key ? refusal.body : '',
