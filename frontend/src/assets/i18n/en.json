@@ -40,7 +40,20 @@
     "actions": "Actions",
     "stepOf": "Step {{step}} of {{steps}}"
   },
+  "tasks": {
+    "title": "Tasks",
+    "views": {
+      "label": "Saved views",
+      "mine": "My tasks",
+      "all": "All tasks",
+      "unit": "Unit tasks",
+      "unassigned": "Unassigned",
+      "unavailable": "That view isn't available to you, so these are your own tasks.",
+      "loadFailed": "Your other task views couldn't be loaded."
+    }
+  },
   "nav": {
+    "tasks": "Tasks",
     "dashboard": "Dashboard",
     "organization": "Organization Structure",
     "workingCalendar": "Working Calendar",
@@ -2356,9 +2369,43 @@
     "moreActionsFor": "Actions for “{{title}}”"
   },
   "taskList": {
+    "recordType": {
+      "COMMITTEE": "Committee",
+      "MEETING": "Meeting",
+      "DOCUMENT": "Document",
+      "AUDIT": "Audit",
+      "CAPA": "CAPA",
+      "INCIDENT": "Incident",
+      "CORRECTIVE_ACTION": "Corrective action",
+      "STANDARD": "Standard",
+      "KPI": "KPI",
+      "GAP": "Gap",
+      "QUALITY_IMPROVEMENT_PLAN": "Quality improvement plan",
+      "OTHER": "Record"
+    },
+    "denied": {
+      "title": "You can't open this view.",
+      "fallback": "Your permissions don't include it."
+    },
+    "emptyView": {
+      "all": {
+        "title": "No tasks to show",
+        "body": "Tasks on the record types you can see appear here."
+      },
+      "unit": {
+        "title": "Nothing in your units",
+        "body": "Tasks on records your units own appear here."
+      },
+      "unassigned": {
+        "title": "Every task has someone on it",
+        "body": "A task nobody holds, and no pool can pick up, appears here."
+      }
+    },
     "searchLabel": "Search tasks",
     "searchPlaceholder": "Search task or assignee…",
     "filter": {
+      "recordType": "Record type",
+      "unit": "Unit",
       "status": "Status",
       "overdueOnly": "Overdue only",
       "assignee": "Assignee or pool",
@@ -2375,6 +2422,8 @@
       "label": "Sort"
     },
     "chip": {
+      "recordType": "Record type: {{value}}",
+      "unit": "Unit: {{value}}",
       "remove": "Remove filter: {{filter}}",
       "clearAll": "Clear all",
       "link": "Opened from a link · {{title}}",
