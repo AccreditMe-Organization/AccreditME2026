@@ -284,7 +284,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
               <label for="sourceType" class="text-sm font-medium">
                 {{ 'task.sourceType' | translate }} <span class="text-red-500">*</span>
               </label>
-              <app-overlay-select formControlName="sourceType" [options]="sourceTypes" />
+              <app-overlay-select formControlName="sourceType" [options]="sourceTypes()" />
             </div>
             <div class="flex flex-col gap-1 flex-1">
               <label for="sourceId" class="text-sm font-medium">
@@ -792,7 +792,15 @@ export class TaskFormComponent implements OnInit {
   readonly step = signal<1 | 2>(1);
   readonly dateView = signal(false);
   readonly saving = signal(false);
-  readonly sourceTypes = SOURCE_TYPES;
+  /**
+   * ACC-120 slice 3 — the record types New task may create on (GET /tasks/views' create.types).
+   * Null offers every type, as before.
+   */
+  readonly allowedSourceTypes = input<readonly string[] | null>(null);
+  readonly sourceTypes = computed(() => {
+    const allowed = this.allowedSourceTypes();
+    return allowed ? SOURCE_TYPES.filter((t) => allowed.includes(t)) : SOURCE_TYPES;
+  });
   readonly priorities = PRIORITIES;
   /** Set by a Create that found the assignment incomplete (a unit, no position). */
   readonly showAssignErrors = signal(false);
@@ -983,6 +991,13 @@ export class TaskFormComponent implements OnInit {
 
   ngOnInit(): void {
     this.dueDates.load();
+
+    // A default the viewer may not create on gives way to the first type they may.
+    const types = this.sourceTypes();
+    if (!this.task() && !this.isSourceLocked() && types.length && !types.includes(this.form.controls.sourceType.value ?? '')) {
+      this.form.controls.sourceType.setValue(types[0]!);
+      this.form.controls.sourceType.markAsPristine();
+    }
 
     const task = this.task();
     if (task) {
