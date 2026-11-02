@@ -171,7 +171,7 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
       .am-ts__view {
         display: inline-flex;
         align-items: center;
-        min-block-size: 36px;
+        min-block-size: var(--am-row-height);
         padding: 0 var(--am-space-12);
         margin-block-end: -1px;
         border-block-end: 2px solid transparent;
