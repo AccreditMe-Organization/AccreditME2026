@@ -235,7 +235,9 @@ describe('Who works a stage, saved and kept, against a real database (ACC-271 PR
       }),
     );
     // Reported since PR 5a, in the same change as its row on the page.
-    expect((await health.getHealth(o.id)).open.map((c) => c.type)).toContain('STAGE_ON_STARTING_ASSIGNMENT');
+    expect((await health.getHealth(o.id)).open.map((c) => c.type)).toContain(
+      'STAGE_ON_STARTING_ASSIGNMENT',
+    );
 
     await expect(templates.keepStartingAssignment(o.stage, o.id, o.admin)).resolves.toEqual({ kept: true });
     await expect(templates.keepStartingAssignment(o.stage, o.id, o.admin)).resolves.toEqual({ kept: false });
@@ -365,24 +367,46 @@ describe('Who works a stage, saved and kept, against a real database (ACC-271 PR
   it("should NOT return records belonging to a different tenant — the person picker offers this organisation's ACTIVE and INVITED people only", async () => {
     const a = await org();
     const b = await org();
-    await prisma.user.create({ data: { organizationId: a.id, email: `${a.slug}-inv@example.test`, name: 'Invited One', status: 'INVITED' } });
-    await prisma.user.create({ data: { organizationId: a.id, email: `${a.slug}-off@example.test`, name: 'Gone One', status: 'INACTIVE' } });
+    await prisma.user.create({
+      data: {
+        organizationId: a.id,
+        email: `${a.slug}-inv@example.test`,
+        name: 'Invited One',
+        status: 'INVITED',
+      },
+    });
+    await prisma.user.create({
+      data: {
+        organizationId: a.id,
+        email: `${a.slug}-off@example.test`,
+        name: 'Gone One',
+        status: 'INACTIVE',
+      },
+    });
     const page = await whoOptions.people(a.id, { take: 50 });
     const names = page.items.map((p) => p.name).sort();
     expect(names).toEqual(['Hessa', 'Huda', 'Invited One']);
     expect(page.total).toBe(3);
     expect(page.items.map((p) => p.id)).not.toContain(b.admin);
     const searched = await whoOptions.people(a.id, { q: 'invited' });
-    expect(searched).toEqual(expect.objectContaining({ total: 3, matching: 1 }));
+    expect(searched).toEqual(
+      expect.objectContaining({ total: 3, matching: 1 }),
+    );
   });
 
   it("should NOT return records belonging to a different tenant — the committee picker offers this organisation's active committees only", async () => {
     const a = await org();
     const b = await org();
-    await prisma.committee.update({ where: { id: b.committee }, data: { nameEn: 'Quality Committee B' } });
+    await prisma.committee.update({
+      where: { id: b.committee },
+      data: { nameEn: 'Quality Committee B' },
+    });
     const page = await whoOptions.committees(a.id, { take: 50, lang: 'en' });
     expect(page.items.map((c) => c.id)).toEqual([a.committee]);
-    await prisma.committee.update({ where: { id: a.committee }, data: { isActive: false } });
+    await prisma.committee.update({
+      where: { id: a.committee },
+      data: { isActive: false },
+    });
     expect((await whoOptions.committees(a.id, {})).items).toEqual([]);
   });
 });

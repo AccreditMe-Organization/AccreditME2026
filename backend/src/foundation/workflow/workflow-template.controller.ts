@@ -39,7 +39,12 @@ import {
   UpdateStageTaskDefinitionDto,
 } from './dto/stage-task-definition.dto';
 import { IStageTaskDefinitionListItem, IStageTaskDefinitionSaved } from './interfaces/stage-task-definition.interface';
-import { StageWhoOptionsService, WhoCommitteeOption, WhoOptionsPage, WhoPersonOption } from './stage-who-options.service';
+import {
+  StageWhoOptionsService,
+  WhoCommitteeOption,
+  WhoOptionsPage,
+  WhoPersonOption,
+} from './stage-who-options.service';
 import { WhoOptionsQueryDto } from './dto/who-options-query.dto';
 
 // Route order is deliberate: static segments (transitions, stages) are
@@ -69,13 +74,19 @@ export class WorkflowTemplateController {
 
   @Get('who-options/people')
   @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
-  getWhoPeople(@Query() query: WhoOptionsQueryDto, @CurrentTenant() tenantId: string): Promise<WhoOptionsPage<WhoPersonOption>> {
+  getWhoPeople(
+    @Query() query: WhoOptionsQueryDto,
+    @CurrentTenant() tenantId: string,
+  ): Promise<WhoOptionsPage<WhoPersonOption>> {
     return this.whoOptions.people(tenantId, query);
   }
 
   @Get('who-options/committees')
   @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
-  getWhoCommittees(@Query() query: WhoOptionsQueryDto, @CurrentTenant() tenantId: string): Promise<WhoOptionsPage<WhoCommitteeOption>> {
+  getWhoCommittees(
+    @Query() query: WhoOptionsQueryDto,
+    @CurrentTenant() tenantId: string,
+  ): Promise<WhoOptionsPage<WhoCommitteeOption>> {
     return this.whoOptions.committees(tenantId, query);
   }
 

@@ -377,14 +377,25 @@ describe('SetupHealthService (ACC-82)', () => {
   // ACC-271 PR 5a — reported now, with its row on the page.
   describe('a stage still on its starting assignment', () => {
     beforeEach(() => {
-      rows = [row({ id: 'starting', type: 'STAGE_ON_STARTING_ASSIGNMENT', severity: 'AT_RISK' })];
+      rows = [
+        row({
+          id: 'starting',
+          type: 'STAGE_ON_STARTING_ASSIGNMENT',
+          severity: 'AT_RISK',
+        }),
+      ];
       runs = [];
     });
 
     it('is reported as an open condition, and counted in the badge', async () => {
       const { open } = await service.getHealth(ORG_A, NOW);
-      expect(open.map((c) => [c.id, c.type])).toEqual([['starting', 'STAGE_ON_STARTING_ASSIGNMENT']]);
-      expect(await service.getSummary(ORG_A)).toEqual({ open: 1, blocksWork: 0 });
+      expect(open.map((c) => [c.id, c.type])).toEqual([
+        ['starting', 'STAGE_ON_STARTING_ASSIGNMENT'],
+      ]);
+      expect(await service.getSummary(ORG_A)).toEqual({
+        open: 1,
+        blocksWork: 0,
+      });
     });
   });
 

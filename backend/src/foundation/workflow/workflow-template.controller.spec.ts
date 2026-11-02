@@ -321,8 +321,16 @@ describe('WorkflowTemplateController', () => {
       expect(whoOptions.committees).toHaveBeenCalledWith(TENANT_ID, query);
     });
 
-    it.each(['getWhoPeople', 'getWhoCommittees'] as const)('%s requires workflows:manage', (method) => {
-      expect(Reflect.getMetadata(PERMISSIONS_KEY, WorkflowTemplateController.prototype[method])).toEqual(['workflows:manage']);
-    });
+    it.each(['getWhoPeople', 'getWhoCommittees'] as const)(
+      '%s requires workflows:manage',
+      (method) => {
+        expect(
+          Reflect.getMetadata(
+            PERMISSIONS_KEY,
+            WorkflowTemplateController.prototype[method],
+          ),
+        ).toEqual(['workflows:manage']);
+      },
+    );
   });
 });

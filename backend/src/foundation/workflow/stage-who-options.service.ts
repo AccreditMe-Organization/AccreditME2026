@@ -42,10 +42,18 @@ const PAGE = 50;
 export class StageWhoOptionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async people(organizationId: string, query: WhoOptionsQueryDto): Promise<WhoOptionsPage<WhoPersonOption>> {
-    const base: Prisma.UserWhereInput = { organizationId, status: { in: [...PICKABLE_STATUSES] } };
+  async people(
+    organizationId: string,
+    query: WhoOptionsQueryDto,
+  ): Promise<WhoOptionsPage<WhoPersonOption>> {
+    const base: Prisma.UserWhereInput = {
+      organizationId,
+      status: { in: [...PICKABLE_STATUSES] },
+    };
     const q = query.q?.trim();
-    const where: Prisma.UserWhereInput = q ? { ...base, name: { contains: q, mode: 'insensitive' } } : base;
+    const where: Prisma.UserWhereInput = q
+      ? { ...base, name: { contains: q, mode: 'insensitive' } }
+      : base;
     const dir = query.dir === 'desc' ? 'desc' : 'asc';
     const [rows, total, matching] = await Promise.all([
       this.prisma.user.findMany({
@@ -59,22 +67,41 @@ export class StageWhoOptionsService {
       q ? this.prisma.user.count({ where }) : null,
     ]);
     return {
-      items: rows.map((r) => ({ id: r.id, name: r.name, status: r.status as WhoPersonOption['status'] })),
+      items: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        status: r.status as WhoPersonOption['status'],
+      })),
       total,
       matching: matching ?? total,
     };
   }
 
-  async committees(organizationId: string, query: WhoOptionsQueryDto): Promise<WhoOptionsPage<WhoCommitteeOption>> {
+  async committees(
+    organizationId: string,
+    query: WhoOptionsQueryDto,
+  ): Promise<WhoOptionsPage<WhoCommitteeOption>> {
     const base: Prisma.CommitteeWhereInput = { organizationId, isActive: true };
     const q = query.q?.trim();
     const where: Prisma.CommitteeWhereInput = q
-      ? { ...base, OR: [{ nameEn: { contains: q, mode: 'insensitive' } }, { nameAr: { contains: q, mode: 'insensitive' } }] }
+      ? {
+          ...base,
+          OR: [
+            { nameEn: { contains: q, mode: 'insensitive' } },
+            { nameAr: { contains: q, mode: 'insensitive' } },
+          ],
+        }
       : base;
     const dir = query.dir === 'desc' ? 'desc' : 'asc';
     // The name the reader sees: Arabic in Arabic (an unnamed one last, ACC-160), then English.
     const orderBy: Prisma.CommitteeOrderByWithRelationInput[] =
-      query.lang === 'ar' ? [{ nameAr: { sort: dir, nulls: 'last' } }, { nameEn: dir }, { id: 'asc' }] : [{ nameEn: dir }, { id: 'asc' }];
+      query.lang === 'ar'
+        ? [
+            { nameAr: { sort: dir, nulls: 'last' } },
+            { nameEn: dir },
+            { id: 'asc' },
+          ]
+        : [{ nameEn: dir }, { id: 'asc' }];
     const [rows, total, matching] = await Promise.all([
       this.prisma.committee.findMany({
         where,
