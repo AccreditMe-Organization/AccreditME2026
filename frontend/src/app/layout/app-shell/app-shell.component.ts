@@ -83,8 +83,15 @@ export const SHELL_PHONE_BELOW_PX = 768;
                bar, so the toggle stays where it was and closes it again. While
                it is open the page behind is inert, and the scrim closes it. -->
           <div class="relative flex-1 min-h-0 flex flex-col">
+            <!-- ACC-271 PR 5a — <main> is the page's only scroll, so it is also
+                 the containing block of anything absolutely positioned in the
+                 page (visually hidden text and inputs, live regions). Without
+                 "relative" here they were positioned against the wrapper above,
+                 escaped main's scroll, and made the whole window scroll as well,
+                 leaving blank space under the rail at the bottom. Pinned by
+                 workflow-stage-list.scroll.spec.ts. -->
             <main
-              class="flex-1 min-h-0 overflow-auto p-4"
+              class="relative flex-1 min-h-0 overflow-auto p-4"
               [attr.inert]="pageInert() ? '' : null"
               (wheel)="onWheel($event)"
             >

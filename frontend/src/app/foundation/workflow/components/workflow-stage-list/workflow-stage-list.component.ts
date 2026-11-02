@@ -57,7 +57,13 @@ const NUMBER_TRACK = '32px';
     StageTaskListComponent,
   ],
   template: `
-    <div class="flex flex-col h-full gap-4">
+    <!-- ACC-271 PR 5a — NOT h-full. This page stacks the strip, the stage
+         editor panel and the stages list, so <main> scrolls the whole stack,
+         as on other admin pages. Held to the window's height, the column
+         squeezed the list to nothing under an open panel and gave its rows a
+         second, hidden vertical scroll; unconstrained, the list grows to its
+         rows (data-list's own rule). -->
+    <div class="flex flex-col gap-4">
 
       <app-page-header
         [title]="templateName()"
