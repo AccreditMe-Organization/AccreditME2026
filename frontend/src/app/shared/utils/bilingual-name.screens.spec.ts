@@ -1,4 +1,4 @@
-import { Type } from '@angular/core';
+import { Type, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, ActivatedRoute, convertToParamMap } from '@angular/router';
 import { ConfirmationService } from 'primeng/api';
@@ -30,6 +30,9 @@ import { CommitteeFormComponent } from '../../foundation/committees/components/c
 import { CommitteeMemberFormComponent } from '../../foundation/committees/components/committee-member-form/committee-member-form.component';
 import { WorkflowStageIndicatorComponent } from '../../foundation/workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import { StageEditorPanelComponent } from '../../foundation/workflow/components/stage-editor-panel/stage-editor-panel.component';
+import { StageWhoEntryComponent } from '../../foundation/workflow/components/stage-who/stage-who-entry.component';
+import { StageWhoOptionsStore } from '../../foundation/workflow/components/stage-who/stage-who-options.store';
+import { createRow } from '../../foundation/workflow/components/stage-who/stage-who.model';
 import { WorkflowTransitionActionsComponent } from '../../foundation/workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { WorkflowStageListComponent } from '../../foundation/workflow/components/workflow-stage-list/workflow-stage-list.component';
 import { WorkflowTransitionEditorComponent } from '../../foundation/workflow/components/workflow-transition-editor/workflow-transition-editor.component';
@@ -75,7 +78,7 @@ function stubService(): unknown {
 const STUBBED: Type<unknown>[] = [
   NavigationAccessService, AuthService, FormatService, CommitteeService, LookupService,
   UserService, OrgUnitService, OrgUnitHeadService, OrgPositionService, RoleService,
-  TaskService, WorkflowService, WorkflowTemplateService,
+  TaskService, WorkflowService, WorkflowTemplateService, StageWhoOptionsStore,
 ];
 
 const confirm = jasmine.createSpy('confirm');
@@ -193,14 +196,22 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
     });
   });
 
-  describe('stage-editor-panel', () => {
+  // ACC-271 PR 5a — the stage editor's committee roles moved into "Who works
+  // this stage" (am-stage-who-entry's role filter), after its "All members".
+  describe('stage-who-entry', () => {
     it('offers committee roles with a label, never a blank option', () => {
-      const c = build(StageEditorPanelComponent);
-      c.committeeRoles.set([
-        as({ id: 'r1', labelEn: 'Chairman', labelAr: 'رئيس' }),
-        as({ id: 'r2', labelEn: 'Observer', labelAr: null }),
-      ]);
-      expect(c.committeeRoleOptions().map((o) => o.label)).toEqual(['رئيس', 'Observer']);
+      TestBed.overrideProvider(StageWhoOptionsStore, {
+        useValue: {
+          units: signal([]),
+          positions: signal([]),
+          roles: signal([
+            as({ id: 'r1', labelEn: 'Chairman', labelAr: 'رئيس' }),
+            as({ id: 'r2', labelEn: 'Observer', labelAr: null }),
+          ]),
+        },
+      });
+      const c = build(StageWhoEntryComponent, { row: createRow(null), index: 0 });
+      expect(c.roleOptions().slice(1).map((o) => o.label)).toEqual(['رئيس', 'Observer']);
     });
   });
 

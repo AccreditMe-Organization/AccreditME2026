@@ -15,6 +15,7 @@ import { NavigationAccessService } from '../../core/services/navigation-access.s
 import { AmConfirmService } from '../../shared/components/confirm/am-confirm.service';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { StageEditorPanelComponent } from './components/stage-editor-panel/stage-editor-panel.component';
+import { fakeStageWhoOptions } from './components/stage-who/stage-who-options.testing';
 import { WorkflowTransitionEditorComponent } from './components/workflow-transition-editor/workflow-transition-editor.component';
 import { WorkflowStageDto, WorkflowTransitionDto } from './services/workflow-template.service';
 import { whoMovedToStageMessage } from './workflow-refusal';
@@ -126,6 +127,7 @@ describe("workflow screens say WHO_MOVED_TO_STAGE in the server's own words (ACC
         provideTranslateService({ lang }),
         provideFormatTesting(),
         ConfirmationService,
+        fakeStageWhoOptions(),
         { provide: AmConfirmService, useValue: { ask: (o: { accept: () => void }) => o.accept() } },
         { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
         {

@@ -3224,6 +3224,7 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
     run. **It is reconciled but NOT reported yet:** it stays out of
     `SETUP_CONDITION_TYPES` until PR 5 adds its row and its Fix (the stages
     page, `?stage=<id>`), so the live page shows no unlabelled rows.
+    Superseded (PR 5a): reported since PR 5a, with its row, Review stage and Keep — see "PR 5a" below.
     `STAGE_WITHOUT_ASSIGNEE` was already pool-driven on converted stages
     (PR 1's flag), and is unchanged.
   - **Nothing on the per-request path** (guards, throttler, interceptors,
@@ -3264,6 +3265,73 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
     verb is followed by the whole name.
   - **A Specific user may be ACTIVE or INVITED** (an invited person joins the
     pool when they accept); INACTIVE and SUSPENDED are `WHO_USER_NOT_ACTIVE`.
+- **PR 5a: who works a stage, on screen** (drawing sections 8 and 11).
+  - **"Who works this stage" replaced the stage editor panel's "Who the work
+    lands on" and "How approval is reached" cards** (`am-stage-who` and
+    `am-stage-who-entry`, `foundation/workflow/components/stage-who/`). The
+    panel sends `who` — on every add, and on an edit that changed it — and
+    never the old assignee or approval fields. A new stage's first entry is a
+    Fixed position (ACC-136).
+  - **No rule is kept on the screen.** The Kind list is the template's
+    `assigneeKinds`; each kind's fields, which are required, the modes, when
+    "When there are several people" shows and the default mode are its
+    `whoRules`; "the record's unit" and "the record's committee" are offered
+    only where its `recordRoutes` allow. A chosen mode the list can no longer
+    use (Committee vote once the list is not one Committee entry) falls back
+    to the default mode, and a sentence says so.
+  - **The read-back is the server's `whoSentence`**, in an `aria-live="polite"`
+    region. It stands for what is saved: while the list differs, a line says
+    it reads back once the stage is saved. The "Starting assignment" chip and
+    its drawn note show on a stored starting entry until the row changes.
+  - **A Fixed position row warns "Nobody holds this position in this unit
+    yet."** from the read's `holderCount`, or for a changed row from the
+    assignment picker's positions for that unit (one read per unit, shared by
+    every row naming it). It never blocks Save.
+  - **Refusals land in their slots** (`whoRefusal()` in
+    `workflow-refusal.ts`): the section ("A stage needs at least one
+    assignee."), the mode, or one row's field by its `index` and `field`. A
+    missing kind or required field is said on Save from `whoRules.requires`,
+    nothing is sent, and Save is never disabled. A protected workflow
+    (`editableStageFields` has no `who`) shows the section read-only.
+  - **The pickers.** Units (`/tasks/assignment/units`), the position
+    catalogue and the committee member roles load TOGETHER when the panel
+    first opens, and are kept for the stages page (`StageWhoOptionsStore`,
+    provided by the page). People and committees are searched, sorted and
+    paged on the server, in an `am-list-dialog` with `am-simple-list`:
+    `GET /workflow-templates/who-options/people` (ACTIVE and INVITED) and
+    `GET /workflow-templates/who-options/committees` (active; sorted by the
+    name the reader sees, `lang`), both `workflows:manage`, both scoped by the
+    organisation, `take` at most 50. `/users` takes one status and
+    `/committees` is neither searched nor paged, which is why these exist.
+  - **`?stage=<id>` opens that stage in the panel** (it used to expand its
+    row), with focus on the panel's heading. Setup health's Review stage, for
+    either stage condition, lands there.
+  - **Setup health reports `STAGE_ON_STARTING_ASSIGNMENT`** (§13.2): the row
+    says the condition, then "Workflow: {workflow} · Stage: {stage} · Its work
+    goes to {admin} until someone replaces this assignment.", with Review
+    stage and Keep this assignment. Keep asks through `AmConfirmService.ask()`
+    ("Keep {admin} on {stage}?" · "Setup health will stop flagging it." ·
+    Keep), calls keep-starting-assignment, reads the page once, and the row
+    says "Kept, closes on the next check" until the hourly run closes it.
+    Without `workflows:manage`, the permission line replaces both actions.
+  - **Display labels** for the entry kind and the mode are their own block in
+    `workflow-labels.ts` (`stageAssignee`, `whoMode`), and
+    `check:workflow-enum-display` fails a template that prints either raw.
+  - **Nothing on the per-request path; no polling;** the panel's lists are one
+    batch per page, and no row reads anything for itself.
+  - **One vertical scroll (Ahmad's review, 2 Nov).** The shell's `<main>` is
+    the page's only vertical scroll AND the containing block of anything
+    absolutely positioned in the page (`relative`): visually hidden text and
+    inputs, and the list's live region, used to sit against the wrapper around
+    `<main>`, escape its scroll and make the whole window scroll, leaving blank
+    space under the rail. The Stages page's column is no longer held to the
+    window's height, so an open panel no longer squeezes the stages list into
+    a second, hidden scroll; the strip keeps its own horizontal scroll.
+    `workflow-stage-list.scroll.spec.ts` renders the real shell with the page
+    inside it and fails on either.
+  - **"What this stage means" labels only a meaning that must sit on exactly
+    one stage** ("Exactly one stage"); one that any number of stages may carry
+    has no label.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
@@ -3272,6 +3340,12 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
   `setup-condition.starting-assignment.spec.ts` and `stage-who.db-spec.ts`
   (real Postgres). PR 5-be: `stage-who.rules.spec.ts`,
   `workflow-template.pr5be.spec.ts`, and more cases in `stage-who.db-spec.ts`.
+  PR 5a: `stage-who-options.service.spec.ts` and the picker cases of
+  `stage-who.db-spec.ts`; on screen, `stage-who.component.spec.ts` (every kind
+  in every mode it allows, the slots, focus), the panel's layout spec (one
+  entry of every kind at four widths, both languages and a fallback font),
+  `setup-health-page.starting-assignment.spec.ts` and
+  `setup-health-page.layout.spec.ts`.
 
 ---
 
@@ -10984,7 +11058,8 @@ opening creates no bell entry; the rail badge is the signal.
 | Type (`SetupConditionType`) | Object keyed by | Severity | Opened at | Fix opens |
 | -- | -- | -- | -- | -- |
 | `ORG_UNIT_WITHOUT_HEAD` | `OrgUnit.id` | `BLOCKS_WORK` if `isHeadFullyUnresolved` (escalation resolves no one); else `AT_RISK` (vacant but covered) | `OrgUnit.headVacantSince` | `/organization?head=<id>` — that unit's head panel |
-| `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages?stage=<id>` — the stage list with that stage expanded |
+| `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages?stage=<id>` — that stage open in the stage editor panel (ACC-271 PR 5a; it used to expand the row) |
+| `STAGE_ON_STARTING_ASSIGNMENT` (ACC-271) | `WorkflowStage.id` | `AT_RISK` | the starting entry's `createdAt` | Review stage: the same page and panel. Beside it, **Keep this assignment** (a confirm, then keep-starting-assignment; the next hourly run closes the row). Both need `workflows:manage`. Reported since PR 5a; §2.19 |
 | `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks/unassigned?reassign=<id>` — that task's reassign dialog |
 | `STORAGE_ALMOST_FULL` (ACC-177) | the organisation | `AT_RISK` | first detection | **no Fix yet** — the recycle bin screen is lane A's; the row's hint says to purge deleted files or ask AccreditMe for more storage. Section 16.12 |
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |

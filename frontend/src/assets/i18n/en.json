@@ -785,7 +785,6 @@
       "meaningsEmpty": "This record type has no meanings a stage can carry yet.",
       "addingNote": "You can set what this stage allows once it's added.",
       "alsoNeeds": "Also needs: {{permission}}",
-      "anyNumber": "Any number",
       "exactlyOne": "Exactly one stage",
       "allowed": "Allowed",
       "notAllowed": "Not allowed",
@@ -1141,7 +1140,91 @@
     "confirmRemoveStageHeader": "Remove the stage “{{name}}”?",
     "confirmDeactivateTemplateHeader": "Deactivate the template “{{name}}”?",
     "confirmDeactivateDefaultTemplate": "Records already on it carry on. It's the default, so new records of its type can't start until another template is made the default.",
-    "confirmRemoveTransitionHeader": "Remove the transition “{{name}}”?"
+    "confirmRemoveTransitionHeader": "Remove the transition “{{name}}”?",
+    "who": {
+      "title": "Who works this stage",
+      "or": "or",
+      "nobody": "Nobody works this stage yet.",
+      "addAnother": "+ Add another",
+      "startingChip": "Starting assignment",
+      "startingNote": "Seeded workflows start here so every stage has someone. Replace it with the people who should do this work.",
+      "modesLegend": "When there are several people",
+      "readbackPending": "How this reads is shown once the stage is saved.",
+      "fallback": "“{{mode}}” can’t be used with this list, so the stage will use “{{fallback}}”.",
+      "assigneeN": "Assignee {{n}}",
+      "removeN": "Remove assignee {{n}}",
+      "kindLabel": "Kind",
+      "chooseKind": "Choose a kind",
+      "choosePerson": "Choose a person",
+      "chooseCommittee": "Choose a committee",
+      "choosePosition": "Choose a position",
+      "chooseUnit": "Choose a unit",
+      "recordUnit": "The record’s unit",
+      "recordCommittee": "The record’s committee",
+      "useRecordCommittee": "Use the record’s committee instead",
+      "allMembers": "All members",
+      "roleNamed": "Role: {{role}}",
+      "creatorValue": "Whoever created the record",
+      "noHolder": "Nobody holds this position in this unit yet.",
+      "field": {
+        "userId": "Person",
+        "positionId": "Position",
+        "orgUnitId": "Unit",
+        "inUnit": "In unit",
+        "committeeId": "Committee",
+        "committeeRoleValueId": "Role"
+      },
+      "kind": {
+        "SPECIFIC_USER": "Specific user",
+        "POSITION_IN_UNIT": "Fixed position",
+        "ORG_UNIT_HEAD": "Org unit head",
+        "CREATOR": "Creator",
+        "COMMITTEE": "Committee"
+      },
+      "mode": {
+        "ANY_ONE": "Any one of them",
+        "ALL": "All of them",
+        "COMMITTEE_VOTE": "Committee vote"
+      },
+      "modeHelp": {
+        "ANY_ONE": "The first to act decides; the others’ tasks close.",
+        "ALL": "Each of them acts; the stage waits for all of them.",
+        "COMMITTEE_VOTE": "The committee’s members vote; the committee’s own quorum and voting rules decide."
+      },
+      "error": {
+        "required": "A stage needs at least one assignee.",
+        "mode": "Choose how the people of this stage decide.",
+        "voteNeedsOne": "A committee vote needs exactly one assignee, and it must be a committee.",
+        "duplicate": "This entry is already in the list.",
+        "kindNotAllowed": "This kind of assignee can’t work a stage of this record type.",
+        "fieldNotUsed": "This kind of assignee doesn’t use one of the values sent. Choose the kind again.",
+        "noRecordUnit": "This record type has no unit of its own. Choose a unit.",
+        "noRecordCommittee": "This record type has no committee of its own. Choose a committee.",
+        "removed": "This was removed. Choose again.",
+        "userNotActive": "This person’s account isn’t active. Choose someone else.",
+        "choose": {
+          "kind": "Choose a kind.",
+          "userId": "Choose a person.",
+          "positionId": "Choose a position.",
+          "orgUnitId": "Choose a unit.",
+          "committeeId": "Choose a committee.",
+          "committeeRoleValueId": "Choose a role."
+        }
+      },
+      "searchPeople": "Search people",
+      "searchCommittees": "Search committees",
+      "noPeople": "No people to choose.",
+      "noCommittees": "No committees to choose.",
+      "noMatch": "Nothing matches “{{q}}”.",
+      "invited": "Invitation pending",
+      "active": "Active",
+      "closePicker": "Close",
+      "col": {
+        "name": "Name",
+        "status": "Status",
+        "committee": "Committee"
+      }
+    }
   },
   "notification": {
     "openRecord": "Open record",
@@ -2248,7 +2331,8 @@
       "STORAGE_ALMOST_FULL": "File storage almost full",
       "STORAGE_ACCESS_WITHDRAWN": "SharePoint storage can't be reached",
       "STORAGE_SECRET_EXPIRING": "SharePoint client secret expires soon",
-      "ACTING_HEAD_OPEN_ENDED": "Acting head with no end date"
+      "ACTING_HEAD_OPEN_ENDED": "Acting head with no end date",
+      "STAGE_ON_STARTING_ASSIGNMENT": "Workflow stage still on its starting assignment"
     },
     "context": {
       "template": "Workflow: {{name}}"
@@ -2267,7 +2351,8 @@
         "UNKNOWN": "Uploads and downloads of files stored in SharePoint are paused."
       },
       "sharePointSecretExpiring": "The client secret expires on {{date}}. After that, uploads and downloads of files stored in SharePoint pause.",
-      "actingOpenEnded": "Acting head since {{date}}, with no end date."
+      "actingOpenEnded": "Acting head since {{date}}, with no end date.",
+      "startingAssignment": "Workflow: {{workflow}} · Stage: {{stage}} · Its work goes to {{admin}} until someone replaces this assignment."
     },
     "hint": {
       "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it.",
@@ -2289,7 +2374,8 @@
       "ACTING_HEAD_OPEN_ENDED": "Open unit",
       "STORAGE_ACCESS_WITHDRAWN": "Open file storage",
       "STORAGE_SECRET_EXPIRING": "Open file storage",
-      "STORAGE_ALMOST_FULL": "Open recycle bin"
+      "STORAGE_ALMOST_FULL": "Open recycle bin",
+      "STAGE_ON_STARTING_ASSIGNMENT": "Review stage"
     },
     "fixNeeds": {
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
@@ -2299,7 +2385,8 @@
       "ACTING_HEAD_OPEN_ENDED": "Fixing this needs permission to manage the organization structure.",
       "STORAGE_ACCESS_WITHDRAWN": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STORAGE_SECRET_EXPIRING": "Fixing this needs permission to set up email, storage, deadlines and AI.",
-      "STORAGE_ALMOST_FULL": "Fixing this needs permission to set up email, storage, deadlines and AI."
+      "STORAGE_ALMOST_FULL": "Fixing this needs permission to set up email, storage, deadlines and AI.",
+      "STAGE_ON_STARTING_ASSIGNMENT": "Fixing this needs permission to manage workflows."
     },
     "freshness": {
       "failed": "{{type}}: the last check failed. Its rows are as last confirmed on {{when}}.",
@@ -2319,7 +2406,17 @@
     "objectFilter": "Showing {{name}} only",
     "objectFilterNone": "Showing one unit only",
     "showAll": "Show all",
-    "emptyObject": "Nothing is open for this unit."
+    "emptyObject": "Nothing is open for this unit.",
+    "keep": {
+      "button": "Keep this assignment",
+      "buttonFor": "Keep this assignment: {{stage}}",
+      "header": "Keep {{admin}} on {{stage}}?",
+      "message": "Setup health will stop flagging it.",
+      "accept": "Keep",
+      "kept": "Kept, closes on the next check",
+      "failed": "Couldn’t keep the assignment. Try again.",
+      "someone": "the organization’s administrator"
+    }
   },
   "format": {
     "lessThanMinute": "less than a minute",
@@ -2753,6 +2850,28 @@
       "stageTasks": {
         "one": "{{count}} task",
         "other": "{{count}} tasks"
+      },
+      "who": {
+        "heldBy": {
+          "one": "Held by {{count}} person",
+          "other": "Held by {{count}} people"
+        },
+        "people": {
+          "one": "{{count}} person",
+          "other": "{{count}} people"
+        },
+        "peopleMatch": {
+          "one": "{{count}} person matches",
+          "other": "{{count}} people match"
+        },
+        "committees": {
+          "one": "{{count}} committee",
+          "other": "{{count}} committees"
+        },
+        "committeesMatch": {
+          "one": "{{count}} committee matches",
+          "other": "{{count}} committees match"
+        }
       }
     },
     "home": {

@@ -1,3 +1,5 @@
+import { StageWhoDraft } from '../stage-who/stage-who-draft';
+import { ALL_KINDS, WHO_RULES } from '../stage-who/stage-who-options.testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -66,6 +68,8 @@ const TEMPLATE = {
   stageFlags: [{ key: 'DISSOLVING', labelKey: 'workflow.stageFlag.DISSOLVING', cardinality: 'any' }],
   recordFields: [],
   recordRoutes: { unit: false, committee: false },
+  assigneeKinds: ALL_KINDS,
+  whoRules: WHO_RULES,
   stages: [1, 2, 3].map((i) => stage(i)),
 };
 
@@ -83,7 +87,7 @@ describe('WorkflowStageListComponent — the stage editor panel (ACC-255 PR 4b)'
   let http: HttpTestingController;
   let confirm: jasmine.Spy;
 
-  async function render(opts: { template?: object; manage?: boolean } = {}): Promise<HTMLElement> {
+  async function render(opts: { template?: object; manage?: boolean; query?: Record<string, string> } = {}): Promise<HTMLElement> {
     confirm = jasmine.createSpy('ask');
     TestBed.configureTestingModule({
       imports: [WorkflowStageListComponent],
@@ -99,7 +103,7 @@ describe('WorkflowStageListComponent — the stage editor panel (ACC-255 PR 4b)'
         { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => p !== 'workflows:manage' || (opts.manage ?? true) } },
         {
           provide: ActivatedRoute,
-          useValue: { snapshot: { paramMap: convertToParamMap({ templateId: 'template-1' }), queryParamMap: convertToParamMap({}) } },
+          useValue: { snapshot: { paramMap: convertToParamMap({ templateId: 'template-1' }), queryParamMap: convertToParamMap(opts.query ?? {}) } },
         },
       ],
     });
@@ -147,6 +151,20 @@ describe('WorkflowStageListComponent — the stage editor panel (ACC-255 PR 4b)'
     expect(panel()!.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(document.activeElement).toBe(el().querySelector('[data-panel-heading]'));
     expect(card(1).getAttribute('aria-current')).toBe('true');
+  });
+
+  // ACC-271 PR 5a — Setup health's "Review stage" (?stage=<id>) opens that
+  // stage in the panel, where who works it is set; an unknown id opens nothing.
+  it('?stage=<id> opens that stage in the panel, with focus on its heading', async () => {
+    await render({ query: { stage: 'stage-2' } });
+    expect(heading()).toBe('Stage 2');
+    expect(panel()!.querySelector('[data-section="who"]')).not.toBeNull();
+    expect(document.activeElement).toBe(el().querySelector('[data-panel-heading]'));
+  });
+
+  it('?stage= naming no stage of this workflow opens nothing', async () => {
+    await render({ query: { stage: 'stage-elsewhere' } });
+    expect(panel()).toBeNull();
   });
 
   it('a stage’s name in the list opens it too; the list has no Edit or ⋯ of its own', async () => {
@@ -202,8 +220,14 @@ describe('WorkflowStageListComponent — the stage editor panel (ACC-255 PR 4b)'
     await settle();
     expect(heading()).toBe('Add Stage');
     expect(el().querySelector('[data-adding-note]')).not.toBeNull();
-    const panelCmp = fixture.componentInstance as unknown as { panel: { form: { controls: { nameEn: { setValue(v: string): void } } }; onSubmit(): void } };
+    const panelCmp = fixture.componentInstance as unknown as {
+      panel: { form: { controls: { nameEn: { setValue(v: string): void } } }; onSubmit(): void; whoDraft: StageWhoDraft };
+    };
     panelCmp.panel.form.controls.nameEn.setValue('Stage 4');
+    // ACC-271 PR 5a — the new stage's first entry, a Fixed position, filled in.
+    const row = panelCmp.panel.whoDraft.rows()[0]!;
+    row.group.controls.positionId.setValue('pos-1');
+    row.group.controls.orgUnitId.setValue('unit-1');
     panelCmp.panel.onSubmit();
     http.expectOne({ method: 'POST', url: `${API}/template-1/stages` }).flush(stage(4, { actions: ['add_member'] }));
     http.expectOne(`${API}/template-1`).flush({ ...TEMPLATE, stages: [...TEMPLATE.stages, stage(4)] });

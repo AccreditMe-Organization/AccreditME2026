@@ -13,6 +13,7 @@ import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StageRulesService } from './stage-rules.service';
+import { StageWhoOptionsService } from './stage-who-options.service';
 import { WorkflowService } from './workflow.service';
 import { WorkflowActionProcessor } from './workflow-action.processor';
 import { SlaMonitorProcessor } from './sla-monitor.processor';
@@ -79,6 +80,8 @@ import { StagePoolModule } from './stage-pool.module';
     StageTaskDefinitionService,
     // ACC-255 — what a record's current stage allows; read by the modules.
     StageRulesService,
+    // ACC-271 PR 5a — the stage editor's person and committee pickers.
+    StageWhoOptionsService,
     ...(workersEnabled() ? [WorkflowActionProcessor, SlaMonitorProcessor] : []),
   ],
   exports: [WorkflowTemplateService, WorkflowService, StageRulesService],

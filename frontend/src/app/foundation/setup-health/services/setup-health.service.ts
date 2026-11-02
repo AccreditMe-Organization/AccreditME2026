@@ -21,7 +21,10 @@ export type SetupConditionType =
   | 'STORAGE_SECRET_EXPIRING'
   // ACC-120 slice 2 — an acting head with no end date, 90 days on. Listed by the
   // backend since then; the page shows it since slice 11 (PR D).
-  | 'ACTING_HEAD_OPEN_ENDED';
+  | 'ACTING_HEAD_OPEN_ENDED'
+  // ACC-271 PR 5a — a workflow stage still worked by its seeded starting
+  // assignment (the organization's administrator). Listed since this PR.
+  | 'STAGE_ON_STARTING_ASSIGNMENT';
 
 export type SetupConditionSeverity = 'BLOCKS_WORK' | 'AT_RISK';
 
@@ -55,6 +58,9 @@ export interface SetupConditionSubject {
   orgUnitNameEn?: string;
   orgUnitNameAr?: string | null;
   validFrom?: string;
+  // ACC-271 PR 5a — STAGE_ON_STARTING_ASSIGNMENT: whose the work is until it is
+  // replaced (a person's name; null if they were removed).
+  adminName?: string | null;
 }
 
 export interface SetupConditionDto {

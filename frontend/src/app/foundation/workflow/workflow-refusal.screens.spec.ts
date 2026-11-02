@@ -17,6 +17,7 @@ import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { WorkflowTemplateListComponent } from './components/workflow-template-list/workflow-template-list.component';
 import { WorkflowStageListComponent } from './components/workflow-stage-list/workflow-stage-list.component';
 import { StageEditorPanelComponent } from './components/stage-editor-panel/stage-editor-panel.component';
+import { fakeStageWhoOptions } from './components/stage-who/stage-who-options.testing';
 import { WorkflowTransitionEditorComponent } from './components/workflow-transition-editor/workflow-transition-editor.component';
 import { WorkflowActionConfiguratorComponent } from './components/workflow-action-configurator/workflow-action-configurator.component';
 import { WorkflowStageDto, WorkflowTransitionActionDto, WorkflowTransitionDto } from './services/workflow-template.service';
@@ -115,6 +116,7 @@ describe('workflow screens say refusals in their own words (ACC-255 PR 3)', () =
         provideTranslateService({ lang }),
         provideFormatTesting(),
         ConfirmationService,
+        fakeStageWhoOptions(),
         // A confirm a person accepts: the write follows at once.
         { provide: AmConfirmService, useValue: { ask: (o: { accept: () => void }) => o.accept() } },
         { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
