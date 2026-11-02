@@ -183,6 +183,13 @@ describe('TaskListViewComponent — the views of /tasks (ACC-120 slice 3)', () =
   describe('request outcomes', () => {
     it('shows a 403 as the denied state, with the server\'s sentence and no Retry', () => {
       setup({ view: 'unassigned' });
+      // The column headers are the desktop layout's (the test browser is phone-narrow).
+      list().phone.set(false);
+      fixture.detectChanges();
+      // Non-vacuity: before the answer the toolbar, search and headers are there.
+      expect(q('task-list-toolbar')).not.toBeNull();
+      expect(q('task-list-search')).not.toBeNull();
+      expect(q('task-list-head')).not.toBeNull();
       next().flush(
         { statusCode: 403, message: 'Required permission: committees:manage_tasks', error: 'Forbidden' },
         { status: 403, statusText: 'Forbidden' },
@@ -194,6 +201,38 @@ describe('TaskListViewComponent — the views of /tasks (ACC-120 slice 3)', () =
       expect(text(q('task-list-denied-reason'))).toBe('Required permission: committees:manage_tasks');
       expect(q('task-list-error')).toBeNull();
       expect(denied!.querySelector('button')).toBeNull();
+    });
+
+    // ACC-120 slice 3 — a view the viewer may not open offers nothing to search, filter
+    // or sort: only the denied state, with the server's sentence.
+    for (const phone of [false, true]) {
+      it(`hides the toolbar, search, filters, chips, column headers and sort when denied (${phone ? 'phone' : 'desktop'})`, () => {
+        setup({ view: 'all', recordType: 'COMMITTEE' });
+        list().phone.set(phone);
+        fixture.detectChanges();
+        // Non-vacuity: what is hidden was there before the answer.
+        const sortControl = phone ? 'task-list-sort-menu' : 'task-list-head';
+        expect(q(sortControl)).withContext(`before: ${sortControl}`).not.toBeNull();
+        expect(q('task-list-toolbar')).withContext('before: toolbar').not.toBeNull();
+        next().flush({ statusCode: 403, message: 'Required permission: committees:view_all_tasks', error: 'Forbidden' }, { status: 403, statusText: 'Forbidden' });
+        fixture.detectChanges();
+        expect(q('task-list-denied')).withContext('the denied state rendered').not.toBeNull();
+        for (const id of ['task-list-toolbar', 'task-list-search', 'filter-status', 'filter-record-type', 'task-list-chips', sortControl]) {
+          expect(q(id)).withContext(id).toBeNull();
+        }
+      });
+    }
+
+    it('tells its host when the view is denied, and when it is not', () => {
+      setup({ view: 'unassigned' });
+      const told: boolean[] = [];
+      list().deniedChange.subscribe((d) => told.push(d));
+      next().flush({ statusCode: 403, message: 'No', error: 'Forbidden' }, { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
+      expect(told).toEqual([true]);
+      list().reload();
+      answer(next(), listPage([], { view: 'unassigned' }));
+      expect(told).toEqual([true, false]);
     });
 
     it('says why a view is empty, in its own words', () => {

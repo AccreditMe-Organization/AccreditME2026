@@ -102,128 +102,132 @@ interface ViewRow {
   imports: [FormsModule, TranslatePipe, AmDatePipe, OverlaySelectComponent, RowMenuComponent, SortHeaderComponent, TaskLinkComponent, TaskActionHostComponent],
   template: `
     <div class="am-tl" [class.am-tl--page]="variant() === 'page'" data-testid="task-list-view">
-      <div class="am-tl__toolbar" role="search" data-testid="task-list-toolbar">
-        <span class="am-tl__search">
-          <i class="pi pi-search" aria-hidden="true"></i>
-          <input
-            #search
-            type="search"
-            [value]="qInput()"
-            (input)="onSearch(search.value)"
-            [attr.aria-label]="'taskList.searchLabel' | translate"
-            [placeholder]="'taskList.searchPlaceholder' | translate"
-            data-testid="task-list-search"
-          />
-        </span>
-        <app-overlay-select
-          class="am-tl__filter"
-          [options]="statusOptions()"
-          [placeholder]="'taskList.filter.status' | translate"
-          [ariaLabel]="'taskList.filter.status' | translate"
-          [showClear]="true"
-          [ngModel]="status()"
-          (ngModelChange)="status.set($event)"
-          data-testid="filter-status"
-        />
-        <button type="button" class="am-tl__toggle" [attr.aria-pressed]="overdue()" (click)="overdue.set(!overdue())" data-testid="filter-overdue">
-          {{ 'taskList.filter.overdueOnly' | translate }}
-        </button>
-        <app-overlay-select
-          class="am-tl__filter am-tl__filter--wide"
-          [options]="whoOptions()"
-          optionGroupLabel="label"
-          optionGroupChildren="items"
-          [groupsSelectable]="false"
-          [placeholder]="'taskList.filter.assignee' | translate"
-          [ariaLabel]="'taskList.filter.assignee' | translate"
-          [showClear]="true"
-          [ngModel]="who()"
-          (ngModelChange)="who.set($event)"
-          data-testid="filter-who"
-        />
-        <app-overlay-select
-          class="am-tl__filter"
-          [options]="requiredOptions()"
-          [placeholder]="'taskList.filter.required' | translate"
-          [ariaLabel]="'taskList.filter.required' | translate"
-          [showClear]="true"
-          [ngModel]="required()"
-          (ngModelChange)="required.set($event)"
-          data-testid="filter-required"
-        />
-        <app-overlay-select
-          class="am-tl__filter"
-          [options]="dueOptions()"
-          [placeholder]="'taskList.filter.due' | translate"
-          [ariaLabel]="'taskList.filter.due' | translate"
-          [showClear]="true"
-          [ngModel]="due()"
-          (ngModelChange)="due.set($event)"
-          data-testid="filter-due"
-        />
-        <!-- ACC-120 slice 3 — the organisation-wide views' own filters, from
-             the response's facets (the server's scope, never a client list). -->
-        @if (showRecordTypeFilter()) {
+      <!-- ACC-120 slice 3 — a view the server refused (403) offers nothing to search,
+           filter or sort: only the denied state below. -->
+      @if (phase() !== 'denied') {
+        <div class="am-tl__toolbar" role="search" data-testid="task-list-toolbar">
+          <span class="am-tl__search">
+            <i class="pi pi-search" aria-hidden="true"></i>
+            <input
+              #search
+              type="search"
+              [value]="qInput()"
+              (input)="onSearch(search.value)"
+              [attr.aria-label]="'taskList.searchLabel' | translate"
+              [placeholder]="'taskList.searchPlaceholder' | translate"
+              data-testid="task-list-search"
+            />
+          </span>
           <app-overlay-select
             class="am-tl__filter"
-            [options]="recordTypeOptions()"
-            [placeholder]="'taskList.filter.recordType' | translate"
-            [ariaLabel]="'taskList.filter.recordType' | translate"
+            [options]="statusOptions()"
+            [placeholder]="'taskList.filter.status' | translate"
+            [ariaLabel]="'taskList.filter.status' | translate"
             [showClear]="true"
-            [ngModel]="recordTypeSel()"
-            (ngModelChange)="recordTypeSel.set($event)"
-            data-testid="filter-record-type"
+            [ngModel]="status()"
+            (ngModelChange)="status.set($event)"
+            data-testid="filter-status"
           />
-        }
-        @if (showUnitFilter()) {
+          <button type="button" class="am-tl__toggle" [attr.aria-pressed]="overdue()" (click)="overdue.set(!overdue())" data-testid="filter-overdue">
+            {{ 'taskList.filter.overdueOnly' | translate }}
+          </button>
           <app-overlay-select
             class="am-tl__filter am-tl__filter--wide"
-            [options]="unitOptions()"
-            [placeholder]="'taskList.filter.unit' | translate"
-            [ariaLabel]="'taskList.filter.unit' | translate"
+            [options]="whoOptions()"
+            optionGroupLabel="label"
+            optionGroupChildren="items"
+            [groupsSelectable]="false"
+            [placeholder]="'taskList.filter.assignee' | translate"
+            [ariaLabel]="'taskList.filter.assignee' | translate"
             [showClear]="true"
-            [ngModel]="unitSel()"
-            (ngModelChange)="unitSel.set($event)"
-            data-testid="filter-unit"
+            [ngModel]="who()"
+            (ngModelChange)="who.set($event)"
+            data-testid="filter-who"
           />
-        }
-        <button type="button" class="am-tl__toggle" [attr.aria-pressed]="mine()" (click)="mine.set(!mine())" data-testid="filter-mine">
-          {{ 'taskList.filter.mine' | translate }}
-        </button>
-        @if (phone()) {
-          <!-- ACC-234 — cards have no column headers, so a phone keeps a
-               compact sort menu: the headers' own sorts, both directions. -->
           <app-overlay-select
             class="am-tl__filter"
-            [options]="phoneSortOptions()"
-            [ngModel]="sort().key + ':' + sort().dir"
-            (ngModelChange)="onPhoneSort($event)"
-            [ariaLabel]="'taskList.sort.label' | translate"
-            data-testid="task-list-sort-menu"
+            [options]="requiredOptions()"
+            [placeholder]="'taskList.filter.required' | translate"
+            [ariaLabel]="'taskList.filter.required' | translate"
+            [showClear]="true"
+            [ngModel]="required()"
+            (ngModelChange)="required.set($event)"
+            data-testid="filter-required"
           />
-        }
-      </div>
-
-      <div class="am-tl__chips" data-testid="task-list-chips">
-        @for (chip of chips(); track chip.id) {
-          <button
-            type="button"
-            class="am-tl__chip"
-            [attr.aria-label]="'taskList.chip.remove' | translate: { filter: chip.label }"
-            (click)="removeChip(chip.id)"
-          >
-            {{ chip.label }} <span aria-hidden="true">✕</span>
+          <app-overlay-select
+            class="am-tl__filter"
+            [options]="dueOptions()"
+            [placeholder]="'taskList.filter.due' | translate"
+            [ariaLabel]="'taskList.filter.due' | translate"
+            [showClear]="true"
+            [ngModel]="due()"
+            (ngModelChange)="due.set($event)"
+            data-testid="filter-due"
+          />
+          <!-- ACC-120 slice 3 — the organisation-wide views' own filters, from
+               the response's facets (the server's scope, never a client list). -->
+          @if (showRecordTypeFilter()) {
+            <app-overlay-select
+              class="am-tl__filter"
+              [options]="recordTypeOptions()"
+              [placeholder]="'taskList.filter.recordType' | translate"
+              [ariaLabel]="'taskList.filter.recordType' | translate"
+              [showClear]="true"
+              [ngModel]="recordTypeSel()"
+              (ngModelChange)="recordTypeSel.set($event)"
+              data-testid="filter-record-type"
+            />
+          }
+          @if (showUnitFilter()) {
+            <app-overlay-select
+              class="am-tl__filter am-tl__filter--wide"
+              [options]="unitOptions()"
+              [placeholder]="'taskList.filter.unit' | translate"
+              [ariaLabel]="'taskList.filter.unit' | translate"
+              [showClear]="true"
+              [ngModel]="unitSel()"
+              (ngModelChange)="unitSel.set($event)"
+              data-testid="filter-unit"
+            />
+          }
+          <button type="button" class="am-tl__toggle" [attr.aria-pressed]="mine()" (click)="mine.set(!mine())" data-testid="filter-mine">
+            {{ 'taskList.filter.mine' | translate }}
           </button>
-        }
-        @if (chips().length > 1 || (chips().length === 1 && chips()[0].id !== 'link')) {
-          <button type="button" class="am-tl__clear" (click)="clearAll()" data-testid="task-list-clear">{{ 'taskList.chip.clearAll' | translate }}</button>
-        }
-        <span class="flex-1"></span>
-        <span class="text-xs text-[var(--am-ink-700)]" aria-live="polite" data-testid="task-list-live">{{ liveText() }}</span>
-      </div>
+          @if (phone()) {
+            <!-- ACC-234 — cards have no column headers, so a phone keeps a
+                 compact sort menu: the headers' own sorts, both directions. -->
+            <app-overlay-select
+              class="am-tl__filter"
+              [options]="phoneSortOptions()"
+              [ngModel]="sort().key + ':' + sort().dir"
+              (ngModelChange)="onPhoneSort($event)"
+              [ariaLabel]="'taskList.sort.label' | translate"
+              data-testid="task-list-sort-menu"
+            />
+          }
+        </div>
+
+        <div class="am-tl__chips" data-testid="task-list-chips">
+          @for (chip of chips(); track chip.id) {
+            <button
+              type="button"
+              class="am-tl__chip"
+              [attr.aria-label]="'taskList.chip.remove' | translate: { filter: chip.label }"
+              (click)="removeChip(chip.id)"
+            >
+              {{ chip.label }} <span aria-hidden="true">✕</span>
+            </button>
+          }
+          @if (chips().length > 1 || (chips().length === 1 && chips()[0].id !== 'link')) {
+            <button type="button" class="am-tl__clear" (click)="clearAll()" data-testid="task-list-clear">{{ 'taskList.chip.clearAll' | translate }}</button>
+          }
+          <span class="flex-1"></span>
+          <span class="text-xs text-[var(--am-ink-700)]" aria-live="polite" data-testid="task-list-live">{{ liveText() }}</span>
+        </div>
+      }
 
       <div #scroller class="am-tl__scroll" data-testid="task-list-scroll" [attr.aria-busy]="phase() === 'loading'">
-        @if (!phone()) {
+        @if (!phone() && phase() !== 'denied') {
           <!-- ACC-234 — a column the server sorts by is a header you press;
                the others are plain text. -->
           <div class="am-tl__row am-tl__head" role="row" data-testid="task-list-head">
@@ -454,6 +458,8 @@ export class TaskListViewComponent {
   /** Something on the list changed — the panel behind refreshes when the popup closes. */
   readonly changed = output<void>();
   readonly totalChange = output<{ total: number; scope: 'all' | 'own' }>();
+  /** Whether the server refused this view (a 403), so the host can hide what goes with it. */
+  readonly deniedChange = output<boolean>();
 
   private readonly searchBox = viewChild<ElementRef<HTMLInputElement>>('search');
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
@@ -868,6 +874,7 @@ export class TaskListViewComponent {
         this.matching.set(page.matching);
         this.facets.set(page.facets ?? this.facets());
         this.phase.set('ready');
+        this.deniedChange.emit(false);
         this.totalChange.emit({ total: page.total, scope: page.scope });
         if (around) {
           this.aroundPending = null;
@@ -879,6 +886,7 @@ export class TaskListViewComponent {
         if (err instanceof HttpErrorResponse && err.status === 403) {
           this.deniedMessage.set(extractErrorMessage(err, 'taskList.denied.fallback'));
           this.phase.set('denied');
+          this.deniedChange.emit(true);
           return;
         }
         this.phase.set('error');
