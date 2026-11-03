@@ -186,7 +186,7 @@ describe('workflow refusals (ACC-255 PR 3)', () => {
   });
 
   it('gives every workflow screen fallback a key in both languages', () => {
-    for (const key of ['updateFailed', 'removeFailed', 'saveFailed', 'reorderFailed', 'setDefaultFailed', 'deactivateFailed', 'invalidHeadersJson', 'invalidValidatorJson']) {
+    for (const key of ['updateFailed', 'removeFailed', 'saveFailed', 'reorderFailed', 'setDefaultFailed', 'deactivateFailed', 'invalidHeadersJson']) {
       expect(typeof lookup(en, `workflow.error.${key}`)).withContext(`en ${key}`).toBe('string');
       expect(typeof lookup(ar, `workflow.error.${key}`)).withContext(`ar ${key}`).toBe('string');
     }

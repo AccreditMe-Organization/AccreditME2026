@@ -508,6 +508,9 @@ elsewhere.**
   **The editor's picker offers only keys a transition may be given (PR B)**:
   `inUse`, and no platform key inside a tenant
   (`workflow-transition-editor.component.ts`, `offerable()`).
+  Superseded (ACC-271 PR 5b): there is no permission picker any more. The
+  transition panel sends no permission, so a stored key is left as it is; who
+  presses a move is set on its stage (§2.19).
   - The EDIT picker also shows the transition's OWN current key when it is not
     offerable. It is selected, in a last group: "Can't be granted yet" when the
     catalogue has the key, "Not a defined permission" when it does not. So an
@@ -652,9 +655,9 @@ endpoint. Grepped for actual callers (not just the service definition):
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `listRoles()` | `GET /roles` | `committee-form`, `committee-detail`, `workflow-transition-editor`, `stage-editor-panel` (was `workflow-stage-form`, ACC-255 PR 4b), `user-role-assignment`, `role-list` |
+| `listRoles()` | `GET /roles` | `committee-form`, `committee-detail`, `stage-editor-panel` (was `workflow-stage-form`, ACC-255 PR 4b), `user-role-assignment`, `role-list` |
 | `getRole()` | `GET /roles/:id` | `role-permission-matrix` |
-| `listAllPermissions()` | `GET /roles/permissions` | `role-permission-matrix`, `workflow-transition-editor` |
+| `listAllPermissions()` | `GET /roles/permissions` | `role-permission-matrix` (the transition editor stopped reading it, ACC-271 PR 5b) |
 | `createRole()` | `POST /roles` | `role-form` |
 | `updateRole()` | `PATCH /roles/:id` | `role-form` |
 | `assignPermissions()` | `PATCH /roles/:id/permissions` | `role-permission-matrix` |
@@ -1456,8 +1459,9 @@ workflow write, may be held by the root role (Organization Administrator,
 - **The screens learn it from the server:** `GET /roles/permissions` answers
   `rootRoleOnly` per key. The role permissions list (`buildMatrix(…, { isRootRole })`)
   hides such a key on every role but the root role, whose read-only list
-  shows it as held, tagged "Organization Administrator only" (ACC-272). The transition editor still lists it. No screen names the
-  key.
+  shows it as held, tagged "Organization Administrator only" (ACC-272). A
+  transition may still require it; since ACC-271 PR 5b no screen sets or shows
+  a transition's permission. No screen names the key.
 - **Counts on the shared database, 24 Oct:** no custom or other system role
   held it; all three Organization Administrator roles and all three Platform
   Administrator roles did.
@@ -2064,7 +2068,11 @@ different `ROLE_BASED`/`SPECIFIC_USER` `triggerCondition` gaps.
 > entry's definition tasks (§2.15). The per-action table below is history for
 > `CREATE_TASK`.
 
-Fires in `order` after a successful transition. Per `actionType`:
+Fires in `order` after a successful transition. **An action created without
+an `order` goes last on its transition** (ACC-271 PR 5b): the transition's
+highest `order` + 10, or 10 when it has none, from one aggregate read scoped
+by organisation and made only when the order is left out. A sent order, and
+every update, are stored as sent. Per `actionType`:
 
 - **`WEBHOOK`** — enqueued to BullMQ (`workflow-actions` queue) and
   returns immediately; the `WorkflowActionLog` row is written later by
@@ -2259,7 +2267,8 @@ those specific tasks.
 
 **Not** wired into the transition editor UI: `validatorConfig` is still
 an unlabelled JSON textarea, so configuring this means typing
-`{"allPreviousStageTasksComplete": true}` by hand. Enforcement and
+`{"allPreviousStageTasksComplete": true}` by hand. Superseded (ACC-271
+PR 5b): the transition panel has no validator box, and a save sends none. Enforcement and
 configurability are separate concerns and only the former is built.
 
 **Live evidence of how little this is exercised:** across all tenants,
@@ -2618,7 +2627,8 @@ Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
   - The other routes are one or two selects.
   - The deadline rule is a validator and a message on Priority, before Save.
 - **The transition editor** gains Kind, and both of its dialogs are stepped
-  (10.5).
+  (10.5). Superseded (ACC-271 PR 5b): the dialogs became the transition panel
+  (§2.19).
 - **Refusals are read by code**, never the English `message`, through
   `foundation/workflow/workflow-refusal.ts`.
 - **`CantMoveDialogComponent`** shows `STAGE_TASKS_OPEN`.
@@ -3335,6 +3345,63 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
   - **"What this stage means" labels only a meaning that must sit on exactly
     one stage** ("Exactly one stage"); one that any number of stages may carry
     has no label.
+- **PR 5b: the transition panel** (drawing sections 9 and 10).
+  - **A transition opens in a PAGE PANEL on the Stages page**
+    (`am-transition-panel`, `foundation/workflow/components/transition-panel/`),
+    in the stage editor panel's slot. It replaced the Add and Edit transition
+    dialogs. One panel is open at a time: opening a stage closes it, and the
+    reverse, asking first when the open one has unsaved changes.
+    `?transition=<id>` opens it, with the stage it leaves expanded. Cancel and
+    Close return focus to whatever opened it.
+  - **What it holds:** the names; From (read-only); To (chosen when adding,
+    read-only after); Kind, with its help line; Approval path; "How it moves";
+    and the automatic actions. "How it moves" shows only **A person** for now:
+    "Pressed by whoever works {stage}." / «يضغطه من يعمل على مرحلة «{stage}».»,
+    the stage a link that opens its panel (`?stage=<id>` as its address).
+    "Automatically", "Share in turn" and "Show this button only when" are not
+    built (ACC-270, step 2).
+  - **Gone:** "Who can trigger" and its kinds, the list's trigger column,
+    Required permission, the permission warning and the raw validator JSON.
+    Add sends the names, both stages, Kind and Approval path; Edit sends the
+    names, Kind and Approval path. Neither sends a trigger, role, person,
+    permission or validator, so the stored values are left as they are.
+  - **`isApprovalPath` is accepted on create** (it was update-only), so Add
+    can set it.
+  - **A move the app runs (`mover` APP) is read-only:** "Done by the app" /
+    «يُنفّذها النظام» in the list, with no Edit and no ⋯; its name opens the
+    panel showing the server's `appMove` line, "The app runs this move itself,
+    so it can't be changed here.", and Close. The line is never a frontend copy.
+    Every move is a row under the stage it leaves, so Withdraw from three
+    stages is three rows.
+  - **A protected workflow's moves are read-only** too (the server refuses
+    them, 409 `WORKFLOW_TEMPLATE_PROTECTED`): the panel shows them with no Save
+    or Remove, and the Actions dialog gets `[isProtected]`.
+  - **The transitions list** (`app-workflow-transition-editor`, in a stage's
+    expanded row) is now a list: the move (with its chips), To, Kind, and for
+    a person's move on an editable workflow Edit and a ⋯ (Automatic actions,
+    Remove). It reads no roles or permissions.
+  - **The Actions dialog** is `am-transition-actions-dialog`, shared by the
+    list and the panel, and is given the transition AS LAST LOADED, looked up
+    by id. It used to keep the object it was opened with, so after a save
+    inside it the dialog showed the actions from before.
+  - **The flow strip has Zoom out / Fit / Zoom in**, the org chart's buttons
+    and rule (`shared/utils/zoom.ts`, `am-zoom-controls`): steps of 10% up to
+    150%, Fit never above 100%. It opens on Fit and stays fitted while the
+    frame or the row changes size, until someone zooms; Fit returns to that.
+    At Fit nothing scrolls sideways: Zoom out stops at the smaller of 30% and
+    the Fit value, so a long workflow on a phone still fits. The org chart
+    reads the same rule and buttons, unchanged.
+  - **Display labels** for a transition's kind and its mover are their own
+    block in `workflow-labels.ts` (`transitionKind`, `mover`); the trigger
+    block went with the column. `check:workflow-enum-display` now also fails a
+    raw `mover` or a transition's raw `kind`.
+  - **A single select closes when its selected option is picked again**
+    (`OverlaySelectComponent`, by mouse, Enter or Space). CdkListbox sends no
+    value change for a re-pick, so the list used to stay open; 5a's live check
+    met it as "Fixed position" leaving the Kind list open on a row that was
+    already Fixed position.
+  - **Nothing on the per-request path; no polling;** the panel reads nothing
+    of its own (it is given the template the page loaded).
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
@@ -3348,7 +3415,12 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
   in every mode it allows, the slots, focus), the panel's layout spec (one
   entry of every kind at four widths, both languages and a fallback font),
   `setup-health-page.starting-assignment.spec.ts` and
-  `setup-health-page.layout.spec.ts`.
+  `setup-health-page.layout.spec.ts`. PR 5b: `transition-panel.component.spec.ts`
+  (what a save sends, both read-only cases, keyboard and focus),
+  `transition-panel.layout.spec.ts` (four widths, both languages), the list's
+  and the Actions dialog's specs, the strip's zoom cases, the page's scroll
+  spec with the transition panel open, and the re-pick cases of
+  `overlay-select.component.spec.ts` and `stage-who.component.spec.ts`.
 
 ---
 
@@ -8255,7 +8327,8 @@ precondition for the scroll-chaining bug above).
 fix (see below for why): `user-list` (its `invite-user` dialog),
 `task-list` (its `task-form` dialog), `workflow-action-configurator`
 (own inline form), `workflow-transition-editor` (both its Add and Edit
-Transition dialogs — its separate "Configure Actions" dialog,
+Transition dialogs, which ACC-271 PR 5b replaced with the transition panel,
+so it left this list — its separate "Configure Actions" dialog,
 wrapping `workflow-action-configurator`, deliberately stays a raw
 `p-dialog`, outside ACC-39's scope), `ai-feature-cost-list`,
 `ai-credit-pack-list`, and `lookup-value-list`'s own separate
@@ -8590,8 +8663,8 @@ IS a real choice, matching `p-cascadeSelect`'s own behavior.
 **But that is a property of org-unit data, not of hierarchies in
 general.** A grouped list whose groups are pure categories needs the
 opposite, and ACC-55 found out the expensive way: the workflow
-transition editor's permission picker grouped 72 strings under 19
-module headings, `committees` is not itself a permission, and selecting
+transition editor's permission picker (removed in ACC-271 PR 5b) grouped
+72 strings under 19 module headings, `committees` is not itself a permission, and selecting
 a heading saved `requiredPermission: null` — silently CLEARING the
 transition's permission gate and widening who could fire it. A
 value-sentinel guard in the consumer was not enough; it turned a
@@ -8610,7 +8683,8 @@ is also styled as a heading — no pointer cursor, no hover highlight —
 so it never invites the click CDK now refuses.
 
 Consumers so far (1): `workflow-transition-editor.requiredPermission`
-(both the add and edit dialogs).
+(both the add and edit dialogs). Superseded (ACC-271 PR 5b): that picker is
+gone. `task-list-view` also passes `[groupsSelectable]="false"` today.
 
 ##### `optionDisabled` / `optionDisabledReason` — shown but not chosen (ACC-120 slice 11)
 
@@ -10165,7 +10239,9 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
   `aria-controls`. Focus is moved back only if nothing else took it, so an
   accept that focuses something keeps that.
 - **A raw `p-dialog` that opens a confirm must be on the layer stack too.**
-  The one case is the transition editor's Actions dialog (Remove action).
+  The one case is the transition editor's Actions dialog (Remove action), now
+  `am-transition-actions-dialog` (ACC-271 PR 5b), shared by the transitions
+  list and the transition panel.
   PrimeNG's own Escape closes a dialog only while it holds the highest
   z-index, and a tooltip takes that. Once focus returned to the trash button,
   its tooltip showed and Escape no longer closed the dialog. The editor now
@@ -10201,7 +10277,8 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
   - `confirm-over-dialog.spec.ts`: the Vacate Head case.
   - `am-confirm.details.spec.ts` (ACC-240): the details list renders in order,
     before the message, only when given and non-empty, and as text, never markup.
-  - The Actions-dialog block in `workflow-transition-editor.component.spec.ts`.
+  - `transition-actions-dialog.component.spec.ts` (the Actions dialog; it was a
+    block of `workflow-transition-editor.component.spec.ts` until ACC-271 PR 5b).
   - `confirm-wording.spec.ts`: every reworded confirm's header, message and
     buttons from the real translation files, in both languages, and the Actions
     dialog's trash button name.

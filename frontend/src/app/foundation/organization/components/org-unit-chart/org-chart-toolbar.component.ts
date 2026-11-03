@@ -6,6 +6,7 @@ import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { CHART_LEVELS } from './org-chart-model';
 import { OrgUnitPathItemDto } from '../../services/org-unit.service';
+import { ZoomControlsComponent } from '../../../../shared/components/zoom-controls/zoom-controls.component';
 
 /**
  * ACC-120 slice 11, PR E — the chart's toolbar (OS L161-172): "Showing from"
@@ -16,7 +17,7 @@ import { OrgUnitPathItemDto } from '../../services/org-unit.service';
 @Component({
   selector: 'am-org-chart-toolbar',
   standalone: true,
-  imports: [TranslatePipe, FormsModule, CheckboxModule],
+  imports: [TranslatePipe, FormsModule, CheckboxModule, ZoomControlsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex flex-wrap items-center gap-2 px-3 py-2 bg-surface border-b border-rule text-meta" data-testid="chart-toolbar">
@@ -46,21 +47,23 @@ import { OrgUnitPathItemDto } from '../../services/org-unit.service';
           <span>{{ 'organization.chart.showCommittees' | translate }}</span>
         </label>
       }
-      <span class="ms-auto flex items-center gap-1.5">
-        <button type="button" class="oct__btn" [attr.aria-label]="'organization.chart.zoomOut' | translate" [disabled]="!canZoomOut()" (click)="zoomOut.emit()" data-testid="chart-zoom-out">−</button>
-        <button type="button" class="oct__btn oct__btn--text" (click)="fit.emit()" data-testid="chart-fit">{{ 'organization.chart.fit' | translate }}</button>
-        <button type="button" class="oct__btn" [attr.aria-label]="'organization.chart.zoomIn' | translate" [disabled]="!canZoomIn()" (click)="zoomIn.emit()" data-testid="chart-zoom-in">+</button>
-      </span>
+      <!-- ACC-271 PR 5b — the zoom buttons are shared with the workflow strip. -->
+      <am-zoom-controls
+        class="ms-auto"
+        testIdPrefix="chart"
+        [canZoomIn]="canZoomIn()"
+        [canZoomOut]="canZoomOut()"
+        (zoomIn)="zoomIn.emit()"
+        (zoomOut)="zoomOut.emit()"
+        (fit)="fit.emit()"
+      />
     </div>
   `,
   styles: [
     `
       .oct__link{font:inherit;padding:0;border:0;background:none;color:var(--am-primary-700);font-weight:600;cursor:pointer}
       .oct__link:hover{text-decoration:underline}
-      .oct__link:focus-visible,.oct__btn:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
-      .oct__btn{min-inline-size:var(--am-space-32);block-size:var(--am-space-32);padding:0 var(--am-space-8);font:inherit;color:var(--am-ink-900);background:var(--am-control-bg);border:1px solid var(--am-ink-500);border-radius:var(--am-radius-button);cursor:pointer}
-      .oct__btn:disabled{opacity:.5;cursor:default}
-      .oct__btn--text{padding-inline:var(--am-space-12)}
+      .oct__link:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
     `,
   ],
 })

@@ -117,10 +117,10 @@ function stage(i: number, over: Record<string, unknown> = {}): Record<string, un
               validatorConfig: null,
               isApprovalPath: false,
               kind: 'RETURN',
+              mover: 'PERSON',
             },
             {
-              // The longest chips of each column (measured, ACC-255 PR 4a):
-              // "End the record" and "Any Authenticated User".
+              // The longest Kind chip (measured, ACC-255 PR 4a): "End the record".
               id: 't-2',
               fromStageId: 'stage-1',
               toStageId: 'stage-2',
@@ -133,6 +133,7 @@ function stage(i: number, over: Record<string, unknown> = {}): Record<string, un
               validatorConfig: null,
               isApprovalPath: false,
               kind: 'EXIT',
+              mover: 'PERSON',
             },
           ]
         : [],
@@ -264,9 +265,8 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
           // The transition table's own frame may scroll on a phone (ACC-254's
           // allowance); at desktop widths it must not either.
           if (c.width < 400 && el.closest('[data-tr-scroll]')) return false;
-          // ACC-255 PR 4b — the flow strip scrolls sideways inside its own frame
-          // at any width (Templates 6b); its own spec holds the page to that.
-          if (el.hasAttribute('data-strip-frame')) return false;
+          // ACC-271 PR 5b — the flow strip opens on Fit, so its own frame does
+          // not scroll sideways either, at any width, in either language.
           return (ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1;
         });
         expect(sideways.map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80))).withContext('scrolls sideways').toEqual([]);
@@ -324,7 +324,9 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
           const spread = Math.max(...rects.map((r) => r.top)) - Math.min(...rects.map((r) => r.top));
           return rects.length > 0 && spread < lineHeight / 2;
         };
-        for (const chip of Array.from(host.querySelectorAll<HTMLElement>('[data-tr-trigger], [data-tr-kind]'))) {
+        // ACC-271 PR 5b — the Kind chip; "Who can trigger" is gone.
+        expect(host.querySelector('[data-tr-trigger]')).withContext('no trigger column').toBeNull();
+        for (const chip of Array.from(host.querySelectorAll<HTMLElement>('[data-tr-kind]'))) {
           expect(oneLine(chip)).withContext(`chip "${chip.textContent!.trim()}" on one line`).toBeTrue();
           if (c.width < 400) continue;
           const cell = chip.closest('td')!.getBoundingClientRect();
@@ -342,13 +344,13 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
     }
   }
 
-  it('the trigger reads in words, never its code', async () => {
+  it('a transition’s kind reads in words, never its code, and no trigger is shown', async () => {
     const host = await render(1148, 'en');
     const text = host.textContent!;
-    for (const code of ['ASSIGNEE_POOL', 'ROLE_BASED', 'SINGLE', 'POSITION_FIXED']) {
+    for (const code of ['ASSIGNEE_POOL', 'ROLE_BASED', 'SINGLE', 'POSITION_FIXED', 'RETURN', 'EXIT', 'PERSON', 'Assignee pool', 'Any Authenticated User']) {
       expect(text).withContext(code).not.toContain(code);
     }
-    expect(host.querySelector('[data-tr-trigger]')!.textContent!.trim()).toBe('Assignee pool');
+    expect(Array.from(host.querySelectorAll('[data-tr-kind]')).map((c) => c.textContent!.trim())).toEqual(['Send back', 'End the record']);
   });
 
   // ACC-255 PR 4a — the rows as drawn: meanings in words under the name, what

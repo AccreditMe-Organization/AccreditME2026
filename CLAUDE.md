@@ -4437,6 +4437,10 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
 - **The record page's buttons show what the server says**
   (`GET /workflows/instances/:id/moves`); no screen reads a move's
   `requiredPermission` any more.
+- **A TRANSITION'S SCREEN NAMES NO PEOPLE (PR 5b).** The transition panel
+  sends no trigger, role, person, permission or validator, so stored values
+  stay; a move the app runs (`mover` APP) is read-only, with the server's
+  `appMove` line, never a copy.
 - **PR 3 BUILT THE APIS (no screens):** a stage save takes `who: { mode, entries }`, the template read returns each stage's `who` and `whoSentence`, `assigneeKinds` and each APP move's `appMove`, Keep this assignment has its own route, and a CHANGED old people field is 400 `WHO_MOVED_TO_STAGE` — SYSTEM-REFERENCE §2.19.
 - **WHO WORKS A STAGE IS SET ON THE STAGE'S PANEL, FROM THE SERVER'S RULES
   (PR 5a).** `am-stage-who` replaced the assignee and approval cards; the

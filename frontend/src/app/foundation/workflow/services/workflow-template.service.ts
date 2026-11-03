@@ -185,8 +185,16 @@ export interface WorkflowTransitionDto {
   // ACC-190 — ADVANCE is held by the stage's open mandatory tasks; RETURN and
   // EXIT never are. Never inferred from stage order.
   kind: WorkflowTransitionKind;
+  // ACC-271 PR 3 — who moves the record: PERSON (whoever works the from-stage
+  // presses it) or APP (a module makes the move itself). An APP move also
+  // carries the server's one line saying when it runs (APP_MOVES); the screens
+  // show that line and never a copy of it.
+  mover?: WorkflowTransitionMover;
+  appMove?: { key: string; en: string; ar: string };
   actions?: WorkflowTransitionActionDto[];
 }
+
+export type WorkflowTransitionMover = 'PERSON' | 'APP' | 'AUTOMATIC';
 
 export type WorkflowTransitionKind = 'ADVANCE' | 'RETURN' | 'EXIT';
 export const WORKFLOW_TRANSITION_KINDS: readonly WorkflowTransitionKind[] = ['ADVANCE', 'RETURN', 'EXIT'];
@@ -341,42 +349,29 @@ export interface CreateWorkflowStageDto {
 
 export type UpdateWorkflowStageDto = Partial<CreateWorkflowStageDto>;
 
+// ACC-271 PR 5b — a save names the move, never who may press it: the stage
+// says that. No trigger, role, person, permission or validator is sent, so an
+// edit leaves whatever is stored untouched.
 export interface CreateWorkflowTransitionDto {
   fromStageId: string;
   toStageId: string;
   labelEn: string;
   labelAr: string;
-  // ACC-55 — `| null` clears a previously-set permission (the picker's
-  // "no permission required" option). The backend distinguishes null from
-  // undefined via `!== undefined`, so `|| undefined` would silently mean
-  // "leave unchanged" and make clearing impossible.
-  requiredPermission?: string | null;
-  triggerCondition: string;
-  triggerUserId?: string;
-  triggerRoleId?: string;
-  validatorConfig?: Record<string, unknown>;
   kind?: WorkflowTransitionKind;
+  isApprovalPath?: boolean;
 }
 
 export interface UpdateWorkflowTransitionDto {
   labelEn?: string;
   labelAr?: string;
-  // ACC-55 — `| null` clears a previously-set permission (the picker's
-  // "no permission required" option). The backend distinguishes null from
-  // undefined via `!== undefined`, so `|| undefined` would silently mean
-  // "leave unchanged" and make clearing impossible.
-  requiredPermission?: string | null;
-  triggerCondition?: string;
-  triggerUserId?: string;
-  triggerRoleId?: string;
-  validatorConfig?: Record<string, unknown>;
   isApprovalPath?: boolean;
   kind?: WorkflowTransitionKind;
 }
 
 export interface CreateWorkflowTransitionActionDto {
   actionType: string;
-  order: number;
+  // ACC-271 PR 5b — optional: left out, the server puts the action last.
+  order?: number;
   isEnabled?: boolean;
   configJson?: Record<string, unknown>;
 }

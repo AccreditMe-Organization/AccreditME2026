@@ -1185,6 +1185,7 @@ export class WorkflowTemplateService {
         triggerRoleId: dto.triggerRoleId ?? null,
         validatorConfig: this.toJson(dto.validatorConfig),
         ...(dto.kind !== undefined && { kind: dto.kind }),
+        ...(dto.isApprovalPath !== undefined && { isApprovalPath: dto.isApprovalPath }),
         ...(converted && { mover: 'PERSON' as const }),
       },
     });
@@ -1329,11 +1330,16 @@ export class WorkflowTemplateService {
 
     // ACC-277 — stored as sent, less the read-only markers a client may echo back.
     const configJson = dto.configJson === undefined ? undefined : mergeActionConfig(null, dto.configJson);
+    // ACC-271 PR 5b — a left-out order puts the action last: the transition's
+    // highest order + 10, or 10 when it has none. One aggregate read, made only
+    // when the order is left out. Order is not unique, so two adds at once may
+    // tie, which only leaves their relative order to the read's tie-break.
+    const order = dto.order ?? (await this.nextActionOrder(transitionId, organizationId));
     const action = await this.prisma.workflowTransitionAction.create({
       data: {
         workflowTransitionId: transitionId,
         actionType: dto.actionType,
-        order: dto.order,
+        order,
         isEnabled: dto.isEnabled ?? true,
         configJson: this.toJson(configJson),
       },
@@ -1350,6 +1356,15 @@ export class WorkflowTemplateService {
     });
 
     return this.mapTransitionAction(action);
+  }
+
+  /** The order that puts a new action after every action already on the transition. */
+  private async nextActionOrder(transitionId: string, organizationId: string): Promise<number> {
+    const { _max } = await this.prisma.workflowTransitionAction.aggregate({
+      where: { workflowTransitionId: transitionId, workflowTransition: { fromStage: { workflowTemplate: { organizationId } } } },
+      _max: { order: true },
+    });
+    return _max.order === null ? 10 : _max.order + 10;
   }
 
   async updateTransitionAction(

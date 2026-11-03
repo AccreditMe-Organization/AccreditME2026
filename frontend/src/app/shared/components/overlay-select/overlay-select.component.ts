@@ -175,6 +175,9 @@ function flattenHierarchy(
         [cdkListboxMultiple]="multiple()"
         [cdkListboxValue]="listboxValue()"
         (cdkListboxValueChange)="onListboxChange($event)"
+        (click)="onPanelPick($event)"
+        (keydown.enter)="onPanelPick($event)"
+        (keydown.space)="onPanelPick($event)"
       >
         @for (flat of flattenedOptions(); track getOptionValue(flat.node)) {
           <div
@@ -789,6 +792,26 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
     this.value = event.value.length > 0 ? event.value[0] : null;
     this.onChange(this.value);
     this.close();
+  }
+
+  // Picking the option that is ALREADY selected must close a single select
+  // too. CdkListbox's triggerOption() emits valueChange only when the
+  // selection changed, so onListboxChange() never ran for a re-pick and the
+  // list stayed open (ACC-271 PR 5b: "Fixed position" on a row that was
+  // already Fixed position). Read from the option's own ARIA state, and
+  // closed in a microtask, so it holds whichever of CDK's listener and this
+  // one runs first; a pick that DID change has already closed the panel, and
+  // close() on a detached overlay does nothing.
+  onPanelPick(event: Event): void {
+    if (this.multiple()) return;
+    const target = event.target instanceof Element ? event.target : null;
+    let option = target?.closest('[role="option"]') ?? null;
+    // A key pressed on the panel itself acts on CDK's active option.
+    if (!option && target) option = target.querySelector('[role="option"].cdk-option-active');
+    if (!option) return;
+    if (option.getAttribute('aria-disabled') === 'true') return;
+    if (option.getAttribute('aria-selected') !== 'true') return;
+    queueMicrotask(() => this.close());
   }
 
   clear(event: Event): void {

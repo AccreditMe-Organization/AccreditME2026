@@ -12,9 +12,11 @@ import {
   WorkflowStageDto,
   WorkflowRecordActionDto,
   WorkflowStageFlagDto,
+  WorkflowTransitionDto,
 } from '../../services/workflow-template.service';
 import { StageEditorPanelComponent } from '../stage-editor-panel/stage-editor-panel.component';
-import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
+import { TransitionOpenEvent, WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
+import { TransitionPanelComponent } from '../transition-panel/transition-panel.component';
 import { WorkflowStripComponent } from '../workflow-strip/workflow-strip.component';
 import { StageTaskListComponent, StageTaskSummary } from '../stage-task-list/stage-task-list.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -51,6 +53,7 @@ const NUMBER_TRACK = '32px';
     ButtonModule,
     TooltipModule,
     StageEditorPanelComponent,
+    TransitionPanelComponent,
     DataListComponent,
     WorkflowTransitionEditorComponent,
     WorkflowStripComponent,
@@ -114,6 +117,24 @@ const NUMBER_TRACK = '32px';
           (openStage)="openStage($event, null)"
           (menuPicked)="pick(editingStage()!, $event)"
         />
+      }
+
+      <!-- ACC-271 PR 5b — a transition, in a page panel in the same slot (drawing
+           sections 9 and 10). One panel is open at a time: opening a stage
+           closes it, and the reverse. ?transition=<id> opens it. -->
+      @if (transitionPanel(); as tp) {
+        @if (template(); as t) {
+          <am-transition-panel
+            [template]="t"
+            [transition]="editingTransition()"
+            [fromStageId]="tp.fromStageId"
+            (saved)="onTransitionSaved($event)"
+            (removed)="onTransitionRemoved()"
+            (closed)="closePanel()"
+            (openStage)="openStage($event, null)"
+            (actionsChanged)="loadTemplate()"
+          />
+        }
       }
 
       <!-- ACC-78 - page mode, and the hardest of the three proving tables:
@@ -233,7 +254,11 @@ const NUMBER_TRACK = '32px';
                     [stageId]="stage.id"
                     [transitions]="stage.transitions ?? []"
                     [availableStages]="stages()"
+                    [isProtected]="!!template()?.isProtected"
+                    [selectedId]="transitionPanel()?.id ?? null"
                     (changed)="loadTemplate()"
+                    (open)="openTransition($event)"
+                    (add)="addTransition(stage.id, $event.opener)"
                   />
                   @if (template(); as t) {
                     <app-stage-task-list
@@ -371,6 +396,7 @@ const NUMBER_TRACK = '32px';
 })
 export class WorkflowStageListComponent implements OnInit {
   @ViewChild(StageEditorPanelComponent) private panel?: StageEditorPanelComponent;
+  @ViewChild(TransitionPanelComponent) private transitionPanelRef?: TransitionPanelComponent;
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly route = inject(ActivatedRoute);
@@ -393,7 +419,17 @@ export class WorkflowStageListComponent implements OnInit {
   /** ACC-255 PR 4b — the editor panel: open, and on which stage (null while adding one). */
   readonly panelOpen = signal(false);
   readonly editingStage = signal<WorkflowStageDto | null>(null);
-  /** Whatever opened the panel, so Cancel can return focus to it. */
+  /**
+   * ACC-271 PR 5b — the transition panel: open on a transition (its id), or on
+   * a new one leaving fromStageId (id null). Never open beside the stage panel.
+   */
+  readonly transitionPanel = signal<{ id: string | null; fromStageId: string } | null>(null);
+  /** The open transition as last loaded, so the panel always shows the stored one. */
+  readonly editingTransition = computed<WorkflowTransitionDto | null>(() => {
+    const id = this.transitionPanel()?.id;
+    return id ? (this.findTransition(id) ?? null) : null;
+  });
+  /** Whatever opened a panel, so Cancel or Close can return focus to it. */
   private opener: HTMLElement | null = null;
   readonly expandedRowKeys = signal<Record<string, boolean>>({});
 
@@ -592,10 +628,60 @@ export class WorkflowStageListComponent implements OnInit {
   }
 
   private showPanel(stage: WorkflowStageDto | null, opener: HTMLElement | null): void {
-    // A refusal's link keeps the first opener, so Cancel still returns there.
-    if (opener || !this.panelOpen()) this.opener = opener ?? (this.document.activeElement as HTMLElement | null);
+    // A link inside a panel (a refusal's, or a transition's from-stage) keeps
+    // the first opener, so Cancel still returns there.
+    if (opener || !this.anyPanelOpen()) this.opener = opener ?? (this.document.activeElement as HTMLElement | null);
+    this.transitionPanel.set(null);
     this.editingStage.set(stage);
     this.panelOpen.set(true);
+  }
+
+  private anyPanelOpen(): boolean {
+    return this.panelOpen() || this.transitionPanel() !== null;
+  }
+
+  // ── ACC-271 PR 5b — the transition panel ──────────────────────────────────
+
+  /** A transitions row's name or Edit opens that transition in the panel. */
+  openTransition(event: TransitionOpenEvent): void {
+    const transition = this.findTransition(event.transitionId);
+    if (!transition) return;
+    if (this.transitionPanel()?.id === transition.id) {
+      this.transitionPanelRef?.focusHeading();
+      return;
+    }
+    this.whenDiscarded(() => this.showTransitionPanel(transition.id, transition.fromStageId, event.opener));
+  }
+
+  /** Add transition, in a stage's row: the panel, empty, leaving that stage. */
+  addTransition(fromStageId: string, opener: HTMLElement | null): void {
+    this.whenDiscarded(() => this.showTransitionPanel(null, fromStageId, opener));
+  }
+
+  private showTransitionPanel(id: string | null, fromStageId: string, opener: HTMLElement | null): void {
+    if (opener || !this.anyPanelOpen()) this.opener = opener ?? (this.document.activeElement as HTMLElement | null);
+    this.panelOpen.set(false);
+    this.editingStage.set(null);
+    this.transitionPanel.set({ id, fromStageId });
+  }
+
+  /** Saved: the panel stays on the transition (one just added reopens on itself), and the page reloads. */
+  onTransitionSaved(transition: WorkflowTransitionDto): void {
+    this.transitionPanel.set({ id: transition.id, fromStageId: transition.fromStageId });
+    this.loadTemplate();
+  }
+
+  onTransitionRemoved(): void {
+    this.closePanel();
+    this.loadTemplate();
+  }
+
+  private findTransition(id: string): WorkflowTransitionDto | undefined {
+    for (const stage of this.stages()) {
+      const found = stage.transitions?.find((t) => t.id === id);
+      if (found) return found;
+    }
+    return undefined;
   }
 
   /**
@@ -603,7 +689,10 @@ export class WorkflowStageListComponent implements OnInit {
    * first (plan §17.6), through the one confirm.
    */
   private whenDiscarded(then: () => void): void {
-    if (!this.panelOpen() || !this.panel?.hasChanges()) {
+    const unsaved =
+      (this.panelOpen() && !!this.panel?.hasChanges()) ||
+      (this.transitionPanel() !== null && !!this.transitionPanelRef?.hasChanges());
+    if (!unsaved) {
       then();
       return;
     }
@@ -626,10 +715,11 @@ export class WorkflowStageListComponent implements OnInit {
     this.loadTemplate();
   }
 
-  /** Cancel: the panel closes and focus returns to whatever opened it. */
+  /** Cancel or Close: the open panel closes and focus returns to whatever opened it. */
   closePanel(): void {
     this.panelOpen.set(false);
     this.editingStage.set(null);
+    this.transitionPanel.set(null);
     const opener = this.opener;
     this.opener = null;
     if (opener?.isConnected) opener.focus();
@@ -716,6 +806,9 @@ export class WorkflowStageListComponent implements OnInit {
   // ("Review stage" for a stage on its starting assignment, or with nobody to
   // work it), and the panel's heading takes focus.
   private readonly fixLinkStage = injectFixLinkParam('stage');
+  // ACC-271 PR 5b — ?transition=<id> opens that transition in its panel, with
+  // the stage it leaves expanded so its row is in view.
+  private readonly fixLinkTransition = injectFixLinkParam('transition');
 
   loadTemplate(): void {
     const id = this.route.snapshot.paramMap.get('templateId');
@@ -733,9 +826,18 @@ export class WorkflowStageListComponent implements OnInit {
         }
         this.loading.set(false);
         this.reordering.set(false);
+        // A transition removed elsewhere (its row's ⋯) closes its panel.
+        const open = this.transitionPanel();
+        if (open?.id && !this.findTransition(open.id)) this.closePanel();
         const stageId = this.fixLinkStage();
         const linked = stageId ? template.stages?.find((s) => s.id === stageId) : undefined;
         if (linked) this.showPanel(linked, null);
+        const transitionId = this.fixLinkTransition();
+        const linkedMove = transitionId ? this.findTransition(transitionId) : undefined;
+        if (linkedMove) {
+          this.expandedRowKeys.update((keys) => ({ ...keys, [linkedMove.fromStageId]: true }));
+          this.showTransitionPanel(linkedMove.id, linkedMove.fromStageId, null);
+        }
       },
       error: () => {
         this.error.set('workflow.errorLoad');
