@@ -8,9 +8,10 @@ const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? val
 
 // ACC-174 — what a task's creator may change: these four fields and nothing
 // else. Written out rather than derived from CreateTaskDto, which carries
-// engine-only fields (sourceStageId, workflowInstanceId, assigneeDelegations)
-// no person may set. At least one field is required; TaskService refuses an
-// empty body before reading anything.
+// fields fixed at creation (the source record, who it goes to, the AI marks).
+// The engine-only fields are not on CreateTaskDto at all since ACC-271: they
+// are TaskService.create()'s `internal` argument. At least one field is
+// required; TaskService refuses an empty body before reading anything.
 export class UpdateTaskDto {
   @Transform(trim)
   @IsString()

@@ -18,7 +18,7 @@ import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
 import { assertMayCreateTasks, holdsTaskKey, seesRecordType, taskKeyOf, taskKeysOf, typesHolding } from './task-record-types';
-import { CreateTaskDto } from './dto/create-task.dto';
+import { CreateTaskDto, type CreateTaskInternal } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
@@ -237,7 +237,16 @@ export class TaskService {
   // ACC-244 — the HTTP route calls createForViewer(), which checks the record
   // first. This stays the trusted path, for specs and for any caller acting on
   // its own behalf (ACC-101's getById() / getByIdForViewer() line).
-  async create(dto: CreateTaskDto, organizationId: string, actorId: string): Promise<ITask> {
+  //
+  // ACC-271 — the engine-only values (the stage, the instance, the delegation
+  // stamps) come ONLY from `internal`, never from the body: CreateTaskDto no
+  // longer carries them, and createForViewer() never passes this argument.
+  async create(
+    dto: CreateTaskDto,
+    organizationId: string,
+    actorId: string,
+    internal?: CreateTaskInternal,
+  ): Promise<ITask> {
     if (dto.assignTo && dto.assigneeUserIds?.length) {
       throw new BadRequestException('Choose either who the task goes to or named people, not both');
     }
@@ -267,8 +276,8 @@ export class TaskService {
     const poolClock = pooled ? await this.poolClock(priority, organizationId, new Date()) : NO_POOL_CLOCK;
 
     // ACC-40 Section 2.6.3 — stamped once, at the moment each TaskAssignee
-    // row is created, from the caller-supplied per-assignee delegation map
-    // (manual tasks:create callers never send this, so every assignee there
+    // row is created, from the in-code caller's per-assignee delegation map
+    // (the HTTP route never passes `internal`, so every assignee there
     // simply has no matching entry).
     const prepared: PreparedTask = {
       data: {
@@ -276,8 +285,8 @@ export class TaskService {
         description: dto.description ?? null,
         sourceType: dto.sourceType,
         sourceId: dto.sourceId,
-        sourceStageId: dto.sourceStageId ?? null,
-        workflowInstanceId: dto.workflowInstanceId ?? null,
+        sourceStageId: internal?.sourceStageId ?? null,
+        workflowInstanceId: internal?.workflowInstanceId ?? null,
         meetingId: dto.meetingId ?? null,
         requiresEvidence: dto.requiresEvidence ?? false,
         priority,
@@ -291,7 +300,7 @@ export class TaskService {
         ...poolClock,
       },
       eligibleAssigneeIds,
-      delegations: new Map((dto.assigneeDelegations ?? []).map((d) => [d.userId, d])),
+      delegations: new Map((internal?.assigneeDelegations ?? []).map((d) => [d.userId, d])),
       pooled,
     };
 

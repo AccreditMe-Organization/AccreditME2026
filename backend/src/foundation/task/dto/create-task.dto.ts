@@ -15,22 +15,15 @@ import { TaskAiWorkloadHintDto } from './task-ai-workload-hint.dto';
 
 const DELEGATION_REASONS = ['ACTING_HEAD', 'OUT_OF_OFFICE_COVERAGE'] as const;
 
-// ACC-40 Section 2.6.3 — per-assignee delegation stamp, populated ONLY by
-// the workflow engine's own internal call (WorkflowService.executeCreateTask()),
-// never by the public controller/manual (Create tasks) path — a manually
-// created task's assignees are directly chosen by a human, no delegation
-// reasoning applies.
-export class TaskAssigneeDelegationDto {
-  @IsString()
-  @IsNotEmpty()
-  userId!: string;
-
-  @IsIn(DELEGATION_REASONS)
-  delegationReason!: (typeof DELEGATION_REASONS)[number];
-
-  @IsString()
-  @IsNotEmpty()
-  delegationContextId!: string;
+// ACC-40 Section 2.6.3 — per-assignee delegation stamp. Never part of the
+// request body (ACC-271): a manually created task's assignees are chosen by a
+// human, so no delegation reasoning applies. Only TaskService.create()'s
+// trusted in-code callers pass it, through its `internal` argument, so it is a
+// plain type with no validation decorators.
+export interface TaskAssigneeDelegationDto {
+  userId: string;
+  delegationReason: (typeof DELEGATION_REASONS)[number];
+  delegationContextId: string;
 }
 
 export const TASK_SOURCE_TYPES = [
@@ -48,6 +41,19 @@ export const TASK_SOURCE_TYPES = [
 ] as const;
 
 export const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+
+// ACC-271 — what only a trusted in-code caller may set on a new task, passed
+// as TaskService.create()'s fourth argument and never read from a request
+// body. createForViewer() (the HTTP route) never passes it.
+export interface CreateTaskInternal {
+  // The workflow stage a task belongs to.
+  sourceStageId?: string;
+  // Links a workflow-generated task back to the WorkflowInstance that created it.
+  workflowInstanceId?: string;
+  // Only those assignees resolved via delegation (ACTING_HEAD or
+  // OUT_OF_OFFICE_COVERAGE); a direct, undelegated assignee has no entry.
+  assigneeDelegations?: TaskAssigneeDelegationDto[];
+}
 
 // ACC-197 — the task was written with an AI draft the creator accepted in the
 // New task dialog. `id` is the draft's own id (POST /tasks/draft). It is a
@@ -71,6 +77,13 @@ export class TaskAiDraftDto {
 // CLAUDE.md's non-negotiable rule. Both fields are required here, not
 // optional, regardless of whether the task is created automatically by the
 // workflow engine or manually by a user holding Create tasks on the record's type.
+//
+// ACC-271 — this is the request body of POST /tasks. The engine-only fields
+// (sourceStageId, workflowInstanceId, assigneeDelegations) are NOT on it, so
+// the global forbidNonWhitelisted pipe refuses a body that sends any of them
+// (400): a hand-made task can't pose as workflow-made or carry a delegation
+// reason. Trusted in-code callers pass them as TaskService.create()'s
+// `internal` argument (CreateTaskInternal) instead.
 export class CreateTaskDto {
   @IsString()
   @IsNotEmpty()
@@ -88,16 +101,6 @@ export class CreateTaskDto {
   @IsString()
   @IsNotEmpty()
   sourceId!: string;
-
-  @IsString()
-  @IsOptional()
-  sourceStageId?: string;
-
-  // Links a workflow-generated task back to the WorkflowInstance that
-  // created it — never set by manual (Create tasks) task creation.
-  @IsString()
-  @IsOptional()
-  workflowInstanceId?: string;
 
   @IsString()
   @IsOptional()
@@ -119,16 +122,6 @@ export class CreateTaskDto {
   @ValidateNested()
   @Type(() => AssignTargetDto)
   assignTo?: AssignTargetDto;
-
-  // ACC-40 Section 2.6.3 — optional, workflow-engine-only. Not every
-  // assigneeUserIds entry needs an entry here — only those resolved via
-  // delegation (ACTING_HEAD or OUT_OF_OFFICE_COVERAGE); a direct,
-  // undelegated assignee simply has no matching row.
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => TaskAssigneeDelegationDto)
-  assigneeDelegations?: TaskAssigneeDelegationDto[];
 
   @IsIn(TASK_PRIORITIES)
   @IsOptional()
