@@ -70,6 +70,18 @@ class ListHost {
   readonly variant = input<'page' | 'popup'>('popup');
 }
 
+/** ACC-120 slice 3 — the Created by me view, organisation-wide, as /tasks draws it. */
+@Component({
+  standalone: true,
+  imports: [TaskListViewComponent],
+  template: `<div class="flex flex-col" [style.width.px]="width()" [style.height.px]="700" data-testid="own-host">
+    <app-task-list-view variant="page" view="created" />
+  </div>`,
+})
+class OwnViewHost {
+  readonly width = input(1148);
+}
+
 /** Every kind of row the list draws: with and without a next step, overdue, long text. */
 function variedRows(language: 'en' | 'ar'): ITaskRecordRowDto[] {
   const kinds: Partial<ITaskRecordRowDto>[] = [
@@ -241,5 +253,96 @@ describe('All tasks list — columns, measured (ACC-234)', () => {
         });
       }
     });
+  }
+});
+
+
+// ACC-120 slice 3 — the own views' status chips and overdue pill, MEASURED in
+// the real theme and font: the chip row fits on one line at /tasks' 1440
+// width, scrolls inside itself (never the page) on a phone, cuts no chip's
+// label, and a row's Overdue pill stays inside its column.
+describe('Created by me — the status chips and overdue pill, measured (ACC-120 slice 3)', () => {
+  preserveDocumentLanguage();
+  let http: HttpTestingController;
+
+  function configure(language: 'en' | 'ar'): void {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [OwnViewHost],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        ConfirmationService,
+        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+        providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(language);
+    document.documentElement.dir = TestBed.inject(LanguageService).isRtl() ? 'rtl' : 'ltr';
+    http = TestBed.inject(HttpTestingController);
+  }
+
+  /** Every kind of row, with records named so the record link renders. */
+  function ownRows(language: 'en' | 'ar'): ITaskRecordRowDto[] {
+    const record = { type: 'COMMITTEE', id: 'c-1', nameEn: 'Infection Prevention & Control Committee', nameAr: 'لجنة الوقاية من العدوى ومكافحتها' };
+    return variedRows(language).map((r) => ({ ...r, record }));
+  }
+
+  for (const language of ['en', 'ar'] as const) {
+    for (const c of [
+      { name: '/tasks?view=created at 1440', width: 1148, phone: false },
+      { name: '/tasks?view=created at 390', width: 358, phone: true },
+    ]) {
+      it(`${language} ${c.name}: the chip row is one line, cuts no label, and the page does not scroll sideways`, async () => {
+        configure(language);
+        const fixture = TestBed.createComponent(OwnViewHost);
+        fixture.componentRef.setInput('width', c.width);
+        document.body.appendChild(fixture.nativeElement);
+        fixture.autoDetectChanges(true);
+        const view = fixture.debugElement.query((d) => d.componentInstance instanceof TaskListViewComponent)!.componentInstance as TaskListViewComponent;
+        view.phone.set(c.phone);
+        http.expectOne((r) => r.url === API).flush(listPage(ownRows(language), { total: 30, matching: 30, view: 'created' }));
+        await fixture.whenStable();
+        await document.fonts.ready;
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+        const host = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="own-host"]')!;
+        const row = host.querySelector<HTMLElement>('[data-testid="task-list-status-chips"]')!;
+        const chips = Array.from(row.querySelectorAll<HTMLElement>('button'));
+        // Non-vacuity: laid out, in the real font, with every chip.
+        expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
+        expect(chips.length).withContext('chips rendered').toBe(8);
+        expect(row.getBoundingClientRect().width).withContext('the chip row is not laid out').toBeGreaterThan(c.width / 2);
+        expect(chips.every((b) => b.getBoundingClientRect().width > 20)).withContext('a chip with no width').toBe(true);
+
+        // One line: every chip at the same top.
+        const tops = new Set(chips.map((b) => Math.round(b.getBoundingClientRect().top)));
+        expect(tops.size).withContext('the chips wrapped to more than one line').toBe(1);
+        // No chip's label is cut.
+        const cut = chips.filter((b) => b.scrollWidth > b.clientWidth + 1).map((b) => b.textContent!.trim());
+        expect(cut).withContext('a cut chip label').toEqual([]);
+        // The page never scrolls sideways: the host holds its width. On a phone
+        // the row may scroll inside itself; at 1440 it must not need to.
+        expect(host.scrollWidth).withContext('the page would scroll sideways').toBeLessThanOrEqual(host.clientWidth + 1);
+        if (!c.phone) expect(row.scrollWidth).withContext('the chip row needs to scroll at 1440').toBeLessThanOrEqual(row.clientWidth + 1);
+
+        if (!c.phone) {
+          // The Overdue pill and the record link stay inside their columns.
+          const rowEls = Array.from(host.querySelectorAll<HTMLElement>('[data-task-row]'));
+          expect(rowEls.filter((r) => r.querySelector('[data-testid="task-list-overdue"]')).length).withContext('overdue rows with a pill').toBeGreaterThan(2);
+          expect(host.querySelectorAll('[data-testid="task-list-record"]').length).withContext('record names').toBe(30);
+          const m = measure(host.querySelector<HTMLElement>('[data-testid="task-list-view"]')!);
+          expect(m.overflow).withContext('text painting outside its track').toEqual([]);
+          expect(m.untitledCuts).withContext('a cut name with no tooltip').toEqual([]);
+          m.drift.forEach((d, i) => expect(d).withContext(`column ${i}`).toBeLessThanOrEqual(1));
+        }
+        fixture.nativeElement.remove();
+      });
+    }
   }
 });
