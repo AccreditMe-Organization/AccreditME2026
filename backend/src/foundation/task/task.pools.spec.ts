@@ -103,7 +103,9 @@ const mockPrisma = {
   committeeMember: { findMany: jest.fn(), count: jest.fn() },
   orgUnit: { findFirst: jest.fn(), findMany: jest.fn() },
   orgPosition: { findFirst: jest.fn() },
-  committee: { findFirst: jest.fn() },
+  committee: { findFirst: jest.fn(), findMany: jest.fn() },
+  // ACC-120 slice 3 — the Available list names each row's record.
+  meeting: { findMany: jest.fn() },
   lookupValue: { findFirst: jest.fn() },
   // ACC-199 — the "assigned on an AI suggestion" claim is checked against the AI log.
   aiInteractionLog: { findFirst: jest.fn() },
@@ -739,6 +741,55 @@ describe('TaskService — pools (ACC-167)', () => {
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
       );
+    });
+
+    // ACC-120 slice 3 — each row's record, on its own IAvailableTaskListItem.
+    describe('the record', () => {
+      const inPool = () => {
+        mockPrisma.user.findFirst.mockResolvedValue({ positionId: 'pos-qo', primaryOrgUnitId: 'unit-1' });
+        mockPrisma.committeeMember.findMany.mockResolvedValue([]);
+      };
+
+      it('names it in ONE batched lookup for a viewer who may see committees, and leaves every old field as it was', async () => {
+        inPool();
+        mockPrisma.task.findMany.mockResolvedValue([
+          { ...poolTask(), _count: { evidence: 0 } },
+          { ...poolTask({ id: 'task-2' }), _count: { evidence: 0 } },
+        ]);
+        mockPrisma.committee.findMany.mockResolvedValue([{ id: 'committee-1', nameEn: 'Quality Committee', nameAr: null }]);
+
+        const before = await (async () => {
+          // The same rows, read by a viewer who sees no committees: the old shape plus a nameless record.
+          const rows = await service.getAvailableToPick(HOLDER_A, ORG_A);
+          return rows[0]!;
+        })();
+        expect(mockPrisma.committee.findMany).not.toHaveBeenCalled();
+
+        const [first, second] = await service.getAvailableToPick(HOLDER_A, ORG_A, ['committees:view']);
+        expect(mockPrisma.committee.findMany).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.committee.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: { in: ['committee-1'] }, organizationId: ORG_A } }),
+        );
+        expect(mockPrisma.meeting.findMany).not.toHaveBeenCalled();
+        expect(first!.record).toEqual({ type: 'COMMITTEE', id: 'committee-1', nameEn: 'Quality Committee', nameAr: null });
+        expect(second!.record).toEqual(first!.record);
+        // Additive: everything but the record is what the list returned before.
+        const { record: _named, ...rest } = first!;
+        const { record: unnamed, ...restBefore } = before;
+        expect(rest).toEqual(restBefore);
+        expect(unnamed).toEqual({ type: 'COMMITTEE', id: 'committee-1', nameEn: null, nameAr: null });
+      });
+
+      itEnforcesTenantIsolation('getAvailableToPick record names', async () => {
+        inPool();
+        mockPrisma.task.findMany.mockResolvedValue([{ ...poolTask(), _count: { evidence: 0 } }]);
+        mockPrisma.committee.findMany.mockResolvedValue([]);
+        const [row] = await service.getAvailableToPick(HOLDER_A, ORG_B, ['committees:view']);
+        expect(mockPrisma.committee.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+        );
+        expect(row!.record).toEqual({ type: 'COMMITTEE', id: 'committee-1', nameEn: null, nameAr: null });
+      });
     });
   });
 
