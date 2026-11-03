@@ -78,9 +78,11 @@ describe('TaskClosedNoticeService (ACC-271 PR 4)', () => {
     expect(notifications.createInAppMany).not.toHaveBeenCalled();
   });
 
-  it("tells an away member's ACTIVE acting user in their place, and nobody who is no longer ACTIVE", async () => {
+  // ACC-271 — the notice is about the row the assignee holds, so it goes to
+  // them, never rerouted through an acting user.
+  it('an assignee who is away is still told directly, and their acting user is not told; nobody no longer ACTIVE is told', async () => {
     const away = { outOfOfficeFrom: new Date(NOW - DAY), outOfOfficeTo: new Date(NOW + DAY) };
-    const { service, written } = setup(
+    const { service, written, prisma } = setup(
       [
         { id: 'actor' },
         { id: 'away', ...away, actingUserId: 'stand-in' },
@@ -93,8 +95,10 @@ describe('TaskClosedNoticeService (ACC-271 PR 4)', () => {
 
     await service.afterStageExit(ORG, 'actor', move([{ id: 't1', assigneeUserIds: ['away', 'left', 'away-to-actor'] }]));
 
-    // The acting user, once; the inactive person, never; an acting user who is the actor, never.
-    expect(written().map((r) => r.userId)).toEqual(['stand-in']);
+    // Both away assignees themselves; the stand-in never; the inactive person never.
+    expect(written().map((r) => r.userId)).toEqual(['away', 'away-to-actor']);
+    // Away status is not read at all.
+    expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: { id: true, name: true, status: true } }));
   });
 
   it("names the record and links it only for someone who may open it; the type and no link for anyone else", async () => {
