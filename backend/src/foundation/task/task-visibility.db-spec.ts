@@ -328,6 +328,13 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
       // 'corrupt' (on another organisation's committee) is the creator's too: a
       // relationship needs no record (Q1), as the tenant test asserts.
       expect(keys).toEqual(['corrupt', 'dept', 'emptyPool', 'pool', 'request', 'root', 'sib', 'unassigned', 'ward']);
+      // Its record label never resolves from the other organisation: the
+      // type and its own id, and no name.
+      const own = await prisma.task.findFirst({ where: { id: corruptTask, organizationId: A }, select: { sourceId: true } });
+      const row = answer.items.find((i) => i.id === corruptTask);
+      expect(row?.record).toEqual({ type: 'COMMITTEE', id: own!.sourceId, nameEn: null, nameAr: null });
+      // Non-vacuity: that committee does have a name, in its own organisation.
+      expect((await prisma.committee.findFirst({ where: { id: own!.sourceId, organizationId: B }, select: { nameEn: true } }))?.nameEn).toBe('C X');
       // Non-vacuity: the creator does see their workflow-made task elsewhere.
       expect(await admitted(as('creator', [SEE]))).toContain('workflowMade');
       expect(keys).not.toContain('workflowMade');
