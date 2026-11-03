@@ -16,8 +16,8 @@ export type RecordListSort = (typeof RECORD_LIST_SORTS)[number];
 
 export const RECORD_LIST_DUE = ['THIS_WEEK', 'LATER', 'NONE'] as const;
 export const RECORD_LIST_REQUIRED = ['REQUIRED', 'OPTIONAL'] as const;
-/** ACC-244 — the organisation-wide saved views (no record named). */
-export const RECORD_LIST_VIEWS = ['all', 'unit', 'unassigned'] as const;
+/** ACC-244 — the organisation-wide saved views (no record named); ACC-120 slice 3 adds mine and created. */
+export const RECORD_LIST_VIEWS = ['all', 'unit', 'unassigned', 'mine', 'created'] as const;
 export type RecordListView = (typeof RECORD_LIST_VIEWS)[number];
 const SOURCE_TYPES = [
   'MEETING',
@@ -64,6 +64,9 @@ export class RecordListQueryDto {
    * ACC-244 — with no record: `all` (View all tasks, the types it is held on),
    * `unit` (unit scope: the records owned by the viewer's unit and below) or
    * `unassigned` (Manage tasks: no actionable owner, the types managed).
+   * ACC-120 slice 3: `mine` (the viewer is an active assignee) and `created`
+   * (created by the viewer, or by a creator they act for now; not
+   * workflow-made). Those two need no permission and are never a 403.
    */
   @IsOptional()
   @IsIn(RECORD_LIST_VIEWS)
