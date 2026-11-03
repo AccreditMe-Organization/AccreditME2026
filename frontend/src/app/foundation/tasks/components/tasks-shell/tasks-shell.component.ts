@@ -16,9 +16,10 @@ import { TaskFormStepsComponent } from '../task-form/task-form-steps.component';
 
 /** The views of /tasks, in their fixed order (Task Screens; the Unit Tasks View drawing). */
 export type TaskViewKey = 'mine' | TaskRecordListView;
-const ORDER: readonly TaskViewKey[] = ['mine', 'all', 'unit', 'unassigned'];
+const ORDER: readonly TaskViewKey[] = ['mine', 'created', 'unit', 'all', 'unassigned'];
 const LABELS: Readonly<Record<TaskViewKey, string>> = {
   mine: 'tasks.views.mine',
+  created: 'tasks.views.created',
   all: 'tasks.views.all',
   unit: 'tasks.views.unit',
   unassigned: 'tasks.views.unassigned',
@@ -107,6 +108,10 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
           } @else if (!(wantsListView() && viewsState() === 'error')) {
             <app-my-tasks [showHeader]="false" />
           }
+        }
+        @case ('created') {
+          <!-- ACC-120 slice 3 — Created by me: the shared list on the viewer's own view. -->
+          <app-task-list-view variant="page" view="created" (deniedChange)="listDenied.set($event)" />
         }
         @case ('all') {
           <app-task-list-view variant="page" view="all" [recordType]="recordTypeParam()" (deniedChange)="listDenied.set($event)" />
@@ -245,7 +250,7 @@ export class TasksShellComponent {
   /** The view the URL asks for; anything else is My tasks. */
   readonly requested = computed<TaskViewKey>(() => {
     const view = this.params().get('view');
-    return view === 'all' || view === 'unit' || view === 'unassigned' ? view : 'mine';
+    return view === 'created' || view === 'all' || view === 'unit' || view === 'unassigned' ? view : 'mine';
   });
   readonly recordTypeParam = computed(() => this.params().get('recordType'));
   readonly unitParam = computed(() => this.params().get('unit'));
@@ -256,7 +261,9 @@ export class TasksShellComponent {
   readonly switcher = computed(() => {
     const v = this.views();
     if (!v) return [];
-    return ORDER.filter((key) => key === 'mine' || v[key] !== null).map((key) => ({ key, labelKey: LABELS[key] }));
+    // A view exists when the server names it: an object, or created's true.
+    // A key the server leaves out is absent, never present.
+    return ORDER.filter((key) => key === 'mine' || !!v[key]).map((key) => ({ key, labelKey: LABELS[key] }));
   });
 
   /** The open view: the one asked for, when this viewer has it; otherwise My tasks. */
@@ -264,7 +271,7 @@ export class TasksShellComponent {
     const asked = this.requested();
     const v = this.views();
     if (asked === 'mine' || !v) return 'mine';
-    return v[asked] !== null ? asked : 'mine';
+    return v[asked] ? asked : 'mine';
   });
 
   /** A link to a view this viewer no longer has opens My tasks, and says so in one line. */
