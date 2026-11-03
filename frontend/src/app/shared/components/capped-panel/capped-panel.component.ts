@@ -25,6 +25,14 @@ export type CappedPanelState = 'loading' | 'error' | 'ready';
  *
  * `testIdPrefix` names the parts (`{prefix}-head`, `-body`, `-count`, `-foot`,
  * `-see-all`, `-error`, `-empty`), so each panel keeps its own test hooks.
+ *
+ * Opt-in, both off by default so every other panel is unchanged:
+ * - `emptyBody`: the drawing's empty state for a section that has never held
+ *   anything (Compact List Panel, "No meetings recorded"): a small dashed
+ *   marker, `emptyText` as its title and this as the line under it, centred.
+ * - **Filling its grid cell**: inside an element marked `data-fill-panels`,
+ *   the panel takes its cell's full height, so panels in a row share their top
+ *   and bottom edges. The body keeps its fixed height and never scrolls.
  */
 @Component({
   selector: 'am-capped-panel',
@@ -55,7 +63,13 @@ export type CappedPanelState = 'loading' | 'error' | 'ready';
             </div>
           }
           @default {
-            @if (shown() === 0) {
+            @if (shown() === 0 && emptyBody()) {
+              <div class="am-cp__empty" [attr.data-testid]="testIdPrefix() + '-empty'">
+                <span class="am-cp__empty-mark" aria-hidden="true"></span>
+                <p class="am-cp__empty-title">{{ emptyText() }}</p>
+                <p class="am-cp__empty-body">{{ emptyBody() }}</p>
+              </div>
+            } @else if (shown() === 0) {
               <p class="am-cp__state" [attr.data-testid]="testIdPrefix() + '-empty'">{{ emptyText() }}</p>
             } @else {
               <ul class="am-cp__list" role="list"><ng-content /></ul>
@@ -93,6 +107,12 @@ export type CappedPanelState = 'loading' | 'error' | 'ready';
       .am-cp__link{font:inherit;padding:0;border:0;background:none;color:var(--am-primary-700);font-weight:600;cursor:pointer}
       .am-cp__link:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
       .am-cp__state{margin:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px;font-size:13px;color:var(--am-ink-700)}
+      .am-cp__empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1 1 auto;padding:26px 20px;text-align:center}
+      .am-cp__empty-mark{inline-size:30px;block-size:30px;border-radius:7px;border:1px dashed var(--am-control-border);background:var(--am-surface);margin-block-end:5px}
+      .am-cp__empty-title{margin:0;font-size:13px;font-weight:600;color:var(--am-ink-900)}
+      .am-cp__empty-body{margin:0;font-size:12px;color:var(--am-ink-500);text-wrap:pretty}
+      [data-fill-panels] am-capped-panel{block-size:100%}
+      [data-fill-panels] .am-cp{block-size:100%;box-sizing:border-box;display:flex;flex-direction:column}
       .am-cp__skeleton span{display:block;block-size:10px;border-radius:4px;background:var(--am-surface)}.am-cp__skeleton span+span{margin-block-start:8px;inline-size:60%}
       [dir=rtl] .am-cp__head{block-size:46px;padding:0 16px 0 12px}
       [dir=rtl] .am-cp__body{block-size:328px}
@@ -119,6 +139,8 @@ export class CappedPanelComponent {
   readonly errorText = input('');
   /** The body's line when there is nothing, already translated. */
   readonly emptyText = input('');
+  /** Opt-in: a line under `emptyText`, in the drawing's centred empty state. */
+  readonly emptyBody = input('');
   readonly testIdPrefix = input('capped');
   /**
    * ACC-120 slice 11, PR D — false for a total the viewer may count but not

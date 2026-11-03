@@ -12,6 +12,8 @@ import { TaskFormStepsComponent } from '../../../tasks/components/task-form/task
 import { RecordTasksPanelComponent } from '../../../tasks/components/record-tasks-panel/record-tasks-panel.component';
 import { CommitteeMembersPanelComponent } from '../committee-members-panel/committee-members-panel.component';
 import { CommitteeSubCommitteesPanelComponent } from '../committee-sub-committees-panel/committee-sub-committees-panel.component';
+import { CommitteeMembershipHistoryPanelComponent } from '../committee-membership-history-panel/committee-membership-history-panel.component';
+import { CappedPanelComponent } from '../../../../shared/components/capped-panel/capped-panel.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   CommitteeService,
@@ -34,7 +36,7 @@ import { WorkflowTransitionActionsComponent } from '../../../workflow/components
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
-import { AmDatePipe, FormatService } from '../../../../core/formatting';
+import { FormatService } from '../../../../core/formatting';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
@@ -55,7 +57,6 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
   standalone: true,
   imports: [
     TranslatePipe,
-    AmDatePipe,
     ButtonModule,
     TagModule,
     MessageModule,
@@ -67,6 +68,8 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     RecordTasksPanelComponent,
     CommitteeMembersPanelComponent,
     CommitteeSubCommitteesPanelComponent,
+    CommitteeMembershipHistoryPanelComponent,
+    CappedPanelComponent,
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
@@ -307,7 +310,10 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
              checks that need Meetings and Documents are named here even while
              those modules do not exist, because a section that is absent reads
              as a design that never considered it. -->
-        <section class="grid gap-3" [style.grid-template-columns]="panelGrid">
+        <!-- Every panel is am-capped-panel, at one fixed height, and data-fill-panels
+             makes each fill its grid cell: panels in a row share their top and
+             bottom edges, and no body scrolls. -->
+        <section class="grid gap-3" [style.grid-template-columns]="panelGrid" data-fill-panels data-committee-panels>
 
           <!-- ACC-230 — Members, capped at five, ordered by seat; Change role and
                Remove in a worded ⋯ menu (Q12), with the same permissions as
@@ -347,62 +353,33 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
           <!-- Four of the seven things a surveyor checks for a committee live
                here (module-designs.md:880-887): attendance, quorum
                confirmation, decisions with vote counts, action items. -->
-          <app-record-panel
+          <am-capped-panel
             [heading]="'committee.meetings' | translate"
-            [count]="0"
-            [isEmpty]="true"
-            [emptyTitle]="'committee.noMeetings' | translate"
-            [emptyMessage]="'committee.meetingsDescription' | translate"
+            state="ready"
+            [emptyText]="'committee.noMeetings' | translate"
+            [emptyBody]="'committee.meetingsDescription' | translate"
+            testIdPrefix="committee-meetings"
           />
 
           <!-- Terms of Reference and reports to the parent body — the other
                two. Committee.termsOfReferenceDocumentId is already in the
                schema, annotated there as unpopulated until Documents ships. -->
-          <app-record-panel
+          <am-capped-panel
             [heading]="'committee.documents' | translate"
-            [count]="0"
-            [isEmpty]="true"
-            [emptyTitle]="'committee.noDocuments' | translate"
-            [emptyMessage]="'committee.documentsDescription' | translate"
+            state="ready"
+            [emptyText]="'committee.noDocuments' | translate"
+            [emptyBody]="'committee.documentsDescription' | translate"
+            testIdPrefix="committee-documents"
           />
 
-          <app-record-panel
-            [heading]="'committee.membershipHistory' | translate"
-            [count]="membershipEvents().length"
-            [isEmpty]="membershipEvents().length === 0"
-            [emptyTitle]="'committee.noMembershipHistory' | translate"
-          >
-            @for (event of membershipEvents(); track event.id) {
-              <div
-                class="grid grid-cols-[8px_1fr_auto] gap-2.5 items-baseline px-4 py-2 border-b border-[var(--am-border)]"
-              >
-                <span
-                  class="w-[7px] h-[7px] rounded-full mt-1.5"
-                  [style.background]="membershipEventColor(event.action)"
-                ></span>
-                <span class="min-w-0 text-[12.5px]">
-                  <span class="font-medium">{{ userName(event.userId) }}</span>
-                  <span class="text-[var(--am-text-secondary)]">
-                    {{ 'committee.action.' + event.action.toLowerCase() | translate }} —
-                    {{ memberRoleLabel(event.roleValueId) }}
-                  </span>
-                  <!-- Who authorised it. A membership log without this is not a
-                       compliance trail — resolved from approvedBy against the
-                       users already loaded, no extra request. -->
-                  @if (approvedByName(event.approvedBy); as approver) {
-                    <span class="block text-[11.5px] text-[var(--am-text-secondary)]">{{ approver }}</span>
-                  }
-                </span>
-                <span
-                  dir="ltr"
-                  style="unicode-bidi: isolate"
-                  class="text-[11.5px] whitespace-nowrap text-[var(--am-text-secondary)]"
-                >
-                  {{ event.effectiveDate | amDate }}
-                </span>
-              </div>
-            }
-          </app-record-panel>
+          <!-- Capped at five like Members, with See all; who authorised each
+               change stays on its row, resolved from the people already loaded. -->
+          <app-committee-membership-history-panel
+            [events]="membershipEvents()"
+            [users]="users()"
+            [memberRoles]="memberRoles()"
+            [committeeName]="displayName(c)"
+          />
           <!-- ACC-240 — last in the grid. -->
           <am-committee-change-requests-panel
             [committeeId]="committeeId"
@@ -684,12 +661,6 @@ export class CommitteeDetailComponent implements OnInit {
     return value ? this.languageService.bilingual(value.labelEn, value.labelAr) : '—';
   }
 
-  memberRoleLabel(roleValueId: string): string {
-    const value = this.memberRoles().find((v) => v.id === roleValueId);
-    if (!value) return roleValueId;
-    return this.languageService.bilingual(value.labelEn, value.labelAr);
-  }
-
   userName(userId: string): string {
     return this.users().find((u) => u.id === userId)?.name ?? userId;
   }
@@ -710,24 +681,6 @@ export class CommitteeDetailComponent implements OnInit {
     const en = self.currentStageNameEn;
     return en ? this.languageService.bilingual(en, self.currentStageNameAr) : '';
   });
-
-  // JOINED reads as gain, LEFT as loss, ROLE_CHANGED as neither — semantic
-  // status tokens, never brand colours (CLAUDE.md, Brand Design Tokens).
-  membershipEventColor(action: string): string {
-    if (action === 'JOINED') return 'var(--am-status-approved)';
-    if (action === 'LEFT') return 'var(--am-status-rejected)';
-    return 'var(--am-blue-primary)';
-  }
-
-  // approvedBy is a userId and nullable — not every event needs approval.
-  // Resolved against the users this page already loaded, so no extra request.
-  approvedByName(approvedBy: string | null): string {
-    if (!approvedBy) return '';
-    const name = this.users().find((u) => u.id === approvedBy)?.name;
-    if (!name) return '';
-    this.translate.currentLang();
-    return this.translate.instant('committee.approvedBy', { name });
-  }
 
   parentCommitteeName(committee: CommitteeDto): string {
     if (!committee.parentCommitteeId) return '—';
