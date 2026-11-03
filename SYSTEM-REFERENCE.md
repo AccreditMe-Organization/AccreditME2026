@@ -9143,10 +9143,19 @@ and `workflow-template-list` (the Workflows list).*
 
 **The Workflows list adds two shapes other consumers can copy:**
 - **Group headings are rows of their own.** Its source returns a heading row,
-  then that group's workflows (each record type, its default last). A heading
-  carries no `amListRow`, so ↑/↓ skip it, and its `amListRowIndex` counts
-  workflow rows only, so the first tab stop is never a heading. A search keeps
+  then that group's workflows. A heading carries no `amListRow`, so ↑/↓ skip
+  it, and its `amListRowIndex` counts workflow rows only, so the first tab stop
+  is never a heading. A search keeps
   the headings of groups that still match.
+  **The groups are MODULES (ACC-120 slice 7c)**, because grouping by record
+  type gave nearly every heading one row: Documents (document requests,
+  documents, change requests), Incidents, Audits, Corrective actions, Meetings,
+  Committees (committees, committee change requests), then Other for a type the
+  page does not know. The mapping and the order live in one place,
+  `workflow-list-groups.ts`. Inside a module a record type's workflows stay
+  together, its default last, and every row's second line names its record
+  type ("Default for document requests", "For committee management"); a type
+  is never shown as its code.
 - **The page owns its load** when the shared states don't say what it needs.
   It reads `GET /workflow-templates` once and shows its own skeletons, its own
   alert ("…couldn't be loaded. Nothing was changed." with Retry) and its own
