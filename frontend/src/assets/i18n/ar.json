@@ -755,9 +755,30 @@
       "colState": "الحالة",
       "searchPlaceholder": "ابحث في سير العمل",
       "loading": "جارٍ تحميل سير العمل",
-      "default": "افتراضي",
-      "defaultSub": "يُستخدم للسجلات الجديدة من هذا النوع.",
-      "protectedSub": "يُستخدم لكل طلب تغيير (لا حقول لاختبارها).",
+      "defaultFor": "الافتراضي في {{type}}",
+      "forType": "يُستخدم في {{type}}",
+      "protectedFor": "الافتراضي في {{type}} (لا حقول لاختبارها).",
+      "module": {
+        "DOCUMENTS": "الوثائق",
+        "INCIDENTS": "الحوادث",
+        "AUDITS": "عمليات التدقيق",
+        "CORRECTIVE_ACTIONS": "الإجراءات التصحيحية",
+        "MEETINGS": "الاجتماعات",
+        "COMMITTEES": "اللجان",
+        "OTHER": "أخرى"
+      },
+      "recordFor": {
+        "DOCUMENT_REQUEST": "طلبات الوثائق",
+        "DOCUMENT": "دورة حياة الوثيقة",
+        "CHANGE_REQUEST": "طلبات التغيير",
+        "INCIDENT": "الحوادث",
+        "AUDIT": "عمليات التدقيق",
+        "CORRECTIVE_ACTION": "الإجراءات التصحيحية",
+        "MEETING": "الاجتماعات",
+        "COMMITTEE": "إدارة اللجان",
+        "COMMITTEE_CHANGE_REQUEST": "طلبات تغيير اللجان",
+        "OTHER": "سجلات أخرى"
+      },
       "actionsFor": "إجراءات {{name}}",
       "open": "فتح",
       "setDefault": "تعيين كافتراضي",
@@ -767,18 +788,7 @@
       "retry": "إعادة المحاولة",
       "dismiss": "إغلاق",
       "emptyTitle": "لا يوجد سير عمل بعد",
-      "emptyBody": "يُضاف سير عمل كل نوع سجل عند إعداد المنشأة، ولا يوجد أي منها لهذه المنشأة بعد.",
-      "group": {
-        "DOCUMENT_REQUEST": "طلبات الوثائق",
-        "DOCUMENT": "الوثائق",
-        "CHANGE_REQUEST": "طلبات تغيير الوثائق",
-        "INCIDENT": "الحوادث",
-        "AUDIT": "عمليات التدقيق",
-        "CORRECTIVE_ACTION": "الإجراءات التصحيحية",
-        "MEETING": "الاجتماعات",
-        "COMMITTEE": "اللجان",
-        "COMMITTEE_CHANGE_REQUEST": "طلبات تغيير اللجان"
-      }
+      "emptyBody": "يُضاف سير عمل كل نوع سجل عند إعداد المنشأة، ولا يوجد أي منها لهذه المنشأة بعد."
     },
     "editor": {
       "identityTitle": "المرحلة",
