@@ -8,6 +8,7 @@ import { ReassignTaskDto } from './reassign-task.dto';
 import { AssignmentCommitteeRolesQueryDto, AssignmentHoldersQueryDto } from './assignment-query.dto';
 import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './task-request.dto';
 import { EvidenceSummaryQueryDto, MakeEvidenceSummaryDto } from './evidence-summary.dto';
+import { RecordListQueryDto } from './record-list-query.dto';
 
 // ACC-163 — these DTOs ARE the refusal for most bad input, so they are tested
 // through a pipe configured exactly as main.ts configures the app's, not by
@@ -443,6 +444,19 @@ describe('ApproveTaskRequestDto and DeclineTaskRequestDto (ACC-173)', () => {
   it('approve refuses a counter-proposed date', async () => {
     expect(await messages(run(ApproveTaskRequestDto, { requestedDueAt: '2026-11-01T13:00:00.000Z' }))).toEqual(
       expect.arrayContaining([expect.stringMatching(/requestedDueAt/)]),
+    );
+  });
+});
+
+// ACC-120 slice 3 — the organisation-wide saved views, the viewer's own two included.
+describe('RecordListQueryDto — view', () => {
+  it.each(['all', 'unit', 'unassigned', 'mine', 'created'])('accepts view=%s', async (view) => {
+    await expect(run(RecordListQueryDto, { view }, 'query')).resolves.toMatchObject({ view });
+  });
+
+  it.each(['everything', 'Mine', 'record'])('refuses view=%s with a 400', async (view) => {
+    expect(await messages(run(RecordListQueryDto, { view }, 'query'))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^view /)]),
     );
   });
 });

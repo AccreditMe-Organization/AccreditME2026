@@ -6,6 +6,7 @@ import { TaskAdmissionService } from './task-admission.service';
 import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, poolTargetOf, resolvePoolMemberIds, toPoolView } from './task-pool';
 import { OPEN_REQUEST_INCLUDE, toOpenRequest } from './task-request-lifecycle';
 import { taskActionsFor } from './task-actions';
+import { isWorkflowMade } from './task-visibility';
 import {
   ITaskHistoryEvent,
   ITaskPagePerson,
@@ -135,7 +136,7 @@ export class TaskPageService {
       })),
       poolMemberCount: poolMemberIds ? poolMemberIds.length : null,
       createdBy: toPerson(creator),
-      createdByWorkflow: !!(task.workflowInstanceStageId || task.workflowInstanceId || task.sourceStageId),
+      createdByWorkflow: isWorkflowMade(task),
       completedBy,
       rejectedBy,
       cancelledBy,

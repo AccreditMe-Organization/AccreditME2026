@@ -9,7 +9,10 @@
  * rows are real. Fails, never skips, without a local database (ACC-120).
  */
 import { randomUUID } from 'crypto';
+import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { isWorkflowMade, workflowMadeSql } from './task-visibility';
 import { TaskRecordListService } from './task-record-list.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { TaskService } from './task.service';
@@ -45,6 +48,8 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
   const record = `rec-${randomUUID().slice(0, 8)}`;
   const id: Record<string, string> = {};
   const VIEW_ALL = { permissions: ['committees:view_all_tasks', 'committees:view'] };
+  /** ACC-120 slice 3 — tasks covering all 8 combinations of the three workflow columns. */
+  const combos: string[] = [];
 
   async function newOrg(): Promise<{ org: string; creator: string; viewer: string }> {
     const slug = `acc229-${randomUUID().slice(0, 8)}`;
@@ -95,6 +100,39 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
       data: { organizationId: b.org, createdById: b.creator, sourceType: 'COMMITTEE', sourceId: record, title: 'Foreign', dueAt: at(-30 * DAY) },
     });
     id['foreign'] = foreign.id;
+    // ACC-120 slice 3 — two cross-organisation rows that name THIS viewer: an
+    // assignee row on B's task, and a B task the viewer is recorded as creating.
+    await prisma.taskAssignee.create({ data: { taskId: foreign.id, userId: viewer, assignedById: b.creator } });
+    const foreignCreated = await prisma.task.create({
+      data: { organizationId: b.org, createdById: viewer, sourceType: 'COMMITTEE', sourceId: record, title: 'Foreign created', status: 'PENDING' },
+    });
+    id['foreignCreated'] = foreignCreated.id;
+
+    // ACC-120 slice 3 — the 8 combinations of workflowInstanceStageId,
+    // workflowInstanceId and sourceStageId being null or set, on a record id
+    // no committee has (so no other count here sees them).
+    const template = await prisma.workflowTemplate.create({ data: { organizationId: org, nameEn: 'Combo', objectType: 'COMMITTEE' } });
+    const stage = await prisma.workflowStage.create({ data: { workflowTemplateId: template.id, nameEn: 'Step', order: 1 } as never });
+    const instance = await prisma.workflowInstance.create({
+      data: { organizationId: org, workflowTemplateId: template.id, objectType: 'COMMITTEE', objectId: `combo-${record}` } as never,
+    });
+    const entry = await prisma.workflowInstanceStage.create({ data: { workflowInstanceId: instance.id, stageId: stage.id } as never });
+    for (let bits = 0; bits < 8; bits++) {
+      const t = await prisma.task.create({
+        data: {
+          organizationId: org,
+          createdById: a.creator,
+          sourceType: 'COMMITTEE',
+          sourceId: `combo-${record}`,
+          title: `Combo ${bits}`,
+          status: 'PENDING',
+          workflowInstanceStageId: bits & 1 ? entry.id : null,
+          workflowInstanceId: bits & 2 ? instance.id : null,
+          sourceStageId: bits & 4 ? stage.id : null,
+        } as never,
+      });
+      combos.push(t.id);
+    }
   });
   afterAll(async () => {
     await prisma.onModuleDestroy();
@@ -185,6 +223,47 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     // A meeting has no task keys yet (ACC-244 §2.2): seeing meetings adds nothing.
     const withMeetings = await service.list({}, org, { id: viewer, permissions: [...VIEW_ALL.permissions, 'meetings:view'] });
     expect(keysOf(withMeetings.items)).not.toContain('meeting');
+  });
+
+  // ACC-120 slice 3 — the viewer's own views.
+  it('My tasks lists exactly what getMyTasks() lists: the tasks the viewer is an active assignee on', async () => {
+    const mine = await service.list({ view: 'mine' }, org, { id: viewer, permissions: [] });
+    const expected = await prisma.task.findMany({
+      where: { organizationId: org, assignees: { some: { userId: viewer, removedAt: null } } },
+      select: { id: true },
+    });
+    // Non-vacuity: the viewer is on one task here.
+    expect(expected.length).toBe(1);
+    expect(mine.items.map((i) => i.id).sort()).toEqual(expected.map((t) => t.id).sort());
+    expect(mine.view).toBe('mine');
+  });
+
+  itEnforcesTenantIsolation('record-list mine/created', async () => {
+    const mine = await service.list({ view: 'mine' }, org, { id: viewer, permissions: [] });
+    const created = await service.list({ view: 'created' }, org, { id: viewer, permissions: [] });
+    // Non-vacuity: each view does list this organisation's own row.
+    expect(keysOf(mine.items)).toEqual(['tomorrow']);
+    expect(keysOf(created.items)).toEqual(['created']);
+    for (const list of [mine, created]) {
+      expect(list.items.map((i) => i.id)).not.toContain(id['foreign']);
+      expect(list.items.map((i) => i.id)).not.toContain(id['foreignCreated']);
+    }
+  });
+
+  it('workflowMadeSql() and isWorkflowMade() agree on all 8 combinations of the workflow columns', async () => {
+    const sqlIds = await prisma.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT t.id FROM "Task" t WHERE t."organizationId" = ${org} AND t.id IN (${Prisma.join(combos)}) AND ${workflowMadeSql()}`,
+    );
+    const rows = await prisma.task.findMany({
+      where: { organizationId: org, id: { in: combos } },
+      select: { id: true, workflowInstanceStageId: true, workflowInstanceId: true, sourceStageId: true },
+    });
+    const jsIds = rows.filter((r) => isWorkflowMade(r)).map((r) => r.id);
+    // Non-vacuity: all 8 rows exist, and 7 of them (every one with a column set) are workflow-made.
+    expect(rows.length).toBe(8);
+    expect(jsIds.length).toBe(7);
+    expect(sqlIds.map((r) => r.id).sort()).toEqual(jsIds.sort());
+    expect(jsIds).not.toContain(combos[0]);
   });
 
   it('the filter options cover the whole scope', async () => {

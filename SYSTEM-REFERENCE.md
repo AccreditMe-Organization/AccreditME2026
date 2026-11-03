@@ -4680,7 +4680,7 @@ list.**
 | Mode | Gate | Rows |
 |---|---|---|
 | On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | **ACC-244:** the tasks on it that `taskVisibleSql()` admits; `scope: 'all'` when the viewer sees the whole record (View all, or unit scope over it), else `'own'` |
-| Organisation-wide (neither) | **ACC-244:** the `view` (§3.19) — All tasks needs View all on some type, else 403 naming the keys | the view's tasks AND `taskVisibleSql()` |
+| Organisation-wide (neither) | **ACC-244:** the `view` (§3.19) — All tasks needs View all on some type, else 403 naming the keys. **ACC-120 slice 3:** My tasks (`mine`) and Created by me (`created`) need no key and are never a 403 | the view's tasks AND `taskVisibleSql()` |
 
 Naming one of `sourceType`/`sourceId` without the other is a 400.
 
@@ -5439,13 +5439,14 @@ nobody, each with and without the record's view permission — with LIST =
 ADMIT on every committee, every view a subset of admit, and a second
 organisation reaching nothing.
 
-**The API for the task list (lane A's slice 3).**
+**The API for the task list (ACC-120 slice 3).**
 
 `GET /tasks/views` — no `@Permissions`; what this viewer's `/tasks` offers:
 
 ```ts
 {
   mine: true,
+  created: true,                          // Created by me: always (ACC-120 slice 3)
   all: { types: string[] } | null,        // View all on these types
   unassigned: { types: string[] } | null, // Manage on these types
   unit: {
@@ -5464,13 +5465,16 @@ their sub-units are in the list but not named here.
 
 | Param | |
 |---|---|
-| `view` | `all` (the default when omitted — today's All tasks) · `unit` · `unassigned`. Sent with a record: 400 |
+| `view` | `all` (the default when omitted — today's All tasks) · `unit` · `unassigned` · **`mine`** (an active assignee: `getMyTasks()`' own condition, so an unpicked pool task is not in it) · **`created`** (created by the viewer or by a creator they act for now, workflow-made tasks left out: `createdBySql()` AND NOT `workflowMadeSql()`). `mine` and `created` need no key and are **never a 403** (ACC-120 slice 3). Sent with a record: 400 |
 | `recordType` | one record type, from `facets.recordTypes` |
 | `unit` | one owning unit in scope (unit view), from `facets.units` |
 
 A view the viewer lacks is **403 naming the keys** (`committees:view_all_tasks`;
-`unit headship or committees:view_unit_tasks`; `committees:manage_tasks`). The
-response gains `view` (`'record' | 'all' | 'unit' | 'unassigned'`) and
+`unit headship or committees:view_unit_tasks`; `committees:manage_tasks`);
+`mine` and `created` never are. Every view, those two included, is its own
+condition AND `taskVisibleSql()`, so a list never holds a task its page would
+refuse. The response gains `view` (`'record' | 'all' | 'unit' | 'unassigned' |
+'mine' | 'created'`) and
 `facets.recordTypes` / `facets.units`, computed in SQL over the same scope. On
 a record, `scope` is `'all'` when the viewer sees the whole record (View all,
 or unit scope over it), else `'own'`.
@@ -5557,8 +5561,10 @@ no endpoint. The design reference is
 - **Deleted:** `UnassignedTasksComponent`, `TaskListComponent` and
   `TaskService.getUnassigned()`. The backend's `GET /tasks/unassigned` is
   left in place, with no frontend caller.
-- **Not built here:** a rebuilt My tasks, a "Created by me" view, and Home's
-  task lines.
+- **Not built here:** a rebuilt My tasks, a "Created by me" view on the
+  screen, and Home's task lines. The server's side of both views is built:
+  `view=mine`, `view=created` and `views.created` (§3.19); the switcher
+  ignores `created` until the screen uses it.
 
 ## 4. Notification System
 
