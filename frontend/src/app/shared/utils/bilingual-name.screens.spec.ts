@@ -36,6 +36,7 @@ import { createRow } from '../../foundation/workflow/components/stage-who/stage-
 import { WorkflowTransitionActionsComponent } from '../../foundation/workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { WorkflowStageListComponent } from '../../foundation/workflow/components/workflow-stage-list/workflow-stage-list.component';
 import { WorkflowTransitionEditorComponent } from '../../foundation/workflow/components/workflow-transition-editor/workflow-transition-editor.component';
+import { TransitionPanelComponent } from '../../foundation/workflow/components/transition-panel/transition-panel.component';
 import { OrgUnitFormComponent } from '../../foundation/organization/components/org-unit-form/org-unit-form.component';
 import { ManageRolesComponent } from '../../foundation/roles/components/manage-roles/manage-roles.component';
 import { RolePermissionMatrixComponent } from '../../foundation/roles/components/role-permission-matrix/role-permission-matrix.component';
@@ -253,16 +254,6 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
     });
   });
 
-  describe('workflow-transition-editor', () => {
-    it('names the trigger role in English when it has no Arabic name', () => {
-      const c = build(WorkflowTransitionEditorComponent);
-      c.roles.set([as({ id: 'ro1', nameEn: 'Quality Manager', nameAr: null })]);
-      expect(
-        c.triggerRoleLabel(as({ triggerCondition: 'ROLE_BASED', triggerRoleId: 'ro1' })),
-      ).toBe('Quality Manager');
-    });
-  });
-
   // ── org-unit-form: an inferred computed, and THE ${} HAZARD ───────────────
   describe('org-unit-form', () => {
     const department = { id: 'tv1', key: 'department', labelEn: 'Department', labelAr: null };
@@ -372,8 +363,8 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
       expect(c.transitionLabel(as({ labelEn: 'Approve', labelAr: null }))).toBe('Approve');
       expect(c.stageName('s1')).toBe('معتمد');
       expect(c.stageName('s2')).toBe('Closed');
-      // An unknown id is still said plainly rather than hidden.
-      expect(c.stageName('missing')).toBe('missing');
+      // ACC-271 PR 5b — an unknown id reads "—", never a raw id (ACC-94's missing value).
+      expect(c.stageName('missing')).toBe('—');
     });
 
     // "user role assignment" was here. The component went with the old profile
@@ -404,8 +395,8 @@ describe('every form accepts an empty Arabic name (ACC-160)', () => {
     ['lookup-value-form', () => build(LookupValueFormComponent).form as never, 'labelEn', 'labelAr', 255],
     ['lookup-value-list override', () => build(LookupValueListComponent).overrideForm as never, 'labelEn', 'labelAr', 255],
     ['stage-editor-panel', () => build(StageEditorPanelComponent).form as never, 'nameEn', 'nameAr', 100],
-    ['transition editor (add)', () => build(WorkflowTransitionEditorComponent).addForm as never, 'labelEn', 'labelAr', 100],
-    ['transition editor (edit)', () => build(WorkflowTransitionEditorComponent).editForm as never, 'labelEn', 'labelAr', 100],
+    // ACC-271 PR 5b — the transition panel's one form, for adding and editing.
+    ['transition panel', () => build(TransitionPanelComponent).form as never, 'labelEn', 'labelAr', 100],
   ];
 
   for (const [name, formOf, en, ar, max] of forms) {

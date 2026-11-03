@@ -47,6 +47,10 @@ import { WorkflowStageListComponent } from './workflow-stage-list.component';
 // panel closed and open. The strip keeps its own HORIZONTAL scroll, which is
 // not a vertical scroll and is left alone.
 //
+// ACC-271 PR 5b — and with the TRANSITION panel open, in the same slot. The
+// panel and the stages list never scroll sideways, and the strip, which opens
+// on Fit, shows its whole row with no sideways scroll at any of these widths.
+//
 // NON-VACUITY FIRST: the page is taller than the window (so <main> must scroll)
 // and the list has its rows, before "nothing else scrolls" may mean anything.
 
@@ -119,7 +123,8 @@ const stage = (i: number): Record<string, unknown> => ({
             validatorConfig: null,
             isApprovalPath: false,
             kind: 'ADVANCE',
-            actions: [],
+            mover: 'PERSON',
+            actions: [{ id: `a-${i}`, workflowTransitionId: `t-${i}`, actionType: 'LOG_AUDIT', order: 10, isEnabled: true, configJson: null }],
           },
         ]
       : [],
@@ -273,11 +278,17 @@ describe('WorkflowStageListComponent — one vertical scroll, inside the shell (
 
   for (const lang of ['en', 'ar'] as const) {
     for (const c of CASES) {
-      for (const panel of ['closed', 'open'] as const) {
+      for (const panel of ['closed', 'open', 'transition'] as const) {
         it(`${c.name} [${lang}], panel ${panel}: <main> is the only vertical scroll, and the document is never taller than the window`, async () => {
           const host = await render(c.width, c.phone, lang);
           if (panel === 'open') {
             host.querySelectorAll<HTMLButtonElement>('[data-strip-card]')[1]!.click();
+            await settle();
+          }
+          if (panel === 'transition') {
+            host.querySelectorAll<HTMLButtonElement>('[data-testid="stage-expand"]')[1]!.click();
+            await settle();
+            host.querySelector<HTMLButtonElement>('[data-transition-row="t-1"] [data-tr-open]')!.click();
             await settle();
           }
           const main = host.querySelector<HTMLElement>('main')!;
@@ -288,8 +299,23 @@ describe('WorkflowStageListComponent — one vertical scroll, inside the shell (
           if (panel === 'open') {
             expect(host.querySelector('[data-stage-panel] [data-who-modes]')).withContext('the panel is open, mode choice and all').not.toBeNull();
           }
+          if (panel === 'transition') {
+            expect(host.querySelector('[data-transition-panel] [data-pressed-by]')).withContext('the transition panel is open').not.toBeNull();
+            expect(host.querySelector('[data-stage-panel]')).withContext('one panel at a time').toBeNull();
+          }
           expect(main.scrollHeight).withContext('the page is taller than the window, so <main> must scroll').toBeGreaterThan(main.clientHeight + 50);
           expect(list.querySelectorAll('[data-testid="stage-edit"]').length).withContext('the list has its seven stages').toBe(NAMES.length);
+
+          // ── Nothing scrolls sideways: not <main>, not a panel, not the strip at Fit ──
+          const strip = host.querySelector<HTMLElement>('[data-strip-frame]')!;
+          expect(strip.querySelector('[data-strip-card]')).withContext('non-vacuity: the strip has its cards').not.toBeNull();
+          expect(strip.scrollWidth).withContext('the strip at Fit').toBeLessThanOrEqual(strip.clientWidth + 1);
+          expect(main.scrollWidth).withContext('<main> sideways').toBeLessThanOrEqual(main.clientWidth + 1);
+          for (const p of Array.from(host.querySelectorAll<HTMLElement>('[data-transition-panel], [data-stage-panel]'))) {
+            expect(p.scrollWidth).withContext('a panel sideways').toBeLessThanOrEqual(p.clientWidth + 1);
+            expect(p.getBoundingClientRect().right).withContext('a panel inside <main>').toBeLessThanOrEqual(main.getBoundingClientRect().right + 1);
+            expect(p.getBoundingClientRect().left).withContext('a panel inside <main>').toBeGreaterThanOrEqual(main.getBoundingClientRect().left - 1);
+          }
 
           // ── One vertical scroll ──
           expect(otherVerticalScrolls(host, main)).withContext('vertical scrolls besides <main>').toEqual([]);

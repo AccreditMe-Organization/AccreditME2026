@@ -14,6 +14,10 @@ import { WorkflowStripComponent } from './workflow-strip.component';
 // with the server's liveCount and the names of its exits; between two cards,
 // the forward transitions are solid and the returns dashed; the strip scrolls
 // sideways inside its own frame, never the page.
+//
+// ACC-271 PR 5b — Zoom out / Fit / Zoom in, the org chart's rule: it opens on
+// Fit (the whole row in the frame, never above 100%), so nothing scrolls
+// sideways until someone zooms in.
 
 const transition = (over: Partial<WorkflowTransitionDto>): WorkflowTransitionDto => ({
   id: 't',
@@ -64,13 +68,14 @@ describe('WorkflowStripComponent (ACC-255 PR 4b)', () => {
   preserveDocumentLanguage();
   let fixture: ComponentFixture<Host>;
 
-  function render(lang: 'en' | 'ar', width = 1148): HTMLElement {
+  function render(lang: 'en' | 'ar', width = 1148, stages: WorkflowStageDto[] = STAGES): HTMLElement {
     TestBed.configureTestingModule({ imports: [Host], providers: [provideTranslateService({ lang }), provideFormatTesting()] });
     loadTranslationsForTest({ en, ar });
     TestBed.inject(TranslateService).use(lang);
     TestBed.inject(LanguageService).use(lang);
     fixture = TestBed.createComponent(Host);
     fixture.componentRef.setInput('width', width);
+    fixture.componentInstance.stages = stages;
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
   }
@@ -123,14 +128,116 @@ describe('WorkflowStripComponent (ACC-255 PR 4b)', () => {
     expect(fixture.componentInstance.opened).toBe('s3');
   });
 
-  it('scrolls sideways inside its own frame on a phone, never the page, and never vertically', () => {
+  // ── ACC-271 PR 5b — zoom ──────────────────────────────────────────────────
+
+  /** Lets the ResizeObserver measure and the zoom apply. */
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 2; i++) {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      fixture.detectChanges();
+    }
+  }
+  const frameOf = (el: HTMLElement): HTMLElement => el.querySelector<HTMLElement>('[data-strip-frame]')!;
+  const zoomOf = (el: HTMLElement): number => Number(/scale\(([\d.]+)\)/.exec(el.querySelector<HTMLElement>('[data-strip-zoom]')!.style.transform)![1]);
+  const press = async (el: HTMLElement, id: string, times = 1): Promise<void> => {
+    for (let i = 0; i < times; i++) {
+      el.querySelector<HTMLButtonElement>(`[data-testid="strip-${id}"]`)!.click();
+      fixture.detectChanges();
+    }
+    await settle();
+  };
+
+  it('has the org chart’s three buttons, named', async () => {
+    const el = render('en');
+    await settle();
+    expect(el.querySelector('[data-testid="strip-zoom-out"]')!.getAttribute('aria-label')).toBe('Zoom out');
+    expect(el.querySelector('[data-testid="strip-fit"]')!.textContent!.trim()).toBe('Fit');
+    expect(el.querySelector('[data-testid="strip-zoom-in"]')!.getAttribute('aria-label')).toBe('Zoom in');
+  });
+
+  for (const lang of ['en', 'ar'] as const) {
+    for (const width of [1148, 358]) {
+      it(`opens on Fit at ${width} [${lang}]: the whole row in the frame, never above 100%, no sideways scroll`, async () => {
+        const el = render(lang, width);
+        await settle();
+        const frame = frameOf(el);
+        const row = el.querySelector<HTMLElement>('.am-strip__row')!;
+        // Non-vacuity: the row is laid out, and on a phone it is wider than the frame unscaled.
+        expect(row.offsetWidth).toBeGreaterThan(300);
+        if (width < 400) expect(row.offsetWidth).withContext('unscaled, the row would not fit').toBeGreaterThan(frame.clientWidth);
+        expect(zoomOf(el)).toBeLessThanOrEqual(1);
+        expect(frame.scrollWidth).withContext('no sideways scroll at Fit').toBeLessThanOrEqual(frame.clientWidth + 1);
+        expect(getComputedStyle(frame).overflowY).toBe('hidden');
+        // Every card is inside the frame.
+        const box = frame.getBoundingClientRect();
+        for (const card of Array.from(el.querySelectorAll<HTMLElement>('[data-strip-card]'))) {
+          const r = card.getBoundingClientRect();
+          expect(r.left).toBeGreaterThanOrEqual(box.left - 1);
+          expect(r.right).toBeLessThanOrEqual(box.right + 1);
+        }
+      });
+    }
+  }
+
+  it('Zoom in widens the row past the frame, which then scrolls sideways inside itself, never the page', async () => {
     const el = render('en', 358);
-    const frame = el.querySelector<HTMLElement>('[data-strip-frame]')!;
-    // Non-vacuity: four cards and three connectors are wider than 358.
+    await settle();
+    const fit = zoomOf(el);
+    await press(el, 'zoom-in', 3);
+    expect(zoomOf(el)).toBeCloseTo(fit + 0.3, 2);
+    const frame = frameOf(el);
     expect(frame.scrollWidth).toBeGreaterThan(frame.clientWidth);
     expect(getComputedStyle(frame).overflowX).toBe('auto');
-    expect(getComputedStyle(frame).overflowY).toBe('hidden');
     expect(frame.getBoundingClientRect().width).toBeLessThanOrEqual(358 + 1);
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(document.documentElement.clientWidth);
+  });
+
+  it('Zoom in stops at 150%; Zoom out stops at the smaller of 30% and Fit, so a long row still fits on a phone', async () => {
+    // Eight stages: unscaled, well over three times a phone's width.
+    const long = [...STAGES, ...STAGES.map((st) => ({ ...st, id: `${st.id}-b` }))];
+    const el = render('en', 358, long);
+    await settle();
+    const fit = zoomOf(el);
+    expect(fit).withContext('non-vacuity: on a phone the row fits only below 30%').toBeLessThan(0.3);
+    expect(el.querySelector<HTMLButtonElement>('[data-testid="strip-zoom-out"]')!.disabled).withContext('already at the floor').toBeTrue();
+    await press(el, 'zoom-in', 20);
+    expect(zoomOf(el)).toBe(1.5);
+    expect(el.querySelector<HTMLButtonElement>('[data-testid="strip-zoom-in"]')!.disabled).toBeTrue();
+    await press(el, 'zoom-out', 30);
+    expect(zoomOf(el)).toBe(fit);
+  });
+
+  it('Zoom out at a wide frame stops at 30%', async () => {
+    const el = render('en', 1148);
+    await settle();
+    await press(el, 'zoom-out', 20);
+    expect(zoomOf(el)).toBe(0.3);
+    expect(el.querySelector<HTMLButtonElement>('[data-testid="strip-zoom-out"]')!.disabled).toBeTrue();
+  });
+
+  it('Fit after zooming returns to the whole row, with no sideways scroll', async () => {
+    const el = render('ar', 358);
+    await settle();
+    const fit = zoomOf(el);
+    await press(el, 'zoom-in', 4);
+    expect(frameOf(el).scrollWidth).toBeGreaterThan(frameOf(el).clientWidth);
+    await press(el, 'fit');
+    expect(zoomOf(el)).toBe(fit);
+    expect(frameOf(el).scrollWidth).toBeLessThanOrEqual(frameOf(el).clientWidth + 1);
+  });
+
+  it('follows the frame while fitted, and stops following once someone zooms', async () => {
+    const el = render('en', 1148);
+    await settle();
+    fixture.componentRef.setInput('width', 358);
+    fixture.detectChanges();
+    await settle();
+    const fittedNarrow = zoomOf(el);
+    expect(fittedNarrow).toBeLessThan(0.5);
+    await press(el, 'zoom-in');
+    fixture.componentRef.setInput('width', 1148);
+    fixture.detectChanges();
+    await settle();
+    expect(zoomOf(el)).withContext('a chosen zoom is kept').toBeCloseTo(fittedNarrow + 0.1, 2);
   });
 });

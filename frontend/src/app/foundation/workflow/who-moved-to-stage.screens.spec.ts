@@ -16,7 +16,7 @@ import { AmConfirmService } from '../../shared/components/confirm/am-confirm.ser
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { StageEditorPanelComponent } from './components/stage-editor-panel/stage-editor-panel.component';
 import { fakeStageWhoOptions } from './components/stage-who/stage-who-options.testing';
-import { WorkflowTransitionEditorComponent } from './components/workflow-transition-editor/workflow-transition-editor.component';
+import { TransitionPanelComponent } from './components/transition-panel/transition-panel.component';
 import { WorkflowStageDto, WorkflowTransitionDto } from './services/workflow-template.service';
 import { whoMovedToStageMessage } from './workflow-refusal';
 
@@ -74,6 +74,7 @@ const TRANSITION: WorkflowTransitionDto = {
   validatorConfig: null,
   isApprovalPath: false,
   kind: 'ADVANCE',
+  mover: 'PERSON',
 };
 
 const TEMPLATE = {
@@ -161,7 +162,7 @@ describe("workflow screens say WHO_MOVED_TO_STAGE in the server's own words (ACC
     drain(fixture);
   }
 
-  // The transition editor's dialog renders in an overlay, so read the whole document.
+  // Overlays render outside the fixture, so read the whole document.
   const shownText = () => document.body.textContent ?? '';
 
   afterEach(() => {
@@ -184,20 +185,17 @@ describe("workflow screens say WHO_MOVED_TO_STAGE in the server's own words (ACC
         expect(shownText()).not.toContain('WHO_MOVED_TO_STAGE');
       });
 
-      it('the transition editor: Save in Edit', () => {
-        const fixture = setup(WorkflowTransitionEditorComponent, lang, {
-          stageId: 'stage-1',
-          transitions: [TRANSITION],
-          availableStages: [STAGE],
+      // ACC-271 PR 5b — the panel sends no people field, so a refusal is a
+      // stored change from elsewhere; it is still said in the server's words.
+      it('the transition panel: Save', () => {
+        const fixture = setup(TransitionPanelComponent, lang, {
+          template: { ...TEMPLATE, stages: [{ ...STAGE, transitions: [TRANSITION] }] },
+          transition: TRANSITION,
         });
         drain(fixture);
-        const editor = fixture.componentInstance;
-        editor.openEdit(TRANSITION);
-        fixture.detectChanges();
-        drain(fixture);
-        editor.onSubmitEdit();
+        fixture.componentInstance.onSubmit();
         refuse(fixture, `${API}/transitions/transition-1`, 'requiredPermission');
-        expect(editor.saveError()).toBe(said);
+        expect(fixture.componentInstance.refusal()).toBe(said);
         expect(shownText()).toContain(said);
         expect(shownText()).not.toContain(notSaid);
         expect(shownText()).not.toContain('WHO_MOVED_TO_STAGE');
