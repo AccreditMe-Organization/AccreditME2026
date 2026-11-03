@@ -45,10 +45,14 @@ class ListStub {
 
 const ROOT = { id: 'u-ph', nameEn: 'Pharmacy', nameAr: 'الصيدلية', via: 'HEAD' as const };
 const ACTING = { id: 'u-cn', nameEn: 'Clinical Nutrition', nameAr: 'التغذية العلاجية', via: 'ACTING' as const };
-const MEMBER: ITaskViewsDto = { mine: true, all: null, unassigned: null, unit: null, create: { types: [] } };
+// The server sends created: true to everyone since ACC-120 slice 3 (#251).
+const MEMBER: ITaskViewsDto = { mine: true, created: true, all: null, unassigned: null, unit: null, create: { types: [] } };
+/** An answer offering My tasks alone (no Created by me): the one-view case. */
+const MINE_ONLY = { mine: true, all: null, unassigned: null, unit: null, create: { types: [] } } as unknown as ITaskViewsDto;
 const HEAD: ITaskViewsDto = { ...MEMBER, unit: { types: ['COMMITTEE'], units: [ROOT, ACTING] } };
 const MANAGER: ITaskViewsDto = {
   mine: true,
+  created: true,
   all: { types: ['COMMITTEE', 'MEETING'] },
   unassigned: { types: ['COMMITTEE'] },
   unit: null,
@@ -96,21 +100,22 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
   const list = () => harness.fixture.debugElement.query((d) => d.componentInstance instanceof ListStub)?.componentInstance as ListStub | undefined;
 
   describe('the switcher', () => {
-    // ACC-120 slice 3 — one tab is noise: a viewer with My tasks alone gets no switcher.
-    it('draws no switcher for a plain member, who has My tasks alone', async () => {
-      const root = await open('/tasks', MEMBER);
+    // ACC-120 slice 3 — one tab is noise: an answer offering My tasks alone
+    // draws no switcher (a view the server leaves out is absent).
+    it('draws no switcher when the server offers My tasks alone', async () => {
+      const root = await open('/tasks', MINE_ONLY);
       expect(root.querySelector('[data-testid="stub-my-tasks"]')).withContext('non-vacuity: the page rendered').not.toBeNull();
       expect(root.querySelector('[data-testid="task-views"]')).toBeNull();
     });
 
-    it('draws the switcher once there are two views', async () => {
-      expect(switcher(await open('/tasks', HEAD))).toEqual(['My tasks', 'Unit tasks']);
+    it('draws the switcher for a plain member: My tasks and Created by me', async () => {
+      expect(switcher(await open('/tasks', MEMBER))).toEqual(['My tasks', 'Created by me']);
     });
 
-    it('shows exactly the non-null views, in their fixed order', async () => {
-      expect(switcher(await open('/tasks', HEAD))).toEqual(['My tasks', 'Unit tasks']);
-      expect(switcher(await open('/tasks', MANAGER))).toEqual(['My tasks', 'All tasks', 'Unassigned']);
-      expect(switcher(await open('/tasks', EVERYTHING))).toEqual(['My tasks', 'All tasks', 'Unit tasks', 'Unassigned']);
+    it('shows exactly the offered views, in their fixed order, Created by me second', async () => {
+      expect(switcher(await open('/tasks', HEAD))).toEqual(['My tasks', 'Created by me', 'Unit tasks']);
+      expect(switcher(await open('/tasks', MANAGER))).toEqual(['My tasks', 'Created by me', 'All tasks', 'Unassigned']);
+      expect(switcher(await open('/tasks', EVERYTHING))).toEqual(['My tasks', 'Created by me', 'Unit tasks', 'All tasks', 'Unassigned']);
     });
 
     it('reads GET /tasks/views once for the page', async () => {
@@ -123,7 +128,7 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
     it('links each view by its URL, and shows no counts on it', async () => {
       const root = await open('/tasks', EVERYTHING);
       const hrefs = Array.from(root.querySelectorAll('[data-testid="task-views"] a')).map((a) => a.getAttribute('href'));
-      expect(hrefs).toEqual(['/tasks', '/tasks?view=all', '/tasks?view=unit', '/tasks?view=unassigned']);
+      expect(hrefs).toEqual(['/tasks', '/tasks?view=created', '/tasks?view=unit', '/tasks?view=all', '/tasks?view=unassigned']);
       expect(switcher(root).some((label) => /\d/.test(label))).toBeFalse();
     });
   });
@@ -138,7 +143,7 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
       expect(text(root.querySelector('h1'))).toBe('Tasks');
     });
 
-    for (const [view, views] of [['all', MANAGER], ['unit', HEAD], ['unassigned', MANAGER]] as const) {
+    for (const [view, views] of [['created', MEMBER], ['all', MANAGER], ['unit', HEAD], ['unassigned', MANAGER]] as const) {
       it(`opens the list for ?view=${view}, sending that view`, async () => {
         const root = await open(`/tasks?view=${view}`, views);
         expect(currentView(root)).toBe(view);
@@ -147,6 +152,18 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
         expect(root.querySelector('[data-testid="stub-my-tasks"]')).toBeNull();
       });
     }
+
+    // ACC-120 slice 3 — My tasks is still the old screen in this PR.
+    it('keeps My tasks on the old screen, beside Created by me', async () => {
+      const root = await open('/tasks', MEMBER);
+      expect(currentView(root)).toBe('mine');
+      expect(root.querySelector('[data-testid="stub-my-tasks"]')).not.toBeNull();
+      expect(list()).toBeUndefined();
+      await harness.navigateByUrl('/tasks?view=created');
+      harness.detectChanges();
+      expect(list()!.view()).toBe('created');
+      expect(root.querySelector('[data-testid="stub-my-tasks"]')).toBeNull();
+    });
 
     it('follows Back and Forward through the URL', async () => {
       const root = await open('/tasks?view=all', MANAGER);
@@ -229,7 +246,7 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
 
   it('names the views in Arabic', async () => {
     const root = await open('/tasks', EVERYTHING, 'ar');
-    expect(switcher(root)).toEqual(['مهامي', 'كل المهام', 'مهام الوحدة', 'غير المُسندة']);
+    expect(switcher(root)).toEqual(['مهامي', 'مهام أنشأتها', 'مهام الوحدة', 'كل المهام', 'غير المُسندة']);
     expect(text(root.querySelector('h1'))).toBe('المهام');
     expect(root.querySelector('[data-testid="task-views"]')!.getAttribute('aria-label')).toBe('طرق العرض المحفوظة');
   });

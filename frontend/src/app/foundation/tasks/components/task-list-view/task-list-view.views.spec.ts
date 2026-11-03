@@ -13,6 +13,7 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { TaskListViewComponent } from './task-list-view.component';
+import { TaskRecordListView } from '../../services/task.service';
 import { NO_ACTIONS, listPage, recordRow } from '../record-tasks-panel/record-tasks.fixtures';
 
 // ACC-120 slice 3 — the organisation-wide views of /tasks: each sends its view
@@ -36,7 +37,7 @@ const LIST = `${environment.apiUrl}/tasks/record-list`;
   />`,
 })
 class HostComponent {
-  readonly view = signal<'all' | 'unit' | 'unassigned' | null>('all');
+  readonly view = signal<TaskRecordListView | null>('all');
   readonly recordType = signal<string | null>(null);
   readonly unit = signal<string | null>(null);
   readonly unitFilter = signal(false);
@@ -45,7 +46,7 @@ class HostComponent {
 }
 
 type HostSetup = Partial<{
-  view: 'all' | 'unit' | 'unassigned' | null;
+  view: TaskRecordListView | null;
   recordType: string | null;
   unit: string | null;
   unitFilter: boolean;
@@ -266,6 +267,187 @@ describe('TaskListViewComponent — the views of /tasks (ACC-120 slice 3)', () =
       expect(act).not.toHaveBeenCalled();
       // Non-vacuity: the linked row was found and highlighted.
       expect(list().highlightId()).toBe('t2');
+    });
+  });
+
+
+  // ACC-120 slice 3 — the viewer's own views: status chips in place of the
+  // status select, the Overdue pill and tint, and the record's name.
+  describe("the viewer's own views (mine, created)", () => {
+    const chipRow = () => q('task-list-status-chips');
+    const chipLabels = () => Array.from(chipRow()!.querySelectorAll('button')).map((b) => text(b));
+    const pressed = () => Array.from(chipRow()!.querySelectorAll('button[aria-pressed="true"]')).map((b) => b.getAttribute('data-chip'));
+    const chip = (id: string) => chipRow()!.querySelector<HTMLButtonElement>(`button[data-chip="${id}"]`)!;
+    const CREATED_OPEN = 'UNASSIGNED,PENDING,IN_PROGRESS,ON_HOLD,REJECTED';
+
+    it('Created by me asks for view=created with the open statuses, under "All open"', () => {
+      setup({ view: 'created' });
+      const req = next();
+      expect(req.request.params.get('view')).toBe('created');
+      expect(req.request.params.get('status')).toBe(CREATED_OPEN);
+      answer(req, listPage([recordRow('t1')], { view: 'created' }));
+      expect(chipRow()!.getAttribute('role')).toBe('group');
+      expect(chipRow()!.getAttribute('aria-label')).toBe('Status');
+      expect(chipLabels()).toEqual(['All open', 'Unassigned', 'Assigned', 'In progress', 'On hold', 'Rejected', 'Completed', 'Cancelled']);
+      expect(pressed()).toEqual(['OPEN']);
+      // The single-select status filter is gone here.
+      expect(q('filter-status')).toBeNull();
+      // "All open" is not a filter: nothing to clear.
+      expect(q('task-list-clear')).toBeNull();
+    });
+
+    for (const st of ['UNASSIGNED', 'PENDING', 'IN_PROGRESS', 'ON_HOLD', 'REJECTED', 'COMPLETED', 'CANCELLED']) {
+      it(`the ${st} chip sends that status alone, from the first page`, () => {
+        setup({ view: 'created' });
+        answer(next(), listPage([recordRow('t1')], { view: 'created' }));
+        chip(st).click();
+        fixture.detectChanges();
+        const req = next();
+        expect(req.request.params.get('status')).toBe(st);
+        expect(req.request.params.get('skip')).toBe('0');
+        answer(req, listPage([], { view: 'created' }));
+        expect(pressed()).toEqual([st]);
+      });
+    }
+
+    it('Clear goes back to "All open", never to every status', () => {
+      setup({ view: 'created' });
+      answer(next(), listPage([recordRow('t1')], { view: 'created' }));
+      chip('COMPLETED').click();
+      fixture.detectChanges();
+      answer(next(), listPage([], { view: 'created' }));
+      // Non-vacuity: a chip but "All open" is a filter, so Clear is offered.
+      const clear = q('task-list-clear');
+      expect(clear).not.toBeNull();
+      clear!.click();
+      fixture.detectChanges();
+      const req = next();
+      expect(req.request.params.get('status')).toBe(CREATED_OPEN);
+      answer(req, listPage([recordRow('t1')], { view: 'created' }));
+      expect(pressed()).toEqual(['OPEN']);
+      expect(q('task-list-clear')).toBeNull();
+    });
+
+    it('My tasks leaves out Unassigned and Rejected, and opens on its own open set', () => {
+      setup({ view: 'mine' });
+      const req = next();
+      expect(req.request.params.get('view')).toBe('mine');
+      expect(req.request.params.get('status')).toBe('PENDING,IN_PROGRESS,ON_HOLD');
+      answer(req, listPage([recordRow('t1')], { view: 'mine' }));
+      expect(chipLabels()).toEqual(['All open', 'Assigned', 'In progress', 'On hold', 'Completed', 'Cancelled']);
+      expect(chipRow()!.querySelector('[data-chip="UNASSIGNED"]')).toBeNull();
+      expect(chipRow()!.querySelector('[data-chip="REJECTED"]')).toBeNull();
+    });
+
+    it('says why Created by me is empty, and My tasks too', () => {
+      setup({ view: 'created' });
+      answer(next(), listPage([], { view: 'created' }));
+      expect(text(q('task-list-empty'))).toContain('Nothing you created is open');
+      expect(text(q('task-list-empty'))).toContain('Tasks you create on a record appear here.');
+      setup({ view: 'mine' });
+      answer(next(), listPage([], { view: 'mine' }));
+      expect(text(q('task-list-empty'))).toContain('Nothing open for you');
+      expect(text(q('task-list-empty'))).toContain("Tasks you're given on any record appear here.");
+    });
+
+    it('All tasks keeps the status select, sends no status, and draws no chip row', () => {
+      setup({ view: 'all' });
+      const req = next();
+      expect(req.request.params.has('status')).toBeFalse();
+      answer(req, listPage([recordRow('t1')], { view: 'all' }));
+      expect(q('filter-status')).not.toBeNull();
+      expect(chipRow()).toBeNull();
+    });
+
+    describe('Overdue', () => {
+      const PAST = '2020-01-01T05:00:00.000Z';
+      const overdueRows = () => [
+        recordRow('late', { status: 'IN_PROGRESS', dueAt: PAST }),
+        recordRow('held', { status: 'ON_HOLD', dueAt: PAST, onHoldUntil: '2099-01-01T05:00:00.000Z' }),
+        recordRow('done', { status: 'COMPLETED', dueAt: PAST, completedAt: PAST }),
+        recordRow('gone', { status: 'CANCELLED', dueAt: PAST, cancelledAt: PAST }),
+        recordRow('ahead', { status: 'PENDING' }),
+      ];
+      const flagged = () =>
+        Array.from(el.querySelectorAll('[data-task-row]'))
+          .filter((r) => r.querySelector('[data-testid="task-list-overdue"]'))
+          .map((r) => r.getAttribute('data-task-row'));
+
+      for (const phone of [false, true]) {
+        it(`shows the pill and the tint only on an open, not held, overdue row (${phone ? 'phone' : 'desktop'})`, () => {
+          setup({ view: 'created' });
+          list().phone.set(phone);
+          answer(next(), listPage(overdueRows(), { view: 'created' }));
+          expect(flagged()).toEqual(['late']);
+          expect(text(el.querySelector('[data-task-row="late"] [data-testid="task-list-overdue"]'))).toBe('Overdue');
+          const tinted = Array.from(el.querySelectorAll('[data-task-row][data-overdue]')).map((r) => r.getAttribute('data-task-row'));
+          expect(tinted).toEqual(['late']);
+          // Non-vacuity: all five rows rendered.
+          expect(el.querySelectorAll('[data-task-row]').length).toBe(5);
+        });
+      }
+
+      it('leaves All tasks as it was: no pill, no tint', () => {
+        setup({ view: 'all' });
+        answer(next(), listPage(overdueRows(), { view: 'all' }));
+        expect(el.querySelectorAll('[data-task-row]').length).toBe(5);
+        expect(flagged()).toEqual([]);
+        expect(el.querySelector('[data-overdue]')).toBeNull();
+      });
+    });
+
+    describe('the record', () => {
+      const named = { type: 'COMMITTEE', id: 'c-9', nameEn: 'Quality Committee', nameAr: 'لجنة الجودة' };
+      const recordOf = (id: string) => el.querySelector<HTMLElement>(`[data-task-row="${id}"] [data-testid="task-list-record"]`);
+
+      for (const phone of [false, true]) {
+        it(`names the record, and links a committee to its page (${phone ? 'phone' : 'desktop'})`, () => {
+          setup({ view: 'created' });
+          list().phone.set(phone);
+          answer(
+            next(),
+            listPage(
+              [
+                recordRow('c', { record: named }),
+                recordRow('u', { record: { type: 'COMMITTEE', id: 'c-hidden', nameEn: null, nameAr: null } }),
+                recordRow('m', { sourceType: 'MEETING', record: { type: 'MEETING', id: 'm-1', nameEn: 'Board meeting', nameAr: null } }),
+              ],
+              { view: 'created' },
+            ),
+          );
+          const link = recordOf('c')!;
+          expect(link.tagName).toBe('A');
+          expect(text(link)).toBe('Quality Committee');
+          expect(link.getAttribute('href')).toBe('/committees/c-9');
+          // No name: the type word, as plain text, never the code.
+          expect(recordOf('u')!.tagName).toBe('SPAN');
+          expect(text(recordOf('u'))).toBe('Committee');
+          // A record type with no page today: its name, as plain text.
+          expect(recordOf('m')!.tagName).toBe('SPAN');
+          expect(text(recordOf('m'))).toBe('Board meeting');
+        });
+      }
+
+      it('names it in Arabic, through the bilingual rule', () => {
+        setup({ view: 'created', language: 'ar' });
+        answer(next(), listPage([recordRow('c', { record: named })], { view: 'created' }));
+        expect(text(recordOf('c'))).toBe('لجنة الجودة');
+      });
+
+      it('leaves All tasks as it was: the record line, no link', () => {
+        setup({ view: 'all' });
+        answer(next(), listPage([recordRow('c', { record: named })], { view: 'all' }));
+        expect(recordOf('c')).toBeNull();
+        expect(text(el.querySelector('[data-task-row="c"]'))).toContain('Quality Committee');
+      });
+    });
+
+    it('names the chips in Arabic', () => {
+      setup({ view: 'created', language: 'ar' });
+      answer(next(), listPage([recordRow('t1')], { view: 'created' }));
+      expect(chipRow()!.getAttribute('aria-label')).toBe('الحالة');
+      expect(chipLabels()[0]).toBe('كل المفتوحة');
+      expect(chipLabels()).toContain('قيد التنفيذ');
     });
   });
 

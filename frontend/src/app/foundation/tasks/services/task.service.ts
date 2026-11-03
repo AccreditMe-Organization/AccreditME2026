@@ -250,10 +250,12 @@ export interface ITaskRecordPanelDto {
 
 /**
  * ACC-244 — GET /tasks/views: the saved views of the one /tasks list this
- * viewer gets, and New task's record types. Lane A's slice 3 renders from it.
+ * viewer gets, and New task's record types. ACC-120 slice 3 renders from it.
  */
 export interface ITaskViewsDto {
   mine: true;
+  /** ACC-120 slice 3 — Created by me: always offered (the server sends it to everyone). */
+  created: true;
   all: { types: string[] } | null;
   unassigned: { types: string[] } | null;
   unit: { types: string[]; units: { id: string; nameEn: string; nameAr: string | null; via: 'HEAD' | 'ACTING' | 'PERMISSION' }[] } | null;
@@ -278,8 +280,8 @@ export interface ITaskRecordListDto {
   aroundIndex: number | null;
 }
 
-/** ACC-244 — the organisation-wide views of GET /tasks/record-list; omitted = 'all'. */
-export type TaskRecordListView = 'all' | 'unit' | 'unassigned';
+/** ACC-244 — the organisation-wide views of GET /tasks/record-list; omitted = 'all'. ACC-120 slice 3 adds the viewer's own two. */
+export type TaskRecordListView = 'all' | 'unit' | 'unassigned' | 'mine' | 'created';
 
 export type TaskRecordListSort = 'due' | 'created' | 'updated' | 'status' | 'title';
 export type TaskRecordListStatus = 'UNASSIGNED' | 'PENDING' | 'IN_PROGRESS' | 'ON_HOLD' | 'REJECTED' | 'COMPLETED' | 'CANCELLED';

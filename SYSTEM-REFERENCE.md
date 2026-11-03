@@ -5550,21 +5550,42 @@ no endpoint. The design reference is
 `frontend/design-reference/AccreditMe Unit Tasks View.dc.html`.
 
 - **Which views exist is `GET /tasks/views`, read once per page load, and
-  nothing else** (`TasksShellComponent`). The order is fixed: My tasks, All
-  tasks, Unit tasks, Unassigned. A view shows exactly when it is non-null, so
-  the screen re-derives no permission. **One view draws no switcher**: a
-  viewer with My tasks alone sees the page without a tab row.
+  nothing else** (`TasksShellComponent`). The order is fixed: My tasks,
+  Created by me, Unit tasks, All tasks, Unassigned. A view shows exactly when
+  the server names it (an object, or `created: true`); a key it leaves out is
+  absent, never present. So the screen re-derives no permission. **One view
+  draws no switcher**: an answer offering My tasks alone shows the page
+  without a tab row. Since the server offers Created by me to everyone, in
+  practice every viewer has at least two.
 - **The view lives in the URL**: no `?view` is My tasks (the default);
-  `?view=all|unit|unassigned` the others. A link to a view this viewer lacks
+  `?view=created|unit|all|unassigned` the others. A link to a view this viewer lacks
   opens My tasks and says so in one line.
 - **My tasks is `MyTasksComponent`, unchanged** but for `showHeader`: the
   page's "Tasks" is the one H1. Its `?task=` and `?request=` links work as
   before.
-- **The other three are `TaskListViewComponent`, organisation-wide**, sending
+- **The other views are `TaskListViewComponent`, organisation-wide**, sending
   `view`, and `recordType` / `unit` when chosen. The Record type filter
   (All tasks, Unit tasks) comes from `facets.recordTypes`; the Unit filter
   (Unit tasks) from `facets.units`, and only when the viewer's unit scope
-  holds more than one top-level unit. Unassigned has neither.
+  holds more than one top-level unit. Unassigned and Created by me have
+  neither.
+- **The viewer's own views (`mine`, `created`) differ from the others in
+  three ways**, and only there (`ownView()`; a record's panel and All,
+  Unit and Unassigned are unchanged):
+  - **Status chips replace the status select**: one pressed at a time,
+    "All open" first and the default. Created by me's All open sends
+    Unassigned, Assigned, In progress, On hold and Rejected; My tasks' sends
+    Assigned, In progress and On hold, and its chips leave out Unassigned
+    and Rejected, which no one can be "on". **All open is not a filter**:
+    Clear returns to it, and the list never opens with no chip pressed.
+    Each chip has room for a count, rendered once the server sends counts.
+  - **An Overdue pill and a light danger tint** on an open, not-on-hold row
+    past its due time (`isTaskOverdue()`); the due cell already said
+    "n days overdue" through the formatting layer.
+  - **The record is named, and linked where it has a page**: its bilingual
+    name, a link only for a type with a record page today (committees) and
+    only for a viewer that page's route admits (`ROUTE_PERMISSIONS`); plain
+    text otherwise, and the type word when the row carries no name.
 - **The total is shown once, in the list's own header row.** The page adds
   none.
 - **A 403 is the denied state**: "You can't open this view." with the
@@ -5590,10 +5611,15 @@ no endpoint. The design reference is
 - **Deleted:** `UnassignedTasksComponent`, `TaskListComponent` and
   `TaskService.getUnassigned()`. The backend's `GET /tasks/unassigned` is
   left in place, with no frontend caller.
-- **Not built here:** a rebuilt My tasks, a "Created by me" view on the
-  screen, and Home's task lines. The server's side of both views is built:
-  `view=mine`, `view=created` and `views.created` (§3.19); the switcher
-  ignores `created` until the screen uses it.
+- **Created by me is built** (`?view=created`, «مهام أنشأتها»). **Not
+  built here:** a rebuilt My tasks (it still renders `MyTasksComponent`, so
+  the own-view chips show on Created by me only), counts on the chips, and
+  Home's task lines. The server's `view=mine` exists (§3.19) for the
+  rebuilt My tasks.
+- **Known gap, server side:** on `view=mine` and `view=created`, which need
+  no key, a row's record name is filled in whether or not the viewer may see
+  that record. The screen shows what it is sent; leaving the name out for a
+  viewer who may not open the record (ACC-228's rule) is a backend change.
 
 ## 4. Notification System
 

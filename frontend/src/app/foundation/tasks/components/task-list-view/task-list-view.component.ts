@@ -15,11 +15,14 @@ import {
 } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
-import { AmDatePipe, FormatService } from '../../../../core/formatting';
+import { AmDatePipe, AmNumberPipe, FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { ROUTE_PERMISSIONS } from '../../../../core/navigation/nav-items';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { SortHeaderComponent, SortState, nextSort } from '../../../../shared/components/sort-header/sort-header.component';
@@ -37,6 +40,7 @@ import {
 import { TaskRowActionId, TaskRowActionModel, asRowAction, taskRowActions } from '../../task-row-actions';
 import { TaskRowText } from '../../task-row-text';
 import { taskPoolLabel } from '../../task-pool-label';
+import { isTaskOverdue } from '../../task-status';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 /** Below this window width rows are two-line cards (the phone sheet). */
@@ -60,6 +64,25 @@ const SORTABLE: { key: TaskRecordListSort; labelKey: string }[] = [
 /** The order the list opens in: overdue first, then soonest due, open before closed. */
 const DEFAULT_SORT: SortState = { key: 'due', dir: 'asc' };
 
+/**
+ * ACC-120 slice 3 — the status chips of the viewer's own views (Task Screens:
+ * "All open · 9", then one chip per status). Only the statuses a task in that
+ * view can have: nobody is ever "on" an Unassigned or a Rejected task, so My
+ * tasks leaves both out. "All open" is the default and is not a filter.
+ */
+type OwnView = 'mine' | 'created';
+export type StatusChipId = 'OPEN' | TaskRecordListStatus;
+const OPEN_STATUSES: Record<OwnView, TaskRecordListStatus[]> = {
+  created: ['UNASSIGNED', 'PENDING', 'IN_PROGRESS', 'ON_HOLD', 'REJECTED'],
+  mine: ['PENDING', 'IN_PROGRESS', 'ON_HOLD'],
+};
+const CHIP_STATUSES: Record<OwnView, TaskRecordListStatus[]> = {
+  created: ['UNASSIGNED', 'PENDING', 'IN_PROGRESS', 'ON_HOLD', 'REJECTED', 'COMPLETED', 'CANCELLED'],
+  mine: ['PENDING', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED'],
+};
+/** A record type with a page of its own today, and the route that opens it. */
+const RECORD_PAGES: Readonly<Record<string, string>> = { COMMITTEE: 'committees' };
+
 interface Chip {
   id: 'q' | 'status' | 'overdue' | 'who' | 'required' | 'due' | 'mine' | 'link' | 'recordType' | 'unit';
   label: string;
@@ -79,6 +102,11 @@ interface ViewRow {
   subLine: string | null;
   tagKey: string | null;
   recordLine: string | null;
+  /** ACC-120 slice 3 — the own views: the record's name (or its type word), and where it opens. */
+  recordName: string | null;
+  recordHref: string[] | null;
+  /** Open, not on hold, its due time passed (isTaskOverdue). */
+  overdue: boolean;
   model: TaskRowActionModel;
   menu: RowMenuItem[][];
 }
@@ -99,7 +127,7 @@ interface ViewRow {
 @Component({
   selector: 'app-task-list-view',
   standalone: true,
-  imports: [FormsModule, TranslatePipe, AmDatePipe, OverlaySelectComponent, RowMenuComponent, SortHeaderComponent, TaskLinkComponent, TaskActionHostComponent],
+  imports: [FormsModule, RouterLink, TranslatePipe, AmDatePipe, AmNumberPipe, OverlaySelectComponent, RowMenuComponent, SortHeaderComponent, TaskLinkComponent, TaskActionHostComponent],
   template: `
     <div class="am-tl" [class.am-tl--page]="variant() === 'page'" data-testid="task-list-view">
       <!-- ACC-120 slice 3 — a view the server refused (403) offers nothing to search,
@@ -118,6 +146,24 @@ interface ViewRow {
               data-testid="task-list-search"
             />
           </span>
+          @if (ownView()) {
+            <!-- ACC-120 slice 3 — the own views' status chips: one pressed at a
+                 time, "All open" by default. A count sits beside each label
+                 once the server sends it (none yet). -->
+            <div class="order-first basis-full flex flex-nowrap gap-1.5 min-w-0 overflow-x-auto [scrollbar-width:thin]" role="group" [attr.aria-label]="'taskList.filter.status' | translate" data-testid="task-list-status-chips">
+              @for (c of statusChips(); track c.id) {
+                <button
+                  type="button"
+                  class="flex-none [font:inherit] text-[12px] h-7 px-2.5 whitespace-nowrap cursor-pointer border border-[var(--am-control-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-surface-raised)] text-[var(--am-ink-900)] aria-pressed:border-[var(--am-primary-600)] aria-pressed:bg-[var(--am-primary-100)] aria-pressed:text-[var(--am-primary-700)] aria-pressed:font-semibold focus-visible:outline-[length:var(--am-focus-ring-width)] focus-visible:outline-[var(--am-focus-ring)]"
+                  [attr.aria-pressed]="statusChip() === c.id"
+                  [attr.data-chip]="c.id"
+                  (click)="statusChip.set(c.id)"
+                >
+                  {{ c.label }}@if (c.count !== null) {<span> · {{ c.count | amNumber }}</span>}
+                </button>
+              }
+            </div>
+          } @else {
           <app-overlay-select
             class="am-tl__filter"
             [options]="statusOptions()"
@@ -128,6 +174,7 @@ interface ViewRow {
             (ngModelChange)="status.set($event)"
             data-testid="filter-status"
           />
+          }
           <button type="button" class="am-tl__toggle" [attr.aria-pressed]="overdue()" (click)="overdue.set(!overdue())" data-testid="filter-overdue">
             {{ 'taskList.filter.overdueOnly' | translate }}
           </button>
@@ -280,8 +327,9 @@ interface ViewRow {
             <ul class="list-none m-0 p-0" role="list">
               @for (r of rows(); track r.row.id) {
                 <li
-                  class="am-tl__row am-tl__item"
+                  class="am-tl__row am-tl__item data-[overdue]:bg-[color-mix(in_srgb,var(--am-danger-bg)_55%,transparent)]"
                   [class.am-tl__item--card]="phone()"
+                  [attr.data-overdue]="r.overdue ? '' : null"
                   [class.am-tl__item--sought]="highlightId() === r.row.id"
                   [attr.data-task-row]="r.row.id"
                   tabindex="-1"
@@ -294,19 +342,36 @@ interface ViewRow {
                       }
                     </span>
                     @if (phone()) {
-                      @if (r.recordLine) {
+                      @if (ownView() && r.recordName) {
+                        <span class="am-tl__sub am-tl__tail">
+                          @if (r.recordHref) {<a class="text-[var(--am-primary-700)] no-underline hover:underline focus-visible:outline-[length:var(--am-focus-ring-width)] focus-visible:outline-[var(--am-focus-ring)]" [routerLink]="r.recordHref" data-testid="task-list-record">{{ r.recordName }}</a>} @else {<span data-testid="task-list-record">{{ r.recordName }}</span>}
+                        </span>
+                      } @else if (r.recordLine) {
                         <span class="am-tl__sub am-tl__tail">{{ r.recordLine }}</span>
                       }
                       <span class="am-tl__sub">
                         <span class="am-tl__due whitespace-nowrap" [attr.data-tone]="r.due.tone">{{ r.due.text }}</span>
                         <span class="am-tl__tail"> · {{ r.who }} · {{ r.statusKey | translate }}</span>
+                        @if (r.overdue) {
+                          <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)] ms-1" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
+                        }
+                      </span>
+                    } @else if (ownView() && r.recordName) {
+                      <span class="am-tl__sub am-tl__tail" [attr.title]="r.subLine">
+                        @if (r.recordHref) {<a class="text-[var(--am-primary-700)] no-underline hover:underline focus-visible:outline-[length:var(--am-focus-ring-width)] focus-visible:outline-[var(--am-focus-ring)]" [routerLink]="r.recordHref" data-testid="task-list-record">{{ r.recordName }}</a>} @else {<span data-testid="task-list-record">{{ r.recordName }}</span>}
+                        @if (r.fact) {<span>&nbsp;· {{ r.fact }}</span>}
                       </span>
                     } @else if (r.subLine) {
                       <span class="am-tl__sub am-tl__tail" [attr.title]="r.subLine">{{ r.subLine }}</span>
                     }
                   </span>
                   @if (!phone()) {
-                    <span>{{ r.statusKey | translate }}</span>
+                    <span class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
+                      <span>{{ r.statusKey | translate }}</span>
+                      @if (r.overdue) {
+                        <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)]" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
+                      }
+                    </span>
                     <span class="am-tl__task">
                       <span class="am-tl__tail" [attr.title]="r.who">{{ r.who }}</span>
                       @if (r.position) {
@@ -432,6 +497,7 @@ export class TaskListViewComponent {
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly language = inject(LanguageService);
+  private readonly access = inject(NavigationAccessService);
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
 
@@ -468,6 +534,8 @@ export class TaskListViewComponent {
   readonly qInput = signal('');
   readonly q = signal('');
   readonly status = signal<TaskRecordListStatus | null>(null);
+  /** ACC-120 slice 3 — the own views' pressed chip; "All open" by default, never none. */
+  readonly statusChip = signal<StatusChipId>('OPEN');
   readonly overdue = signal(false);
   readonly who = signal<string | null>(null);
   readonly required = signal<'REQUIRED' | 'OPTIONAL' | null>(null);
@@ -506,7 +574,7 @@ export class TaskListViewComponent {
       sourceType: this.sourceType() ?? undefined,
       sourceId: this.sourceId() ?? undefined,
       q: this.q() || undefined,
-      status: this.status() ? [this.status()!] : undefined,
+      status: this.statusesSent(),
       overdue: this.overdue() || undefined,
       assignee: who?.startsWith('user:') ? who.slice(5) : undefined,
       pool: who?.startsWith('pool:') ? who.slice(5) : undefined,
@@ -522,9 +590,39 @@ export class TaskListViewComponent {
     };
   });
 
+  /** ACC-120 slice 3 — the viewer's own views: My tasks and Created by me (never a record). */
+  readonly ownView = computed<OwnView | null>(() => {
+    const view = this.sourceType() ? null : this.view();
+    return view === 'mine' || view === 'created' ? view : null;
+  });
+
+  /** The statuses the query sends: the pressed chip's on an own view, else the select's. */
+  private statusesSent(): TaskRecordListStatus[] | undefined {
+    const own = this.ownView();
+    if (own) {
+      const chip = this.statusChip();
+      return chip === 'OPEN' ? [...OPEN_STATUSES[own]] : [chip];
+    }
+    return this.status() ? [this.status()!] : undefined;
+  }
+
+  /** A status narrows the list: any chip but "All open", or a chosen status. */
+  private readonly statusFiltered = computed(() => (this.ownView() ? this.statusChip() !== 'OPEN' : !!this.status()));
+
   readonly filtered = computed(() => {
     const q = this.query();
-    return !!(q.q || q.status || q.overdue || q.assignee || q.pool || q.required || q.due || q.mine || q.recordType || q.unit);
+    return !!(q.q || this.statusFiltered() || q.overdue || q.assignee || q.pool || q.required || q.due || q.mine || q.recordType || q.unit);
+  });
+
+  /** The chips of the open own view, "All open" first. `count` waits for the server. */
+  readonly statusChips = computed<{ id: StatusChipId; label: string; count: number | null }[]>(() => {
+    this.translate.currentLang();
+    const own = this.ownView();
+    if (!own) return [];
+    return [
+      { id: 'OPEN' as const, label: this.translate.instant('taskList.filter.allOpen'), count: null },
+      ...CHIP_STATUSES[own].map((st) => ({ id: st, label: this.translate.instant(`task.status.${st.toLowerCase()}`), count: null })),
+    ];
   });
 
   readonly rows = computed<ViewRow[]>(() => {
@@ -538,6 +636,7 @@ export class TaskListViewComponent {
       const cut = due.text.indexOf(' · ');
       const fact = this.text.fact(row);
       const recordLine = row.record ? this.recordLine(row.record) : null;
+      const own = !!this.ownView();
       return {
         row,
         title: this.text.title(row),
@@ -550,6 +649,9 @@ export class TaskListViewComponent {
         tagKey: this.text.requirementKey(row),
         recordLine,
         subLine: [recordLine, fact].filter(Boolean).join(' · ') || null,
+        recordName: own && row.record ? this.recordName(row.record) : null,
+        recordHref: own && row.record ? this.recordHref(row.record) : null,
+        overdue: own && isTaskOverdue(row, now),
         model,
         menu: model.menu.map((group) =>
           group.map((a) => ({
@@ -639,7 +741,8 @@ export class TaskListViewComponent {
     const named = (key: string, value: string) => this.translate.instant(key, { value });
     if (this.linkTitle()) chips.push({ id: 'link', label: this.translate.instant('taskList.chip.link', { title: this.linkTitle() }) });
     if (this.q()) chips.push({ id: 'q', label: named('taskList.chip.search', this.q()) });
-    const status = this.status();
+    const chip = this.ownView() ? this.statusChip() : null;
+    const status = this.ownView() ? (chip === 'OPEN' ? null : chip) : this.status();
     if (status) chips.push({ id: 'status', label: named('taskList.chip.status', this.translate.instant(`task.status.${status.toLowerCase()}`)) });
     if (this.overdue()) chips.push({ id: 'overdue', label: this.translate.instant('taskList.filter.overdueOnly') });
     const who = this.who();
@@ -757,6 +860,8 @@ export class TaskListViewComponent {
         this.q.set('');
         return;
       case 'status':
+        // An own view goes back to "All open", never to no chip at all.
+        this.statusChip.set('OPEN');
         return this.status.set(null);
       case 'overdue':
         return this.overdue.set(false);
@@ -783,6 +888,7 @@ export class TaskListViewComponent {
     this.qInput.set('');
     this.q.set('');
     this.status.set(null);
+    this.statusChip.set('OPEN');
     this.overdue.set(false);
     this.who.set(null);
     this.required.set(null);
@@ -930,6 +1036,27 @@ export class TaskListViewComponent {
     const key = `taskList.recordType.${type}`;
     const name = this.translate.instant(key);
     return name === key ? this.translate.instant('taskList.recordType.OTHER') : name;
+  }
+
+  /** ACC-120 slice 3 — the record's name in the reader's language, or its type word when the row carries none. */
+  private recordName(record: NonNullable<ITaskRecordRowDto['record']>): string {
+    return record.nameEn ? this.language.bilingual(record.nameEn, record.nameAr) : this.recordTypeWord(record.type);
+  }
+
+  /**
+   * Where the record opens: only a type with a page today, only with a name
+   * (a nameless row is one the viewer may not open), and only for a viewer the
+   * page's route admits — hidden, never a link the guard then refuses.
+   */
+  private recordHref(record: NonNullable<ITaskRecordRowDto['record']>): string[] | null {
+    const route = RECORD_PAGES[record.type];
+    if (!route || !record.nameEn) return null;
+    const needs = ROUTE_PERMISSIONS.get(route) ?? [];
+    return needs.every((p) => this.access.hasPermission(p)) ? ['/', route, record.id] : null;
+  }
+
+  private recordTypeWord(type: string): string {
+    return this.translate.instant(type === 'COMMITTEE' || type === 'MEETING' ? `taskPage.recordType.${type}` : 'taskPage.recordType.OTHER');
   }
 
   private recordLine(record: NonNullable<ITaskRecordRowDto['record']>): string {
