@@ -758,9 +758,30 @@
       "colState": "State",
       "searchPlaceholder": "Search workflows",
       "loading": "Loading the workflows",
-      "default": "Default",
-      "defaultSub": "Used for new records of this type.",
-      "protectedSub": "Used for every change request (no fields to test).",
+      "defaultFor": "Default for {{type}}",
+      "forType": "For {{type}}",
+      "protectedFor": "Default for {{type}} (no fields to test).",
+      "module": {
+        "DOCUMENTS": "Documents",
+        "INCIDENTS": "Incidents",
+        "AUDITS": "Audits",
+        "CORRECTIVE_ACTIONS": "Corrective actions",
+        "MEETINGS": "Meetings",
+        "COMMITTEES": "Committees",
+        "OTHER": "Other"
+      },
+      "recordFor": {
+        "DOCUMENT_REQUEST": "document requests",
+        "DOCUMENT": "document lifecycle",
+        "CHANGE_REQUEST": "change requests",
+        "INCIDENT": "incidents",
+        "AUDIT": "audits",
+        "CORRECTIVE_ACTION": "corrective actions",
+        "MEETING": "meetings",
+        "COMMITTEE": "committee management",
+        "COMMITTEE_CHANGE_REQUEST": "committee change requests",
+        "OTHER": "other records"
+      },
       "actionsFor": "Actions for {{name}}",
       "open": "Open",
       "setDefault": "Set as default",
@@ -770,18 +791,7 @@
       "retry": "Retry",
       "dismiss": "Dismiss",
       "emptyTitle": "No workflows yet",
-      "emptyBody": "Each record type's workflow is added when the organization is set up, and this organization has none yet.",
-      "group": {
-        "DOCUMENT_REQUEST": "Document requests",
-        "DOCUMENT": "Documents",
-        "CHANGE_REQUEST": "Document change requests",
-        "INCIDENT": "Incidents",
-        "AUDIT": "Audits",
-        "CORRECTIVE_ACTION": "Corrective actions",
-        "MEETING": "Meetings",
-        "COMMITTEE": "Committees",
-        "COMMITTEE_CHANGE_REQUEST": "Committee change requests"
-      }
+      "emptyBody": "Each record type's workflow is added when the organization is set up, and this organization has none yet."
     },
     "editor": {
       "identityTitle": "The stage",
