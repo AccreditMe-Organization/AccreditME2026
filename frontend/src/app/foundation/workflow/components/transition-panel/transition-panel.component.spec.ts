@@ -228,6 +228,53 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     expect(text(q('[data-change-count]'))).toBe('Transition saved');
   });
 
+  // The saved line used to vanish a second after a save: the save reloads the
+  // template, the panel refills its form, and the refill read as an edit.
+  it('the saved line outlives the reload that follows a save, and goes on the next change', async () => {
+    await setup();
+    type('tp-labelEn', 'Send for legal review');
+    save().flush({ transition: { ...PERSON, labelEn: 'Send for legal review' }, permissionWarning: null });
+    fixture.detectChanges();
+    expect(text(q('[data-change-count]'))).toBe('Transition saved');
+
+    // The page reloads the template: the same transition, as a new object.
+    fixture.componentRef.setInput('transition', { ...PERSON, labelEn: 'Send for legal review' });
+    fixture.detectChanges();
+    expect(q<HTMLInputElement>('#tp-labelEn')!.value).toBe('Send for legal review');
+    expect(text(q('[data-change-count]'))).withContext('still shown after the reload').toBe('Transition saved');
+
+    type('tp-labelEn', 'Send for legal review now');
+    expect(text(q('[data-change-count]'))).withContext('the next change takes it away').not.toContain('saved');
+  });
+
+  it('a transition just added keeps its saved line when the panel reopens on it', async () => {
+    const p = await setup({ transition: null });
+    type('tp-labelEn', 'Escalate');
+    await choose('[data-to-select]', 'Approved');
+    p.saved.subscribe(() => undefined);
+    save().flush({ transition: { ...PERSON, id: 't-new', labelEn: 'Escalate', toStageId: 's3' }, permissionWarning: null });
+    fixture.detectChanges();
+    expect(text(q('[data-change-count]'))).toBe('Transition saved');
+
+    // The page reloads and the panel is given the new transition.
+    fixture.componentRef.setInput('transition', { ...PERSON, id: 't-new', labelEn: 'Escalate', toStageId: 's3' });
+    fixture.detectChanges();
+    expect(text(q('[data-change-count]'))).toBe('Transition saved');
+    q<HTMLInputElement>('#tp-isApprovalPath')!.click();
+    fixture.detectChanges();
+    expect(text(q('[data-change-count]'))).not.toContain('saved');
+  });
+
+  it('opening another transition starts without a saved line', async () => {
+    await setup();
+    type('tp-labelEn', 'Renamed');
+    save().flush({ transition: { ...PERSON, labelEn: 'Renamed' }, permissionWarning: null });
+    fixture.detectChanges();
+    fixture.componentRef.setInput('transition', { ...PERSON, id: 't2', labelEn: 'Another' });
+    fixture.detectChanges();
+    expect(text(q('[data-change-count]'))).toBe('');
+  });
+
   it('Save is never disabled: a missing name and To are said in their slots, and nothing is sent', async () => {
     await setup({ transition: null });
     q<HTMLButtonElement>('[data-panel-save] button')!.click();
