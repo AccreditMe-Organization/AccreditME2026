@@ -568,6 +568,32 @@ describe('am-stage-who — who works a stage (ACC-271 PR 5a)', () => {
     expect(document.activeElement).toBe(who().querySelector('[data-who-add]'));
   });
 
+  /** Opens row i's Kind list with the mouse, clicks option n, and says whether the list is still open. */
+  async function pickKindWithMouse(i: number, n: number): Promise<boolean> {
+    rowEl(i).querySelector<HTMLElement>('[data-who-kind] .am-overlay-select-trigger')!.click();
+    fixture.detectChanges();
+    const options = document.querySelectorAll<HTMLElement>('.am-overlay-select-panel [role="option"]');
+    expect(options.length).withContext('the Kind list opened').toBe(ALL_KINDS.length);
+    options[n]!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return document.querySelector('.am-overlay-select-panel') !== null;
+  }
+
+  // 5a's live check: "Fixed position" picked with the mouse left the list open
+  // while the other kinds closed it. The row was already Fixed position, and a
+  // re-pick sends no value change from CdkListbox, so nothing closed the list.
+  it('picking each kind with the mouse closes the Kind list, including the kind the row already has', async () => {
+    await setup();
+    for (const [n, kind] of ALL_KINDS.entries()) {
+      expect(await pickKindWithMouse(0, n)).withContext(`${kind} picked`).toBeFalse();
+      expect(rows()[0]!.group.controls.kind.value).toBe(kind);
+      expect(await pickKindWithMouse(0, n)).withContext(`${kind} picked again`).toBeFalse();
+      expect(rows()[0]!.group.controls.kind.value).toBe(kind);
+    }
+  });
+
   it('each Remove is named for its entry', async () => {
     await setup();
     addRow();
