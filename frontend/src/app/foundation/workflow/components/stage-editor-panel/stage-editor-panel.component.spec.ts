@@ -265,6 +265,61 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
     expect(document.activeElement).toBe(save);
   });
 
+  // The saved line used to vanish a second after a save: the page reloads the
+  // template, the panel refills its form, and the refill read as an edit.
+  it('the saved line outlives the reload that follows a save, and goes on the next change', async () => {
+    const panel = await setup();
+    panel.form.controls.nameEn.setValue('Terms Review (renamed)');
+    fixture.detectChanges();
+    const req = submit();
+    req.flush({ ...STAGE, nameEn: 'Terms Review (renamed)' });
+    fixture.detectChanges();
+    expect(text('[data-change-count]')).toBe('Stage saved');
+
+    // The page reloads the template: the same stage, as a new object.
+    fixture.componentRef.setInput('stage', { ...STAGE, nameEn: 'Terms Review (renamed)' });
+    fixture.detectChanges();
+    expect(panel.form.controls.nameEn.value).toBe('Terms Review (renamed)');
+    expect(text('[data-change-count]')).withContext('still shown after the reload').toBe('Stage saved');
+
+    // The next change, in the form or a section, takes it away.
+    tick('edit_details');
+    expect(text('[data-change-count]')).not.toContain('saved');
+    tick('edit_details');
+    expect(text('[data-change-count]')).withContext('undoing the change does not bring it back').toBe('');
+  });
+
+  it('a field changed after saving takes the saved line away', async () => {
+    const panel = await setup();
+    submit().flush(STAGE);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('stage', { ...STAGE });
+    fixture.detectChanges();
+    expect(text('[data-change-count]')).toBe('Stage saved');
+    panel.form.controls.description.setValue('A note');
+    fixture.detectChanges();
+    expect(text('[data-change-count]')).not.toContain('saved');
+  });
+
+  it('a stage just added keeps its saved line when the panel reopens on it; opening another starts without one', async () => {
+    const panel = await setup({ stage: null });
+    panel.form.controls.nameEn.setValue('Board review');
+    const row = panel.whoDraft.rows()[0]!;
+    row.group.controls.positionId.setValue('pos-qm');
+    row.group.controls.orgUnitId.setValue('unit-q');
+    fixture.detectChanges();
+    const added = { ...STAGE, id: 'stage-new', nameEn: 'Board review' };
+    submit().flush(added);
+    fixture.detectChanges();
+    expect(text('[data-change-count]')).toBe('Stage saved');
+    fixture.componentRef.setInput('stage', added);
+    fixture.detectChanges();
+    expect(text('[data-change-count]')).withContext('reopened on the stage it added').toBe('Stage saved');
+    fixture.componentRef.setInput('stage', OTHER);
+    fixture.detectChanges();
+    expect(text('[data-change-count]')).toBe('');
+  });
+
   it('an unchanged stage sends neither section', async () => {
     await setup();
     const req = submit();

@@ -597,10 +597,19 @@ export class TransitionPanelComponent implements OnChanges {
   readonly changeCount = computed(() => this.changedNames().length);
   readonly hasChanges = computed(() => this.changeCount() > 0);
 
+  /**
+   * True while load() refills the form from what the server holds. A refill is
+   * not the person changing something, so it must not take the saved line away:
+   * a save reloads the template, the panel refills itself, and "saved" used to
+   * vanish about a second after it appeared.
+   */
+  private refilling = false;
+
   constructor() {
     this.form.valueChanges.subscribe(() => {
       this.formTick.update((n) => n + 1);
-      this.savedNotice.set(false);
+      // The saved line stays until the person next changes something here.
+      if (!this.refilling) this.savedNotice.set(false);
     });
   }
 
@@ -637,13 +646,18 @@ export class TransitionPanelComponent implements OnChanges {
   }
 
   private load(transition: WorkflowTransitionDto | null): void {
-    this.form.reset({
-      labelEn: transition?.labelEn ?? '',
-      labelAr: transition?.labelAr ?? '',
-      toStageId: transition?.toStageId ?? null,
-      kind: transition?.kind ?? 'ADVANCE',
-      isApprovalPath: transition?.isApprovalPath ?? false,
-    });
+    this.refilling = true;
+    try {
+      this.form.reset({
+        labelEn: transition?.labelEn ?? '',
+        labelAr: transition?.labelAr ?? '',
+        toStageId: transition?.toStageId ?? null,
+        kind: transition?.kind ?? 'ADVANCE',
+        isApprovalPath: transition?.isApprovalPath ?? false,
+      });
+    } finally {
+      this.refilling = false;
+    }
     // To is chosen only when adding; after that it is read-only.
     this.form.controls.toStageId.setValidators(transition ? [] : [Validators.required]);
     this.form.controls.toStageId.updateValueAndValidity({ emitEvent: false });

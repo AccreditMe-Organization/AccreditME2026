@@ -11,8 +11,10 @@ import {
   ViewChild,
   afterNextRender,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -605,10 +607,24 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
 
   readonly listSeparator = computed(() => (this.languageService.isArabic() ? '، ' : ', '));
 
+  /**
+   * True while load() refills the form from what the server holds. A refill is
+   * not the person changing something, so it must not take the saved line away:
+   * a save reloads the template, the panel refills itself, and "saved" used to
+   * vanish about a second after it appeared.
+   */
+  private refilling = false;
+
   constructor() {
     this.form.valueChanges.subscribe(() => {
       this.formTick.update((n) => n + 1);
-      this.savedNotice.set(false);
+      // The saved line stays until the person next changes something here.
+      if (!this.refilling) this.savedNotice.set(false);
+    });
+    // "Who works this stage" is edited outside the form: a change there takes
+    // the saved line away too.
+    effect(() => {
+      if (this.whoDraft.hasChanges()) untracked(() => this.savedNotice.set(false));
     });
     // ACC-208 — a refusal stands only until the field it is about changes.
     this.form.controls.slaWorkingHours.valueChanges.subscribe(() => this.slaRefusal.set(null));
@@ -631,10 +647,13 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     this.load(this.stage);
     if (switched) {
       this.refusal.set(null);
-      this.savedNotice.set(false);
       this.submitted.set(false);
-      // A stage the panel just added reopens on itself: focus stays where it is.
-      if (previous !== null || changes['stage'].firstChange) this.focusHeading();
+      // A stage the panel just added reopens on itself: focus stays where it is,
+      // and so does its saved line. Any other switch starts without one.
+      if (previous !== null || changes['stage'].firstChange) {
+        this.savedNotice.set(false);
+        this.focusHeading();
+      }
     }
   }
 
@@ -644,14 +663,19 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
   }
 
   private load(stage: WorkflowStageDto | null): void {
-    this.form.reset({
-      nameEn: stage?.nameEn ?? '',
-      nameAr: stage?.nameAr ?? '',
-      description: stage?.description ?? '',
-      slaWorkingHours: stage?.slaWorkingHours ?? null,
-      isInitial: stage?.isInitial ?? false,
-      isFinal: stage?.isFinal ?? false,
-    });
+    this.refilling = true;
+    try {
+      this.form.reset({
+        nameEn: stage?.nameEn ?? '',
+        nameAr: stage?.nameAr ?? '',
+        description: stage?.description ?? '',
+        slaWorkingHours: stage?.slaWorkingHours ?? null,
+        isInitial: stage?.isInitial ?? false,
+        isFinal: stage?.isFinal ?? false,
+      });
+    } finally {
+      this.refilling = false;
+    }
     this.baseForm.set(this.form.getRawValue() as Record<string, unknown>);
     this.whoDraft.load(stage, this.templateSig());
     const actions = new Set(stage?.actions ?? []);
