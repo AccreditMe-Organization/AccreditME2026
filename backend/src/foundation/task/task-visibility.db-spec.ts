@@ -173,6 +173,8 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
         data: { organizationId: A, createdById: user['creator']!, sourceType: 'COMMITTEE', sourceId: corruptCommittee, title: 'Corrupt', status: 'PENDING' } as never,
       })
     ).id;
+    // Named only so keysOf() can print it; ALL leaves it out, so admitted() is unchanged.
+    task['corrupt'] = corruptTask;
 
     taskB = (
       await prisma.task.create({
@@ -272,10 +274,18 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
       it('My tasks and Created by me are never refused, list only admitted tasks, and GET views offers Created by me', async () => {
         const v = viewer();
         expect((await list.views(A, v)).created).toBe(true);
+        // list ⊆ admit, asked of the rule itself rather than of the hand list.
+        const ctx = await rule.contextFor(v, A);
         for (const view of ['mine', 'created'] as const) {
           const answer = await listed(v, { view });
           expect(answer).not.toBe('FORBIDDEN');
-          if (answer !== 'FORBIDDEN') for (const k of answer.keys) expect(expected).toContain(k);
+          if (answer !== 'FORBIDDEN') {
+            for (const k of answer.keys) {
+              // A key keysOf() could not name would read "?<id>": fail on it by name.
+              expect(Object.keys(task)).toContain(k);
+              expect(await rule.isVisible(ctx, task[k]!)).toBe(true);
+            }
+          }
         }
       });
     });
@@ -315,7 +325,9 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
       const answer = await list.list({ view: 'created' }, A, as('creator', [SEE]));
       expect(answer.view).toBe('created');
       const keys = keysOf(answer.items.map((i) => i.id));
-      expect(keys).toEqual(['dept', 'emptyPool', 'pool', 'request', 'root', 'sib', 'unassigned', 'ward']);
+      // 'corrupt' (on another organisation's committee) is the creator's too: a
+      // relationship needs no record (Q1), as the tenant test asserts.
+      expect(keys).toEqual(['corrupt', 'dept', 'emptyPool', 'pool', 'request', 'root', 'sib', 'unassigned', 'ward']);
       // Non-vacuity: the creator does see their workflow-made task elsewhere.
       expect(await admitted(as('creator', [SEE]))).toContain('workflowMade');
       expect(keys).not.toContain('workflowMade');
