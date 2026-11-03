@@ -460,3 +460,30 @@ describe('RecordListQueryDto — view', () => {
     );
   });
 });
+
+// ACC-271 — POST /tasks no longer carries the engine-only fields. Before this,
+// anyone holding Create tasks could send them and make a hand-made task look
+// workflow-made, or stamp a delegation reason on an assignee. Now each one is a
+// 400 by name; trusted in-code callers pass them as TaskService.create()'s
+// `internal` argument.
+describe('CreateTaskDto — the engine-only fields are refused (ACC-271)', () => {
+  const body = { title: 'Collect the minutes', sourceType: 'COMMITTEE', sourceId: 'committee-1' };
+
+  it.each([
+    ['sourceStageId', 'stage-1'],
+    ['workflowInstanceId', 'instance-1'],
+    ['assigneeDelegations', [{ userId: 'user-1', delegationReason: 'ACTING_HEAD', delegationContextId: 'unit-1' }]],
+  ])('refuses %s with a 400 naming it', async (field, value) => {
+    expect(await messages(run(CreateTaskDto, { ...body, [field]: value }))).toEqual(
+      expect.arrayContaining([`property ${field} should not exist`]),
+    );
+  });
+
+  it('still accepts a body without them', async () => {
+    await expect(run(CreateTaskDto, { ...body, assigneeUserIds: ['user-1'], priority: 'HIGH' })).resolves.toMatchObject({
+      ...body,
+      assigneeUserIds: ['user-1'],
+      priority: 'HIGH',
+    });
+  });
+});

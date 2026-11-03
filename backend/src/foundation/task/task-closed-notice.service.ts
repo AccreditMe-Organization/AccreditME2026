@@ -19,10 +19,10 @@ export interface ClosedTask {
  * has committed — the engine's stage change, or a completion — so a move that
  * rolls back tells nobody.
  *
- * Who is told: every assignee still on a closed task, never the actor; an
- * assignee who is away now, with an ACTIVE acting user, is told through that
- * acting user — the same routing the stage's pool uses (StagePoolService).
- * Someone no longer ACTIVE is told nothing.
+ * Who is told: every ACTIVE assignee still on a closed task, directly, never
+ * the actor. The notice is about the row they hold, so an assignee who is away
+ * is still told themselves and their acting user is not (ACC-271). Someone no
+ * longer ACTIVE is told nothing.
  *
  * Batched (the performance rule): one read of the people, then the record's
  * name and who may open it together, then ONE createMany for the whole move.
@@ -71,33 +71,16 @@ export class TaskClosedNoticeService {
     const assignees = [...new Set(closed.flatMap((t) => t.assigneeUserIds))];
     if (assignees.length === 0) return 0;
 
-    // 1. The people: who is ACTIVE, who is away with someone acting, and the actor's name.
-    const now = new Date();
+    // 1. The people: who is ACTIVE, and the actor's name.
     const people = await this.prisma.user.findMany({
       where: { organizationId, id: { in: [...assignees, actorId] } },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        outOfOfficeFrom: true,
-        outOfOfficeTo: true,
-        actingUserId: true,
-        actingUser: { select: { status: true, organizationId: true } },
-      },
+      select: { id: true, name: true, status: true },
     });
     const byId = new Map(people.map((p) => [p.id, p]));
-    const toldFor = (userId: string): string | null => {
-      const p = byId.get(userId);
-      if (!p || p.status !== 'ACTIVE') return null;
-      const away = !!p.outOfOfficeFrom && !!p.outOfOfficeTo && p.outOfOfficeFrom <= now && now <= p.outOfOfficeTo;
-      if (away && p.actingUserId && p.actingUser?.status === 'ACTIVE' && p.actingUser.organizationId === organizationId) {
-        return p.actingUserId;
-      }
-      return userId;
-    };
+    const isActive = (userId: string) => byId.get(userId)?.status === 'ACTIVE';
     const perTask = closed.map((task) => ({
       task,
-      readers: [...new Set(task.assigneeUserIds.map(toldFor).filter((id): id is string => id !== null && id !== actorId))],
+      readers: [...new Set(task.assigneeUserIds.filter((id) => id !== actorId && isActive(id)))],
     }));
     const readers = [...new Set(perTask.flatMap((t) => t.readers))];
     if (readers.length === 0) return 0;
