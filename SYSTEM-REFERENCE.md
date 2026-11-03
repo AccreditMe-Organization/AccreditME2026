@@ -3125,8 +3125,10 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
 - **PR 4 — closed-task notices and the sweep's leaver rule.**
   - **`TaskClosedNoticeService`** (`foundation/task/`, wording in
     `task-closed-notice.ts`): in-app only, one notice per person whose task
-    closed because of someone else, never the actor; an away member is told
-    through their ACTIVE acting user. Four wordings, both languages, stored as
+    closed because of someone else, never the actor. It goes to the ACTIVE
+    holder of the row directly: an away member is told themselves, and their
+    acting user is not (rerouting removed later in ACC-271). Four wordings,
+    both languages, stored as
     the notification's title and body: **moved on** (an ADVANCE — Any one
     deciding, or optional work closed by a forward move), **sent back**
     (RETURN), **ended** (EXIT), and **completed** (another assignee completed a

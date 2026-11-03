@@ -189,7 +189,7 @@ describe('TaskService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TaskService,
+        TaskService,
 
         { provide: TaskClosedNoticeService, useValue: mockClosedNotices },
         // ACC-167 — REAL, over the same mockPrisma: it decides where a chosen
@@ -428,18 +428,22 @@ describe('TaskService', () => {
       mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }, { id: USER_B }]);
       mockPrisma.task.create.mockResolvedValue(BASE_TASK);
 
+      // ACC-271 — the delegation stamps come through create()'s `internal`
+      // argument, never the request body.
       await service.create(
         {
           title: 'Task',
           sourceType: 'DOCUMENT',
           sourceId: 'doc-1',
           assigneeUserIds: [USER_A, USER_B],
+        },
+        ORG_A,
+        ACTOR,
+        {
           assigneeDelegations: [
             { userId: USER_A, delegationReason: 'ACTING_HEAD', delegationContextId: 'unit-1' },
           ],
         },
-        ORG_A,
-        ACTOR,
       );
 
       expect(mockPrisma.task.create).toHaveBeenCalledWith(

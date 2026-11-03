@@ -4428,8 +4428,9 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
   **Both have been executed on the shared database (29 Oct)**: every stage in
   every organisation is converted, and every transition has a `mover`.
 - **A TASK CLOSED BY SOMEONE ELSE'S ACTION IS TOLD, AFTER THE COMMIT (PR 4).**
-  `TaskClosedNoticeService`: in-app, never the actor, through an away member's
-  acting user; four wordings (moved on, sent back, ended, completed by another
+  `TaskClosedNoticeService`: in-app, never the actor, to the ACTIVE row holder
+  directly (an away member is told themselves, never through their acting
+  user); four wordings (moved on, sent back, ended, completed by another
   assignee); the record named and linked only for someone who may open it. One
   batched write per move. Never send it inside a transaction.
 - **WHO LEFT AN "ALL OF THEM" POOL IS THE SWEEP'S TO RECORD (PR 4)**, from the
