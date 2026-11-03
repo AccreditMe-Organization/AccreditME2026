@@ -144,16 +144,6 @@ describe('WorkflowTemplateListComponent (ACC-120 slice 7)', () => {
       expect(outline(root)).not.toContain('# Corrective actions');
     });
 
-    it('pins a default last within its record type, not within its module', () => {
-      const items = workflowListItems([
-        t('dr-default', 'A request', 'DOCUMENT_REQUEST', true),
-        t('d-other', 'A lifecycle', 'DOCUMENT', false),
-        t('dr-other', 'B request', 'DOCUMENT_REQUEST', false),
-        t('d-default', 'B lifecycle', 'DOCUMENT', true),
-      ]);
-      expect(outlineOf(items)).toEqual(['# DOCUMENTS', 'dr-other', 'dr-default', 'd-other', 'd-default']);
-    });
-
     it("names each row's record type on its second line, and draws no star", () => {
       const root = render();
       answer(MIXED);
@@ -174,14 +164,6 @@ describe('WorkflowTemplateListComponent (ACC-120 slice 7)', () => {
       answer(MIXED);
       expect(text(row(root, 'gap-1').querySelector('[data-testid="workflow-record-line"]'))).toBe('For other records');
       expect(text(root)).not.toContain('GAP');
-    });
-
-    it('keeps the heading of every module with a match while searching, and only those', () => {
-      expect(outlineOf(workflowListItems(MIXED, 'review'))).toEqual(['# DOCUMENTS', 'dr-default', 'd-default', 'cr-default']);
-      expect(outlineOf(workflowListItems(MIXED, 'lifecycle'))).toEqual(['# COMMITTEES', 'c-task', 'c-default']);
-      // The Arabic name matches too.
-      expect(outlineOf(workflowListItems(MIXED, 'لجنة'))).toEqual(['# COMMITTEES', 'c-default', 'ccr']);
-      expect(workflowListItems(MIXED, 'nothing like this')).toEqual([]);
     });
 
     it('says an inactive workflow is Inactive, in words', () => {
@@ -348,5 +330,27 @@ describe('WorkflowTemplateListComponent (ACC-120 slice 7)', () => {
       expect(line('ccr')).toBe('الافتراضي في طلبات تغيير اللجان (لا حقول لاختبارها).');
       expect(line('gap-1')).toBe('يُستخدم في سجلات أخرى');
     });
+  });
+});
+
+// ACC-120 slice 7c — the grouping itself, as a pure function. Its own describe:
+// these tests render nothing, so they must not share the page's HTTP teardown.
+describe('workflowListItems (ACC-120 slice 7c)', () => {
+  it('pins a default last within its record type, not within its module', () => {
+    const items = workflowListItems([
+      t('dr-default', 'A request', 'DOCUMENT_REQUEST', true),
+      t('d-other', 'A lifecycle', 'DOCUMENT', false),
+      t('dr-other', 'B request', 'DOCUMENT_REQUEST', false),
+      t('d-default', 'B lifecycle', 'DOCUMENT', true),
+    ]);
+    expect(outlineOf(items)).toEqual(['# DOCUMENTS', 'dr-other', 'dr-default', 'd-other', 'd-default']);
+  });
+
+  it('keeps the heading of every module with a match while searching, and only those', () => {
+    expect(outlineOf(workflowListItems(MIXED, 'review'))).toEqual(['# DOCUMENTS', 'dr-default', 'd-default', 'cr-default']);
+    expect(outlineOf(workflowListItems(MIXED, 'lifecycle'))).toEqual(['# COMMITTEES', 'c-task', 'c-default']);
+    // The Arabic name matches too.
+    expect(outlineOf(workflowListItems(MIXED, 'لجنة'))).toEqual(['# COMMITTEES', 'c-default', 'ccr']);
+    expect(workflowListItems(MIXED, 'nothing like this')).toEqual([]);
   });
 });
