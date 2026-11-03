@@ -382,6 +382,65 @@ describe('OverlaySelectComponent', () => {
     );
   });
 
+  // ACC-271 PR 5b — CdkListbox emits no value change when the option picked is
+  // the one already selected, so the list used to stay open on a re-pick.
+  describe('picking the option that is already selected', () => {
+    async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('a mouse click on it closes the list, keeps the value, and returns focus to the trigger', async () => {
+      const fixture = TestBed.createComponent(ObjectOptionsHostComponent);
+      fixture.componentInstance.control.setValue('r2');
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+      const options = document.querySelectorAll<HTMLElement>('.am-overlay-select-panel [role="option"]');
+      expect(options[1]!.getAttribute('aria-selected')).toBe('true');
+      options[1]!.click();
+      await settle(fixture);
+
+      expect(document.querySelector('.am-overlay-select-panel')).toBeNull();
+      expect(fixture.componentInstance.control.value).toBe('r2');
+      expect(document.activeElement).toBe(getTrigger(fixture));
+    });
+
+    it('Enter on it closes the list', async () => {
+      const fixture = TestBed.createComponent(ObjectOptionsHostComponent);
+      fixture.componentInstance.control.setValue('r1');
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      keydown(panel, 'ArrowDown', DOWN_ARROW);
+      keydown(panel, 'ArrowUp', UP_ARROW);
+      fixture.detectChanges();
+      expect(panel.querySelector('.cdk-option-active')?.textContent?.trim()).toBe('Quality Manager');
+      keydown(panel, 'Enter', ENTER);
+      await settle(fixture);
+
+      expect(document.querySelector('.am-overlay-select-panel')).toBeNull();
+      expect(fixture.componentInstance.control.value).toBe('r1');
+    });
+
+    it('a click on another option still picks it and closes, exactly once', async () => {
+      const fixture = TestBed.createComponent(ObjectOptionsHostComponent);
+      fixture.componentInstance.control.setValue('r1');
+      fixture.detectChanges();
+      const changes: unknown[] = [];
+      fixture.componentInstance.control.valueChanges.subscribe((v) => changes.push(v));
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+      document.querySelectorAll<HTMLElement>('.am-overlay-select-panel [role="option"]')[2]!.click();
+      await settle(fixture);
+
+      expect(document.querySelector('.am-overlay-select-panel')).toBeNull();
+      expect(changes).toEqual(['r3']);
+    });
+  });
+
   // ACC-208 — a keyboard user keeps their place: closing the list returns
   // focus to the trigger instead of dropping it on <body> with the pane.
   describe('focus after the list closes', () => {

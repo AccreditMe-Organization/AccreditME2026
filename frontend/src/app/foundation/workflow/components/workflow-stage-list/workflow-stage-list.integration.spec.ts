@@ -1,18 +1,16 @@
-// ACC-55 — the integration that actually broke on the live pass, and that
-// neither component's own spec covers on its own.
+// ACC-55 — the seam that broke on the live pass, and that neither component's
+// own spec covers on its own: a save reloads the template, which replaces the
+// stages array the expanded row renders from.
 //
-// The transition editor's dialog logic was already correct in isolation. What
-// failed was the seam: the editor emitted `changed`, workflow-stage-list ran
-// loadTemplate(), the stages array was replaced, p-table rebuilt the expanded
-// row's embedded view, and the editor component was DESTROYED and recreated —
-// taking the open dialog and its warning with it.
-//
-// Proven pre-fix: after a reload the component instance identity changed and
-// both showEditDialog and editPermissionWarning were back at their defaults.
-// This spec pins the seam so a future refactor cannot silently reintroduce it.
+// Before ACC-271 PR 5b the transition dialogs lived INSIDE the expanded row, so
+// a reload that rebuilt the row destroyed an open dialog and its warning. The
+// transition panel lives on the page now, outside the row. This pins that a
+// save reloads the page, the panel stays open on the transition (showing what
+// the server stored), and the row's list is kept, not rebuilt (rows by id).
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   provideTranslateService,
   provideTranslateLoader,
@@ -24,8 +22,10 @@ import { By } from '@angular/platform-browser';
 import { environment } from '../../../../../environments/environment';
 import { WorkflowStageListComponent } from './workflow-stage-list.component';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
+import { TransitionPanelComponent } from '../transition-panel/transition-panel.component';
 
 const TRANSITION = {
   id: 'transition-1',
@@ -39,8 +39,8 @@ const TRANSITION = {
   triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
-
   kind: 'ADVANCE' as const,
+  mover: 'PERSON' as const,
 };
 
 const template = () => ({
@@ -77,15 +77,17 @@ const template = () => ({
   ],
 });
 
-describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
-  it('a warning dialog survives — the parent is not reloaded underneath it', () => {
+describe('WorkflowStageList + transition panel (ACC-55 seam, ACC-271 PR 5b)', () => {
+  it('a save reloads the page; the panel stays on the transition and the row’s list is kept', async () => {
     TestBed.configureTestingModule({
       imports: [WorkflowStageListComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideNoopAnimations(),
         provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
         ConfirmationService,
+        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
         {
           provide: ActivatedRoute,
           // queryParamMap — ACC-82's Fix link reads it; this test passes none.
@@ -96,16 +98,8 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
       ],
     });
 
-    // ACC-78 — the role picker reads listAllRoles(), which asks for
-    // ?pageSize=200 and expects the PAGINATED ENVELOPE. Flushing a bare array
-    // here would leave `.data` undefined rather than failing loudly, so the
-    // shape matters even though the test does not read the roles.
-    const drainRoles = (http: HttpTestingController): void => {
-      http
-        .match((r) => r.url === `${environment.apiUrl}/roles`)
-        .forEach((r) => r.flush({ data: [], total: 0, page: 1, pageSize: 200 }));
-      http.match(`${environment.apiUrl}/roles/permissions`).forEach((r) => r.flush([]));
-      // ACC-208 — the expanded row's "Tasks on entry" reads its own list.
+    // ACC-208 — the expanded row's "Tasks on entry" reads its own list.
+    const drainTasks = (http: HttpTestingController): void => {
       http
         .match(`${environment.apiUrl}/workflow-templates/stages/stage-1/task-definitions`)
         .forEach((r) => r.flush([]));
@@ -120,44 +114,46 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
 
     fixture.componentInstance.expandedRowKeys.set({ 'stage-1': true });
     fixture.detectChanges();
+    drainTasks(http);
 
-    const editorDebug = fixture.debugElement.query(By.directive(WorkflowTransitionEditorComponent));
-    const editor = editorDebug.componentInstance as WorkflowTransitionEditorComponent;
-    drainRoles(http);
-    fixture.detectChanges();
+    const list = fixture.debugElement.query(By.directive(WorkflowTransitionEditorComponent)).componentInstance as WorkflowTransitionEditorComponent;
+    const host = fixture.nativeElement as HTMLElement;
+    // No roles or permissions are read for the list or the panel any more.
+    http.expectNone(`${environment.apiUrl}/roles/permissions`);
 
-    editor.openEdit(TRANSITION);
+    host.querySelector<HTMLButtonElement>('[data-transition-row="transition-1"] [data-tr-edit] button')!.click();
     fixture.detectChanges();
-    editor.onSubmitEdit();
+    await fixture.whenStable();
+    const panel = (): TransitionPanelComponent | undefined =>
+      fixture.debugElement.query(By.directive(TransitionPanelComponent))?.componentInstance;
+    expect(panel()).withContext('the panel opened').toBeDefined();
+
+    const input = host.querySelector<HTMLInputElement>('#tp-labelEn')!;
+    input.value = 'Approve now';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    host.querySelector<HTMLButtonElement>('[data-panel-save] button')!.click();
+    fixture.detectChanges();
 
     http
       .expectOne(`${environment.apiUrl}/workflow-templates/transitions/transition-1`)
-      .flush({
-        transition: { ...TRANSITION, requiredPermission: 'capa:approve' },
-        permissionWarning: 'UNKNOWN_PERMISSION',
-      });
+      .flush({ transition: { ...TRANSITION, labelEn: 'Approve now' }, permissionWarning: null });
     fixture.detectChanges();
 
-    // No template refetch may be in flight — that request is what destroyed
-    // the dialog. http.verify() in the finally block enforces it.
-    const sameInstance =
-      (fixture.debugElement.query(By.directive(WorkflowTransitionEditorComponent))
-        ?.componentInstance as WorkflowTransitionEditorComponent) === editor;
+    const saved = template();
+    saved.stages[0]!.transitions = [{ ...TRANSITION, labelEn: 'Approve now' }];
+    http.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(saved);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    drainTasks(http);
 
-    expect(sameInstance).withContext('editor must not be recreated').toBe(true);
-    expect(editor.showEditDialog()).withContext('dialog must stay open').toBe(true);
-    expect(editor.editPermissionWarning()).toBe('UNKNOWN_PERMISSION');
-
-    // Closing flushes the deferred refresh — the list must still end up fresh.
-    editor.onEditDialogVisibleChange(false);
-    fixture.detectChanges();
-    http.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(template());
-    fixture.detectChanges();
-    // Drained twice, and the second time is not redundant: reopening the
-    // expanded row rebuilds the editor, which fetches its role list again.
-    drainRoles(http);
-    fixture.detectChanges();
-    drainRoles(http);
+    expect(panel()).withContext('the panel stays open on the transition').toBeDefined();
+    expect(host.querySelector('[data-panel-heading]')?.textContent?.trim()).toBe('Approve now');
+    const sameList =
+      (fixture.debugElement.query(By.directive(WorkflowTransitionEditorComponent))?.componentInstance as WorkflowTransitionEditorComponent) === list;
+    expect(sameList).withContext('the row’s list is kept, not rebuilt').toBeTrue();
+    expect(host.querySelector('[data-transition-row="transition-1"] [data-tr-label]')?.textContent).toContain('Approve now');
 
     http.verify();
   });

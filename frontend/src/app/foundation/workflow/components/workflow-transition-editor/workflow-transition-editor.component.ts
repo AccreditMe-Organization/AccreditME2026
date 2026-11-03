@@ -1,621 +1,158 @@
-import { Component, DestroyRef, Input, Output, EventEmitter, OnInit, OnChanges, TemplateRef, ViewChild, computed, effect, inject, signal } from '@angular/core';
-import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
+import { Component, EventEmitter, Input, Output, computed, inject, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { DialogModule } from 'primeng/dialog';
-import { InputTextModule } from 'primeng/inputtext';
-import { TextareaModule } from 'primeng/textarea';
-import { CheckboxModule } from 'primeng/checkbox';
-import { RadioButtonModule } from 'primeng/radiobutton';
-import { MessageModule } from 'primeng/message';
 import {
   WorkflowTemplateService,
   WorkflowStageDto,
   WorkflowTransitionDto,
-  CreateWorkflowTransitionDto,
-  UpdateWorkflowTransitionDto,
-  TransitionPermissionWarning,
-  WORKFLOW_TRANSITION_KINDS,
-  WorkflowTransitionKind,
 } from '../../services/workflow-template.service';
-import { RoleService, RoleDto, PermissionDto } from '../../../roles/services/role.service';
-import { WorkflowActionConfiguratorComponent } from '../workflow-action-configurator/workflow-action-configurator.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { plainWorkflowRefusalKey, whoMovedToStageMessage } from '../../workflow-refusal';
-// ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on these fields:
-// raw p-dialog context. See CLAUDE.md's PrimeNG-components-only exception
-// note and overlay-select.component.ts for the full mechanism.
-import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
-// ACC-39 — EditDialogComponent replaces the raw p-dialog + manual @if on
-// the Add and Edit Transition dialogs specifically (2 separate migrations,
-// not combined — separate FormGroups, separate reset() calls, no shared
-// state). The "Configure Actions" dialog below stays a raw p-dialog —
-// outside ACC-39's own scope. Add is create-only (architectural
-// consistency only); Edit has a genuine edit flow but was already immune
-// to ACC-29's bug (editForm.reset() runs imperatively in openEdit(), no
-// separate *-form.component.ts involved).
-import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { LanguageService } from '../../../../core/services/language.service';
-
-// ACC-55 — hierarchy-mode shape for OverlaySelectComponent:
-//   optionGroupChildren="permissions"  optionGroupLabel="module"
-//   optionLabel="label"                optionValue="value"
-// A node with a non-empty `permissions` array renders as a group header; one
-// without renders as a selectable leaf.
-interface PermissionNode {
-  value: string;
-  label?: string;
-  module?: string;
-  permissions?: PermissionNode[];
-}
-
-// Module headings still need a unique value even though they can no longer be
-// selected ([groupsSelectable]="false"): @for tracks by
-// getOptionValue(flat.node), so 19 headings all resolving to undefined would
-// collide on the track key.
-//
-// toPermissionPayload() also refuses to persist a sentinel. That is now
-// defence in depth rather than the primary guard, and it is kept deliberately:
-// before ACC-55's live pass the sentinel was the ONLY protection, and it was
-// not enough — selecting a heading sent requiredPermission: null, silently
-// CLEARING an existing permission and widening who could fire the transition.
-// The real fix is that CdkOption now refuses the click and the keyboard; this
-// stays so a future template that forgets [groupsSelectable]="false" degrades
-// to a no-op instead of quietly stripping a permission gate.
-const GROUP_SENTINEL_PREFIX = '__module__:';
-
-// The picker's explicit "no permission required" choice. Distinct from the
-// sentinel: this one IS meant to be selected, and persists as null.
-const NO_PERMISSION_VALUE = '';
-
-// ACC-254 — the trigger conditions come from workflow-labels.ts, labelled in
-// the reader's words (triggerConditions below), never the stored code.
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
-import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
-import { workflowLabelKey, workflowOptionKeys } from '../../workflow-labels';
-// ACC-208 — literal keys, so the translation-keys spec sees each one.
-const KIND_LABEL_KEYS: Record<WorkflowTransitionKind, string> = {
-  ADVANCE: 'workflow.kind.advance',
-  RETURN: 'workflow.kind.return',
-  EXIT: 'workflow.kind.exit',
-};
-const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
-  ADVANCE: 'workflow.kind.advanceHelp',
-  RETURN: 'workflow.kind.returnHelp',
-  EXIT: 'workflow.kind.exitHelp',
-};
+import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
+import { workflowLabelKey } from '../../workflow-labels';
+import { TransitionActionsDialogComponent } from '../transition-actions-dialog/transition-actions-dialog.component';
 
+/** Which transition to open, and the control that opened it (focus returns there). */
+export interface TransitionOpenEvent {
+  transitionId: string;
+  opener: HTMLElement | null;
+}
+
+/**
+ * A stage's transitions, in its expanded row on the Stages page.
+ *
+ * ACC-271 PR 5b — a LIST, no longer an editor: Add transition, a row's name and
+ * Edit open the transition PANEL on the page (am-transition-panel), which
+ * replaced the Add and Edit dialogs. The columns are the drawing's: the move
+ * (with "Done by the app" for one the app runs), where it goes, and its kind.
+ * "Who can trigger" is gone: whoever works the stage presses its moves.
+ *
+ * A move the app runs (the server's mover APP) has no Edit and no ⋯; its name
+ * still opens the panel, read-only. So does every move of a protected workflow,
+ * whose moves the server refuses to change. Each move appears once, under the
+ * stage it leaves, so a move the app makes from three stages (Withdraw) is
+ * three rows: nothing groups or hides one.
+ *
+ * The ⋯ holds Automatic actions and Remove. The Actions dialog is given the
+ * transition as last loaded, looked up by id, so it never shows the actions
+ * from before a save.
+ */
 @Component({
   selector: 'app-workflow-transition-editor',
   standalone: true,
-  imports: [
-    ReactiveFormsModule,
-    TranslatePipe,
-    TableModule,
-    ButtonModule,
-    TagModule,
-    TooltipModule,
-    DialogModule,
-    InputTextModule,
-    TextareaModule,
-    CheckboxModule,
-    RadioButtonModule,
-    MessageModule,
-    WorkflowActionConfiguratorComponent,
-    OverlaySelectComponent,
-    EditDialogComponent,
-  ],
+  imports: [TranslatePipe, TableModule, ButtonModule, TagModule, TooltipModule, RowMenuComponent, TransitionActionsDialogComponent],
   template: `
     <div class="flex flex-col gap-3">
-
       <div class="flex items-center justify-between">
         <h3 class="font-medium text-sm">{{ 'workflow.transitions' | translate }}</h3>
-        <!-- ACC-123 — workflows:manage. The cog beside each row is NOT gated
-             here: it opens the action configurator, whose own writes are gated
-             inside it, so a viewer may still read how a transition is wired. -->
-        @if (canManage()) {
+        <!-- workflows:manage, and never on a protected workflow (the server refuses it). -->
+        @if (canAddTransition()) {
           <p-button
             icon="pi pi-plus"
             size="small"
             [label]="'workflow.addTransition' | translate"
-            (onClick)="openAdd()"
+            (onClick)="add.emit({ opener: $any($event)?.currentTarget ?? null })"
+            data-tr-add
           />
         }
       </div>
 
       @if (error()) {
-        <p class="text-red-500 text-sm">{{ error() | translate }}</p>
+        <p class="text-red-500 text-sm" role="alert">{{ error() | translate }}</p>
       }
 
       <!-- ACC-254 — fixed column widths, so nothing pushes the table past the
-           panel's column and the page sideways. ACC-255 PR 4a (ACC-265 item 3):
-           the transition's name and its destination WRAP onto lines, whole,
-           rather than ending in an ellipsis; the Kind and trigger chips stay on
-           one line because each column is sized to its longest chip, in both
-           languages (the layout spec checks every chip is on one line). -->
-      <!-- On a phone the fixed columns alone (456px) are wider than the panel,
-           so the table scrolls sideways inside this frame (ACC-254's allowance:
-           "a narrow phone may still scroll the table inside its own card"),
-           with a minimum width that keeps the name and destination readable.
-           At desktop widths the frame never scrolls. -->
+           panel's column and the page sideways. The name and destination WRAP,
+           whole, rather than ending in an ellipsis; the Kind chip stays on one
+           line because its column is sized to the longest chip in both
+           languages. On a phone the table may scroll sideways inside this frame
+           (ACC-254's allowance). -->
       <div class="am-tr-scroll" data-tr-scroll>
-      <p-table [value]="transitions" styleClass="w-full am-tr-table" [tableStyle]="{ 'table-layout': 'fixed', width: '100%', 'min-width': '44rem' }">
-        <ng-template pTemplate="header">
-          <tr>
-            <th>{{ 'workflow.label' | translate }}</th>
-            <th>{{ 'workflow.toStage' | translate }}</th>
-            <th class="am-tr-col-kind">{{ 'workflow.kind.label' | translate }}</th>
-            <th class="am-tr-col-trigger">{{ 'workflow.triggerCondition' | translate }}</th>
-            <th class="am-tr-col-cog"></th>
-            <th class="am-tr-col-actions"></th>
-          </tr>
-        </ng-template>
+        <p-table [value]="transitionList()" styleClass="w-full am-tr-table" [tableStyle]="{ 'table-layout': 'fixed', width: '100%', 'min-width': '30rem' }">
+          <ng-template pTemplate="header">
+            <tr>
+              <th>{{ 'workflow.transitionPanel.colTransition' | translate }}</th>
+              <th>{{ 'workflow.transitionPanel.to' | translate }}</th>
+              <th class="am-tr-col-kind">{{ 'workflow.kind.label' | translate }}</th>
+              <th class="am-tr-col-actions"><span class="am-tr-sr">{{ 'workflow.transitionPanel.colActions' | translate }}</span></th>
+            </tr>
+          </ng-template>
 
-        <ng-template pTemplate="body" let-transition>
-          <tr>
-            <td class="am-tr-wrap" data-tr-label>{{ transitionLabel(transition) }}</td>
-            <td class="am-tr-wrap" data-tr-to>{{ stageName(transition.toStageId) }}</td>
-            <td>
-              <!-- ACC-208 — Send back is dashed, as returns are in the stage
-                   strip; End the record is outlined in danger (drawing). -->
-              <span [class]="'am-tr-chip am-tr-chip--' + kindOf(transition).toLowerCase()" data-tr-kind>
-                {{ kindLabelKey(transition) | translate }}
-              </span>
-            </td>
-            <td>
-              <p-tag [value]="triggerLabelKey(transition.triggerCondition) | translate" severity="info" data-tr-trigger />
-              <!-- ACC-82 — which role can fire it. ROLE_BASED alone does not say, and
-                   a Setup health stage Fix lands here looking for exactly that. -->
-              @if (triggerRoleLabel(transition); as roleLabel) {
-                <span class="ms-2 text-sm text-[var(--am-text-primary)]">{{ roleLabel }}</span>
-              }
-              @if (transition.isApprovalPath) {
-                <p-tag [value]="'workflow.approvalPath' | translate" severity="success" />
-              }
-            </td>
-            <td>
-              <p-button
-                icon="pi pi-cog"
-                [text]="true"
-                size="small"
-                [pTooltip]="'workflow.actions' | translate"
-                [ariaLabel]="'workflow.transitionActionsFor' | translate: { name: transitionLabel(transition) }"
-                (onClick)="openActions(transition)"
-              />
-            </td>
-            <td>
-              <div class="flex gap-1 justify-end">
-                @if (canManage()) {
-                <p-button
-                  icon="pi pi-pencil"
-                  [text]="true"
-                  size="small"
-                  [pTooltip]="'common.edit' | translate"
-                  [ariaLabel]="'workflow.editTransitionNamed' | translate: { name: transitionLabel(transition) }"
-                  (onClick)="openEdit(transition)"
-                />
-                <p-button
-                  icon="pi pi-trash"
-                  [text]="true"
-                  size="small"
-                  severity="danger"
-                  [pTooltip]="'common.remove' | translate"
-                  [ariaLabel]="'workflow.removeTransitionNamed' | translate: { name: transitionLabel(transition) }"
-                  (onClick)="onRemove(transition)"
-                />
-              }
-              </div>
-            </td>
-          </tr>
-        </ng-template>
+          <ng-template pTemplate="body" let-transition>
+            <tr [attr.data-transition-row]="transition.id" [class.am-tr-row--current]="transition.id === selectedId">
+              <td class="am-tr-wrap" data-tr-label>
+                <button
+                  type="button"
+                  class="am-tr-open"
+                  [attr.aria-label]="openLabel(transition)"
+                  (click)="open.emit({ transitionId: transition.id, opener: $any($event).currentTarget })"
+                  data-tr-open
+                >{{ transitionLabel(transition) }}</button>
+                @if (transition.mover === 'APP') {
+                  <span class="am-tr-chip am-tr-chip--app" data-tr-app>{{ 'workflow.mover.APP' | translate }}</span>
+                }
+                @if (transition.isApprovalPath) {
+                  <p-tag [value]="'workflow.approvalPath' | translate" severity="success" />
+                }
+              </td>
+              <td class="am-tr-wrap" data-tr-to>{{ stageName(transition.toStageId) }}</td>
+              <td>
+                <!-- ACC-208 — Send back is dashed, as returns are in the stage
+                     strip; End the record is outlined in danger (drawing). -->
+                <span [class]="'am-tr-chip am-tr-chip--' + kindOf(transition).toLowerCase()" data-tr-kind>
+                  {{ kindLabelKey(transition) | translate }}
+                </span>
+              </td>
+              <td>
+                @if (canEditRow(transition)) {
+                  <div class="flex gap-1 justify-end items-center">
+                    <p-button
+                      icon="pi pi-pencil"
+                      [text]="true"
+                      size="small"
+                      [pTooltip]="'common.edit' | translate"
+                      [ariaLabel]="'workflow.editTransitionNamed' | translate: { name: transitionLabel(transition) }"
+                      (onClick)="open.emit({ transitionId: transition.id, opener: $any($event)?.currentTarget ?? null })"
+                      data-tr-edit
+                    />
+                    <am-row-menu
+                      [groups]="menu()"
+                      [label]="'workflow.transitionMenuFor' | translate: { name: transitionLabel(transition) }"
+                      (picked)="pick(transition, $event)"
+                    />
+                  </div>
+                }
+              </td>
+            </tr>
+          </ng-template>
 
-        <ng-template pTemplate="emptymessage">
-          <tr>
-            <td colspan="6" class="text-center py-4 text-[var(--am-text-secondary)]">
-              {{ 'workflow.noTransitions' | translate }}
-            </td>
-          </tr>
-        </ng-template>
-      </p-table>
+          <ng-template pTemplate="emptymessage">
+            <tr>
+              <td colspan="4" class="text-center py-4 text-[var(--am-text-secondary)]">
+                {{ 'workflow.noTransitions' | translate }}
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
       </div>
 
-      <!-- Add Transition.
-           ACC-208 — TWO STEPS, measured (ACC-120). Before Kind existed this
-           dialog measured 674 English / 696 Arabic against the 420 cap, and
-           Kind adds three radio rows. The seam it already had: step 1 is the
-           move itself (where to, what it is called, what kind of move), step 2
-           who may fire it and what it checks. The actions moved to the footer.
-           Numbers: step-208-stage-tasks-screen.md §4.5. -->
-      <ng-template #addFormTpl>
-        <form [formGroup]="addForm" (ngSubmit)="onSubmitAdd()" class="flex flex-col gap-4">
-          @if (addStep() === 1) {
-            <div class="flex flex-col gap-1">
-              <label class="font-medium text-sm">{{ 'workflow.toStage' | translate }} <span class="text-red-500">*</span></label>
-              <app-overlay-select
-                formControlName="toStageId"
-                [options]="availableStages"
-                optionLabel="nameEn"
-                optionValue="id"
-              />
-            </div>
-
-            <div class="am-tr-pair">
-              <div class="flex flex-col gap-1">
-                <label class="font-medium text-sm">{{ 'workflow.labelEn' | translate }} <span class="text-red-500">*</span></label>
-                <input pInputText formControlName="labelEn" />
-              </div>
-              <div class="flex flex-col gap-1">
-                <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
-                <input pInputText dir="rtl" formControlName="labelAr" />
-              </div>
-            </div>
-
-            <!-- ACC-208 — Kind, first after the labels (drawing). Always starts
-                 at Advance and is never inferred from stage order: Reject goes
-                 to a higher-order stage and Reactivate to a lower one. -->
-            <fieldset class="am-tr-kind">
-              <legend class="am-tr-kind__legend">{{ 'workflow.kind.label' | translate }}</legend>
-              @for (kind of kinds; track kind.value) {
-                <div class="am-tr-kind__row">
-                  <p-radiobutton [inputId]="'add-kind-' + kind.value" formControlName="kind" [value]="kind.value" />
-                  <label [for]="'add-kind-' + kind.value">
-                    <span class="am-tr-kind__title">{{ kind.labelKey | translate }}</span>
-                    <span class="am-tr-kind__help">{{ kind.helpKey | translate }}</span>
-                  </label>
-                </div>
-              }
-            </fieldset>
-          } @else {
-            <div class="flex flex-col gap-1">
-              <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
-              <app-overlay-select
-                formControlName="triggerCondition"
-                [options]="triggerConditions()"
-                optionLabel="label"
-                optionValue="value"
-              />
-            </div>
-
-            @if (addForm.controls.triggerCondition.value === 'ROLE_BASED') {
-              <div class="flex flex-col gap-1">
-                <label class="font-medium text-sm">{{ 'workflow.assigneeRole' | translate }}</label>
-                <app-overlay-select
-                  formControlName="triggerRoleId"
-                  [options]="roles()"
-                  optionLabel="nameEn"
-                  optionValue="id"
-                />
-              </div>
-            }
-
-            @if (addForm.controls.triggerCondition.value === 'SPECIFIC_USER') {
-              <p-message severity="info" [text]="'workflow.userPickerUnavailable' | translate" />
-            }
-
-            @if (addForm.controls.triggerCondition.value === 'ASSIGNEE_POOL') {
-              <p-message severity="info" [text]="'workflow.assigneePoolHelp' | translate" />
-            }
-
-            <!--
-              ACC-55 — grouped picker replaces the free-text input. 72 strings
-              across 19 modules, read from GET /roles/permissions (the real
-              source), so a typo can no longer silently create a permanently
-              unfireable transition.
-            -->
-            <div class="flex flex-col gap-1">
-              <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
-              <app-overlay-select
-                formControlName="requiredPermission"
-                [options]="addPermissionGroups()"
-                optionLabel="label"
-                optionValue="value"
-                optionGroupLabel="module"
-                optionGroupChildren="permissions"
-                [groupsSelectable]="false"
-                [placeholder]="'workflow.noPermissionRequired' | translate"
-              />
-              @if (permissionsLoadFailed()) {
-                <small class="text-[var(--am-text-secondary)]">
-                  {{ 'workflow.permissionListUnavailable' | translate }}
-                </small>
-              }
-            </div>
-
-            <!-- ACC-208 (D5) — no "Approval path" here. Create never sent it
-                 (CreateWorkflowTransitionDto has no such field; the builder sets
-                 it as a follow-up edit), so ticking it was silently dropped. It
-                 stays on Edit, where it saves. -->
-
-            <div class="flex flex-col gap-1">
-              <label class="font-medium text-sm">{{ 'workflow.validatorConfig' | translate }}</label>
-              <textarea pTextarea rows="3" formControlName="validatorConfig"></textarea>
-            </div>
-          }
-        </form>
-      </ng-template>
-      <ng-template #addFooterTpl>
-        <div class="am-tr-footer">
-          @if (saveError()) {
-            <span class="am-tr-footer__error" role="alert">{{ saveError()! | translate }}</span>
-          } @else {
-            <span class="am-tr-footer__step">{{ 'common.stepOf' | translate: { step: addStep(), steps: 2 } }}</span>
-          }
-          <span class="am-tr-footer__actions">
-            @if (addStep() === 1) {
-              <p-button
-                [label]="'common.cancel' | translate"
-                severity="secondary"
-                [text]="true"
-                (onClick)="onAddDialogVisibleChange(false)"
-              />
-              <p-button
-                [label]="'common.next' | translate"
-                [disabled]="addStepOneInvalid()"
-                (onClick)="addStep.set(2)"
-                data-tr-next
-              />
-            } @else {
-              <p-button
-                [label]="'common.back' | translate"
-                severity="secondary"
-                [text]="true"
-                [disabled]="saving()"
-                (onClick)="addStep.set(1)"
-              />
-              <p-button
-                [label]="'common.add' | translate"
-                [loading]="saving()"
-                [disabled]="addForm.invalid"
-                (onClick)="onSubmitAdd()"
-                data-tr-save
-              />
-            }
-          </span>
-        </div>
-      </ng-template>
-      <app-edit-dialog
-        [visible]="showAddDialog()"
-        (visibleChange)="onAddDialogVisibleChange($event)"
-        [header]="'workflow.addTransition' | translate"
-        [content]="addFormTpl"
-        [footer]="addFooterTpl"
-        width="560px"
+      <am-transition-actions-dialog
+        [transition]="actionsTransition()"
+        [isProtected]="isProtected"
+        [visible]="actionsTransitionId() !== null"
+        (visibleChange)="!$event && actionsTransitionId.set(null)"
+        (changed)="changed.emit()"
       />
-
-      <!-- Edit Transition — the same two steps (measured 542 English / 564
-           Arabic before Kind). A save that warns keeps step 2 open on the
-           warning (ACC-55). -->
-      <ng-template #editFormTpl>
-        <form [formGroup]="editForm" (ngSubmit)="onSubmitEdit()" class="flex flex-col gap-4">
-          @if (editStep() === 1) {
-            <p class="text-sm text-[var(--am-text-secondary)] m-0">
-              {{ 'workflow.transitionEndpointsLocked' | translate }}
-            </p>
-
-            <div class="am-tr-pair">
-              <div class="flex flex-col gap-1">
-                <label class="font-medium text-sm">{{ 'workflow.labelEn' | translate }} <span class="text-red-500">*</span></label>
-                <input pInputText formControlName="labelEn" />
-              </div>
-              <div class="flex flex-col gap-1">
-                <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
-                <input pInputText dir="rtl" formControlName="labelAr" />
-              </div>
-            </div>
-
-            <!-- ACC-208 — Kind, first after the labels (drawing). Always starts
-                 at Advance and is never inferred from stage order: Reject goes
-                 to a higher-order stage and Reactivate to a lower one. -->
-            <fieldset class="am-tr-kind">
-              <legend class="am-tr-kind__legend">{{ 'workflow.kind.label' | translate }}</legend>
-              @for (kind of kinds; track kind.value) {
-                <div class="am-tr-kind__row">
-                  <p-radiobutton [inputId]="'edit-kind-' + kind.value" formControlName="kind" [value]="kind.value" />
-                  <label [for]="'edit-kind-' + kind.value">
-                    <span class="am-tr-kind__title">{{ kind.labelKey | translate }}</span>
-                    <span class="am-tr-kind__help">{{ kind.helpKey | translate }}</span>
-                  </label>
-                </div>
-              }
-            </fieldset>
-          } @else {
-            <div class="flex flex-col gap-1">
-              <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
-              <app-overlay-select
-                formControlName="triggerCondition"
-                [options]="triggerConditions()"
-                optionLabel="label"
-                optionValue="value"
-              />
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
-              <app-overlay-select
-                formControlName="requiredPermission"
-                [options]="editPermissionGroups()"
-                optionLabel="label"
-                optionValue="value"
-                optionGroupLabel="module"
-                optionGroupChildren="permissions"
-                [groupsSelectable]="false"
-                [placeholder]="'workflow.noPermissionRequired' | translate"
-              />
-              @if (permissionsLoadFailed()) {
-                <small class="text-[var(--am-text-secondary)]">
-                  {{ 'workflow.permissionListUnavailable' | translate }}
-                </small>
-              }
-              <!--
-                ACC-55 — the warning sits in normal flow directly under the
-                field it is about, deliberately NOT in a sticky footer. ACC-54
-                tried that on the stage form and it regressed: sticky content
-                overlays what scrolls beneath it, so the panel covered the very
-                picker it was advising on. Here it pushes content instead.
-              -->
-              @if (editPermissionWarning(); as warning) {
-                <p-message
-                  severity="warn"
-                  [text]="
-                    (warning === 'UNKNOWN_PERMISSION'
-                      ? 'workflow.permissionUnknownWarning'
-                      : 'workflow.permissionNoHolderWarning'
-                    ) | translate
-                  "
-                />
-              }
-            </div>
-
-            <div class="flex items-center gap-2">
-              <p-checkbox formControlName="isApprovalPath" [binary]="true" inputId="edit-isApprovalPath" />
-              <label for="edit-isApprovalPath" class="text-sm cursor-pointer">
-                {{ 'workflow.isApprovalPath' | translate }}
-              </label>
-            </div>
-
-            <div class="flex flex-col gap-1">
-              <label class="font-medium text-sm">{{ 'workflow.validatorConfig' | translate }}</label>
-              <textarea pTextarea rows="3" formControlName="validatorConfig"></textarea>
-            </div>
-          }
-        </form>
-      </ng-template>
-      <ng-template #editFooterTpl>
-        <div class="am-tr-footer">
-          @if (saveError()) {
-            <span class="am-tr-footer__error" role="alert">{{ saveError()! | translate }}</span>
-          } @else {
-            <span class="am-tr-footer__step">{{ 'common.stepOf' | translate: { step: editStep(), steps: 2 } }}</span>
-          }
-          <span class="am-tr-footer__actions">
-            @if (editStep() === 1) {
-              <p-button
-                [label]="'common.cancel' | translate"
-                severity="secondary"
-                [text]="true"
-                (onClick)="onEditDialogVisibleChange(false)"
-              />
-              <p-button
-                [label]="'common.next' | translate"
-                [disabled]="editStepOneInvalid()"
-                (onClick)="editStep.set(2)"
-                data-tr-next
-              />
-            } @else {
-              <p-button
-                [label]="'common.back' | translate"
-                severity="secondary"
-                [text]="true"
-                [disabled]="saving()"
-                (onClick)="editStep.set(1)"
-              />
-              <p-button
-                [label]="'common.save' | translate"
-                [loading]="saving()"
-                [disabled]="editForm.invalid"
-                (onClick)="onSubmitEdit()"
-                data-tr-save
-              />
-            }
-          </span>
-        </div>
-      </ng-template>
-      <app-edit-dialog
-        [visible]="showEditDialog()"
-        (visibleChange)="onEditDialogVisibleChange($event)"
-        [header]="'workflow.editTransition' | translate"
-        [content]="editFormTpl"
-        [footer]="editFooterTpl"
-        width="560px"
-      />
-
-      <!-- Configure Actions -->
-      <p-dialog
-        [visible]="showActionsDialog()"
-        (visibleChange)="showActionsDialog.set($event)"
-        [header]="'workflow.actions' | translate"
-        [modal]="true"
-        [closeOnEscape]="false"
-        [style]="{ width: '560px' }"
-      >
-        @if (actionsTransition(); as transition) {
-          <app-workflow-action-configurator
-            [transitionId]="transition.id"
-            [actions]="transition.actions ?? []"
-            (changed)="changed.emit()"
-          />
-        }
-      </p-dialog>
-
     </div>
   `,
   styles: [
     `
-      .am-tr-pair {
-        display: flex;
-        gap: var(--am-space-12);
-      }
-      .am-tr-pair > * {
-        flex: 1 1 0;
-        min-inline-size: 0;
-      }
-      .am-tr-kind {
-        border: 0;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-      }
-      .am-tr-kind__legend {
-        padding: 0;
-        margin-block-end: var(--am-space-2);
-        font-size: var(--am-type-value-size);
-        font-weight: 500;
-      }
-      .am-tr-kind__row {
-        display: flex;
-        align-items: flex-start;
-        gap: var(--am-space-8);
-        padding-block: var(--am-space-2);
-      }
-      .am-tr-kind__row label {
-        display: flex;
-        flex-direction: column;
-        cursor: pointer;
-      }
-      .am-tr-kind__title {
-        font-size: var(--am-type-value-size);
-        font-weight: 500;
-      }
-      .am-tr-kind__help {
-        font-size: var(--am-type-meta-size);
-        color: var(--am-ink-500);
-      }
-      .am-tr-footer {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--am-space-8);
-        inline-size: 100%;
-      }
-      .am-tr-footer__step {
-        font-size: var(--am-type-meta-size);
-        color: var(--am-ink-500);
-      }
-      .am-tr-footer__error {
-        font-size: var(--am-type-meta-size);
-        font-weight: 500;
-        color: var(--am-danger-ink);
-      }
-      .am-tr-footer__actions {
-        display: flex;
-        gap: var(--am-space-8);
-      }
       .am-tr-chip {
         display: inline-block;
         max-inline-size: 100%;
@@ -634,22 +171,15 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
         min-inline-size: 0;
         overflow: hidden;
       }
-      /* The fixed columns, each sized to its content in both languages
-         (measured, ACC-255 PR 4a): the longest Kind chip ("End the record",
-         89px) and the longest trigger chip ("Any Authenticated User", 173px),
-         each with the cell's 16px padding on both sides; the Actions cog; Edit
-         and Remove. The transition's name and destination share the rest. */
+      /* The fixed columns, each sized to its content in both languages: the
+         longest Kind chip ("End the record", 89px) with the cell's 16px padding
+         on both sides; Edit and the ⋯. The move and its destination share the
+         rest. */
       .am-tr-col-kind {
         inline-size: 7.75rem;
       }
-      .am-tr-col-trigger {
-        inline-size: 13rem;
-      }
-      .am-tr-col-cog {
-        inline-size: 2.75rem;
-      }
       .am-tr-col-actions {
-        inline-size: 5rem;
+        inline-size: 6rem;
       }
       .am-tr-scroll {
         overflow-x: auto;
@@ -658,6 +188,29 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
       .am-tr-wrap {
         white-space: normal;
         overflow-wrap: anywhere;
+      }
+      .am-tr-open {
+        display: inline;
+        margin-inline-end: var(--am-space-6);
+        padding: 0;
+        background: none;
+        border: 0;
+        font: inherit;
+        color: var(--am-primary-700);
+        text-align: start;
+        cursor: pointer;
+        overflow-wrap: anywhere;
+      }
+      .am-tr-open:hover {
+        text-decoration: underline;
+      }
+      .am-tr-open:focus-visible {
+        outline: 2px solid var(--am-primary-600);
+        outline-offset: 2px;
+        border-radius: var(--am-radius-control);
+      }
+      .am-tr-row--current .am-tr-open {
+        font-weight: 700;
       }
       .am-tr-chip--advance {
         color: var(--am-primary-700);
@@ -674,527 +227,113 @@ const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
         background: var(--am-surface-raised);
         border: 1px solid var(--am-danger-border);
       }
+      /* "Done by the app": its own chip, quieter than a kind. */
+      .am-tr-chip--app {
+        color: var(--am-ink-700);
+        background: var(--am-surface);
+        border: 1px solid var(--am-border);
+      }
+      .am-tr-sr {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
     `,
   ],
 })
-export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
+export class WorkflowTransitionEditorComponent {
   @Input() stageId!: string;
-  @Input() transitions: WorkflowTransitionDto[] = [];
+  @Input()
+  set transitions(value: WorkflowTransitionDto[]) {
+    this.transitionList.set(value ?? []);
+  }
   @Input() availableStages: WorkflowStageDto[] = [];
+  /** The server's isProtected: its moves are read-only. */
+  @Input() isProtected = false;
+  /** The transition open in the page's panel, marked in its row. */
+  @Input() selectedId: string | null = null;
+  /** A remove or an action change: the page reloads. */
   @Output() changed = new EventEmitter<void>();
-
-  @ViewChild('addFormTpl', { read: TemplateRef, static: true }) addFormTpl!: TemplateRef<unknown>;
-  @ViewChild('editFormTpl', { read: TemplateRef, static: true }) editFormTpl!: TemplateRef<unknown>;
+  /** A row's name or Edit: open that transition in the panel. */
+  @Output() open = new EventEmitter<TransitionOpenEvent>();
+  /** Add transition: open the panel, empty, for this stage. */
+  @Output() add = new EventEmitter<{ opener: HTMLElement | null }>();
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
-  private readonly roleService = inject(RoleService);
-  private readonly fb = inject(FormBuilder);
   private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly translate = inject(TranslateService);
-
-  // ACC-123 — workflows:manage, what every transition endpoint carries.
-  readonly canManage = computed(() =>
-    this.navigationAccess.hasPermission('workflows:manage'),
-  );
-  // ACC-55 — group labels are built inside a computed, outside the template,
-  // so TranslatePipe cannot reach them. instant() matches the established
-  // precedent in org-unit-head-panel.component.ts.
-  private readonly translateService = inject(TranslateService);
-
-  /** ACC-254 — every trigger condition, in the reader's words; follows a language switch. */
-  readonly triggerConditions = computed(() => {
-    this.translate.currentLang();
-    return workflowOptionKeys('trigger').map(({ value, labelKey }) => ({ value, label: this.translate.instant(labelKey) }));
-  });
-
-  triggerLabelKey(condition: string | null | undefined): string {
-    return workflowLabelKey('trigger', condition);
-  }
-  readonly roles = signal<RoleDto[]>([]);
   private readonly languageService = inject(LanguageService);
 
-  // ACC-82 — the name of the role a ROLE_BASED transition is restricted to,
-  // for the table. Role names are tenant data (a custom role's name is typed by
-  // an admin), so they are chosen by language, not translated. A triggerRoleId
-  // that matches no known role is said plainly rather than hidden: it is
-  // exactly the case that leaves a stage unfireable.
-  triggerRoleLabel(transition: WorkflowTransitionDto): string | null {
-    if (transition.triggerCondition !== 'ROLE_BASED' || !transition.triggerRoleId) return null;
-    const role = this.roles().find((r) => r.id === transition.triggerRoleId);
-    if (!role) return this.translateService.instant('workflow.triggerRoleUnknown');
-    return this.languageService.bilingual(role.nameEn, role.nameAr);
+  readonly transitionList = signal<WorkflowTransitionDto[]>([]);
+  readonly error = signal<string | null>(null);
+
+  // ACC-123 — workflows:manage, what every transition endpoint carries.
+  readonly canManage = computed(() => this.navigationAccess.hasPermission('workflows:manage'));
+
+  /** Moves may be added here: the permission, and a workflow the server lets change. */
+  canAddTransition(): boolean {
+    return this.canManage() && !this.isProtected;
   }
 
-  // ── ACC-55: requiredPermission picker ──────────────────────────────────────
-  // 72 permission strings across 19 modules. Flat that is unusable, and
-  // OverlaySelectComponent has no filter-search (a known, deliberate gap —
-  // CLAUDE.md, ACC-42), so the picker uses hierarchy mode: one group per
-  // module, 2-8 options each.
-  readonly allPermissions = signal<PermissionDto[]>([]);
-  readonly permissionsLoadFailed = signal(false);
-  readonly editPermissionWarning = signal<TransitionPermissionWarning | null>(null);
-
-  // WHICH KEYS THE PICKER OFFERS (ACC-120 slice 5, F1 / PR B). Only keys a
-  // transition may be GIVEN: ones some code checks today (`inUse`, R2), and
-  // inside a tenant no platform key (R1). The server refuses the rest on create
-  // and on a changed key, so offering them was offering a refusal.
-  //
-  // A transition may already HOLD a key outside that list: a key nothing
-  // checks yet (the seeded Document, Audit, Incident and Meeting transitions
-  // require 38 of them per tenant), or one with no Permission row at all, a
-  // forward reference such as capa:approve or a typo. Its OWN current key is
-  // therefore shown in the EDIT picker, selected, in a group of its own: "Can't
-  // be granted yet" when the catalogue knows the key, "Not a defined
-  // permission" when it does not. An unrelated edit sends it back unchanged
-  // (F1 keeps an unchanged key), never blanked.
-  //
-  // ONLY its own key. Before PR B every transition's unknown value was offered
-  // in every dialog, which would now let a person pick another transition's
-  // ungrantable key and be refused. The ADD picker offers no such key at all.
-  //
-  // There is still no free-text entry for a NEW unknown value (ACC-55, Test 4):
-  // a new forward reference is an edit to permissions.ts and workflow.seed.ts,
-  // not something a tenant admin does in a dialog.
-  readonly addPermissionGroups = computed<PermissionNode[]>(() => this.permissionNodes(null));
-  readonly editPermissionGroups = computed<PermissionNode[]>(() =>
-    this.permissionNodes(this.editingTransition()?.requiredPermission ?? null),
-  );
-
-  /** A key a transition may be given: in use, and not a platform key inside a tenant. */
-  private offerable(p: PermissionDto): boolean {
-    if (!p.inUse) return false;
-    return !(p.module === 'platform' && !this.navigationAccess.isPlatformOrg());
+  /** Edit and the ⋯: an editable workflow, and a move a person presses. */
+  canEditRow(transition: WorkflowTransitionDto): boolean {
+    return this.canAddTransition() && transition.mover !== 'APP';
   }
 
-  private permissionNodes(current: string | null): PermissionNode[] {
-    // Establishes the dependency that instant() alone does not. The labels
-    // below are resolved imperatively, so without reading a signal that
-    // changes on a language switch this would never re-evaluate — leaving "No
-    // permission required" and the group headings stuck in the previous
-    // language for the rest of the session. TranslateService.currentLang is a
-    // real Signal (LanguageService relies on the same fact).
-    this.translateService.currentLang();
+  /** The Actions dialog's transition, by id, from what was last loaded. */
+  readonly actionsTransitionId = signal<string | null>(null);
+  readonly actionsTransition = computed(() => {
+    const id = this.actionsTransitionId();
+    return id ? (this.transitionList().find((t) => t.id === id) ?? null) : null;
+  });
 
-    // Same Map<string, PermissionDto[]> shape role-permission-matrix already
-    // uses, rather than a second grouping idiom for the same data.
-    const byModule = new Map<string, PermissionNode[]>();
-    for (const perm of this.allPermissions()) {
-      if (!this.offerable(perm)) continue;
-      const key = `${perm.module}:${perm.action}`;
-      const list = byModule.get(perm.module) ?? [];
-      list.push({ value: key, label: key });
-      byModule.set(perm.module, list);
-    }
-
-    const nodes: PermissionNode[] = [
-      // Leaf, not a group — no `permissions` array, so it stays selectable
-      // and sits at the top where a configurer looks first.
-      {
-        value: NO_PERMISSION_VALUE,
-        label: this.translateService.instant('workflow.noPermissionRequired'),
-      },
-      ...[...byModule.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([module, permissions]) => ({
-          value: `${GROUP_SENTINEL_PREFIX}${module}`,
-          module,
-          permissions,
-        })),
+  readonly menu = computed<RowMenuItem[][]>(() => {
+    this.translate.currentLang();
+    return [
+      [{ id: 'actions', label: this.translate.instant('workflow.transitionPanel.actionsTitle') as string }],
+      [{ id: 'remove', label: this.translate.instant('common.remove') as string, danger: true }],
     ];
+  });
 
-    // The transition's own current key, when it is not one of the offered
-    // ones: kept LAST, in its own group, so the configurer sees it is not a
-    // key they could choose today.
-    const offered = new Set([...byModule.values()].flat().map((n) => n.value));
-    if (current && !offered.has(current)) {
-      const known = this.allPermissions().some((p) => `${p.module}:${p.action}` === current);
-      nodes.push({
-        value: `${GROUP_SENTINEL_PREFIX}__current__`,
-        module: this.translateService.instant(known ? 'workflow.permissionNotGrantable' : 'workflow.permissionNotDefined'),
-        permissions: [{ value: current, label: current }],
-      });
-    }
-    return nodes;
-  }
-
-  // ── ACC-55: deferred parent notification ───────────────────────────────────
-  // `changed` triggers workflow-stage-list's loadTemplate(), which replaces
-  // the stages array. p-table then rebuilds the expanded row's embedded view,
-  // DESTROYING this component and recreating it — resetting showEditDialog and
-  // editPermissionWarning to their initial values.
-  //
-  // That is why the warning flashed and vanished on ACC-55's live pass, on
-  // both the add and edit paths. The dialog logic was already correct; the
-  // component holding it was being torn down underneath. Verified directly:
-  // after a reload the component instance identity changes and both signals
-  // are back at their defaults.
-  //
-  // So a save that produced a warning does NOT notify the parent. The refresh
-  // is deferred until the dialog actually closes, by which point there is no
-  // surface left to destroy. The list is briefly stale while the dialog is
-  // open — the correct trade, since the user is looking at the dialog, not the
-  // row behind it.
-  private readonly refreshPending = signal(false);
-
-  private notifyParent(): void {
-    this.refreshPending.set(false);
-    this.changed.emit();
-  }
-
-  // Both dialogs route their visibility through here rather than binding
-  // [(visible)] directly, so EVERY way out — Cancel, the X, Escape, an
-  // outside click — flushes a deferred refresh. A pending refresh must not be
-  // strandable by any exit path, or the list stays stale until something else
-  // happens to reload it.
-  onAddDialogVisibleChange(visible: boolean): void {
-    this.showAddDialog.set(visible);
-    if (!visible) this.onDialogClosed();
-  }
-
-  onEditDialogVisibleChange(visible: boolean): void {
-    this.showEditDialog.set(visible);
-    if (!visible) this.onDialogClosed();
-  }
-
-  private onDialogClosed(): void {
-    if (!this.refreshPending()) return;
-    this.notifyParent();
-  }
-
-  // The form control holds '' for "no permission required"; the API needs
-  // null to actually CLEAR it (undefined means "leave unchanged" — see the
-  // clearing fix commit). Keeping the control on '' avoids null-vs-empty
-  // churn in the template.
-  //
-  // Also the guard that makes a module header inert: hierarchy mode renders
-  // headers as selectable rows, so a header's sentinel must never reach the
-  // API. Treating it as "no permission" is the safe reading — a header is not
-  // a permission, and silently persisting '__module__:committees' would
-  // create exactly the unfireable transition this ticket exists to prevent.
-  private toPermissionPayload(raw: string | null | undefined): string | null {
-    if (!raw || raw.trim() === '') return null;
-    if (raw.startsWith(GROUP_SENTINEL_PREFIX)) return null;
-    return raw;
-  }
-
-  // ACC-208 — the transition's kind, offered in this order with its help line.
-  readonly kinds = WORKFLOW_TRANSITION_KINDS.map((value) => ({
-    value,
-    labelKey: KIND_LABEL_KEYS[value],
-    helpKey: KIND_HELP_KEYS[value],
-  }));
-  readonly addStep = signal(1);
-  readonly editStep = signal(1);
-
-  addStepOneInvalid(): boolean {
-    const { toStageId, labelEn, labelAr, kind } = this.addForm.controls;
-    return toStageId.invalid || labelEn.invalid || labelAr.invalid || kind.invalid;
-  }
-
-  editStepOneInvalid(): boolean {
-    const { labelEn, labelAr, kind } = this.editForm.controls;
-    return labelEn.invalid || labelAr.invalid || kind.invalid;
+  pick(transition: WorkflowTransitionDto, id: string): void {
+    if (id === 'actions') this.actionsTransitionId.set(transition.id);
+    if (id === 'remove') this.onRemove(transition);
   }
 
   /** A transition read before ACC-190's column existed reads as the default. */
-  kindOf(transition: WorkflowTransitionDto): WorkflowTransitionKind {
+  kindOf(transition: WorkflowTransitionDto): string {
     return transition.kind ?? 'ADVANCE';
   }
 
   kindLabelKey(transition: WorkflowTransitionDto): string {
-    return KIND_LABEL_KEYS[this.kindOf(transition)];
+    return workflowLabelKey('transitionKind', this.kindOf(transition));
   }
 
-  readonly showAddDialog = signal(false);
-  readonly showEditDialog = signal(false);
-  readonly showActionsDialog = signal(false);
-  readonly editingTransition = signal<WorkflowTransitionDto | null>(null);
-  readonly actionsTransition = signal<WorkflowTransitionDto | null>(null);
-
-  readonly saving = signal(false);
-  readonly saveError = signal<string | null>(null);
-  readonly error = signal<string | null>(null);
-
-  readonly addForm = this.fb.group({
-    toStageId: [null as string | null, [Validators.required]],
-    labelEn: ['', [Validators.required, Validators.maxLength(100)]],
-    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
-    // because the product is sold to customers who do not operate in Arabic.
-    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
-    // DTO's trimToNull, so the empty-to-null decision lives in one place.
-    labelAr: ['', [Validators.maxLength(100)]],
-    kind: ['ADVANCE' as WorkflowTransitionKind, [Validators.required]],
-    triggerCondition: ['ROLE_BASED', [Validators.required]],
-    triggerRoleId: [null as string | null],
-    requiredPermission: [''],
-    validatorConfig: [''],
-  });
-
-  readonly editForm = this.fb.group({
-    labelEn: ['', [Validators.required, Validators.maxLength(100)]],
-    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
-    // because the product is sold to customers who do not operate in Arabic.
-    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
-    // DTO's trimToNull, so the empty-to-null decision lives in one place.
-    labelAr: ['', [Validators.maxLength(100)]],
-    kind: ['ADVANCE' as WorkflowTransitionKind, [Validators.required]],
-    triggerCondition: ['ROLE_BASED', [Validators.required]],
-    requiredPermission: [''],
-    isApprovalPath: [false],
-    validatorConfig: [''],
-  });
-
-  // ACC-120 slice 10 — the Actions dialog is a raw p-dialog, so it is put on
-  // the layer stack here and answers Escape itself (closeOnEscape is off).
-  // PrimeNG's own Escape closes a dialog only while it holds the highest
-  // z-index, and a tooltip takes that: once Remove action's confirm returned
-  // focus to the trash button, its tooltip showed and Escape stopped closing
-  // this dialog at all. Registered here, before any confirm opens, so a confirm
-  // above it is still the top layer when this runs and only the confirm closes.
-  private actionsLayerId: number | null = null;
-
-  constructor() {
-    const layers = inject(LayerStackService);
-    const onKeydown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || this.actionsLayerId === null || !layers.isTop(this.actionsLayerId)) return;
-      event.stopPropagation();
-      this.showActionsDialog.set(false);
-    };
-    document.addEventListener('keydown', onKeydown);
-    effect(() => {
-      if (this.showActionsDialog()) {
-        if (this.actionsLayerId === null) this.actionsLayerId = layers.push();
-      } else if (this.actionsLayerId !== null) {
-        layers.remove(this.actionsLayerId);
-        this.actionsLayerId = null;
-      }
-    });
-    inject(DestroyRef).onDestroy(() => {
-      document.removeEventListener('keydown', onKeydown);
-      if (this.actionsLayerId !== null) layers.remove(this.actionsLayerId);
-    });
-  }
-
-  ngOnInit(): void {
-    this.roleService.listAllRoles().subscribe({ next: (roles) => this.roles.set(roles) });
-    this.loadPermissions();
-  }
-
-  // Reuses RoleService.listAllPermissions() (GET /roles/permissions), the
-  // same call role-permission-matrix makes — the real source, not a
-  // hardcoded duplicate of permissions.ts.
-  //
-  // On failure the picker degrades to accepting whatever is already there
-  // rather than showing an empty list that looks like "no permissions
-  // exist". The endpoint requires roles:view while this screen requires
-  // workflows:manage; every real role holds both today, but a
-  // workflows-only role would 403 here (recorded as a known limitation).
-  private loadPermissions(): void {
-    this.roleService.listAllPermissions().subscribe({
-      next: (permissions) => {
-        this.allPermissions.set(permissions);
-        this.permissionsLoadFailed.set(false);
-      },
-      error: () => {
-        this.allPermissions.set([]);
-        this.permissionsLoadFailed.set(true);
-      },
-    });
-  }
-
-  ngOnChanges(): void {
-    // availableStages/transitions are parent-owned — nothing to refetch here.
-  }
-
-  // ACC-160 (ACC-89 items 1 and 2) — both of these read the English name only,
-  // whatever the session's language, even when an Arabic one was stored.
   transitionLabel(transition: WorkflowTransitionDto): string {
     return this.languageService.bilingual(transition.labelEn, transition.labelAr);
   }
 
+  /** The name button's accessible name: open, or view a move that can't be changed. */
+  openLabel(transition: WorkflowTransitionDto): string {
+    const key = this.canEditRow(transition) ? 'workflow.transitionPanel.openNamed' : 'workflow.transitionPanel.viewNamed';
+    return this.translate.instant(key, { name: this.transitionLabel(transition) }) as string;
+  }
+
   stageName(stageId: string): string {
     const stage = this.availableStages.find((s) => s.id === stageId);
-    return stage ? this.languageService.bilingual(stage.nameEn, stage.nameAr) : stageId;
-  }
-
-  openAdd(): void {
-    this.addForm.reset({
-      toStageId: null,
-      labelEn: '',
-      labelAr: '',
-      kind: 'ADVANCE',
-      triggerCondition: 'ROLE_BASED',
-      triggerRoleId: null,
-      requiredPermission: '',
-      validatorConfig: '',
-    });
-    this.saveError.set(null);
-    this.addStep.set(1);
-    this.showAddDialog.set(true);
-  }
-
-  openEdit(transition: WorkflowTransitionDto): void {
-    this.editingTransition.set(transition);
-    // Before resetting the form: a value the picker does not know about must
-    // become a selectable option first, or the control would bind to a value
-    // with no matching option and render blank — which then saves back as
-    // "cleared", silently destroying a deliberate forward reference.
-    this.editForm.reset({
-      labelEn: transition.labelEn,
-      labelAr: transition.labelAr,
-      kind: transition.kind ?? 'ADVANCE',
-      triggerCondition: transition.triggerCondition,
-      requiredPermission: transition.requiredPermission ?? '',
-      isApprovalPath: transition.isApprovalPath,
-      validatorConfig: transition.validatorConfig ? JSON.stringify(transition.validatorConfig) : '',
-    });
-    this.saveError.set(null);
-    this.editPermissionWarning.set(null);
-    this.editStep.set(1);
-    this.showEditDialog.set(true);
-  }
-
-  openActions(transition: WorkflowTransitionDto): void {
-    this.actionsTransition.set(transition);
-    this.showActionsDialog.set(true);
-  }
-
-  onSubmitAdd(): void {
-    if (this.addForm.invalid) return;
-    const raw = this.addForm.getRawValue();
-
-    let validatorConfig: Record<string, unknown> | undefined;
-    try {
-      validatorConfig = raw.validatorConfig ? JSON.parse(raw.validatorConfig) : undefined;
-    } catch {
-      this.saveError.set('workflow.error.invalidValidatorJson');
-      return;
-    }
-
-    this.saving.set(true);
-    this.saveError.set(null);
-
-    const dto: CreateWorkflowTransitionDto = {
-      fromStageId: this.stageId,
-      toStageId: raw.toStageId!,
-      labelEn: raw.labelEn!,
-      labelAr: raw.labelAr!,
-      kind: raw.kind!,
-      triggerCondition: raw.triggerCondition!,
-      // Omitted entirely when blank — on CREATE the column defaults to null,
-      // so there is nothing to clear and sending null would be noise.
-      ...(this.toPermissionPayload(raw.requiredPermission)
-        ? { requiredPermission: this.toPermissionPayload(raw.requiredPermission)! }
-        : {}),
-      ...(raw.triggerCondition === 'ROLE_BASED' && raw.triggerRoleId
-        ? { triggerRoleId: raw.triggerRoleId }
-        : {}),
-      ...(validatorConfig ? { validatorConfig } : {}),
-    };
-
-    this.workflowTemplateService.addTransition(dto).subscribe({
-      next: (result) => {
-        this.saving.set(false);
-        this.showAddDialog.set(false);
-
-        // The transition already exists by now, so the add dialog cannot stay
-        // open — re-submitting would create a second one. On a warning we
-        // switch to the EDIT dialog for the record just created (ACC-54's
-        // stage form does the same create→edit switch).
-        if (result.permissionWarning) {
-          this.openEdit(result.transition);
-          // The warning sits under the permission picker, on step 2.
-          this.editStep.set(2);
-          this.editPermissionWarning.set(result.permissionWarning);
-          // Saved, but the parent must not refresh yet — doing so would
-          // destroy the dialog we just opened to show this warning.
-          this.refreshPending.set(true);
-        } else {
-          this.notifyParent();
-        }
-      },
-      error: (err: unknown) => {
-        this.saveError.set(this.saveRefusal(err));
-        this.saving.set(false);
-      },
-    });
-  }
-
-  onSubmitEdit(): void {
-    const transition = this.editingTransition();
-    if (this.editForm.invalid || !transition) return;
-    const raw = this.editForm.getRawValue();
-
-    let validatorConfig: Record<string, unknown> | undefined;
-    try {
-      validatorConfig = raw.validatorConfig ? JSON.parse(raw.validatorConfig) : undefined;
-    } catch {
-      this.saveError.set('workflow.error.invalidValidatorJson');
-      return;
-    }
-
-    this.saving.set(true);
-    this.saveError.set(null);
-
-    const dto: UpdateWorkflowTransitionDto = {
-      labelEn: raw.labelEn!,
-      labelAr: raw.labelAr!,
-      kind: raw.kind!,
-      triggerCondition: raw.triggerCondition!,
-      // null, not undefined — the picker's "no permission required" option
-      // must actually CLEAR the field. `|| undefined` meant "leave
-      // unchanged", so clearing was impossible (fixed alongside ACC-55).
-      requiredPermission: this.toPermissionPayload(raw.requiredPermission),
-      isApprovalPath: raw.isApprovalPath!,
-      ...(validatorConfig ? { validatorConfig } : {}),
-    };
-
-    this.workflowTemplateService.updateTransition(transition.id, dto).subscribe({
-      next: (result) => {
-        this.saving.set(false);
-        this.editPermissionWarning.set(result.permissionWarning);
-
-        if (!result.permissionWarning) {
-          this.showEditDialog.set(false);
-          this.notifyParent();
-        } else {
-          // Dialog stays open so the warning is readable — and crucially the
-          // parent is NOT notified yet (see notifyParent()).
-          this.editingTransition.set(result.transition);
-          this.refreshPending.set(true);
-        }
-      },
-      error: (err: unknown) => {
-        this.saveError.set(this.saveRefusal(err));
-        this.saving.set(false);
-      },
-    });
-  }
-
-  /**
-   * What the footer says when a save is refused. ACC-271 PR 3: a changed
-   * trigger or permission on a move out of a converted stage is said in the
-   * server's own sentence, in the reader's language; anything else by its
-   * code, or the generic line.
-   */
-  private saveRefusal(err: unknown): string {
-    return (
-      whoMovedToStageMessage(err, this.languageService.isArabic()) ??
-      plainWorkflowRefusalKey(err) ??
-      extractErrorMessage(err, 'workflow.error.saveFailed')
-    );
+    return stage ? this.languageService.bilingual(stage.nameEn, stage.nameAr) : '—';
   }
 
   onRemove(transition: WorkflowTransitionDto): void {
     this.amConfirm.ask({
       tone: 'destructive',
-      // workflow-template.service.ts removeTransition() deletes its actions,
-      // then the transition.
+      // workflow-template.service.ts removeTransition() deletes its actions, then the transition.
       message: this.translate.instant('workflow.confirmRemoveTransition'),
-      header: this.translate.instant('workflow.confirmRemoveTransitionHeader', {
-        name: this.languageService.bilingual(transition.labelEn, transition.labelAr),
-      }),
+      header: this.translate.instant('workflow.confirmRemoveTransitionHeader', { name: this.transitionLabel(transition) }),
       acceptLabel: this.translate.instant('confirm.removeTransition'),
       accept: () => {
         this.workflowTemplateService.removeTransition(transition.id).subscribe({

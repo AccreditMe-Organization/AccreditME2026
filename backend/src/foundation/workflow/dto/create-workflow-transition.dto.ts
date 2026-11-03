@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsIn,
   IsNotEmpty,
   IsObject,
@@ -76,4 +77,11 @@ export class CreateWorkflowTransitionDto {
   @IsIn(WORKFLOW_TRANSITION_KINDS)
   @IsOptional()
   kind?: (typeof WORKFLOW_TRANSITION_KINDS)[number];
+
+  // ACC-271 PR 5b — accepted on create too: the transition panel shows
+  // "Approval path" when adding a move, not only once it exists. Omitted means
+  // false (the schema default).
+  @IsBoolean()
+  @IsOptional()
+  isApprovalPath?: boolean;
 }

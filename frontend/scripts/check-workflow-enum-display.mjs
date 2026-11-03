@@ -24,6 +24,11 @@
 // objects that carry them: `who.mode`, a draft's `mode()`, and the `kind` of
 // an `entry`, a `saved` entry or a `whoEntry`.
 //
+// ACC-271 PR 5b — widened to the transitions list and panel: who moves the
+// record (`mover`: PERSON, APP, AUTOMATIC) on any object, and a transition's
+// kind (ADVANCE, RETURN, EXIT) on the objects that carry one: a `transition`,
+// a `move`, a `tr`, or the page's `editingTransition()`.
+//
 // A PREDICATE, not a baseline (CLAUDE.md, ACC-120): what puts a template in
 // scope is what makes it a defect, so a screen written tomorrow is covered.
 // NON-VACUITY: the patterns are checked against known-bad and known-good
@@ -39,10 +44,12 @@ import { fileURLToPath } from 'node:url';
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
-const FIELDS = 'approvalMode|assigneeStrategy|triggerCondition|objectType|actionType';
+const FIELDS = 'approvalMode|assigneeStrategy|triggerCondition|objectType|actionType|mover';
 // ACC-271 PR 5a — the who fields, on the objects that carry them (see above).
 const WHO = String.raw`(?:\bwho\??\.mode|\b(?:draft|whoDraft|d)(?:\(\))?\.mode\(\)|\b(?:entry|saved|whoEntry)\??\.kind)`;
-const EXPR = String.raw`[\w$.?!()]*?(?:\.(?:${FIELDS})|${WHO})`;
+// ACC-271 PR 5b — a transition's kind, on the objects that carry one (see above).
+const MOVE = String.raw`(?:\b(?:transition|move|tr|editingTransition\(\))\??\.kind)`;
+const EXPR = String.raw`[\w$.?!()]*?(?:\.(?:${FIELDS})|${WHO}|${MOVE})`;
 const INTERPOLATION = new RegExp(String.raw`\{\{\s*${EXPR}\s*\}\}`, 'g');
 const BINDING = new RegExp(String.raw`\[(?:value|label|text)\]\s*=\s*"\s*${EXPR}\s*"`, 'g');
 
@@ -66,6 +73,13 @@ const MUST_FLAG = [
   '{{ stage.who?.mode }}',
   '{{ d.mode() }}',
   '[label]="whoDraft.mode()"',
+  // ACC-271 PR 5b — who moves the record, and a transition's kind.
+  '{{ transition.mover }}',
+  '[value]="t?.mover"',
+  '{{ transition.kind }}',
+  '{{ transition?.kind }}',
+  '[label]="move.kind"',
+  '{{ editingTransition()?.kind }}',
 ];
 const MUST_PASS = [
   '{{ approvalLabelKey(stage.approvalMode) | translate }}',
@@ -78,6 +92,11 @@ const MUST_PASS = [
   '{{ modeLabel(d.mode()) }}',
   '[value]="o.kind"',
   '@if (entry.kind === "CREATOR") {',
+  // ACC-271 PR 5b — in words, and a comparison.
+  "{{ workflowLabelKey('mover', transition.mover) | translate }}",
+  '{{ kindLabelKey(transition) | translate }}',
+  "@if (transition.mover === 'APP') {",
+  '[class]="\'am-tr-chip am-tr-chip--\' + kindOf(transition).toLowerCase()"',
 ];
 const selftest = [];
 for (const s of MUST_FLAG) if (findings(s).length !== 1) selftest.push(`should flag: ${s}`);

@@ -13,9 +13,11 @@ export class CreateWorkflowTransitionActionDto {
   @IsIn(WORKFLOW_ACTION_TYPES)
   actionType!: (typeof WORKFLOW_ACTION_TYPES)[number];
 
+  // ACC-271 PR 5b — optional: left out, the action goes last on its transition.
   @IsInt()
   @Min(0)
-  order!: number;
+  @IsOptional()
+  order?: number;
 
   @IsBoolean()
   @IsOptional()

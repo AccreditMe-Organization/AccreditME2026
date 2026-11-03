@@ -142,6 +142,7 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
     deleteMany: jest.fn(),
+    aggregate: jest.fn(),
   },
   role: {
     findMany: jest.fn(),
@@ -1181,6 +1182,25 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowTransition.create).toHaveBeenCalled();
     });
 
+    // ACC-271 PR 5b — the transition panel sets Approval path when adding.
+    it('stores isApprovalPath when sent on create, and leaves the default when not', async () => {
+      const add = async (extra: Record<string, unknown>): Promise<Record<string, unknown>> => {
+        mockPrisma.workflowStage.findFirst
+          .mockResolvedValueOnce(makeStage({ id: 'stage-1', workflowTemplateId: 'template-1' }))
+          .mockResolvedValueOnce(makeStage({ id: 'stage-2', workflowTemplateId: 'template-1' }));
+        mockPrisma.workflowTransition.create.mockResolvedValue(BASE_TRANSITION);
+        await service.addTransition(
+          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', triggerCondition: 'ROLE_BASED', ...extra } as never,
+          ORG_A,
+          ACTOR,
+        );
+        const calls = mockPrisma.workflowTransition.create.mock.calls;
+        return (calls[calls.length - 1]![0] as { data: Record<string, unknown> }).data;
+      };
+      expect((await add({ isApprovalPath: true })).isApprovalPath).toBe(true);
+      expect(await add({})).not.toHaveProperty('isApprovalPath');
+    });
+
     it('throws NotFoundException if fromStage does not belong to this org', async () => {
       mockPrisma.workflowStage.findFirst.mockResolvedValueOnce(null);
 
@@ -1715,6 +1735,61 @@ describe('WorkflowTemplateService', () => {
           ACTOR,
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    // ACC-271 PR 5b — the order is optional; left out, the action goes last.
+    it('keeps a sent order as sent, with no extra read', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransitionAction.create.mockResolvedValue(BASE_ACTION);
+
+      await service.addTransitionAction('transition-1', { actionType: 'SEND_NOTIFICATION', order: 0 } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowTransitionAction.aggregate).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowTransitionAction.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ order: 0 }) }),
+      );
+    });
+
+    it('a left-out order goes after the transition’s highest: highest + 10', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransitionAction.aggregate.mockResolvedValue({ _max: { order: 35 } });
+      mockPrisma.workflowTransitionAction.create.mockResolvedValue(BASE_ACTION);
+
+      await service.addTransitionAction('transition-1', { actionType: 'SEND_NOTIFICATION' } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowTransitionAction.aggregate).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.workflowTransitionAction.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ order: 45 }) }),
+      );
+    });
+
+    it('a left-out order on a transition with no actions is 10', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransitionAction.aggregate.mockResolvedValue({ _max: { order: null } });
+      mockPrisma.workflowTransitionAction.create.mockResolvedValue(BASE_ACTION);
+
+      await service.addTransitionAction('transition-1', { actionType: 'SEND_NOTIFICATION' } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowTransitionAction.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ order: 10 }) }),
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant — the next order reads only this organisation’s transition', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransitionAction.aggregate.mockResolvedValue({ _max: { order: null } });
+      mockPrisma.workflowTransitionAction.create.mockResolvedValue(BASE_ACTION);
+
+      await service.addTransitionAction('transition-1', { actionType: 'SEND_NOTIFICATION' } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowTransitionAction.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            workflowTransitionId: 'transition-1',
+            workflowTransition: { fromStage: { workflowTemplate: { organizationId: ORG_A } } },
+          },
+        }),
+      );
     });
 
     it('defaults isEnabled to true when omitted', async () => {
