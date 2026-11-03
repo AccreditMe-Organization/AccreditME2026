@@ -45,6 +45,7 @@
     "views": {
       "label": "Saved views",
       "mine": "My tasks",
+      "created": "Created by me",
       "all": "All tasks",
       "unit": "Unit tasks",
       "unassigned": "Unassigned",
@@ -2509,6 +2510,14 @@
       "unassigned": {
         "title": "Every task has someone on it",
         "body": "A task nobody holds, and no pool can pick up, appears here."
+      },
+      "mine": {
+        "title": "Nothing open for you",
+        "body": "Tasks you're given on any record appear here."
+      },
+      "created": {
+        "title": "Nothing you created is open",
+        "body": "Tasks you create on a record appear here."
       }
     },
     "searchLabel": "Search tasks",
@@ -2517,6 +2526,7 @@
       "recordType": "Record type",
       "unit": "Unit",
       "status": "Status",
+      "allOpen": "All open",
       "overdueOnly": "Overdue only",
       "assignee": "Assignee or pool",
       "required": "Required or optional",
@@ -2580,7 +2590,8 @@
       "overdue": "⚠ {{span}} overdue · {{date}}",
       "soon": "Due {{when}} · {{date}}",
       "on": "Due {{date}}"
-    }
+    },
+    "overdue": "Overdue"
   },
   "aiCredits": {
     "periodTitle": "This period's allowance",
