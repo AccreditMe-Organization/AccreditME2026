@@ -31,10 +31,11 @@ import { OrgChartResponseDto, OrgUnitService } from '../../services/org-unit.ser
 import { OrgChartBoxComponent } from './org-chart-box.component';
 import { OrgChartPanelComponent } from './org-chart-panel.component';
 import { OrgChartToolbarComponent } from './org-chart-toolbar.component';
+import { ZOOM, clampZoom, fitZoom, innerInlineSize } from '../../../../shared/utils/zoom';
 import { BOX, CHART_LEVELS, CONNECTOR, ChartBox, ChartKey, allBoxes, boxSize, buildChart, moveFocus } from './org-chart-model';
 
-/** Zoom steps and limits; Fit never zooms in past 100%. */
-export const CHART_ZOOM = { min: 0.3, max: 1.5, step: 0.1 } as const;
+/** Zoom steps and limits; Fit never zooms in past 100%. The rule is shared (shared/utils/zoom.ts). */
+export const CHART_ZOOM = ZOOM;
 
 /** The docked side panel's width on desktop (OS L174). */
 export const PANEL_WIDTH = 280;
@@ -401,7 +402,7 @@ export class OrgUnitChartComponent implements AfterViewInit {
   }
 
   setZoom(z: number): void {
-    const next = Math.min(CHART_ZOOM.max, Math.max(CHART_ZOOM.min, Math.round(z * 100) / 100));
+    const next = clampZoom(z);
     this.zoom.set(next);
     this.savePrefs();
   }
@@ -411,9 +412,7 @@ export class OrgUnitChartComponent implements AfterViewInit {
     const area = this.scroll()?.nativeElement;
     const w = this.natural().w;
     if (!area || !w) return;
-    const style = getComputedStyle(area);
-    const inner = area.clientWidth - parseFloat(style.paddingInlineStart || '0') - parseFloat(style.paddingInlineEnd || '0');
-    this.setZoom(Math.floor(Math.min(1, inner / w) * 100) / 100);
+    this.setZoom(fitZoom(innerInlineSize(area), w));
   }
 
   setShowCommittees(on: boolean): void {
