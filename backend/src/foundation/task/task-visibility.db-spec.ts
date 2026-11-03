@@ -13,7 +13,9 @@
  *      tasks on that committee, and its total equals its rows;
  *   3. every saved view (All tasks, Unit tasks, Unassigned) lists only admitted
  *      tasks, and exactly the ones it is for;
- *   4. GET /tasks/views offers exactly the views whose lists answer.
+ *   4. GET /tasks/views offers exactly the views whose lists answer;
+ *   5. ACC-120 slice 3 — the viewer's own views, My tasks and Created by me,
+ *      are never a 403 and list only admitted tasks.
  * And, against a second organisation with the same shape, that nothing of it
  * reaches any answer (tenant isolation).
  *
@@ -115,8 +117,15 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
     await person('poolMember', A, { positionId: staff, primaryOrgUnitId: unit['WARD'] });
     await person('nobody', A);
     await person('outsider', B);
+    // ACC-120 slice 3 — a creator away now, whose out-of-office cover is "cover".
+    await person('cover', A);
 
     const now = Date.now();
+    await person('awayCreator', A, {
+      actingUserId: user['cover'],
+      outOfOfficeFrom: new Date(now - 24 * HOUR),
+      outOfOfficeTo: new Date(now + 24 * HOUR),
+    });
     const acting = (orgUnitId: string, userId: string, validFrom: Date) =>
       prisma.orgUnitHeadAssignment.create({
         data: { organizationId: A, orgUnitId, userId, kind: 'ACTING', reason: 'VACANCY', createdById: user['creator']!, validFrom } as never,
@@ -152,6 +161,11 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
       data: { organizationId: A, taskId: task['request']!, type: 'EXTENSION', requestedById: user['assignee']!, reason: 'More time', requestedDueAt: new Date(now + 72 * HOUR) } as never,
     });
     await mkTask('departed', 'ROOT', { createdById: user['departed'] }, user['assignee']);
+    // ACC-120 slice 3 — workflow-made tasks (the legacy stage column is enough;
+    // it has no foreign key), and the away creator's own.
+    await mkTask('workflowMade', 'ROOT', { sourceStageId: 'stage-legacy' });
+    await mkTask('awayManual', 'ROOT', { createdById: user['awayCreator'] });
+    await mkTask('awayWorkflow', 'ROOT', { createdById: user['awayCreator'], sourceStageId: 'stage-legacy' });
 
     const corruptCommittee = await mkCommittee('X', B, unit['DEPT']!);
     corruptTask = (
@@ -171,7 +185,9 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
     await prisma.onModuleDestroy();
   });
 
-  const ALL = ['root', 'dept', 'ward', 'sib', 'unassigned', 'pool', 'emptyPool', 'request', 'departed'];
+  const ALL = ['root', 'dept', 'ward', 'sib', 'unassigned', 'pool', 'emptyPool', 'request', 'departed', 'workflowMade', 'awayManual', 'awayWorkflow'];
+  /** The tasks "creator" made (manual or workflow-made): not departed's, not the away creator's. */
+  const BY_CREATOR = ALL.filter((k) => !['departed', 'awayManual', 'awayWorkflow'].includes(k));
   const keysOf = (ids: string[]) => ids.map((id) => Object.keys(task).find((k) => task[k] === id) ?? `?${id}`).sort();
 
   async function admitted(viewer: TaskViewer, organizationId = A): Promise<string[]> {
@@ -199,7 +215,8 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
   const viewers: [string, () => TaskViewer, string[]][] = [
     ['relationship only: an assignee, with the record visible', () => as('assignee', [SEE]), ['root', 'dept', 'ward', 'sib', 'request', 'departed']],
     ['relationship only: the same assignee with NO key at all (Q1)', () => as('assignee', []), ['root', 'dept', 'ward', 'sib', 'request', 'departed']],
-    ['relationship only: the creator', () => as('creator', [SEE]), ALL.filter((k) => k !== 'departed')],
+    ['relationship only: the creator', () => as('creator', [SEE]), BY_CREATOR],
+    ['relationship only: an away creator\'s out-of-office cover', () => as('cover', [SEE]), ['awayManual', 'awayWorkflow']],
     ['relationship only: a pool member, while the task waits', () => as('poolMember', [SEE]), ['pool']],
     ['View all tasks on committees', () => as('viewAll', [SEE, VIEW_ALL]), ALL],
     ['View all tasks WITHOUT committees:view (rule 1)', () => as('viewAll', [VIEW_ALL]), []],
@@ -249,6 +266,18 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
         if (all !== 'FORBIDDEN') expect(all.keys).toEqual([...ALL].sort());
         if (unassigned !== 'FORBIDDEN') expect(unassigned.keys).toEqual(['emptyPool', 'unassigned']);
       });
+
+      // ACC-120 slice 3 — the viewer's own views need no key: never a 403, even
+      // with no permission at all, and list ⊆ admit.
+      it('My tasks and Created by me are never refused, list only admitted tasks, and GET views offers Created by me', async () => {
+        const v = viewer();
+        expect((await list.views(A, v)).created).toBe(true);
+        for (const view of ['mine', 'created'] as const) {
+          const answer = await listed(v, { view });
+          expect(answer).not.toBe('FORBIDDEN');
+          if (answer !== 'FORBIDDEN') for (const k of answer.keys) expect(expected).toContain(k);
+        }
+      });
     });
   }
 
@@ -266,6 +295,38 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
     expect(sib.items).toEqual([]);
   });
 
+  describe('the viewer\'s own views (ACC-120 slice 3)', () => {
+    it('My tasks for an assignee: exactly the tasks they are an active assignee on', async () => {
+      const answer = await list.list({ view: 'mine' }, A, as('assignee', [SEE]));
+      expect(answer.view).toBe('mine');
+      expect(keysOf(answer.items.map((i) => i.id))).toEqual(['departed', 'dept', 'request', 'root', 'sib', 'ward']);
+      // A unit-only facet: never on this view.
+      expect(answer.facets?.units).toEqual([]);
+    });
+
+    it('My tasks for a pool member: nothing — an unpicked pool task waits in Available', async () => {
+      const answer = await list.list({ view: 'mine' }, A, as('poolMember', [SEE]));
+      expect(answer.items).toEqual([]);
+      // Non-vacuity: the rule does admit them the pool task.
+      expect(await admitted(as('poolMember', [SEE]))).toEqual(['pool']);
+    });
+
+    it('Created by me for the creator: their manual tasks, and no workflow-made one', async () => {
+      const answer = await list.list({ view: 'created' }, A, as('creator', [SEE]));
+      expect(answer.view).toBe('created');
+      const keys = keysOf(answer.items.map((i) => i.id));
+      expect(keys).toEqual(['dept', 'emptyPool', 'pool', 'request', 'root', 'sib', 'unassigned', 'ward']);
+      // Non-vacuity: the creator does see their workflow-made task elsewhere.
+      expect(await admitted(as('creator', [SEE]))).toContain('workflowMade');
+      expect(keys).not.toContain('workflowMade');
+    });
+
+    it('Created by me for a cover: the manual tasks of the creator they act for now', async () => {
+      const answer = await list.list({ view: 'created' }, A, as('cover', []));
+      expect(keysOf(answer.items.map((i) => i.id))).toEqual(['awayManual']);
+    });
+  });
+
   it('the panel says scope all where the viewer sees every task on the record, and own elsewhere', async () => {
     const head = as('deptHead', [SEE]);
     expect((await list.panel({ sourceType: 'COMMITTEE', sourceId: committee['WARD']! }, A, head)).scope).toBe('all');
@@ -278,7 +339,7 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
       const v = viewer();
       const ctx = await rule.contextFor(v, A);
       expect(await rule.isVisible(ctx, taskB)).toBe(false);
-      for (const view of ['all', 'unit', 'unassigned'] as const) {
+      for (const view of ['all', 'unit', 'unassigned', 'mine', 'created'] as const) {
         const answer = await listed(v, { view });
         if (answer !== 'FORBIDDEN') expect(answer.keys).not.toContain(`?${taskB}`);
       }
