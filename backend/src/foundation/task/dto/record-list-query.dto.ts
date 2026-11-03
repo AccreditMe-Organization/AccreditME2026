@@ -83,7 +83,11 @@ export class RecordListQueryDto {
   @MaxLength(64)
   unit?: string;
 
-  /** Title, Arabic title, or an active assignee's name. */
+  /**
+   * Title, Arabic title, or an active assignee's name. ACC-120 slice 3 —
+   * organisation-wide, also the record's name (a committee's English or Arabic
+   * name, a meeting's title), only for a record type the viewer may see.
+   */
   @IsOptional()
   @IsString()
   @MaxLength(120)

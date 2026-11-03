@@ -67,13 +67,17 @@ function statement(call: unknown[]): Prisma.Sql {
   return Prisma.sql(strings, ...values);
 }
 
-function setup(opts: { ids?: string[]; rows?: ReturnType<typeof task>[]; refuse?: Error; headOf?: string | null } = {}) {
+function setup(
+  opts: { ids?: string[]; rows?: ReturnType<typeof task>[]; refuse?: Error; headOf?: string | null; statusRows?: { status: string; n: bigint }[] } = {},
+) {
   const ids = opts.ids ?? ['t2', 't1'];
   const prisma = {
     $queryRaw: jest.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = Prisma.sql(strings, ...values).sql;
       if (sql.includes('WITH RECURSIVE')) return Promise.resolve(opts.headOf ? [{ id: opts.headOf }] : []);
       if (sql.includes('AS hit')) return Promise.resolve([{ hit: true }]);
+      // ACC-120 slice 3 — the status counts (before COUNT(*), which they also contain).
+      if (sql.includes('GROUP BY 1')) return Promise.resolve(opts.statusRows ?? []);
       if (sql.includes('COUNT(*)')) return Promise.resolve([{ n: BigInt(ids.length) }]);
       if (sql.includes('ROW_NUMBER')) return Promise.resolve([{ rn: BigInt(1) }]);
       if (sql.includes('DISTINCT')) return Promise.resolve([]);
@@ -290,6 +294,107 @@ describe('TaskRecordListService', () => {
       const { service } = setup({ ids: ['t1'], rows: [asked] });
       const result = await service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: MANAGER });
       expect(result.items[0]!.actions.reviewRequest).toBe(true);
+    });
+  });
+
+  // ACC-120 slice 3 — the status chips' counts, who rejected a task, and the
+  // search by the record's name.
+  describe('status counts', () => {
+    const groupBys = (prisma: ReturnType<typeof setup>['prisma']) => sqlOf(prisma).filter((st) => st.text.includes('GROUP BY 1'));
+
+    it('one GROUP BY over the scope — the rule, no search, no status filter — zero-filled, DELEGATED and unknown dropped', async () => {
+      const { service, prisma } = setup({
+        statusRows: [
+          { status: 'PENDING', n: BigInt(2) },
+          { status: 'IN_PROGRESS', n: BigInt(1) },
+          { status: 'DELEGATED', n: BigInt(5) },
+          { status: 'SOMETHING_ELSE', n: BigInt(9) },
+        ],
+      });
+      const result = await service.list({ view: 'all', q: 'abc', status: ['COMPLETED'] }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
+      const statements = groupBys(prisma);
+      expect(statements.length).toBe(1);
+      const g = statements[0]!;
+      expect(g.text).toContain('t."createdById" = ANY('); // the rule
+      expect(g.text).toContain('t."organizationId" = $');
+      // A legacy OVERDUE row is counted as Assigned, in the statement itself.
+      expect(g.text).toContain(`WHEN t.status::text = 'OVERDUE' THEN 'PENDING'`);
+      // Not narrowed by the toolbar: no search, no status filter.
+      expect(g.text).not.toContain('ILIKE');
+      expect(g.text).not.toContain('t.status::text IN (');
+      expect(g.values).not.toContain('%abc%');
+      expect(g.values).not.toContain('COMPLETED');
+      expect(result.facets!.statusCounts).toEqual({
+        UNASSIGNED: 0,
+        PENDING: 2,
+        IN_PROGRESS: 1,
+        ON_HOLD: 0,
+        REJECTED: 0,
+        COMPLETED: 0,
+        CANCELLED: 0,
+      });
+    });
+
+    it('page 1 only: no GROUP BY when the list is read from skip 5', async () => {
+      const { service, prisma } = setup();
+      const result = await service.list({ view: 'all', skip: 5 }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
+      expect(result.facets).toBeNull();
+      expect(groupBys(prisma)).toEqual([]);
+      // Non-vacuity: the page itself was read.
+      expect(sqlOf(prisma).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('rejectedBy', () => {
+    it('carries who rejected a task, and null on every other row', async () => {
+      const { service } = setup({
+        ids: ['t1', 't2'],
+        rows: [task('t1', { status: 'REJECTED', rejectedReason: 'Not mine', rejectedBy: { id: 'u9', name: 'Nadia' } }), task('t2')],
+      });
+      const result = await service.list({ view: 'all' }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
+      expect(result.items.find((r) => r.id === 't1')!.rejectedBy).toEqual({ id: 'u9', name: 'Nadia' });
+      expect(result.items.find((r) => r.id === 't2')!.rejectedBy).toBeNull();
+    });
+  });
+
+  describe('search by the record name', () => {
+    const pageOf = (prisma: ReturnType<typeof setup>['prisma']) => sqlOf(prisma).find((st) => st.text.includes('ORDER BY'))!;
+
+    it('organisation-wide, for a viewer who sees committees: the committee names, in this organisation', async () => {
+      const { service, prisma } = setup({ ids: [] });
+      await service.list({ view: 'all', q: 'Quality' }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
+      const page = pageOf(prisma);
+      expect(page.text).toContain('FROM "Committee" nc');
+      expect(page.text).toContain('nc."organizationId" = $');
+      expect(page.values).toEqual(expect.arrayContaining(['org-a', '%Quality%']));
+      // Meetings are not a type this viewer may see: their titles are not searched.
+      expect(page.text).not.toContain('FROM "Meeting" nm');
+    });
+
+    it('searches meeting titles too, for a viewer who sees meetings', async () => {
+      const { service, prisma } = setup({ ids: [] });
+      await service.list({ view: 'all', q: 'Board' }, 'org-a', { id: 'u1', permissions: [...VIEW_ALL, 'meetings:view'] });
+      const page = pageOf(prisma);
+      expect(page.text).toContain('FROM "Committee" nc');
+      expect(page.text).toContain('FROM "Meeting" nm');
+      expect(page.text).toContain('nm."organizationId" = $');
+    });
+
+    it("never on one record's list", async () => {
+      const { service, prisma } = setup({ ids: [] });
+      await service.list({ ...RECORD, q: 'Quality' }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
+      const page = pageOf(prisma);
+      expect(page.text).toContain('ILIKE'); // non-vacuity: the search ran
+      expect(page.text).not.toContain('"Committee" nc');
+    });
+
+    it('never for a viewer without committees:view, so a search cannot reveal a hidden name', async () => {
+      const { service, prisma } = setup({ ids: [] });
+      await service.list({ view: 'mine', q: 'Quality' }, 'org-a', { id: 'u1', permissions: [] });
+      const page = pageOf(prisma);
+      expect(page.text).toContain('ILIKE'); // non-vacuity: the search ran
+      expect(page.text).not.toContain('"Committee" nc');
+      expect(page.text).not.toContain('"Meeting" nm');
     });
   });
 

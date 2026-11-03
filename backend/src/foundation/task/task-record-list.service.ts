@@ -20,7 +20,8 @@ import {
 } from './task-visibility';
 import { OPEN_REQUEST_INCLUDE, toOpenRequest } from './task-request-lifecycle';
 import { taskActionsFor } from './task-actions';
-import { RecordListQueryDto, RecordListSort, RecordPanelQueryDto } from './dto/record-list-query.dto';
+import { RECORD_LIST_STATUSES, RecordListQueryDto, RecordListSort, RecordListStatus, RecordPanelQueryDto } from './dto/record-list-query.dto';
+import { recordNameMatchSql, recordNamesOf, recordOf } from './task-record-names';
 import { ITaskRecordList, ITaskRecordListFacets, ITaskRecordPanel, ITaskRecordRow, ITaskViews } from './interfaces/task-record-row.interface';
 
 const PAGE = 50;
@@ -258,9 +259,13 @@ export class TaskRecordListService {
     const q = dto.q?.trim();
     if (q) {
       const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      // ACC-120 slice 3 — organisation-wide, the record's name matches too,
+      // through the same gate that names the row: a type the viewer may not
+      // see is not searched, so a search cannot reveal a hidden name.
+      const byRecord = dto.sourceType ? null : recordNameMatchSql(pattern, organizationId, viewer.permissions);
       parts.push(Prisma.sql`(t.title ILIKE ${pattern} ESCAPE '\\' OR COALESCE(t."titleAr", '') ILIKE ${pattern} ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM "TaskAssignee" sa JOIN "User" su ON su.id = sa."userId"
-                   WHERE sa."taskId" = t.id AND sa."removedAt" IS NULL AND su.name ILIKE ${pattern} ESCAPE '\\'))`);
+                   WHERE sa."taskId" = t.id AND sa."removedAt" IS NULL AND su.name ILIKE ${pattern} ESCAPE '\\')${byRecord ? Prisma.sql` OR ${byRecord}` : Prisma.empty})`);
     }
     return parts.length ? Prisma.sql`AND ${Prisma.join(parts, ' AND ')}` : Prisma.empty;
   }
@@ -280,6 +285,8 @@ export class TaskRecordListService {
         ...POOL_LABEL_INCLUDE,
         ...OPEN_REQUEST_INCLUDE,
         createdBy: { select: { id: true, name: true, status: true } },
+        // ACC-120 slice 3 — who rejected it, beside the reason. No new query.
+        rejectedBy: { select: { id: true, name: true } },
       },
     });
     const byId = new Map(found.map((t) => [t.id, t]));
@@ -290,7 +297,7 @@ export class TaskRecordListService {
     const covered = new Set(scope.ctx.coveredCreatorIds);
     const pools = scope.ctx.pools;
     const stillInStep = await this.stillInStep(ordered, organizationId);
-    const records = orgWide ? await this.recordNames(ordered, organizationId) : null;
+    const records = orgWide ? await recordNamesOf(this.prisma, ordered, organizationId, viewer.permissions) : null;
 
     const result: ITaskRecordRow[] = [];
     for (const task of ordered) {
@@ -322,13 +329,14 @@ export class TaskRecordListService {
         cancelledAt: task.cancelledAt,
         cancelledReason: task.cancelledReason,
         rejectedReason: task.rejectedReason,
+        rejectedBy: task.rejectedBy ?? null,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
         requiresEvidence: task.requiresEvidence,
         requirement: task.workflowInstanceStageId ? (task.isMandatory ? 'REQUIRED' : 'OPTIONAL') : null,
         sourceType: task.sourceType,
         sourceId: task.sourceId,
-        record: records ? (records.get(`${task.sourceType}:${task.sourceId}`) ?? { type: task.sourceType, id: task.sourceId, nameEn: null, nameAr: null }) : null,
+        record: records ? recordOf(records, task) : null,
         assignees: active.map((a) => ({
           id: a.user.id,
           name: a.user.name,
@@ -400,36 +408,19 @@ export class TaskRecordListService {
     return result;
   }
 
-  /** The organisation-wide list names each task's record — types the viewer may see, by construction. */
-  private async recordNames(
-    tasks: { sourceType: string; sourceId: string }[],
-    organizationId: string,
-  ): Promise<Map<string, { type: string; id: string; nameEn: string | null; nameAr: string | null }>> {
-    const ids = (type: string) => [...new Set(tasks.filter((t) => t.sourceType === type).map((t) => t.sourceId))];
-    const [committees, meetings] = await Promise.all([
-      ids('COMMITTEE').length
-        ? this.prisma.committee.findMany({ where: { id: { in: ids('COMMITTEE') }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
-        : Promise.resolve([]),
-      ids('MEETING').length
-        ? this.prisma.meeting.findMany({ where: { id: { in: ids('MEETING') }, organizationId }, select: { id: true, title: true } })
-        : Promise.resolve([]),
-    ]);
-    const map = new Map<string, { type: string; id: string; nameEn: string | null; nameAr: string | null }>();
-    for (const c of committees) map.set(`COMMITTEE:${c.id}`, { type: 'COMMITTEE', id: c.id, nameEn: c.nameEn, nameAr: c.nameAr });
-    for (const m of meetings) map.set(`MEETING:${m.id}`, { type: 'MEETING', id: m.id, nameEn: m.title, nameAr: null });
-    return map;
-  }
-
   /**
    * The filters' options, over the whole scope — not the current filters. In
    * SQL like the rows (ACC-244): the people on tasks in scope, the pools, the
    * record types present and, for the unit view, the owning units present.
+   * ACC-120 slice 3 — and how many tasks are in each status, for the status
+   * chips: over the same scope (organisation, view, rule; no toolbar filter,
+   * no search), with a legacy OVERDUE row counted as Assigned.
    */
   private async facets(scoped: Prisma.Sql, scope: Scope): Promise<ITaskRecordListFacets> {
     const ownerUnit = Object.entries(TASK_RECORD_TYPES)
       .filter(([, e]) => !!e.ownerUnitSql)
       .map(([type, e]) => Prisma.sql`WHEN t."sourceType"::text = ${type} THEN ${e.ownerUnitSql!}`);
-    const [people, poolReps, types, units] = await Promise.all([
+    const [people, poolReps, types, units, statusRows] = await Promise.all([
       this.prisma.$queryRaw<{ id: string; name: string }[]>`
         SELECT DISTINCT u.id, u.name FROM "Task" t
           JOIN "TaskAssignee" a ON a."taskId" = t.id AND a."removedAt" IS NULL
@@ -448,6 +439,9 @@ export class TaskRecordListService {
                AND ou.id IN (SELECT CASE ${Prisma.join(ownerUnit, ' ')} END FROM "Task" t WHERE ${scoped})
              ORDER BY ou."nameEn"`
         : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
+      this.prisma.$queryRaw<{ status: string; n: bigint }[]>`
+        SELECT (CASE WHEN t.status::text = 'OVERDUE' THEN 'PENDING' ELSE t.status::text END) AS status, COUNT(*)::bigint AS n
+          FROM "Task" t WHERE ${scoped} GROUP BY 1`,
     ]);
     const pooled = poolReps.length
       ? await this.prisma.task.findMany({
@@ -473,8 +467,18 @@ export class TaskRecordListService {
       pools,
       recordTypes: types.map((t) => t.type).sort(),
       units,
+      statusCounts: statusCountsOf(statusRows),
     };
   }
+}
+
+/** Every status a person filters by, zero-filled; DELEGATED and anything unknown are dropped. */
+export function statusCountsOf(rows: readonly { status: string; n: bigint }[]): Record<RecordListStatus, number> {
+  const counts = Object.fromEntries(RECORD_LIST_STATUSES.map((st) => [st, 0])) as Record<RecordListStatus, number>;
+  for (const r of rows) {
+    if ((RECORD_LIST_STATUSES as readonly string[]).includes(r.status)) counts[r.status as RecordListStatus] += Number(r.n);
+  }
+  return counts;
 }
 
 function activeAssignee(userId: string): Prisma.Sql {
