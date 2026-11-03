@@ -1262,8 +1262,8 @@
   },
   "committee": {
     "action": {
-      "joined": "انضم",
-      "left": "غادر",
+      "joined": "انضمام",
+      "left": "مغادرة",
       "role_changed": "تغيير الدور"
     },
     "addCommittee": "إضافة لجنة",

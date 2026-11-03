@@ -280,6 +280,9 @@ describe('CommitteeDetailComponent — every panel lines up in its grid row', ()
       const rows = host.querySelectorAll('[data-history-row]');
       expect(rows.length).toBe(5);
       expect(rows[0]!.getAttribute('data-history-row')).toBe('ev-0');
+      // The action as a verbal noun, so the Arabic is gender-neutral («انضمام», «مغادرة»).
+      expect(text('[data-history-row="ev-0"] .am-cp-l2')).toContain(t.action.joined);
+      expect(text('[data-history-row="ev-2"] .am-cp-l2')).toContain(t.action.left);
       expect(text('[data-testid="committee-history-count"]')).toBe('8');
       expect(host.querySelector('[data-testid="committee-history-see-all"]')).not.toBeNull();
     });
