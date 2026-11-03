@@ -37,6 +37,7 @@ import { WorkflowTransitionActionsComponent } from '../../foundation/workflow/co
 import { WorkflowStageListComponent } from '../../foundation/workflow/components/workflow-stage-list/workflow-stage-list.component';
 import { WorkflowTransitionEditorComponent } from '../../foundation/workflow/components/workflow-transition-editor/workflow-transition-editor.component';
 import { TransitionPanelComponent } from '../../foundation/workflow/components/transition-panel/transition-panel.component';
+import { CommitteeMembershipHistoryPanelComponent } from '../../foundation/committees/components/committee-membership-history-panel/committee-membership-history-panel.component';
 import { OrgUnitFormComponent } from '../../foundation/organization/components/org-unit-form/org-unit-form.component';
 import { ManageRolesComponent } from '../../foundation/roles/components/manage-roles/manage-roles.component';
 import { RolePermissionMatrixComponent } from '../../foundation/roles/components/role-permission-matrix/role-permission-matrix.component';
@@ -133,12 +134,21 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
       expect(c.displayName(as({ nameEn: 'Quality Committee', nameAr: null }))).toBe('Quality Committee');
     });
 
-    it('labels a committee type and a member role in English when they have no Arabic label', () => {
+    it('labels a committee type in English when it has no Arabic label', () => {
       const c = build(CommitteeDetailComponent);
-      c.memberRoles.set([as({ id: 'r1', labelEn: 'Secretary', labelAr: null })]);
       // ACC-265 — the type is named by the committee read itself.
       expect(c.typeLabel(as({ typeValue: { id: 't1', key: 'board', labelEn: 'Board', labelAr: null, offered: true } }))).toBe('Board');
-      expect(c.memberRoleLabel('r1')).toBe('Secretary');
+    });
+
+    // The seat is named on the membership history rows (their own panel since
+    // the committee panels moved onto am-capped-panel).
+    it('names a member role in English on a history row when it has no Arabic label', () => {
+      const history = build(CommitteeMembershipHistoryPanelComponent, {
+        events: [],
+        committeeName: 'Quality Committee',
+        memberRoles: [as({ id: 'r1', labelEn: 'Secretary', labelAr: null })],
+      });
+      expect(history.detail(as({ action: 'JOINED', roleValueId: 'r1', approvedBy: null }))).toContain('Secretary');
     });
 
     // THE `?? ''` BLANK. Before ACC-160 these returned '' in this case.

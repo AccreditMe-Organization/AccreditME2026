@@ -1642,6 +1642,17 @@
         "unreachable": "Nothing was changed: the server couldn't be reached.",
         "failed": "Something went wrong, so nothing was changed."
       }
+    },
+    "historyPopup": {
+      "title": "Membership history · {{committee}}",
+      "close": "Close membership history",
+      "search": "Search membership history",
+      "searchPlaceholder": "Search by name or change…",
+      "col": {
+        "person": "Person",
+        "change": "Change",
+        "date": "Date"
+      }
     }
   },
   "orgPosition": {
@@ -2728,6 +2739,14 @@
       "quorumHint": {
         "one": "0 means not set yet · of {{count}} member",
         "other": "0 means not set yet · of {{count}} members"
+      },
+      "historyCount": {
+        "one": "{{count}} change",
+        "other": "{{count}} changes"
+      },
+      "historyMatch": {
+        "one": "{{count}} change matches",
+        "other": "{{count}} changes match"
       }
     },
     "task": {
