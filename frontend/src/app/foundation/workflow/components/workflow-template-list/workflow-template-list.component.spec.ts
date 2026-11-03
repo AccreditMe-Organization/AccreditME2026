@@ -1,7 +1,7 @@
 // ACC-120 slice 7 — the Workflows list as drawn (Workflow Setup, section 7).
 //
 // Read through the page's own DOM only, so each test says what a reader sees:
-// the groups and their order, the default's words, each row's ⋯, the keyboard,
+// the modules and their order, each row's record type, each row's ⋯, the keyboard,
 // and the three request outcomes. Real translations, so the Arabic test reads
 // the Arabic a reader gets.
 //
@@ -13,7 +13,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ConfirmationService } from 'primeng/api';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
-import { WorkflowTemplateListComponent } from './workflow-template-list.component';
+import { WorkflowTemplateListComponent, workflowListItems } from './workflow-template-list.component';
+import { WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { environment } from '../../../../../environments/environment';
 import { loadTranslationsForTest } from '../../../../core/formatting/testing';
@@ -31,6 +32,25 @@ const TEMPLATES = [
   { id: 'd-default', nameEn: 'Document review', nameAr: 'مراجعة الوثيقة', objectType: 'DOCUMENT', isDefault: true, isActive: true, isProtected: false },
   { id: 'ccr', nameEn: 'Committee change request', nameAr: 'طلب تغيير لجنة', objectType: 'COMMITTEE_CHANGE_REQUEST', isDefault: true, isActive: true, isProtected: true },
 ];
+
+// ACC-120 slice 7c — a mix across modules, deliberately out of order (the
+// module order is the page's, not the server's), with an unknown type.
+const t = (id: string, nameEn: string, objectType: string, isDefault: boolean, extra: Partial<WorkflowTemplateDto> = {}) =>
+  ({ id, nameEn, nameAr: null, objectType, isDefault, isActive: true, isProtected: false, ...extra }) as WorkflowTemplateDto;
+const MIXED: WorkflowTemplateDto[] = [
+  t('c-default', 'Committee lifecycle', 'COMMITTEE', true, { nameAr: 'دورة حياة اللجنة' }),
+  t('gap-1', 'Gap closure', 'GAP', false),
+  t('ccr', 'Committee change request', 'COMMITTEE_CHANGE_REQUEST', true, { isProtected: true, nameAr: 'طلب تغيير لجنة' }),
+  t('cr-default', 'Change request review', 'CHANGE_REQUEST', true),
+  t('m-default', 'Meeting minutes', 'MEETING', true),
+  t('d-default', 'Document review', 'DOCUMENT', true, { nameAr: 'مراجعة الوثيقة' }),
+  t('dr-default', 'Document request review', 'DOCUMENT_REQUEST', true),
+  t('dr-fast', 'Fast-track request', 'DOCUMENT_REQUEST', false),
+  t('c-task', 'Task force lifecycle', 'COMMITTEE', false),
+  t('i-default', 'Incident handling', 'INCIDENT', true),
+];
+const outlineOf = (items: ReturnType<typeof workflowListItems>): string[] =>
+  items.map((i) => (i.kind === 'group' ? `# ${i.module}` : i.template.id));
 
 const MANAGE = ['workflows:view', 'workflows:manage'];
 
@@ -96,31 +116,72 @@ describe('WorkflowTemplateListComponent (ACC-120 slice 7)', () => {
   }
 
   describe('the rows', () => {
-    it('groups by record type in the server order, with the default pinned last in each group', () => {
+    // ACC-120 slice 7c — grouped by MODULE, in the page's fixed order, each
+    // heading only when it has a row; record types kept together in the
+    // module's order; each type's default pinned last.
+    it('groups by module in the fixed order, record types together, each default last', () => {
       const root = render();
-      answer(TEMPLATES);
+      answer(MIXED);
       expect(outline(root)).toEqual([
+        '# Documents',
+        'Fast-track request',
+        'Document request review',
+        'Document review',
+        'Change request review',
+        '# Incidents',
+        'Incident handling',
+        '# Meetings',
+        'Meeting minutes',
         '# Committees',
         'Task force lifecycle',
         'Committee lifecycle',
-        '# Documents',
-        'Document review',
-        '# Committee change requests',
         'Committee change request',
+        '# Other',
+        'Gap closure',
       ]);
+      // A module with no row draws no heading.
+      expect(outline(root)).not.toContain('# Audits');
+      expect(outline(root)).not.toContain('# Corrective actions');
     });
 
-    it('says which row is the default in words, and draws no star', () => {
+    it('pins a default last within its record type, not within its module', () => {
+      const items = workflowListItems([
+        t('dr-default', 'A request', 'DOCUMENT_REQUEST', true),
+        t('d-other', 'A lifecycle', 'DOCUMENT', false),
+        t('dr-other', 'B request', 'DOCUMENT_REQUEST', false),
+        t('d-default', 'B lifecycle', 'DOCUMENT', true),
+      ]);
+      expect(outlineOf(items)).toEqual(['# DOCUMENTS', 'dr-other', 'dr-default', 'd-other', 'd-default']);
+    });
+
+    it("names each row's record type on its second line, and draws no star", () => {
       const root = render();
-      answer(TEMPLATES);
-      expect(text(row(root, 'c-default').querySelector('[data-testid="workflow-default-line"]'))).toBe(
-        'Default · Used for new records of this type.',
-      );
-      expect(text(row(root, 'ccr').querySelector('[data-testid="workflow-default-line"]'))).toBe(
-        'Default · Used for every change request (no fields to test).',
-      );
-      expect(row(root, 'c-task').querySelector('[data-testid="workflow-default-line"]')).toBeNull();
+      answer(MIXED);
+      const line = (id: string) => text(row(root, id).querySelector('[data-testid="workflow-record-line"]'));
+      expect(line('dr-default')).toBe('Default for document requests');
+      expect(line('d-default')).toBe('Default for document lifecycle');
+      expect(line('cr-default')).toBe('Default for change requests');
+      expect(line('c-default')).toBe('Default for committee management');
+      expect(line('dr-fast')).toBe('For document requests');
+      expect(line('c-task')).toBe('For committee management');
+      expect(line('ccr')).toBe('Default for committee change requests (no fields to test).');
+      expect(text(root)).not.toContain('Used for new records of this type.');
       expect(root.querySelector('.pi-star, .pi-star-fill')).toBeNull();
+    });
+
+    it('puts an unknown record type under Other, never shown as a code', () => {
+      const root = render();
+      answer(MIXED);
+      expect(text(row(root, 'gap-1').querySelector('[data-testid="workflow-record-line"]'))).toBe('For other records');
+      expect(text(root)).not.toContain('GAP');
+    });
+
+    it('keeps the heading of every module with a match while searching, and only those', () => {
+      expect(outlineOf(workflowListItems(MIXED, 'review'))).toEqual(['# DOCUMENTS', 'dr-default', 'd-default', 'cr-default']);
+      expect(outlineOf(workflowListItems(MIXED, 'lifecycle'))).toEqual(['# COMMITTEES', 'c-task', 'c-default']);
+      // The Arabic name matches too.
+      expect(outlineOf(workflowListItems(MIXED, 'لجنة'))).toEqual(['# COMMITTEES', 'c-default', 'ccr']);
+      expect(workflowListItems(MIXED, 'nothing like this')).toEqual([]);
     });
 
     it('says an inactive workflow is Inactive, in words', () => {
@@ -189,7 +250,9 @@ describe('WorkflowTemplateListComponent (ACC-120 slice 7)', () => {
     it('makes the first workflow row the tab stop, not a heading', () => {
       const root = render();
       answer(TEMPLATES);
-      expect(row(root, 'c-task').getAttribute('tabindex')).toBe('0');
+      // Documents comes first among the modules, so its only row is the first.
+      expect(row(root, 'd-default').getAttribute('tabindex')).toBe('0');
+      expect(row(root, 'c-task').getAttribute('tabindex')).toBe('-1');
       expect(root.querySelector('[data-testid="workflow-group"]')!.hasAttribute('tabindex')).toBe(false);
     });
 
@@ -257,22 +320,33 @@ describe('WorkflowTemplateListComponent (ACC-120 slice 7)', () => {
   });
 
   describe('in Arabic', () => {
-    it('titles the page, heads the groups and states the default in Arabic, with the English name where there is no Arabic one', () => {
+    it("titles the page, heads the modules and names each row's record type in Arabic, with the English name where there is no Arabic one", () => {
       const root = render(MANAGE, 'ar');
-      answer(TEMPLATES);
+      answer(MIXED);
       expect(text(root.querySelector('h1'))).toBe('سير العمل');
       expect(outline(root)).toEqual([
+        '# الوثائق',
+        'Fast-track request',
+        'Document request review',
+        'مراجعة الوثيقة',
+        'Change request review',
+        '# الحوادث',
+        'Incident handling',
+        '# الاجتماعات',
+        'Meeting minutes',
         '# اللجان',
         'Task force lifecycle',
         'دورة حياة اللجنة',
-        '# الوثائق',
-        'مراجعة الوثيقة',
-        '# طلبات تغيير اللجان',
         'طلب تغيير لجنة',
+        '# أخرى',
+        'Gap closure',
       ]);
-      expect(text(row(root, 'c-default').querySelector('[data-testid="workflow-default-line"]'))).toBe(
-        'افتراضي · يُستخدم للسجلات الجديدة من هذا النوع.',
-      );
+      const line = (id: string) => text(row(root, id).querySelector('[data-testid="workflow-record-line"]'));
+      expect(line('dr-default')).toBe('الافتراضي في طلبات الوثائق');
+      expect(line('d-default')).toBe('الافتراضي في دورة حياة الوثيقة');
+      expect(line('c-task')).toBe('يُستخدم في إدارة اللجان');
+      expect(line('ccr')).toBe('الافتراضي في طلبات تغيير اللجان (لا حقول لاختبارها).');
+      expect(line('gap-1')).toBe('يُستخدم في سجلات أخرى');
     });
   });
 });
