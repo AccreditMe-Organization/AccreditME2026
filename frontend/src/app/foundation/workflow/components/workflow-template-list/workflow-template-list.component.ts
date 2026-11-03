@@ -16,37 +16,55 @@ import { DataListSource } from '../../../../shared/components/data-list/data-lis
 import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { SHELL_PHONE_BELOW_PX } from '../../../../layout/app-shell/app-shell.component';
-import { workflowGroupLabelKey } from './workflow-list-groups';
+import {
+  WORKFLOW_MODULES,
+  WorkflowModule,
+  isKnownWorkflowType,
+  workflowModuleLabelKey,
+  workflowRecordForKey,
+} from './workflow-list-groups';
 
-/** One row of the list: a record type's heading, or one of its workflows. */
+/** One row of the list: a module's heading, or one of its workflows. */
 export type WorkflowListItem =
-  | { kind: 'group'; key: string; objectType: string }
+  | { kind: 'group'; key: string; module: WorkflowModule }
   // `index` counts workflow rows only: it is the row directive's index, and
   // index 0 is the list's first tab stop, which a heading never is.
   | { kind: 'workflow'; key: string; template: WorkflowTemplateDto; index: number };
 
 /**
- * Groups the templates by record type, in the server's order (it sorts by
- * record type, then name), and pins each type's default LAST — the drawing's
- * list (Workflow Setup, section 7). A search keeps the workflows whose name
- * matches, with their headings.
+ * ACC-120 slice 7c — groups the templates by MODULE (workflow-list-groups.ts),
+ * modules in their fixed order and each shown only when it has a row. Inside a
+ * module, a record type's workflows stay together in the module's order, in the
+ * server's order (by name), with that type's default pinned LAST — the drawing's
+ * list (Workflow Setup, section 7). Record types this page does not know go to
+ * a final Other group, in the order they arrived. A search keeps the workflows
+ * whose name matches, with their module's heading.
  */
 export function workflowListItems(templates: readonly WorkflowTemplateDto[], search = ''): WorkflowListItem[] {
   const term = search.trim().toLowerCase();
   const matches = (t: WorkflowTemplateDto): boolean =>
     !term || [t.nameEn, t.nameAr].some((name) => (name ?? '').toLowerCase().includes(term));
-  const groups = new Map<string, WorkflowTemplateDto[]>();
+  const byType = new Map<string, WorkflowTemplateDto[]>();
   for (const t of templates) {
     if (!matches(t)) continue;
-    groups.set(t.objectType, [...(groups.get(t.objectType) ?? []), t]);
+    byType.set(t.objectType, [...(byType.get(t.objectType) ?? []), t]);
   }
+  const unknownTypes = [...byType.keys()].filter((type) => !isKnownWorkflowType(type));
+  const modules: { module: WorkflowModule; types: readonly string[] }[] = [
+    ...WORKFLOW_MODULES,
+    { module: 'OTHER', types: unknownTypes },
+  ];
+
   const items: WorkflowListItem[] = [];
   let index = 0;
-  for (const [objectType, rows] of groups) {
-    items.push({ kind: 'group', key: `group:${objectType}`, objectType });
-    for (const template of [...rows.filter((t) => !t.isDefault), ...rows.filter((t) => t.isDefault)]) {
-      items.push({ kind: 'workflow', key: template.id, template, index: index++ });
-    }
+  for (const { module, types } of modules) {
+    const rows = types.flatMap((type) => {
+      const ofType = byType.get(type) ?? [];
+      return [...ofType.filter((t) => !t.isDefault), ...ofType.filter((t) => t.isDefault)];
+    });
+    if (rows.length === 0) continue;
+    items.push({ kind: 'group', key: `group:${module}`, module });
+    for (const template of rows) items.push({ kind: 'workflow', key: template.id, template, index: index++ });
   }
   return items;
 }
@@ -55,7 +73,8 @@ export function workflowListItems(templates: readonly WorkflowTemplateDto[], sea
  * ACC-120 slice 7 — the Workflows list as drawn (Workflow Setup, section 7,
  * and the list template, Templates, template 1).
  *
- * Grouped by record type, the default last in each group and said in words.
+ * Grouped by module, each row naming its record type, and each type's default
+ * last and said in words.
  * Headers are plain text: the list does not sort (the server takes no sort, and
  * the order is the meaning). One ⋯ per row holds every action, so no bare icon
  * and no destructive action sits outside the menu.
@@ -137,7 +156,7 @@ export function workflowListItems(templates: readonly WorkflowTemplateDto[], sea
             <ng-template #listRow let-item>
               @if (item.kind === 'group') {
                 <div class="am-wf-group" role="row" data-testid="workflow-group">
-                  <span role="rowheader">{{ groupLabelKey(item.objectType) | translate }}</span>
+                  <span role="rowheader">{{ groupLabelKey(item.module) | translate }}</span>
                 </div>
               } @else {
                 <div
@@ -161,12 +180,11 @@ export function workflowListItems(templates: readonly WorkflowTemplateDto[], sea
                       data-testid="workflow-name"
                       >{{ templateName(item.template) }}</span
                     >
-                    @if (item.template.isDefault) {
-                      <span class="text-meta text-[var(--am-ink-500)]" data-testid="workflow-default-line">
-                        <span class="font-semibold">{{ 'workflow.list.default' | translate }}</span>
-                        · {{ (item.template.isProtected ? 'workflow.list.protectedSub' : 'workflow.list.defaultSub') | translate }}
-                      </span>
-                    }
+                    <!-- ACC-120 slice 7c — which record type the row is for, and
+                         whether it is that type's default, in words. -->
+                    <span class="text-meta text-[var(--am-ink-500)]" data-testid="workflow-record-line">{{
+                      recordLineKey(item.template) | translate: { type: (recordForKey(item.template.objectType) | translate) }
+                    }}</span>
                     @if (phone()) {
                       <span class="text-meta truncate" [class.am-wf-inactive]="!item.template.isActive" data-testid="workflow-state">
                         {{ (item.template.isActive ? 'common.active' : 'common.inactive') | translate }}
@@ -231,7 +249,7 @@ export function workflowListItems(templates: readonly WorkflowTemplateDto[], sea
         border-color: var(--am-danger-border);
         color: var(--am-danger-ink);
       }
-      /* A record type's heading: the micro type, which Arabic sets without
+      /* A module's heading: the micro type, which Arabic sets without
          capitals or tracking (design-tokens.scss). */
       .am-wf-group {
         padding: var(--am-space-8) var(--am-space-12) var(--am-space-6);
@@ -332,8 +350,19 @@ export class WorkflowTemplateListComponent implements OnInit {
     return this.languageService.bilingual(template.nameEn, template.nameAr);
   }
 
-  groupLabelKey(objectType: string): string {
-    return workflowGroupLabelKey(objectType);
+  groupLabelKey(module: WorkflowModule): string {
+    return workflowModuleLabelKey(module);
+  }
+
+  /** The record type as the row's second line names it ("document requests"). */
+  recordForKey(objectType: string): string {
+    return workflowRecordForKey(objectType);
+  }
+
+  /** "Default for …", "For …", or the protected default's own sentence. */
+  recordLineKey(template: WorkflowTemplateDto): string {
+    if (template.isProtected && template.isDefault) return 'workflow.list.protectedFor';
+    return template.isDefault ? 'workflow.list.defaultFor' : 'workflow.list.forType';
   }
 
   /**
