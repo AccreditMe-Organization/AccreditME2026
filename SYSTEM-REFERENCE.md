@@ -3400,6 +3400,12 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
     value change for a re-pick, so the list used to stay open; 5a's live check
     met it as "Fixed position" leaving the Kind list open on a row that was
     already Fixed position.
+  - **The saved line stays until the next change.** After a save the page
+    reloads the template and the panel refills its form. The refill is not an
+    edit, so "Transition saved" / «حُفظ الانتقال» (and the stage panel's
+    "Stage saved") stays until the person next changes something in that
+    panel, a change in "Who works this stage" included. A stage or transition
+    the panel has just added keeps its line when the panel reopens on it.
   - **Nothing on the per-request path; no polling;** the panel reads nothing
     of its own (it is given the template the page loaded).
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
@@ -4923,6 +4929,27 @@ is in `CommitteeListsService`:
   - **`offersSeeAll`** (ACC-120 slice 11 PR D; opt-in, default true): false
     for a total the viewer may count but not read (an org unit's committees
     without `committees:view`), so there is no "Showing 0 of 3 · See all".
+  - **`emptyBody`** (opt-in, default empty): the drawing's empty state for a
+    section that has never held anything (Compact List Panel): a small dashed
+    marker, `emptyText` as its title and `emptyBody` under it, centred. Without
+    it the empty state is `emptyText` on one line, as before.
+  - **Filling its grid cell** (opt-in): inside an element marked
+    `data-fill-panels`, the panel takes its cell's full height, so panels in a
+    row share their top and bottom edges. The body keeps its fixed height. The
+    committee page's panel grid is the one user.
+- **The committee page's panels are all `am-capped-panel`.** Meetings and
+  Documents (empty sections, with `emptyBody`), and Membership history moved
+  off the older `app-record-panel`, which did not fill its grid cell and headed
+  in small capitals: Meetings ended short in its row and Change requests ran
+  taller than its row. `app-record-panel` is unchanged for its other users (the
+  committee page's Stage history among them).
+- **`CommitteeMembershipHistoryPanelComponent`**
+  (`app-committee-membership-history-panel`): newest first, capped at five,
+  with See all. A row is the person and the date, then "{what happened} —
+  {seat} · by {approver}". It is given the events, people and seats the page
+  already loaded and reads nothing itself; See all searches, sorts (Person,
+  Date) and pages them in memory, since a committee's history is small and
+  already here in full.
 - **`SimpleListComponent`** (`am-simple-list`,
   `shared/components/simple-list/`) is the body of a plain list popup.
   - **Toolbar:** search (`type=search`, so `am-list-dialog` focuses it). There
