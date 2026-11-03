@@ -8,7 +8,16 @@ import { TaskService, TaskViewer } from './task.service';
 import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, poolTargetOf, toPoolView } from './task-pool';
 import { holdsTaskKey, taskKeysOf, TASK_RECORD_TYPES } from './task-record-types';
 import { TaskVisibilityService } from './task-visibility.service';
-import { taskVisibleSql, TaskVisibilityContext, unassignedSql, unitScopeSql, viewAllSql } from './task-visibility';
+import {
+  createdBySql,
+  isWorkflowMade,
+  taskVisibleSql,
+  TaskVisibilityContext,
+  unassignedSql,
+  unitScopeSql,
+  viewAllSql,
+  workflowMadeSql,
+} from './task-visibility';
 import { OPEN_REQUEST_INCLUDE, toOpenRequest } from './task-request-lifecycle';
 import { taskActionsFor } from './task-actions';
 import { RecordListQueryDto, RecordListSort, RecordPanelQueryDto } from './dto/record-list-query.dto';
@@ -26,7 +35,7 @@ const RANK = Prisma.raw(
 interface Scope {
   sql: Prisma.Sql;
   kind: 'all' | 'own';
-  view: 'record' | 'all' | 'unit' | 'unassigned';
+  view: 'record' | 'all' | 'unit' | 'unassigned' | 'mine' | 'created';
   /** Organisation-wide: rows say which record they belong to. */
   orgWide: boolean;
   ctx: TaskVisibilityContext;
@@ -47,6 +56,11 @@ interface Scope {
  *     actionable owner). Each is also ANDed with the rule itself, so a view can
  *     never show what the page would refuse. A view the viewer has no way into
  *     is 403 naming the keys.
+ *   - ACC-120 slice 3 — two views about the viewer themselves, which need no
+ *     permission and are never a 403: My tasks (`mine`, an active assignee —
+ *     getMyTasks()' own condition) and Created by me (`created`, created by
+ *     the viewer or a creator they act for now, workflow-made tasks left out).
+ *     Each is ANDed with the rule too, so list ⊆ admit holds by construction.
  *
  * ORDER AND FILTERS ARE SQL, every value a bound parameter and organizationId
  * in every WHERE, so the panel's five are the five most likely to need someone
@@ -105,6 +119,8 @@ export class TaskRecordListService {
       all: ctx.viewAllTypes.length ? { types: ctx.viewAllTypes } : null,
       unassigned: ctx.manageTypes.length ? { types: ctx.manageTypes } : null,
       unit: unitTypes.length && units.length ? { types: unitTypes, units } : null,
+      // ACC-120 slice 3 — like My tasks, always: it lists the viewer's own work.
+      created: true,
       create: { types: ctx.createTypes },
     };
   }
@@ -163,6 +179,19 @@ export class TaskRecordListService {
     }
     const ctx = await this.visibility.contextFor(viewer, organizationId);
     const view = dto.view ?? 'all';
+    // ACC-120 slice 3 — the viewer's own views: no permission, so never a 403.
+    // An unpicked pool task is not "mine" (it waits in Available).
+    if (view === 'mine' || view === 'created') {
+      const own = view === 'mine' ? activeAssignee(ctx.viewerId) : Prisma.sql`${createdBySql(ctx)} AND NOT ${workflowMadeSql()}`;
+      return {
+        // The view's own condition AND the rule, as for every other view.
+        sql: Prisma.sql`AND ${own} AND ${taskVisibleSql(ctx)}`,
+        kind: 'all',
+        view,
+        orgWide: true,
+        ctx,
+      };
+    }
     const viewSql =
       view === 'all'
         ? ctx.viewAllTypes.length ? viewAllSql(ctx) : null
@@ -312,7 +341,7 @@ export class TaskRecordListService {
         openRequest,
         evidenceCount: task._count.evidence,
         createdBy: { id: task.createdBy.id, name: task.createdBy.name },
-        createdByWorkflow: !!(task.workflowInstanceStageId || task.workflowInstanceId || task.sourceStageId),
+        createdByWorkflow: isWorkflowMade(task),
         actions: taskActionsFor({
           status: task.status,
           requiresEvidence: task.requiresEvidence,

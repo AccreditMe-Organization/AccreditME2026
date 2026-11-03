@@ -199,6 +199,34 @@ export function viewAllSql(ctx: TaskVisibilityContext): Prisma.Sql {
   return ctx.viewAllTypes.length ? onRecordsOf(ctx.viewAllTypes) : Prisma.sql`FALSE`;
 }
 
+/**
+ * ACC-120 slice 3 — the Created by me view's own condition: created by the
+ * viewer, or by a creator they act for now. This is THE RULE's creator branch,
+ * word for word, so the view can only narrow what the rule already admits.
+ */
+export function createdBySql(ctx: TaskVisibilityContext): Prisma.Sql {
+  return Prisma.sql`t."createdById" = ANY(${sqlArray(ctx.coveredCreatorIds)})`;
+}
+
+/**
+ * ACC-120 slice 3 — the task was made by a workflow, not by a person: it
+ * belongs to a stage entry (ACC-190), or to an instance or a stage (the older
+ * CREATE_TASK path). isWorkflowMade() is the same test on a row in JavaScript,
+ * and a real-database spec holds the two equal.
+ */
+export function workflowMadeSql(): Prisma.Sql {
+  return Prisma.sql`(t."workflowInstanceStageId" IS NOT NULL OR t."workflowInstanceId" IS NOT NULL OR t."sourceStageId" IS NOT NULL)`;
+}
+
+/** workflowMadeSql()'s test, on a task row already read. */
+export function isWorkflowMade(task: {
+  workflowInstanceStageId: string | null;
+  workflowInstanceId: string | null;
+  sourceStageId: string | null;
+}): boolean {
+  return !!(task.workflowInstanceStageId || task.workflowInstanceId || task.sourceStageId);
+}
+
 /** Does unit scope reach this record? For a record's panel and the picker counts. */
 export async function unitScopeCoversRecord(
   client: Pick<PrismaService, '$queryRaw'>,

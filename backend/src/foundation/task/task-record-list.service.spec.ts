@@ -131,6 +131,9 @@ describe('TaskRecordListService', () => {
       await expect(service.list({ sourceType: 'COMMITTEE' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
       await expect(service.list({ sourceId: 'cmt-1' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
       await expect(service.list({ ...RECORD, view: 'all' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
+      // ACC-120 slice 3 — the viewer's own views are organisation-wide too.
+      await expect(service.list({ ...RECORD, view: 'mine' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.list({ ...RECORD, view: 'created' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
@@ -215,6 +218,48 @@ describe('TaskRecordListService', () => {
       expect(page.text).toContain('oc."orgUnitId"');
       expect(page.values).toEqual(expect.arrayContaining([['unit-q']]));
       expect(result.facets).toEqual(expect.objectContaining({ units: [] }));
+    });
+
+    // ACC-120 slice 3 — the viewer's own views need no key: never a 403.
+    it('My tasks with no permission at all: no refusal, the active-assignee condition AND the rule', async () => {
+      const { service, prisma } = setup({ ids: [] });
+      const result = await service.list({ view: 'mine' }, 'org-a', { id: 'u1', permissions: [] });
+      expect(result.view).toBe('mine');
+      expect(result.facets).toEqual(expect.objectContaining({ units: [] }));
+      const statements = sqlOf(prisma);
+      expect(statements.length).toBeGreaterThan(0);
+      for (const s of statements) {
+        expect(s.text).toContain('fa."userId" = $');
+        expect(s.text).toContain('fa."removedAt" IS NULL');
+        expect(s.text).toContain('t."createdById" = ANY('); // the rule
+        expect(s.text).toContain('t."organizationId" = $');
+      }
+      expect(statements[0]!.values).toContain('u1');
+    });
+
+    it('Created by me with no permission at all: no refusal, created-by-the-covered AND not workflow-made AND the rule', async () => {
+      const { service, prisma } = setup({ ids: [] });
+      const result = await service.list({ view: 'created' }, 'org-a', { id: 'u1', permissions: [] });
+      expect(result.view).toBe('created');
+      expect(result.facets).toEqual(expect.objectContaining({ units: [] }));
+      const statements = sqlOf(prisma);
+      expect(statements.length).toBeGreaterThan(0);
+      for (const s of statements) {
+        expect(s.text).toContain(
+          'NOT (t."workflowInstanceStageId" IS NOT NULL OR t."workflowInstanceId" IS NOT NULL OR t."sourceStageId" IS NOT NULL)',
+        );
+        // Once as the view's own condition, once inside the rule.
+        expect(s.text.split('t."createdById" = ANY(').length - 1).toBe(2);
+        expect(s.text).toContain('t."organizationId" = $');
+      }
+    });
+
+    it('GET /tasks/views offers Created by me to everyone, beside My tasks', async () => {
+      const { service } = setup();
+      const views = await service.views('org-a', { id: 'u1', permissions: [] });
+      expect(views.mine).toBe(true);
+      expect(views.created).toBe(true);
+      expect(views.all).toBeNull();
     });
   });
 
