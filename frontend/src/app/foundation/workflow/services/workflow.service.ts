@@ -101,10 +101,35 @@ export interface SubmitApprovalDto {
   comment?: string;
 }
 
+/** ACC-271 — a record waiting on the signed-in person's decision (GET /workflows/awaiting-me). */
+export interface WorkflowAwaitingRowDto {
+  instanceStageId: string;
+  record: { type: string; id: string; nameEn: string; nameAr: string | null };
+  /** `position` is the stage's 1-based place among the template's `stageCount` stages. */
+  stage: { id: string; nameEn: string; nameAr: string | null; position: number; stageCount: number };
+  /** When the record entered the stage. */
+  since: string;
+}
+
+export interface WorkflowAwaitingMeDto {
+  /** Every record waiting on this person; `rows` holds the oldest five. */
+  total: number;
+  rows: WorkflowAwaitingRowDto[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class WorkflowService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiUrl}/workflows`;
+
+  /**
+   * ACC-271 — Home's "Awaiting my action": the records waiting on this
+   * person's decision, as the server decides it. Self-scoped, so it needs no
+   * permission and never 403s for a signed-in person.
+   */
+  getAwaitingMe(): Observable<WorkflowAwaitingMeDto> {
+    return this.http.get<WorkflowAwaitingMeDto>(`${this.base}/awaiting-me`);
+  }
 
   getInstance(id: string): Observable<WorkflowInstanceDto> {
     return this.http.get<WorkflowInstanceDto>(`${this.base}/instances/${id}`);

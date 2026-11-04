@@ -9,41 +9,43 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../core/format
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { ChangeRequestDto, ChangeRequestService } from '../committees/change-requests/change-request.service';
 import { REQUEST } from '../committees/change-requests/change-request.testing';
-import { TaskRequestForDecisionDto, TaskService } from '../tasks/services/task.service';
+import { TaskService } from '../tasks/services/task.service';
+import { WorkflowAwaitingMeDto, WorkflowAwaitingRowDto, WorkflowService } from '../workflow/services/workflow.service';
 import { HomeAwaitingComponent } from './home-awaiting.component';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 
-function taskRequest(id: string, createdAt: string, over: Partial<TaskRequestForDecisionDto> = {}): TaskRequestForDecisionDto {
+function stageRow(id: string, since: string, over: Partial<WorkflowAwaitingRowDto> = {}): WorkflowAwaitingRowDto {
   return {
-    id,
-    type: 'EXTENSION',
-    requestedDueAt: '2026-10-30T09:00:00Z',
-    holdUntil: null,
-    requestedById: 'u-sara',
-    requestedByName: 'Sara Al-Qahtani',
-    reason: 'Waiting for the lab.',
-    createdAt,
-    task: { id: `t-${id}`, title: `Task ${id}`, sourceType: 'COMMITTEE', sourceId: 'c-1', status: 'IN_PROGRESS', priority: 'MEDIUM', dueAt: null },
+    instanceStageId: id,
+    record: { type: 'COMMITTEE', id: `c-${id}`, nameEn: `Committee ${id}`, nameAr: null },
+    stage: { id: 'stage-terms', nameEn: 'Terms Review', nameAr: 'مراجعة الشروط', position: 2, stageCount: 6 },
+    since,
     ...over,
   };
 }
 
-// ACC-240 — Home's "Awaiting my action" (plan §3.5, Q-B).
-describe('HomeAwaitingComponent (ACC-240)', () => {
+const stages = (rows: WorkflowAwaitingRowDto[], total = rows.length): WorkflowAwaitingMeDto => ({ total, rows });
+
+// ACC-240, ACC-271 — Home's "Awaiting my action": records to approve or return
+// (Task Screens §10). Stage approvals from GET /workflows/awaiting-me, change
+// requests from their own read; task requests are no longer here.
+describe('HomeAwaitingComponent (ACC-240, ACC-271)', () => {
   preserveDocumentLanguage();
 
   let fixture: ComponentFixture<HomeAwaitingComponent>;
   let format: FormatService;
   let approver: boolean;
   let changes: () => Observable<ChangeRequestDto[]>;
-  let tasks: () => Observable<TaskRequestForDecisionDto[]>;
+  let awaiting: () => Observable<WorkflowAwaitingMeDto>;
   let changeCalls: number;
+  let taskCalls: number;
 
   beforeEach(() => {
     approver = true;
     changeCalls = 0;
+    taskCalls = 0;
     changes = () => of([]);
-    tasks = () => of([]);
+    awaiting = () => of(stages([]));
     TestBed.configureTestingModule({
       imports: [HomeAwaitingComponent],
       providers: [
@@ -60,7 +62,17 @@ describe('HomeAwaitingComponent (ACC-240)', () => {
             },
           },
         },
-        { provide: TaskService, useValue: { getAwaitingDecision: () => tasks() } },
+        { provide: WorkflowService, useValue: { getAwaitingMe: () => awaiting() } },
+        // Task requests left this card: reading them is a failure here.
+        {
+          provide: TaskService,
+          useValue: {
+            getAwaitingDecision: () => {
+              taskCalls++;
+              return of([]);
+            },
+          },
+        },
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -76,16 +88,56 @@ describe('HomeAwaitingComponent (ACC-240)', () => {
 
   const text = (e: Element | null) => e?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   const rows = (el: HTMLElement) => Array.from(el.querySelectorAll('li'));
+  const meta = (li: Element) => text(li.querySelector('span.text-xs'));
 
-  it('an approver with a change request: the card, its row linked to the request page', () => {
+  it('a stage approval: the record named and linked to its page, its type, stage, place and since', () => {
+    awaiting = () => of(stages([stageRow('e1', '2026-10-03T08:00:00Z')]));
+    const el = render();
+    const link = el.querySelector('[data-testid="home-awaiting-row"]')!;
+    expect(text(link)).toBe('Committee e1');
+    expect(link.getAttribute('href')).toBe('/committees/c-e1');
+    expect(meta(rows(el)[0]!)).toBe(`Committee · Terms Review 2/6 · since ${format.date('2026-10-03T08:00:00Z')}`);
+  });
+
+  it('a record with no page yet (a meeting) is named without a link', () => {
+    awaiting = () => of(stages([stageRow('m1', '2026-10-03T08:00:00Z', { record: { type: 'MEETING', id: 'mt-1', nameEn: 'October meeting', nameAr: null } })]));
+    const el = render();
+    const row = el.querySelector('[data-testid="home-awaiting-row"]')!;
+    expect(row.tagName).toBe('SPAN');
+    expect(text(row)).toBe('October meeting');
+    expect(meta(rows(el)[0]!)).toContain('Meeting · Terms Review 2/6');
+  });
+
+  it('the header as drawn: title, the count badge and "n records to approve or return"', () => {
+    awaiting = () => of(stages([stageRow('e1', '2026-10-03T08:00:00Z')], 7));
     changes = () => of([REQUEST()]);
     const el = render();
     expect(text(el.querySelector('h3'))).toBe('Awaiting my action');
+    // The server's stage total counts past the five rows it sends.
+    expect(text(el.querySelector('[data-testid="home-awaiting-count"]'))).toBe('8');
+    expect(text(el.querySelector('[data-testid="home-awaiting-sub"]'))).toBe('8 records to approve or return');
+  });
+
+  it('one record: the singular subtitle', () => {
+    awaiting = () => of(stages([stageRow('e1', '2026-10-03T08:00:00Z')]));
+    expect(text(render().querySelector('[data-testid="home-awaiting-sub"]'))).toBe('1 record to approve or return');
+  });
+
+  it('an approver with a change request: its row keeps its text and links to the request page', () => {
+    changes = () => of([REQUEST()]);
+    const el = render();
     expect(rows(el).length).toBe(1);
     const link = el.querySelector('[data-testid="home-awaiting-row"]')!;
     expect(text(link)).toBe('Change request 3 · Patient Experience Committee');
     expect(link.getAttribute('href')).toBe('/committees/c-1/change-requests/cr-1');
-    expect(text(rows(el)[0].querySelector('span'))).toBe(`Nora Al-Otaibi · submitted ${format.date('2026-10-18T09:00:00Z')}`);
+    expect(meta(rows(el)[0]!)).toBe(`Nora Al-Otaibi · submitted ${format.date('2026-10-18T09:00:00Z')}`);
+  });
+
+  it('task requests are not read and there is no "See all" link to /tasks', () => {
+    awaiting = () => of(stages([stageRow('e1', '2026-10-03T08:00:00Z')]));
+    const el = render();
+    expect(taskCalls).toBe(0);
+    expect(el.querySelector('a[href="/tasks"]')).toBeNull();
   });
 
   it('nothing waiting: no card at all', () => {
@@ -94,29 +146,22 @@ describe('HomeAwaitingComponent (ACC-240)', () => {
 
   it('both reads failed: no card, and no error on Home', () => {
     changes = () => throwError(() => new Error('boom'));
-    tasks = () => throwError(() => new Error('boom'));
-    const el = render();
-    expect(el.textContent?.trim()).toBe('');
+    awaiting = () => throwError(() => new Error('boom'));
+    expect(render().textContent?.trim()).toBe('');
+  });
+
+  it('one read failed: the other still shows', () => {
+    awaiting = () => throwError(() => new Error('boom'));
+    changes = () => of([REQUEST()]);
+    expect(rows(render()).length).toBe(1);
   });
 
   it('without committees:approve the change requests are not read', () => {
     approver = false;
-    tasks = () => of([taskRequest('r1', '2026-10-17T09:00:00Z')]);
+    awaiting = () => of(stages([stageRow('e1', '2026-10-03T08:00:00Z')]));
     const el = render();
     expect(changeCalls).toBe(0);
     expect(rows(el).length).toBe(1);
-  });
-
-  it('task-request rows: the task, what was asked, linked to My Tasks on that request', () => {
-    approver = false;
-    tasks = () => of([taskRequest('r1', '2026-10-17T09:00:00Z'), taskRequest('r2', '2026-10-16T09:00:00Z', { type: 'ON_HOLD', requestedDueAt: null, holdUntil: '2026-11-02T00:00:00Z' })]);
-    const el = render();
-    const [first, second] = rows(el);
-    expect(text(first.querySelector('a'))).toBe('Task r2');
-    expect(text(first.querySelector('span'))).toBe(`Sara Al-Qahtani asks to put it on hold until ${format.date('2026-11-02T00:00:00Z')}`);
-    expect(first.querySelector('a')!.getAttribute('href')).toBe('/tasks?request=r2');
-    expect(text(second.querySelector('span'))).toBe(`Sara Al-Qahtani asks for the due date to move to ${format.dateTime('2026-10-30T09:00:00Z')}`);
-    expect(el.querySelector('[data-testid="home-awaiting-all"]')!.getAttribute('href')).toBe('/tasks');
   });
 
   it('both kinds together, oldest first, five rows', () => {
@@ -126,33 +171,29 @@ describe('HomeAwaitingComponent (ACC-240)', () => {
         REQUEST({ id: 'cr-b', number: 2, submittedAt: '2026-10-14T09:00:00Z' }),
         REQUEST({ id: 'cr-c', number: 4, submittedAt: '2026-10-20T09:00:00Z' }),
       ]);
-    tasks = () =>
-      of([
-        taskRequest('r1', '2026-10-12T09:00:00Z'),
-        taskRequest('r2', '2026-10-18T09:00:00Z'),
-        taskRequest('r3', '2026-10-11T09:00:00Z'),
-        taskRequest('r4', '2026-10-21T09:00:00Z'),
-      ]);
+    awaiting = () =>
+      of(stages([stageRow('s3', '2026-10-11T09:00:00Z'), stageRow('s1', '2026-10-12T09:00:00Z'), stageRow('s2', '2026-10-18T09:00:00Z'), stageRow('s4', '2026-10-21T09:00:00Z')]));
     const el = render();
-    expect(rows(el).map((li) => `${li.getAttribute('data-awaiting-kind')}:${text(li.querySelector('a'))}`)).toEqual([
+    expect(rows(el).map((li) => `${li.getAttribute('data-awaiting-kind')}:${text(li.querySelector('[data-testid="home-awaiting-row"]'))}`)).toEqual([
       'change:Change request 1 · Patient Experience Committee',
-      'task:Task r3',
-      'task:Task r1',
+      'stage:Committee s3',
+      'stage:Committee s1',
       'change:Change request 2 · Patient Experience Committee',
-      'task:Task r2',
+      'stage:Committee s2',
     ]);
   });
 
-  it('only change requests: no "See all in My Tasks", which would not list them', () => {
-    changes = () => of([REQUEST()]);
-    expect(render().querySelector('[data-testid="home-awaiting-all"]')).toBeNull();
-  });
-
-  it('Arabic', () => {
+  it('Arabic: the record and stage in Arabic (English fallback), the Arabic subtitle', () => {
     TestBed.inject(TranslateService).use('ar');
-    changes = () => of([REQUEST({ committeeNameAr: 'لجنة تجربة المرضى' })]);
+    awaiting = () =>
+      of(stages([stageRow('e1', '2026-10-03T08:00:00Z', { record: { type: 'COMMITTEE', id: 'c-1', nameEn: 'Quality', nameAr: 'لجنة الجودة' } }), stageRow('e2', '2026-10-04T08:00:00Z')]));
     const el = render();
     expect(text(el.querySelector('h3'))).toBe(ar.home.awaiting);
-    expect(text(el.querySelector('[data-testid="home-awaiting-row"]'))).toBe(ar.home.awaitingChange.replace('{{n}}', '3').replace('{{committee}}', 'لجنة تجربة المرضى'));
+    const [first, second] = rows(el);
+    expect(text(first!.querySelector('[data-testid="home-awaiting-row"]'))).toBe('لجنة الجودة');
+    // No Arabic name: the English one, never blank.
+    expect(text(second!.querySelector('[data-testid="home-awaiting-row"]'))).toBe('Committee e2');
+    expect(meta(first!)).toBe(`${ar.workflow.objectTypeName.COMMITTEE} · مراجعة الشروط 2/6 · منذ ${format.date('2026-10-03T08:00:00Z')}`);
+    expect(text(el.querySelector('[data-testid="home-awaiting-sub"]'))).toBe('سجلان للاعتماد أو الإعادة');
   });
 });
