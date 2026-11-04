@@ -272,4 +272,129 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     const next = await service.list({ ...onRecord, skip: 5 }, org, { id: viewer, ...VIEW_ALL });
     expect(next.facets).toBeNull();
   });
+
+  // ACC-120 slice 3 — the status chips' counts, record names and the search by
+  // record name, on organisations of their own (C, and D pointing at C's
+  // committee), so nothing above changes.
+  describe('status counts, record names and search by record (ACC-120 slice 3)', () => {
+    let orgC = '';
+    let orgD = '';
+    let creatorC = '';
+    let viewerC = '';
+    let assigneeC = '';
+    let creatorD = '';
+    const committeeC = `cq-${randomUUID().slice(0, 8)}`;
+    const ids: Record<string, string> = {};
+    let taskD = '';
+    const VIEW_ALL_C = ['committees:view_all_tasks', 'committees:view'];
+    const STATUSES = ['UNASSIGNED', 'PENDING', 'IN_PROGRESS', 'ON_HOLD', 'REJECTED', 'COMPLETED', 'CANCELLED'] as const;
+
+    beforeAll(async () => {
+      const c = await newOrg();
+      orgC = c.org;
+      creatorC = c.creator;
+      viewerC = c.viewer;
+      assigneeC = (await prisma.user.create({ data: { organizationId: orgC, email: `${committeeC}-a@example.test`, name: 'Assignee Person' } })).id;
+      const unitC = await prisma.orgUnit.create({ data: { organizationId: orgC, nameEn: 'Quality', code: `C${committeeC.slice(-4)}`.toUpperCase() } });
+      await prisma.committee.create({
+        data: { id: committeeC, organizationId: orgC, nameEn: 'Quality Committee', nameAr: 'لجنة الجودة', typeValueId: 'type', orgUnitId: unitC.id },
+      });
+      const make = async (key: string, data: Record<string, unknown>) => {
+        const t = await prisma.task.create({
+          data: { organizationId: orgC, createdById: creatorC, sourceType: 'COMMITTEE', sourceId: committeeC, title: `Step ${key}`, ...data } as never,
+        });
+        ids[key] = t.id;
+      };
+      await make('unassigned', { status: 'UNASSIGNED' });
+      await make('pending1', { status: 'PENDING' });
+      await make('pending2', { status: 'PENDING' });
+      // A row stored before ACC-163's backfill: counted as Assigned.
+      await make('legacyOverdue', { status: 'OVERDUE', dueAt: at(-3 * DAY) });
+      await make('inProgress', { status: 'IN_PROGRESS' });
+      await make('onHold', { status: 'ON_HOLD', onHoldUntil: at(4 * DAY) });
+      await make('rejected', { status: 'REJECTED', rejectedReason: 'Not my unit', rejectedById: creatorC, rejectedAt: at(-DAY) });
+      await make('completed', { status: 'COMPLETED', completedAt: at(-DAY) });
+      await make('cancelled', { status: 'CANCELLED', cancelledAt: at(-DAY) });
+      await prisma.taskAssignee.create({ data: { taskId: ids['pending1']!, userId: assigneeC, assignedById: creatorC } });
+
+      // Organisation D: a task naming C's committee id.
+      const d = await newOrg();
+      orgD = d.org;
+      creatorD = d.creator;
+      taskD = (
+        await prisma.task.create({
+          data: { organizationId: orgD, createdById: creatorD, sourceType: 'COMMITTEE', sourceId: committeeC, title: 'Their task', status: 'PENDING' },
+        })
+      ).id;
+    });
+
+    const all = (dto: Record<string, unknown> = {}) => service.list({ view: 'all', ...dto }, orgC, { id: viewerC, permissions: VIEW_ALL_C });
+
+    it('each status count equals the list filtered by that status', async () => {
+      const counts = (await all()).facets!.statusCounts;
+      for (const st of STATUSES) {
+        const filtered = await all({ status: [st] });
+        // The status is in the compared value, so a failure names it.
+        expect([st, counts[st]]).toEqual([st, filtered.matching]);
+      }
+      // Non-vacuity: every task is counted, the legacy row among the Assigned.
+      expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(9);
+      expect(counts.PENDING).toBe(3);
+    });
+
+    it('the counts do not move with the search or the status filter', async () => {
+      const base = (await all()).facets!.statusCounts;
+      const narrowed = await all({ q: 'zzz-nothing', status: ['COMPLETED'] });
+      expect(narrowed.matching).toBe(0); // non-vacuity: the filters did narrow
+      expect(narrowed.facets!.statusCounts).toEqual(base);
+    });
+
+    it("finds the organisation's tasks by their committee's name, organisation-wide", async () => {
+      const found = await all({ q: 'Quality Comm' });
+      // No title says "Quality": the record's name is what matched.
+      expect(found.matching).toBe(9);
+      expect(found.items.every((i) => !i.title.includes('Quality'))).toBe(true);
+      expect(found.items[0]!.record).toEqual({ type: 'COMMITTEE', id: committeeC, nameEn: 'Quality Committee', nameAr: 'لجنة الجودة' });
+    });
+
+    it('a rejected row carries who rejected it', async () => {
+      const list = await all({ status: ['REJECTED'] });
+      expect(list.items.map((i) => i.id)).toEqual([ids['rejected']]);
+      expect(list.items[0]!.rejectedBy).toEqual({ id: creatorC, name: 'Creator' });
+    });
+
+    // THE NAME GATE: on My tasks, which needs no key, the record's name — and a
+    // search by it — reach only a viewer who may see the record's type.
+    it('My tasks without committees:view: no name on the row, and a search by that name does not match it', async () => {
+      const mine = await service.list({ view: 'mine' }, orgC, { id: assigneeC, permissions: [] });
+      expect(mine.items.map((i) => i.id)).toEqual([ids['pending1']]);
+      expect(mine.items[0]!.record).toEqual({ type: 'COMMITTEE', id: committeeC, nameEn: null, nameAr: null });
+      const searched = await service.list({ view: 'mine', q: 'Quality Committee' }, orgC, { id: assigneeC, permissions: [] });
+      expect(searched.items).toEqual([]);
+    });
+
+    it('…and the same viewer WITH committees:view sees the name, and the search matches', async () => {
+      const seer = { id: assigneeC, permissions: ['committees:view'] };
+      const mine = await service.list({ view: 'mine' }, orgC, seer);
+      expect(mine.items[0]!.record).toEqual({ type: 'COMMITTEE', id: committeeC, nameEn: 'Quality Committee', nameAr: 'لجنة الجودة' });
+      const searched = await service.list({ view: 'mine', q: 'Quality Committee' }, orgC, seer);
+      expect(searched.items.map((i) => i.id)).toEqual([ids['pending1']]);
+    });
+
+    itEnforcesTenantIsolation("record-list search by record name: another organisation's committee name never matches, and never names a row", async () => {
+      const theirs = { id: creatorD, permissions: ['committees:view'] };
+      // Non-vacuity: D's own task is on its Created by me list…
+      const created = await service.list({ view: 'created' }, orgD, theirs);
+      expect(created.items.map((i) => i.id)).toEqual([taskD]);
+      // …with no name: the committee it points at is C's.
+      expect(created.items[0]!.record).toEqual({ type: 'COMMITTEE', id: committeeC, nameEn: null, nameAr: null });
+      // Searching for C's committee name from D finds nothing.
+      const searched = await service.list({ view: 'created', q: 'Quality Committee' }, orgD, theirs);
+      expect(searched.items).toEqual([]);
+      // And C's own search never returns D's task.
+      const fromC = await all({ q: 'Quality Committee' });
+      expect(fromC.items.map((i) => i.id)).not.toContain(taskD);
+    });
+  });
+
 });

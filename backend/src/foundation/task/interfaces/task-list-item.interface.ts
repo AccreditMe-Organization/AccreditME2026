@@ -1,6 +1,7 @@
 import { ITask } from './task.interface';
 import { ITaskOpenRequest } from './task-request.interface';
 import { ITaskPoolView } from '../task-pool';
+import type { ITaskRecordRef } from '../task-record-names';
 
 // ACC-163 — the row a task LIST returns: the task plus how much evidence it
 // holds, so a list can say "Evidence required · none yet" and disable Complete
@@ -33,4 +34,11 @@ export interface ITaskListItem extends ITask {
 // can know it.
 export interface IMyTaskListItem extends ITaskListItem {
   pickedByMe: boolean;
+}
+
+// ACC-120 slice 3 — a row of the Available list (waiting in the caller's
+// pools), with its record named for a viewer who may see the record's type.
+// Its own type, like IMyTaskListItem: only that list names the record.
+export interface IAvailableTaskListItem extends ITaskListItem {
+  record: ITaskRecordRef;
 }

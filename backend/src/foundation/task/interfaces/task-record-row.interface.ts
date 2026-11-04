@@ -1,6 +1,8 @@
 import { ITaskActions } from './task-page.interface';
 import { ITaskOpenRequest } from './task-request.interface';
 import { ITaskPoolView } from '../task-pool';
+import type { ITaskRecordRef } from '../task-record-names';
+import type { RecordListStatus } from '../dto/record-list-query.dto';
 
 /**
  * ACC-229 — one row of a record's Tasks panel and of the All tasks list. A
@@ -20,6 +22,8 @@ export interface ITaskRecordRow {
   cancelledAt: Date | null;
   cancelledReason: string | null;
   rejectedReason: string | null;
+  /** ACC-120 slice 3 — who rejected it (REJECTED only); null otherwise. */
+  rejectedBy: { id: string; name: string } | null;
   createdAt: Date;
   updatedAt: Date;
   requiresEvidence: boolean;
@@ -28,7 +32,7 @@ export interface ITaskRecordRow {
   sourceType: string;
   sourceId: string;
   /** The record, named, on the organisation-wide list only; its name only when the viewer may open it. */
-  record: { type: string; id: string; nameEn: string | null; nameAr: string | null } | null;
+  record: ITaskRecordRef | null;
   assignees: { id: string; name: string; positionNameEn: string | null; positionNameAr: string | null }[];
   /** The pool it waits in, or was picked from; null when it went to named people. */
   pool: ITaskPoolView | null;
@@ -58,6 +62,11 @@ export interface ITaskRecordListFacets {
   pools: { key: string; pool: ITaskPoolView }[];
   /** ACC-244 — the record types present in this view, for the Record type filter. */
   recordTypes: string[];
+  /**
+   * ACC-120 slice 3 — how many tasks in this view are in each status, over the
+   * whole scope (no toolbar filter, no search): every status, zero-filled.
+   */
+  statusCounts: Record<RecordListStatus, number>;
   /** ACC-244 — the unit view only: the owning units present, for the Unit filter. */
   units: { id: string; nameEn: string; nameAr: string | null }[];
 }

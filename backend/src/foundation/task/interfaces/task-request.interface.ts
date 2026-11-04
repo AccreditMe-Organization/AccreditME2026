@@ -1,3 +1,5 @@
+import type { ITaskRecordRef } from '../task-record-names';
+
 // ACC-173 — extension and on-hold requests.
 
 /** A task's PENDING request, as a list row carries it. At most one per task. */
@@ -41,4 +43,6 @@ export interface ITaskRequestForDecision extends ITaskOpenRequest {
     priority: string;
     dueAt: Date | null;
   };
+  /** ACC-120 slice 3 — the task's record, named for a viewer who may see its type. */
+  record: ITaskRecordRef;
 }

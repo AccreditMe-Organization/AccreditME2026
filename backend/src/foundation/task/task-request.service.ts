@@ -20,6 +20,7 @@ import { TaskSlaService, latest } from './task-sla.service';
 import { aTaskThatIs } from './task-status-label';
 import { HOLD_CLEARED, REQUESTABLE_STATUSES } from './task-request-lifecycle';
 import { lockWorkflowInstance, moveStageDeadlineForTaskInTx } from './stage-deadline';
+import { recordNamesOf, recordOf } from './task-record-names';
 
 type TaskTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 type TaskWithAssigneeRows = ITask & { assignees: TaskAssignee[] };
@@ -485,6 +486,9 @@ export class TaskRequestService {
         },
       },
     });
+    // ACC-120 slice 3 — the record beside the task, named for a viewer who may
+    // see its type: one batched lookup for the whole inbox, never one per row.
+    const records = await recordNamesOf(this.prisma, rows.map((r) => r.task), organizationId, viewer.permissions);
     return rows.map((r) => ({
       id: r.id,
       type: r.type,
@@ -495,6 +499,7 @@ export class TaskRequestService {
       reason: r.reason,
       createdAt: r.createdAt,
       task: r.task,
+      record: recordOf(records, r.task),
     }));
   }
 

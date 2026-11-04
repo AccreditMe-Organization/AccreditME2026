@@ -4110,7 +4110,9 @@ NOT ungated — its permission check moved into the service (3.2).
 (`task.controller.spec.ts` asserts the absence):
 
 - `GET /tasks/available`, `POST /tasks/:id/pick` — self-scoped to the pools
-  the caller is in right now; a non-member gets the identical 404.
+  the caller is in right now; a non-member gets the identical 404. Since
+  ACC-120 slice 3 each Available row carries a top-level `record`
+  (`IAvailableTaskListItem`), named only for a viewer who may see its type.
 - `POST /tasks/:id/release` — self-scoped to the active assignee who picked it.
 - `GET /tasks/assignment/units`, `/assignment/positions`,
   `/assignment/committee-roles`, `/assignees`, `/assignees/committee` — the
@@ -4133,7 +4135,9 @@ is clause (b): the identical 404 "Task not found", decided before any 409.
   your own request"*, checked AFTER the 404, so only someone already entitled
   to decide learns why.
 - `GET /tasks/requests/awaiting-decision` — self-scoped: the requests the
-  caller may decide. Declared before `:id` (route-order spec).
+  caller may decide. Declared before `:id` (route-order spec). Since ACC-120
+  slice 3 each row also carries a top-level `record` beside the unchanged
+  nested `task`, named only for a viewer who may see its type.
 
 **ACC-174 adds four more ungated routes and one gated one** (3.11):
 
@@ -4314,6 +4318,9 @@ optional person showing their position; the committee and its roles first on
 a committee task) states the server's outcome before Save. My tasks gains
 "Available to pick up" and Release; the committee record reads "Assigned to
 {position}, {unit}" or "{role}, {committee}" until someone picks the task up.
+**ACC-120 slice 3:** `GET /tasks/available` rows carry a `record`
+(`recordNamesOf()`, one batched organisation-scoped lookup per record type,
+beside the cover read), named only for a viewer who may see the type.
 
 **Known limitations.**
 - Stage-created pool tasks were not exercised live: a temporary stage cannot
@@ -4419,7 +4426,10 @@ creator plus their current cover, and the `tasks:reassign` holders only when
 the creator is no longer ACTIVE; a decision → the person who asked; a resume →
 the assignees and the creator, never the person who resumed. The decider's
 inbox, "Waiting for your decision" on My tasks, is the same set, read from
-`GET /tasks/requests/awaiting-decision`.
+`GET /tasks/requests/awaiting-decision`. **ACC-120 slice 3:** each inbox row
+also carries a top-level `record` (`recordNamesOf()`, one batched lookup per
+record type for the whole inbox), named only for a viewer who may see its
+type; the nested `task` is unchanged.
 
 **While on hold.** Start, complete, reject and release refuse with 409
 *"Resume the task first"* (`lockOpenForActiveAssignee`'s `allowOnHold`);
@@ -4695,7 +4705,7 @@ Naming one of `sourceType`/`sourceId` without the other is a 400.
 | Endpoint | Returns |
 |---|---|
 | `GET /tasks/record-panel?sourceType&sourceId` | `{ total, scope, rows }` — the first five of the order below; `total` is every task the viewer can see on the record |
-| `GET /tasks/record-list?…` | `{ items, total, matching, scope, facets, aroundIndex }` — 1 to 50 rows (`take`, `skip`); `facets` (the assignee and pool filter options, over the whole scope) on the first page only; `aroundIndex` is where `around=<taskId>` sits under the current sort and filters |
+| `GET /tasks/record-list?…` | `{ items, total, matching, scope, facets, aroundIndex }` — 1 to 50 rows (`take`, `skip`); `facets` (the assignee and pool filter options, the record types, the unit view's units and — ACC-120 slice 3 — `statusCounts`, all over the whole scope) on the first page only; `aroundIndex` is where `around=<taskId>` sits under the current sort and filters. Each row carries `rejectedBy` (`{ id, name }` or null, ACC-120 slice 3) beside `rejectedReason` |
 
 Both are declared before `':id'`, with no `@Permissions` — the service
 decides, like the task page.
@@ -4722,6 +4732,12 @@ more never repeats or skips a row.
   TENANT's zone (`WorkingCalendarService.getEffectiveTimeZone`, ACC-94 D3),
   later, or none; "Assigned to me"; search — `ILIKE` on the title, the Arabic
   title and the active assignees' names, with `%`, `_` and `\` escaped.
+  **ACC-120 slice 3: organisation-wide, the search also matches the record's
+  name** — a committee's English or Arabic name, a meeting's title — through
+  `recordNameMatchSql()` (`task-record-names.ts`): an organisation-scoped
+  `EXISTS` per type, and only for a record type the viewer may see, the same
+  gate that names the row. So a search can never reveal a name the row would
+  not show. Not on one record's list, where the record is already named.
 
 **Rows are read in batches, never one query per row.** One `findMany` for the
 page's tasks with assignees, evidence counts, pool labels and open requests;
@@ -5504,7 +5520,16 @@ A view the viewer lacks is **403 naming the keys** (`committees:view_all_tasks`;
 condition AND `taskVisibleSql()`, so a list never holds a task its page would
 refuse. The response gains `view` (`'record' | 'all' | 'unit' | 'unassigned' |
 'mine' | 'created'`) and
-`facets.recordTypes` / `facets.units`, computed in SQL over the same scope. On
+`facets.recordTypes` / `facets.units`, computed in SQL over the same scope.
+**ACC-120 slice 3** adds `facets.statusCounts`: one `GROUP BY` on page 1,
+inside the facets' own `Promise.all`, over the same scope (organisation,
+view, rule — no toolbar filter, no search); every status a person filters by,
+zero-filled, a legacy `OVERDUE` row counted as `PENDING`, `DELEGATED`
+dropped. **Record names follow one gate, `recordNamesOf()`**: a row's
+record is named only for a viewer who may see its type (`seesRecordType`);
+otherwise it carries the type and id alone. That closes the gap where
+`mine` and `created`, which need no key, named records the viewer could not
+see. The task page keeps its stronger per-record check (`assertCanView`). On
 a record, `scope` is `'all'` when the viewer sees the whole record (View all,
 or unit scope over it), else `'own'`.
 
@@ -5616,10 +5641,11 @@ no endpoint. The design reference is
   the own-view chips show on Created by me only), counts on the chips, and
   Home's task lines. The server's `view=mine` exists (§3.19) for the
   rebuilt My tasks.
-- **Known gap, server side:** on `view=mine` and `view=created`, which need
-  no key, a row's record name is filled in whether or not the viewer may see
-  that record. The screen shows what it is sent; leaving the name out for a
-  viewer who may not open the record (ACC-228's rule) is a backend change.
+- **Closed, server side (ACC-120 slice 3):** on `view=mine` and
+  `view=created`, which need no key, a row's record name was filled in whether
+  or not the viewer could see that record's type. `recordNamesOf()` now names
+  it only for a viewer who may see the type, and the record-name search uses
+  the same gate (§3.19).
 
 ## 4. Notification System
 
