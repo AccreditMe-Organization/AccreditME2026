@@ -56,7 +56,8 @@
       "col": {
         "taskRecord": "Task · record"
       },
-      "quoted": "“{{text}}”",
+      "quoteOpen": "“",
+      "quoteClose": "”",
       "countUnknown": "Count not available",
       "decision": {
         "purpose": "On tasks you created or cover for. Someone is waiting on your answer.",

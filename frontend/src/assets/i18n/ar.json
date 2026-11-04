@@ -56,7 +56,8 @@
       "col": {
         "taskRecord": "المهمة · السجل"
       },
-      "quoted": "«{{text}}»",
+      "quoteOpen": "«",
+      "quoteClose": "»",
       "countUnknown": "العدد غير متاح",
       "decision": {
         "purpose": "على مهام من إنشائك أو بالنيابة عن منشئها. هناك من ينتظر ردّك.",

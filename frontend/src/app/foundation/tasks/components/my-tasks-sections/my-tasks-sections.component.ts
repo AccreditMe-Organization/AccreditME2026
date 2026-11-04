@@ -50,11 +50,11 @@ interface DecisionRow {
   title: string;
   dueAt: string | null;
   record: RecordView;
-  /** Who asked, or who rejected. */
-  who: string;
+  /** Who asked; null on a rejected row, whose ask already names who rejected it. */
+  who: string | null;
   /** The ask ("Hold until 20 Oct 2026"), or "Rejected by …". */
   ask: string;
-  /** The reason, quoted. */
+  /** The reason, as typed (the template quotes it). */
   why: string | null;
   request: ITaskRequestInboxDto | null;
   row: ITaskRecordRowDto | null;
@@ -133,13 +133,18 @@ const REJECTED_PAGE = 50;
                     } @else {
                       <span data-testid="mts-record">{{ r.record.label }}</span>
                     }
-                    <span>&nbsp;· {{ r.who }}</span>
+                    @if (r.who) {
+                      <span>&nbsp;· {{ r.who }}</span>
+                    }
                   </span>
                 </span>
                 <span class="am-mts__ask">
                   <span class="am-mts__ask-line" data-testid="mts-ask">{{ r.ask }}</span>
                   @if (r.why) {
-                    <span class="am-mts__why" data-testid="mts-why">{{ r.why }}</span>
+                    <!-- The reason is whatever the person typed, in either
+                         script: isolated, so the reading language's quote
+                         marks land on the right sides. -->
+                    <span class="am-mts__why" data-testid="mts-why">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ r.why }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</span>
                   }
                 </span>
                 <span class="am-mts__act">
@@ -250,13 +255,14 @@ const REJECTED_PAGE = 50;
       .am-mts__failed{margin:0;font-size:var(--am-type-meta-size);color:var(--am-danger-ink)}
       .am-mts__retry{font:inherit;border:0;background:none;padding:0;color:var(--am-primary-700);text-decoration:underline;cursor:pointer}
       .am-mts__rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--am-space-6)}
-      .am-mts__row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,2fr) auto;gap:var(--am-space-12);align-items:center;padding:var(--am-space-8) var(--am-space-12);border:1px solid var(--am-border);border-radius:var(--am-radius-control);background:var(--am-surface-raised)}
-      .am-mts__row--available{grid-template-columns:minmax(0,3fr) minmax(0,1fr) minmax(0,1.3fr) auto}
+      .am-mts__row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,2fr) calc(var(--am-space-40) * 4);gap:var(--am-space-12);align-items:center;padding:var(--am-space-8) var(--am-space-12);border:1px solid var(--am-border);border-radius:var(--am-radius-control);background:var(--am-surface-raised)}
+      .am-mts__row--available{grid-template-columns:minmax(0,3fr) minmax(0,1fr) minmax(0,1.3fr) calc(var(--am-space-40) * 4)}
       .am-mts__row--sought{border-color:var(--am-primary-600);box-shadow:inset 3px 0 0 var(--am-primary-600)}
       :host-context([dir=rtl]) .am-mts__row--sought{box-shadow:inset -3px 0 0 var(--am-primary-600)}
       .am-mts__row:focus-visible,.am-mts__btn:focus-visible,.am-mts__retry:focus-visible,.am-mts__record:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
       .am-mts__task,.am-mts__ask{display:flex;flex-direction:column;min-inline-size:0}
-      .am-mts__sub,.am-mts__why{display:flex;flex-wrap:wrap;min-inline-size:0;font-size:var(--am-type-meta-size);color:var(--am-ink-700)}
+      .am-mts__sub,.am-mts__why{min-inline-size:0;font-size:var(--am-type-meta-size);color:var(--am-ink-700)}
+      .am-mts__sub{display:flex;flex-wrap:wrap}
       .am-mts__record{color:var(--am-primary-700);text-decoration:none}.am-mts__record:hover{text-decoration:underline}
       .am-mts__cell{font-size:var(--am-type-meta-size);color:var(--am-ink-900)}
       .am-mts__act{display:flex;justify-content:flex-end}
@@ -488,7 +494,7 @@ export class MyTasksSectionsComponent {
       record: this.recordView(r.record),
       who: r.requestedByName,
       ask,
-      why: r.reason ? this.translate.instant('tasks.sections.quoted', { text: r.reason }) : null,
+      why: r.reason || null,
       request: r,
       row: null,
     };
@@ -503,9 +509,9 @@ export class MyTasksSectionsComponent {
       title: this.language.bilingual(row.title, row.titleAr),
       dueAt: row.dueAt,
       record: this.recordView(row.record),
-      who: name ?? this.translate.instant('task.status.rejected'),
+      who: null,
       ask: name ? this.translate.instant('tasks.sections.decision.rejectedBy', { name }) : this.translate.instant('task.status.rejected'),
-      why: row.rejectedReason ? this.translate.instant('tasks.sections.quoted', { text: row.rejectedReason }) : null,
+      why: row.rejectedReason || null,
       request: null,
       row,
     };
