@@ -23,9 +23,12 @@ const VOTING_MODES = new Set(['ALL', 'COMMITTEE_VOTE']);
  *      (IN_PROGRESS) instance, at the instance's current stage; the stage is
  *      converted (whoMode set) and not final;
  *   2. the stage is a DECISION POINT: among its moves made by a PERSON (APP
- *      moves never count) there is an ADVANCE and a RETURN or EXIT, so a
- *      committee in Terms Review counts and an Active one does not, and the
- *      change-request template (all APP moves) never appears;
+ *      moves never count) there is an ADVANCE and a RETURN to a DIFFERENT
+ *      stage. An EXIT does not count (cancelling is not an approval), nor does
+ *      a return that loops to the same stage. So a committee in Terms Review
+ *      counts and an Active one does not, a meeting in Minutes review counts
+ *      and one in Planned does not, and the change-request template (all APP
+ *      moves) never appears;
  *   3. the viewer may make those moves: the engine's own rule,
  *      mayActInStagePool(), that triggerTransition() refuses on;
  *   4. the viewer is in the pool NOW (`members`, so an acting user standing in
@@ -70,7 +73,7 @@ export class WorkflowAwaitingService {
             nameEn: true,
             nameAr: true,
             whoMode: true,
-            transitionsFrom: { select: { kind: true, mover: true, triggerCondition: true } },
+            transitionsFrom: { select: { kind: true, mover: true, triggerCondition: true, toStageId: true } },
             workflowTemplate: { select: { stages: { select: { id: true }, orderBy: [{ order: 'asc' }, { id: 'asc' }] } } },
           },
         },
@@ -78,7 +81,7 @@ export class WorkflowAwaitingService {
       orderBy: [{ enteredAt: 'asc' }, { id: 'asc' }],
     });
     const candidates = entries.filter(
-      (e) => e.workflowInstance.currentStageId === e.stageId && isConvertedStage(e.stage) && isDecisionPoint(e.stage.transitionsFrom),
+      (e) => e.workflowInstance.currentStageId === e.stageId && isConvertedStage(e.stage) && isDecisionPoint(e.stage.id, e.stage.transitionsFrom),
     );
     if (candidates.length === 0) return { total: 0, rows: [] };
 
@@ -137,8 +140,15 @@ export class WorkflowAwaitingService {
   }
 }
 
-/** A stage a person decides at: a person's ADVANCE and a person's RETURN or EXIT. */
-function isDecisionPoint(moves: readonly { kind: WorkflowTransitionKind; mover: TransitionMover | null; triggerCondition: string }[]): boolean {
+/**
+ * A stage a person decides at: a person's ADVANCE and a person's RETURN to a
+ * DIFFERENT stage. An EXIT is not one (cancelling is not an approval), and a
+ * return that loops back to the same stage is not a way back.
+ */
+function isDecisionPoint(
+  stageId: string,
+  moves: readonly { kind: WorkflowTransitionKind; mover: TransitionMover | null; triggerCondition: string; toStageId: string }[],
+): boolean {
   const byPerson = moves.filter((m) => transitionMover(m) === 'PERSON');
-  return byPerson.some((m) => m.kind === 'ADVANCE') && byPerson.some((m) => m.kind === 'RETURN' || m.kind === 'EXIT');
+  return byPerson.some((m) => m.kind === 'ADVANCE') && byPerson.some((m) => m.kind === 'RETURN' && m.toStageId !== stageId);
 }

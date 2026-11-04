@@ -3422,11 +3422,15 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
      converted and not final;
   2. the stage is a **decision point**: among its moves made by a PERSON
      (`transitionMover`, so APP moves never count) there is an ADVANCE and a
-     RETURN or EXIT. Seeded, Terms Review is the only committee stage that
-     is one (Active is not), and the change-request template (all APP) never
-     appears. The seeded meeting stages with a person's cancel or send-back
-     (Planned, Agenda ready, Minutes draft, Minutes review) would count too
-     once meetings exist;
+     RETURN whose target is a DIFFERENT stage (Ahmad, 4 Nov). An EXIT does
+     not count, because cancelling is not an approval, and a return that
+     loops to the same stage does not either. On the seeded templates:
+     committee Terms Review counts (Active does not); meeting Minutes review
+     counts, while Planned and Agenda ready (an ADVANCE and a Cancel) and
+     Minutes draft (its return loops to itself) do not; Document Request has
+     none (its reviews reject with an EXIT); the change-request templates are
+     all APP. The unbuilt Document, Audit and Corrective Action templates have
+     review stages that would count once those modules exist;
   3. the viewer may make those moves: **`mayActInStagePool()`**
      (`stage-pool.service.ts`), now the ONE copy of the engine's rule, which
      `assertInStagePool()` (triggerTransition, submitApproval) and the record

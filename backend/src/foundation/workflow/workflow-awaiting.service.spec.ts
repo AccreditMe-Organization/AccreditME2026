@@ -11,10 +11,10 @@ const ORG = 'org-a';
 const VIEWER = 'viewer';
 const VIEW = ['committees:view'];
 
-type Move = { kind: 'ADVANCE' | 'RETURN' | 'EXIT'; mover: 'PERSON' | 'APP' | null; triggerCondition: string };
+type Move = { kind: 'ADVANCE' | 'RETURN' | 'EXIT'; mover: 'PERSON' | 'APP' | null; triggerCondition: string; toStageId: string };
 const DECIDE: Move[] = [
-  { kind: 'ADVANCE', mover: 'PERSON', triggerCondition: 'ROLE_BASED' },
-  { kind: 'RETURN', mover: 'PERSON', triggerCondition: 'ROLE_BASED' },
+  { kind: 'ADVANCE', mover: 'PERSON', triggerCondition: 'ROLE_BASED', toStageId: 'stage-active' },
+  { kind: 'RETURN', mover: 'PERSON', triggerCondition: 'ROLE_BASED', toStageId: 'stage-formation' },
 ];
 
 interface EntryOver {
@@ -114,11 +114,16 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
   });
 
   it('not a stage with no person RETURN or EXIT (an Active committee), nor one whose moves are all APP', async () => {
-    const active = entry({ moves: [{ kind: 'ADVANCE', mover: 'PERSON', triggerCondition: 'ROLE_BASED' }, { kind: 'ADVANCE', mover: null, triggerCondition: 'ROLE_BASED' }] });
+    const active = entry({
+      moves: [
+        { kind: 'ADVANCE', mover: 'PERSON', triggerCondition: 'ROLE_BASED', toStageId: 'stage-suspended' },
+        { kind: 'ADVANCE', mover: null, triggerCondition: 'ROLE_BASED', toStageId: 'stage-dissolution' },
+      ],
+    });
     const appOnly = entry({
       moves: [
-        { kind: 'ADVANCE', mover: 'APP', triggerCondition: 'SYSTEM_AUTOMATIC' },
-        { kind: 'RETURN', mover: null, triggerCondition: 'SYSTEM_AUTOMATIC' },
+        { kind: 'ADVANCE', mover: 'APP', triggerCondition: 'SYSTEM_AUTOMATIC', toStageId: 'stage-approved' },
+        { kind: 'RETURN', mover: null, triggerCondition: 'SYSTEM_AUTOMATIC', toStageId: 'stage-returned' },
       ],
     });
     const { service, stagePool } = setup([active, appOnly]);
@@ -127,8 +132,32 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
     expect(stagePool.resolveMany).not.toHaveBeenCalled();
   });
 
-  it('an EXIT made by a person counts as the way back', async () => {
-    const { service } = setup([entry({ moves: [DECIDE[0]!, { kind: 'EXIT', mover: 'PERSON', triggerCondition: 'ROLE_BASED' }] })]);
+  // Ahmad, 4 Nov — cancelling is not an approval, so an EXIT is not the way
+  // back: a meeting in Planned (Confirm agenda, Cancel meeting) is not listed.
+  it('not a stage whose only way out besides ADVANCE is an EXIT', async () => {
+    const planned = entry({ moves: [DECIDE[0]!, { kind: 'EXIT', mover: 'PERSON', triggerCondition: 'ROLE_BASED', toStageId: 'stage-cancelled' }] });
+    const { service, stagePool } = setup([planned]);
+
+    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [] });
+    expect(stagePool.resolveMany).not.toHaveBeenCalled();
+  });
+
+  // A return to the SAME stage (a meeting's Minutes draft, "Revise draft") is
+  // not a way back either.
+  it('not a stage whose only RETURN loops back to itself', async () => {
+    const looped = entry({
+      id: 'draft',
+      moves: [DECIDE[0]!, { kind: 'RETURN', mover: 'PERSON', triggerCondition: 'ROLE_BASED', toStageId: 'stage-draft' }],
+    });
+    const { service } = setup([looped]);
+    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [] });
+  });
+
+  it('a person RETURN to a different stage makes it a decision point, beside an EXIT', async () => {
+    const minutesReview = entry({
+      moves: [...DECIDE, { kind: 'EXIT', mover: 'PERSON', triggerCondition: 'ROLE_BASED', toStageId: 'stage-cancelled' }],
+    });
+    const { service } = setup([minutesReview]);
     expect((await service.awaitingMe(ORG, VIEWER, VIEW)).total).toBe(1);
   });
 
