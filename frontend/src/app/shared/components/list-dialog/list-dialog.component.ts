@@ -40,7 +40,9 @@ export const LIST_DIALOG_SHEET_BELOW_PX = 760;
  *   on its defaults every time and remembers nothing (drawn Q3).
  * - **Escape closes only the top layer** (LayerStackService), listened for in
  *   the CAPTURE phase: a row menu inside closes itself on Escape before the
- *   event bubbles, and would otherwise hand this dialog the same keypress.
+ *   event bubbles, and would otherwise hand this dialog the same keypress. It
+ *   listens on the window, not the document, so it is never made passive by a
+ *   library's document listener (see the constructor).
  * - **Focus starts in the body's search box once the dialog has opened**, and
  *   returns to whatever opened it (the panel's "See all").
  * - `role="dialog"`, `aria-modal`, named by its title.
@@ -173,8 +175,18 @@ export class ListDialogComponent {
       event.preventDefault();
       this.closeRequested.emit();
     };
-    this.document.addEventListener('keydown', onKeydown, true);
-    destroyRef.onDestroy(() => this.document.removeEventListener('keydown', onKeydown, true));
+    // On the WINDOW, never the document (ACC-271). zone.js keeps ONE native
+    // listener per event and phase on a target, created with the FIRST
+    // registration's options, and Angular CDK's input-modality detector
+    // registers document keydown as { passive: true, capture: true } at start.
+    // On the document this handler therefore ran passive: its preventDefault was
+    // ignored ("Unable to preventDefault inside passive event listener"). The
+    // window's capture phase runs before the document's, so the order the menu
+    // rule needs is unchanged, and passive: false is stated, not inherited.
+    const view = this.document.defaultView;
+    const options: AddEventListenerOptions = { capture: true, passive: false };
+    view?.addEventListener('keydown', onKeydown, options);
+    destroyRef.onDestroy(() => view?.removeEventListener('keydown', onKeydown, options));
 
     effect(() => {
       if (this.visible()) {

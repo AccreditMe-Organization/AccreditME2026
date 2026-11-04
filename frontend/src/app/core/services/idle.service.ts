@@ -219,8 +219,13 @@ export class IdleService {
 
   private attachListeners(): void {
     if (this.listenersAttached || typeof document === 'undefined') return;
+    // Passive ONLY for touchstart, the one of these a browser can hold scrolling
+    // for (ACC-271). zone.js keeps one native listener per event and phase on a
+    // target, created with the first registration's options, so a passive
+    // keydown here made EVERY later document keydown handler passive: the
+    // dialogs' Escape and date-picker preventDefault() calls were ignored.
     for (const event of ['keydown', 'pointerdown', 'pointermove', 'touchstart'] as const) {
-      document.addEventListener(event, this.onActivity, { passive: true });
+      document.addEventListener(event, this.onActivity, { passive: event === 'touchstart' });
     }
     this.listenersAttached = true;
   }

@@ -89,6 +89,28 @@ describe('ListDialogComponent and the row menu inside it (ACC-229)', () => {
     expect(fixture.componentInstance.closes).toBe(1);
   });
 
+  // ACC-271, found live: Escape logged "Unable to preventDefault inside passive
+  // event listener". Angular CDK registers document keydown as passive in the
+  // capture phase, and zone.js gives every later document capture listener that
+  // same native listener, so a handler there runs passive. Pinned by WHERE the
+  // listener goes, not by dispatching: this test page already holds document
+  // capture listeners from earlier fixtures, so the passive one is not first
+  // here and a dispatched Escape cannot show the defect.
+  it('listens for Escape on the window, capture phase, not passive, and never on the document', () => {
+    fixture.destroy();
+    fixture.nativeElement.remove();
+    const onDocument = spyOn(document, 'addEventListener').and.callThrough();
+    const onWindow = spyOn(window, 'addEventListener').and.callThrough();
+    fixture = TestBed.createComponent(HostComponent);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+    const keydown = (calls: jasmine.Calls<typeof document.addEventListener>) => calls.allArgs().filter(([type]) => type === 'keydown');
+    expect(keydown(onDocument.calls)).withContext('a document keydown listener').toEqual([]);
+    const onWin = keydown(onWindow.calls as unknown as jasmine.Calls<typeof document.addEventListener>);
+    expect(onWin.length).toBe(1);
+    expect(onWin[0][2]).toEqual({ capture: true, passive: false });
+  });
+
   // ACC-229, found live: the list focused its search box on its first render,
   // before the dialog was in the page, so nothing held focus once it opened and
   // the shell fell back to its frame. The shell now focuses the search box
