@@ -1,4 +1,4 @@
-import { Component, input, output } from '@angular/core';
+import { Component, forwardRef, input, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -14,22 +14,41 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { ITaskViewsDto, TaskService } from '../../services/task.service';
-import { MyTasksComponent } from '../my-tasks/my-tasks.component';
+import { MyTasksSectionsComponent } from '../my-tasks-sections/my-tasks-sections.component';
 import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
 import { TasksShellComponent } from './tasks-shell.component';
 
 // ACC-120 slice 3 — the /tasks shell: the switcher is exactly GET /tasks/views'
 // non-null views, in order; the URL picks the view; New task follows
 // views.create; the Unit filter follows the number of top-level units; and a
-// Setup health Fix's ?reassign= reaches the Unassigned list. My tasks and the
-// list are stood in for, so these tests are the shell's alone.
+// Setup health Fix's ?reassign= reaches the Unassigned list. My tasks is its
+// two sections and the shared list on view mine (ACC-120 slice 3), and a
+// briefing's ?task= / ?request= reaches the right one (ACC-198). The sections
+// and the list are stood in for, so these tests are the shell's alone.
 
-@Component({ selector: 'app-my-tasks', standalone: true, template: '<p data-testid="stub-my-tasks">my tasks</p>' })
-class MyTasksStub {
-  readonly showHeader = input(true);
+// Each stub stands in under the real type too, so the shell's viewChild()
+// queries (the reloads it makes) find it.
+@Component({
+  selector: 'app-my-tasks-sections',
+  standalone: true,
+  template: '<p data-testid="stub-sections">sections</p>',
+  providers: [{ provide: MyTasksSectionsComponent, useExisting: forwardRef(() => SectionsStub) }],
+})
+class SectionsStub {
+  readonly soughtRequestId = input<string | null>(null);
+  readonly soughtTaskId = input<string | null>(null);
+  readonly changed = output<void>();
+  readonly requestsLoaded = output<string[]>();
+  readonly availableLoaded = output<string[] | null>();
+  reload(): void {}
 }
 
-@Component({ selector: 'app-task-list-view', standalone: true, template: '<p data-testid="stub-list">list</p>' })
+@Component({
+  selector: 'app-task-list-view',
+  standalone: true,
+  template: '<p data-testid="stub-list">list</p>',
+  providers: [{ provide: TaskListViewComponent, useExisting: forwardRef(() => ListStub) }],
+})
 class ListStub {
   readonly variant = input<string>('popup');
   readonly view = input<string | null>(null);
@@ -66,6 +85,7 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
 
   let harness: RouterTestingHarness;
   let getViews: jasmine.Spy;
+  let navigate: jasmine.Spy;
 
   async function open(url: string, views: ITaskViewsDto | Observable<ITaskViewsDto>, language: 'en' | 'ar' = 'en'): Promise<HTMLElement> {
     TestBed.resetTestingModule();
@@ -82,12 +102,13 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
       ],
     });
     TestBed.overrideComponent(TasksShellComponent, {
-      remove: { imports: [MyTasksComponent, TaskListViewComponent] },
-      add: { imports: [MyTasksStub, ListStub] },
+      remove: { imports: [MyTasksSectionsComponent, TaskListViewComponent] },
+      add: { imports: [SectionsStub, ListStub] },
     });
     loadTranslationsForTest({ en, ar });
     TestBed.inject(TranslateService).use(language);
     getViews = spyOn(TestBed.inject(TaskService), 'getViews').and.returnValue(views instanceof Observable ? views : of(views));
+    navigate = spyOn(TestBed.inject(Router), 'navigate').and.callThrough();
     harness = await RouterTestingHarness.create();
     await harness.navigateByUrl(url);
     harness.detectChanges();
@@ -98,13 +119,14 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
   const switcher = (root: HTMLElement) => Array.from(root.querySelectorAll('[data-testid="task-views"] a')).map((a) => text(a));
   const currentView = (root: HTMLElement) => root.querySelector('[data-testid="task-views"] a[aria-current="page"]')?.getAttribute('data-view');
   const list = () => harness.fixture.debugElement.query((d) => d.componentInstance instanceof ListStub)?.componentInstance as ListStub | undefined;
+  const sections = () => harness.fixture.debugElement.query((d) => d.componentInstance instanceof SectionsStub)?.componentInstance as SectionsStub | undefined;
 
   describe('the switcher', () => {
     // ACC-120 slice 3 — one tab is noise: an answer offering My tasks alone
     // draws no switcher (a view the server leaves out is absent).
     it('draws no switcher when the server offers My tasks alone', async () => {
       const root = await open('/tasks', MINE_ONLY);
-      expect(root.querySelector('[data-testid="stub-my-tasks"]')).withContext('non-vacuity: the page rendered').not.toBeNull();
+      expect(root.querySelector('[data-testid="stub-sections"]')).withContext('non-vacuity: the page rendered').not.toBeNull();
       expect(root.querySelector('[data-testid="task-views"]')).toBeNull();
     });
 
@@ -134,13 +156,20 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
   });
 
   describe('the URL picks the view', () => {
-    it('opens My tasks with no ?view, without its own header', async () => {
+    // ACC-120 slice 3 — My tasks is its two sections, then the shared list on
+    // view mine, as a page; the shell's "Tasks" is the one H1.
+    it('opens My tasks with no ?view: the sections, then the list on view mine', async () => {
       const root = await open('/tasks', MANAGER);
       expect(currentView(root)).toBe('mine');
-      const mine = harness.fixture.debugElement.query((d) => d.componentInstance instanceof MyTasksStub)!.componentInstance as MyTasksStub;
-      expect(mine.showHeader()).toBeFalse();
-      expect(list()).toBeUndefined();
+      expect(root.querySelector('[data-testid="stub-sections"]')).not.toBeNull();
+      expect(list()!.view()).toBe('mine');
+      expect(list()!.variant()).toBe('page');
+      expect(list()!.around()).toBeNull();
+      // The sections come first.
+      const order = Array.from(root.querySelectorAll('[data-testid="stub-sections"], [data-testid="stub-list"]')).map((e) => e.getAttribute('data-testid'));
+      expect(order).toEqual(['stub-sections', 'stub-list']);
       expect(text(root.querySelector('h1'))).toBe('Tasks');
+      expect(root.querySelectorAll('h1').length).toBe(1);
     });
 
     for (const [view, views] of [['created', MEMBER], ['all', MANAGER], ['unit', HEAD], ['unassigned', MANAGER]] as const) {
@@ -149,20 +178,19 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
         expect(currentView(root)).toBe(view);
         expect(list()!.view()).toBe(view);
         expect(list()!.variant()).toBe('page');
-        expect(root.querySelector('[data-testid="stub-my-tasks"]')).toBeNull();
+        expect(root.querySelector('[data-testid="stub-sections"]')).toBeNull();
       });
     }
 
-    // ACC-120 slice 3 — My tasks is still the old screen in this PR.
-    it('keeps My tasks on the old screen, beside Created by me', async () => {
+    it('switches from My tasks to Created by me, the sections staying with My tasks', async () => {
       const root = await open('/tasks', MEMBER);
       expect(currentView(root)).toBe('mine');
-      expect(root.querySelector('[data-testid="stub-my-tasks"]')).not.toBeNull();
-      expect(list()).toBeUndefined();
+      expect(root.querySelector('[data-testid="stub-sections"]')).not.toBeNull();
+      expect(list()!.view()).toBe('mine');
       await harness.navigateByUrl('/tasks?view=created');
       harness.detectChanges();
       expect(list()!.view()).toBe('created');
-      expect(root.querySelector('[data-testid="stub-my-tasks"]')).toBeNull();
+      expect(root.querySelector('[data-testid="stub-sections"]')).toBeNull();
     });
 
     it('follows Back and Forward through the URL', async () => {
@@ -175,8 +203,8 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
 
     it('opens My tasks, and says so, for a view this viewer does not have', async () => {
       const root = await open('/tasks?view=unassigned', MEMBER);
-      expect(root.querySelector('[data-testid="stub-my-tasks"]')).not.toBeNull();
-      expect(list()).toBeUndefined();
+      expect(root.querySelector('[data-testid="stub-sections"]')).not.toBeNull();
+      expect(list()!.view()).toBe('mine');
       expect(text(root.querySelector('[data-testid="task-view-notice"]'))).toBe("That view isn't available to you, so these are your own tasks.");
     });
 
@@ -198,6 +226,92 @@ describe('TasksShellComponent — one /tasks list with saved views (ACC-120 slic
       expect(list()).withContext('non-vacuity: the list view is open').toBeDefined();
       expect(root.querySelector('[data-testid="task-view-total"]')).toBeNull();
       expect(text(root)).not.toContain('11 tasks');
+    });
+  });
+
+  describe('My tasks: the sections tell the list, and a save reloads both', () => {
+    it('reloads the list when something changes in the sections', async () => {
+      await open('/tasks', MEMBER);
+      const reload = spyOn(list()!, 'reload');
+      sections()!.changed.emit();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads the sections and the list after New task saves', async () => {
+      await open('/tasks', MANAGER);
+      const reloadList = spyOn(list()!, 'reload');
+      const reloadSections = spyOn(sections()!, 'reload');
+      (harness.routeDebugElement!.componentInstance as TasksShellComponent).onSaved();
+      expect(reloadList).toHaveBeenCalledTimes(1);
+      expect(reloadSections).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ACC-198 — a briefing item links to its row on My tasks: ?task=<id> (in
+  // Available, or in the list) and ?request=<id> (Waiting for your decision).
+  // The row is marked, and both parameters are taken out of the address. A
+  // record no longer there leaves the page ordinary.
+  describe('My tasks links (?task=, ?request=)', () => {
+    const removed = () => jasmine.objectContaining({ queryParams: { task: null, request: null }, replaceUrl: true });
+
+    it('?task= for a task in the list: the list opens at it, and both parameters go with replaceUrl', async () => {
+      await open('/tasks?task=mine-1', MEMBER);
+      // The list waits for Available's answer before it is asked for anything.
+      expect(list()).withContext('waits for Available').toBeUndefined();
+      sections()!.availableLoaded.emit(['pool-1']);
+      harness.detectChanges();
+      expect(list()!.around()).toBe('mine-1');
+      expect(sections()!.soughtTaskId()).toBeNull();
+      expect(navigate).toHaveBeenCalledWith([], removed());
+      await harness.fixture.whenStable();
+      expect(TestBed.inject(Router).parseUrl(TestBed.inject(Router).url).queryParams).toEqual({});
+    });
+
+    it('?task= for a pool task finds it in Available', async () => {
+      await open('/tasks?task=pool-1', MEMBER);
+      sections()!.availableLoaded.emit(['pool-1']);
+      harness.detectChanges();
+      expect(sections()!.soughtTaskId()).toBe('pool-1');
+      expect(list()!.around()).withContext('not sent to the list as well').toBeNull();
+      expect(navigate).toHaveBeenCalledWith([], removed());
+    });
+
+    it('?request= marks the row in Waiting for your decision, and no task', async () => {
+      await open('/tasks?request=req-1', MEMBER);
+      // Nothing to wait for: the list is there at once.
+      expect(list()!.around()).toBeNull();
+      sections()!.requestsLoaded.emit(['req-1']);
+      harness.detectChanges();
+      expect(sections()!.soughtRequestId()).toBe('req-1');
+      expect(sections()!.soughtTaskId()).toBeNull();
+      expect(navigate).toHaveBeenCalledWith([], removed());
+    });
+
+    it('an unknown id marks nothing', async () => {
+      await open('/tasks?request=gone', MEMBER);
+      sections()!.requestsLoaded.emit(['req-1']);
+      harness.detectChanges();
+      expect(sections()!.soughtRequestId()).toBeNull();
+      expect(sections()!.soughtTaskId()).toBeNull();
+      // Non-vacuity: the link was read (and taken out of the address).
+      expect(navigate).toHaveBeenCalledWith([], removed());
+    });
+
+    it('no parameter, no navigation', async () => {
+      await open('/tasks', MEMBER);
+      sections()!.requestsLoaded.emit(['req-1']);
+      sections()!.availableLoaded.emit(['pool-1']);
+      harness.detectChanges();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(sections()!.soughtRequestId()).toBeNull();
+      expect(list()!.around()).toBeNull();
+    });
+
+    it('?task= when Available fails: the list opens at it all the same', async () => {
+      await open('/tasks?task=mine-1', MEMBER);
+      sections()!.availableLoaded.emit(null);
+      harness.detectChanges();
+      expect(list()!.around()).toBe('mine-1');
     });
   });
 
