@@ -109,7 +109,7 @@ const REJECTED_PAGE = 50;
         @if (decisionState() === 'error') {
           <p class="am-mts__failed" role="alert" data-testid="mts-decision-failed">
             {{ 'tasks.sections.decision.failed' | translate }} ·
-            <button type="button" class="am-mts__retry" (click)="loadDecision()" data-testid="mts-decision-retry">{{ 'list.retry' | translate }}</button>
+            <button type="button" class="am-mts__retry" (click)="loadDecision()" data-testid="mts-decision-retry">{{ 'common.retry' | translate }}</button>
           </p>
         } @else {
           @if (decisionError()) {
@@ -186,7 +186,7 @@ const REJECTED_PAGE = 50;
         @if (availableState() === 'error') {
           <p class="am-mts__failed" role="alert" data-testid="mts-available-failed">
             {{ 'tasks.sections.available.failed' | translate }} ·
-            <button type="button" class="am-mts__retry" (click)="loadAvailable()" data-testid="mts-available-retry">{{ 'list.retry' | translate }}</button>
+            <button type="button" class="am-mts__retry" (click)="loadAvailable()" data-testid="mts-available-retry">{{ 'common.retry' | translate }}</button>
           </p>
         } @else {
           @if (pickError()) {
