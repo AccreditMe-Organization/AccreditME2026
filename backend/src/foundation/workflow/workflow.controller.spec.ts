@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowService } from './workflow.service';
+import { WorkflowAwaitingService } from './workflow-awaiting.service';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
@@ -50,6 +52,7 @@ describe('WorkflowController', () => {
     submitApproval: jest.Mock;
     cancelInstance: jest.Mock;
   };
+  const awaiting = { awaitingMe: jest.fn().mockResolvedValue({ total: 0, rows: [] }) };
 
   beforeEach(async () => {
     service = {
@@ -63,7 +66,10 @@ describe('WorkflowController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WorkflowController],
-      providers: [{ provide: WorkflowService, useValue: service }],
+      providers: [
+        { provide: WorkflowService, useValue: service },
+        { provide: WorkflowAwaitingService, useValue: awaiting },
+      ],
     })
       .overrideGuard(TenantGuard)
       .useValue({ canActivate: () => true })
@@ -75,6 +81,17 @@ describe('WorkflowController', () => {
   });
 
   afterEach(() => jest.clearAllMocks());
+
+  // ACC-271 — Home's "Awaiting my action". Self-scoped, so it carries no
+  // @Permissions: the service answers only for the caller, row by row.
+  describe('getAwaitingMe', () => {
+    it('hands the caller, their organisation and their permissions to the service, and carries no @Permissions', async () => {
+      const result = await controller.getAwaitingMe(TENANT_ID, ACTOR_ID, VIEWER_PERMISSIONS);
+      expect(awaiting.awaitingMe).toHaveBeenCalledWith(TENANT_ID, ACTOR_ID, VIEWER_PERMISSIONS);
+      expect(result).toEqual({ total: 0, rows: [] });
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, WorkflowController.prototype.getAwaitingMe)).toBeUndefined();
+    });
+  });
 
   describe('getInstanceById', () => {
     // ACC-101 — the route reads through the viewer-aware method; the plain

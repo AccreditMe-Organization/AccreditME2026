@@ -36,6 +36,7 @@ import { WorkflowController } from './workflow.controller';
 import { WorkflowService } from './workflow.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
+import { WorkflowAwaitingService } from './workflow-awaiting.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const TENANT_ID = 'org-a';
@@ -117,6 +118,8 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
         WorkflowService,
         // ACC-271 — real: it runs only for converted workflow stages.
         StagePoolService,
+        // ACC-271 — real: GET /workflows/awaiting-me, through the real guards.
+        WorkflowAwaitingService,
         DelegationLabelService,
         // REAL — the refusal under test is this service's.
         ObjectVisibilityService,
@@ -163,6 +166,17 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
   const instanceById = () => request(app.getHttpServer()).get(`/workflows/instances/${INSTANCE_ID}`);
   // ACC-271 PR 2 — which moves the caller may press: it says what the record's stage allows.
   const moves = () => request(app.getHttpServer()).get(`/workflows/instances/${INSTANCE_ID}/moves`);
+
+  // ACC-271 — "Awaiting my action" carries no @Permissions: through the REAL
+  // PermissionGuard, a caller holding nothing reaches it and is answered only
+  // for themselves — here, with no record type they may see, nothing at all.
+  it('GET /workflows/awaiting-me answers a caller with no permissions: 200, and empty', async () => {
+    callerPermissions = [];
+    const response = await request(app.getHttpServer()).get('/workflows/awaiting-me');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ total: 0, rows: [] });
+  });
 
   describe('a caller holding workflows:view but NOT committees:view', () => {
     beforeEach(() => {

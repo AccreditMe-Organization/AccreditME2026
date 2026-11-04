@@ -7,6 +7,7 @@ import { of, throwError } from 'rxjs';
 import { HomeComponent } from './home.component';
 import { TaskService } from '../tasks/services/task.service';
 import { ChangeRequestService } from '../committees/change-requests/change-request.service';
+import { WorkflowService } from '../workflow/services/workflow.service';
 import { NotificationService } from '../notification/services/notification.service';
 import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
@@ -81,11 +82,15 @@ describe('HomeComponent', () => {
           useValue: {
             getMyTasks: () =>
               opts.tasksFail ? throwError(() => new Error('boom')) : of(opts.tasks ?? []),
-            // ACC-240 — Awaiting my action; empty here, its own spec covers it.
+            // ACC-271 — the decision and pool lines; empty here, covered below.
             getAwaitingDecision: () => of([]),
+            getRecordList: () => of({ items: [], total: 0, matching: 0 }),
+            getAvailable: () => of([]),
           },
         },
         { provide: ChangeRequestService, useValue: { awaitingDecision: () => of([]) } },
+        // ACC-271 — Awaiting my action; empty here, its own spec covers it.
+        { provide: WorkflowService, useValue: { getAwaitingMe: () => of({ total: 0, rows: [] }) } },
         {
           provide: NotificationService,
           useValue: {
@@ -103,7 +108,7 @@ describe('HomeComponent', () => {
           },
         },
         { provide: AuthService, useValue: { currentUser: () => ({ name: 'Dr. Yasser Al-Amri' }) } },
-        { provide: LanguageService, useValue: { isArabic: () => opts.arabic ?? false, bilingual: (en: string) => en } },
+        { provide: LanguageService, useValue: { isArabic: () => opts.arabic ?? false, isRtl: () => opts.arabic ?? false, bilingual: (en: string) => en } },
         // ACC-198 — the briefing card asks only for a tenant admin; these stubs
         // keep Home's own panels tested on their own.
         { provide: NavigationAccessService, useValue: { hasPermission: () => opts.admin ?? false } },
@@ -157,7 +162,11 @@ describe('HomeComponent', () => {
 
   // ACC-163 (Q8) — overdue is a flag beside the status, not a status. With the
   // no-op loader the text is the KEY, so these assert which label was chosen.
-  it('shows an Overdue badge beside the status of an open task past its due time', () => {
+  // ACC-271 — as drawn, the flag is the due date marked late on the right.
+  const homeRows = () => Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="home-task-row"]'));
+  const lateDue = (row: Element) => row.querySelector('.am-ht__due')!.classList.contains('am-ht__late');
+
+  it('marks the due date of an open task past its due time late, beside its status', () => {
     setup({
       tasks: [
         { ...task('1', 'IN_PROGRESS'), dueAt: '2026-01-01T09:00:00.000Z' },
@@ -165,17 +174,17 @@ describe('HomeComponent', () => {
       ],
     });
 
-    const rows = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('tbody tr'));
+    const rows = homeRows();
     expect(rows[0]!.textContent).toContain('task.status.in_progress');
-    expect(rows[0]!.textContent).toContain('task.overdueBadge');
-    expect(rows[1]!.textContent).not.toContain('task.overdueBadge');
+    expect(lateDue(rows[0]!)).toBeTrue();
+    expect(lateDue(rows[1]!)).toBeFalse();
   });
 
-  it('shows a legacy OVERDUE row as Assigned, with the badge, never as an "Overdue" status', () => {
+  it('shows a legacy OVERDUE row as Assigned, its due date late, never as an "Overdue" status', () => {
     setup({ tasks: [{ ...task('1', 'OVERDUE'), dueAt: '2026-01-01T09:00:00.000Z' }] });
 
     expect(text()).toContain('task.status.pending');
-    expect(text()).toContain('task.overdueBadge');
+    expect(lateDue(homeRows()[0]!)).toBeTrue();
     expect(text()).not.toContain('task.status.overdue');
   });
 

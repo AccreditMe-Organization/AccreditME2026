@@ -38,7 +38,7 @@ import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
 import { assertTransitionPreconditions } from './transition-preconditions';
-import { StagePool, StagePoolRequest, StagePoolService } from './stage-pool.service';
+import { StagePool, StagePoolRequest, StagePoolService, mayActInStagePool } from './stage-pool.service';
 import { APP_MOVER_WHERE, isConvertedStage, transitionMover } from './workflow-pool';
 
 // The client inside this.prisma.$transaction(async (tx) => …) — read off
@@ -327,8 +327,7 @@ export class WorkflowService {
       objectType: instance.objectType as WorkflowObjectType,
       objectId: instance.objectId,
     });
-    const works = pool.members.includes(viewerId) || pool.direct.includes(viewerId);
-    return { transitionIds: works ? byPerson.map((t) => t.id) : [] };
+    return { transitionIds: mayActInStagePool(pool, viewerId) ? byPerson.map((t) => t.id) : [] };
   }
 
   // ACC-76 — the real path an object took through its workflow.
@@ -1657,7 +1656,7 @@ export class WorkflowService {
   private assertInStagePool(pool: StagePool, stage: PrismaWorkflowStage, actorId: string): void {
     const stageNames = { stageNameEn: stage.nameEn, stageNameAr: stage.nameAr };
     if (pool.members.length === 0) throw new WorkflowRefusalException('STAGE_HAS_NO_ONE', stageNames);
-    if (!pool.members.includes(actorId) && !pool.direct.includes(actorId)) {
+    if (!mayActInStagePool(pool, actorId)) {
       throw new WorkflowRefusalException('NOT_IN_STAGE_POOL', stageNames);
     }
   }
