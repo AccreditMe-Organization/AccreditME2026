@@ -17,7 +17,6 @@ import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
 import {
   WorkflowTemplateService,
@@ -34,7 +33,6 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { StepStripComponent, StepStripItem } from '../../../../shared/components/step-strip/step-strip.component';
-import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
@@ -56,7 +54,7 @@ const ALWAYS_RUNS = 'LOG_AUDIT';
 export const MAX_WEBHOOK_HEADERS = 5;
 
 /** The controls on step 1, which a Save from step 2 returns to when one is wrong. */
-const STEP_ONE_CONTROLS = ['actionType', 'order', 'isEnabled', 'webhookUrl'] as const;
+const STEP_ONE_CONTROLS = ['actionType', 'isEnabled', 'webhookUrl'] as const;
 
 /** The read-only markers a masked read adds (ACC-277); a save never sends them. */
 const READ_ONLY_MARKERS = ['headersValueSet', 'signingSecretSet'];
@@ -83,8 +81,6 @@ type HeaderRow = FormGroup<{
     TagModule,
     TooltipModule,
     InputTextModule,
-    InputNumberModule,
-    InputNumberLatinDigits,
     CheckboxModule,
     OverlaySelectComponent,
     EditDialogComponent,
@@ -123,18 +119,18 @@ type HeaderRow = FormGroup<{
         <ng-template pTemplate="header">
           <tr>
             <th>{{ 'workflow.actionType' | translate }}</th>
-            <th>{{ 'workflow.order' | translate }}</th>
             <th>{{ 'workflow.actionsDialog.state' | translate }}</th>
             <th></th>
           </tr>
         </ng-template>
 
+        <!-- No Order column (ACC-120 slice 7): the rows stand in the server's
+             order, which is the order they run in. -->
         <ng-template pTemplate="body" let-action>
           <tr [attr.data-action-id]="action.id">
             <td>
               <p-tag [value]="actionTypeName(action.actionType)" severity="info" data-testid="action-type" />
             </td>
-            <td>{{ action.order }}</td>
             <td data-testid="action-state">
               @if (action.actionType === alwaysRuns) {
                 <!-- The engine runs it whatever isEnabled says, so there is no
@@ -187,7 +183,7 @@ type HeaderRow = FormGroup<{
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="4" class="text-center py-4 text-[var(--am-ink-500)]">
+            <td colspan="3" class="text-center py-4 text-[var(--am-ink-500)]">
               {{ 'workflow.noActions' | translate }}
             </td>
           </tr>
@@ -197,12 +193,19 @@ type HeaderRow = FormGroup<{
       <ng-template #formTpl>
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4" data-testid="action-form">
           <!-- ACC-120 slice 7 — a webhook is two steps: what the action is, then
-               what it sends. Every other kind is this first step alone. -->
+               what it sends. Every other kind is this first step alone. On one
+               step, a webhook with five headers measured 585px (EN) and 623px
+               (AR) at 1440, over the 420px cap, so the two steps stay. -->
           @if (step() === 1) {
+            <!-- ACC-120 slice 7 (Templates artboards 10-11): the kind is the first
+                 control and its own fields sit beneath it, so switching kind
+                 never moves it. The form's gap-4 is the only spacing on this
+                 step. The select always holds a kind, so it can never error and
+                 reserves no message slot (that slot was the gap under it). -->
             <am-field
               [label]="'workflow.actionType' | translate"
               [control]="form.controls.actionType"
-              [forceShowErrors]="showErrors()"
+              message="none"
             >
               <!-- No inner input for the wrapper to label: the select names itself. -->
               <app-overlay-select
@@ -214,34 +217,21 @@ type HeaderRow = FormGroup<{
               />
             </am-field>
 
-            <!-- ACC-255 PR 4b — compacted (ACC-120): Order and Enabled share a row,
-                 and the actions are in the dialog's footer. -->
-            <div class="grid grid-cols-2 items-end gap-4">
-              <am-field
-                [label]="'workflow.order' | translate"
-                [control]="form.controls.order"
-                inputId="action-order"
-                [forceShowErrors]="showErrors()"
-              >
-                <p-inputNumber
-                  formControlName="order"
-                  [min]="0"
-                  inputId="action-order"
-                  styleClass="w-full min-w-0"
-                  inputStyleClass="w-full min-w-0"
-                />
-              </am-field>
-              @if (form.controls.actionType.value !== alwaysRuns) {
-                <div class="flex items-center gap-2 pb-2">
-                  <p-checkbox formControlName="isEnabled" [binary]="true" inputId="action-enabled" />
-                  <label for="action-enabled" class="text-sm cursor-pointer">
-                    {{ 'workflow.actionEnabled' | translate }}
-                  </label>
-                </div>
-              } @else {
-                <span class="text-sm pb-2" data-testid="action-form-always-runs">{{ 'workflow.actionsDialog.alwaysRuns' | translate }}</span>
-              }
-            </div>
+            @if (actionType() === alwaysRuns) {
+              <!-- No box to offer: the engine writes the audit row whatever
+                   isEnabled says. One read-only line in its place. -->
+              <p class="flex items-baseline gap-2 text-sm" data-testid="action-form-always-runs">
+                <i class="pi pi-info-circle text-[var(--am-ink-500)]" aria-hidden="true"></i>
+                <span>{{ 'workflow.actionsDialog.alwaysRunsLine' | translate }}</span>
+              </p>
+            } @else {
+              <div class="flex items-center gap-2" data-testid="action-form-enabled">
+                <p-checkbox formControlName="isEnabled" [binary]="true" inputId="action-enabled" />
+                <label for="action-enabled" class="text-sm cursor-pointer">
+                  {{ 'workflow.actionEnabled' | translate }}
+                </label>
+              </div>
+            }
 
             @if (isWebhook()) {
               <am-field
@@ -500,7 +490,6 @@ export class WorkflowActionConfiguratorComponent {
 
   readonly form = this.fb.nonNullable.group({
     actionType: ['LOG_AUDIT', [Validators.required]],
-    order: [10, [Validators.required, Validators.min(0)]],
     isEnabled: [true],
     webhookUrl: [''],
     headers: this.fb.array<HeaderRow>([]),
@@ -551,7 +540,7 @@ export class WorkflowActionConfiguratorComponent {
 
   openAdd(): void {
     this.editingAction.set(null);
-    this.resetForm({ actionType: 'LOG_AUDIT', order: 10, isEnabled: true, webhookUrl: '' }, []);
+    this.resetForm({ actionType: 'LOG_AUDIT', isEnabled: true, webhookUrl: '' }, []);
     this.showFormDialog.set(true);
   }
 
@@ -566,7 +555,7 @@ export class WorkflowActionConfiguratorComponent {
     // Names only: a read never carries a value (ACC-277), and none is refilled.
     const rows = Object.keys(config.headers ?? {}).map((name) => this.headerRow(name, true, valueSet[name] === true));
     this.resetForm(
-      { actionType: action.actionType, order: action.order, isEnabled: action.isEnabled, webhookUrl: config.webhookUrl ?? '' },
+      { actionType: action.actionType, isEnabled: action.isEnabled, webhookUrl: config.webhookUrl ?? '' },
       rows,
     );
     this.showFormDialog.set(true);
@@ -667,9 +656,11 @@ export class WorkflowActionConfiguratorComponent {
     this.saving.set(true);
     this.saveError.set(null);
 
+    // No order key, ever (ACC-120 slice 7): left out, the server puts a new
+    // action last and keeps an edited one's stored order. A null would pass its
+    // optional check, so it is not sent either.
     const dto: CreateWorkflowTransitionActionDto = {
       actionType: raw.actionType,
-      order: raw.order,
       isEnabled: raw.actionType === ALWAYS_RUNS ? true : raw.isEnabled,
       ...(configJson ? { configJson } : {}),
     };
@@ -737,7 +728,7 @@ export class WorkflowActionConfiguratorComponent {
     return same > 1 ? { duplicate: true } : null;
   }
 
-  private resetForm(values: { actionType: string; order: number; isEnabled: boolean; webhookUrl: string }, rows: HeaderRow[]): void {
+  private resetForm(values: { actionType: string; isEnabled: boolean; webhookUrl: string }, rows: HeaderRow[]): void {
     const headers = this.form.controls.headers;
     headers.clear({ emitEvent: false });
     rows.forEach((row) => headers.push(row, { emitEvent: false }));
