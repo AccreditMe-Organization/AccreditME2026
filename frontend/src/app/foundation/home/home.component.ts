@@ -166,7 +166,7 @@ type MaybeNamed = ITaskListItemDto & { record?: { nameEn: string | null; nameAr:
     `
       .am-ht__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--am-space-4) var(--am-space-12);margin-block-end:var(--am-space-12)}
       .am-ht__summary{font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);color:var(--am-ink-700)}
-      .am-ht__late{color:var(--am-danger-ink);font-weight:600}
+      .am-ht__late,.am-ht__due.am-ht__late{color:var(--am-danger-ink);font-weight:600}
       .am-ht__line{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:var(--am-space-4) var(--am-space-8);padding:var(--am-space-8) var(--am-space-12);margin-block-end:var(--am-space-8);border:1px solid;border-radius:var(--am-radius-control);text-decoration:none}
       .am-ht__line--decide{background:var(--am-warning-bg);border-color:var(--am-warning-border)}
       .am-ht__line--decide .am-ht__line-main{color:var(--am-warning-ink)}
