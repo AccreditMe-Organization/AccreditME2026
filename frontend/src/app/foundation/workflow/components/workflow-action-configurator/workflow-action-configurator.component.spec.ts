@@ -144,6 +144,135 @@ describe('WorkflowActionConfiguratorComponent (ACC-120 slice 7)', () => {
     expect(button('Save')).toBeDefined();
   });
 
+  /** Picks a kind in the Action Type select by its name, as a person would. */
+  const pickKind = async (name: string): Promise<void> => {
+    body().querySelector<HTMLElement>('.am-overlay-select-trigger')!.click();
+    await settle();
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((o) => text(o) === name);
+    expect(option).withContext(`a "${name}" option`).toBeDefined();
+    option!.click();
+    await settle();
+  };
+
+  // ACC-120 slice 7 — the Order field is gone. The server puts a new action
+  // last and keeps an edited one's order when the key is absent; a null would
+  // pass its optional check, so the key is never sent at all.
+  describe('no Order field', () => {
+    it('shows no Order field or column', async () => {
+      const { root, c } = render([action('n1', 'SEND_NOTIFICATION')]);
+      expect(Array.from(root.querySelectorAll('th')).map((th) => text(th))).toEqual(['Action Type', 'State', '']);
+      c.openAdd();
+      await settle();
+      expect(body().querySelector('p-inputnumber, #action-order')).toBeNull();
+      expect(text(body())).not.toContain('Order');
+      expect(Object.keys(c.form.controls)).not.toContain('order');
+    });
+
+    it('sends no order key on Add', async () => {
+      const { c } = render([]);
+      c.openAdd();
+      await settle();
+      await pickKind('Send notification');
+      await press('Add');
+      const req = http.expectOne(`${environment.apiUrl}/workflow-templates/transitions/tr-1/actions`);
+      expect(req.request.method).toBe('POST');
+      const sent = req.request.body as Record<string, unknown>;
+      // Guard: this is the request the dialog built, with the kind picked.
+      expect(sent['actionType']).toBe('SEND_NOTIFICATION');
+      expect('order' in sent).withContext(JSON.stringify(sent)).toBeFalse();
+      req.flush(action('new', 'SEND_NOTIFICATION'));
+    });
+
+    it('sends no order key on Edit, so the stored order is kept', async () => {
+      const { c } = render([action('n1', 'SEND_NOTIFICATION', null, false)]);
+      c.openEdit(action('n1', 'SEND_NOTIFICATION', null, false));
+      await settle();
+      body().querySelector<HTMLInputElement>('#action-enabled')!.click();
+      await settle();
+      await press('Save');
+      const sent = patched('n1');
+      // Guard: the edit itself went through.
+      expect(sent['isEnabled']).toBeTrue();
+      expect('order' in sent).withContext(JSON.stringify(sent)).toBeFalse();
+    });
+  });
+
+  describe('the first step, kind by kind', () => {
+    it('gives an ordinary kind an Enabled box with its label on one row, under the kind', async () => {
+      const { c } = render([]);
+      c.openAdd();
+      await settle();
+      await pickKind('Send notification');
+      const row = body().querySelector<HTMLElement>('[data-testid="action-form-enabled"]');
+      expect(row).withContext('the Enabled row').not.toBeNull();
+      const box = row!.querySelector<HTMLInputElement>('input[type="checkbox"]#action-enabled');
+      const label = row!.querySelector<HTMLLabelElement>('label[for="action-enabled"]');
+      expect(box).withContext('its box').not.toBeNull();
+      expect(text(label)).toBe('Enabled');
+      // A direct child of the form, after the kind: no grid, no shared row.
+      expect(row!.parentElement!.matches('form')).toBeTrue();
+      expect(row!.previousElementSibling!.tagName.toLowerCase()).toBe('am-field');
+      expect(body().querySelector('.grid')).toBeNull();
+      expect(body().querySelector('[data-testid="action-form-always-runs"]')).toBeNull();
+    });
+
+    it('gives the audit log no box, no orphan label, and one line saying it always runs', async () => {
+      const { c } = render([]);
+      c.openAdd();
+      await settle();
+      // Add opens on Log to the audit trail.
+      expect(c.form.controls.actionType.value).toBe('LOG_AUDIT');
+      expect(body().querySelector('input[type="checkbox"]')).toBeNull();
+      expect(body().querySelector('label[for="action-enabled"]')).toBeNull();
+      expect(body().querySelector('[data-testid="action-form-enabled"]')).toBeNull();
+      const line = body().querySelector<HTMLElement>('[data-testid="action-form-always-runs"]');
+      expect(text(line)).toBe('Always runs: the audit trail is written on every transition.');
+      expect(line!.querySelector('.pi-info-circle')!.getAttribute('aria-hidden')).toBe('true');
+      expect(line!.parentElement!.matches('form')).toBeTrue();
+      // No empty cell anywhere: every element child of the form has something in it.
+      for (const child of Array.from(body().querySelector('form')!.children)) {
+        expect(text(child).length).withContext(`<${child.tagName.toLowerCase()}> is empty`).toBeGreaterThan(0);
+      }
+    });
+
+    it('says the audit log always runs in Arabic', async () => {
+      const { c } = render([], { language: 'ar' });
+      c.openAdd();
+      await settle();
+      expect(text(body().querySelector('[data-testid="action-form-always-runs"]'))).toBe('يعمل دائمًا: يُسجَّل كل انتقال في سجل التدقيق.');
+    });
+
+    it('switches between the box and the line as the kind changes, and saves the audit log enabled', async () => {
+      const { c } = render([]);
+      c.openAdd();
+      await settle();
+      await pickKind('Webhook');
+      expect(body().querySelector('#action-enabled')).not.toBeNull();
+      expect(body().querySelector('#action-webhook-url')).not.toBeNull();
+      await pickKind('Log to the audit trail');
+      expect(body().querySelector('#action-enabled')).toBeNull();
+      expect(body().querySelector('#action-webhook-url')).toBeNull();
+      expect(body().querySelector('[data-testid="action-form-always-runs"]')).not.toBeNull();
+      await press('Add');
+      const req = http.expectOne(`${environment.apiUrl}/workflow-templates/transitions/tr-1/actions`);
+      expect(req.request.body).toEqual({ actionType: 'LOG_AUDIT', isEnabled: true });
+      req.flush(action('new', 'LOG_AUDIT'));
+    });
+
+    it('keeps the webhook to two steps, the headers on the second', async () => {
+      const { c } = render([webhook(['A-One', 'A-Two', 'A-Three', 'A-Four', 'A-Five'])]);
+      c.openEdit(webhook(['A-One', 'A-Two', 'A-Three', 'A-Four', 'A-Five']));
+      await settle();
+      expect(document.querySelector('.am-steps')).withContext('the step strip').not.toBeNull();
+      expect(headerRows().length).toBe(0);
+      expect(button('Save')).toBeUndefined();
+      await press('Next');
+      expect(headerRows().length).toBe(5);
+      expect(body().querySelector('#action-webhook-url')).toBeNull();
+      expect(button('Save')).toBeDefined();
+    });
+  });
+
   describe('unsaved work', () => {
     it('asks before discarding on Cancel', async () => {
       const { c } = render([webhook([])]);

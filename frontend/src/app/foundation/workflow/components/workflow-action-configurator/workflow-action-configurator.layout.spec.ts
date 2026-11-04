@@ -33,11 +33,20 @@ import { WorkflowTransitionActionDto } from '../../services/workflow-template.se
 // That is why rows sit 6px apart and each hint has no gap above it: with 8px
 // and a 4px gap, five headers measured 422px in Arabic.
 //
+// ACC-120 slice 7, the tidy (4 Nov) — Order is gone, and step 1 is the kind,
+// then that kind's own fields, one gap token apart. A webhook on ONE step with
+// five headers measured 585px (EN) and 623px (AR) in the app at 1440, over the
+// 420px cap, so it stays two steps; both are pinned below, five headers on
+// step 2. The rhythm test walks every kind: the gap between each control on
+// step 1 is the form's own row gap, and nothing sits under the kind select.
+//
 // NON-VACUITY FIRST: a body measuring 0 passes "<= 400".
 
 const CAP = 420;
 const ROOM = 20;
 const FLOOR = 120;
+/** Step 1 of a kind with no fields of its own is about 100px: its own floor. */
+const SMALL_FLOOR = 60;
 
 /** A stored webhook with this many set headers, as the masked read returns it (ACC-277). */
 function webhook(count: number): WorkflowTransitionActionDto {
@@ -87,7 +96,7 @@ describe('Action configurator dialog — at least 20px under the 420px cap (ACC-
     return fixture.componentInstance;
   }
 
-  async function measure(label: string, language: 'en' | 'ar'): Promise<number> {
+  async function measure(label: string, language: 'en' | 'ar', floor = FLOOR): Promise<number> {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -95,7 +104,7 @@ describe('Action configurator dialog — at least 20px under the 420px cap (ACC-
     expect(body).withContext('.am-dialog__body not found — did the shell change?').not.toBeNull();
     const height = body!.scrollHeight;
     measured.push(`${label} [${language}]: ${height}px`);
-    expect(height).withContext(`${label} [${language}] is not laid out`).toBeGreaterThan(FLOOR);
+    expect(height).withContext(`${label} [${language}] is not laid out`).toBeGreaterThan(floor);
     expect(height).withContext(`${label} [${language}] body ${height}px: at least ${ROOM}px under ${CAP}`).toBeLessThanOrEqual(CAP - ROOM);
     return height;
   }
@@ -116,6 +125,97 @@ describe('Action configurator dialog — at least 20px under the 420px cap (ACC-
       configurator.openEdit(webhook(3));
       await measure('Edit · webhook · step 1', language);
     });
+
+    it(`Edit action, a webhook with 5 headers stays two steps, each under the budget [${language}]`, async () => {
+      const configurator = open(language);
+      configurator.openEdit(webhook(5));
+      const step1 = await measure('Edit · webhook · 5 headers · step 1', language);
+      // Guard: step 1 holds no header row; the headers are step 2's.
+      expect(document.querySelectorAll('.am-dialog__body [data-testid="action-header-row"]').length).toBe(0);
+      configurator.next();
+      const step2 = await measure('Edit · webhook · 5 headers · step 2', language);
+      expect(document.querySelectorAll('.am-dialog__body [data-testid="action-header-row"]').length).toBe(5);
+      // Two steps because one would not fit: together they are over the cap.
+      expect(step1 + step2).withContext(`steps 1 + 2 = ${step1 + step2}px`).toBeGreaterThan(CAP);
+    });
+
+    // Every kind, as Add offers it and as an existing action of a kind no longer
+    // offered opens in Edit.
+    const kinds: { kind: string; via: 'add' | 'edit' }[] = [
+      { kind: 'SEND_NOTIFICATION', via: 'add' },
+      { kind: 'LOG_AUDIT', via: 'add' },
+      { kind: 'WEBHOOK', via: 'add' },
+      { kind: 'GENERATE_PDF', via: 'edit' },
+      { kind: 'LOCK_DOCUMENT', via: 'edit' },
+    ];
+    for (const { kind, via } of kinds) {
+      it(`step 1 of ${kind} (${via}): one even gap, every label with its control, all aligned [${language}]`, async () => {
+        const configurator = open(language);
+        if (via === 'add') {
+          configurator.openAdd();
+          configurator.form.controls.actionType.setValue(kind);
+        } else {
+          configurator.openEdit({ id: 'a-2', workflowTransitionId: 'tr-1', actionType: kind, order: 10, isEnabled: true, configJson: null });
+        }
+        await measure(`${via === 'add' ? 'Add' : 'Edit'} · ${kind} · step 1`, language, SMALL_FLOOR);
+        // The dialog opens with a scale animation; boxes read during it are
+        // scaled (16px read as 14.88). Wait for the dialog's own finite
+        // animations, then read; a cancelled one rejects `finished` and has
+        // ended all the same.
+        const form = document.querySelector<HTMLElement>('.am-dialog__body form')!;
+        const layer = form.closest('.p-dialog-mask') ?? form.closest('.p-dialog')!;
+        const motion = layer
+          .getAnimations({ subtree: true })
+          .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
+        await Promise.all(motion.map((a) => a.finished.catch(() => undefined)));
+        const children = Array.from(form.children) as HTMLElement[];
+        const gap = parseFloat(getComputedStyle(form).rowGap);
+        // NON-VACUITY: a real gap, and at least the kind and one more control.
+        expect(gap).withContext('the form has a row gap').toBeGreaterThan(0);
+        expect(children.length).withContext('the kind and its fields').toBeGreaterThanOrEqual(2);
+        for (const child of children) {
+          expect(child.getBoundingClientRect().height).withContext(`<${child.tagName.toLowerCase()}> is laid out`).toBeGreaterThan(0);
+        }
+
+        // Nothing under the kind select: its field ends where the select does.
+        const select = children[0]!.querySelector<HTMLElement>('app-overlay-select')!;
+        expect(Math.round(children[0]!.getBoundingClientRect().bottom - select.getBoundingClientRect().bottom))
+          .withContext('space under the kind select inside its field')
+          .toBe(0);
+        // One rhythm: every control is the form's gap below the one before
+        // (within a pixel: the boxes sit on fractional pixels).
+        for (let i = 1; i < children.length; i++) {
+          const between = children[i]!.getBoundingClientRect().top - children[i - 1]!.getBoundingClientRect().bottom;
+          expect(Math.abs(between - gap))
+            .withContext(`gap before child ${i} of ${kind}: ${between}px, the form's is ${gap}px`)
+            .toBeLessThan(1);
+        }
+
+        // Every label has its control, shown. The kind's label has no inner
+        // input to point at (the select names itself), so its select is it.
+        expect(select.getBoundingClientRect().height).withContext('the kind select is shown').toBeGreaterThan(0);
+        for (const label of Array.from(form.querySelectorAll<HTMLLabelElement>('label[for]:not([for=""])'))) {
+          const control = document.getElementById(label.htmlFor);
+          expect(control).withContext(`a control for "${label.textContent?.trim()}"`).not.toBeNull();
+          const shown = control!.closest('p-checkbox') ?? control!;
+          expect(shown.getBoundingClientRect().height).withContext(`"${label.textContent?.trim()}"'s control is shown`).toBeGreaterThan(0);
+        }
+
+        // The Enabled row starts where the select starts (either direction).
+        const enabled = form.querySelector<HTMLElement>('[data-testid="action-form-enabled"]');
+        const always = form.querySelector<HTMLElement>('[data-testid="action-form-always-runs"]');
+        expect(!!enabled !== !!always).withContext('exactly one of the Enabled row and the Always-runs line').toBeTrue();
+        const row = (enabled ?? always)!;
+        const start = (el: Element): number =>
+          language === 'ar' ? el.getBoundingClientRect().right : el.getBoundingClientRect().left;
+        expect(Math.round(start(row.firstElementChild!))).withContext('aligned with the select').toBe(Math.round(start(select)));
+        if (kind === 'LOG_AUDIT') {
+          expect(enabled).withContext('the audit log has no box').toBeNull();
+        } else {
+          expect(enabled!.querySelector('input[type="checkbox"]')).withContext('an Enabled box').not.toBeNull();
+        }
+      });
+    }
 
     for (const count of [3, 5, 7]) {
       it(`Edit action, a webhook, step 2 with ${count} set headers [${language}]`, async () => {
