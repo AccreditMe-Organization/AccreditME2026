@@ -122,7 +122,19 @@ export interface TaskOpenRequestDto {
   createdAt: string;
 }
 
-/** A row of "Waiting for your decision". */
+/**
+ * ACC-120 slice 3 — the record a task belongs to, as the server names it: the
+ * name only for a viewer who may see that record type, else nulls (the type
+ * and id alone).
+ */
+export interface TaskRecordRefDto {
+  type: string;
+  id: string;
+  nameEn: string | null;
+  nameAr: string | null;
+}
+
+/** A request to decide, as the decision dialog takes it. */
 export interface TaskRequestForDecisionDto extends TaskOpenRequestDto {
   task: {
     id: string;
@@ -133,6 +145,15 @@ export interface TaskRequestForDecisionDto extends TaskOpenRequestDto {
     priority: string;
     dueAt: string | null;
   };
+}
+
+/**
+ * ACC-120 slice 3 — a row of GET /tasks/requests/awaiting-decision: the request,
+ * and the task's record at the top level beside the unchanged nested task. Its
+ * own type so the dialog's input, which Home also builds, stays as it was.
+ */
+export interface ITaskRequestInboxDto extends TaskRequestForDecisionDto {
+  record: TaskRecordRefDto;
 }
 
 // The new due date, or the hold date, as an ISO instant (New task's
@@ -167,6 +188,11 @@ export interface TaskPoolDto {
 // instead. Its own type for the ACC-74 reason below — only my-tasks knows it.
 export interface IMyTaskListItemDto extends ITaskListItemDto {
   pickedByMe: boolean;
+}
+
+/** ACC-120 slice 3 — a row of GET /tasks/available: the task, and its record. */
+export interface IAvailableTaskListItemDto extends ITaskListItemDto {
+  record: TaskRecordRefDto;
 }
 
 // ACC-76 — returned by getForSource() ONLY. Deliberately a separate type
@@ -221,6 +247,8 @@ export interface ITaskRecordRowDto {
   cancelledAt: string | null;
   cancelledReason: string | null;
   rejectedReason: string | null;
+  /** ACC-120 slice 3 — who rejected a REJECTED task; null on every other row. */
+  rejectedBy: { id: string; name: string } | null;
   createdAt: string;
   updatedAt: string;
   requiresEvidence: boolean;
@@ -228,7 +256,7 @@ export interface ITaskRecordRowDto {
   sourceType: string;
   sourceId: string;
   /** On the organisation-wide list only. */
-  record: { type: string; id: string; nameEn: string | null; nameAr: string | null } | null;
+  record: TaskRecordRefDto | null;
   assignees: { id: string; name: string; positionNameEn: string | null; positionNameAr: string | null }[];
   pool: TaskPoolDto | null;
   waitingInPool: boolean;
@@ -276,6 +304,11 @@ export interface ITaskRecordListDto {
     recordTypes: string[];
     /** ACC-244 — the unit view only: the owning units present, for a Unit filter. */
     units: { id: string; nameEn: string; nameAr: string | null }[];
+    /**
+     * ACC-120 slice 3 — how many tasks of each status the view holds, over its
+     * whole scope (no toolbar filter, no search), every status zero-filled.
+     */
+    statusCounts?: Record<TaskRecordListStatus, number>;
   } | null;
   aroundIndex: number | null;
 }
@@ -392,8 +425,6 @@ export interface CreateTaskDto {
   description?: string;
   sourceType: string;
   sourceId: string;
-  sourceStageId?: string;
-  workflowInstanceId?: string;
   meetingId?: string;
   // Named people. The task form sends `assignTo` instead (ACC-167); sending
   // both is refused by the server.
@@ -642,9 +673,9 @@ export class TaskService {
   }
 
   // ACC-167 — waiting tasks in the pools the caller is in right now.
-  // Self-scoped, like my-tasks.
-  getAvailable(): Observable<ITaskListItemDto[]> {
-    return this.http.get<ITaskListItemDto[]>(`${this.base}/available`);
+  // Self-scoped, like my-tasks. ACC-120 slice 3: each row names its record.
+  getAvailable(): Observable<IAvailableTaskListItemDto[]> {
+    return this.http.get<IAvailableTaskListItemDto[]>(`${this.base}/available`);
   }
 
   // ACC-167 — a member of the pool takes the task. 409 when someone was first.
@@ -796,8 +827,8 @@ export class TaskService {
   }
 
   // "Waiting for your decision" — self-scoped.
-  getAwaitingDecision(): Observable<TaskRequestForDecisionDto[]> {
-    return this.http.get<TaskRequestForDecisionDto[]>(`${this.base}/requests/awaiting-decision`);
+  getAwaitingDecision(): Observable<ITaskRequestInboxDto[]> {
+    return this.http.get<ITaskRequestInboxDto[]>(`${this.base}/requests/awaiting-decision`);
   }
 
   // ACC-174 — the creator's own actions. The server decides who may (the
