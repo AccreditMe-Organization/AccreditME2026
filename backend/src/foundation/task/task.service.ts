@@ -24,7 +24,8 @@ import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { GetMyTasksQueryDto } from './dto/get-my-tasks-query.dto';
 import { ITask } from './interfaces/task.interface';
-import { IMyTaskListItem, ITaskListItem } from './interfaces/task-list-item.interface';
+import { IAvailableTaskListItem, IMyTaskListItem, ITaskListItem } from './interfaces/task-list-item.interface';
+import { recordNamesOf, recordOf } from './task-record-names';
 import { ReleaseTaskDto } from './dto/release-task.dto';
 import { ResolvedPlacement, TaskAssignmentService } from './task-assignment.service';
 import {
@@ -630,7 +631,7 @@ export class TaskService {
     userId: string,
     organizationId: string,
     viewerPermissions: readonly string[] = [],
-  ): Promise<ITaskListItem[]> {
+  ): Promise<IAvailableTaskListItem[]> {
     const pools = await poolsOfUser(this.prisma, userId, organizationId);
     if (pools.length === 0) return [];
 
@@ -640,9 +641,14 @@ export class TaskService {
       include: { _count: { select: { evidence: { where: { deletedAt: null } } } }, ...POOL_LABEL_INCLUDE, ...CREATOR_STATUS_INCLUDE },
     });
     const viewer = { id: userId, permissions: viewerPermissions };
-    const covered = await this.coveredCreators(viewer, organizationId);
+    // ACC-120 slice 3 — each row's record, named for a viewer who may see its
+    // type: one batched lookup for the list, beside the cover read.
+    const [covered, records] = await Promise.all([
+      this.coveredCreators(viewer, organizationId),
+      recordNamesOf(this.prisma, rows, organizationId, viewerPermissions),
+    ]);
     // A task waiting in its pool has nobody on it, so nobody can have asked.
-    const result: ITaskListItem[] = [];
+    const result: IAvailableTaskListItem[] = [];
     for (const { createdBy, ...row } of rows) {
       const { task, evidenceCount, pool } = splitListRow(row);
       result.push({
@@ -651,6 +657,7 @@ export class TaskService {
         pool,
         openRequest: null,
         canManage: await this.mayManage({ createdById: task.createdById, sourceType: task.sourceType, createdBy }, viewer, organizationId, { covered }),
+        record: recordOf(records, task),
       });
     }
     return result;

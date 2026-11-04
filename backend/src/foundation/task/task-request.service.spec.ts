@@ -80,6 +80,9 @@ const mockPrisma = {
   user: { findFirst: jest.fn() },
   // ACC-190 — approving may move a stage task's stage deadline.
   workflowInstanceStage: { findFirst: jest.fn(), update: jest.fn() },
+  // ACC-120 slice 3 — the inbox names each row's record (task-record-names.ts).
+  committee: { findMany: jest.fn() },
+  meeting: { findMany: jest.fn() },
   $queryRaw: jest.fn(),
   $transaction: jest.fn(),
 };
@@ -888,6 +891,56 @@ describe('TaskRequestService (ACC-173)', () => {
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
       );
       expect(mockAuthority.creatorsCoveredBy).toHaveBeenCalledWith(CREATOR, ORG_B);
+    });
+
+    // ACC-120 slice 3 — a top-level `record` beside the unchanged `task`.
+    describe('the record', () => {
+      const seer = { id: CREATOR, permissions: ['committees:view'] };
+      const onMeeting = { ...inboxRow, id: 'req-2', task: { ...inboxRow.task, id: 'task-2', sourceType: 'MEETING', sourceId: 'm1' } };
+      const twice = { ...inboxRow, id: 'req-3', task: { ...inboxRow.task, id: 'task-3' } };
+
+      it('names it in ONE batched lookup per type the viewer may see, and leaves every old field as it was', async () => {
+        mockAuthority.creatorsCoveredBy.mockResolvedValue([]);
+        mockPrisma.taskRequest.findMany.mockResolvedValue([inboxRow, twice, onMeeting]);
+        mockPrisma.committee.findMany.mockResolvedValue([{ id: 'c1', nameEn: 'Quality Committee', nameAr: 'لجنة الجودة' }]);
+
+        const rows = await service.awaitingDecision(seer, ORG_A);
+
+        expect(mockPrisma.committee.findMany).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.committee.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: { in: ['c1'] }, organizationId: ORG_A } }),
+        );
+        // Meetings are not a type this viewer may see: no lookup, no name.
+        expect(mockPrisma.meeting.findMany).not.toHaveBeenCalled();
+        expect(rows[0]!.record).toEqual({ type: 'COMMITTEE', id: 'c1', nameEn: 'Quality Committee', nameAr: 'لجنة الجودة' });
+        expect(rows[1]!.record).toEqual(rows[0]!.record);
+        expect(rows[2]!.record).toEqual({ type: 'MEETING', id: 'm1', nameEn: null, nameAr: null });
+        // Additive: the nested task is byte-for-byte what it was.
+        expect(rows[0]!.task).toEqual(inboxRow.task);
+        expect(Object.keys(rows[0]!).sort()).toEqual(
+          ['createdAt', 'holdUntil', 'id', 'reason', 'record', 'requestedById', 'requestedByName', 'requestedDueAt', 'task', 'type'].sort(),
+        );
+      });
+
+      it('without committees:view: the type and id alone, and nothing is looked up', async () => {
+        mockAuthority.creatorsCoveredBy.mockResolvedValue([]);
+        mockPrisma.taskRequest.findMany.mockResolvedValue([inboxRow]);
+        const rows = await service.awaitingDecision(creator, ORG_A);
+        expect(rows[0]!.record).toEqual({ type: 'COMMITTEE', id: 'c1', nameEn: null, nameAr: null });
+        expect(mockPrisma.committee.findMany).not.toHaveBeenCalled();
+      });
+
+      itEnforcesTenantIsolation('awaitingDecision record names', async () => {
+        mockAuthority.creatorsCoveredBy.mockResolvedValue([]);
+        mockPrisma.taskRequest.findMany.mockResolvedValue([inboxRow]);
+        mockPrisma.committee.findMany.mockResolvedValue([]);
+        const rows = await service.awaitingDecision(seer, ORG_B);
+        expect(mockPrisma.committee.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+        );
+        // Not found in ORG_B: no name, never another organisation's.
+        expect(rows[0]!.record).toEqual({ type: 'COMMITTEE', id: 'c1', nameEn: null, nameAr: null });
+      });
     });
   });
 });

@@ -32,6 +32,7 @@ import { TaskService, TaskViewer } from './task.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskVisibilityService } from './task-visibility.service';
 import { TaskRecordListService } from './task-record-list.service';
+import { recordNamesOf, recordOf } from './task-record-names';
 
 const url = process.env['DATABASE_URL'];
 if (!url) {
@@ -379,5 +380,38 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
     expect(await rule.isVisible(await rule.contextFor(as('creator', []), A), corruptTask)).toBe(true);
     // …and in B, its own viewer with View all does see it.
     expect(await rule.isVisible(await rule.contextFor({ id: user['outsider']!, permissions: [SEE, VIEW_ALL] }, B), taskB)).toBe(true);
+
+    // ACC-120 slice 3 — the record name never comes from the other
+    // organisation: searching for B's committee name ("C X") from A does not
+    // return the corrupt-link task, and naming it gives no name.
+    const creator = as('creator', [SEE]);
+    const created = await list.list({ view: 'created', q: 'C X' }, A, creator);
+    expect(created.items.map((i) => i.id)).not.toContain(corruptTask);
+    // Non-vacuity: without the search it is on the list.
+    expect((await list.list({ view: 'created' }, A, creator)).items.map((i) => i.id)).toContain(corruptTask);
+    const own = await prisma.task.findFirst({ where: { id: corruptTask, organizationId: A }, select: { sourceType: true, sourceId: true } });
+    const names = await recordNamesOf(prisma, [own!], A, [SEE, VIEW_ALL]);
+    expect(recordOf(names, own!)).toEqual({ type: 'COMMITTEE', id: own!.sourceId, nameEn: null, nameAr: null });
+
+    // LIST ⊆ ADMIT holds with a search too: every task a view returns for a
+    // record name, for every viewer, is one the rule admits.
+    let hits = 0;
+    for (const [, viewer] of viewers) {
+      const v = viewer();
+      const ctx = await rule.contextFor(v, A);
+      for (const view of ['all', 'unit', 'unassigned', 'mine', 'created'] as const) {
+        let found: string[];
+        try {
+          found = (await list.list({ view, q: 'C DEPT', take: 50 }, A, v)).items.map((i) => i.id);
+        } catch (e) {
+          if (e instanceof ForbiddenException) continue;
+          throw e;
+        }
+        for (const id of found) expect([view, id, await rule.isVisible(ctx, id)]).toEqual([view, id, true]);
+        hits += found.length;
+      }
+    }
+    // Non-vacuity: the search did match tasks on the DEPT committee somewhere.
+    expect(hits).toBeGreaterThan(0);
   });
 });
