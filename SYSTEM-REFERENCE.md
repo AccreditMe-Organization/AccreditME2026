@@ -2119,6 +2119,18 @@ every update, are stored as sent. Per `actionType`:
     - **`isProtected`** makes the whole dialog read-only.
     - **Log to the audit trail** says "Always runs", with no Enabled box,
       because the engine ignores `isEnabled` for it.
+    - **No Order (ACC-120 slice 7, #256).** The form has no Order field and the
+      table no Order column; the rows stand in the server's order. Add and Edit
+      leave the `order` key out entirely (never `null`, which would pass the
+      DTO's optional check), so a new action goes last and an edit keeps its
+      stored order (the rule above).
+    - **Step 1 is the kind, then its own fields** (Templates artboards 10–11),
+      one `gap-4` apart. The kind select declares `message="none"`: it always
+      holds a kind, and its reserved slot was the gap under it. An ordinary kind
+      shows its Enabled box and label on one row; the audit log shows one
+      read-only line instead ("Always runs: the audit trail is written on every
+      transition."). A webhook stays two steps: on one, five headers measured
+      585px (EN) and 623px (AR) at 1440, over the 420px cap.
 - **`CREATE_TASK`** — resolves `toStage`'s assignees via
   `resolveAssignee()` (full array, not just the first — an explicitly
   fixed prior bug), maps `instance.objectType` → `TaskSourceType` via
