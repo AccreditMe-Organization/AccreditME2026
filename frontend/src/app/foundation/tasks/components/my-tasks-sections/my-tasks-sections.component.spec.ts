@@ -195,6 +195,8 @@ describe('MyTasksSectionsComponent (ACC-120 slice 3)', () => {
       expect(text(q('mts-decision')!.querySelector('h2'))).toBe('بانتظار قرارك');
       expect(text(q('mts-ask'))).toBe('إيقاف مؤقت حتى 20 أكتوبر 2026');
       expect(text(q('mts-why'))).toBe('«The lab export was delayed.»');
+      // The typed reason is isolated, so the Arabic quote marks keep their sides.
+      expect(text(q('mts-why')!.querySelector('bdi'))).toBe('The lab export was delayed.');
     });
 
     it('says a more-time request in Arabic, the arrow pointing the reading way', () => {
@@ -224,6 +226,8 @@ describe('MyTasksSectionsComponent (ACC-120 slice 3)', () => {
       answer({ rejected: [rejectedRow('x1')] });
       const row = q('mts-decision')!.querySelector('[data-task-row="x1"]')!;
       expect(text(row.querySelector('[data-testid="mts-ask"]'))).toBe('Rejected by Tariq Suleiman');
+      // Named once, in the ask: the record line carries the record alone.
+      expect(text(row).split('Tariq Suleiman').length - 1).toBe(1);
       expect(text(row.querySelector('[data-testid="mts-why"]'))).toBe('“I\'m not on this task force.”');
       const reassign = row.querySelector<HTMLButtonElement>('[data-testid="mts-reassign"]')!;
       expect(text(reassign)).toBe('Reassign…');
