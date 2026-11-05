@@ -6,6 +6,8 @@ import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { Observable, map, of } from 'rxjs';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
+import { FormatContext } from '../../../../core/formatting/format-context';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { BreadcrumbParentService } from '../../../../core/navigation/breadcrumb-parent.service';
@@ -21,7 +23,8 @@ import {
   TaskRequestType,
   TaskService,
 } from '../../services/task.service';
-import { isTaskOverdue, taskStatusLabelKey } from '../../task-status';
+import { displayStatus, isTaskOverdue, taskStatusLabelKey, taskStatusSeverity } from '../../task-status';
+import { taskPriorityGlyph, taskRecordHref } from '../../task-row-display';
 import { taskPoolLabel } from '../../task-pool-label';
 import { TaskEvidenceListComponent } from '../task-evidence-list/task-evidence-list.component';
 import { TaskAddEvidenceDialogComponent } from '../task-add-evidence-dialog/task-add-evidence-dialog.component';
@@ -33,7 +36,7 @@ import { TaskReassignDialogComponent } from '../task-reassign-dialog/task-reassi
 import { TaskEditDialogComponent } from '../task-edit-dialog/task-edit-dialog.component';
 import { TaskCancelDialogComponent } from '../task-cancel-dialog/task-cancel-dialog.component';
 import { TaskReopenDialogComponent } from '../task-reopen-dialog/task-reopen-dialog.component';
-import { PRIMARY_ACTION_ID, TASK_ACTION_LABELS, TaskActionId } from '../../task-row-actions';
+import { TASK_ACTION_LABELS, TaskActionId, taskPrimaryActionId } from '../../task-row-actions';
 
 // ACC-229 — the labels and the main-action mapping are shared with the record
 // Tasks panel and the All tasks list (task-row-actions.ts); where each action
@@ -48,7 +51,28 @@ interface PageAction {
 }
 
 const LABELS = TASK_ACTION_LABELS;
-const PRIMARY_ID = PRIMARY_ACTION_ID;
+
+/**
+ * ACC-120 slice 4 — the status as the design tones it (Task Screens' ST):
+ * from taskStatusSeverity, with the two cases the design draws apart. A
+ * waiting pool task reads in a paler blue; On hold and Cancelled are grey;
+ * Assigned and Completed have no dot, and Completed reads "Completed ✓".
+ * Tokens only; the classes are Tailwind utilities, so the styles keep to
+ * their budget.
+ */
+interface StatusTone {
+  dot: string | null;
+  ink: string;
+  done: boolean;
+}
+const INK_PLAIN = 'text-[var(--am-ink-700)]';
+const INK_GREY = 'text-[var(--am-ink-700)] font-medium';
+const INK_PRIMARY = 'text-[var(--am-primary-700)] font-medium';
+const INK_WARNING = 'text-[var(--am-warning-ink)] font-medium';
+const DOT_PRIMARY = 'bg-[var(--am-primary-600)]';
+const DOT_WAITING = 'bg-[color-mix(in_srgb,var(--am-primary-600)_60%,var(--am-surface-raised))]';
+const DOT_WARNING = 'bg-[var(--am-warning-ink)]';
+const DOT_GREY = 'bg-[var(--am-ink-300)]';
 
 // Shown as buttons beside the main one, at most two, in this order.
 const SECONDARY_ORDER: ActionId[] = ['addEvidence', 'edit', 'reassign'];
@@ -126,7 +150,11 @@ type PageState =
           <span class="sr-only" aria-live="polite">{{ 'taskPage.loading' | translate }}</span>
           <div class="h-[34px] w-3/5 rounded bg-[var(--am-surface)]"></div>
           <div class="h-5 w-2/5 rounded bg-[var(--am-surface)]"></div>
-          <div class="h-[62px] rounded bg-[var(--am-surface)]"></div>
+          <div class="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))]" data-testid="task-skeleton-strip">
+            @for (i of skeletonCells; track i) {
+              <div class="h-[62px] rounded bg-[var(--am-surface)]"></div>
+            }
+          </div>
           <div class="grid gap-3 items-start [grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))]">
             <div class="h-40 rounded bg-[var(--am-surface)]"></div>
             <div class="h-40 rounded bg-[var(--am-surface)]"></div>
@@ -159,18 +187,27 @@ type PageState =
               <div class="flex-[1_1_520px] min-w-0">
                 <div class="am-tp__kicker">{{ 'taskPage.kicker' | translate }}</div>
                 <h1 class="am-tp__title" tabindex="-1" #heading>{{ title() }}</h1>
-                <div class="flex flex-wrap items-center gap-x-3.5 gap-y-2 mt-1.5 text-[13px] text-[var(--am-ink-700)]">
-                  <span class="inline-flex items-center font-medium text-[var(--am-primary-700)]">
-                    <span class="w-1.5 h-1.5 rounded-full bg-[var(--am-primary-600)] me-1.5" aria-hidden="true"></span>{{ statusKey() | translate }}
+                <div class="am-tp__meta-row flex flex-wrap items-center gap-x-3.5 gap-y-2 mt-1.5 text-[13px] text-[var(--am-ink-700)]">
+                  <span class="inline-flex items-center" [class]="statusTone().ink" data-testid="task-status">
+                    @if (statusTone().dot; as dot) {
+                      <span class="w-1.5 h-1.5 rounded-full me-1.5 flex-none" [class]="dot" aria-hidden="true" data-testid="task-status-dot"></span>
+                    }
+                    {{ statusKey() | translate }}@if (statusTone().done) {<span aria-hidden="true">&nbsp;✓</span>}
                   </span>
                   @if (overdue()) {
                     <span class="am-tp__flag">{{ 'task.overdueBadge' | translate }}</span>
                   }
-                  <span>{{ 'taskPage.priority' | translate: { priority: (priorityKey() | translate) } }}</span>
-                  <span>
+                  <!-- Text, never colour: a glyph on High and Critical. -->
+                  <span data-testid="task-priority">
+                    @if (priorityGlyph(); as glyph) {<span aria-hidden="true">{{ glyph }}&nbsp;</span>}{{ 'taskPage.priority' | translate: { priority: (priorityKey() | translate) } }}
+                  </span>
+                  <span data-testid="task-due">
                     @if (v.task.dueAt) {
+                      <!-- The date reads in the page's direction (an Arabic month
+                           must not be turned around); only the time and its
+                           offset are one left-to-right run, so "+03" stays beside it. -->
                       {{ 'taskPage.due' | translate }}
-                      <strong dir="ltr" class="font-semibold [unicode-bidi:isolate]">{{ v.task.dueAt | amDateTime }}</strong>
+                      <bdi class="font-semibold" data-testid="task-due-date">{{ dueDate() }}</bdi>{{ dueSeparator() }}<span dir="ltr" class="[unicode-bidi:isolate]" data-testid="task-due-time"><span class="font-semibold">{{ dueTime() }}</span><span class="text-[var(--am-ink-500)]">&nbsp;{{ zoneOffset() }}</span></span>
                     } @else {
                       {{ 'taskPage.noDue' | translate }}
                     }
@@ -233,9 +270,10 @@ type PageState =
             <dl class="am-tp__strip">
               <div class="am-tp__cell">
                 <dt class="am-tp__label">{{ 'taskPage.about' | translate }}</dt>
-                <dd class="am-tp__value">
+                <dd class="am-tp__value" data-testid="task-about">
+                  <span class="text-[var(--am-ink-500)]" aria-hidden="true">◇&nbsp;</span>
                   @if (recordLink(); as link) {
-                    <a class="am-tp__link" [routerLink]="link">{{ recordName() }}</a>
+                    <a class="am-tp__link" [routerLink]="link" data-testid="task-about-link">{{ recordName() }}</a>
                   } @else {
                     {{ recordName() }}
                   }
@@ -285,19 +323,25 @@ type PageState =
               <div class="flex flex-col gap-3 min-w-0">
                 @if (v.task.openRequest; as r) {
                   <section class="am-tp__panel am-tp__panel--request" aria-labelledby="am-tp-request" data-testid="task-open-request">
-                    <h2 class="am-tp__panel-title am-tp__panel-title--warn" id="am-tp-request">{{ 'taskPage.openRequest' | translate }}</h2>
+                    <h2 class="am-tp__panel-title am-tp__panel-title--warn flex flex-wrap items-baseline justify-between gap-2" id="am-tp-request">
+                      <span>{{ 'taskPage.openRequest' | translate }}</span>
+                      <span class="normal-case tracking-normal font-normal" data-testid="task-request-note">{{ 'taskPage.request.oneAtATime' | translate }}</span>
+                    </h2>
                     <div class="am-tp__panel-body">
                       <p class="font-semibold">{{ requestHeadline() }}</p>
                       <p class="text-[12.5px] text-[var(--am-info-ink)]">{{ requestEffect() }}</p>
                       <p class="am-tp__meta">
                         {{ 'taskPage.request.askedBy' | translate: { name: r.requestedByName, when: (r.createdAt | amDateTime) } }}
                       </p>
-                      <p class="am-tp__quote">{{ 'task.request.reasonQuoted' | translate: { reason: r.reason } }}</p>
+                      <!-- The reason as typed, isolated between the reading
+                           language's quote marks. -->
+                      <p class="am-tp__quote" data-testid="task-request-reason">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ r.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</p>
                       @if (v.actions.reviewRequest || v.actions.withdrawRequest) {
                         <div class="flex flex-wrap items-center gap-2">
                           @if (v.actions.reviewRequest) {
-                            <button type="button" class="am-tp-btn am-tp-btn--primary" (click)="run('reviewRequest')">
-                              {{ 'taskPage.action.reviewRequest' | translate }}
+                            <!-- One button, the existing decision dialog: no one-click Approve. -->
+                            <button type="button" class="am-tp-btn am-tp-btn--primary" (click)="run('reviewRequest')" data-testid="task-decide">
+                              {{ decideKey() | translate }}
                             </button>
                           }
                           @if (v.actions.withdrawRequest) {
@@ -317,7 +361,7 @@ type PageState =
                     <div class="am-tp__panel-body">
                       <p class="am-tp__meta">{{ note.line }}</p>
                       @if (note.reason) {
-                        <p class="am-tp__quote">{{ 'task.request.reasonQuoted' | translate: { reason: note.reason } }}</p>
+                        <p class="am-tp__quote">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ note.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</p>
                       }
                     </div>
                   </section>
@@ -332,12 +376,12 @@ type PageState =
                 >
                   <ol class="list-none m-0 p-0">
                     @for (event of historyRows(); track $index) {
-                      <li class="am-tp__event">
-                        <time class="am-tp__when" [attr.datetime]="event.at">{{ event.at | amDateTime }}</time>
+                      <li class="am-tp__event" data-testid="task-event">
+                        <time class="am-tp__when" [attr.datetime]="event.at" data-testid="task-event-when">{{ eventWhen(event) }}</time>
                         <span class="flex flex-col min-w-0 [overflow-wrap:anywhere]">
-                          <span class="font-semibold">{{ historyLine(event) }}</span>
+                          <span class="font-medium" data-testid="task-event-what">{{ historyLine(event) }}</span>
                           @if (event.reason) {
-                            <span class="am-tp__meta">{{ 'task.request.reasonQuoted' | translate: { reason: event.reason } }}</span>
+                            <span class="am-tp__meta">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ event.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</span>
                           }
                         </span>
                       </li>
@@ -361,6 +405,9 @@ type PageState =
                   (cdkMenuItemTriggered)="run(a.id)"
                 >
                   {{ a.labelKey | translate }}
+                  @if (a.disabled && a.id === 'complete') {
+                    <span class="block text-xs text-[var(--am-ink-500)]">{{ 'task.completeNeedsEvidence' | translate }}</span>
+                  }
                 </button>
               }
             </div>
@@ -402,6 +449,7 @@ type PageState =
             (visibleChange)="onDialogVisible($event)"
             [task]="v.task"
             [rejection]="rejection()"
+            [recordName]="recordName()"
             [committeeName]="v.record.type === 'COMMITTEE' && v.record.nameEn ? recordName() : null"
             (reassigned)="reload()"
           />
@@ -455,7 +503,8 @@ type PageState =
       .am-tp__panel-body{margin:0;padding:10px 12px;display:flex;flex-direction:column;gap:4px;font-size:13.5px;color:var(--am-ink-900)}
       .am-tp__panel-body p{margin:0}
       .am-tp__quote{font-size:13px;color:var(--am-ink-700);background:var(--am-surface);border-radius:var(--am-radius-control);padding:8px 10px;overflow-wrap:anywhere}
-      .am-tp__event{display:grid;grid-template-columns:112px 1fr;gap:10px;padding:6px 12px;border-block-end:1px solid var(--am-border);font-size:12.5px}
+      .am-tp__event{display:grid;grid-template-columns:92px 1fr;gap:10px;padding:6px 12px;border-block-end:1px solid var(--am-border);font-size:12.5px}
+      :host-context([dir=rtl]) .am-tp__meta-row{font-size:14px}:host-context([dir=rtl]) .am-tp__sub{font-size:12.5px}
       .am-tp__when{font-size:11.5px;font-variant-numeric:tabular-nums}
       .am-tp-menu{min-width:220px;padding:4px 0;display:flex;flex-direction:column;background:var(--am-surface-raised);border:1px solid var(--am-border-strong);border-radius:var(--am-radius-card);box-shadow:var(--am-shadow-overlay)}
       .am-tp-menu__item{font:inherit;font-size:13px;text-align:start;color:var(--am-ink-900);background:none;border:0;padding:7px 14px;cursor:pointer}
@@ -472,6 +521,8 @@ export class TaskPageComponent implements OnDestroy {
   private readonly format = inject(FormatService);
   private readonly language = inject(LanguageService);
   private readonly breadcrumb = inject(BreadcrumbParentService);
+  private readonly formatContext = inject(FormatContext);
+  private readonly access = inject(NavigationAccessService);
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly evidenceList = viewChild(TaskEvidenceListComponent);
@@ -529,6 +580,36 @@ export class TaskPageComponent implements OnDestroy {
     return !!v && isTaskOverdue(v.task);
   });
   readonly priorityKey = computed(() => `task.priority.${(this.view()?.task.priority ?? 'MEDIUM').toLowerCase()}`);
+  readonly priorityGlyph = computed(() => taskPriorityGlyph(this.view()?.task.priority ?? ''));
+  protected readonly skeletonCells = [0, 1, 2, 3];
+
+  readonly statusTone = computed<StatusTone>(() => {
+    const v = this.view();
+    if (!v) return { dot: null, ink: INK_PLAIN, done: false };
+    if (this.statusKey() === 'taskPage.status.waiting') return { dot: DOT_WAITING, ink: INK_PRIMARY, done: false };
+    const status = displayStatus(v.task.status);
+    switch (taskStatusSeverity(v.task)) {
+      case 'success':
+        return { dot: null, ink: INK_PLAIN, done: true };
+      case 'warn':
+        return { dot: DOT_WARNING, ink: INK_WARNING, done: false };
+      case 'info':
+        return status === 'ON_HOLD' ? { dot: DOT_GREY, ink: INK_GREY, done: false } : { dot: DOT_PRIMARY, ink: INK_PRIMARY, done: false };
+      default:
+        return status === 'CANCELLED' ? { dot: DOT_GREY, ink: INK_GREY, done: false } : { dot: null, ink: INK_PLAIN, done: false };
+    }
+  });
+
+  // "Due 15 Oct 2026, 17:00 +03": the date, then the time and the tenant's offset.
+  readonly dueDate = computed(() => this.format.date(this.view()?.task.dueAt ?? null));
+  readonly dueTime = computed(() => this.format.timeOfDay(this.view()?.task.dueAt ?? null));
+  readonly dueSeparator = computed(() => (this.language.isArabic() ? '، ' : ', '));
+  readonly zoneOffset = computed(() => this.format.zoneOffset(this.formatContext.timeZone()));
+
+  /** The creator's button on the open request, by what was asked. */
+  readonly decideKey = computed(() =>
+    this.view()?.task.openRequest?.type === 'ON_HOLD' ? 'taskPage.request.decideHold' : 'taskPage.request.decideExtension',
+  );
 
   // ── The action group ──────────────────────────────────────────────────
 
@@ -537,15 +618,16 @@ export class TaskPageComponent implements OnDestroy {
     if (!a) return [];
     return MENU_ORDER.filter((id) => a[id]).map((id) => ({
       id,
-      labelKey: LABELS[id],
+      labelKey: id === 'reviewRequest' ? this.decideKey() : LABELS[id],
       danger: id === 'cancel',
       disabled: id === 'complete' && a.completeNeedsEvidence,
     }));
   });
+  /** The one next step, by the rule the record panel and the lists use (task-row-actions.ts). */
   readonly primary = computed<PageAction | null>(() => {
-    const p = this.view()?.actions.primary;
-    if (!p) return null;
-    return this.enabled().find((a) => a.id === PRIMARY_ID[p]) ?? null;
+    const v = this.view();
+    const id = v ? taskPrimaryActionId(v.actions, v.task.status) : null;
+    return id ? (this.enabled().find((a) => a.id === id) ?? null) : null;
   });
   readonly secondaries = computed<PageAction[]>(() => {
     const primaryId = this.primary()?.id;
@@ -579,9 +661,10 @@ export class TaskPageComponent implements OnDestroy {
     if (v.stage) parts.push(this.language.bilingual(v.stage.nameEn, v.stage.nameAr));
     return parts.join(' · ');
   });
+  /** By the one rule (task-row-display.ts): the record's page, for a viewer it admits. */
   readonly recordLink = computed<string[] | null>(() => {
     const r = this.view()?.record;
-    return r?.canOpen && r.type === 'COMMITTEE' ? ['/committees', r.id] : null;
+    return r?.canOpen ? taskRecordHref(r, (p) => this.access.hasPermission(p)) : null;
   });
 
   readonly withLine = computed(() => {
@@ -664,7 +747,7 @@ export class TaskPageComponent implements OnDestroy {
   readonly rejection = computed(() => {
     const v = this.view();
     if (!v || v.task.status !== 'REJECTED' || !v.task.rejectedReason) return null;
-    return { byName: v.rejectedBy?.name ?? null, reason: v.task.rejectedReason };
+    return { byName: v.rejectedBy?.name ?? null, reason: v.task.rejectedReason, at: v.task.rejectedAt ?? null };
   });
   /** Rejected, Cancelled or Reopened — whichever explains the task's state now. */
   readonly closingNote = computed<{ titleKey: string; line: string; reason: string | null } | null>(() => {
@@ -821,15 +904,32 @@ export class TaskPageComponent implements OnDestroy {
 
   // ── Wording ───────────────────────────────────────────────────────────
 
+  /** "1 Oct 09:12": the year only when it isn't this year, in the tenant's zone. */
+  eventWhen(event: ITaskHistoryEventDto): string {
+    return this.format.eventTime(event.at);
+  }
+
+  /**
+   * ACC-120 slice 4 — a sentence with its actor inside ("Picked up by Dr. Huda
+   * Zahrani"), from what the event carries: its kind, its actor, and for
+   * evidence its type ("Evidence added: a link"). A kind with no sentence of
+   * its own keeps its words, then the actor.
+   */
   historyLine(event: ITaskHistoryEventDto): string {
-    const key =
-      event.kind === 'request_made'
-        ? event.requestType === 'ON_HOLD'
-          ? 'taskPage.event.request_made_hold'
-          : 'taskPage.event.request_made_extension'
-        : `taskPage.event.${event.kind}`;
-    const what = this.translate.instant(key);
-    return event.actorName ? `${what} · ${event.actorName}` : what;
+    const kind =
+      event.kind === 'request_made' ? (event.requestType === 'ON_HOLD' ? 'request_made_hold' : 'request_made_extension') : event.kind;
+    const name = event.actorName;
+    if ((kind === 'evidence_added' || kind === 'evidence_removed') && event.evidenceType) {
+      const what = this.translate.instant(`taskPage.evidenceKind.${event.evidenceType}`);
+      return this.translate.instant(`taskPage.eventEvidence.${kind}${name ? 'By' : ''}`, { what, name });
+    }
+    if (name) {
+      const key = `taskPage.eventBy.${kind}`;
+      const sentence = this.translate.instant(key, { name });
+      if (sentence !== key) return sentence;
+    }
+    const what = this.translate.instant(`taskPage.event.${kind}`);
+    return name ? `${what} · ${name}` : what;
   }
 
   private placement(person: ITaskPagePersonDto): string {
