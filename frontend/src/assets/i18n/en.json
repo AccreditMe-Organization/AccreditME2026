@@ -2294,9 +2294,13 @@
     "awaiting": "Awaiting my action",
     "awaitingChange": "Change request {{n}} · {{committee}}",
     "awaitingChangeMeta": "{{name}} · submitted {{date}}",
-    "awaitingSeeAll": "See all in My Tasks",
+    "allMyTasks": "All my tasks",
+    "awaitingStageMeta": "{{type}} · {{stage}} {{position}}/{{count}} · since {{date}}",
+    "decisionFailed": "— waiting for your decision",
+    "dueOn": "Due {{date}}",
+    "onHoldUntil": "On hold until {{date}}",
     "greeting": "Welcome back, {{name}}",
-    "myTasks": "My Open Tasks",
+    "myTasks": "My tasks",
     "viewAll": "View all",
     "noOpenTasks": "You have no open tasks.",
     "notifications": "Recent Notifications",
@@ -3000,6 +3004,34 @@
       }
     },
     "home": {
+      "awaitingRecords": {
+        "one": "{{count}} record to approve or return",
+        "other": "{{count}} records to approve or return"
+      },
+      "openTasks": {
+        "one": "{{count}} open",
+        "other": "{{count}} open"
+      },
+      "overdueTasks": {
+        "one": "{{count}} overdue",
+        "other": "{{count}} overdue"
+      },
+      "waitingDecision": {
+        "one": "{{count}} waiting for your decision",
+        "other": "{{count}} waiting for your decision"
+      },
+      "requests": {
+        "one": "{{count}} request",
+        "other": "{{count}} requests"
+      },
+      "rejected": {
+        "one": "{{count}} rejected",
+        "other": "{{count}} rejected"
+      },
+      "availableToPick": {
+        "one": "{{count}} available to pick up",
+        "other": "{{count}} available to pick up"
+      },
       "briefingCredits": {
         "one": "· {{count}} credit",
         "other": "· {{count}} credits"

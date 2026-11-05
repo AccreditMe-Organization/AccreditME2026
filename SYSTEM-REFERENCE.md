@@ -3422,6 +3422,46 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
     the panel has just added keeps its line when the panel reopens on it.
   - **Nothing on the per-request path; no polling;** the panel reads nothing
     of its own (it is given the template the page loaded).
+- **Home's "Awaiting my action": `GET /workflows/awaiting-me`**
+  (`WorkflowAwaitingService`). Returns `{ total, rows }`: `rows` holds at most
+  five, oldest first by when the record entered its stage, each
+  `{ instanceStageId, record: { type, id, nameEn, nameAr }, stage: { id,
+  nameEn, nameAr, position, stageCount }, since }`. `position` is the stage's
+  1-based place by `order` among its template's `stageCount` stages, the
+  Stages page's numbering. A record waits on the viewer when ALL hold:
+  1. its stage entry is open, in the viewer's organisation, on an
+     IN_PROGRESS instance, at the instance's current stage; the stage is
+     converted and not final;
+  2. the stage is a **decision point**: among its moves made by a PERSON
+     (`transitionMover`, so APP moves never count) there is an ADVANCE and a
+     RETURN whose target is a DIFFERENT stage (Ahmad, 4 Nov). An EXIT does
+     not count, because cancelling is not an approval, and a return that
+     loops to the same stage does not either. On the seeded templates:
+     committee Terms Review counts (Active does not); meeting Minutes review
+     counts, while Planned and Agenda ready (an ADVANCE and a Cancel) and
+     Minutes draft (its return loops to itself) do not; Document Request has
+     none (its reviews reject with an EXIT); the change-request templates are
+     all APP. The unbuilt Document, Audit and Corrective Action templates have
+     review stages that would count once those modules exist;
+  3. the viewer may make those moves: **`mayActInStagePool()`**
+     (`stage-pool.service.ts`), now the ONE copy of the engine's rule, which
+     `assertInStagePool()` (triggerTransition, submitApproval) and the record
+     page's moves also call;
+  4. the viewer is in the pool NOW (`members`: an acting user standing in
+     for someone away is; the absent person, still in `direct`, is not);
+  5. on an "All of them" or Committee vote stage, the viewer has no decision
+     recorded on that entry (an approval row whose decision is not PENDING);
+  6. the viewer may see the record type (`recordTypesVisibleTo`, the same
+     registry as `seesRecordType`), and `recordNamesOf()` names it; a record
+     it cannot name is left out (fail closed). Today: committees and meetings.
+
+  **No `@Permissions`**: it answers only for the caller, through the gates
+  above, so holding nothing means an empty answer. **Batched**: one candidates
+  query, one `resolveMany()`, one approvals query and one names call, however
+  many rows; nothing on the per-request path. Specs:
+  `workflow-awaiting.service.spec.ts` (each gate, mutation-checked),
+  `workflow-awaiting.db-spec.ts` (real Postgres) and the route's case in
+  `workflow-parent-visibility.spec.ts` (through the real `PermissionGuard`).
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
@@ -4830,6 +4870,19 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
   - **Body:** a header and the body template, rebuilt on every open.
   - **Escape:** it is a layer in `LayerStackService`, listening for Escape in
     the CAPTURE phase, so an open row menu inside it takes the first Escape.
+    It listens on the **window**, `{ capture: true, passive: false }`, never
+    the document (ACC-271): zone.js keeps one native listener per event and
+    phase on a target, created with the first registration's options, and
+    Angular CDK's input-modality detector registers document keydown as
+    passive in the capture phase. On the document this handler ran passive,
+    so its `preventDefault()` was ignored ("Unable to preventDefault inside
+    passive event listener"). The window's capture phase runs before the
+    document's, so the menu order is unchanged. For the same reason the idle
+    service (`core/services/idle.service.ts`) is passive for `touchstart`
+    only: a passive document `keydown` there made every later bubble-phase
+    document keydown handler passive (the dialogs' date-picker Escapes).
+    **A new document-level keydown handler that calls `preventDefault()`
+    must not rely on being first; on the capture phase, use the window.**
   - **Focus on open** (fixed in ACC-230, tagged ACC-229): `focusOnShow` is
     off, because PrimeNG's own focus runs while the dialog is still animating
     in and landed on the frame. `onShow` (after the animation) focuses the
@@ -10431,6 +10484,50 @@ the org unit record's Parent unit · Head · Acting head (§7.10).
   (`overflow-wrap: anywhere`), never cut.
 - **Not yet adopted** by the tree or the committee record, whose fact strip
   predates it. The table-cell and inline contexts (B, A) are unbuilt.
+
+### 10.24 Home — "Awaiting my action" and the My tasks panel (ACC-271)
+
+Built from the approved drawing (Task Screens §10 "Home"). Decisions on TASKS
+are task work and sit in the My tasks panel; approvals of RECORDS keep their
+own card, whose subtitle says so, so the two cannot be read as one.
+
+- **"Awaiting my action"** (`home-awaiting.component.ts`): stage approvals
+  from `GET /workflows/awaiting-me` (§2.19) and change requests under review
+  (`awaitingDecision()`, read only for holders of `committees:approve`),
+  merged oldest first, five rows.
+  - **Header:** the title, a count badge (the server's stage `total`, which
+    counts past five, plus the change requests) and "{n} records to approve
+    or return" («… للاعتماد أو الإعادة», all six Arabic forms).
+  - **A stage row:** the record's name in the reader's language (English
+    fallback), linked through `recordPageLink()`
+    (`shared/utils/record-link.util.ts`, the one type-to-page map; a type
+    with no page, a meeting today, is named without a link), and "{type} ·
+    {stage} {position}/{count} · since {date}". Change-request rows are
+    unchanged.
+  - **Task requests left the card**, and with them its "See all" link to
+    `/tasks`. The card renders only with a row and fails quietly.
+- **My tasks** (`home.component.ts`):
+  - **Header:** "My tasks", then "{n} open · {m} overdue", the overdue count
+    in danger ink when above zero.
+  - **The decision line**, shown only above zero: "{n} waiting for your
+    decision · {r} requests · {j} rejected ›", linking to `/tasks`. `r` is the
+    row count of `GET /tasks/requests/awaiting-decision`; `j` is the
+    **`matching`** count of `GET /tasks/record-list?view=created&status=REJECTED&take=1`
+    (`total` is every task in the view before the filter, so it would count
+    them all). If either read fails the line says "— waiting for your decision
+    · Retry", never 0; Retry reads both again.
+  - **The pool line**, shown only with at least one: "{n} available to pick
+    up · {pools} ›", from `GET /tasks/available`, each pool named once.
+  - **Rows:** at most five open tasks, overdue first, then soonest due,
+    undated after, on hold last. A row is its title (`am-task-link`), a line
+    with the record's type (and its name when the row carries one) and the
+    status ("On hold until {date}" for a held task), and its due date on the
+    right, in danger ink when overdue. Then "All my tasks".
+  - **Every read is fired together** when Home opens, and each fails quietly
+    on its own.
+- **Specs:** `home-awaiting.component.spec.ts`, `home.component.spec.ts` and
+  `home.tasks-panel.spec.ts` (real translation files; `matching` versus
+  `total` and the failed line are mutation-checked).
 
 ## 11. Known Cross-Cutting Gaps
 

@@ -14,6 +14,7 @@ import { WorkflowTemplateService } from './workflow-template.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StageRulesService } from './stage-rules.service';
 import { StageWhoOptionsService } from './stage-who-options.service';
+import { WorkflowAwaitingService } from './workflow-awaiting.service';
 import { WorkflowService } from './workflow.service';
 import { WorkflowActionProcessor } from './workflow-action.processor';
 import { SlaMonitorProcessor } from './sla-monitor.processor';
@@ -82,6 +83,8 @@ import { StagePoolModule } from './stage-pool.module';
     StageRulesService,
     // ACC-271 PR 5a — the stage editor's person and committee pickers.
     StageWhoOptionsService,
+    // ACC-271 — Home's "Awaiting my action": the records waiting on the viewer.
+    WorkflowAwaitingService,
     ...(workersEnabled() ? [WorkflowActionProcessor, SlaMonitorProcessor] : []),
   ],
   exports: [WorkflowTemplateService, WorkflowService, StageRulesService],

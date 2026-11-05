@@ -52,6 +52,18 @@ export interface StagePool {
   voteCommitteeId: string | null;
 }
 
+/**
+ * ACC-271 — whether this person may act on a converted stage: the pool has
+ * someone in it, and they are a member (directly, or standing in for someone
+ * away) or someone the entries name directly who is away (they may still act
+ * themselves). The ONE copy of the rule: triggerTransition() and
+ * submitApproval() refuse on it (WorkflowService.assertInStagePool), and the
+ * record page's moves and Home's "Awaiting my action" ask it.
+ */
+export function mayActInStagePool(pool: StagePool, userId: string): boolean {
+  return pool.members.length > 0 && (pool.members.includes(userId) || pool.direct.includes(userId));
+}
+
 type PoolClient = Pick<
   PrismaService,
   'workflowStageAssignee' | 'workflowInstanceStage' | 'user' | 'orgUnitHeadAssignment' | 'committeeMember' | 'committee' | 'meeting'

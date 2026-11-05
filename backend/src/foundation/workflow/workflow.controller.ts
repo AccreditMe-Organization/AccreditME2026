@@ -12,11 +12,32 @@ import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { CancelWorkflowInstanceDto } from './dto/cancel-workflow-instance.dto';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
 import { IWorkflowStageHistory } from './interfaces/workflow-stage-history.interface';
+import { IWorkflowAwaitingMe } from './interfaces/workflow-awaiting.interface';
+import { WorkflowAwaitingService } from './workflow-awaiting.service';
 
 @Controller('workflows')
 @UseGuards(TenantGuard, PermissionGuard)
 export class WorkflowController {
-  constructor(private readonly workflowService: WorkflowService) {}
+  constructor(
+    private readonly workflowService: WorkflowService,
+    private readonly awaiting: WorkflowAwaitingService,
+  ) {}
+
+  // ACC-271 — Home's "Awaiting my action": the records waiting on THIS viewer's
+  // decision. No @Permissions, deliberately, like the self-scoped reads
+  // (my-tasks, the notification inbox): it answers only for the caller, row by
+  // row through the service's gates — the viewer works the stage now, may make
+  // its person moves, and may see the record's type. Holding no permission
+  // means an empty answer, never another person's work. One segment, so it
+  // cannot clash with 'instances/:id'.
+  @Get('awaiting-me')
+  getAwaitingMe(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<IWorkflowAwaitingMe> {
+    return this.awaiting.awaitingMe(tenantId, actorId, actorPermissions);
+  }
 
   @Get('instances/:id')
   @Permissions(WORKFLOWS_PERMISSIONS.VIEW)

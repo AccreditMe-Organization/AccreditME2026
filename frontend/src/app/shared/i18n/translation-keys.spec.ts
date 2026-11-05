@@ -215,6 +215,8 @@ describe('translation keys (ACC-78)', () => {
       'roles.matrix.ofCount': '"5 of 12" beside a module or group name — no noun after the total',
       'roles.matrix.matchCount': '"2 of 12 match" — a position, no noun after the total',
       'roles.matrix.moduleBox': '"All Committees permissions, 5 of 12 granted" — the noun comes before the counts, which take none',
+      // ACC-271 — Home's "Awaiting my action": "Terms Review 2/6", the stage's place.
+      'home.awaitingStageMeta': '"Terms Review 2/6" — a position after the stage name, no noun after the total',
     };
 
     // Time quantities never become plural objects: they go through the layer's

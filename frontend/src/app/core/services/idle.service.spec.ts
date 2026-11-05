@@ -184,6 +184,26 @@ describe('IdleService (ACC-122)', () => {
     discardPeriodicTasks();
   }));
 
+  // ACC-271 — a passive keydown listener here made every later document keydown
+  // handler passive (zone.js shares one native listener per event and phase), so
+  // a dialog's Escape preventDefault() was ignored. With the idle listeners on,
+  // a document keydown handler added after them still prevents the default.
+  it("does not make a later document keydown handler's preventDefault() a no-op", fakeAsync(() => {
+    setup();
+    service.start();
+    const handler = (e: KeyboardEvent): void => e.preventDefault();
+    document.addEventListener('keydown', handler);
+    try {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      document.body.dispatchEvent(event);
+      expect(event.defaultPrevented).withContext('the shared keydown listener is passive').toBeTrue();
+    } finally {
+      document.removeEventListener('keydown', handler);
+      service.stop();
+      discardPeriodicTasks();
+    }
+  }));
+
   it('resets the clock on pointer and touch input too', fakeAsync(() => {
     setup();
     service.start();
