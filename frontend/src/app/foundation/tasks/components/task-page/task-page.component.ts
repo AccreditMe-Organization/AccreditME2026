@@ -639,9 +639,11 @@ export class TaskPageComponent implements OnDestroy {
     const shown = new Set<ActionId>([...(this.primary() ? [this.primary()!.id] : []), ...this.secondaries().map((a) => a.id)]);
     return this.enabled().filter((a) => !shown.has(a.id));
   });
+  // The line under the group describes a disabled Complete BUTTON. When Add
+  // evidence leads, Complete is in ⋯ and says why there instead.
   readonly completeWaits = computed(() => {
-    const a = this.view()?.actions;
-    return !!a && a.complete && a.completeNeedsEvidence;
+    const p = this.primary();
+    return !!p && p.id === 'complete' && !!p.disabled;
   });
 
   // ── The four relations ────────────────────────────────────────────────

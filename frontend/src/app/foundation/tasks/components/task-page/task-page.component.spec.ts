@@ -368,6 +368,8 @@ describe('TaskPageComponent — the task page (ACC-228)', () => {
       expect(el.querySelector('[data-testid="task-actions"] [data-action="complete"]')).toBeNull();
       const complete = fixture.componentInstance.menuActions().find((a) => a.id === 'complete');
       expect(complete).toEqual(jasmine.objectContaining({ disabled: true }));
+      // The line that describes a disabled Complete button is not shown: there is no such button.
+      expect(el.querySelector('#am-tp-complete-why')).toBeNull();
     });
 
     it('the creator of a rejected task: Reassign… leads, Edit stays beside it, Cancel is in ⋯', () => {
