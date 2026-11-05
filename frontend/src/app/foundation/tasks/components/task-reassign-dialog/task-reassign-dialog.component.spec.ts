@@ -7,6 +7,8 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
+import en from '../../../../../assets/i18n/en.json';
+import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { ITaskDto } from '../../services/task.service';
 import { COMMITTEE_SCOPE } from '../task-assignee-picker/task-assignee-picker.component';
@@ -41,6 +43,8 @@ const REASSIGN_URL = `${API}/task-1/reassign`;
       (visibleChange)="visible.set($event)"
       [task]="task()"
       [rejection]="rejection()"
+      [recordName]="recordName()"
+      [committeeName]="committeeName()"
       (reassigned)="reassignedCount = reassignedCount + 1"
     />
   `,
@@ -48,6 +52,8 @@ const REASSIGN_URL = `${API}/task-1/reassign`;
 class HostComponent {
   readonly visible = signal(true);
   readonly rejection = signal<TaskRejection | null>(null);
+  readonly recordName = signal<string | null>(null);
+  readonly committeeName = signal<string | null>(null);
   readonly task = signal<ITaskDto>(TASK);
   reassignedCount = 0;
 }
@@ -56,7 +62,14 @@ describe('TaskReassignDialogComponent (ACC-163, ACC-167)', () => {
   let http: HttpTestingController;
 
   function setup(
-    options: { rejection?: TaskRejection; task?: ITaskDto; unitsStatus?: number; permissions?: string[] } = {},
+    options: {
+      rejection?: TaskRejection;
+      task?: ITaskDto;
+      unitsStatus?: number;
+      permissions?: string[];
+      recordName?: string;
+      committeeName?: string;
+    } = {},
   ) {
     TestBed.configureTestingModule({
       imports: [HostComponent],
@@ -66,28 +79,22 @@ describe('TaskReassignDialogComponent (ACC-163, ACC-167)', () => {
         provideNoopAnimations(),
         ConfirmationService,
         provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
         {
           provide: NavigationAccessService,
           useValue: { hasPermission: (p: string) => (options.permissions ?? []).includes(p) },
         },
       ],
     });
-    TestBed.inject(TranslateService).setTranslation(
-      'en',
-      {
-        task: {
-          reassignNamed: 'Reassign “{{title}}”',
-          rejectedByNamed: 'Rejected by {{name}}: {{reason}}',
-          status: { rejected: 'Rejected' },
-          assign: { unavailable: 'You cannot choose who this task goes to.' },
-        },
-      },
-      true,
-    );
+    // The real English file: these tests read what a user reads.
+    loadTranslationsForTest({ en });
+    TestBed.inject(TranslateService).use('en');
     http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(HostComponent);
     if (options.rejection) fixture.componentInstance.rejection.set(options.rejection);
     if (options.task) fixture.componentInstance.task.set(options.task);
+    if (options.recordName) fixture.componentInstance.recordName.set(options.recordName);
+    if (options.committeeName) fixture.componentInstance.committeeName.set(options.committeeName);
     fixture.detectChanges();
 
     const units = http.expectOne((r) => r.url === `${API}/assignment/units`);
@@ -235,15 +242,110 @@ describe('TaskReassignDialogComponent (ACC-163, ACC-167)', () => {
     });
   });
 
-  it('names the task in its header', () => {
-    setup();
+  // ACC-120 slice 4 (Task Screens, Reassign) — "Reassign task", with the
+  // task and its record as the context line.
+  it('is headed "Reassign task", with the task and its record as the context line', () => {
+    setup({ recordName: 'Infection Control Committee' });
 
-    expect(document.body.textContent).toContain('Reassign “Review incident report”');
+    const header = document.querySelector('.p-dialog-header')!.textContent!;
+    expect(header).toContain('Reassign task');
+    expect(header).toContain('Review incident report · ◇ Infection Control Committee');
   });
 
-  it('states the rejection it acts on — who handed it back, and why', () => {
-    setup({ rejection: { byName: 'Sarah', reason: 'This belongs to Pharmacy' } });
+  it('the context line is the title alone when the host names no record', () => {
+    setup();
+    const header = document.querySelector('.p-dialog-header')!.textContent!;
+    expect(header).toContain('Review incident report');
+    expect(header).not.toContain('◇');
+  });
 
-    expect(document.body.textContent).toContain('Rejected by Sarah: This belongs to Pharmacy');
+  it('states the rejection it acts on: "Rejected by … · date" over the reason in a grey box of two lines', () => {
+    const reason = 'This belongs to Pharmacy, who hold the stock records for every ward and should check them first.';
+    setup({ rejection: { byName: 'Sarah', reason, at: '2026-10-05T09:12:00.000Z' } });
+
+    const label = document.querySelector('[data-testid="reassign-rejection-label"]')!;
+    expect(label.textContent!.trim()).toBe('Rejected by Sarah · 5 Oct 2026');
+    // No uppercase strip: the label reads as written.
+    expect(getComputedStyle(label).textTransform).toBe('none');
+
+    const box = document.querySelector('[data-testid="reassign-rejection-reason"]') as HTMLElement;
+    expect(box.textContent!.trim()).toBe(`“${reason}”`);
+    expect(box.getAttribute('title')).toBe(reason);
+    expect(box.classList).toContain('line-clamp-2');
+    expect(getComputedStyle(box).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  });
+
+  it('a rejection with no name or date still says it was rejected', () => {
+    setup({ rejection: { byName: null, reason: 'Wrong unit' } });
+    expect(document.querySelector('[data-testid="reassign-rejection-label"]')!.textContent!.trim()).toBe('Rejected');
+  });
+
+  // The fields in the drawn order: the unit (or committee) across, then the
+  // seat and the person side by side, then the outcome across.
+  describe('field order and the outcome line (ACC-120 slice 4)', () => {
+    const labels = (): string[] =>
+      Array.from(document.querySelectorAll('.am-picker--split .am-field__label')).map((l) => l.textContent!.replace('*', '').trim());
+    const box = (label: string): DOMRect => {
+      const field = Array.from(document.querySelectorAll('.am-picker--split am-field')).find(
+        (f) => f.querySelector('.am-field__label')!.textContent!.replace('*', '').trim() === label,
+      )!;
+      return field.getBoundingClientRect();
+    };
+    const outcome = (): string => document.querySelector('[data-testid="picker-outcome"]')?.textContent?.trim() ?? '';
+
+    it('a unit: Unit across, then Position | Person, then "Offered to …"', () => {
+      const { fixture, dialog } = setup();
+      dialog.form.controls.assignTo.controls.scope.setValue('unit-1');
+      http
+        .expectOne((r) => r.url === `${API}/assignment/positions`)
+        .flush([{ id: 'pos-1', nameEn: 'Pharmacist', nameAr: null, isSingleAssignee: false, holderCount: 3 }]);
+      dialog.form.controls.assignTo.controls.target.setValue('pos-1');
+      http
+        .expectOne((r) => r.url === `${API}/assignees`)
+        .flush([{ id: 'user-a', name: 'Sarah Al-Harbi', positionNameEn: 'Pharmacist', positionNameAr: null }]);
+      fixture.detectChanges();
+
+      expect(labels()).toEqual(['Unit', 'Position', 'Person (optional)']);
+      const unit = box('Unit');
+      const position = box('Position');
+      const person = box('Person (optional)');
+      expect(unit.width).toBeGreaterThan(0);
+      expect(position.top).toBeGreaterThan(unit.top);
+      expect(person.top).toBe(position.top);
+      expect(unit.width).toBeGreaterThan(position.width * 1.8);
+      expect(outcome()).toBe('Offered to Pharmacist, Pharmacy (3 people).');
+
+      dialog.form.controls.assignTo.controls.userId.setValue('user-a');
+      fixture.detectChanges();
+      expect(outcome()).toBe('Goes straight to Sarah Al-Harbi (Pharmacist).');
+      // Never promises a notice.
+      expect(outcome()).not.toMatch(/notif|told|email/i);
+    });
+
+    it('a committee: Member role | Member, then "Offered to …"', () => {
+      const { fixture, dialog } = setup({
+        task: COMMITTEE_TASK,
+        permissions: ['committees:view'],
+        committeeName: 'Infection Control Committee',
+      });
+      dialog.form.controls.assignTo.controls.scope.setValue(COMMITTEE_SCOPE);
+      http
+        .expectOne((r) => r.url === `${API}/assignment/committee-roles`)
+        .flush([{ id: 'role-sec', labelEn: 'Secretary', labelAr: null, memberCount: 2 }]);
+      dialog.form.controls.assignTo.controls.target.setValue('role-sec');
+      http.expectOne((r) => r.url === `${API}/assignees/committee`).flush([]);
+      fixture.detectChanges();
+
+      expect(labels()).toEqual(['Unit or committee', 'Member role', 'Member (optional)']);
+      expect(box('Member (optional)').top).toBe(box('Member role').top);
+      expect(box('Member role').top).toBeGreaterThan(box('Unit or committee').top);
+      expect(outcome()).toBe('Offered to Secretary, Infection Control Committee (2 people).');
+    });
+
+    it('the reason field reads "Reassignment reason", in sentence case', () => {
+      setup();
+      const all = Array.from(document.querySelectorAll('am-field .am-field__label')).map((l) => l.textContent!.replace('*', '').trim());
+      expect(all).toContain('Reassignment reason');
+    });
   });
 });
