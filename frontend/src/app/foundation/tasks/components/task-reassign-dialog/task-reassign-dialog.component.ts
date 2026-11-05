@@ -84,12 +84,15 @@ export interface TaskRejection {
           <div class="flex flex-col gap-1" data-testid="reassign-rejection">
             <span class="text-meta text-[var(--am-ink-700)]" data-testid="reassign-rejection-label">{{ rejectionLabel() }}</span>
             <!-- The clamp is on the inner line box: on the padded box itself, a
-                 third line shows through the bottom padding. -->
+                 third line shows through the bottom padding. The line box takes
+                 the REASON's direction (dir="auto"), so the quote marks sit at its
+                 start and end however it wraps; an inner bdi would hide the
+                 reason from dir="auto". -->
             <p
               class="m-0 [overflow-wrap:anywhere] text-[13px] leading-[18px] text-[var(--am-ink-700)] bg-[var(--am-surface)] rounded-[var(--am-radius-control)] px-2.5 py-1.5"
               [attr.title]="r.reason"
               data-testid="reassign-rejection-reason"
-            ><span class="line-clamp-2" data-testid="reassign-rejection-text">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ r.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</span></p>
+            ><span class="line-clamp-2" dir="auto" data-testid="reassign-rejection-text">{{ 'tasks.sections.quoteOpen' | translate }}{{ r.reason }}{{ 'tasks.sections.quoteClose' | translate }}</span></p>
           </div>
         }
 
@@ -114,7 +117,7 @@ export interface TaskRejection {
           [forceShowErrors]="showErrors()"
           [errorMessages]="{ maxlength: 'task.rejectReasonTooLong' }"
         >
-          <input pInputText id="taskReassignReason" formControlName="reason" autocomplete="off" />
+          <input pInputText id="taskReassignReason" formControlName="reason" autocomplete="off" dir="auto" />
         </am-field>
 
         @if (error()) {

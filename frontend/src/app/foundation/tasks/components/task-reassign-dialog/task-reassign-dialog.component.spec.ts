@@ -279,6 +279,17 @@ describe('TaskReassignDialogComponent (ACC-163, ACC-167)', () => {
     expect(getComputedStyle(box).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   });
 
+  // CC-208 — the reason takes its own direction, with the quote marks at its
+  // start and end however it wraps; the typed reassignment reason does too.
+  it('the rejection reason and the typed reason take their own direction (dir="auto")', () => {
+    setup({ rejection: { byName: 'Sarah', reason: 'This belongs to Pharmacy.' } });
+    const lines = document.querySelector('[data-testid="reassign-rejection-text"]') as HTMLElement;
+    expect(lines.getAttribute('dir')).toBe('auto');
+    expect(lines.querySelector('bdi')).toBeNull();
+    expect(lines.textContent!.trim()).toBe('“This belongs to Pharmacy.”');
+    expect(document.getElementById('taskReassignReason')!.getAttribute('dir')).toBe('auto');
+  });
+
   it('a rejection with no name or date still says it was rejected', () => {
     setup({ rejection: { byName: null, reason: 'Wrong unit' } });
     expect(document.querySelector('[data-testid="reassign-rejection-label"]')!.textContent!.trim()).toBe('Rejected');

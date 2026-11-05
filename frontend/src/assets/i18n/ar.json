@@ -4102,7 +4102,7 @@
     "byWorkflowStage": "بواسطة سير العمل، عند دخول السجل مرحلة {{stage}}",
     "evidenceRequired": "مطلوب",
     "evidenceNotRequired": "غير مطلوب",
-    "evidenceNone": "لم يُضف شيء بعد",
+    "evidenceNone": "لا يوجد بعد",
     "completeAvailable": "الإنجاز متاح",
     "rejected": "مرفوضة",
     "rejectedBy": "الرفض: {{name}} · {{when}}",

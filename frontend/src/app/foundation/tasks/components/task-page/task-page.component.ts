@@ -204,10 +204,11 @@ type PageState =
                   <span data-testid="task-due">
                     @if (v.task.dueAt) {
                       <!-- The date reads in the page's direction (an Arabic month
-                           must not be turned around); only the time and its
-                           offset are one left-to-right run, so "+03" stays beside it. -->
+                           must not be turned around); the time, a no-break space
+                           and the offset are ONE left-to-right isolate, so wrapping
+                           can neither split nor turn "18:40 +03" around. -->
                       {{ 'taskPage.due' | translate }}
-                      <bdi class="font-semibold" data-testid="task-due-date">{{ dueDate() }}</bdi>{{ dueSeparator() }}<span dir="ltr" class="[unicode-bidi:isolate]" data-testid="task-due-time"><span class="font-semibold">{{ dueTime() }}</span><span class="text-[var(--am-ink-500)]">&nbsp;{{ zoneOffset() }}</span></span>
+                      <bdi class="font-semibold" data-testid="task-due-date">{{ dueDate() }}</bdi>{{ dueSeparator() }}<bdi dir="ltr" data-testid="task-due-time"><span class="font-semibold">{{ dueTime() }}</span>&nbsp;<span class="text-[var(--am-ink-500)]">{{ zoneOffset() }}</span></bdi>
                     } @else {
                       {{ 'taskPage.noDue' | translate }}
                     }
@@ -307,7 +308,9 @@ type PageState =
               <div class="flex flex-col gap-3 min-w-0">
                 <section class="am-tp__panel" aria-labelledby="am-tp-description">
                   <h2 class="am-tp__panel-title" id="am-tp-description">{{ 'taskPage.description' | translate }}</h2>
-                  <p class="am-tp__panel-body whitespace-pre-wrap [overflow-wrap:anywhere]">{{ v.task.description || ('taskPage.noDescription' | translate) }}</p>
+                  <!-- Typed text takes its own direction (dir="auto"), so an English
+                       description on an Arabic page ends with its full stop. -->
+                  <p class="am-tp__panel-body whitespace-pre-wrap [overflow-wrap:anywhere]" [attr.dir]="v.task.description ? 'auto' : null" data-testid="task-description">{{ v.task.description || ('taskPage.noDescription' | translate) }}</p>
                 </section>
                 <div class="am-tp__panel">
                   <app-task-evidence-list
@@ -333,9 +336,12 @@ type PageState =
                       <p class="am-tp__meta">
                         {{ 'taskPage.request.askedBy' | translate: { name: r.requestedByName, when: (r.createdAt | amDateTime) } }}
                       </p>
-                      <!-- The reason as typed, isolated between the reading
-                           language's quote marks. -->
-                      <p class="am-tp__quote" data-testid="task-request-reason">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ r.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</p>
+                      <!-- The reason as typed, between the reading language's
+                           quote marks. The block is its own paragraph and takes the
+                           REASON's direction (dir="auto"), so the marks sit at its
+                           start and end on every line. No inner bdi: dir="auto"
+                           skips bdi content, and would then see no text at all. -->
+                      <p class="am-tp__quote" dir="auto" data-testid="task-request-reason">{{ 'tasks.sections.quoteOpen' | translate }}{{ r.reason }}{{ 'tasks.sections.quoteClose' | translate }}</p>
                       @if (v.actions.reviewRequest || v.actions.withdrawRequest) {
                         <div class="flex flex-wrap items-center gap-2">
                           @if (v.actions.reviewRequest) {
@@ -361,7 +367,7 @@ type PageState =
                     <div class="am-tp__panel-body">
                       <p class="am-tp__meta">{{ note.line }}</p>
                       @if (note.reason) {
-                        <p class="am-tp__quote">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ note.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</p>
+                        <p class="am-tp__quote" dir="auto" data-testid="task-closing-reason">{{ 'tasks.sections.quoteOpen' | translate }}{{ note.reason }}{{ 'tasks.sections.quoteClose' | translate }}</p>
                       }
                     </div>
                   </section>
@@ -381,7 +387,7 @@ type PageState =
                         <span class="flex flex-col min-w-0 [overflow-wrap:anywhere]">
                           <span class="font-medium" data-testid="task-event-what">{{ historyLine(event) }}</span>
                           @if (event.reason) {
-                            <span class="am-tp__meta">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ event.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</span>
+                            <span class="am-tp__meta" dir="auto" data-testid="task-event-reason">{{ 'tasks.sections.quoteOpen' | translate }}{{ event.reason }}{{ 'tasks.sections.quoteClose' | translate }}</span>
                           }
                         </span>
                       </li>

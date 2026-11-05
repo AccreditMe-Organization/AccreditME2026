@@ -223,6 +223,78 @@ describe('TaskPageComponent — the task page (ACC-228)', () => {
       expect(time.contains(date)).toBeFalse();
     });
 
+    // CC-208 — at 390 in Arabic the time and offset must not split or turn
+    // around: ONE left-to-right isolate holding the time, a no-break space and
+    // the offset, in that order.
+    it('the time and offset are one left-to-right isolate: time, no-break space, offset', () => {
+      setup('ar');
+      const el = answer(pageView());
+      const time = el.querySelector('[data-testid="task-due-time"]')!;
+      expect(time.tagName).toBe('BDI');
+      expect(time.getAttribute('dir')).toBe('ltr');
+      expect(getComputedStyle(time).unicodeBidi).toBe('isolate');
+      expect(time.textContent).toBe('17:00 +03');
+      // Laid out left to right, on one line.
+      const [hour, offset] = Array.from(time.children) as HTMLElement[];
+      expect(hour.textContent).toBe('17:00');
+      expect(offset.textContent).toBe('+03');
+      expect(hour.getBoundingClientRect().left).toBeLessThan(offset.getBoundingClientRect().left);
+      expect(hour.getBoundingClientRect().top).toBe(offset.getBoundingClientRect().top);
+    });
+
+    // CC-208 — typed text takes its own direction; quote marks sit at the
+    // start and end of the reason, outside it.
+    it('typed text takes its own direction: the description and every quoted reason are dir="auto"', () => {
+      setup('ar');
+      const el = answer(
+        pageView({
+          task: {
+            status: 'REJECTED',
+            rejectedReason: 'Pharmacy owns this.',
+            rejectedAt: '2026-10-05T11:20:00.000Z',
+            openRequest: {
+              id: 'req-1',
+              type: 'EXTENSION',
+              requestedDueAt: '2099-10-20T14:00:00.000Z',
+              holdUntil: null,
+              requestedById: 'huda',
+              requestedByName: 'Dr. Huda Zahrani',
+              reason: 'Second ward pilot.',
+              createdAt: '2026-10-05T11:20:00.000Z',
+            },
+          },
+          view: { rejectedBy: { id: 'u-t', name: 'Tariq Suleiman' } },
+        }),
+      );
+      expect(el.querySelector('[data-testid="task-description"]')!.getAttribute('dir')).toBe('auto');
+      const quoted = ['task-request-reason', 'task-closing-reason', 'task-event-reason'].map(
+        (id) => el.querySelector(`[data-testid="${id}"]`) as HTMLElement,
+      );
+      for (const block of quoted) {
+        expect(block).withContext('a quoted reason is on screen').not.toBeNull();
+        expect(block.getAttribute('dir')).toBe('auto');
+        // No inner bdi: dir="auto" would skip it and see no text.
+        expect(block.querySelector('bdi')).toBeNull();
+        const t = block.textContent!.trim();
+        expect(t.startsWith('«')).withContext(t).toBeTrue();
+        expect(t.endsWith('»')).withContext(t).toBeTrue();
+      }
+      // An English reason on an Arabic page reads left to right, full stop at its end.
+      expect(getComputedStyle(quoted[0]!).direction).toBe('ltr');
+    });
+
+    it('no description is the page\'s own words, in the page\'s direction', () => {
+      setup('ar');
+      const el = answer(pageView({ task: { description: null } }));
+      expect(el.querySelector('[data-testid="task-description"]')!.hasAttribute('dir')).toBeFalse();
+    });
+
+    it('in Arabic, no evidence yet reads «لا يوجد بعد», as the evidence panel does', () => {
+      setup('ar');
+      const el = answer(pageView({ task: { evidenceCount: 0 } }));
+      expect(text(el.querySelectorAll('.am-tp__cell')[3]!)).toContain('لا يوجد بعد');
+    });
+
     it('in Arabic the date keeps the page direction: day, month, year, then the time and offset', () => {
       setup('ar');
       const el = answer(pageView());
