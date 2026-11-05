@@ -14,7 +14,6 @@ import { WorkflowService } from './workflow.service';
 import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
-import { isConvertedStage } from './workflow-pool';
 import {
   POOL_LABEL_INCLUDE,
   PICKABLE_STATUSES,
@@ -60,9 +59,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     private readonly notificationService: NotificationService,
     private readonly orgPositionService: OrgPositionService,
     // Same module (WorkflowModule provides both) — no forwardRef needed.
-    // ACC-28 Section 2.5.1: reuses WorkflowService's own
-    // resolveUnassignedBlockingTransitions()/resolveUnreachableTriggerConditionTransitions()
-    // rather than duplicating that resolution logic here.
+    // ACC-28 Section 2.5.1 / ACC-271: reuses WorkflowService's own pool
+    // resolution (resolveStagePools()) rather than duplicating it here.
     private readonly workflowService: WorkflowService,
     // ACC-40 Section 2.3 — automatic handover completion (Phase 5 commit 5)
     // reuses OrgUnitHeadService.completeHandoverAutomatically() rather than
@@ -413,10 +411,12 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       include: { workflowInstance: true, stage: true },
     });
 
-    // ACC-271 — a converted stage is unassigned when its pool is empty (plan
-    // §4.5). Every converted entry's pool is resolved up front, one batch per
-    // organisation (one query per assignee kind), never one per entry.
-    const pools = await this.resolveConvertedPools(openStages);
+    // ACC-271 — a stage is unassigned when its pool is empty (plan §4.5). Every
+    // open entry's pool is resolved up front, one batch per organisation (one
+    // query per assignee kind), never one per entry. PR 6a removed the two old
+    // detectors: a stage with no `who` gets an empty pool, so its entry is
+    // flagged and Setup health shows it.
+    const pools = await this.resolveEntryPools(openStages);
     // ACC-271 PR 4 (plan §8) — who left an "All of them" pool since the last
     // look: one recomputer, from the pools just resolved.
     await this.recordPoolLeavers(openStages, pools);
@@ -424,21 +424,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     for (const instanceStage of openStages) {
       const organizationId = instanceStage.workflowInstance.organizationId;
       const pool = pools.get(instanceStage.id);
-      let isNowUnassigned: boolean;
-      if (pool) {
-        isNowUnassigned = pool.members.length === 0;
-      } else {
-        const poolBlocking = await this.workflowService.resolveUnassignedBlockingTransitions(
-          instanceStage.stage,
-          instanceStage.workflowInstance,
-          organizationId,
-        );
-        const triggerBlocking = await this.workflowService.resolveUnreachableTriggerConditionTransitions(
-          instanceStage.stage,
-          organizationId,
-        );
-        isNowUnassigned = poolBlocking.length + triggerBlocking.length > 0;
-      }
+      const isNowUnassigned = !pool || pool.members.length === 0;
 
       // wasUnassigned read from the row as fetched at the top of this sweep
       // pass, before anything here touches it — the precise condition that
@@ -491,7 +477,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       // otherwise invisible to getMyTasks() and rejected by complete() —
       // finally hears about it.
       if (!isNowUnassigned) {
-        await this.recoverUnassignedStageTasks(instanceStage, organizationId, pool?.members);
+        await this.recoverUnassignedStageTasks(instanceStage, organizationId, pool?.members ?? []);
       }
     }
   }
@@ -514,15 +500,14 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     for (const [organizationId, orgPools] of byOrg) await this.workflowService.recordPoolChanges(organizationId, orgPools);
   }
 
-  // ACC-271 — the pools of the open entries whose stage is converted, keyed by
-  // entry id: one resolveStagePools() call per organisation. An unconverted
-  // entry is absent, and keeps the old detectors.
-  private async resolveConvertedPools(
+  // ACC-271 — the pools of the open entries, keyed by entry id: one
+  // resolveStagePools() call per organisation. A stage with no `who` gets an
+  // empty pool (StagePoolService fails closed), never the old detectors (PR 6a).
+  private async resolveEntryPools(
     openStages: { id: string; stage: PrismaWorkflowStage; workflowInstance: PrismaWorkflowInstance }[],
   ): Promise<Map<string, StagePool>> {
     const byOrg = new Map<string, StagePoolRequest[]>();
     for (const entry of openStages) {
-      if (!isConvertedStage(entry.stage)) continue;
       const organizationId = entry.workflowInstance.organizationId;
       const list = byOrg.get(organizationId) ?? [];
       list.push({ key: entry.id, stageId: entry.stage.id, instance: entry.workflowInstance });
@@ -540,21 +525,16 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // TaskService, which owns the actual assignment/notification business logic
   // (this processor orchestrates; it never hand-rolls task writes).
   //
-  // A still-empty pool is a real, expected outcome, not an error: a stage can
-  // recover because its blocking transition's requiredPermission became
-  // satisfiable, without the pool itself changing at all. Nothing to attach,
-  // nothing to notify — return quietly rather than logging noise.
+  // A still-empty pool is a real, expected outcome, not an error. Nothing to
+  // attach, nothing to notify — return quietly rather than logging noise.
   //
   // ACC-52 — now called for every open, non-blocked stage on every sweep
   // rather than once per flag transition, which makes the ORDER of the two
   // checks below load-bearing rather than stylistic:
   //   1. hasUnassignedStageTasks() — one indexed count, and on a healthy
   //      tenant it returns false, so the vast majority of sweeps stop here.
-  //   2. resolveAssigneeForStage() — only then, because pool resolution is
-  //      the expensive half (role/committee lookups, org-unit parent walks,
-  //      then out-of-office routing per resolved user).
-  // Resolving the pool first would impose that cost on every open stage,
-  // every 15 minutes, overwhelmingly to discover there was nothing to do.
+  //   2. the pool — already resolved for every entry in the sweep's batch
+  //      (ACC-271), so recovery adds no read of its own.
   //
   // Worth stating plainly, because it is a genuine behavior expansion beyond
   // "recover a missed transition": this also re-attaches a task that reached
@@ -573,8 +553,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       workflowInstance: PrismaWorkflowInstance;
     },
     organizationId: string,
-    // ACC-271 — a converted stage's pool, already resolved in the sweep's batch.
-    resolvedPool?: string[],
+    // ACC-271 — the stage's pool, already resolved in the sweep's batch (PR 6a:
+    // every entry's, so there is no per-entry fallback).
+    pool: string[],
   ): Promise<void> {
     const hasOrphan = await this.taskService.hasUnassignedStageTasks(
       instanceStage.workflowInstance.id,
@@ -583,13 +564,6 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     );
     if (!hasOrphan) return;
 
-    const pool =
-      resolvedPool ??
-      (await this.workflowService.resolveAssigneeForStage(
-        instanceStage.stage,
-        instanceStage.workflowInstance,
-        organizationId,
-      ));
     if (pool.length === 0) return;
 
     await this.taskService.attachAssigneesToUnassignedStageTasks(

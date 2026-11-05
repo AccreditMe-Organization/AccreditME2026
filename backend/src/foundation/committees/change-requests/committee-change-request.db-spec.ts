@@ -25,8 +25,6 @@ import { WorkingCalendarService } from '../../working-calendar/working-calendar.
 import { NotificationService } from '../../notification/notification.service';
 import { TenantService } from '../../tenant/tenant.service';
 import { LookupService } from '../../lookup/lookup.service';
-import { RoleService } from '../../roles/role.service';
-import { OrganizationService } from '../../organization/organization.service';
 import { TaskService } from '../../task/task.service';
 import { TaskAuthorityService } from '../../task/task-authority.service';
 import { TaskAssignmentService } from '../../task/task-assignment.service';
@@ -79,10 +77,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
   const sla = new TaskSlaService(prisma, calendar);
   const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla, new TaskClosedNoticeService(prisma, notifications));
   const stageTasks = new StageTaskDefinitionService(prisma, audit, tasks);
-  const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
-  const organizations = { resolveActingHeadForOrgUnit: async () => null } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, new StagePoolService(prisma));
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, new StagePoolService(prisma));
   const templates = new WorkflowTemplateService(prisma, audit, stageTasks);
   const requests = new CommitteeChangeRequestService(prisma, workflow, tasks, audit, notifications, new StageRulesService(prisma));
 
@@ -425,8 +421,19 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       const tpl = await prisma.workflowTemplate.create({
         data: { organizationId: w.org, nameEn: 'Vote', objectType: 'MEETING', isDefault: true, isActive: true },
       });
+      // ACC-271 PR 6a — a Committee vote stage on this committee, as the
+      // backfill converts an approvalMode COMMITTEE one (the old columns stay).
       const stage = await prisma.workflowStage.create({
-        data: { workflowTemplateId: tpl.id, nameEn: 'Committee vote', order: 10, isInitial: true, approvalMode: 'COMMITTEE', committeeId: w.committee },
+        data: {
+          workflowTemplateId: tpl.id,
+          nameEn: 'Committee vote',
+          order: 10,
+          isInitial: true,
+          approvalMode: 'COMMITTEE',
+          committeeId: w.committee,
+          whoMode: 'COMMITTEE_VOTE',
+          assignees: { create: { organizationId: w.org, order: 1, kind: 'COMMITTEE', committeeId: w.committee } },
+        },
       });
       return { tpl, stage };
     }

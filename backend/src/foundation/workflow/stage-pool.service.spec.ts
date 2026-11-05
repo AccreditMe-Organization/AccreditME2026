@@ -54,6 +54,8 @@ interface Data {
   covers: { id: string; organizationId: string; orgUnitId: string; userId: string; validFrom: Date; validTo: Date | null; endedAt: Date | null }[];
   members: { organizationId: string; committeeId: string; userId: string; roleValueId: string; isActive: boolean }[];
   committees: { id: string; organizationId: string; orgUnitId: string }[];
+  // ACC-271 PR 6a — stages whose `whoMode` is null (the fake's stage table).
+  stagesWithoutWho?: string[];
 }
 
 const inOrEq = (filter: string | { in: string[] } | undefined, value: string | null | undefined): boolean =>
@@ -63,12 +65,15 @@ function fakePrisma(data: Data) {
   const userById = (id: string | null | undefined) => data.users.find((u) => u.id === id);
   return {
     workflowStageAssignee: {
-      findMany: jest.fn(async ({ where }: { where: { organizationId: string; stageId: { in: string[] } } }) =>
+      findMany: jest.fn(
+        async ({ where }: { where: { organizationId: string; stageId: { in: string[] }; kind?: Kind; stage?: { whoMode: { not: null } } } }) =>
         data.entries
           .filter((e) => e.organizationId === where.organizationId && where.stageId.in.includes(e.stageId))
+          .filter((e) => (where.kind ? e.kind === where.kind : true))
+          .filter((e) => (where.stage ? !(data.stagesWithoutWho ?? []).includes(e.stageId) : true))
           .sort((a, b) => a.stageId.localeCompare(b.stageId) || a.order - b.order)
           .map((e) => ({ userId: null, positionId: null, orgUnitId: null, committeeId: null, committeeRoleValueId: null, ...e })),
-      ),
+        ),
       findFirst: jest.fn(async ({ where }: { where: { organizationId: string; stageId: string; kind: Kind } }) => {
         const e = data.entries
           .filter((x) => x.organizationId === where.organizationId && x.stageId === where.stageId && x.kind === where.kind)
@@ -284,6 +289,20 @@ describe('StagePoolService (ACC-271)', () => {
   it('a stage with no entries has nobody', async () => {
     const pool = await one(empty());
     expect(pool).toMatchObject({ members: [], direct: [], voteCommitteeId: null });
+  });
+
+  // ACC-271 PR 6a — fail closed: a stage with no `who` is read as converted
+  // with an EMPTY pool, whatever entries it holds, so nobody may act on it, the
+  // sweep flags it and it awaits nobody (stage-without-who.db-spec: real Postgres).
+  it('a stage with no `who` has nobody, and no vote committee, whatever entries it holds', async () => {
+    const data = empty();
+    data.entries.push(entry('s1', 1, 'SPECIFIC_USER', { userId: 'u1' }), entry('s1', 2, 'COMMITTEE', { committeeId: 'cX' }));
+    data.users.push(active('u1'));
+    data.stagesWithoutWho = ['s1'];
+
+    expect(await one(data)).toMatchObject({ members: [], direct: [], voteCommitteeId: null });
+    const { pools } = service(data);
+    expect(await pools.voteCommitteeId(ORG, 's1', { objectType: 'COMMITTEE', objectId: 'c1' })).toBeNull();
   });
 
   describe('ACTIVE only', () => {
