@@ -507,6 +507,13 @@ describe('am-stage-who — who works a stage (ACC-271 PR 5a)', () => {
     expect(text(who().querySelector('[data-who-section-error]'))).toBe('A stage needs at least one assignee.');
   });
 
+  // ACC-271 PR 6a — a new stage sent without `who` (WHO_REQUIRED, 400).
+  it('a stage sent without who is said under the section', async () => {
+    await setup();
+    refuse({ code: 'WHO_REQUIRED' });
+    expect(text(who().querySelector('[data-who-section-error]'))).toBe('Choose who works this stage.');
+  });
+
   it('a slot’s refusal clears once that row changes', async () => {
     await setup();
     refuse({ code: 'WHO_USER_NOT_ACTIVE', index: 0 });

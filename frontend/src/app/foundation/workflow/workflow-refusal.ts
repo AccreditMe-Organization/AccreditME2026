@@ -54,7 +54,9 @@ export type WhoRefusalCode =
   | 'WHO_RECORD_ROUTE_NOT_AVAILABLE'
   | 'COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE'
   | 'WHO_REFERENCE_NOT_FOUND'
-  | 'WHO_USER_NOT_ACTIVE';
+  | 'WHO_USER_NOT_ACTIVE'
+  // ACC-271 PR 6a — a new stage sent without `who`.
+  | 'WHO_REQUIRED';
 
 /**
  * Where a refused `who` is said (drawing section 8, "Errors in their slots"):
@@ -91,6 +93,7 @@ export function whoRefusal(err: unknown): WhoRefusal | null {
       : null;
   switch (code) {
     case 'WHO_ENTRIES_REQUIRED':
+    case 'WHO_REQUIRED':
       return { code, where: { slot: 'section' }, kind };
     case 'WHO_MODE_UNKNOWN':
     case 'COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE':

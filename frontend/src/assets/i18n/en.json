@@ -1209,6 +1209,7 @@
       },
       "error": {
         "required": "A stage needs at least one assignee.",
+        "whoRequired": "Choose who works this stage.",
         "mode": "Choose how the people of this stage decide.",
         "voteNeedsOne": "A committee vote needs exactly one assignee, and it must be a committee.",
         "duplicate": "This entry is already in the list.",
