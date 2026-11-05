@@ -215,6 +215,6 @@ describe('TaskRequestDialogComponent (ACC-173)', () => {
 
   it('names the task in its header, in Arabic', () => {
     setup('ON_HOLD', 'ar');
-    expect(document.body.textContent).toContain('طلب إيقاف «Collect the audit sample» مؤقتًا');
+    expect(document.body.textContent).toContain('طلب تعليق «Collect the audit sample»');
   });
 });
