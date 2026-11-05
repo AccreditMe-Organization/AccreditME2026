@@ -4228,19 +4228,19 @@ task surface reads the same helper.
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `getMyTasks()` | `GET /tasks/my-tasks` | `my-tasks.component.ts`, `loadTasks()` |
+| `getMyTasks()` | `GET /tasks/my-tasks` | `home.component.ts` only since ACC-120 slice 3 (My tasks reads `GET /tasks/record-list?view=mine`, §3.20); kept for Home |
 | `getForSource()` | `GET /tasks` | `task-list.component.ts` (routed page) **+ `committee-detail.component.ts` directly** (ACC-76) |
 | `getUnassigned()` | `GET /tasks/unassigned` | **Removed (ACC-120 slice 3)** with `unassigned-tasks.component.ts`; the Unassigned view reads `GET /tasks/record-list?view=unassigned` (§3.20). The backend route is left in place |
 | `getById()` | `GET /tasks/:id` | **ZERO frontend callers found** |
 | `create()` | `POST /tasks` | `task-form.component.ts`, `onSubmit()` (rendered from `task-list.component.ts`, confirmed referenced there) |
-| `complete()` | `POST /tasks/:id/complete` | `my-tasks.component.ts` **+ `committee-detail.component.ts`** (ACC-76) |
-| `start()` | `POST /tasks/:id/start` | `my-tasks.component.ts` (ACC-163) |
-| `reject()` | `POST /tasks/:id/reject` | `task-reject-dialog.component.ts`, hosted by My tasks (ACC-163) |
+| `complete()` | `POST /tasks/:id/complete` | `task-action-host.component.ts` (every list row, My tasks' included) and `task-page.component.ts` |
+| `start()` | `POST /tasks/:id/start` | `task-action-host.component.ts` and `task-page.component.ts` |
+| `reject()` | `POST /tasks/:id/reject` | `task-reject-dialog.component.ts`, hosted by the action host and the task page |
 | `reassign()` | `POST /tasks/:id/reassign` | `task-reassign-dialog.component.ts` (ACC-163, extracted), hosted by Unassigned tasks and the committee record |
 | `addEvidence()` | `POST /tasks/:id/evidence` | `task-add-evidence-dialog.component.ts` (Link; a File uploads separately, §16.6). Corrected ACC-274: it replaced `task-link-evidence-dialog.component.ts`, deleted in ACC-177 (§16.9) |
-| `getAvailable()` | `GET /tasks/available` | `my-tasks.component.ts` — "Available to pick up" (ACC-167) |
-| `pick()` | `POST /tasks/:id/pick` | `my-tasks.component.ts` (ACC-167) |
-| `release()` | `POST /tasks/:id/release` | `task-release-dialog.component.ts`, hosted by My tasks (ACC-167) |
+| `getAvailable()` | `GET /tasks/available` | `my-tasks-sections.component.ts` — "Available to pick up" (ACC-167; its rows name their record since ACC-120 slice 3) |
+| `pick()` | `POST /tasks/:id/pick` | `my-tasks-sections.component.ts` (ACC-167), the action host and the task page |
+| `release()` | `POST /tasks/:id/release` | `task-release-dialog.component.ts`, hosted by the action host and the task page (ACC-167) |
 | `getAssignable*()`, `getAssignees()`, `getCommitteeAssignees()` | the five picker routes | `task-assignee-picker.component.ts`, used by New task (`layout="row"`) and Reassign (ACC-167) |
 
 **Two remaining gaps, static-check-confirmed**: there is no task-detail
@@ -5650,9 +5650,36 @@ no endpoint. The design reference is
 - **The view lives in the URL**: no `?view` is My tasks (the default);
   `?view=created|unit|all|unassigned` the others. A link to a view this viewer lacks
   opens My tasks and says so in one line.
-- **My tasks is `MyTasksComponent`, unchanged** but for `showHeader`: the
-  page's "Tasks" is the one H1. Its `?task=` and `?request=` links work as
-  before.
+- **My tasks is its two sections, then the shared list on `view=mine`**
+  (ACC-120 slice 3; `MyTasksComponent` and its specs are deleted). The page's
+  "Tasks" is the one H1, and on My tasks the page scrolls as one: the list has
+  no fixed-height frame there.
+  - **`MyTasksSectionsComponent`**, above the list. Each section loads,
+    fails and retries on its own; a section with nothing in it is absent; a
+    failure is one line in its place ("Couldn't load requests · Retry") and
+    its count reads "—", never 0. After any action it reloads, and tells the
+    list. Rows stack as cards at phone width.
+    - **"Waiting for your decision"** (warning tint): requests the viewer may
+      decide (`GET /tasks/requests/awaiting-decision`), with Review request —
+      the decision dialog through `TaskActionHostComponent.reviewRequest()`,
+      no page view read — and tasks the viewer created that someone rejected
+      (`record-list?view=created&status=REJECTED`, 50), with Reassign….
+      Soonest due first. Its count is the requests plus that list's
+      `matching`, never its `total` (which ignores the status filter).
+    - **"Available to pick up"** (info tint): `GET /tasks/available`, with
+      Pick up; a 409 says the server's sentence and the section reloads.
+  - **The list on `view=mine`** has its own columns — Task · record, Priority
+    (text: "▲ High", "!! Critical", the others plain; not sortable), Due,
+    Status with the Overdue pill, actions — each track fixed or fr (ACC-234),
+    and no "Assigned to me" toggle or assignee/pool filter. Every other view
+    is unchanged.
+  - **The record and the priority read by one rule**, `tasks/task-row-display.ts`,
+    for the sections and the list.
+  - **Links** (a briefing's, ACC-198) are read by the shell, once: `?request=`
+    marks its row in "Waiting for your decision"; `?task=` marks it in
+    Available when it is there, and otherwise opens the list at it (`around`;
+    the list waits for Available only while a `?task=` is looked for). Both
+    are then removed with `replaceUrl`.
 - **The other views are `TaskListViewComponent`, organisation-wide**, sending
   `view`, and `recordType` / `unit` when chosen. The Record type filter
   (All tasks, Unit tasks) comes from `facets.recordTypes`; the Unit filter
@@ -5668,7 +5695,10 @@ no endpoint. The design reference is
     Assigned, In progress and On hold, and its chips leave out Unassigned
     and Rejected, which no one can be "on". **All open is not a filter**:
     Clear returns to it, and the list never opens with no chip pressed.
-    Each chip has room for a count, rendered once the server sends counts.
+    **Each chip carries its count** from the first page's
+    `facets.statusCounts`, over the view's whole scope (no filter, no
+    search), so a chip pressed does not change them; "All open" is the sum of
+    the view's open set. With no facets, no count — never a 0 for "not told".
   - **An Overdue pill and a light danger tint** on an open, not-on-hold row
     past its due time (`isTaskOverdue()`); the due cell already said
     "n days overdue" through the formatting layer.
@@ -5701,11 +5731,9 @@ no endpoint. The design reference is
 - **Deleted:** `UnassignedTasksComponent`, `TaskListComponent` and
   `TaskService.getUnassigned()`. The backend's `GET /tasks/unassigned` is
   left in place, with no frontend caller.
-- **Created by me is built** (`?view=created`, «مهام أنشأتها»). **Not
-  built here:** a rebuilt My tasks (it still renders `MyTasksComponent`, so
-  the own-view chips show on Created by me only), counts on the chips, and
-  Home's task lines. The server's `view=mine` exists (§3.19) for the
-  rebuilt My tasks.
+- **Created by me is built** (`?view=created`, «مهام أنشأتها»), and **My
+  tasks is rebuilt** on the shared list (above). **Not built here:** Home's
+  task lines; Home still reads `GET /tasks/my-tasks`, which stays for it.
 - **Closed, server side (ACC-120 slice 3):** on `view=mine` and
   `view=created`, which need no key, a row's record name was filled in whether
   or not the viewer could see that record's type. `recordNamesOf()` now names

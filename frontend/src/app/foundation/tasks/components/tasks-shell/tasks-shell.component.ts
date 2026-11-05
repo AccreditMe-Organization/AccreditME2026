@@ -1,6 +1,6 @@
 import { Component, TemplateRef, ViewChild, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -8,7 +8,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 import { ITaskViewsDto, TaskRecordListView, TaskService } from '../../services/task.service';
-import { MyTasksComponent } from '../my-tasks/my-tasks.component';
+import { MyTasksSectionsComponent } from '../my-tasks-sections/my-tasks-sections.component';
 import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
 import { TaskFormComponent } from '../task-form/task-form.component';
 import { TaskFormFooterComponent } from '../task-form/task-form-footer.component';
@@ -40,10 +40,17 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
  * none. A view the server refuses (403) shows only its denied state, so New
  * task goes too.
  *
- * My tasks is today's MyTasksComponent, unchanged but for its header (this
- * page's "Tasks" is the one H1). The other views are the shared task list,
- * organisation-wide, sending their view; each has its own instance, so a
- * switch starts it fresh.
+ * Every view is the shared task list, sending its view; each has its own
+ * instance, so a switch starts it fresh. My tasks puts its two sections above
+ * it (MyTasksSectionsComponent: "Waiting for your decision", "Available to
+ * pick up"), and its list flows with the page, so the page scrolls as one.
+ *
+ * A link into My tasks (a briefing item, ACC-198) is read here, once: a
+ * ?request=<id> marks that row in "Waiting for your decision"; a ?task=<id>
+ * marks it in "Available to pick up" when it is there, and otherwise opens the
+ * list at it (its [around]). Both parameters are then removed from the address
+ * (replaceUrl), so a refresh is ordinary. Only while a ?task= is being looked
+ * for does the list wait, for Available to answer first.
  */
 @Component({
   selector: 'app-tasks-shell',
@@ -54,14 +61,14 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
     ButtonModule,
     PageHeaderComponent,
     EditDialogComponent,
-    MyTasksComponent,
+    MyTasksSectionsComponent,
     TaskListViewComponent,
     TaskFormComponent,
     TaskFormFooterComponent,
     TaskFormStepsComponent,
   ],
   template: `
-    <div class="flex flex-col h-full gap-3">
+    <div class="flex flex-col gap-3" [class.h-full]="current() !== 'mine'">
       <app-page-header [title]="'tasks.title' | translate">
         <div pageActions>
           <!-- ACC-118 — hidden, not disabled, for a viewer who cannot use it. The
@@ -106,7 +113,16 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
               }
             </div>
           } @else if (!(wantsListView() && viewsState() === 'error')) {
-            <app-my-tasks [showHeader]="false" />
+            <app-my-tasks-sections
+              [soughtRequestId]="soughtRequestId()"
+              [soughtTaskId]="soughtTaskId()"
+              (requestsLoaded)="onRequestsLoaded($event)"
+              (availableLoaded)="onAvailableLoaded($event)"
+              (changed)="reloadList()"
+            />
+            @if (mineListReady()) {
+              <app-task-list-view variant="page" view="mine" [around]="mineAround()" (deniedChange)="listDenied.set($event)" />
+            }
           }
         }
         @case ('created') {
@@ -230,6 +246,7 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
 export class TasksShellComponent {
   private readonly tasks = inject(TaskService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
@@ -242,6 +259,16 @@ export class TasksShellComponent {
   readonly taskFormRef = signal<TaskFormComponent | null>(null);
   /** A Setup health Fix's task (?reassign=<id>), read once on the Unassigned view. */
   readonly reassignId = signal<string | null>(null);
+  /** A ?request= link's request, once "Waiting for your decision" shows it. */
+  readonly soughtRequestId = signal<string | null>(null);
+  /** A ?task= link's task, once "Available to pick up" shows it. */
+  readonly soughtTaskId = signal<string | null>(null);
+  /** A ?task= link's task that Available does not hold: the list opens at it. */
+  readonly mineAround = signal<string | null>(null);
+  /** False only while a ?task= waits for Available's answer. */
+  readonly mineListReady = signal(true);
+  private pendingTask: string | null = null;
+  private pendingRequest: string | null = null;
   protected readonly skeleton = [0, 1, 2, 3, 4];
 
   private readonly params = toSignal(this.route.queryParamMap.pipe(map((p) => p)), {
@@ -285,6 +312,7 @@ export class TasksShellComponent {
   readonly unitFilter = computed(() => (this.views()?.unit?.units.length ?? 0) > 1);
 
   private readonly list = viewChild(TaskListViewComponent);
+  private readonly sections = viewChild(MyTasksSectionsComponent);
   private readonly fixLinkReassign = injectFixLinkParam('reassign');
 
   constructor() {
@@ -304,6 +332,44 @@ export class TasksShellComponent {
         if (id) this.reassignId.set(id);
       });
     });
+    this.watchMyTasksLinks();
+  }
+
+  /** ACC-198 — ?task= and ?request= on My tasks: kept until the sections answer, and taken out of the address. */
+  private watchMyTasksLinks(): void {
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      if (this.requested() !== 'mine') return;
+      const task = params.get('task');
+      const request = params.get('request');
+      if (!task && !request) return;
+      this.pendingTask = task;
+      this.pendingRequest = request;
+      if (task) this.mineListReady.set(false);
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { task: null, request: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    });
+  }
+
+  /** The decision section loaded: a sought request it shows is marked; either way the link is spent. */
+  onRequestsLoaded(ids: string[]): void {
+    const id = this.pendingRequest;
+    if (!id) return;
+    this.pendingRequest = null;
+    if (ids.includes(id)) this.soughtRequestId.set(id);
+  }
+
+  /** Available answered (null: it failed): the sought task is marked there, or the list opens at it. */
+  onAvailableLoaded(ids: string[] | null): void {
+    const id = this.pendingTask;
+    if (!id) return;
+    this.pendingTask = null;
+    if (ids?.includes(id)) this.soughtTaskId.set(id);
+    else this.mineAround.set(id);
+    this.mineListReady.set(true);
   }
 
   loadViews(): void {
@@ -317,8 +383,14 @@ export class TasksShellComponent {
     });
   }
 
+  /** Something changed in My tasks' sections: its list reads again. */
+  reloadList(): void {
+    this.list()?.reload();
+  }
+
   onSaved(): void {
     this.formVisible.set(false);
     this.list()?.reload();
+    this.sections()?.reload();
   }
 }

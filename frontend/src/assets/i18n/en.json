@@ -51,6 +51,27 @@
       "unassigned": "Unassigned",
       "unavailable": "That view isn't available to you, so these are your own tasks.",
       "loadFailed": "Your other task views couldn't be loaded."
+    },
+    "sections": {
+      "col": {
+        "taskRecord": "Task · record"
+      },
+      "quoteOpen": "“",
+      "quoteClose": "”",
+      "countUnknown": "Count not available",
+      "decision": {
+        "purpose": "On tasks you created or cover for. Someone is waiting on your answer.",
+        "askHold": "Hold until {{date}}",
+        "askMore": "More time: {{from}} → {{to}}",
+        "rejectedBy": "Rejected by {{name}}",
+        "reassignNamed": "Reassign “{{title}}”",
+        "failed": "Couldn't load requests"
+      },
+      "available": {
+        "purpose": "Offered to a position you hold. The first person to pick one up owns it.",
+        "offeredTo": "offered to {{pool}}",
+        "failed": "Couldn't load tasks to pick up"
+      }
     }
   },
   "nav": {
@@ -2636,6 +2657,18 @@
     "errorLoad": "The AI credits couldn't be loaded."
   },
   "plural": {
+    "tasks": {
+      "sections": {
+        "decisionCount": {
+          "one": "{{count}} task waiting for your decision",
+          "other": "{{count}} tasks waiting for your decision"
+        },
+        "availableCount": {
+          "one": "{{count}} task to pick up",
+          "other": "{{count}} tasks to pick up"
+        }
+      }
+    },
     "role": {
       "permissions": {
         "one": "{{count}} permission",

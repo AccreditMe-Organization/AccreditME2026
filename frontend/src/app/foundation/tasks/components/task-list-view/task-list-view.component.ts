@@ -22,7 +22,6 @@ import { Subscription } from 'rxjs';
 import { AmDatePipe, AmNumberPipe, FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
-import { ROUTE_PERMISSIONS } from '../../../../core/navigation/nav-items';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { SortHeaderComponent, SortState, nextSort } from '../../../../shared/components/sort-header/sort-header.component';
@@ -40,6 +39,7 @@ import {
 import { TaskRowActionId, TaskRowActionModel, asRowAction, taskRowActions } from '../../task-row-actions';
 import { TaskRowText } from '../../task-row-text';
 import { taskPoolLabel } from '../../task-pool-label';
+import { taskPriorityGlyph, taskPriorityKey, taskRecordHref, taskRecordTypeKey } from '../../task-row-display';
 import { isTaskOverdue } from '../../task-status';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
@@ -47,6 +47,15 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 export const TASK_LIST_PHONE_BELOW_PX = 760;
 const PAGE = 50;
 const SEARCH_DELAY_MS = 250;
+/**
+ * ACC-120 slice 3 — My tasks' list, under its two sections: the page's frame
+ * (border, radius, surface) with no fixed height, so the page scrolls as one,
+ * and its five tracks (Task · record, Priority, Due, Status, actions), each
+ * fixed or fr under the ACC-234 rule. Utilities, so the component's styles
+ * stay inside their budget; the row rule reads the two variables.
+ */
+const MINE_ROOT =
+  'border border-[var(--am-border)] rounded-[var(--am-radius-card)] bg-[var(--am-surface-raised)] [--am-tl-cols:minmax(180px,3fr)_96px_minmax(130px,1.3fr)_minmax(110px,1fr)_150px] [--am-tl-min:720px]';
 
 const STATUSES: TaskRecordListStatus[] = ['UNASSIGNED', 'PENDING', 'IN_PROGRESS', 'ON_HOLD', 'REJECTED', 'COMPLETED', 'CANCELLED'];
 /**
@@ -80,8 +89,6 @@ const CHIP_STATUSES: Record<OwnView, TaskRecordListStatus[]> = {
   created: ['UNASSIGNED', 'PENDING', 'IN_PROGRESS', 'ON_HOLD', 'REJECTED', 'COMPLETED', 'CANCELLED'],
   mine: ['PENDING', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED'],
 };
-/** A record type with a page of its own today, and the route that opens it. */
-const RECORD_PAGES: Readonly<Record<string, string>> = { COMMITTEE: 'committees' };
 
 interface Chip {
   id: 'q' | 'status' | 'overdue' | 'who' | 'required' | 'due' | 'mine' | 'link' | 'recordType' | 'unit';
@@ -107,6 +114,8 @@ interface ViewRow {
   recordHref: string[] | null;
   /** Open, not on hold, its due time passed (isTaskOverdue). */
   overdue: boolean;
+  /** ACC-120 slice 3 — My tasks' Priority column: text, never colour; a glyph on High and Critical. */
+  priority: { glyph: string | null; label: string };
   model: TaskRowActionModel;
   menu: RowMenuItem[][];
 }
@@ -129,7 +138,7 @@ interface ViewRow {
   standalone: true,
   imports: [FormsModule, RouterLink, TranslatePipe, AmDatePipe, AmNumberPipe, OverlaySelectComponent, RowMenuComponent, SortHeaderComponent, TaskLinkComponent, TaskActionHostComponent],
   template: `
-    <div class="am-tl" [class.am-tl--page]="variant() === 'page'" data-testid="task-list-view">
+    <div class="am-tl" [class]="rootClass()" data-testid="task-list-view">
       <!-- ACC-120 slice 3 — a view the server refused (403) offers nothing to search,
            filter or sort: only the denied state below. -->
       @if (phase() !== 'denied') {
@@ -148,8 +157,9 @@ interface ViewRow {
           </span>
           @if (ownView()) {
             <!-- ACC-120 slice 3 — the own views' status chips: one pressed at a
-                 time, "All open" by default. A count sits beside each label
-                 once the server sends it (none yet). -->
+                 time, "All open" by default. Each carries its count from the
+                 first page's facets.statusCounts, over the view's whole scope;
+                 with no facets, no count. -->
             <div class="order-first basis-full flex flex-nowrap gap-1.5 min-w-0 overflow-x-auto [scrollbar-width:thin]" role="group" [attr.aria-label]="'taskList.filter.status' | translate" data-testid="task-list-status-chips">
               @for (c of statusChips(); track c.id) {
                 <button
@@ -178,6 +188,7 @@ interface ViewRow {
           <button type="button" class="am-tl__toggle" [attr.aria-pressed]="overdue()" (click)="overdue.set(!overdue())" data-testid="filter-overdue">
             {{ 'taskList.filter.overdueOnly' | translate }}
           </button>
+          @if (!isMine()) {
           <app-overlay-select
             class="am-tl__filter am-tl__filter--wide"
             [options]="whoOptions()"
@@ -191,6 +202,7 @@ interface ViewRow {
             (ngModelChange)="who.set($event)"
             data-testid="filter-who"
           />
+          }
           <app-overlay-select
             class="am-tl__filter"
             [options]="requiredOptions()"
@@ -237,9 +249,11 @@ interface ViewRow {
               data-testid="filter-unit"
             />
           }
-          <button type="button" class="am-tl__toggle" [attr.aria-pressed]="mine()" (click)="mine.set(!mine())" data-testid="filter-mine">
-            {{ 'taskList.filter.mine' | translate }}
-          </button>
+          @if (!isMine()) {
+            <button type="button" class="am-tl__toggle" [attr.aria-pressed]="mine()" (click)="mine.set(!mine())" data-testid="filter-mine">
+              {{ 'taskList.filter.mine' | translate }}
+            </button>
+          }
           @if (phone()) {
             <!-- ACC-234 — cards have no column headers, so a phone keeps a
                  compact sort menu: the headers' own sorts, both directions. -->
@@ -274,7 +288,17 @@ interface ViewRow {
       }
 
       <div #scroller class="am-tl__scroll" data-testid="task-list-scroll" [attr.aria-busy]="phase() === 'loading'">
-        @if (!phone() && phase() !== 'denied') {
+        @if (!phone() && phase() !== 'denied' && isMine()) {
+          <!-- ACC-120 slice 3 — My tasks' columns (Task Screens): Task · record,
+               Priority (plain text, not sortable), Due, Status, actions. -->
+          <div class="am-tl__row am-tl__head" role="row" data-testid="task-list-head">
+            <am-sort-header key="title" [label]="'tasks.sections.col.taskRecord' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <span role="columnheader" class="am-tl__tail" data-testid="task-list-col-priority">{{ 'task.priority.title' | translate }}</span>
+            <am-sort-header key="due" [label]="'taskList.col.due' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <am-sort-header key="status" [label]="'taskList.col.status' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <span role="columnheader"><span class="sr-only">{{ 'taskList.col.actions' | translate }}</span></span>
+          </div>
+        } @else if (!phone() && phase() !== 'denied') {
           <!-- ACC-234 — a column the server sorts by is a header you press;
                the others are plain text. -->
           <div class="am-tl__row am-tl__head" role="row" data-testid="task-list-head">
@@ -351,7 +375,11 @@ interface ViewRow {
                       }
                       <span class="am-tl__sub">
                         <span class="am-tl__due whitespace-nowrap" [attr.data-tone]="r.due.tone">{{ r.due.text }}</span>
-                        <span class="am-tl__tail"> · {{ r.who }} · {{ r.statusKey | translate }}</span>
+                        @if (isMine()) {
+                          <span class="am-tl__tail"> · {{ r.priority.label }} · {{ r.statusKey | translate }}</span>
+                        } @else {
+                          <span class="am-tl__tail"> · {{ r.who }} · {{ r.statusKey | translate }}</span>
+                        }
                         @if (r.overdue) {
                           <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)] ms-1" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
                         }
@@ -365,7 +393,24 @@ interface ViewRow {
                       <span class="am-tl__sub am-tl__tail" [attr.title]="r.subLine">{{ r.subLine }}</span>
                     }
                   </span>
-                  @if (!phone()) {
+                  @if (!phone() && isMine()) {
+                    <span class="am-tl__tail" data-testid="task-list-priority">
+                      @if (r.priority.glyph) {<span aria-hidden="true">{{ r.priority.glyph }}&nbsp;</span>}{{ r.priority.label }}
+                    </span>
+                    <span class="am-tl__due overflow-hidden" [attr.data-tone]="r.due.tone" data-testid="task-list-due">
+                      <span class="flex flex-wrap -ms-[1em]">
+                        @for (part of r.dueParts; track $index) {
+                          <span class="am-tl__part relative min-w-0 ps-[1em] wrap-anywhere before:absolute before:start-0 before:w-[1em] before:text-center before:content-['·']">{{ part }}</span>
+                        }
+                      </span>
+                    </span>
+                    <span class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0" data-testid="task-list-status">
+                      <span>{{ r.statusKey | translate }}</span>
+                      @if (r.overdue) {
+                        <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)]" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
+                      }
+                    </span>
+                  } @else if (!phone()) {
                     <span class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
                       <span>{{ r.statusKey | translate }}</span>
                       @if (r.overdue) {
@@ -462,8 +507,10 @@ interface ViewRow {
          its row's content. The action track was 'auto', so a row with a
          next-step button sized it wider than a row without one and every fr
          column shifted. It is fixed now, wide enough for the longest next
-         step and the ⋯ in both languages. No cell paints outside its track. */
-      .am-tl__row{display:grid;grid-template-columns:minmax(170px,2.2fr) 96px minmax(120px,1.4fr) minmax(150px,1.2fr) minmax(90px,1fr) 92px 150px;gap:10px;align-items:center;min-inline-size:960px;box-sizing:border-box;padding:6px 16px;border-block-end:1px solid var(--am-border)}
+         step and the ⋯ in both languages. No cell paints outside its track.
+         ACC-120 slice 3 — My tasks has its own five tracks (MINE_ROOT), set
+         through the two variables; every other list keeps these. */
+      .am-tl__row{display:grid;grid-template-columns:var(--am-tl-cols,minmax(170px,2.2fr) 96px minmax(120px,1.4fr) minmax(150px,1.2fr) minmax(90px,1fr) 92px 150px);gap:10px;align-items:center;min-inline-size:var(--am-tl-min,960px);box-sizing:border-box;padding:6px 16px;border-block-end:1px solid var(--am-border)}
       .am-tl__row>*{min-inline-size:0}
       .am-tl__head{position:sticky;inset-block-start:0;z-index:1;block-size:30px;padding-block:0;background:var(--am-surface);font-size:11.5px;font-weight:600;color:var(--am-ink-700)}
       .am-tl__item{min-block-size:52px}.am-tl__item:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:-2px}
@@ -596,6 +643,11 @@ export class TaskListViewComponent {
     return view === 'mine' || view === 'created' ? view : null;
   });
 
+  /** ACC-120 slice 3 — My tasks: its own columns, no assignee filters, and it flows with the page. */
+  readonly isMine = computed(() => this.ownView() === 'mine');
+  /** The frame: My tasks', or the fixed-height page frame, or none (the popup). */
+  readonly rootClass = computed(() => (this.isMine() ? MINE_ROOT : this.variant() === 'page' ? 'am-tl--page' : ''));
+
   /** The statuses the query sends: the pressed chip's on an own view, else the select's. */
   private statusesSent(): TaskRecordListStatus[] | undefined {
     const own = this.ownView();
@@ -614,14 +666,24 @@ export class TaskListViewComponent {
     return !!(q.q || this.statusFiltered() || q.overdue || q.assignee || q.pool || q.required || q.due || q.mine || q.recordType || q.unit);
   });
 
-  /** The chips of the open own view, "All open" first. `count` waits for the server. */
+  /**
+   * The chips of the open own view, "All open" first, each with its count from
+   * the first page's facets.statusCounts. "All open" is the sum of that view's
+   * open set. No counts, no number: a chip never says 0 for "not told".
+   */
   readonly statusChips = computed<{ id: StatusChipId; label: string; count: number | null }[]>(() => {
     this.translate.currentLang();
     const own = this.ownView();
     if (!own) return [];
+    const counts = this.facets()?.statusCounts ?? null;
+    const open = counts ? OPEN_STATUSES[own].reduce((sum, st) => sum + (counts[st] ?? 0), 0) : null;
     return [
-      { id: 'OPEN' as const, label: this.translate.instant('taskList.filter.allOpen'), count: null },
-      ...CHIP_STATUSES[own].map((st) => ({ id: st, label: this.translate.instant(`task.status.${st.toLowerCase()}`), count: null })),
+      { id: 'OPEN' as const, label: this.translate.instant('taskList.filter.allOpen'), count: open },
+      ...CHIP_STATUSES[own].map((st) => ({
+        id: st,
+        label: this.translate.instant(`task.status.${st.toLowerCase()}`),
+        count: counts ? (counts[st] ?? 0) : null,
+      })),
     ];
   });
 
@@ -652,6 +714,7 @@ export class TaskListViewComponent {
         recordName: own && row.record ? this.recordName(row.record) : null,
         recordHref: own && row.record ? this.recordHref(row.record) : null,
         overdue: own && isTaskOverdue(row, now),
+        priority: this.priorityText(row.priority),
         model,
         menu: model.menu.map((group) =>
           group.map((a) => ({
@@ -960,6 +1023,7 @@ export class TaskListViewComponent {
       next: (page) => {
         const fresh = page.items.find((r) => r.id === taskId);
         this.items.update((rows) => (fresh ? rows.map((r) => (r.id === taskId ? fresh : r)) : rows.filter((r) => r.id !== taskId)));
+        if (page.facets) this.facets.set(page.facets);
         this.total.set(page.total);
         this.matching.set(page.matching);
         this.totalChange.emit({ total: page.total, scope: page.scope });
@@ -1038,29 +1102,29 @@ export class TaskListViewComponent {
     return name === key ? this.translate.instant('taskList.recordType.OTHER') : name;
   }
 
+  /** "▲ High", "!! Critical", the others their word alone (task-row-display.ts). */
+  private priorityText(priority: string): { glyph: string | null; label: string } {
+    const key = taskPriorityKey(priority);
+    const label = this.translate.instant(key);
+    return { glyph: taskPriorityGlyph(priority), label: label === key ? priority : label };
+  }
+
   /** ACC-120 slice 3 — the record's name in the reader's language, or its type word when the row carries none. */
   private recordName(record: NonNullable<ITaskRecordRowDto['record']>): string {
     return record.nameEn ? this.language.bilingual(record.nameEn, record.nameAr) : this.recordTypeWord(record.type);
   }
 
-  /**
-   * Where the record opens: only a type with a page today, only with a name
-   * (a nameless row is one the viewer may not open), and only for a viewer the
-   * page's route admits — hidden, never a link the guard then refuses.
-   */
+  /** Where the record opens, by the one rule (task-row-display.ts). */
   private recordHref(record: NonNullable<ITaskRecordRowDto['record']>): string[] | null {
-    const route = RECORD_PAGES[record.type];
-    if (!route || !record.nameEn) return null;
-    const needs = ROUTE_PERMISSIONS.get(route) ?? [];
-    return needs.every((p) => this.access.hasPermission(p)) ? ['/', route, record.id] : null;
+    return taskRecordHref(record, (p) => this.access.hasPermission(p));
   }
 
   private recordTypeWord(type: string): string {
-    return this.translate.instant(type === 'COMMITTEE' || type === 'MEETING' ? `taskPage.recordType.${type}` : 'taskPage.recordType.OTHER');
+    return this.translate.instant(taskRecordTypeKey(type));
   }
 
   private recordLine(record: NonNullable<ITaskRecordRowDto['record']>): string {
-    const type = this.translate.instant(record.type === 'COMMITTEE' || record.type === 'MEETING' ? `taskPage.recordType.${record.type}` : 'taskPage.recordType.OTHER');
+    const type = this.recordTypeWord(record.type);
     return record.nameEn ? `${type} · ${this.language.bilingual(record.nameEn, record.nameAr)}` : type;
   }
 }

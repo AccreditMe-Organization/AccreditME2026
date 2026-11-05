@@ -38,6 +38,10 @@ export interface TaskActionFailure {
  *
  * Success emits `changed` with the task's id; a failure emits `failed` for
  * THAT row (ACC-217: an action's error never blanks the list it came from).
+ *
+ * ACC-120 slice 3 — `reviewRequest()` opens the decision dialog on an inbox
+ * request (My tasks' "Waiting for your decision"), which already carries what
+ * the dialog shows, so no page view is read and no row is made up for it.
  */
 @Component({
   selector: 'app-task-action-host',
@@ -67,12 +71,6 @@ export interface TaskActionFailure {
         [type]="requestType()"
         (requested)="done()"
       />
-      <app-task-request-decision-dialog
-        [visible]="dialog() === 'decision'"
-        (visibleChange)="onVisible($event)"
-        [request]="decisionRequest()"
-        (decided)="done()"
-      />
       <app-task-reassign-dialog
         [visible]="dialog() === 'reassign'"
         (visibleChange)="onVisible($event)"
@@ -85,6 +83,13 @@ export interface TaskActionFailure {
       <app-task-cancel-dialog [visible]="dialog() === 'cancel'" (visibleChange)="onVisible($event)" [task]="v.task" (cancelledTask)="done()" />
       <app-task-reopen-dialog [visible]="dialog() === 'reopen'" (visibleChange)="onVisible($event)" [task]="v.task" (reopened)="done()" />
     }
+    <!-- Outside the page view: an inbox request opens it with no view read. -->
+    <app-task-request-decision-dialog
+      [visible]="dialog() === 'decision'"
+      (visibleChange)="onVisible($event)"
+      [request]="decisionRequest()"
+      (decided)="done()"
+    />
   `,
 })
 export class TaskActionHostComponent {
@@ -105,8 +110,12 @@ export class TaskActionHostComponent {
   readonly requestType = signal<TaskRequestType>('EXTENSION');
   /** An evidence-only dialog that changed nothing still refreshes the count. */
   private dirty = false;
+  /** An inbox request being decided (reviewRequest()), in place of a page view's. */
+  private readonly direct = signal<TaskRequestForDecisionDto | null>(null);
 
   readonly decisionRequest = computed<TaskRequestForDecisionDto | null>(() => {
+    const direct = this.direct();
+    if (direct) return direct;
     const v = this.view();
     const r = v?.task.openRequest;
     if (!v || !r) return null;
@@ -167,24 +176,38 @@ export class TaskActionHostComponent {
     }
   }
 
+  /** ACC-120 slice 3 — decide an inbox request; its task is what `changed` names. */
+  reviewRequest(request: TaskRequestForDecisionDto): void {
+    this.direct.set(request);
+    this.dirty = false;
+    this.dialog.set('decision');
+  }
+
   onVisible(visible: boolean): void {
     if (visible) return;
-    const id = this.view()?.task.id;
+    const id = this.taskId();
     this.dialog.set(null);
+    this.direct.set(null);
     if (this.dirty && id) this.changed.emit(id);
     this.dirty = false;
   }
 
   /** A dialog finished its work. `closes` is false for one that stays open (evidence). */
   done(closes = true): void {
-    const id = this.view()?.task.id;
+    const id = this.taskId();
     if (!id) return;
     if (closes) {
       this.dialog.set(null);
+      this.direct.set(null);
       this.changed.emit(id);
     } else {
       this.dirty = true;
     }
+  }
+
+  /** The task the open dialog is about: the inbox request's, else the page view's. */
+  private taskId(): string | undefined {
+    return this.direct()?.task.id ?? this.view()?.task.id;
   }
 
   private openDialog(row: ITaskRecordRowDto, dialog: DialogId): void {
@@ -192,6 +215,7 @@ export class TaskActionHostComponent {
     this.tasks.getPage(row.id).subscribe({
       next: (view) => {
         this.busyChange.emit(null);
+        this.direct.set(null);
         this.view.set(view);
         this.dirty = false;
         this.dialog.set(dialog);

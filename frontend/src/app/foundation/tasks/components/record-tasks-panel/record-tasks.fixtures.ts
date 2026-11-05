@@ -36,6 +36,7 @@ export function recordRow(id: string, over: Partial<ITaskRecordRowDto> = {}): IT
     cancelledAt: null,
     cancelledReason: null,
     rejectedReason: null,
+    rejectedBy: null,
     createdAt: '2026-10-01T05:00:00.000Z',
     updatedAt: '2026-10-02T05:00:00.000Z',
     requiresEvidence: false,
