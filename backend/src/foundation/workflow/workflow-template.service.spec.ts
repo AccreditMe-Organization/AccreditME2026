@@ -743,7 +743,7 @@ describe('WorkflowTemplateService', () => {
 
       await service.addStage(
         'template-1',
-        { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' } as never,
+        { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never,
         ORG_A,
         ACTOR,
       );
@@ -759,41 +759,11 @@ describe('WorkflowTemplateService', () => {
       await expect(
         service.addStage(
           'template-1',
-          { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' } as never,
+          { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never,
           ORG_B,
           ACTOR,
         ),
       ).rejects.toThrow(NotFoundException);
-    });
-
-    // ACC-17 — assigneeUserId re-validated against the caller's org before
-    // being written onto the stage, mirroring the re-scoping the ROLE case
-    // already gets. A client-supplied user id belonging to a DIFFERENT org
-    // must be rejected, not written unscoped.
-    it('throws NotFoundException when assigneeUserId does not belong to this org', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.user.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.addStage(
-          'template-1',
-          {
-            nameEn: 'Drafting',
-            nameAr: 'مسودة',
-            order: 10,
-            approvalMode: 'SINGLE',
-            assigneeStrategy: 'SPECIFIC_USER',
-            assigneeUserId: 'foreign-user',
-          } as never,
-          ORG_A,
-          ACTOR,
-        ),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
-        where: { id: 'foreign-user', organizationId: ORG_A },
-      });
-      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
     });
 
     it('defaults isInitial and isFinal to false when omitted', async () => {
@@ -802,7 +772,7 @@ describe('WorkflowTemplateService', () => {
 
       await service.addStage(
         'template-1',
-        { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' } as never,
+        { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never,
         ORG_A,
         ACTOR,
       );
@@ -812,214 +782,6 @@ describe('WorkflowTemplateService', () => {
       );
     });
 
-    // ACC-22 (closing the ACC-17 deferred gap) — committeeId re-validated
-    // against the caller's org before being written onto the stage,
-    // mirroring the assigneeUserId re-scoping test above. A client-supplied
-    // committee id belonging to a DIFFERENT org must be rejected, not
-    // written unscoped.
-    it('throws NotFoundException when committeeId does not belong to this org', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.committee.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.addStage(
-          'template-1',
-          {
-            nameEn: 'Active',
-            nameAr: 'نشطة',
-            order: 10,
-            approvalMode: 'COMMITTEE',
-            assigneeStrategy: 'COMMITTEE',
-            committeeId: 'foreign-committee',
-          } as never,
-          ORG_A,
-          ACTOR,
-        ),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
-        where: { id: 'foreign-committee', organizationId: ORG_A },
-      });
-      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
-    });
-
-    it('creates the stage when committeeId belongs to this org', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.workflowStage.create.mockResolvedValue(makeStage({ committeeId: 'committee-a' }));
-
-      await service.addStage(
-        'template-1',
-        {
-          nameEn: 'Active',
-          nameAr: 'نشطة',
-          order: 10,
-          approvalMode: 'COMMITTEE',
-          assigneeStrategy: 'COMMITTEE',
-          committeeId: 'committee-a',
-        } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
-        where: { id: 'committee-a', organizationId: ORG_A },
-      });
-      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ committeeId: 'committee-a' }) }),
-      );
-    });
-
-    // ACC-28 — assigneeCommitteeRoleValueId re-validated against a real,
-    // tenant-visible committee_member_role LookupValue before being written
-    // onto the stage, mirroring the committeeId re-scoping tests above.
-    it('throws NotFoundException when assigneeCommitteeRoleValueId does not resolve to a tenant-visible lookup value', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.lookupValue.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.addStage(
-          'template-1',
-          {
-            nameEn: 'Active',
-            nameAr: 'نشطة',
-            order: 10,
-            approvalMode: 'COMMITTEE',
-            assigneeStrategy: 'COMMITTEE',
-            committeeId: 'committee-a',
-            assigneeCommitteeRoleValueId: 'foreign-lookup-value',
-          } as never,
-          ORG_A,
-          ACTOR,
-        ),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(mockPrisma.lookupValue.findFirst).toHaveBeenCalledWith({
-        where: {
-          id: 'foreign-lookup-value',
-          category: { key: 'committee_member_role' },
-          OR: [{ organizationId: null }, { organizationId: ORG_A }],
-        },
-      });
-      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
-    });
-
-    // ACC-54 — both POSITION_FIXED ids re-validated against this tenant
-    // before being written onto the stage, mirroring the committeeId and
-    // assigneeCommitteeRoleValueId tests above. Both are checked
-    // independently: a stage could otherwise reference another tenant's
-    // position, another tenant's unit, or one of each.
-    const positionFixedDto = (overrides: Record<string, unknown> = {}) =>
-      ({
-        nameEn: 'Compliance Review',
-        nameAr: 'مراجعة الامتثال',
-        order: 10,
-        approvalMode: 'SINGLE',
-        assigneeStrategy: 'POSITION_FIXED',
-        assigneePositionId: 'position-a',
-        assigneeOrgUnitId: 'unit-a',
-        ...overrides,
-      }) as never;
-
-    itEnforcesTenantIsolation('assigneePositionId is rejected when it belongs to another tenant', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.orgPosition.findFirst.mockResolvedValue(null); // foreign tenant's position
-
-      await expect(
-        service.addStage('template-1', positionFixedDto({ assigneePositionId: 'foreign-position' }), ORG_A, ACTOR),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith({
-        where: { id: 'foreign-position', organizationId: ORG_A },
-      });
-      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
-    });
-
-    itEnforcesTenantIsolation('assigneeOrgUnitId is rejected when it belongs to another tenant', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.orgPosition.findFirst.mockResolvedValue({ id: 'position-a', organizationId: ORG_A });
-      mockPrisma.orgUnit.findFirst.mockResolvedValue(null); // foreign tenant's unit
-
-      await expect(
-        service.addStage('template-1', positionFixedDto({ assigneeOrgUnitId: 'foreign-unit' }), ORG_A, ACTOR),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
-        where: { id: 'foreign-unit', organizationId: ORG_A },
-      });
-      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
-    });
-
-    it('creates a POSITION_FIXED stage when both ids resolve within this tenant', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.orgPosition.findFirst.mockResolvedValue({ id: 'position-a', organizationId: ORG_A });
-      mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-a', organizationId: ORG_A });
-      mockPrisma.workflowStage.create.mockResolvedValue(
-        makeStage({ assigneePositionId: 'position-a', assigneeOrgUnitId: 'unit-a' }),
-      );
-
-      await service.addStage('template-1', positionFixedDto(), ORG_A, ACTOR);
-
-      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ assigneePositionId: 'position-a', assigneeOrgUnitId: 'unit-a' }),
-        }),
-      );
-    });
-
-    // The pairing rule, stated as a test so the choice is explicit rather
-    // than incidental: a POSITION_FIXED stage missing one or both ids is
-    // ACCEPTED at write time, not rejected. This matches every other
-    // strategy in this codebase — ROLE without assigneeRoleId and COMMITTEE
-    // without committeeId are both writable too — and it is what lets a
-    // half-configured stage surface through ACC-28's unassigned-stage
-    // detection instead of blocking an admin mid-configuration. The UI warns
-    // (non-blocking) rather than the API rejecting.
-    it('accepts a POSITION_FIXED stage with neither id set, matching how ROLE and COMMITTEE behave', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.workflowStage.create.mockResolvedValue(makeStage({}));
-
-      await expect(
-        service.addStage(
-          'template-1',
-          positionFixedDto({ assigneePositionId: undefined, assigneeOrgUnitId: undefined }),
-          ORG_A,
-          ACTOR,
-        ),
-      ).resolves.toBeDefined();
-
-      // Nothing to validate, so neither validator is consulted at all.
-      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
-      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
-      expect(mockPrisma.workflowStage.create).toHaveBeenCalled();
-    });
-
-    it('creates the stage when assigneeCommitteeRoleValueId resolves to a tenant-visible lookup value', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.workflowStage.create.mockResolvedValue(
-        makeStage({ committeeId: 'committee-a', assigneeCommitteeRoleValueId: 'lookup-chairman-id' }),
-      );
-
-      await service.addStage(
-        'template-1',
-        {
-          nameEn: 'Active',
-          nameAr: 'نشطة',
-          order: 10,
-          approvalMode: 'COMMITTEE',
-          assigneeStrategy: 'COMMITTEE',
-          committeeId: 'committee-a',
-          assigneeCommitteeRoleValueId: 'lookup-chairman-id',
-        } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ assigneeCommitteeRoleValueId: 'lookup-chairman-id' }),
-        }),
-      );
-    });
   });
 
   // ── updateStage ──────────────────────────────────────────────────────────────
@@ -1033,77 +795,6 @@ describe('WorkflowTemplateService', () => {
 
       expect(mockPrisma.workflowStage.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { nameEn: 'Renamed' } }),
-      );
-    });
-
-    it('throws NotFoundException when assigneeUserId does not belong to this org', async () => {
-      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
-      mockPrisma.user.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.updateStage('stage-1', { assigneeUserId: 'foreign-user' } as never, ORG_A, ACTOR),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
-        where: { id: 'foreign-user', organizationId: ORG_A },
-      });
-      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
-    });
-
-    // ACC-22 (closing the ACC-17 deferred gap) — same re-validation as
-    // addStage above, exercised here for updateStage.
-    it('throws NotFoundException when committeeId does not belong to this org', async () => {
-      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
-      mockPrisma.committee.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.updateStage('stage-1', { committeeId: 'foreign-committee' } as never, ORG_A, ACTOR),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
-        where: { id: 'foreign-committee', organizationId: ORG_A },
-      });
-      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
-    });
-
-    // ACC-28 — same re-validation as addStage above, exercised here for
-    // updateStage.
-    it('throws NotFoundException when assigneeCommitteeRoleValueId does not resolve to a tenant-visible lookup value', async () => {
-      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
-      mockPrisma.lookupValue.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.updateStage(
-          'stage-1',
-          { assigneeCommitteeRoleValueId: 'foreign-lookup-value' } as never,
-          ORG_A,
-          ACTOR,
-        ),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(mockPrisma.lookupValue.findFirst).toHaveBeenCalledWith({
-        where: {
-          id: 'foreign-lookup-value',
-          category: { key: 'committee_member_role' },
-          OR: [{ organizationId: null }, { organizationId: ORG_A }],
-        },
-      });
-      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
-    });
-
-    it('explicitly clears assigneeCommitteeRoleValueId when the dto sets it to null', async () => {
-      mockPrisma.workflowStage.findFirst.mockResolvedValue(
-        makeStage({ assigneeCommitteeRoleValueId: 'lookup-chairman-id' }),
-      );
-      mockPrisma.workflowStage.update.mockResolvedValue(
-        makeStage({ assigneeCommitteeRoleValueId: null }),
-      );
-
-      await service.updateStage('stage-1', { assigneeCommitteeRoleValueId: null } as never, ORG_A, ACTOR);
-
-      expect(mockPrisma.lookupValue.findFirst).not.toHaveBeenCalled();
-      expect(mockPrisma.workflowStage.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { assigneeCommitteeRoleValueId: null } }),
       );
     });
 
@@ -1903,7 +1594,7 @@ describe('WorkflowTemplateService', () => {
       await expect(
         service.addStage(
           'template-belonging-to-org-a',
-          { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' } as never,
+          { nameEn: 'Drafting', nameAr: 'مسودة', order: 10, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never,
           ORG_B,
           ACTOR,
         ),
@@ -2368,7 +2059,7 @@ describe('WorkflowTemplateService', () => {
     });
 
     describe('addStage', () => {
-      const ADD = { nameEn: 'Board Review', order: 25, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' };
+      const ADD = { nameEn: 'Board Review', order: 25, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } };
 
       it("a committee stage added with no actions gets the member actions — what such a stage allowed before stage rules", async () => {
         mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ objectType: 'COMMITTEE' }));
@@ -2412,6 +2103,8 @@ describe('WorkflowTemplateService', () => {
           'nameEn', 'nameAr', 'description', 'order', 'slaWorkingHours', 'isInitial', 'isFinal', 'approvalMode', 'parallelThreshold',
           'committeeId', 'assigneeStrategy', 'assigneeUserId', 'assigneeRoleId', 'assigneeCommitteeRoleValueId', 'assigneePositionId',
           'assigneeOrgUnitId', 'escalationConfig', 'actions', 'flags',
+          // ACC-271 PR 6a — every stage is created with who, and its audit names it.
+          'whoMode', 'whoEntries',
         ]);
         expect(row!['after']).toMatchObject({ nameEn: 'Board Review', order: 25, actions: ['add_member', 'remove_member', 'change_member_role'], flags: [] });
       });

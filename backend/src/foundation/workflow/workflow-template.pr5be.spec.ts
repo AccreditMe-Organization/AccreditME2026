@@ -273,14 +273,22 @@ describe('WorkflowTemplateService — the backend for the stage screens (ACC-271
       expect(prisma.workflowStage.create).not.toHaveBeenCalled();
     });
 
-    it('a stage created the old way, without who, is created exactly as before', async () => {
+    // ACC-271 PR 6a — the engine reads nothing but `who`, so a stage created
+    // without one would be worked by nobody: refused, nothing written.
+    it('a stage without who is refused WHO_REQUIRED (400), and nothing is written', async () => {
       const { prisma, audit, service } = ready();
-      await service.addStage('template-1', { nameEn: 'Review', order: 20, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE' } as never, ORG, ACTOR);
-      const data = prisma.workflowStage.create.mock.calls[0][0].data;
-      expect(data).toEqual(expect.objectContaining({ approvalMode: 'SINGLE', assigneeStrategy: 'ROLE' }));
-      expect(data).not.toHaveProperty('whoMode');
+      const err = await service
+        .addStage('template-1', { nameEn: 'Review', order: 20, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE' } as never, ORG, ACTOR)
+        .then(
+          () => null,
+          (e: { getStatus: () => number; getResponse: () => { code?: string; message?: string } }) => e,
+        );
+      expect(err?.getStatus()).toBe(400);
+      expect(err?.getResponse()).toEqual(expect.objectContaining({ code: 'WHO_REQUIRED', message: 'Choose who works this stage' }));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.workflowStage.create).not.toHaveBeenCalled();
       expect(prisma.workflowStageAssignee.createMany).not.toHaveBeenCalled();
-      expect(audit.log.mock.calls[0][0].after).not.toHaveProperty('whoMode');
+      expect(audit.log).not.toHaveBeenCalled();
     });
 
     describe('the create DTO', () => {
