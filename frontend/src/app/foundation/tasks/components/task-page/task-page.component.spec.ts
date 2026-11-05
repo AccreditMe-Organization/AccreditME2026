@@ -165,7 +165,7 @@ describe('TaskPageComponent — the task page (ACC-228)', () => {
       const el = answer(pageView());
       expect(text(el.querySelector('.am-tp__kicker'))).toBe('مهمة');
       expect(text(el.querySelector('header'))).toContain('قيد التنفيذ');
-      expect(Array.from(el.querySelectorAll('.am-tp__label')).map(text)).toEqual(['بخصوص', 'لدى', 'من أنشأها', 'الأدلة']);
+      expect(Array.from(el.querySelectorAll('.am-tp__label')).map(text)).toEqual(['بخصوص', 'لدى', 'أُنشئت بواسطة', 'الأدلة']);
       expect(text(el.querySelector('.am-tp__cell a'))).toBe('لجنة مكافحة العدوى');
     });
   });
