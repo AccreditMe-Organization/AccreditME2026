@@ -55,6 +55,18 @@ describe('FormatService (ACC-94)', () => {
       expect(format.timeOfDay(at)).toBe('14:05');
       expect(format.timeOfDay(null)).toBe('—');
     });
+
+    it("eventTime (ACC-120 slice 4) is day, month and 24-hour time, the year only when it isn't this year", () => {
+      const now = new Date('2026-11-05T09:00:00Z');
+      expect(format.eventTime('2026-10-01T06:12:00Z', now)).toBe('1 Oct 09:12');
+      // The day is the tenant's: 21:30Z is past midnight in Riyadh.
+      expect(format.eventTime('2026-09-15T21:30:00Z', now)).toBe('16 Sep 00:30');
+      expect(format.eventTime('2025-12-31T06:12:00Z', now)).toBe('31 Dec 2025 09:12');
+      inArabic();
+      expect(format.eventTime('2026-10-01T06:12:00Z', now)).toBe('1 أكتوبر 09:12');
+      expect(ARABIC_INDIC_DIGITS.test(format.eventTime('2026-10-01T06:12:00Z', now))).toBeFalse();
+      expect(format.eventTime(null, now)).toBe('—');
+    });
   });
 
   describe('time zone — the tenant\'s, never the browser\'s', () => {
@@ -70,6 +82,19 @@ describe('FormatService (ACC-94)', () => {
       expect(format.dateTime(instant)).toBe('15 Sep 2026, 17:30');
       context.zone.set('UTC');
       expect(format.dateTime(instant)).toBe('15 Sep 2026, 21:30');
+    });
+
+    // ACC-120 slice 4 — "Due 15 Oct 2026, 17:00 +03": the zone's offset, in
+    // Latin digits, minutes only when the zone has them. Zones with no daylight
+    // saving, so the answer does not depend on the day the suite runs.
+    it('zoneOffset names the tenant zone as a signed hour offset', () => {
+      expect(format.zoneOffset('Asia/Riyadh')).toBe('+03');
+      expect(format.zoneOffset('Asia/Dubai')).toBe('+04');
+      expect(format.zoneOffset('Asia/Kolkata')).toBe('+05:30');
+      expect(format.zoneOffset('UTC')).toBe('+00');
+      expect(format.zoneOffset('America/Bogota')).toBe('-05');
+      inArabic();
+      expect(format.zoneOffset('Asia/Riyadh')).toBe('+03');
     });
   });
 
