@@ -127,7 +127,11 @@ interface WorkloadFailure {
  * next, and the outcome is the person field's hint. `row` (New task): all
  * three in one row, the outcome on a line beneath. New task's step 1 measured
  * 414px against the 420 cap stacked — too close to call a fit, and a pool's
- * outcome wraps to a second line — so it takes the row.
+ * outcome wraps to a second line — so it takes the row. `split` (Reassign,
+ * ACC-120 slice 4, as Task Screens draws it): the unit or committee across the
+ * dialog, then position | person — member role | member — in one row, and the
+ * outcome beneath, in the drawing's words ("Goes straight to …", "Offered to
+ * …"). The fields stay in one DOM order; a grid places them.
  *
  * ## purpose: 'stage-task' (ACC-208)
  *
@@ -161,7 +165,7 @@ interface WorkloadFailure {
     @if (unavailable()) {
       <p-message severity="info" [text]="'task.assign.unavailable' | translate" />
     } @else {
-      <div [formGroup]="group()" class="am-picker" [class.am-picker--row]="layout() === 'row'">
+      <div [formGroup]="group()" class="am-picker" [class.am-picker--row]="layout() === 'row'" [class.am-picker--split]="layout() === 'split'">
         <div class="am-picker__pair">
           <am-field
             [label]="(offersCommittee() ? 'task.assign.unitOrCommittee' : 'task.assign.unit') | translate"
@@ -182,7 +186,7 @@ interface WorkloadFailure {
           </am-field>
 
           <am-field
-            [label]="(isCommitteeScope() ? 'task.assign.role' : 'task.assign.position') | translate"
+            [label]="targetLabelKey() | translate"
             [control]="group().controls.target"
             [forceShowErrors]="forceShowErrors()"
             [loading]="targetsLoading()"
@@ -203,9 +207,9 @@ interface WorkloadFailure {
 
         <am-field
           class="am-picker__person"
-          [label]="'task.assign.person' | translate"
+          [label]="personLabelKey() | translate"
           [control]="group().controls.userId"
-          [hint]="layout() === 'row' || workloadState() ? '' : outcome()"
+          [hint]="layout() !== 'stacked' || workloadState() ? '' : outcome()"
           [message]="layout() === 'stacked' && workloadState() ? 'none' : 'reserved'"
           [loading]="peopleLoading()"
         >
@@ -232,13 +236,13 @@ interface WorkloadFailure {
           [view]="hintView()"
           [refusalText]="hintFailureText()"
           [retryable]="hintRetryable()"
-          [inline]="layout() === 'stacked'"
+          [inline]="layout() !== 'row'"
           (suggest)="suggestSomeone()"
           (assign)="assignSuggested()"
           (keep)="keepChosen()"
         />
-      } @else if (layout() === 'row' && outcome()) {
-        <p class="am-picker__outcome" aria-live="polite">{{ outcome() }}</p>
+      } @else if (layout() !== 'stacked' && outcome()) {
+        <p class="am-picker__outcome" aria-live="polite" data-testid="picker-outcome">{{ outcome() }}</p>
       }
     }
 
@@ -304,6 +308,19 @@ interface WorkloadFailure {
         flex: 1 1 0;
         min-width: 0;
       }
+      /* Split (Reassign, a compact dialog): the first field across, then two
+         side by side, at compact density's field and column gaps. */
+      .am-picker--split {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--am-space-8);
+      }
+      .am-picker--split .am-picker__pair {
+        display: contents;
+      }
+      .am-picker--split .am-picker__pair > :first-child {
+        grid-column: 1 / -1;
+      }
       /* ACC-199 — the counts share the row's end edge with the name, on one line. */
       .am-picker__person-row {
         display: flex;
@@ -329,6 +346,10 @@ interface WorkloadFailure {
          the hint costs only its own lines. */
       .am-picker__workload {
         margin-block-start: var(--am-space-4);
+      }
+      /* Split: the form's own field gap already sits above it. */
+      .am-picker--split + .am-picker__workload {
+        margin-block-start: 0;
       }
       .am-picker__outcome {
         margin: 0;
@@ -357,8 +378,12 @@ export class TaskAssigneePickerComponent implements OnInit {
   readonly taskId = input<string | undefined>(undefined);
   readonly required = input(false);
   readonly forceShowErrors = input(false);
-  /** 'stacked': unit and position, then person (Reassign). 'row': all three in one row (New task). */
-  readonly layout = input<'stacked' | 'row'>('stacked');
+  /**
+   * 'stacked': unit and position, then person (a stage's task definition).
+   * 'row': all three in one row (New task). 'split': the unit or committee,
+   * then position | person in one row (Reassign).
+   */
+  readonly layout = input<'stacked' | 'row' | 'split'>('stacked');
   /** 'task': one task, placed on save. 'stage-task': a stage's definition, placed at each entry (ACC-208). */
   readonly purpose = input<'task' | 'stage-task'>('task');
   /** ACC-199 — the task's priority, for "✦ Suggest someone". */
@@ -386,6 +411,14 @@ export class TaskAssigneePickerComponent implements OnInit {
   private readonly userId = signal<string | null>(null);
 
   readonly isCommitteeScope = computed(() => this.scope() === COMMITTEE_SCOPE);
+
+  /** Reassign says "Member role" / "Member (optional)" on a committee, as drawn. */
+  readonly targetLabelKey = computed(() =>
+    this.isCommitteeScope() ? (this.layout() === 'split' ? 'task.assign.memberRole' : 'task.assign.role') : 'task.assign.position',
+  );
+  readonly personLabelKey = computed(() =>
+    this.isCommitteeScope() && this.layout() === 'split' ? 'task.assign.member' : 'task.assign.person',
+  );
 
   // ── ACC-199 — workload on the record, and "✦ Suggest someone" ─────────────
 
@@ -546,9 +579,11 @@ export class TaskAssigneePickerComponent implements OnInit {
     if (!target) return '';
 
     const chosen = this.userId();
+    const split = this.layout() === 'split' && this.purpose() === 'task';
     if (chosen) {
       const person = this.people().find((p) => p.id === chosen);
       if (!person) return '';
+      if (split) return this.straightTo(person.name);
       return this.translate.instant(
         this.purpose() === 'stage-task' ? 'workflow.stageTaskForm.outcomePerson' : 'task.assign.outcomePerson',
         { name: person.name },
@@ -557,7 +592,8 @@ export class TaskAssigneePickerComponent implements OnInit {
 
     if (scope === COMMITTEE_SCOPE) {
       const role = this.roles().find((r) => r.id === target);
-      return role ? this.poolOutcome(role.memberCount) : '';
+      if (!role) return '';
+      return split && role.memberCount > 0 ? this.offeredTo(role.memberCount) : this.poolOutcome(role.memberCount);
     }
 
     const position = this.positions().find((p) => p.id === target);
@@ -571,12 +607,42 @@ export class TaskAssigneePickerComponent implements OnInit {
     if (position.isSingleAssignee) {
       if (this.peopleLoading()) return '';
       const holder = this.people()[0];
+      if (holder && split) return this.straightTo(holder.name);
       return holder
         ? this.translate.instant('task.assign.outcomePerson', { name: holder.name })
         : this.translate.instant('task.assign.outcomeVacant');
     }
-    return this.poolOutcome(position.holderCount);
+    return split && position.holderCount > 0 ? this.offeredTo(position.holderCount) : this.poolOutcome(position.holderCount);
   });
+
+  /** The chosen seat's name: the member role or the position. */
+  private seatName(): string {
+    return this.targetOptions().find((o) => o.id === this.target())?.label ?? '';
+  }
+
+  /** The chosen unit's or committee's name. */
+  private placeName(): string {
+    const scope = this.scope();
+    const find = (options: UnitOption[]): string | null => {
+      for (const o of options) {
+        if (o.value === scope) return o.label;
+        const inner = o.items ? find(o.items) : null;
+        if (inner) return inner;
+      }
+      return null;
+    };
+    return find(this.scopeOptions()) ?? '';
+  }
+
+  /** "Goes straight to Dr. Sara Al-Qahtani (Secretary)." */
+  private straightTo(name: string): string {
+    return this.translate.instant('task.assign.outcomeStraight', { name, role: this.seatName() });
+  }
+
+  /** "Offered to Quality Officer, Pharmacy (4 people)." */
+  private offeredTo(count: number): string {
+    return this.format.count('task.assignOffered', count, { role: this.seatName(), unit: this.placeName() });
+  }
 
   ngOnInit(): void {
     const { scope, target, userId } = this.group().controls;
