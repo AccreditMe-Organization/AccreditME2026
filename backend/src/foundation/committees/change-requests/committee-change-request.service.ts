@@ -681,13 +681,10 @@ export class CommitteeChangeRequestService {
     const span = (f: ChangeField) => ({ from: committee[f], to: changes[f] ?? null });
     if ('quorumCount' in changes) {
       // Votes already open keep the quorum they began with (ACC-239's snapshot).
-      const inProgress = await this.prisma.workflowInstanceStage.count({
-        where: {
-          exitedAt: null,
-          stage: { approvalMode: 'COMMITTEE', committeeId },
-          workflowInstance: { organizationId, status: 'IN_PROGRESS' },
-        },
-      });
+      // ACC-271 PR 6a — counted by who mode and the vote's committee
+      // (WorkflowService.countOpenCommitteeVotes); it read approvalMode before,
+      // which no converted stage has, so it always said 0.
+      const inProgress = await this.workflow.countOpenCommitteeVotes(organizationId, committeeId);
       impacts.push({ code: 'QUORUM', ...span('quorumCount'), inProgress });
     }
     if ('nameEn' in changes || 'nameAr' in changes) impacts.push({ code: 'NAME' });

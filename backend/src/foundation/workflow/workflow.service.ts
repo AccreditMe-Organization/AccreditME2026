@@ -1488,6 +1488,33 @@ export class WorkflowService {
     return this.stagePool.resolveMany(organizationId, requests);
   }
 
+  /**
+   * ACC-271 PR 6a — how many open entries are Committee votes counting against
+   * this committee: stages with whoMode COMMITTEE_VOTE whose vote committee —
+   * the stage's COMMITTEE entry's own, else the record's, as
+   * StagePoolService.voteCommitteeIds() resolves it — is this one. For the
+   * change-request preview ("open votes keep the quorum they began with").
+   * BATCHED: one entries query plus one batched committee resolution, never
+   * one per entry. It used to read approvalMode COMMITTEE, which no converted
+   * stage has, so it always answered 0.
+   */
+  async countOpenCommitteeVotes(organizationId: string, committeeId: string): Promise<number> {
+    const entries = await this.prisma.workflowInstanceStage.findMany({
+      where: {
+        exitedAt: null,
+        stage: { whoMode: 'COMMITTEE_VOTE', workflowTemplate: { organizationId } },
+        workflowInstance: { organizationId, status: 'IN_PROGRESS' },
+      },
+      select: { id: true, stageId: true, workflowInstance: { select: { objectType: true, objectId: true } } },
+    });
+    if (entries.length === 0) return 0;
+    const committees = await this.stagePool.voteCommitteeIds(
+      organizationId,
+      entries.map((e) => ({ key: e.id, stageId: e.stageId, instance: e.workflowInstance })),
+    );
+    return entries.filter((e) => committees.get(e.id) === committeeId).length;
+  }
+
   /** ACC-271 PR 4 — the sweep's leaver rule on "All of them" entries (StagePoolService.recordPoolChanges()). */
   async recordPoolChanges(organizationId: string, pools: ReadonlyMap<string, StagePool>): Promise<{ joined: number; left: number }> {
     return this.stagePool.recordPoolChanges(organizationId, pools);
