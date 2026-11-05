@@ -3044,6 +3044,7 @@ Plan, Ahmad's answers (28 Oct, §13.1) and the PR split:
 **nothing writes the new shape yet** (the backfill is PR 2, the screens PR 3), so
 every stage on every database is still unconverted and behaves as §2.4–§2.8 say.
 Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts a new organisation, and both PR 2 backfills ran on the shared database on 29 Oct, so every stage is converted. §2.4–§2.8 describe only a stage whose `whoMode` is null. PR 3, the APIs, is built (see "PR 3" below); PR 5, the screens, is not started.
+Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only the stage's pool; a stage whose `whoMode` is null has an EMPTY pool (fail closed), and a new stage must say `who` (`WHO_REQUIRED`). §2.4–§2.8 and §2.13 are history: they describe code that no longer exists. See "PR 6a" below.
 
 - **The transition window (plan §4.6).** A stage with `WorkflowStage.whoMode`
   set is CONVERTED: its `WorkflowStageAssignee` entries say who works it, and
@@ -3052,6 +3053,9 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
   `triggerRoleId`, `triggerUserId`) are not read for it. A stage with
   `whoMode` null takes every old branch, unchanged. One predicate,
   `isConvertedStage()` (`workflow-pool.ts`), loose `!= null`.
+  Superseded (PR 6a): there is no old branch; a stage with `whoMode` null is
+  read as converted with an empty pool. `isConvertedStage()` remains for the
+  template read, the transition editor and awaiting-me.
 - **The pool** (`StagePoolService`, `stage-pool.service.ts`, its own
   `StagePoolModule` on Prisma alone, imported by WorkflowModule and UserModule).
   Entries join with "or"; each resolves to **ACTIVE** users at read time, never
@@ -3090,6 +3094,8 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
   empty, at entry and in the 15-minute sweep, which resolves every converted
   open entry of an organisation in one `resolveStagePools()` call and hands
   that pool to recovery.
+  Superseded (PR 6a): EVERY open entry, and an entry is unassigned exactly when
+  its pool is empty. The old transition-field detectors are deleted.
 - **The delegation stamp** on a converted stage comes from the pool:
   `actingHeadOf` (ACTING_HEAD), then `coveringFor` (OUT_OF_OFFICE_COVERAGE).
 - **The leaver (decision 7).** `UserService.deactivate()` reads
@@ -3219,6 +3225,7 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
       now set on the stage, not here.", naming the `field`. The Arabic travels
       with it as `messageAr` («يُحدَّد من يعمل على هذه المرحلة الآن في المرحلة
       نفسها، لا هنا.»).
+    Since PR 6a, on every stage, whether or not it has a `who`.
 
     This deliberately departs from the plan's "accepted and ignored":
     ignoring a changed value would look saved and do nothing. A move ADDED out
@@ -3279,6 +3286,8 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
     audit row carries `whoMode` and `whoEntries`. An old people field sent
     beside `who` (set, not null or empty) is 400 `WHO_MOVED_TO_STAGE`. A
     stage created with the old fields only is created exactly as before.
+    Superseded (PR 6a): a create without `who` is 400 `WHO_REQUIRED`. The
+    DTO still accepts the old fields until PR 6b.
   - **Creating a move out of a converted stage** needs no `triggerCondition`.
     Sent, it must be the column's default, ROLE_BASED (what the old Add dialog
     sends). Any other trigger, or a role, person or permission, is
@@ -3462,6 +3471,52 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
   `workflow-awaiting.service.spec.ts` (each gate, mutation-checked),
   `workflow-awaiting.db-spec.ts` (real Postgres) and the route's case in
   `workflow-parent-visibility.spec.ts` (through the real `PermissionGuard`).
+- **PR 6a — the engine's old branch is deleted (backend only, no migration).**
+  - **Removed from `WorkflowService`:** every `else` behind
+    `isConvertedStage()` and the code reached only from them —
+    `resolveAssignee()`, `resolveAssigneeRaw()`, `resolveApproverPool()`,
+    `applyOutOfOfficeRouting()`, `notifyTenantAdminsOfCoverageGap()`,
+    `resolveActingHeadOrgUnitIdForUser()`,
+    `resolveOutOfOfficeCoverageForUser()`, the `ASSIGNEE_POOL` check,
+    `resolveUnassignedBlockingTransitions()`,
+    `resolveUnreachableTriggerConditionTransitions()`,
+    `resolveAssigneeForStage()`, and the `approvalMode` branches of the
+    threshold, the quorum snapshot and "decides alone". It no longer injects
+    `RoleService` or `OrganizationService`.
+  - **Fail closed.** `StagePoolService` reads a stage's entries only where
+    `whoMode` is set (`resolveMany()` and `voteCommitteeIds()`), so a stage
+    with no `who` has an EMPTY pool whatever entries it still holds: a move
+    and a vote are 409 `STAGE_HAS_NO_ONE`, `GET …/moves` is empty,
+    awaiting-me leaves it out, and entry and the sweep flag it unassigned.
+    None exist on the shared database (every stage was converted on 29 Oct).
+  - **The sweep** sends every open entry through the batched pools; recovery
+    uses the batch's pool and reads none of its own.
+  - **A new stage needs `who`:** `POST /workflow-templates/:id/stages` without
+    it is 400 `WHO_REQUIRED` ("Choose who works this stage." /
+    «يلزم اختيار من يعمل على هذه المرحلة.», said under the who section).
+    `updateStage` refuses a changed old people field on every stage
+    (`WHO_MOVED_TO_STAGE`), and the old fields' write-time validators are
+    deleted.
+  - **The change request preview's open votes** are the open entries of
+    `COMMITTEE_VOTE` stages whose vote committee (the stage's Committee
+    entry's own, else the record's) is this committee:
+    `WorkflowService.countOpenCommitteeVotes()`, batched (the open entries,
+    their stages' Committee entries, then one read per record type). It read
+    `approvalMode` before, which no converted stage has, so it always said 0.
+  - **The seed states each move's `mover`** (`SeedTransition.mover`), and
+    `applyWorkflowSeed()` writes it instead of reading it off
+    `triggerCondition`: 67 PERSON, 8 APP (the committee change request's).
+    The seed still writes the old columns; PR 6b removes them, the old DTO
+    fields, and `transitionMover()`'s null fallback.
+  - **Specs:** `stage-without-who.db-spec.ts` (real Postgres: each case shown
+    working with a `who` first), the fail-closed cases of
+    `workflow.service.spec.ts`, `stage-pool.service.spec.ts` and
+    `sla-monitor.processor.spec.ts`, the open-vote cases of
+    `committee-change-request.db-spec.ts`, `WHO_REQUIRED` in
+    `workflow-template.pr5be.spec.ts` and `stage-who.component.spec.ts`, and
+    the mover case of `workflow.seed.spec.ts`. Mutation-checked: putting the
+    old trigger back for a stage with no `who`, or counting votes by
+    `approvalMode`, turns them red.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
@@ -5408,6 +5463,9 @@ ACC-255 PR 2, §2.18.1).
   preview for Request a change. The preview names the impact of each change,
   including how many open committee votes keep the quorum they began with
   (§2.17), and always the terms task approval will create.
+  Corrected (ACC-271 PR 6a): the open votes are counted by `whoMode`
+  `COMMITTEE_VOTE` and the vote's committee (§2.19, "PR 6a"); counted by
+  `approvalMode` they were always 0.
 - **What the screens read, beyond the request itself (ACC-240, PR 3a)**. Each
   of these was added to an existing response; no route, permission or refusal
   changed.
