@@ -1,6 +1,5 @@
 import { APP_MOVES, appMoveFor } from './app-moves';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
-import { moverForTrigger } from './workflow-who';
 
 /**
  * ACC-271 PR 3 — every move the app runs has its one line, and every line is
@@ -10,7 +9,7 @@ import { moverForTrigger } from './workflow-who';
 describe('APP_MOVES (ACC-271 PR 3)', () => {
   const appTransitions = SYSTEM_WORKFLOW_SEED.flatMap((wf) =>
     wf.transitions
-      .filter((t) => moverForTrigger(t.triggerCondition) === 'APP')
+      .filter((t) => t.mover === 'APP')
       .map((t) => ({ objectType: wf.objectType, from: t.fromStageKey, to: t.toStageKey, label: t.labelEn })),
   );
 

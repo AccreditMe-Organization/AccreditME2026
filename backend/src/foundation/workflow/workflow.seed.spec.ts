@@ -72,10 +72,31 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
     expect(checked).toBe(4);
   });
 
-  it('marks the app\'s own moves APP and every other move PERSON', () => {
-    const movers = SYSTEM_WORKFLOW_SEED.flatMap((w) => w.transitions.map((t) => moverForTrigger(t.triggerCondition)));
-    expect(movers.filter((m) => m === 'APP')).toHaveLength(8);
-    expect(movers.filter((m) => m === 'PERSON')).toHaveLength(67);
+  // ACC-271 PR 6a — the seed states each move's mover (seed-apply writes it); it
+  // was read off triggerCondition. The APP moves are exactly today's: the
+  // committee change request's eight, which its service fires. On the shared
+  // database that is 8 per organisation (16 in its 2 organisations, 29 Oct).
+  it('states a mover on every move, and the APP moves are exactly the change request\'s eight', () => {
+    const all = SYSTEM_WORKFLOW_SEED.flatMap((w) => w.transitions.map((t) => ({ w: w.objectType, t })));
+    expect(all).toHaveLength(75);
+    for (const { t } of all) expect(['PERSON', 'APP']).toContain(t.mover);
+    // No move changes who moves it: the stated mover is what triggerCondition gave.
+    for (const { t } of all) expect(t.mover).toBe(moverForTrigger(t.triggerCondition));
+
+    const app = all.filter(({ t }) => t.mover === 'APP').map(({ w, t }) => `${w}:${t.fromStageKey}>${t.toStageKey}`);
+    expect(app.sort()).toEqual(
+      [
+        'COMMITTEE_CHANGE_REQUEST:draft>under_review',
+        'COMMITTEE_CHANGE_REQUEST:returned>under_review',
+        'COMMITTEE_CHANGE_REQUEST:under_review>approved',
+        'COMMITTEE_CHANGE_REQUEST:under_review>returned',
+        'COMMITTEE_CHANGE_REQUEST:under_review>rejected',
+        'COMMITTEE_CHANGE_REQUEST:draft>withdrawn',
+        'COMMITTEE_CHANGE_REQUEST:under_review>withdrawn',
+        'COMMITTEE_CHANGE_REQUEST:returned>withdrawn',
+      ].sort(),
+    );
+    expect(all.filter(({ t }) => t.mover === 'PERSON')).toHaveLength(67);
   });
 
   // The backfill's mapping applied to the seed's own old columns gives the
