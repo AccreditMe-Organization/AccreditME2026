@@ -271,7 +271,11 @@ describe('TaskReassignDialogComponent (ACC-163, ACC-167)', () => {
     const box = document.querySelector('[data-testid="reassign-rejection-reason"]') as HTMLElement;
     expect(box.textContent!.trim()).toBe(`“${reason}”`);
     expect(box.getAttribute('title')).toBe(reason);
-    expect(box.classList).toContain('line-clamp-2');
+    // Two lines at most, clamped inside the padding so no third line shows.
+    const lines = box.querySelector('[data-testid="reassign-rejection-text"]') as HTMLElement;
+    expect(lines.classList).toContain('line-clamp-2');
+    expect(lines.getBoundingClientRect().height).toBeLessThanOrEqual(2 * 18 + 1);
+    expect(lines.getBoundingClientRect().bottom).toBeLessThanOrEqual(box.getBoundingClientRect().bottom - 5);
     expect(getComputedStyle(box).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   });
 

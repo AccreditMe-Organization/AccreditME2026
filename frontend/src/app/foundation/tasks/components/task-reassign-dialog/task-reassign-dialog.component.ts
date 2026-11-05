@@ -83,11 +83,13 @@ export interface TaskRejection {
                fields, because the reason decides who the task should go to. -->
           <div class="flex flex-col gap-1" data-testid="reassign-rejection">
             <span class="text-meta text-[var(--am-ink-700)]" data-testid="reassign-rejection-label">{{ rejectionLabel() }}</span>
+            <!-- The clamp is on the inner line box: on the padded box itself, a
+                 third line shows through the bottom padding. -->
             <p
-              class="m-0 line-clamp-2 [overflow-wrap:anywhere] text-[13px] leading-[18px] text-[var(--am-ink-700)] bg-[var(--am-surface)] rounded-[var(--am-radius-control)] px-2.5 py-1.5"
+              class="m-0 [overflow-wrap:anywhere] text-[13px] leading-[18px] text-[var(--am-ink-700)] bg-[var(--am-surface)] rounded-[var(--am-radius-control)] px-2.5 py-1.5"
               [attr.title]="r.reason"
               data-testid="reassign-rejection-reason"
-            >{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ r.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</p>
+            ><span class="line-clamp-2" data-testid="reassign-rejection-text">{{ 'tasks.sections.quoteOpen' | translate }}<bdi>{{ r.reason }}</bdi>{{ 'tasks.sections.quoteClose' | translate }}</span></p>
           </div>
         }
 
