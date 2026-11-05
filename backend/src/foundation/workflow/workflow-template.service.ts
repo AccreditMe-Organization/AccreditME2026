@@ -387,8 +387,8 @@ export class WorkflowTemplateService {
       committeeIds.length === 0
         ? []
         : this.prisma.committee.findMany({ where: { id: { in: committeeIds }, organizationId }, select: { id: true, nameEn: true, nameAr: true } }),
-      // A committee role is the SYSTEM value or this organisation's own, as
-      // validateCommitteeRoleValueId() reads it.
+      // A committee role is the SYSTEM value or this organisation's own (custom,
+      // or an override with its own id), as LookupService.getValues() resolves it.
       roleIds.length === 0
         ? []
         : this.prisma.lookupValue.findMany({
@@ -718,39 +718,21 @@ export class WorkflowTemplateService {
     const actions = rules.actions ?? newStageActionKeys(template.objectType);
     const flags = rules.flags ?? [];
 
-    // ACC-271 PR 5-be — a stage created with `who` is converted in the same
-    // transaction that creates it, checked exactly as a who save is: its shape
-    // first, then every id it names against this organisation. It names no old
-    // people field beside `who` (WHO_MOVED_TO_STAGE); a stage created the old
-    // way, without `who`, is created exactly as before.
+    // ACC-271 PR 5-be — a stage is converted in the same transaction that
+    // creates it, its `who` checked exactly as a who save is: its shape first,
+    // then every id it names against this organisation. It names no old people
+    // field beside `who` (WHO_MOVED_TO_STAGE). PR 6a — a stage created without
+    // `who` is refused (WHO_REQUIRED): the engine reads nothing else, so such a
+    // stage would be worked by nobody.
     const { who: sentWho } = dto;
-    let wantedWho: Required<WhoEntryInput>[] | undefined;
-    let whoRefs: WhoReferences | undefined;
-    if (sentWho !== undefined) {
-      refuseChangedOldPeopleField(NO_OLD_STAGE_PEOPLE, dto as unknown as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
-      const recordRoute = RECORD_ROUTES[template.objectType];
-      wantedWho = assertWhoShape(template.objectType, sentWho, {
-        unit: typeof recordRoute?.unit === 'function',
-        committee: typeof recordRoute?.committee === 'function',
-      });
-      whoRefs = await this.assertWhoReferences(wantedWho, organizationId);
-    }
-
-    if (dto.assigneeUserId) {
-      await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
-    }
-    if (dto.committeeId) {
-      await this.validateCommitteeId(dto.committeeId, organizationId);
-    }
-    if (dto.assigneeCommitteeRoleValueId) {
-      await this.validateCommitteeRoleValueId(dto.assigneeCommitteeRoleValueId, organizationId);
-    }
-    if (dto.assigneePositionId) {
-      await this.validateAssigneePositionId(dto.assigneePositionId, organizationId);
-    }
-    if (dto.assigneeOrgUnitId) {
-      await this.validateAssigneeOrgUnitId(dto.assigneeOrgUnitId, organizationId);
-    }
+    if (sentWho === undefined) throw new WorkflowRefusalException('WHO_REQUIRED');
+    refuseChangedOldPeopleField(NO_OLD_STAGE_PEOPLE, dto as unknown as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
+    const recordRoute = RECORD_ROUTES[template.objectType];
+    const wantedWho = assertWhoShape(template.objectType, sentWho, {
+      unit: typeof recordRoute?.unit === 'function',
+      committee: typeof recordRoute?.committee === 'function',
+    });
+    const whoRefs = await this.assertWhoReferences(wantedWho, organizationId);
 
     const counted = exactlyOneFlags(template.objectType).filter((f) => flags.includes(f));
     const stage = await this.prisma.$transaction(async (tx) => {
@@ -765,13 +747,10 @@ export class WorkflowTemplateService {
         slaWorkingHours: dto.slaWorkingHours ?? null,
         isInitial: dto.isInitial ?? false,
         isFinal: dto.isFinal ?? false,
-        // Absent only on a stage created with `who` (the DTO requires them
-        // otherwise): the columns then keep their defaults, which a converted
-        // stage never reads.
+        // The old people columns: `who` refuses a set one, so they keep their
+        // defaults and nothing reads them (ACC-271 PR 6b removes them).
         ...(dto.approvalMode !== undefined && { approvalMode: dto.approvalMode }),
         parallelThreshold: dto.parallelThreshold ?? null,
-        // Org-validated above (ACC-22, closing the ACC-17 deferred gap) —
-        // mirrors validateAssigneeUserId() for assigneeUserId just above.
         committeeId: dto.committeeId ?? null,
         ...(dto.assigneeStrategy !== undefined && { assigneeStrategy: dto.assigneeStrategy }),
         assigneeUserId: dto.assigneeUserId ?? null,
@@ -782,7 +761,7 @@ export class WorkflowTemplateService {
         escalationConfig: this.toJson(dto.escalationConfig),
         flags,
         // ACC-271 PR 5-be — how the new stage's people decide; setting it converts the stage.
-        ...(sentWho !== undefined && { whoMode: sentWho.mode }),
+        whoMode: sentWho.mode,
       },
       });
       if (actions.length > 0) {
@@ -791,24 +770,22 @@ export class WorkflowTemplateService {
         });
       }
       // ACC-271 PR 5-be — the entries, in the transaction that creates the stage.
-      if (wantedWho) await this.replaceStageWho(tx, created.id, organizationId, wantedWho, actorId);
+      await this.replaceStageWho(tx, created.id, organizationId, wantedWho, actorId);
       await this.assertFlagCardinality(tx, templateId, counted);
       return created;
     });
 
     // ACC-271 PR 5-be — the new stage's who, named once for the audit and the
     // response from the references its check already read.
-    const entries: StoredWhoEntry[] = wantedWho
-      ? await this.prisma.workflowStageAssignee.findMany({ where: { organizationId, stageId: stage.id }, orderBy: { order: 'asc' } })
-      : [];
+    const entries: StoredWhoEntry[] = await this.prisma.workflowStageAssignee.findMany({
+      where: { organizationId, stageId: stage.id },
+      orderBy: { order: 'asc' },
+    });
     const holders = await this.holderCountsFor(entries, organizationId);
-    const refsRead = whoRefs;
-    const named = refsRead
-      ? {
-          whoMode: stage.whoMode ?? null,
-          whoEntries: whoAuditEntries(entries.map((e) => ({ ...entryForSentence(e, refsRead), isStartingAssignment: e.isStartingAssignment }))),
-        }
-      : {};
+    const named = {
+      whoMode: stage.whoMode ?? null,
+      whoEntries: whoAuditEntries(entries.map((e) => ({ ...entryForSentence(e, whoRefs), isStartingAssignment: e.isStartingAssignment }))),
+    };
 
     // ACC-255 — the whole new stage, its actions and flags included; ACC-271
     // PR 5-be — and who works it, as a who save records it.
@@ -823,7 +800,7 @@ export class WorkflowTemplateService {
 
     return {
       ...this.mapStage(stage, undefined, actions),
-      ...(refsRead ? this.whoRead(stage.whoMode, entries, refsRead, holders) : {}),
+      ...this.whoRead(stage.whoMode, entries, whoRefs, holders),
     };
   }
 
@@ -876,33 +853,16 @@ export class WorkflowTemplateService {
       });
       if (changed.length > 0 || whoChanged) refuseProtected('STAGE_FIELD');
     }
-    // ACC-271 PR 3 — once a stage is converted (or this save converts it), the
-    // old people fields are not read: re-sending one unchanged is accepted, a
-    // CHANGED one is refused (WHO_MOVED_TO_STAGE). After the protected check:
-    // on a protected template nothing may be reshaped at all, which is the
-    // truer answer.
-    if (isConvertedStage(stage) || sentWho !== undefined) {
-      refuseChangedOldPeopleField(stored, fields as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
-    }
+    // ACC-271 PR 3 — the old people fields are not read: re-sending one
+    // unchanged is accepted, a CHANGED one is refused (WHO_MOVED_TO_STAGE). PR 6a
+    // — on every stage: a stage with no `who` has no old path left, so its
+    // people are set through `who` too. After the protected check: on a
+    // protected template nothing may be reshaped at all, which is the truer
+    // answer.
+    refuseChangedOldPeopleField(stored, fields as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
     // Every id the new `who` names is this organisation's, and no chosen person is deactivated.
     if (whoChanged && wantedWho) await this.assertWhoReferences(wantedWho, organizationId);
     const rules = this.stageRuleKeys(objectType, dto.actions, dto.flags);
-
-    if (dto.assigneeUserId) {
-      await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
-    }
-    if (dto.committeeId) {
-      await this.validateCommitteeId(dto.committeeId, organizationId);
-    }
-    if (dto.assigneeCommitteeRoleValueId) {
-      await this.validateCommitteeRoleValueId(dto.assigneeCommitteeRoleValueId, organizationId);
-    }
-    if (dto.assigneePositionId) {
-      await this.validateAssigneePositionId(dto.assigneePositionId, organizationId);
-    }
-    if (dto.assigneeOrgUnitId) {
-      await this.validateAssigneeOrgUnitId(dto.assigneeOrgUnitId, organizationId);
-    }
 
     // ACC-190 — the stage-deadline rule from the stage's side: a deadline
     // shorter than the longest task defined on it is refused. And a stage that
@@ -938,8 +898,8 @@ export class WorkflowTemplateService {
         ...(dto.isFinal !== undefined && { isFinal: dto.isFinal }),
         ...(dto.approvalMode !== undefined && { approvalMode: dto.approvalMode }),
         ...(dto.parallelThreshold !== undefined && { parallelThreshold: dto.parallelThreshold }),
-        // Org-validated above (ACC-22, closing the ACC-17 deferred gap) —
-        // see the same validation in addStage above.
+        // The old people columns: only ever the stored value, since a changed
+        // one is refused above (ACC-271 PR 6b removes them).
         ...(dto.committeeId !== undefined && { committeeId: dto.committeeId }),
         ...(dto.assigneeStrategy !== undefined && { assigneeStrategy: dto.assigneeStrategy }),
         ...(dto.assigneeUserId !== undefined && { assigneeUserId: dto.assigneeUserId }),
@@ -1458,70 +1418,6 @@ export class WorkflowTemplateService {
     }
   }
 
-  // Re-validates a client-supplied assigneeUserId belongs to this org before
-  // it's written onto a WorkflowStage — mirrors the re-scoping the ROLE case
-  // already gets for free downstream (assigneeRoleId's eventual userRole
-  // lookup is joined against user:{organizationId}); SPECIFIC_USER had no
-  // equivalent check at write time (see ACC-17).
-  private async validateAssigneeUserId(userId: string, organizationId: string): Promise<void> {
-    const user = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
-    if (!user) {
-      throw new NotFoundException('Assignee user not found in this tenant');
-    }
-  }
-
-  // Re-validates a client-supplied committeeId belongs to this org before
-  // it's written onto a WorkflowStage — same pattern as
-  // validateAssigneeUserId() above. Deferred from ACC-17 ("no Committee/
-  // CommitteeMember data exists anywhere yet, so there's nothing real to
-  // validate against — must be revisited when Committee Management ships")
-  // — closed here as part of ACC-22, since Committee is now a real table.
-  private async validateCommitteeId(committeeId: string, organizationId: string): Promise<void> {
-    const committee = await this.prisma.committee.findFirst({ where: { id: committeeId, organizationId } });
-    if (!committee) {
-      throw new NotFoundException('Committee not found in this tenant');
-    }
-  }
-
-  // ACC-54 — same pattern as validateAssigneeUserId()/validateCommitteeId()
-  // above, for the POSITION_FIXED pair. Both need it independently: a stage
-  // could otherwise be written referencing another tenant's position, or
-  // another tenant's org unit, or one of each.
-  //
-  // These are genuinely needed rather than defence-in-depth theatre —
-  // resolveAssigneeRaw()'s POSITION_FIXED case does filter its own query by
-  // organizationId, so a cross-tenant id would resolve to an empty pool
-  // rather than leaking anyone. But storing a foreign tenant's id on a stage
-  // is still wrong: it silently produces a permanently unresolvable stage,
-  // and it puts another tenant's identifier in this tenant's configuration
-  // where an admin can see it. Rejecting at write time is the same call
-  // ACC-17 made for assigneeUserId for the same reason.
-  private async validateAssigneePositionId(
-    positionId: string,
-    organizationId: string,
-  ): Promise<void> {
-    const position = await this.prisma.orgPosition.findFirst({
-      where: { id: positionId, organizationId },
-    });
-    if (!position) {
-      throw new NotFoundException('Assignee position not found in this tenant');
-    }
-  }
-
-  private async validateAssigneeOrgUnitId(orgUnitId: string, organizationId: string): Promise<void> {
-    const orgUnit = await this.prisma.orgUnit.findFirst({
-      where: { id: orgUnitId, organizationId },
-    });
-    if (!orgUnit) {
-      throw new NotFoundException('Assignee org unit not found in this tenant');
-    }
-  }
-
-  // ACC-28 — same pattern as validateAssigneeUserId()/validateCommitteeId()
-  // above. A LookupValue is visible to this tenant if it's the SYSTEM row
-  // (organizationId: null) or a tenant-scoped row (custom value, or an
-  // overrideLabel()-created override with its own id) — same "system OR
-  // tenant" shape LookupService.getValues() itself resolves against.
   // ACC-120 slice 5 (F1) — a transition may not REQUIRE a key no role can be
   // given: that is a transition nobody can ever fire. So a key a person picks
   // is refused, with the role save's own codes, when it is unknown
@@ -1594,19 +1490,6 @@ export class WorkflowTemplateService {
     });
 
     return holdingRoles === 0 ? 'NO_ACTIVE_ROLE_HOLDS' : null;
-  }
-
-  private async validateCommitteeRoleValueId(roleValueId: string, organizationId: string): Promise<void> {
-    const value = await this.prisma.lookupValue.findFirst({
-      where: {
-        id: roleValueId,
-        category: { key: 'committee_member_role' },
-        OR: [{ organizationId: null }, { organizationId }],
-      },
-    });
-    if (!value) {
-      throw new NotFoundException('Committee member role lookup value not found in this tenant');
-    }
   }
 
   // ── Internal mappers ─────────────────────────────────────────────────────────

@@ -18,8 +18,6 @@ import { ITask } from '../task/interfaces/task.interface';
 import { PreparedTask, StageExitCancellation, TaskService } from '../task/task.service';
 import { taskStatusTitle } from '../task/task-status-label';
 import { lockWorkflowInstance } from '../task/stage-deadline';
-import { RoleService } from '../roles/role.service';
-import { OrganizationService } from '../organization/organization.service';
 import {
   WorkflowInstance as PrismaWorkflowInstance,
   WorkflowInstanceStage as PrismaWorkflowInstanceStage,
@@ -39,7 +37,7 @@ import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-tas
 import { WorkflowRefusalException } from './workflow-refusal';
 import { assertTransitionPreconditions } from './transition-preconditions';
 import { StagePool, StagePoolRequest, StagePoolService, mayActInStagePool } from './stage-pool.service';
-import { APP_MOVER_WHERE, isConvertedStage, transitionMover } from './workflow-pool';
+import { APP_MOVER_WHERE, transitionMover } from './workflow-pool';
 
 // The client inside this.prisma.$transaction(async (tx) => …) — read off
 // PrismaService, whose extended client has its own transaction type.
@@ -83,11 +81,10 @@ const STAGE_CHANGE_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 // "Reject" path both landing on higher-order stages), so stage order alone
 // cannot distinguish them.
 //
-// NOTE on SEQUENTIAL/COMMITTEE: none of the 8 seeded workflows currently use
-// SEQUENTIAL or COMMITTEE approvalMode (only SINGLE and PARALLEL+ALL are
-// exercised by real seed data) — the logic below implements them per the
-// plan's Business Rules, but is unverified against real seed data until a
-// functional module actually configures one.
+// ACC-271 PR 6a — who works a stage, who may move a record out of it and how
+// its votes decide come from the stage's pool and who mode only
+// (StagePoolService). The old approvalMode / assigneeStrategy / trigger
+// branches are gone; a stage with no `who` has an empty pool and is refused.
 @Injectable()
 export class WorkflowService {
   private readonly logger = new Logger(WorkflowService.name);
@@ -102,14 +99,6 @@ export class WorkflowService {
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     private readonly taskService: TaskService,
-    private readonly roleService: RoleService,
-    // ACC-40 Section 2.5/2.6.2 — resolveAssigneeRaw()'s and
-    // resolveApproverPool()'s new ORG_UNIT_HEAD cases call
-    // OrganizationService.resolveActingHeadForOrgUnit() rather than
-    // duplicating that resolution logic here, same "domain service owns
-    // the query, WorkflowService calls into it" placement the plan's own
-    // 2.5 section confirms.
-    private readonly organizationService: OrganizationService,
     @InjectQueue('workflow-actions') private readonly workflowActionsQueue: Queue,
     // ACC-190 — the tasks a stage creates when a record enters it.
     private readonly stageTaskDefinitions: StageTaskDefinitionService,
@@ -230,9 +219,8 @@ export class WorkflowService {
       await this.resolveAndNotifyInitialAssignee(initialStage, instance, organizationId);
     }
 
-    // ACC-28 Section 2.5 — flag + notify Tenant Admins if this stage has an
-    // outgoing ASSIGNEE_POOL transition nobody in the resolved pool could
-    // ever fire (e.g. a vacant Chairman seat).
+    // ACC-28 Section 2.5 — flag the entry unassigned if nobody can work the
+    // stage: its pool is empty (ACC-271), e.g. a vacant Chairman seat.
     await this.checkAndFlagUnassignedStage(initialStage, initialInstanceStage.id, instance, organizationId);
 
     await this.auditLog.log({
@@ -286,10 +274,9 @@ export class WorkflowService {
    * copy of the rule. Behind the same visibility check as the instance read
    * (the identical 404 for a hidden record).
    *
-   * A converted stage answers from its pool: a person's moves for whoever works
-   * it (out-of-office aware), nothing for anyone else and nothing at all while
-   * the pool is empty. An unconverted stage answers with today's rule, unchanged:
-   * a move with no permission, or one the viewer holds. Pressing is still
+   * The stage answers from its pool: a person's moves for whoever works it
+   * (out-of-office aware), nothing for anyone else and nothing at all while the
+   * pool is empty, as it is for a stage with no `who` (PR 6a). Pressing is still
    * decided by triggerTransition(); this only stops a screen offering what the
    * server would refuse. At most the moves of one stage, one pool resolution.
    */
@@ -308,18 +295,12 @@ export class WorkflowService {
       }),
       this.prisma.workflowTransition.findMany({
         where: { fromStageId: instance.currentStageId, fromStage: { workflowTemplate: { organizationId } } },
-        select: { id: true, requiredPermission: true, triggerCondition: true, mover: true },
+        select: { id: true, triggerCondition: true, mover: true },
         orderBy: { id: 'asc' },
       }),
     ]);
     if (!stage) return { transitionIds: [] };
-    if (!isConvertedStage(stage)) {
-      return {
-        transitionIds: transitions
-          .filter((t) => !t.requiredPermission || viewerPermissions.includes(t.requiredPermission))
-          .map((t) => t.id),
-      };
-    }
+    // PR 6a — no permission branch: a stage with no `who` has an empty pool, so nothing.
     const byPerson = transitions.filter((t) => transitionMover(t) === 'PERSON');
     if (byPerson.length === 0) return { transitionIds: [] };
     const pool = await this.stagePool.resolve(organizationId, stage.id, {
@@ -584,56 +565,18 @@ export class WorkflowService {
     }
 
     const fromStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.fromStageId } });
-
-    // ACC-271 — a converted stage says who may move the record out of it: its
-    // pool (decision 1). The transition's requiredPermission, triggerCondition,
-    // triggerRoleId and triggerUserId are not read for it. An unconverted stage
-    // keeps every check below, unchanged (plan §4.6).
-    let pool: StagePool | undefined;
-    if (fromStage && isConvertedStage(fromStage)) {
-      if (transitionMover(transition) !== 'PERSON') {
-        throw new ForbiddenException('This transition can only be fired by a system process');
-      }
-      pool = await this.stagePool.resolve(organizationId, fromStage.id, instance);
-      this.assertInStagePool(pool, fromStage, actorId);
-    } else {
-      if (transition.requiredPermission && !userPermissions.includes(transition.requiredPermission)) {
-        throw new ForbiddenException(`Missing required permission: ${transition.requiredPermission}`);
-      }
-
-      if (transition.triggerCondition === 'SYSTEM_AUTOMATIC') {
-        throw new ForbiddenException('This transition can only be fired by a system process');
-      }
-      if (transition.triggerCondition === 'SPECIFIC_USER' && transition.triggerUserId !== actorId) {
-        throw new ForbiddenException('Only the specifically configured user may trigger this transition');
-      }
-      if (transition.triggerCondition === 'ROLE_BASED' && transition.triggerRoleId) {
-        const holdsRole = await this.prisma.userRole.findFirst({
-          where: { userId: actorId, roleId: transition.triggerRoleId },
-        });
-        if (!holdsRole) {
-          throw new ForbiddenException('You do not hold the role required to trigger this transition');
-        }
-      }
-    }
-
     if (!fromStage) throw new NotFoundException('Current stage not found');
 
-    // ASSIGNEE_POOL (ACC-28) — placed after fromStage resolves, unlike the
-    // three triggerCondition checks above, because resolveAssignee()
-    // needs the full stage row, not just its id. Reuses the existing
-    // assignee-resolution machinery rather than a new authorization
-    // primitive — see backend/Plans/step-28-resource-scoped-roles.md
-    // Section 2.2. Uses resolveAssignee() (OOO-aware), not the raw
-    // resolveAssigneeRaw() — fixed per ACC-40 Section 2.6.1: an
-    // out-of-office holder's acting user must be able to trigger this
-    // transition too, same as they'd receive the task/notification for it.
-    if (!pool && transition.triggerCondition === 'ASSIGNEE_POOL') {
-      const assigneePool = await this.resolveAssignee(fromStage, instance, organizationId);
-      if (!assigneePool.includes(actorId)) {
-        throw new ForbiddenException('You are not in the resolved assignee pool for this stage');
-      }
+    // ACC-271 — the stage says who may move the record out of it: its pool
+    // (decision 1). The transition's requiredPermission, triggerCondition,
+    // triggerRoleId and triggerUserId are never read. PR 6a removed the old
+    // branch for a stage with no `who`: StagePoolService gives such a stage an
+    // EMPTY pool (fail closed), so it is refused STAGE_HAS_NO_ONE.
+    if (transitionMover(transition) !== 'PERSON') {
+      throw new ForbiddenException('This transition can only be fired by a system process');
     }
+    const pool = await this.stagePool.resolve(organizationId, fromStage.id, instance);
+    this.assertInStagePool(pool, fromStage, actorId);
 
     const currentInstanceStage = await this.prisma.workflowInstanceStage.findFirst({
       where: { workflowInstanceId: instanceId, stageId: fromStage.id, exitedAt: null },
@@ -772,38 +715,18 @@ export class WorkflowService {
     const stage = await this.prisma.workflowStage.findFirst({ where: { id: instanceStage.stageId } });
     if (!stage) throw new NotFoundException('Workflow stage not found');
 
-    // ACC-40 Section 2.6.2 — resolveApproverPool()'s ORG_UNIT_HEAD case
-    // needs the calling object's orgUnitId, read off the instance (see
-    // that case's own comment) — this method only had instanceStage in
-    // scope until now, so a real fetch is required here (unlike
-    // triggerTransition(), which already has instance loaded).
+    // The stage's pool is resolved for this record, so the instance is read
+    // here (triggerTransition() already has it loaded).
     const instance = await this.prisma.workflowInstance.findFirst({
       where: { id: instanceStage.workflowInstanceId },
     });
     if (!instance) throw new NotFoundException('Workflow instance not found');
 
-    // Mirrors triggerTransition()'s ASSIGNEE_POOL check (pool.includes(actorId))
-    // — reuses resolveApproverPool(), the same pool-resolution isApprovalThresholdMet()
-    // already trusts for this exact stage, rather than inventing a new
-    // authorization primitive. Only enforced when the pool resolves to
-    // something concrete (COMMITTEE/ROLE/ORG_UNIT_HEAD strategies — the only
-    // three resolveApproverPool() understands) — an unresolvable strategy on
-    // a multi-approver stage is a pre-existing, separately-tracked
-    // config-error case (see resolveApproverPool()'s own comment), not one
-    // this check newly blocks.
-    //
-    // ACC-271 — a converted stage asks its pool instead, and an EMPTY pool now
-    // refuses everyone (plan gap 3: today an empty pool lets anyone vote).
-    let pool: StagePool | undefined;
-    if (isConvertedStage(stage)) {
-      pool = await this.stagePool.resolve(organizationId, stage.id, instance);
-      this.assertInStagePool(pool, stage, actorId);
-    } else {
-      const approverPool = await this.resolveApproverPool(stage, organizationId, instance);
-      if (approverPool.length > 0 && !approverPool.includes(actorId)) {
-        throw new ForbiddenException('You are not an eligible approver for this stage');
-      }
-    }
+    // ACC-271 — the stage's pool decides who may vote, and an EMPTY pool refuses
+    // everyone (plan gap 3). PR 6a removed the old approver-pool branch: a stage
+    // with no `who` has an empty pool, so it is refused STAGE_HAS_NO_ONE.
+    const pool = await this.stagePool.resolve(organizationId, stage.id, instance);
+    this.assertInStagePool(pool, stage, actorId);
 
     // ACC-190 (Ahmad, 9 Oct, J) — the approval path is gated too, and a deciding
     // vote is refused BEFORE it is recorded.
@@ -858,10 +781,8 @@ export class WorkflowService {
     organizationId: string,
     actorId: string,
     dto: SubmitApprovalDto,
-    // ACC-40 Section 2.6.2 — caller-supplied now (submitApproval() already
-    // fetches this for resolveApproverPool()'s ORG_UNIT_HEAD case), rather
-    // than this method re-fetching the same row a second time in the same
-    // request.
+    // Caller-supplied (submitApproval() already fetched it), rather than this
+    // method re-fetching the same row a second time in the same request.
     instance: PrismaWorkflowInstance,
     // ACC-271 — a converted stage's pool, already resolved by the caller.
     pool?: StagePool,
@@ -1033,66 +954,40 @@ export class WorkflowService {
       (a) => a.decision === 'APPROVED' || a.decision === 'APPROVED_WITH_COMMENTS',
     ).length;
 
-    // ACC-271 — a converted stage decides by its who mode (plan §4.3).
-    if (isConvertedStage(fromStage)) {
-      const stagePool = pool ?? (await this.stagePool.resolve(organizationId, fromStage.id, instance));
-      if (fromStage.whoMode === 'ANY_ONE') return approvedCount >= 1;
-      if (fromStage.whoMode === 'COMMITTEE_VOTE') {
-        // The committee's own quorum and majority. A stage whose committee
-        // resolves to none decides nothing (plan gap 5: today one approval does).
-        const committeeId = stagePool.voteCommitteeId;
-        if (!committeeId) return false;
-        const quorum =
-          currentInstanceStage.quorumCount ??
-          (await this.prisma.committee.findFirst({ where: { id: committeeId, organizationId } }))?.quorumCount ??
-          null;
-        if (quorum === null || approvals.length < quorum) return false;
-        return approvedCount > approvals.length / 2;
-      }
-      // ALL: every CURRENT member of the pool has approved — someone who left
-      // is no longer waited for, and their earlier approval harms nothing (Q6).
-      // An acting user's place is filled by their own approval or by the
-      // approval of the absent member they stand in for. An empty pool decides
-      // nothing (gap 3: today it is met by the first approval).
-      if (stagePool.members.length === 0) return false;
-      const approvedBy = new Set(
-        approvals
-          .filter((a) => a.decision === 'APPROVED' || a.decision === 'APPROVED_WITH_COMMENTS')
-          .map((a) => a.approverId),
-      );
-      return stagePool.members.every((member) => {
-        const covered = stagePool.coveringFor.get(member);
-        return approvedBy.has(member) || (covered !== undefined && approvedBy.has(covered));
-      });
-    }
-
-    if (fromStage.approvalMode === 'COMMITTEE') {
-      if (!fromStage.committeeId) return approvedCount > 0;
-      // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) — a
-      // committeeId that somehow referenced another tenant's Committee row
-      // must never resolve here, defense-in-depth alongside the write-time
-      // validation in workflow-template.service.ts's addStage/updateStage.
-      //
-      // ACC-239 — the quorum is the one saved when this entry began, so a
-      // quorum changed while the vote is open does not move it. An entry made
-      // before ACC-239 has none saved and keeps the live read.
+    // ACC-271 — the stage decides by its who mode (plan §4.3). PR 6a removed
+    // the approvalMode branch.
+    const stagePool = pool ?? (await this.stagePool.resolve(organizationId, fromStage.id, instance));
+    if (fromStage.whoMode === 'ANY_ONE') return approvedCount >= 1;
+    if (fromStage.whoMode === 'COMMITTEE_VOTE') {
+      // The committee's own quorum and majority. A stage whose committee
+      // resolves to none decides nothing (plan gap 5). The quorum is the one
+      // saved when this entry began (ACC-239), so a quorum changed while the
+      // vote is open does not move it; an entry with none saved reads it live.
+      // The committee read is org-scoped (ACC-22).
+      const committeeId = stagePool.voteCommitteeId;
+      if (!committeeId) return false;
       const quorum =
         currentInstanceStage.quorumCount ??
-        (await this.prisma.committee.findFirst({ where: { id: fromStage.committeeId, organizationId } }))?.quorumCount ??
+        (await this.prisma.committee.findFirst({ where: { id: committeeId, organizationId } }))?.quorumCount ??
         null;
       if (quorum === null || approvals.length < quorum) return false;
       return approvedCount > approvals.length / 2;
     }
-
-    const approverPool = await this.resolveApproverPool(fromStage, organizationId, instance);
-    const poolSize = approverPool.length || Math.max(approvals.length, 1);
-    // SEQUENTIAL has no dedicated ordered-roster mechanism in the current
-    // schema — treated as PARALLEL+ALL until a real sequence concept exists.
-    const threshold = fromStage.approvalMode === 'SEQUENTIAL' ? 'ALL' : (fromStage.parallelThreshold ?? 'ALL');
-
-    if (threshold === 'ALL') return approvedCount >= poolSize;
-    if (threshold === 'ANY') return approvedCount >= 1;
-    return approvedCount > poolSize / 2; // MAJORITY
+    // ALL: every CURRENT member of the pool has approved — someone who left is
+    // no longer waited for, and their earlier approval harms nothing (Q6). An
+    // acting user's place is filled by their own approval or by the approval of
+    // the absent member they stand in for. An empty pool decides nothing (gap
+    // 3), and so does a stage with no `who` (PR 6a: its pool is empty).
+    if (stagePool.members.length === 0) return false;
+    const approvedBy = new Set(
+      approvals
+        .filter((a) => a.decision === 'APPROVED' || a.decision === 'APPROVED_WITH_COMMENTS')
+        .map((a) => a.approverId),
+    );
+    return stagePool.members.every((member) => {
+      const covered = stagePool.coveringFor.get(member);
+      return approvedBy.has(member) || (covered !== undefined && approvedBy.has(covered));
+    });
   }
 
   private async performTransition(
@@ -1280,20 +1175,15 @@ export class WorkflowService {
    * the transaction, with every other read, scoped by organisation.
    */
   //
-  // ACC-271 — on a converted stage: a Committee vote's committee, the stage's
-  // COMMITTEE entry's own or the record's.
+  // ACC-271 — a Committee vote's committee: the stage's COMMITTEE entry's own,
+  // or the record's. PR 6a removed the approvalMode branch.
   private async quorumSnapshot(
     stage: PrismaWorkflowStage,
     organizationId: string,
     record: Pick<StagePoolRequest['instance'], 'objectType' | 'objectId'>,
   ): Promise<number | null> {
-    const committeeId = isConvertedStage(stage)
-      ? stage.whoMode === 'COMMITTEE_VOTE'
-        ? await this.stagePool.voteCommitteeId(organizationId, stage.id, record)
-        : null
-      : stage.approvalMode === 'COMMITTEE'
-        ? stage.committeeId
-        : null;
+    const committeeId =
+      stage.whoMode === 'COMMITTEE_VOTE' ? await this.stagePool.voteCommitteeId(organizationId, stage.id, record) : null;
     if (!committeeId) return null;
     const committee = await this.prisma.committee.findFirst({
       where: { id: committeeId, organizationId },
@@ -1577,72 +1467,52 @@ export class WorkflowService {
 
   // ── Internal: assignee resolution ────────────────────────────────────────────
 
-  // Resolves a stage's configured assigneeStrategy to concrete User.id(s) —
-  // used for CREATE_TASK/SEND_NOTIFICATION targeting. Always returns an array
-  // (empty if nothing could be resolved); callers needing a single assignee
-  // take the first element.
-  // Public shape unchanged — resolves the raw strategy result, then applies
-  // out-of-office routing (Absence and Departure Management, Pattern 1)
-  // before returning. Affects every caller uniformly (CREATE_TASK,
-  // SEND_NOTIFICATION, initial-assignee notification) since out-of-office
-  // substitution should apply to assignee resolution generally, not just
-  // to tasks.
-  private async resolveAssignee(
-    stage: PrismaWorkflowStage,
-    instance: PrismaWorkflowInstance,
-    organizationId: string,
-  ): Promise<string[]> {
-    const rawUserIds = await this.resolveAssigneeRaw(stage, instance, organizationId);
-    return this.applyOutOfOfficeRouting(rawUserIds, organizationId);
-  }
-
-  // ACC-51 — public accessor over the private resolveAssignee() above, for
-  // SlaMonitorProcessor's unassigned-stage RECOVERY branch: once a stage's
-  // isUnassigned flag clears, the sweep needs the concrete pool that just
-  // became resolvable, to attach to the still-UNASSIGNED Task.
-  // Same precedent as resolveUnassignedBlockingTransitions() being public
-  // specifically so that processor can reuse this file's resolution logic
-  // rather than duplicating it. Deliberately a thin pass-through, not a
-  // second implementation — OOO routing included, exactly as every other
-  // consumer of the pool gets it.
-  //
-  // Yes, this re-resolves a pool resolveUnassignedBlockingTransitions()
-  // already resolved moments earlier in the same sweep pass. Accepted: it
-  // runs only on the rare recovery branch of a 15-minute job, and threading
-  // the pool back out through a method whose whole contract is "return the
-  // blocking transitions" would muddy that contract for a micro-optimization
-  // nothing has measured a need for.
-  async resolveAssigneeForStage(
-    stage: PrismaWorkflowStage,
-    instance: PrismaWorkflowInstance,
-    organizationId: string,
-  ): Promise<string[]> {
-    return this.whoWorks(stage, instance, organizationId);
-  }
-
-  // ACC-271 — the people a stage's work and notices go to: a converted stage's
-  // pool, or the old strategy's assignees (with its out-of-office notices) for
-  // a stage not converted yet. A pool resolves without notices: it is read on
-  // every decision, and a notice per read would repeat.
+  // ACC-271 — the people a stage's work and notices go to: its pool's members.
+  // A pool resolves without notices: it is read on every decision, and a notice
+  // per read would repeat. PR 6a — a stage with no `who` has an empty pool, so
+  // nobody (the old strategy's assignees are gone).
   private async whoWorks(
     stage: PrismaWorkflowStage,
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<string[]> {
-    if (isConvertedStage(stage)) {
-      return (await this.stagePool.resolve(organizationId, stage.id, instance)).members;
-    }
-    return this.resolveAssignee(stage, instance, organizationId);
+    return (await this.stagePool.resolve(organizationId, stage.id, instance)).members;
   }
 
   /**
    * ACC-271 — many converted stages' pools at once (StagePoolService.
-   * resolveMany(), one query per kind), for the 15-minute sweep. Public for the
-   * same reason resolveUnassignedBlockingTransitions() is: the sweep reuses the
-   * engine's resolution rather than a copy.
+   * resolveMany(), one query per kind), for the 15-minute sweep. Public so the
+   * sweep reuses the engine's resolution rather than a copy.
    */
   async resolveStagePools(organizationId: string, requests: StagePoolRequest[]): Promise<Map<string, StagePool>> {
     return this.stagePool.resolveMany(organizationId, requests);
+  }
+
+  /**
+   * ACC-271 PR 6a — how many open entries are Committee votes counting against
+   * this committee: stages with whoMode COMMITTEE_VOTE whose vote committee —
+   * the stage's COMMITTEE entry's own, else the record's, as
+   * StagePoolService.voteCommitteeIds() resolves it — is this one. For the
+   * change-request preview ("open votes keep the quorum they began with").
+   * BATCHED: one entries query plus one batched committee resolution, never
+   * one per entry. It used to read approvalMode COMMITTEE, which no converted
+   * stage has, so it always answered 0.
+   */
+  async countOpenCommitteeVotes(organizationId: string, committeeId: string): Promise<number> {
+    const entries = await this.prisma.workflowInstanceStage.findMany({
+      where: {
+        exitedAt: null,
+        stage: { whoMode: 'COMMITTEE_VOTE', workflowTemplate: { organizationId } },
+        workflowInstance: { organizationId, status: 'IN_PROGRESS' },
+      },
+      select: { id: true, stageId: true, workflowInstance: { select: { objectType: true, objectId: true } } },
+    });
+    if (entries.length === 0) return 0;
+    const committees = await this.stagePool.voteCommitteeIds(
+      organizationId,
+      entries.map((e) => ({ key: e.id, stageId: e.stageId, instance: e.workflowInstance })),
+    );
+    return entries.filter((e) => committees.get(e.id) === committeeId).length;
   }
 
   /** ACC-271 PR 4 — the sweep's leaver rule on "All of them" entries (StagePoolService.recordPoolChanges()). */
@@ -1661,421 +1531,34 @@ export class WorkflowService {
     }
   }
 
-  // Whether one person's action decides the stage: a converted stage worked by
-  // Any one of them, or an unconverted SINGLE stage.
+  // Whether one person's action decides the stage: a stage worked by Any one of
+  // them. PR 6a removed the approvalMode branch.
   private decidesAlone(stage: PrismaWorkflowStage): boolean {
-    return isConvertedStage(stage) ? stage.whoMode === 'ANY_ONE' : stage.approvalMode === 'SINGLE';
-  }
-
-  private async resolveAssigneeRaw(
-    stage: PrismaWorkflowStage,
-    instance: PrismaWorkflowInstance,
-    organizationId: string,
-  ): Promise<string[]> {
-    switch (stage.assigneeStrategy) {
-      case 'SPECIFIC_USER':
-        return stage.assigneeUserId ? [stage.assigneeUserId] : [];
-
-      case 'ROLE':
-      case 'ROUND_ROBIN': {
-        if (!stage.assigneeRoleId) return [];
-        const userRoles = await this.prisma.userRole.findMany({
-          where: { roleId: stage.assigneeRoleId, user: { organizationId, status: 'ACTIVE' } },
-        });
-        const userIds = userRoles.map((ur) => ur.userId);
-        if (userIds.length === 0) return [];
-        // ROUND_ROBIN's "least-recently-assigned" tie-breaking needs an
-        // assignment-history mechanism that doesn't exist yet — falls back
-        // to the same "first active holder" resolution as ROLE, per the
-        // plan's own documented limitation (Step 9 will refine this).
-        return stage.approvalMode === 'SINGLE' ? [userIds[0] as string] : userIds;
-      }
-
-      case 'ORG_UNIT_HEAD': {
-        // ACC-40 Section 2.5 — real resolver wiring, but still degrades to
-        // an empty pool for every REAL caller today: no workflow-driven
-        // object (Committee, Meeting) has its own orgUnitId field yet
-        // (confirmed prerequisite gap, Section 2.5's own checklist note) —
-        // a real, separate schema addition on whichever functional module
-        // first consumes this strategy, not made by this ticket. Reads
-        // instance.orgUnitId defensively (a property the real
-        // WorkflowInstance Prisma model does not carry — no schema change
-        // here), so this is exactly as safe as the previous unconditional
-        // stub for every existing tenant/workflow, while being real,
-        // tested wiring for whichever module supplies the field next.
-        // TODO(ACC-40): once a real orgUnitId column is added to a
-        // consuming object's schema, REPLACE this cast with a properly-typed
-        // field reference (e.g. instance.orgUnitId directly, once the
-        // Prisma-generated WorkflowInstance type actually carries it) —
-        // don't just leave the cast in place and trust it keeps compiling.
-        const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
-        if (!orgUnitId) return [];
-        return this.organizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId);
-      }
-
-      case 'SELF': {
-        const firstStage = await this.prisma.workflowInstanceStage.findFirst({
-          where: { workflowInstanceId: instance.id },
-          orderBy: { enteredAt: 'asc' },
-        });
-        return firstStage?.actorId ? [firstStage.actorId] : [];
-      }
-
-      // ACC-54 — the FIXED half of OrgPosition-based resolution: whoever
-      // holds this specific position in this specific, explicitly-configured
-      // unit. Unlike ROLE (which returns every holder of a role anywhere in
-      // the tenant, with no connection to the triggering object), this is
-      // narrowed to one unit — but that unit is chosen at CONFIG time, so it
-      // is the same pool for every instance of the template. The RELATIVE
-      // variant, which derives the unit from the triggering object's own
-      // orgUnitId, is deliberately not built yet: no workflow-driven object
-      // carries an orgUnitId to derive from (Committee has none), so it
-      // would resolve empty for every object that exists today.
-      //
-      // Returns [] rather than throwing when either field is unset, exactly
-      // like every other case in this switch (SPECIFIC_USER, ROLE,
-      // ORG_UNIT_HEAD, COMMITTEE all do the same). That is what lets an
-      // unconfigured or half-configured stage flow into ACC-28's
-      // unassigned-stage detection and ACC-51/52's task recovery rather than
-      // crashing a transition or a sweep — the empty pool IS the signal.
-      case 'POSITION_FIXED': {
-        if (!stage.assigneePositionId || !stage.assigneeOrgUnitId) return [];
-        const holders = await this.prisma.user.findMany({
-          where: {
-            organizationId,
-            positionId: stage.assigneePositionId,
-            primaryOrgUnitId: stage.assigneeOrgUnitId,
-            status: 'ACTIVE',
-          },
-          select: { id: true },
-        });
-        const holderIds = holders.map((h) => h.id);
-        if (holderIds.length === 0) return [];
-        // Mirrors ROLE's own SINGLE-mode narrowing directly above: one
-        // approver needed means one assignee, and the position is normally
-        // isSingleAssignee anyway, so this is a no-op in the common case.
-        return stage.approvalMode === 'SINGLE' ? [holderIds[0] as string] : holderIds;
-      }
-
-      case 'COMMITTEE': {
-        if (!stage.committeeId) return [];
-        // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) —
-        // organizationId filter on the denormalized column, isActive
-        // instead of leftAt: null (both per the plan's Pending Discussions
-        // #6/#7 resolutions).
-        // assigneeCommitteeRoleValueId (ACC-28) narrows this to a specific
-        // committee_member_role when set — null preserves the pre-ACC-28
-        // "every active member" behavior.
-        const members = await this.prisma.committeeMember.findMany({
-          where: {
-            committeeId: stage.committeeId,
-            organizationId,
-            isActive: true,
-            ...(stage.assigneeCommitteeRoleValueId
-              ? { roleValueId: stage.assigneeCommitteeRoleValueId }
-              : {}),
-          },
-        });
-        return members.map((m) => m.userId);
-      }
-
-      default:
-        return [];
-    }
-  }
-
-  // ACC-40 Section 2.6.3 — the ACTING_HEAD half of the unified delegation
-  // stamp. A narrow, single-actor sibling to resolveAssigneeRaw()'s own
-  // ORG_UNIT_HEAD case and OrganizationService.resolveActingHeadForOrgUnit()
-  // — deliberately not a modification of either (pool resolution stays a
-  // flat string[], unchanged). Walks the SAME hierarchy shape, but asks a
-  // different, narrower question: not "who is eligible" but "is THIS
-  // specific actor eligible only because they're acting, not because they
-  // really hold the position." Returns the OrgUnit id they're acting FOR
-  // (the delegation context), or null if they're a real holder (not
-  // "acting") or not acting for anything found in the walk.
-  //
-  // Public (not private) so this phase's own tests can exercise it in
-  // isolation before Phase 9 commit 3 wires it into a real write site —
-  // same precedent as resolveActingHeadForOrgUnit() (Phase 6 commit 1).
-  async resolveActingHeadOrgUnitIdForUser(
-    actorId: string,
-    orgUnitId: string,
-    organizationId: string,
-  ): Promise<string | null> {
-    let current: string | null = orgUnitId;
-    while (current) {
-      const isRealHolder = await this.prisma.user.count({
-        where: {
-          id: actorId,
-          organizationId,
-          primaryOrgUnitId: current,
-          status: 'ACTIVE',
-          position: { isUnitHeadPosition: true },
-        },
-      });
-      if (isRealHolder > 0) return null; // real position-holder — not "acting"
-
-      const unit: { actingHeadUserId: string | null; parentId: string | null } | null =
-        await this.prisma.orgUnit.findFirst({
-          where: { id: current, organizationId },
-          select: { actingHeadUserId: true, parentId: true },
-        });
-      if (!unit) return null;
-      if (unit.actingHeadUserId === actorId) return current; // the unit id they're acting FOR
-
-      current = unit.parentId;
-    }
-    return null;
-  }
-
-  // ACC-40 Section 2.6.3 — the OUT_OF_OFFICE_COVERAGE half. Constrained to
-  // rawPoolUserIds deliberately — actorId being *someone's* actingUserId
-  // tenant-wide is not relevant; only whether they're covering for a person
-  // who was actually part of *this* resolution's raw pool counts. Public
-  // for the same isolated-testing reason as the sibling above.
-  async resolveOutOfOfficeCoverageForUser(
-    actorId: string,
-    rawPoolUserIds: string[],
-    organizationId: string,
-  ): Promise<string | null> {
-    if (rawPoolUserIds.length === 0) return null;
-
-    const now = new Date();
-    const coveredFor = await this.prisma.user.findFirst({
-      where: {
-        id: { in: rawPoolUserIds },
-        organizationId,
-        actingUserId: actorId,
-        outOfOfficeFrom: { lte: now },
-        outOfOfficeTo: { gte: now },
-      },
-    });
-    return coveredFor?.id ?? null;
+    return stage.whoMode === 'ANY_ONE';
   }
 
   // ACC-40 Section 2.6.3 — the unified delegation-reason stamp, computed at
-  // the exact moment of writing actorId/approverId (or, per Phase 9 commit
-  // 4, each TaskAssignee row). ACTING_HEAD checked first,
-  // OUT_OF_OFFICE_COVERAGE second — a stated, deliberate precedence for the
-  // rare edge case where both could theoretically resolve (an actor who is
-  // both the acting head of a vacant unit and separately covering an
-  // absent ROLE-based colleague in the same raw pool). The stamp records
-  // one reason, not a set.
+  // the exact moment of writing actorId/approverId. ACC-271 — the stage's pool
+  // already knows why each person is in it: acting head of a unit an Org unit
+  // head entry names (checked first), or standing in for an absent member. The
+  // stamp records one reason, not a set. PR 6a removed the old strategy path.
   private async resolveDelegationStamp(
     userId: string,
     stage: PrismaWorkflowStage,
     instance: PrismaWorkflowInstance,
     organizationId: string,
-    // ACC-271 — a converted stage's pool, when the caller already has it.
+    // The stage's pool, when the caller already has it.
     pool?: StagePool,
   ): Promise<{ delegationReason: 'ACTING_HEAD' | 'OUT_OF_OFFICE_COVERAGE'; delegationContextId: string } | null> {
-    // ACC-271 — a converted stage's pool already knows why each person is in
-    // it: acting head of a unit an Org unit head entry names, or standing in
-    // for an absent member. Same precedence as below.
-    if (isConvertedStage(stage)) {
-      const stagePool = pool ?? (await this.stagePool.resolve(organizationId, stage.id, instance));
-      const actingFor = stagePool.actingHeadOf.get(userId);
-      if (actingFor) return { delegationReason: 'ACTING_HEAD', delegationContextId: actingFor };
-      const coveredFor = stagePool.coveringFor.get(userId);
-      if (coveredFor) return { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: coveredFor };
-      return null;
-    }
-
-    if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
-      // Same instance.orgUnitId defensive read as resolveAssigneeRaw()'s
-      // own ORG_UNIT_HEAD case — see that case's own comment.
-      const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
-      if (orgUnitId) {
-        const actingForOrgUnitId = await this.resolveActingHeadOrgUnitIdForUser(userId, orgUnitId, organizationId);
-        if (actingForOrgUnitId) {
-          return { delegationReason: 'ACTING_HEAD', delegationContextId: actingForOrgUnitId };
-        }
-      }
-    }
-
-    const rawPool = await this.resolveAssigneeRaw(stage, instance, organizationId);
-    const coveredForUserId = await this.resolveOutOfOfficeCoverageForUser(userId, rawPool, organizationId);
-    if (coveredForUserId) {
-      return { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: coveredForUserId };
-    }
-
+    const stagePool = pool ?? (await this.stagePool.resolve(organizationId, stage.id, instance));
+    const actingFor = stagePool.actingHeadOf.get(userId);
+    if (actingFor) return { delegationReason: 'ACTING_HEAD', delegationContextId: actingFor };
+    const coveredFor = stagePool.coveringFor.get(userId);
+    if (coveredFor) return { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: coveredFor };
     return null;
   }
 
-  // Absence and Departure Management, Pattern 1 (Acting Assignment):
-  //   IF user.outOfOfficeFrom <= now <= outOfOfficeTo AND actingUserId set:
-  //     → substitute actingUser, notify both, audit log the substitution
-  //   ELSE (out of office, no acting user set):
-  //     → keep the user assigned, notify Tenant Admin to reassign
-  private async applyOutOfOfficeRouting(userIds: string[], organizationId: string): Promise<string[]> {
-    if (userIds.length === 0) return userIds;
-
-    const now = new Date();
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: userIds }, organizationId },
-    });
-
-    const resolved = new Set<string>();
-    for (const user of users) {
-      const isOutOfOffice =
-        user.outOfOfficeFrom && user.outOfOfficeTo && user.outOfOfficeFrom <= now && now <= user.outOfOfficeTo;
-
-      if (!isOutOfOffice) {
-        resolved.add(user.id);
-        continue;
-      }
-
-      if (user.actingUserId) {
-        resolved.add(user.actingUserId);
-
-        await this.notificationService.create(
-          {
-            userId: user.id,
-            titleEn: 'Assignment routed to your acting user',
-            bodyEn: `An assignment was routed to your acting user while you are on leave.`,
-          },
-          organizationId,
-        );
-        await this.notificationService.create(
-          {
-            userId: user.actingUserId,
-            titleEn: 'Assignment routed to you (acting)',
-            bodyEn: `You have been assigned as the acting user for a colleague on leave.`,
-          },
-          organizationId,
-        );
-        await this.auditLog.log({
-          action: 'DELEGATE',
-          objectType: 'User',
-          objectId: user.id,
-          tenantId: organizationId,
-          metadata: { assignedToActingUserId: user.actingUserId, reason: 'out-of-office' },
-        });
-      } else {
-        // Out of office with no acting user set — assign normally per the
-        // documented fallback, but flag the gap to the Tenant Admin.
-        resolved.add(user.id);
-        await this.notifyTenantAdminsOfCoverageGap(organizationId, user.id);
-      }
-    }
-
-    return Array.from(resolved);
-  }
-
-  private async notifyTenantAdminsOfCoverageGap(organizationId: string, absentUserId: string): Promise<void> {
-    const adminRole = await this.prisma.role.findFirst({ where: { organizationId, key: 'TENANT_ADMIN' } });
-    if (!adminRole) return;
-
-    const userRoles = await this.prisma.userRole.findMany({
-      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
-    });
-
-    for (const userRole of userRoles) {
-      await this.notificationService.create(
-        {
-          userId: userRole.userId,
-          titleEn: 'Coverage gap — user on leave with no acting user',
-          bodyEn: `A user on leave (id: ${absentUserId}) has no acting user set and was assigned anyway. Consider reassigning.`,
-        },
-        organizationId,
-      );
-    }
-  }
-
   // ── ACC-28 Section 2.5: unassigned-stage detection ──────────────────────────
-
-  // Returns every outgoing ASSIGNEE_POOL transition from `stage` that nobody
-  // in the currently-resolved assignee pool could ever fire — either the
-  // pool is empty (unreachable regardless of requiredPermission), or the
-  // pool is non-empty but nobody in it holds the transition's
-  // requiredPermission. Public: called both from checkAndFlagUnassignedStage()
-  // below (entry-time, this file) and from SlaMonitorProcessor's periodic
-  // sweep (drift-after-entry re-check, plan Section 2.5.1) — the resolution
-  // logic must stay identical between both call sites, so it lives in one
-  // place rather than being duplicated. Uses resolveAssignee() (OOO-aware),
-  // not the raw resolveAssigneeRaw() — fixed per ACC-40 Section 2.6.1: an
-  // out-of-office holder with no acting user set is a real, already-flagged
-  // coverage gap (notifyTenantAdminsOfCoverageGap()), but one WITH an acting
-  // user set must not be misreported as an unassigned/blocked stage.
-  async resolveUnassignedBlockingTransitions(
-    stage: PrismaWorkflowStage,
-    instance: PrismaWorkflowInstance,
-    organizationId: string,
-  ): Promise<PrismaWorkflowTransition[]> {
-    const outgoingTransitions = await this.prisma.workflowTransition.findMany({
-      where: { fromStageId: stage.id, triggerCondition: 'ASSIGNEE_POOL' },
-    });
-    if (outgoingTransitions.length === 0) return [];
-
-    const pool = await this.resolveAssignee(stage, instance, organizationId);
-    const blocking: PrismaWorkflowTransition[] = [];
-
-    for (const transition of outgoingTransitions) {
-      // Empty pool blocks every outgoing ASSIGNEE_POOL transition regardless
-      // of requiredPermission — nobody can ever satisfy triggerTransition()'s
-      // pool.includes(actorId) check if the pool has no members at all.
-      if (pool.length === 0) {
-        blocking.push(transition);
-        continue;
-      }
-      if (!transition.requiredPermission) continue;
-
-      let anyQualifies = false;
-      for (const userId of pool) {
-        const permissions = await this.roleService.getUserPermissions(userId, organizationId);
-        if (permissions.includes(transition.requiredPermission)) {
-          anyQualifies = true;
-          break;
-        }
-      }
-      if (!anyQualifies) blocking.push(transition);
-    }
-
-    return blocking;
-  }
-
-  // Returns every outgoing ROLE_BASED/SPECIFIC_USER transition from `stage`
-  // that has become permanently unreachable — a structurally different check
-  // from resolveUnassignedBlockingTransitions() above, not a generalization
-  // of it (SYSTEM-REFERENCE.md Section 2.13 / Section 11 Tier 1): ROLE_BASED
-  // gating (transition.triggerRoleId) and SPECIFIC_USER gating
-  // (transition.triggerUserId) are properties of the TRANSITION itself,
-  // independent of the stage's assigneeStrategy/pool entirely — a stage can
-  // use any assigneeStrategy at all and still have an outgoing transition
-  // gated this way. ROLE_BASED transitions without a triggerRoleId (gated
-  // only by requiredPermission, the common case in this codebase's seed
-  // data) and SPECIFIC_USER transitions without a triggerUserId are outside
-  // this check's scope — requiredPermission-only reachability (does ANY
-  // active user hold a role granting this permission, across the whole
-  // tenant) is a broader, more expensive question not covered here.
-  async resolveUnreachableTriggerConditionTransitions(
-    stage: PrismaWorkflowStage,
-    organizationId: string,
-  ): Promise<PrismaWorkflowTransition[]> {
-    const outgoingTransitions = await this.prisma.workflowTransition.findMany({
-      where: { fromStageId: stage.id, triggerCondition: { in: ['ROLE_BASED', 'SPECIFIC_USER'] } },
-    });
-    if (outgoingTransitions.length === 0) return [];
-
-    const blocking: PrismaWorkflowTransition[] = [];
-
-    for (const transition of outgoingTransitions) {
-      if (transition.triggerCondition === 'ROLE_BASED' && transition.triggerRoleId) {
-        const holderCount = await this.prisma.userRole.count({
-          where: { roleId: transition.triggerRoleId, user: { organizationId, status: 'ACTIVE' } },
-        });
-        if (holderCount === 0) blocking.push(transition);
-      } else if (transition.triggerCondition === 'SPECIFIC_USER' && transition.triggerUserId) {
-        const user = await this.prisma.user.findFirst({
-          where: { id: transition.triggerUserId, organizationId, status: 'ACTIVE' },
-        });
-        if (!user) blocking.push(transition);
-      }
-    }
-
-    return blocking;
-  }
 
   // Entry-time check (plan Section 2.5) — called once, right after a new
   // WorkflowInstanceStage row is created (startInstance() for the initial
@@ -2095,117 +1578,18 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<void> {
-    // ACC-271 — a converted stage is unassigned when its pool is empty (plan
-    // §4.5); the two old detectors read transition fields it does not use.
-    if (isConvertedStage(stage)) {
-      const pool = await this.stagePool.resolve(organizationId, stage.id, instance);
-      // ACC-271 PR 4 — who an "All of them" stage starts with, so the sweep can
-      // tell when someone leaves it (plan §8).
-      if (stage.whoMode === 'ALL') await this.stagePool.recordPoolChanges(organizationId, new Map([[instanceStageId, pool]]));
-      if (pool.members.length > 0) return;
-    } else {
-      const poolBlocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
-      const triggerBlocking = await this.resolveUnreachableTriggerConditionTransitions(stage, organizationId);
-      if (poolBlocking.length === 0 && triggerBlocking.length === 0) return;
-    }
+    // ACC-271 — a stage is unassigned when its pool is empty (plan §4.5), as a
+    // stage with no `who` always is (PR 6a removed the two old detectors).
+    const pool = await this.stagePool.resolve(organizationId, stage.id, instance);
+    // ACC-271 PR 4 — who an "All of them" stage starts with, so the sweep can
+    // tell when someone leaves it (plan §8).
+    if (stage.whoMode === 'ALL') await this.stagePool.recordPoolChanges(organizationId, new Map([[instanceStageId, pool]]));
+    if (pool.members.length > 0) return;
 
     await this.prisma.workflowInstanceStage.update({
       where: { id: instanceStageId },
       data: { isUnassigned: true, unassignedAt: new Date() },
     });
-  }
-
-  // Sizes the eligible-approver pool for PARALLEL/SEQUENTIAL threshold checks
-  // — deliberately separate from resolveAssignee() above, which needs the
-  // full instance (for SELF) and isn't meaningful for pool-sizing purposes.
-  // ACC-40 Section 2.6.1 — routes its result through applyOutOfOfficeRouting()
-  // before returning, same as resolveAssignee() does for resolveAssigneeRaw().
-  // Fixes both of this method's callers at once: submitApproval()'s
-  // eligibility gate and isApprovalThresholdMet()'s pool-sizing calculation —
-  // an out-of-office approver's acting user must be able to both cast the
-  // vote and count toward the threshold in their place.
-  private async resolveApproverPool(
-    stage: PrismaWorkflowStage,
-    organizationId: string,
-    instance: PrismaWorkflowInstance,
-  ): Promise<string[]> {
-    let rawPool: string[];
-    if (stage.assigneeStrategy === 'COMMITTEE') {
-      if (!stage.committeeId) return [];
-      // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) — same
-      // fix as resolveAssigneeRaw()'s COMMITTEE case above. Same
-      // assigneeCommitteeRoleValueId filter too (ACC-28) — a PARALLEL-mode
-      // stage narrowed to e.g. "chairman" must size its threshold against
-      // that same narrowed pool, not the full membership.
-      const members = await this.prisma.committeeMember.findMany({
-        where: {
-          committeeId: stage.committeeId,
-          organizationId,
-          isActive: true,
-          ...(stage.assigneeCommitteeRoleValueId
-            ? { roleValueId: stage.assigneeCommitteeRoleValueId }
-            : {}),
-        },
-      });
-      rawPool = members.map((m) => m.userId);
-    } else if (stage.assigneeStrategy === 'ROLE' && stage.assigneeRoleId) {
-      const userRoles = await this.prisma.userRole.findMany({
-        where: { roleId: stage.assigneeRoleId, user: { organizationId, status: 'ACTIVE' } },
-      });
-      rawPool = userRoles.map((ur) => ur.userId);
-    } else if (
-      stage.assigneeStrategy === 'POSITION_FIXED' &&
-      stage.assigneePositionId &&
-      stage.assigneeOrgUnitId
-    ) {
-      // ACC-54 — required for the same reason ACC-40 gave for the
-      // ORG_UNIT_HEAD case directly below: this method is structurally
-      // separate from resolveAssigneeRaw(), so a strategy gaining a case
-      // there does NOT gain one here. Without this branch a POSITION_FIXED
-      // stage fell through to the terminal `else` and returned [], which
-      // silently disabled both consumers on any multi-approver stage —
-      // submitApproval()'s eligibility gate (`approverPool.length > 0 &&
-      // ...` skips entirely on an empty pool) and isApprovalThresholdMet()'s
-      // sizing (`pool.length || Math.max(approvals.length, 1)` falls back to
-      // the approval count, making ALL satisfiable by the first approver).
-      //
-      // Same query as resolveAssigneeRaw()'s POSITION_FIXED case, minus its
-      // SINGLE-mode narrowing: this method only ever runs for multi-approver
-      // stages, and a threshold must be sized against the whole eligible
-      // pool rather than one arbitrarily-chosen member of it.
-      const holders = await this.prisma.user.findMany({
-        where: {
-          organizationId,
-          positionId: stage.assigneePositionId,
-          primaryOrgUnitId: stage.assigneeOrgUnitId,
-          status: 'ACTIVE',
-        },
-        select: { id: true },
-      });
-      rawPool = holders.map((h) => h.id);
-    } else if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
-      // ACC-40 Section 2.6.2 — required prerequisite this investigation
-      // surfaced: without this case, submitApproval()'s eligibility gate
-      // and isApprovalThresholdMet()'s pool-sizing calculation are both
-      // complete no-ops for ORG_UNIT_HEAD-strategy stages, even after
-      // resolveAssigneeRaw() gains its own case, since this is a
-      // structurally separate method that case doesn't touch. Same
-      // instance.orgUnitId defensive read as resolveAssigneeRaw()'s case —
-      // degrades to an empty pool for every real caller today, for the
-      // identical reason (no workflow-driven object has this field yet).
-      // TODO(ACC-40): same note as resolveAssigneeRaw()'s ORG_UNIT_HEAD
-      // case — replace this cast with a properly-typed field reference
-      // once a real orgUnitId column exists, don't just trust the cast.
-      const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
-      rawPool = orgUnitId
-        ? await this.organizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId)
-        : [];
-    } else {
-      // Any other assigneeStrategy on a multi-approver stage is a seed/config
-      // error — there is no well-defined pool to size a threshold against.
-      return [];
-    }
-    return this.applyOutOfOfficeRouting(rawPool, organizationId);
   }
 
   // ACC-190 — counted from the entry's own `enteredAt`, the same instant its

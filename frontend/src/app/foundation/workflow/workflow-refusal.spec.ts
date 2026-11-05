@@ -197,6 +197,7 @@ describe('workflow refusals (ACC-255 PR 3)', () => {
 describe('whoRefusal (ACC-271 PR 5a)', () => {
   it('places each refusal: the section, the mode, or a row by index and field', () => {
     expect(whoRefusal(refusal(400, { code: 'WHO_ENTRIES_REQUIRED' }))?.where).toEqual({ slot: 'section' });
+    expect(whoRefusal(refusal(400, { code: 'WHO_REQUIRED' }))?.where).toEqual({ slot: 'section' });
     expect(whoRefusal(refusal(400, { code: 'WHO_MODE_UNKNOWN', mode: 'X' }))?.where).toEqual({ slot: 'mode' });
     expect(whoRefusal(refusal(400, { code: 'COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE' }))?.where).toEqual({ slot: 'mode' });
     expect(whoRefusal(refusal(400, { code: 'WHO_ENTRY_INCOMPLETE', index: 2, kind: 'POSITION_IN_UNIT', field: 'positionId' }))?.where).toEqual({

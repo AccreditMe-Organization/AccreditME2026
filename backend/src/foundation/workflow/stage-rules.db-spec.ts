@@ -362,7 +362,7 @@ describe('Stage rules against a real database (ACC-255)', () => {
       const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
       const added = await templates.addStage(
         template.id,
-        { nameEn: 'Board review', order: 25, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' } as never,
+        { nameEn: 'Board review', order: 25, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never,
         o.id,
         o.actorId,
       );

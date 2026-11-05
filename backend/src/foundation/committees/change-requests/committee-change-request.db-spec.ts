@@ -25,8 +25,6 @@ import { WorkingCalendarService } from '../../working-calendar/working-calendar.
 import { NotificationService } from '../../notification/notification.service';
 import { TenantService } from '../../tenant/tenant.service';
 import { LookupService } from '../../lookup/lookup.service';
-import { RoleService } from '../../roles/role.service';
-import { OrganizationService } from '../../organization/organization.service';
 import { TaskService } from '../../task/task.service';
 import { TaskAuthorityService } from '../../task/task-authority.service';
 import { TaskAssignmentService } from '../../task/task-assignment.service';
@@ -37,6 +35,7 @@ import { WorkflowTemplateService } from '../../workflow/workflow-template.servic
 import { StageTaskDefinitionService } from '../../workflow/stage-task-definition.service';
 import { applyWorkflowSeed } from '../../workflow/workflow-seed-apply';
 import { SYSTEM_WORKFLOW_SEED } from '../../workflow/workflow.seed';
+import { itEnforcesTenantIsolation } from '../../../common/testing/tenant-isolation';
 import { COMMITTEE_STAGE_KEYS } from '../../workflow/workflow-stage-keys';
 import { runBackfill } from '../../../../prisma/backfill-acc239-change-request-workflow';
 import { ChangeRequestViewer, CommitteeChangeRequestService } from './committee-change-request.service';
@@ -79,10 +78,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
   const sla = new TaskSlaService(prisma, calendar);
   const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla, new TaskClosedNoticeService(prisma, notifications));
   const stageTasks = new StageTaskDefinitionService(prisma, audit, tasks);
-  const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
-  const organizations = { resolveActingHeadForOrgUnit: async () => null } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, new StagePoolService(prisma));
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, new StagePoolService(prisma));
   const templates = new WorkflowTemplateService(prisma, audit, stageTasks);
   const requests = new CommitteeChangeRequestService(prisma, workflow, tasks, audit, notifications, new StageRulesService(prisma));
 
@@ -425,8 +422,19 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       const tpl = await prisma.workflowTemplate.create({
         data: { organizationId: w.org, nameEn: 'Vote', objectType: 'MEETING', isDefault: true, isActive: true },
       });
+      // ACC-271 PR 6a — a Committee vote stage on this committee, as the
+      // backfill converts an approvalMode COMMITTEE one (the old columns stay).
       const stage = await prisma.workflowStage.create({
-        data: { workflowTemplateId: tpl.id, nameEn: 'Committee vote', order: 10, isInitial: true, approvalMode: 'COMMITTEE', committeeId: w.committee },
+        data: {
+          workflowTemplateId: tpl.id,
+          nameEn: 'Committee vote',
+          order: 10,
+          isInitial: true,
+          approvalMode: 'COMMITTEE',
+          committeeId: w.committee,
+          whoMode: 'COMMITTEE_VOTE',
+          assignees: { create: { organizationId: w.org, order: 1, kind: 'COMMITTEE', committeeId: w.committee } },
+        },
       });
       return { tpl, stage };
     }
@@ -612,6 +620,52 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       const preview = await requests.preview(w.committee, { quorumCount: 5, nameEn: 'New name', meetingFrequency: 'MONTHLY' }, w.org);
       expect(preview.changedFields).toEqual(['nameEn', 'quorumCount']);
       expect(preview.impacts).toEqual([{ code: 'QUORUM', from: 3, to: 5, inProgress: 0 }, { code: 'NAME' }, { code: 'TERMS_TASK' }]);
+    });
+
+    // ACC-271 PR 6a — "votes that keep their quorum" are the open entries of
+    // Committee vote stages (whoMode COMMITTEE_VOTE) whose vote committee is this
+    // one: the stage's Committee entry's own committee, else the record's. It
+    // read approvalMode COMMITTEE before, which no converted stage has.
+    describe('open votes the preview counts', () => {
+      /** A stage made a Committee vote, on `committeeId` (null: the record's own). */
+      const voteStage = async (w: World, key: string, committeeId: string | null) => {
+        await prisma.workflowStage.update({ where: { id: w.stageOf[key] }, data: { whoMode: 'COMMITTEE_VOTE' } });
+        await prisma.workflowStageAssignee.create({ data: { organizationId: w.org, stageId: w.stageOf[key]!, order: 1, kind: 'COMMITTEE', committeeId } });
+      };
+      const instanceOf = async (w: World, committeeId: string) =>
+        (await prisma.workflowInstance.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE', objectId: committeeId } })).id;
+      const openEntry = async (w: World, committeeId: string, key: string, exitedAt: Date | null = null) =>
+        prisma.workflowInstanceStage.create({ data: { workflowInstanceId: await instanceOf(w, committeeId), stageId: w.stageOf[key]!, exitedAt } });
+
+      it("counts a vote on this committee 1, a vote on another committee 0, and a closed entry 0", async () => {
+        const w = await world();
+        await voteStage(w, 'terms_review', null); // the record's own committee
+        await voteStage(w, 'formation', w.other); // always the other committee
+        // An old-style committee approval that is not a Committee vote stage: not counted.
+        await prisma.workflowStage.update({ where: { id: w.stageOf['dissolution_pending'] }, data: { whoMode: 'ANY_ONE', approvalMode: 'COMMITTEE' } });
+
+        await openEntry(w, w.committee, 'terms_review'); // this committee's own vote: 1
+        await openEntry(w, w.committee, 'terms_review', new Date()); // closed: 0
+        await openEntry(w, w.other, 'terms_review'); // the other committee's own vote
+        await openEntry(w, w.committee, 'formation'); // this record, but the vote is the other committee's
+        await openEntry(w, w.committee, 'dissolution_pending'); // not a Committee vote stage
+
+        const preview = await requests.preview(w.committee, { quorumCount: 5 }, w.org);
+        expect(preview.impacts.find((i) => i.code === 'QUORUM')).toEqual({ code: 'QUORUM', from: 3, to: 5, inProgress: 1 });
+        expect(await workflow.countOpenCommitteeVotes(w.org, w.committee)).toBe(1);
+        expect(await workflow.countOpenCommitteeVotes(w.org, w.other)).toBe(2);
+      });
+
+      itEnforcesTenantIsolation("the open-vote count never counts another organisation's entries", async () => {
+        const a = await world();
+        const b = await world();
+        await voteStage(b, 'terms_review', null);
+        await openEntry(b, b.committee, 'terms_review');
+
+        expect(await workflow.countOpenCommitteeVotes(b.org, b.committee)).toBe(1);
+        expect(await workflow.countOpenCommitteeVotes(a.org, b.committee)).toBe(0);
+        expect(await workflow.countOpenCommitteeVotes(a.org, a.committee)).toBe(0);
+      });
     });
   });
 

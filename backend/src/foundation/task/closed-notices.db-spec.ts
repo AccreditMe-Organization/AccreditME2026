@@ -26,8 +26,6 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { LookupService } from '../lookup/lookup.service';
-import { RoleService } from '../roles/role.service';
-import { OrganizationService } from '../organization/organization.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageTaskDefinitionService } from '../workflow/stage-task-definition.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
@@ -66,10 +64,8 @@ describe('Closed-task notices, against a real database (ACC-271 PR 4)', () => {
   const sla = new TaskSlaService(prisma, calendar);
   const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla, new TaskClosedNoticeService(prisma, notifications));
   const stageTasks = new StageTaskDefinitionService(prisma, audit, tasks);
-  const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
-  const organizations = { resolveActingHeadForOrgUnit: async () => [], refreshOrgUnitHeadVacancy: async () => undefined } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, new StagePoolService(prisma));
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, new StagePoolService(prisma));
 
   interface Org {
     id: string;

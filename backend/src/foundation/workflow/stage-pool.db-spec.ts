@@ -75,7 +75,7 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
   } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
   const pools = new StagePoolService(prisma);
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, pools);
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, pools);
   const users = new UserService(
     prisma,
     audit,

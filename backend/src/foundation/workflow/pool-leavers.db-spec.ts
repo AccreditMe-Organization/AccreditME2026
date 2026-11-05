@@ -77,7 +77,7 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
   const organizations = { resolveActingHeadForOrgUnit: async () => [], refreshOrgUnitHeadVacancy: async () => undefined } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
   const pools = new StagePoolService(prisma);
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, pools);
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, pools);
   const users = new UserService(
     prisma,
     audit,

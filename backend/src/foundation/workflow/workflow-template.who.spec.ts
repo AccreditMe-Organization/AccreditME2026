@@ -152,12 +152,14 @@ describe('WorkflowTemplateService — who works a stage (ACC-271 PR 3)', () => {
       expect(prisma.workflowStage.update).not.toHaveBeenCalled();
     });
 
-    it('on a stage still on the old columns, a changed old field is saved as before', async () => {
+    // ACC-271 PR 6a — no old path is left: on a stage with no `who` too, a
+    // changed old field is refused, and its people are set through `who`.
+    it('on a stage with no `who`, a changed old field is refused too', async () => {
       const { prisma, service } = build();
       prisma.workflowStage.findFirst.mockResolvedValue({ ...STAGE, whoMode: null });
-      prisma.workflowStage.update.mockResolvedValue({ ...STAGE, whoMode: null, approvalMode: 'PARALLEL' });
-      await service.updateStage('stage-1', { approvalMode: 'PARALLEL' } as never, ORG, ACTOR);
-      expect(prisma.workflowStage.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ approvalMode: 'PARALLEL' }) }));
+      const body = await refusal(service.updateStage('stage-1', { approvalMode: 'PARALLEL' } as never, ORG, ACTOR));
+      expect(body?.code).toBe('WHO_MOVED_TO_STAGE');
+      expect(prisma.workflowStage.update).not.toHaveBeenCalled();
     });
 
     it('a save that converts an old stage refuses changed old fields with it', async () => {

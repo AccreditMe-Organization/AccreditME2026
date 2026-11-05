@@ -100,6 +100,12 @@ export class StagePoolService {
   /**
    * Many pools at once, all in one organisation. Every request gets an answer;
    * a stage with no entries gets the empty pool.
+   *
+   * ACC-271 PR 6a — FAIL CLOSED: a stage with no `whoMode` (none exist; the
+   * engine's old branch for one is gone) is read as having no entries, in the
+   * same query, so its pool is empty for every caller: the engine refuses its
+   * moves and votes, the moves list and Home leave it out, and the sweep flags
+   * its open entry unassigned.
    */
   async resolveMany(
     organizationId: string,
@@ -112,7 +118,7 @@ export class StagePoolService {
 
     const stageIds = [...new Set(requests.map((r) => r.stageId))];
     const entries = await client.workflowStageAssignee.findMany({
-      where: { organizationId, stageId: { in: stageIds } },
+      where: { organizationId, stageId: { in: stageIds }, stage: { whoMode: { not: null } } },
       orderBy: [{ stageId: 'asc' }, { order: 'asc' }],
     });
     const entriesByStage = new Map<string, WorkflowStageAssignee[]>();
@@ -309,16 +315,60 @@ export class StagePoolService {
     instance: Pick<StagePoolRequest['instance'], 'objectType' | 'objectId'>,
     client: PoolClient = this.prisma,
   ): Promise<string | null> {
-    const entry = await client.workflowStageAssignee.findFirst({
-      where: { organizationId, stageId, kind: 'COMMITTEE' },
-      orderBy: { order: 'asc' },
-      select: { committeeId: true },
+    const ids = await this.voteCommitteeIds(organizationId, [{ key: 'one', stageId, instance }], client);
+    return ids.get('one') ?? null;
+  }
+
+  /**
+   * voteCommitteeId() for many (stage, record) pairs at once, BATCHED: one read
+   * of the stages' first COMMITTEE entries, then one read per record type for
+   * the records' own committees — never one per pair. A pair with no COMMITTEE
+   * entry, or whose record has no committee, answers null. ACC-271 PR 6a — the
+   * change-request preview's open-vote count reads it.
+   */
+  async voteCommitteeIds(
+    organizationId: string,
+    requests: { key: string; stageId: string; instance: Pick<StagePoolRequest['instance'], 'objectType' | 'objectId'> }[],
+    client: PoolClient = this.prisma,
+  ): Promise<Map<string, string | null>> {
+    const answers = new Map<string, string | null>();
+    if (requests.length === 0) return answers;
+    const stageIds = [...new Set(requests.map((r) => r.stageId))];
+    const entries = await client.workflowStageAssignee.findMany({
+      where: { organizationId, stageId: { in: stageIds }, kind: 'COMMITTEE', stage: { whoMode: { not: null } } },
+      orderBy: [{ stageId: 'asc' }, { order: 'asc' }],
+      select: { stageId: true, committeeId: true },
     });
-    if (!entry) return null;
-    if (entry.committeeId) return entry.committeeId;
-    const route = RECORD_ROUTES[instance.objectType];
-    if (!route) return null;
-    return (await route.committeesOf(client, [instance.objectId], organizationId)).get(instance.objectId) ?? null;
+    // The first COMMITTEE entry of each stage, by order.
+    const firstByStage = new Map<string, { committeeId: string | null }>();
+    for (const entry of entries) if (!firstByStage.has(entry.stageId)) firstByStage.set(entry.stageId, entry);
+
+    // The records whose stage leaves the committee to them: one read per type.
+    const recordIdsByType = new Map<WorkflowObjectType, Set<string>>();
+    for (const r of requests) {
+      const entry = firstByStage.get(r.stageId);
+      if (!entry || entry.committeeId) continue;
+      const set = recordIdsByType.get(r.instance.objectType) ?? new Set<string>();
+      set.add(r.instance.objectId);
+      recordIdsByType.set(r.instance.objectType, set);
+    }
+    const recordCommittees = new Map<string, string | null>();
+    await Promise.all(
+      [...recordIdsByType].map(async ([type, ids]) => {
+        const route = RECORD_ROUTES[type];
+        if (!route) return;
+        const found = await route.committeesOf(client, [...ids], organizationId);
+        for (const id of ids) recordCommittees.set(recordKey(type, id), found.get(id) ?? null);
+      }),
+    );
+
+    for (const r of requests) {
+      const entry = firstByStage.get(r.stageId);
+      if (!entry) answers.set(r.key, null);
+      else if (entry.committeeId) answers.set(r.key, entry.committeeId);
+      else answers.set(r.key, recordCommittees.get(recordKey(r.instance.objectType, r.instance.objectId)) ?? null);
+    }
+    return answers;
   }
 
   /**

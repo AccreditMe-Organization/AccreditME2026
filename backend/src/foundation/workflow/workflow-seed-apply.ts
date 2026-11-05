@@ -2,7 +2,6 @@ import { Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { SeedWorkflow } from './workflow.seed';
 import { KEYED_SEED_TEMPLATES } from './workflow-stage-keys';
-import { moverForTrigger } from './workflow-who';
 
 /**
  * Writes seed workflows into one organisation: each template, its stages, its
@@ -171,7 +170,8 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
           })
         : await db.workflowTransition.create({
             // ACC-271 — who moves the record, written with the transition, like who works a stage.
-            data: { fromStageId, toStageId, ...transitionData, mover: moverForTrigger(seedTransition.triggerCondition) },
+            // PR 6a — the seed states it (it was read off triggerCondition).
+            data: { fromStageId, toStageId, ...transitionData, mover: seedTransition.mover },
           });
 
       for (const seedAction of seedTransition.actions) {

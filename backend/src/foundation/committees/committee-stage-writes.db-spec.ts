@@ -27,8 +27,6 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { LookupService } from '../lookup/lookup.service';
-import { RoleService } from '../roles/role.service';
-import { OrganizationService } from '../organization/organization.service';
 import { TaskService } from '../task/task.service';
 import { TaskAuthorityService } from '../task/task-authority.service';
 import { TaskAssignmentService } from '../task/task-assignment.service';
@@ -68,10 +66,8 @@ describe("A committee's direct writes, decided by its stage, against a real data
   const sla = new TaskSlaService(prisma, calendar);
   const tasks = new TaskService(prisma, audit, labels, visibility, calendar, notifications, tenant, assignment, authority, sla, new TaskClosedNoticeService(prisma, notifications));
   const stageTasks = new StageTaskDefinitionService(prisma, audit, tasks);
-  const roles = { getUserPermissions: async () => [] } as unknown as RoleService;
-  const organizations = { resolveActingHeadForOrgUnit: async () => null } as unknown as OrganizationService;
   const queue = { add: async () => undefined } as never;
-  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, roles, organizations, queue, stageTasks, new StagePoolService(prisma));
+  const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, new StagePoolService(prisma));
   const committees = new CommitteesService(prisma, audit, workflow, new StageRulesService(prisma));
 
   interface Org {

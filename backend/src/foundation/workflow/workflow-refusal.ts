@@ -43,7 +43,9 @@ export type WorkflowRefusalCode =
   | 'COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE'
   | 'WHO_REFERENCE_NOT_FOUND'
   | 'WHO_USER_NOT_ACTIVE'
-  | 'WHO_MOVED_TO_STAGE';
+  | 'WHO_MOVED_TO_STAGE'
+  // ACC-271 PR 6a — a new stage must say who works it.
+  | 'WHO_REQUIRED';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -81,6 +83,7 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   WHO_REFERENCE_NOT_FOUND: HttpStatus.NOT_FOUND,
   WHO_USER_NOT_ACTIVE: HttpStatus.BAD_REQUEST,
   WHO_MOVED_TO_STAGE: HttpStatus.BAD_REQUEST,
+  WHO_REQUIRED: HttpStatus.BAD_REQUEST,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -119,6 +122,7 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   WHO_REFERENCE_NOT_FOUND: 'One of the chosen people, positions, units, committees or roles was not found',
   WHO_USER_NOT_ACTIVE: "A deactivated person can't work a stage",
   WHO_MOVED_TO_STAGE: 'Who works this stage is now set on the stage, not here.',
+  WHO_REQUIRED: 'Choose who works this stage',
 };
 
 /**

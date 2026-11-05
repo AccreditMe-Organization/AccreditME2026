@@ -154,7 +154,7 @@ export class StageWhoDraft {
     this.clearRefusals();
     const where = refusal.where;
     if (where.slot === 'section') {
-      this.sectionError.set('workflow.who.error.required');
+      this.sectionError.set(refusal.code === 'WHO_REQUIRED' ? 'workflow.who.error.whoRequired' : 'workflow.who.error.required');
       return true;
     }
     if (where.slot === 'mode') {

@@ -4405,6 +4405,10 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
   `triggerCondition`, `triggerRoleId` and `triggerUserId` are not read:
   whoever is in the pool may press a person's move. Empty pool: 409
   `STAGE_HAS_NO_ONE`; outside it: 403 `NOT_IN_STAGE_POOL`.
+  Superseded (PR 6a): the old branch is deleted. Every stage is worked by its
+  pool, and a stage with `whoMode` null has an EMPTY pool (fail closed):
+  nobody may move it or vote, it offers no move, awaits nobody, and is flagged
+  unassigned.
 - **THE POOL IS `StagePoolService`, RESOLVED AT READ TIME, ACTIVE ONLY, AND
   IN BATCHES** — one query per assignee kind for any number of stages and
   records. Never resolve pools one per row or per stage in a loop.
@@ -4453,6 +4457,18 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
   `STAGE_ON_STARTING_ASSIGNMENT`, with Review stage and Keep.
 - **One additive migration** (`acc271_stage_assignees`, PR 1).
   Superseded (ACC-274): two additive migrations — PR 4 added `acc271_pool_member_joined` (the `POOL_MEMBER_JOINED` event kind).
+- **PR 6a — THE OLD BRANCH IS GONE** (backend only, no migration). Full list:
+  SYSTEM-REFERENCE.md §2.19, "PR 6a".
+  - **A stage without `who` is refused:** creating one is 400 `WHO_REQUIRED`,
+    said in both languages under the who section; a changed old people field
+    is `WHO_MOVED_TO_STAGE` on every stage.
+  - **The change request preview counts open votes by `whoMode`
+    `COMMITTEE_VOTE` and the vote's committee**
+    (`countOpenCommitteeVotes()`, batched). By `approvalMode` it was always 0.
+  - **The seed states each move's `mover`** (67 PERSON, 8 APP) and writes it.
+  - **Left for PR 6b:** the old columns (the seed still writes them), the
+    DTOs' old fields, the template read's old fields, and `transitionMover()`'s
+    null fallback.
 
 ## Key Architecture Decisions (ACC-260)
 
