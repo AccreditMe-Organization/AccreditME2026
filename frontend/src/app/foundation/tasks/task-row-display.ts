@@ -1,4 +1,5 @@
 import { ROUTE_PERMISSIONS } from '../../core/navigation/nav-items';
+import { recordPageLink } from '../../shared/utils/record-link.util';
 import { TaskRecordRefDto } from './services/task.service';
 
 /**
@@ -7,19 +8,19 @@ import { TaskRecordRefDto } from './services/task.service';
  * cannot name a record or a priority two ways.
  */
 
-/** A record type with a page of its own today, and the route that opens it. */
-const RECORD_PAGES: Readonly<Record<string, string>> = { COMMITTEE: 'committees' };
-
 /**
- * Where the record opens: only a type with a page today, only with a name (a
- * nameless record is one the viewer may not open), and only for a viewer the
- * page's route admits — hidden, never a link the guard then refuses.
+ * Where the record opens: only a type with a page today (recordPageLink, the
+ * one list of record pages), only with a name (a nameless record is one the
+ * viewer may not open), and only for a viewer the page's route admits —
+ * hidden, never a link the guard then refuses.
  */
 export function taskRecordHref(record: TaskRecordRefDto, hasPermission: (key: string) => boolean): string[] | null {
-  const route = RECORD_PAGES[record.type];
-  if (!route || !record.nameEn) return null;
+  const link = recordPageLink(record.type, record.id);
+  if (!link || !record.nameEn) return null;
+  // The route's key in ROUTE_PERMISSIONS: '/committees' → 'committees'.
+  const route = link[0]!.replace(/^\//, '');
   const needs = ROUTE_PERMISSIONS.get(route) ?? [];
-  return needs.every((p) => hasPermission(p)) ? ['/', route, record.id] : null;
+  return needs.every((p) => hasPermission(p)) ? link : null;
 }
 
 /** The translation key of a record type's word ("Committee"); an unknown type reads "Record". */
