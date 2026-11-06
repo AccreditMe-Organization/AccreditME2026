@@ -61,8 +61,8 @@ export function requestStagePolicy(key: string | null | undefined): RequestStage
 }
 
 /**
- * Where each move takes the request (the seeded SYSTEM_AUTOMATIC transition into
- * that stage). Approve is not here: its target is the one stage of the
+ * Where each move takes the request (the seeded app move, mover APP, into that
+ * stage). Approve is not here: its target is the one stage of the
  * request's template flagged APPLIES_APPROVED_CHANGE (ACC-255 §4.3), found by
  * the service.
  */

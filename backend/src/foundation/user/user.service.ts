@@ -125,8 +125,8 @@ const USER_SORT = new SortWhitelist(
 // getByIdForViewer() (confirmed via a full call-site audit before this
 // change: none of them currently read the excluded fields off the object
 // getById() returns, but the design stays defensive against a future one
-// that does, per the same reasoning WorkflowStage.requiredPermission's
-// ACC-44 removal write-up used for "don't guess, verify" — see CLAUDE.md's
+// that does, per the same reasoning the ACC-44 removal of a stage-level
+// permission field used for "don't guess, verify" — see CLAUDE.md's
 // ACC-44 section). Call this explicitly at every call site that actually
 // serializes a User onto an HTTP response — all 5 now covered:
 // UserController's listUsers()/getById()/invite()/updateProfile()/

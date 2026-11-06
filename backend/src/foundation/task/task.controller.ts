@@ -449,9 +449,8 @@ export class TaskController {
   // WHAT IT BROKE, concretely. tasks:complete was seeded to PLATFORM_ADMIN,
   // TENANT_ADMIN and QUALITY_MANAGER only. BASE_USER — the default role for
   // ordinary staff — did not hold it. And the workflow engine assigns to
-  // BASE_USER by design: MEETING.minutes_review is seeded assigneeStrategy
-  // ROLE / assigneeRoleKey BASE_USER / PARALLEL / threshold ALL, i.e. every
-  // user in the tenant. So the engine handed work to people the permission
+  // BASE_USER by design: MEETING.minutes_review was seeded to the BASE_USER
+  // role with every holder approving, i.e. every user in the tenant. So the engine handed work to people the permission
   // model forbade from finishing it, and my-tasks' Complete button 403'd for
   // most of the people it was shown to.
   //

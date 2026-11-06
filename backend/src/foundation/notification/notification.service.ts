@@ -44,9 +44,8 @@ export class NotificationService {
 
   // dto.userId is re-validated against organizationId here — the layer
   // boundary, not just the one call site that currently passes it
-  // unscoped (workflow.service.ts's SEND_NOTIFICATION action, resolving a
-  // SPECIFIC_USER-strategy stage's assigneeUserId with no tenant check of
-  // its own — see ACC-17). Every current and future caller is protected by
+  // unscoped (the workflow SEND_NOTIFICATION action, which once resolved a
+  // stage's named user with no tenant check of its own — see ACC-17). Every current and future caller is protected by
   // fixing it here, not by re-auditing each caller individually.
   async create(dto: CreateNotificationDto, organizationId: string): Promise<INotification> {
     const user = await this.prisma.user.findFirst({

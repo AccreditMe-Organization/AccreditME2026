@@ -19,7 +19,8 @@ type AuthorityClient = Pick<PrismaService, 'user' | 'orgUnitHeadAssignment' | 'u
  *   1. the creator;
  *   2. the creator's OUT-OF-OFFICE delegate (User.actingUserId), while the
  *      creator is out: both dates set and now inside them, inclusive — the
- *      same window WorkflowService.applyOutOfOfficeRouting() uses;
+ *      same window StagePoolService uses to put an acting user in an away
+ *      member's place;
  *   3. the ACTING HEAD appointed for ABSENCE of a unit the creator heads
  *      substantively, read from the OrgUnitHeadAssignment PERIOD TABLE through
  *      unit-headship.ts (ACC-244): the cover in force on the unit
@@ -181,8 +182,8 @@ interface CreatorCoverFields {
   position: { isUnitHeadPosition: boolean } | null;
 }
 
-// Both dates set and now inside them, inclusive — applyOutOfOfficeRouting()'s
-// window. An open-ended window is not out of office.
+// Both dates set and now inside them, inclusive — StagePoolService's
+// out-of-office window. An open-ended window is not out of office.
 function isOutOfOffice(user: CreatorCoverFields, now: Date): boolean {
   return (
     !!user.outOfOfficeFrom && !!user.outOfOfficeTo && user.outOfOfficeFrom <= now && now <= user.outOfOfficeTo

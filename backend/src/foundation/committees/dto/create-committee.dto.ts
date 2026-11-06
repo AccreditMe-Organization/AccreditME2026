@@ -3,9 +3,8 @@ import { Transform } from 'class-transformer';
 import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
 // Matches the Prisma CommitteeMeetingFrequency enum — @IsIn with a local
-// const array, same pattern already used by
-// create-workflow-stage.dto.ts's approvalMode/assigneeStrategy, rather
-// than @IsEnum against the generated Prisma enum directly.
+// const array (the workflow DTOs' pattern for their enums), rather than
+// @IsEnum against the generated Prisma enum directly.
 export const COMMITTEE_MEETING_FREQUENCIES = [
   'WEEKLY',
   'MONTHLY',
