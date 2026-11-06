@@ -101,6 +101,7 @@ const TASK = { id: 'task-1', title: 'Review incident report', sourceType: 'COMMI
 const REJECTION: TaskRejection = {
   byName: 'Dr. Khalifa Al-Muhairi',
   reason: 'Pharmacy holds the stock records for ward 6A and should check them first; I cannot do this until they reply.',
+  at: '2026-10-05T09:12:00.000Z',
 };
 
 @Component({

@@ -691,7 +691,7 @@ export class TaskListViewComponent {
     this.translate.currentLang();
     const now = new Date();
     return this.items().map((row) => {
-      const model = taskRowActions(row.actions, row.evidenceCount);
+      const model = taskRowActions(row.actions, row.evidenceCount, row.status);
       const due = this.text.due(row, now);
       // Every two-part due text is "relative · date" in both languages, so
       // its first " · " is where line 2 starts.

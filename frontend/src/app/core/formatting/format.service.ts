@@ -132,6 +132,21 @@ export class FormatService {
     return this.time(at, language, timeZone);
   }
 
+  // ACC-120 slice 4 — an event's moment in a dated log ("1 Oct 09:12"): the day
+  // and month, the year only when it is not this year (both in the tenant's
+  // zone), then the 24-hour time. For a column of events, where the year on
+  // every line is noise. A reader on the Hijri calendar gets dateTime, whole.
+  eventTime(value: DateInput, now: Date = new Date()): string {
+    const at = toDate(value);
+    if (!at) return EMPTY_VALUE;
+    const { language, timeZone, calendar } = this.snapshot();
+    if (calendar === 'islamic-umalqura') return this.dateTime(at);
+    const p = this.parts(at, language, { timeZone, calendar: 'gregory', day: 'numeric', month: 'short', year: 'numeric' });
+    const thisYear = this.parts(now, language, { timeZone, calendar: 'gregory', year: 'numeric' }).year;
+    const day = p.year === thisYear ? `${p.day} ${p.month}` : `${p.day} ${p.month} ${p.year}`;
+    return `${day} ${this.time(at, language, timeZone)}`;
+  }
+
   // How long ago (or until) an instant, for recency summaries only. Anything a
   // person acts on or cites is shown absolutely (date/dateTime), with this at
   // most beside it.

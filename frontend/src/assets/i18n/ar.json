@@ -1815,7 +1815,7 @@
     "rejectReason": "السبب",
     "rejectReasonHint": "يقرؤه من أسند إليك هذه المهمة ليعيد إسنادها.",
     "rejectReasonTooLong": "استخدم 1000 حرف أو أقل.",
-    "rejectedByNamed": "رفضها {{name}}: {{reason}}",
+    "rejectedByNamed": "الرفض: {{name}} — {{reason}}",
     "rejectedReasonOnly": "مرفوضة: {{reason}}",
     "addLink": "إضافة رابط",
     "addLinkNamed": "إضافة رابط دليل إلى «{{title}}»",
@@ -1860,12 +1860,15 @@
       "outcomeVacant": "لا يشغل أحد هذا المنصب هنا بعد. تبقى المهمة غير مُسندة حتى يشغله أحد.",
       "outcomeEmptyPool": "تذهب إلى مجموعة لا أحد فيها بعد. لا يمكن لأحد استلامها حتى ينضم إليها أحد.",
       "unavailable": "لا يمكنك اختيار من تُسند إليه هذه المهمة.",
-      "assignedToPool": "مُسندة إلى {{pool}}"
+      "assignedToPool": "مُسندة إلى {{pool}}",
+      "memberRole": "دور العضو",
+      "member": "العضو (اختياري)",
+      "outcomeStraight": "تُسند مباشرة إلى {{name}} ({{role}})."
     },
     "request": {
       "backToDetails": "العودة إلى الطلب",
       "newDueDate": "تاريخ الاستحقاق الجديد",
-      "holdUntil": "متوقفة مؤقتًا حتى",
+      "holdUntil": "معلّقة حتى",
       "holdUntilHint": "تُستأنف المهمة مع بداية ساعات العمل في هذا اليوم.",
       "chooseDate": "اختر تاريخًا",
       "time": "الوقت",
@@ -1873,12 +1876,12 @@
       "reason": "لماذا تحتاج إلى ذلك؟",
       "reasonHint": "يقرأ منشئ المهمة هذا عند البتّ في الطلب.",
       "sendExtension": "طلب وقت إضافي",
-      "sendHold": "طلب إيقاف مؤقت",
+      "sendHold": "طلب تعليق",
       "extensionNamed": "طلب وقت إضافي للمهمة «{{title}}»",
-      "holdNamed": "طلب إيقاف «{{title}}» مؤقتًا",
+      "holdNamed": "طلب تعليق «{{title}}»",
       "errorPast": "اختر تاريخًا في المستقبل.",
       "errorNotAfterDue": "اختر تاريخًا بعد تاريخ الاستحقاق الحالي.",
-      "errorTooLong": "لا يمكن أن يتجاوز الإيقاف المؤقت 90 يومًا.",
+      "errorTooLong": "لا يمكن أن يتجاوز التعليق 90 يومًا.",
       "decisionNote": "ملاحظة",
       "decisionNoteHint": "اختيارية عند الموافقة، ومطلوبة عند الرفض — يقرؤها صاحب الطلب.",
       "declineNeedsNote": "اذكر سبب الرفض.",
@@ -1887,20 +1890,20 @@
       "review": "مراجعة",
       "reviewNamed": "مراجعة الطلب على «{{title}}»",
       "extensionRequested": "وقت إضافي",
-      "holdRequested": "إيقاف مؤقت",
-      "askedExtension": "يطلب {{name}} نقل تاريخ الاستحقاق إلى {{date}}",
-      "askedHold": "يطلب {{name}} إيقافها مؤقتًا حتى {{date}}",
+      "holdRequested": "تعليق",
+      "askedExtension": "الطلب من: {{name}} — نقل تاريخ الاستحقاق إلى {{date}}",
+      "askedHold": "الطلب من: {{name}} — تعليقها حتى {{date}}",
       "reasonQuoted": "السبب: {{reason}}",
       "awaiting": "بانتظار قرارك",
-      "awaitingPurpose": "طلبات وقت إضافي أو إيقاف مؤقت لمهام أنشأتها، أو أنشأها من تنوب عنه.",
+      "awaitingPurpose": "طلبات وقت إضافي أو تعليق لمهام من إنشائك، أو بالنيابة عن منشئها.",
       "asked": "الطلب",
       "extensionPending": "طُلب وقت إضافي · حتى {{date}}",
-      "holdPending": "طُلب إيقاف مؤقت · حتى {{date}}",
-      "onHoldUntil": "متوقفة مؤقتًا حتى {{date}}",
+      "holdPending": "طُلب تعليق · حتى {{date}}",
+      "onHoldUntil": "معلّقة حتى {{date}}",
       "resumeNamed": "استئناف «{{title}}» الآن",
       "withdrawNamed": "سحب الطلب على «{{title}}»",
-      "recordExtension": "طلب {{name}} وقتًا إضافيًا — حتى {{date}}",
-      "recordHold": "طلب {{name}} إيقافها مؤقتًا حتى {{date}}"
+      "recordExtension": "طلب وقت إضافي من: {{name}} — حتى {{date}}",
+      "recordHold": "طلب تعليق من: {{name}} — حتى {{date}}"
     },
     "edit": {
       "named": "تعديل «{{title}}»",
@@ -1914,7 +1917,7 @@
       "keep": "الإبقاء على المهمة",
       "confirm": "إلغاء المهمة",
       "line": "أُلغيت: {{reason}}",
-      "lineNamed": "ألغاها {{name}}: {{reason}}"
+      "lineNamed": "الإلغاء: {{name}} — {{reason}}"
     },
     "reopen": {
       "named": "إعادة فتح «{{title}}»",
@@ -1996,7 +1999,9 @@
       },
       "assignInsteadNamed": "اعتماد الاقتراح: {{name}}",
       "keepNamed": "الإبقاء على الاختيار: {{name}}"
-    }
+    },
+    "reassignTitle": "إعادة تعيين المهمة",
+    "reassignRejectedBy": "الرفض: {{name}}"
   },
   "auth": {
     "login": "تسجيل الدخول",
@@ -3026,6 +3031,14 @@
         "few": "{{count}} مهام مفتوحة",
         "many": "{{count}} مهمة مفتوحة",
         "other": "{{count}} مهمة مفتوحة"
+      },
+      "assignOffered": {
+        "zero": "معروضة على {{role}}، {{unit}} (لا أحد).",
+        "one": "معروضة على {{role}}، {{unit}} (شخص واحد).",
+        "two": "معروضة على {{role}}، {{unit}} (شخصان).",
+        "few": "معروضة على {{role}}، {{unit}} ({{count}} أشخاص).",
+        "many": "معروضة على {{role}}، {{unit}} ({{count}} شخصًا).",
+        "other": "معروضة على {{role}}، {{unit}} ({{count}} شخص)."
       }
     },
     "user": {
@@ -4072,8 +4085,8 @@
     "loading": "جارٍ تحميل المهمة",
     "about": "بخصوص",
     "with": "لدى",
-    "createdBy": "أنشأها",
-    "evidence": "الدليل",
+    "createdBy": "أُنشئت بواسطة",
+    "evidence": "الأدلة",
     "description": "الوصف",
     "noDescription": "لا يوجد وصف.",
     "openRequest": "طلب مفتوح",
@@ -4090,17 +4103,17 @@
     "byWorkflowStage": "بواسطة سير العمل، عند دخول السجل مرحلة {{stage}}",
     "evidenceRequired": "مطلوب",
     "evidenceNotRequired": "غير مطلوب",
-    "evidenceNone": "لم يُضف شيء بعد",
+    "evidenceNone": "لا يوجد بعد",
     "completeAvailable": "الإنجاز متاح",
     "rejected": "مرفوضة",
-    "rejectedBy": "رفضها {{name}} · {{when}}",
+    "rejectedBy": "الرفض: {{name}} · {{when}}",
     "cancelled": "ملغاة",
-    "cancelledBy": "ألغاها {{name}} · {{when}}",
+    "cancelledBy": "الإلغاء: {{name}} · {{when}}",
     "cancelledByWorkflow": "أُلغيت عند انتقال السجل · {{when}}",
     "completed": "مكتملة",
-    "completedBy": "أنجزها {{name}} · {{when}}",
+    "completedBy": "الإنجاز: {{name}} · {{when}}",
     "reopened": "أُعيد فتحها",
-    "reopenedBy": "أعاد فتحها {{name}} · {{when}}",
+    "reopenedBy": "إعادة الفتح: {{name}} · {{when}}",
     "status": {
       "waiting": "بانتظار الاستلام"
     },
@@ -4114,21 +4127,24 @@
       "hold": "تعليق حتى {{date}}",
       "ifApprovedExtension": "عند الموافقة، يُنقل تاريخ الاستحقاق إلى {{date}}.",
       "ifApprovedHold": "عند الموافقة، يُنقل تاريخا البدء والاستحقاق إلى {{date}}. لا يمكن تغيير تاريخ الاستحقاق أثناء التعليق.",
-      "askedBy": "طلبه {{name}} · {{when}}"
+      "askedBy": "الطلب من: {{name}} · {{when}}",
+      "oneAtATime": "طلب واحد في كل مرة لكل مهمة",
+      "decideHold": "البتّ في طلب التعليق…",
+      "decideExtension": "البتّ في طلب الوقت الإضافي…"
     },
     "action": {
       "reviewRequest": "مراجعة الطلب",
-      "resume": "استئناف",
+      "resume": "استئناف الآن",
       "addEvidence": "إضافة دليل",
       "edit": "تعديل",
       "reassign": "إعادة تعيين…",
       "requestMoreTime": "طلب تمديد…",
-      "requestHold": "طلب تعليق…",
+      "requestHold": "طلب تعليق المهمة…",
       "withdrawRequest": "سحب الطلب",
       "reject": "رفض…",
-      "release": "إرجاع…",
+      "release": "إرجاع المهمة…",
       "cancel": "إلغاء المهمة…",
-      "reopen": "إعادة فتح…",
+      "reopen": "إعادة فتح المهمة…",
       "moreFor": "إجراءات أخرى لـ «{{title}}»"
     },
     "notFound": {
@@ -4167,6 +4183,40 @@
       "evidence_added": "أُضيف دليل",
       "evidence_removed": "أُزيل دليل",
       "changed": "تغيّرت"
+    },
+    "eventBy": {
+      "created": "الإنشاء: {{name}}",
+      "started": "بدء العمل: {{name}}",
+      "completed": "الإنجاز: {{name}}",
+      "rejected": "الرفض: {{name}}",
+      "reassigned": "إعادة التعيين: {{name}}",
+      "picked": "الاستلام من المجموعة: {{name}}",
+      "released": "الإرجاع إلى المجموعة: {{name}}",
+      "edited": "التعديل: {{name}}",
+      "cancelled": "الإلغاء: {{name}}",
+      "reopened": "إعادة الفتح: {{name}}",
+      "request_made_extension": "طلب وقت إضافي: {{name}}",
+      "request_made_hold": "طلب تعليق: {{name}}",
+      "request_withdrawn": "سحب الطلب: {{name}}",
+      "request_approved": "الموافقة على الطلب: {{name}}",
+      "request_declined": "رفض الطلب: {{name}}",
+      "hold_started": "التعليق: {{name}}",
+      "resumed": "الاستئناف: {{name}}",
+      "evidence_added": "إضافة دليل: {{name}}",
+      "evidence_removed": "إزالة دليل: {{name}}",
+      "changed": "التغيير: {{name}}"
+    },
+    "eventEvidence": {
+      "evidence_added": "إضافة دليل: {{what}}",
+      "evidence_addedBy": "إضافة دليل ({{what}}): {{name}}",
+      "evidence_removed": "إزالة دليل: {{what}}",
+      "evidence_removedBy": "إزالة دليل ({{what}}): {{name}}"
+    },
+    "evidenceKind": {
+      "LINK": "رابط",
+      "INTERNAL_REFERENCE": "سجل",
+      "ATTACHMENT": "ملف",
+      "TEXT": "ملاحظة"
     }
   },
   "confirm": {

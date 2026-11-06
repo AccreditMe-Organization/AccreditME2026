@@ -149,12 +149,15 @@ describe('TaskPageComponent — the task page (ACC-228)', () => {
       expect(request).toContain('Hold until');
       expect(request).toContain('If approved, the start and due dates move to');
       expect(request).toContain('Asked by Dr. Huda Zahrani');
-      const events = Array.from(el.querySelectorAll('.am-tp__event')).map(text);
+      // ACC-120 slice 4 — the header's note, and the reason as a bare quote.
+      expect(text(el.querySelector('[data-testid="task-request-note"]'))).toBe('one at a time per task');
+      expect(text(el.querySelector('[data-testid="task-request-reason"]'))).toBe('“The audit form needs Infection Control sign-off.”');
+      const events = Array.from(el.querySelectorAll('[data-testid="task-event-what"]')).map(text);
       expect(events.length).toBe(4);
-      expect(events[0]).toContain('Created · Nora Al-Otaibi');
-      expect(events[1]).toContain('Picked up from the pool');
-      expect(events[3]).toContain('Hold requested');
-      expect(events[3]).toContain('The audit form needs Infection Control sign-off.');
+      expect(events[0]).toBe('Created by Nora Al-Otaibi');
+      expect(events[1]).toBe('Picked up by Dr. Huda Zahrani');
+      expect(events[3]).toBe('Hold requested by Dr. Huda Zahrani');
+      expect(text(el.querySelectorAll('.am-tp__event')[3]!)).toContain('“The audit form needs Infection Control sign-off.”');
     });
 
     it('in Arabic: the kicker, the labels and the status are Arabic', () => {
@@ -162,8 +165,242 @@ describe('TaskPageComponent — the task page (ACC-228)', () => {
       const el = answer(pageView());
       expect(text(el.querySelector('.am-tp__kicker'))).toBe('مهمة');
       expect(text(el.querySelector('header'))).toContain('قيد التنفيذ');
-      expect(Array.from(el.querySelectorAll('.am-tp__label')).map(text)).toEqual(['بخصوص', 'لدى', 'أنشأها', 'الدليل']);
+      expect(Array.from(el.querySelectorAll('.am-tp__label')).map(text)).toEqual(['بخصوص', 'لدى', 'أُنشئت بواسطة', 'الأدلة']);
       expect(text(el.querySelector('.am-tp__cell a'))).toBe('لجنة مكافحة العدوى');
+    });
+  });
+
+  // ACC-120 slice 4 — the header, the relations and history as drawn (Task
+  // Screens, the task page).
+  describe('as drawn (ACC-120 slice 4)', () => {
+    const status = (el: HTMLElement) => el.querySelector('[data-testid="task-status"]')!;
+    const dot = (el: HTMLElement) => el.querySelector('[data-testid="task-status-dot"]');
+
+    // Status tones: a dot for open work, amber for Rejected and Unassigned,
+    // grey for On hold and Cancelled; Assigned and Completed have none.
+    const TONES: { s: string; dot: string | null; ink: string; reads: string }[] = [
+      { s: 'IN_PROGRESS', dot: '--am-primary-600', ink: '--am-primary-700', reads: 'In progress' },
+      { s: 'PENDING', dot: null, ink: '--am-ink-700', reads: 'Assigned' },
+      { s: 'COMPLETED', dot: null, ink: '--am-ink-700', reads: 'Completed ✓' },
+      { s: 'REJECTED', dot: '--am-warning-ink', ink: '--am-warning-ink', reads: 'Rejected' },
+      { s: 'UNASSIGNED', dot: '--am-warning-ink', ink: '--am-warning-ink', reads: 'Unassigned' },
+      { s: 'ON_HOLD', dot: '--am-ink-300', ink: '--am-ink-700', reads: 'On hold' },
+      { s: 'CANCELLED', dot: '--am-ink-300', ink: '--am-ink-700', reads: 'Cancelled' },
+    ];
+    for (const c of TONES) {
+      it(`status tone: ${c.s} reads "${c.reads}"${c.dot ? ', with its dot' : ', with no dot'}`, () => {
+        setup();
+        const el = answer(pageView({ task: { status: c.s as never } }));
+        expect(text(status(el))).toBe(c.reads);
+        expect(status(el).className).toContain(c.ink);
+        if (c.dot) expect(dot(el)?.className).toContain(c.dot);
+        else expect(dot(el)).toBeNull();
+      });
+    }
+
+    const GLYPHS: [string, string][] = [
+      ['HIGH', '▲ High priority'],
+      ['CRITICAL', '!! Critical priority'],
+      ['MEDIUM', 'Medium priority'],
+    ];
+    for (const [priority, reads] of GLYPHS) {
+      it(`priority ${priority} reads "${reads}"`, () => {
+        setup();
+        const el = answer(pageView({ task: { priority: priority as never } }));
+        expect(text(el.querySelector('[data-testid="task-priority"]'))).toBe(reads);
+      });
+    }
+
+    it('due reads "Due 15 Oct 2099, 17:00 +03": the date isolated, only the time and offset left to right', () => {
+      setup();
+      const el = answer(pageView());
+      expect(text(el.querySelector('[data-testid="task-due"]'))).toBe('Due 15 Oct 2099, 17:00 +03');
+      const date = el.querySelector('[data-testid="task-due-date"]')!;
+      expect(date.tagName).toBe('BDI');
+      const time = el.querySelector('[data-testid="task-due-time"]')!;
+      expect(time.getAttribute('dir')).toBe('ltr');
+      expect(text(time)).toBe('17:00 +03');
+      expect(time.contains(date)).toBeFalse();
+    });
+
+    // CC-208 — at 390 in Arabic the time and offset must not split or turn
+    // around: ONE left-to-right isolate holding the time, a no-break space and
+    // the offset, in that order.
+    it('the time and offset are one left-to-right isolate: time, no-break space, offset', () => {
+      setup('ar');
+      const el = answer(pageView());
+      const time = el.querySelector('[data-testid="task-due-time"]')!;
+      expect(time.tagName).toBe('BDI');
+      expect(time.getAttribute('dir')).toBe('ltr');
+      expect(getComputedStyle(time).unicodeBidi).toBe('isolate');
+      expect(time.textContent).toBe('17:00 +03');
+      // Laid out left to right, on one line.
+      const [hour, offset] = Array.from(time.children) as HTMLElement[];
+      expect(hour.textContent).toBe('17:00');
+      expect(offset.textContent).toBe('+03');
+      expect(hour.getBoundingClientRect().left).toBeLessThan(offset.getBoundingClientRect().left);
+      expect(hour.getBoundingClientRect().top).toBe(offset.getBoundingClientRect().top);
+    });
+
+    // CC-208 — typed text takes its own direction; quote marks sit at the
+    // start and end of the reason, outside it.
+    it('typed text takes its own direction: the description and every quoted reason are dir="auto"', () => {
+      setup('ar');
+      const el = answer(
+        pageView({
+          task: {
+            status: 'REJECTED',
+            rejectedReason: 'Pharmacy owns this.',
+            rejectedAt: '2026-10-05T11:20:00.000Z',
+            openRequest: {
+              id: 'req-1',
+              type: 'EXTENSION',
+              requestedDueAt: '2099-10-20T14:00:00.000Z',
+              holdUntil: null,
+              requestedById: 'huda',
+              requestedByName: 'Dr. Huda Zahrani',
+              reason: 'Second ward pilot.',
+              createdAt: '2026-10-05T11:20:00.000Z',
+            },
+          },
+          view: { rejectedBy: { id: 'u-t', name: 'Tariq Suleiman' } },
+        }),
+      );
+      expect(el.querySelector('[data-testid="task-description"]')!.getAttribute('dir')).toBe('auto');
+      const quoted = ['task-request-reason', 'task-closing-reason', 'task-event-reason'].map(
+        (id) => el.querySelector(`[data-testid="${id}"]`) as HTMLElement,
+      );
+      for (const block of quoted) {
+        expect(block).withContext('a quoted reason is on screen').not.toBeNull();
+        expect(block.getAttribute('dir')).toBe('auto');
+        // No inner bdi: dir="auto" would skip it and see no text.
+        expect(block.querySelector('bdi')).toBeNull();
+        const t = block.textContent!.trim();
+        expect(t.startsWith('«')).withContext(t).toBeTrue();
+        expect(t.endsWith('»')).withContext(t).toBeTrue();
+      }
+      // An English reason on an Arabic page reads left to right, full stop at its end.
+      expect(getComputedStyle(quoted[0]!).direction).toBe('ltr');
+    });
+
+    it('no description is the page\'s own words, in the page\'s direction', () => {
+      setup('ar');
+      const el = answer(pageView({ task: { description: null } }));
+      expect(el.querySelector('[data-testid="task-description"]')!.hasAttribute('dir')).toBeFalse();
+    });
+
+    it('in Arabic, no evidence yet reads «لا يوجد بعد», as the evidence panel does', () => {
+      setup('ar');
+      const el = answer(pageView({ task: { evidenceCount: 0 } }));
+      expect(text(el.querySelectorAll('.am-tp__cell')[3]!)).toContain('لا يوجد بعد');
+    });
+
+    it('in Arabic the date keeps the page direction: day, month, year, then the time and offset', () => {
+      setup('ar');
+      const el = answer(pageView());
+      const date = text(el.querySelector('[data-testid="task-due-date"]'));
+      expect(date).toBe('15 أكتوبر 2099');
+      expect(text(el.querySelector('[data-testid="task-due-time"]'))).toBe('17:00 +03');
+      const due = text(el.querySelector('[data-testid="task-due"]'));
+      // The date comes before the time in reading order, Latin digits throughout.
+      expect(due.indexOf('15 أكتوبر 2099')).toBeLessThan(due.indexOf('17:00'));
+      expect(/[٠-٩]/.test(due)).toBeFalse();
+    });
+
+    it('About marks the record with ◇, linking it by the shared record-link rule', () => {
+      setup();
+      const el = answer(pageView());
+      const about = el.querySelector('[data-testid="task-about"]')!;
+      expect(text(about)).toContain('◇');
+      expect(el.querySelector('[data-testid="task-about-link"]')?.getAttribute('href')).toBe('/committees/committee-1');
+    });
+
+    it('a decider decides from the open request through the existing dialog, worded by what was asked; no one-click Approve', () => {
+      setup();
+      const request = {
+        id: 'req-1',
+        type: 'ON_HOLD' as const,
+        requestedDueAt: null,
+        holdUntil: '2099-10-20T05:00:00.000Z',
+        requestedById: 'huda',
+        requestedByName: 'Dr. Huda Zahrani',
+        reason: 'Waiting on Infection Control',
+        createdAt: '2026-10-05T11:20:00.000Z',
+      };
+      const el = answer(pageView({ task: { openRequest: request }, actions: { reviewRequest: true, primary: 'REVIEW_REQUEST' } }));
+      const panel = el.querySelector('[data-testid="task-open-request"]')!;
+      expect(text(panel.querySelector('[data-testid="task-decide"]'))).toBe('Decide hold request…');
+      expect(text(panel)).not.toMatch(/\bApprove\b/);
+      panel.querySelector<HTMLButtonElement>('[data-testid="task-decide"]')!.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.dialog()).toBe('decision');
+    });
+
+    it('a more-time request is decided with "Decide more-time request…"', () => {
+      setup();
+      const el = answer(
+        pageView({
+          task: {
+            openRequest: {
+              id: 'req-2',
+              type: 'EXTENSION',
+              requestedDueAt: '2099-10-20T14:00:00.000Z',
+              holdUntil: null,
+              requestedById: 'huda',
+              requestedByName: 'Dr. Huda Zahrani',
+              reason: 'Second ward pilot',
+              createdAt: '2026-10-05T11:20:00.000Z',
+            },
+          },
+          actions: { reviewRequest: true, primary: 'REVIEW_REQUEST' },
+        }),
+      );
+      expect(text(el.querySelector('[data-testid="task-decide"]'))).toBe('Decide more-time request…');
+    });
+
+    it('history: a 92px time column reading "1 Oct 09:12", the sentence at weight 500, the evidence kind named', () => {
+      jasmine.clock().install();
+      jasmine.clock().mockDate(new Date('2026-11-05T09:00:00.000Z'));
+      try {
+        setup();
+        const el = answer(pageView(), [
+          ...HISTORY,
+          { at: '2025-12-31T06:12:00.000Z', actorName: 'Dr. Huda Zahrani', kind: 'evidence_added', reason: null, requestType: null, evidenceType: 'LINK' },
+          { at: '2026-10-06T06:12:00.000Z', actorName: null, kind: 'evidence_added', reason: null, requestType: null, evidenceType: 'ATTACHMENT' },
+          { at: '2026-10-06T07:00:00.000Z', actorName: 'Nora Al-Otaibi', kind: 'evidence_removed', reason: null, requestType: null, evidenceType: 'INTERNAL_REFERENCE' },
+        ]);
+        const when = Array.from(el.querySelectorAll('[data-testid="task-event-when"]')).map(text);
+        expect(when[0]).toBe('1 Oct 09:12');
+        // The year only when it is not this year.
+        expect(when).toContain('31 Dec 2025 09:12');
+        const what = Array.from(el.querySelectorAll('[data-testid="task-event-what"]')).map(text);
+        expect(what).toContain('Evidence added by Dr. Huda Zahrani: a link');
+        expect(what).toContain('Evidence added: a file');
+        expect(what).toContain('Evidence removed by Nora Al-Otaibi: a record');
+
+        const event = el.querySelector('.am-tp__event') as HTMLElement;
+        expect(getComputedStyle(event).gridTemplateColumns.split(' ')[0]).toBe('92px');
+        expect(getComputedStyle(el.querySelector('[data-testid="task-event-what"]')!).fontWeight).toBe('500');
+      } finally {
+        jasmine.clock().uninstall();
+      }
+    });
+
+    it('while it loads, a skeleton of the four relation cells', () => {
+      setup();
+      const strip = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="task-skeleton-strip"]')!;
+      expect(strip.children.length).toBe(4);
+      answer(pageView());
+    });
+
+    it('in Arabic the meta row is 14px and the sub-lines 12.5px', () => {
+      setup('ar');
+      document.documentElement.setAttribute('dir', 'rtl');
+      const el = answer(pageView());
+      expect(getComputedStyle(el.querySelector('.am-tp__meta-row')!).fontSize).toBe('14px');
+      const sub = el.querySelector('.am-tp__sub');
+      expect(sub).withContext('a relation sub-line is on screen').not.toBeNull();
+      expect(getComputedStyle(sub!).fontSize).toBe('12.5px');
     });
   });
 
@@ -186,6 +423,48 @@ describe('TaskPageComponent — the task page (ACC-228)', () => {
       expect(complete.disabled).toBe(true);
       expect(complete.getAttribute('aria-describedby')).toBe('am-tp-complete-why');
       expect(text(el.querySelector('#am-tp-complete-why'))).toBe('Add evidence before completing');
+    });
+
+    // ACC-120 slice 4 — the next step chosen on the client, by the same rule as
+    // the record panel (taskPrimaryActionId).
+    it('an assignee whose evidence is missing: Add evidence leads, and Complete waits in ⋯ saying why', () => {
+      setup();
+      const el = answer(
+        pageView({
+          task: { evidenceCount: 0 },
+          actions: { complete: true, completeNeedsEvidence: true, addEvidence: true, reject: true, primary: 'COMPLETE' },
+        }),
+      );
+      expect(actionIds(el)[0]).toBe('addEvidence');
+      expect(el.querySelector('[data-action="addEvidence"]')!.classList).toContain('am-tp-btn--primary');
+      expect(el.querySelector('[data-testid="task-actions"] [data-action="complete"]')).toBeNull();
+      const complete = fixture.componentInstance.menuActions().find((a) => a.id === 'complete');
+      expect(complete).toEqual(jasmine.objectContaining({ disabled: true }));
+      // The line that describes a disabled Complete button is not shown: there is no such button.
+      expect(el.querySelector('#am-tp-complete-why')).toBeNull();
+    });
+
+    it('the creator of a rejected task: Reassign… leads, Edit stays beside it, Cancel is in ⋯', () => {
+      setup();
+      const el = answer(pageView({ task: { status: 'REJECTED' }, actions: { reassign: true, edit: true, cancel: true, primary: null } }));
+      expect(actionIds(el)).toEqual(['reassign', 'edit']);
+      expect(el.querySelector('[data-action="reassign"]')!.classList).toContain('am-tp-btn--primary');
+      expect(text(el.querySelector('[data-action="reassign"]'))).toBe('Reassign…');
+      expect(fixture.componentInstance.menuActions().map((a) => a.id)).toEqual(['cancel']);
+    });
+
+    it('the action labels read as drawn', () => {
+      setup();
+      answer(pageView({ actions: { requestHold: true, release: true, resume: true, reopen: true } }));
+      const labels = fixture.componentInstance.menuActions().map((a) => TestBed.inject(TranslateService).instant(a.labelKey));
+      expect(labels).toEqual(jasmine.arrayContaining(['Ask to put on hold…', 'Hand back…', 'Resume now', 'Reopen task…']));
+    });
+
+    it('in Arabic, the same labels', () => {
+      setup('ar');
+      answer(pageView({ actions: { requestHold: true, release: true, resume: true, reopen: true } }));
+      const labels = fixture.componentInstance.menuActions().map((a) => TestBed.inject(TranslateService).instant(a.labelKey));
+      expect(labels).toEqual(jasmine.arrayContaining(['طلب تعليق المهمة…', 'إرجاع المهمة…', 'استئناف الآن', 'إعادة فتح المهمة…']));
     });
 
     it('a reader with no relationship gets no action group at all', () => {
