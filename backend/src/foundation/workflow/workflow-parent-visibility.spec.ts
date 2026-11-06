@@ -175,7 +175,7 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
     const response = await request(app.getHttpServer()).get('/workflows/awaiting-me');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ total: 0, rows: [] });
+    expect(response.body).toEqual({ total: 0, rows: [], oldestSince: null });
   });
 
   describe('a caller holding workflows:view but NOT committees:view', () => {
