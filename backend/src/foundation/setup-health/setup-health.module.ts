@@ -27,5 +27,7 @@ import { workersEnabled } from '../../common/queue/workers.config';
     ...(workersEnabled() ? [SetupHealthProcessor] : []),
     SetupHealthService,
   ],
+  // ACC-279 — Home's admin summary reads getHomeSlice().
+  exports: [SetupHealthService],
 })
 export class SetupHealthModule {}
