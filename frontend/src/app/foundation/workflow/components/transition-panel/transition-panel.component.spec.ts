@@ -34,10 +34,6 @@ const PERSON: WorkflowTransitionDto = {
   labelEn: 'Send to Legal review',
   labelAr: 'إرسال إلى المراجعة القانونية',
   // Stored values a save must leave alone: the panel never sends them.
-  requiredPermission: 'committees:manage',
-  triggerCondition: 'ROLE_BASED',
-  triggerUserId: null,
-  triggerRoleId: 'role-1',
   validatorConfig: { minimumAttachments: 1 },
   isApprovalPath: false,
   kind: 'ADVANCE',
@@ -211,7 +207,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     expect(req.request.body).toEqual({ labelEn: 'Escalate', labelAr: '', kind: 'RETURN', isApprovalPath: true, fromStageId: 's1', toStageId: 's3' });
     const saved = jasmine.createSpy('saved');
     p.saved.subscribe(saved);
-    req.flush({ transition: { ...PERSON, id: 't-new' }, permissionWarning: null });
+    req.flush({ transition: { ...PERSON, id: 't-new' } });
     expect(saved).toHaveBeenCalledWith(jasmine.objectContaining({ id: 't-new' }));
   });
 
@@ -223,7 +219,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     expect(req.request.url).toBe(`${TRANSITIONS_URL}/t1`);
     expect(Object.keys(req.request.body).sort()).toEqual(['isApprovalPath', 'kind', 'labelAr', 'labelEn']);
     expect(req.request.body.labelEn).toBe('Send for legal review');
-    req.flush({ transition: { ...PERSON, labelEn: 'Send for legal review' }, permissionWarning: null });
+    req.flush({ transition: { ...PERSON, labelEn: 'Send for legal review' } });
     fixture.detectChanges();
     expect(text(q('[data-change-count]'))).toBe('Transition saved');
   });
@@ -233,7 +229,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
   it('the saved line outlives the reload that follows a save, and goes on the next change', async () => {
     await setup();
     type('tp-labelEn', 'Send for legal review');
-    save().flush({ transition: { ...PERSON, labelEn: 'Send for legal review' }, permissionWarning: null });
+    save().flush({ transition: { ...PERSON, labelEn: 'Send for legal review' } });
     fixture.detectChanges();
     expect(text(q('[data-change-count]'))).toBe('Transition saved');
 
@@ -252,7 +248,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     type('tp-labelEn', 'Escalate');
     await choose('[data-to-select]', 'Approved');
     p.saved.subscribe(() => undefined);
-    save().flush({ transition: { ...PERSON, id: 't-new', labelEn: 'Escalate', toStageId: 's3' }, permissionWarning: null });
+    save().flush({ transition: { ...PERSON, id: 't-new', labelEn: 'Escalate', toStageId: 's3' } });
     fixture.detectChanges();
     expect(text(q('[data-change-count]'))).toBe('Transition saved');
 
@@ -268,7 +264,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
   it('opening another transition starts without a saved line', async () => {
     await setup();
     type('tp-labelEn', 'Renamed');
-    save().flush({ transition: { ...PERSON, labelEn: 'Renamed' }, permissionWarning: null });
+    save().flush({ transition: { ...PERSON, labelEn: 'Renamed' } });
     fixture.detectChanges();
     fixture.componentRef.setInput('transition', { ...PERSON, id: 't2', labelEn: 'Another' });
     fixture.detectChanges();
@@ -291,16 +287,6 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     fixture.detectChanges();
     expect(text(q('[data-panel-refusal]'))).toContain('The moves of a committee change request are fixed');
     expect(text(q('[data-panel-refusal]'))).not.toContain('English for a log');
-  });
-
-  it('a changed old people field is refused in the server’s own sentence, in the reader’s language', async () => {
-    await setup({ lang: 'ar' });
-    save().flush(
-      { statusCode: 400, code: 'WHO_MOVED_TO_STAGE', message: 'Who presses a move is set on its stage.', messageAr: 'يُحدَّد من يضغط الانتقال في مرحلته.' },
-      { status: 400, statusText: 'Bad Request' },
-    );
-    fixture.detectChanges();
-    expect(text(q('[data-panel-refusal]'))).toContain('يُحدَّد من يضغط الانتقال في مرحلته.');
   });
 
   it('a reload of the same transition keeps unsaved work (ACC-55); another transition replaces it', async () => {

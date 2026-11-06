@@ -15,7 +15,6 @@ import {
   IWorkflowTransition,
   IWorkflowTransitionAction,
   IWorkflowTransitionWriteResult,
-  TransitionPermissionWarning,
 } from './interfaces/workflow-transition.interface';
 import { CreateWorkflowTemplateDto } from './dto/create-workflow-template.dto';
 import { UpdateWorkflowTemplateDto } from './dto/update-workflow-template.dto';
@@ -31,7 +30,7 @@ import { writeStartingAssignments } from './workflow-who';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
-import { refuseProtected, WHO_MOVED_TO_STAGE_AR, WorkflowRefusalException } from './workflow-refusal';
+import { refuseProtected, WorkflowRefusalException } from './workflow-refusal';
 import {
   isRecordAction,
   isStageFlag,
@@ -43,10 +42,6 @@ import {
   stageFlagsFor,
 } from './record-registry';
 import type { EngineTx } from './workflow.service';
-import {
-  assertKnownAndGrantable,
-  isPlatformPermission,
-} from '../roles/permission-grantability';
 import type { IStageWho, IStageWhoEntry } from './interfaces/workflow-stage.interface';
 import {
   assertWhoShape,
@@ -62,7 +57,7 @@ import {
 } from './stage-who';
 import { appMoveFor } from './app-moves';
 import { auditSecretsOf, headerChanges, maskActionConfig, mergeActionConfig } from './webhook-config-secrets';
-import { isConvertedStage, transitionMover } from './workflow-pool';
+import { transitionMover } from './workflow-pool';
 
 /** Stage fields a protected template's stage may still change (names, description, deadline and its escalation). */
 const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr', 'description', 'slaWorkingHours', 'escalationConfig']);
@@ -71,26 +66,10 @@ const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr
  * ACC-255 — every stage field an audit row may name, in the stage form's
  * order, then the stage rules. `addStage` and `removeStage` record all of
  * them; `updateStage` records the ones that changed (`stageAuditDiff`).
+ * ACC-271 PR 6b — who works the stage is recorded beside them (`whoMode`,
+ * `whoEntries`); the old people columns never are.
  */
-const STAGE_AUDIT_FIELDS = [
-  'nameEn',
-  'nameAr',
-  'description',
-  'order',
-  'slaWorkingHours',
-  'isInitial',
-  'isFinal',
-  'approvalMode',
-  'parallelThreshold',
-  'committeeId',
-  'assigneeStrategy',
-  'assigneeUserId',
-  'assigneeRoleId',
-  'assigneeCommitteeRoleValueId',
-  'assigneePositionId',
-  'assigneeOrgUnitId',
-  'escalationConfig',
-] as const;
+const STAGE_AUDIT_FIELDS = ['nameEn', 'nameAr', 'description', 'order', 'slaWorkingHours', 'isInitial', 'isFinal', 'escalationConfig'] as const;
 
 /** ACC-255 — a stage as an audit row records it: every field, its allowed actions and its flags. */
 export function stageSnapshot(
@@ -133,59 +112,6 @@ function sameKeySet(a: readonly string[], b: readonly string[]): boolean {
   const left = new Set(a);
   const right = new Set(b);
   return left.size === right.size && [...left].every((k) => right.has(k));
-}
-
-/**
- * ACC-271 PR 3 — the people fields the engine no longer reads once a stage is
- * converted (plan §4.2, §4.6). Old screens send them on every save, so an
- * UNCHANGED value is accepted and ignored, and a CHANGED one is refused
- * (WHO_MOVED_TO_STAGE): silently ignoring it would look saved and do nothing
- * (Ahmad, 28 Oct, condition b).
- */
-export const OLD_STAGE_WHO_FIELDS = [
-  'assigneeStrategy',
-  'assigneeUserId',
-  'assigneeRoleId',
-  'approvalMode',
-  'parallelThreshold',
-  'committeeId',
-  'assigneeCommitteeRoleValueId',
-  'assigneePositionId',
-  'assigneeOrgUnitId',
-] as const;
-export const OLD_TRANSITION_WHO_FIELDS = ['triggerCondition', 'triggerRoleId', 'triggerUserId', 'requiredPermission'] as const;
-
-/**
- * ACC-271 PR 5-be — what a NEW move's people fields are compared with, out of a
- * converted stage: the column's own default trigger (schema.prisma) and no role,
- * person or permission. Sending nothing, or exactly what the column would store
- * anyway (the old Add dialog's ROLE_BASED), says nothing and is accepted; any
- * other value names people the stage now decides, and is refused
- * (WHO_MOVED_TO_STAGE), never silently ignored.
- */
-const NEW_MOVE_PEOPLE_BASELINE: Readonly<Record<(typeof OLD_TRANSITION_WHO_FIELDS)[number], string | null>> = {
-  triggerCondition: 'ROLE_BASED',
-  triggerRoleId: null,
-  triggerUserId: null,
-  requiredPermission: null,
-};
-
-/** ACC-271 PR 5-be — a stage created with `who` names no old people field at all. */
-const NO_OLD_STAGE_PEOPLE: Readonly<Record<string, null>> = Object.fromEntries(OLD_STAGE_WHO_FIELDS.map((f) => [f, null]));
-
-/** An empty string and null both mean "not set". */
-const oldValue = (value: unknown): unknown => (typeof value === 'string' && value.trim() === '' ? null : (value ?? null));
-
-/** Refuses the first old people field the save CHANGES from what is stored. */
-function refuseChangedOldPeopleField(
-  stored: Record<string, unknown>,
-  sent: Record<string, unknown>,
-  fields: readonly string[],
-): void {
-  const field = fields.find((f) => sent[f] !== undefined && oldValue(sent[f]) !== oldValue(stored[f]));
-  if (field !== undefined) {
-    throw new WorkflowRefusalException('WHO_MOVED_TO_STAGE', { field, messageAr: WHO_MOVED_TO_STAGE_AR });
-  }
 }
 
 /** The ids a set of entries names, per field, deduplicated. */
@@ -466,7 +392,7 @@ export class WorkflowTemplateService {
     refs: WhoReferences,
     holders: Map<string, number>,
   ): { who: IStageWho | null; whoSentence: { en: string; ar: string } | null } {
-    if (!isConvertedStage({ whoMode }) || whoMode === null) return { who: null, whoSentence: null };
+    if (whoMode === null) return { who: null, whoSentence: null };
     const named = entries.map((e) => entryForSentence(e, refs));
     return {
       who: {
@@ -720,13 +646,12 @@ export class WorkflowTemplateService {
 
     // ACC-271 PR 5-be — a stage is converted in the same transaction that
     // creates it, its `who` checked exactly as a who save is: its shape first,
-    // then every id it names against this organisation. It names no old people
-    // field beside `who` (WHO_MOVED_TO_STAGE). PR 6a — a stage created without
-    // `who` is refused (WHO_REQUIRED): the engine reads nothing else, so such a
-    // stage would be worked by nobody.
+    // then every id it names against this organisation. PR 6a — a stage created
+    // without `who` is refused (WHO_REQUIRED): the engine reads nothing else,
+    // so such a stage would be worked by nobody. PR 6b — the DTO has no old
+    // people field, so none can be sent beside it.
     const { who: sentWho } = dto;
     if (sentWho === undefined) throw new WorkflowRefusalException('WHO_REQUIRED');
-    refuseChangedOldPeopleField(NO_OLD_STAGE_PEOPLE, dto as unknown as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
     const recordRoute = RECORD_ROUTES[template.objectType];
     const wantedWho = assertWhoShape(template.objectType, sentWho, {
       unit: typeof recordRoute?.unit === 'function',
@@ -747,17 +672,8 @@ export class WorkflowTemplateService {
         slaWorkingHours: dto.slaWorkingHours ?? null,
         isInitial: dto.isInitial ?? false,
         isFinal: dto.isFinal ?? false,
-        // The old people columns: `who` refuses a set one, so they keep their
-        // defaults and nothing reads them (ACC-271 PR 6b removes them).
-        ...(dto.approvalMode !== undefined && { approvalMode: dto.approvalMode }),
-        parallelThreshold: dto.parallelThreshold ?? null,
-        committeeId: dto.committeeId ?? null,
-        ...(dto.assigneeStrategy !== undefined && { assigneeStrategy: dto.assigneeStrategy }),
-        assigneeUserId: dto.assigneeUserId ?? null,
-        assigneeRoleId: dto.assigneeRoleId ?? null,
-        assigneeCommitteeRoleValueId: dto.assigneeCommitteeRoleValueId ?? null,
-        assigneePositionId: dto.assigneePositionId ?? null,
-        assigneeOrgUnitId: dto.assigneeOrgUnitId ?? null,
+        // ACC-271 PR 6b — no old people column is written: they keep their
+        // database defaults, nothing reads them, and 6c drops them.
         escalationConfig: this.toJson(dto.escalationConfig),
         flags,
         // ACC-271 PR 5-be — how the new stage's people decide; setting it converts the stage.
@@ -853,13 +769,6 @@ export class WorkflowTemplateService {
       });
       if (changed.length > 0 || whoChanged) refuseProtected('STAGE_FIELD');
     }
-    // ACC-271 PR 3 — the old people fields are not read: re-sending one
-    // unchanged is accepted, a CHANGED one is refused (WHO_MOVED_TO_STAGE). PR 6a
-    // — on every stage: a stage with no `who` has no old path left, so its
-    // people are set through `who` too. After the protected check: on a
-    // protected template nothing may be reshaped at all, which is the truer
-    // answer.
-    refuseChangedOldPeopleField(stored, fields as Record<string, unknown>, OLD_STAGE_WHO_FIELDS);
     // Every id the new `who` names is this organisation's, and no chosen person is deactivated.
     if (whoChanged && wantedWho) await this.assertWhoReferences(wantedWho, organizationId);
     const rules = this.stageRuleKeys(objectType, dto.actions, dto.flags);
@@ -896,23 +805,6 @@ export class WorkflowTemplateService {
         ...(dto.slaWorkingHours !== undefined && { slaWorkingHours: dto.slaWorkingHours }),
         ...(dto.isInitial !== undefined && { isInitial: dto.isInitial }),
         ...(dto.isFinal !== undefined && { isFinal: dto.isFinal }),
-        ...(dto.approvalMode !== undefined && { approvalMode: dto.approvalMode }),
-        ...(dto.parallelThreshold !== undefined && { parallelThreshold: dto.parallelThreshold }),
-        // The old people columns: only ever the stored value, since a changed
-        // one is refused above (ACC-271 PR 6b removes them).
-        ...(dto.committeeId !== undefined && { committeeId: dto.committeeId }),
-        ...(dto.assigneeStrategy !== undefined && { assigneeStrategy: dto.assigneeStrategy }),
-        ...(dto.assigneeUserId !== undefined && { assigneeUserId: dto.assigneeUserId }),
-        ...(dto.assigneeRoleId !== undefined && { assigneeRoleId: dto.assigneeRoleId }),
-        ...(dto.assigneeCommitteeRoleValueId !== undefined && {
-          assigneeCommitteeRoleValueId: dto.assigneeCommitteeRoleValueId,
-        }),
-        // ACC-54 — `!== undefined` rather than a truthiness check, matching
-        // every sibling above: it lets an explicit null clear a previously-set
-        // value (e.g. switching a stage away from POSITION_FIXED), which
-        // `dto.x && ...` would silently ignore.
-        ...(dto.assigneePositionId !== undefined && { assigneePositionId: dto.assigneePositionId }),
-        ...(dto.assigneeOrgUnitId !== undefined && { assigneeOrgUnitId: dto.assigneeOrgUnitId }),
         ...(dto.escalationConfig !== undefined && { escalationConfig: this.toJson(dto.escalationConfig) }),
         ...(newFlags !== undefined && { flags: newFlags }),
         // ACC-271 PR 3 — how the stage's people decide; setting it converts the stage.
@@ -1117,36 +1009,20 @@ export class WorkflowTemplateService {
       throw new ConflictException('A transition must connect two stages of the same template');
     }
     this.assertNoRetiredValidator(dto.validatorConfig);
-    // ACC-271 PR 3 / 5-be — from a converted stage, whoever works it presses the
-    // move: a new move names no role, person or permission (nothing would read
-    // them), and is never the app's (only seeds write those, plan §4.4). Its
-    // trigger is optional; sent, it must be what the column stores anyway
-    // (NEW_MOVE_PEOPLE_BASELINE), or it is refused, never silently ignored. The
-    // mover is PERSON. A move out of a stage still on the old columns names its
-    // trigger, as before.
-    const converted = isConvertedStage(fromStage);
-    if (converted) {
-      refuseChangedOldPeopleField(NEW_MOVE_PEOPLE_BASELINE, dto as unknown as Record<string, unknown>, OLD_TRANSITION_WHO_FIELDS);
-    } else if (dto.triggerCondition === undefined) {
-      throw new BadRequestException(['triggerCondition is required for a move out of a stage that is not converted yet']);
-    }
-    await this.assertTransitionPermissionGrantable(dto.requiredPermission, organizationId);
-
+    // ACC-271 PR 6b — whoever works the from-stage presses the move: it names no
+    // role, person or permission, and is never the app's (only seeds write
+    // those, plan §4.4). Its mover is always PERSON; the old people columns
+    // keep their database defaults (6c drops them).
     const transition = await this.prisma.workflowTransition.create({
       data: {
         fromStageId: dto.fromStageId,
         toStageId: dto.toStageId,
         labelEn: dto.labelEn,
         labelAr: dto.labelAr,
-        requiredPermission: dto.requiredPermission ?? null,
-        // Absent only on a move out of a converted stage: the column's default.
-        ...(dto.triggerCondition !== undefined && { triggerCondition: dto.triggerCondition }),
-        triggerUserId: dto.triggerUserId ?? null,
-        triggerRoleId: dto.triggerRoleId ?? null,
         validatorConfig: this.toJson(dto.validatorConfig),
         ...(dto.kind !== undefined && { kind: dto.kind }),
         ...(dto.isApprovalPath !== undefined && { isApprovalPath: dto.isApprovalPath }),
-        ...(converted && { mover: 'PERSON' as const }),
+        mover: 'PERSON',
       },
     });
 
@@ -1156,17 +1032,10 @@ export class WorkflowTemplateService {
       action: 'CREATE',
       objectType: 'WorkflowTransition',
       objectId: transition.id,
-      after: { labelEn: transition.labelEn, labelAr: transition.labelAr },
+      after: { labelEn: transition.labelEn, labelAr: transition.labelAr, mover: transition.mover },
     });
 
-    // Resolved AFTER the write, deliberately — this is advice about a saved
-    // record, not a precondition for saving it.
-    const permissionWarning = await this.resolvePermissionWarning(
-      transition.requiredPermission,
-      organizationId,
-    );
-
-    return { transition: this.mapTransition(transition), permissionWarning };
+    return { transition: this.mapTransition(transition) };
   }
 
   async updateTransition(
@@ -1177,32 +1046,17 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowTransitionWriteResult> {
     const transition = await this.prisma.workflowTransition.findFirst({
       where: { id, fromStage: { workflowTemplate: { organizationId } } },
-      include: { fromStage: { select: { whoMode: true, workflowTemplate: { select: { objectType: true } } } } },
+      include: { fromStage: { select: { workflowTemplate: { select: { objectType: true } } } } },
     });
     if (!transition) throw new NotFoundException('Workflow transition not found');
     if (PROTECTED_TEMPLATES.has(transition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
-    // ACC-271 PR 3 — from a converted stage the move is pressed by whoever works
-    // it: the old people fields re-sent unchanged pass, a changed one is refused.
-    if (isConvertedStage(transition.fromStage)) {
-      refuseChangedOldPeopleField(transition as unknown as Record<string, unknown>, dto as unknown as Record<string, unknown>, OLD_TRANSITION_WHO_FIELDS);
-    }
     this.assertNoRetiredValidator(dto.validatorConfig);
-    // Only a CHANGED key is checked. A transition already holding a key that
-    // could not be chosen today (a seeded forward reference) keeps it when any
-    // other field is edited, or when the editor sends the same key back.
-    if (dto.requiredPermission !== undefined && dto.requiredPermission !== transition.requiredPermission) {
-      await this.assertTransitionPermissionGrantable(dto.requiredPermission, organizationId);
-    }
 
     const updated = await this.prisma.workflowTransition.update({
       where: { id },
       data: {
         ...(dto.labelEn !== undefined && { labelEn: dto.labelEn }),
         ...(dto.labelAr !== undefined && { labelAr: dto.labelAr }),
-        ...(dto.requiredPermission !== undefined && { requiredPermission: dto.requiredPermission }),
-        ...(dto.triggerCondition !== undefined && { triggerCondition: dto.triggerCondition }),
-        ...(dto.triggerUserId !== undefined && { triggerUserId: dto.triggerUserId }),
-        ...(dto.triggerRoleId !== undefined && { triggerRoleId: dto.triggerRoleId }),
         ...(dto.validatorConfig !== undefined && { validatorConfig: this.toJson(dto.validatorConfig) }),
         ...(dto.isApprovalPath !== undefined && { isApprovalPath: dto.isApprovalPath }),
         ...(dto.kind !== undefined && { kind: dto.kind }),
@@ -1218,37 +1072,22 @@ export class WorkflowTemplateService {
       before: {
         labelEn: transition.labelEn,
         labelAr: transition.labelAr,
-        requiredPermission: transition.requiredPermission,
-        triggerCondition: transition.triggerCondition,
-        triggerUserId: transition.triggerUserId,
-        triggerRoleId: transition.triggerRoleId,
         validatorConfig: transition.validatorConfig,
         isApprovalPath: transition.isApprovalPath,
         kind: transition.kind,
+        mover: transition.mover,
       },
       after: {
         labelEn: updated.labelEn,
         labelAr: updated.labelAr,
-        requiredPermission: updated.requiredPermission,
-        triggerCondition: updated.triggerCondition,
-        triggerUserId: updated.triggerUserId,
-        triggerRoleId: updated.triggerRoleId,
         validatorConfig: updated.validatorConfig,
         isApprovalPath: updated.isApprovalPath,
         kind: updated.kind,
+        mover: updated.mover,
       },
     });
 
-    // Resolved against the SAVED value, not dto.requiredPermission — an
-    // update that leaves the field untouched must still report a pre-existing
-    // problem, otherwise editing an unrelated field would silently clear a
-    // warning the transition still deserves.
-    const permissionWarning = await this.resolvePermissionWarning(
-      updated.requiredPermission,
-      organizationId,
-    );
-
-    return { transition: this.mapTransition(updated), permissionWarning };
+    return { transition: this.mapTransition(updated) };
   }
 
   async removeTransition(id: string, organizationId: string, actorId: string): Promise<void> {
@@ -1418,80 +1257,6 @@ export class WorkflowTemplateService {
     }
   }
 
-  // ACC-120 slice 5 (F1) — a transition may not REQUIRE a key no role can be
-  // given: that is a transition nobody can ever fire. So a key a person picks
-  // is refused, with the role save's own codes, when it is unknown
-  // (PERMISSION_UNKNOWN), a platform key inside a tenant
-  // (PLATFORM_PERMISSION_NOT_ALLOWED) or a key nothing checks yet
-  // (PERMISSION_NOT_IN_USE). No key (null or blank) is always allowed. The
-  // rule is permission-grantability.ts, the one the role save reads.
-  //
-  // This governs the EDITOR's writes only. seedTemplates() writes its
-  // transitions directly, forward references included, and is untouched.
-  private async assertTransitionPermissionGrantable(
-    key: string | null | undefined,
-    organizationId: string,
-  ): Promise<void> {
-    if (!key || key.trim() === '') return;
-    // The organisation is read only for a platform key, the one case where it
-    // changes the answer.
-    const isPlatformOrg = isPlatformPermission(key)
-      ? (
-          await this.prisma.organization.findUnique({
-            where: { id: organizationId },
-            select: { isPlatformOrg: true },
-          })
-        )?.isPlatformOrg === true
-      : false;
-    assertKnownAndGrantable([key], isPlatformOrg);
-  }
-
-  // ACC-55 — resolves why a transition's requiredPermission may be
-  // unsatisfiable. Unlike every validate*() method above this is NOT a
-  // validator: it never throws and never blocks a write.
-  //
-  // It cannot be one. seedTemplates() writes 45 transitions carrying
-  // permission strings for modules that do not exist yet (workflow.seed.ts:66-81
-  // declares them deliberate forward references), and a transition that already
-  // holds one keeps it through an unrelated edit — so a saved value can still be
-  // unknown or ungranted. Since ACC-120 slice 5 a NEWLY chosen key is refused
-  // first (assertTransitionPermissionGrantable above); this reports on the rest.
-  //
-  // Returns null when the permission is genuinely satisfiable, or when none is
-  // set at all (6 seeded transitions have no requiredPermission, which is a
-  // valid configuration meaning "gated by triggerCondition alone").
-  async resolvePermissionWarning(
-    requiredPermission: string | null | undefined,
-    organizationId: string,
-  ): Promise<TransitionPermissionWarning | null> {
-    if (!requiredPermission || requiredPermission.trim() === '') return null;
-
-    const [module, action] = requiredPermission.split(':');
-    if (!module || !action) return 'UNKNOWN_PERMISSION';
-
-    // Permission is a GLOBAL table — no organizationId column, one row per
-    // module:action shared by every tenant (only RolePermission is
-    // tenant-scoped, via Role). So this query is correctly unscoped, and must
-    // not be "fixed" to filter by organizationId: there is no such field.
-    const permission = await this.prisma.permission.findFirst({
-      where: { module, action },
-      select: { id: true },
-    });
-    if (!permission) return 'UNKNOWN_PERMISSION';
-
-    // Tenant-scoped through Role. isActive matters: a deactivated role's
-    // grants cannot satisfy triggerTransition(), which reads permissions via
-    // the actor's live role assignments.
-    const holdingRoles = await this.prisma.rolePermission.count({
-      where: {
-        permissionId: permission.id,
-        role: { organizationId, isActive: true },
-      },
-    });
-
-    return holdingRoles === 0 ? 'NO_ACTIVE_ROLE_HOLDS' : null;
-  }
-
   // ── Internal mappers ─────────────────────────────────────────────────────────
 
   private mapTemplate(template: PrismaWorkflowTemplate): IWorkflowTemplate {
@@ -1524,15 +1289,6 @@ export class WorkflowTemplateService {
       slaWorkingHours: stage.slaWorkingHours,
       isInitial: stage.isInitial,
       isFinal: stage.isFinal,
-      approvalMode: stage.approvalMode,
-      parallelThreshold: stage.parallelThreshold,
-      committeeId: stage.committeeId,
-      assigneeStrategy: stage.assigneeStrategy,
-      assigneeUserId: stage.assigneeUserId,
-      assigneeRoleId: stage.assigneeRoleId,
-      assigneeCommitteeRoleValueId: stage.assigneeCommitteeRoleValueId,
-      assigneePositionId: stage.assigneePositionId,
-      assigneeOrgUnitId: stage.assigneeOrgUnitId,
       escalationConfig: stage.escalationConfig as Record<string, unknown> | null,
       actions,
       flags: [...(stage.flags ?? [])],
@@ -1550,10 +1306,6 @@ export class WorkflowTemplateService {
       toStageId: transition.toStageId,
       labelEn: transition.labelEn,
       labelAr: transition.labelAr,
-      requiredPermission: transition.requiredPermission,
-      triggerCondition: transition.triggerCondition,
-      triggerUserId: transition.triggerUserId,
-      triggerRoleId: transition.triggerRoleId,
       validatorConfig: transition.validatorConfig as Record<string, unknown> | null,
       isApprovalPath: transition.isApprovalPath,
       kind: transition.kind,

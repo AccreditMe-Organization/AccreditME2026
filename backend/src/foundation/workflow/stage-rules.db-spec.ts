@@ -70,12 +70,6 @@ describe('Stage rules against a real database (ACC-255)', () => {
   async function org(): Promise<{ id: string; slug: string; actorId: string }> {
     const slug = `acc255-${randomUUID().slice(0, 8)}`;
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
-    const roleKeys = new Set<string>();
-    for (const w of SEEDS) {
-      for (const s of w.stages) if (s.assigneeRoleKey) roleKeys.add(s.assigneeRoleKey);
-      for (const t of w.transitions) if (t.triggerRoleKey) roleKeys.add(t.triggerRoleKey);
-    }
-    for (const key of roleKeys) await prisma.role.create({ data: { organizationId: o.id, key, nameEn: key, isSystem: true } });
     await applyWorkflowSeed(prisma, o.id, SEEDS);
     const actor = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}@example.test`, name: 'Workflow admin' } });
     return { id: o.id, slug, actorId: actor.id };
@@ -162,7 +156,7 @@ describe('Stage rules against a real database (ACC-255)', () => {
       // A stage the organisation added: no key, gets the member actions only.
       const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
       const added = await prisma.workflowStage.create({
-        data: { workflowTemplateId: template.id, nameEn: 'Board review', order: 25, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+        data: { workflowTemplateId: template.id, nameEn: 'Board review', order: 25 },
       });
       // A stage the organisation configured first: left exactly as it is.
       const suspended = await stageId(o.id, 'COMMITTEE', 'suspended');
@@ -223,7 +217,7 @@ describe('Stage rules against a real database (ACC-255)', () => {
       const o = await org();
       const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
       const stage = await prisma.workflowStage.create({
-        data: { workflowTemplateId: template.id, nameEn: 'Temporary', order: 99, approvalMode: 'SINGLE', assigneeStrategy: 'SELF' },
+        data: { workflowTemplateId: template.id, nameEn: 'Temporary', order: 99 },
       });
       await prisma.workflowStageRecordAction.create({ data: { organizationId: o.id, stageId: stage.id, actionKey: 'add_member' } });
       await expect(

@@ -43,7 +43,7 @@ import {
  *
  * THE REQUEST'S STATE IS ITS STAGE KEY. There is no status column: the request
  * has a workflow instance on the fixed six-stage template (PROTECTED_TEMPLATES),
- * and every move is a SYSTEM_AUTOMATIC transition fired from here, after this
+ * and every move is an app move (mover APP) fired from here, after this
  * service has decided who may make it. Writes that belong with a move (the
  * "from" values at Submit, the applied values at Approve) run inside the
  * engine's stage-change transaction through `inTx`, so the two commit together.
@@ -682,7 +682,7 @@ export class CommitteeChangeRequestService {
     if ('quorumCount' in changes) {
       // Votes already open keep the quorum they began with (ACC-239's snapshot).
       // ACC-271 PR 6a — counted by who mode and the vote's committee
-      // (WorkflowService.countOpenCommitteeVotes); it read approvalMode before,
+      // (WorkflowService.countOpenCommitteeVotes); it read the old approval mode before,
       // which no converted stage has, so it always said 0.
       const inProgress = await this.workflow.countOpenCommitteeVotes(organizationId, committeeId);
       impacts.push({ code: 'QUORUM', ...span('quorumCount'), inProgress });

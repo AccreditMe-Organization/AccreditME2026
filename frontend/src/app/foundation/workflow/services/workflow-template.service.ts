@@ -135,22 +135,7 @@ export interface WorkflowStageDto {
   slaWorkingHours: number | null;
   isInitial: boolean;
   isFinal: boolean;
-  approvalMode: string;
-  parallelThreshold: string | null;
-  committeeId: string | null;
-  assigneeStrategy: string;
-  assigneeUserId: string | null;
-  assigneeRoleId: string | null;
-  // ACC-28 — narrows the COMMITTEE assigneeStrategy case to members holding
-  // this committee_member_role lookup value (e.g. "chairman"). Only
-  // meaningful when assigneeStrategy === 'COMMITTEE'; null preserves the
-  // pre-ACC-28 "every active member" behavior.
-  assigneeCommitteeRoleValueId: string | null;
-  // ACC-54 — the POSITION_FIXED pair: resolves to whoever holds this
-  // position in this specific unit. Only meaningful when
-  // assigneeStrategy === 'POSITION_FIXED'.
-  assigneePositionId: string | null;
-  assigneeOrgUnitId: string | null;
+  // ACC-271 PR 6b — no old people field: who works the stage is `who` below.
   escalationConfig: Record<string, unknown> | null;
   transitions?: WorkflowTransitionDto[];
   // ACC-190 — on the detail read: how many tasks entering this stage creates,
@@ -164,8 +149,8 @@ export interface WorkflowStageDto {
   // what it means (flag keys).
   actions?: string[];
   flags?: string[];
-  // ACC-271 PR 3 — who works the stage (null on a stage not yet converted) and
-  // the server's read-back sentence, in both languages.
+  // ACC-271 PR 3 — who works the stage (null only on a stage with no `who`,
+  // which none has) and the server's read-back sentence, in both languages.
   who?: StageWhoDto | null;
   whoSentence?: { en: string; ar: string } | null;
 }
@@ -176,10 +161,8 @@ export interface WorkflowTransitionDto {
   toStageId: string;
   labelEn: string;
   labelAr: string | null;
-  requiredPermission: string | null;
-  triggerCondition: string;
-  triggerUserId: string | null;
-  triggerRoleId: string | null;
+  // ACC-271 PR 6b — no old people field: whoever works the from-stage presses
+  // a PERSON move.
   validatorConfig: Record<string, unknown> | null;
   isApprovalPath: boolean;
   // ACC-190 — ADVANCE is held by the stage's open mandatory tasks; RETURN and
@@ -188,8 +171,9 @@ export interface WorkflowTransitionDto {
   // ACC-271 PR 3 — who moves the record: PERSON (whoever works the from-stage
   // presses it) or APP (a module makes the move itself). An APP move also
   // carries the server's one line saying when it runs (APP_MOVES); the screens
-  // show that line and never a copy of it.
-  mover?: WorkflowTransitionMover;
+  // show that line and never a copy of it. Null (none exist) is a move nobody
+  // can make.
+  mover?: WorkflowTransitionMover | null;
   appMove?: { key: string; en: string; ar: string };
   actions?: WorkflowTransitionActionDto[];
 }
@@ -265,27 +249,10 @@ export interface StageTaskDefinitionWriteDto {
   committeeRoleValueId?: string | null;
 }
 
-// ACC-55 — why a saved transition's requiredPermission may not do what the
-// configurer intended. Always advisory: the write has already succeeded by
-// the time this arrives.
-//
-//   UNKNOWN_PERMISSION    no permission with this module:action exists.
-//                         Deliberately does not distinguish a typo from a
-//                         deliberate forward reference — 45 seeded
-//                         transitions legitimately carry strings for unbuilt
-//                         modules (capa:*, incidents:manage), and nothing at
-//                         write time can tell those from 'committees:aprove'.
-//   NO_ACTIVE_ROLE_HOLDS  the permission is real, but no active role in this
-//                         tenant grants it, so nobody can ever fire the
-//                         transition.
-export type TransitionPermissionWarning = 'UNKNOWN_PERMISSION' | 'NO_ACTIVE_ROLE_HOLDS';
-
-// Returned by addTransition/updateTransition only. Reads still return the
-// bare WorkflowTransitionDto — resolving the warning costs two backend
-// queries per transition, and getTemplate() returns a whole template's worth.
+// Returned by addTransition/updateTransition. ACC-271 PR 6b — the permission
+// warning went with the move's old permission field.
 export interface WorkflowTransitionWriteResult {
   transition: WorkflowTransitionDto;
-  permissionWarning: TransitionPermissionWarning | null;
 }
 
 export interface WorkflowTransitionActionDto {
@@ -319,24 +286,7 @@ export interface CreateWorkflowStageDto {
   slaWorkingHours?: number;
   isInitial?: boolean;
   isFinal?: boolean;
-  // ACC-271 PR 5a — optional: the stage screens send `who` instead, and never
-  // an old people field beside it (the server refuses that, WHO_MOVED_TO_STAGE).
-  approvalMode?: string;
-  parallelThreshold?: string;
-  committeeId?: string;
-  assigneeStrategy?: string;
-  assigneeUserId?: string;
-  assigneeRoleId?: string;
-  // string | null (not just string | undefined) — null is a genuine,
-  // meaningful value here: explicitly clearing a previously-set filter back
-  // to "all active committee members," not merely "field not provided."
-  assigneeCommitteeRoleValueId?: string | null;
-  // ACC-54 — string | null for the same reason as the field above: null
-  // explicitly clears a previously-set value (e.g. switching a stage away
-  // from POSITION_FIXED), which the backend distinguishes from "not
-  // provided" via its own `!== undefined` check.
-  assigneePositionId?: string | null;
-  assigneeOrgUnitId?: string | null;
+  // ACC-271 PR 6b — no old people field: the server refuses one (400).
   escalationConfig?: Record<string, unknown>[];
   // ACC-255 — the record actions the stage allows and the meanings it carries,
   // as registry keys. Sent only when the stage editor changed them.
@@ -472,11 +422,7 @@ export class WorkflowTemplateService {
 
   // ── Transitions ──────────────────────────────────────────────────────────────
 
-  // ACC-55 — both return { transition, permissionWarning }. The permission
-  // LIST itself is not fetched here: RoleService.listAllPermissions() already
-  // calls GET /roles/permissions and is already consumed by
-  // role-permission-matrix, so the editor reuses that rather than adding a
-  // second call to the same endpoint from a second service.
+  // Both return { transition }.
   addTransition(dto: CreateWorkflowTransitionDto): Observable<WorkflowTransitionWriteResult> {
     return this.http.post<WorkflowTransitionWriteResult>(`${this.base}/transitions`, dto);
   }

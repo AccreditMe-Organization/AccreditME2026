@@ -23,10 +23,6 @@ const PERSON: WorkflowTransitionDto = {
   toStageId: 'stage-2',
   labelEn: 'Approve Committee',
   labelAr: 'اعتماد اللجنة',
-  requiredPermission: 'committees:manage',
-  triggerCondition: 'ROLE_BASED',
-  triggerUserId: null,
-  triggerRoleId: 'role-auditor',
   validatorConfig: null,
   isApprovalPath: false,
   kind: 'ADVANCE',
@@ -110,7 +106,8 @@ describe('WorkflowTransitionEditorComponent — a stage’s transitions list (AC
     expect(chips).toEqual(['workflow.kind.advance', 'workflow.kind.return', 'workflow.kind.exit']);
     expect(row(el, 't-return').querySelector('[data-tr-kind]')!.classList).toContain('am-tr-chip--return');
     const all = text(el);
-    for (const gone of ['ROLE_BASED', 'workflow.triggerCondition', 'workflow.triggerRoleBased', 'committees:manage', 'workflow.requiredPermission']) {
+    // No permission is shown: a move names none (ACC-271 PR 6b).
+    for (const gone of ['committees:manage', 'committees:approve']) {
       expect(all).not.toContain(gone);
     }
   });

@@ -6,8 +6,9 @@ import { WORKFLOW_VALUE_UNKNOWN, WorkflowEnumKind, workflowLabelKey, workflowOpt
 // languages, and a value nobody listed reads "Unknown", never its code.
 
 // ACC-271 PR 5b — the trigger block went with "Who can trigger"; a transition's
-// kind and who moves it were added.
-const KINDS: WorkflowEnumKind[] = ['approvalMode', 'threshold', 'assignee', 'objectType', 'stageAssignee', 'whoMode', 'transitionKind', 'mover'];
+// kind and who moves it were added. PR 6b — the approval mode, threshold and
+// assignee blocks went with those fields.
+const KINDS: WorkflowEnumKind[] = ['objectType', 'stageAssignee', 'whoMode', 'transitionKind', 'mover'];
 const lookup = (lang: unknown, key: string): unknown => key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], lang);
 
 describe('workflow labels (ACC-254)', () => {
@@ -21,15 +22,12 @@ describe('workflow labels (ACC-254)', () => {
         }
       }
     }
-    expect(count).withContext('non-vacuity: every enum was listed').toBe(4 + 3 + 7 + 9 + 5 + 3 + 3 + 3);
+    expect(count).withContext('non-vacuity: every enum was listed').toBe(9 + 5 + 3 + 3 + 3);
     for (const lang of [en, ar]) expect(typeof lookup(lang, WORKFLOW_VALUE_UNKNOWN)).toBe('string');
   });
 
   it('the backend enums are all listed: none would read "Unknown"', () => {
     const backend: Record<WorkflowEnumKind, string[]> = {
-      approvalMode: ['SINGLE', 'SEQUENTIAL', 'PARALLEL', 'COMMITTEE'],
-      threshold: ['ALL', 'MAJORITY', 'ANY'],
-      assignee: ['SPECIFIC_USER', 'ROLE', 'ORG_UNIT_HEAD', 'SELF', 'COMMITTEE', 'ROUND_ROBIN', 'POSITION_FIXED'],
       objectType: [
         'DOCUMENT_REQUEST',
         'DOCUMENT',
@@ -55,7 +53,7 @@ describe('workflow labels (ACC-254)', () => {
 
   it('a value nobody listed, or none, reads "Unknown"', () => {
     expect(workflowLabelKey('mover', 'SOMETHING_NEW')).toBe(WORKFLOW_VALUE_UNKNOWN);
-    expect(workflowLabelKey('approvalMode', null)).toBe(WORKFLOW_VALUE_UNKNOWN);
+    expect(workflowLabelKey('whoMode', null)).toBe(WORKFLOW_VALUE_UNKNOWN);
     expect(workflowLabelKey('objectType', undefined)).toBe(WORKFLOW_VALUE_UNKNOWN);
   });
 });

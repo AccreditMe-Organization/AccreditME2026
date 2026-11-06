@@ -205,7 +205,7 @@ describe("UserPermissionsComponent (ACC-272, A user's permissions)", () => {
       'meetings',
       'positions',
     ]);
-    expect(t('[data-up-module="committees"] [data-up-count]')).toBe('9 of 12');
+    expect(t('[data-up-module="committees"] [data-up-count]')).toBe('9 of 11');
     expect(rowsOf('committees').length).toBe(9);
     expect(rowsOf('committees')).not.toContain('committees:remove_member');
     expect(all('[data-up-group]', q('[data-up-module="committees"]')!).map((g) => text(g))).toEqual([
@@ -237,7 +237,7 @@ describe("UserPermissionsComponent (ACC-272, A user's permissions)", () => {
     expect(t('[data-up-source]', rows[1]!)).toBe('مرتبط بمنصب الرئاسة رئيس سلامة المرضى · وحدة سلامة المرضى');
     expect(text(q('[data-up-source]', rows[2]!))).toContain('⁦3⁩');
     expect(rows.map((r) => t('[data-up-gives]', r))).toEqual(['يمنح 6 صلاحيات', 'يمنح 3 صلاحيات', 'يمنح 14 صلاحية', 'لا يمنح أي صلاحية ما دام غير نشط']);
-    expect(text(q('[data-up-module="committees"] [data-up-count]'))).toBe('⁦9⁩ من ⁦12⁩');
+    expect(text(q('[data-up-module="committees"] [data-up-count]'))).toBe('⁦9⁩ من ⁦11⁩');
     expect(t('[data-up-row="committees:view"] [data-up-from]')).toBe('من: رئيس وحدة، مراجع سلامة المرضى، محرر الجودة');
     expect(t('[data-up-nothing]')).toBe(`لا شيء ممنوح في: ${moduleName('ar', 'roles')}، ${moduleName('ar', 'setup')} و${moduleName('ar', 'admin')}.`);
   });
@@ -249,7 +249,7 @@ describe("UserPermissionsComponent (ACC-272, A user's permissions)", () => {
     find('member');
     expect(all('[data-up-module]').map((m) => m.getAttribute('data-up-module'))).toEqual(['committees']);
     expect(rowsOf('committees')).toEqual(['committees:view', 'committees:add_member', 'committees:change_member_role']);
-    expect(t('[data-up-module="committees"] [data-up-count]')).toBe('9 of 12');
+    expect(t('[data-up-module="committees"] [data-up-count]')).toBe('9 of 11');
     // No "nothing granted" line while searching.
     expect(q('[data-up-nothing]')).toBeNull();
   });

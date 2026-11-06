@@ -26,15 +26,6 @@ const STAGE = {
   slaWorkingHours: null,
   isInitial: true,
   isFinal: false,
-  approvalMode: 'SINGLE',
-  parallelThreshold: null,
-  committeeId: null,
-  assigneeStrategy: 'ROLE',
-  assigneeUserId: null,
-  assigneeRoleId: 'role-qm',
-  assigneeCommitteeRoleValueId: null,
-  assigneePositionId: null,
-  assigneeOrgUnitId: null,
   escalationConfig: null,
   flags: [] as string[],
   recordActions: [] as { actionKey: string }[],
@@ -109,143 +100,6 @@ async function refusal(p: Promise<unknown>): Promise<Record<string, unknown> | u
 }
 
 describe('WorkflowTemplateService — who works a stage (ACC-271 PR 3)', () => {
-  describe('the old people fields on a converted stage', () => {
-    it('re-sending every old field unchanged is accepted (an old screen saving a name)', async () => {
-      const { prisma, service } = build();
-      prisma.workflowStage.findFirst.mockResolvedValue(STAGE);
-      prisma.workflowStage.update.mockResolvedValue({ ...STAGE, nameEn: 'Forming' });
-      const dto = {
-        nameEn: 'Forming',
-        assigneeStrategy: 'ROLE',
-        assigneeRoleId: 'role-qm',
-        approvalMode: 'SINGLE',
-        parallelThreshold: null,
-        committeeId: '',
-        assigneeUserId: null,
-      };
-      await expect(service.updateStage('stage-1', dto as never, ORG, ACTOR)).resolves.toEqual(expect.objectContaining({ nameEn: 'Forming' }));
-    });
-
-    it.each([
-      ['assigneeStrategy', 'POSITION_FIXED'],
-      ['assigneeRoleId', 'role-other'],
-      ['approvalMode', 'PARALLEL'],
-      ['parallelThreshold', 'ALL'],
-      ['assigneeUserId', 'user-x'],
-      ['committeeId', 'committee-x'],
-      ['assigneeCommitteeRoleValueId', 'role-value-x'],
-      ['assigneePositionId', 'position-x'],
-      ['assigneeOrgUnitId', 'unit-x'],
-    ])('a CHANGED %s is refused (400 WHO_MOVED_TO_STAGE, in both languages), writing nothing', async (field, value) => {
-      const { prisma, service } = build();
-      prisma.workflowStage.findFirst.mockResolvedValue(STAGE);
-      const body = await refusal(service.updateStage('stage-1', { [field]: value } as never, ORG, ACTOR));
-      expect(body).toEqual(
-        expect.objectContaining({
-          status: 400,
-          code: 'WHO_MOVED_TO_STAGE',
-          field,
-          message: 'Who works this stage is now set on the stage, not here.',
-          messageAr: 'يُحدَّد من يعمل على هذه المرحلة الآن في المرحلة نفسها، لا هنا.',
-        }),
-      );
-      expect(prisma.workflowStage.update).not.toHaveBeenCalled();
-    });
-
-    // ACC-271 PR 6a — no old path is left: on a stage with no `who` too, a
-    // changed old field is refused, and its people are set through `who`.
-    it('on a stage with no `who`, a changed old field is refused too', async () => {
-      const { prisma, service } = build();
-      prisma.workflowStage.findFirst.mockResolvedValue({ ...STAGE, whoMode: null });
-      const body = await refusal(service.updateStage('stage-1', { approvalMode: 'PARALLEL' } as never, ORG, ACTOR));
-      expect(body?.code).toBe('WHO_MOVED_TO_STAGE');
-      expect(prisma.workflowStage.update).not.toHaveBeenCalled();
-    });
-
-    it('a save that converts an old stage refuses changed old fields with it', async () => {
-      const { prisma, service } = build();
-      prisma.workflowStage.findFirst.mockResolvedValue({ ...STAGE, whoMode: null });
-      const body = await refusal(
-        service.updateStage('stage-1', { approvalMode: 'PARALLEL', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never, ORG, ACTOR),
-      );
-      expect(body?.code).toBe('WHO_MOVED_TO_STAGE');
-    });
-  });
-
-  describe('the old people fields on a transition from a converted stage', () => {
-    const TRANSITION = {
-      id: 't-1',
-      fromStageId: 'stage-1',
-      toStageId: 'stage-2',
-      labelEn: 'Submit',
-      labelAr: null,
-      requiredPermission: 'committees:manage',
-      triggerCondition: 'ROLE_BASED',
-      triggerUserId: null,
-      triggerRoleId: 'role-qm',
-      validatorConfig: null,
-      isApprovalPath: false,
-      kind: 'ADVANCE',
-      mover: 'PERSON',
-      fromStage: { whoMode: 'ANY_ONE', workflowTemplate: { objectType: 'COMMITTEE' } },
-    };
-
-    it('re-sending them unchanged is accepted', async () => {
-      const { prisma, service } = build();
-      prisma.workflowTransition.findFirst.mockResolvedValue(TRANSITION);
-      prisma.workflowTransition.update.mockResolvedValue({ ...TRANSITION, labelEn: 'Send' });
-      const dto = { labelEn: 'Send', requiredPermission: 'committees:manage', triggerCondition: 'ROLE_BASED', triggerRoleId: 'role-qm', triggerUserId: null };
-      await expect(service.updateTransition('t-1', dto as never, ORG, ACTOR)).resolves.toBeDefined();
-    });
-
-    it.each([
-      ['triggerCondition', 'ANY_AUTHENTICATED'],
-      ['triggerRoleId', 'role-other'],
-      ['triggerUserId', 'user-x'],
-      ['requiredPermission', 'committees:approve'],
-      ['requiredPermission', null],
-    ])('a CHANGED %s (%s) is refused, writing nothing', async (field, value) => {
-      const { prisma, service } = build();
-      prisma.workflowTransition.findFirst.mockResolvedValue(TRANSITION);
-      const body = await refusal(service.updateTransition('t-1', { [field]: value } as never, ORG, ACTOR));
-      expect(body).toEqual(expect.objectContaining({ status: 400, code: 'WHO_MOVED_TO_STAGE', field }));
-      expect(prisma.workflowTransition.update).not.toHaveBeenCalled();
-    });
-
-    it('from a stage still on the old columns, a changed one is saved as before', async () => {
-      const { prisma, service } = build();
-      prisma.workflowTransition.findFirst.mockResolvedValue({ ...TRANSITION, fromStage: { whoMode: null, workflowTemplate: { objectType: 'COMMITTEE' } } });
-      prisma.workflowTransition.update.mockResolvedValue(TRANSITION);
-      await expect(service.updateTransition('t-1', { triggerRoleId: 'role-other' } as never, ORG, ACTOR)).resolves.toBeDefined();
-    });
-
-    describe('a new move from a converted stage', () => {
-      const from = { ...STAGE, whoMode: 'ANY_ONE' };
-      const add = (service: WorkflowTemplateService, extra: Record<string, unknown>) =>
-        service.addTransition({ fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Go', triggerCondition: 'ROLE_BASED', ...extra } as never, ORG, ACTOR);
-
-      it('is written as a person-pressed move, naming no one', async () => {
-        const { prisma, service } = build();
-        prisma.workflowStage.findFirst.mockResolvedValueOnce(from).mockResolvedValueOnce({ ...STAGE, id: 'stage-2' });
-        prisma.workflowTransition.create.mockResolvedValue({ ...TRANSITION, requiredPermission: null, triggerRoleId: null });
-        await add(service, {});
-        expect(prisma.workflowTransition.create).toHaveBeenCalledWith({ data: expect.objectContaining({ mover: 'PERSON' }) });
-      });
-
-      it.each([
-        ['triggerRoleId', { triggerRoleId: 'role-qm' }],
-        ['triggerUserId', { triggerUserId: 'user-1' }],
-        ['requiredPermission', { requiredPermission: 'committees:manage' }],
-        ['triggerCondition', { triggerCondition: 'SYSTEM_AUTOMATIC' }],
-      ])('is refused when it names %s', async (field, extra) => {
-        const { prisma, service } = build();
-        prisma.workflowStage.findFirst.mockResolvedValueOnce(from).mockResolvedValueOnce({ ...STAGE, id: 'stage-2' });
-        expect(await refusal(add(service, extra))).toEqual(expect.objectContaining({ code: 'WHO_MOVED_TO_STAGE', field }));
-        expect(prisma.workflowTransition.create).not.toHaveBeenCalled();
-      });
-    });
-  });
-
   describe('saving who', () => {
     it('replaces the entries and sets the mode in the stage transaction, writing a field-by-field audit', async () => {
       const { prisma, audit, service } = build();
@@ -352,15 +206,6 @@ describe('WorkflowTemplateService — who works a stage (ACC-271 PR 3)', () => {
       ).resolves.toBeDefined();
     });
 
-    it('on a protected template, a changed old people field gets the protected refusal, not WHO_MOVED_TO_STAGE', async () => {
-      const { prisma, service } = build();
-      prisma.workflowStage.findFirst.mockResolvedValue({ ...STAGE, workflowTemplate: { objectType: 'COMMITTEE_CHANGE_REQUEST' } });
-      prisma.workflowStageAssignee.findMany.mockResolvedValue([STARTING]);
-      expect(await refusal(service.updateStage('stage-1', { approvalMode: 'COMMITTEE' } as never, ORG, ACTOR))).toEqual(
-        expect.objectContaining({ code: 'WORKFLOW_TEMPLATE_PROTECTED', edit: 'STAGE_FIELD' }),
-      );
-      expect(prisma.workflowStage.update).not.toHaveBeenCalled();
-    });
   });
 
   describe('the template read', () => {
@@ -377,7 +222,7 @@ describe('WorkflowTemplateService — who works a stage (ACC-271 PR 3)', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      const appMove = { id: 'move-app', fromStageId: 's-draft', toStageId: 's-review', labelEn: 'Submit', labelAr: null, requiredPermission: null, triggerCondition: 'SYSTEM_AUTOMATIC', triggerUserId: null, triggerRoleId: null, validatorConfig: null, isApprovalPath: false, kind: 'ADVANCE', mover: 'APP', actions: [] };
+      const appMove = { id: 'move-app', fromStageId: 's-draft', toStageId: 's-review', labelEn: 'Submit', labelAr: null, validatorConfig: null, isApprovalPath: false, kind: 'ADVANCE', mover: 'APP', actions: [] };
       prisma.workflowStage.findMany.mockResolvedValue([
         { ...STAGE, id: 's-draft', key: 'draft', whoMode: 'ANY_ONE', transitionsFrom: [appMove], assignees: [{ ...STARTING, stageId: 's-draft' }] },
         { ...STAGE, id: 's-review', key: 'under_review', whoMode: null, transitionsFrom: [], assignees: [] },

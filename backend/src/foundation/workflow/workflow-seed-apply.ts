@@ -16,7 +16,6 @@ import { KEYED_SEED_TEMPLATES } from './workflow-stage-keys';
  */
 export type WorkflowSeedDb = Pick<
   Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
-  | 'role'
   | 'workflowTemplate'
   | 'workflowStage'
   | 'workflowTransition'
@@ -26,32 +25,8 @@ export type WorkflowSeedDb = Pick<
 >;
 
 export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: string, seeds: readonly SeedWorkflow[]): Promise<void> {
-  const roleKeys = new Set<string>();
-  for (const seedWorkflow of seeds) {
-    for (const stage of seedWorkflow.stages) {
-      if (stage.assigneeRoleKey) roleKeys.add(stage.assigneeRoleKey);
-    }
-    for (const transition of seedWorkflow.transitions) {
-      if (transition.triggerRoleKey) roleKeys.add(transition.triggerRoleKey);
-    }
-  }
-
-  const roles = await db.role.findMany({
-    where: { organizationId, key: { in: Array.from(roleKeys) } },
-  });
-  const roleIdByKey = new Map(roles.map((r) => [r.key, r.id]));
-
-  const resolveRoleId = (key: string | undefined): string | undefined => {
-    if (!key) return undefined;
-    const id = roleIdByKey.get(key);
-    if (!id) {
-      throw new Error(
-        `Role key '${key}' referenced in workflow seed data was not found for organization ${organizationId} — seedSystemRoles() must run first`,
-      );
-    }
-    return id;
-  };
-
+  // ACC-271 PR 6b — the seed names no role (it named them for the old people
+  // columns), so nothing is resolved before writing.
   for (const seedWorkflow of seeds) {
     const existingTemplate = await db.workflowTemplate.findFirst({
       where: { organizationId, objectType: seedWorkflow.objectType, isDefault: true },
@@ -99,10 +74,8 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
         slaWorkingHours: seedStage.slaWorkingHours ?? null,
         isInitial: seedStage.isInitial,
         isFinal: seedStage.isFinal,
-        approvalMode: seedStage.approvalMode,
-        parallelThreshold: seedStage.parallelThreshold ?? null,
-        assigneeStrategy: seedStage.assigneeStrategy,
-        assigneeRoleId: resolveRoleId(seedStage.assigneeRoleKey) ?? null,
+        // ACC-271 PR 6b — no old people column: they keep their database
+        // defaults until 6c drops them.
       };
 
       // ACC-255 — a stage's record actions and flags are written only when the
@@ -155,9 +128,8 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
       const transitionData = {
         labelEn: seedTransition.labelEn,
         labelAr: seedTransition.labelAr,
-        requiredPermission: seedTransition.requiredPermission ?? null,
-        triggerCondition: seedTransition.triggerCondition,
-        triggerRoleId: resolveRoleId(seedTransition.triggerRoleKey) ?? null,
+        // ACC-271 PR 6b — no old people column (they keep their database
+        // defaults until 6c drops them); the mover says who moves it.
         validatorConfig: toJson(seedTransition.validatorConfig),
         isApprovalPath: seedTransition.isApprovalPath ?? false,
         kind: seedTransition.kind ?? 'ADVANCE',
@@ -170,7 +142,7 @@ export async function applyWorkflowSeed(db: WorkflowSeedDb, organizationId: stri
           })
         : await db.workflowTransition.create({
             // ACC-271 — who moves the record, written with the transition, like who works a stage.
-            // PR 6a — the seed states it (it was read off triggerCondition).
+            // PR 6a — the seed states it.
             data: { fromStageId, toStageId, ...transitionData, mover: seedTransition.mover },
           });
 

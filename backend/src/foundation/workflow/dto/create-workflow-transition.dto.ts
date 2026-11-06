@@ -1,26 +1,15 @@
-import {
-  IsBoolean,
-  IsIn,
-  IsNotEmpty,
-  IsObject,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsIn, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { trimToNull } from '../../../common/utils/trim-to-null.transform';
-
-const WORKFLOW_TRIGGER_CONDITIONS = [
-  'SPECIFIC_USER',
-  'ROLE_BASED',
-  'ANY_AUTHENTICATED',
-  'SYSTEM_AUTOMATIC',
-] as const;
 
 // ACC-190 — ADVANCE is held by the stage's mandatory tasks; RETURN (send back)
 // and EXIT (end the record) never are. Omitted means ADVANCE (the schema default).
 export const WORKFLOW_TRANSITION_KINDS = ['ADVANCE', 'RETURN', 'EXIT'] as const;
 
+// ACC-271 PR 6b — a move names no people (the old permission, trigger, role
+// and user fields are gone): whoever works its from-stage
+// presses it, and the service writes mover PERSON. The global whitelist refuses
+// an old field sent anyway, 400 "property X should not exist".
 export class CreateWorkflowTransitionDto {
   @IsString()
   @IsNotEmpty()
@@ -43,32 +32,6 @@ export class CreateWorkflowTransitionDto {
   @MaxLength(100)
   @Transform(trimToNull)
   labelAr?: string | null;
-
-  // ACC-55 — `| null` is a genuine, distinct value here, not just "absent":
-  // null explicitly CLEARS a previously-set permission, which the service
-  // distinguishes from "not provided" via its own `!== undefined` check.
-  // Same reasoning as assigneeCommitteeRoleValueId on the stage DTOs.
-  // @IsOptional() skips validation for null (verified empirically, not
-  // assumed), so null passes through while a non-string is still rejected.
-  @IsString()
-  @IsOptional()
-  requiredPermission?: string | null;
-
-  // ACC-271 PR 5-be — optional: a move out of a converted stage names no people
-  // (whoever works the stage presses it), so it needs no trigger. A move out of
-  // a stage still on the old columns must say it; the service refuses one that
-  // does not.
-  @IsIn(WORKFLOW_TRIGGER_CONDITIONS)
-  @IsOptional()
-  triggerCondition?: (typeof WORKFLOW_TRIGGER_CONDITIONS)[number];
-
-  @IsString()
-  @IsOptional()
-  triggerUserId?: string;
-
-  @IsString()
-  @IsOptional()
-  triggerRoleId?: string;
 
   @IsObject()
   @IsOptional()

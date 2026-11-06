@@ -32,7 +32,9 @@ export type WorkflowRefusalCode =
   // ACC-271 — who works a converted stage (StagePoolService).
   | 'STAGE_HAS_NO_ONE'
   | 'NOT_IN_STAGE_POOL'
-  // ACC-271 PR 3 — a stage save's `who` (stage-who.ts) and the old people fields.
+  // ACC-271 PR 6b — a move with no mover (none exist): nobody can make it.
+  | 'MOVE_HAS_NO_MOVER'
+  // ACC-271 PR 3 — a stage save's `who` (stage-who.ts).
   | 'WHO_MODE_UNKNOWN'
   | 'WHO_ENTRIES_REQUIRED'
   | 'WHO_ENTRY_DUPLICATE'
@@ -43,7 +45,6 @@ export type WorkflowRefusalCode =
   | 'COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE'
   | 'WHO_REFERENCE_NOT_FOUND'
   | 'WHO_USER_NOT_ACTIVE'
-  | 'WHO_MOVED_TO_STAGE'
   // ACC-271 PR 6a — a new stage must say who works it.
   | 'WHO_REQUIRED';
 
@@ -71,6 +72,7 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_FLAG_EXACTLY_ONE: HttpStatus.CONFLICT,
   STAGE_HAS_NO_ONE: HttpStatus.CONFLICT,
   NOT_IN_STAGE_POOL: HttpStatus.FORBIDDEN,
+  MOVE_HAS_NO_MOVER: HttpStatus.CONFLICT,
   WHO_MODE_UNKNOWN: HttpStatus.BAD_REQUEST,
   WHO_ENTRIES_REQUIRED: HttpStatus.BAD_REQUEST,
   WHO_ENTRY_DUPLICATE: HttpStatus.BAD_REQUEST,
@@ -82,7 +84,6 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   // Another organisation's id reads exactly like an invented one.
   WHO_REFERENCE_NOT_FOUND: HttpStatus.NOT_FOUND,
   WHO_USER_NOT_ACTIVE: HttpStatus.BAD_REQUEST,
-  WHO_MOVED_TO_STAGE: HttpStatus.BAD_REQUEST,
   WHO_REQUIRED: HttpStatus.BAD_REQUEST,
 };
 
@@ -111,6 +112,7 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   STAGE_FLAG_EXACTLY_ONE: 'Exactly one stage of this workflow must carry this meaning',
   STAGE_HAS_NO_ONE: "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it",
   NOT_IN_STAGE_POOL: 'Only whoever works this stage can do this',
+  MOVE_HAS_NO_MOVER: "Nobody is set to make this move, so the record can't move this way. Ask an administrator",
   WHO_MODE_UNKNOWN: 'Choose how the people of this stage decide',
   WHO_ENTRIES_REQUIRED: 'A stage needs at least one assignee',
   WHO_ENTRY_DUPLICATE: 'This entry is already in the list',
@@ -121,16 +123,8 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   COMMITTEE_VOTE_NEEDS_ONE_COMMITTEE: 'A committee vote needs exactly one assignee, and it must be a committee',
   WHO_REFERENCE_NOT_FOUND: 'One of the chosen people, positions, units, committees or roles was not found',
   WHO_USER_NOT_ACTIVE: "A deactivated person can't work a stage",
-  WHO_MOVED_TO_STAGE: 'Who works this stage is now set on the stage, not here.',
   WHO_REQUIRED: 'Choose who works this stage',
 };
-
-/**
- * ACC-271 PR 3 — the one refusal an old screen meets on purpose (Ahmad, 28 Oct,
- * condition b): its sentence in both languages travels with it as `messageAr`,
- * because the screen that sends it predates the code.
- */
-export const WHO_MOVED_TO_STAGE_AR = 'يُحدَّد من يعمل على هذه المرحلة الآن في المرحلة نفسها، لا هنا.';
 
 export class WorkflowRefusalException extends HttpException {
   constructor(

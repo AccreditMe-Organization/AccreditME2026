@@ -58,16 +58,10 @@ describe("A new organisation's workflows start on its first admin, against a rea
   const templates = new WorkflowTemplateService(prisma, audit, new StageTaskDefinitionService(prisma, audit, tasks));
   const pools = new StagePoolService(prisma);
 
-  /** An organisation bootstrapped as far as its workflows: the roles the seed names, then the seed. */
+  /** An organisation bootstrapped as far as its workflows: the seed (it names no role since ACC-271 PR 6b). */
   async function newOrganisation(): Promise<{ id: string; slug: string }> {
     const slug = `acc271s-${randomUUID().slice(0, 8)}`;
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
-    const roleKeys = new Set<string>();
-    for (const w of SYSTEM_WORKFLOW_SEED) {
-      for (const s of w.stages) if (s.assigneeRoleKey) roleKeys.add(s.assigneeRoleKey);
-      for (const t of w.transitions) if (t.triggerRoleKey) roleKeys.add(t.triggerRoleKey);
-    }
-    for (const key of roleKeys) await prisma.role.create({ data: { organizationId: o.id, key, nameEn: key, isSystem: true } });
     await templates.seedDefaultWorkflows(o.id);
     return { id: o.id, slug };
   }

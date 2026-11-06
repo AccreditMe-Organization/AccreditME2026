@@ -68,14 +68,13 @@ describe('WorkflowTemplateService — webhook header values are never sent back 
       prisma.workflowStage.findMany.mockResolvedValue([
         {
           id: 'stage-1', workflowTemplateId: 'template-1', key: null, nameEn: 'S', nameAr: null, description: null, order: 1,
-          slaWorkingHours: null, isInitial: true, isFinal: false, approvalMode: 'SINGLE', parallelThreshold: null, committeeId: null,
-          assigneeStrategy: 'ROLE', assigneeUserId: null, assigneeRoleId: null, assigneeCommitteeRoleValueId: null,
-          assigneePositionId: null, assigneeOrgUnitId: null, escalationConfig: null, flags: [], whoMode: null,
+          slaWorkingHours: null, isInitial: true, isFinal: false,
+          escalationConfig: null, flags: [], whoMode: null,
           recordActions: [], assignees: [],
           transitionsFrom: [
             {
-              id: 't-1', fromStageId: 'stage-1', toStageId: 'stage-1', labelEn: 'Go', labelAr: null, requiredPermission: null,
-              triggerCondition: 'ROLE_BASED', triggerUserId: null, triggerRoleId: null, validatorConfig: null,
+              id: 't-1', fromStageId: 'stage-1', toStageId: 'stage-1', labelEn: 'Go', labelAr: null,
+              validatorConfig: null,
               isApprovalPath: false, kind: 'ADVANCE', mover: 'PERSON', actions: [ACTION],
             },
           ],

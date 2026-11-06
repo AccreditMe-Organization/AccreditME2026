@@ -100,11 +100,10 @@ export class WorkflowController {
     return this.workflowService.getMovesForViewer(id, tenantId, actorPermissions, actorId);
   }
 
-  // No class-level @Permissions — the required permission is data-driven
-  // (whatever the specific WorkflowTransition.requiredPermission says), not a
-  // fixed string known at compile time. TenantGuard/PermissionGuard still run
-  // (authentication + userPermissions population); WorkflowService performs
-  // the fine-grained check itself. Deliberate, documented exception — see
+  // No class-level @Permissions — who may move a record is data-driven (the
+  // from-stage's pool, ACC-271), not a fixed string known at compile time.
+  // TenantGuard/PermissionGuard still run (authentication + userPermissions
+  // population); WorkflowService performs the fine-grained check itself. Deliberate, documented exception — see
   // Step 6 plan, Business Rules, "Permission Model for Runtime Transitions".
   @Post('instances/:id/transitions')
   triggerTransition(
@@ -129,8 +128,8 @@ export class WorkflowController {
   }
 
   // Unlike the two endpoints above, cancellation bypasses the transition graph
-  // entirely — there is no per-transition requiredPermission to defer to, so
-  // this one gets its own explicit @Permissions() rather than a class-level one.
+  // entirely — there is no stage pool to defer to, so this one gets its own
+  // explicit @Permissions() rather than a class-level one.
   @Post('instances/:id/cancel')
   @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
   cancelInstance(

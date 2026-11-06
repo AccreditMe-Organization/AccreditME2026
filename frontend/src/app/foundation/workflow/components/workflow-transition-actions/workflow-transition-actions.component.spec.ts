@@ -1,7 +1,7 @@
 // ACC-22 (extension) — proves the three behaviors this reusable component
 // exists for: (1) a transition button renders only when the server says the
-// caller may press it (ACC-271 PR 2; it was the caller's requiredPermission,
-// read on the client), (2) clicking a button calls the real
+// caller may press it (ACC-271 PR 2; it was once a permission check on the
+// client), (2) clicking a button calls the real
 // triggerTransition() endpoint with the correct payload, (3) a successful
 // transition emits the updated instance, which is what drives any
 // consumer's displayed-stage refresh (CommitteeDetailComponent.
@@ -38,10 +38,6 @@ const TRANSITION = {
   toStageId: 'stage-terms-review',
   labelEn: 'Submit for Approval',
   labelAr: 'إرسال للاعتماد',
-  requiredPermission: 'committees:manage',
-  triggerCondition: 'ROLE_BASED',
-  triggerUserId: null,
-  triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
 
@@ -67,15 +63,8 @@ const TEMPLATE_RESPONSE = {
       description: null,
       order: 10,
       slaWorkingHours: null,
-      requiredPermission: null,
       isInitial: true,
       isFinal: false,
-      approvalMode: 'SINGLE',
-      parallelThreshold: null,
-      committeeId: null,
-      assigneeStrategy: 'ROLE',
-      assigneeUserId: null,
-      assigneeRoleId: null,
       escalationConfig: null,
       transitions: [TRANSITION],
     },
@@ -90,12 +79,6 @@ const TEMPLATE_RESPONSE = {
       slaWorkingHours: null,
       isInitial: false,
       isFinal: false,
-      approvalMode: 'SINGLE',
-      parallelThreshold: null,
-      committeeId: null,
-      assigneeStrategy: 'ROLE',
-      assigneeUserId: null,
-      assigneeRoleId: null,
       escalationConfig: null,
       transitions: [],
     },
@@ -135,12 +118,11 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
 
   afterEach(() => httpMock.verify());
 
-  // ACC-271 PR 2 — on a converted stage the move's requiredPermission is not
-  // read: whoever works the stage may press it. The screen takes the server's
+  // ACC-271 PR 2 — whoever works the stage may press a move (PR 6b: a move
+  // names no permission at all). The screen takes the server's
   // answer and keeps no copy of either rule.
   describe('takes what the server says the caller may press (ACC-271)', () => {
-    it('shows a move the server allows, though the person holds none of its requiredPermission', () => {
-      // TRANSITION requires committees:manage; nothing here grants it.
+    it('shows a move the server allows, though the person holds no permission at all', () => {
       setup([TRANSITION.id]);
 
       expect(component.availableTransitions().map((t) => t.id)).toEqual([TRANSITION.id]);

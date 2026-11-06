@@ -19,10 +19,9 @@ import { ALL_PERMISSIONS } from '../../foundation/roles/permission.seed';
  * groups table (frontend permission-groups.ts, ACC-272, which replaced the
  * grid's column table). It says which labelled GROUP a key is listed under in
  * a large module; it decides nothing about who may act, so it neither puts a
- * key in use nor keeps one alive. The workflow seed is a real
- * check for a record type that exists (Committee) and a forward reference for
- * the rest — which is exactly why it may mention an unused key, and why an
- * in-use key may rest on it (committees:manage and committees:approve do).
+ * key in use nor keeps one alive. The workflow seed names no permission since
+ * ACC-271 PR 6b, so no in-use key rests on it (committees:manage did, and went
+ * on the list then).
  */
 
 const REPO = join(__dirname, '..', '..', '..', '..');
@@ -80,8 +79,8 @@ describe('PERMISSIONS_NOT_YET_CHECKED (ACC-120 slice 5, R2)', () => {
   it('the list plus the in-use keys are the catalogue, exactly', () => {
     const inUse = catalogue.filter((k) => !notYet.has(k));
     expect([...inUse, ...PERMISSIONS_NOT_YET_CHECKED].sort()).toEqual([...catalogue].sort());
-    expect(inUse).toHaveLength(36); // ACC-244: -4 tasks:*, +4 committee task keys
-    expect(PERMISSIONS_NOT_YET_CHECKED).toHaveLength(38);
+    expect(inUse).toHaveLength(35); // ACC-244: -4 tasks:*, +4 committee task keys; ACC-271 PR 6b: -committees:manage
+    expect(PERMISSIONS_NOT_YET_CHECKED).toHaveLength(39);
   });
 
   describe('against the code', () => {

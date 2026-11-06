@@ -88,7 +88,8 @@ export const COMMITTEES_PERMISSIONS = {
 //
 // Its own group, not COMMITTEES_PERMISSIONS: QUALITY_MANAGER is seeded with
 // every value of that group, and ACC-28's umbrella rule (committees:manage holds
-// every committee string) is about committee CRUD, not task reach. Each grant
+// every committee string; since ACC-271 PR 6b a seed-time umbrella only, not
+// in use) is about committee CRUD, not task reach. Each grant
 // of these is deliberate (role.seed.ts, and backfill:acc244-grant-task-keys for
 // existing tenants).
 //
@@ -211,10 +212,9 @@ export const ADMIN_PERMISSIONS = {
 // ACC-120 slice 5 (CC-91, R2) — the catalogue keys NO CODE CHECKS YET.
 //
 // A key is IN USE when some code decides something with it today: a backend
-// @Permissions()/hasPermission() check, a frontend gate, or a requiredPermission
-// on a seeded workflow transition of a record type that exists (Committee).
-// Every key below is either referenced nowhere, or only by seeded transitions
-// of record types not built yet (Meeting, Document, Audit, Incident).
+// @Permissions()/hasPermission() check or a frontend gate. (A seeded workflow
+// move's required permission counted too until ACC-271 PR 6b, when moves
+// stopped naming one.) Every key below is referenced by no such check.
 //
 // What it changes: GET roles/permissions marks these `inUse: false`; a role
 // cannot GAIN one through PATCH roles/:id/permissions (400
@@ -229,6 +229,9 @@ export const ADMIN_PERMISSIONS = {
 // NOT a `*_PERMISSIONS` group: permission.seed.ts flattens only those, so this
 // list can never be seeded as extra keys.
 export const PERMISSIONS_NOT_YET_CHECKED: readonly string[] = [
+  // ACC-271 PR 6b — a seed-time umbrella only (ACC-28): it was in use because
+  // seeded workflow moves required it, and a move names no permission now.
+  COMMITTEES_PERMISSIONS.MANAGE,
   NOTIFICATIONS_PERMISSIONS.VIEW,
   NOTIFICATIONS_PERMISSIONS.MANAGE,
   MEETINGS_PERMISSIONS.MANAGE,

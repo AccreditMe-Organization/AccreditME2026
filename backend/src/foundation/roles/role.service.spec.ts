@@ -1356,6 +1356,46 @@ describe('RoleService', () => {
       expect(state.held()).toEqual(['documents:view', 'workflows:view']);
     });
 
+    // ACC-271 PR 6b — committees:manage is a seed-time umbrella only: nothing
+    // checks it since a workflow move names no permission. A role that holds it
+    // (QUALITY_MANAGER is seeded with it) keeps it through every save; only a
+    // NEW grant is refused.
+    const COMMITTEE_FULL_SET = [
+      'committees:add_member',
+      'committees:approve',
+      'committees:change_member_role',
+      'committees:create',
+      'committees:edit_details',
+      'committees:manage',
+      'committees:remove_member',
+      'committees:view',
+    ];
+
+    it('a role holding committees:manage saves its full set unchanged, whether the save sends it back or not', async () => {
+      const state = stageRolePermissions(COMMITTEE_FULL_SET);
+
+      // Sent back, as an API caller holding the full set would.
+      await service.assignPermissions('role-1', { permissionKeys: [...COMMITTEE_FULL_SET], expectedPermissionKeys: state.held() }, ORG_A, ACTOR);
+      expect(state.held()).toEqual(COMMITTEE_FULL_SET);
+
+      // Left out, as the role screen now does (it shows only keys in use).
+      const shown = COMMITTEE_FULL_SET.filter((k) => k !== 'committees:manage');
+      await service.assignPermissions('role-1', { permissionKeys: shown, expectedPermissionKeys: state.held() }, ORG_A, ACTOR);
+      expect(state.held()).toEqual(COMMITTEE_FULL_SET);
+    });
+
+    it('a role NOT holding committees:manage cannot gain it: 400 PERMISSION_NOT_IN_USE, nothing written', async () => {
+      const without = COMMITTEE_FULL_SET.filter((k) => k !== 'committees:manage');
+      const state = stageRolePermissions(without);
+
+      const code = await codeOf(
+        service.assignPermissions('role-1', { permissionKeys: [...COMMITTEE_FULL_SET], expectedPermissionKeys: state.held() }, ORG_A, ACTOR),
+      );
+
+      expect(code).toBe('PERMISSION_NOT_IN_USE');
+      expect(state.held()).toEqual(without);
+    });
+
     it('the 409 comparison uses the FULL set, kept keys included', async () => {
       stageRolePermissions(['committees:view', 'documents:view']);
 

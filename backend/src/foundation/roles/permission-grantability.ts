@@ -12,9 +12,8 @@ import { TENANT_ADMIN_KEY } from './tenant-administrator.invariant';
  * ACC-120 slice 5 — which permission keys can be GIVEN, and where.
  *
  * One rule, read by every write that can make a key reachable: a role's
- * permission save, creating a role, and a workflow transition's
- * requiredPermission. A transition requiring a key no role may be given is a
- * transition nobody can ever fire, so the two must refuse the same keys.
+ * permission save and creating a role. (A workflow move required a key too
+ * until ACC-271 PR 6b; a move is now made by whoever works its stage.)
  *
  * - A platform:* key can be given only in the PLATFORM organisation (R1).
  *   Inside a tenant it means nothing — PlatformGuard also needs isPlatformOrg —
@@ -60,9 +59,7 @@ export function assertGrantable(keys: readonly string[], isPlatformOrg: boolean)
  * (24 Oct, Q1); it is never assignable inside a tenant.
  *
  * Kept APART from assertGrantable / assertKnownAndGrantable on purpose: those
- * also guard a workflow transition's requiredPermission, and a transition that
- * requires workflows:manage stays valid — the root role holds it, so someone can
- * still fire it.
+ * say whether a key may be given at all; this says which role may hold it.
  *
  * The role editor reads this through the catalogue's `rootRoleOnly` flag, so
  * no screen keeps a copy of the list.

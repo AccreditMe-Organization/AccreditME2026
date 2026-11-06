@@ -42,15 +42,6 @@ const BASE_STAGE = {
   slaWorkingHours: null as number | null,
   isInitial: true,
   isFinal: false,
-  approvalMode: 'SINGLE',
-  parallelThreshold: null as string | null,
-  committeeId: null as string | null,
-  assigneeStrategy: 'SELF',
-  assigneeUserId: null as string | null,
-  assigneeRoleId: null as string | null,
-  assigneeCommitteeRoleValueId: null as string | null,
-  assigneePositionId: null as string | null,
-  assigneeOrgUnitId: null as string | null,
   escalationConfig: null as unknown,
   // ACC-255 — a stage's flags, and (on reads that include them) its action rows.
   flags: [] as string[],
@@ -64,15 +55,8 @@ const BASE_TRANSITION = {
   toStageId: 'stage-2',
   labelEn: 'Submit for Review',
   labelAr: 'إرسال للمراجعة',
-  // `as string | null` matches the real nullable column — without it,
-  // Partial<typeof BASE_TRANSITION> infers `string` and makeTransition()
-  // cannot express the "no permission required" case (6 seeded transitions),
-  // same shape as triggerUserId/triggerRoleId just below.
-  requiredPermission: 'documents:submit' as string | null,
-  triggerCondition: 'ROLE_BASED',
-  triggerUserId: null as string | null,
-  triggerRoleId: null as string | null,
   validatorConfig: null as unknown,
+  mover: 'PERSON' as string | null,
 };
 
 const BASE_ACTION = {
@@ -222,19 +206,11 @@ describe('WorkflowTemplateService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    // Default: any assigneeUserId a test sets belongs to ORG_A, matching
-    // this file's usual "happy path" org. Tests exercising the cross-tenant
-    // rejection override this per-case.
+    // Defaults: a user, a committee and a committee role a test names belong to
+    // ORG_A, this file's usual "happy path" org.
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
-    // Same default for committeeId (ACC-22, closing the ACC-17 deferred gap).
     mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', organizationId: ORG_A });
-    // Same default for assigneeCommitteeRoleValueId (ACC-28).
     mockPrisma.lookupValue.findFirst.mockResolvedValue({ id: 'lookup-chairman-id', organizationId: null });
-    // ACC-55 — default to the satisfiable case so resolvePermissionWarning()
-    // returns null and no pre-existing transition test has to care about it.
-    // The warning cases override these per-test.
-    mockPrisma.permission.findFirst.mockResolvedValue({ id: 'perm-id' });
-    mockPrisma.rolePermission.count.mockResolvedValue(1);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -448,21 +424,6 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowTemplate.update).not.toHaveBeenCalled();
     });
 
-    it("resolves assigneeRoleKey/triggerRoleKey to the tenant's actual Role.id values", async () => {
-      installFakeStore();
-
-      await service.seedDefaultWorkflows(ORG_A);
-
-      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ assigneeRoleId: 'role-QUALITY_MANAGER' }),
-        }),
-      );
-      expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
-      );
-    });
-
     it('correctly wires transitions from seed stage keys to the real generated stage IDs', async () => {
       installFakeStore();
 
@@ -475,15 +436,6 @@ describe('WorkflowTemplateService', () => {
         expect(data.fromStageId).toMatch(/^stage-\d+$/);
         expect(data.toStageId).toMatch(/^stage-\d+$/);
       }
-    });
-
-    it('throws if a referenced role key was not found for the org', async () => {
-      installFakeStore();
-      mockPrisma.role.findMany.mockResolvedValue([]);
-
-      await expect(service.seedDefaultWorkflows(ORG_A)).rejects.toThrow(
-        /Role key .* was not found/,
-      );
     });
 
     it('is idempotent — calling twice produces no duplicate templates, stages, transitions, or actions', async () => {
@@ -865,7 +817,7 @@ describe('WorkflowTemplateService', () => {
       mockPrisma.workflowTransition.create.mockResolvedValue(BASE_TRANSITION);
 
       await service.addTransition(
-        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED' } as never,
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال' } as never,
         ORG_A,
         ACTOR,
       );
@@ -881,7 +833,7 @@ describe('WorkflowTemplateService', () => {
           .mockResolvedValueOnce(makeStage({ id: 'stage-2', workflowTemplateId: 'template-1' }));
         mockPrisma.workflowTransition.create.mockResolvedValue(BASE_TRANSITION);
         await service.addTransition(
-          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', triggerCondition: 'ROLE_BASED', ...extra } as never,
+          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', ...extra } as never,
           ORG_A,
           ACTOR,
         );
@@ -897,7 +849,7 @@ describe('WorkflowTemplateService', () => {
 
       await expect(
         service.addTransition(
-          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED' } as never,
+          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال' } as never,
           ORG_B,
           ACTOR,
         ),
@@ -911,7 +863,7 @@ describe('WorkflowTemplateService', () => {
 
       await expect(
         service.addTransition(
-          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED' } as never,
+          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال' } as never,
           ORG_A,
           ACTOR,
         ),
@@ -967,408 +919,7 @@ describe('WorkflowTemplateService', () => {
 
   // ── resolvePermissionWarning (ACC-55) ────────────────────────────────────────
 
-  describe('permission warning on the transition write path', () => {
-    // Exercised through addTransition/updateTransition rather than by calling
-    // the resolver directly — the point of the feature is that a write both
-    // SUCCEEDS and reports, so testing the write is what proves it.
-    function stageLookupsSucceed(): void {
-      mockPrisma.workflowStage.findFirst
-        .mockResolvedValueOnce(makeStage({ id: 'stage-1', workflowTemplateId: 'template-1' }))
-        .mockResolvedValueOnce(makeStage({ id: 'stage-2', workflowTemplateId: 'template-1' }));
-    }
-
-    // ACC-258 — workflows:manage is root-role-only for ROLES, but a transition
-    // may still require it: the root role holds it, so someone can fire it.
-    it('accepts a transition that requires workflows:manage', async () => {
-      stageLookupsSucceed();
-      mockPrisma.workflowTransition.create.mockResolvedValue(makeTransition({ requiredPermission: 'workflows:manage' }));
-
-      const result = await service.addTransition(
-        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Reopen', labelAr: 'إعادة فتح', triggerCondition: 'ROLE_BASED', requiredPermission: 'workflows:manage' } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(result.transition.requiredPermission).toBe('workflows:manage');
-      expect(mockPrisma.workflowTransition.create).toHaveBeenCalled();
-    });
-
-    it('returns no warning when the permission exists and an active role holds it', async () => {
-      stageLookupsSucceed();
-      mockPrisma.workflowTransition.create.mockResolvedValue(
-        makeTransition({ requiredPermission: 'committees:manage' }),
-      );
-
-      const result = await service.addTransition(
-        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage' } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(result.permissionWarning).toBeNull();
-      expect(result.transition.requiredPermission).toBe('committees:manage');
-    });
-
-    // ACC-120 slice 5 (F1) REVERSES ACC-55 for a key a person picks: a typo, or
-    // a forward reference to an unbuilt module, is now refused rather than saved
-    // with a warning — a transition requiring a key no role can be given can
-    // never fire. seedTemplates() writes directly and is not this path, so
-    // provisioning still writes the seed's forward references. The warning
-    // remains for keys a transition already holds (see the update cases).
-    it('refuses an UNKNOWN key on create with 400 PERMISSION_UNKNOWN, writing nothing', async () => {
-      stageLookupsSucceed();
-
-      const code = await codeOf(
-        service.addTransition(
-          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:aprove' } as never,
-          ORG_A,
-          ACTOR,
-        ),
-      );
-
-      expect(code).toBe('PERMISSION_UNKNOWN');
-      expect(mockPrisma.workflowTransition.create).not.toHaveBeenCalled();
-    });
-
-    it('refuses a forward reference to an unbuilt module on create (capa:investigate is not in the catalogue)', async () => {
-      stageLookupsSucceed();
-
-      const code = await codeOf(
-        service.addTransition(
-          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Start Investigation', labelAr: 'بدء التحقيق', triggerCondition: 'ROLE_BASED', requiredPermission: 'capa:investigate' } as never,
-          ORG_A,
-          ACTOR,
-        ),
-      );
-
-      expect(code).toBe('PERMISSION_UNKNOWN');
-      expect(mockPrisma.workflowTransition.create).not.toHaveBeenCalled();
-    });
-
-    it('returns NO_ACTIVE_ROLE_HOLDS when the permission is real but ungranted', async () => {
-      stageLookupsSucceed();
-      mockPrisma.permission.findFirst.mockResolvedValue({ id: 'perm-id' });
-      mockPrisma.rolePermission.count.mockResolvedValue(0);
-      mockPrisma.workflowTransition.create.mockResolvedValue(
-        makeTransition({ requiredPermission: 'committees:approve' }),
-      );
-
-      const result = await service.addTransition(
-        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:approve' } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(result.permissionWarning).toBe('NO_ACTIVE_ROLE_HOLDS');
-    });
-
-    it('counts only ACTIVE roles as holders', async () => {
-      stageLookupsSucceed();
-      mockPrisma.workflowTransition.create.mockResolvedValue(BASE_TRANSITION);
-
-      await service.addTransition(
-        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:approve' } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      // A deactivated role's grants cannot satisfy triggerTransition(), which
-      // reads permissions through the actor's live role assignments.
-      expect(mockPrisma.rolePermission.count).toHaveBeenCalledWith({
-        where: { permissionId: 'perm-id', role: { organizationId: ORG_A, isActive: true } },
-      });
-    });
-
-    it('returns no warning when no permission is required at all', async () => {
-      // 6 seeded transitions legitimately have none — gated by triggerCondition
-      // alone. That must not be reported as a problem.
-      stageLookupsSucceed();
-      mockPrisma.workflowTransition.create.mockResolvedValue(
-        makeTransition({ requiredPermission: null }),
-      );
-
-      const result = await service.addTransition(
-        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ANY_AUTHENTICATED' } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(result.permissionWarning).toBeNull();
-      expect(mockPrisma.permission.findFirst).not.toHaveBeenCalled();
-    });
-
-    it('refuses a malformed string with no colon as unknown, without querying', async () => {
-      stageLookupsSucceed();
-
-      const code = await codeOf(
-        service.addTransition(
-          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees' } as never,
-          ORG_A,
-          ACTOR,
-        ),
-      );
-
-      expect(code).toBe('PERMISSION_UNKNOWN');
-      expect(mockPrisma.permission.findFirst).not.toHaveBeenCalled();
-      expect(mockPrisma.workflowTransition.create).not.toHaveBeenCalled();
-    });
-
-    it('still reports UNKNOWN_PERMISSION for a key the transition already held, through an unrelated edit', async () => {
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ requiredPermission: 'capa:investigate' }),
-      );
-      mockPrisma.workflowTransition.update.mockResolvedValue(
-        makeTransition({ labelEn: 'Renamed', requiredPermission: 'capa:investigate' }),
-      );
-      mockPrisma.permission.findFirst.mockResolvedValue(null);
-
-      const result = await service.updateTransition('transition-1', { labelEn: 'Renamed' } as never, ORG_A, ACTOR);
-
-      expect(result.permissionWarning).toBe('UNKNOWN_PERMISSION');
-      expect(result.transition.requiredPermission).toBe('capa:investigate');
-    });
-
-    it('reports a pre-existing problem when an update leaves requiredPermission untouched', async () => {
-      // Resolving against the DTO instead of the saved row would let an edit
-      // to an unrelated field silently clear a warning the transition still
-      // deserves.
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ requiredPermission: 'committees:approve' }),
-      );
-      mockPrisma.workflowTransition.update.mockResolvedValue(
-        makeTransition({ labelEn: 'Renamed', requiredPermission: 'committees:approve' }),
-      );
-      mockPrisma.rolePermission.count.mockResolvedValue(0);
-
-      const result = await service.updateTransition(
-        'transition-1',
-        { labelEn: 'Renamed' } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(result.permissionWarning).toBe('NO_ACTIVE_ROLE_HOLDS');
-    });
-
-    it('clears requiredPermission when null is supplied, distinguishing it from undefined', async () => {
-      // The picker's "no permission required" option depends on this. Before
-      // ACC-55 the editor sent `raw.requiredPermission || undefined`, so an
-      // emptied field became undefined and the service's `!== undefined`
-      // guard skipped the write — clearing was impossible through the UI.
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-      mockPrisma.workflowTransition.update.mockResolvedValue(
-        makeTransition({ requiredPermission: null }),
-      );
-
-      const result = await service.updateTransition(
-        'transition-1',
-        { requiredPermission: null } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { requiredPermission: null } }),
-      );
-      expect(result.transition.requiredPermission).toBeNull();
-      expect(result.permissionWarning).toBeNull();
-    });
-
-    it('leaves requiredPermission untouched when the field is absent', async () => {
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-      mockPrisma.workflowTransition.update.mockResolvedValue(makeTransition({ labelEn: 'Renamed' }));
-
-      await service.updateTransition('transition-1', { labelEn: 'Renamed' } as never, ORG_A, ACTOR);
-
-      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { labelEn: 'Renamed' } }),
-      );
-    });
-
-    itEnforcesTenantIsolation('rolePermission holder count in resolvePermissionWarning', async () => {
-      // The holder count is the tenant-scoped half of this check. ORG_B holds
-      // the permission; ORG_A does not. Scoping it correctly means ORG_A gets
-      // the warning rather than inheriting ORG_B's grant.
-      mockPrisma.permission.findFirst.mockResolvedValue({ id: 'perm-id' });
-      mockPrisma.rolePermission.count.mockImplementation(({ where }: { where: { role: { organizationId: string } } }) =>
-        Promise.resolve(where.role.organizationId === ORG_B ? 1 : 0),
-      );
-      stageLookupsSucceed();
-      mockPrisma.workflowTransition.create.mockResolvedValue(
-        makeTransition({ requiredPermission: 'committees:approve' }),
-      );
-
-      const result = await service.addTransition(
-        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:approve' } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(result.permissionWarning).toBe('NO_ACTIVE_ROLE_HOLDS');
-      expect(mockPrisma.rolePermission.count).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ role: expect.objectContaining({ organizationId: ORG_A }) }),
-        }),
-      );
-    });
-  });
-
   // ── F1: a transition may not require a key no role can be given ─────────────
-
-  describe('requiredPermission must be grantable (ACC-120 slice 5, F1)', () => {
-    function stageLookupsSucceed(): void {
-      mockPrisma.workflowStage.findFirst
-        .mockResolvedValueOnce(makeStage({ id: 'stage-1', workflowTemplateId: 'template-1' }))
-        .mockResolvedValueOnce(makeStage({ id: 'stage-2', workflowTemplateId: 'template-1' }));
-    }
-    const create = (requiredPermission: string | null): Promise<unknown> =>
-      service.addTransition(
-        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-    it('refuses a key nothing checks yet on create with 400 PERMISSION_NOT_IN_USE', async () => {
-      stageLookupsSucceed();
-
-      expect(await codeOf(create('documents:approve'))).toBe('PERMISSION_NOT_IN_USE');
-      expect(mockPrisma.workflowTransition.create).not.toHaveBeenCalled();
-    });
-
-    it('refuses a platform key on create inside a tenant with 400 PLATFORM_PERMISSION_NOT_ALLOWED', async () => {
-      stageLookupsSucceed();
-      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
-
-      expect(await codeOf(create('platform:admin'))).toBe('PLATFORM_PERMISSION_NOT_ALLOWED');
-      expect(mockPrisma.organization.findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: ORG_A } }),
-      );
-      expect(mockPrisma.workflowTransition.create).not.toHaveBeenCalled();
-    });
-
-    itEnforcesTenantIsolation("transition platform-key check reads the caller's own organisation, never another's", async () => {
-      // ORG_A is the platform organisation; ORG_B is a tenant. A tenant asking
-      // for a platform key must be judged by ITS OWN organisation row.
-      stageLookupsSucceed();
-      mockPrisma.organization.findUnique.mockImplementation(({ where }: { where: { id?: string } }) =>
-        Promise.resolve({ isPlatformOrg: where.id === ORG_A }),
-      );
-
-      const code = await codeOf(
-        service.addTransition(
-          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'platform:admin' } as never,
-          ORG_B,
-          ACTOR,
-        ),
-      );
-
-      expect(code).toBe('PLATFORM_PERMISSION_NOT_ALLOWED');
-      expect(mockPrisma.organization.findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: ORG_B } }),
-      );
-      expect(mockPrisma.workflowTransition.create).not.toHaveBeenCalled();
-    });
-
-    it('allows a platform key on create in the PLATFORM organisation', async () => {
-      stageLookupsSucceed();
-      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
-      mockPrisma.workflowTransition.create.mockResolvedValue(makeTransition({ requiredPermission: 'platform:admin' }));
-
-      await create('platform:admin');
-
-      expect(mockPrisma.workflowTransition.create).toHaveBeenCalled();
-    });
-
-    it('allows an in-use key, and no key at all, on create', async () => {
-      stageLookupsSucceed();
-      mockPrisma.workflowTransition.create.mockResolvedValue(makeTransition({ requiredPermission: 'committees:approve' }));
-      await create('committees:approve');
-      stageLookupsSucceed();
-      mockPrisma.workflowTransition.create.mockResolvedValue(makeTransition({ requiredPermission: null }));
-      await create(null);
-
-      expect(mockPrisma.workflowTransition.create).toHaveBeenCalledTimes(2);
-      expect(mockPrisma.organization.findUnique).not.toHaveBeenCalled();
-    });
-
-    it('refuses CHANGING the key to one nothing checks yet, writing nothing', async () => {
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ requiredPermission: 'committees:approve' }));
-
-      const code = await codeOf(
-        service.updateTransition('transition-1', { requiredPermission: 'meetings:manage' } as never, ORG_A, ACTOR),
-      );
-
-      expect(code).toBe('PERMISSION_NOT_IN_USE');
-      expect(mockPrisma.workflowTransition.update).not.toHaveBeenCalled();
-    });
-
-    it('refuses CHANGING the key to a platform key inside a tenant', async () => {
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ requiredPermission: 'committees:approve' }));
-      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
-
-      const code = await codeOf(
-        service.updateTransition('transition-1', { requiredPermission: 'platform:admin' } as never, ORG_A, ACTOR),
-      );
-
-      expect(code).toBe('PLATFORM_PERMISSION_NOT_ALLOWED');
-      expect(mockPrisma.workflowTransition.update).not.toHaveBeenCalled();
-    });
-
-    it('refuses CHANGING the key to an unknown one', async () => {
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ requiredPermission: 'committees:approve' }));
-
-      const code = await codeOf(
-        service.updateTransition('transition-1', { requiredPermission: 'committees:aprove' } as never, ORG_A, ACTOR),
-      );
-
-      expect(code).toBe('PERMISSION_UNKNOWN');
-      expect(mockPrisma.workflowTransition.update).not.toHaveBeenCalled();
-    });
-
-    it('KEEPS a held not-in-use key untouched when another field is edited', async () => {
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ requiredPermission: 'documents:approve' }));
-      mockPrisma.workflowTransition.update.mockResolvedValue(
-        makeTransition({ labelEn: 'Renamed', requiredPermission: 'documents:approve' }),
-      );
-
-      await service.updateTransition('transition-1', { labelEn: 'Renamed' } as never, ORG_A, ACTOR);
-
-      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { labelEn: 'Renamed' } }),
-      );
-    });
-
-    it('KEEPS a held not-in-use key when the editor sends the same key back with an edit', async () => {
-      // The transition editor sends its whole form, so an unchanged key arrives
-      // as a value, not as absent. It must not be refused for being what it was.
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ requiredPermission: 'documents:approve' }));
-      mockPrisma.workflowTransition.update.mockResolvedValue(
-        makeTransition({ labelEn: 'Renamed', requiredPermission: 'documents:approve' }),
-      );
-
-      await service.updateTransition(
-        'transition-1',
-        { labelEn: 'Renamed', requiredPermission: 'documents:approve' } as never,
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { labelEn: 'Renamed', requiredPermission: 'documents:approve' } }),
-      );
-    });
-
-    it('still allows CLEARING a held not-in-use key', async () => {
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ requiredPermission: 'documents:approve' }));
-      mockPrisma.workflowTransition.update.mockResolvedValue(makeTransition({ requiredPermission: null }));
-
-      await service.updateTransition('transition-1', { requiredPermission: null } as never, ORG_A, ACTOR);
-
-      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { requiredPermission: null } }),
-      );
-    });
-  });
 
   // ── removeTransition ─────────────────────────────────────────────────────────
 
@@ -1609,7 +1160,7 @@ describe('WorkflowTemplateService', () => {
 
       await expect(
         service.addTransition(
-          { fromStageId: 'stage-belonging-to-org-a', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED' } as never,
+          { fromStageId: 'stage-belonging-to-org-a', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال' } as never,
           ORG_B,
           ACTOR,
         ),
@@ -1899,15 +1450,6 @@ describe('WorkflowTemplateService', () => {
         slaWorkingHours: 16,
         isInitial: false,
         isFinal: true,
-        approvalMode: 'PARALLEL',
-        parallelThreshold: 'ALL',
-        committeeId: 'committee-a',
-        assigneeStrategy: 'ROLE',
-        assigneeUserId: 'user-a',
-        assigneeRoleId: 'role-x',
-        assigneeCommitteeRoleValueId: 'lookup-chairman-id',
-        assigneePositionId: 'position-x',
-        assigneeOrgUnitId: 'unit-x',
         escalationConfig: [{ afterHours: 8 }],
         actions: ['edit_details'],
         flags: [],
@@ -2100,10 +1642,9 @@ describe('WorkflowTemplateService', () => {
         const [row] = auditCalls();
         expect(row).toMatchObject({ action: 'CREATE', objectType: 'WorkflowStage', objectId: 'stage-new', tenantId: ORG_A });
         expect(Object.keys(row!['after'] as object)).toEqual([
-          'nameEn', 'nameAr', 'description', 'order', 'slaWorkingHours', 'isInitial', 'isFinal', 'approvalMode', 'parallelThreshold',
-          'committeeId', 'assigneeStrategy', 'assigneeUserId', 'assigneeRoleId', 'assigneeCommitteeRoleValueId', 'assigneePositionId',
-          'assigneeOrgUnitId', 'escalationConfig', 'actions', 'flags',
-          // ACC-271 PR 6a — every stage is created with who, and its audit names it.
+          'nameEn', 'nameAr', 'description', 'order', 'slaWorkingHours', 'isInitial', 'isFinal', 'escalationConfig', 'actions', 'flags',
+          // ACC-271 PR 6a — every stage is created with who, and its audit names it;
+          // PR 6b — never the old people columns.
           'whoMode', 'whoEntries',
         ]);
         expect(row!['after']).toMatchObject({ nameEn: 'Board Review', order: 25, actions: ['add_member', 'remove_member', 'change_member_role'], flags: [] });

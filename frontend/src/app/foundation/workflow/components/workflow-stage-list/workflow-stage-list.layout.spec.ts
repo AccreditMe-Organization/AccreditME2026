@@ -86,15 +86,6 @@ function stage(i: number, over: Record<string, unknown> = {}): Record<string, un
     slaWorkingHours: i % 2 ? 40 : null,
     isInitial: i === 1,
     isFinal: i === 6,
-    approvalMode: ['SINGLE', 'SEQUENTIAL', 'PARALLEL', 'COMMITTEE'][i % 4],
-    parallelThreshold: null,
-    committeeId: null,
-    assigneeStrategy: ['ROLE', 'POSITION_FIXED', 'ORG_UNIT_HEAD', 'COMMITTEE', 'SPECIFIC_USER', 'SELF'][i % 6],
-    assigneeUserId: null,
-    assigneeRoleId: null,
-    assigneeCommitteeRoleValueId: null,
-    assigneePositionId: null,
-    assigneeOrgUnitId: null,
     escalationConfig: null,
     actions: SEEDED[i - 1]!.actions,
     flags: SEEDED[i - 1]!.flags,
@@ -110,10 +101,6 @@ function stage(i: number, over: Record<string, unknown> = {}): Record<string, un
               toStageId: 'stage-2',
               labelEn: 'Submit the terms of reference to the Board for its final approval',
               labelAr: 'إرسال النظام الداخلي إلى مجلس الإدارة لاعتماده النهائي',
-              requiredPermission: 'committees:manage',
-              triggerCondition: 'ASSIGNEE_POOL',
-              triggerUserId: null,
-              triggerRoleId: null,
               validatorConfig: null,
               isApprovalPath: false,
               kind: 'RETURN',
@@ -126,10 +113,6 @@ function stage(i: number, over: Record<string, unknown> = {}): Record<string, un
               toStageId: 'stage-2',
               labelEn: 'Withdraw the committee proposal before the Board has considered it',
               labelAr: 'سحب مقترح اللجنة قبل أن ينظر فيه مجلس الإدارة',
-              requiredPermission: null,
-              triggerCondition: 'ANY_AUTHENTICATED',
-              triggerUserId: null,
-              triggerRoleId: null,
               validatorConfig: null,
               isApprovalPath: false,
               kind: 'EXIT',
@@ -347,7 +330,7 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
   it('a transition’s kind reads in words, never its code, and no trigger is shown', async () => {
     const host = await render(1148, 'en');
     const text = host.textContent!;
-    for (const code of ['ASSIGNEE_POOL', 'ROLE_BASED', 'SINGLE', 'POSITION_FIXED', 'RETURN', 'EXIT', 'PERSON', 'Assignee pool', 'Any Authenticated User']) {
+    for (const code of ['RETURN', 'EXIT', 'PERSON', 'Assignee pool', 'Any Authenticated User']) {
       expect(text).withContext(code).not.toContain(code);
     }
     expect(Array.from(host.querySelectorAll('[data-tr-kind]')).map((c) => c.textContent!.trim())).toEqual(['Send back', 'End the record']);

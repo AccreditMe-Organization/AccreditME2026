@@ -5,8 +5,8 @@ import { WorkflowRefusalException } from './workflow-refusal';
 // ACC-238 — what a record must satisfy before a transition may move it, per
 // kind of record. FAIL OPEN, unlike RECORD_ROUTES: a kind with no entry has no
 // precondition, because a missing rule here must never stop an existing
-// workflow. A precondition reads the RECORD, never a person's permission —
-// who may fire a transition stays the transition's own `requiredPermission`.
+// workflow. A precondition reads the RECORD, never a person — who may fire a
+// transition is its from-stage's pool (ACC-271).
 //
 // Run by WorkflowService twice: early, before a deciding vote is recorded, and
 // again inside the stage-change transaction under the instance's row lock,

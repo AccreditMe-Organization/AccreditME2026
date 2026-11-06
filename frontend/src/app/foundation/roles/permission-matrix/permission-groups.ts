@@ -27,7 +27,7 @@ export const PERMISSION_GROUPS: Readonly<Record<string, readonly PermissionGroup
   committees: [
     {
       id: 'records',
-      keys: ['committees:view', 'committees:create', 'committees:edit_details', 'committees:approve', 'committees:manage'],
+      keys: ['committees:view', 'committees:create', 'committees:edit_details', 'committees:approve'],
     },
     { id: 'members', keys: ['committees:add_member', 'committees:remove_member', 'committees:change_member_role'] },
     // The four task rows every task-bearing module will get (the design's decision 3).

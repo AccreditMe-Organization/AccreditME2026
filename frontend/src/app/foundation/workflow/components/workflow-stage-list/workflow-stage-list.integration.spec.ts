@@ -33,10 +33,6 @@ const TRANSITION = {
   toStageId: 'stage-1',
   labelEn: 'Approve',
   labelAr: 'اعتماد',
-  requiredPermission: 'committees:manage',
-  triggerCondition: 'ROLE_BASED',
-  triggerUserId: null,
-  triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
   kind: 'ADVANCE' as const,
@@ -62,15 +58,6 @@ const template = () => ({
       slaWorkingHours: null,
       isInitial: true,
       isFinal: false,
-      approvalMode: 'SINGLE',
-      parallelThreshold: null,
-      committeeId: null,
-      assigneeStrategy: 'ROLE',
-      assigneeUserId: null,
-      assigneeRoleId: null,
-      assigneeCommitteeRoleValueId: null,
-      assigneePositionId: null,
-      assigneeOrgUnitId: null,
       escalationConfig: null,
       transitions: [TRANSITION],
     },
@@ -137,7 +124,7 @@ describe('WorkflowStageList + transition panel (ACC-55 seam, ACC-271 PR 5b)', ()
 
     http
       .expectOne(`${environment.apiUrl}/workflow-templates/transitions/transition-1`)
-      .flush({ transition: { ...TRANSITION, labelEn: 'Approve now' }, permissionWarning: null });
+      .flush({ transition: { ...TRANSITION, labelEn: 'Approve now' } });
     fixture.detectChanges();
 
     const saved = template();

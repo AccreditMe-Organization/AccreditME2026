@@ -1,13 +1,14 @@
 /**
  * ACC-254 (ACC-255 PR 3, plan §10.1) — the workflow screens' enum values in the
- * reader's words. An approval mode, a parallel threshold, an assignee strategy,
- * a record type, a transition's kind and who moves it each map to ONE translation key here,
- * never printed as the stored code (SINGLE, ROLE_BASED, COMMITTEE_CHANGE_REQUEST).
+ * reader's words. A record type, who works a stage, a transition's kind and who
+ * moves it each map to ONE translation key here, never printed as the stored
+ * code (COMMITTEE_CHANGE_REQUEST, ANY_ONE, ADVANCE). ACC-271 PR 6b — the old
+ * approval mode, threshold and assignee labels went with those fields.
  * A value this file does not know reads "Unknown", never the raw code.
  * `npm run check:workflow-enum-display` fails a template that prints one of
  * those fields directly.
  */
-export type WorkflowEnumKind = 'approvalMode' | 'threshold' | 'assignee' | 'objectType' | WhoEnumKind | MoveEnumKind;
+export type WorkflowEnumKind = 'objectType' | WhoEnumKind | MoveEnumKind;
 
 /**
  * ACC-271 PR 5a — who works a stage: an entry's kind, and how several people
@@ -56,26 +57,6 @@ const MOVE_KEYS: Readonly<Record<MoveEnumKind, Readonly<Record<string, string>>>
 const KEYS: Readonly<Record<WorkflowEnumKind, Readonly<Record<string, string>>>> = {
   ...WHO_KEYS,
   ...MOVE_KEYS,
-  approvalMode: {
-    SINGLE: 'workflow.approvalModeSingle',
-    SEQUENTIAL: 'workflow.approvalModeSequential',
-    PARALLEL: 'workflow.approvalModeParallel',
-    COMMITTEE: 'workflow.approvalModeCommittee',
-  },
-  threshold: {
-    ALL: 'workflow.thresholdAll',
-    MAJORITY: 'workflow.thresholdMajority',
-    ANY: 'workflow.thresholdAny',
-  },
-  assignee: {
-    SPECIFIC_USER: 'workflow.assigneeSpecificUser',
-    ROLE: 'workflow.assigneeRole',
-    SELF: 'workflow.assigneeSelf',
-    COMMITTEE: 'workflow.assigneeCommittee',
-    ROUND_ROBIN: 'workflow.assigneeRoundRobin',
-    ORG_UNIT_HEAD: 'workflow.assigneeOrgUnitHead',
-    POSITION_FIXED: 'workflow.assigneePositionFixed',
-  },
   objectType: {
     DOCUMENT_REQUEST: 'workflow.objectTypeName.DOCUMENT_REQUEST',
     DOCUMENT: 'workflow.objectTypeName.DOCUMENT',
