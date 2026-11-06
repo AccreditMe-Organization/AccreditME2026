@@ -510,7 +510,7 @@ type PageState =
       .am-tp__panel-body p{margin:0}
       .am-tp__quote{font-size:13px;color:var(--am-ink-700);background:var(--am-surface);border-radius:var(--am-radius-control);padding:8px 10px;overflow-wrap:anywhere}
       .am-tp__event{display:grid;grid-template-columns:92px 1fr;gap:10px;padding:6px 12px;border-block-end:1px solid var(--am-border);font-size:12.5px}
-      :host-context([dir=rtl]) .am-tp__meta-row{font-size:14px}:host-context([dir=rtl]) .am-tp__sub{font-size:12.5px}
+      :host-context([dir=rtl]) .am-tp__meta-row{font-size:var(--am-type-value-size)}:host-context([dir=rtl]) .am-tp__sub{font-size:12.5px}
       .am-tp__when{font-size:11.5px;font-variant-numeric:tabular-nums}
       .am-tp-menu{min-width:220px;padding:4px 0;display:flex;flex-direction:column;background:var(--am-surface-raised);border:1px solid var(--am-border-strong);border-radius:var(--am-radius-card);box-shadow:var(--am-shadow-overlay)}
       .am-tp-menu__item{font:inherit;font-size:13px;text-align:start;color:var(--am-ink-900);background:none;border:0;padding:7px 14px;cursor:pointer}

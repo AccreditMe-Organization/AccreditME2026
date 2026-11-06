@@ -274,8 +274,13 @@ describe('TaskReassignDialogComponent (ACC-163, ACC-167)', () => {
     // Two lines at most, clamped inside the padding so no third line shows.
     const lines = box.querySelector('[data-testid="reassign-rejection-text"]') as HTMLElement;
     expect(lines.classList).toContain('line-clamp-2');
-    expect(lines.getBoundingClientRect().height).toBeLessThanOrEqual(2 * 18 + 1);
-    expect(lines.getBoundingClientRect().bottom).toBeLessThanOrEqual(box.getBoundingClientRect().bottom - 5);
+    const line = parseFloat(getComputedStyle(lines).lineHeight);
+    expect(line).withContext('a type token sets the line height').toBeGreaterThan(0);
+    expect(lines.getBoundingClientRect().height).toBeLessThanOrEqual(2 * line + 1);
+    // The lines end where the box's bottom padding begins: nothing shows through it.
+    const padding = parseFloat(getComputedStyle(box).paddingBottom);
+    expect(padding).toBeGreaterThan(0);
+    expect(lines.getBoundingClientRect().bottom).toBeLessThanOrEqual(box.getBoundingClientRect().bottom - padding + 0.5);
     expect(getComputedStyle(box).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   });
 

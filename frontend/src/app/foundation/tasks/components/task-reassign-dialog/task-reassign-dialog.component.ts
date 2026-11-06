@@ -58,8 +58,10 @@ export interface TaskRejection {
  * required error. At FORM density it was 416px English and 437px Arabic: over
  * the 420 cap in Arabic, and over the 400 the spec allows (a line of room) in
  * both. Compact density (artboard 13: the whole dialog, never mixed) with the
- * split picker at compact gaps brings it to **385px English, 399px Arabic**.
- * Every other state is lower (counts only 349 / 359, a refusal 367 / 379).
+ * split picker at compact gaps brings it to **381px English, 399px Arabic**.
+ * The reason box is on the meta type token; its Arabic line is 2px taller,
+ * paid for by 4px of padding instead of 6.
+ * Every other state is lower (counts only 345 / 359, a refusal 363 / 379).
  */
 @Component({
   selector: 'app-task-reassign-dialog',
@@ -89,7 +91,7 @@ export interface TaskRejection {
                  start and end however it wraps; an inner bdi would hide the
                  reason from dir="auto". -->
             <p
-              class="m-0 [overflow-wrap:anywhere] text-[13px] leading-[18px] text-[var(--am-ink-700)] bg-[var(--am-surface)] rounded-[var(--am-radius-control)] px-2.5 py-1.5"
+              class="m-0 [overflow-wrap:anywhere] text-meta text-[var(--am-ink-700)] bg-[var(--am-surface)] rounded-[var(--am-radius-control)] px-2.5 py-1"
               [attr.title]="r.reason"
               data-testid="reassign-rejection-reason"
             ><span class="line-clamp-2" dir="auto" data-testid="reassign-rejection-text">{{ 'tasks.sections.quoteOpen' | translate }}{{ r.reason }}{{ 'tasks.sections.quoteClose' | translate }}</span></p>
