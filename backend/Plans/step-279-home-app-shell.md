@@ -3,14 +3,34 @@
 Linear: [ACC-279](https://linear.app/accreditme/issue/ACC-279). Branch:
 `feature/home-app-shell`, from `dev` at `833b1db`.
 
-**This is a plan, not a build.** It covers:
+It covers:
 
 - what we build from the two Home artboards in `frontend/design-reference/AccreditMe App
   Shell.dc.html`;
 - the reads Home will make;
 - the layout, and the state of each panel;
 - the specs to add;
-- the questions for Ahmad.
+- the questions, and Ahmad's answers (6 Nov, §5.5). **Where an answer changed the plan, the
+  section above it already says the decided version.**
+
+**Ahmad's answers (6 Nov), in short:**
+
+- Q1–Q5 and Q8–Q11: as recommended.
+- Q6: as recommended, and the seats meta is left out when the organisation has no seat limit: no
+  plan, or the plan's maximum not set. It never reads "of 0".
+- Q7: changed. Home has **no header actions at all** for now, and no New task button. Tasks are
+  created from a record's Tasks panel, where the record is known.
+- Q12: as recommended, and the record picker is
+  [ACC-280](https://linear.app/accreditme/issue/ACC-280) (High, related). It replaces the typed
+  record id everywhere and adds New task to Home for people with `createTypes`. It is built right
+  after this ticket.
+- Q13: as recommended, and the counts service also loads once after sign-in, from the same
+  existing reads. It refreshes after an action that changes a count (complete, pick up, decide,
+  approve). No new endpoint and no polling. §2.5 names the reads.
+- The Arabic greeting has two forms only: «صباح الخير» before noon and «مساء الخير» after, in the
+  organisation's time zone. It stays singular and gender-neutral.
+- Three Arabic fixes in `ar.json`, under the rule "singular address, and no gendered verb about a
+  person" (§3.8).
 
 **Ahmad's decisions (6 Nov) are not reopened here:**
 
@@ -47,8 +67,8 @@ Linear: [ACC-279](https://linear.app/accreditme/issue/ACC-279). Branch:
      Retry, and the available-to-pick line.
    - **Recent Notifications.** This is removed.
 
-What changes, in one sentence: an admin block on top, then the personal tiles, a New task button,
-three capped panels, and the briefing. Every count reads a bounded endpoint, and every failure says
+What changes, in one sentence: an admin block on top, then the personal tiles, three capped
+panels, and the briefing, with no header actions. Every count reads a bounded endpoint, and every failure says
 that it failed.
 
 ---
@@ -70,11 +90,11 @@ that it failed.
 |---|---|---|---|---|
 | Eyebrow "Home" (work home) | **Dropped.** The breadcrumb root is the organisation, and the H1 is the page. An eyebrow that repeats the rail item's name adds a line and says nothing (PageHeaderComponent: an eyebrow never repeats a crumb). | — | — | — |
 | Eyebrow "Administration" (admin home) | **Dropped.** There is one Home, so the page is not "Administration". | — | — | — |
-| H1 "Good morning, Layla" | **Build**, with the time-of-day greeting in the **tenant's** zone (morning / afternoon / evening, using the briefing's existing keys) and the user's `name`. See **Q1**. | `AuthService.currentUser().name`; the tenant zone from the formatting layer | none | — |
+| H1 "Good morning, Layla" | **Build**, with a time-of-day greeting in the **organisation's** time zone and the user's `name`. English has three bands: morning before 12:00, afternoon before 17:00, evening after. Arabic has two forms only: «صباح الخير، {name}» before noon and «مساء الخير، {name}» after (Ahmad, 6 Nov). Both are singular and gender-neutral. See **Q1**. | `AuthService.currentUser().name`; the zone from `FormatService` | none | — |
 | H1 "Organization status" | **Dropped.** One Home, one H1. | — | — | — |
 | Purpose line (both artboards) | **Dropped.** See §1.6. | — | — | — |
 | Action "Report an incident" | **Later** (Incidents). | — | — | incidents |
-| Action "New task" | **Build.** It opens the **same** New task dialog as `/tasks` (§3.5). | `GET /tasks/views` → `create.types` | shown only when `create.types` is non-empty: the dialog's own gate (Create tasks on at least one record type, ACC-244) | — |
+| Action "New task" | **Later: ACC-280** (Ahmad, Q7). Until the dialog picks its record instead of asking for a typed id, tasks are created from a record's Tasks panel, where the record is known. ACC-280 adds it here for people with `createTypes`. | — | — | — |
 | Action "Invite user" | **Dropped.** See **Q7**. | — | — | — |
 | Action "Setup health" | **Dropped.** The Needs fixing block's own "Open Setup health →" goes to the same place. See **Q7**. | — | — | — |
 
@@ -90,7 +110,7 @@ Administration group (ACC-79). Each part asks only for its own permission.
 | "Keep this assignment" on a starting-assignment row | **Dropped from Home.** It is a confirmation step with its own dialog, and it stays on the page; the row's Fix still opens the stage. | — | — | — |
 | Footnote "…disappears on the next 15-minute pass…" | **Build, with the copy corrected.** Setup health reconciles **hourly** (§13.5), so "15-minute" is false. New copy: "Each line is a live condition, not a message. It clears by itself on the next hourly check once the setup is fixed. There is nothing to dismiss." | — | `setup:view` | — |
 | Tile "Open conditions" N, meta "n blocking" (danger) | **Build** | `setup.open` and `setup.blocksWork` | `setup:view` | — |
-| Tile "Active users" 298, meta "of 400 seats" | **Build.** The meta is "{occupied} of {max} seats in use", where occupied is ACTIVE + INVITED, the count the invite refusal uses (`assertSeatAvailable`). See **Q6**. | `users.active`; `users.occupied` and `users.maxUsers` | `users:view`; the meta also needs `tenant:view`, which already reads `maxUsers` in `GET /tenant` | — |
+| Tile "Active users" 298, meta "of 400 seats" | **Build.** The meta is "{occupied} of {max} seats in use", where occupied is ACTIVE + INVITED, the count the invite refusal uses (`assertSeatAvailable`). **It is left out when there is no seat limit**: no plan, or the plan's `maxFullUsers` not set (Ahmad, 6 Nov). It never reads "of 0". See **Q6** and the finding under it. | `users.active`; `users.seats` (`null` when there is no limit) | `users:view`; the meta also needs `tenant:view` | — |
 | Tile "Pending invites" 14, meta "3 over 30 days" | **Build, with the meta changed to "n expired".** An invitation lives **7 days** (`INVITATION_TTL_MS`), so "over 30 days" can never happen. An expired one is the actionable fact. See **Q5**. | `users.invited` and `users.invitedExpired` | `users:view` | — |
 | Tile "Active committees" 22, meta "4 below quorum" | **Build as "Committees in force"**, because "Active" is not a committee status any more (ACC-256). Below quorum means in force, with an active-member count under `quorumCount` (and `quorumCount` above 0). See **Q4**. | `committees.inForce` and `committees.belowQuorum`, from ONE grouped query (§2.2) | `committees:view` | `committees`† |
 | "Configure this organization" cards | **Dropped** (Ahmad): they repeat the rail, which is why ACC-79 removed the Admin Settings hub. | — | — | — |
@@ -104,7 +124,7 @@ Administration group (ACC-79). Each part asks only for its own permission.
 | Tile "My committees" 3, meta "1 meeting this week" | **Build the number; the meta is Later** (Meetings). There is no other meta: a meta line is not required, and none is invented to fill it. | `GET /committees/mine` → `total` (§2.1) | none (self-scoped); see **Q2** | `committees`† |
 | Tile "Training due" | **Later** (no training module) | — | — | training |
 | Decision line and available line (in today's My tasks card) | **Build, moved to a strip under the tiles.** The capped panel has a fixed body and nowhere to put them. Their wording and their Retry stay. See **Q8**. | as today: `GET /tasks/requests/awaiting-decision`, `record-list view=created&status=REJECTED&take=1`, `GET /tasks/available` | none | — |
-| AI briefing | **Build, unchanged, placed between the strip and the panels.** It summarises the person's own work, so it belongs to the personal part, not to the admin block. Its gate stays as it is (`tenant:manage_config` and the feature available, §17.8). If Q1's recommendation is taken, its own greeting line goes, so the page does not say "Good morning" twice. | `GET /ai/briefing` | `tenant:manage_config` | — |
+| AI briefing | **Build, unchanged, placed between the strip and the panels.** It summarises the person's own work, so it belongs to the personal part, not to the admin block. Its gate stays as it is (`tenant:manage_config` and the feature available, §17.8). Its own greeting line goes (Q1), so the page does not say "Good morning" twice. | `GET /ai/briefing` | `tenant:manage_config` | — |
 | Panel "My tasks" (count, "2 overdue" alert chip, "All my tasks") | **Build** on `am-capped-panel` | the record-list call above: 5 rows plus `matching`. Rows: the title (`am-task-link`); line 2 is the record (named only for a viewer who may open it, ACC-228) · "6 days overdue" (late styling) / "due 24 Sep" / "On hold until …" | none | — |
 | Panel "My committees" (count, "All committees") | **Build** on `am-capped-panel`. Line 1 is the committee's name and a status chip from `committeeListStatus()`. Line 2 is the person's seat · the current stage's name. "next 14 Sep" is **Later** (Meetings). "All committees" shows only with `committees:view`. | `GET /committees/mine` | none; see **Q2** | `committees`† |
 | Panel "Awaiting my action" (count, "View all") | **Build** on `am-capped-panel`. Rows: the record, then "awaiting your approval"-style meta (today's wording) · "3 days waiting". It is now **always shown**, with an empty state (**Q9**). | `GET /workflows/awaiting-me` + change requests, as today | none | — |
@@ -234,7 +254,7 @@ stays, updated to cite these two lines.
     };
     users: null | { failed: true } | {
       active: number; invited: number; invitedExpired: number;
-      seats: null | { occupied: number; maxUsers: number };   // null without tenant:view
+      seats: null | { occupied: number; maxUsers: number };   // null without tenant:view, or with no seat limit
     };
     committees: null | { failed: true } | { inForce: number; belowQuorum: number };
   }
@@ -257,7 +277,10 @@ stays, updated to cite these two lines.
   1. `user.groupBy({ by: ['status'], where: { organizationId, status: { in: ['ACTIVE', 'INVITED'] } }, _count })`.
   2. `user.count({ where: { organizationId, status: 'INVITED', invitationExpiresAt: { lt: now } } })`.
      It reads `invitationExpiresAt` as `open-invitation.ts` does.
-  3. Only with `tenant:view`: `organization.findFirst({ where: { id: organizationId }, select: { maxUsers: true } })`.
+  3. Only with `tenant:view`: `organization.findFirst({ where: { id: organizationId }, select: { maxUsers: true, plan: { select: { maxFullUsers: true } } } })`.
+     That is one query with a join. `seats` is `null` unless the organisation has a plan whose
+     `maxFullUsers` is set and above 0 (Ahmad, Q6). When it is shown, the limit is
+     `Organization.maxUsers`, the number the invite refusal actually enforces.
 - **`committees`** (`committees:view`, and the committees module open): `CommitteesService.homeCounts(organizationId)`, **1 grouped
   query** (`$queryRaw`, every value bound, `organizationId` on every table):
   ```sql
@@ -314,7 +337,6 @@ entry, or `null` at 0.
 | `GET /workflows/awaiting-me` | none | Awaiting panel + tile | yes, 5 rows + total (+ `oldestSince`) |
 | `GET /committees/change-requests/awaiting-decision` | `committees:view` on the route; Home calls it only for `committees:approve` | the other half of Awaiting | as today |
 | `GET /tasks/requests/awaiting-decision`, `record-list view=created&status=REJECTED&take=1`, `GET /tasks/available` | none | the decision and available lines | as today |
-| `GET /tasks/views` | none | whether New task shows (`create.types`) | yes |
 | `GET /ai/briefing` | `tenant:manage_config` (asked only by holders) | the briefing | yes |
 
 **Removed from Home:**
@@ -329,18 +351,43 @@ count equals the /tasks page's**, and a spec asserts it.
 The order is the record list's `due` order: open by soonest due (overdue first), then On hold.
 That replaces Home's own sort in the browser.
 
-### 2.5 For lane A's rail "My work" (planned, not built here)
+### 2.5 `MyWorkCountsService`, which lane A's rail reads (built here, Q13)
 
-The rail badges read **the same calls Home makes**:
+**What it is.** A root service, `core/my-work/my-work-counts.service.ts`. It owns **the reads behind
+Home's personal tiles and panels**, and holds each answer as a signal with its own state
+(`loading` / `ready` / `failed`). Home renders from it, and lane A's rail reads the same signals.
+The two can never disagree, and nothing is fetched twice.
 
-- My tasks badge: the two record-list `matching` values. The alert tone comes from overdue.
-- Awaiting my action badge: `awaiting-me.total` plus the change requests.
-- My committees: `GET /committees/mine` → `total`.
+**The existing reads it calls.** There is no new endpoint other than §2.1's:
 
-**Recommendation, Q13:** this ticket adds a root `MyWorkCountsService`. It holds those counts as
-signals, Home fills it, and the rail reads it. The two can then never disagree, nothing is fetched
-twice, and nothing polls (it refreshes when Home loads and after an action on Home). No new
-endpoint is needed for the rail.
+| Signal | Read | Gives |
+|---|---|---|
+| `myTasks` | `GET /tasks/record-list?view=mine&status=PENDING&status=IN_PROGRESS&status=ON_HOLD&sort=due&take=5` | the five rows, and `matching` (the count of open tasks) |
+| `myOverdue` | the same with `&overdue=true&take=1` | `matching` (overdue). The rail's alert tone comes from this. |
+| `awaiting` | `GET /workflows/awaiting-me`, plus `GET /committees/change-requests/awaiting-decision`, the latter only for `committees:approve` | rows, `total` + the request count, and the oldest date. Either half failing makes the whole signal `failed`: a partial count is a wrong count. |
+| `myCommittees` | `GET /committees/mine` (§2.1), only while the committees module is open (§1.4) | five rows and `total` |
+
+**When it loads:**
+
+- **Once after sign-in**: from the shell's initialisation, at the point where it already calls
+  `NavigationAccessService.loadAccess()`. That covers a hard reload and a same-tab sign-in.
+- **Cleared at sign-out**, like `SetupHealthService`'s summary.
+- **Retry** re-runs only the failed read.
+
+**When it refreshes.** After a successful action that changes a count. These frontend service
+calls emit on a small root `MyWorkEvents.changed()` once their request succeeds:
+
+- **Tasks:** complete, reject, pick up, release, reassign, cancel, reopen.
+- **Task requests:** approve, decline.
+- **Records:** a workflow move, a vote, and a change request's approve, return, reject or withdraw.
+
+The service listens and reloads all its reads once, coalescing a burst of events into one reload.
+This keeps `TaskService` free of a dependency on the counts service, which would be a cycle.
+
+**No polling, no timer, no new endpoint.** A count the server changes on its own (a pool task
+someone else picks up) is seen on the next sign-in, the next Home visit or the next action.
+
+**Home also reloads it on entry**, so returning to Home is never stale.
 
 ---
 
@@ -349,7 +396,7 @@ endpoint is needed for the rail.
 ### 3.1 Order, top to bottom
 
 ```
-Page header: H1 greeting ............................. [New task]
+Page header: H1 greeting (no actions)
 ┌ Admin block (only if a part renders) ──────────────────────────┐
 │ Needs fixing  (setup:view)                                     │
 │ [Open conditions] [Active users] [Pending invites] [In force]  │
@@ -414,15 +461,9 @@ rail − 32.
 
 ### 3.5 New task
 
-`tasks-shell.component.ts` holds New task's `EditDialogComponent`, the form, its steps and its
-footer. That block is **extracted unchanged** into `NewTaskDialogComponent`
-(`foundation/tasks/components/new-task-dialog/`). `/tasks` and Home both host it, so there is one
-copy.
-
-It takes `allowedSourceTypes` from `GET /tasks/views`, as `/tasks` does. **Known and not fixed
-here:** with no record locked, the dialog asks for a record type and a record **id** as text. That
-is today's behaviour on `/tasks`. It deserves its own ticket (a record picker), and Home inherits
-it unchanged. See **Q12**.
+Not on Home (Q7). [ACC-280](https://linear.app/accreditme/issue/ACC-280) adds it, together with
+the record picker that replaces the typed record id, so that Home never opens a dialog asking for
+an id. Nothing about the dialog changes in this ticket.
 
 ### 3.6 One row builder for Setup health
 
@@ -434,6 +475,17 @@ translate, format, access and language). The page and Home's Needs fixing both c
 
 `committeeListStatus()` moves to `foundation/committees/committee-status.ts`. The list, the record
 page and Home import it. Its chip classes move with it.
+
+### 3.8 Arabic fixes in `ar.json` (Ahmad, 6 Nov)
+
+**The rule:** singular address, and no gendered verb about a person.
+
+- `workflow.editor.meaningsNote` ends «يعود إليكم». It becomes «يعود إليك».
+- **Every `committee.*` line that puts a masculine verb before a person's name** («قدّمه / بدأه /
+  أعاده / اعتمده / سحبه / رفضه {{name}}») becomes a noun phrase: «قدّمه {{name}}» →
+  «مقدَّم من {{name}}», and the same shape for each. The full list is found by grep at build time
+  and named in the PR.
+- **The add-member date hint** uses a gendered address. It is reworded gender-neutrally.
 
 ---
 
@@ -461,7 +513,6 @@ page and Home import it. Its chip classes move with it.
 | My tasks panel | 5 skeleton rows | "You have no open tasks." | "Your tasks couldn't be loaded." + Retry |
 | My committees panel | 5 skeleton rows | "You aren't on any committee." | "Your committees couldn't be loaded." + Retry |
 | Awaiting my action panel | 5 skeleton rows | "Nothing is waiting for you." It is always shown now (**Q9**). | "This couldn't be loaded." + Retry. **This fixes today's silent failure.** |
-| New task button | not drawn until `/tasks/views` answers | not drawn | not drawn, with no error. The button is an affordance, not a count. `/tasks` has the full view and says so. |
 
 **Retry** re-runs only that element's read, except where one read feeds a tile and a panel (My
 tasks, Awaiting, My committees). Then Retry on either re-runs it once, and both update.
@@ -518,7 +569,7 @@ tasks, Awaiting, My committees). Then Retry on either re-runs it once, and both 
     disabled**;
   - no Notifications panel and no `/notifications` request;
   - no `my-tasks` request;
-  - New task shows iff `create.types` is non-empty;
+  - no header actions, and no `/tasks/views` request;
   - no role name is read anywhere (a source scan in the spec, like `role.seed.spec.ts`'s pins).
 - `home.tiles.spec.ts`:
   - every count's failed state shows "Couldn't load" and Retry, never "0". **Mutation:** map the
@@ -541,9 +592,16 @@ tasks, Awaiting, My committees). Then Retry on either re-runs it once, and both 
 - `setup-health-page.component.spec.ts` stays green, unedited, which proves the extraction changed
   nothing.
 - `committee-list.component.spec.ts` stays green after the `committeeListStatus()` move.
-- `new-task-dialog.component.spec.ts`, plus the existing `/tasks` New task specs, green
-  unchanged.
-- `my-work-counts.service.spec.ts` (if Q13 is accepted).
+- `my-work-counts.service.spec.ts`:
+  - it loads once from `init()` and never twice for repeated calls;
+  - a burst of `changed()` events gives one reload;
+  - a failed read is `failed`, never 0;
+  - `clear()` empties it;
+  - the change-request half is asked only with `committees:approve`;
+  - `myCommittees` is not asked while the module is closed.
+- A spec per wired action that a successful call emits `changed()` and a failed one does not.
+- `ar.json` fixes (§3.8): a spec reads the file and asserts that none of the listed keys contains
+  the old gendered verb forms.
 
 ### 5.3 Layout spec — `home.layout.spec.ts` (ChromeHeadless, real layout)
 
@@ -570,12 +628,13 @@ open, 1280 with the rail collapsed, and 390 × 844**, in **English and Arabic**.
 - Both test suites, the tenant-isolation pattern, and `ng build`.
 - **No migration**: every read is over existing columns. Nothing has to wait for a deploy.
 
-### 5.5 Questions for Ahmad (each with a recommended answer)
+### 5.5 Questions, and Ahmad's answers (6 Nov)
 
 1. **Greeting.** Use "Good morning / afternoon / evening, {name}" in the tenant's zone, as drawn,
    instead of "Welcome back"?
    **Recommended: yes**, reusing the briefing's three keys. The briefing card then drops its own
    greeting line, so a tenant admin is not greeted twice.
+   **Decided: as recommended, with Arabic in two forms (§1.1).**
 2. **My committees for someone without `committees:view`.** BASE_USER does not hold it, and most
    members only have BASE_USER.
    **Recommended:** show the panel and the tile to **every member**, with the committee's name in
@@ -583,49 +642,61 @@ open, 1280 with the rail collapsed, and 390 × 844**, in **English and Arabic**.
    self-scoped rule, the same reasoning as a notification naming the record).
    *Alternative:* show the panel only with `committees:view`. Then most members see no committees
    on Home.
+   **Decided: as recommended.**
 3. **My committees: which rows, and in what order.**
    **Recommended:**
    - active memberships on **active** committees only (a deactivated committee is not live work);
    - ordered by seat (the tenant's role order), then longest-served.
    *Alternative:* in force first, by name.
+   **Decided: as recommended.**
 4. **"Active committees" becomes "Committees in force"** (in force and not dissolving, by stage
    flags), with "n below quorum": in force, quorum above 0, active members under it.
    **Recommended: yes.** "Active" is no longer a status anywhere (ACC-256).
+   **Decided: as recommended.**
 5. **Pending invites meta.** Invitations expire after 7 days, so "over 30 days" never happens.
    **Recommended: "n expired".**
+   **Decided: as recommended.**
 6. **Seats.** **Recommended:** "{active + invited} of {max} seats in use", the count the invite
    refusal enforces, shown only with `tenant:view` as well as `users:view`. `maxUsers` is already in
    `GET /tenant` for that permission.
+   **Decided: as recommended, and left out when there is no seat limit (no plan, or `maxFullUsers` not set); never "of 0". Finding: setting a plan does not copy `Plan.maxFullUsers` into `Organization.maxUsers`, so the plan and the enforced limit can differ. The tile shows the enforced one. This is recorded in the PR, not fixed here.**
 7. **Header actions.** **Recommended:** New task only.
    - Drop "Invite user": it is Users' own action, the same reason the Configure cards go.
    - Drop "Setup health": the Needs fixing link goes there.
    - "Report an incident" comes with Incidents.
+   **Decided (changed): no header actions at all, and no New task, until ACC-280.**
 8. **The decision and available lines.** **Recommended:** keep them as one strip under the personal
    tiles, shown only when non-zero or failed, with their wording and Retry unchanged.
    *Alternative:* fold task requests and rejected tasks into Awaiting my action as a third kind of
    row. That changes that panel's count and meaning, so it would be its own decision.
+   **Decided: as recommended.**
 9. **Awaiting my action when empty.** **Recommended:** always show it, with "Nothing is waiting for
    you." Today it disappears at 0, which also hid its failures.
+   **Decided: as recommended.**
 10. **Panel links.** **Recommended:** the header link only ("All my tasks" → `/tasks`; "All
     committees" → `/committees`; "View all" → `/tasks`), with no "Showing 5 of N · See all" footer
     on Home. The header count already says how many there are.
+   **Decided: as recommended.**
 11. **"Oldest 3d".** **Recommended:** whole calendar days through the duration formatter ("oldest 3
     days", and "oldest today" under a day). This is wording, not an SLA, and the tile's own tooltip
     gives the date.
+   **Decided: as recommended.**
 12. **New task's record id field.** Home inherits `/tasks`'s dialog unchanged, including typing a
     record id when no record is locked.
     **Recommended:** keep it the same here and open a separate ticket for a record picker, so Home
     does not fork the dialog.
+   **Decided: as recommended; the picker is ACC-280 (High, related), built right after this ticket, and it adds New task to Home.**
 13. **Rail counts.** **Recommended:** this ticket adds `MyWorkCountsService` (root signals, filled by
     Home, read by lane A's rail). No new endpoint and no polling; it refreshes on Home's load and
     after an action.
 
+   **Decided: as recommended, and it loads once after sign-in and refreshes after an action (§2.5).**
 ---
 
 ## 6. Progress
 
 - [x] Step 1: this plan (ACC-279), committed, not pushed
-- [ ] Ahmad's answers to §5.5
+- [x] Ahmad's answers to §5.5 (6 Nov), and ACC-280 created
 - [ ] Backend: `GET /committees/mine`, `GET /home/admin-summary`, `oldestSince`, with their specs
-- [ ] Frontend: extractions (§3.5–3.7), then Home, then the specs and the layout spec
+- [ ] Frontend: extractions (§3.6–3.7), `MyWorkCountsService`, the `ar.json` fixes (§3.8), then Home, then the specs and the layout spec
 - [ ] Docs: SYSTEM-REFERENCE (Home section, §13.9's "out of scope" line, §17.8 placement); CLAUDE.md Key Architecture Decisions (ACC-279)
