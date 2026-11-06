@@ -4,7 +4,7 @@ import en from '../../../../assets/i18n/en.json';
 import { QE_KEYS, grant, nouraGrants } from './user-permissions.fixtures';
 
 // ACC-272 — "A user's permissions" as data: the design's Noura Al-Mutairi
-// example (16 permissions through 3 active roles; Committees 9 of 12).
+// example (16 permissions through 3 active roles; Committees 9 of 11).
 
 const SENTENCES = (en as { roles: { matrix: { sentence: Record<string, string> } } }).roles.matrix.sentence;
 const perm = (key: string, extra: Partial<PermissionDto> = {}): PermissionDto => {
@@ -36,10 +36,10 @@ describe("A user's permissions, as data (ACC-272)", () => {
     expect(s.granted.size).toBe(16);
     expect([...s.granted]).toContain('committees:view_unit_tasks');
     expect([...s.granted]).toContain('committees:approve');
-    // Committees: 9 of 12.
+    // Committees: 9 of 11 (ACC-271 PR 6b: committees:manage is not in use).
     const committees = s.modules.find((m) => m.module === 'committees')!;
     expect(committees.keys.filter((k) => s.granted.has(k)).length).toBe(9);
-    expect(committees.keys.length).toBe(12);
+    expect(committees.keys.length).toBe(11);
   });
 
   it('an inactive role gives nothing, even keys no active role gives', () => {

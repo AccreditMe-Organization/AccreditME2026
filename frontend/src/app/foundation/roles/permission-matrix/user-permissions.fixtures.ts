@@ -8,7 +8,7 @@ import type { IUserDto } from '../../user/services/user.service';
  * Noura Al-Mutairi: 16 permissions through 3 active roles. Quality Editor's
  * 14, plus "See tasks on committees your unit or its sub-units own" from Unit
  * Head and "Approve terms, changes and dissolutions" from Patient Safety
- * Reviewer; Committees 9 of 12. Committee Secretary is held but inactive.
+ * Reviewer; Committees 9 of 11. Committee Secretary is held but inactive.
  */
 
 export const QE_KEYS = [

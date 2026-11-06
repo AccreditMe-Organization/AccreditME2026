@@ -593,10 +593,10 @@ export class CommitteeDetailComponent implements OnInit {
   // by PermissionGuard, same contract as WorkflowTransitionActionsComponent's
   // own filtering.
   //
-  // Committee's CRUD permissions are action-specific by design (ACC-28): an
-  // umbrella committees:manage is seeded holding all eight strings directly,
-  // never computed at runtime, so checking the specific string here is correct
-  // and not a narrowing.
+  // Committee's CRUD permissions are action-specific by design (ACC-28): the
+  // umbrella committees:manage was seeded beside all eight strings, never
+  // computed at runtime, and since ACC-271 PR 6b it grants nothing at all (a
+  // seed-time umbrella, not in use). So the specific string is the only check.
   readonly canEdit = computed(() => this.navigationAccess.hasPermission('committees:edit_details'));
   // ACC-255 — Edit, the locked line and the member actions: the server's
   // stageRules for the committee's current stage, with each action's own

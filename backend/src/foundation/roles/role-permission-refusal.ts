@@ -110,7 +110,7 @@ export class PermissionRootRoleOnlyException extends BadRequestException {
   }
 }
 
-/** The catalogue has no such key (F1: a transition's requiredPermission). */
+/** The catalogue has no such key. */
 export const PERMISSION_UNKNOWN = 'PERMISSION_UNKNOWN';
 
 export class PermissionUnknownException extends BadRequestException {
