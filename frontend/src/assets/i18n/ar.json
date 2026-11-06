@@ -2229,18 +2229,19 @@
   "home": {
     "awaiting": "بانتظار إجرائي",
     "awaitingChange": "طلب التغيير {{n}} · {{committee}}",
-    "awaitingChangeMeta": "{{name}} · قُدّم في {{date}}",
+    "awaitingChangeMeta": "من {{name}}",
     "allMyTasks": "كل مهامي",
-    "awaitingStageMeta": "{{type}} · {{stage}} {{position}}/{{count}} · منذ {{date}}",
+    "awaitingStageMeta": "{{type}} · {{stage}} {{position}}/{{count}}",
     "decisionFailed": "— بانتظار قرارك",
     "dueOn": "تستحق {{date}}",
     "onHoldUntil": "معلّقة حتى {{date}}",
-    "greeting": "مرحبًا بعودتك، {{name}}",
+    "greeting": {
+      "morning": "صباح الخير، {{name}}",
+      "afternoon": "مساء الخير، {{name}}",
+      "evening": "مساء الخير، {{name}}"
+    },
     "myTasks": "مهامي",
-    "viewAll": "عرض الكل",
     "noOpenTasks": "لا توجد لديك مهام مفتوحة.",
-    "notifications": "الإشعارات الأخيرة",
-    "noNotifications": "لا توجد إشعارات حديثة.",
     "briefing": {
       "label": "موجزك",
       "intro": "ملخص قصير بالذكاء الاصطناعي لأعمالك المتأخرة والمستحقة اليوم، وما ينتظر قرارك.",
@@ -2249,11 +2250,6 @@
       "working": "جارٍ إعداد موجزك…",
       "tagWorking": "موجزك · قيد الإعداد",
       "tagMade": "موجزك · أعدّه الذكاء الاصطناعي في {{time}} من مهامك وإشعاراتك",
-      "greeting": {
-        "morning": "صباح الخير يا {{name}}.",
-        "afternoon": "مساء الخير يا {{name}}.",
-        "evening": "مساء الخير يا {{name}}."
-      },
       "focus": "ابدأ بهذه أولًا",
       "done": "منجز",
       "showAll": "عرض القائمة الكاملة",
@@ -2267,6 +2263,46 @@
         "pool": "بانتظار من يتسلّمها · {{n}}",
         "notification": "جديد منذ الأمس · {{n}}"
       }
+    },
+    "myCommittees": "لجاني",
+    "allCommittees": "كل اللجان",
+    "noCommittees": "لا عضوية لك في أي لجنة.",
+    "seatUnknown": "مقعد بلا اسم",
+    "nothingAwaiting": "لا شيء بانتظار إجرائك.",
+    "noDueDate": "بلا موعد استحقاق",
+    "overdueFor": "متأخرة {{duration}}",
+    "waitingToday": "بدأ الانتظار اليوم",
+    "waitingFor": "بدأ الانتظار {{relative}}",
+    "oldest": "أقدمها {{duration}}",
+    "oldestToday": "أقدمها اليوم",
+    "availableFailed": "تعذّر تحميل المهام المتاحة للالتقاط",
+    "panel": {
+      "loading": "جارٍ التحميل…",
+      "myTasksFailed": "تعذّر تحميل مهامك.",
+      "myCommitteesFailed": "تعذّر تحميل لجانك.",
+      "awaitingFailed": "تعذّر التحميل."
+    },
+    "tile": {
+      "failed": "تعذّر التحميل",
+      "overdueFailed": "تعذّر تحميل عدد المتأخرة",
+      "openTasks": "مهام مفتوحة",
+      "awaitingMe": "بانتظار إجرائي",
+      "myCommittees": "لجاني",
+      "openConditions": "حالات قائمة",
+      "activeUsers": "مستخدمون نشطون",
+      "pendingInvites": "دعوات معلّقة",
+      "committeesInForce": "لجان سارية"
+    },
+    "admin": {
+      "label": "الإدارة"
+    },
+    "needsFixing": {
+      "title": "يحتاج إلى إصلاح",
+      "open": "فتح سلامة الإعداد ←",
+      "failed": "تعذّر تحميل سلامة الإعداد.",
+      "stale": "لم تُجرَ بعض الفحوص مؤخرًا، فقد لا تكون هذه محدَّثة. التفاصيل في سلامة الإعداد.",
+      "empty": "لا شيء يحتاج إلى إصلاح.",
+      "note": "كل سطر حالة قائمة، لا رسالة. يختفي من تلقاء نفسه في الفحص التالي كل ساعة بعد إصلاح الإعداد. لا شيء يحتاج إلى إخفاء."
     }
   },
   "list": {
@@ -3327,6 +3363,38 @@
         "few": "· {{count}} أرصدة",
         "many": "· {{count}} رصيدًا",
         "other": "· {{count}} رصيد"
+      },
+      "blocking": {
+        "zero": "لا شيء يعطّل العمل",
+        "one": "حالة واحدة تعطّل العمل",
+        "two": "حالتان تعطّلان العمل",
+        "few": "{{count}} حالات تعطّل العمل",
+        "many": "{{count}} حالة تعطّل العمل",
+        "other": "{{count}} حالة تعطّل العمل"
+      },
+      "expiredInvites": {
+        "zero": "لا دعوات منتهية",
+        "one": "دعوة واحدة منتهية",
+        "two": "دعوتان منتهيتان",
+        "few": "{{count}} دعوات منتهية",
+        "many": "{{count}} دعوة منتهية",
+        "other": "{{count}} دعوة منتهية"
+      },
+      "belowQuorum": {
+        "zero": "لا لجان دون النصاب",
+        "one": "لجنة واحدة دون النصاب",
+        "two": "لجنتان دون النصاب",
+        "few": "{{count}} لجان دون النصاب",
+        "many": "{{count}} لجنة دون النصاب",
+        "other": "{{count}} لجنة دون النصاب"
+      },
+      "seatsInUse": {
+        "zero": "المقاعد المستخدمة: {{occupied}} من {{count}}",
+        "one": "المقاعد المستخدمة: {{occupied}} من {{count}}",
+        "two": "المقاعد المستخدمة: {{occupied}} من {{count}}",
+        "few": "المقاعد المستخدمة: {{occupied}} من {{count}}",
+        "many": "المقاعد المستخدمة: {{occupied}} من {{count}}",
+        "other": "المقاعد المستخدمة: {{occupied}} من {{count}}"
       }
     },
     "taskPage": {
