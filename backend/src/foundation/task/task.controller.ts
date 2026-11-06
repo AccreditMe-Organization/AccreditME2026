@@ -330,20 +330,6 @@ export class TaskController {
     return this.recordList.list(query, tenantId, viewer(userId, actorPermissions));
   }
 
-  // Must be declared before ':id' — Nest matches routes in declaration order
-  // and :id would otherwise swallow the literal 'unassigned' segment.
-  //
-  // ACC-244 — Manage tasks holders only, limited to the record types they
-  // manage; decided in the service (403 naming the keys).
-  @Get('unassigned')
-  getUnassigned(
-    @CurrentTenant() tenantId: string,
-    @CurrentUser() userId: string,
-    @CurrentUserPermissions() permissions: string[],
-  ): Promise<ITask[]> {
-    return this.taskService.listUnassigned(tenantId, viewer(userId, permissions));
-  }
-
   // ACC-244 (Q10) — GET /tasks?sourceType=&sourceId= and GET /tasks/:id are
   // removed. Neither had a frontend caller, and each answered from its own copy
   // of who may see a task; a record's tasks are GET /tasks/record-panel and

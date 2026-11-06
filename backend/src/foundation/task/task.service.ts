@@ -17,7 +17,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
-import { assertMayCreateTasks, holdsTaskKey, seesRecordType, taskKeyOf, taskKeysOf, typesHolding } from './task-record-types';
+import { assertMayCreateTasks, holdsTaskKey, seesRecordType, taskKeyOf } from './task-record-types';
 import { CreateTaskDto, type CreateTaskInternal } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { RejectTaskDto } from './dto/reject-task.dto';
@@ -31,7 +31,6 @@ import { ResolvedPlacement, TaskAssignmentService } from './task-assignment.serv
 import {
   POOL_LABEL_INCLUDE,
   PoolLabelRelations,
-  findEmptyPoolTasks,
   isPoolMember,
   poolLabel,
   poolTargetOf,
@@ -661,40 +660,6 @@ export class TaskService {
       });
     }
     return result;
-  }
-
-  // Tenant-wide — unassigned tasks have no assignees, so getMyTasks()
-  // structurally can never surface them (ACC-34).
-  //
-  // ACC-167 — also lists open pool tasks whose pool nobody is in right now:
-  // nobody can pick them up, so they are work with no actionable owner exactly
-  // as an UNASSIGNED task is. Setup health's TASK_WITHOUT_OWNER lists the same
-  // tasks and its Fix opens them here.
-  //
-  // ACC-244 — for Manage tasks holders only, and only on the record types they
-  // manage with the record type visible (rule 5): the rest of the organisation's
-  // unowned work is not theirs to see. Without Manage tasks on any type, 403
-  // naming the keys (nothing about any task is read first).
-  async listUnassigned(organizationId: string, viewer: TaskViewer): Promise<ITask[]> {
-    const types = typesHolding(viewer.permissions, 'MANAGE') as TaskSourceType[];
-    if (types.length === 0) {
-      throw new ForbiddenException(`Required permission: ${taskKeysOf('MANAGE').join(' or ')}`);
-    }
-    const [unassigned, emptyPools] = await Promise.all([
-      this.prisma.task.findMany({
-        where: { organizationId, status: 'UNASSIGNED', sourceType: { in: types } },
-        orderBy: { createdAt: 'desc' },
-      }),
-      findEmptyPoolTasks(this.prisma, organizationId),
-    ]);
-    const strandedIds = emptyPools.filter((t) => (types as string[]).includes(t.sourceType)).map((t) => t.id);
-    if (strandedIds.length === 0) return unassigned;
-
-    const stranded = await this.prisma.task.findMany({
-      where: { organizationId, id: { in: strandedIds } },
-      orderBy: { createdAt: 'desc' },
-    });
-    return [...unassigned, ...stranded];
   }
 
   async getById(id: string, organizationId: string): Promise<ITask> {

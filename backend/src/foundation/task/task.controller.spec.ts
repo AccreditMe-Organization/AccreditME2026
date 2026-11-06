@@ -86,7 +86,6 @@ describe('TaskController', () => {
     getAvailableToPick: jest.Mock;
     reassign: jest.Mock;
     addEvidence: jest.Mock;
-    listUnassigned: jest.Mock;
     update: jest.Mock;
     cancel: jest.Mock;
     reopen: jest.Mock;
@@ -160,7 +159,6 @@ describe('TaskController', () => {
       getAvailableToPick: jest.fn().mockResolvedValue([]),
       reassign: jest.fn().mockResolvedValue(MOCK_TASK),
       addEvidence: jest.fn().mockResolvedValue({ id: 'evidence-1' }),
-      listUnassigned: jest.fn().mockResolvedValue([{ ...MOCK_TASK, status: 'UNASSIGNED' }]),
       update: jest.fn().mockResolvedValue(MOCK_TASK),
       cancel: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'CANCELLED' }),
       reopen: jest.fn().mockResolvedValue(MOCK_TASK),
@@ -307,18 +305,19 @@ describe('TaskController', () => {
 
   // ACC-244 (Q10) — the two legacy reads are gone: a record's tasks are the
   // record list, one task is its page.
-  it('GET /tasks?sourceType= and GET /tasks/:id no longer exist', () => {
+  it('GET /tasks?sourceType=, GET /tasks/:id and GET /tasks/unassigned no longer exist', () => {
     const proto = TaskController.prototype as unknown as Record<string, unknown>;
     expect(proto['getForSource']).toBeUndefined();
     expect(proto['getById']).toBeUndefined();
+    // ACC-120 — no screen called it; the record list's view=unassigned is the list.
+    expect(proto['getUnassigned']).toBeUndefined();
   });
 
-  // ACC-244 — Create, Unassigned and the SLA preview are decided per record
-  // type in the services, so none carries a route permission any more.
-  it('create, Unassigned and the SLA preview carry no route permission', () => {
+  // ACC-244 — Create and the SLA preview are decided per record type in the
+  // services, so neither carries a route permission any more.
+  it('create and the SLA preview carry no route permission', () => {
     const reflector = new Reflector();
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.create)).toBeUndefined();
-    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getUnassigned)).toBeUndefined();
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getSlaPreview)).toBeUndefined();
   });
 
@@ -410,13 +409,6 @@ describe('TaskController', () => {
     expect(evidence.getSummary).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS }, 'ar');
     await controller.makeEvidenceSummary('task-1', 'ev-1', { language: 'en' }, TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
     expect(evidence.makeSummary).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS }, 'en');
-  });
-
-  it('getUnassigned delegates to the service with the current tenant and the caller', async () => {
-    const result = await controller.getUnassigned(TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
-
-    expect(service.listUnassigned).toHaveBeenCalledWith(TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
-    expect(result).toEqual([{ ...MOCK_TASK, status: 'UNASSIGNED' }]);
   });
 
   // ACC-167 — none of these carries a route permission. Pick and release are

@@ -5,8 +5,8 @@ import { IResolvedDelegation } from '../../../common/services/delegation-label.i
 //
 // ITask deliberately carries no assignees: it is the row, not the row plus its
 // relations. Before this ticket NO list endpoint in the product returned
-// assignee data at all (getForSource/getMyTasks/listUnassigned are all bare
-// findMany calls), so "who is this assigned to" was unanswerable in any UI —
+// assignee data at all (getForSource and getMyTasks were bare findMany
+// calls, as was the unassigned list, since removed), so "who is this assigned to" was unanswerable in any UI —
 // the defect ACC-58 tracked.
 //
 // Kept as a separate interface rather than making `assignees` optional on

@@ -35,7 +35,6 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
   const taskService = {
     getMyTasks: jest.fn().mockResolvedValue([]),
     getAvailableToPick: jest.fn().mockResolvedValue([]),
-    listUnassigned: jest.fn().mockResolvedValue([]),
     pick: jest.fn().mockResolvedValue({}),
     release: jest.fn().mockResolvedValue({}),
     update: jest.fn().mockResolvedValue({}),
