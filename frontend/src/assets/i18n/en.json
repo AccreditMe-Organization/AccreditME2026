@@ -1708,7 +1708,7 @@
     "createdAt": "Created",
     "complete": "Complete",
     "reassign": "Reassign",
-    "reassignReason": "Reassignment Reason",
+    "reassignReason": "Reassignment reason",
     "newAssignees": "New Assignees",
     "selectAssignees": "Select assignees",
     "addEvidence": "Add Evidence",
@@ -1838,7 +1838,10 @@
       "outcomeVacant": "Nobody holds this position here yet. The task waits, unassigned, until someone does.",
       "outcomeEmptyPool": "Goes to a pool nobody is in yet. Nobody can pick it up until someone joins.",
       "unavailable": "You cannot choose who this task goes to.",
-      "assignedToPool": "Assigned to {{pool}}"
+      "assignedToPool": "Assigned to {{pool}}",
+      "memberRole": "Member role",
+      "member": "Member (optional)",
+      "outcomeStraight": "Goes straight to {{name}} ({{role}})."
     },
     "request": {
       "backToDetails": "Back to the request",
@@ -1974,7 +1977,9 @@
       },
       "assignInsteadNamed": "Assign instead: {{name}}",
       "keepNamed": "Keep: {{name}}"
-    }
+    },
+    "reassignTitle": "Reassign task",
+    "reassignRejectedBy": "Rejected by {{name}}"
   },
   "auth": {
     "login": "Sign in",
@@ -2824,6 +2829,10 @@
       "workloadAltOpen": {
         "one": "{{count}} open",
         "other": "{{count}} open"
+      },
+      "assignOffered": {
+        "one": "Offered to {{role}}, {{unit}} ({{count}} person).",
+        "other": "Offered to {{role}}, {{unit}} ({{count}} people)."
       }
     },
     "user": {
@@ -3588,21 +3597,24 @@
       "hold": "Hold until {{date}}",
       "ifApprovedExtension": "If approved, the due date moves to {{date}}.",
       "ifApprovedHold": "If approved, the start and due dates move to {{date}}. The due date can't be changed while on hold.",
-      "askedBy": "Asked by {{name}} · {{when}}"
+      "askedBy": "Asked by {{name}} · {{when}}",
+      "oneAtATime": "one at a time per task",
+      "decideHold": "Decide hold request…",
+      "decideExtension": "Decide more-time request…"
     },
     "action": {
       "reviewRequest": "Review request",
-      "resume": "Resume",
+      "resume": "Resume now",
       "addEvidence": "Add evidence",
       "edit": "Edit",
       "reassign": "Reassign…",
       "requestMoreTime": "Request more time…",
-      "requestHold": "Request a hold…",
+      "requestHold": "Ask to put on hold…",
       "withdrawRequest": "Withdraw request",
       "reject": "Reject…",
-      "release": "Release…",
+      "release": "Hand back…",
       "cancel": "Cancel task…",
-      "reopen": "Reopen…",
+      "reopen": "Reopen task…",
       "moreFor": "More actions for “{{title}}”"
     },
     "notFound": {
@@ -3641,6 +3653,40 @@
       "evidence_added": "Evidence added",
       "evidence_removed": "Evidence removed",
       "changed": "Changed"
+    },
+    "eventBy": {
+      "created": "Created by {{name}}",
+      "started": "Started by {{name}}",
+      "completed": "Completed by {{name}}",
+      "rejected": "Rejected by {{name}}",
+      "reassigned": "Reassigned by {{name}}",
+      "picked": "Picked up by {{name}}",
+      "released": "Handed back to the pool by {{name}}",
+      "edited": "Edited by {{name}}",
+      "cancelled": "Cancelled by {{name}}",
+      "reopened": "Reopened by {{name}}",
+      "request_made_extension": "More time requested by {{name}}",
+      "request_made_hold": "Hold requested by {{name}}",
+      "request_withdrawn": "Request withdrawn by {{name}}",
+      "request_approved": "Request approved by {{name}}",
+      "request_declined": "Request declined by {{name}}",
+      "hold_started": "Put on hold by {{name}}",
+      "resumed": "Resumed by {{name}}",
+      "evidence_added": "Evidence added by {{name}}",
+      "evidence_removed": "Evidence removed by {{name}}",
+      "changed": "Changed by {{name}}"
+    },
+    "eventEvidence": {
+      "evidence_added": "Evidence added: {{what}}",
+      "evidence_addedBy": "Evidence added by {{name}}: {{what}}",
+      "evidence_removed": "Evidence removed: {{what}}",
+      "evidence_removedBy": "Evidence removed by {{name}}: {{what}}"
+    },
+    "evidenceKind": {
+      "LINK": "a link",
+      "INTERNAL_REFERENCE": "a record",
+      "ATTACHMENT": "a file",
+      "TEXT": "a note"
     }
   },
   "confirm": {

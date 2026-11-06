@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { FormatService } from '../../../../core/formatting';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
@@ -19,6 +20,8 @@ import { followedHint } from '../task-assignee-picker/followed-hint';
 export interface TaskRejection {
   byName: string | null;
   reason: string;
+  /** When it was rejected, for the label "Rejected by … · 5 Oct 2026". */
+  at?: string | null;
 }
 
 /**
@@ -38,12 +41,27 @@ export interface TaskRejection {
  * That closes ACC-166: before, the people list needed users:view, and a
  * creator whose role lacked it could not reassign their own rejected task.
  *
- * ## Body height — FORM density
+ * ## As drawn (Task Screens, Reassign — ACC-120 slice 4)
  *
- * Re-measured for ACC-167 in the browser (6 Oct 2026, 1440x900), in its
- * tallest state — a rejected task, the strip with a two-line reason, a unit
- * and position chosen, the outcome line, and the reason's required error:
- * 358px English, 371px Arabic. The picker stays stacked here: there is room.
+ * "Reassign task", with the task and its record as the context line. A
+ * rejected task opens with "Rejected by … · date" over the reason in a grey
+ * box, two lines at most (the whole reason in its title). Then the picker's
+ * `split` layout: the unit or committee across, then position | person
+ * (member role | member) in one row, and the outcome beneath. The reason field
+ * stays: the server records it.
+ *
+ * ## Body height — COMPACT density, because form density measured over
+ *
+ * MEASURED in `task-workload.layout.spec.ts` (real shell, theme, font and
+ * translations). The tallest state is a rejected task with a two-line reason
+ * box, a person chosen, the "✦ Suggest someone" answer, and the reason's
+ * required error. At FORM density it was 416px English and 437px Arabic: over
+ * the 420 cap in Arabic, and over the 400 the spec allows (a line of room) in
+ * both. Compact density (artboard 13: the whole dialog, never mixed) with the
+ * split picker at compact gaps brings it to **381px English, 399px Arabic**.
+ * The reason box is on the meta type token; its Arabic line is 2px taller,
+ * paid for by 4px of padding instead of 6.
+ * Every other state is lower (counts only 345 / 359, a refusal 363 / 379).
  */
 @Component({
   selector: 'app-task-reassign-dialog',
@@ -61,15 +79,22 @@ export interface TaskRejection {
   ],
   template: `
     <ng-template #bodyTpl>
-      <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
+      <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-2">
         @if (rejection(); as r) {
           <!-- What the creator is acting on. Read-only, and stated before the
                fields, because the reason decides who the task should go to. -->
-          <div class="am-reassign-strip">
-            <span class="am-reassign-strip__label">{{ 'task.status.rejected' | translate }}</span>
-            <span class="am-reassign-strip__body">
-              {{ (r.byName ? 'task.rejectedByNamed' : 'task.rejectedReasonOnly') | translate: { name: r.byName, reason: r.reason } }}
-            </span>
+          <div class="flex flex-col gap-1" data-testid="reassign-rejection">
+            <span class="text-meta text-[var(--am-ink-700)]" data-testid="reassign-rejection-label">{{ rejectionLabel() }}</span>
+            <!-- The clamp is on the inner line box: on the padded box itself, a
+                 third line shows through the bottom padding. The line box takes
+                 the REASON's direction (dir="auto"), so the quote marks sit at its
+                 start and end however it wraps; an inner bdi would hide the
+                 reason from dir="auto". -->
+            <p
+              class="m-0 [overflow-wrap:anywhere] text-meta text-[var(--am-ink-700)] bg-[var(--am-surface)] rounded-[var(--am-radius-control)] px-2.5 py-1"
+              [attr.title]="r.reason"
+              data-testid="reassign-rejection-reason"
+            ><span class="line-clamp-2" dir="auto" data-testid="reassign-rejection-text">{{ 'tasks.sections.quoteOpen' | translate }}{{ r.reason }}{{ 'tasks.sections.quoteClose' | translate }}</span></p>
           </div>
         }
 
@@ -81,6 +106,7 @@ export interface TaskRejection {
             [committeeName]="committeeName()"
             [taskId]="t.id"
             [priority]="taskPriority()"
+            layout="split"
             (hintFollowed)="workloadFollowed.set($event)"
             [required]="true"
             [forceShowErrors]="showErrors()"
@@ -93,7 +119,7 @@ export interface TaskRejection {
           [forceShowErrors]="showErrors()"
           [errorMessages]="{ maxlength: 'task.rejectReasonTooLong' }"
         >
-          <input pInputText id="taskReassignReason" formControlName="reason" autocomplete="off" />
+          <input pInputText id="taskReassignReason" formControlName="reason" autocomplete="off" dir="auto" />
         </am-field>
 
         @if (error()) {
@@ -118,47 +144,23 @@ export interface TaskRejection {
       #dialog
       [visible]="visible()"
       (visibleChange)="visibleChange.emit($event)"
-      [header]="'task.reassignNamed' | translate: { title: task()?.title ?? '' }"
+      [header]="'task.reassignTitle' | translate"
+      [context]="contextLine()"
       [content]="bodyTpl"
       [footer]="footerTpl"
       [dirty]="form.dirty"
       [saving]="saving()"
       size="form"
+      density="compact"
     />
   `,
-  styles: [
-    `
-      .am-reassign-strip {
-        display: flex;
-        gap: var(--am-space-8);
-        align-items: flex-start;
-        padding: 8px 0;
-        border-block: 1px solid var(--am-border);
-      }
-      .am-reassign-strip__label {
-        flex: none;
-        font-size: 11px;
-        line-height: 18px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        color: var(--am-warning-ink);
-      }
-      .am-reassign-strip__body {
-        flex: 1 1 auto;
-        min-width: 0;
-        font-size: 13px;
-        line-height: 18px;
-        color: var(--am-ink-900);
-        overflow-wrap: anywhere;
-      }
-    `,
-  ],
 })
 export class TaskReassignDialogComponent {
   private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
   private readonly hintStore = inject(TaskWorkloadHintStore);
+  private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
 
   readonly visible = input.required<boolean>();
   readonly task = input<ITaskDto | null>(null);
@@ -166,6 +168,22 @@ export class TaskReassignDialogComponent {
   readonly rejection = input<TaskRejection | null>(null);
   /** Names the committee option, when the host is a committee record. */
   readonly committeeName = input<string | null>(null);
+  /** The task's record as the host names it, for the context line. */
+  readonly recordName = input<string | null>(null);
+
+  /** "Collect member CVs · ◇ Outbreak Response Task Force". */
+  readonly contextLine = computed(() => {
+    const title = this.task()?.title ?? '';
+    const record = this.recordName();
+    return record ? `${title} · ◇ ${record}` : title;
+  });
+  /** "Rejected by Tariq Suleiman · 5 Oct 2026" — the parts it has. */
+  readonly rejectionLabel = computed(() => {
+    const r = this.rejection();
+    if (!r) return '';
+    const by = r.byName ? this.translate.instant('task.reassignRejectedBy', { name: r.byName }) : this.translate.instant('task.status.rejected');
+    return r.at ? `${by} · ${this.format.date(r.at)}` : by;
+  });
   readonly visibleChange = output<boolean>();
   /** Emitted once the task is reassigned; the host reloads its list. */
   readonly reassigned = output<void>();

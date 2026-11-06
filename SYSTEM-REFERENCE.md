@@ -5052,6 +5052,12 @@ without `tasks:view`, and a reader holding `tasks:reassign`.
 - **`task-row-actions.ts`** places the server's actions — the primary as the
   button, then the menu in groups: the viewer's own work, the creator's, then
   View evidence (n) and Open task. Shared with the task page's labels.
+  **Which allowed action leads is `taskPrimaryActionId()` (ACC-120 slice 4),
+  one rule for the panel, the lists and the task page:** evidence required and
+  none added → Add evidence, with Complete disabled in the menu saying why; a
+  REJECTED task its viewer may reassign → Reassign…; otherwise the server's
+  `primary`. It only chooses among actions the server's flags already allow, so
+  no rule is re-derived on the client.
 - **`task-row-text.ts`** words a row: the due label first and never cut ("⚠ 4
   days overdue · 10 Oct 2026", "⏸ On hold to …", "✓ Completed …"), then who,
   status and the one changing fact.

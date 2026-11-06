@@ -6,6 +6,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { ITaskPageViewDto, ITaskRecordRowDto, TaskRequestForDecisionDto, TaskRequestType, TaskService } from '../../services/task.service';
 import { TaskRowActionId } from '../../task-row-actions';
+import { taskRecordTypeKey } from '../../task-row-display';
 import { TaskAddEvidenceDialogComponent } from '../task-add-evidence-dialog/task-add-evidence-dialog.component';
 import { TaskRejectDialogComponent } from '../task-reject-dialog/task-reject-dialog.component';
 import { TaskReleaseDialogComponent } from '../task-release-dialog/task-release-dialog.component';
@@ -76,6 +77,7 @@ export interface TaskActionFailure {
         (visibleChange)="onVisible($event)"
         [task]="v.task"
         [rejection]="rejection()"
+        [recordName]="recordName()"
         [committeeName]="committeeName()"
         (reassigned)="done()"
       />
@@ -125,7 +127,13 @@ export class TaskActionHostComponent {
   readonly rejection = computed(() => {
     const v = this.view();
     if (!v || v.task.status !== 'REJECTED' || !v.task.rejectedReason) return null;
-    return { byName: v.rejectedBy?.name ?? null, reason: v.task.rejectedReason };
+    return { byName: v.rejectedBy?.name ?? null, reason: v.task.rejectedReason, at: v.task.rejectedAt ?? null };
+  });
+  /** The task's record for Reassign's context line: its name, else its type word. */
+  readonly recordName = computed(() => {
+    const r = this.view()?.record;
+    if (!r) return null;
+    return r.nameEn ? this.language.bilingual(r.nameEn, r.nameAr) : this.translate.instant(taskRecordTypeKey(r.type));
   });
   readonly committeeName = computed(() => {
     const r = this.view()?.record;

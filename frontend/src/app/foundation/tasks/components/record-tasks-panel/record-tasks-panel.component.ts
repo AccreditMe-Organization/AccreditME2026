@@ -185,7 +185,7 @@ export class RecordTasksPanelComponent {
     this.translate.currentLang();
     const now = new Date();
     return this.items().map((row) => {
-      const model = taskRowActions(row.actions, row.evidenceCount);
+      const model = taskRowActions(row.actions, row.evidenceCount, row.status);
       return {
         row,
         title: this.text.title(row),

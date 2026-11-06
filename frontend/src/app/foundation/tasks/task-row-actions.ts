@@ -85,14 +85,35 @@ export function asRowAction(id: string): TaskRowActionId {
   return id as TaskRowActionId;
 }
 
+/**
+ * ACC-120 slice 4 — THE ONE NEXT STEP, chosen on the client from the server's
+ * actions (its `primary` is unchanged), for the task page, the record Tasks
+ * panel and the lists (Task Screens' action matrix):
+ *
+ * - evidence required and none added, Complete waiting for it → Add evidence;
+ *   Complete goes to the menu, disabled, saying why;
+ * - a REJECTED task its creator may reassign → Reassign…;
+ * - otherwise the server's primary.
+ *
+ * Every id returned is one the server offers (`actions[id]`).
+ */
+export function taskPrimaryActionId(actions: ITaskActionsDto, status: string): TaskActionId | null {
+  if (actions.complete && actions.completeNeedsEvidence && actions.addEvidence) return 'addEvidence';
+  if (status === 'REJECTED' && actions.reassign) return 'reassign';
+  const id = actions.primary ? PRIMARY_ACTION_ID[actions.primary] : null;
+  return id && actions[id] ? id : null;
+}
+
 /** One action, labelled as a row shows it. */
 export function taskRowAction(id: TaskActionId, actions: ITaskActionsDto): TaskRowAction {
+  const waiting = id === 'complete' && actions.completeNeedsEvidence;
   return {
     id,
     labelKey: TASK_ACTION_LABELS[id],
-    subKey: id === 'reject' ? 'taskActions.rejectSub' : undefined,
+    // A Complete waiting for evidence says why, under its label.
+    subKey: id === 'reject' ? 'taskActions.rejectSub' : waiting ? 'task.completeNeedsEvidence' : undefined,
     danger: id === 'cancel',
-    disabled: id === 'complete' && actions.completeNeedsEvidence,
+    disabled: waiting,
   };
 }
 
@@ -101,9 +122,9 @@ export function taskRowAction(id: TaskActionId, actions: ITaskActionsDto): TaskR
  * disabled — the one exception is Complete waiting for evidence, which says
  * why. The main action is not repeated in the menu.
  */
-export function taskRowActions(actions: ITaskActionsDto, evidenceCount: number): TaskRowActionModel {
-  const primaryId = actions.primary ? PRIMARY_ACTION_ID[actions.primary] : null;
-  const primary = primaryId && actions[primaryId] ? taskRowAction(primaryId, actions) : null;
+export function taskRowActions(actions: ITaskActionsDto, evidenceCount: number, status: string): TaskRowActionModel {
+  const primaryId = taskPrimaryActionId(actions, status);
+  const primary = primaryId ? taskRowAction(primaryId, actions) : null;
   const pick = (order: TaskActionId[]) =>
     order.filter((id) => actions[id] && id !== primary?.id).map((id) => taskRowAction(id, actions));
 

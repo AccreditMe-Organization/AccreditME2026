@@ -129,7 +129,7 @@ describe('TaskRequestDecisionDialogComponent (ACC-173)', () => {
 
   it('reads in Arabic', () => {
     setup('ar');
-    expect(document.body.textContent).toContain('يطلب Sara نقل تاريخ الاستحقاق إلى');
+    expect(document.body.textContent).toContain('الطلب من: Sara — نقل تاريخ الاستحقاق إلى');
     expect(document.body.textContent).toContain('موافقة');
     expect(document.body.textContent).toContain('رفض');
   });
