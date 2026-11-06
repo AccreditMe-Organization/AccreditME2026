@@ -1112,7 +1112,7 @@ lookups:view                lookups:manage
 workflows:view              workflows:manage
 setup:view
 notifications:view *        notifications:manage *
-committees:view              committees:manage          committees:approve
+committees:view              committees:manage *        committees:approve
 committees:create            committees:edit_details    committees:add_member
 committees:remove_member     committees:change_member_role
 committees:view_all_tasks    committees:view_unit_tasks
@@ -2319,6 +2319,9 @@ Prisma Studio.
   own attempt at one was designed, built, then deliberately rejected
   for the reason above, and that reasoning applies to any future
   module considering the same shortcut.
+  **ACC-271 PR 6b: `committees:manage` is now a seed-time umbrella only** —
+  it grants nothing at runtime and can't be newly granted (it is in
+  `PERMISSIONS_NOT_YET_CHECKED`; a role that holds it keeps it).
 - **`WorkflowInstanceStage.isUnassigned`/`.unassignedAt`** (ACC-28,
   extended ACC-33) detects when a stage's next required transition
   has NO eligible actor — checked at stage-entry time and re-swept
@@ -4400,7 +4403,8 @@ Ahmad's answers (28 Oct, §13.1) and PR 1 as built (§11.1):
 Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230, #231, #233); PR 3 is built (below); PR 5 is not started.
 
 - **A CONVERTED STAGE (`whoMode` set) IS WORKED BY ITS POOL; ANY OTHER STAGE
-  TAKES THE OLD BRANCH, UNCHANGED.** `isConvertedStage()` is the one test. For
+  TAKES THE OLD BRANCH, UNCHANGED.** `isConvertedStage()` is the one test
+  (deleted in PR 6b, with the branch). For
   a converted stage the transition's `requiredPermission`,
   `triggerCondition`, `triggerRoleId` and `triggerUserId` are not read:
   whoever is in the pool may press a person's move. Empty pool: 409
@@ -4460,15 +4464,35 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
 - **PR 6a — THE OLD BRANCH IS GONE** (backend only, no migration). Full list:
   SYSTEM-REFERENCE.md §2.19, "PR 6a".
   - **A stage without `who` is refused:** creating one is 400 `WHO_REQUIRED`,
-    said in both languages under the who section; a changed old people field
-    is `WHO_MOVED_TO_STAGE` on every stage.
+    said in both languages under the who section. (A changed old people field
+    was `WHO_MOVED_TO_STAGE`; PR 6b removed the fields, so the refusal went too.)
   - **The change request preview counts open votes by `whoMode`
     `COMMITTEE_VOTE` and the vote's committee**
     (`countOpenCommitteeVotes()`, batched). By `approvalMode` it was always 0.
   - **The seed states each move's `mover`** (67 PERSON, 8 APP) and writes it.
-  - **Left for PR 6b:** the old columns (the seed still writes them), the
-    DTOs' old fields, the template read's old fields, and `transitionMover()`'s
-    null fallback.
+  - **Left for PR 6b:** the DTOs' old fields, the template read's old fields,
+    and `transitionMover()`'s fallback. Done; see the next bullet.
+- **PR 6b — THE OLD WHO FIELDS ARE GONE FROM THE API AND THE SEED** (no
+  migration: the columns stay until 6c). Full list: SYSTEM-REFERENCE.md §2.19,
+  "PR 6b".
+  - **API in:** the stage and transition DTOs carry no old who field; one sent
+    is 400 "property X should not exist" (the global whitelist).
+    `WHO_MOVED_TO_STAGE`, `refuseChangedOldPeopleField` and their lists are
+    deleted.
+  - **API out:** the template read and the audits name `who` and `mover`,
+    never an old field. The transition write returns `{ transition }` (the
+    permission warning is gone).
+  - **Movers:** `transitionMover()` and `APP_MOVER_WHERE` read `mover` only.
+    A new move is always PERSON. A move with no mover (none exist) is 409
+    `MOVE_HAS_NO_MOVER` for a person and never the app's.
+    `isConvertedStage()` is deleted.
+  - **Seed:** names no role, permission or trigger; the old NOT NULL columns
+    keep their database defaults.
+  - **`committees:manage` is not in use** (Ahmad, 6 Nov): seeded moves were
+    its only check. It is a seed-time umbrella only (see ACC-28 above).
+  - **Kept until 6c:** the columns, `whoFromLegacy` / `moverForTrigger` /
+    `decidesTogether` (the executed backfills import them), and those
+    backfills.
 
 ## Key Architecture Decisions (ACC-260)
 

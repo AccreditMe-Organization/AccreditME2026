@@ -3045,6 +3045,7 @@ Plan, Ahmad's answers (28 Oct, §13.1) and the PR split:
 every stage on every database is still unconverted and behaves as §2.4–§2.8 say.
 Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts a new organisation, and both PR 2 backfills ran on the shared database on 29 Oct, so every stage is converted. §2.4–§2.8 describe only a stage whose `whoMode` is null. PR 3, the APIs, is built (see "PR 3" below); PR 5, the screens, is not started.
 Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only the stage's pool; a stage whose `whoMode` is null has an EMPTY pool (fail closed), and a new stage must say `who` (`WHO_REQUIRED`). §2.4–§2.8 and §2.13 are history: they describe code that no longer exists. See "PR 6a" below.
+Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the seed.** The columns stay in the schema until 6c. See "PR 6b" below.
 
 - **The transition window (plan §4.6).** A stage with `WorkflowStage.whoMode`
   set is CONVERTED: its `WorkflowStageAssignee` entries say who works it, and
@@ -3056,6 +3057,8 @@ Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only th
   Superseded (PR 6a): there is no old branch; a stage with `whoMode` null is
   read as converted with an empty pool. `isConvertedStage()` remains for the
   template read, the transition editor and awaiting-me.
+  Superseded (PR 6b): `isConvertedStage()` is deleted; awaiting-me filters
+  `whoMode` in its query, and the template read checks `whoMode` itself.
 - **The pool** (`StagePoolService`, `stage-pool.service.ts`, its own
   `StagePoolModule` on Prisma alone, imported by WorkflowModule and UserModule).
   Entries join with "or"; each resolves to **ACTIVE** users at read time, never
@@ -3080,6 +3083,8 @@ Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only th
   `NOT_IN_STAGE_POOL`, both carrying `stageNameEn`/`stageNameAr`. A move
   whose mover is APP or AUTOMATIC is refused as SYSTEM_AUTOMATIC is today. The
   mandatory-task gate and `TRANSITION_PRECONDITIONS` run as before.
+- Superseded (PR 6b): `transitionMover()` returns the stored `mover` only, and
+  `APP_MOVER_WHERE` is `{ mover: 'APP' }`; a null mover is no one's (below).
 - **The mover** (`WorkflowTransition.mover`, `transitionMover()`): null reads
   as APP for SYSTEM_AUTOMATIC, PERSON otherwise. `triggerSystemTransition`
   looks for `APP_MOVER_WHERE`; the in-transaction write requires APP.
@@ -3226,6 +3231,8 @@ Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only th
       with it as `messageAr` («يُحدَّد من يعمل على هذه المرحلة الآن في المرحلة
       نفسها، لا هنا.»).
     Since PR 6a, on every stage, whether or not it has a `who`.
+    Superseded (PR 6b): the fields are gone from the DTOs, so one sent is 400
+    "property X should not exist" and `WHO_MOVED_TO_STAGE` is deleted.
 
     This deliberately departs from the plan's "accepted and ignored":
     ignoring a changed value would look saved and do nothing. A move ADDED out
@@ -3288,6 +3295,7 @@ Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only th
     stage created with the old fields only is created exactly as before.
     Superseded (PR 6a): a create without `who` is 400 `WHO_REQUIRED`. The
     DTO still accepts the old fields until PR 6b.
+    Superseded (PR 6b): the DTO no longer has them.
   - **Creating a move out of a converted stage** needs no `triggerCondition`.
     Sent, it must be the column's default, ROLE_BASED (what the old Add dialog
     sends). Any other trigger, or a role, person or permission, is
@@ -3517,6 +3525,56 @@ Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only th
     the mover case of `workflow.seed.spec.ts`. Mutation-checked: putting the
     old trigger back for a stage with no `who`, or counting votes by
     `approvalMode`, turns them red.
+- **PR 6b — the old who fields are gone from the API and the seed (no
+  migration: the columns stay until 6c).** "Old who fields": on a stage
+  `assigneeStrategy`, `assigneeRoleId`, `assigneeUserId`, `committeeId`,
+  `assigneeCommitteeRoleValueId`, `assigneePositionId`, `assigneeOrgUnitId`,
+  `approvalMode` and `parallelThreshold`; on a transition `triggerCondition`,
+  `triggerRoleId`, `triggerUserId` and `requiredPermission`.
+  - **API in.** `CreateWorkflowStageDto` and `CreateWorkflowTransitionDto` (and
+    so the update DTOs) have none of them. With the global pipe (`whitelist` +
+    `forbidNonWhitelisted`) a create or update sending one is 400 "property X
+    should not exist". Deleted: `OLD_STAGE_WHO_FIELDS`,
+    `OLD_TRANSITION_WHO_FIELDS`, `NEW_MOVE_PEOPLE_BASELINE`,
+    `refuseChangedOldPeopleField`, the `WHO_MOVED_TO_STAGE` refusal (backend
+    and frontend), and the old fields' write-time validators.
+  - **API out.** The template read (`mapStage`, `mapTransition`,
+    `IWorkflowStage`, `IWorkflowTransition`) returns none of them. The stage
+    audit records its fields and `whoMode` / `whoEntries`; the transition audit
+    records labels, kind, approval path, validators and `mover`. The
+    transition write returns `{ transition }`: the permission warning
+    (`resolvePermissionWarning`) and the grantability check on a move's
+    permission (`assertTransitionPermissionGrantable`) are deleted.
+    `ROOT_ROLE_ONLY_PERMISSIONS` stays for roles.
+  - **Transitions.** `addTransition` writes mover PERSON, always; there is no
+    branch for a move out of a stage with no `who`. `transitionMover()` reads
+    `mover` only and returns null when there is none; `APP_MOVER_WHERE` is
+    `{ mover: 'APP' }`. A person pressing a move with no mover (none exist:
+    every writer sets one) is 409 `MOVE_HAS_NO_MOVER` («لم يُحدَّد من ينفّذ هذا
+    الانتقال…»), and the app never finds one.
+  - **Seed.** `workflow.seed.ts` names no role, permission or trigger, and
+    `applyWorkflowSeed()` writes none (it no longer reads roles). Every old
+    NOT NULL column has a database default (`approvalMode` SINGLE,
+    `assigneeStrategy` ROLE, `triggerCondition` ROLE_BASED), so no fixed value
+    is written.
+  - **`committees:manage` is not in use** (Ahmad, 6 Nov). Seeded moves were
+    its only check; it is in `PERMISSIONS_NOT_YET_CHECKED`, its sentence and
+    its row on the role screen are gone, a role that holds it keeps it, and a
+    new grant is 400 `PERMISSION_NOT_IN_USE`.
+  - **Kept until 6c:** the columns and enums in `schema.prisma`, the executed
+    backfills (`backfill-acc271-stage-assignees`,
+    `backfill-acc271-transition-movers`) and what they import from
+    `workflow-who.ts` (`whoFromLegacy`, `moverForTrigger`, `decidesTogether`).
+  - **Frontend.** The old fields left `workflow-template.service.ts`'s types;
+    the approval mode, threshold and assignee labels left `workflow-labels.ts`
+    and both translation files; `check:workflow-enum-display` no longer scans
+    them.
+  - **Nothing on the per-request path; no query added.** The PR removes code.
+  - **Specs:** `dto/old-who-fields.dto.spec.ts` (each old field, create and
+    update, through main.ts's pipe), the MOVE_HAS_NO_MOVER and `mover: 'APP'`
+    cases of `workflow.service.spec.ts`, and the two `committees:manage` cases
+    of `role.service.spec.ts`. Mutation-checked: an old field back in the DTO,
+    or `transitionMover()` falling back to `triggerCondition`, turns them red.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
@@ -5319,8 +5377,9 @@ change request (§3.18; its screens are ACC-240).
   - Where it allows no edit and is neither in force nor dissolving (seeded:
     Terms Review): no Edit; the locked line "Locked while the terms are under
     review. Revise Terms to change it." for holders of `committees:edit_details`.
-    Revise Terms is the seeded RETURN transition (terms_review → formation,
-    `committees:manage`).
+    Revise Terms is the seeded RETURN transition (terms_review → formation),
+    pressed by whoever works Terms Review (ACC-271; it required
+    `committees:manage` until PR 6b).
   - Anywhere else: nothing new. The transition buttons stay as the live
     workflow renders them.
   - The page reads the committee again after every transition, because the
