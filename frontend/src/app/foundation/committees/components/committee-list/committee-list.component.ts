@@ -24,29 +24,8 @@ import { ListRowDirective } from '../../../../shared/components/data-list/list-r
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { AmNumberPipe } from '../../../../core/formatting';
-import { STAGE_FLAG_DISSOLVING, STAGE_FLAG_IN_FORCE } from '../../committee-offers';
+import { COMMITTEE_LIST_STATUSES, CommitteeListStatus, committeeListStatus } from '../../committee-status';
 import { SHELL_PHONE_BELOW_PX } from '../../../../layout/app-shell/app-shell.component';
-
-/** A committee's state as the list shows and filters it, in lifecycle order. */
-export const COMMITTEE_LIST_STATUSES = ['NOT_YET_IN_FORCE', 'IN_FORCE', 'DISSOLVING', 'INACTIVE'] as const;
-export type CommitteeListStatus = (typeof COMMITTEE_LIST_STATUSES)[number];
-
-// ACC-256 (Ahmad, 25 Oct) — read from the current stage's FLAGS (the server's
-// stageRules), never its name or key, so a stage a tenant renames or adds reads
-// by what it means:
-//   - the committee record is inactive               → Inactive (Dissolved);
-//   - the stage is flagged DISSOLVING                → Being dissolved;
-//   - the stage is flagged IN_FORCE                  → In force (Active, Suspended);
-//   - no flag, or no live stage at all (D14)         → Not yet in force
-//                                                      (Formation, Terms Review).
-// Before this, every active committee that was not dissolving read "Active",
-// Formation and Terms Review included.
-export function committeeListStatus(c: Pick<CommitteeListItemDto, 'isActive' | 'stageRules'>): CommitteeListStatus {
-  if (!c.isActive) return 'INACTIVE';
-  const flags = c.stageRules?.flags ?? [];
-  if (flags.includes(STAGE_FLAG_DISSOLVING)) return 'DISSOLVING';
-  return flags.includes(STAGE_FLAG_IN_FORCE) ? 'IN_FORCE' : 'NOT_YET_IN_FORCE';
-}
 
 // ACC-120 slice 4 — the committees list, on the list template /roles and /users
 // already use (Template 1). Plan: backend/Plans/step-120-4-committees-list.md.
