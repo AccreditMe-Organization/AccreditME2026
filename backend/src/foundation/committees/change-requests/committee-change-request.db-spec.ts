@@ -422,16 +422,13 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       const tpl = await prisma.workflowTemplate.create({
         data: { organizationId: w.org, nameEn: 'Vote', objectType: 'MEETING', isDefault: true, isActive: true },
       });
-      // ACC-271 PR 6a — a Committee vote stage on this committee, as the
-      // backfill converts an approvalMode COMMITTEE one (the old columns stay).
+      // ACC-271 PR 6a — a Committee vote stage on this committee.
       const stage = await prisma.workflowStage.create({
         data: {
           workflowTemplateId: tpl.id,
           nameEn: 'Committee vote',
           order: 10,
           isInitial: true,
-          approvalMode: 'COMMITTEE',
-          committeeId: w.committee,
           whoMode: 'COMMITTEE_VOTE',
           assignees: { create: { organizationId: w.org, order: 1, kind: 'COMMITTEE', committeeId: w.committee } },
         },
@@ -502,7 +499,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(await edit(templates.deactivateTemplate(t.tpl.id, w.org, a))).toBe(`${P}:DEACTIVATE`);
       expect(await edit(templates.addStage(t.tpl.id, { nameEn: 'Legal review', order: 22 } as never, w.org, a))).toBe(`${P}:ADD_STAGE`);
       expect(await edit(templates.removeStage(t.stage('returned').id, w.org, a))).toBe(`${P}:REMOVE_STAGE`);
-      expect(await edit(templates.updateStage(t.stage('under_review').id, { approvalMode: 'COMMITTEE' } as never, w.org, a))).toBe(`${P}:STAGE_FIELD`);
+      expect(await edit(templates.updateStage(t.stage('under_review').id, { order: 99 } as never, w.org, a))).toBe(`${P}:STAGE_FIELD`);
       expect(
         await edit(templates.addTransition({ fromStageId: t.stage('draft').id, toStageId: t.stage('approved').id, labelEn: 'Skip' } as never, w.org, a)),
       ).toBe(`${P}:TRANSITION`);
@@ -539,7 +536,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         await edit(
           templates.updateStage(
             stage.id,
-            { nameEn: 'Quality review', nameAr: 'مراجعة الجودة', slaWorkingHours: 16, approvalMode: stage.approvalMode, assigneeStrategy: stage.assigneeStrategy } as never,
+            { nameEn: 'Quality review', nameAr: 'مراجعة الجودة', slaWorkingHours: 16, order: stage.order, isFinal: stage.isFinal } as never,
             w.org,
             w.approver.userId,
           ),

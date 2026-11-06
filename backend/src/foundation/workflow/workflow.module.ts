@@ -7,7 +7,6 @@ import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
 import { OrgPositionModule } from '../org-position/org-position.module';
 import { OrganizationModule } from '../organization/organization.module';
-import { RolesModule } from '../roles/roles.module';
 import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
@@ -58,13 +57,6 @@ import { StagePoolModule } from './stage-pool.module';
     // `nest start` boot, not just tsc/jest, same standard as every other
     // edge in this file.
     forwardRef(() => OrganizationModule),
-    // RolesModule is @Global() — RoleService.getUserPermissions() would
-    // already resolve without this (see platform.module.ts's identical
-    // comment) — imported explicitly anyway for clarity/testability, same
-    // precedent as NotificationModule above. ACC-28's unassigned-stage
-    // detection (2.5) needs it to check whether a resolved assignee pool
-    // holds a transition's requiredPermission.
-    RolesModule,
     // ACC-271 — who works a converted stage; depends on Prisma alone.
     StagePoolModule,
   ],

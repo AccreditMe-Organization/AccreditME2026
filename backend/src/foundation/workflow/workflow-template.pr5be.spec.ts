@@ -35,15 +35,6 @@ const STAGE = {
   slaWorkingHours: null,
   isInitial: true,
   isFinal: false,
-  approvalMode: 'SINGLE',
-  parallelThreshold: null,
-  committeeId: null,
-  assigneeStrategy: 'ROLE',
-  assigneeUserId: null,
-  assigneeRoleId: null,
-  assigneeCommitteeRoleValueId: null,
-  assigneePositionId: null,
-  assigneeOrgUnitId: null,
   escalationConfig: null,
   flags: [] as string[],
   whoMode: 'ANY_ONE' as string | null,
@@ -231,29 +222,6 @@ describe('WorkflowTemplateService — the backend for the stage screens (ACC-271
       expect(created.whoSentence).toEqual({ en: 'Any one of: Huda, or whoever created the record.', ar: 'أيٌّ من: Huda، أو من أنشأ السجل.' });
     });
 
-    it.each([
-      ['assigneeStrategy', 'ROLE'],
-      ['approvalMode', 'SINGLE'],
-      ['assigneeRoleId', 'role-qm'],
-      ['assigneeUserId', 'user-1'],
-      ['parallelThreshold', 'ALL'],
-      ['committeeId', 'committee-1'],
-      ['assigneeCommitteeRoleValueId', 'role-chair'],
-      ['assigneePositionId', 'pos-1'],
-      ['assigneeOrgUnitId', 'unit-1'],
-    ])('who sent with the old %s is refused with the translated sentence, creating nothing', async (field, value) => {
-      const { prisma, service } = ready();
-      const body = await refusal(service.addStage('template-1', { nameEn: 'Review', order: 20, who, [field]: value } as never, ORG, ACTOR));
-      expect(body).toEqual(expect.objectContaining({ status: 400, code: 'WHO_MOVED_TO_STAGE', field, messageAr: expect.any(String) }));
-      expect(prisma.workflowStage.create).not.toHaveBeenCalled();
-    });
-
-    it('an old field sent empty beside who says nothing, and is accepted', async () => {
-      const { prisma, service } = ready();
-      await service.addStage('template-1', { nameEn: 'Review', order: 20, who, assigneeRoleId: null, committeeId: '' } as never, ORG, ACTOR);
-      expect(prisma.workflowStage.create).toHaveBeenCalledTimes(1);
-    });
-
     it("a who of the wrong shape is refused before anything is read or written", async () => {
       const { prisma, service } = ready();
       const body = await refusal(
@@ -278,7 +246,7 @@ describe('WorkflowTemplateService — the backend for the stage screens (ACC-271
     it('a stage without who is refused WHO_REQUIRED (400), and nothing is written', async () => {
       const { prisma, audit, service } = ready();
       const err = await service
-        .addStage('template-1', { nameEn: 'Review', order: 20, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE' } as never, ORG, ACTOR)
+        .addStage('template-1', { nameEn: 'Review', order: 20 } as never, ORG, ACTOR)
         .then(
           () => null,
           (e: { getStatus: () => number; getResponse: () => { code?: string; message?: string } }) => e,
@@ -292,12 +260,6 @@ describe('WorkflowTemplateService — the backend for the stage screens (ACC-271
     });
 
     describe('the create DTO', () => {
-      it('without who, approvalMode and assigneeStrategy are still required', async () => {
-        expect(await errorsOf(CreateWorkflowStageDto, { nameEn: 'Review', order: 20 })).toEqual(
-          expect.arrayContaining(['approvalMode', 'assigneeStrategy']),
-        );
-      });
-
       it('with who, neither is required', async () => {
         expect(await errorsOf(CreateWorkflowStageDto, { nameEn: 'Review', order: 20, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } })).toEqual([]);
       });
@@ -305,7 +267,6 @@ describe('WorkflowTemplateService — the backend for the stage screens (ACC-271
       it('the update DTO still takes who, and still takes nothing at all', async () => {
         expect(await errorsOf(UpdateWorkflowStageDto, { who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } })).toEqual([]);
         expect(await errorsOf(UpdateWorkflowStageDto, {})).toEqual([]);
-        expect(await errorsOf(UpdateWorkflowStageDto, { approvalMode: 'NOPE' })).toEqual(['approvalMode']);
       });
     });
   });
@@ -318,58 +279,22 @@ describe('WorkflowTemplateService — the backend for the stage screens (ACC-271
       const ctx = build();
       ctx.prisma.workflowStage.findFirst.mockResolvedValueOnce({ ...STAGE, whoMode }).mockResolvedValueOnce({ ...STAGE, id: 'stage-2' });
       ctx.prisma.workflowTransition.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
-        Promise.resolve({ id: 't-new', triggerCondition: 'ROLE_BASED', requiredPermission: null, triggerUserId: null, triggerRoleId: null, kind: 'ADVANCE', mover: null, ...data }),
+        Promise.resolve({ id: 't-new', kind: 'ADVANCE', mover: null, ...data }),
       );
       return ctx;
     }
 
-    it('out of a converted stage, no trigger is needed: the column keeps its default and the mover is PERSON', async () => {
+    it('a new move names no people: the old columns keep their defaults and the mover is PERSON', async () => {
       const { prisma, service } = from('ANY_ONE');
       await add(service, {});
       const data = prisma.workflowTransition.create.mock.calls[0][0].data;
       expect(data).not.toHaveProperty('triggerCondition');
+      expect(data).not.toHaveProperty('requiredPermission');
       expect(data.mover).toBe('PERSON');
     });
 
-    it("out of a converted stage, the old Add dialog's ROLE_BASED (the column's own default) is accepted", async () => {
-      const { prisma, service } = from('ANY_ONE');
-      await add(service, { triggerCondition: 'ROLE_BASED' });
-      expect(prisma.workflowTransition.create).toHaveBeenCalledTimes(1);
-    });
-
-    it.each([
-      ['triggerCondition', { triggerCondition: 'SPECIFIC_USER' }],
-      ['triggerCondition', { triggerCondition: 'ANY_AUTHENTICATED' }],
-      ['triggerCondition', { triggerCondition: 'ASSIGNEE_POOL' }],
-      ['triggerCondition', { triggerCondition: 'SYSTEM_AUTOMATIC' }],
-      ['triggerRoleId', { triggerRoleId: 'role-qm' }],
-      ['triggerUserId', { triggerUserId: 'user-1' }],
-      ['requiredPermission', { requiredPermission: 'committees:manage' }],
-    ])('out of a converted stage, a people value (%s) is refused with WHO_MOVED_TO_STAGE, never ignored', async (field, extra) => {
-      const { prisma, service } = from('ANY_ONE');
-      expect(await refusal(add(service, extra))).toEqual(expect.objectContaining({ status: 400, code: 'WHO_MOVED_TO_STAGE', field, messageAr: expect.any(String) }));
-      expect(prisma.workflowTransition.create).not.toHaveBeenCalled();
-    });
-
-    it('out of a stage not converted yet, the trigger is still required', async () => {
-      const { prisma, service } = from(null);
-      expect(await refusal(add(service, {}))).toEqual(expect.objectContaining({ status: 400 }));
-      expect(prisma.workflowTransition.create).not.toHaveBeenCalled();
-    });
-
-    it('out of a stage not converted yet, an old move is created exactly as before', async () => {
-      const { prisma, service } = from(null);
-      await add(service, { triggerCondition: 'ANY_AUTHENTICATED' });
-      const data = prisma.workflowTransition.create.mock.calls[0][0].data;
-      expect(data.triggerCondition).toBe('ANY_AUTHENTICATED');
-      expect(data).not.toHaveProperty('mover');
-    });
-
-    it('the create DTO no longer requires a trigger', async () => {
+    it('the create DTO needs no trigger', async () => {
       expect(await errorsOf(CreateWorkflowTransitionDto, { fromStageId: 's1', toStageId: 's2', labelEn: 'Go' })).toEqual([]);
-      expect(await errorsOf(CreateWorkflowTransitionDto, { fromStageId: 's1', toStageId: 's2', labelEn: 'Go', triggerCondition: 'NOPE' })).toEqual([
-        'triggerCondition',
-      ]);
     });
   });
 });

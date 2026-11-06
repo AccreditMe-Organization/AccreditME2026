@@ -47,10 +47,10 @@ describe('Webhook action secrets, against a real database (ACC-277)', () => {
       data: { organizationId: o.id, nameEn: 'Documents', objectType: 'DOCUMENT_REQUEST', isDefault: true, isActive: true },
     });
     const from = await prisma.workflowStage.create({
-      data: { workflowTemplateId: template.id, nameEn: 'Submitted', order: 10, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', whoMode: 'ANY_ONE' },
+      data: { workflowTemplateId: template.id, nameEn: 'Submitted', order: 10, whoMode: 'ANY_ONE' },
     });
     const to = await prisma.workflowStage.create({
-      data: { workflowTemplateId: template.id, nameEn: 'Approved', order: 20, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', isFinal: true },
+      data: { workflowTemplateId: template.id, nameEn: 'Approved', order: 20, isFinal: true },
     });
     const transition = await prisma.workflowTransition.create({ data: { fromStageId: from.id, toStageId: to.id, labelEn: 'Approve', mover: 'PERSON' } });
     const action = await prisma.workflowTransitionAction.create({

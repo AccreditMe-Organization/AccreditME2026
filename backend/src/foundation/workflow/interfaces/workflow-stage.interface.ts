@@ -41,16 +41,7 @@ export interface IWorkflowStage {
   slaWorkingHours: number | null;
   isInitial: boolean;
   isFinal: boolean;
-  approvalMode: string; // WorkflowApprovalMode
-  parallelThreshold: string | null; // WorkflowParallelThreshold
-  committeeId: string | null;
-  assigneeStrategy: string; // WorkflowAssigneeStrategy
-  assigneeUserId: string | null;
-  assigneeRoleId: string | null;
-  assigneeCommitteeRoleValueId: string | null;
-  // ACC-54 — only meaningful when assigneeStrategy === 'POSITION_FIXED'.
-  assigneePositionId: string | null;
-  assigneeOrgUnitId: string | null;
+  // ACC-271 PR 6b — no old people field: who works the stage is `who` below.
   escalationConfig: Record<string, unknown> | null;
   // ACC-255 — the record actions this stage allows and its flags, as keys in
   // registry order (record-registry.ts). Labels are the frontend's.
@@ -66,8 +57,8 @@ export interface IWorkflowStage {
   // A record at a final stage counts (a dissolved committee is at Dissolved);
   // a cancelled instance does not.
   liveCount?: number;
-  // ACC-271 PR 3 — on a template read and a stage save. Null on a stage still on
-  // the old assignee columns (whoMode null).
+  // ACC-271 PR 3 — on a template read and a stage save. Null only on a stage
+  // with no `whoMode` (none exist; such a stage is worked by nobody, PR 6a).
   who?: IStageWho | null;
   // ACC-271 PR 3 — the read-back sentence, built by the server (stage-who.ts).
   whoSentence?: { en: string; ar: string } | null;

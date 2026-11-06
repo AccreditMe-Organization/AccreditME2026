@@ -80,7 +80,7 @@ describe('Who works a stage, saved and kept, against a real database (ACC-271 PR
       data: { organizationId: o.id, nameEn: 'Committee Management', nameAr: 'إدارة اللجان', objectType: 'COMMITTEE', isDefault: true, isActive: true },
     });
     const stage = await prisma.workflowStage.create({
-      data: { workflowTemplateId: template.id, nameEn: 'Terms Review', nameAr: 'مراجعة الشروط', order: 20, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', whoMode: 'ANY_ONE' },
+      data: { workflowTemplateId: template.id, nameEn: 'Terms Review', nameAr: 'مراجعة الشروط', order: 20, whoMode: 'ANY_ONE' },
     });
     await prisma.workflowStageAssignee.create({
       data: { organizationId: o.id, stageId: stage.id, order: 1, kind: 'SPECIFIC_USER', userId: admin.id, isStartingAssignment: true },
@@ -336,30 +336,15 @@ describe('Who works a stage, saved and kept, against a real database (ACC-271 PR
     expect(await stageCount(a.template)).toBe(before);
   });
 
-  it('who sent with an old people field is refused, and no stage is created', async () => {
-    const o = await org();
-    const before = await stageCount(o.template);
-    const body = await refusal(
-      templates.addStage(o.template, { nameEn: 'Mixed', order: 60, approvalMode: 'SINGLE', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } } as never, o.id, o.admin),
-    );
-    expect(body).toEqual(expect.objectContaining({ status: 400, code: 'WHO_MOVED_TO_STAGE', field: 'approvalMode' }));
-    expect(await stageCount(o.template)).toBe(before);
-  });
-
-  it('a move out of a converted stage needs no trigger, and a people value is refused', async () => {
+  // ACC-271 PR 6b — a new move names no people, and is a person's.
+  it('a new move needs no trigger and is stored with mover PERSON', async () => {
     const o = await org();
     const to = await prisma.workflowStage.create({
-      data: { workflowTemplateId: o.template, nameEn: 'Active', order: 70, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', whoMode: 'ANY_ONE' },
+      data: { workflowTemplateId: o.template, nameEn: 'Active', order: 70, whoMode: 'ANY_ONE' },
     });
     const made = await templates.addTransition({ fromStageId: o.stage, toStageId: to.id, labelEn: 'Activate' } as never, o.id, o.admin);
     const stored = await prisma.workflowTransition.findUniqueOrThrow({ where: { id: made.transition.id } });
-    expect(stored).toEqual(expect.objectContaining({ mover: 'PERSON', triggerCondition: 'ROLE_BASED', requiredPermission: null }));
-
-    const body = await refusal(
-      templates.addTransition({ fromStageId: o.stage, toStageId: to.id, labelEn: 'Anyone', triggerCondition: 'ANY_AUTHENTICATED' } as never, o.id, o.admin),
-    );
-    expect(body).toEqual(expect.objectContaining({ code: 'WHO_MOVED_TO_STAGE', field: 'triggerCondition' }));
-    expect(await prisma.workflowTransition.count({ where: { fromStageId: o.stage, labelEn: 'Anyone' } })).toBe(0);
+    expect(stored.mover).toBe('PERSON');
   });
 
   // ── ACC-271 PR 5a — the stage editor's pickers ─────────────────────────────
