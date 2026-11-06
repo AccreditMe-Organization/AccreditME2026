@@ -3712,8 +3712,8 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   ("tasks filtered by sourceType + sourceId"). **The ONLY list query
   here that returns assignees** (ACC-76), typed `ITaskWithAssignees[]`
   rather than `ITask[]`. `getMyTasks()` needs none (every row is the
-  caller's own by construction) and `listUnassigned()` has none by
-  definition, so this stayed one endpoint's shape change rather than
+  caller's own by construction) and `listUnassigned()` (since removed, ACC-120)
+  had none by definition, so this stayed one endpoint's shape change rather than
   all three. Returns ACTIVE assignees only (`removedAt: null`) — the
   same definition of "assigned" `getMyTasks()` uses; without that
   filter a completed task would list everyone ever assigned, since
@@ -4285,7 +4285,7 @@ task surface reads the same helper.
 |---|---|---|
 | `getMyTasks()` | `GET /tasks/my-tasks` | `home.component.ts` only since ACC-120 slice 3 (My tasks reads `GET /tasks/record-list?view=mine`, §3.20); kept for Home |
 | `getForSource()` | `GET /tasks` | `task-list.component.ts` (routed page) **+ `committee-detail.component.ts` directly** (ACC-76) |
-| `getUnassigned()` | `GET /tasks/unassigned` | **Removed (ACC-120 slice 3)** with `unassigned-tasks.component.ts`; the Unassigned view reads `GET /tasks/record-list?view=unassigned` (§3.20). The backend route is left in place |
+| `getUnassigned()` | `GET /tasks/unassigned` | **Removed (ACC-120 slice 3)** with `unassigned-tasks.component.ts`; the Unassigned view reads `GET /tasks/record-list?view=unassigned` (§3.20). The backend route and `TaskService.listUnassigned()` were removed later in ACC-120 (#262) |
 | `getById()` | `GET /tasks/:id` | **ZERO frontend callers found** |
 | `create()` | `POST /tasks` | `task-form.component.ts`, `onSubmit()` (rendered from `task-list.component.ts`, confirmed referenced there) |
 | `complete()` | `POST /tasks/:id/complete` | `task-action-host.component.ts` (every list row, My tasks' included) and `task-page.component.ts` |
@@ -5602,7 +5602,6 @@ is how a reader asks. **There is no second copy**:
 | The task page and every file path (`TaskAdmissionService.admit()`) | `isVisible(ctx, taskId)` — the same condition on one row |
 | A record's Tasks panel and list, All tasks, Unit tasks, Unassigned list views (`TaskRecordListService`) | `AND taskVisibleSql(ctx)` in the `WHERE`, **before** `LIMIT` — never filtered after paging |
 | Workload counts (`TaskWorkloadService`) | View all, or unit scope over the record (`seesWholeRecord()`) |
-| Unassigned (`TaskService.listUnassigned()`) | Manage tasks, limited to the types held, the record checked |
 | Deciding, resuming, reassigning, managing (`task-request`, `task.service`, `task-assignment`) | `holdsTaskKey(…, 'MANAGE')` on the task's type, where `tasks:reassign` was |
 | Creating, the SLA preview, drafting (`createForViewer()`, `slaPreview()`, `TaskDraftService`) | `holdsTaskKey(…, 'CREATE')` on the type, or on any type when none is named (`assertMayCreateTasks()`, a 403 naming the key or keys) |
 
@@ -5793,8 +5792,9 @@ no endpoint. The design reference is
   `/tasks`, because one there would turn the rail to exact matching and every
   view would go dark.
 - **Deleted:** `UnassignedTasksComponent`, `TaskListComponent` and
-  `TaskService.getUnassigned()`. The backend's `GET /tasks/unassigned` is
-  left in place, with no frontend caller.
+  `TaskService.getUnassigned()`. The backend's `GET /tasks/unassigned` was
+  left in place with no frontend caller, then removed with
+  `TaskService.listUnassigned()` later in ACC-120 (#262). The redirect stays.
 - **Created by me is built** (`?view=created`, «مهام أنشأتها»), and **My
   tasks is rebuilt** on the shared list (above). **Not built here:** Home's
   task lines; Home still reads `GET /tasks/my-tasks`, which stays for it.
