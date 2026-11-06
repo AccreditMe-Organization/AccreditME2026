@@ -28,12 +28,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // underlying gap that motivated that decision, WorkflowStage having no
 // persisted stage key/slug, applies identically to WorkflowTransition).
 //
-// Does NOT filter on triggerCondition (e.g. hiding SYSTEM_AUTOMATIC
-// transitions a human should never manually fire) — out of scope for this
-// pass since no shipped workflow seed uses anything but ROLE_BASED today.
-// Flagging here for whichever future module first seeds a
-// SYSTEM_AUTOMATIC/SPECIFIC_USER transition and needs this component to
-// stop showing it as a clickable button.
+// The buttons are exactly the moves GET /workflows/instances/:id/moves returns
+// (ACC-271): a person's moves, for whoever works the stage. The app's own moves
+// are never offered.
 @Component({
   selector: 'app-workflow-transition-actions',
   standalone: true,

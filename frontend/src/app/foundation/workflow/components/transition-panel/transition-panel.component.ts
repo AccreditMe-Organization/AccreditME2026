@@ -32,7 +32,7 @@ import {
 } from '../../services/workflow-template.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { plainWorkflowRefusalKey, whoMovedToStageMessage } from '../../workflow-refusal';
+import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { workflowLabelKey } from '../../workflow-labels';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
@@ -740,10 +740,8 @@ export class TransitionPanelComponent implements OnChanges {
     });
   }
 
-  /** A refused save: the server's own sentence for a changed people field, shown as it is; anything else by its code. */
+  /** A refused save, said by its code. */
   private refusalText(err: unknown): string {
-    const whoMoved = whoMovedToStageMessage(err, this.languageService.isArabic());
-    if (whoMoved) return whoMoved;
     return this.translate.instant(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed')) as string;
   }
 

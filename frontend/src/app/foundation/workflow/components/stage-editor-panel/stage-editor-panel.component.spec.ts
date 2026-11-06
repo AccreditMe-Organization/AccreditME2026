@@ -33,15 +33,6 @@ const STAGE: WorkflowStageDto = {
   slaWorkingHours: 40,
   isInitial: false,
   isFinal: false,
-  approvalMode: 'SINGLE',
-  parallelThreshold: null,
-  committeeId: null,
-  assigneeStrategy: 'ROLE',
-  assigneeUserId: null,
-  assigneeRoleId: 'role-1',
-  assigneeCommitteeRoleValueId: null,
-  assigneePositionId: null,
-  assigneeOrgUnitId: null,
   escalationConfig: null,
   actions: ['add_member', 'remove_member', 'change_member_role'],
   flags: [],
@@ -359,7 +350,9 @@ describe('StageEditorPanelComponent (ACC-255 PR 4b)', () => {
     expect('actions' in req.request.body).toBeFalse();
     expect('flags' in req.request.body).toBeFalse();
     expect(req.request.body.who).toEqual({ mode: 'ANY_ONE', entries: [{ kind: 'POSITION_IN_UNIT', positionId: 'pos-qm', orgUnitId: 'unit-q' }] });
-    for (const old of ['approvalMode', 'assigneeStrategy', 'assigneeRoleId', 'parallelThreshold']) expect(old in req.request.body).withContext(old).toBeFalse();
+    // ACC-271 PR 6b — only what the create DTO takes (the server refuses anything else, 400).
+    const takes = ['nameEn', 'nameAr', 'description', 'order', 'slaWorkingHours', 'isInitial', 'isFinal', 'escalationConfig', 'actions', 'flags', 'who'];
+    expect(Object.keys(req.request.body).filter((k) => !takes.includes(k))).toEqual([]);
     req.flush({ ...STAGE, id: 'stage-new' });
   });
 

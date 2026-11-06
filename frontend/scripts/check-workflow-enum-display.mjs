@@ -9,7 +9,10 @@
 // screen, in both languages. Each now goes through a label helper
 // (workflow-labels.ts, or the configurator's actionTypeName()).
 //
-// So this fails a template that prints one of those five fields DIRECTLY:
+// ACC-271 PR 6b — the stage's approval mode and assignee strategy, and the
+// move's trigger condition, are gone from the API, so they are not scanned.
+//
+// So this fails a template that prints one of the fields below DIRECTLY:
 //   - an interpolation whose whole expression ends in the field
 //       {{ stage.approvalMode }}  {{ t?.triggerCondition }}
 //   - a [value] / [label] / [text] binding whose whole expression ends in it
@@ -44,7 +47,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
-const FIELDS = 'approvalMode|assigneeStrategy|triggerCondition|objectType|actionType|mover';
+const FIELDS = 'objectType|actionType|mover';
 // ACC-271 PR 5a — the who fields, on the objects that carry them (see above).
 const WHO = String.raw`(?:\bwho\??\.mode|\b(?:draft|whoDraft|d)(?:\(\))?\.mode\(\)|\b(?:entry|saved|whoEntry)\??\.kind)`;
 // ACC-271 PR 5b — a transition's kind, on the objects that carry one (see above).
@@ -59,12 +62,10 @@ function findings(source) {
 
 // ── Non-vacuity: the patterns catch what they must, and leave the fix alone ──
 const MUST_FLAG = [
-  '{{ stage.approvalMode }}',
-  '{{stage.assigneeStrategy}}',
-  '{{ t?.triggerCondition }}',
   '<p-tag [value]="template.objectType" />',
+  '{{template.objectType}}',
   '<p-tag [value]="action.actionType" severity="info" />',
-  '[label]="row.approvalMode"',
+  '[label]="row.actionType"',
   // ACC-271 PR 5a — a who entry's kind, and a stage's who mode.
   '{{ entry.kind }}',
   '{{ row().saved?.kind }}',
@@ -82,11 +83,10 @@ const MUST_FLAG = [
   '{{ editingTransition()?.kind }}',
 ];
 const MUST_PASS = [
-  '{{ approvalLabelKey(stage.approvalMode) | translate }}',
-  '[value]="triggerLabelKey(transition.triggerCondition) | translate"',
+  "{{ workflowLabelKey('objectType', template.objectType) | translate }}",
   '[value]="actionTypeName(action.actionType)"',
-  "{{ 'workflow.approvalMode' | translate }}",
-  '@if (form.value.approvalMode === "PARALLEL") {',
+  "{{ 'workflow.objectType' | translate }}",
+  '@if (template.objectType === "COMMITTEE") {',
   // ACC-271 PR 5a — in words, and a storage option's kind bound as a radio's value.
   "{{ workflowLabelKey('stageAssignee', entry.kind) | translate }}",
   '{{ modeLabel(d.mode()) }}',

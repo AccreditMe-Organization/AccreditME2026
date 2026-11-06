@@ -24,7 +24,6 @@ import {
   finalStageTaskCount,
   flagExactlyOne,
   plainWorkflowRefusalKey,
-  whoMovedToStageMessage,
   whoRefusal,
 } from '../../workflow-refusal';
 import { ButtonModule } from 'primeng/button';
@@ -834,10 +833,6 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
           : this.translate.instant('workflow.editor.flagMissingNamed', { flag: flagLabel }),
       };
     }
-    // ACC-271 PR 3 — a changed old people field: the server's own sentence, in
-    // the reader's language. Shown as it is, never looked up as a key.
-    const whoMoved = whoMovedToStageMessage(err, this.languageService.isArabic());
-    if (whoMoved) return { body: whoMoved };
     const key = plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.saveFailed');
     return { body: this.translate.instant(key) };
   }

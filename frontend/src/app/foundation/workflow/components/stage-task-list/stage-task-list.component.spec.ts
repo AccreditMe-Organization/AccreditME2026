@@ -35,15 +35,6 @@ const STAGE: WorkflowStageDto = {
   slaWorkingHours: 40,
   isInitial: false,
   isFinal: false,
-  approvalMode: 'SINGLE',
-  parallelThreshold: null,
-  committeeId: null,
-  assigneeStrategy: 'ROLE',
-  assigneeUserId: null,
-  assigneeRoleId: null,
-  assigneeCommitteeRoleValueId: null,
-  assigneePositionId: null,
-  assigneeOrgUnitId: null,
   escalationConfig: null,
 };
 
