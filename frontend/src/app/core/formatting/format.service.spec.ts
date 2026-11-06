@@ -141,6 +141,26 @@ describe('FormatService (ACC-94)', () => {
     });
   });
 
+  // ACC-279 — Home's greeting: the part of the day in the ORGANISATION's zone.
+  describe('dayPart — in the tenant zone, never the browser zone', () => {
+    it('morning before 12:00, afternoon before 17:00, evening after', () => {
+      context.zone.set('Asia/Riyadh');
+      expect(format.dayPart(new Date('2026-11-06T08:59:00Z'))).toBe('morning'); // 11:59
+      expect(format.dayPart(new Date('2026-11-06T09:00:00Z'))).toBe('afternoon'); // 12:00
+      expect(format.dayPart(new Date('2026-11-06T13:59:00Z'))).toBe('afternoon'); // 16:59
+      expect(format.dayPart(new Date('2026-11-06T14:00:00Z'))).toBe('evening'); // 17:00
+      expect(format.dayPart(new Date('2026-11-06T21:00:00Z'))).toBe('morning'); // 00:00 the next day
+    });
+
+    it('the same instant is a different part of the day in another tenant zone', () => {
+      const at = new Date('2026-11-06T10:00:00Z');
+      context.zone.set('Asia/Riyadh');
+      expect(format.dayPart(at)).toBe('afternoon'); // 13:00
+      context.zone.set('America/New_York');
+      expect(format.dayPart(at)).toBe('morning'); // 05:00
+    });
+  });
+
   describe('relative — how long ago, with correct plurals', () => {
     const now = new Date('2026-09-15T12:00:00Z');
     const ago = (ms: number) => new Date(now.getTime() - ms);
