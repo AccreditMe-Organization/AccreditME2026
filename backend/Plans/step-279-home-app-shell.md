@@ -697,6 +697,31 @@ open, 1280 with the rail collapsed, and 390 × 844**, in **English and Arabic**.
 
 - [x] Step 1: this plan (ACC-279), committed, not pushed
 - [x] Ahmad's answers to §5.5 (6 Nov), and ACC-280 created
-- [ ] Backend: `GET /committees/mine`, `GET /home/admin-summary`, `oldestSince`, with their specs
-- [ ] Frontend: extractions (§3.6–3.7), `MyWorkCountsService`, the `ar.json` fixes (§3.8), then Home, then the specs and the layout spec
-- [ ] Docs: SYSTEM-REFERENCE (Home section, §13.9's "out of scope" line, §17.8 placement); CLAUDE.md Key Architecture Decisions (ACC-279)
+- [x] Backend: `GET /committees/mine`, `GET /home/admin-summary`, `oldestSince`, with their specs
+- [x] Frontend: extractions (§3.6–3.7), `MyWorkCountsService`, the `ar.json` fixes (§3.8), then Home, then the specs and the layout spec (done)
+- [x] Docs: SYSTEM-REFERENCE (Home section, §13.9's "out of scope" line, §17.8 placement); CLAUDE.md Key Architecture Decisions (ACC-279)
+
+---
+
+## 7. As built: where the build differs from the plan above
+
+- **Awaiting my action has no "View all".** Q10 named it a link to `/tasks`, but
+  `/tasks` does not list records awaiting a person (those are workflow stages
+  and change requests, not tasks). A link to a list that does not hold them
+  would be a wrong turn. The header count says how many there are.
+- **The admin summary's committees part checks the permission, not the
+  module.** The backend has no notion of the rail's module rule. The screen
+  draws the tile only while `isNavModuleOpen('committees')` holds, and the
+  extra grouped query is the only cost.
+- **The seats limit shown is `Organization.maxUsers`**, the number
+  `assertSeatAvailable()` enforces. It is shown only when the plan sets
+  `maxFullUsers` (Q6). Setting a plan does not copy `maxFullUsers` into
+  `maxUsers`, so the two can differ. That is recorded, not fixed here.
+- **The Setup health link on Needs fixing, and each tile's number link, follow
+  the route's own permissions** (`ROUTE_PERMISSIONS`). Setup health needs
+  `admin:access` as well as `setup:view`, so a viewer without it sees the
+  block with no link.
+- **The counts service is `foundation/home/my-work-counts.service.ts`**, and the
+  event is `core/my-work/my-work-events.ts`. Its reads are `myTasks`,
+  `myOverdue`, `awaiting` and `myCommittees` (§2.5). Home's entry right after
+  sign-in does not load twice: a load begun within 2 seconds is not repeated.

@@ -471,6 +471,7 @@ ACC-244: Task visibility rule and per-record-type task keys ✅
 ACC-255: What each workflow stage allows, and stage flags ✅
 ACC-271: Stage pools (PRs 1, 2, 4 merged; 3 and 5 to come)
 ACC-272: Role permissions as a grouped list, and "A user's permissions" ✅
+ACC-279: Home to the App Shell design: one Home, admin block, work counts
 
 ### Onboarding
 Tenant Onboarding wizard
@@ -4595,6 +4596,54 @@ The rule is Ahmad's 29 Oct comment on ACC-221. Briefly:
   previous owner keeps their roles.
 - **`GET /users/:id` says `isAccountOwner`** and the platform detail `owner`,
   each from an existing read. **No query on the per-request path.**
+
+## Key Architecture Decisions (ACC-279)
+
+Home built to the App Shell design. Full mechanism: SYSTEM-REFERENCE.md §10.24.
+Plan and Ahmad's answers (6 Nov, Q1–Q13): `backend/Plans/step-279-home-app-shell.md`.
+Briefly:
+
+- **ONE HOME FOR EVERYONE, GATED BY PERMISSION AND MODULE, NEVER BY A ROLE NAME.**
+  - Admin permissions get the admin block on top: Needs fixing (`setup:view`)
+    and tiles, each on its own permission. Then come the same personal tiles
+    and panels for everyone.
+  - A module part asks `isNavModuleOpen()`, the rail item's own `moduleKey`,
+    so Home and the rail cannot disagree about a module.
+- **No purpose line, no header actions** (ACC-79's tests; Q7). New task comes
+  with ACC-280's record picker.
+- **The H1 greets in the organisation's zone** (`FormatService.dayPart()`).
+  Arabic has two forms only (Ahmad).
+- **`MyWorkCountsService` IS THE ONE SOURCE OF A PERSON'S WORK COUNTS**, for
+  Home and lane A's rail. It is built from existing reads: the `/tasks` mine
+  view (5 rows plus `matching`), its overdue count, `awaiting-me` plus change
+  requests, and `GET /committees/mine`.
+  - It loads once after sign-in, on Home's entry, and after a successful
+    action (`MyWorkEvents.changed()`).
+  - **It never polls.** A new action that changes a count emits
+    `changed()` in its service, after success only.
+- **A FAILED COUNT SAYS SO, WITH RETRY, AND NEVER SHOWS 0**, on every tile and
+  panel. A read made of two halves fails whole: a partial count is a wrong one.
+  Awaiting my action no longer vanishes on failure or at 0.
+- **Two new reads, and nothing on the per-request path:**
+  - **`GET /committees/mine`:** self-scoped, no `@Permissions` (being a member
+    is the entitlement, Q2), 8 queries whatever the count.
+  - **`GET /home/admin-summary`:** no `@Permissions`; each part on its own
+    permission, decided before reading.
+    - At most 7 queries in one `allSettled` wave.
+    - Below quorum comes from ONE grouped query.
+    - A failed part is `{ failed: true }`.
+  - **`awaiting-me` gained `oldestSince`** (additive, no query).
+- **Needs fixing words a condition with the page's own `SetupConditionRows`**,
+  and says "hourly", which is the reconciler's real cadence.
+- **The seats line shows only with a seat limit** (a plan's `maxFullUsers`),
+  as ACTIVE + INVITED of the enforced `Organization.maxUsers`. It never reads
+  "of 0". Setting a plan does not sync the two: a known gap.
+- **`committeeListStatus()` lives in `committees/committee-status.ts`**, shared
+  by the list and My committees.
+- **Arabic copy rule (Ahmad, 6 Nov): singular address, no gendered verb about
+  a person.** Eight change-request lines became noun phrases («مقدَّم من
+  {{name}}»), and `home-arabic.spec.ts` pins them.
+- **No migration.**
 
 ## Open / Deferred Items
 
