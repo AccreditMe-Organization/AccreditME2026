@@ -43,12 +43,6 @@ const SINGLE_STAGE = {
   slaWorkingHours: null as number | null,
   isInitial: true,
   isFinal: false,
-  approvalMode: 'SINGLE',
-  parallelThreshold: null as string | null,
-  committeeId: null as string | null,
-  assigneeStrategy: 'SELF',
-  assigneeUserId: null as string | null,
-  assigneeRoleId: null as string | null,
   // ACC-271 PR 6a — every fixture stage is converted, as every stage on the
   // shared database is (the 29 Oct backfill's mapping: SINGLE → Any one,
   // PARALLEL ALL → All, COMMITTEE → Committee vote). Who works it comes from
@@ -60,10 +54,6 @@ const PARALLEL_STAGE = {
   ...SINGLE_STAGE,
   id: 'stage-parallel',
   isInitial: false,
-  approvalMode: 'PARALLEL',
-  parallelThreshold: 'ALL',
-  assigneeStrategy: 'ROLE',
-  assigneeRoleId: 'role-qm',
   whoMode: 'ALL',
 };
 
@@ -71,9 +61,6 @@ const COMMITTEE_STAGE = {
   ...SINGLE_STAGE,
   id: 'stage-committee',
   isInitial: false,
-  approvalMode: 'COMMITTEE',
-  assigneeStrategy: 'COMMITTEE',
-  committeeId: 'committee-a',
   whoMode: 'COMMITTEE_VOTE',
 };
 
@@ -127,13 +114,11 @@ const BASE_TRANSITION = {
   toStageId: 'stage-target',
   labelEn: 'Submit',
   labelAr: 'إرسال',
-  requiredPermission: null as string | null,
-  triggerCondition: 'ANY_AUTHENTICATED',
-  triggerUserId: null as string | null,
-  triggerRoleId: null as string | null,
   validatorConfig: null as unknown,
   isApprovalPath: false,
   kind: 'ADVANCE' as 'ADVANCE' | 'RETURN' | 'EXIT',
+  // ACC-271 PR 6b — the mover is read alone.
+  mover: 'PERSON' as string | null,
 };
 
 const BASE_APPROVAL = {
@@ -242,33 +227,8 @@ const poolOf = (members: string[], extra: Partial<StagePool> = {}): StagePool =>
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-// ⚠️ MOCKING RULE FOR THIS FILE — any mock of `mockPrisma.user.findMany`
-// MUST honor the `id: { in: [...] }` filter.
-//
-// Assignee resolution queries user.findMany TWICE per call: once for the
-// strategy's own lookup (ROLE via userRole, POSITION_FIXED via user directly,
-// etc.), and then again inside applyOutOfOfficeRouting(), which re-queries
-// `{ id: { in: <whatever the first call resolved> }, organizationId }` to
-// check each resolved user's out-of-office window. The same is true of
-// resolveApproverPool(), which ends in the same applyOutOfOfficeRouting()
-// call.
-//
-// A blanket `mockResolvedValue([...])` answers BOTH queries identically and
-// silently corrupts the pool in one of two directions:
-//   - returns MORE than the first call resolved → re-expands a pool that
-//     SINGLE mode had just narrowed to one assignee;
-//   - returns [] or fewer → empties a pool that should be populated, so a
-//     gate under test is skipped and the test fails for a reason unrelated
-//     to the code being tested.
-//
-// Both failure modes have already occurred in this file's history (ACC-54:
-// once on the SINGLE-narrowing test, once on the approver-eligibility test),
-// each time producing a red test that looked like a bug in the
-// implementation and was not. Use mockImplementation and filter:
-//
-//   mockPrisma.user.findMany.mockImplementation(({ where }) =>
-//     Promise.resolve(where.id?.in ? holders.filter((h) => where.id.in.includes(h.id)) : holders),
-//   );
+// Who works a stage comes from mockStagePool (ACC-271): a test sets the pool it
+// needs with poolOf(). Since PR 6b nothing in the engine resolves people itself.
 describe('WorkflowService', () => {
   let service: WorkflowService;
 
@@ -280,12 +240,9 @@ describe('WorkflowService', () => {
     mockPrisma.task.findMany.mockResolvedValue([]);
     mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
     mockPrisma.workflowInstanceStage.update.mockResolvedValue(BASE_INSTANCE_STAGE);
-    // ACC-28 Section 2.5 — default: no ASSIGNEE_POOL outgoing transitions, so
-    // checkAndFlagUnassignedStage() is a no-op for every pre-existing test.
-    // Tests that specifically exercise 2.5 override this per-case.
+    // Default: no outgoing transitions to list.
     mockPrisma.workflowTransition.findMany.mockResolvedValue([]);
-    // Default: no user is out-of-office — applyOutOfOfficeRouting() passes
-    // resolveAssignee()'s raw result through unchanged for existing tests.
+    // Default: no user is out-of-office.
     mockPrisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
       Promise.resolve(
         where.id.in.map((id) => ({ id, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null })),
@@ -987,10 +944,8 @@ describe('WorkflowService', () => {
       mockPrisma.workflowStage.findFirst.mockResolvedValue(SINGLE_STAGE);
     });
 
-    it('throws ForbiddenException for SYSTEM_AUTOMATIC transitions', async () => {
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ triggerCondition: 'SYSTEM_AUTOMATIC' }),
-      );
+    it('throws ForbiddenException for a move the app runs (mover APP)', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ mover: 'APP' }));
 
       await expect(
         service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
@@ -2063,11 +2018,10 @@ describe('WorkflowService', () => {
 
   // ── ACC-271: a converted stage (whoMode set) is worked by its pool ────────────
   describe('converted stages (ACC-271)', () => {
-    // approvalMode is left at SINGLE / PARALLEL on purpose: on a converted
-    // stage the who mode decides, and the old columns are not read.
+    // The who mode decides (ACC-271 PR 6b: no old people column is read or sent).
     const POOL_STAGE = { ...SINGLE_STAGE, id: 'stage-pool', nameEn: 'Quality review', nameAr: 'مراجعة الجودة', whoMode: 'ANY_ONE' };
     const ALL_STAGE = { ...POOL_STAGE, whoMode: 'ALL' };
-    const VOTE_STAGE = { ...POOL_STAGE, whoMode: 'COMMITTEE_VOTE', approvalMode: 'PARALLEL' };
+    const VOTE_STAGE = { ...POOL_STAGE, whoMode: 'COMMITTEE_VOTE' };
     const POOL_INSTANCE_STAGE = makeInstanceStage({ stageId: 'stage-pool' });
 
     function arrange(fromStage: Record<string, unknown>, transition: Record<string, unknown> = {}, toStage: Record<string, unknown> = TARGET_STAGE) {
@@ -2095,13 +2049,8 @@ describe('WorkflowService', () => {
       );
 
     describe('who may press a move (decision 1)', () => {
-      it("lets a member of the stage's pool move it, without the transition's permission, role or user", async () => {
-        arrange(POOL_STAGE, {
-          requiredPermission: 'committees:approve',
-          triggerCondition: 'SPECIFIC_USER',
-          triggerUserId: 'someone-else',
-          triggerRoleId: 'role-x',
-        });
+      it("lets a member of the stage's pool move it, holding no permission at all", async () => {
+        arrange(POOL_STAGE);
         mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
 
         await trigger([]);
@@ -2112,7 +2061,7 @@ describe('WorkflowService', () => {
       });
 
       it('refuses someone outside the pool with NOT_IN_STAGE_POOL (403), whatever permissions they hold', async () => {
-        arrange(POOL_STAGE, { requiredPermission: 'committees:approve' });
+        arrange(POOL_STAGE);
         mockStagePool.resolve.mockResolvedValue(poolOf(['user-nora']));
 
         const body = await refusal(trigger(['committees:approve']));
@@ -2142,7 +2091,6 @@ describe('WorkflowService', () => {
 
       it.each([
         ['mover APP', { mover: 'APP' }],
-        ['SYSTEM_AUTOMATIC with no mover', { triggerCondition: 'SYSTEM_AUTOMATIC' }],
         ['mover AUTOMATIC', { mover: 'AUTOMATIC' }],
       ])('refuses a move a person does not make (%s), even to a pool member', async (_label, transition) => {
         arrange(POOL_STAGE, transition);
@@ -2152,13 +2100,21 @@ describe('WorkflowService', () => {
         expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
       });
 
-      it("a mover PERSON on a SYSTEM_AUTOMATIC row is a person's move: the marker wins over the old field", async () => {
-        arrange(POOL_STAGE, { triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'PERSON' });
+      // ACC-271 PR 6b — the mover is read alone. A move with none (none exist:
+      // every writer sets one) is nobody's: refused with its own code, even to a
+      // pool member, never read as a person's or the app's.
+      it('refuses a move with no mover with MOVE_HAS_NO_MOVER (409), even to a pool member', async () => {
+        arrange(POOL_STAGE, { mover: null });
         mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
 
-        await trigger();
+        const err = await trigger().then(
+          () => null,
+          (e: { getStatus: () => number; getResponse: () => { code?: string } }) => e,
+        );
 
-        moved();
+        expect(err?.getStatus()).toBe(409);
+        expect(err?.getResponse().code).toBe('MOVE_HAS_NO_MOVER');
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
       });
 
       it("still holds the stage's mandatory tasks (the gate runs on a converted stage too)", async () => {
@@ -2206,7 +2162,7 @@ describe('WorkflowService', () => {
       // stage-pool.service.spec and stage-without-who.db-spec prove that half):
       // refused, even for a caller holding the move's old permission.
       it('a stage with no `who`: no old check runs, and its empty pool refuses STAGE_HAS_NO_ONE, whatever the caller holds', async () => {
-        arrange({ ...POOL_STAGE, whoMode: null }, { requiredPermission: 'committees:approve', triggerCondition: 'ROLE_BASED' });
+        arrange({ ...POOL_STAGE, whoMode: null });
         mockStagePool.resolve.mockResolvedValue(poolOf([]));
 
         const body = await refusal(trigger(['committees:approve']));
@@ -2221,8 +2177,8 @@ describe('WorkflowService', () => {
       const approve = { isApprovalPath: true };
       const approved = (approverId: string) => makeApproval({ approverId, decision: 'APPROVED' });
 
-      it('Any one of them: the first press decides, whatever approvalMode the row still carries', async () => {
-        arrange({ ...POOL_STAGE, approvalMode: 'PARALLEL', parallelThreshold: 'ALL' }, approve);
+      it('Any one of them: the first press decides, however many work the stage', async () => {
+        arrange(POOL_STAGE, approve);
         mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR, 'user-2', 'user-3']));
 
         await trigger();
@@ -2352,7 +2308,7 @@ describe('WorkflowService', () => {
       // ACC-271 PR 6a — no old approver pool: a stage with no `who` refuses its
       // votes from its (empty) pool.
       it('refuses a vote on a stage with no `who` with STAGE_HAS_NO_ONE, never the old approver pool', async () => {
-        arrangeVote({ ...POOL_STAGE, whoMode: null, approvalMode: 'PARALLEL', parallelThreshold: 'ALL' });
+        arrangeVote({ ...POOL_STAGE, whoMode: null });
         mockStagePool.resolve.mockResolvedValue(poolOf([]));
 
         expect((await refusal(vote())).code).toBe('STAGE_HAS_NO_ONE');
@@ -2478,9 +2434,11 @@ describe('WorkflowService', () => {
 
     describe('getMovesForViewer', () => {
       const moves = [
-        { id: 'move-approve', requiredPermission: 'committees:approve', triggerCondition: 'ROLE_BASED', mover: null },
-        { id: 'move-app', requiredPermission: null, triggerCondition: 'SYSTEM_AUTOMATIC', mover: null },
-        { id: 'move-open', requiredPermission: null, triggerCondition: 'ANY_AUTHENTICATED', mover: 'PERSON' },
+        { id: 'move-approve', mover: 'PERSON' },
+        { id: 'move-app', mover: 'APP' },
+        { id: 'move-open', mover: 'PERSON' },
+        // ACC-271 PR 6b — a move with no mover is nobody's: never offered.
+        { id: 'move-none', mover: null },
       ];
       function arrangeMoves(stage: Record<string, unknown>) {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
@@ -2489,7 +2447,7 @@ describe('WorkflowService', () => {
       }
       const ask = (permissions: string[] = []) => service.getMovesForViewer('instance-1', ORG_A, permissions, ACTOR);
 
-      it("a converted stage: a pool member gets the person's moves, whatever they require, and never the app's", async () => {
+      it("a converted stage: a pool member gets the person's moves, never the app's nor one with no mover", async () => {
         arrangeMoves(POOL_STAGE);
         mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
 
@@ -2535,7 +2493,8 @@ describe('WorkflowService', () => {
     });
 
     describe('the move the app runs (the marker)', () => {
-      it('triggerSystemTransition looks for mover APP, or SYSTEM_AUTOMATIC with no mover', async () => {
+      // ACC-271 PR 6b — mover APP only: a move with no mover is never the app's.
+      it('triggerSystemTransition looks for mover APP only', async () => {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
         mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
 
@@ -2545,7 +2504,7 @@ describe('WorkflowService', () => {
           where: {
             fromStageId: 'stage-single',
             toStage: { key: 'approved', workflowTemplateId: 'template-1' },
-            OR: [{ mover: 'APP' }, { mover: null, triggerCondition: 'SYSTEM_AUTOMATIC' }],
+            mover: 'APP',
           },
         });
       });

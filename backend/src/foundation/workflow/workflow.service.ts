@@ -83,8 +83,8 @@ const STAGE_CHANGE_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 //
 // ACC-271 PR 6a — who works a stage, who may move a record out of it and how
 // its votes decide come from the stage's pool and who mode only
-// (StagePoolService). The old approvalMode / assigneeStrategy / trigger
-// branches are gone; a stage with no `who` has an empty pool and is refused.
+// (StagePoolService). The old approval, assignee and trigger branches are
+// gone; a stage with no `who` has an empty pool and is refused.
 @Injectable()
 export class WorkflowService {
   private readonly logger = new Logger(WorkflowService.name);
@@ -295,7 +295,7 @@ export class WorkflowService {
       }),
       this.prisma.workflowTransition.findMany({
         where: { fromStageId: instance.currentStageId, fromStage: { workflowTemplate: { organizationId } } },
-        select: { id: true, triggerCondition: true, mover: true },
+        select: { id: true, mover: true },
         orderBy: { id: 'asc' },
       }),
     ]);
@@ -490,8 +490,8 @@ export class WorkflowService {
     return instances.map((i) => this.mapInstance(i));
   }
 
-  // Administrative force-cancel — bypasses requiredPermission/triggerCondition/
-  // validatorConfig entirely and sets status = CANCELLED regardless of the
+  // Administrative force-cancel — bypasses the stage's pool and validatorConfig
+  // entirely and sets status = CANCELLED regardless of the
   // current stage or the transition graph. Distinct from a modeled "Cancel"
   // transition (MEETING/INCIDENT already have one), which goes through the
   // normal triggerTransition() path.
@@ -568,11 +568,15 @@ export class WorkflowService {
     if (!fromStage) throw new NotFoundException('Current stage not found');
 
     // ACC-271 — the stage says who may move the record out of it: its pool
-    // (decision 1). The transition's requiredPermission, triggerCondition,
-    // triggerRoleId and triggerUserId are never read. PR 6a removed the old
-    // branch for a stage with no `who`: StagePoolService gives such a stage an
-    // EMPTY pool (fail closed), so it is refused STAGE_HAS_NO_ONE.
-    if (transitionMover(transition) !== 'PERSON') {
+    // (decision 1). PR 6a removed the old branch for a stage with no `who`:
+    // StagePoolService gives such a stage an EMPTY pool (fail closed), so it is
+    // refused STAGE_HAS_NO_ONE. PR 6b — the move's mover is read alone: APP is
+    // the module's own, and a move with none (none exist) is made by nobody.
+    const mover = transitionMover(transition);
+    if (mover === null) {
+      throw new WorkflowRefusalException('MOVE_HAS_NO_MOVER', { stageNameEn: fromStage.nameEn, stageNameAr: fromStage.nameAr });
+    }
+    if (mover !== 'PERSON') {
       throw new ForbiddenException('This transition can only be fired by a system process');
     }
     const pool = await this.stagePool.resolve(organizationId, fromStage.id, instance);
@@ -661,9 +665,8 @@ export class WorkflowService {
 
     if (!transition.isApprovalPath) {
       // Any single non-approval-path vote fires immediately — no threshold
-      // required to send something back (matches SEQUENTIAL's "a RETURNED
-      // decision immediately halts the chain" business rule, applied
-      // consistently across all multi-approver modes).
+      // required to send something back: a RETURNED decision halts the stage
+      // at once, whoever works it.
       return this.performTransition(
         instance,
         currentInstanceStage,
@@ -867,19 +870,19 @@ export class WorkflowService {
   }
 
   /**
-   * ACC-239 — the move a MODULE makes on its own record: along the
-   * SYSTEM_AUTOMATIC transition from the record's current stage to the stage
-   * keyed `toStageKey`. A person never fires these through the generic
-   * endpoint (triggerTransition() refuses SYSTEM_AUTOMATIC); the module's own
-   * endpoint has already checked who may act.
+   * ACC-239 — the move a MODULE makes on its own record: along the app's move
+   * (mover APP) from the record's current stage to the stage keyed
+   * `toStageKey`. A person never fires these through the generic endpoint
+   * (triggerTransition() refuses a move whose mover is not PERSON); the
+   * module's own endpoint has already checked who may act.
    *
    * `inTx` is the engine's first caller-supplied write: it runs INSIDE the
    * stage-change transaction, under the instance's row lock, after the "still
    * open" check and the gate and before the move is written, so the module's
    * write and the stage move commit together or not at all. ACC-64 still
    * holds: the engine emits nothing of its own; the module decides what to
-   * write, the engine only lends the transaction. Only SYSTEM_AUTOMATIC
-   * transitions accept it.
+   * write, the engine only lends the transaction. Only the app's moves
+   * (mover APP) accept it.
    */
   async triggerSystemTransition(
     instanceId: string,
@@ -892,8 +895,7 @@ export class WorkflowService {
     if (!instance) throw new NotFoundException('Workflow instance not found');
     if (!instance.currentStageId) throw new ConflictException('Workflow instance has no current stage');
 
-    // ACC-271 — the move the app runs: mover APP, or (until the backfill writes
-    // the marker) a SYSTEM_AUTOMATIC transition with none.
+    // ACC-271 — the move the app runs: mover APP (PR 6b: nothing else).
     const transition = await this.prisma.workflowTransition.findFirst({
       where: {
         fromStageId: instance.currentStageId,
@@ -955,7 +957,7 @@ export class WorkflowService {
     ).length;
 
     // ACC-271 — the stage decides by its who mode (plan §4.3). PR 6a removed
-    // the approvalMode branch.
+    // the old approval-mode branch.
     const stagePool = pool ?? (await this.stagePool.resolve(organizationId, fromStage.id, instance));
     if (fromStage.whoMode === 'ANY_ONE') return approvedCount >= 1;
     if (fromStage.whoMode === 'COMMITTEE_VOTE') {
@@ -1055,9 +1057,9 @@ export class WorkflowService {
 
       // ACC-239 — the module's own write, under this same lock and transaction.
       if (hook.inTx) {
-        // ACC-271 — the move the app runs (mover APP, or SYSTEM_AUTOMATIC with none).
+        // ACC-271 — the move the app runs (mover APP; PR 6b: nothing else).
         if (transitionMover(transition) !== 'APP') {
-          throw new Error('Only a SYSTEM_AUTOMATIC transition takes a write of its own');
+          throw new Error('Only a move the app runs (mover APP) takes a write of its own');
         }
         await hook.inTx(tx);
       }
@@ -1176,7 +1178,7 @@ export class WorkflowService {
    */
   //
   // ACC-271 — a Committee vote's committee: the stage's COMMITTEE entry's own,
-  // or the record's. PR 6a removed the approvalMode branch.
+  // or the record's. PR 6a removed the old approval-mode branch.
   private async quorumSnapshot(
     stage: PrismaWorkflowStage,
     organizationId: string,
@@ -1495,7 +1497,7 @@ export class WorkflowService {
    * StagePoolService.voteCommitteeIds() resolves it — is this one. For the
    * change-request preview ("open votes keep the quorum they began with").
    * BATCHED: one entries query plus one batched committee resolution, never
-   * one per entry. It used to read approvalMode COMMITTEE, which no converted
+   * one per entry. It used to read the old approval mode, which no converted
    * stage has, so it always answered 0.
    */
   async countOpenCommitteeVotes(organizationId: string, committeeId: string): Promise<number> {
@@ -1532,7 +1534,7 @@ export class WorkflowService {
   }
 
   // Whether one person's action decides the stage: a stage worked by Any one of
-  // them. PR 6a removed the approvalMode branch.
+  // them. PR 6a removed the old approval-mode branch.
   private decidesAlone(stage: PrismaWorkflowStage): boolean {
     return stage.whoMode === 'ANY_ONE';
   }

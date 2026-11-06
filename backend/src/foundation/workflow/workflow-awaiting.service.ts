@@ -4,7 +4,7 @@ import type { TransitionMover, WorkflowObjectType, WorkflowTransitionKind } from
 import { recordTypesVisibleTo } from '../../common/services/object-visibility.service';
 import { recordNamesOf } from '../task/task-record-names';
 import { StagePoolService, mayActInStagePool } from './stage-pool.service';
-import { isConvertedStage, transitionMover } from './workflow-pool';
+import { transitionMover } from './workflow-pool';
 import { IWorkflowAwaitingMe, IWorkflowAwaitingRow } from './interfaces/workflow-awaiting.interface';
 
 /** How many rows Home's "Awaiting my action" shows; `total` counts past it. */
@@ -73,7 +73,7 @@ export class WorkflowAwaitingService {
             nameEn: true,
             nameAr: true,
             whoMode: true,
-            transitionsFrom: { select: { kind: true, mover: true, triggerCondition: true, toStageId: true } },
+            transitionsFrom: { select: { kind: true, mover: true, toStageId: true } },
             workflowTemplate: { select: { stages: { select: { id: true }, orderBy: [{ order: 'asc' }, { id: 'asc' }] } } },
           },
         },
@@ -81,7 +81,7 @@ export class WorkflowAwaitingService {
       orderBy: [{ enteredAt: 'asc' }, { id: 'asc' }],
     });
     const candidates = entries.filter(
-      (e) => e.workflowInstance.currentStageId === e.stageId && isConvertedStage(e.stage) && isDecisionPoint(e.stage.id, e.stage.transitionsFrom),
+      (e) => e.workflowInstance.currentStageId === e.stageId && isDecisionPoint(e.stage.id, e.stage.transitionsFrom),
     );
     if (candidates.length === 0) return { total: 0, rows: [] };
 
@@ -147,7 +147,7 @@ export class WorkflowAwaitingService {
  */
 function isDecisionPoint(
   stageId: string,
-  moves: readonly { kind: WorkflowTransitionKind; mover: TransitionMover | null; triggerCondition: string; toStageId: string }[],
+  moves: readonly { kind: WorkflowTransitionKind; mover: TransitionMover | null; toStageId: string }[],
 ): boolean {
   const byPerson = moves.filter((m) => transitionMover(m) === 'PERSON');
   return byPerson.some((m) => m.kind === 'ADVANCE') && byPerson.some((m) => m.kind === 'RETURN' && m.toStageId !== stageId);
