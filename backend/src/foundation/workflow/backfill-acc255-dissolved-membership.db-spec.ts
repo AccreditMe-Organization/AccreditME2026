@@ -38,12 +38,6 @@ describe('backfill:acc255-dissolved-membership, on a real database (ACC-255 PR 2
   async function org(isPlatformOrg = false) {
     const slug = `acc255d-${randomUUID().slice(0, 8)}`;
     const id = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA', isPlatformOrg } })).id;
-    const roleKeys = new Set<string>();
-    for (const w of SEEDS) {
-      for (const s of w.stages) if (s.assigneeRoleKey) roleKeys.add(s.assigneeRoleKey);
-      for (const t of w.transitions) if (t.triggerRoleKey) roleKeys.add(t.triggerRoleKey);
-    }
-    for (const key of roleKeys) await prisma.role.create({ data: { organizationId: id, key, nameEn: key, isSystem: true } });
     await applyWorkflowSeed(prisma, id, SEEDS);
     const dissolved = await stage(id, 'dissolved');
     await prisma.workflowStageRecordAction.createMany({

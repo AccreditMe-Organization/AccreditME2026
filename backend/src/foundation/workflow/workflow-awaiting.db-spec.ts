@@ -54,8 +54,6 @@ describe('Awaiting my action, against a real database (ACC-271)', () => {
     const slug = `acc271aw-${randomUUID().slice(0, 8)}`;
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
     const roleKeys = new Set<string>(['TENANT_ADMIN']);
-    for (const s of COMMITTEE_SEED.stages) if (s.assigneeRoleKey) roleKeys.add(s.assigneeRoleKey);
-    for (const t of COMMITTEE_SEED.transitions) if (t.triggerRoleKey) roleKeys.add(t.triggerRoleKey);
     for (const key of roleKeys) await prisma.role.create({ data: { organizationId: o.id, key, nameEn: key, isSystem: true } });
     await applyWorkflowSeed(prisma, o.id, [COMMITTEE_SEED]);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });

@@ -1,9 +1,7 @@
-// System default workflow templates seeded per tenant on bootstrap, after
-// seedSystemRoles() has run for that tenant (see TenantService.bootstrap()).
-// Role keys below are resolved to that tenant's actual Role.id values at
-// seed time by WorkflowTemplateService.seedDefaultWorkflows() — the same
-// "seed with a stable string, resolve to a real ID at seed time" pattern
-// already used by RoleService.seedSystemRoles() for permission strings.
+// System default workflow templates seeded per tenant on bootstrap (see
+// TenantService.bootstrap()), written by applyWorkflowSeed(). ACC-271 PR 6b —
+// a stage says who works it (`who`) and a move who makes it (`mover`); the
+// seed names no role, permission or trigger.
 
 import { COMMITTEE_ACTIONS, STAGE_FLAG } from './record-registry';
 
@@ -28,17 +26,13 @@ export interface SeedTransition {
   toStageKey: string;
   labelEn: string;
   labelAr: string;
-  triggerCondition: 'SPECIFIC_USER' | 'ROLE_BASED' | 'ANY_AUTHENTICATED' | 'SYSTEM_AUTOMATIC';
-  // ACC-271 PR 6a — who moves the record, stated rather than read off
-  // triggerCondition: a person (PERSON), or the module's own code (APP: today's
-  // SYSTEM_AUTOMATIC moves, the change request's). Written with the transition.
+  // ACC-271 PR 6a — who moves the record: a person (PERSON: whoever works the
+  // from-stage), or the module's own code (APP: the change request's moves).
+  // Written with the transition. PR 6b — the only people field a move has.
   mover: 'PERSON' | 'APP';
-  triggerRoleKey?: string; // resolved to Role.id at seed time
-  requiredPermission?: string;
   validatorConfig?: Record<string, unknown>;
-  // Only meaningful when the fromStage's approvalMode is PARALLEL/SEQUENTIAL/
-  // COMMITTEE — marks which outgoing transition submitApproval() fires once
-  // the stage's threshold is satisfied. Defaults to false (schema default).
+  // On an "All of them" stage, marks which outgoing move submitApproval()
+  // fires once every member has approved. Defaults to false (schema default).
   isApprovalPath?: boolean;
   // ACC-190 — RETURN (send back) and EXIT (end the record) are never held by
   // the stage's mandatory tasks; ADVANCE, the default, is. Stage order cannot
@@ -65,11 +59,8 @@ export interface SeedStage {
   slaWorkingHours?: number;
   isInitial: boolean;
   isFinal: boolean;
-  approvalMode: 'SINGLE' | 'SEQUENTIAL' | 'PARALLEL' | 'COMMITTEE';
-  parallelThreshold?: 'ALL' | 'MAJORITY' | 'ANY';
-  assigneeStrategy: 'SPECIFIC_USER' | 'ROLE' | 'ORG_UNIT_HEAD' | 'SELF' | 'COMMITTEE' | 'ROUND_ROBIN';
-  assigneeRoleKey?: string; // resolved to Role.id at seed time
-  // ACC-271 — who works the stage (plan §5). A stage the record's creator
+  // ACC-271 — who works the stage (plan §5). PR 6b — the only people field a
+  // stage has; the old columns keep their database defaults until 6c drops them. A stage the record's creator
   // drives seeds a CREATOR entry; every other stage seeds NO entry and is
   // marked for a starting assignment: the tenant admin, written by
   // WorkflowTemplateService.assignStartingAssignments() once the first admin
@@ -100,23 +91,6 @@ export interface SeedWorkflow {
   transitions: SeedTransition[];
 }
 
-// NOTE: The following requiredPermission strings are
-// forward references — they do not yet exist in
-// common/constants/permissions.ts and will be added
-// when their respective modules are built:
-//
-//   capa:investigate, capa:approve, capa:close
-//     → Step 18 (CAPA module)
-//
-//   incidents:manage
-//     → Step 17 (Incident module — extend INCIDENTS_PERMISSIONS)
-//
-//   gaps:investigate, gaps:approve
-//     → Step 18 (Gap module)
-//
-// All other permission strings in this file already
-// exist in permissions.ts and are valid.
-
 export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
   // ── 1. DOCUMENT_REQUEST ──────────────────────────────────────────────────
   {
@@ -124,18 +98,18 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Document Request',
     nameAr: 'طلب وثيقة',
     stages: [
-      { key: 'submitted', nameEn: 'Submitted', nameAr: 'مقدّم', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'unit_manager_review', nameEn: 'Unit Manager Review', nameAr: 'مراجعة مدير الوحدة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ORG_UNIT_HEAD', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'quality_review', nameEn: 'Quality Review', nameAr: 'مراجعة الجودة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'approved', nameEn: 'Approved', nameAr: 'مقبول', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'submitted', nameEn: 'Submitted', nameAr: 'مقدّم', order: 10, isInitial: true, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'unit_manager_review', nameEn: 'Unit Manager Review', nameAr: 'مراجعة مدير الوحدة', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'quality_review', nameEn: 'Quality Review', nameAr: 'مراجعة الجودة', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'approved', nameEn: 'Approved', nameAr: 'مقبول', order: 40, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 50, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
-      { fromStageKey: 'submitted', toStageKey: 'unit_manager_review', labelEn: 'Submit Request', labelAr: 'تقديم الطلب', triggerCondition: 'ANY_AUTHENTICATED', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'unit_manager_review', toStageKey: 'quality_review', labelEn: 'Approve', labelAr: 'موافقة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'org:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'unit_manager_review', toStageKey: 'rejected', labelEn: 'Reject', labelAr: 'رفض', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'EXIT', requiredPermission: 'org:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'quality_review', toStageKey: 'approved', labelEn: 'Approve Request', labelAr: 'قبول الطلب', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'documents:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'quality_review', toStageKey: 'rejected', labelEn: 'Reject Request', labelAr: 'رفض الطلب', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'EXIT', requiredPermission: 'documents:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'submitted', toStageKey: 'unit_manager_review', labelEn: 'Submit Request', labelAr: 'تقديم الطلب', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'unit_manager_review', toStageKey: 'quality_review', labelEn: 'Approve', labelAr: 'موافقة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'unit_manager_review', toStageKey: 'rejected', labelEn: 'Reject', labelAr: 'رفض', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'quality_review', toStageKey: 'approved', labelEn: 'Approve Request', labelAr: 'قبول الطلب', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'quality_review', toStageKey: 'rejected', labelEn: 'Reject Request', labelAr: 'رفض الطلب', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 
@@ -145,25 +119,25 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Document Lifecycle',
     nameAr: 'دورة حياة الوثيقة',
     stages: [
-      { key: 'drafting', nameEn: 'Drafting', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'owners_review', nameEn: 'Owners Review', nameAr: 'مراجعة المُلاك', order: 20, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40, who: { mode: 'ALL', startingAssignment: true } },
-      { key: 'stakeholders_review', nameEn: 'Stakeholders Review', nameAr: 'مراجعة أصحاب المصلحة', order: 30, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40, who: { mode: 'ALL', startingAssignment: true } },
-      { key: 'final_approval', nameEn: 'Final Approval', nameAr: 'الموافقة النهائية', order: 40, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 24, who: { mode: 'ALL', startingAssignment: true } },
-      { key: 'publish_approval', nameEn: 'Publish Approval', nameAr: 'موافقة النشر', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'published', nameEn: 'Published', nameAr: 'منشورة', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'obsolete', nameEn: 'Obsolete', nameAr: 'ملغاة', order: 70, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'drafting', nameEn: 'Drafting', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'owners_review', nameEn: 'Owners Review', nameAr: 'مراجعة المُلاك', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 40, who: { mode: 'ALL', startingAssignment: true } },
+      { key: 'stakeholders_review', nameEn: 'Stakeholders Review', nameAr: 'مراجعة أصحاب المصلحة', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 40, who: { mode: 'ALL', startingAssignment: true } },
+      { key: 'final_approval', nameEn: 'Final Approval', nameAr: 'الموافقة النهائية', order: 40, isInitial: false, isFinal: false, slaWorkingHours: 24, who: { mode: 'ALL', startingAssignment: true } },
+      { key: 'publish_approval', nameEn: 'Publish Approval', nameAr: 'موافقة النشر', order: 50, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'published', nameEn: 'Published', nameAr: 'منشورة', order: 60, isInitial: false, isFinal: false, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'obsolete', nameEn: 'Obsolete', nameAr: 'ملغاة', order: 70, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
-      { fromStageKey: 'drafting', toStageKey: 'owners_review', labelEn: 'Submit for Review', labelAr: 'إرسال للمراجعة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'documents:submit', validatorConfig: { requiredFields: ['title', 'content'] }, actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'owners_review', toStageKey: 'stakeholders_review', labelEn: 'Owners Approved', labelAr: 'موافقة المُلاك', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'documents:review', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'owners_review', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'documents:review', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'stakeholders_review', toStageKey: 'final_approval', labelEn: 'Stakeholders Approved', labelAr: 'موافقة أصحاب المصلحة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'documents:review', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'stakeholders_review', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'documents:review', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'final_approval', toStageKey: 'publish_approval', labelEn: 'All Approved', labelAr: 'اعتماد جميع الأطراف', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'documents:approve', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'final_approval', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'documents:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'publish_approval', toStageKey: 'published', labelEn: 'Publish', labelAr: 'نشر', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'documents:publish', actions: [{ actionType: 'GENERATE_PDF', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'publish_approval', toStageKey: 'drafting', labelEn: 'Reject Publication', labelAr: 'رفض النشر', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'documents:publish', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'published', toStageKey: 'obsolete', labelEn: 'Mark Obsolete', labelAr: 'إلغاء الوثيقة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'documents:manage_templates', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'drafting', toStageKey: 'owners_review', labelEn: 'Submit for Review', labelAr: 'إرسال للمراجعة', mover: 'PERSON', validatorConfig: { requiredFields: ['title', 'content'] }, actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'owners_review', toStageKey: 'stakeholders_review', labelEn: 'Owners Approved', labelAr: 'موافقة المُلاك', mover: 'PERSON', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'owners_review', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'stakeholders_review', toStageKey: 'final_approval', labelEn: 'Stakeholders Approved', labelAr: 'موافقة أصحاب المصلحة', mover: 'PERSON', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'stakeholders_review', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'final_approval', toStageKey: 'publish_approval', labelEn: 'All Approved', labelAr: 'اعتماد جميع الأطراف', mover: 'PERSON', isApprovalPath: true, actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'final_approval', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'publish_approval', toStageKey: 'published', labelEn: 'Publish', labelAr: 'نشر', mover: 'PERSON', actions: [{ actionType: 'GENERATE_PDF', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'publish_approval', toStageKey: 'drafting', labelEn: 'Reject Publication', labelAr: 'رفض النشر', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'published', toStageKey: 'obsolete', labelEn: 'Mark Obsolete', labelAr: 'إلغاء الوثيقة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 
@@ -173,19 +147,19 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Incident Management',
     nameAr: 'إدارة الحوادث',
     stages: [
-      { key: 'reported', nameEn: 'Reported', nameAr: 'مُبلَّغ', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'investigating', nameEn: 'Investigating', nameAr: 'قيد التحقيق', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'root_cause_identified', nameEn: 'Root Cause Identified', nameAr: 'تحديد السبب الجذري', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'reported', nameEn: 'Reported', nameAr: 'مُبلَّغ', order: 10, isInitial: true, isFinal: false, slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'investigating', nameEn: 'Investigating', nameAr: 'قيد التحقيق', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'root_cause_identified', nameEn: 'Root Cause Identified', nameAr: 'تحديد السبب الجذري', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 40, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 50, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
-      { fromStageKey: 'reported', toStageKey: 'investigating', labelEn: 'Start Investigation', labelAr: 'بدء التحقيق', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'incidents:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'investigating', toStageKey: 'root_cause_identified', labelEn: 'Submit Root Cause', labelAr: 'تقديم السبب الجذري', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'incidents:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'investigating', toStageKey: 'closed', labelEn: 'Close — No RCA Needed', labelAr: 'إغلاق — لا يستلزم تحليل السبب الجذري', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'incidents:close', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'root_cause_identified', toStageKey: 'closed', labelEn: 'Close Incident', labelAr: 'إغلاق الحادثة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'incidents:close', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'reported', toStageKey: 'cancelled', labelEn: 'Cancel Incident', labelAr: 'إلغاء الحادثة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'EXIT', requiredPermission: 'incidents:manage', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'investigating', toStageKey: 'cancelled', labelEn: 'Cancel Incident', labelAr: 'إلغاء الحادثة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'EXIT', requiredPermission: 'incidents:manage', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'reported', toStageKey: 'investigating', labelEn: 'Start Investigation', labelAr: 'بدء التحقيق', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'investigating', toStageKey: 'root_cause_identified', labelEn: 'Submit Root Cause', labelAr: 'تقديم السبب الجذري', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'investigating', toStageKey: 'closed', labelEn: 'Close — No RCA Needed', labelAr: 'إغلاق — لا يستلزم تحليل السبب الجذري', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'root_cause_identified', toStageKey: 'closed', labelEn: 'Close Incident', labelAr: 'إغلاق الحادثة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'reported', toStageKey: 'cancelled', labelEn: 'Cancel Incident', labelAr: 'إلغاء الحادثة', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'investigating', toStageKey: 'cancelled', labelEn: 'Cancel Incident', labelAr: 'إلغاء الحادثة', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
     ],
   },
 
@@ -195,30 +169,30 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Audit Management',
     nameAr: 'إدارة المراجعات',
     stages: [
-      { key: 'planning', nameEn: 'Planning', nameAr: 'التخطيط', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'announced', nameEn: 'Announced', nameAr: 'الإعلان', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'fieldwork', nameEn: 'Fieldwork', nameAr: 'العمل الميداني', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'findings_draft', nameEn: 'Findings Draft', nameAr: 'مسودة النتائج', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 24, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'auditee_response', nameEn: 'Auditee Response', nameAr: 'رد المدقق عليه', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'report_review', nameEn: 'Report Review', nameAr: 'مراجعة التقرير', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'report_approved', nameEn: 'Report Approved', nameAr: 'اعتماد التقرير', order: 70, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'corrective_action', nameEn: 'Corrective Action', nameAr: 'الإجراء التصحيحي', order: 80, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'verification', nameEn: 'Verification', nameAr: 'التحقق', order: 90, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 100, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'planning', nameEn: 'Planning', nameAr: 'التخطيط', order: 10, isInitial: true, isFinal: false, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'announced', nameEn: 'Announced', nameAr: 'الإعلان', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'fieldwork', nameEn: 'Fieldwork', nameAr: 'العمل الميداني', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'findings_draft', nameEn: 'Findings Draft', nameAr: 'مسودة النتائج', order: 40, isInitial: false, isFinal: false, slaWorkingHours: 24, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'auditee_response', nameEn: 'Auditee Response', nameAr: 'رد المدقق عليه', order: 50, isInitial: false, isFinal: false, slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'report_review', nameEn: 'Report Review', nameAr: 'مراجعة التقرير', order: 60, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'report_approved', nameEn: 'Report Approved', nameAr: 'اعتماد التقرير', order: 70, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'corrective_action', nameEn: 'Corrective Action', nameAr: 'الإجراء التصحيحي', order: 80, isInitial: false, isFinal: false, slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'verification', nameEn: 'Verification', nameAr: 'التحقق', order: 90, isInitial: false, isFinal: false, slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 100, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
-      { fromStageKey: 'planning', toStageKey: 'announced', labelEn: 'Announce Audit', labelAr: 'الإعلان عن المراجعة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:create', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'announced', toStageKey: 'fieldwork', labelEn: 'Begin Fieldwork', labelAr: 'بدء العمل الميداني', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:execute', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'fieldwork', toStageKey: 'findings_draft', labelEn: 'Complete Fieldwork', labelAr: 'إنهاء العمل الميداني', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:execute', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'findings_draft', toStageKey: 'auditee_response', labelEn: 'Send Findings', labelAr: 'إرسال النتائج', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:report', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'auditee_response', toStageKey: 'report_review', labelEn: 'Submit Response', labelAr: 'تقديم الرد', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:execute', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'auditee_response', toStageKey: 'findings_draft', labelEn: 'Dispute Findings', labelAr: 'الاعتراض على النتائج', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'audits:execute', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'report_review', toStageKey: 'report_approved', labelEn: 'Finalize Report', labelAr: 'إنهاء التقرير', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:report', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'report_review', toStageKey: 'findings_draft', labelEn: 'Revise Findings', labelAr: 'مراجعة النتائج', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'audits:report', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'report_approved', toStageKey: 'corrective_action', labelEn: 'Issue Report', labelAr: 'إصدار التقرير', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:close', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'corrective_action', toStageKey: 'verification', labelEn: 'Submit CAP', labelAr: 'تقديم خطة الإجراء التصحيحي', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:execute', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'verification', toStageKey: 'closed', labelEn: 'Close Audit', labelAr: 'إغلاق المراجعة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'audits:close', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'verification', toStageKey: 'corrective_action', labelEn: 'Return for Revision', labelAr: 'إعادة للمراجعة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'audits:execute', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'planning', toStageKey: 'announced', labelEn: 'Announce Audit', labelAr: 'الإعلان عن المراجعة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'announced', toStageKey: 'fieldwork', labelEn: 'Begin Fieldwork', labelAr: 'بدء العمل الميداني', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'fieldwork', toStageKey: 'findings_draft', labelEn: 'Complete Fieldwork', labelAr: 'إنهاء العمل الميداني', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'findings_draft', toStageKey: 'auditee_response', labelEn: 'Send Findings', labelAr: 'إرسال النتائج', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'auditee_response', toStageKey: 'report_review', labelEn: 'Submit Response', labelAr: 'تقديم الرد', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'auditee_response', toStageKey: 'findings_draft', labelEn: 'Dispute Findings', labelAr: 'الاعتراض على النتائج', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'report_review', toStageKey: 'report_approved', labelEn: 'Finalize Report', labelAr: 'إنهاء التقرير', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'report_review', toStageKey: 'findings_draft', labelEn: 'Revise Findings', labelAr: 'مراجعة النتائج', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'report_approved', toStageKey: 'corrective_action', labelEn: 'Issue Report', labelAr: 'إصدار التقرير', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'corrective_action', toStageKey: 'verification', labelEn: 'Submit CAP', labelAr: 'تقديم خطة الإجراء التصحيحي', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'verification', toStageKey: 'closed', labelEn: 'Close Audit', labelAr: 'إغلاق المراجعة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'verification', toStageKey: 'corrective_action', labelEn: 'Return for Revision', labelAr: 'إعادة للمراجعة', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 
@@ -228,31 +202,31 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Corrective Action',
     nameAr: 'الإجراء التصحيحي',
     stages: [
-      { key: 'detection', nameEn: 'Detection', nameAr: 'الاكتشاف', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'investigation', nameEn: 'Investigation', nameAr: 'التحقيق', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'root_cause_approved', nameEn: 'Root Cause Approved', nameAr: 'اعتماد السبب الجذري', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'action_planning', nameEn: 'Action Planning', nameAr: 'تخطيط الإجراء', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 24, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'plan_approved', nameEn: 'Plan Approved', nameAr: 'اعتماد الخطة', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'implementation', nameEn: 'Implementation', nameAr: 'التنفيذ', order: 60, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'implementation_verified', nameEn: 'Implementation Verified', nameAr: 'التحقق من التنفيذ', order: 70, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'effectiveness_check', nameEn: 'Effectiveness Check', nameAr: 'فحص الفاعلية', order: 80, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_OFFICER', slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'effectiveness_approved', nameEn: 'Effectiveness Approved', nameAr: 'اعتماد الفاعلية', order: 90, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 100, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'detection', nameEn: 'Detection', nameAr: 'الاكتشاف', order: 10, isInitial: true, isFinal: false, slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'investigation', nameEn: 'Investigation', nameAr: 'التحقيق', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 40, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'root_cause_approved', nameEn: 'Root Cause Approved', nameAr: 'اعتماد السبب الجذري', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'action_planning', nameEn: 'Action Planning', nameAr: 'تخطيط الإجراء', order: 40, isInitial: false, isFinal: false, slaWorkingHours: 24, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'plan_approved', nameEn: 'Plan Approved', nameAr: 'اعتماد الخطة', order: 50, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'implementation', nameEn: 'Implementation', nameAr: 'التنفيذ', order: 60, isInitial: false, isFinal: false, slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'implementation_verified', nameEn: 'Implementation Verified', nameAr: 'التحقق من التنفيذ', order: 70, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'effectiveness_check', nameEn: 'Effectiveness Check', nameAr: 'فحص الفاعلية', order: 80, isInitial: false, isFinal: false, slaWorkingHours: 240, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'effectiveness_approved', nameEn: 'Effectiveness Approved', nameAr: 'اعتماد الفاعلية', order: 90, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'closed', nameEn: 'Closed', nameAr: 'مغلق', order: 100, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
-      { fromStageKey: 'detection', toStageKey: 'investigation', labelEn: 'Start Investigation', labelAr: 'بدء التحقيق', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'investigation', toStageKey: 'root_cause_approved', labelEn: 'Submit Root Cause', labelAr: 'تقديم السبب الجذري', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'root_cause_approved', toStageKey: 'action_planning', labelEn: 'Approve Root Cause', labelAr: 'اعتماد السبب الجذري', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:approve', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'root_cause_approved', toStageKey: 'investigation', labelEn: 'Insufficient Investigation', labelAr: 'تحقيق غير كافٍ', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'capa:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'action_planning', toStageKey: 'plan_approved', labelEn: 'Submit Action Plan', labelAr: 'تقديم خطة الإجراء', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'plan_approved', toStageKey: 'implementation', labelEn: 'Approve Plan', labelAr: 'اعتماد الخطة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'plan_approved', toStageKey: 'action_planning', labelEn: 'Revise Plan', labelAr: 'مراجعة الخطة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'capa:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'implementation', toStageKey: 'implementation_verified', labelEn: 'Submit for Verification', labelAr: 'إرسال للتحقق', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'implementation_verified', toStageKey: 'effectiveness_check', labelEn: 'Verify Implementation', labelAr: 'التحقق من التنفيذ', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'implementation_verified', toStageKey: 'implementation', labelEn: 'Implementation Incomplete', labelAr: 'التنفيذ غير مكتمل', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'capa:investigate', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'effectiveness_check', toStageKey: 'effectiveness_approved', labelEn: 'Submit Effectiveness', labelAr: 'تقديم نتائج الفاعلية', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:investigate', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'effectiveness_approved', toStageKey: 'closed', labelEn: 'Close CAPA', labelAr: 'إغلاق الإجراء التصحيحي', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'capa:close', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'effectiveness_approved', toStageKey: 'implementation', labelEn: 'Recurrence Detected — Reopen', labelAr: 'إعادة الفتح — تكرار المشكلة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'capa:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'detection', toStageKey: 'investigation', labelEn: 'Start Investigation', labelAr: 'بدء التحقيق', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'investigation', toStageKey: 'root_cause_approved', labelEn: 'Submit Root Cause', labelAr: 'تقديم السبب الجذري', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'root_cause_approved', toStageKey: 'action_planning', labelEn: 'Approve Root Cause', labelAr: 'اعتماد السبب الجذري', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'root_cause_approved', toStageKey: 'investigation', labelEn: 'Insufficient Investigation', labelAr: 'تحقيق غير كافٍ', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'action_planning', toStageKey: 'plan_approved', labelEn: 'Submit Action Plan', labelAr: 'تقديم خطة الإجراء', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'plan_approved', toStageKey: 'implementation', labelEn: 'Approve Plan', labelAr: 'اعتماد الخطة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'plan_approved', toStageKey: 'action_planning', labelEn: 'Revise Plan', labelAr: 'مراجعة الخطة', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'implementation', toStageKey: 'implementation_verified', labelEn: 'Submit for Verification', labelAr: 'إرسال للتحقق', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'implementation_verified', toStageKey: 'effectiveness_check', labelEn: 'Verify Implementation', labelAr: 'التحقق من التنفيذ', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'implementation_verified', toStageKey: 'implementation', labelEn: 'Implementation Incomplete', labelAr: 'التنفيذ غير مكتمل', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'effectiveness_check', toStageKey: 'effectiveness_approved', labelEn: 'Submit Effectiveness', labelAr: 'تقديم نتائج الفاعلية', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'effectiveness_approved', toStageKey: 'closed', labelEn: 'Close CAPA', labelAr: 'إغلاق الإجراء التصحيحي', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'effectiveness_approved', toStageKey: 'implementation', labelEn: 'Recurrence Detected — Reopen', labelAr: 'إعادة الفتح — تكرار المشكلة', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 
@@ -262,22 +236,22 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Meeting Management',
     nameAr: 'إدارة الاجتماعات',
     stages: [
-      { key: 'planned', nameEn: 'Planned', nameAr: 'مجدول', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'agenda_ready', nameEn: 'Agenda Ready', nameAr: 'الأجندة جاهزة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'minutes_draft', nameEn: 'Minutes Draft', nameAr: 'مسودة المحضر', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', slaWorkingHours: 16, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'minutes_review', nameEn: 'Minutes Review', nameAr: 'مراجعة المحضر', order: 40, isInitial: false, isFinal: false, approvalMode: 'PARALLEL', parallelThreshold: 'ALL', assigneeStrategy: 'ROLE', assigneeRoleKey: 'BASE_USER', slaWorkingHours: 16, who: { mode: 'ALL', startingAssignment: true } },
-      { key: 'minutes_approved', nameEn: 'Minutes Approved', nameAr: 'اعتماد المحضر', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 60, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'planned', nameEn: 'Planned', nameAr: 'مجدول', order: 10, isInitial: true, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'agenda_ready', nameEn: 'Agenda Ready', nameAr: 'الأجندة جاهزة', order: 20, isInitial: false, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'minutes_draft', nameEn: 'Minutes Draft', nameAr: 'مسودة المحضر', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'minutes_review', nameEn: 'Minutes Review', nameAr: 'مراجعة المحضر', order: 40, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ALL', startingAssignment: true } },
+      { key: 'minutes_approved', nameEn: 'Minutes Approved', nameAr: 'اعتماد المحضر', order: 50, isInitial: false, isFinal: true, slaWorkingHours: 8, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'cancelled', nameEn: 'Cancelled', nameAr: 'ملغى', order: 60, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
-      { fromStageKey: 'planned', toStageKey: 'agenda_ready', labelEn: 'Prepare Agenda', labelAr: 'إعداد الأجندة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'planned', toStageKey: 'cancelled', labelEn: 'Cancel Meeting', labelAr: 'إلغاء الاجتماع', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'EXIT', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'agenda_ready', toStageKey: 'minutes_draft', labelEn: 'Record Minutes', labelAr: 'تسجيل المحضر', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'meetings:manage', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'agenda_ready', toStageKey: 'cancelled', labelEn: 'Cancel Meeting', labelAr: 'إلغاء الاجتماع', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'EXIT', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_draft', toStageKey: 'minutes_review', labelEn: 'Distribute Minutes', labelAr: 'توزيع المحضر', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_review', toStageKey: 'minutes_approved', labelEn: 'Approve Minutes', labelAr: 'اعتماد المحضر', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'meetings:approve_minutes', isApprovalPath: true, actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_review', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'meetings:manage', isApprovalPath: false, actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_draft', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'planned', toStageKey: 'agenda_ready', labelEn: 'Prepare Agenda', labelAr: 'إعداد الأجندة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'planned', toStageKey: 'cancelled', labelEn: 'Cancel Meeting', labelAr: 'إلغاء الاجتماع', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'agenda_ready', toStageKey: 'minutes_draft', labelEn: 'Record Minutes', labelAr: 'تسجيل المحضر', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'agenda_ready', toStageKey: 'cancelled', labelEn: 'Cancel Meeting', labelAr: 'إلغاء الاجتماع', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_draft', toStageKey: 'minutes_review', labelEn: 'Distribute Minutes', labelAr: 'توزيع المحضر', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_review', toStageKey: 'minutes_approved', labelEn: 'Approve Minutes', labelAr: 'اعتماد المحضر', mover: 'PERSON', isApprovalPath: true, actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_review', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', mover: 'PERSON', kind: 'RETURN', isApprovalPath: false, actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_draft', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 
@@ -287,58 +261,58 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Committee Management',
     nameAr: 'إدارة اللجان',
     stages: [
-      { key: 'formation', nameEn: 'Formation', nameAr: 'التأسيس', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [COMMITTEE_ACTIONS.EDIT_DETAILS, ...MEMBERS], who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, actions: [...MEMBERS], who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'dissolution_pending', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', order: 50, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 40, actions: [...MEMBERS], flags: [STAGE_FLAG.DISSOLVING], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'formation', nameEn: 'Formation', nameAr: 'التأسيس', order: 10, isInitial: true, isFinal: false, actions: [COMMITTEE_ACTIONS.EDIT_DETAILS, ...MEMBERS], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 40, actions: [...MEMBERS], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'dissolution_pending', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', order: 50, isInitial: false, isFinal: false, slaWorkingHours: 40, actions: [...MEMBERS], flags: [STAGE_FLAG.DISSOLVING], who: { mode: 'ANY_ONE', startingAssignment: true } },
       // ACC-255 PR 2 (Ahmad, Q-A): a dissolved committee's members can't be changed;
       // Dissolution Pending still allows it. Existing organisations: backfill:acc255-dissolved-membership.
-      { key: 'dissolved', nameEn: 'Dissolved', nameAr: 'محلولة', order: 60, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', actions: [], flags: [STAGE_FLAG.DISSOLVING], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'dissolved', nameEn: 'Dissolved', nameAr: 'محلولة', order: 60, isInitial: false, isFinal: true, actions: [], flags: [STAGE_FLAG.DISSOLVING], who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
-      { fromStageKey: 'formation', toStageKey: 'terms_review', labelEn: 'Submit for Approval', labelAr: 'إرسال للاعتماد', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'committees:manage', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'terms_review', toStageKey: 'active', labelEn: 'Approve Committee', labelAr: 'اعتماد اللجنة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'committees:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'terms_review', toStageKey: 'formation', labelEn: 'Revise Terms', labelAr: 'مراجعة النظام الداخلي', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'RETURN', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'active', toStageKey: 'suspended', labelEn: 'Suspend Committee', labelAr: 'تعليق اللجنة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'suspended', toStageKey: 'active', labelEn: 'Reactivate Committee', labelAr: 'إعادة تفعيل اللجنة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'active', toStageKey: 'dissolution_pending', labelEn: 'Initiate Dissolution', labelAr: 'بدء إجراءات الحل', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'suspended', toStageKey: 'dissolution_pending', labelEn: 'Dissolve Committee', labelAr: 'حل اللجنة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'dissolution_pending', toStageKey: 'dissolved', labelEn: 'Confirm Dissolution', labelAr: 'تأكيد الحل', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'committees:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'formation', toStageKey: 'terms_review', labelEn: 'Submit for Approval', labelAr: 'إرسال للاعتماد', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'terms_review', toStageKey: 'active', labelEn: 'Approve Committee', labelAr: 'اعتماد اللجنة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'terms_review', toStageKey: 'formation', labelEn: 'Revise Terms', labelAr: 'مراجعة النظام الداخلي', mover: 'PERSON', kind: 'RETURN', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'active', toStageKey: 'suspended', labelEn: 'Suspend Committee', labelAr: 'تعليق اللجنة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'suspended', toStageKey: 'active', labelEn: 'Reactivate Committee', labelAr: 'إعادة تفعيل اللجنة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'active', toStageKey: 'dissolution_pending', labelEn: 'Initiate Dissolution', labelAr: 'بدء إجراءات الحل', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'suspended', toStageKey: 'dissolution_pending', labelEn: 'Dissolve Committee', labelAr: 'حل اللجنة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'dissolution_pending', toStageKey: 'dissolved', labelEn: 'Confirm Dissolution', labelAr: 'تأكيد الحل', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 
   // ── 7b. COMMITTEE_CHANGE_REQUEST (ACC-239) ──────────────────────────────────
-  // A change to an approved committee's details. EVERY transition is
-  // SYSTEM_AUTOMATIC: the generic transitions endpoint refuses them, so a
-  // request moves only through the change request endpoints — nobody can move
-  // one to Approved without the change being applied. Its shape is fixed
+  // A change to an approved committee's details. EVERY move is the app's
+  // (mover APP): the generic transitions endpoint refuses them, so a request
+  // moves only through the change request endpoints — nobody can move one to
+  // Approved without the change being applied. Its shape is fixed
   // (PROTECTED_TEMPLATES): tenants may rename the stages and set their
   // deadlines. No SEND_NOTIFICATION action: the module tells the people
-  // concerned itself, in both languages. Every stage's assignee is SELF (the
-  // requester); the approvers are the holders of committees:approve, a rule the
-  // module checks, not a stage assignee.
+  // concerned itself, in both languages. Every stage is worked by its creator
+  // (the requester); the approvers are the holders of committees:approve, a
+  // rule the module checks, not a stage assignee.
   {
     objectType: 'COMMITTEE_CHANGE_REQUEST',
     nameEn: 'Committee Change Request',
     nameAr: 'طلب تغيير اللجنة',
     stages: [
-      { key: 'draft', nameEn: 'Draft', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'under_review', nameEn: 'Under review', nameAr: 'قيد المراجعة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'returned', nameEn: 'Returned', nameAr: 'مُعاد', order: 25, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'approved', nameEn: 'Approved', nameAr: 'معتمد', order: 30, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', flags: [STAGE_FLAG.APPLIES_APPROVED_CHANGE], who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'withdrawn', nameEn: 'Withdrawn', nameAr: 'مسحوب', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'draft', nameEn: 'Draft', nameAr: 'مسودة', order: 10, isInitial: true, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'under_review', nameEn: 'Under review', nameAr: 'قيد المراجعة', order: 20, isInitial: false, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'returned', nameEn: 'Returned', nameAr: 'مُعاد', order: 25, isInitial: false, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'approved', nameEn: 'Approved', nameAr: 'معتمد', order: 30, isInitial: false, isFinal: true, flags: [STAGE_FLAG.APPLIES_APPROVED_CHANGE], who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 40, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'withdrawn', nameEn: 'Withdrawn', nameAr: 'مسحوب', order: 50, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
     ],
     transitions: [
-      { fromStageKey: 'draft', toStageKey: 'under_review', labelEn: 'Submit for review', labelAr: 'إرسال للمراجعة', triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'APP', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'returned', toStageKey: 'under_review', labelEn: 'Submit again', labelAr: 'إعادة الإرسال', triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'APP', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'under_review', toStageKey: 'approved', labelEn: 'Approve and apply', labelAr: 'اعتماد وتطبيق', triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'APP', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'under_review', toStageKey: 'returned', labelEn: 'Return for changes', labelAr: 'إعادة للتعديل', triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'APP', kind: 'RETURN', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'under_review', toStageKey: 'rejected', labelEn: 'Reject', labelAr: 'رفض', triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'APP', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'draft', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'APP', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'under_review', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'APP', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
-      { fromStageKey: 'returned', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', triggerCondition: 'SYSTEM_AUTOMATIC', mover: 'APP', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'draft', toStageKey: 'under_review', labelEn: 'Submit for review', labelAr: 'إرسال للمراجعة', mover: 'APP', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'returned', toStageKey: 'under_review', labelEn: 'Submit again', labelAr: 'إعادة الإرسال', mover: 'APP', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'under_review', toStageKey: 'approved', labelEn: 'Approve and apply', labelAr: 'اعتماد وتطبيق', mover: 'APP', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'under_review', toStageKey: 'returned', labelEn: 'Return for changes', labelAr: 'إعادة للتعديل', mover: 'APP', kind: 'RETURN', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'under_review', toStageKey: 'rejected', labelEn: 'Reject', labelAr: 'رفض', mover: 'APP', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'draft', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', mover: 'APP', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'under_review', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', mover: 'APP', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
+      { fromStageKey: 'returned', toStageKey: 'withdrawn', labelEn: 'Withdraw', labelAr: 'سحب', mover: 'APP', kind: 'EXIT', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
     ],
   },
 
@@ -348,18 +322,18 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameEn: 'Change Request',
     nameAr: 'طلب تغيير',
     stages: [
-      { key: 'submitted', nameEn: 'Submitted', nameAr: 'مقدّم', order: 10, isInitial: true, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'SELF', who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
-      { key: 'unit_manager_review', nameEn: 'Unit Manager Review', nameAr: 'مراجعة مدير الوحدة', order: 20, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ORG_UNIT_HEAD', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'quality_review', nameEn: 'Quality Review', nameAr: 'مراجعة الجودة', order: 30, isInitial: false, isFinal: false, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'approved', nameEn: 'Approved', nameAr: 'مقبول', order: 40, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 50, isInitial: false, isFinal: true, approvalMode: 'SINGLE', assigneeStrategy: 'ROLE', assigneeRoleKey: 'QUALITY_MANAGER', who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'submitted', nameEn: 'Submitted', nameAr: 'مقدّم', order: 10, isInitial: true, isFinal: false, who: { mode: 'ANY_ONE', entries: [{ kind: 'CREATOR' }] } },
+      { key: 'unit_manager_review', nameEn: 'Unit Manager Review', nameAr: 'مراجعة مدير الوحدة', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'quality_review', nameEn: 'Quality Review', nameAr: 'مراجعة الجودة', order: 30, isInitial: false, isFinal: false, slaWorkingHours: 16, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'approved', nameEn: 'Approved', nameAr: 'مقبول', order: 40, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
+      { key: 'rejected', nameEn: 'Rejected', nameAr: 'مرفوض', order: 50, isInitial: false, isFinal: true, who: { mode: 'ANY_ONE', startingAssignment: true } },
     ],
     transitions: [
-      { fromStageKey: 'submitted', toStageKey: 'unit_manager_review', labelEn: 'Submit Change Request', labelAr: 'تقديم طلب التغيير', triggerCondition: 'ANY_AUTHENTICATED', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'unit_manager_review', toStageKey: 'quality_review', labelEn: 'Approve', labelAr: 'موافقة', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'org:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
-      { fromStageKey: 'unit_manager_review', toStageKey: 'rejected', labelEn: 'Reject', labelAr: 'رفض', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'EXIT', requiredPermission: 'org:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'quality_review', toStageKey: 'approved', labelEn: 'Approve Change Request', labelAr: 'قبول طلب التغيير', triggerCondition: 'ROLE_BASED', mover: 'PERSON', requiredPermission: 'documents:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'quality_review', toStageKey: 'rejected', labelEn: 'Reject Change Request', labelAr: 'رفض طلب التغيير', triggerCondition: 'ROLE_BASED', mover: 'PERSON', kind: 'EXIT', requiredPermission: 'documents:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'submitted', toStageKey: 'unit_manager_review', labelEn: 'Submit Change Request', labelAr: 'تقديم طلب التغيير', mover: 'PERSON', actions: [{ actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'unit_manager_review', toStageKey: 'quality_review', labelEn: 'Approve', labelAr: 'موافقة', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'unit_manager_review', toStageKey: 'rejected', labelEn: 'Reject', labelAr: 'رفض', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'quality_review', toStageKey: 'approved', labelEn: 'Approve Change Request', labelAr: 'قبول طلب التغيير', mover: 'PERSON', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'quality_review', toStageKey: 'rejected', labelEn: 'Reject Change Request', labelAr: 'رفض طلب التغيير', mover: 'PERSON', kind: 'EXIT', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 ];

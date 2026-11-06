@@ -49,12 +49,6 @@ describe('The template read counts the records in each stage (ACC-255 PR 4b-be, 
   async function org(): Promise<{ id: string; templateId: string; stage: (key: string) => Promise<string> }> {
     const slug = `acc255g4-${randomUUID().slice(0, 8)}`;
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
-    const roleKeys = new Set<string>();
-    for (const w of SEEDS) {
-      for (const s of w.stages) if (s.assigneeRoleKey) roleKeys.add(s.assigneeRoleKey);
-      for (const t of w.transitions) if (t.triggerRoleKey) roleKeys.add(t.triggerRoleKey);
-    }
-    for (const key of roleKeys) await prisma.role.create({ data: { organizationId: o.id, key, nameEn: key, isSystem: true } });
     await applyWorkflowSeed(prisma, o.id, SEEDS);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
     const stage = async (key: string): Promise<string> =>

@@ -1,6 +1,5 @@
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
-import { moverForTrigger, whoFromLegacy, decidesTogether } from './workflow-who';
-import { RECORD_ROUTES } from './stage-task-record-routes';
+import { whoFromLegacy, decidesTogether } from './workflow-who';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 
 // ACC-271 PR 2 (plan §5) — who works each seeded stage, pinned stage by stage.
@@ -31,22 +30,6 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
     expect(Object.values(actual).flat()).toHaveLength(60);
   });
 
-  it('seeds a CREATOR entry exactly where the creator drove the stage, and a starting assignment everywhere else', () => {
-    for (const workflow of SYSTEM_WORKFLOW_SEED) {
-      for (const stage of workflow.stages) {
-        const creator = 'entries' in stage.who && stage.who.entries.some((e) => e.kind === 'CREATOR');
-        expect([`${workflow.objectType}.${stage.key}`, creator]).toEqual([`${workflow.objectType}.${stage.key}`, stage.assigneeStrategy === 'SELF']);
-      }
-    }
-  });
-
-  it('maps the approval mode: SINGLE to Any one of them, PARALLEL ALL to All of them', () => {
-    for (const stage of SYSTEM_WORKFLOW_SEED.flatMap((w) => w.stages)) {
-      const expected = stage.approvalMode === 'SINGLE' ? 'ANY_ONE' : stage.approvalMode === 'PARALLEL' && stage.parallelThreshold === 'ALL' ? 'ALL' : 'unmapped';
-      expect([stage.key, stage.who.mode]).toEqual([stage.key, expected]);
-    }
-  });
-
   it('keeps a protected template on its creator: every committee change request stage is CREATOR', () => {
     for (const workflow of SYSTEM_WORKFLOW_SEED.filter((w) => PROTECTED_TEMPLATES.has(w.objectType))) {
       for (const stage of workflow.stages) expect([stage.key, pin(stage.who)]).toEqual([stage.key, 'ANY_ONE:CREATOR']);
@@ -72,16 +55,14 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
     expect(checked).toBe(4);
   });
 
-  // ACC-271 PR 6a — the seed states each move's mover (seed-apply writes it); it
-  // was read off triggerCondition. The APP moves are exactly today's: the
+  // ACC-271 PR 6a — the seed states each move's mover (seed-apply writes it);
+  // PR 6b — the only people field a seeded move has. The APP moves are exactly today's: the
   // committee change request's eight, which its service fires. On the shared
   // database that is 8 per organisation (16 in its 2 organisations, 29 Oct).
   it('states a mover on every move, and the APP moves are exactly the change request\'s eight', () => {
     const all = SYSTEM_WORKFLOW_SEED.flatMap((w) => w.transitions.map((t) => ({ w: w.objectType, t })));
     expect(all).toHaveLength(75);
     for (const { t } of all) expect(['PERSON', 'APP']).toContain(t.mover);
-    // No move changes who moves it: the stated mover is what triggerCondition gave.
-    for (const { t } of all) expect(t.mover).toBe(moverForTrigger(t.triggerCondition));
 
     const app = all.filter(({ t }) => t.mover === 'APP').map(({ w, t }) => `${w}:${t.fromStageKey}>${t.toStageKey}`);
     expect(app.sort()).toEqual(
@@ -99,31 +80,6 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
     expect(all.filter(({ t }) => t.mover === 'PERSON')).toHaveLength(67);
   });
 
-  // The backfill's mapping applied to the seed's own old columns gives the
-  // seed's `who`, stage for stage: an existing organisation ends where a new
-  // one starts. The seed's two Org unit head stages are on record types with no
-  // unit route, so both start on the tenant admin (Ahmad, 29 Oct).
-  it('agrees with the backfill mapping on every stage', () => {
-    for (const workflow of SYSTEM_WORKFLOW_SEED) {
-      for (const stage of workflow.stages) {
-        const mapped = whoFromLegacy(
-          {
-          assigneeStrategy: stage.assigneeStrategy,
-          approvalMode: stage.approvalMode,
-          parallelThreshold: stage.parallelThreshold ?? null,
-          assigneeUserId: null,
-          assigneePositionId: null,
-          assigneeOrgUnitId: null,
-          committeeId: null,
-          assigneeCommitteeRoleValueId: null,
-          },
-          RECORD_ROUTES[workflow.objectType] !== undefined,
-        );
-        const asPin = `${mapped.whoMode}:${mapped.startingAssignment ? 'START' : mapped.entries.map((e) => e.kind).join('+')}`;
-        expect([`${workflow.objectType}.${stage.key}`, asPin]).toEqual([`${workflow.objectType}.${stage.key}`, pin(stage.who)]);
-      }
-    }
-  });
 });
 
 describe('whoFromLegacy (the backfill mapping, plan §6.1)', () => {

@@ -102,10 +102,6 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
   async function org(): Promise<Org> {
     const slug = `acc271l-${randomUUID().slice(0, 8)}`;
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
-    const roleKeys = new Set<string>();
-    for (const s of COMMITTEE_SEED.stages) if (s.assigneeRoleKey) roleKeys.add(s.assigneeRoleKey);
-    for (const t of COMMITTEE_SEED.transitions) if (t.triggerRoleKey) roleKeys.add(t.triggerRoleKey);
-    for (const key of roleKeys) await prisma.role.create({ data: { organizationId: o.id, key, nameEn: key, isSystem: true } });
     await applyWorkflowSeed(prisma, o.id, [COMMITTEE_SEED]);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Quality', code: `Q-${slug}` } });

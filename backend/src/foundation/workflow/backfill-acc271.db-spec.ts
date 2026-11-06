@@ -55,17 +55,230 @@ describe('backfill:acc271-stage-assignees and -transition-movers, on a real data
     adminId: string;
   }
 
+  /**
+   * ACC-271 PR 6b — the old who columns as the seed wrote them before 6b (dev
+   * 1c68fea): [approvalMode, parallelThreshold, assigneeStrategy] per stage key,
+   * [triggerCondition, requiredPermission] per move. The seed no longer writes
+   * them, and these backfills read nothing else, so the fixture restores them.
+   * Kept in this spec on purpose: the permissions-in-use scan skips specs, and
+   * these strings check nothing. 6c deletes it with the backfills.
+   */
+  const LEGACY_COLUMNS: Record<string, { stages: Record<string, [string, string | null, string]>; transitions: Record<string, [string, string | null]> }> = {
+  DOCUMENT_REQUEST: {
+    stages: {
+      submitted: ['SINGLE',null,'SELF'],
+      unit_manager_review: ['SINGLE',null,'ORG_UNIT_HEAD'],
+      quality_review: ['SINGLE',null,'ROLE'],
+      approved: ['SINGLE',null,'ROLE'],
+      rejected: ['SINGLE',null,'ROLE'],
+    },
+    transitions: {
+      'submitted>unit_manager_review': ['ANY_AUTHENTICATED',null],
+      'unit_manager_review>quality_review': ['ROLE_BASED','org:manage'],
+      'unit_manager_review>rejected': ['ROLE_BASED','org:manage'],
+      'quality_review>approved': ['ROLE_BASED','documents:approve'],
+      'quality_review>rejected': ['ROLE_BASED','documents:approve'],
+    },
+  },
+  DOCUMENT: {
+    stages: {
+      drafting: ['SINGLE',null,'SELF'],
+      owners_review: ['PARALLEL','ALL','ROLE'],
+      stakeholders_review: ['PARALLEL','ALL','ROLE'],
+      final_approval: ['PARALLEL','ALL','ROLE'],
+      publish_approval: ['SINGLE',null,'ROLE'],
+      published: ['SINGLE',null,'ROLE'],
+      obsolete: ['SINGLE',null,'ROLE'],
+    },
+    transitions: {
+      'drafting>owners_review': ['ROLE_BASED','documents:submit'],
+      'owners_review>stakeholders_review': ['ROLE_BASED','documents:review'],
+      'owners_review>drafting': ['ROLE_BASED','documents:review'],
+      'stakeholders_review>final_approval': ['ROLE_BASED','documents:review'],
+      'stakeholders_review>drafting': ['ROLE_BASED','documents:review'],
+      'final_approval>publish_approval': ['ROLE_BASED','documents:approve'],
+      'final_approval>drafting': ['ROLE_BASED','documents:approve'],
+      'publish_approval>published': ['ROLE_BASED','documents:publish'],
+      'publish_approval>drafting': ['ROLE_BASED','documents:publish'],
+      'published>obsolete': ['ROLE_BASED','documents:manage_templates'],
+    },
+  },
+  INCIDENT: {
+    stages: {
+      reported: ['SINGLE',null,'ROLE'],
+      investigating: ['SINGLE',null,'ROLE'],
+      root_cause_identified: ['SINGLE',null,'ROLE'],
+      closed: ['SINGLE',null,'ROLE'],
+      cancelled: ['SINGLE',null,'ROLE'],
+    },
+    transitions: {
+      'reported>investigating': ['ROLE_BASED','incidents:investigate'],
+      'investigating>root_cause_identified': ['ROLE_BASED','incidents:investigate'],
+      'investigating>closed': ['ROLE_BASED','incidents:close'],
+      'root_cause_identified>closed': ['ROLE_BASED','incidents:close'],
+      'reported>cancelled': ['ROLE_BASED','incidents:manage'],
+      'investigating>cancelled': ['ROLE_BASED','incidents:manage'],
+    },
+  },
+  AUDIT: {
+    stages: {
+      planning: ['SINGLE',null,'ROLE'],
+      announced: ['SINGLE',null,'ROLE'],
+      fieldwork: ['SINGLE',null,'ROLE'],
+      findings_draft: ['SINGLE',null,'ROLE'],
+      auditee_response: ['SINGLE',null,'ROLE'],
+      report_review: ['SINGLE',null,'ROLE'],
+      report_approved: ['SINGLE',null,'ROLE'],
+      corrective_action: ['SINGLE',null,'ROLE'],
+      verification: ['SINGLE',null,'ROLE'],
+      closed: ['SINGLE',null,'ROLE'],
+    },
+    transitions: {
+      'planning>announced': ['ROLE_BASED','audits:create'],
+      'announced>fieldwork': ['ROLE_BASED','audits:execute'],
+      'fieldwork>findings_draft': ['ROLE_BASED','audits:execute'],
+      'findings_draft>auditee_response': ['ROLE_BASED','audits:report'],
+      'auditee_response>report_review': ['ROLE_BASED','audits:execute'],
+      'auditee_response>findings_draft': ['ROLE_BASED','audits:execute'],
+      'report_review>report_approved': ['ROLE_BASED','audits:report'],
+      'report_review>findings_draft': ['ROLE_BASED','audits:report'],
+      'report_approved>corrective_action': ['ROLE_BASED','audits:close'],
+      'corrective_action>verification': ['ROLE_BASED','audits:execute'],
+      'verification>closed': ['ROLE_BASED','audits:close'],
+      'verification>corrective_action': ['ROLE_BASED','audits:execute'],
+    },
+  },
+  CORRECTIVE_ACTION: {
+    stages: {
+      detection: ['SINGLE',null,'ROLE'],
+      investigation: ['SINGLE',null,'ROLE'],
+      root_cause_approved: ['SINGLE',null,'ROLE'],
+      action_planning: ['SINGLE',null,'ROLE'],
+      plan_approved: ['SINGLE',null,'ROLE'],
+      implementation: ['SINGLE',null,'ROLE'],
+      implementation_verified: ['SINGLE',null,'ROLE'],
+      effectiveness_check: ['SINGLE',null,'ROLE'],
+      effectiveness_approved: ['SINGLE',null,'ROLE'],
+      closed: ['SINGLE',null,'ROLE'],
+    },
+    transitions: {
+      'detection>investigation': ['ROLE_BASED','capa:investigate'],
+      'investigation>root_cause_approved': ['ROLE_BASED','capa:investigate'],
+      'root_cause_approved>action_planning': ['ROLE_BASED','capa:approve'],
+      'root_cause_approved>investigation': ['ROLE_BASED','capa:approve'],
+      'action_planning>plan_approved': ['ROLE_BASED','capa:investigate'],
+      'plan_approved>implementation': ['ROLE_BASED','capa:approve'],
+      'plan_approved>action_planning': ['ROLE_BASED','capa:approve'],
+      'implementation>implementation_verified': ['ROLE_BASED','capa:investigate'],
+      'implementation_verified>effectiveness_check': ['ROLE_BASED','capa:investigate'],
+      'implementation_verified>implementation': ['ROLE_BASED','capa:investigate'],
+      'effectiveness_check>effectiveness_approved': ['ROLE_BASED','capa:investigate'],
+      'effectiveness_approved>closed': ['ROLE_BASED','capa:close'],
+      'effectiveness_approved>implementation': ['ROLE_BASED','capa:approve'],
+    },
+  },
+  MEETING: {
+    stages: {
+      planned: ['SINGLE',null,'SELF'],
+      agenda_ready: ['SINGLE',null,'SELF'],
+      minutes_draft: ['SINGLE',null,'SELF'],
+      minutes_review: ['PARALLEL','ALL','ROLE'],
+      minutes_approved: ['SINGLE',null,'ROLE'],
+      cancelled: ['SINGLE',null,'ROLE'],
+    },
+    transitions: {
+      'planned>agenda_ready': ['ROLE_BASED','meetings:manage'],
+      'planned>cancelled': ['ROLE_BASED','meetings:manage'],
+      'agenda_ready>minutes_draft': ['ROLE_BASED','meetings:manage'],
+      'agenda_ready>cancelled': ['ROLE_BASED','meetings:manage'],
+      'minutes_draft>minutes_review': ['ROLE_BASED','meetings:manage'],
+      'minutes_review>minutes_approved': ['ROLE_BASED','meetings:approve_minutes'],
+      'minutes_review>minutes_draft': ['ROLE_BASED','meetings:manage'],
+      'minutes_draft>minutes_draft': ['ROLE_BASED','meetings:manage'],
+    },
+  },
+  COMMITTEE: {
+    stages: {
+      formation: ['SINGLE',null,'ROLE'],
+      terms_review: ['SINGLE',null,'ROLE'],
+      active: ['SINGLE',null,'ROLE'],
+      suspended: ['SINGLE',null,'ROLE'],
+      dissolution_pending: ['SINGLE',null,'ROLE'],
+      dissolved: ['SINGLE',null,'ROLE'],
+    },
+    transitions: {
+      'formation>terms_review': ['ROLE_BASED','committees:manage'],
+      'terms_review>active': ['ROLE_BASED','committees:approve'],
+      'terms_review>formation': ['ROLE_BASED','committees:manage'],
+      'active>suspended': ['ROLE_BASED','committees:manage'],
+      'suspended>active': ['ROLE_BASED','committees:manage'],
+      'active>dissolution_pending': ['ROLE_BASED','committees:manage'],
+      'suspended>dissolution_pending': ['ROLE_BASED','committees:manage'],
+      'dissolution_pending>dissolved': ['ROLE_BASED','committees:approve'],
+    },
+  },
+  COMMITTEE_CHANGE_REQUEST: {
+    stages: {
+      draft: ['SINGLE',null,'SELF'],
+      under_review: ['SINGLE',null,'SELF'],
+      returned: ['SINGLE',null,'SELF'],
+      approved: ['SINGLE',null,'SELF'],
+      rejected: ['SINGLE',null,'SELF'],
+      withdrawn: ['SINGLE',null,'SELF'],
+    },
+    transitions: {
+      'draft>under_review': ['SYSTEM_AUTOMATIC',null],
+      'returned>under_review': ['SYSTEM_AUTOMATIC',null],
+      'under_review>approved': ['SYSTEM_AUTOMATIC',null],
+      'under_review>returned': ['SYSTEM_AUTOMATIC',null],
+      'under_review>rejected': ['SYSTEM_AUTOMATIC',null],
+      'draft>withdrawn': ['SYSTEM_AUTOMATIC',null],
+      'under_review>withdrawn': ['SYSTEM_AUTOMATIC',null],
+      'returned>withdrawn': ['SYSTEM_AUTOMATIC',null],
+    },
+  },
+  CHANGE_REQUEST: {
+    stages: {
+      submitted: ['SINGLE',null,'SELF'],
+      unit_manager_review: ['SINGLE',null,'ORG_UNIT_HEAD'],
+      quality_review: ['SINGLE',null,'ROLE'],
+      approved: ['SINGLE',null,'ROLE'],
+      rejected: ['SINGLE',null,'ROLE'],
+    },
+    transitions: {
+      'submitted>unit_manager_review': ['ANY_AUTHENTICATED',null],
+      'unit_manager_review>quality_review': ['ROLE_BASED','org:manage'],
+      'unit_manager_review>rejected': ['ROLE_BASED','org:manage'],
+      'quality_review>approved': ['ROLE_BASED','documents:approve'],
+      'quality_review>rejected': ['ROLE_BASED','documents:approve'],
+    },
+  },
+  };
+
   /** An organisation as it stood before PR 2, with one ACTIVE tenant admin. */
   async function legacyOrg(): Promise<Org> {
     const slug = `acc271b-${randomUUID().slice(0, 8)}`;
     const id = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } })).id;
     const roleKeys = new Set<string>(['TENANT_ADMIN']);
-    for (const w of SYSTEM_WORKFLOW_SEED) {
-      for (const s of w.stages) if (s.assigneeRoleKey) roleKeys.add(s.assigneeRoleKey);
-      for (const t of w.transitions) if (t.triggerRoleKey) roleKeys.add(t.triggerRoleKey);
-    }
     for (const key of roleKeys) await prisma.role.create({ data: { organizationId: id, key, nameEn: key, isSystem: true } });
     await applyWorkflowSeed(prisma, id, SYSTEM_WORKFLOW_SEED);
+    // The old columns, as the seed wrote them before PR 6b.
+    // Stages are found by name: only keyed templates store the seed's key.
+    for (const [objectType, legacy] of Object.entries(LEGACY_COLUMNS)) {
+      const seed = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === objectType)!;
+      const rows = await prisma.workflowStage.findMany({ where: { workflowTemplate: { organizationId: id, objectType: objectType as never, isDefault: true } } });
+      const stageIdOf = (key: string) => rows.find((r) => r.nameEn === seed.stages.find((st) => st.key === key)!.nameEn)!.id;
+      for (const [key, [approvalMode, parallelThreshold, assigneeStrategy]] of Object.entries(legacy.stages)) {
+        await prisma.workflowStage.update({ where: { id: stageIdOf(key) }, data: { approvalMode, parallelThreshold, assigneeStrategy } as never });
+      }
+      for (const [move, [triggerCondition, requiredPermission]] of Object.entries(legacy.transitions)) {
+        const [from, to] = move.split('>') as [string, string];
+        await prisma.workflowTransition.updateMany({
+          where: { fromStageId: stageIdOf(from), toStageId: stageIdOf(to) },
+          data: { triggerCondition, requiredPermission } as never,
+        });
+      }
+    }
     // Take PR 2's shape off again.
     await prisma.workflowStageAssignee.deleteMany({ where: { organizationId: id } });
     await prisma.workflowStage.updateMany({ where: { workflowTemplate: { organizationId: id } }, data: { whoMode: null } });
