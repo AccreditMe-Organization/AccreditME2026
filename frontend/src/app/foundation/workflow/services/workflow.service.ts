@@ -115,6 +115,8 @@ export interface WorkflowAwaitingMeDto {
   /** Every record waiting on this person; `rows` holds the oldest five. */
   total: number;
   rows: WorkflowAwaitingRowDto[];
+  /** ACC-279 — when the oldest waiting record entered its stage (past the five); null at 0. */
+  oldestSince: string | null;
 }
 
 @Injectable({ providedIn: 'root' })

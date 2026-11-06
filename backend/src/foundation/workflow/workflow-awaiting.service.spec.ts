@@ -128,7 +128,7 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
     });
     const { service, stagePool } = setup([active, appOnly]);
 
-    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [] });
+    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [], oldestSince: null });
     expect(stagePool.resolveMany).not.toHaveBeenCalled();
   });
 
@@ -138,7 +138,7 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
     const planned = entry({ moves: [DECIDE[0]!, { kind: 'EXIT', mover: 'PERSON', toStageId: 'stage-cancelled' }] });
     const { service, stagePool } = setup([planned]);
 
-    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [] });
+    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [], oldestSince: null });
     expect(stagePool.resolveMany).not.toHaveBeenCalled();
   });
 
@@ -150,7 +150,7 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
       moves: [DECIDE[0]!, { kind: 'RETURN', mover: 'PERSON', toStageId: 'stage-draft' }],
     });
     const { service } = setup([looped]);
-    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [] });
+    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [], oldestSince: null });
   });
 
   it('a person RETURN to a different stage makes it a decision point, beside an EXIT', async () => {
@@ -211,7 +211,7 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
   it('someone without committees:view sees nothing, and nothing is read', async () => {
     const { service, prisma } = setup([entry()]);
 
-    expect(await service.awaitingMe(ORG, VIEWER, ['users:view'])).toEqual({ total: 0, rows: [] });
+    expect(await service.awaitingMe(ORG, VIEWER, ['users:view'])).toEqual({ total: 0, rows: [], oldestSince: null });
     expect(prisma.workflowInstanceStage.findMany).not.toHaveBeenCalled();
   });
 
@@ -219,7 +219,7 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
     const gone = entry({ id: 'gone' });
     const { service, prisma } = setup([gone]);
     prisma.committee.findMany.mockResolvedValueOnce([]);
-    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [] });
+    expect(await service.awaitingMe(ORG, VIEWER, VIEW)).toEqual({ total: 0, rows: [], oldestSince: null });
   });
 
   it('oldest first; total counts past five while rows stop at five', async () => {
@@ -231,6 +231,16 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
     expect(result.total).toBe(7);
     expect(result.rows).toHaveLength(AWAITING_ME_ROWS);
     expect(result.rows.map((r) => r.instanceStageId)).toEqual(['e0', 'e1', 'e2', 'e3', 'e4']);
+  });
+
+  // ACC-279 — Home's "oldest 3 days" reads oldestSince, never rows[0].
+  it('oldestSince is the oldest waiting entry, whatever the cap', async () => {
+    const entries = Array.from({ length: 7 }, (_, i) => entry({ id: `e${i}`, enteredAt: new Date(Date.UTC(2026, 9, 1 + i)) }));
+    const { service } = setup(entries);
+
+    const result = await service.awaitingMe(ORG, VIEWER, VIEW);
+
+    expect(result.oldestSince).toEqual(new Date(Date.UTC(2026, 9, 1)));
   });
 
   it('batched: one candidates query, one resolveMany, one approvals query and one names read, for any number of rows', async () => {
