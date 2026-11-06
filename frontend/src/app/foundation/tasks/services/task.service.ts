@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
+import { MyWorkEvents } from '../../../core/my-work/my-work-events';
 import { IFileSummaryView, SummaryLanguage } from '../../../shared/files/viewer/file-summary.model';
 import { HttpClient, HttpEvent, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 
 export interface ITaskDto {
@@ -663,6 +664,8 @@ export interface IFileDownloadDto {
 @Injectable({ providedIn: 'root' })
 export class TaskService {
   private readonly http = inject(HttpClient);
+  // ACC-279 — a successful action that can change a work count says so, once.
+  private readonly myWork = inject(MyWorkEvents);
   private readonly base = `${environment.apiUrl}/tasks`;
 
   getMyTasks(query: MyTasksQuery = {}): Observable<IMyTaskListItemDto[]> {
@@ -680,12 +683,12 @@ export class TaskService {
 
   // ACC-167 — a member of the pool takes the task. 409 when someone was first.
   pick(id: string): Observable<ITaskDto> {
-    return this.http.post<ITaskDto>(`${this.base}/${id}/pick`, {});
+    return this.http.post<ITaskDto>(`${this.base}/${id}/pick`, {}).pipe(tap(() => this.myWork.changed()));
   }
 
   // ACC-167 — whoever picked the task up hands it back, with a reason.
   release(id: string, dto: ReleaseTaskDto): Observable<ITaskDto> {
-    return this.http.post<ITaskDto>(`${this.base}/${id}/release`, dto);
+    return this.http.post<ITaskDto>(`${this.base}/${id}/release`, dto).pipe(tap(() => this.myWork.changed()));
   }
 
   // ACC-167 — the assignment picker. `taskId` names the task being
@@ -784,7 +787,7 @@ export class TaskService {
   }
 
   complete(id: string): Observable<ITaskDto> {
-    return this.http.post<ITaskDto>(`${this.base}/${id}/complete`, {});
+    return this.http.post<ITaskDto>(`${this.base}/${id}/complete`, {}).pipe(tap(() => this.myWork.changed()));
   }
 
   // ACC-163 — self-scoped to an active assignee, like complete().
@@ -793,13 +796,13 @@ export class TaskService {
   }
 
   reject(id: string, dto: RejectTaskDto): Observable<ITaskDto> {
-    return this.http.post<ITaskDto>(`${this.base}/${id}/reject`, dto);
+    return this.http.post<ITaskDto>(`${this.base}/${id}/reject`, dto).pipe(tap(() => this.myWork.changed()));
   }
 
   // ACC-163 — open to a Manage tasks holder OR the task's creator; the
   // server decides, and refuses anyone else as not found.
   reassign(id: string, dto: ReassignTaskDto): Observable<ITaskDto> {
-    return this.http.post<ITaskDto>(`${this.base}/${id}/reassign`, dto);
+    return this.http.post<ITaskDto>(`${this.base}/${id}/reassign`, dto).pipe(tap(() => this.myWork.changed()));
   }
 
   // ACC-173 — extension and hold requests. The server decides who may: the
@@ -814,11 +817,11 @@ export class TaskService {
   }
 
   approveRequest(taskId: string, requestId: string, note?: string): Observable<TaskRequestDto> {
-    return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests/${requestId}/approve`, note ? { note } : {});
+    return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests/${requestId}/approve`, note ? { note } : {}).pipe(tap(() => this.myWork.changed()));
   }
 
   declineRequest(taskId: string, requestId: string, note: string): Observable<TaskRequestDto> {
-    return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests/${requestId}/decline`, { note });
+    return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests/${requestId}/decline`, { note }).pipe(tap(() => this.myWork.changed()));
   }
 
   // "Resume now" — the assignee, or anyone who may decide.
@@ -839,11 +842,11 @@ export class TaskService {
   }
 
   cancel(id: string, dto: CancelTaskDto): Observable<ITaskDto> {
-    return this.http.post<ITaskDto>(`${this.base}/${id}/cancel`, dto);
+    return this.http.post<ITaskDto>(`${this.base}/${id}/cancel`, dto).pipe(tap(() => this.myWork.changed()));
   }
 
   reopen(id: string, dto: ReopenTaskDto): Observable<ITaskDto> {
-    return this.http.post<ITaskDto>(`${this.base}/${id}/reopen`, dto);
+    return this.http.post<ITaskDto>(`${this.base}/${id}/reopen`, dto).pipe(tap(() => this.myWork.changed()));
   }
 
   // New task's picker: every priority's due date and limit from now. Needs

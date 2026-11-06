@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
+import { MyWorkEvents } from '../../../core/my-work/my-work-events';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { CommitteePageDto } from '../services/committee.service';
 
@@ -108,6 +109,8 @@ export interface ChangeRequestListQuery {
 @Injectable({ providedIn: 'root' })
 export class ChangeRequestService {
   private readonly http = inject(HttpClient);
+  // ACC-279 — a successful action that can change a work count says so, once.
+  private readonly myWork = inject(MyWorkEvents);
   private readonly committees = `${environment.apiUrl}/committees`;
   private readonly requests = `${environment.apiUrl}/committee-change-requests`;
 
@@ -148,18 +151,18 @@ export class ChangeRequestService {
   }
 
   withdraw(id: string): Observable<ChangeRequestDto> {
-    return this.http.post<ChangeRequestDto>(`${this.requests}/${encodeURIComponent(id)}/withdraw`, {});
+    return this.http.post<ChangeRequestDto>(`${this.requests}/${encodeURIComponent(id)}/withdraw`, {}).pipe(tap(() => this.myWork.changed()));
   }
 
   approve(id: string): Observable<ChangeRequestDto> {
-    return this.http.post<ChangeRequestDto>(`${this.requests}/${encodeURIComponent(id)}/approve`, {});
+    return this.http.post<ChangeRequestDto>(`${this.requests}/${encodeURIComponent(id)}/approve`, {}).pipe(tap(() => this.myWork.changed()));
   }
 
   returnForChanges(id: string, note: string): Observable<ChangeRequestDto> {
-    return this.http.post<ChangeRequestDto>(`${this.requests}/${encodeURIComponent(id)}/return`, { note });
+    return this.http.post<ChangeRequestDto>(`${this.requests}/${encodeURIComponent(id)}/return`, { note }).pipe(tap(() => this.myWork.changed()));
   }
 
   reject(id: string, reason: string): Observable<ChangeRequestDto> {
-    return this.http.post<ChangeRequestDto>(`${this.requests}/${encodeURIComponent(id)}/reject`, { reason });
+    return this.http.post<ChangeRequestDto>(`${this.requests}/${encodeURIComponent(id)}/reject`, { reason }).pipe(tap(() => this.myWork.changed()));
   }
 }

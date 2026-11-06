@@ -387,6 +387,19 @@ export function isNavItemVisible(item: NavItem, access: NavAccess): boolean {
   return permitted && entitled && notExcluded;
 }
 
+/**
+ * ACC-279 — whether a nav item's MODULE is open, read from the item itself, so a
+ * screen outside the rail (Home) gates a module exactly as the rail does. An item
+ * with no moduleKey is open (Committees today, deliberately: see its entry), and
+ * the day it gains one every caller follows with no change of its own. An unknown
+ * key is closed (fail closed).
+ */
+export function isNavModuleOpen(itemKey: string, access: Pick<NavAccess, 'isModuleEnabled'>): boolean {
+  const item = TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === itemKey);
+  if (!item) return false;
+  return !item.moduleKey || access.isModuleEnabled(item.moduleKey);
+}
+
 /** ACC-123 — a group the caller may see at all, before its items are filtered. */
 export function isNavGroupPermitted(group: NavGroup, access: NavAccess): boolean {
   return !group.requiredPermission || access.hasPermission(group.requiredPermission);

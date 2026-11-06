@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
+import { MyWorkEvents } from '../../../core/my-work/my-work-events';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ResolvedDelegationDto } from '../../tasks/services/task.service';
 
@@ -122,6 +123,8 @@ export interface WorkflowAwaitingMeDto {
 @Injectable({ providedIn: 'root' })
 export class WorkflowService {
   private readonly http = inject(HttpClient);
+  // ACC-279 — a successful action that can change a work count says so, once.
+  private readonly myWork = inject(MyWorkEvents);
   private readonly base = `${environment.apiUrl}/workflows`;
 
   /**
@@ -161,17 +164,17 @@ export class WorkflowService {
   }
 
   triggerTransition(instanceId: string, dto: TriggerTransitionDto): Observable<WorkflowInstanceDto> {
-    return this.http.post<WorkflowInstanceDto>(`${this.base}/instances/${instanceId}/transitions`, dto);
+    return this.http.post<WorkflowInstanceDto>(`${this.base}/instances/${instanceId}/transitions`, dto).pipe(tap(() => this.myWork.changed()));
   }
 
   submitApproval(instanceStageId: string, dto: SubmitApprovalDto): Observable<WorkflowApprovalDto> {
     return this.http.post<WorkflowApprovalDto>(
       `${this.base}/instance-stages/${instanceStageId}/approvals`,
       dto,
-    );
+    ).pipe(tap(() => this.myWork.changed()));
   }
 
   cancelInstance(instanceId: string, reason: string): Observable<void> {
-    return this.http.post<void>(`${this.base}/instances/${instanceId}/cancel`, { reason });
+    return this.http.post<void>(`${this.base}/instances/${instanceId}/cancel`, { reason }).pipe(tap(() => this.myWork.changed()));
   }
 }
