@@ -124,7 +124,7 @@ export class TaskAdmissionService {
 
   private async canSeeRecord(type: string, id: string, organizationId: string, viewer: TaskViewer): Promise<boolean> {
     try {
-      await this.objectVisibility.assertCanView(type, id, organizationId, viewer.permissions);
+      await this.objectVisibility.assertCanView(type, id, organizationId, viewer.permissions, viewer.id);
       return true;
     } catch {
       return false;

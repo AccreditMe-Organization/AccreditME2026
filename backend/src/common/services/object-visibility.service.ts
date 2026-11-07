@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../constants/permissions';
+import { isActiveMember } from './committee-membership';
 
 /**
  * ACC-244 — the permission that lets a caller see records of each type: the
@@ -66,9 +67,14 @@ export class ObjectVisibilityService {
           where: { id, organizationId },
           select: { id: true },
         }),
+      // ACC-281 — an active member of this active committee may see it without
+      // committees:view (Ahmad, 7 Nov). Asked only when the permission is missing.
+      member: (id, organizationId, viewerId) => isActiveMember(this.prisma, id, viewerId, organizationId),
     },
     // ACC-239 — a change request is part of its committee's record: seeing it
-    // takes what seeing the committee takes.
+    // takes what seeing the committee takes. ACC-281: change requests are read
+    // through their committee's own routes, which apply membership there; this
+    // rule stays committees:view.
     COMMITTEE_CHANGE_REQUEST: {
       permission: RECORD_VIEW_PERMISSION['COMMITTEE_CHANGE_REQUEST']!,
       exists: (id, organizationId) =>
@@ -111,6 +117,7 @@ export class ObjectVisibilityService {
     objectId: string,
     organizationId: string,
     viewerPermissions: readonly string[],
+    viewerId?: string,
   ): Promise<void> {
     const rule = this.rules[objectType];
 
@@ -124,6 +131,11 @@ export class ObjectVisibilityService {
     }
 
     if (!viewerPermissions.includes(rule.permission)) {
+      // ACC-281 — a member of THIS record is admitted (one indexed query, only
+      // here, only without the permission). A non-member gets today's 403: the
+      // membership query answers the same for an invented id, so it stays
+      // existence-neutral. No viewerId means today's rule exactly (fail closed).
+      if (rule.member && viewerId && (await rule.member(objectId, organizationId, viewerId))) return;
       throw new ForbiddenException(`Required permission: ${rule.permission}`);
     }
 
@@ -162,7 +174,7 @@ export class ObjectVisibilityService {
     viewerId?: string,
   ): Promise<void> {
     try {
-      await this.assertCanView(objectType, objectId, organizationId, viewerPermissions);
+      await this.assertCanView(objectType, objectId, organizationId, viewerPermissions, viewerId);
     } catch (error) {
       // Only the two refusals this service raises are translated. Anything else
       // — a dropped connection, a Prisma fault — must surface as itself rather
@@ -200,4 +212,6 @@ export class ObjectVisibilityService {
 interface ParentRule {
   permission: string;
   exists(id: string, organizationId: string): Promise<{ id: string } | null>;
+  /** ACC-281 — who else may see a record of this type: true admits the viewer. */
+  member?(id: string, organizationId: string, viewerId: string): Promise<boolean>;
 }

@@ -214,7 +214,7 @@ export class TaskService {
     if (seesRecordType(viewer.permissions, dto.sourceType) && !holdsTaskKey(viewer.permissions, dto.sourceType, 'CREATE')) {
       throw new ForbiddenException(`Required permission: ${taskKeyOf(dto.sourceType, 'CREATE') ?? 'Create tasks'}`);
     }
-    await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions);
+    await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id);
     return this.create(dto, organizationId, viewer.id);
   }
 

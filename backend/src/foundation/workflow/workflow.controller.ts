@@ -62,8 +62,9 @@ export class WorkflowController {
     @Query('objectId') objectId: string,
     @CurrentTenant() tenantId: string,
     @CurrentUserPermissions() actorPermissions: string[],
+    @CurrentUser() actorId: string,
   ): Promise<IWorkflowInstance[]> {
-    return this.workflowService.getInstancesByObject(objectType, objectId, tenantId, actorPermissions);
+    return this.workflowService.getInstancesByObject(objectType, objectId, tenantId, actorPermissions, actorId);
   }
 
   // ACC-76 — the object-detail stage indicator's data.

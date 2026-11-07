@@ -108,6 +108,8 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
       committee: {
         findFirst: jest.fn().mockResolvedValue({ id: COMMITTEE_ID, organizationId: TENANT_ID }),
       },
+      // ACC-281 — the membership read a caller without committees:view pays; nobody is a member here.
+      committeeMember: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
       meeting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     prismaRef = prisma as unknown as typeof prismaRef;

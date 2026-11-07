@@ -123,7 +123,7 @@ describe('TaskWorkloadService (ACC-199)', () => {
   it('visible: each person carries open and overdue on the record, and whether choosing them offers a suggestion', async () => {
     const { service, objectVisibility } = setup({ rows: rowsFor({ nora: 12, sara: 4, khalid: 7 }) });
     const list = await service.listHolders(CAN_SEE, ORG, { orgUnitId: 'u1', positionId: 'p1', record: RECORD });
-    expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', ORG, CAN_SEE.permissions);
+    expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', ORG, CAN_SEE.permissions, CAN_SEE.id);
     expect(list.map((h) => [h.id, h.workload])).toEqual([
       ['nora', { openCount: 12, overdueCount: 0, canSuggest: true }],
       ['sara', { openCount: 4, overdueCount: 0, canSuggest: false }],
@@ -161,7 +161,7 @@ describe('TaskWorkloadService (ACC-199)', () => {
     // made in THEIR organisation, and the counts read is scoped by it too.
     const { service, prisma, objectVisibility } = setup({ rows: rowsFor({ nora: 3 }) });
     await service.listHolders(CAN_SEE, 'org-b', { orgUnitId: 'u1', positionId: 'p1', record: RECORD });
-    expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-b', CAN_SEE.permissions);
+    expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-b', CAN_SEE.permissions, CAN_SEE.id);
     const where = (prisma.taskAssignee.findMany.mock.calls[0] as [{ where: { task: { organizationId: string } } }])[0].where;
     expect(where.task.organizationId).toBe('org-b');
     expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: 'org-b' }) }));

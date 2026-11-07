@@ -110,12 +110,14 @@ describe('WorkflowController', () => {
 
   describe('getInstancesByObject', () => {
     it('delegates to workflowService.getInstancesByObject with query params and caller permissions', async () => {
-      const result = await controller.getInstancesByObject('DOCUMENT', 'object-1', TENANT_ID, VIEWER_PERMISSIONS);
+      const result = await controller.getInstancesByObject('DOCUMENT', 'object-1', TENANT_ID, VIEWER_PERMISSIONS, 'actor-1');
       expect(service.getInstancesByObject).toHaveBeenCalledWith(
         'DOCUMENT',
         'object-1',
         TENANT_ID,
         VIEWER_PERMISSIONS,
+        // ACC-281 — the caller, so a member of the committee passes the parent check.
+        'actor-1',
       );
       expect(result).toEqual([MOCK_INSTANCE]);
     });

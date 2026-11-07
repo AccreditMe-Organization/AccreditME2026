@@ -11,6 +11,8 @@ const COMMITTEE_ID = 'committee-1';
 const mockPrisma = {
   committee: { findFirst: jest.fn() },
   meeting: { findFirst: jest.fn() },
+  // ACC-281 — the membership read a caller without committees:view pays.
+  committeeMember: { findFirst: jest.fn() },
 };
 
 describe('ObjectVisibilityService (ACC-101)', () => {
@@ -20,6 +22,7 @@ describe('ObjectVisibilityService (ACC-101)', () => {
     jest.clearAllMocks();
     mockPrisma.committee.findFirst.mockResolvedValue({ id: COMMITTEE_ID });
     mockPrisma.meeting.findFirst.mockResolvedValue({ id: 'meeting-1' });
+    mockPrisma.committeeMember.findFirst.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [ObjectVisibilityService, { provide: PrismaService, useValue: mockPrisma }],
@@ -48,6 +51,71 @@ describe('ObjectVisibilityService (ACC-101)', () => {
     ).rejects.toThrow(ForbiddenException);
 
     expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
+  });
+
+  // ACC-281 — an ACTIVE member of THIS active committee is admitted without the
+  // permission (Ahmad, 7 Nov). Everyone else is refused exactly as before.
+  describe('committee membership (ACC-281)', () => {
+    const MEMBER = 'user-member';
+
+    it('admits an active member of the committee without committees:view', async () => {
+      mockPrisma.committeeMember.findFirst.mockResolvedValue({ id: 'cm-1' });
+
+      await expect(service.assertCanView('COMMITTEE', COMMITTEE_ID, ORG_A, [], MEMBER)).resolves.toBeUndefined();
+      expect(mockPrisma.committeeMember.findFirst).toHaveBeenCalledWith({
+        where: {
+          committeeId: COMMITTEE_ID,
+          userId: MEMBER,
+          organizationId: ORG_A,
+          isActive: true,
+          committee: { organizationId: ORG_A, isActive: true },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('a non-member gets the identical 403 for a real committee and an invented id', async () => {
+      const real = await service.assertCanView('COMMITTEE', COMMITTEE_ID, ORG_A, [], MEMBER).catch((e: Error) => e);
+      const invented = await service.assertCanView('COMMITTEE', 'no-such-id', ORG_A, [], MEMBER).catch((e: Error) => e);
+
+      expect(real).toEqual(new ForbiddenException('Required permission: committees:view'));
+      expect(invented).toEqual(real);
+      // Only the membership read: the committee itself is never read for a refusal.
+      expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('a holder of committees:view pays no membership read', async () => {
+      await service.assertCanView('COMMITTEE', COMMITTEE_ID, ORG_A, ['committees:view'], MEMBER);
+      expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('no viewer id keeps the old rule exactly (fail closed), with no read', async () => {
+      mockPrisma.committeeMember.findFirst.mockResolvedValue({ id: 'cm-1' });
+      await expect(service.assertCanView('COMMITTEE', COMMITTEE_ID, ORG_A, [])).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('a change request does not admit members through this rule', async () => {
+      mockPrisma.committeeMember.findFirst.mockResolvedValue({ id: 'cm-1' });
+      await expect(service.assertCanView('COMMITTEE_CHANGE_REQUEST', 'cr-1', ORG_A, [], MEMBER)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('the read-first form admits a member, and answers a non-member with its own 404', async () => {
+      mockPrisma.committeeMember.findFirst.mockResolvedValueOnce({ id: 'cm-1' });
+      await expect(
+        service.assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, [], 'Task not found', MEMBER),
+      ).resolves.toBeUndefined();
+      await expect(
+        service.assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, [], 'Task not found', MEMBER),
+      ).rejects.toThrow(new NotFoundException('Task not found'));
+    });
+
+    itEnforcesTenantIsolation('committee membership in the parent rule', async () => {
+      await service.assertCanView('COMMITTEE', COMMITTEE_ID, ORG_B, [], MEMBER).catch(() => undefined);
+      const where = mockPrisma.committeeMember.findFirst.mock.calls[0]![0].where;
+      expect(where.organizationId).toBe(ORG_B);
+      expect(where.committee.organizationId).toBe(ORG_B);
+    });
   });
 
   it('reports a missing parent as not found, once the caller is entitled to ask', async () => {
