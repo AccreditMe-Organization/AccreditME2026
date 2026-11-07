@@ -82,6 +82,8 @@ const mockPrisma = {
   workflowInstanceStage: { findFirst: jest.fn(), update: jest.fn() },
   // ACC-120 slice 3 — the inbox names each row's record (task-record-names.ts).
   committee: { findMany: jest.fn() },
+  // ACC-281 — a viewer without committees:view is a member of nothing here.
+  committeeMember: { findMany: jest.fn().mockResolvedValue([]) },
   meeting: { findMany: jest.fn() },
   $queryRaw: jest.fn(),
   $transaction: jest.fn(),
@@ -922,7 +924,7 @@ describe('TaskRequestService (ACC-173)', () => {
         );
       });
 
-      it('without committees:view: the type and id alone, and nothing is looked up', async () => {
+      it('without committees:view and on no committee: the type and id alone, and no name is looked up', async () => {
         mockAuthority.creatorsCoveredBy.mockResolvedValue([]);
         mockPrisma.taskRequest.findMany.mockResolvedValue([inboxRow]);
         const rows = await service.awaitingDecision(creator, ORG_A);

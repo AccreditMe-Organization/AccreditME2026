@@ -39,7 +39,8 @@ describe('TaskService.createForViewer — the task\'s record comes first (ACC-24
       const row = committees.find((c) => c.id === where.id && c.organizationId === where.organizationId);
       return row ? { id: row.id } : null;
     });
-    const prisma = { committee: { findFirst } } as unknown as PrismaService;
+    // ACC-281 — nobody is a member of the record here, so membership admits no one.
+    const prisma = { committee: { findFirst }, committeeMember: { findFirst: jest.fn().mockResolvedValue(null) } } as unknown as PrismaService;
     create = jest.fn().mockResolvedValue({ id: 'new-task' });
     createForViewer = TaskService.prototype.createForViewer.bind({
       objectVisibility: new ObjectVisibilityService(prisma),

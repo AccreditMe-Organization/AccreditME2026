@@ -176,4 +176,111 @@ describe('Awaiting my action, against a real database (ACC-271)', () => {
     expect(result.total).toBe(7);
     expect(result.rows.map((r) => r.instanceStageId)).toEqual(entries.slice(0, 5));
   });
+
+  // ── ACC-281 — paging, the order contract, the cap, and members ──────────────
+
+  describe('ACC-281 — ?skip=&take=', () => {
+    it('pages in enteredAt then entry-id order: the pages together are the whole list, with no repeat or gap', async () => {
+      const o = await org();
+      const member = await o.person('Member');
+      await o.workedBy('terms_review', 'ANY_ONE', [member]);
+      const same = new Date(Date.UTC(2026, 9, 5, 8));
+      // Four entries at the same instant (the id decides among them), four spread out.
+      for (let i = 0; i < 4; i++) await o.committeeAt('terms_review', same);
+      for (let i = 0; i < 4; i++) await o.committeeAt('terms_review', new Date(Date.UTC(2026, 9, 1 + i)));
+
+      const whole = await awaiting.awaitingMe(o.id, member, VIEW, { take: 50 });
+      expect(whole.total).toBe(8);
+      const pages = [
+        ...(await awaiting.awaitingMe(o.id, member, VIEW, { skip: 0, take: 3 })).rows,
+        ...(await awaiting.awaitingMe(o.id, member, VIEW, { skip: 3, take: 3 })).rows,
+        ...(await awaiting.awaitingMe(o.id, member, VIEW, { skip: 6, take: 3 })).rows,
+      ];
+      expect(pages.map((r) => r.instanceStageId)).toEqual(whole.rows.map((r) => r.instanceStageId));
+
+      // The order is the database's own: enteredAt, then the entry id.
+      const expected = await prisma.workflowInstanceStage.findMany({
+        where: { workflowInstance: { organizationId: o.id } },
+        orderBy: [{ enteredAt: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      });
+      expect(whole.rows.map((r) => r.instanceStageId)).toEqual(expected.map((e) => e.id));
+
+      // No page asked for: exactly the oldest five, as Home has always read it.
+      const home = await awaiting.awaitingMe(o.id, member, VIEW);
+      expect(home.rows.map((r) => r.instanceStageId)).toEqual(expected.slice(0, 5).map((e) => e.id));
+      expect(home.total).toBe(8);
+      expect(home.oldestSince).toEqual(new Date(Date.UTC(2026, 9, 1)));
+    });
+
+    it('reads at most 1,000 open entries, the oldest', async () => {
+      const o = await org();
+      const member = await o.person('Member');
+      await o.workedBy('terms_review', 'ANY_ONE', [member]);
+      const stage = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: o.templateId, key: 'terms_review' } });
+      const unit = await prisma.orgUnit.findFirstOrThrow({ where: { organizationId: o.id } });
+      // 1,001 committees in Terms Review, written in batches.
+      const base = Date.UTC(2026, 0, 1);
+      const committees = Array.from({ length: 1001 }, (_, i) => ({ id: randomUUID(), i }));
+      await prisma.committee.createMany({
+        data: committees.map(({ id, i }) => ({ id, organizationId: o.id, nameEn: `Cap ${i}`, typeValueId: 'type', orgUnitId: unit.id })),
+      });
+      const instances = committees.map(({ id, i }) => ({ id: randomUUID(), committeeId: id, i }));
+      await prisma.workflowInstance.createMany({
+        data: instances.map(({ id, committeeId }) => ({
+          id,
+          organizationId: o.id,
+          workflowTemplateId: o.templateId,
+          objectType: 'COMMITTEE' as const,
+          objectId: committeeId,
+          status: 'IN_PROGRESS' as const,
+          currentStageId: stage.id,
+        })),
+      });
+      await prisma.workflowInstanceStage.createMany({
+        data: instances.map(({ id, i }) => ({ workflowInstanceId: id, stageId: stage.id, enteredAt: new Date(base + i * 60_000) })),
+      });
+
+      const result = await awaiting.awaitingMe(o.id, member, VIEW, { take: 1 });
+      expect(result.total).toBe(1000);
+      expect(result.oldestSince).toEqual(new Date(base));
+      // The newest one was not read.
+      const last = await awaiting.awaitingMe(o.id, member, VIEW, { skip: 999, take: 5 });
+      expect(last.rows).toHaveLength(1);
+      expect(new Date(last.rows[0]!.since).getTime()).toBe(base + 999 * 60_000);
+    });
+  });
+
+  describe('ACC-281 — a member without committees:view (Ahmad, Q7)', () => {
+    it('an active member in the pool sees their committee; a former member and a non-member do not', async () => {
+      const o = await org();
+      const member = await o.person('Member');
+      const former = await o.person('Former');
+      const stranger = await o.person('Stranger');
+      await o.workedBy('terms_review', 'ANY_ONE', [member, former, stranger]);
+      const c = await o.committeeAt('terms_review');
+      await prisma.committeeMember.create({ data: { organizationId: o.id, committeeId: c.id, userId: member, roleValueId: 'seat' } });
+      await prisma.committeeMember.create({
+        data: { organizationId: o.id, committeeId: c.id, userId: former, roleValueId: 'seat', isActive: false, leftAt: new Date() },
+      });
+
+      const seen = await awaiting.awaitingMe(o.id, member, []);
+      expect(seen.total).toBe(1);
+      expect(seen.rows[0]!.record).toMatchObject({ type: 'COMMITTEE', id: c.id, nameEn: expect.any(String) });
+      expect(await awaiting.awaitingMe(o.id, former, [])).toEqual({ total: 0, rows: [], oldestSince: null });
+      expect(await awaiting.awaitingMe(o.id, stranger, [])).toEqual({ total: 0, rows: [], oldestSince: null });
+    });
+
+    itEnforcesTenantIsolation('awaiting-me membership across organisations', async () => {
+      const a = await org();
+      const b = await org();
+      const member = await b.person('Member of b');
+      await a.workedBy('terms_review', 'ANY_ONE', [member]);
+      const c = await a.committeeAt('terms_review');
+      // A membership row naming a's committee but in b's organisation is no membership in a.
+      await prisma.committeeMember.create({ data: { organizationId: b.id, committeeId: c.id, userId: member, roleValueId: 'seat' } });
+      expect((await awaiting.awaitingMe(a.id, member, [])).total).toBe(0);
+    });
+  });
+
 });

@@ -90,7 +90,7 @@ export class TaskDraftService {
 
     if (!sourceType !== !sourceId) throw new BadRequestException('sourceType and sourceId go together');
     if (sourceType && sourceId) {
-      await this.objectVisibility.assertCanView(sourceType, sourceId, organizationId, viewer.permissions);
+      await this.objectVisibility.assertCanView(sourceType, sourceId, organizationId, viewer.permissions, viewer.id);
     }
 
     const availability = await aiFeatureAvailability(this.prisma, organizationId, DRAFT_FEATURE);

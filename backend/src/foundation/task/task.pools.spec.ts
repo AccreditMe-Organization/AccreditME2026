@@ -694,6 +694,8 @@ describe('TaskService — pools (ACC-167)', () => {
     it('looks only in the pools the caller is in right now — their position in their unit, and their committee roles', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ positionId: 'pos-qo', primaryOrgUnitId: 'unit-1' });
       mockPrisma.committeeMember.findMany.mockResolvedValue([{ committeeId: 'committee-1', roleValueId: 'role-sec' }]);
+      // ACC-281 — the caller sits on committee-1, so its rows are named for them too.
+      mockPrisma.committee.findMany.mockResolvedValue([{ id: 'committee-1', nameEn: 'Quality Committee', nameAr: null }]);
       mockPrisma.task.findMany.mockResolvedValue([{ ...poolTask(), _count: { evidence: 0 } }]);
 
       const [task] = await service.getAvailableToPick(HOLDER_A, ORG_A);

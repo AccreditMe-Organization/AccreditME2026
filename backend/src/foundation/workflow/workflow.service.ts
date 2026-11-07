@@ -475,12 +475,16 @@ export class WorkflowService {
     objectId: string,
     organizationId: string,
     viewerPermissions: readonly string[],
+    viewerId?: string,
   ): Promise<IWorkflowInstance[]> {
+    // ACC-281 — viewerId lets an active member of the committee through the
+    // parent check (the route still needs workflows:view).
     await this.objectVisibility.assertCanView(
       objectType,
       objectId,
       organizationId,
       viewerPermissions,
+      viewerId,
     );
 
     const instances = await this.prisma.workflowInstance.findMany({

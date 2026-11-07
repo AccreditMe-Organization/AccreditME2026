@@ -96,7 +96,7 @@ export class TaskWorkloadService {
     const mightSeeAll =
       ctx.viewAllTypes.includes(record.sourceType) || ctx.unitScope.some((s) => s.type === record.sourceType);
     if (ctx.recordTypes.includes(record.sourceType) && !mightSeeAll) throw refusal();
-    await this.objectVisibility.assertCanView(record.sourceType, record.sourceId, organizationId, viewer.permissions);
+    await this.objectVisibility.assertCanView(record.sourceType, record.sourceId, organizationId, viewer.permissions, viewer.id);
     if (!(await this.visibility.seesWholeRecord(ctx, record.sourceType, record.sourceId))) throw refusal();
   }
 

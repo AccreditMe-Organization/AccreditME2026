@@ -41,7 +41,7 @@ const COMMITTEE: CommitteeDetailDto = {
   stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: { id: 'type-1', key: 'quality', labelEn: 'Quality', labelAr: 'الجودة', offered: true },
-  orgUnit: null,
+  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null,
 };
 
 const LIST_ITEM = (id: string, nameEn: string, over: Partial<CommitteeListItemDto> = {}): CommitteeListItemDto => ({

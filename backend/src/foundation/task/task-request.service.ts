@@ -488,7 +488,7 @@ export class TaskRequestService {
     });
     // ACC-120 slice 3 — the record beside the task, named for a viewer who may
     // see its type: one batched lookup for the whole inbox, never one per row.
-    const records = await recordNamesOf(this.prisma, rows.map((r) => r.task), organizationId, viewer.permissions);
+    const records = await recordNamesOf(this.prisma, rows.map((r) => r.task), organizationId, viewer.permissions, viewer.id);
     return rows.map((r) => ({
       id: r.id,
       type: r.type,

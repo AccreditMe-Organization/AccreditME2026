@@ -125,7 +125,7 @@ describe('TaskRecordListService', () => {
       await expect(service.list({ ...RECORD }, 'org-a', { id: 'u1', permissions: ['committees:view_all_tasks'] })).rejects.toThrow(
         'Required permission: committees:view',
       );
-      expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-a', ['committees:view_all_tasks']);
+      expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-a', ['committees:view_all_tasks'], 'u1');
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
@@ -441,7 +441,7 @@ describe('TaskRecordListService', () => {
     // every statement is bound to it, and every Prisma read is scoped by it.
     const { service, prisma, objectVisibility } = setup();
     await service.list({ ...RECORD, around: 't1' }, 'org-b', { id: 'u1', permissions: VIEW_ALL });
-    expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-b', VIEW_ALL);
+    expect(objectVisibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-b', VIEW_ALL, expect.any(String));
     const statements = sqlOf(prisma);
     expect(statements.length).toBeGreaterThanOrEqual(4);
     for (const s of statements) {

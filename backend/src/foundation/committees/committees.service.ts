@@ -12,6 +12,7 @@ import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
 import { ChangeCommitteeMemberRoleDto } from './dto/change-committee-member-role.dto';
 import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
 import {
+  ICommitteeRef,
   ICommittee,
   ICommitteeDetail,
   ICommitteeListItem,
@@ -23,6 +24,13 @@ import { committeeStagesAndCounts } from './committee-stage-counts';
 import { committeeTypeValues } from './committee-type-values';
 import { CommitteeChangedException } from './committee-edit-refusal';
 import { committeeStageRefusalMessage } from './committee-stage-refusal';
+import {
+  CommitteeViewer,
+  assertMaySeeCommittee,
+  assertMayWriteCommittee,
+  memberCommitteeIds,
+  seesEveryCommittee,
+} from '../../common/services/committee-membership';
 
 /**
  * ACC-233 — the value an update SETS, only when it differs from what is stored;
@@ -68,9 +76,15 @@ export class CommitteesService {
   // grouped count over CommitteeMember, one pass over the workflow instances
   // for the whole id set. The per-row alternative is N+1 twice over, and at
   // ~110ms a round trip that is visible to a user.
-  async listCommittees(organizationId: string): Promise<ICommitteeListItem[]> {
+  // ACC-281 — committees:view sees every committee (oversight); anyone else sees
+  // only the ACTIVE committees they are an ACTIVE member of, by one more
+  // condition on the same query. A non-member gets an empty list.
+  async listCommittees(organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeListItem[]> {
+    const own: Prisma.CommitteeWhereInput = seesEveryCommittee(viewer.permissions)
+      ? {}
+      : { isActive: true, members: { some: { userId: viewer.id, organizationId, isActive: true } } };
     const committees = await this.prisma.committee.findMany({
-      where: { organizationId },
+      where: { organizationId, ...own },
       orderBy: { nameEn: 'asc' },
     });
     if (committees.length === 0) return [];
@@ -111,9 +125,11 @@ export class CommitteesService {
   // its type and owning unit named (ACC-246, ACC-265). Read by the same helpers
   // as the list rows, so the two agree. No stage key is sent (ACC-265).
   // Internal callers keep getCommitteeById(), which costs one query.
-  async getCommitteeDetail(id: string, organizationId: string): Promise<ICommitteeDetail> {
+  async getCommitteeDetail(id: string, organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeDetail> {
+    // ACC-281 — committees:view or an active member; anyone else today's 403.
+    await assertMaySeeCommittee(this.prisma, id, organizationId, viewer);
     const committee = await this.getCommitteeById(id, organizationId);
-    const [facts, types, rules, orgUnit] = await Promise.all([
+    const [facts, types, rules, orgUnit, related] = await Promise.all([
       committeeStagesAndCounts(this.prisma, organizationId, [committee.id]),
       committeeTypeValues(this.prisma, organizationId, [committee.typeValueId]),
       this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [committee.id]),
@@ -124,10 +140,17 @@ export class CommitteesService {
             select: { id: true, nameEn: true, nameAr: true },
           })
         : Promise.resolve(null),
+      // ACC-281 — the parent and Reports to, named by the record itself, so the
+      // page reads no committee list. Two queries at most, whatever the record.
+      this.relatedCommittees(organizationId, [committee.parentCommitteeId, committee.reportingToCommitteeId], viewer),
     ]);
     const fact = facts.get(committee.id);
     return {
       ...committee,
+      currentStageNameEn: fact?.stageNameEn ?? null,
+      currentStageNameAr: fact?.stageNameAr ?? null,
+      parent: committee.parentCommitteeId ? related.get(committee.parentCommitteeId) ?? null : null,
+      reportsTo: committee.reportingToCommitteeId ? related.get(committee.reportingToCommitteeId) ?? null : null,
       isDissolving: fact?.isDissolving ?? false,
       typeValue: types.get(committee.typeValueId) ?? null,
       orgUnit,
@@ -203,7 +226,12 @@ export class CommitteesService {
     dto: UpdateCommitteeDto,
     organizationId: string,
     actorId: string,
+    viewerPermissions: readonly string[],
   ): Promise<ICommittee> {
+    // ACC-281 — the action's own permission was checked at the route; this adds
+    // "committees:view OR an active member of THIS committee". Anyone else gets the
+    // identical 404 a missing committee gets. The stage rules still apply below.
+    await assertMayWriteCommittee(this.prisma, id, organizationId, { id: actorId, permissions: viewerPermissions });
     // ACC-233 — ONE transaction. An update that sets a parent or reports-to
     // first takes the organisation's hierarchy lock, so two edits saved at the
     // same moment cannot close a loop between them (lockCommitteeHierarchy()).
@@ -294,7 +322,8 @@ export class CommitteesService {
 
   // ── Membership Management (NOT workflow transitions — module-designs.md) ────
 
-  async listMembers(committeeId: string, organizationId: string): Promise<ICommitteeMember[]> {
+  async listMembers(committeeId: string, organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeMember[]> {
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer); // ACC-281
     await this.getCommitteeById(committeeId, organizationId); // validates committee belongs to org
     return this.prisma.committeeMember.findMany({
       where: { committeeId, organizationId, isActive: true },
@@ -305,7 +334,10 @@ export class CommitteesService {
   async listMembershipEvents(
     committeeId: string,
     organizationId: string,
+    viewer: CommitteeViewer,
   ): Promise<ICommitteeMembershipEvent[]> {
+    // ACC-281 — a member sees all of their committee's details, history included (Ahmad, 7 Nov).
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer);
     await this.getCommitteeById(committeeId, organizationId);
     return this.prisma.committeeMembershipEvent.findMany({
       where: { committeeId, organizationId },
@@ -318,7 +350,12 @@ export class CommitteesService {
     dto: AddCommitteeMemberDto,
     organizationId: string,
     actorId: string,
+    viewerPermissions: readonly string[],
   ): Promise<ICommitteeMember> {
+    // ACC-281 — the action's own permission was checked at the route; this adds
+    // "committees:view OR an active member of THIS committee". Anyone else gets the
+    // identical 404 a missing committee gets. The stage rules still apply below.
+    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, { id: actorId, permissions: viewerPermissions });
     await this.getCommitteeById(committeeId, organizationId);
     await this.validateUserReference(dto.userId, organizationId);
 
@@ -398,7 +435,12 @@ export class CommitteesService {
     dto: ChangeCommitteeMemberRoleDto,
     organizationId: string,
     actorId: string,
+    viewerPermissions: readonly string[],
   ): Promise<ICommitteeMember> {
+    // ACC-281 — the action's own permission was checked at the route; this adds
+    // "committees:view OR an active member of THIS committee". Anyone else gets the
+    // identical 404 a missing committee gets. The stage rules still apply below.
+    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, { id: actorId, permissions: viewerPermissions });
     await this.getCommitteeById(committeeId, organizationId);
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
 
@@ -447,7 +489,12 @@ export class CommitteesService {
     dto: RemoveCommitteeMemberDto,
     organizationId: string,
     actorId: string,
+    viewerPermissions: readonly string[],
   ): Promise<void> {
+    // ACC-281 — the action's own permission was checked at the route; this adds
+    // "committees:view OR an active member of THIS committee". Anyone else gets the
+    // identical 404 a missing committee gets. The stage rules still apply below.
+    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, { id: actorId, permissions: viewerPermissions });
     await this.getCommitteeById(committeeId, organizationId);
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
 
@@ -592,5 +639,25 @@ export class CommitteesService {
     if (!user) {
       throw new NotFoundException('User not found in this tenant');
     }
+  }
+
+  /**
+   * ACC-281 — other committees this record names (parent, Reports to), each with
+   * whether the viewer may open it: committees:view, or an active member of it.
+   * One read for the names and, only without committees:view, one for membership.
+   */
+  private async relatedCommittees(
+    organizationId: string,
+    ids: (string | null)[],
+    viewer: CommitteeViewer,
+  ): Promise<Map<string, ICommitteeRef>> {
+    const wanted = [...new Set(ids.filter((x): x is string => !!x))];
+    if (wanted.length === 0) return new Map();
+    const oversight = seesEveryCommittee(viewer.permissions);
+    const [rows, mine] = await Promise.all([
+      this.prisma.committee.findMany({ where: { id: { in: wanted }, organizationId }, select: { id: true, nameEn: true, nameAr: true } }),
+      oversight ? Promise.resolve(new Set<string>()) : memberCommitteeIds(this.prisma, viewer.id, organizationId, wanted),
+    ]);
+    return new Map(rows.map((r) => [r.id, { ...r, mayOpen: oversight || mine.has(r.id) }]));
   }
 }

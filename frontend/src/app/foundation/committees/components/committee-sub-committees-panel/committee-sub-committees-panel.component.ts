@@ -40,7 +40,11 @@ type PanelState = 'loading' | 'error' | 'ready';
       @for (s of rows(); track s.id) {
         <li class="am-cp-row" [attr.data-sub-row]="s.id">
           <span class="am-cp-l1">
-            <a class="am-csp__name am-cp-cut" [routerLink]="['/committees', s.id]">{{ name(s) }}</a>
+            @if (s.mayOpen) {
+              <a class="am-csp__name am-cp-cut" [routerLink]="['/committees', s.id]">{{ name(s) }}</a>
+            } @else {
+              <span class="am-csp__name am-csp__name--plain am-cp-cut">{{ name(s) }}</span>
+            }
           </span>
           <span class="am-cp-l2"><span class="am-cp-cut">{{ meta(s) }}</span></span>
         </li>
@@ -48,7 +52,11 @@ type PanelState = 'loading' | 'error' | 'ready';
     </am-capped-panel>
 
     <ng-template #subCells let-s>
-      <a class="am-csp__name am-cp-cut" [routerLink]="['/committees', s.id]">{{ name(s) }}</a>
+      @if (s.mayOpen) {
+              <a class="am-csp__name am-cp-cut" [routerLink]="['/committees', s.id]">{{ name(s) }}</a>
+            } @else {
+              <span class="am-csp__name am-csp__name--plain am-cp-cut">{{ name(s) }}</span>
+            }
       <span class="am-cp-cut text-[var(--am-ink-700)]">{{ stage(s) || '—' }}</span>
       <span class="text-[var(--am-ink-700)] whitespace-nowrap">{{ format.count('committee.members', s.memberCount) }}</span>
     </ng-template>
@@ -81,6 +89,7 @@ type PanelState = 'loading' | 'error' | 'ready';
       :host{display:block;min-inline-size:0}
       .am-csp__name{font-weight:500;color:var(--am-primary-700);text-decoration:none}
       .am-csp__name:hover{text-decoration:underline}
+      .am-csp__name--plain,.am-csp__name--plain:hover{color:var(--am-ink-900);text-decoration:none}
       .am-csp__name:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
     `,
   ],

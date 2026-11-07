@@ -35,7 +35,7 @@ export function memberRow(i: number, over: Partial<CommitteeMemberRowDto> = {}):
 }
 
 export function subRow(i: number, over: Partial<SubCommitteeRowDto> = {}): SubCommitteeRowDto {
-  return { id: `s${i}`, nameEn: `Sub ${i}`, nameAr: null, stageNameEn: 'Active', stageNameAr: 'نشطة', memberCount: i, ...over };
+  return { id: `s${i}`, nameEn: `Sub ${i}`, nameAr: null, stageNameEn: 'Active', stageNameAr: 'نشطة', memberCount: i, mayOpen: true, ...over };
 }
 
 const page = <T>(items: T[], total = items.length, matching = total) => ({ items, total, matching });
@@ -315,6 +315,19 @@ describe('Committee Members and Sub-committees panels (ACC-230)', () => {
       expect(rows[1]!.textContent).toContain('1 member');
       expect(rows[1]!.textContent).not.toContain('·');
       expect(rows[0]!.querySelector('a')!.getAttribute('href')).toBe('/committees/s3');
+    });
+
+    // ACC-281 — a member sees their committee's children; one they may not open
+    // is named, not linked (the server's mayOpen, never a guess).
+    it('links a child only where the viewer may open it', () => {
+      setup();
+      answer(membersReq(), page([]));
+      answer(subsReq(), page([subRow(1), subRow(2, { mayOpen: false })]));
+      const rows = Array.from(el.querySelectorAll<HTMLElement>('[data-sub-row]'));
+      expect(rows.length).withContext('both rows rendered').toBe(2);
+      expect(rows[0]!.querySelector('a')!.getAttribute('href')).toBe('/committees/s1');
+      expect(rows[1]!.querySelector('a')).toBeNull();
+      expect(rows[1]!.textContent).toContain('Sub 2');
     });
 
     it('has no header action, and See all opens its own list', () => {

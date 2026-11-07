@@ -51,21 +51,25 @@ function buildContext(handlerName: HandlerName, userPermissions: string[]): Exec
   } as unknown as ExecutionContext;
 }
 
-// ACC-230 — the two read lists carry committees:view, exactly as
-// GET /committees/:id/members does: the real guard, the real metadata.
-describe('CommitteesController — the Members and Sub-committees lists (ACC-230)', () => {
+// ACC-230, changed by ACC-281 — the read lists carry NO route permission now: the
+// guard admits every caller, and the service admits committees:view OR an active
+// member of the committee (committee-membership.ts, proved in the db-spec). This
+// pins that the guard is no longer what decides, so the rule has one home.
+describe('CommitteesController — the committee reads decide in the service (ACC-281)', () => {
   const guard = new PermissionGuard(new Reflector());
-  const ctx = (name: 'membersPage' | 'subCommittees', userPermissions: string[]) =>
+  const ctx = (name: string, userPermissions: string[]) =>
     ({
       getHandler: () => (CommitteesController.prototype as unknown as Record<string, () => unknown>)[name],
       getClass: () => CommitteesController,
       switchToHttp: () => ({ getRequest: () => ({ userPermissions }) }),
     }) as unknown as ExecutionContext;
 
-  it.each(['membersPage', 'subCommittees'] as const)('%s needs committees:view, and committees:view is enough', (name) => {
-    expect(() => guard.canActivate(ctx(name, ['tasks:view']))).toThrow(ForbiddenException);
-    expect(guard.canActivate(ctx(name, [COMMITTEES_PERMISSIONS.VIEW]))).toBe(true);
-  });
+  it.each(['listCommittees', 'getCommitteeById', 'listMembers', 'membersPage', 'subCommittees', 'listMembershipEvents'])(
+    '%s passes the guard for a caller without committees:view',
+    (name) => {
+      expect(guard.canActivate(ctx(name, ['tasks:view']))).toBe(true);
+    },
+  );
 });
 
 describe('CommitteesController permission wiring (ACC-28 correction — Retrospective Note 2)', () => {

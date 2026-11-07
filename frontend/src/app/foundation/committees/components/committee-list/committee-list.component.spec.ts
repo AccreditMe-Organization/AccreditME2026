@@ -93,8 +93,9 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
   // The Arabic case switches <html> to rtl; put it back for the specs after.
   preserveDocumentLanguage();
 
-  function setup(perms: string[], rows: CommitteeListItemDto[] = ROWS, lang: 'en' | 'ar' = 'en', phone = false): void {
-    permissions = perms;
+  // ACC-281 — the type lookup is read only with lookups:view; most cases hold it.
+  function setup(perms: string[], rows: CommitteeListItemDto[] = ROWS, lang: 'en' | 'ar' = 'en', phone = false, lookups = true): void {
+    permissions = lookups ? [...perms, 'lookups:view'] : perms;
     TestBed.configureTestingModule({
       imports: [CommitteeListComponent],
       providers: [
@@ -117,7 +118,8 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     fixture.componentInstance.phone.set(phone);
     el = fixture.nativeElement;
     fixture.detectChanges();
-    http.expectOne(`${API}/lookups/categories/committee_type/values`).flush(TYPES);
+    if (lookups) http.expectOne(`${API}/lookups/categories/committee_type/values`).flush(TYPES);
+    else http.expectNone(`${API}/lookups/categories/committee_type/values`);
     fixture.detectChanges();
     http.expectOne(`${API}/committees`).flush(rows);
     fixture.detectChanges();
@@ -288,6 +290,19 @@ describe('CommitteeListComponent (ACC-120 slice 4)', () => {
     http.expectNone(`${API}/lookups/categories/committee_type/values`);
     http.expectNone(`${API}/organization/units/flat`);
     http.match(() => true).forEach((r) => r.flush([]));
+  }));
+
+  // ACC-281 — a member without lookups:view (or committees:view) opens the list
+  // too: the rows name their own type, so the column and the filter still read.
+  it('without lookups:view, the type column and filter read the type each row names', fakeAsync(() => {
+    const quality = { id: 'type-quality', key: 'quality', labelEn: 'Quality', labelAr: 'الجودة', offered: true };
+    setup([], [committee('a', { typeValue: quality }), committee('b', { typeValueId: 'type-none' })], 'en', false, false);
+    flush();
+    fixture.detectChanges();
+    expect(cells('type')).toEqual(['Quality', '—']);
+    expect(fixture.componentInstance.typeOptions()).toEqual([{ value: 'type-quality', label: 'Quality' }]);
+    http.verify();
+    TestBed.resetTestingModule();
   }));
 
   it('nothing at all: "No committees yet", with a line pointing to Add Committee only for a creator', fakeAsync(() => {
