@@ -9,6 +9,7 @@ import {
   ISetupCondition,
   ISetupConditionFreshness,
   ISetupHealth,
+  ISetupHealthHomeSlice,
   ISetupHealthSummary,
   SetupConditionAgeBasis,
 } from './interfaces/setup-health.interface';
@@ -155,6 +156,52 @@ export class SetupHealthService {
       }),
     ]);
     return { open, blocksWork };
+  }
+
+  /** How many open conditions Home shows (ACC-279); the page shows them all. */
+  static readonly HOME_ROWS = 3;
+
+  // ACC-279 — the admin summary's part: three queries in parallel, whatever the
+  // number of conditions. The counts are ONE grouped query (getSummary() uses two
+  // for the same numbers). The rows are the page's first three: BLOCKS_WORK before
+  // AT_RISK (the enum's declaration order, which is what ascending sorts by in
+  // Postgres), then the oldest, then the id.
+  async getHomeSlice(
+    organizationId: string,
+    now: Date = new Date(),
+  ): Promise<ISetupHealthHomeSlice> {
+    const where = { organizationId, type: { in: SETUP_CONDITION_TYPES }, clearedAt: null };
+    const [bySeverity, topRows, runs] = await Promise.all([
+      this.prisma.setupCondition.groupBy({
+        by: ['severity'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.setupCondition.findMany({
+        where,
+        select: CONDITION_SELECT,
+        orderBy: [{ severity: 'asc' }, { openedAt: 'asc' }, { id: 'asc' }],
+        take: SetupHealthService.HOME_ROWS,
+      }),
+      this.prisma.setupConditionRun.findMany({
+        where: { organizationId, type: { in: SETUP_CONDITION_TYPES } },
+        select: { type: true, lastSucceededAt: true, lastFailedAt: true },
+      }),
+    ]);
+    const countOf = (severity: SetupConditionSeverity) =>
+      bySeverity.find((g) => g.severity === severity)?._count._all ?? 0;
+    return {
+      open: bySeverity.reduce((sum, g) => sum + g._count._all, 0),
+      blocksWork: countOf('BLOCKS_WORK'),
+      top: topRows.map((row) => this.toCondition(row)),
+      freshness: SETUP_CONDITION_TYPES.map((type) =>
+        this.freshnessOf(
+          type,
+          runs.find((r) => r.type === type),
+          now,
+        ),
+      ),
+    };
   }
 
   // Rows arrive already filtered to reported types (the query's type: { in }),

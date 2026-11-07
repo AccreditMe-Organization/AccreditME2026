@@ -16,4 +16,10 @@ export interface IWorkflowAwaitingMe {
   total: number;
   /** The oldest five, oldest first. */
   rows: IWorkflowAwaitingRow[];
+  /**
+   * ACC-279 — when the oldest waiting record entered its stage, past the five
+   * returned; null when nothing waits. Home's "oldest 3 days" reads this, so
+   * it never depends on the order of `rows`.
+   */
+  oldestSince: Date | null;
 }

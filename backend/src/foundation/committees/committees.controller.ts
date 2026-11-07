@@ -20,10 +20,12 @@ import {
   ICommitteeMemberRow,
   ICommitteeMembershipEvent,
   ICommitteePage,
+  IMyCommittees,
   ISubCommitteeRow,
 } from './interfaces/committee.interface';
 import { CommitteeListsService } from './committee-lists.service';
 import { CommitteeFormChoicesService } from './committee-form-choices.service';
+import { CommitteeHomeService } from './committee-home.service';
 import { CommitteeMembersPageQueryDto, SubCommitteesQueryDto } from './dto/committee-list-query.dto';
 
 // Lifecycle transitions (FORMATION -> ... -> DISSOLVED) go through the
@@ -37,6 +39,7 @@ export class CommitteesController {
     private readonly committeesService: CommitteesService,
     private readonly lists: CommitteeListsService,
     private readonly formChoices: CommitteeFormChoicesService,
+    private readonly home: CommitteeHomeService,
   ) {}
 
   @Get()
@@ -53,6 +56,16 @@ export class CommitteesController {
   @Permissions(COMMITTEES_PERMISSIONS.CREATE, COMMITTEES_PERMISSIONS.EDIT_DETAILS)
   getFormChoices(@CurrentTenant() tenantId: string): Promise<ICommitteeFormChoices> {
     return this.formChoices.forOrganization(tenantId);
+  }
+
+  // ACC-279 — the caller's own committees, for Home. Deliberately NO @Permissions:
+  // it answers only for the caller's own memberships, and being a member is the
+  // entitlement (ACC-101's self-scoped rule, like GET /tasks/my-tasks). PermissionGuard
+  // still runs and passes with no metadata; TenantGuard still authenticates. Declared
+  // ABOVE ':id' so 'mine' is not read as an id.
+  @Get('mine')
+  getMine(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IMyCommittees> {
+    return this.home.mine(tenantId, userId);
   }
 
   @Get(':id')

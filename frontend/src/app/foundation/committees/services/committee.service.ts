@@ -217,6 +217,23 @@ export interface CommitteeListQuery {
   lang?: 'en' | 'ar';
 }
 
+// ACC-279 — GET /committees/mine: the caller's own committees, for Home. Self-scoped.
+export interface MyCommitteeRowDto {
+  committeeId: string;
+  nameEn: string;
+  nameAr: string | null;
+  isActive: boolean;
+  seat: { id: string; labelEn: string | null; labelAr: string | null };
+  stage: { nameEn: string | null; nameAr: string | null };
+  isInForce: boolean;
+  isDissolving: boolean;
+}
+
+export interface MyCommitteesDto {
+  total: number;
+  rows: MyCommitteeRowDto[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class CommitteeService {
   private readonly http = inject(HttpClient);
@@ -234,6 +251,11 @@ export class CommitteeService {
    * lookups:view or org:view gets its lists rather than a 403 its Retry can
    * never get past.
    */
+  /** ACC-279 — the caller's own committees (five, by seat) and how many there are. */
+  getMine(): Observable<MyCommitteesDto> {
+    return this.http.get<MyCommitteesDto>(`${this.base}/mine`);
+  }
+
   formChoices(): Observable<CommitteeFormChoicesDto> {
     return this.http.get<CommitteeFormChoicesDto>(`${this.base}/form-choices`);
   }

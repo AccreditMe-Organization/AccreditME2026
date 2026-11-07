@@ -116,14 +116,16 @@ describe('HomeBriefingComponent (ACC-198)', () => {
 
     answer.next({ available: true, creditCost: 5, greeting: 'morning', briefing: TODAY });
     render();
-    expect(el().querySelector('.am-briefing__hello')!.textContent).toContain('Good morning, Hessa Al-Dosari.');
+    // ACC-279 — Home's H1 greets; the card does not say it a second time.
+    expect(el().querySelector('.am-briefing__hello')).toBeNull();
+    expect(el().textContent).not.toContain('Good morning');
     expect(el().querySelector('.am-ai__tag')!.textContent).toContain('made by AI at 07:40');
   });
 
   it('the briefing: lead, Focus on these first, groups in order with our links and dates, "done", Show the full list', () => {
     build({ available: true, creditCost: 5, greeting: 'afternoon', briefing: TODAY });
     const text = el().textContent!;
-    expect(text).toContain('Good afternoon, Hessa Al-Dosari.');
+    expect(text).not.toContain('Good afternoon'); // ACC-279: Home's H1 greets
     expect(text).toContain('Two tasks are overdue and one waits for your decision.');
     expect(text).toContain('Focus on these first');
     expect(text).toContain('It is a week late and blocks the audit.');
@@ -193,7 +195,7 @@ describe('HomeBriefingComponent (ACC-198)', () => {
   it('in Arabic: Arabic words, the request sent in Arabic, and an English briefing marked as English (D4)', () => {
     arabic = true;
     build({ available: true, creditCost: 5, greeting: 'morning', briefing: TODAY });
-    expect(el().textContent).toContain('صباح الخير يا Hessa Al-Dosari.');
+    expect(el().textContent).not.toContain('صباح الخير'); // ACC-279: Home's H1 greets
     expect(el().textContent).toContain('ابدأ بهذه أولًا');
     const lead = el().querySelector('.am-briefing__lead')!;
     expect(lead.getAttribute('lang')).toBe('en');

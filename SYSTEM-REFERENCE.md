@@ -10635,49 +10635,134 @@ the org unit record's Parent unit · Head · Acting head (§7.10).
 - **Not yet adopted** by the tree or the committee record, whose fact strip
   predates it. The table-cell and inline contexts (B, A) are unbuilt.
 
-### 10.24 Home — "Awaiting my action" and the My tasks panel (ACC-271)
+### 10.24 Home — one Home for everyone (ACC-279; was "Awaiting my action and My tasks", ACC-271)
 
-Built from the approved drawing (Task Screens §10 "Home"). Decisions on TASKS
-are task work and sit in the My tasks panel; approvals of RECORDS keep their
-own card, whose subtitle says so, so the two cannot be read as one.
+Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
+(6 Nov, Q1–Q13): `backend/Plans/step-279-home-app-shell.md`.
 
-- **"Awaiting my action"** (`home-awaiting.component.ts`): stage approvals
-  from `GET /workflows/awaiting-me` (§2.19) and change requests under review
-  (`awaitingDecision()`, read only for holders of `committees:approve`),
-  merged oldest first, five rows.
-  - **Header:** the title, a count badge (the server's stage `total`, which
-    counts past five, plus the change requests) and "{n} records to approve
-    or return" («… للاعتماد أو الإعادة», all six Arabic forms).
-  - **A stage row:** the record's name in the reader's language (English
-    fallback), linked through `recordPageLink()`
-    (`shared/utils/record-link.util.ts`, the one type-to-page map; a type
-    with no page, a meeting today, is named without a link), and "{type} ·
-    {stage} {position}/{count} · since {date}". Change-request rows are
-    unchanged.
-  - **Task requests left the card**, and with them its "See all" link to
-    `/tasks`. The card renders only with a row and fails quietly.
-- **My tasks** (`home.component.ts`):
-  - **Header:** "My tasks", then "{n} open · {m} overdue", the overdue count
-    in danger ink when above zero.
-  - **The decision line**, shown only above zero: "{n} waiting for your
-    decision · {r} requests · {j} rejected ›", linking to `/tasks`. `r` is the
-    row count of `GET /tasks/requests/awaiting-decision`; `j` is the
-    **`matching`** count of `GET /tasks/record-list?view=created&status=REJECTED&take=1`
-    (`total` is every task in the view before the filter, so it would count
-    them all). If either read fails the line says "— waiting for your decision
-    · Retry", never 0; Retry reads both again.
-  - **The pool line**, shown only with at least one: "{n} available to pick
-    up · {pools} ›", from `GET /tasks/available`, each pool named once.
-  - **Rows:** at most five open tasks, overdue first, then soonest due,
-    undated after, on hold last. A row is its title (`am-task-link`), a line
-    with the record's type (and its name when the row carries one) and the
-    status ("On hold until {date}" for a held task), and its due date on the
-    right, in danger ink when overdue. Then "All my tasks".
-  - **Every read is fired together** when Home opens, and each fails quietly
-    on its own.
-- **Specs:** `home-awaiting.component.spec.ts`, `home.component.spec.ts` and
-  `home.tasks-panel.spec.ts` (real translation files; `matching` versus
-  `total` and the failed line are mutation-checked).
+- **One Home, gated by permission and module, never by a role name.** The
+  admin block is on top, then the same personal part for everyone. A part a
+  viewer may not see is absent, not greyed. A module part reads
+  `isNavModuleOpen(itemKey)` (`core/navigation/nav-items.ts`), the rail
+  item's own `moduleKey`. Committees has none today, so it is open, and Home
+  follows the day the rail gains one.
+- **No purpose line and no header actions.** Both drawn lines fail ACC-79's
+  two tests. New task arrives with ACC-280's record picker (Q7).
+- **The H1 greets by the part of the day in the organisation's zone**
+  (`FormatService.dayPart()`). English has three bands: before 12:00, before
+  17:00, and after. Arabic has two forms: «صباح الخير» and «مساء الخير». The AI
+  briefing card no longer greets.
+
+#### The admin block (`home-admin.component.ts`)
+
+- **One read:** `GET /home/admin-summary` (`foundation/home/`). It has no
+  `@Permissions`; each part is decided by the caller's permissions before
+  anything is read, and computed by the module that owns its data.
+  - `setup` (`setup:view`): `SetupHealthService.getHomeSlice()`. Three
+    queries: one grouped count by severity, the page's first three rows, and
+    the runs.
+  - `users` (`users:view`): `UserHomeCountsService.counts()`. Active,
+    invited and expired invitations (`invitationExpiresAt` passed), in two
+    queries. With `tenant:view` a third query reads the seat limit.
+    - `seats` is null unless the plan sets `maxFullUsers`. When shown, it is
+      ACTIVE + INVITED of `Organization.maxUsers`, the limit
+      `assertSeatAvailable()` enforces. It never reads "of 0".
+    - **Setting a plan does not copy `maxFullUsers` into `maxUsers`**: a
+      known gap, not fixed here.
+  - `committees` (`committees:view`): `CommitteeHomeService.homeCounts()`.
+    ONE grouped `$queryRaw`.
+    - **In force** follows `committeeListStatus()`: an active committee
+      whose newest instance's stage is flagged IN_FORCE and not DISSOLVING.
+    - **Below quorum:** in force, `quorumCount > 0`, and fewer active
+      members than the quorum.
+    - The server does not check the module; the screen draws the tile only
+      while it is open.
+  - **At most 7 queries, in one wave.** With no permission, none.
+  - **The parts run in `Promise.allSettled`.** A failed part is
+    `{ failed: true }` and the others still arrive.
+- **Needs fixing:**
+  - **Rows:** the top three conditions, worded by `SetupConditionRows`
+    (`setup-health/setup-condition-rows.ts`), the builder the Setup health
+    page uses. A Fix shows only for a viewer who can use it; otherwise the
+    page's "needs" note.
+  - **Header and notes:**
+    - "Checked N ago";
+    - a note when a check failed or is late;
+    - "Nothing needs fixing." when empty;
+    - the footnote says **hourly**. The design's "15-minute pass" was wrong.
+- **Tiles:**
+  - **Open conditions:** "n blocking".
+  - **Active users:** the seats line.
+  - **Pending invites:** "n expired".
+  - **Committees in force:** "n below quorum".
+  - A meta reading 0 is not shown. A tile's number links only where the route
+    admits the viewer (`ROUTE_PERMISSIONS`).
+
+#### The personal part
+
+- **`MyWorkCountsService`** (`foundation/home/my-work-counts.service.ts`) is
+  the one source of the person's work counts, for Home and lane A's rail. It
+  owns these existing reads:
+  - `myTasks`: `GET /tasks/record-list?view=mine&status=PENDING,IN_PROGRESS,ON_HOLD&sort=due&take=5`
+    (rows and `matching`). This is the same rule as `/tasks` My tasks.
+    `GET /tasks/my-tasks`, which is unbounded, is no longer read by Home.
+  - `myOverdue`: the same query with `overdue=true&take=1`.
+  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests for
+    `committees:approve` holders. Either half failing fails the whole read.
+  - `myCommittees`: `GET /committees/mine`, only while the module is open.
+- **When it loads:**
+  - once after sign-in (the shell, after `loadAccess()`);
+  - again on Home's entry, unless a load began within 2 seconds;
+  - once after a burst of `MyWorkEvents.changed()`. That event fires after a
+    successful task complete, reject, pick up, release, reassign, cancel,
+    reopen, request approve or decline, workflow move, vote or cancel, and
+    change request approve, return, reject or withdraw.
+  - **No timer.** `clear()` runs when the shell is destroyed (sign-out).
+- **`GET /committees/mine`** (`CommitteeHomeService.mine()`) is self-scoped
+  with no `@Permissions`: being a member is the entitlement (Q2).
+  - It covers active memberships on active committees, five of them, by the
+    tenant's seat order then longest-served, with an honest `total`.
+  - **8 queries whatever the count:** memberships (cap 200), their count, and
+    the seats (3) in one wave, then `committeeStagesAndCounts()` (3) for the
+    five shown.
+- **`oldestSince`** on `GET /workflows/awaiting-me`: the oldest waiting entry,
+  past the five. It costs no extra query.
+- **Tiles:** Open tasks ("n overdue"), Awaiting me ("oldest 3 days"), My
+  committees.
+  - A failed count says "Couldn't load · Try again", never 0. The overdue
+    meta has its own failure and Try again.
+- **The decision and available lines** sit under the tiles, shown only with
+  something to say or a failure. Each failure has its own Try again.
+- **The briefing** (§17.8) sits between the lines and the panels.
+
+#### The panels
+
+- **All three are on `am-capped-panel`**, in a `data-fill-panels` grid
+  (`repeat(auto-fit, minmax(min(330px, 100%), 1fr))`), header link only,
+  `offersSeeAll` false (Q10).
+  - **My tasks** (`home-my-tasks.component.ts`): rows show
+    "{type} · {record}" or the type alone, and "6 days overdue" / "Due …" /
+    "On hold until …", with the "n overdue" chip and "All my tasks".
+  - **My committees** (`home-my-committees.component.ts`): rows show the name,
+    the status chip (`committeeStatusOf()`, `committees/committee-status.ts`,
+    shared with the list), and "seat · stage". The name and "All committees"
+    link only for `committees:view`.
+  - **Awaiting my action** (`home-awaiting.component.ts`) is always shown,
+    with "Nothing is waiting for you." or a failure with Try again; until
+    ACC-279 it vanished on both. Rows end "3 days waiting". It has no "View
+    all", because no page lists those records.
+- **Layout** (`home.layout.spec.ts`, en and ar, real theme): at content widths
+  988 / 1148 / 1628 / 1176 / 358,
+  - panels sit 2 / 3 / 3 / 3 / 1 to a row;
+  - the admin tiles 4, or 2 on a phone;
+  - rows share top and bottom edges;
+  - bodies are 294 / 328;
+  - nothing is wider than the column.
+  - The spec is mutation-checked on the panel minimum, the tile minimum and
+    `data-fill-panels`.
+- **Specs:** `home.component.spec.ts`, `home-panels.spec.ts`,
+  `home-admin.component.spec.ts`, `my-work-counts.service.spec.ts`,
+  `core/my-work/my-work-events.spec.ts`, `home-arabic.spec.ts`.
 
 ## 11. Known Cross-Cutting Gaps
 
@@ -11857,8 +11942,9 @@ unbuilt and not shown.
   unit's record with `?edit=1`, which opens its Edit dialog once loaded
   (until PR D it opened the tree with a `?unit=` nothing read). Assign head
   still opens the tree's headship panel (`?head=`).
-- **Out of scope:** the admin home's top-three slice (the home-pages
-  ticket reads from this model).
+- **Home's Needs fixing (ACC-279)** reads this model's top three through
+  `getHomeSlice()` and words them with the page's own `SetupConditionRows`
+  (§10.24).
 
 ### 13.10 The cached-state rule, and its worked example
 
@@ -13607,7 +13693,9 @@ Plan, Ahmad's answers (13 Oct, D1–D13) and the build's differences:
 - **Who:** `POST /ai/briefing` needs `tenant:manage_config`.
   `GET /ai/briefing` is self-scoped (a person's own briefing — ACC-101) and
   answers `available: false` to anyone else. Home asks only when the viewer
-  holds the permission, so nobody else sends the request. `available` also needs
+  holds the permission, so nobody else sends the request. Since ACC-279 the card
+  sits between Home's personal tiles and its panels, and no longer greets:
+  Home's H1 does (§10.24). `available` also needs
   the feature open to the organisation (`openAiFeatures`) and AI on
   (`aiBalanceOf().enabled`). Pressing while not available is
   `AI_NOT_ENABLED` with ACC-194's reasons.

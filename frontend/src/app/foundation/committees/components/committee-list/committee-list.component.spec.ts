@@ -13,7 +13,8 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { CommitteeListItemDto } from '../../services/committee.service';
-import { CommitteeListComponent, committeeListStatus } from './committee-list.component';
+import { CommitteeListComponent } from './committee-list.component';
+import { committeeListStatus } from '../../committee-status';
 import { ACTIVE_RULES, DISSOLVED_RULES, SEEDED_STAGE_RULES, tenantStageRules } from '../../testing';
 import { NO_STAGE_RULES } from '../../committee-offers';
 

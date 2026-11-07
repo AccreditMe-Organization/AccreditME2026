@@ -137,7 +137,7 @@ describe('A stage with no `who`, against a real database (ACC-271 PR 6a)', () =>
     await prisma.workflowStage.update({ where: { id: stageId }, data: { whoMode: null } });
 
     expect(await workflow.getMovesForViewer(instance.id, o.id, EVERYTHING, o.adminId)).toEqual({ transitionIds: [] });
-    expect(await awaiting.awaitingMe(o.id, o.adminId, EVERYTHING)).toEqual({ total: 0, rows: [] });
+    expect(await awaiting.awaitingMe(o.id, o.adminId, EVERYTHING)).toEqual({ total: 0, rows: [], oldestSince: null });
     expect(await refusalCode(workflow.triggerTransition(instance.id, { transitionId: approve.id }, o.id, o.adminId, EVERYTHING))).toBe('STAGE_HAS_NO_ONE');
     expect(await refusalCode(workflow.submitApproval(entryId, { decision: 'APPROVED' }, o.id, o.adminId))).toBe('STAGE_HAS_NO_ONE');
 

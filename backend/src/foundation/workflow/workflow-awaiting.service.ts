@@ -52,7 +52,7 @@ export class WorkflowAwaitingService {
   async awaitingMe(organizationId: string, viewerId: string, permissions: readonly string[]): Promise<IWorkflowAwaitingMe> {
     // 6, first half: only record types the viewer may see are read at all.
     const types = recordTypesVisibleTo(permissions) as WorkflowObjectType[];
-    if (types.length === 0) return { total: 0, rows: [] };
+    if (types.length === 0) return { total: 0, rows: [], oldestSince: null };
 
     // 1 and 2 — ONE query: the open entries on converted, non-final stages,
     // with each stage's moves and its template's stage order.
@@ -83,7 +83,7 @@ export class WorkflowAwaitingService {
     const candidates = entries.filter(
       (e) => e.workflowInstance.currentStageId === e.stageId && isDecisionPoint(e.stage.id, e.stage.transitionsFrom),
     );
-    if (candidates.length === 0) return { total: 0, rows: [] };
+    if (candidates.length === 0) return { total: 0, rows: [], oldestSince: null };
 
     // 3 and 4 — every candidate's pool in ONE call; 5 — the viewer's votes in ONE query.
     const voting = candidates.filter((e) => VOTING_MODES.has(e.stage.whoMode ?? '')).map((e) => e.id);
@@ -109,7 +109,7 @@ export class WorkflowAwaitingService {
       const pool = pools.get(e.id);
       return !!pool && mayActInStagePool(pool, viewerId) && pool.members.includes(viewerId) && !votedOn.has(e.id);
     });
-    if (waiting.length === 0) return { total: 0, rows: [] };
+    if (waiting.length === 0) return { total: 0, rows: [], oldestSince: null };
 
     // 6, second half — the names, in ONE batched call; an unnamed record is out.
     const names = await recordNamesOf(
@@ -136,7 +136,8 @@ export class WorkflowAwaitingService {
         since: e.enteredAt,
       });
     }
-    return { total: rows.length, rows: rows.slice(0, AWAITING_ME_ROWS) };
+    // ACC-279 — entries are read oldest first, so the first kept row is the oldest.
+    return { total: rows.length, rows: rows.slice(0, AWAITING_ME_ROWS), oldestSince: rows[0]?.since ?? null };
   }
 }
 

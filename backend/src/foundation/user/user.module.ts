@@ -7,6 +7,7 @@ import { OrganizationModule } from '../organization/organization.module';
 import { OrgPositionModule } from '../org-position/org-position.module';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
+import { UserHomeCountsService } from './user-home-counts.service';
 import { StagePoolModule } from '../workflow/stage-pool.module';
 
 // TaskModule closes a transitive cycle the same shape as Step 8's own
@@ -47,7 +48,7 @@ import { StagePoolModule } from '../workflow/stage-pool.module';
     StagePoolModule,
   ],
   controllers: [UserController],
-  providers: [UserService],
-  exports: [UserService],
+  providers: [UserService, UserHomeCountsService],
+  exports: [UserService, UserHomeCountsService],
 })
 export class UserModule {}

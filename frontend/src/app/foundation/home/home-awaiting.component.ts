@@ -1,17 +1,16 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { forkJoin, of, catchError, map } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { FormatService } from '../../core/formatting';
 import { LanguageService } from '../../core/services/language.service';
-import { NavigationAccessService } from '../../core/services/navigation-access.service';
-import { CardComponent } from '../../shared/components/card/card.component';
+import { CappedPanelComponent, CappedPanelState } from '../../shared/components/capped-panel/capped-panel.component';
 import { recordPageLink } from '../../shared/utils/record-link.util';
-import { ChangeRequestDto, ChangeRequestService } from '../committees/change-requests/change-request.service';
-import { WorkflowAwaitingMeDto, WorkflowService } from '../workflow/services/workflow.service';
+import { MyWorkCountsService, panelState } from './my-work-counts.service';
 
-/** How many rows the card shows (Q-B). */
+/** How many rows the panel shows. */
 export const AWAITING_ROWS = 5;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface AwaitingRow {
   id: string;
@@ -20,89 +19,95 @@ export interface AwaitingRow {
   since: string;
   title: string;
   meta: string;
+  /** "3 days waiting": how long, from `since`. */
+  waiting: string;
   /** The record's page; null for a record with no page yet, named without a link. */
   link: string[] | null;
 }
 
-const NOTHING: WorkflowAwaitingMeDto = { total: 0, rows: [] };
-
 /**
- * Home's "Awaiting my action": RECORDS to approve or return (approved drawing,
- * Task Screens §10). Task-request decisions are task work and live in the My
- * tasks panel instead (decision 7 there), so they are not read here.
+ * Home's "Awaiting my action": RECORDS to approve or return (Task Screens §10).
+ * Task-request decisions are task work, on the line under the tiles.
  *
  * - **Stage approvals** — GET /workflows/awaiting-me (ACC-271): the records
  *   whose current stage this person works and decides at. The server applies
- *   every rule; this card only lays the rows out.
+ *   every rule; this panel only lays the rows out.
  * - **Change requests** under review that this person may decide (ACC-240),
- *   read only for holders of `committees:approve` — the endpoint's own
- *   permission, so nobody else is sent a 403.
+ *   asked only of holders of `committees:approve`.
  *
- * Merged oldest first, five rows. The badge counts both (the server's stage
- * total, so it counts past five). Rendered only with at least one row: no card
- * while loading, with nothing waiting, or when both reads fail (Home fails
- * quietly, ACC-70).
+ * ACC-279 — on am-capped-panel, always shown (Ahmad, Q9): with nothing waiting
+ * it says so, and a failed read says THAT, with Retry. Until ACC-279 the card
+ * vanished at 0 and on failure alike, so a failure read as "nothing to do".
+ * Both reads come from MyWorkCountsService, shared with the tile and the rail;
+ * either half failing fails the panel, because a partial count is a wrong one.
+ * No "View all": no page lists every record awaiting a person yet, and a link to
+ * a list that does not hold them would be a wrong turn.
  */
 @Component({
   selector: 'app-home-awaiting',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, CardComponent],
+  imports: [CappedPanelComponent, RouterLink, TranslatePipe],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (rows().length) {
-      <app-card>
-        <section aria-labelledby="home-awaiting-h" data-testid="home-awaiting">
-          <div class="am-aw__head">
-            <span class="am-aw__title-row">
-              <h3 id="home-awaiting-h" class="text-lg font-medium">{{ 'home.awaiting' | translate }}</h3>
-              <span class="am-aw__count" data-testid="home-awaiting-count">{{ countLabel() }}</span>
-            </span>
-            <span class="am-aw__sub" data-testid="home-awaiting-sub">{{ subtitle() }}</span>
-          </div>
-          <ul class="flex flex-col divide-y divide-[var(--am-border)]">
-            @for (row of shown(); track row.kind + row.id) {
-              <li class="py-2.5 flex flex-col gap-0.5 min-w-0" [attr.data-awaiting-kind]="row.kind">
-                @if (row.link) {
-                  <a class="am-aw__link" [routerLink]="row.link" data-testid="home-awaiting-row">{{ row.title }}</a>
-                } @else {
-                  <span class="am-aw__name" data-testid="home-awaiting-row">{{ row.title }}</span>
-                }
-                <span class="text-xs text-[var(--am-text-secondary)]">{{ row.meta }}</span>
-              </li>
+    <am-capped-panel
+      [heading]="'home.awaiting' | translate"
+      [state]="state()"
+      [total]="count()"
+      [shown]="shown().length"
+      [offersSeeAll]="false"
+      [loadingText]="'home.panel.loading' | translate"
+      [errorText]="'home.panel.awaitingFailed' | translate"
+      [emptyText]="'home.nothingAwaiting' | translate"
+      testIdPrefix="home-awaiting"
+      (retry)="counts.loadAwaiting()"
+    >
+      @for (row of shown(); track row.kind + row.id) {
+        <li class="am-cp-row" [attr.data-awaiting-kind]="row.kind">
+          <span class="am-cp-l1">
+            @if (row.link) {
+              <a class="am-cp-cut am-aw__link" [routerLink]="row.link" data-testid="home-awaiting-row">{{ row.title }}</a>
+            } @else {
+              <span class="am-cp-cut am-aw__name" data-testid="home-awaiting-row">{{ row.title }}</span>
             }
-          </ul>
-        </section>
-      </app-card>
-    }
+          </span>
+          <span class="am-cp-l2">
+            <span class="am-cp-cut">{{ row.meta }}</span>
+            <span class="am-aw__dot" aria-hidden="true">·</span>
+            <span class="am-aw__when" data-testid="home-awaiting-waiting">{{ row.waiting }}</span>
+          </span>
+        </li>
+      }
+    </am-capped-panel>
   `,
   styles: [
     `
-      .am-aw__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--am-space-4) var(--am-space-12);margin-block-end:var(--am-space-12)}
-      .am-aw__title-row{display:flex;align-items:center;gap:var(--am-space-8);min-inline-size:0}
-      .am-aw__count{flex:none;font-size:12px;font-weight:600;color:var(--am-ink-700);background:var(--am-surface);border:1px solid var(--am-border);border-radius:var(--am-radius-pill);padding:0 8px}
-      .am-aw__sub{font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);color:var(--am-ink-500)}
-      .am-aw__link,.am-aw__name{font-size:14px;font-weight:500;overflow-wrap:anywhere}
+      app-home-awaiting{display:block;min-inline-size:0}
+      .am-aw__link,.am-aw__name{font-size:13px;font-weight:500}
       .am-aw__link{color:var(--am-primary-700);text-decoration:none}
       .am-aw__name{color:var(--am-ink-900)}
       .am-aw__link:hover{text-decoration:underline}
       .am-aw__link:focus-visible{outline:var(--am-focus-ring-width) solid var(--am-focus-ring);outline-offset:var(--am-focus-ring-offset)}
+      .am-aw__dot{flex:none;padding-inline:5px;color:var(--am-ink-500)}
+      .am-aw__when{flex:none;white-space:nowrap}
     `,
   ],
 })
 export class HomeAwaitingComponent {
-  private readonly workflows = inject(WorkflowService);
-  private readonly changeRequests = inject(ChangeRequestService);
-  private readonly access = inject(NavigationAccessService);
+  protected readonly counts = inject(MyWorkCountsService);
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
   private readonly format = inject(FormatService);
 
-  private readonly stages = signal<WorkflowAwaitingMeDto>(NOTHING);
-  private readonly changes = signal<ChangeRequestDto[]>([]);
+  /** The panel calls a failure `error`. */
+  readonly state = computed((): CappedPanelState => panelState(this.counts.awaiting().state));
 
   /** Every row, oldest first. */
   readonly rows = computed<AwaitingRow[]>(() => {
     this.translate.currentLang();
-    const stageRows = this.stages().rows.map((r): AwaitingRow => ({
+    const answer = this.counts.awaiting();
+    if (answer.state !== 'ready') return [];
+    const now = new Date();
+    const stageRows = answer.value.stages.rows.map((r): AwaitingRow => ({
       id: r.instanceStageId,
       kind: 'stage',
       since: r.since,
@@ -112,45 +117,47 @@ export class HomeAwaitingComponent {
         stage: this.language.bilingual(r.stage.nameEn, r.stage.nameAr),
         position: this.format.number(r.stage.position),
         count: this.format.number(r.stage.stageCount),
-        date: this.format.date(r.since),
       }),
+      waiting: this.waiting(r.since, now),
       link: recordPageLink(r.record.type, r.record.id),
     }));
-    const changeRows = this.changes().map((r): AwaitingRow => ({
-      id: r.id,
-      kind: 'change',
-      since: r.submittedAt ?? r.createdAt,
-      title: this.translate.instant('home.awaitingChange', {
-        n: this.format.number(r.number),
-        committee: this.language.bilingual(r.committeeNameEn, r.committeeNameAr),
-      }),
-      meta: this.translate.instant('home.awaitingChangeMeta', { name: r.requestedBy.name, date: this.format.date(r.submittedAt ?? r.createdAt) }),
-      link: ['/committees', r.committeeId, 'change-requests', r.id],
-    }));
+    const changeRows = answer.value.changes.map((r): AwaitingRow => {
+      const since = r.submittedAt ?? r.createdAt;
+      return {
+        id: r.id,
+        kind: 'change',
+        since,
+        title: this.translate.instant('home.awaitingChange', {
+          n: this.format.number(r.number),
+          committee: this.language.bilingual(r.committeeNameEn, r.committeeNameAr),
+        }),
+        meta: this.translate.instant('home.awaitingChangeMeta', { name: r.requestedBy.name }),
+        waiting: this.waiting(since, now),
+        link: ['/committees', r.committeeId, 'change-requests', r.id],
+      };
+    });
     return [...stageRows, ...changeRows].sort((a, b) => a.since.localeCompare(b.since) || a.id.localeCompare(b.id));
   });
 
   readonly shown = computed(() => this.rows().slice(0, AWAITING_ROWS));
 
   /** The server's stage total (past five) plus every change request read. */
-  readonly count = computed(() => this.stages().total + this.changes().length);
-  readonly countLabel = computed(() => this.format.number(this.count()));
-  readonly subtitle = computed(() => {
-    this.translate.currentLang();
-    return this.format.count('home.awaitingRecords', this.count());
+  readonly count = computed(() => {
+    const answer = this.counts.awaiting();
+    return answer.state === 'ready' ? answer.value.stages.total + answer.value.changes.length : 0;
   });
 
-  constructor() {
-    const stages$ = this.workflows.getAwaitingMe().pipe(
-      map((answer) => answer ?? NOTHING),
-      catchError(() => of(NOTHING)),
-    );
-    const changes$ = this.access.hasPermission('committees:approve')
-      ? this.changeRequests.awaitingDecision().pipe(catchError(() => of<ChangeRequestDto[]>([])))
-      : of<ChangeRequestDto[]>([]);
-    forkJoin([stages$, changes$]).subscribe(([stages, changes]) => {
-      this.stages.set(stages);
-      this.changes.set(changes);
-    });
+  /** "3 days waiting"; under a day, "waiting since today". Wording, not an SLA. */
+  private waiting(since: string, now: Date): string {
+    const ms = now.getTime() - new Date(since).getTime();
+    return ms < DAY_MS
+      ? this.translate.instant('home.waitingToday')
+      : // Both forms, as Setup health's ages: English reads the duration ("3 days
+        // waiting"), Arabic the relative form, which takes the genitive after its
+        // preposition (ACC-94).
+        this.translate.instant('home.waitingFor', {
+          duration: this.format.duration(Math.floor(ms / DAY_MS) * DAY_MS),
+          relative: this.format.relative(since, now),
+        });
   }
 }

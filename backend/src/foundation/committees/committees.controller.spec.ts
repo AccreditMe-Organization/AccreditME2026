@@ -3,6 +3,7 @@ import { CommitteesController } from './committees.controller';
 import { CommitteesService } from './committees.service';
 import { CommitteeListsService } from './committee-lists.service';
 import { CommitteeFormChoicesService } from './committee-form-choices.service';
+import { CommitteeHomeService } from './committee-home.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
@@ -65,6 +66,7 @@ describe('CommitteesController', () => {
   let controller: CommitteesController;
   let lists: { members: jest.Mock; subCommittees: jest.Mock };
   let formChoices: { forOrganization: jest.Mock };
+  let home: { mine: jest.Mock };
   let service: {
     listCommittees: jest.Mock;
     getCommitteeDetail: jest.Mock;
@@ -92,6 +94,8 @@ describe('CommitteesController', () => {
 
     formChoices = { forOrganization: jest.fn().mockResolvedValue({ committeeTypes: [], orgUnits: [] }) };
 
+    home = { mine: jest.fn().mockResolvedValue({ total: 0, rows: [] }) };
+
     lists = {
       members: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
       subCommittees: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
@@ -103,6 +107,7 @@ describe('CommitteesController', () => {
         { provide: CommitteesService, useValue: service },
         { provide: CommitteeListsService, useValue: lists },
         { provide: CommitteeFormChoicesService, useValue: formChoices },
+        { provide: CommitteeHomeService, useValue: home },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -134,6 +139,15 @@ describe('CommitteesController', () => {
   // ACC-265 — the record page's read, which now names the type and the owning
   // unit, needs committees:view and nothing else: a role without lookups:view
   // or org:view reads the names with the committee.
+  // ACC-279 — the caller's own committees: self-scoped, so no route permission.
+  it('getMine delegates with the tenant and the CALLER, and carries no @Permissions', async () => {
+    const result = await controller.getMine(TENANT_ID, 'user-1');
+
+    expect(home.mine).toHaveBeenCalledWith(TENANT_ID, 'user-1');
+    expect(result).toEqual({ total: 0, rows: [] });
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getMine)).toBeUndefined();
+  });
+
   it('the record read needs committees:view alone', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getCommitteeById)).toEqual(['committees:view']);
   });
