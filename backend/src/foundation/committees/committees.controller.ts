@@ -5,6 +5,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { CommitteesService } from './committees.service';
 import { CreateCommitteeDto } from './dto/create-committee.dto';
 import { UpdateCommitteeDto } from './dto/update-committee.dto';
@@ -42,10 +43,15 @@ export class CommitteesController {
     private readonly home: CommitteeHomeService,
   ) {}
 
+  // ACC-281 — no route permission: committees:view lists every committee, anyone
+  // else only their own (an empty list for a non-member). Decided in the service.
   @Get()
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
-  listCommittees(@CurrentTenant() tenantId: string): Promise<ICommitteeListItem[]> {
-    return this.committeesService.listCommittees(tenantId);
+  listCommittees(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ICommitteeListItem[]> {
+    return this.committeesService.listCommittees(tenantId, { id: userId, permissions });
   }
 
   // ACC-255 (plan §10.5) — what the create and edit dialogs choose from, for
@@ -68,10 +74,16 @@ export class CommitteesController {
     return this.home.mine(tenantId, userId);
   }
 
+  // ACC-281 — no route permission: committees:view OR an active member of the
+  // committee, decided in the service; anyone else gets today's 403.
   @Get(':id')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
-  getCommitteeById(@Param('id') id: string, @CurrentTenant() tenantId: string): Promise<ICommitteeDetail> {
-    return this.committeesService.getCommitteeDetail(id, tenantId);
+  getCommitteeById(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ICommitteeDetail> {
+    return this.committeesService.getCommitteeDetail(id, tenantId, { id: userId, permissions });
   }
 
   @Post()
@@ -91,49 +103,62 @@ export class CommitteesController {
     @Body() dto: UpdateCommitteeDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ICommittee> {
-    return this.committeesService.updateCommittee(id, dto, tenantId, userId);
+    return this.committeesService.updateCommittee(id, dto, tenantId, userId, permissions);
   }
 
+  // ACC-281 — no route permission: committees:view OR an active member of the
+  // committee, decided in the service; anyone else gets today's 403.
   @Get(':id/members')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   listMembers(
     @Param('id') committeeId: string,
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ICommitteeMember[]> {
-    return this.committeesService.listMembers(committeeId, tenantId);
+    return this.committeesService.listMembers(committeeId, tenantId, { id: userId, permissions });
   }
 
   // ACC-230 — the Members panel and its See all list: searched, sorted and
   // paged on the server. The bare array above stays for its other callers.
+  // ACC-281 — no route permission: committees:view OR an active member of the
+  // committee, decided in the service; anyone else gets today's 403.
   @Get(':id/members/page')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   membersPage(
     @Param('id') committeeId: string,
     @Query() query: CommitteeMembersPageQueryDto,
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ICommitteePage<ICommitteeMemberRow>> {
-    return this.lists.members(committeeId, query, tenantId);
+    return this.lists.members(committeeId, query, tenantId, { id: userId, permissions });
   }
 
   // ACC-230 — the Sub-committees panel and its See all list.
+  // ACC-281 — no route permission: committees:view OR an active member of the
+  // committee, decided in the service; anyone else gets today's 403.
   @Get(':id/sub-committees')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   subCommittees(
     @Param('id') committeeId: string,
     @Query() query: SubCommitteesQueryDto,
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ICommitteePage<ISubCommitteeRow>> {
-    return this.lists.subCommittees(committeeId, query, tenantId);
+    return this.lists.subCommittees(committeeId, query, tenantId, { id: userId, permissions });
   }
 
+  // ACC-281 — no route permission: committees:view OR an active member of the
+  // committee, decided in the service; anyone else gets today's 403.
   @Get(':id/membership-events')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   listMembershipEvents(
     @Param('id') committeeId: string,
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ICommitteeMembershipEvent[]> {
-    return this.committeesService.listMembershipEvents(committeeId, tenantId);
+    return this.committeesService.listMembershipEvents(committeeId, tenantId, { id: userId, permissions });
   }
 
   @Post(':id/members')
@@ -143,8 +168,9 @@ export class CommitteesController {
     @Body() dto: AddCommitteeMemberDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ICommitteeMember> {
-    return this.committeesService.addMember(committeeId, dto, tenantId, userId);
+    return this.committeesService.addMember(committeeId, dto, tenantId, userId, permissions);
   }
 
   @Patch(':id/members/:memberId')
@@ -155,8 +181,9 @@ export class CommitteesController {
     @Body() dto: ChangeCommitteeMemberRoleDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ICommitteeMember> {
-    return this.committeesService.changeMemberRole(committeeId, memberId, dto, tenantId, userId);
+    return this.committeesService.changeMemberRole(committeeId, memberId, dto, tenantId, userId, permissions);
   }
 
   @Delete(':id/members/:memberId')
@@ -167,7 +194,8 @@ export class CommitteesController {
     @Body() dto: RemoveCommitteeMemberDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<void> {
-    return this.committeesService.removeMember(committeeId, memberId, dto, tenantId, userId);
+    return this.committeesService.removeMember(committeeId, memberId, dto, tenantId, userId, permissions);
   }
 }

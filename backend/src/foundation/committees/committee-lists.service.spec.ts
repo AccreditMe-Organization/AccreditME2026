@@ -60,7 +60,7 @@ describe('CommitteeListsService (ACC-230)', () => {
   describe('members', () => {
     it('orders by seat — the tenant\'s own seat order — then the longest-serving first; a hidden seat goes last', async () => {
       const { service, lookups } = setup();
-      const page = await service.members('c-1', {}, ORG);
+      const page = await service.members('c-1', {}, ORG, { id: 'viewer-1', permissions: ['committees:view'] });
       expect(lookups.getValues).toHaveBeenCalledWith('committee_member_role', ORG);
       expect(page.items.map((m) => m.id)).toEqual(['m2', 'm4', 'm3', 'm1', 'm5']);
       expect(page.items[0]).toEqual(
@@ -72,7 +72,7 @@ describe('CommitteeListsService (ACC-230)', () => {
 
     it('reads ACTIVE members of THIS committee in THIS organisation only', async () => {
       const { service, prisma } = setup();
-      await service.members('c-1', {}, ORG);
+      await service.members('c-1', {}, ORG, { id: 'viewer-1', permissions: ['committees:view'] });
       expect(prisma.committeeMember.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { committeeId: 'c-1', organizationId: ORG, isActive: true } }),
       );
@@ -80,24 +80,24 @@ describe('CommitteeListsService (ACC-230)', () => {
 
     it('sorts by name and by since, either way', async () => {
       const { service } = setup();
-      expect((await service.members('c-1', { sort: 'name' }, ORG)).items.map((m) => m.id)).toEqual(['m5', 'm2', 'm3', 'm4', 'm1']);
-      expect((await service.members('c-1', { sort: 'since', dir: 'desc' }, ORG)).items.map((m) => m.id)).toEqual(['m2', 'm4', 'm1', 'm5', 'm3']);
+      expect((await service.members('c-1', { sort: 'name' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((m) => m.id)).toEqual(['m5', 'm2', 'm3', 'm4', 'm1']);
+      expect((await service.members('c-1', { sort: 'since', dir: 'desc' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((m) => m.id)).toEqual(['m2', 'm4', 'm1', 'm5', 'm3']);
     });
 
     it('searches names case-insensitively, a typed % or _ meaning itself; total stays, matching counts', async () => {
       const { service } = setup();
-      const page = await service.members('c-1', { q: 'AL-' }, ORG);
+      const page = await service.members('c-1', { q: 'AL-' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] });
       expect(page.items.map((m) => m.id)).toEqual(['m2', 'm4', 'm1']);
       expect(page.total).toBe(5);
       expect(page.matching).toBe(3);
-      expect((await service.members('c-1', { q: '50%_' }, ORG)).items.map((m) => m.id)).toEqual(['m3']);
-      expect((await service.members('c-1', { q: '%' }, ORG)).items.map((m) => m.id)).toEqual(['m3']);
+      expect((await service.members('c-1', { q: '50%_' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((m) => m.id)).toEqual(['m3']);
+      expect((await service.members('c-1', { q: '%' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((m) => m.id)).toEqual(['m3']);
     });
 
     it('pages: take and skip over the one order', async () => {
       const { service } = setup();
-      const first = await service.members('c-1', { take: 2 }, ORG);
-      const rest = await service.members('c-1', { take: 2, skip: 2 }, ORG);
+      const first = await service.members('c-1', { take: 2 }, ORG, { id: 'viewer-1', permissions: ['committees:view'] });
+      const rest = await service.members('c-1', { take: 2, skip: 2 }, ORG, { id: 'viewer-1', permissions: ['committees:view'] });
       expect([...first.items, ...rest.items].map((m) => m.id)).toEqual(['m2', 'm4', 'm3', 'm1']);
     });
   });
@@ -105,7 +105,7 @@ describe('CommitteeListsService (ACC-230)', () => {
   describe('sub-committees', () => {
     it('lists the children by name, with each one\'s live stage and active member count', async () => {
       const { service } = setup();
-      const page = await service.subCommittees('c-1', {}, ORG);
+      const page = await service.subCommittees('c-1', {}, ORG, { id: 'viewer-1', permissions: ['committees:view'] });
       expect(page.items.map((s) => s.id)).toEqual(['s2', 's1', 's3']);
       expect(page.items[1]).toEqual({
         id: 's1',
@@ -114,26 +114,28 @@ describe('CommitteeListsService (ACC-230)', () => {
         stageNameEn: 'Active',
         stageNameAr: 'نشطة',
         memberCount: 4,
+        // ACC-281 — committees:view opens every child.
+        mayOpen: true,
       });
       expect(page.items[0]).toEqual(expect.objectContaining({ stageNameEn: null, memberCount: 0 }));
     });
 
     it('sorts by members, and by status with a committee that has none last', async () => {
       const { service } = setup();
-      expect((await service.subCommittees('c-1', { sort: 'members', dir: 'desc' }, ORG)).items.map((s) => s.id)).toEqual(['s3', 's1', 's2']);
-      expect((await service.subCommittees('c-1', { sort: 'status' }, ORG)).items.map((s) => s.id)).toEqual(['s1', 's3', 's2']);
-      expect((await service.subCommittees('c-1', { sort: 'status', dir: 'desc' }, ORG)).items.map((s) => s.id)).toEqual(['s3', 's1', 's2']);
+      expect((await service.subCommittees('c-1', { sort: 'members', dir: 'desc' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((s) => s.id)).toEqual(['s3', 's1', 's2']);
+      expect((await service.subCommittees('c-1', { sort: 'status' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((s) => s.id)).toEqual(['s1', 's3', 's2']);
+      expect((await service.subCommittees('c-1', { sort: 'status', dir: 'desc' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((s) => s.id)).toEqual(['s3', 's1', 's2']);
     });
 
     it('searches the English and the Arabic names', async () => {
       const { service } = setup();
-      expect((await service.subCommittees('c-1', { q: 'hygiene' }, ORG)).items.map((s) => s.id)).toEqual(['s1']);
-      expect((await service.subCommittees('c-1', { q: 'حزمة' }, ORG)).items.map((s) => s.id)).toEqual(['s3']);
+      expect((await service.subCommittees('c-1', { q: 'hygiene' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((s) => s.id)).toEqual(['s1']);
+      expect((await service.subCommittees('c-1', { q: 'حزمة' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((s) => s.id)).toEqual(['s3']);
     });
 
     it('sorts by the name an Arabic reader sees, falling back to English', async () => {
       const { service } = setup();
-      const ar = (await service.subCommittees('c-1', { lang: 'ar' }, ORG)).items.map((s) => s.id);
+      const ar = (await service.subCommittees('c-1', { lang: 'ar' }, ORG, { id: 'viewer-1', permissions: ['committees:view'] })).items.map((s) => s.id);
       // Arabic collation: Arabic names in Arabic order, then the English-only
       // one (which an Arabic reader sees in English, ACC-160).
       expect(ar).toEqual(['s3', 's1', 's2']);
@@ -143,8 +145,8 @@ describe('CommitteeListsService (ACC-230)', () => {
   it('another organisation\'s committee, or a missing one, is the same 404 — and nothing else is read', async () => {
     const { service, prisma, lookups } = setup();
     prisma.committee.findFirst.mockResolvedValue(null);
-    await expect(service.members('c-1', {}, 'org-b')).rejects.toThrow(new NotFoundException('Committee not found'));
-    await expect(service.subCommittees('c-1', {}, 'org-b')).rejects.toThrow(new NotFoundException('Committee not found'));
+    await expect(service.members('c-1', {}, 'org-b', { id: 'viewer-1', permissions: ['committees:view'] })).rejects.toThrow(new NotFoundException('Committee not found'));
+    await expect(service.subCommittees('c-1', {}, 'org-b', { id: 'viewer-1', permissions: ['committees:view'] })).rejects.toThrow(new NotFoundException('Committee not found'));
     expect(prisma.committeeMember.findMany).not.toHaveBeenCalled();
     expect(prisma.committee.findMany).not.toHaveBeenCalled();
     expect(lookups.getValues).not.toHaveBeenCalled();
@@ -154,8 +156,8 @@ describe('CommitteeListsService (ACC-230)', () => {
     // Every read is scoped by the CALLER's organisation: the committee check,
     // the members, the seats, the children and their counts and stages.
     const { service, prisma, lookups } = setup();
-    await service.members('c-1', {}, 'org-b');
-    await service.subCommittees('c-1', {}, 'org-b');
+    await service.members('c-1', {}, 'org-b', { id: 'viewer-1', permissions: ['committees:view'] });
+    await service.subCommittees('c-1', {}, 'org-b', { id: 'viewer-1', permissions: ['committees:view'] });
     expect(prisma.committee.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'c-1', organizationId: 'org-b' } }));
     expect(prisma.committeeMember.findMany.mock.calls[0]![0].where.organizationId).toBe('org-b');
     expect(lookups.getValues).toHaveBeenCalledWith('committee_member_role', 'org-b');

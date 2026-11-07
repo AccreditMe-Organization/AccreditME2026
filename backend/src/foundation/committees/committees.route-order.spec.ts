@@ -1,8 +1,8 @@
 // ACC-279 — GET /committees/mine reaches its own handler and is not swallowed
 // by GET /committees/:id (Nest matches in declaration order). Over real HTTP,
-// behind the real PermissionGuard, for a caller holding NO permission: ':id'
-// needs committees:view, so a swallowed path would answer 403. The control test
-// pins that ':id' really refuses this caller. Same shape as task.route-order.spec.ts.
+// behind the real PermissionGuard, for a caller holding NO permission. Since
+// ACC-281 ':id' carries no route permission, so the proof is which handler ran.
+// Same shape as task.route-order.spec.ts.
 import { ExecutionContext, INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -51,9 +51,12 @@ describe('Committee routes — /committees/mine is not swallowed by :id (ACC-279
 
   afterEach(() => jest.clearAllMocks());
 
-  it('control: GET /committees/:id refuses a caller without committees:view', async () => {
-    await request(app.getHttpServer()).get('/committees/c-1').expect(403);
-    expect(service.getCommitteeDetail).not.toHaveBeenCalled();
+  // ACC-281 — ':id' has no route permission any more (the service decides
+  // view-or-member), so the control is that a real id DOES reach the detail
+  // read: 'mine' reaching it instead is what the next test rules out.
+  it('control: GET /committees/c-1 reaches the detail read, with the caller as viewer', async () => {
+    await request(app.getHttpServer()).get('/committees/c-1').expect(200);
+    expect(service.getCommitteeDetail).toHaveBeenCalledWith('c-1', 'org-a', { id: 'user-1', permissions: [] });
   });
 
   it('GET /committees/mine answers from the caller\'s own memberships, with no permission', async () => {

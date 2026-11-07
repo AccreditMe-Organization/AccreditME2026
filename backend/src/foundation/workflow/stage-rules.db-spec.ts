@@ -282,8 +282,8 @@ describe('Stage rules against a real database (ACC-255)', () => {
       }
 
       const committees = new CommitteesService(prisma, new AuditLogService(prisma), {} as WorkflowService, stageRules);
-      expect((await committees.getCommitteeDetail(committee.id, o.id)).stageRules).toEqual({ actions: NOTHING, flags: [] });
-      const row = (await committees.listCommittees(o.id)).find((c) => c.id === committee.id);
+      expect((await committees.getCommitteeDetail(committee.id, o.id, { id: 'viewer-1', permissions: ['committees:view'] })).stageRules).toEqual({ actions: NOTHING, flags: [] });
+      const row = (await committees.listCommittees(o.id, { id: 'viewer-1', permissions: ['committees:view'] })).find((c) => c.id === committee.id);
       expect(row?.stageRules).toEqual({ actions: NOTHING, flags: [] });
 
       // An open change request on it keeps the moves an unkeyed stage gave:
@@ -317,12 +317,12 @@ describe('Stage rules against a real database (ACC-255)', () => {
       for (let i = 0; i < 30; i++) await committeeAt(large.id, keys[i % keys.length]!);
       const committees = new CommitteesService(prisma, new AuditLogService(prisma), {} as WorkflowService, stageRules);
 
-      const one = await statementsDuring(() => committees.listCommittees(small.id));
-      const thirty = await statementsDuring(() => committees.listCommittees(large.id));
+      const one = await statementsDuring(() => committees.listCommittees(small.id, { id: 'viewer-1', permissions: ['committees:view'] }));
+      const thirty = await statementsDuring(() => committees.listCommittees(large.id, { id: 'viewer-1', permissions: ['committees:view'] }));
 
       expect(one).toBeGreaterThan(0); // non-vacuity: the counter sees the driver
       expect(thirty).toBe(one);
-      const rows = await committees.listCommittees(large.id);
+      const rows = await committees.listCommittees(large.id, { id: 'viewer-1', permissions: ['committees:view'] });
       expect(rows).toHaveLength(30);
       expect(rows.filter((r) => r.stageRules.flags.includes('DISSOLVING'))).toHaveLength(10);
     });

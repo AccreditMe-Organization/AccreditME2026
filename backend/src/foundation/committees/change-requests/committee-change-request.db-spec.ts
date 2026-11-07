@@ -574,7 +574,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       for (const call of [
         (id: string) => requests.list(id, {}, other.org, asOther),
         (id: string) => requests.openSummary(id, other.org, asOther),
-        (id: string) => requests.preview(id, { quorumCount: 9 }, other.org),
+        (id: string) => requests.preview(id, { quorumCount: 9 }, other.org, { userId: 'viewer-1', permissions: ['committees:view'] }),
         (id: string) => requests.create(id, { changes: { quorumCount: 9 }, reason: 'r' }, other.org, other.requester),
       ]) {
         const real = await body(call(w.committee));
@@ -614,7 +614,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
 
     it('the preview names what approval would change, and how many votes keep their quorum', async () => {
       const w = await world();
-      const preview = await requests.preview(w.committee, { quorumCount: 5, nameEn: 'New name', meetingFrequency: 'MONTHLY' }, w.org);
+      const preview = await requests.preview(w.committee, { quorumCount: 5, nameEn: 'New name', meetingFrequency: 'MONTHLY' }, w.org, { userId: 'viewer-1', permissions: ['committees:view'] });
       expect(preview.changedFields).toEqual(['nameEn', 'quorumCount']);
       expect(preview.impacts).toEqual([{ code: 'QUORUM', from: 3, to: 5, inProgress: 0 }, { code: 'NAME' }, { code: 'TERMS_TASK' }]);
     });
@@ -647,7 +647,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         await openEntry(w, w.committee, 'formation'); // this record, but the vote is the other committee's
         await openEntry(w, w.committee, 'dissolution_pending'); // not a Committee vote stage
 
-        const preview = await requests.preview(w.committee, { quorumCount: 5 }, w.org);
+        const preview = await requests.preview(w.committee, { quorumCount: 5 }, w.org, { userId: 'viewer-1', permissions: ['committees:view'] });
         expect(preview.impacts.find((i) => i.code === 'QUORUM')).toEqual({ code: 'QUORUM', from: 3, to: 5, inProgress: 1 });
         expect(await workflow.countOpenCommitteeVotes(w.org, w.committee)).toBe(1);
         expect(await workflow.countOpenCommitteeVotes(w.org, w.other)).toBe(2);
@@ -814,7 +814,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         [w.other]: { en: 'Patient Safety Committee', ar: 'لجنة سلامة المرضى' },
       });
 
-      const preview = await requests.preview(w.committee, { reportingToCommitteeId: w.other }, w.org);
+      const preview = await requests.preview(w.committee, { reportingToCommitteeId: w.other }, w.org, { userId: 'viewer-1', permissions: ['committees:view'] });
       expect(preview.labels).toEqual({ [w.other]: { en: 'Patient Safety Committee', ar: 'لجنة سلامة المرضى' } });
     });
 

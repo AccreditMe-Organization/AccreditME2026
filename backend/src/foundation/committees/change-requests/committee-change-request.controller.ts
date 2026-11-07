@@ -22,10 +22,14 @@ import {
   UpdateChangeRequestDto,
 } from './dto/change-request.dto';
 
-// ACC-239 — committee change requests. Every route needs committees:view (a
-// request is part of its committee, ACC-101); what the caller may DO to a
-// request — edit_details to raise and edit one, approve to decide one, being
-// its requester — is decided in the service, which knows the request.
+// ACC-239 — committee change requests. What the caller may DO to a request —
+// edit_details to raise and edit one, approve to decide one, being its
+// requester — is decided in the service, which knows the request.
+//
+// ACC-281 (Ahmad, 7 Nov) — reading, raising, editing, submitting and withdrawing
+// carry no route permission: the service admits committees:view OR an active
+// member of the request's committee. DECIDING (approve, return, reject) and the
+// awaiting-decision list keep committees:view here, exactly as before.
 
 /** A committee's requests: its list, its open one, the preview, and raising one. */
 @Controller('committees/:committeeId/change-requests')
@@ -34,7 +38,6 @@ export class CommitteeChangeRequestsByCommitteeController {
   constructor(private readonly requests: CommitteeChangeRequestService) {}
 
   @Get()
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   list(
     @Param('committeeId') committeeId: string,
     @Query() query: ChangeRequestListQueryDto,
@@ -46,7 +49,6 @@ export class CommitteeChangeRequestsByCommitteeController {
   }
 
   @Get('open')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   open(
     @Param('committeeId') committeeId: string,
     @CurrentTenant() tenantId: string,
@@ -57,17 +59,17 @@ export class CommitteeChangeRequestsByCommitteeController {
   }
 
   @Post('preview')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   preview(
     @Param('committeeId') committeeId: string,
     @Body() dto: PreviewChangeRequestDto,
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<IChangeRequestPreview> {
-    return this.requests.preview(committeeId, dto.changes, tenantId);
+    return this.requests.preview(committeeId, dto.changes, tenantId, { userId, permissions });
   }
 
   @Post()
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   create(
     @Param('committeeId') committeeId: string,
     @Body() dto: CreateChangeRequestDto,
@@ -97,7 +99,6 @@ export class CommitteeChangeRequestsController {
   }
 
   @Get(':id')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   getOne(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
@@ -108,7 +109,6 @@ export class CommitteeChangeRequestsController {
   }
 
   @Patch(':id')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   update(
     @Param('id') id: string,
     @Body() dto: UpdateChangeRequestDto,
@@ -120,7 +120,6 @@ export class CommitteeChangeRequestsController {
   }
 
   @Post(':id/submit')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   submit(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
@@ -131,7 +130,6 @@ export class CommitteeChangeRequestsController {
   }
 
   @Post(':id/withdraw')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   withdraw(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,

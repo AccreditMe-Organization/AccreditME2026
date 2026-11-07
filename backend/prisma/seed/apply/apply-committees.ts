@@ -118,6 +118,8 @@ export async function applyCommittees(
         },
         ctx.organizationId,
         actorId,
+        // ACC-281 — the seed acts as the tenant admin, who oversees every committee.
+        ['committees:view'],
       );
     }
   }

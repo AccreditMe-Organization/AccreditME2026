@@ -121,24 +121,26 @@ describe('CommitteesController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  it('listCommittees delegates to the service', async () => {
-    const result = await controller.listCommittees(TENANT_ID);
+  // ACC-281 — every read passes the viewer, so the service can admit committees:view
+  // OR an active member of the committee; no read carries a route permission.
+  const PERMS = ['committees:view'];
+  const VIEWER = { id: USER_ID, permissions: PERMS };
 
-    expect(service.listCommittees).toHaveBeenCalledWith(TENANT_ID);
+  it('listCommittees delegates with the viewer', async () => {
+    const result = await controller.listCommittees(TENANT_ID, USER_ID, PERMS);
+
+    expect(service.listCommittees).toHaveBeenCalledWith(TENANT_ID, VIEWER);
     expect(result).toEqual([MOCK_COMMITTEE]);
   });
 
-  // ACC-238 — the record page's read carries the stage key, from getCommitteeDetail().
-  it("getCommitteeById delegates to the service's detail read", async () => {
-    const result = await controller.getCommitteeById('committee-1', TENANT_ID);
+  // ACC-238 — the record page's read, from getCommitteeDetail().
+  it("getCommitteeById delegates to the service's detail read with the viewer", async () => {
+    const result = await controller.getCommitteeById('committee-1', TENANT_ID, USER_ID, PERMS);
 
-    expect(service.getCommitteeDetail).toHaveBeenCalledWith('committee-1', TENANT_ID);
+    expect(service.getCommitteeDetail).toHaveBeenCalledWith('committee-1', TENANT_ID, VIEWER);
     expect(result).toEqual(MOCK_COMMITTEE);
   });
 
-  // ACC-265 — the record page's read, which now names the type and the owning
-  // unit, needs committees:view and nothing else: a role without lookups:view
-  // or org:view reads the names with the committee.
   // ACC-279 — the caller's own committees: self-scoped, so no route permission.
   it('getMine delegates with the tenant and the CALLER, and carries no @Permissions', async () => {
     const result = await controller.getMine(TENANT_ID, 'user-1');
@@ -148,8 +150,24 @@ describe('CommitteesController', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getMine)).toBeUndefined();
   });
 
-  it('the record read needs committees:view alone', () => {
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getCommitteeById)).toEqual(['committees:view']);
+  // ACC-281 — no read gates on committees:view at the route: the service decides
+  // view-or-member. Pinned handler by handler, so one cannot quietly get it back.
+  it.each(['listCommittees', 'getCommitteeById', 'listMembers', 'membersPage', 'subCommittees', 'listMembershipEvents'] as const)(
+    '%s carries no route permission (ACC-281)',
+    (handler) => {
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype[handler])).toBeUndefined();
+    },
+  );
+
+  // ACC-281 — every write keeps EXACTLY its own key at the route (Ahmad, 7 Nov).
+  it.each([
+    ['createCommittee', ['committees:create']],
+    ['updateCommittee', ['committees:edit_details']],
+    ['addMember', ['committees:add_member']],
+    ['changeMemberRole', ['committees:change_member_role']],
+    ['removeMember', ['committees:remove_member']],
+  ] as const)('%s keeps its own route permission, %j', (handler, keys) => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype[handler])).toEqual(keys);
   });
 
   it('createCommittee delegates to the service with tenant and actor', async () => {
@@ -160,62 +178,62 @@ describe('CommitteesController', () => {
     expect(result).toEqual(MOCK_COMMITTEE);
   });
 
-  it('updateCommittee delegates to the service with tenant and actor', async () => {
+  it("updateCommittee delegates with tenant, actor and the actor's permissions", async () => {
     const dto = { nameEn: 'Renamed' };
-    const result = await controller.updateCommittee('committee-1', dto as never, TENANT_ID, USER_ID);
+    const result = await controller.updateCommittee('committee-1', dto as never, TENANT_ID, USER_ID, PERMS);
 
-    expect(service.updateCommittee).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID);
+    expect(service.updateCommittee).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID, PERMS);
     expect(result).toEqual(MOCK_COMMITTEE);
   });
 
   // ACC-230 — the two lists behind the Members and Sub-committees panels.
-  it('membersPage delegates to the lists service with the query and the tenant', async () => {
+  it('membersPage delegates to the lists service with the query, the tenant and the viewer', async () => {
     const query = { q: 'sara', sort: 'name' as const, take: 5 };
-    await controller.membersPage('committee-1', query, TENANT_ID);
-    expect(lists.members).toHaveBeenCalledWith('committee-1', query, TENANT_ID);
+    await controller.membersPage('committee-1', query, TENANT_ID, USER_ID, PERMS);
+    expect(lists.members).toHaveBeenCalledWith('committee-1', query, TENANT_ID, VIEWER);
   });
 
-  it('subCommittees delegates to the lists service with the query and the tenant', async () => {
+  it('subCommittees delegates to the lists service with the query, the tenant and the viewer', async () => {
     const query = { sort: 'status' as const };
-    await controller.subCommittees('committee-1', query, TENANT_ID);
-    expect(lists.subCommittees).toHaveBeenCalledWith('committee-1', query, TENANT_ID);
+    await controller.subCommittees('committee-1', query, TENANT_ID, USER_ID, PERMS);
+    expect(lists.subCommittees).toHaveBeenCalledWith('committee-1', query, TENANT_ID, VIEWER);
   });
 
-  it('listMembers delegates to the service', async () => {
-    const result = await controller.listMembers('committee-1', TENANT_ID);
+  it('listMembers delegates to the service with the viewer', async () => {
+    const result = await controller.listMembers('committee-1', TENANT_ID, USER_ID, PERMS);
 
-    expect(service.listMembers).toHaveBeenCalledWith('committee-1', TENANT_ID);
+    expect(service.listMembers).toHaveBeenCalledWith('committee-1', TENANT_ID, VIEWER);
     expect(result).toEqual([MOCK_MEMBER]);
   });
 
-  it('listMembershipEvents delegates to the service', async () => {
-    const result = await controller.listMembershipEvents('committee-1', TENANT_ID);
+  it('listMembershipEvents delegates to the service with the viewer', async () => {
+    const result = await controller.listMembershipEvents('committee-1', TENANT_ID, USER_ID, PERMS);
 
-    expect(service.listMembershipEvents).toHaveBeenCalledWith('committee-1', TENANT_ID);
+    expect(service.listMembershipEvents).toHaveBeenCalledWith('committee-1', TENANT_ID, VIEWER);
     expect(result).toEqual([MOCK_EVENT]);
   });
 
-  it('addMember delegates to the service with tenant and actor', async () => {
+  it("addMember delegates with tenant, actor and the actor's permissions", async () => {
     const dto = { userId: 'user-1', roleValueId: 'chairman' };
-    const result = await controller.addMember('committee-1', dto as never, TENANT_ID, USER_ID);
+    const result = await controller.addMember('committee-1', dto as never, TENANT_ID, USER_ID, PERMS);
 
-    expect(service.addMember).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID);
+    expect(service.addMember).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID, PERMS);
     expect(result).toEqual(MOCK_MEMBER);
   });
 
-  it('changeMemberRole delegates to the service with tenant and actor', async () => {
+  it("changeMemberRole delegates with tenant, actor and the actor's permissions", async () => {
     const dto = { roleValueId: 'secretary' };
-    const result = await controller.changeMemberRole('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID);
+    const result = await controller.changeMemberRole('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID, PERMS);
 
-    expect(service.changeMemberRole).toHaveBeenCalledWith('committee-1', 'member-1', dto, TENANT_ID, USER_ID);
+    expect(service.changeMemberRole).toHaveBeenCalledWith('committee-1', 'member-1', dto, TENANT_ID, USER_ID, PERMS);
     expect(result).toEqual(MOCK_MEMBER);
   });
 
-  it('removeMember delegates to the service with tenant and actor', async () => {
+  it("removeMember delegates with tenant, actor and the actor's permissions", async () => {
     const dto = {};
-    await controller.removeMember('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID);
+    await controller.removeMember('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID, PERMS);
 
-    expect(service.removeMember).toHaveBeenCalledWith('committee-1', 'member-1', dto, TENANT_ID, USER_ID);
+    expect(service.removeMember).toHaveBeenCalledWith('committee-1', 'member-1', dto, TENANT_ID, USER_ID, PERMS);
   });
 
   // ACC-255 (plan §10.5)

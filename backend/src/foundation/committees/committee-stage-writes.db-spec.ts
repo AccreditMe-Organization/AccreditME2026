@@ -128,7 +128,7 @@ describe("A committee's direct writes, decided by its stage, against a real data
       const o = await org();
       const c = await o.committeeAt('formation');
 
-      expect(await outcome(committees.updateCommittee(c.id, { nameEn: 'Renamed' } as never, o.id, o.actorId))).toBe('OK');
+      expect(await outcome(committees.updateCommittee(c.id, { nameEn: 'Renamed' } as never, o.id, o.actorId, ['committees:view']))).toBe('OK');
       expect((await prisma.committee.findFirstOrThrow({ where: { id: c.id } })).nameEn).toBe('Renamed');
     });
 
@@ -139,7 +139,7 @@ describe("A committee's direct writes, decided by its stage, against a real data
         const c = await o.committeeAt(key);
         const stage = COMMITTEE_SEED.stages.find((s) => s.key === key)!;
 
-        expect(await outcome(committees.updateCommittee(c.id, { nameEn: 'Renamed' } as never, o.id, o.actorId))).toEqual({
+        expect(await outcome(committees.updateCommittee(c.id, { nameEn: 'Renamed' } as never, o.id, o.actorId, ['committees:view']))).toEqual({
           statusCode: 409,
           error: 'Conflict',
           code: 'STAGE_ACTION_NOT_ALLOWED',
@@ -156,9 +156,9 @@ describe("A committee's direct writes, decided by its stage, against a real data
 
   describe('member changes (Q-A)', () => {
     const changes = (o: Org, c: { id: string; memberId: string }, newUserId: string) => ({
-      add_member: () => committees.addMember(c.id, { userId: newUserId, roleValueId: 'member' } as never, o.id, o.actorId),
-      change_member_role: () => committees.changeMemberRole(c.id, c.memberId, { roleValueId: 'secretary' } as never, o.id, o.actorId),
-      remove_member: () => committees.removeMember(c.id, c.memberId, {} as never, o.id, o.actorId),
+      add_member: () => committees.addMember(c.id, { userId: newUserId, roleValueId: 'member' } as never, o.id, o.actorId, ['committees:view']),
+      change_member_role: () => committees.changeMemberRole(c.id, c.memberId, { roleValueId: 'secretary' } as never, o.id, o.actorId, ['committees:view']),
+      remove_member: () => committees.removeMember(c.id, c.memberId, {} as never, o.id, o.actorId, ['committees:view']),
     });
     const newUser = async (o: Org) =>
       (await prisma.user.create({ data: { organizationId: o.id, email: `${randomUUID()}@example.test`, name: 'New member', status: 'ACTIVE' } })).id;
@@ -232,7 +232,7 @@ describe("A committee's direct writes, decided by its stage, against a real data
       await isLocked;
 
       let settled = false;
-      const edit = outcome(committees.updateCommittee(c.id, { nameEn: 'Renamed' } as never, o.id, o.actorId)).finally(() => (settled = true));
+      const edit = outcome(committees.updateCommittee(c.id, { nameEn: 'Renamed' } as never, o.id, o.actorId, ['committees:view'])).finally(() => (settled = true));
       await new Promise((r) => setTimeout(r, 500));
       expect(settled).toBe(false); // waiting on the instance, FOR SHARE
 
@@ -251,7 +251,7 @@ describe("A committee's direct writes, decided by its stage, against a real data
       for (let round = 0; round < 10; round++) {
         const c = await o.committeeAt('formation');
         const [edit, move] = await Promise.all([
-          outcome(committees.updateCommittee(c.id, { nameEn: `Renamed ${round}` } as never, o.id, o.actorId)),
+          outcome(committees.updateCommittee(c.id, { nameEn: `Renamed ${round}` } as never, o.id, o.actorId, ['committees:view'])),
           outcome(workflow.triggerTransition(c.instanceId, { transitionId: submit.id } as never, o.id, o.actorId, ['committees:manage'])),
         ]);
 
@@ -274,11 +274,11 @@ describe("A committee's direct writes, decided by its stage, against a real data
       const c = await theirs.committeeAt('formation');
 
       for (const id of [c.id, randomUUID()]) {
-        await expect(committees.updateCommittee(id, { nameEn: 'Taken' } as never, mine.id, mine.actorId)).rejects.toThrow(NotFoundException);
-        await expect(committees.addMember(id, { userId: mine.memberUserId, roleValueId: 'member' } as never, mine.id, mine.actorId)).rejects.toThrow(
+        await expect(committees.updateCommittee(id, { nameEn: 'Taken' } as never, mine.id, mine.actorId, ['committees:view'])).rejects.toThrow(NotFoundException);
+        await expect(committees.addMember(id, { userId: mine.memberUserId, roleValueId: 'member' } as never, mine.id, mine.actorId, ['committees:view'])).rejects.toThrow(
           NotFoundException,
         );
-        await expect(committees.removeMember(id, c.memberId, {} as never, mine.id, mine.actorId)).rejects.toThrow(NotFoundException);
+        await expect(committees.removeMember(id, c.memberId, {} as never, mine.id, mine.actorId, ['committees:view'])).rejects.toThrow(NotFoundException);
       }
       expect((await prisma.committee.findFirstOrThrow({ where: { id: c.id } })).nameEn).toBe('Committee formation');
       expect(await prisma.committeeMember.count({ where: { committeeId: c.id, isActive: true } })).toBe(1);
