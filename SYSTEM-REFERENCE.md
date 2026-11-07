@@ -986,6 +986,14 @@ above is not resource-scoped authorization either: it asks whether the
 caller may see the parent TYPE, then whether that parent exists in their
 tenant.
 
+**ACC-281 — one exception, for COMMITTEE: membership.** `assertCanView()` and
+`assertCanViewOrNotFound()` take an optional `viewerId`. A caller without
+`committees:view` who is an active member of THAT committee is admitted, after one
+indexed query. Anyone else gets the refusal above, unchanged and still
+existence-neutral: the membership query answers the same for an invented id. A call site
+that omits `viewerId` keeps the rule above, so a forgotten one fails closed. Full rule:
+§3.21.
+
 ---
 
 ### 1.10 Administration Access — the Section Permission (ACC-123)
@@ -5286,6 +5294,11 @@ breaking any rule.
 
 Plan and Ahmad's decisions (16 Oct): `backend/Plans/step-120-4-committees-list.md`.
 
+**ACC-281:** `GET /committees` has no `@Permissions`. A `committees:view` holder gets
+every committee; anyone else only the active committees they are an active member of. The
+list names each row's type from the row, and asks the type lookup only with
+`lookups:view`. §3.21.
+
 **The list (`/committees`, `CommitteeListComponent`)** is the shared list on
 the /roles template.
 - **Data:** one read of `GET /committees`, cached; search, sort and the two
@@ -5362,19 +5375,23 @@ only while it is FORMING; after approval its details change only through a
 change request (§3.18; its screens are ACC-240).
 
 - **The record page's read carries the stage's rules and names its type and
-  unit.** `GET /committees/:id` (`committees:view`) is
+  unit.** `GET /committees/:id` (`committees:view`, or since ACC-281 an active member, §3.21) is
   `CommitteesService.getCommitteeDetail()`: the row plus
   - `stageRules` (ACC-255) and `isDissolving`, from the same
     `committeeStagesAndCounts()` the list rows read, so the two cannot disagree;
   - `typeValue` (ACC-246): the type's id, key, labels and whether it is still
     offered;
   - `orgUnit` (ACC-265): `{ id, nameEn, nameAr }` of the owning unit, read
-    scoped by organisation, or null.
+    scoped by organisation, or null;
+  - `parent` and `reportsTo` (ACC-281): `{ id, nameEn, nameAr, mayOpen }`, or null;
+  - `currentStageNameEn` / `currentStageNameAr` (ACC-281).
 
   No stage key (ACC-265 removed `currentStageKey`). The page names the type and
   the unit from this read, and loads neither the type list (`lookups:view`) nor
   the unit list (`org:view`), so a reader with `committees:view` alone sees
-  both. Internal callers keep `getCommitteeById()`.
+  both. Since ACC-281 it reads no committee list either: parent, Reports to and
+  the stage come with this read, linked only where `mayOpen`. Internal callers
+  keep `getCommitteeById()`.
 - **What the header offers, by the stage's rules** (since ACC-255 PR 3:
   `frontend/.../committees/committee-offers.ts`, §2.18.2; the key-based
   `committee-stage.ts` is deleted):
@@ -5460,6 +5477,11 @@ change request (§3.18; its screens are ACC-240).
   - `committee-form.choices.spec.ts`, mutation-checked against the old code.
 
 ### 3.18 Committee change requests (ACC-239)
+
+**ACC-281:** a member of the committee reads its change requests and may raise, edit,
+submit and withdraw one with each action's own permission, without `committees:view`.
+Approve, return, reject and awaiting decision are unchanged. Awaiting decision is filtered in
+SQL and capped at 200. §3.21.
 
 PR 2 of the committee changes plan (`backend/Plans/step-238-committee-changes.md`
 §5 and §12; Ahmad's answers of 18 Oct). After approval, a committee's details
@@ -5606,6 +5628,11 @@ Plan, Ahmad's answers (Q1–Q10) and the dry runs:
 `backend/Plans/step-244-task-permissions.md`. **This section is the authority
 for task visibility**; §3.12's table, §3.13's scope table and §3.6's key list
 point here.
+
+**ACC-281 does not change it.** Committee membership admits a member to the committee's
+Tasks panel through the parent check, and the rows are `taskVisibleSql` exactly as below.
+`recordNamesOf()` names a member's own committee on their rows, with one batched
+membership query (§3.21).
 
 **The keys, per record type.** The four flat keys (`tasks:view`,
 `tasks:create`, `tasks:reassign`, `tasks:manage`) are RETIRED — from the
@@ -5862,6 +5889,160 @@ no endpoint. The design reference is
   or not the viewer could see that record's type. `recordNamesOf()` now names
   it only for a viewer who may see the type, and the record-name search uses
   the same gate (§3.19).
+
+### 3.21 Committee members open their own committees (ACC-281)
+
+Plan, Ahmad's answers (7 Nov) and the as-built notes:
+`backend/Plans/step-281-member-committees.md` (§13 for where the build departs).
+
+**The rule (Ahmad, 7 Nov):**
+
+- **`committees:view` is unchanged.** A role holding it sees every committee in the
+  organisation, for oversight, and acts on any of them with each action's own permission.
+- **Membership adds a person's OWN committees** for someone without `committees:view`. A
+  member reads all of their committee's details, read only: the page, members,
+  sub-committees, Membership history and change requests.
+- **A non-member without `committees:view` sees none,** with today's refusal.
+- **This is the interim rule until ACC-283**, which gives seats their own actions.
+
+**Who is a member: ONE place, `common/services/committee-membership.ts`.** An active
+`CommitteeMember` row, on an active `Committee`, both in the caller's organisation. A member
+who left (`isActive: false`) loses access on their next request: the check is live, never
+cached.
+
+| Function | What it does | Cost |
+| -- | -- | -- |
+| `isActiveMember(client, committeeId, userId, org)` | one committee | one `findFirst` on the `(committeeId, userId)` unique index |
+| `memberCommitteeIds(client, userId, org, among?)` | a batch | one `findMany`; none for an empty `among` |
+| `seesEveryCommittee(permissions)` | holds `committees:view` | no query |
+| `assertMaySeeCommittee(…)` | a read | a holder costs nothing; otherwise one query; refused with **403 "Required permission: committees:view"** (today's, existence-neutral) |
+| `assertMayWriteCommittee(…, message?)` | a write | the same; refused with **404 "Committee not found"** (or "Change request not found"), the answer a missing committee gets |
+
+#### Reads
+
+- **The parent rule (§1.9) gains a member clause, for COMMITTEE only.**
+  `ObjectVisibilityService.assertCanView(type, id, org, permissions, viewerId?)` and
+  `assertCanViewOrNotFound(…, viewerId?)`.
+  - A holder: today's behaviour and today's queries.
+  - No holder, with a `viewerId`: one membership query. A member is admitted; anyone else
+    gets today's refusal.
+  - A call site that omits `viewerId` keeps today's rule, so a forgotten one fails closed.
+  - `COMMITTEE_CHANGE_REQUEST`'s own rule stays `committees:view`.
+  - The callers that pass the viewer: task draft, task admission, the record list and panel,
+    task create, the workload hint, and `GET /workflows/instances?objectType=&objectId=`.
+- **The committee reads carry no `@Permissions`; the service decides:**
+  - `GET /committees`: a holder gets every committee; anyone else only the active
+    committees they are an active member of. That is one extra condition on the same
+    `findMany`, not an added query.
+  - `GET /committees/:id`, `/members`, `/members/page`, `/sub-committees` and
+    `/membership-events`: `assertMaySeeCommittee`.
+- **The committee read names what the page used to read every committee for:**
+  - `parent` and `reportsTo`: `{ id, nameEn, nameAr, mayOpen }`, from one `findMany` plus a
+    membership batch;
+  - `currentStageNameEn` / `currentStageNameAr`.
+  - `mayOpen` is true for a holder or a member of THAT committee. A sub-committee row carries
+    it too.
+- **Membership history** (`CommitteeListsService.membershipEvents()`) names each row's
+  person, approver and seat (`userName`, `approvedByName`, `roleLabelEn`, `roleLabelAr`).
+  It costs one user `findMany` and the seat lookup, in one `Promise.all`, so a member without
+  `users:view` or `lookups:view` reads it.
+- **Change requests:**
+  - A committee's list, `open` and `preview` use `assertMaySeeCommittee`.
+  - `GET /committee-change-requests/:id`: a holder as today. Anyone else needs the request
+    AND membership of its committee, else the same 403 for a real, an invented and another
+    organisation's id.
+- **Task rows name a member's committee:** `recordNamesOf(…, viewerId?)` adds one
+  `memberCommitteeIds()` query for the committee ids the permission does not cover, never
+  one per row. **Task visibility (`taskVisibleSql`, §3.19) is unchanged:** membership does
+  not widen which tasks a member sees.
+- **The stage routes keep `workflows:view`.** A member without it reads the stage name from
+  the committee read and sees no timeline or move buttons. That gap is ACC-282.
+
+#### Writes
+
+A committee write is allowed when the caller holds **that action's own permission AND
+(`committees:view` OR active membership of THAT committee)**. The access check runs first,
+then everything that runs today, in today's order: the stage rules (`STAGE_ACTION_NOT_ALLOWED`),
+the reference checks, the stale-save check and the change-request codes. Every refusal code is
+kept.
+
+| Write | Own permission (unchanged) | Members of that committee |
+| -- | -- | -- |
+| `PATCH /committees/:id` | `committees:edit_details` | yes |
+| `POST /committees/:id/members` | `committees:add_member` | yes |
+| `PATCH /committees/:id/members/:memberId` | `committees:change_member_role` | yes |
+| `DELETE /committees/:id/members/:memberId` | `committees:remove_member` | yes |
+| Create, edit, submit a change request | `committees:edit_details` (service) | yes |
+| Withdraw a change request | the requester, or `committees:approve` where the stage allows | yes |
+| **Approve, return, reject** | **`committees:view` (route) and `committees:approve` (service)** | **NO**, exactly as before; never the requester |
+| `GET /committee-change-requests/awaiting-decision` | `committees:view` (route) | no |
+
+The committee services' write methods take the caller's permissions as a trailing argument
+(`updateCommittee`, `addMember`, `changeMemberRole`, `removeMember`).
+
+#### Awaiting reads
+
+- **`GET /workflows/awaiting-me?skip=&take=`** (`AwaitingMeQueryDto`):
+  - `skip` is an integer ≥ 0, and `take` an integer from 1 to 50; anything else is a 400.
+  - No parameters give today's response: `{ total, rows: oldest 5, oldestSince }`. With
+    them, `rows` is `waiting.slice(skip, skip + take)`, with `take` defaulting to 5.
+  - Order: `enteredAt` ascending, then the entry id.
+  - **Candidates are capped at `AWAITING_ME_CANDIDATE_CAP` = 1,000**, oldest first, with a
+    warning logged when the cap is reached. `total` counts within the cap.
+  - A viewer without `committees:view` also sees committee stages on committees they are an
+    active member of, after one `memberCommitteeIds()` query.
+- **`GET /committee-change-requests/awaiting-decision`** is filtered in SQL:
+  - one `$queryRaw` takes each request's newest instance (LATERAL), its stage key in
+    `AWAITING_DECISION_KEYS` (derived from `awaitsDecision()`), not the viewer's own;
+  - ordered by `submittedAt`, then id, with `LIMIT AWAITING_DECISION_CAP` (200);
+  - organisation-scoped on the request, the instance and the stage;
+  - then today's reads, for those rows only. `awaitsDecision()` still runs on them as a
+    second guard.
+
+#### The screens (lane B)
+
+- **The committee page sends only the reads this viewer may make:**
+  - no `GET /committees` (the read names parent, Reports to and the stage);
+  - the user list only with `users:view`, the seat lookup only with `lookups:view`, the
+    instance read only with `workflows:view`;
+  - Membership history for everyone who may open the page.
+  - A panel whose read is not sent is absent, never an error.
+- **Parent and Reports to link only where `mayOpen`;** otherwise the name is plain text. The
+  Sub-committees panel does the same per row.
+- **The committees list** names each row's type from the row (`typeValue`), and asks the type
+  lookup only with `lookups:view`. For a member, a parent name may read "—": the list holds
+  only their own committees.
+- **`MyWorkCountsService.isCommitteeMember`** (§10.24): lane A's rail and route guard read it
+  to show and admit Committees to a member. Until lane A ships that, the guard still refuses
+  `/committees` without `committees:view`, and Home's My committees links only for holders.
+
+#### The performance rule
+
+- Nothing on the per-request path: TenantGuard, PermissionGuard, ModuleGuard, the throttler,
+  the interceptors, middleware and `verifySessionIdentity()` are untouched.
+- Membership is read only inside the reads and writes above, only for a caller without
+  `committees:view`, as one indexed query or one batch. No polling.
+- Independent reads run in `Promise.all`; no query runs in a row loop.
+- Hard caps: awaiting-me 1,000 candidates and `take` ≤ 50; awaiting decision 200.
+
+#### Specs
+
+- `committee-membership.spec.ts`: query shapes and costs, and the isolation case.
+- `committee-member-access.db-spec.ts` (real Postgres): every committee read and write for an
+  active member, a former member, a stranger and a `committees:view` holder; a real versus an
+  invented id; the stage rules still applying to a member; the isolation case.
+- `committee-change-request.db-spec.ts`, ACC-281 blocks: members' reads and writes, and
+  awaiting decision against `awaitsDecision()`, the 200 cap and isolation.
+- `committee-change-request.permissions.spec.ts`: a member holding `committees:approve`
+  without `committees:view` is refused approve, return, reject and awaiting decision by the
+  real guard.
+- `workflow-awaiting.db-spec.ts`: paging order with equal `enteredAt`, the 1,000 cap on 1,001
+  entries, member, former member and stranger, and isolation.
+- Frontend: `committee-detail.member.spec.ts`, the list's lookup-less case,
+  `my-work-counts.service.spec.ts`.
+- Mutation-checked: membership removed, a former member counted, the awaiting-decision stage
+  filter removed, the cap removed, the page's `users:view` gate, and the Reports to
+  `mayOpen` rule.
 
 ## 4. Notification System
 
@@ -10708,6 +10889,11 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
   - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests for
     `committees:approve` holders. Either half failing fails the whole read.
   - `myCommittees`: `GET /committees/mine`, only while the module is open.
+- **`isCommitteeMember`** (ACC-281): true once `myCommittees` has loaded with a total
+  above 0; false while loading, after a failure, or with none. Lane A's rail and route
+  guard read it to show and admit Committees to a member without `committees:view`
+  (§3.21). It adds no query.
+- **A platform admin:** `init()` asks nothing (ACC-281).
 - **When it loads:**
   - once after sign-in (the shell, after `loadAccess()`);
   - again on Home's entry, unless a load began within 2 seconds;
@@ -10725,6 +10911,10 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     five shown.
 - **`oldestSince`** on `GET /workflows/awaiting-me`: the oldest waiting entry,
   past the five. It costs no extra query.
+- **`GET /workflows/awaiting-me?skip=&take=`** (ACC-281) pages the same list
+  (`take` 1–50), oldest first; without parameters the response is unchanged.
+  Candidates are capped at 1,000. A member without `committees:view` also sees their
+  own committees' stages. §3.21.
 - **Tiles:** Open tasks ("n overdue"), Awaiting me ("oldest 3 days"), My
   committees.
   - A failed count says "Couldn't load · Try again", never 0. The overdue

@@ -1,7 +1,7 @@
 # Step 281 — Committee members open their own committees, and the paged Awaiting my action read
 
 Linear: [ACC-281](https://linear.app/accreditme/issue/ACC-281). Branch:
-`feature/ACC-281-member-committees`, from `dev` at `96e94cb`. Lane B. **Plan only; no code yet.**
+`feature/ACC-281-member-committees`, from `dev` at `96e94cb`. Lane B. **Built; §13 says where the build departs from the plan.**
 
 **Decided (Ahmad, 7 Nov):**
 
@@ -82,7 +82,7 @@ differ.**
 A departed member (`leftAt` set) and a member of a dissolved, inactive committee are not
 members. The user is ACTIVE by construction, because TenantGuard admits nobody else.
 
-**Where the rule lives: one place**, `committees/committee-membership.ts`:
+**Where the rule lives: one place**, `common/services/committee-membership.ts` (§13):
 
 - `isActiveMember(client, committeeId, userId, organizationId): Promise<boolean>`: **one**
   `findFirst` on the `(committeeId, userId)` unique index.
@@ -133,7 +133,7 @@ record they are party to, and nothing they would not learn by being on the commi
 | 5 | Parent and Reports to, named on the record | the page reads `GET /committees` to name them | **Named by `GET /committees/:id` itself** (additive: `parent` and `reportsTo` as `{ id, nameEn, nameAr }`); **linked only where the viewer may open them** (see **Q2**) | Same reasoning as row 4. Reading every committee to name two would hand a member the whole list. |
 | 6 | `GET /committees/:id/membership-events`, Membership history | `committees:view` | **Yes** (Ahmad, 7 Nov: a member sees all of their committee's details) | The roster's history on the committee they sit on, read only. |
 | 7 | Stage history, the current instance, moves (`GET /workflows/instances?objectType=COMMITTEE&objectId=`, `/instances/:id/stage-history`, `/instances/:id/moves`) | `@Permissions(workflows:view)` + parent check | **The parent check admits members; the route keeps `workflows:view`** (see **Q4**) | Unchanged for the holders of `workflows:view` (QUALITY_MANAGER, VIEWER…). BASE_USER does not hold it, so in this ticket a BASE_USER member reads the current stage from row 1, not from the instance. |
-| 8 | Change requests (`GET /committees/:id/change-requests`, `/open`, `/change-requests/:id`) | `committees:view` | **Yes, read only** (Ahmad, 7 Nov) | Proposals to amend their own committee. A request by id is admitted when the viewer may see its committee. Anyone else gets "Change request not found", identical to a missing one. |
+| 8 | Change requests (`GET /committees/:id/change-requests`, `/open`, `GET /committee-change-requests/:id`) | `committees:view` | **Yes, read only** (Ahmad, 7 Nov) | Proposals to amend their own committee. A request by id is admitted when the viewer may see its committee. Anyone else gets "Change request not found", identical to a missing one. |
 | 9 | Tasks panel (`GET /tasks/record-panel?sourceType=COMMITTEE&sourceId=`) and See all (`record-list`) | `assertCanView(COMMITTEE)` then `taskVisibleSql` | **Yes, through the parent check; the rows are their own tasks** (scope `own`, §4) | Each row is a task the member is on, created, or may pick up. Nothing else. |
 | 10 | Files | Only tasks own files (`StoredFileOwnerType` is `TASK`); `TaskAdmissionService` | **Unchanged**: a task's files follow the task (ACC-231) | Committees have no files of their own. |
 | 11 | `GET /committees/form-choices` | `committees:create` or `edit_details` | **No.** It is for writes. | — |
@@ -225,10 +225,10 @@ today's order:
 | W3 | `DELETE /committees/:id/members/:memberId`, remove a member | `committees:remove_member` (route) | **Yes** | the stage allows `remove_member` |
 | W4 | `PATCH /committees/:id/members/:memberId`, change a seat | `committees:change_member_role` (route) | **Yes** | the stage allows `change_member_role` |
 | W5 | `POST /committees/:id/change-requests`, create (draft or submit) | `committees:edit_details` (service) | **Yes** | one open request per committee; IN_FORCE |
-| W5a | `PATCH /committees/change-requests/:id`, edit your own draft | `committees:edit_details` (service) | **Yes, as part of create** | the requester only; the stage allows `edit` |
+| W5a | `PATCH /committee-change-requests/:id`, edit your own draft | `committees:edit_details` (service) | **Yes, as part of create** | the requester only; the stage allows `edit` |
 | W5b | `POST /committees/:id/change-requests/preview`, what approving would do | none of its own (a read for Request a change) | **Yes** | — |
-| W6 | `POST /committees/change-requests/:id/submit` | `committees:edit_details` (service) | **Yes** | the requester only; the stage allows `submit` |
-| W7 | `POST /committees/change-requests/:id/withdraw` | the requester, or `committees:approve` where the stage lets others withdraw | **Yes** | the stage allows `withdraw` |
+| W6 | `POST /committee-change-requests/:id/submit` | `committees:edit_details` (service) | **Yes** | the requester only; the stage allows `submit` |
+| W7 | `POST /committee-change-requests/:id/withdraw` | the requester, or `committees:approve` where the stage lets others withdraw | **Yes** | the stage allows `withdraw` |
 | D1 | `POST …/:id/approve` | `committees:view` (route) + `committees:approve` (service) | **NO, exactly as today** | never the requester |
 | D2 | `POST …/:id/return` | as D1 | **NO** | as D1 |
 | D3 | `POST …/:id/reject` | as D1 | **NO** | as D1 |
@@ -242,7 +242,7 @@ out.
 
 - **The route-level `committees:view`** comes off W5–W7 and the change-request reads. D1–D3 keep
   it.
-- **One assertion, `CommitteeAccessService.assertCommitteeAccess(committeeId, org, viewer)`**,
+- **One assertion, `assertMayWriteCommittee(client, committeeId, org, viewer)`** (§13),
   runs before the committee's row is read or locked:
   - `committees:view` → nothing read;
   - otherwise one membership query;
@@ -321,7 +321,7 @@ order.
 
 ---
 
-## 8. `GET /committees/change-requests/awaiting-decision`: filtered in the query
+## 8. `GET /committee-change-requests/awaiting-decision`: filtered in the query
 
 **Today** it reads EVERY submitted request in the organisation, ever (decided ones included),
 then their stage keys, then filters to `awaitsDecision()` in memory.
@@ -493,8 +493,53 @@ Q1, Q2 and Q6–Q10: as recommended. Q3 and Q5: **members see them** (read only)
 
 - [x] Plan (this file), committed, not pushed
 - [x] Ahmad's answers to §11 (7 Nov); ACC-282 and ACC-283 created
-- [ ] Backend: membership rule, the parent clause, the reads (§2–3), names (§4), awaiting-me
-      paging (§7), awaiting-decision (§8), with their specs
-- [ ] Frontend: the committee page loads only what it may (§2), `isCommitteeMember` (§6)
-- [ ] Docs: SYSTEM-REFERENCE §1.9, §3.17, §3.19 and §10.24; CLAUDE.md Key Architecture
-      Decisions (ACC-281)
+- [x] Backend: membership rule, the parent clause, the reads (§2–3), the writes (§5), names
+      (§4), awaiting-me paging (§7), awaiting-decision (§8), with their specs
+- [x] Frontend: the committee page loads only what it may (§2), `isCommitteeMember` (§6),
+      the platform-admin and `joinedHint` fixes
+- [x] Docs: SYSTEM-REFERENCE §3.21 (new), with pointers from §1.9, §3.16–§3.19 and
+      §10.24; CLAUDE.md Key Architecture Decisions (ACC-281)
+- [ ] /ready-to-pr (Ahmad)
+
+---
+
+## 13. As built (7 Nov)
+
+Where the build departs from the plan text above, and why. Everything else is as planned.
+
+- **The membership rule is `backend/src/common/services/committee-membership.ts`**, not
+  under `committees/`. `ObjectVisibilityService` (in `common/`) needs it, and `common/`
+  does not import from `foundation/`. It holds:
+  - `isActiveMember()` and `memberCommitteeIds()`, one query each;
+  - `seesEveryCommittee()` and `maySeeCommittee()`;
+  - `assertMaySeeCommittee()`: a read refused is today's 403 "Required permission:
+    committees:view";
+  - `assertMayWriteCommittee()`: a write refused is 404 "Committee not found", or the
+    caller's message ("Change request not found"). There is no `CommitteeAccessService`.
+- **The change-request routes:**
+  - `committee-change-requests/…` for a request by id (`GET`, `PATCH`, `submit`,
+    `withdraw`, `approve`, `return`, `reject`) and for `awaiting-decision`;
+  - `committees/:committeeId/change-requests` for a committee's (`GET`, `open`,
+    `preview`, create).
+  - The plan's earlier text said `committees/change-requests`; corrected above.
+- **`GET /committee-change-requests/:id` for a non-holder** reads the request, then needs
+  membership of its committee. A request they may not see, a missing one and another
+  organisation's all get the same 403 "Required permission: committees:view", so the answer is
+  identical for a real and an invented id.
+- **Membership history is served by `CommitteeListsService.membershipEvents()`.** Each row
+  names its person (`userName`), its approver (`approvedByName`) and its seat
+  (`roleLabelEn`, `roleLabelAr`), from one user `findMany` and the seat lookup, in one
+  `Promise.all`. So a member without `users:view` or `lookups:view` reads it.
+- **The committee read also names the current stage** (`currentStageNameEn`,
+  `currentStageNameAr`), so the page's header reads no committee list and no instance.
+- **The page's user list is gated on `users:view`, and the seat lookup on
+  `lookups:view`:** the reads' own permissions, rather than the member-dialog actions §2
+  proposed. A viewer without `users:view` could not make that read anyway.
+- **The committees list page, for a member:** a parent name may read "—". The list holds only
+  their own committees, and a parent they are not on is not in it.
+- **Awaiting decision** filters in SQL with `s.key = ANY(AWAITING_DECISION_KEYS)`, the keys
+  derived from `awaitsDecision()` in `change-request-policy.ts`. The cap is
+  `AWAITING_DECISION_CAP = 200`. Its cap spec adds 50 older withdrawn requests, so a query
+  missing the stage filter fills its 200 with them and fails.
+- **Awaiting-me** caps candidates at `AWAITING_ME_CANDIDATE_CAP = 1000`, oldest first, and
+  logs a warning when the cap is reached.
