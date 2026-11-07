@@ -286,9 +286,9 @@ describe('StorageSettingsComponent (ACC-260, PR A)', () => {
 
   it('reads in Arabic', () => {
     const el = answer(requested(), 'ar');
-    expect(text(el, 'strip-name')).toBe('MinIO على خوادمكم');
+    expect(text(el, 'strip-name')).toBe('MinIO على خوادم مؤسستك');
     expect(text(el, 'strip-chip')).toBe('✓ مؤكَّد');
-    expect(text(el, 'strip-request')).toContain('ستتواصل معكم AccreditMe');
+    expect(text(el, 'strip-request')).toContain('ستتواصل AccreditMe معك');
     expect(el.querySelector('[data-field="secretKey"] [data-secret-set-on]')!.textContent!.trim()).toBe('مُعيَّن');
     expect(el.querySelector('[data-field="endpoint"] [data-testid="field-value"]')!.getAttribute('dir')).toBe('ltr');
   });

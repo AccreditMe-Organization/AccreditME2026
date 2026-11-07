@@ -168,9 +168,14 @@ describe('StorageSettings — setup layout (ACC-260, PR B)', () => {
   // pairs dropped (Ahmad, 26 Oct). At 358 and 328 email and phone stack and the
   // body scrolls: 495 / 528 and 495 / 548. The same as the app measures in a
   // browser at 1280 and 390 wide.
+  //
+  // ACC-120 (singular Arabic address): the hint's «لديكم» became «لديك», so at
+  // 328 the Arabic hint wraps one line fewer, 548 → 528. Measured here; the
+  // longer «في مؤسستك» wrapped one line MORE at 560 (385 → 405), which is why
+  // the hint says «لديك» and not «مؤسستك».
   const REQUEST_HEIGHTS: Record<'en' | 'ar', Record<560 | 358 | 328, number>> = {
     en: { 560: 362, 358: 495, 328: 495 },
-    ar: { 560: 385, 358: 528, 328: 548 },
+    ar: { 560: 385, 358: 528, 328: 528 },
   };
   for (const lang of ['en', 'ar'] as const) {
     for (const width of [560, 358, 328] as const) {

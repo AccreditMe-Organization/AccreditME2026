@@ -8258,6 +8258,33 @@ The source-level half of the rule — nothing formats a date outside the layer �
 cannot be a Karma spec (no filesystem in the browser). It is a CI build step,
 `npm run check:formatting` (§9.6).
 
+### 9.4.1 How Arabic addresses the reader (ACC-120)
+
+A wording convention, kept by review: **no scan checks it.**
+
+- **The reader is addressed in the singular:** ك، لديك، معك. Never the plural
+  كم، لديكم، معكم، إليكم.
+- **"Your organisation's" is مؤسستك:** «في مؤسستك», «لدى مؤسستك», «تخزين
+  مؤسستك الخاص».
+- **No masculine verb or pronoun has a person as its subject**, because the
+  platform stores no gender. Use one of:
+  - a noun form: «الرفض: {{name}}», «طلب تغيير من {{name}}»;
+  - a passive;
+  - a non-person subject: «هذا الحساب».
+- **Imperatives to the reader are fine:** اطلب، اختر، تحقق.
+- **Where the longer مؤسستك would wrap a measured dialog, the singular «لديك»
+  is used instead.** For example, the storage request hint: at 560 px wide,
+  «في مؤسستك» took the Arabic dialog from 385 px to 405 px.
+
+Not yet brought into line (left for their own wording, ACC-120):
+- **Masculine verbs about a person:**
+  - committee change-request lines: «قدّمه / أعاده / اعتمده {{name}}»;
+  - organisation head history: «بدأ {{person}} رئيسًا»;
+  - the unit head confirms: «لن يشغل {{name}}»;
+  - `manageRoles.holdsNothing`, `user.transfer.reviewPromotionNote` and
+    `user.deactivateConfirm`.
+- **A plural address:** `workflow.editor.meaningsNote`, «يعود إليكم».
+
 ### 9.5 What's Explicitly Not Covered Here
 
 The **full RTL visual audit** (icon mirroring, breadcrumb arrow
