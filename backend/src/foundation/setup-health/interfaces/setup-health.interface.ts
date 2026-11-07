@@ -47,6 +47,15 @@ export interface ISetupHealth {
   freshness: ISetupConditionFreshness[];
 }
 
+// ACC-279 — the admin summary's Setup health part: the counts, the three rows the
+// page would list first, and the same freshness the page reads.
+export interface ISetupHealthHomeSlice {
+  open: number;
+  blocksWork: number;
+  top: ISetupCondition[];
+  freshness: ISetupConditionFreshness[];
+}
+
 export interface ISetupHealthSummary {
   open: number;
   blocksWork: number;

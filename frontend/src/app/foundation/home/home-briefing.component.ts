@@ -6,7 +6,6 @@ import { AiAssistComponent, AiAssistState } from '../../shared/components/ai-ass
 import { aiRefusal, AiRefusal } from '../../core/ai/ai-refusal';
 import { FormatService } from '../../core/formatting';
 import { LanguageService } from '../../core/services/language.service';
-import { AuthService } from '../../core/services/auth.service';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { AiBriefingService, BriefingItemDto, BriefingViewDto, BriefingGroupKind } from './ai-briefing.service';
 
@@ -67,7 +66,7 @@ const UNAVAILABLE: AiRefusal = { kind: 'unavailable', messageKey: 'ai.refusal.un
 
     <ng-template #briefingTpl>
       @if (view()?.briefing; as b) {
-        <p class="am-briefing__hello">{{ greeting() }}</p>
+        <!-- ACC-279 — no greeting here: Home's H1 greets (Q1), and saying it twice reads as a mistake. -->
         <p class="am-briefing__lead" [attr.lang]="b.language" [attr.dir]="b.language === 'ar' ? 'rtl' : 'ltr'">{{ b.lead }}</p>
 
         @if (b.focus.length > 0) {
@@ -123,11 +122,6 @@ const UNAVAILABLE: AiRefusal = { kind: 'unavailable', messageKey: 'ai.refusal.un
       .am-briefing__intro {
         margin: 0;
         color: var(--am-ink-700);
-      }
-      .am-briefing__hello {
-        margin: 0;
-        font-size: var(--am-type-heading-size);
-        font-weight: 600;
       }
       .am-briefing__lead {
         margin: var(--am-space-4) 0 0;
@@ -199,7 +193,6 @@ export class HomeBriefingComponent implements OnInit {
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
-  private readonly auth = inject(AuthService);
   private readonly access = inject(NavigationAccessService);
 
   /** "Show the full list" — Home scrolls to its panels. */
@@ -219,12 +212,6 @@ export class HomeBriefingComponent implements OnInit {
     if (this.state() === 'working') return this.translate.instant('home.briefing.tagWorking');
     const made = this.view()?.briefing?.generatedAt;
     return made ? this.translate.instant('home.briefing.tagMade', { time: this.format.timeOfDay(made) }) : '';
-  });
-
-  readonly greeting = computed(() => {
-    const view = this.view();
-    if (!view) return '';
-    return this.translate.instant(`home.briefing.greeting.${view.greeting}`, { name: this.auth.currentUser()?.name ?? '' });
   });
 
   ngOnInit(): void {

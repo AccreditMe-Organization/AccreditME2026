@@ -121,7 +121,7 @@ describe('Awaiting my action, against a real database (ACC-271)', () => {
     const voted = await o.committeeAt('terms_review');
     await prisma.workflowApproval.create({ data: { workflowInstanceStageId: voted.entryId, approverId: member, decision: 'APPROVED', decidedAt: new Date() } });
 
-    expect(await awaiting.awaitingMe(o.id, member, VIEW)).toEqual({ total: 0, rows: [] });
+    expect(await awaiting.awaitingMe(o.id, member, VIEW)).toEqual({ total: 0, rows: [], oldestSince: null });
     // The other member has not voted yet: it waits on them.
     expect((await awaiting.awaitingMe(o.id, other, VIEW)).rows.map((r) => r.instanceStageId)).toEqual([voted.entryId]);
   });
@@ -144,7 +144,7 @@ describe('Awaiting my action, against a real database (ACC-271)', () => {
     await o.workedBy('terms_review', 'ANY_ONE', [member]);
     await o.committeeAt('terms_review');
 
-    expect(await awaiting.awaitingMe(o.id, member, ['users:view'])).toEqual({ total: 0, rows: [] });
+    expect(await awaiting.awaitingMe(o.id, member, ['users:view'])).toEqual({ total: 0, rows: [], oldestSince: null });
   });
 
   itEnforcesTenantIsolation("GET /workflows/awaiting-me — another organisation's records never appear, even one whose stage names this viewer", async () => {
@@ -160,7 +160,7 @@ describe('Awaiting my action, against a real database (ACC-271)', () => {
     const result = await awaiting.awaitingMe(a.id, viewer, VIEW);
     expect(result.total).toBe(1);
     expect(result.rows.map((r) => r.instanceStageId)).toEqual([mine.entryId]);
-    expect(await awaiting.awaitingMe(b.id, viewer, VIEW)).toEqual({ total: 0, rows: [] });
+    expect(await awaiting.awaitingMe(b.id, viewer, VIEW)).toEqual({ total: 0, rows: [], oldestSince: null });
   });
 
   it('oldest first; total counts past five while rows stop at five', async () => {

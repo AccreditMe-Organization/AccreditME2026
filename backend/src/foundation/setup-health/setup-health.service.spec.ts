@@ -58,7 +58,7 @@ describe('SetupHealthService (ACC-82)', () => {
   let rows: Row[];
   let runs: Run[];
   let prisma: {
-    setupCondition: { findMany: jest.Mock; count: jest.Mock };
+    setupCondition: { findMany: jest.Mock; count: jest.Mock; groupBy: jest.Mock };
     setupConditionRun: { findMany: jest.Mock };
   };
   let service: SetupHealthService;
@@ -92,22 +92,42 @@ describe('SetupHealthService (ACC-82)', () => {
           ({
             where,
             orderBy,
+            take,
           }: {
             where: ConditionWhere;
-            orderBy?: { clearedAt: 'desc' };
+            orderBy?: { clearedAt: 'desc' } | Record<string, 'asc'>[];
+            take?: number;
           }) => {
             const hit = rows.filter((r) => matches(r, where));
-            if (orderBy)
+            if (Array.isArray(orderBy)) {
+              // ACC-279 — Postgres sorts an enum by declaration order:
+              // BLOCKS_WORK before AT_RISK.
+              const rank: Record<string, number> = { BLOCKS_WORK: 0, AT_RISK: 1 };
+              hit.sort(
+                (a, b) =>
+                  rank[a.severity]! - rank[b.severity]! ||
+                  a.openedAt.getTime() - b.openedAt.getTime() ||
+                  a.id.localeCompare(b.id),
+              );
+            } else if (orderBy)
               hit.sort(
                 (a, b) =>
                   (b.clearedAt?.getTime() ?? 0) - (a.clearedAt?.getTime() ?? 0),
               );
-            return Promise.resolve(hit.map((r) => ({ ...r })));
+            return Promise.resolve(hit.slice(0, take ?? hit.length).map((r) => ({ ...r })));
           },
         ),
         count: jest.fn(({ where }: { where: ConditionWhere }) =>
           Promise.resolve(rows.filter((r) => matches(r, where)).length),
         ),
+        groupBy: jest.fn(({ where }: { where: ConditionWhere }) => {
+          const bySeverity = new Map<string, number>();
+          for (const r of rows.filter((x) => matches(x, where)))
+            bySeverity.set(r.severity, (bySeverity.get(r.severity) ?? 0) + 1);
+          return Promise.resolve(
+            [...bySeverity].map(([severity, n]) => ({ severity, _count: { _all: n } })),
+          );
+        }),
       },
       setupConditionRun: {
         findMany: jest.fn(
@@ -318,6 +338,41 @@ describe('SetupHealthService (ACC-82)', () => {
     });
   });
 
+  // ACC-279 — Home's Needs fixing: the page's first three, and the same counts.
+  describe('getHomeSlice', () => {
+    beforeEach(() => {
+      rows = [
+        row({ id: 'at-old', severity: 'AT_RISK', openedAt: daysAgo(30) }),
+        row({ id: 'blocks-new', severity: 'BLOCKS_WORK', openedAt: daysAgo(1) }),
+        row({ id: 'blocks-old', severity: 'BLOCKS_WORK', openedAt: daysAgo(9) }),
+        row({ id: 'at-new', severity: 'AT_RISK', openedAt: daysAgo(2) }),
+        row({ id: 'cleared', severity: 'BLOCKS_WORK', clearedAt: hoursAgo(1) }),
+        row({ id: 'deferred', type: 'POSITION_WITHOUT_ROLE', severity: 'BLOCKS_WORK', openedAt: daysAgo(99) }),
+      ];
+      runs = succeededRuns(ORG_A, hoursAgo(0.5));
+    });
+
+    it("its rows are the page's first three, in the page's order", async () => {
+      const slice = await service.getHomeSlice(ORG_A, NOW);
+      const page = await service.getHealth(ORG_A, NOW);
+
+      expect(slice.top.map((c) => c.id)).toEqual(['blocks-old', 'blocks-new', 'at-old']);
+      expect(slice.top).toEqual(page.open.slice(0, SetupHealthService.HOME_ROWS));
+    });
+
+    it("its counts are getSummary's, from one grouped query", async () => {
+      const slice = await service.getHomeSlice(ORG_A, NOW);
+
+      expect({ open: slice.open, blocksWork: slice.blocksWork }).toEqual(await service.getSummary(ORG_A));
+      expect({ open: slice.open, blocksWork: slice.blocksWork }).toEqual({ open: 4, blocksWork: 2 });
+      expect(prisma.setupCondition.groupBy).toHaveBeenCalledTimes(1);
+    });
+
+    it("its freshness is the page's", async () => {
+      expect((await service.getHomeSlice(ORG_A, NOW)).freshness).toEqual((await service.getHealth(ORG_A, NOW)).freshness);
+    });
+  });
+
   // ACC-82 — POSITION_WITHOUT_ROLE is deferred. Its leftover rows are never
   // reconciled again, so reporting them would show conditions nothing clears.
   describe('deferred types', () => {
@@ -417,6 +472,14 @@ describe('SetupHealthService (ACC-82)', () => {
     itEnforcesTenantIsolation('getHealth freshness', async () => {
       const { freshness } = await service.getHealth(ORG_A, NOW);
       expect(freshness.every((f) => f.status === 'NEVER_RUN')).toBe(true);
+    });
+
+    itEnforcesTenantIsolation('getHomeSlice', async () => {
+      const slice = await service.getHomeSlice(ORG_A, NOW);
+      expect(slice.open).toBe(0);
+      expect(slice.blocksWork).toBe(0);
+      expect(slice.top).toEqual([]);
+      expect(slice.freshness.every((f) => f.status === 'NEVER_RUN')).toBe(true);
     });
 
     itEnforcesTenantIsolation('getSummary', async () => {

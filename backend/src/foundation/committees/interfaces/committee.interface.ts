@@ -183,3 +183,31 @@ export interface ICommitteePage<T> {
   /** The rows the search matches. */
   matching: number;
 }
+
+// ACC-279 — GET /committees/mine: the caller's own committees, for Home. Self-scoped.
+export interface IMyCommitteeRow {
+  committeeId: string;
+  nameEn: string;
+  nameAr: string | null;
+  isActive: boolean;
+  /** The person's seat, as this tenant names it; null labels when the value is gone. */
+  seat: { id: string; labelEn: string | null; labelAr: string | null };
+  /** The committee's current stage; null names when it has no workflow instance. */
+  stage: { nameEn: string | null; nameAr: string | null };
+  /** The stage's meanings (ACC-255 flags), which the screen's one status rule reads. */
+  isInForce: boolean;
+  isDissolving: boolean;
+}
+
+export interface IMyCommittees {
+  /** Every active membership on an active committee. */
+  total: number;
+  /** At most five, by seat then longest-served. */
+  rows: IMyCommitteeRow[];
+}
+
+// ACC-279 — the admin summary's committees part.
+export interface ICommitteeHomeCounts {
+  inForce: number;
+  belowQuorum: number;
+}

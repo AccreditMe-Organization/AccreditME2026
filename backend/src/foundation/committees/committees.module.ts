@@ -6,6 +6,7 @@ import { CommitteesController } from './committees.controller';
 import { CommitteesService } from './committees.service';
 import { CommitteeListsService } from './committee-lists.service';
 import { CommitteeFormChoicesService } from './committee-form-choices.service';
+import { CommitteeHomeService } from './committee-home.service';
 import { OrganizationModule } from '../organization/organization.module';
 import { LookupModule } from '../lookup/lookup.module';
 import { TaskModule } from '../task/task.module';
@@ -36,7 +37,7 @@ import {
     forwardRef(() => OrganizationModule),
   ],
   controllers: [CommitteesController, CommitteeChangeRequestsByCommitteeController, CommitteeChangeRequestsController],
-  providers: [CommitteesService, CommitteeListsService, CommitteeChangeRequestService, CommitteeFormChoicesService],
-  exports: [CommitteesService],
+  providers: [CommitteesService, CommitteeListsService, CommitteeChangeRequestService, CommitteeFormChoicesService, CommitteeHomeService],
+  exports: [CommitteesService, CommitteeHomeService],
 })
 export class CommitteesModule {}

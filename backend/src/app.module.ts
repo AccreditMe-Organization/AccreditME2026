@@ -19,6 +19,7 @@ import { CommitteesModule } from './foundation/committees/committees.module';
 import { AuthModule } from './foundation/auth/auth.module';
 import { UserModule } from './foundation/user/user.module';
 import { SetupHealthModule } from './foundation/setup-health/setup-health.module';
+import { HomeModule } from './foundation/home/home.module';
 import { PlanModule } from './platform/plan/plan.module';
 import { PlatformModule } from './platform/tenant/platform.module';
 import { AiModule } from './foundation/ai/ai.module';
@@ -53,6 +54,7 @@ import { throttlerOptions } from './common/throttle/throttle.config';
     AuthModule,
     UserModule,
     SetupHealthModule,
+    HomeModule,
     PlanModule,
     PlatformModule,
     AiModule,

@@ -1,238 +1,183 @@
-import { NavigationAccessService } from '../../core/services/navigation-access.service';
-import { AiBriefingService } from './ai-briefing.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
-import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
-import { of, throwError } from 'rxjs';
+import { TranslateService } from '@ngx-translate/core';
+import { loadTranslationsForTest } from '../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../testing/document-language';
+import { TestFormatContext } from '../../core/formatting/format-context';
 import { HomeComponent } from './home.component';
-import { TaskService } from '../tasks/services/task.service';
-import { ChangeRequestService } from '../committees/change-requests/change-request.service';
-import { WorkflowService } from '../workflow/services/workflow.service';
-import { NotificationService } from '../notification/services/notification.service';
-import { AuthService } from '../../core/services/auth.service';
-import { LanguageService } from '../../core/services/language.service';
-import { provideFormatTesting } from '../../core/formatting/testing';
+import { MyWorkCountsService } from './my-work-counts.service';
+import { HomeSpecCalls, HomeSpecOptions, awaitingMe, awaitingRow, homeProviders, recordList, taskRow } from './home.testing';
+import en from '../../../assets/i18n/en.json';
+import ar from '../../../assets/i18n/ar.json';
 
-// ACC-70 — this component had no spec when first written, so nothing compiled
-// its template, and a `{{ item.title }}` binding against a DTO that carries
-// titleEn/titleAr shipped rendering blank. `tsc --noEmit` does not type-check
-// Angular templates; only an AOT build or a spec that instantiates the
-// component does. Hence the rendering assertions below rather than pure
-// logic ones.
-describe('HomeComponent', () => {
+// ACC-279 — Home to the App Shell design: one Home for everyone, each part on
+// its own permission and module, every failed count said with Retry and never
+// as 0, and no Notifications panel (the bell holds them).
+describe('HomeComponent (ACC-279)', () => {
+  preserveDocumentLanguage();
   let fixture: ComponentFixture<HomeComponent>;
+  let calls: HomeSpecCalls;
 
-  const NOTIFICATION = {
-    id: 'n-1',
-    titleEn: 'Committee approved',
-    titleAr: 'تمت الموافقة على اللجنة',
-    bodyEn: 'body',
-    bodyAr: null,
-    channel: 'IN_APP',
-    status: 'UNREAD',
-    objectType: null,
-    objectId: null,
-    createdAt: '2026-09-01T10:00:00.000Z',
-  };
+  // 09:30 in Riyadh (UTC+3) is 06:30Z.
+  const MORNING_RIYADH = new Date('2026-11-06T06:30:00.000Z');
 
-  const task = (id: string, status: string) => ({
-    id,
-    organizationId: 'org-1',
-    title: `Task ${id}`,
-    description: null,
-    sourceType: 'COMMITTEE',
-    sourceId: 'c-1',
-    sourceStageId: null,
-    workflowInstanceId: null,
-    meetingId: null,
-    createdById: 'u-1',
-    status,
-    priority: 'MEDIUM',
-    dueAt: null,
-    dueDateOverridden: false,
-    slaBreachedAt: null,
-    completedAt: null,
-    completedById: null,
-    managerEscalatedAt: null,
-    headEscalatedAt: null,
-    createdAt: '2026-09-01T10:00:00.000Z',
-    updatedAt: '2026-09-01T10:00:00.000Z',
-  });
-
-  function setup(opts: {
-    tasks?: unknown[];
-    notifications?: unknown[];
-    tasksFail?: boolean;
-    notificationsFail?: boolean;
-    arabic?: boolean;
-    admin?: boolean;
-  }): void {
+  function configure(opts: HomeSpecOptions, language: 'en' | 'ar', now: Date): void {
+    jasmine.clock().mockDate(now);
+    const setup = homeProviders(opts);
+    calls = setup.calls;
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      imports: [HomeComponent],
-      providers: [
-        provideRouter([]),
-        provideTranslateService({ lang: 'en' }),
-        provideTranslateLoader(TranslateNoOpLoader),
-        // ACC-94 — dates go through the formatting layer, whose zone and calendar
-        // this sets directly rather than through the AuthService stub below.
-        provideFormatTesting(),
-        {
-          provide: TaskService,
-          useValue: {
-            getMyTasks: () =>
-              opts.tasksFail ? throwError(() => new Error('boom')) : of(opts.tasks ?? []),
-            // ACC-271 — the decision and pool lines; empty here, covered below.
-            getAwaitingDecision: () => of([]),
-            getRecordList: () => of({ items: [], total: 0, matching: 0 }),
-            getAvailable: () => of([]),
-          },
-        },
-        { provide: ChangeRequestService, useValue: { awaitingDecision: () => of([]) } },
-        // ACC-271 — Awaiting my action; empty here, its own spec covers it.
-        { provide: WorkflowService, useValue: { getAwaitingMe: () => of({ total: 0, rows: [] }) } },
-        {
-          provide: NotificationService,
-          useValue: {
-            // ACC-78 — the inbox returns the shared { data, total, page,
-            // pageSize } envelope now, not a bare array.
-            list: () =>
-              opts.notificationsFail
-                ? throwError(() => new Error('boom'))
-                : of({
-                    data: opts.notifications ?? [],
-                    total: (opts.notifications ?? []).length,
-                    page: 1,
-                    pageSize: 20,
-                  }),
-          },
-        },
-        { provide: AuthService, useValue: { currentUser: () => ({ name: 'Dr. Yasser Al-Amri' }) } },
-        { provide: LanguageService, useValue: { isArabic: () => opts.arabic ?? false, isRtl: () => opts.arabic ?? false, bilingual: (en: string) => en } },
-        // ACC-198 — the briefing card asks only for a tenant admin; these stubs
-        // keep Home's own panels tested on their own.
-        { provide: NavigationAccessService, useValue: { hasPermission: () => opts.admin ?? false } },
-        { provide: AiBriefingService, useValue: { get: () => of({ available: true, creditCost: 5, greeting: 'morning', briefing: null }) } },
-      ],
-    });
+    TestBed.configureTestingModule({ imports: [HomeComponent], providers: setup.providers });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TestFormatContext).zone.set('Asia/Riyadh');
+    TestBed.inject(TranslateService).use(language);
+  }
+
+  function build(opts: HomeSpecOptions = {}, language: 'en' | 'ar' = 'en', now = MORNING_RIYADH): void {
+    configure(opts, language, now);
     fixture = TestBed.createComponent(HomeComponent);
     fixture.detectChanges();
   }
 
-  function text(): string {
-    return (fixture.nativeElement as HTMLElement).textContent ?? '';
-  }
+  beforeEach(() => jasmine.clock().install());
+  afterEach(() => jasmine.clock().uninstall());
 
-  // The bug this spec exists for.
-  it('renders a notification title from titleEn, not a non-existent `title` field', () => {
-    setup({ notifications: [NOTIFICATION] });
+  const el = () => fixture.nativeElement as HTMLElement;
+  const q = (testId: string) => el().querySelector(`[data-testid="${testId}"]`);
+  const h1 = () => el().querySelector('h1')?.textContent?.trim();
 
-    expect(text()).toContain('Committee approved');
-  });
-
-  it('renders titleAr when the language is Arabic', () => {
-    setup({ notifications: [NOTIFICATION], arabic: true });
-
-    expect(text()).toContain('تمت الموافقة على اللجنة');
-  });
-
-  it('falls back to titleEn when titleAr is null in Arabic', () => {
-    setup({ notifications: [{ ...NOTIFICATION, titleAr: null }], arabic: true });
-
-    expect(text()).toContain('Committee approved');
-  });
-
-  it('shows only OPEN tasks — completed and cancelled work is not landing-page content', () => {
-    setup({
-      tasks: [task('1', 'PENDING'), task('2', 'COMPLETED'), task('3', 'CANCELLED'), task('4', 'OVERDUE')],
+  describe("the greeting, in the organisation's time zone", () => {
+    it('English has three: morning before noon, afternoon before five, evening after', () => {
+      build({}, 'en', MORNING_RIYADH);
+      expect(h1()).toBe('Good morning, Layla Al-Harbi');
+      build({}, 'en', new Date('2026-11-06T10:30:00.000Z')); // 13:30 Riyadh
+      expect(h1()).toBe('Good afternoon, Layla Al-Harbi');
+      build({}, 'en', new Date('2026-11-06T15:30:00.000Z')); // 18:30 Riyadh
+      expect(h1()).toBe('Good evening, Layla Al-Harbi');
     });
 
-    expect(text()).toContain('Task 1');
-    expect(text()).toContain('Task 4');
-    expect(text()).not.toContain('Task 2');
-    expect(text()).not.toContain('Task 3');
-  });
-
-  // ACC-228 — each task's title opens its own page.
-  it('links each open task title to the task page', () => {
-    setup({ tasks: [task('1', 'PENDING'), task('4', 'IN_PROGRESS')] });
-    const hrefs = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('am-task-link a')).map((a) => a.getAttribute('href'));
-    expect(hrefs).toEqual(['/tasks/1', '/tasks/4']);
-  });
-
-  // ACC-163 (Q8) — overdue is a flag beside the status, not a status. With the
-  // no-op loader the text is the KEY, so these assert which label was chosen.
-  // ACC-271 — as drawn, the flag is the due date marked late on the right.
-  const homeRows = () => Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="home-task-row"]'));
-  const lateDue = (row: Element) => row.querySelector('.am-ht__due')!.classList.contains('am-ht__late');
-
-  it('marks the due date of an open task past its due time late, beside its status', () => {
-    setup({
-      tasks: [
-        { ...task('1', 'IN_PROGRESS'), dueAt: '2026-01-01T09:00:00.000Z' },
-        { ...task('2', 'PENDING'), dueAt: '2099-01-01T09:00:00.000Z' },
-      ],
+    it('Arabic has two: صباح الخير before noon, مساء الخير after', () => {
+      build({}, 'ar', MORNING_RIYADH);
+      expect(h1()).toBe('صباح الخير، Layla Al-Harbi');
+      build({}, 'ar', new Date('2026-11-06T10:30:00.000Z'));
+      expect(h1()).toBe('مساء الخير، Layla Al-Harbi');
+      build({}, 'ar', new Date('2026-11-06T15:30:00.000Z'));
+      expect(h1()).toBe('مساء الخير، Layla Al-Harbi');
     });
 
-    const rows = homeRows();
-    expect(rows[0]!.textContent).toContain('task.status.in_progress');
-    expect(lateDue(rows[0]!)).toBeTrue();
-    expect(lateDue(rows[1]!)).toBeFalse();
+    it("the zone is the organisation's, not the browser's: 23:30Z is morning in Riyadh", () => {
+      build({}, 'en', new Date('2026-11-05T23:30:00.000Z')); // 02:30 Riyadh
+      expect(h1()).toBe('Good morning, Layla Al-Harbi');
+    });
   });
 
-  it('shows a legacy OVERDUE row as Assigned, its due date late, never as an "Overdue" status', () => {
-    setup({ tasks: [{ ...task('1', 'OVERDUE'), dueAt: '2026-01-01T09:00:00.000Z' }] });
-
-    expect(text()).toContain('task.status.pending');
-    expect(lateDue(homeRows()[0]!)).toBeTrue();
-    expect(text()).not.toContain('task.status.overdue');
+  it('has no purpose line and no header actions (Q7: New task comes with ACC-280)', () => {
+    build({ permissions: ['committees:create_tasks', 'users:invite', 'setup:view'] });
+    const header = el().querySelector('app-page-header')!;
+    expect(header.querySelector('p')).toBeNull();
+    expect(header.querySelectorAll('button, a').length).toBe(0);
   });
 
-  // The zero-permission case this page exists for: neither endpoint is
-  // permission-gated, so both panels render — empty, but present and honest.
-  it('renders both panels for a user with no tasks and no notifications', () => {
-    setup({ tasks: [], notifications: [] });
-
-    expect(text()).toContain('home.myTasks');
-    expect(text()).toContain('home.notifications');
-    expect(text()).toContain('home.noOpenTasks');
-    expect(text()).toContain('home.noNotifications');
+  it('reads neither the notifications nor the unbounded my-tasks list', () => {
+    build();
+    expect(el().textContent).not.toContain('Recent Notifications');
+    expect(calls.myTasksLegacy).toBe(0);
   });
 
-  it('greets the signed-in user by name', () => {
-    setup({});
+  describe('the personal tiles', () => {
+    it('Open tasks is the count of every open task, with "n overdue"', () => {
+      build({ myTasks: recordList([taskRow()], 7), myOverdue: 2 });
+      expect(q('home-tile-tasks-value')!.textContent!.trim()).toBe('7');
+      expect(q('home-tile-tasks-meta')!.textContent!.trim()).toBe('2 overdue');
+      // The same read as /tasks' My tasks: the mine view, open statuses, five rows.
+      expect(calls.recordList).toContain(jasmine.objectContaining({ view: 'mine', status: ['PENDING', 'IN_PROGRESS', 'ON_HOLD'], take: 5 }));
+    });
 
-    expect(fixture.componentInstance.userName()).toBe('Dr. Yasser Al-Amri');
+    it('a failed task count says so with Try again — never 0', () => {
+      build({ myTasks: 'fail' });
+      expect(q('home-tile-tasks-failed')!.textContent).toContain("Couldn't load");
+      expect(q('home-tile-tasks-retry')).not.toBeNull();
+      expect(q('home-tile-tasks-value')).toBeNull();
+    });
+
+    it('a failed overdue count hides the meta behind its own Try again — never "0 overdue"', () => {
+      build({ myTasks: recordList([], 3), myOverdue: 'fail' });
+      expect(q('home-tile-tasks-value')!.textContent!.trim()).toBe('3');
+      expect(q('home-tile-tasks-meta-failed')!.textContent).toContain("Overdue count couldn't load");
+      expect(el().textContent).not.toContain('0 overdue');
+    });
+
+    it('Retry re-runs only its own read', () => {
+      build({ myTasks: 'fail' });
+      const awaitingBefore = calls.awaitingMe;
+      const mineBefore = calls.recordList.filter((r) => r.view === 'mine' && !r.overdue).length;
+      (q('home-tile-tasks-retry') as HTMLButtonElement).click();
+      expect(calls.awaitingMe).toBe(awaitingBefore);
+      expect(calls.recordList.filter((r) => r.view === 'mine' && !r.overdue).length).toBe(mineBefore + 1);
+    });
+
+    it('Awaiting me counts stage records and change requests, with the oldest age', () => {
+      build({
+        permissions: ['committees:approve'],
+        awaiting: awaitingMe([awaitingRow({ since: '2026-11-03T06:00:00.000Z' })], 2),
+        changes: [],
+      });
+      expect(q('home-tile-awaiting-value')!.textContent!.trim()).toBe('2');
+      expect(q('home-tile-awaiting-meta')!.textContent!.trim()).toBe('oldest 3 days');
+    });
+
+    it('Awaiting me fails as a whole when either half fails: a partial count is a wrong count', () => {
+      build({ permissions: ['committees:approve'], awaiting: awaitingMe([awaitingRow()]), changes: 'fail' });
+      expect(q('home-tile-awaiting-failed')).not.toBeNull();
+      expect(q('home-tile-awaiting-value')).toBeNull();
+    });
+
+    it('My committees shows the total from GET /committees/mine', () => {
+      build({ committees: { total: 3, rows: [] } });
+      expect(q('home-tile-committees-value')!.textContent!.trim()).toBe('3');
+    });
+
+    it('with the Committees module closed, neither the tile nor the panel is drawn, nor read', () => {
+      configure({ committees: { total: 3, rows: [] } }, 'en', MORNING_RIYADH);
+      spyOn(TestBed.inject(MyWorkCountsService), 'committeesOpen').and.returnValue(false);
+      fixture = TestBed.createComponent(HomeComponent);
+      fixture.detectChanges();
+      expect(q('home-tile-committees')).toBeNull();
+      expect(el().querySelector('app-home-my-committees')).toBeNull();
+      expect(calls.committees).toBe(0);
+    });
   });
 
-  // Failing loudly here would reproduce, on the landing page itself, the wall
-  // of failed requests this page exists to stop people landing on.
-  it('fails quietly and independently — one panel failing does not break the other', () => {
-    setup({ tasksFail: true, notifications: [NOTIFICATION] });
+  describe('the admin block', () => {
+    it('is absent, and its read never sent, without any of its permissions', () => {
+      build({ permissions: ['committees:approve', 'tenant:manage_config'] });
+      expect(q('home-admin')).toBeNull();
+      expect(calls.summary).toBe(0);
+    });
 
-    expect(text()).toContain('Committee approved');
-    expect(fixture.componentInstance.tasksLoading()).toBe(false);
+    it('sits above the personal tiles when the viewer holds one of its permissions', () => {
+      build({ permissions: ['setup:view'], summary: { setup: { open: 0, blocksWork: 0, top: [], freshness: [] }, users: null, committees: null } });
+      const admin = q('home-admin')!;
+      const tiles = q('home-tiles')!;
+      expect(admin.compareDocumentPosition(tiles) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
   });
 
-  it('fails quietly when notifications fail', () => {
-    setup({ notificationsFail: true, tasks: [task('1', 'PENDING')] });
+  describe('the decision and available lines', () => {
+    it('are absent with nothing to say', () => {
+      build();
+      expect(q('home-decisions')).toBeNull();
+      expect(q('home-available')).toBeNull();
+    });
 
-    expect(text()).toContain('Task 1');
-    expect(fixture.componentInstance.notificationsLoading()).toBe(false);
+    it('a failed available read says so with Try again, instead of vanishing', () => {
+      build({ available: 'fail' });
+      expect(q('home-available')!.textContent).toContain("What you can pick up couldn't be loaded");
+      expect(q('home-available-retry')).not.toBeNull();
+    });
   });
 
-  // ACC-198 — the briefing card sits above the panels for a tenant admin only.
-  it("shows no briefing card, and asks nothing, for a user without tenant:manage_config", () => {
-    setup({});
-    expect((fixture.nativeElement as HTMLElement).querySelector(".am-briefing")).toBeNull();
-  });
-
-  it("shows the briefing card above the panels for a tenant admin", () => {
-    setup({ admin: true });
-    const el = fixture.nativeElement as HTMLElement;
-    const card = el.querySelector(".am-briefing");
-    expect(card).not.toBeNull();
-    const panels = el.querySelector("#home-panels")!;
-    expect(card!.compareDocumentPosition(panels) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it('the three panels are in the drawn order: My tasks, My committees, Awaiting my action', () => {
+    build();
+    const panels = Array.from(q('home-panels')!.children).map((c) => c.tagName.toLowerCase());
+    expect(panels).toEqual(['app-home-my-tasks', 'app-home-my-committees', 'app-home-awaiting']);
   });
 });

@@ -35,6 +35,7 @@ import { DocumentTitleService } from '../../core/services/document-title.service
 // wrapper doesn't affect how its dropdown behaves.
 import { IdleWarningComponent } from '../../core/components/idle-warning/idle-warning.component';
 import { IdleService } from '../../core/services/idle.service';
+import { MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
 
 /**
  * ACC-232 — below this viewport width the shell is the PHONE shell. The rail
@@ -148,6 +149,7 @@ export const SHELL_PHONE_BELOW_PX = 768;
 })
 export class AppShellComponent implements OnInit {
   private readonly idleService = inject(IdleService);
+  private readonly myWork = inject(MyWorkCountsService);
   private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
@@ -171,6 +173,8 @@ export class AppShellComponent implements OnInit {
     // ACC-79 — tab titles follow the page while the shell is alive, and reset
     // when it is destroyed (logout), so the sign-in tab names no tenant.
     inject(DocumentTitleService).attach(inject(Injector));
+    // ACC-279 — the shell is destroyed at sign-out; the next person starts clean.
+    inject(DestroyRef).onDestroy(() => this.myWork.clear());
 
     const destroyRef = inject(DestroyRef);
     const query = this.document.defaultView?.matchMedia?.(`(max-width: ${SHELL_PHONE_BELOW_PX - 0.02}px)`);
@@ -258,7 +262,10 @@ export class AppShellComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.navigationAccessService.loadAccess().subscribe();
+    // ACC-279 — the person's work counts load once after sign-in, once their
+    // access is known (the committees module and committees:approve decide two of
+    // the reads). Home and the rail both read them; nothing polls.
+    this.navigationAccessService.loadAccess().subscribe(() => this.myWork.init());
     // ACC-122 — the idle clock runs for the life of the signed-in shell.
     // start() is idempotent, and IdleService stops itself on destroy.
     this.idleService.start();

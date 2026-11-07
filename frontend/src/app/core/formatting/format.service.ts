@@ -147,6 +147,17 @@ export class FormatService {
     return `${day} ${this.time(at, language, timeZone)}`;
   }
 
+  // ACC-279 — the part of the day in the ORGANISATION's time zone, for Home's
+  // greeting: morning before 12:00, afternoon before 17:00, evening after — the
+  // bands the AI briefing's greeting uses on the server (greetingAt()). Arabic
+  // has two greetings only, so its translation maps afternoon and evening to one.
+  dayPart(now: Date = new Date()): 'morning' | 'afternoon' | 'evening' {
+    const { timeZone } = this.snapshot();
+    const hour = Number(this.parts(now, 'en', { timeZone, hour: 'numeric', hourCycle: 'h23' }).hour);
+    if (hour < 12) return 'morning';
+    return hour < 17 ? 'afternoon' : 'evening';
+  }
+
   // How long ago (or until) an instant, for recency summaries only. Anything a
   // person acts on or cites is shown absolutely (date/dateTime), with this at
   // most beside it.
