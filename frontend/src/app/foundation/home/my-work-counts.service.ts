@@ -1,4 +1,4 @@
-import { DestroyRef, Injectable, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, Subscription, catchError, forkJoin, map, of, debounceTime } from 'rxjs';
 import { MyWorkEvents } from '../../core/my-work/my-work-events';
 import { isNavModuleOpen } from '../../core/navigation/nav-items';
@@ -43,7 +43,7 @@ const COALESCE_MS = 2000;
  *   myTasks       GET /tasks/record-list?view=mine&status=PENDING,IN_PROGRESS,ON_HOLD&sort=due&take=5
  *   myOverdue     the same with &overdue=true&take=1 (its `matching`)
  *   awaiting      GET /workflows/awaiting-me, and for committees:approve holders
- *                 GET /committees/change-requests/awaiting-decision
+ *                 GET /committee-change-requests/awaiting-decision
  *   myCommittees  GET /committees/mine, while the Committees module is open
  *
  * It loads ONCE after sign-in (the shell calls init() when access has loaded),
@@ -66,6 +66,17 @@ export class MyWorkCountsService {
   readonly myOverdue = signal<Loadable<number>>({ state: 'loading' });
   readonly awaiting = signal<Loadable<AwaitingAnswer>>({ state: 'loading' });
   readonly myCommittees = signal<Loadable<MyCommitteesDto>>({ state: 'loading' });
+
+  /**
+   * ACC-281 — whether this person sits on at least one active committee: My
+   * committees has loaded with a total above 0. False while loading, after a
+   * failure, or with none. Lane A's rail and route guard read it to show and admit
+   * Committees to a member without committees:view; it costs no query of its own.
+   */
+  readonly isCommitteeMember = computed(() => {
+    const c = this.myCommittees();
+    return c.state === 'ready' && c.value.total > 0;
+  });
 
   private started = false;
   private lastLoadAt = 0;

@@ -91,6 +91,25 @@ describe('MyWorkCountsService (ACC-279)', () => {
     expect(service.myCommittees()).toEqual({ state: 'ready', value: { total: 0, rows: [] } });
   });
 
+  // ACC-281 — lane A's rail and guard read this; it costs no query of its own.
+  it('isCommitteeMember is true only once My committees loaded with at least one', () => {
+    build({ committees: { total: 0, rows: [] } });
+    expect(service.isCommitteeMember()).withContext('before init: loading').toBeFalse();
+    service.init();
+    expect(service.myCommittees().state).withContext('non-vacuity: it loaded').toBe('ready');
+    expect(service.isCommitteeMember()).withContext('total 0').toBeFalse();
+    expect(calls.committees).toBe(1);
+
+    build({ committees: 'fail' });
+    service.init();
+    expect(service.isCommitteeMember()).withContext('failed').toBeFalse();
+
+    build({ committees: { total: 2, rows: [] } });
+    service.init();
+    expect(service.isCommitteeMember()).toBeTrue();
+    expect(calls.committees).toBe(1);
+  });
+
   it('clear() at sign-out forgets everything, and the next init() loads again', () => {
     build({ myTasks: recordList([], 4) });
     service.init();
