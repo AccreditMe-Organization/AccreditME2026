@@ -64,7 +64,7 @@ const MOCK_EVENT: ICommitteeMembershipEvent = {
 // enforcement coverage). This file only proves delegation.
 describe('CommitteesController', () => {
   let controller: CommitteesController;
-  let lists: { members: jest.Mock; subCommittees: jest.Mock };
+  let lists: { members: jest.Mock; subCommittees: jest.Mock; membershipEvents: jest.Mock };
   let formChoices: { forOrganization: jest.Mock };
   let home: { mine: jest.Mock };
   let service: {
@@ -99,6 +99,7 @@ describe('CommitteesController', () => {
     lists = {
       members: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
       subCommittees: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
+      membershipEvents: jest.fn().mockResolvedValue([MOCK_EVENT]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -206,10 +207,10 @@ describe('CommitteesController', () => {
     expect(result).toEqual([MOCK_MEMBER]);
   });
 
-  it('listMembershipEvents delegates to the service with the viewer', async () => {
+  it('listMembershipEvents delegates to the lists service (named rows) with the viewer', async () => {
     const result = await controller.listMembershipEvents('committee-1', TENANT_ID, USER_ID, PERMS);
 
-    expect(service.listMembershipEvents).toHaveBeenCalledWith('committee-1', TENANT_ID, VIEWER);
+    expect(lists.membershipEvents).toHaveBeenCalledWith('committee-1', TENANT_ID, VIEWER);
     expect(result).toEqual([MOCK_EVENT]);
   });
 

@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupService } from '../lookup/lookup.service';
 import { CommitteeMembersPageQueryDto, SubCommitteesQueryDto } from './dto/committee-list-query.dto';
-import { ICommitteeMemberRow, ICommitteePage, ISubCommitteeRow } from './interfaces/committee.interface';
+import { ICommitteeMemberRow, ICommitteeMembershipEventRow, ICommitteePage, ISubCommitteeRow } from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
 import { CommitteeViewer, assertMaySeeCommittee, memberCommitteeIds, seesEveryCommittee } from '../../common/services/committee-membership';
 
@@ -149,6 +149,38 @@ export class CommitteeListsService {
       }
     });
     return { items: page(sorted, query), total: rows.length, matching: matching.length };
+  }
+
+  /**
+   * ACC-281 — Membership history, named: who, the seat as this tenant names it,
+   * and who approved. A member of the committee reads it without committees:view
+   * (Ahmad, 7 Nov), and needs neither users:view nor lookups:view for the names.
+   * Queries: the events and, in parallel, the people (one) and the seats (three, in
+   * lookups) — whatever the number of events.
+   */
+  async membershipEvents(committeeId: string, organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeMembershipEventRow[]> {
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer);
+    await this.assertCommittee(committeeId, organizationId);
+    const events = await this.prisma.committeeMembershipEvent.findMany({
+      where: { committeeId, organizationId },
+      orderBy: { effectiveDate: 'desc' },
+    });
+    const people = [...new Set(events.flatMap((e) => [e.userId, e.approvedBy]).filter((id): id is string => !!id))];
+    const [users, seats] = await Promise.all([
+      people.length
+        ? this.prisma.user.findMany({ where: { id: { in: people }, organizationId }, select: { id: true, name: true } })
+        : Promise.resolve([] as { id: string; name: string }[]),
+      this.lookups.getValues(COMMITTEE_MEMBER_ROLE_CATEGORY, organizationId),
+    ]);
+    const nameOf = new Map(users.map((u) => [u.id, u.name]));
+    const seatOf = new Map(seats.map((s) => [s.id, s]));
+    return events.map((e) => ({
+      ...e,
+      userName: nameOf.get(e.userId) ?? null,
+      approvedByName: e.approvedBy ? (nameOf.get(e.approvedBy) ?? null) : null,
+      roleLabelEn: seatOf.get(e.roleValueId)?.labelEn ?? null,
+      roleLabelAr: seatOf.get(e.roleValueId)?.labelAr ?? null,
+    }));
   }
 
   /** The committee, in this organisation — or the identical 404 for any other id. */

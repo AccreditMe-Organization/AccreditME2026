@@ -147,6 +147,8 @@ export class CommitteesService {
     const fact = facts.get(committee.id);
     return {
       ...committee,
+      currentStageNameEn: fact?.stageNameEn ?? null,
+      currentStageNameAr: fact?.stageNameAr ?? null,
       parent: committee.parentCommitteeId ? related.get(committee.parentCommitteeId) ?? null : null,
       reportsTo: committee.reportingToCommitteeId ? related.get(committee.reportingToCommitteeId) ?? null : null,
       isDissolving: fact?.isDissolving ?? false,

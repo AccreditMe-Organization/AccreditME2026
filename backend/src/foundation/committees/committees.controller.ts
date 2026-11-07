@@ -19,7 +19,7 @@ import {
   ICommitteeListItem,
   ICommitteeMember,
   ICommitteeMemberRow,
-  ICommitteeMembershipEvent,
+  ICommitteeMembershipEventRow,
   ICommitteePage,
   IMyCommittees,
   ISubCommitteeRow,
@@ -157,8 +157,9 @@ export class CommitteesController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
-  ): Promise<ICommitteeMembershipEvent[]> {
-    return this.committeesService.listMembershipEvents(committeeId, tenantId, { id: userId, permissions });
+  ): Promise<ICommitteeMembershipEventRow[]> {
+    // ACC-281 — named by the read, so a member needs no users or lookups read.
+    return this.lists.membershipEvents(committeeId, tenantId, { id: userId, permissions });
   }
 
   @Post(':id/members')

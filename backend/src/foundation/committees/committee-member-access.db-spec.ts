@@ -128,7 +128,7 @@ describe('Committee access for members, against a real database (ACC-281)', () =
       ['GET /committees/:id/members', (w, v, id) => committees.listMembers(id, w.org, v)],
       ['GET /committees/:id/members/page', (w, v, id) => lists.members(id, {}, w.org, v)],
       ['GET /committees/:id/sub-committees', (w, v, id) => lists.subCommittees(id, {}, w.org, v)],
-      ['GET /committees/:id/membership-events', (w, v, id) => committees.listMembershipEvents(id, w.org, v)],
+      ['GET /committees/:id/membership-events', (w, v, id) => lists.membershipEvents(id, w.org, v)],
       ['the record panel parent check', (w, v, id) => visibility.assertCanView('COMMITTEE', id, w.org, v.permissions, v.id)],
     ];
 
@@ -158,6 +158,23 @@ describe('Committee access for members, against a real database (ACC-281)', () =
       // A member of the parent too may open it.
       await prisma.committeeMember.create({ data: { organizationId: w.org, committeeId: w.parent, userId: w.member.id, roleValueId: 'seat-member' } });
       expect((await committees.getCommitteeDetail(w.committee, w.org, w.member)).parent?.mayOpen).toBe(true);
+    });
+
+    it('Membership history is named by the read: who, the seat and who approved, with no users or lookups read', async () => {
+      const w = await world();
+      await prisma.committeeMembershipEvent.create({
+        data: {
+          organizationId: w.org,
+          committeeId: w.committee,
+          userId: w.member.id,
+          roleValueId: 'seat-member',
+          action: 'JOINED',
+          effectiveDate: new Date(),
+          approvedBy: w.oversight.id,
+        },
+      });
+      const [row] = await lists.membershipEvents(w.committee, w.org, w.member);
+      expect(row).toEqual(expect.objectContaining({ userName: 'Member', approvedByName: 'Oversight', roleLabelEn: 'Member', roleLabelAr: null }));
     });
 
     it('sub-committees are listed for a member, each opening only where they may see it', async () => {
