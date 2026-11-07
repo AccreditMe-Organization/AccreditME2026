@@ -62,9 +62,17 @@ describe('CommitteeChangeRequestService — organisation scoping (ACC-239)', () 
   it('should NOT return records belonging to a different tenant — awaiting decision reads only the organisation', async () => {
     const { prisma, service } = setup();
     await service.awaitingDecision(ORG_A, viewer);
-    expect(prisma.committeeChangeRequest.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, requestedById: { not: 'user-1' } }) }),
-    );
+    // ACC-281 — filtered in ONE query: every table is scoped by the organisation,
+    // the viewer's own requests are out, and it is capped. Proved on real rows in
+    // change-request-awaiting.db-spec.ts.
+    const [strings, ...values] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    const sql = strings.join('?');
+    expect(sql.match(/"organizationId" = ?/g)).toHaveLength(3);
+    expect(sql).toContain('"requestedById" <> ?');
+    expect(sql).toContain('LIMIT ?');
+    expect(values.filter((v) => v === ORG_A)).toHaveLength(3);
+    expect(values).toContain('user-1');
+    expect(values).not.toContain('org-b');
   });
 });
 

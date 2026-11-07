@@ -78,6 +78,14 @@ export function awaitsDecision(key: string | null | undefined): boolean {
   return requestStagePolicy(key).actions.has('approve');
 }
 
+/**
+ * ACC-281 — the stage keys awaitsDecision() is true for, so a query can filter
+ * by them. Derived from the map above, never written out: today ['under_review'].
+ */
+export const AWAITING_DECISION_KEYS: readonly string[] = (Object.keys(REQUEST_STAGE_POLICY) as ChangeRequestStageKey[]).filter((key) =>
+  awaitsDecision(key),
+);
+
 /** The refusal when the request's stage does not allow an action. */
 const REQUEST_STAGE_REFUSAL: Readonly<Record<ChangeRequestAction, ChangeRequestRefusalCode>> = {
   edit: 'CHANGE_REQUEST_NOT_EDITABLE',

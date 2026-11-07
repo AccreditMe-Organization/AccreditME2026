@@ -20,6 +20,7 @@ import {
   ChangeRequestAction,
   CommitteeStageRules,
   assertCommitteeAllowsRaise,
+  AWAITING_DECISION_KEYS,
   awaitsDecision,
   committeeAllowsRaise,
   assertCommitteeStageAllows,
@@ -77,6 +78,9 @@ export type ChangeValues = Partial<Record<ChangeField, ChangeValue>>;
 const REQUIRED_FIELDS: ReadonlySet<ChangeField> = new Set<ChangeField>(['nameEn', 'typeValueId', 'quorumCount', 'meetingFrequency']);
 
 const OBJECT_TYPE = 'COMMITTEE_CHANGE_REQUEST' as const;
+
+/** ACC-281 — the most requests the awaiting-decision list returns, oldest submitted first. */
+export const AWAITING_DECISION_CAP = 200;
 const PAGE = 50;
 const STAGE_ORDER = new Map<string, number>(CHANGE_REQUEST_STAGE_KEYS.map((k, i) => [k, i]));
 
@@ -668,12 +672,40 @@ export class CommitteeChangeRequestService {
   /** Every request under review that the viewer may decide: not their own. */
   async awaitingDecision(organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest[]> {
     requirePermission(viewer, COMMITTEES_PERMISSIONS.APPROVE);
-    const rows = await this.prisma.committeeChangeRequest.findMany({
-      where: { organizationId, requestedById: { not: viewer.userId }, submittedAt: { not: null } },
-      include: REQUEST_INCLUDE,
-      orderBy: { submittedAt: 'asc' },
-    });
+    // ACC-281 — filtered IN THE QUERY: the ids of the requests whose NEWEST
+    // instance stands in a stage awaiting a decision (the policy's own keys),
+    // oldest submitted first, capped. Before this, every request ever submitted
+    // was read and filtered here. Every table is scoped by organisation.
+    const ids = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT r.id
+      FROM "CommitteeChangeRequest" r
+      JOIN LATERAL (
+        SELECT wi."currentStageId"
+        FROM "WorkflowInstance" wi
+        WHERE wi."organizationId" = ${organizationId}
+          AND wi."objectType"::text = ${OBJECT_TYPE}
+          AND wi."objectId" = r.id
+        ORDER BY wi."createdAt" DESC
+        LIMIT 1
+      ) li ON TRUE
+      JOIN "WorkflowStage" s ON s.id = li."currentStageId"
+      JOIN "WorkflowTemplate" t ON t.id = s."workflowTemplateId" AND t."organizationId" = ${organizationId}
+      WHERE r."organizationId" = ${organizationId}
+        AND r."submittedAt" IS NOT NULL
+        AND r."requestedById" <> ${viewer.userId}
+        AND s.key = ANY(${[...AWAITING_DECISION_KEYS]}::text[])
+      ORDER BY r."submittedAt" ASC, r.id ASC
+      LIMIT ${AWAITING_DECISION_CAP}`;
+    if (ids.length === 0) return [];
+    const order = new Map(ids.map((r, i) => [r.id, i]));
+    const rows = (
+      await this.prisma.committeeChangeRequest.findMany({
+        where: { id: { in: ids.map((r) => r.id) }, organizationId },
+        include: REQUEST_INCLUDE,
+      })
+    ).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
     const stages = await requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId);
+    // A second guard that changes nothing while the query is right (a spec holds the two equal).
     const waiting = rows.filter((r) => awaitsDecision(stages.get(r.id)?.key));
     // ACC-255 PR 2 — every committee's stage in one batch (three queries), not one read each.
     const committeeStages = await this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [...new Set(waiting.map((r) => r.committeeId))]);
