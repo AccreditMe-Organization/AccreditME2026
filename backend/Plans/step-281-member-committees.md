@@ -499,7 +499,7 @@ Q1, Q2 and Q6–Q10: as recommended. Q3 and Q5: **members see them** (read only)
       the platform-admin and `joinedHint` fixes
 - [x] Docs: SYSTEM-REFERENCE §3.21 (new), with pointers from §1.9, §3.16–§3.19 and
       §10.24; CLAUDE.md Key Architecture Decisions (ACC-281)
-- [ ] /ready-to-pr (Ahmad)
+- [x] /ready-to-pr (Ahmad)
 
 ---
 
