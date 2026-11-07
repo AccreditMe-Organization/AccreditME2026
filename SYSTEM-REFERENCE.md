@@ -8283,10 +8283,6 @@ A wording convention, kept by review: **no scan checks it.**
   is used instead.** For example, the storage request hint: at 560 px wide,
   «في مؤسستك» took the Arabic dialog from 385 px to 405 px.
 
-Not yet brought into line. Another PR fixes both:
-- **The committee change-request lines:** «قدّمه / أعاده / اعتمده {{name}}».
-- **`workflow.editor.meaningsNote`:** a plural address, «يعود إليكم».
-
 ### 9.5 What's Explicitly Not Covered Here
 
 The **full RTL visual audit** (icon mirroring, breadcrumb arrow
