@@ -86,10 +86,16 @@ describe('WorkflowController', () => {
   // @Permissions: the service answers only for the caller, row by row.
   describe('getAwaitingMe', () => {
     it('hands the caller, their organisation and their permissions to the service, and carries no @Permissions', async () => {
-      const result = await controller.getAwaitingMe(TENANT_ID, ACTOR_ID, VIEWER_PERMISSIONS);
-      expect(awaiting.awaitingMe).toHaveBeenCalledWith(TENANT_ID, ACTOR_ID, VIEWER_PERMISSIONS);
+      const result = await controller.getAwaitingMe(TENANT_ID, ACTOR_ID, VIEWER_PERMISSIONS, {});
+      expect(awaiting.awaitingMe).toHaveBeenCalledWith(TENANT_ID, ACTOR_ID, VIEWER_PERMISSIONS, { skip: undefined, take: undefined });
       expect(result).toEqual({ total: 0, rows: [] });
       expect(Reflect.getMetadata(PERMISSIONS_KEY, WorkflowController.prototype.getAwaitingMe)).toBeUndefined();
+    });
+
+    // ACC-281 — the page is passed through as asked.
+    it('passes ?skip=&take= to the service', async () => {
+      await controller.getAwaitingMe(TENANT_ID, ACTOR_ID, VIEWER_PERMISSIONS, { skip: 10, take: 20 });
+      expect(awaiting.awaitingMe).toHaveBeenCalledWith(TENANT_ID, ACTOR_ID, VIEWER_PERMISSIONS, { skip: 10, take: 20 });
     });
   });
 
