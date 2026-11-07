@@ -1,15 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { Component } from '@angular/core';
+import { Component, WritableSignal } from '@angular/core';
 import { signal } from '@angular/core';
-import { provideTranslateService } from '@ngx-translate/core';
+import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { SidebarComponent } from './sidebar.component';
 import { AuthService } from '../../core/services/auth.service';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import en from '../../../assets/i18n/en.json';
-import { loadTranslationsForTest } from '../../core/formatting/testing';
+import ar from '../../../assets/i18n/ar.json';
+import { loadTranslationsForTest, provideFormatTesting } from '../../core/formatting/testing';
+import { Loadable, MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
+import { ITaskRecordListDto } from '../../foundation/tasks/services/task.service';
 import { environment } from '../../../environments/environment';
 import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
 
@@ -240,6 +243,155 @@ describe('SidebarComponent (ACC-79)', () => {
       expect(el.querySelector('a[href="/setup-health"]')?.getAttribute('aria-label')).toContain(
         '7 open conditions',
       );
+    });
+  });
+
+  // ACC-120 — the Tasks item shows the person's open tasks: Home's My tasks
+  // count, read from MyWorkCountsService, which the shell loads. The rail only
+  // reads its signals; it starts nothing and requests nothing.
+  describe('Tasks badge (ACC-120)', () => {
+    type TasksState = Loadable<ITaskRecordListDto>;
+    let http: HttpTestingController;
+    let myTasks: WritableSignal<TasksState>;
+    let myOverdue: WritableSignal<Loadable<number>>;
+    let calls: string[];
+
+    const ready = (matching: number): TasksState => ({
+      state: 'ready',
+      value: { matching, total: matching + 40 } as ITaskRecordListDto,
+    });
+
+    function renderTasks(opts: { collapsed?: boolean; language?: 'en' | 'ar' } = {}): HTMLElement {
+      myTasks = signal<TasksState>({ state: 'loading' });
+      myOverdue = signal<Loadable<number>>({ state: 'loading' });
+      calls = [];
+      const record = (name: string) => () => {
+        calls.push(name);
+      };
+      const fake = {
+        myTasks,
+        myOverdue,
+        init: record('init'),
+        reload: record('reload'),
+        refreshOnEntry: record('refreshOnEntry'),
+        loadMyTasks: record('loadMyTasks'),
+        loadMyOverdue: record('loadMyOverdue'),
+      };
+      const el = render({
+        collapsed: opts.collapsed,
+        extraProviders: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideFormatTesting(),
+          { provide: MyWorkCountsService, useValue: fake },
+        ],
+      });
+      loadTranslationsForTest({ en, ar });
+      TestBed.inject(TranslateService).use(opts.language ?? 'en');
+      http = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+      return el;
+    }
+
+    const set = (tasks: TasksState, overdue: Loadable<number>): void => {
+      myTasks.set(tasks);
+      myOverdue.set(overdue);
+      fixture.detectChanges();
+    };
+    const tasksLink = (el: HTMLElement) => el.querySelector('a[href="/tasks"]')!;
+    const badge = (el: HTMLElement) => tasksLink(el).querySelector('.am-rail-badge');
+    const srText = (el: HTMLElement) => badge(el)?.querySelector('.sr-only')?.textContent?.trim();
+
+    // Nothing is fetched by the rail, and nothing on the service is started.
+    afterEach(() => {
+      http.verify();
+      expect(calls).withContext('the rail called the counts service').toEqual([]);
+    });
+
+    it('shows no badge while the count loads', () => {
+      const el = renderTasks();
+      expect(badge(el)).toBeNull();
+    });
+
+    it('shows no badge when the count failed — a failure is never a number', () => {
+      const el = renderTasks();
+      set({ state: 'failed' }, { state: 'ready', value: 2 });
+      expect(badge(el)).toBeNull();
+    });
+
+    it('shows no badge at 0', () => {
+      const el = renderTasks();
+      set(ready(0), { state: 'ready', value: 0 });
+      expect(badge(el)).toBeNull();
+    });
+
+    it('7 open, none overdue: "7", neutral, read as "7 open tasks" (matching, never total)', () => {
+      const el = renderTasks();
+      set(ready(7), { state: 'ready', value: 0 });
+      expect(badge(el)?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('7');
+      expect(badge(el)?.classList).not.toContain('am-rail-badge--alert');
+      expect(srText(el)).toBe('7 open tasks');
+    });
+
+    it('7 open, 2 overdue: "7", the alert tone, read as "7 open tasks, some overdue"', () => {
+      const el = renderTasks();
+      set(ready(7), { state: 'ready', value: 2 });
+      expect(badge(el)?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('7');
+      expect(badge(el)?.classList).toContain('am-rail-badge--alert');
+      expect(srText(el)).toBe('7 open tasks, some overdue');
+    });
+
+    it('one open and overdue reads "1 open task, overdue"', () => {
+      const el = renderTasks();
+      set(ready(1), { state: 'ready', value: 1 });
+      expect(srText(el)).toBe('1 open task, overdue');
+    });
+
+    it('the overdue count loading or failed: the count shows in the neutral tone', () => {
+      const el = renderTasks();
+      set(ready(7), { state: 'failed' });
+      expect(badge(el)?.classList).not.toContain('am-rail-badge--alert');
+      expect(srText(el)).toBe('7 open tasks');
+      set(ready(7), { state: 'loading' });
+      expect(badge(el)?.classList).not.toContain('am-rail-badge--alert');
+      expect(srText(el)).toBe('7 open tasks');
+    });
+
+    it('collapsed: the dot, and the label carries the sentence', () => {
+      const el = renderTasks({ collapsed: true });
+      set(ready(7), { state: 'ready', value: 2 });
+      const dot = badge(el)!;
+      expect(dot.getAttribute('aria-hidden')).toBe('true');
+      expect(dot.textContent?.trim()).toBe('');
+      expect(dot.classList).toContain('am-rail-badge--alert');
+      expect(tasksLink(el).getAttribute('aria-label')).toBe('Tasks — 7 open tasks, some overdue');
+    });
+
+    it('updates when the count changes, with no request of its own', () => {
+      const el = renderTasks();
+      set(ready(7), { state: 'ready', value: 0 });
+      expect(srText(el)).toBe('7 open tasks');
+      set(ready(8), { state: 'ready', value: 3 });
+      expect(srText(el)).toBe('8 open tasks, some overdue');
+      set(ready(0), { state: 'ready', value: 0 });
+      expect(badge(el)).toBeNull();
+      http.expectNone(() => true);
+    });
+
+    it('in Arabic, the sentence takes the plural form for 1, 2, 3 and 11', () => {
+      const el = renderTasks({ language: 'ar' });
+      const cases: [number, string][] = [
+        [1, 'مهمة مفتوحة واحدة'],
+        [2, 'مهمتان مفتوحتان'],
+        [3, '3 مهام مفتوحة'],
+        [11, '11 مهمة مفتوحة'],
+      ];
+      for (const [n, sentence] of cases) {
+        set(ready(n), { state: 'ready', value: 0 });
+        expect(srText(el)).withContext(String(n)).toBe(sentence);
+      }
+      set(ready(3), { state: 'ready', value: 1 });
+      expect(srText(el)).toBe('3 مهام مفتوحة، بعضها متأخر');
     });
   });
 });

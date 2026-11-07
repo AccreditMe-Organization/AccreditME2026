@@ -53,9 +53,13 @@ export interface NavItem {
   // the same reason, or the page renders a wall of 403s.
   requiredPermission?: string;
   // A live count shown on the item. Names a source the sidebar knows how to
-  // read; the count is fetched only while the item is visible, so it can never
-  // request an endpoint the user lacks the permission for.
-  badge?: 'setupHealth';
+  // read:
+  // - setupHealth: fetched by the sidebar only while the item is visible, so
+  //   it can never request an endpoint the user lacks the permission for.
+  // - myTasks (ACC-120): the person's open tasks, from MyWorkCountsService,
+  //   which the shell loads after sign-in. The sidebar only reads its signals
+  //   and fetches nothing.
+  badge?: 'setupHealth' | 'myTasks';
   // Present ONLY on an entitlement-driven functional module. The item renders
   // only when NavigationAccessService.isModuleEnabled(moduleKey) — true for
   // FULL and READ_ONLY alike, because a read-only module is fully present and
@@ -117,7 +121,9 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
       // view: All tasks and Unassigned were rail items until they became saved
       // views of this list, and Tasks stays lit on all of them, and on a task's
       // own page (/tasks/:id), by prefix — no other item starts with /tasks now.
-      { key: 'tasks', labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks' },
+      // ACC-120 — the badge is the person's open-task count, the number Home's
+      // My tasks tile shows; red when any of them is overdue.
+      { key: 'tasks', labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks', badge: 'myTasks' },
     ],
   },
   {
