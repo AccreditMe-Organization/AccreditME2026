@@ -8266,24 +8266,22 @@ A wording convention, kept by review: **no scan checks it.**
   كم، لديكم، معكم، إليكم.
 - **"Your organisation's" is مؤسستك:** «في مؤسستك», «لدى مؤسستك», «تخزين
   مؤسستك الخاص».
-- **No masculine verb or pronoun has a person as its subject**, because the
-  platform stores no gender. Use one of:
-  - a noun form: «الرفض: {{name}}», «طلب تغيير من {{name}}»;
-  - a passive;
-  - a non-person subject: «هذا الحساب».
+- **No masculine verb or pronoun has a specific person as its subject or
+  referent**, because the platform stores no gender. That person may be
+  `{{name}}`, `{{person}}`, `{{incoming}}`, `{{current}}`, or the user a
+  dialog is about. Use one of:
+  - a noun form: «الرفض: {{name}}», «بداية الرئاسة: {{person}}»;
+  - a passive: «تُنهى جلسات…»;
+  - a non-person subject: «هذا الحساب», «هذا الدور», «المنصب».
+- **Generic wording keeps its usual agreement:** «من», «كل من», «أحد»,
+  «لا أحد», «المُسند إليه», «الشخص». For example «كل من أُسندت إليه» or
+  «من يحمله». That is Arabic's neutral form, and the rule above is about a
+  specific person only. A pronoun that refers to a thing (a role, a position,
+  an account, a record) is fine.
 - **Imperatives to the reader are fine:** اطلب، اختر، تحقق.
 - **Where the longer مؤسستك would wrap a measured dialog, the singular «لديك»
   is used instead.** For example, the storage request hint: at 560 px wide,
   «في مؤسستك» took the Arabic dialog from 385 px to 405 px.
-
-Not yet brought into line (left for their own wording, ACC-120):
-- **Masculine verbs about a person:**
-  - committee change-request lines: «قدّمه / أعاده / اعتمده {{name}}»;
-  - organisation head history: «بدأ {{person}} رئيسًا»;
-  - the unit head confirms: «لن يشغل {{name}}»;
-  - `manageRoles.holdsNothing`, `user.transfer.reviewPromotionNote` and
-    `user.deactivateConfirm`.
-- **A plural address:** `workflow.editor.meaningsNote`, «يعود إليكم».
 
 ### 9.5 What's Explicitly Not Covered Here
 
