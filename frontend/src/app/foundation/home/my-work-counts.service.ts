@@ -98,6 +98,9 @@ export class MyWorkCountsService {
 
   /** Load once; later calls do nothing. The shell calls it after sign-in. */
   init(): void {
+    // ACC-281 — a platform admin works no tenant's tasks, records or committees:
+    // nothing to count, so nothing is asked.
+    if (this.access.isPlatformAdmin()) return;
     if (this.started) return;
     this.started = true;
     this.reload();

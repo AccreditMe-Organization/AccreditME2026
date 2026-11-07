@@ -91,6 +91,16 @@ describe('MyWorkCountsService (ACC-279)', () => {
     expect(service.myCommittees()).toEqual({ state: 'ready', value: { total: 0, rows: [] } });
   });
 
+  // ACC-281 — the fix Ahmad asked for: a platform admin has no tenant work.
+  it('init() asks nothing for a platform admin', () => {
+    build({ platformAdmin: true });
+    service.init();
+    expect(mineReads()).toBe(0);
+    expect(calls.awaitingMe).toBe(0);
+    expect(calls.committees).toBe(0);
+    expect(service.myTasks()).toEqual({ state: 'loading' });
+  });
+
   // ACC-281 — lane A's rail and guard read this; it costs no query of its own.
   it('isCommitteeMember is true only once My committees loaded with at least one', () => {
     build({ committees: { total: 0, rows: [] } });

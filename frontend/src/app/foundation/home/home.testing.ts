@@ -70,6 +70,8 @@ export interface HomeSpecOptions {
   summary?: Answer<HomeAdminSummaryDto>;
   available?: Answer<ITaskListItemDto[]>;
   name?: string;
+  /** ACC-281 — signed in as a platform admin. */
+  platformAdmin?: boolean;
 }
 
 /** Every request Home's reads made, by name, so a spec can say what was and was not asked. */
@@ -152,7 +154,7 @@ export function homeProviders(opts: HomeSpecOptions = {}): { providers: (Provide
       useValue: {
         hasPermission: (key: string) => held.has(key),
         isModuleEnabled: () => true,
-        isPlatformAdmin: () => false,
+        isPlatformAdmin: () => opts.platformAdmin ?? false,
       },
     },
     { provide: AuthService, useValue: { currentUser: () => ({ name: opts.name ?? 'Layla Al-Harbi' }) } },
