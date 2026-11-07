@@ -644,7 +644,7 @@ export class TaskService {
     // type: one batched lookup for the list, beside the cover read.
     const [covered, records] = await Promise.all([
       this.coveredCreators(viewer, organizationId),
-      recordNamesOf(this.prisma, rows, organizationId, viewerPermissions),
+      recordNamesOf(this.prisma, rows, organizationId, viewerPermissions, userId),
     ]);
     // A task waiting in its pool has nobody on it, so nobody can have asked.
     const result: IAvailableTaskListItem[] = [];
