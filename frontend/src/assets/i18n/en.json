@@ -2845,6 +2845,14 @@
       "tabProblems": {
         "one": "{{count}} problem",
         "other": "{{count}} problems"
+      },
+      "openTasks": {
+        "one": "{{count}} open task",
+        "other": "{{count}} open tasks"
+      },
+      "openTasksOverdue": {
+        "one": "{{count}} open task, overdue",
+        "other": "{{count}} open tasks, some overdue"
       }
     },
     "setupHealth": {
