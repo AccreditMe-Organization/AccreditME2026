@@ -42,7 +42,7 @@ import { CommitteeMembershipEventDto } from '../../services/committee.service';
         <li class="am-cp-row" [attr.data-history-row]="e.id">
           <span class="am-cp-l1">
             <span class="am-cmh__dot" [style.background]="color(e.action)" aria-hidden="true"></span>
-            <span class="am-cmh__name am-cp-cut">{{ name(e.userId) }}</span>
+            <span class="am-cmh__name am-cp-cut">{{ name(e) }}</span>
             <span class="am-cmh__date" dir="ltr">{{ format.date(e.effectiveDate) }}</span>
           </span>
           <span class="am-cp-l2"><span class="am-cp-cut" [title]="detail(e)">{{ detail(e) }}</span></span>
@@ -53,7 +53,7 @@ import { CommitteeMembershipEventDto } from '../../services/committee.service';
     <ng-template #historyCells let-e>
       <span class="flex items-center gap-2 min-w-0">
         <span class="am-cmh__dot" [style.background]="color(e.action)" aria-hidden="true"></span>
-        <span class="am-cmh__name am-cp-cut">{{ name(e.userId) }}</span>
+        <span class="am-cmh__name am-cp-cut">{{ name(e) }}</span>
       </span>
       <span class="am-cp-cut text-[var(--am-ink-700)]" [title]="detail(e)">{{ detail(e) }}</span>
       <span class="text-[var(--am-ink-700)] whitespace-nowrap" dir="ltr">{{ format.date(e.effectiveDate) }}</span>
@@ -123,11 +123,11 @@ export class CommitteeMembershipHistoryPanelComponent {
   readonly loadPage = (query: SimpleListQuery) => {
     const all = this.events();
     const q = (query.q ?? '').trim().toLocaleLowerCase();
-    const matching = q ? all.filter((e) => `${this.name(e.userId)} ${this.detail(e)}`.toLocaleLowerCase().includes(q)) : all;
+    const matching = q ? all.filter((e) => `${this.name(e)} ${this.detail(e)}`.toLocaleLowerCase().includes(q)) : all;
     const dir = query.dir === 'asc' ? 1 : -1;
     const sorted = [...matching].sort((a, b) =>
       query.sort === 'person'
-        ? dir * this.name(a.userId).localeCompare(this.name(b.userId)) || b.effectiveDate.localeCompare(a.effectiveDate)
+        ? dir * this.name(a).localeCompare(this.name(b)) || b.effectiveDate.localeCompare(a.effectiveDate)
         : dir * a.effectiveDate.localeCompare(b.effectiveDate) || a.id.localeCompare(b.id),
     );
     const page: SimpleListPage<CommitteeMembershipEventDto> = {
@@ -138,17 +138,21 @@ export class CommitteeMembershipHistoryPanelComponent {
     return of(page);
   };
 
-  name(userId: string): string {
-    return this.users().find((u) => u.id === userId)?.name ?? '—';
+  // ACC-281 — the read names its own people and seats, so a member without
+  // users:view or lookups:view reads them; the lists are only a fallback.
+  name(e: CommitteeMembershipEventDto): string {
+    return e.userName ?? this.users().find((u) => u.id === e.userId)?.name ?? '—';
   }
 
   /** "Joined — Member · by {approver}": what happened, in which seat, and who authorised it. */
   detail(e: CommitteeMembershipEventDto): string {
     this.translate.currentLang();
     const action = this.translate.instant(`committee.action.${e.action.toLowerCase()}`) as string;
-    const seat = this.memberRoles().find((v) => v.id === e.roleValueId);
+    const seat = e.roleLabelEn
+      ? { labelEn: e.roleLabelEn, labelAr: e.roleLabelAr ?? null }
+      : this.memberRoles().find((v) => v.id === e.roleValueId);
     const seatName = seat ? this.language.bilingual(seat.labelEn, seat.labelAr) : '—';
-    const approver = e.approvedBy ? this.users().find((u) => u.id === e.approvedBy)?.name : undefined;
+    const approver = e.approvedBy ? (e.approvedByName ?? this.users().find((u) => u.id === e.approvedBy)?.name) : undefined;
     const parts = [`${action} — ${seatName}`];
     if (approver) parts.push(this.translate.instant('committee.approvedBy', { name: approver }) as string);
     return parts.join(' · ');
