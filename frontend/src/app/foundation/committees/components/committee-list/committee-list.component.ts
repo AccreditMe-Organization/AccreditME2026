@@ -240,12 +240,15 @@ export class CommitteeListComponent {
       media.addEventListener('change', onChange);
       inject(DestroyRef).onDestroy(() => media.removeEventListener('change', onChange));
     }
-    // A failed lookup leaves every type as "—" (the plan's partial outcome),
-    // never the raw id, and the list itself still loads.
-    this.lookupService.getValues('committee_type').subscribe({
-      next: (values) => this.committeeTypes.set(values),
-      error: () => this.committeeTypes.set([]),
-    });
+    // ACC-281 — each row names its own type (typeValue), so the Type column needs
+    // no lookup. The full type list is read only by someone who may read lookups,
+    // for the Type filter; anyone else filters by the types the rows carry.
+    if (this.navigationAccess.hasPermission('lookups:view')) {
+      this.lookupService.getValues('committee_type').subscribe({
+        next: (values) => this.committeeTypes.set(values),
+        error: () => this.committeeTypes.set([]),
+      });
+    }
   }
 
   readonly columns = computed<DataListColumn[]>(() => {
@@ -288,10 +291,19 @@ export class CommitteeListComponent {
 
   readonly typeOptions = computed(() => {
     this.translate.currentLang();
-    return this.committeeTypes().map((t) => ({
+    const listed = this.committeeTypes();
+    const types = listed.length ? listed : [...this.rowTypes().values()];
+    return types.map((t) => ({
       value: t.id,
       label: this.languageService.bilingual(t.labelEn, t.labelAr),
     }));
+  });
+
+  /** ACC-281 — the types the rows themselves name, by id. */
+  private readonly rowTypes = computed(() => {
+    const byId = new Map<string, { id: string; labelEn: string; labelAr: string | null }>();
+    for (const c of this.committees() ?? []) if (c.typeValue) byId.set(c.typeValueId, c.typeValue);
+    return byId;
   });
 
   /**
@@ -351,7 +363,8 @@ export class CommitteeListComponent {
   }
 
   typeLabel(typeValueId: string): string {
-    const value = this.committeeTypes().find((v) => v.id === typeValueId);
+    // ACC-281 — the row's own type first; the lookup only as a fallback.
+    const value = this.rowTypes().get(typeValueId) ?? this.committeeTypes().find((v) => v.id === typeValueId);
     return value ? this.languageService.bilingual(value.labelEn, value.labelAr) : '—';
   }
 
