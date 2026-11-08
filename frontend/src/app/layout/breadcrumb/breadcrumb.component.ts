@@ -4,6 +4,7 @@ import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { catchError, filter, map, of, startWith, switchMap } from 'rxjs';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
+import { injectNavAccess } from '../../core/navigation/nav-access';
 import { LANDING_ROUTE } from '../../core/navigation/landing-route';
 import { BreadcrumbParentService } from '../../core/navigation/breadcrumb-parent.service';
 import {
@@ -85,6 +86,9 @@ const PLATFORM_LANDING = '/platform/tenants';
 export class BreadcrumbComponent {
   private readonly router = inject(Router);
   private readonly access = inject(NavigationAccessService);
+  // ACC-281 — the rail's own NavAccess, so a committee member's trail names
+  // Committees as the rail does.
+  private readonly navAccess = injectNavAccess();
   // ACC-228 — a page whose parent is a record (the task page).
   private readonly parents = inject(BreadcrumbParentService);
 
@@ -166,7 +170,7 @@ export class BreadcrumbComponent {
     // A longer ancestry (an org unit's parent units, PR D) resolves its section
     // from the top record, which sits in the same section as the rest.
     const above = recordParent?.above ?? [];
-    const location = resolveNavLocation(recordParent ? (above[0]?.url ?? recordParent.url) : path, this.access);
+    const location = resolveNavLocation(recordParent ? (above[0]?.url ?? recordParent.url) : path, this.navAccess);
     if (!location) return trail;
 
     // The platform shell has one group, labelled "Platform" — the same word as

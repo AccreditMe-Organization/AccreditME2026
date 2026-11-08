@@ -9781,6 +9781,32 @@ Its one use is the read-only Organisation item (7.13), hidden from
 `admin:access` holders. It hides the link only; the route's permission still
 comes from `requiredPermission`.
 
+**`orWhen: 'committeeMember'` (ACC-281):** a second way to meet an item's
+`requiredPermission`. Its one use is Committees: an active member of a
+committee sees it and opens it without `committees:view`, and the server
+answers their own committees.
+- **The answer** is `MyWorkCountsService.isCommitteeMember` (My committees ready
+  with a total above 0). The shell already loads it after sign-in, so this adds
+  no query, timer or `init()`.
+- **One `NavAccess` for all readers:** `injectNavAccess()` (`nav-access.ts`)
+  composes it from explicit delegates. `NavigationAccessService` does not
+  inject the counts, because the counts inject it. The rail, the breadcrumb
+  and the tab title all use this composed `NavAccess`, so they agree.
+- **The rail** shows the item only once membership is KNOWN to be true: not
+  while it loads, and not after a failure.
+- **`permissionGuard`**, when the route's permissions are not held, looks up
+  the route's tenant nav item (`tenantNavItemForRoute`):
+  - with `orWhen` it admits a known member;
+  - it also admits while membership is loading or failed, and lets the server
+    decide (ACC-70's rule). This covers a hard reload straight onto
+    `/committees/:id`, which runs before the shell starts the counts;
+  - it sends a known non-member to the landing route;
+  - it never admits a platform admin, whose counts never load.
+  - Every committees child route inherits this through the walk-up.
+- **`ROUTE_PERMISSIONS` is unchanged** (`committees` → `committees:view`). Its
+  other readers still follow the permission, for example record links in task
+  rows and the members panel.
+
 **Resolution** (`resolveNavLocation`): longest route wins, matched on whole
 segments, among items THIS user can see — so every view of `/tasks`
 resolves to Tasks in My work (it was `/tasks/unassigned` to Administration

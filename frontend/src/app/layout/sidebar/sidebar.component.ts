@@ -21,6 +21,7 @@ import {
   visibleNavGroups,
 } from '../../core/navigation/nav-items';
 import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
+import { injectNavAccess } from '../../core/navigation/nav-access';
 
 const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -301,12 +302,15 @@ export class SidebarComponent {
 
   readonly collapsed = input(false);
 
+  // ACC-281 — the access the nav model reads, with committee membership: the
+  // breadcrumb and the tab title use the same one, so all three agree.
+  private readonly navAccess = injectNavAccess();
+
   // A computed over the service's signals, so the rail updates when access
   // loads — including the same-tab logout→login case, where loadAccess() is
-  // re-run from AppShellComponent without a page reload.
-  readonly groups = computed<NavGroup[]>(() =>
-    visibleNavGroups(this.navigationAccessService),
-  );
+  // re-run from AppShellComponent without a page reload — and when committee
+  // membership turns known (ACC-281).
+  readonly groups = computed<NavGroup[]>(() => visibleNavGroups(this.navAccess));
 
   private readonly setupHealthService = inject(SetupHealthService);
   // ACC-120 — the Tasks badge. The shell loads these counts after sign-in

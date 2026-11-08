@@ -14,6 +14,7 @@ import { TranslateService } from '@ngx-translate/core';
 import { filter } from 'rxjs';
 import { NavigationAccessService } from './navigation-access.service';
 import { normalizePath, resolveNavLocation } from '../navigation/nav-location';
+import { injectNavAccess } from '../navigation/nav-access';
 
 // ACC-79 — BROWSER TAB TITLES.
 //
@@ -112,6 +113,8 @@ export function registerPageName(name: () => string | null): void {
 export class DocumentTitleService {
   private readonly router = inject(Router);
   private readonly access = inject(NavigationAccessService);
+  // ACC-281 — the rail's own NavAccess, so the tab names Committees for a member.
+  private readonly navAccess = injectNavAccess();
   private readonly translate = inject(TranslateService);
   private readonly title = inject(Title);
   private readonly pageNames = inject(PageNameRegistry);
@@ -163,7 +166,7 @@ export class DocumentTitleService {
   // The fallback for a page with no header of its own yet, and for the moment
   // between a record page opening and its record loading.
   private railLabel(path: string): string | null {
-    const location = resolveNavLocation(path, this.access);
+    const location = resolveNavLocation(path, this.navAccess);
     if (!location) return null;
     const key = location.item.labelKey;
     const label = this.translate.instant(key) as string;
