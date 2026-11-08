@@ -11,7 +11,7 @@ import { WorkflowService } from './workflow.service';
 import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { CancelWorkflowInstanceDto } from './dto/cancel-workflow-instance.dto';
-import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
+import { IWorkflowInstance, IWorkflowApproval, IWorkflowMoves } from './interfaces/workflow-instance.interface';
 import { IWorkflowStageHistory } from './interfaces/workflow-stage-history.interface';
 import { IWorkflowAwaitingMe } from './interfaces/workflow-awaiting.interface';
 import { WorkflowAwaitingService } from './workflow-awaiting.service';
@@ -42,12 +42,15 @@ export class WorkflowController {
     return this.awaiting.awaitingMe(tenantId, actorId, actorPermissions, { skip: query.skip, take: query.take });
   }
 
+  // ACC-282 (Ahmad, 8 Nov) — the four reads below carry no route permission:
+  // whoever may open the record may read its workflow (the instance, the list,
+  // stage history), and the moves list is pool-only. The service decides, through
+  // InstanceAccess (instance-access.ts), the one place the rule lives. Anyone who
+  // may not open the record gets exactly the refusal a missing record gets: the
+  // 404 where the instance is read first, the parent's 403 where the request names
+  // the record (ACC-101). The permission set goes to the service, which needs the
+  // record to know which parent applies.
   @Get('instances/:id')
-  @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
-  // ACC-101 — workflows:view is necessary and no longer sufficient on all three
-  // reads below: each is scoped to an object, and the caller must be able to
-  // see that object. The permission set goes to the service, which owns the
-  // check (it needs the record to know which parent applies).
   getInstanceById(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
@@ -59,7 +62,6 @@ export class WorkflowController {
   }
 
   @Get('instances')
-  @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
   getInstancesByObject(
     @Query('objectType') objectType: string,
     @Query('objectId') objectId: string,
@@ -70,17 +72,12 @@ export class WorkflowController {
     return this.workflowService.getInstancesByObject(objectType, objectId, tenantId, actorPermissions, actorId);
   }
 
-  // ACC-76 — the object-detail stage indicator's data.
-  //
-  // Gated on workflows:view, the same as the two reads above: this exposes
-  // who acted at each stage and any comment they left, which is more than
-  // the instance row itself carries. A caller without the permission gets a
-  // 403 and the panel renders nothing — the existing "Current Stage" label
-  // already behaves this way, so the gating is consistent rather than new.
+  // ACC-76 — the object-detail stage indicator's data: who acted at each stage
+  // and any comment they left. ACC-282 (Ahmad, 8 Nov): open to whoever may open
+  // the record, like the instance (it was workflows:view).
   //
   // No route conflict with 'instances/:id' above — three segments, not two.
   @Get('instances/:id/stage-history')
-  @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
   getStageHistory(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
@@ -91,16 +88,17 @@ export class WorkflowController {
   }
 
   // ACC-271 PR 2 — the moves this viewer may press from the record's current
-  // stage, for the record page's buttons. Same gate and visibility as the
-  // instance read above; a small answer (the moves of one stage), no paging.
+  // stage, for the record page's buttons: the instance read's visibility, then
+  // the stage's pool (empty for anyone else who may open the record). A small
+  // answer (the moves of one stage), no paging. ACC-282: each move carries its
+  // label and the stage it leads to.
   @Get('instances/:id/moves')
-  @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
   getMoves(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
     @CurrentUserPermissions() actorPermissions: string[],
     @CurrentUser() actorId: string,
-  ): Promise<{ transitionIds: string[] }> {
+  ): Promise<IWorkflowMoves> {
     return this.workflowService.getMovesForViewer(id, tenantId, actorPermissions, actorId);
   }
 
@@ -120,15 +118,17 @@ export class WorkflowController {
     return this.workflowService.triggerTransition(id, dto, tenantId, actorId, userPermissions);
   }
 
-  // Same deliberate exception as triggerTransition() above.
+  // Same deliberate exception as triggerTransition() above. ACC-282: the voter's
+  // permissions go to the service, which checks they may open the record.
   @Post('instance-stages/:id/approvals')
   submitApproval(
     @Param('id') id: string,
     @Body() dto: SubmitApprovalDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IWorkflowApproval> {
-    return this.workflowService.submitApproval(id, dto, tenantId, actorId);
+    return this.workflowService.submitApproval(id, dto, tenantId, actorId, actorPermissions);
   }
 
   // Unlike the two endpoints above, cancellation bypasses the transition graph

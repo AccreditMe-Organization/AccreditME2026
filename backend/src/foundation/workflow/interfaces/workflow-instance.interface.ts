@@ -1,3 +1,5 @@
+import type { WorkflowTransitionKind } from '../../../../generated/prisma/client';
+
 export interface IWorkflowInstance {
   id: string;
   organizationId: string;
@@ -41,4 +43,25 @@ export interface IWorkflowApproval {
   // ACC-40 Section 2.6.3
   delegationReason: string | null; // DelegationReason
   delegationContextId: string | null;
+}
+
+/**
+ * ACC-282 — the moves this viewer may press from the record's current stage (pool
+ * only), each with what its button shows and where it leads, so no screen reads
+ * the whole template for them. Empty for anyone outside the pool.
+ */
+export interface IWorkflowMove {
+  id: string;
+  labelEn: string;
+  labelAr: string | null;
+  kind: WorkflowTransitionKind;
+  toStageId: string;
+  toStageNameEn: string;
+  toStageNameAr: string | null;
+}
+
+export interface IWorkflowMoves {
+  /** The same ids as `moves`, kept for callers that read only the ids (ACC-271). */
+  transitionIds: string[];
+  moves: IWorkflowMove[];
 }

@@ -16,6 +16,10 @@
 //
 // Both refusals are 403, so every assertion here reads the MESSAGE. That is the
 // difference between testing a gate and testing a status code.
+//
+// ACC-282 (Ahmad, 8 Nov): the child gate (workflows:view on the route) is gone.
+// The reads follow the record alone, and the parent check below is now the whole
+// rule; the moves list is pool-only.
 import { ExecutionContext, INestApplication } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -266,25 +270,32 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
     });
   });
 
-  // CONTROL — the child gate still refuses, with its OWN message. Distinguishes
-  // the two 403s; passes before and after the check existed.
-  it('refuses a caller holding no permissions at all, at the child gate', async () => {
+  // ACC-282 (Ahmad, 8 Nov) — there is no child gate any more: the workflow reads
+  // follow the RECORD. A caller who may not open it (no committees:view, not a
+  // member) gets the answer a missing record gets, naming no permission.
+  it('a caller who may not open the record gets the 404 a missing record gets, on every read-first route', async () => {
     callerPermissions = [];
 
-    const response = await stageHistory();
+    const [history, pressable, one] = await Promise.all([stageHistory(), moves(), instanceById()]);
 
-    expect(response.status).toBe(403);
-    expect(response.body.message).toContain('workflows:view');
-    expect(response.body.message).not.toContain('committees:view');
+    for (const response of [history, pressable, one]) {
+      expect(response.status).toBe(404);
+      expect(response.body.message).toBe('Workflow instance not found');
+    }
+    expect(prismaRef.workflowStage.findFirst).not.toHaveBeenCalled();
   });
 
-  it("refuses the moves to a caller without workflows:view, at the child gate", async () => {
+  it('a caller who may open the record reads its workflow without workflows:view; outside the pool, no moves', async () => {
     callerPermissions = ['committees:view'];
 
-    const response = await moves();
+    const [instances, history, one, pressable] = await Promise.all([instancesByObject(), stageHistory(), instanceById(), moves()]);
 
-    expect(response.status).toBe(403);
-    expect(response.body.message).toContain('workflows:view');
+    expect(instances.status).toBe(200);
+    expect(instances.body).toHaveLength(1);
+    expect(history.status).toBe(200);
+    expect(one.status).toBe(200);
+    expect(pressable.status).toBe(200);
+    expect(pressable.body).toEqual({ transitionIds: [], moves: [] });
   });
 
   // ACC-271 PR 2 — the moves read is the instance read's: the row is looked up
@@ -316,7 +327,7 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
     expect(history.status).toBe(200);
     expect(history.body.visits[0].actorName).toBe('Dr. Hessa Al-Dosari');
     expect(pressable.status).toBe(200);
-    expect(pressable.body).toEqual({ transitionIds: [] });
+    expect(pressable.body).toEqual({ transitionIds: [], moves: [] });
     // Read with the caller's organisation, both of them.
     expect(prismaRef.workflowStage.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'stage-1', workflowTemplate: { organizationId: TENANT_ID } } }),
