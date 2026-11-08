@@ -6,11 +6,12 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { catchError, filter, interval, map, of, startWith, switchMap } from 'rxjs';
 import { normalizePath } from '../../core/navigation/nav-location';
 import { SetupHealthService } from '../../foundation/setup-health/services/setup-health.service';
+import { MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TooltipModule } from 'primeng/tooltip';
 import { AuthService } from '../../core/services/auth.service';
 import { LayerStackService } from '../../shared/overlay/layer-stack.service';
-import { AmCountPipe, FormatService } from '../../core/formatting';
+import { FormatService } from '../../core/formatting';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import {
   NavGroup,
@@ -22,6 +23,14 @@ import {
 import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
 
 const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
+
+/** What a rail item's badge shows: the number, its tone, and the counted sentence. */
+export interface RailBadge {
+  count: number;
+  alert: boolean;
+  /** For screen readers and the collapsed rail's label: "7 open tasks, some overdue". */
+  sentence: string;
+}
 
 // ACC-79 — the rail, built against
 // frontend/design-reference/AccreditMe App Shell.dc.html.
@@ -39,7 +48,6 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
   imports: [
     RouterLink,
     TranslatePipe,
-    AmCountPipe,
     TooltipModule,
     CdkMenu,
     CdkMenuItem,
@@ -126,9 +134,7 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
                       [class.am-rail-badge--alert]="badge.alert"
                     >
                       <span aria-hidden="true">{{ badge.count }}</span>
-                      <span class="sr-only">{{
-                        badge.count | amCount: 'shell.openConditions'
-                      }}</span>
+                      <span class="sr-only">{{ badge.sentence }}</span>
                     </span>
                   } @else {
                     <!-- Collapsed, a dot; the count is in the label and tooltip. -->
@@ -303,6 +309,10 @@ export class SidebarComponent {
   );
 
   private readonly setupHealthService = inject(SetupHealthService);
+  // ACC-120 — the Tasks badge. The shell loads these counts after sign-in
+  // (init() after loadAccess()); the rail only reads them: no init(), reload(),
+  // load*, timer or request here.
+  private readonly myWork = inject(MyWorkCountsService);
   private readonly cleanUpUserMenu = inject(DestroyRef).onDestroy(() => this.userMenuClosed());
 
   // ACC-82 — polls the Setup health counts only while the item is on the rail,
@@ -333,19 +343,41 @@ export class SidebarComponent {
   }
 
   // Zero shows nothing: a badge reading 0 is noise on every healthy tenant.
-  badgeFor(item: NavItem): { count: number; alert: boolean } | null {
-    if (item.badge !== 'setupHealth') return null;
-    const summary = this.setupHealthService.summary();
-    if (!summary || summary.open === 0) return null;
-    return { count: summary.open, alert: summary.blocksWork > 0 };
+  badgeFor(item: NavItem): RailBadge | null {
+    switch (item.badge) {
+      case 'setupHealth': {
+        const summary = this.setupHealthService.summary();
+        if (!summary || summary.open === 0) return null;
+        return {
+          count: summary.open,
+          alert: summary.blocksWork > 0,
+          sentence: this.format.count('shell.openConditions', summary.open),
+        };
+      }
+      case 'myTasks':
+        return this.myTasksBadge();
+      default:
+        return null;
+    }
+  }
+
+  // ACC-120 — Home's My tasks count (`matching`, never `total`). Nothing while
+  // it loads or after it fails: a failure is never shown as a number. Red only
+  // when the overdue count is known and above 0; while it loads or after it
+  // fails, the count shows in the neutral tone.
+  private myTasksBadge(): RailBadge | null {
+    const tasks = this.myWork.myTasks();
+    if (tasks.state !== 'ready' || tasks.value.matching === 0) return null;
+    const count = tasks.value.matching;
+    const overdue = this.myWork.myOverdue();
+    const alert = overdue.state === 'ready' && overdue.value > 0;
+    return { count, alert, sentence: this.format.count(alert ? 'shell.openTasksOverdue' : 'shell.openTasks', count) };
   }
 
   collapsedLabel(item: NavItem): string {
     const label = this.translate.instant(item.labelKey);
     const badge = this.badgeFor(item);
-    return badge
-      ? `${label} — ${this.format.count('shell.openConditions', badge.count)}`
-      : label;
+    return badge ? `${label} — ${badge.sentence}` : label;
   }
 
   // ACC-79 — the platform palette (tokens.scss, .am-rail--platform). Derived

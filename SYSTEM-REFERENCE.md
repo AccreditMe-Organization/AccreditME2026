@@ -10902,6 +10902,18 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     reopen, request approve or decline, workflow move, vote or cancel, and
     change request approve, return, reject or withdraw.
   - **No timer.** `clear()` runs when the shell is destroyed (sign-out).
+- **The rail's Tasks badge (ACC-120)** reads it and fetches nothing:
+  - The number is `myTasks().value.matching`, the one Home's My tasks tile
+    shows, never `total`.
+  - It is red when `myOverdue()` is ready and above 0. While the overdue count
+    loads, or after it fails, the number shows in the neutral tone.
+  - Nothing shows while `myTasks` loads, after it fails, or at 0.
+  - It uses the same markup as Setup health's badge (§13.9): a pill when the
+    rail is open, a dot when it is collapsed, and the counted sentence
+    (`plural.shell.openTasks` / `openTasksOverdue`) for screen readers and the
+    collapsed label.
+  - `SidebarComponent.badgeFor()` returns `{ count, alert, sentence }` for
+    both badges. The sidebar never calls `init()`, `reload()` or a `load*`.
 - **`GET /committees/mine`** (`CommitteeHomeService.mine()`) is self-scoped
   with no `@Permissions`: being a member is the entitlement (Q2).
   - It covers active memberships on active committees, five of them, by the
