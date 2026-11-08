@@ -14,7 +14,7 @@ import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } 
 import { By } from '@angular/platform-browser';
 import { environment } from '../../../../../environments/environment';
 import { WorkflowTransitionActionsComponent } from './workflow-transition-actions.component';
-import { WorkflowInstanceDto } from '../../services/workflow.service';
+import { WorkflowInstanceDto, WorkflowMoveDto } from '../../services/workflow.service';
 import { provideRouter } from '@angular/router';
 import { ConfirmationService } from 'primeng/api';
 import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
@@ -32,57 +32,16 @@ const INSTANCE: WorkflowInstanceDto = {
   unassignedTaskWarnings: [],
 };
 
-const TRANSITION = {
+// ACC-282 — a move as GET /moves answers it: its label, kind and the stage it
+// leads to. The component reads no template.
+const TRANSITION: WorkflowMoveDto = {
   id: 'transition-submit',
-  fromStageId: 'stage-formation',
-  toStageId: 'stage-terms-review',
   labelEn: 'Submit for Approval',
   labelAr: 'إرسال للاعتماد',
-  validatorConfig: null,
-  isApprovalPath: false,
-
-  kind: 'ADVANCE' as const,
-};
-
-const TEMPLATE_RESPONSE = {
-  id: 'template-1',
-  organizationId: 'org-a',
-  nameEn: 'Committee Management',
-  nameAr: 'إدارة اللجان',
-  objectType: 'COMMITTEE',
-  isDefault: true,
-  isActive: true,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
-  stages: [
-    {
-      id: 'stage-formation',
-      workflowTemplateId: 'template-1',
-      nameEn: 'Formation',
-      nameAr: 'التأسيس',
-      description: null,
-      order: 10,
-      slaWorkingHours: null,
-      isInitial: true,
-      isFinal: false,
-      escalationConfig: null,
-      transitions: [TRANSITION],
-    },
-    // ACC-208 — the target, so a refused move can name where it was going.
-    {
-      id: 'stage-terms-review',
-      workflowTemplateId: 'template-1',
-      nameEn: 'Terms Review',
-      nameAr: 'مراجعة الشروط',
-      description: null,
-      order: 20,
-      slaWorkingHours: null,
-      isInitial: false,
-      isFinal: false,
-      escalationConfig: null,
-      transitions: [],
-    },
-  ],
+  kind: 'ADVANCE',
+  toStageId: 'stage-terms-review',
+  toStageNameEn: 'Terms Review',
+  toStageNameAr: 'مراجعة الشروط',
 };
 
 describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
@@ -90,9 +49,10 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
   let component: WorkflowTransitionActionsComponent;
   let httpMock: HttpTestingController;
 
-  /** `pressable`: the transition ids GET /moves answers with. */
+  /** `pressable`: the moves GET /moves answers with. */
   function setup(pressable: boolean | string[]): void {
     const transitionIds = pressable === true ? [TRANSITION.id] : pressable === false ? [] : pressable;
+    const moves = transitionIds.map((id) => ({ ...TRANSITION, id }));
     TestBed.configureTestingModule({
       imports: [WorkflowTransitionActionsComponent],
       providers: [
@@ -111,8 +71,9 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
     fixture.componentRef.setInput('instance', INSTANCE);
     fixture.detectChanges();
 
-    httpMock.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(TEMPLATE_RESPONSE);
-    httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/moves`).flush({ transitionIds });
+    // ACC-282 — one read; the template (workflows:view) is never asked for.
+    httpMock.expectNone(`${environment.apiUrl}/workflow-templates/template-1`);
+    httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/moves`).flush({ transitionIds, moves });
     fixture.detectChanges();
   }
 
@@ -143,8 +104,8 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
       fixture.detectChanges();
 
       expect(component.availableTransitions()).toEqual([]);
-      httpMock.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(TEMPLATE_RESPONSE);
-      httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/moves`).flush({ transitionIds: [] });
+      httpMock.expectNone(`${environment.apiUrl}/workflow-templates/template-1`);
+      httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/moves`).flush({ transitionIds: [], moves: [] });
       fixture.detectChanges();
       expect(fixture.debugElement.queryAll(By.css('p-button')).length).toBe(0);
     });
@@ -158,7 +119,8 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
     expect(buttons.length).toBe(0);
   });
 
-  it("renders a transition button using the transition's own labelEn when the server offers it", () => {
+  // ACC-282 — the label is the move's own, from the moves read.
+  it("renders a transition button using the move's own labelEn when the server offers it", () => {
     setup(true);
 
     expect(component.availableTransitions().length).toBe(1);
@@ -254,6 +216,7 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
     it('opens the dialog with the open tasks, naming the stage it could not reach and the button pressed', () => {
       setup(true);
       fixture.componentRef.setInput('recordLabel', 'Quality Assurance Committee');
+      fixture.componentRef.setInput('stageLabel', 'Formation');
       refuse({ code: 'STAGE_TASKS_OPEN', tasks: [OPEN_TASK] });
 
       const refused = component.cantMove();

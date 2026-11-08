@@ -1,10 +1,8 @@
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { forkJoin } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { WorkflowService, WorkflowInstanceDto } from '../../services/workflow.service';
-import { WorkflowStageDto, WorkflowTemplateService, WorkflowTransitionDto } from '../../services/workflow-template.service';
+import { WorkflowService, WorkflowInstanceDto, WorkflowMoveDto } from '../../services/workflow.service';
 import { OpenStageTask, openStageTasks, plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
 import { LanguageService } from '../../../../core/services/language.service';
@@ -30,7 +28,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 //
 // The buttons are exactly the moves GET /workflows/instances/:id/moves returns
 // (ACC-271): a person's moves, for whoever works the stage. The app's own moves
-// are never offered.
+// are never offered. ACC-282: each move carries its label and the stage it leads
+// to, so this component reads no template (GET /workflow-templates/:id needs
+// workflows:view, which a pool member may not hold).
 @Component({
   selector: 'app-workflow-transition-actions',
   standalone: true,
@@ -73,35 +73,32 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 })
 export class WorkflowTransitionActionsComponent {
   private readonly workflowService = inject(WorkflowService);
-  private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly languageService = inject(LanguageService);
 
   readonly instance = input.required<WorkflowInstanceDto>();
   /** ACC-208 — the record's own name, for the "Can't move yet" dialog's context line. */
   readonly recordLabel = input<string | null>(null);
+  /** ACC-282 — the current stage's name, as the page shows it, for the same line. */
+  readonly stageLabel = input<string | null>(null);
   readonly transitioned = output<WorkflowInstanceDto>();
 
-  readonly transitionsFromCurrentStage = signal<WorkflowTransitionDto[]>([]);
-  /** ACC-271 — the ids the server says this person may press. */
-  private readonly pressable = signal<ReadonlySet<string>>(new Set());
+  /** ACC-271 / ACC-282 — the moves the server says this person may press, as it labels them. */
+  readonly moves = signal<WorkflowMoveDto[]>([]);
   readonly triggeringId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
   readonly warnings = signal<string[]>([]);
   /** ACC-208 — a move refused for open mandatory tasks: what was pressed, where to, and which tasks. */
   readonly cantMove = signal<{ label: string; toStage: string; tasks: OpenStageTask[] } | null>(null);
-  private readonly stages = signal<WorkflowStageDto[]>([]);
   private readonly translate = inject(TranslateService);
 
   /** "Infection Control Committee · Terms Review" — the record, then the stage it is held in. */
   readonly refusalContext = computed(() => {
-    const stage = this.stageName(this.instance().currentStageId);
+    const stage = this.stageLabel() ?? '';
     const record = this.recordLabel();
     return record ? `${record} · ${stage}` : stage;
   });
 
-  readonly availableTransitions = computed(() =>
-    this.transitionsFromCurrentStage().filter((t) => this.pressable().has(t.id)),
-  );
+  readonly availableTransitions = computed(() => this.moves());
 
   constructor() {
     effect(() => {
@@ -109,17 +106,12 @@ export class WorkflowTransitionActionsComponent {
     });
   }
 
-  transitionLabel(transition: WorkflowTransitionDto): string {
+  /** Tenant data, chosen by language (ACC-160). */
+  transitionLabel(transition: WorkflowMoveDto): string {
     return this.languageService.bilingual(transition.labelEn, transition.labelAr);
   }
 
-  /** Tenant data, chosen by language (ACC-160); an unknown id reads as nothing rather than the id. */
-  private stageName(stageId: string | null): string {
-    const stage = this.stages().find((s) => s.id === stageId);
-    return stage ? this.languageService.bilingual(stage.nameEn, stage.nameAr) : '';
-  }
-
-  onTrigger(transition: WorkflowTransitionDto): void {
+  onTrigger(transition: WorkflowMoveDto): void {
     const instanceId = this.instance().id;
     this.triggeringId.set(transition.id);
     this.error.set(null);
@@ -136,7 +128,7 @@ export class WorkflowTransitionActionsComponent {
         if (tasks) {
           this.cantMove.set({
             label: this.transitionLabel(transition),
-            toStage: this.stageName(transition.toStageId),
+            toStage: this.languageService.bilingual(transition.toStageNameEn, transition.toStageNameAr),
             tasks,
           });
           return;
@@ -150,9 +142,9 @@ export class WorkflowTransitionActionsComponent {
     // ACC-54 (finding F5) — clear BEFORE fetching, not only on success.
     //
     // This runs from an effect on instance(), so it re-runs the moment a
-    // transition fires and the instance advances. getTemplate() is an HTTP
-    // round-trip, and until it resolved this signal still held the PREVIOUS
-    // stage's transitions — so the page kept offering the old stage's action
+    // transition fires and the instance advances. The moves read is an HTTP
+    // round-trip (it was getTemplate() until ACC-282), and until it resolved this
+    // signal still held the PREVIOUS stage's transitions — so the page kept offering the old stage's action
     // (e.g. "Submit for Approval" after the instance had already moved to
     // Terms Review) for the whole duration of the request.
     //
@@ -166,23 +158,14 @@ export class WorkflowTransitionActionsComponent {
     // control, because the stale button is CLICKABLE and clicking it fails:
     // triggerTransition() rejects a transition whose fromStageId no longer
     // matches the instance's current stage.
-    this.transitionsFromCurrentStage.set([]);
-    this.pressable.set(new Set());
+    this.moves.set([]);
 
     if (!instance.currentStageId) return;
 
-    // ACC-271 PR 2 — the template for the labels and stages, and the server's
-    // answer for which moves this person may press. Neither alone shows a button.
-    forkJoin({
-      template: this.workflowTemplateService.getTemplate(instance.workflowTemplateId),
-      moves: this.workflowService.getMoves(instance.id),
-    }).subscribe({
-      next: ({ template, moves }) => {
-        this.stages.set(template.stages ?? []);
-        const stage = template.stages?.find((s) => s.id === instance.currentStageId);
-        this.pressable.set(new Set(moves.transitionIds));
-        this.transitionsFromCurrentStage.set(stage?.transitions ?? []);
-      },
+    // ACC-282 — one read: which moves this person may press, each with its label
+    // and where it leads. An empty answer (outside the pool) shows no button.
+    this.workflowService.getMoves(instance.id).subscribe({
+      next: (answer) => this.moves.set(answer.moves),
     });
   }
 }
