@@ -190,7 +190,7 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     expect(pool.actingHeadOf.has(head)).toBe(false);
     // And may move the record.
     const approve = await prisma.workflowTransition.findFirstOrThrow({ where: { fromStageId: stageId, toStage: { key: 'active' } } });
-    await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, cover, []);
+    await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, cover, ['committees:view']);
     const moved = await prisma.workflowInstanceStage.findFirstOrThrow({ where: { workflowInstanceId: c.instanceId, actorId: cover } });
     expect(moved).toMatchObject({ delegationReason: 'ACTING_HEAD', delegationContextId: o.unitId });
   });
@@ -211,7 +211,7 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     const c = await o.committeeAt('terms_review', stays);
 
     // Before: one approval of two is not enough.
-    await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, stays, []);
+    await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, stays, ['committees:view']);
     expect((await prisma.workflowInstance.findFirstOrThrow({ where: { id: c.instanceId } })).currentStageId).toBe(stageId);
 
     await users.deactivate(leaves, o.id, stays);
@@ -222,7 +222,7 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     ]);
 
     // The remaining member's approval is now everyone's.
-    await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, stays, []);
+    await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, stays, ['committees:view']);
     const after = await prisma.workflowInstance.findFirstOrThrow({ where: { id: c.instanceId } });
     const active = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: o.templateId, key: 'active' } });
     expect(after.currentStageId).toBe(active.id);
@@ -236,11 +236,11 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     const approve = await prisma.workflowTransition.findFirstOrThrow({ where: { fromStageId: stageId, toStage: { key: 'active' } } });
     const c = await o.committeeAt('terms_review', outsider);
 
-    const empty = await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, outsider, ['committees:approve']).catch((e: { getResponse: () => unknown }) => e.getResponse());
+    const empty = await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, outsider, ['committees:view', 'committees:approve']).catch((e: { getResponse: () => unknown }) => e.getResponse());
     expect(empty).toMatchObject({ statusCode: 409, code: 'STAGE_HAS_NO_ONE', stageNameEn: 'Terms Review' });
 
     await prisma.user.update({ where: { id: member }, data: { status: 'ACTIVE' } });
-    const outside = await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, outsider, ['committees:approve']).catch((e: { getResponse: () => unknown }) => e.getResponse());
+    const outside = await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, outsider, ['committees:view', 'committees:approve']).catch((e: { getResponse: () => unknown }) => e.getResponse());
     expect(outside).toMatchObject({ statusCode: 403, code: 'NOT_IN_STAGE_POOL' });
 
     expect((await prisma.workflowInstance.findFirstOrThrow({ where: { id: c.instanceId } })).currentStageId).toBe(stageId);

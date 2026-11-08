@@ -134,7 +134,7 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     const submit = await prisma.workflowTransition.findFirstOrThrow({
       where: { fromStage: { workflowTemplateId: o.templateId, key: 'formation' }, toStage: { key: 'terms_review' } },
     });
-    await workflow.triggerTransition(instance.id, { transitionId: submit.id }, o.id, o.adminId, []);
+    await workflow.triggerTransition(instance.id, { transitionId: submit.id }, o.id, o.adminId, ['committees:view']);
     const entry = await prisma.workflowInstanceStage.findFirstOrThrow({ where: { workflowInstanceId: instance.id, exitedAt: null } });
     return { committeeId: c.id, instanceId: instance.id, entryId: entry.id };
   }
@@ -175,7 +175,7 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     expect((await events(c.entryId)).map((e) => `${e.kind}:${e.userId}`).sort()).toEqual([`POOL_MEMBER_JOINED:${leaves}`, `POOL_MEMBER_JOINED:${stays}`].sort());
 
     // The leaver approves, then leaves the position.
-    await workflow.triggerTransition(c.instanceId, { transitionId: t.approveId }, o.id, leaves, []);
+    await workflow.triggerTransition(c.instanceId, { transitionId: t.approveId }, o.id, leaves, ['committees:view']);
     await prisma.user.update({ where: { id: leaves }, data: { positionId: null } });
 
     expect(await sweep(o)).toEqual({ joined: 0, left: 1 });
@@ -184,7 +184,7 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     expect(left.map((e) => [e.userId, e.reason, e.organizationId])).toEqual([[leaves, 'LEFT_POOL', o.id]]);
 
     // The one still in the pool decides it; the earlier approval stands.
-    await workflow.triggerTransition(c.instanceId, { transitionId: t.approveId }, o.id, stays, []);
+    await workflow.triggerTransition(c.instanceId, { transitionId: t.approveId }, o.id, stays, ['committees:view']);
     const after = await prisma.workflowInstance.findUniqueOrThrow({ where: { id: c.instanceId } });
     const active = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: o.templateId, key: 'active' } });
     expect(after.currentStageId).toBe(active.id);
