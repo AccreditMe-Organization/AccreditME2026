@@ -1,11 +1,33 @@
 # Step 282 — A committee member in the stage's pool sees and presses their moves, and votes
 
 Linear: [ACC-282](https://linear.app/accreditme/issue/ACC-282). Branch:
-`feature/ACC-282-pool-member-moves`, from `dev` at `64f7113` (ACC-281). Lane B. **Plan only; no
-code yet.**
+`feature/ACC-282-pool-member-moves`, from `dev` at `64f7113` (ACC-281). Lane B. **Built; §10 says where the build departs
+from the plan.**
 
 **What Ahmad asked (8 Nov):** a committee member in the current stage's pool can see and press
 their moves, and vote, without `workflows:view`.
+
+**Ahmad's answers (8 Nov, second round). They override §2–§4 where they differ:**
+
+1. **Read, not Empty.** Anyone who may open the record by ACC-281's rule (`committees:view`,
+   or an active member of that committee) may READ its workflow: the instance list,
+   `GET /instances/:id` and stage history. The committee page's Lifecycle card and Stage
+   history show for them.
+   - **Moves stay pool-only:** the moves read lists moves only for someone in the current
+     stage's pool, and an empty list for anyone else who may open the record.
+   - **Anyone who may not open the record** gets exactly the refusal a missing record gets,
+     as today.
+2. **Stage history:** open by the rule in 1.
+3. **Yes.** Pressing a move and voting also check that the caller may open the record, in the
+   same place as the pool check, with the identical not-found refusal.
+4. **Yes.** `GET /instances/:id` follows the same rule.
+5. **Yes.** The moves read carries each move's label and the next stage's name, and the
+   buttons stop reading `GET /workflow-templates/:id`.
+6. **Yes.** The four by-id reads are scoped by organisation in the same `where`.
+7. **Live, including pressing.** After the deploy: a temporary committee-role pool entry on
+   one al-nakheel committee's current stage, then three personas without `workflows:view`
+   (a pool member, a member outside the pool, a non-member), a vote if a committee sits on a
+   voting stage, and the entry removed afterwards.
 
 **Read for this plan:**
 
@@ -293,9 +315,40 @@ gate.
 ## 9. Progress
 
 - [x] Plan (this file), committed, not pushed
-- [ ] Ahmad's answers to §8
-- [ ] Backend: `InstanceAccessService`, the three reads, the moves' labels, the POSTs (Q3, Q6),
-      specs
-- [ ] Frontend: the page's instance read, the buttons from the moves read, Lifecycle and
-      history behind `workflows:view`, specs
-- [ ] Docs: SYSTEM-REFERENCE §2.19 and §3.21; CLAUDE.md Key Architecture Decisions (ACC-282)
+- [x] Ahmad's answers to §8 (8 Nov)
+- [x] Backend: `InstanceAccess`, the four reads, the moves' labels, the POSTs (Q3, Q6), the
+      change request's member clause, specs
+- [x] Frontend: the page's instance read for everyone it admits, the buttons from the moves
+      read, specs
+- [x] Docs: SYSTEM-REFERENCE §2.19.1 (new) and §3.21; CLAUDE.md Key Architecture Decisions
+      (ACC-282)
+- [ ] /ready-to-pr (Ahmad), then the live check (Q7) after the deploy
+
+---
+
+## 10. As built (8 Nov)
+
+Where the build departs from the plan text above (§2–§6 predate Ahmad's answers), and why.
+
+- **The rule is `InstanceAccess`, a plain class in `foundation/workflow/instance-access.ts`**,
+  not an injectable `InstanceAccessService`. `WorkflowService` builds it in its constructor
+  from the two services it already injects (`ObjectVisibilityService`, `StagePoolService`).
+  - A new constructor argument would have broken the six db-specs that build
+    `WorkflowService` by hand, for no gain.
+  - It is still the one place the rule lives.
+- **Reading is the parent rule alone** (Ahmad's answer 1), so the batched
+  `readable(instances, …)` and the list's pool filter of §2 were not built. The list returns
+  every instance of a record the viewer may open. The only pool read is the moves read's
+  (and a press's), one each.
+- **A change request's workflow admits members of its committee.** The parent rule for
+  `COMMITTEE_CHANGE_REQUEST` gained a member clause: one query on the membership, its
+  committee and the request together.
+  - This follows answer 1, because a member may open a change request (ACC-281).
+  - Without it, the change-request page's stepper and history would stay hidden from the
+    members who may open it.
+- **The "Can't move yet" line's stage name comes from the page** (`stageLabel`), because
+  the buttons no longer read the template.
+- **A seed quirk found, not changed:** the committee template's Approve moves are not
+  approval-path moves (`isApprovalPath` false), so on an ALL stage a single press of one
+  fires at once. Committee stages are ANY_ONE in the seed, so nothing live is affected. The
+  db-spec's vote case marks Approve as the approval path.
