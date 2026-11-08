@@ -16,12 +16,14 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { NavigationAccessService } from '../services/navigation-access.service';
-import { ROUTE_PERMISSIONS } from '../navigation/nav-items';
+import { ROUTE_PERMISSIONS, tenantNavItemForRoute } from '../navigation/nav-items';
+import { MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
 import { LANDING_ROUTE } from '../navigation/landing-route';
 
 export const permissionGuard: CanActivateFn = (route) => {
   const navigationAccessService = inject(NavigationAccessService);
   const router = inject(Router);
+  const myWork = inject(MyWorkCountsService);
 
   // The full CONFIGURED path this guard sits on, rebuilt from the route
   // hierarchy — not routeConfig.path alone, and not the resolved URL.
@@ -45,9 +47,11 @@ export const permissionGuard: CanActivateFn = (route) => {
   // Exact match first, then walk up. A child inherits its parent's
   // requirement unless it declares a stricter one of its own.
   let required: readonly string[] | undefined;
+  let routeKey = '';
   const segments = fullPath.split('/').filter((s) => s.length > 0);
   for (let i = segments.length; i > 0 && !required; i--) {
-    required = ROUTE_PERMISSIONS.get(segments.slice(0, i).join('/'));
+    routeKey = segments.slice(0, i).join('/');
+    required = ROUTE_PERMISSIONS.get(routeKey);
   }
 
   // No entry means this route was never meant to be permission-gated (the
@@ -70,6 +74,23 @@ export const permissionGuard: CanActivateFn = (route) => {
   // still be refused /users.
   if (required.every((permission) => navigationAccessService.hasPermission(permission)))
     return true;
+
+  // ACC-281 — the route's nav item may be met another way: a member of an
+  // active committee opens Committees without committees:view (the server
+  // answers their own committees). Every child (/committees/:id, its change
+  // requests) arrives here through the walk-up above, on the 'committees' key.
+  //   - Known member (My committees ready, total > 0): admit.
+  //   - Unknown (loading, or failed): admit and let the server decide. This is
+  //     ACC-70's rule again, and it is the hard reload straight onto
+  //     /committees/:id, which runs before the shell has started the counts.
+  //   - Known non-member (ready, total 0, which includes the module being closed):
+  //     the landing route, as before.
+  // Never a platform admin: their counts never load, so "loading" must not
+  // admit them.
+  if (tenantNavItemForRoute(routeKey)?.orWhen === 'committeeMember' && !navigationAccessService.isPlatformAdmin()) {
+    const committees = myWork.myCommittees();
+    if (committees.state !== 'ready' || committees.value.total > 0) return true;
+  }
 
   return router.parseUrl(LANDING_ROUTE);
 };

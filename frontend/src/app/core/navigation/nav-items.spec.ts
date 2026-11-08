@@ -237,6 +237,48 @@ describe('nav-items (ACC-79)', () => {
       );
       expect(committees?.moduleKey).toBeUndefined();
     });
+
+    // ACC-281 — the permission is met by holding it OR by sitting on an active
+    // committee (orWhen: 'committeeMember'), and only once membership is known.
+    describe('or a committee member (ACC-281)', () => {
+      const item = TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === 'committees')!;
+      const withMembership = (permissions: string[], member: boolean): NavAccess => ({
+        ...access({ permissions }),
+        isCommitteeMember: () => member,
+      });
+
+      it('carries orWhen: committeeMember, and keeps committees:view', () => {
+        expect(item.orWhen).toBe('committeeMember');
+        expect(item.requiredPermission).toBe('committees:view');
+      });
+
+      it('permission held, not a member: shows', () => {
+        expect(isNavItemVisible(item, withMembership(['committees:view'], false))).toBeTrue();
+      });
+
+      it('no permission, a member: shows', () => {
+        expect(isNavItemVisible(item, withMembership([], true))).toBeTrue();
+      });
+
+      it('no permission, not a member (or not known yet): hides', () => {
+        expect(isNavItemVisible(item, withMembership([], false))).toBeFalse();
+      });
+
+      it('no permission, and an access that cannot answer membership: hides', () => {
+        expect(isNavItemVisible(item, access({ permissions: [] }))).toBeFalse();
+      });
+
+      it('membership opens no other item', () => {
+        const others = TENANT_NAV_GROUPS.flatMap((g) => g.items).filter((i) => i.requiredPermission && i.key !== 'committees');
+        for (const other of others) {
+          expect(isNavItemVisible(other, withMembership([], true))).withContext(other.key).toBeFalse();
+        }
+      });
+
+      it('ROUTE_PERMISSIONS is unchanged: committees still maps to committees:view', () => {
+        expect(ROUTE_PERMISSIONS.get('committees')).toEqual(['committees:view']);
+      });
+    });
   });
 
   // ACC-120 slice 11, PR F (D1, B1) — the read-only Organisation page.

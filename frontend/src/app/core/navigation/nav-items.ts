@@ -60,6 +60,14 @@ export interface NavItem {
   //   which the shell loads after sign-in. The sidebar only reads its signals
   //   and fetches nothing.
   badge?: 'setupHealth' | 'myTasks';
+  // ACC-281 — a second way to meet requiredPermission. With 'committeeMember'
+  // the item also shows, and its route also opens, for someone who sits on at
+  // least one active committee, without the permission. The answer comes from
+  // MyWorkCountsService.isCommitteeMember (injectNavAccess(), nav-access.ts);
+  // the rail shows the item only once membership is KNOWN, and permissionGuard
+  // admits while it is still unknown and lets the server decide. Never for a
+  // platform admin. ROUTE_PERMISSIONS is not widened by it.
+  orWhen?: 'committeeMember';
   // Present ONLY on an entitlement-driven functional module. The item renders
   // only when NavigationAccessService.isModuleEnabled(moduleKey) — true for
   // FULL and READ_ONLY alike, because a read-only module is fully present and
@@ -155,6 +163,9 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-flag',
         route: '/committees',
         requiredPermission: 'committees:view',
+        // ACC-281 — a member of an active committee sees and opens it without
+        // committees:view: the server answers their own committees.
+        orWhen: 'committeeMember',
       },
       // ACC-120 slice 11, PR F (D1, option B1) — the Organisation pages,
       // read-only, for an org:view holder who does not administer (OS §6). An
@@ -383,11 +394,17 @@ export interface NavAccess {
   hasPermission(permission: string): boolean;
   isModuleEnabled(moduleKey: string): boolean;
   isPlatformAdmin(): boolean;
+  // ACC-281 — true only once membership is KNOWN: false while loading and after
+  // a failure. Optional, so an access without it (NavigationAccessService
+  // alone) never meets an orWhen.
+  isCommitteeMember?(): boolean;
 }
 
 export function isNavItemVisible(item: NavItem, access: NavAccess): boolean {
   const permitted =
-    !item.requiredPermission || access.hasPermission(item.requiredPermission);
+    !item.requiredPermission ||
+    access.hasPermission(item.requiredPermission) ||
+    (item.orWhen === 'committeeMember' && access.isCommitteeMember?.() === true);
   const entitled = !item.moduleKey || access.isModuleEnabled(item.moduleKey);
   const notExcluded = !item.hiddenWithPermission || !access.hasPermission(item.hiddenWithPermission);
   return permitted && entitled && notExcluded;
@@ -404,6 +421,14 @@ export function isNavModuleOpen(itemKey: string, access: Pick<NavAccess, 'isModu
   const item = TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === itemKey);
   if (!item) return false;
   return !item.moduleKey || access.isModuleEnabled(item.moduleKey);
+}
+
+/**
+ * ACC-281 — the tenant nav item whose route is this configured path ('committees'
+ * for /committees), for permissionGuard's orWhen. Undefined for any other path.
+ */
+export function tenantNavItemForRoute(routeKey: string): NavItem | undefined {
+  return TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.route.replace(/^\//, '') === routeKey);
 }
 
 /** ACC-123 — a group the caller may see at all, before its items are filtered. */

@@ -17,6 +17,16 @@ import { permissionGuard } from './permission.guard';
 import { NavigationAccessService } from '../services/navigation-access.service';
 import { LANDING_ROUTE } from '../navigation/landing-route';
 import { ADMIN_ACCESS } from '../navigation/admin-access';
+import { signal } from '@angular/core';
+import { Loadable, MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
+import { MyCommitteesDto } from '../../foundation/committees/services/committee.service';
+
+// ACC-281 — My committees as the guard reads it. A KNOWN non-member (ready, 0)
+// unless a spec says otherwise, so every denial below still denies.
+type Committees = Loadable<MyCommitteesDto>;
+const NOT_A_MEMBER: Committees = { state: 'ready', value: { total: 0, rows: [] } as MyCommitteesDto };
+const A_MEMBER: Committees = { state: 'ready', value: { total: 1, rows: [] } as unknown as MyCommitteesDto };
+const fakeMyWork = (committees: Committees) => ({ myCommittees: signal(committees).asReadonly() });
 
 // ACC-70 — the deny path is the reason this guard exists, so it is tested
 // first and hardest. An allow-only suite would pass just as happily against
@@ -24,10 +34,11 @@ import { ADMIN_ACCESS } from '../navigation/admin-access';
 describe('permissionGuard', () => {
   let router: Router;
 
-  function setup(opts: { permissions: string[]; trustworthy?: boolean }): void {
+  function setup(opts: { permissions: string[]; trustworthy?: boolean; committees?: Committees; platformAdmin?: boolean }): void {
     const stub: Partial<NavigationAccessService> = {
       hasPermission: (p: string) => opts.permissions.includes(p),
       hasTrustworthyPermissions: () => opts.trustworthy ?? true,
+      isPlatformAdmin: () => opts.platformAdmin ?? false,
     };
     // reset first — several specs below call setup() twice to compare the
     // same route under two different permission sets, and TestBed cannot be
@@ -37,6 +48,7 @@ describe('permissionGuard', () => {
       providers: [
         provideRouter([]),
         { provide: NavigationAccessService, useValue: stub },
+        { provide: MyWorkCountsService, useValue: fakeMyWork(opts.committees ?? NOT_A_MEMBER) },
       ],
     });
     router = TestBed.inject(Router);
@@ -129,6 +141,72 @@ describe('permissionGuard', () => {
 
     setup({ permissions: [] });
     expect(run('committees', ':id')).toEqual(router.parseUrl(LANDING_ROUTE));
+  });
+
+  // ACC-281 — Committees is also open to a member of an active committee, by
+  // the item's orWhen: 'committeeMember'. ROUTE_PERMISSIONS is unchanged.
+  describe('a committee member without committees:view (ACC-281)', () => {
+    const landing = () => router.parseUrl(LANDING_ROUTE);
+    const LOADING: Committees = { state: 'loading' };
+    const FAILED: Committees = { state: 'failed' };
+
+    it('committees:view admits, whatever the membership', () => {
+      setup({ permissions: ['committees:view'], committees: NOT_A_MEMBER });
+      expect(run('committees')).toBe(true);
+    });
+
+    it('a known member is admitted', () => {
+      setup({ permissions: [], committees: A_MEMBER });
+      expect(run('committees')).toBe(true);
+    });
+
+    // The hard reload straight onto /committees/:id: the shell has not started
+    // the counts yet, and an unknown answer is not a negative one (ACC-70).
+    it('membership still loading: admitted, and the server decides', () => {
+      setup({ permissions: [], committees: LOADING });
+      expect(run('committees')).toBe(true);
+      expect(run('committees', ':id')).toBe(true);
+    });
+
+    it('membership failed to load: admitted, and the server decides', () => {
+      setup({ permissions: [], committees: FAILED });
+      expect(run('committees')).toBe(true);
+    });
+
+    it('a known non-member is sent to the landing route', () => {
+      setup({ permissions: [], committees: NOT_A_MEMBER });
+      expect(run('committees')).toEqual(landing());
+      expect(run('committees', ':id')).toEqual(landing());
+    });
+
+    // Their counts never load, so "loading" must not admit them.
+    it('a platform admin gets no alternative, even while membership is loading', () => {
+      setup({ permissions: [], committees: LOADING, platformAdmin: true });
+      expect(run('committees')).toEqual(landing());
+      setup({ permissions: [], committees: A_MEMBER, platformAdmin: true });
+      expect(run('committees')).toEqual(landing());
+    });
+
+    it('every committees child follows the same rule, through the walk-up', () => {
+      // As committees.routes.ts configures them: one path per child.
+      const children = [
+        ['committees', ':id'],
+        ['committees', ':id/change-requests/new'],
+        ['committees', ':id/change-requests/:requestId'],
+        ['committees', ':id/change-requests/:requestId/edit'],
+      ];
+      setup({ permissions: [], committees: A_MEMBER });
+      for (const c of children) expect(run(...c)).withContext(c.join('/')).toBe(true);
+      setup({ permissions: [], committees: NOT_A_MEMBER });
+      for (const c of children) expect(run(...c)).withContext(c.join('/')).toEqual(landing());
+    });
+
+    it('membership opens no other route', () => {
+      setup({ permissions: [], committees: A_MEMBER });
+      expect(run('users')).toEqual(landing());
+      expect(run('organization')).toEqual(landing());
+      expect(run('roles')).toEqual(landing());
+    });
   });
 
   it('allows an UNMAPPED route — absence of an entry is not a denial', () => {
@@ -310,6 +388,9 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
         // LanguageService, which needs TranslateService.
         provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
         NavigationAccessService,
+        // ACC-281 — a zero-permission user who sits on no committee: the
+        // committees route still denies them (a member is admitted, below).
+        { provide: MyWorkCountsService, useValue: fakeMyWork(NOT_A_MEMBER) },
       ],
     });
     router = TestBed.inject(Router);
