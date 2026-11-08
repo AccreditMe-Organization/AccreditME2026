@@ -322,7 +322,8 @@ gate.
       read, specs
 - [x] Docs: SYSTEM-REFERENCE §2.19.1 (new) and §3.21; CLAUDE.md Key Architecture Decisions
       (ACC-282)
-- [ ] /ready-to-pr (Ahmad), then the live check (Q7) after the deploy
+- [x] /ready-to-pr (Ahmad)
+- [ ] The live check (Q7), after the deploy
 
 ---
 
