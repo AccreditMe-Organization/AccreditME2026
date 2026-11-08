@@ -472,6 +472,7 @@ ACC-255: What each workflow stage allows, and stage flags ✅
 ACC-271: Stage pools (PRs 1, 2, 4 merged; 3 and 5 to come)
 ACC-272: Role permissions as a grouped list, and "A user's permissions" ✅
 ACC-279: Home to the App Shell design: one Home, admin block, work counts
+ACC-281: Committee members open their own committees; paged awaiting reads
 
 ### Onboarding
 Tenant Onboarding wizard
@@ -4644,6 +4645,46 @@ Briefly:
   a person.** Eight change-request lines became noun phrases («مقدَّم من
   {{name}}»), and `home-arabic.spec.ts` pins them.
 - **No migration.**
+
+## Key Architecture Decisions (ACC-281)
+
+Committee members open their own committees, and the paged awaiting reads. Full mechanism:
+SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes:
+`backend/Plans/step-281-member-committees.md`. Briefly:
+
+- **`committees:view` IS UNCHANGED; MEMBERSHIP ADDS A PERSON'S OWN COMMITTEES.** A holder
+  sees every committee, for oversight. Someone without it who is an active member of an
+  active committee sees all of THAT committee's details, read only: the page, members,
+  sub-committees, Membership history and change requests. Anyone else sees none.
+- **ONE MEMBERSHIP RULE, `common/services/committee-membership.ts`.** An active
+  `CommitteeMember` on an active `Committee`, in the organisation, checked live (a member
+  who leaves is out on the next request). One indexed query, or one batch; never per row,
+  and never for a `committees:view` holder. Never write a second copy.
+- **THE PARENT RULE GAINS A MEMBER CLAUSE, FOR COMMITTEE ONLY.** `assertCanView(…,
+  viewerId?)`: a call site that omits the viewer keeps the old rule, so a forgotten one
+  fails closed. A refused read is still today's 403 "Required permission: committees:view",
+  existence-neutral because the membership query answers the same for an invented id.
+- **A WRITE NEEDS THE ACTION'S OWN PERMISSION AND (`committees:view` OR MEMBERSHIP OF THAT
+  COMMITTEE)**: edit, add, change seat and remove a member; create, edit, submit and
+  withdraw a change request. The stage rules and every refusal code still apply after it. A
+  non-member without `committees:view` gets the 404 a missing committee gets. **Deciding
+  (approve, return, reject) is NOT opened to members**: `committees:view` and
+  `committees:approve`, never the requester. This is the interim rule until ACC-283.
+- **Membership does not widen task visibility** (`taskVisibleSql` is unchanged); it names a
+  member's own committee on their task rows.
+- **The committee read names what the page used to read every committee for**: `parent`
+  and `reportsTo` (with `mayOpen`) and the stage's names. Membership history names its
+  people and seats. The page sends only the reads the viewer may make.
+- **`GET /workflows/awaiting-me?skip=&take=`** pages the list (`take` 1–50), oldest first;
+  with no parameters the response is unchanged. Candidates are capped at 1,000.
+- **`GET /committee-change-requests/awaiting-decision` is filtered in SQL**, the stage keys
+  derived from `awaitsDecision()`, capped at 200.
+- **`MyWorkCountsService.isCommitteeMember`** is lane A's signal for the rail and the route
+  guard. Until lane A ships that change, the guard still refuses `/committees` without
+  `committees:view`. A platform admin's `init()` asks nothing.
+- **The stage routes keep `workflows:view`**: a member without it has no timeline or move
+  buttons. ACC-282.
+- **No migration.** Nothing on the per-request path.
 
 ## Open / Deferred Items
 

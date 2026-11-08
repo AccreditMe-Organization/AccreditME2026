@@ -59,6 +59,8 @@ function setup(options: { counts?: Record<string, number>; answer?: string; avai
     Array.from({ length: n }, () => ({ userId, task: { status: 'PENDING', dueAt: null, priority: 'MEDIUM' } })),
   );
   const prisma = {
+    // ACC-281 — the membership read a caller without committees:view pays; nobody is a member here.
+    committeeMember: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
     committee: { findFirst: jest.fn().mockResolvedValue(options.committee === false ? null : { id: 'cmt-1' }) },
     meeting: { findFirst: jest.fn().mockResolvedValue(null) },
     taskAssignee: { findMany: jest.fn().mockResolvedValue(rows) },

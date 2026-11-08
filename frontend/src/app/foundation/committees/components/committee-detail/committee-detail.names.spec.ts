@@ -48,7 +48,7 @@ const COMMITTEE = (over: Partial<CommitteeDetailDto> = {}): CommitteeDetailDto =
   stageRules: ACTIVE_RULES,
   typeValue: { id: 'type-1', key: 'quality', labelEn: 'Quality Committee', labelAr: 'لجنة الجودة', offered: true },
   orgUnit: { id: 'unit-qa', nameEn: 'Quality Department', nameAr: 'إدارة الجودة' },
-  ...over,
+  parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, ...over,
 });
 
 describe('CommitteeDetailComponent — the type and owning unit come with the committee (ACC-265)', () => {

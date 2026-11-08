@@ -151,24 +151,45 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
       expect(history.detail(as({ action: 'JOINED', roleValueId: 'r1', approvedBy: null }))).toContain('Secretary');
     });
 
+    // ACC-281 — the history read names its own people and seats, so a member
+    // without users:view or lookups:view (no lists passed) still reads them.
+    it('names the person, seat and approver from the history read, with no lists', () => {
+      const history = build(CommitteeMembershipHistoryPanelComponent, { events: [], committeeName: 'Quality Committee' });
+      const e = as<Parameters<typeof history.detail>[0]>({
+        action: 'JOINED',
+        userId: 'u1',
+        userName: 'Huda Al-Harbi',
+        roleValueId: 'r1',
+        roleLabelEn: 'Secretary',
+        roleLabelAr: null,
+        approvedBy: 'u2',
+        approvedByName: 'Fahad Al-Otaibi',
+      });
+      const instant = spyOn(TestBed.inject(TranslateService), 'instant').and.callThrough();
+      expect(history.name(e)).toBe('Huda Al-Harbi');
+      expect(history.detail(e)).toContain('Secretary');
+      // The no-op loader drops parameters from the text; the call carries the name.
+      expect(instant).toHaveBeenCalledWith('committee.approvedBy', { name: 'Fahad Al-Otaibi' });
+    });
+
     // THE `?? ''` BLANK. Before ACC-160 these returned '' in this case.
     it('names the stage in English rather than leaving it blank', () => {
       const c = build(CommitteeDetailComponent);
-      c.allCommittees.set([as({ id: 'c-1', currentStageNameEn: 'Active', currentStageNameAr: null })]);
+      c.committee.set(as({ id: 'c-1', currentStageNameEn: 'Active', currentStageNameAr: null }));
       expect(c.currentStageName()).toBe('Active');
     });
 
     // ACC-230 — a sub-committee's stage is said by the Sub-committees panel now.
     it('names a sub-committee and its stage in English when they have no Arabic', () => {
       const p = build(CommitteeSubCommitteesPanelComponent, { committeeId: 'c-1', committeeName: 'Q' });
-      const sub = as<Parameters<typeof p.stage>[0]>({ id: 's-1', nameEn: 'Hand Hygiene', nameAr: null, stageNameEn: 'Active', stageNameAr: null, memberCount: 3 });
+      const sub = as<Parameters<typeof p.stage>[0]>({ id: 's-1', nameEn: 'Hand Hygiene', nameAr: null, stageNameEn: 'Active', stageNameAr: null, memberCount: 3, mayOpen: true });
       expect(p.name(sub)).toBe('Hand Hygiene');
       expect(p.stage(sub)).toBe('Active');
     });
 
     it('still shows no stage when there is none at all', () => {
       const p = build(CommitteeSubCommitteesPanelComponent, { committeeId: 'c-1', committeeName: 'Q' });
-      expect(p.stage(as({ id: 'x', nameEn: 'X', nameAr: null, stageNameEn: null, stageNameAr: null, memberCount: 0 }))).toBe('');
+      expect(p.stage(as({ id: 'x', nameEn: 'X', nameAr: null, stageNameEn: null, stageNameAr: null, memberCount: 0, mayOpen: true }))).toBe('');
     });
   });
 

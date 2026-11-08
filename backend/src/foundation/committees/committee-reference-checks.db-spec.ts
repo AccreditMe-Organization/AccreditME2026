@@ -75,7 +75,7 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
     );
 
   const update = (o: Org, id: string, dto: Record<string, unknown>) =>
-    code(committees.updateCommittee(id, dto as never, o.organizationId, o.actorId));
+    code(committees.updateCommittee(id, dto as never, o.organizationId, o.actorId, ['committees:view']));
 
   beforeAll(async () => {
     await prisma.onModuleInit();

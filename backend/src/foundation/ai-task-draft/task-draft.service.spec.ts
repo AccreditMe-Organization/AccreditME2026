@@ -38,6 +38,8 @@ const orgRow = {
 
 function setup(answer: string = GOOD) {
   const prisma = {
+    // ACC-281 — the membership read a caller without committees:view pays; nobody is a member here.
+    committeeMember: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
     organization: { findFirst: jest.fn().mockResolvedValue(orgRow) },
     aiFeatureCost: {
       findMany: jest.fn().mockResolvedValue([{ featureKey: 'task_description_drafting', creditCost: 2, restricted: false, allowedOrganizationIds: [] }]),

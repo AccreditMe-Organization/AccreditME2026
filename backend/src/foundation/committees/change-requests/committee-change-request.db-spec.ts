@@ -574,7 +574,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       for (const call of [
         (id: string) => requests.list(id, {}, other.org, asOther),
         (id: string) => requests.openSummary(id, other.org, asOther),
-        (id: string) => requests.preview(id, { quorumCount: 9 }, other.org),
+        (id: string) => requests.preview(id, { quorumCount: 9 }, other.org, { userId: 'viewer-1', permissions: ['committees:view'] }),
         (id: string) => requests.create(id, { changes: { quorumCount: 9 }, reason: 'r' }, other.org, other.requester),
       ]) {
         const real = await body(call(w.committee));
@@ -584,6 +584,184 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(await requests.awaitingDecision(other.org, asOther)).toEqual([]);
       expect((await prisma.committee.findFirstOrThrow({ where: { id: w.committee } })).quorumCount).toBe(3);
       expect((await requests.getOne(r.id, w.org, w.approver)).status).toBe('under_review');
+    });
+  });
+
+  // ── ACC-281 — members of THIS committee (Ahmad, 7 Nov) ───────────────────────
+  //
+  // A member without committees:view reads every request of their committee, and
+  // raises, edits, submits and withdraws with the action's own permission.
+  // Deciding (approve, return, reject) is not opened to them: those routes keep
+  // committees:view at the route (pinned in committee-change-request.controller
+  // .spec.ts with the real guard). Four callers on each: an active member, a
+  // former member, a non-member (none holding committees:view), and a view holder.
+
+  describe('ACC-281 — members of the committee', () => {
+    interface People {
+      member: ChangeRequestViewer;
+      former: ChangeRequestViewer;
+      stranger: ChangeRequestViewer;
+    }
+
+    async function people(w: World): Promise<People> {
+      const make = async (name: string, active: boolean | null) => {
+        const id = (await prisma.user.create({ data: { organizationId: w.org, email: `${w.slug}-${name}@example.test`, name, status: 'ACTIVE' } })).id;
+        if (active !== null) {
+          await prisma.committeeMember.create({
+            data: { organizationId: w.org, committeeId: w.committee, userId: id, roleValueId: 'seat', isActive: active, leftAt: active ? null : new Date() },
+          });
+        }
+        return { userId: id, permissions: [EDIT] };
+      };
+      return { member: await make('Member', true), former: await make('Former', false), stranger: await make('Stranger', null) };
+    }
+
+    const READ_REFUSED = [403, expect.objectContaining({ message: 'Required permission: committees:view' })];
+
+    it('reads: a member and a view holder read; a former member and a stranger get the identical 403', async () => {
+      const w = await world();
+      const p = await people(w);
+      const r = await submitted(w);
+      const reads: [string, (v: ChangeRequestViewer, id: string) => Promise<unknown>][] = [
+        ['list', (v, id) => requests.list(id, {}, w.org, v)],
+        ['open', (v, id) => requests.openSummary(id, w.org, v)],
+        ['preview', (v, id) => requests.preview(id, { quorumCount: 4 }, w.org, v)],
+      ];
+      for (const [name, read] of reads) {
+        expect([name, await outcome(read(p.member, w.committee))]).toEqual([name, 'OK']);
+        expect([name, await outcome(read(w.reader, w.committee))]).toEqual([name, 'OK']);
+        expect([name, await body(read(p.former, w.committee))]).toEqual([name, READ_REFUSED]);
+        expect([name, await body(read(p.stranger, w.committee))]).toEqual([name, READ_REFUSED]);
+        expect([name, await body(read(p.stranger, randomUUID()))]).toEqual([name, READ_REFUSED]);
+      }
+      // One request by id: the same, and identical for an invented id.
+      expect(await outcome(requests.getOne(r.id, w.org, p.member))).toBe('OK');
+      expect(await body(requests.getOne(r.id, w.org, p.former))).toEqual(READ_REFUSED);
+      expect(await body(requests.getOne(r.id, w.org, p.stranger))).toEqual(READ_REFUSED);
+      expect(await body(requests.getOne(randomUUID(), w.org, p.stranger))).toEqual(READ_REFUSED);
+    });
+
+    it('raise, edit and submit: a member with edit_details does; a former member and a stranger get the 404 a missing committee gets', async () => {
+      const w = await world();
+      const p = await people(w);
+      const raise = (v: ChangeRequestViewer, id = w.committee) => requests.create(id, { changes: { quorumCount: 4 }, reason: 'r' }, w.org, v);
+      expect(await body(raise(p.former))).toEqual([404, expect.objectContaining({ message: 'Committee not found' })]);
+      expect(await body(raise(p.stranger))).toEqual([404, expect.objectContaining({ message: 'Committee not found' })]);
+      expect(await body(raise(p.stranger, randomUUID()))).toEqual(await body(raise(p.stranger)));
+
+      const draft = await raise(p.member);
+      expect(draft.status).toBe('draft');
+      expect(await outcome(requests.update(draft.id, { reason: 'Clearer' }, w.org, p.member))).toBe('OK');
+
+      // Someone else's request: a stranger gets the 404 a missing request gets, before "not the requester".
+      const missing = await body(requests.update(randomUUID(), { reason: 'x' }, w.org, p.stranger));
+      expect(missing).toEqual([404, expect.objectContaining({ message: 'Change request not found' })]);
+      expect(await body(requests.update(draft.id, { reason: 'x' }, w.org, p.stranger))).toEqual(missing);
+      expect(await body(requests.submit(draft.id, w.org, p.stranger))).toEqual(missing);
+
+      expect(await outcome(requests.submit(draft.id, w.org, p.member))).toBe('OK');
+      // Every refusal code is kept: without edit_details, a member is refused by the action's key.
+      expect(await outcome(raise({ userId: p.member.userId, permissions: [] }, w.other))).toBe('CHANGE_REQUEST_NOT_ALLOWED');
+    });
+
+    it('withdraw: the member who raised it withdraws; once they leave the committee, the request is the 404 a missing one gets', async () => {
+      const w = await world();
+      const p = await people(w);
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'r' }, w.org, p.member);
+      await prisma.committeeMember.updateMany({ where: { committeeId: w.committee, userId: p.member.userId }, data: { isActive: false, leftAt: new Date() } });
+      expect(await body(requests.withdraw(draft.id, w.org, p.member))).toEqual([404, expect.objectContaining({ message: 'Change request not found' })]);
+      await prisma.committeeMember.updateMany({ where: { committeeId: w.committee, userId: p.member.userId }, data: { isActive: true, leftAt: null } });
+      expect(await outcome(requests.withdraw(draft.id, w.org, p.member))).toBe('OK');
+    });
+
+    itEnforcesTenantIsolation('change requests for a member of another organisation\'s committee', async () => {
+      const w = await world();
+      const p = await people(w);
+      const r = await submitted(w);
+      const other = await world();
+      // The member of w's committee, asking inside other's organisation.
+      expect(await body(requests.getOne(r.id, other.org, p.member))).toEqual(READ_REFUSED);
+      expect(await body(requests.list(w.committee, {}, other.org, p.member))).toEqual(READ_REFUSED);
+      expect(await body(requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'r' }, other.org, p.member))).toEqual([
+        404,
+        expect.objectContaining({ message: 'Committee not found' }),
+      ]);
+    });
+  });
+
+  // ── ACC-281 — the awaiting-decision list, filtered in the query, capped at 200 ──
+
+  describe('ACC-281 — awaiting decision', () => {
+    it('returns exactly the requests awaitsDecision() keeps — newest instance wins, the viewer\'s own left out — oldest submitted first', async () => {
+      const w = await world();
+      // Under review, by the requester: the approver sees it.
+      const waiting = await submitted(w);
+      // A draft, a returned one and a withdrawn one: none waits.
+      const draft = await requests.create(w.other, { changes: { quorumCount: 4 }, reason: 'draft' }, w.org, w.requester);
+      const returnedOne = await requests.create(w.other, { changes: { quorumCount: 5 }, reason: 'r' }, w.org, w.requester).catch(() => null);
+      expect(returnedOne).toBeNull(); // one open request per committee: the draft holds the place
+      await requests.withdraw(draft.id, w.org, w.requester);
+
+      const rows = await requests.awaitingDecision(w.org, w.approver);
+      expect(rows.map((r) => r.id)).toEqual([waiting.id]);
+      // The requester never decides their own, so it is not waiting on them.
+      expect(await requests.awaitingDecision(w.org, w.requester)).toEqual([]);
+      // Returned: no longer waiting.
+      await requests.returnForChanges(waiting.id, { note: 'more detail' }, w.org, w.approver);
+      expect(await requests.awaitingDecision(w.org, w.approver)).toEqual([]);
+    });
+
+    it('is capped at 200, oldest submitted first — and the stage filter is in the query, not after it', async () => {
+      const w = await world();
+      // 201 requests standing in Under review, written directly (the engine would
+      // allow one open request per committee): each with its own committee and
+      // its own instance pointed at the seeded under_review stage.
+      const tpl = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST' } });
+      const underReview = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: tpl.id, key: 'under_review' } });
+      const withdrawn = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: tpl.id, key: 'withdrawn' } });
+      const base = Date.UTC(2026, 9, 1);
+      // 50 OLDER requests that were submitted and then withdrawn. If the query did
+      // not filter by stage, they would take 50 of the 200 places and the guard
+      // after it would drop them, leaving 150: so 200 proves the filter is in SQL.
+      for (let i = 0; i < 50; i++) {
+        const c = await prisma.committee.create({ data: { organizationId: w.org, nameEn: `W${i}`, typeValueId: 'type', orgUnitId: w.unit } });
+        const r = await prisma.committeeChangeRequest.create({
+          data: { organizationId: w.org, committeeId: c.id, number: 1, requestedById: w.requester.userId, reason: 'r', changes: { quorumCount: 4 }, submittedAt: new Date(base - (i + 1) * 60_000) },
+        });
+        await prisma.workflowInstance.create({
+          data: { organizationId: w.org, workflowTemplateId: tpl.id, objectType: 'COMMITTEE_CHANGE_REQUEST', objectId: r.id, status: 'COMPLETED', currentStageId: withdrawn.id },
+        });
+      }
+      for (let i = 0; i < 201; i++) {
+        const c = await prisma.committee.create({ data: { organizationId: w.org, nameEn: `C${i}`, typeValueId: 'type', orgUnitId: w.unit } });
+        const r = await prisma.committeeChangeRequest.create({
+          data: {
+            organizationId: w.org,
+            committeeId: c.id,
+            number: 1,
+            requestedById: w.requester.userId,
+            reason: 'r',
+            changes: { quorumCount: 4 },
+            submittedAt: new Date(base + i * 60_000),
+          },
+        });
+        await prisma.workflowInstance.create({
+          data: { organizationId: w.org, workflowTemplateId: tpl.id, objectType: 'COMMITTEE_CHANGE_REQUEST', objectId: r.id, status: 'IN_PROGRESS', currentStageId: underReview.id },
+        });
+      }
+      const rows = await requests.awaitingDecision(w.org, w.approver);
+      expect(rows).toHaveLength(200);
+      const times = rows.map((r) => new Date(r.submittedAt!).getTime());
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+      expect(times[0]).toBe(base);
+    });
+
+    itEnforcesTenantIsolation('awaiting decision filtered in the query', async () => {
+      const w = await world();
+      await submitted(w);
+      const other = await world();
+      expect(await requests.awaitingDecision(other.org, other.approver)).toEqual([]);
+      expect(await requests.awaitingDecision(w.org, w.approver)).toHaveLength(1);
     });
   });
 
@@ -614,7 +792,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
 
     it('the preview names what approval would change, and how many votes keep their quorum', async () => {
       const w = await world();
-      const preview = await requests.preview(w.committee, { quorumCount: 5, nameEn: 'New name', meetingFrequency: 'MONTHLY' }, w.org);
+      const preview = await requests.preview(w.committee, { quorumCount: 5, nameEn: 'New name', meetingFrequency: 'MONTHLY' }, w.org, { userId: 'viewer-1', permissions: ['committees:view'] });
       expect(preview.changedFields).toEqual(['nameEn', 'quorumCount']);
       expect(preview.impacts).toEqual([{ code: 'QUORUM', from: 3, to: 5, inProgress: 0 }, { code: 'NAME' }, { code: 'TERMS_TASK' }]);
     });
@@ -647,7 +825,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         await openEntry(w, w.committee, 'formation'); // this record, but the vote is the other committee's
         await openEntry(w, w.committee, 'dissolution_pending'); // not a Committee vote stage
 
-        const preview = await requests.preview(w.committee, { quorumCount: 5 }, w.org);
+        const preview = await requests.preview(w.committee, { quorumCount: 5 }, w.org, { userId: 'viewer-1', permissions: ['committees:view'] });
         expect(preview.impacts.find((i) => i.code === 'QUORUM')).toEqual({ code: 'QUORUM', from: 3, to: 5, inProgress: 1 });
         expect(await workflow.countOpenCommitteeVotes(w.org, w.committee)).toBe(1);
         expect(await workflow.countOpenCommitteeVotes(w.org, w.other)).toBe(2);
@@ -814,7 +992,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         [w.other]: { en: 'Patient Safety Committee', ar: 'لجنة سلامة المرضى' },
       });
 
-      const preview = await requests.preview(w.committee, { reportingToCommitteeId: w.other }, w.org);
+      const preview = await requests.preview(w.committee, { reportingToCommitteeId: w.other }, w.org, { userId: 'viewer-1', permissions: ['committees:view'] });
       expect(preview.labels).toEqual({ [w.other]: { en: 'Patient Safety Committee', ar: 'لجنة سلامة المرضى' } });
     });
 

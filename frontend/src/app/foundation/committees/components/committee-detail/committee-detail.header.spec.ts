@@ -47,7 +47,7 @@ const COMMITTEE = (stageRules: CommitteeStageRulesDto): CommitteeDetailDto => ({
   isDissolving: stageRules.flags.includes('DISSOLVING'),
   stageRules,
   typeValue: null,
-  orgUnit: null,
+  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null,
 });
 
 const ALL = ['committees:edit_details', 'committees:add_member', 'committees:remove_member', 'committees:change_member_role'];

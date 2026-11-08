@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../../../generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -14,11 +14,13 @@ import { lockWorkflowInstance } from '../../task/stage-deadline';
 import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-reference-checks';
 import { committeeTypeValues } from '../committee-type-values';
 import { ChangeRequestRefusal } from './change-request-refusal';
+import { assertMaySeeCommittee, assertMayWriteCommittee, maySeeCommittee } from '../../../common/services/committee-membership';
 import {
   ACTION_TARGET_STAGE,
   ChangeRequestAction,
   CommitteeStageRules,
   assertCommitteeAllowsRaise,
+  AWAITING_DECISION_KEYS,
   awaitsDecision,
   committeeAllowsRaise,
   assertCommitteeStageAllows,
@@ -76,6 +78,9 @@ export type ChangeValues = Partial<Record<ChangeField, ChangeValue>>;
 const REQUIRED_FIELDS: ReadonlySet<ChangeField> = new Set<ChangeField>(['nameEn', 'typeValueId', 'quorumCount', 'meetingFrequency']);
 
 const OBJECT_TYPE = 'COMMITTEE_CHANGE_REQUEST' as const;
+
+/** ACC-281 — the most requests the awaiting-decision list returns, oldest submitted first. */
+export const AWAITING_DECISION_CAP = 200;
 const PAGE = 50;
 const STAGE_ORDER = new Map<string, number>(CHANGE_REQUEST_STAGE_KEYS.map((k, i) => [k, i]));
 
@@ -207,6 +212,9 @@ export class CommitteeChangeRequestService {
 
   async create(committeeId: string, dto: CreateChangeRequestDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
     requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
+    // ACC-281 — and committees:view OR an active member of THIS committee; anyone
+    // else gets the identical 404 a missing committee gets.
+    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer));
     const committee = await this.loadCommittee(committeeId, organizationId);
     const changes = normaliseChanges(dto.changes, committee);
 
@@ -270,6 +278,7 @@ export class CommitteeChangeRequestService {
   async update(id: string, dto: UpdateChangeRequestDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
     requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
     const loaded = await this.loadRequest(id, organizationId);
+    await this.assertMayWriteRequest(loaded.row, organizationId, viewer); // ACC-281
     assertRequester(loaded.row, viewer);
 
     const { before, after } = await this.prisma.$transaction(async (tx) => {
@@ -317,6 +326,7 @@ export class CommitteeChangeRequestService {
   async submit(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
     requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
     const loaded = await this.loadRequest(id, organizationId);
+    await this.assertMayWriteRequest(loaded.row, organizationId, viewer); // ACC-281
     assertRequester(loaded.row, viewer);
     assertRequestStageAllows(loaded.stageKey, 'submit');
 
@@ -377,6 +387,7 @@ export class CommitteeChangeRequestService {
 
   async withdraw(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
     const loaded = await this.loadRequest(id, organizationId);
+    await this.assertMayWriteRequest(loaded.row, organizationId, viewer); // ACC-281
     const own = loaded.row.requestedById === viewer.userId;
     const allowed = (stage: string | null): boolean => {
       assertRequestStageAllows(stage, 'withdraw');
@@ -586,6 +597,12 @@ export class CommitteeChangeRequestService {
 
   async getOne(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
     const row = await this.prisma.committeeChangeRequest.findFirst({ where: { id, organizationId }, include: REQUEST_INCLUDE });
+    // ACC-281 — committees:view as today; anyone else only for a request on a
+    // committee they are an active member of. A non-member gets today's 403
+    // whether the request exists or not, so the answer reveals nothing.
+    if (!hasPermission(viewer, COMMITTEES_PERMISSIONS.VIEW) && !(row && (await maySeeCommittee(this.prisma, row.committeeId, organizationId, asCommitteeViewer(viewer))))) {
+      throw new ForbiddenException(`Required permission: ${COMMITTEES_PERMISSIONS.VIEW}`);
+    }
     if (!row) throw new NotFoundException('Change request not found');
     const [stages, committeeStage, extras] = await Promise.all([
       requestStageKeys(this.prisma, [row.id], organizationId),
@@ -597,6 +614,7 @@ export class CommitteeChangeRequestService {
 
   /** The committee's requests — its panel and See all — searched, sorted and paged here (they are few). */
   async list(committeeId: string, query: ChangeRequestListQueryDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequestPage> {
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
     await this.loadCommittee(committeeId, organizationId);
     const rows = await this.prisma.committeeChangeRequest.findMany({
       where: { committeeId, organizationId },
@@ -633,6 +651,7 @@ export class CommitteeChangeRequestService {
    * Create re-checks all three under the committee's row lock; this is a read.
    */
   async openSummary(committeeId: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IOpenChangeRequest> {
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
     await this.loadCommittee(committeeId, organizationId);
     const rows = await this.prisma.committeeChangeRequest.findMany({
       where: { committeeId, organizationId },
@@ -653,12 +672,40 @@ export class CommitteeChangeRequestService {
   /** Every request under review that the viewer may decide: not their own. */
   async awaitingDecision(organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest[]> {
     requirePermission(viewer, COMMITTEES_PERMISSIONS.APPROVE);
-    const rows = await this.prisma.committeeChangeRequest.findMany({
-      where: { organizationId, requestedById: { not: viewer.userId }, submittedAt: { not: null } },
-      include: REQUEST_INCLUDE,
-      orderBy: { submittedAt: 'asc' },
-    });
+    // ACC-281 — filtered IN THE QUERY: the ids of the requests whose NEWEST
+    // instance stands in a stage awaiting a decision (the policy's own keys),
+    // oldest submitted first, capped. Before this, every request ever submitted
+    // was read and filtered here. Every table is scoped by organisation.
+    const ids = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT r.id
+      FROM "CommitteeChangeRequest" r
+      JOIN LATERAL (
+        SELECT wi."currentStageId"
+        FROM "WorkflowInstance" wi
+        WHERE wi."organizationId" = ${organizationId}
+          AND wi."objectType"::text = ${OBJECT_TYPE}
+          AND wi."objectId" = r.id
+        ORDER BY wi."createdAt" DESC
+        LIMIT 1
+      ) li ON TRUE
+      JOIN "WorkflowStage" s ON s.id = li."currentStageId"
+      JOIN "WorkflowTemplate" t ON t.id = s."workflowTemplateId" AND t."organizationId" = ${organizationId}
+      WHERE r."organizationId" = ${organizationId}
+        AND r."submittedAt" IS NOT NULL
+        AND r."requestedById" <> ${viewer.userId}
+        AND s.key = ANY(${[...AWAITING_DECISION_KEYS]}::text[])
+      ORDER BY r."submittedAt" ASC, r.id ASC
+      LIMIT ${AWAITING_DECISION_CAP}`;
+    if (ids.length === 0) return [];
+    const order = new Map(ids.map((r, i) => [r.id, i]));
+    const rows = (
+      await this.prisma.committeeChangeRequest.findMany({
+        where: { id: { in: ids.map((r) => r.id) }, organizationId },
+        include: REQUEST_INCLUDE,
+      })
+    ).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
     const stages = await requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId);
+    // A second guard that changes nothing while the query is right (a spec holds the two equal).
     const waiting = rows.filter((r) => awaitsDecision(stages.get(r.id)?.key));
     // ACC-255 PR 2 — every committee's stage in one batch (three queries), not one read each.
     const committeeStages = await this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [...new Set(waiting.map((r) => r.committeeId))]);
@@ -667,7 +714,13 @@ export class CommitteeChangeRequestService {
   }
 
   /** What approving these changes would do — for Request a change, before anything is saved. */
-  async preview(committeeId: string, values: CommitteeChangeValuesDto, organizationId: string): Promise<IChangeRequestPreview> {
+  async preview(
+    committeeId: string,
+    values: CommitteeChangeValuesDto,
+    organizationId: string,
+    viewer: ChangeRequestViewer,
+  ): Promise<IChangeRequestPreview> {
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
     const committee = await this.loadCommittee(committeeId, organizationId);
     const changes = normaliseChanges(values, committee, { allowEmpty: true });
     const fields = Object.keys(changes) as ChangeField[];
@@ -757,6 +810,16 @@ export class CommitteeChangeRequestService {
     for (const u of units) labels[u.id] = { en: u.nameEn, ar: u.nameAr };
     for (const c of committees) labels[c.id] = { en: c.nameEn, ar: c.nameAr };
     return labels;
+  }
+
+  /**
+   * ACC-281 — a write on a request by id (edit, submit, withdraw): committees:view,
+   * or an active member of the request's committee. Anyone else gets the identical
+   * 404 a missing request gets. Deciding (approve, return, reject) never calls this:
+   * it keeps committees:view at its route and committees:approve here.
+   */
+  private async assertMayWriteRequest(row: { committeeId: string }, organizationId: string, viewer: ChangeRequestViewer): Promise<void> {
+    await assertMayWriteCommittee(this.prisma, row.committeeId, organizationId, asCommitteeViewer(viewer), 'Change request not found');
   }
 
   private async loadCommittee(committeeId: string, organizationId: string): Promise<CommitteeRow> {
@@ -862,6 +925,11 @@ export class CommitteeChangeRequestService {
 
 function hasPermission(viewer: ChangeRequestViewer, permission: string): boolean {
   return viewer.permissions.includes(permission);
+}
+
+/** ACC-281 — the membership rule's viewer shape. */
+function asCommitteeViewer(viewer: ChangeRequestViewer): { id: string; permissions: readonly string[] } {
+  return { id: viewer.userId, permissions: viewer.permissions };
 }
 
 function requirePermission(viewer: ChangeRequestViewer, permission: string): void {

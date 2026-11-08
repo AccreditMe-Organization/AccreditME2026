@@ -18,6 +18,7 @@ import { WorkflowStageIndicatorComponent } from '../../../workflow/components/wo
 import {
   CommitteeService,
   CommitteeDetailDto,
+  CommitteeRefDto,
   CommitteeDto,
   CommitteeListItemDto,
   CommitteeMemberDto,
@@ -220,10 +221,13 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                 {{ 'committee.parentCommittee' | translate }}
               </div>
               <div class="text-[13px]">
-                @if (c.parentCommitteeId) {
-                  <a class="text-[var(--am-blue-primary)]" [routerLink]="['/committees', c.parentCommitteeId]">
-                    {{ parentCommitteeName(c) }}
-                  </a>
+                <!-- ACC-281 — named by the committee read; linked only where this viewer may open it. -->
+                @if (c.parent; as p) {
+                  @if (p.mayOpen) {
+                    <a class="text-[var(--am-blue-primary)]" [routerLink]="['/committees', p.id]" data-testid="committee-parent">{{ refName(p) }}</a>
+                  } @else {
+                    <span data-testid="committee-parent">{{ refName(p) }}</span>
+                  }
                 } @else {
                   —
                 }
@@ -239,7 +243,17 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
               <div class="text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)] mb-1">
                 {{ 'committee.reportingTo' | translate }}
               </div>
-              <div class="text-[13px]">{{ reportingToName(c) }}</div>
+              <div class="text-[13px]">
+                @if (c.reportsTo; as r) {
+                  @if (r.mayOpen) {
+                    <a class="text-[var(--am-blue-primary)]" [routerLink]="['/committees', r.id]" data-testid="committee-reports-to">{{ refName(r) }}</a>
+                  } @else {
+                    <span data-testid="committee-reports-to">{{ refName(r) }}</span>
+                  }
+                } @else {
+                  —
+                }
+              </div>
             </div>
             <div class="px-[18px] py-2.5 flex-[1_1_170px] min-w-0 border-t border-e border-[var(--am-border)]">
               <div class="text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)] mb-1">
@@ -515,7 +529,6 @@ export class CommitteeDetailComponent implements OnInit {
     return this.languageService.bilingual(refusal.stageNameEn ?? refusal.stageNameAr ?? '', refusal.stageNameAr);
   }
 
-  readonly allCommittees = signal<CommitteeListItemDto[]>([]);
   readonly memberRoles = signal<LookupValueDto[]>([]);
   readonly users = signal<IUserDto[]>([]);
   readonly currentInstance = signal<WorkflowInstanceDto | null>(null);
@@ -639,10 +652,17 @@ export class CommitteeDetailComponent implements OnInit {
     // ACC-265 — the type and the owning unit are named by the committee read
     // itself, so this page loads neither the type list (lookups:view) nor the
     // unit list (org:view): a reader holding neither still sees both names.
-    this.lookupService.getValues('committee_member_role').subscribe({ next: (v) => this.memberRoles.set(v) });
-    this.userService.listAllUsers().subscribe({ next: (v) => this.users.set(v) });
+    // ACC-281 — only what this viewer may read: a member without committees:view
+    // opens this page too, and a read they may not make is not sent (its panel is
+    // absent, never an error). Membership history names its own people and seats;
+    // these two lists serve the member dialogs and the remove confirmation.
+    if (this.navigationAccess.hasPermission('lookups:view')) {
+      this.lookupService.getValues('committee_member_role').subscribe({ next: (v) => this.memberRoles.set(v) });
+    }
+    if (this.navigationAccess.hasPermission('users:view')) {
+      this.userService.listAllUsers().subscribe({ next: (v) => this.users.set(v) });
+    }
 
-    this.loadCommitteeList();
     this.loadCommittee();
     this.loadMembers();
     this.loadMembershipEvents();
@@ -675,25 +695,16 @@ export class CommitteeDetailComponent implements OnInit {
   // currentStageNameEn is null only when there is no workflow instance at all.
 
   // This committee's own live stage, from the same list the page already has.
+  // ACC-281 — from the committee read itself, so the page reads no committee list.
   readonly currentStageName = computed(() => {
-    const self = this.allCommittees().find((c) => c.id === this.committeeId);
-    if (!self) return '';
-    const en = self.currentStageNameEn;
-    return en ? this.languageService.bilingual(en, self.currentStageNameAr) : '';
+    const self = this.committee();
+    const en = self?.currentStageNameEn;
+    return en ? this.languageService.bilingual(en, self?.currentStageNameAr ?? null) : '';
   });
 
-  parentCommitteeName(committee: CommitteeDto): string {
-    if (!committee.parentCommitteeId) return '—';
-    const parent = this.allCommittees().find((c) => c.id === committee.parentCommitteeId);
-    return parent ? this.displayName(parent) : '—';
-  }
-
-  reportingToName(committee: CommitteeDto): string {
-    if (committee.reportingToCommitteeId) {
-      const target = this.allCommittees().find((c) => c.id === committee.reportingToCommitteeId);
-      return target ? this.displayName(target) : '—';
-    }
-    return '—';
+  /** ACC-281 — another committee the record names, in the reader's language. */
+  refName(ref: CommitteeRefDto): string {
+    return this.languageService.bilingual(ref.nameEn, ref.nameAr);
   }
 
   // ACC-135 — the owning unit. Separate from "reports to", and always present on
@@ -712,7 +723,6 @@ export class CommitteeDetailComponent implements OnInit {
     this.loadOpenRequest();
     // The committee's own row in allCommittees() is now stale — its name feeds
     // any sibling's parent lookup, and its stage feeds the header pill.
-    this.loadCommitteeList();
   }
 
   onAddMember(): void {
@@ -820,9 +830,6 @@ export class CommitteeDetailComponent implements OnInit {
     void this.router.navigate(['/committees', this.committeeId, 'change-requests', 'new']);
   }
 
-  private loadCommitteeList(): void {
-    this.committeeService.listCommittees().subscribe({ next: (v) => this.allCommittees.set(v) });
-  }
 
   private loadCommittee(): void {
     this.committeeService.getById(this.committeeId).subscribe({
@@ -863,18 +870,18 @@ export class CommitteeDetailComponent implements OnInit {
     // ACC-240 — and with it whether a change may be requested now.
     this.loadOpenRequest();
     this.changeRequestsReload.update((n) => n + 1);
-    // ACC-76 — the SECOND instance of the stale-panel bug Ahmad found on the
-    // stage timeline, in a different place. The header's stage pill reads
-    // currentStageName(), which derives from allCommittees() — loaded once in
-    // ngOnInit and never reloaded. Without this the pill still showed the
-    // stage the committee was in BEFORE the transition it just made, while
-    // the stepper beside it showed the new one.
-    this.loadCommitteeList();
+    // ACC-76 — the header's stage pill must follow the transition just made,
+    // or it shows the stage BEFORE it while the stepper shows the new one. Since
+    // ACC-281 the pill reads the committee read (currentStageNameEn/Ar), so the
+    // loadCommittee() above is what refreshes it.
   }
 
   // Current lifecycle stage is read live from the workflow engine, never a
   // stored field on Committee (ACC-22 Pending Discussion #5).
   private loadCurrentStage(): void {
+    // ACC-281 — the instance read needs workflows:view; without it the header still
+    // shows the stage (from the committee read), and the timeline is absent.
+    if (!this.navigationAccess.hasPermission('workflows:view')) return;
     this.workflowService.getInstancesByObject('COMMITTEE', this.committeeId).subscribe({
       next: (instances) => {
         const instance = instances[0];

@@ -1,7 +1,7 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { StagePool, StagePoolService } from './stage-pool.service';
-import { AWAITING_ME_ROWS, WorkflowAwaitingService } from './workflow-awaiting.service';
+import { AWAITING_ME_CANDIDATE_CAP, AWAITING_ME_ROWS, WorkflowAwaitingService } from './workflow-awaiting.service';
 
 // ACC-271 — the records waiting on the viewer, for Home's "Awaiting my action".
 // Each gate is pinned on its own; the real database proof is
@@ -60,8 +60,14 @@ const pool = (members: string[], direct: string[] = members): StagePool => ({
   voteCommitteeId: null,
 });
 
-function setup(entries: ReturnType<typeof entry>[], pools: Record<string, StagePool> = {}, voted: string[] = []) {
+function setup(entries: ReturnType<typeof entry>[], pools: Record<string, StagePool> = {}, voted: string[] = [], memberOf: string[] = []) {
   const prisma = {
+    // ACC-281 — the committees the viewer is an active member of (read only without committees:view).
+    committeeMember: {
+      findMany: jest.fn(async ({ where }: { where: { committeeId?: { in: string[] } } }) =>
+        memberOf.filter((id) => !where.committeeId || where.committeeId.in.includes(id)).map((committeeId) => ({ committeeId })),
+      ),
+    },
     workflowInstanceStage: { findMany: jest.fn(async () => entries) },
     workflowApproval: { findMany: jest.fn(async () => voted.map((workflowInstanceStageId) => ({ workflowInstanceStageId }))) },
     committee: {
@@ -105,10 +111,12 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
       expect.objectContaining({
         where: {
           exitedAt: null,
-          workflowInstance: { organizationId: ORG, status: 'IN_PROGRESS', objectType: { in: ['COMMITTEE', 'COMMITTEE_CHANGE_REQUEST'] } },
+          workflowInstance: { organizationId: ORG, status: 'IN_PROGRESS', OR: [{ objectType: { in: ['COMMITTEE', 'COMMITTEE_CHANGE_REQUEST'] } }] },
           stage: { whoMode: { not: null }, isFinal: false, workflowTemplate: { organizationId: ORG } },
         },
         orderBy: [{ enteredAt: 'asc' }, { id: 'asc' }],
+        // ACC-281 — the hard cap on what is read.
+        take: AWAITING_ME_CANDIDATE_CAP,
       }),
     );
   });
@@ -208,11 +216,71 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
     });
   });
 
-  it('someone without committees:view sees nothing, and nothing is read', async () => {
+  it('someone without committees:view who is on no committee sees nothing; only the membership is read', async () => {
     const { service, prisma } = setup([entry()]);
 
     expect(await service.awaitingMe(ORG, VIEWER, ['users:view'])).toEqual({ total: 0, rows: [], oldestSince: null });
+    expect(prisma.committeeMember.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.workflowInstanceStage.findMany).not.toHaveBeenCalled();
+  });
+
+  // ACC-281 (Ahmad, Q7) — a member without committees:view is shown the committee
+  // stages that wait on them, for the committees they sit on, and names them.
+  describe('a member without committees:view (ACC-281)', () => {
+    it('reads committee entries for their own committees only, and names them', async () => {
+      const { service, prisma } = setup([entry({ id: 'e1', committeeId: 'cmt-1' })], {}, [], ['cmt-1']);
+
+      const result = await service.awaitingMe(ORG, VIEWER, []);
+
+      const where = (prisma.workflowInstanceStage.findMany.mock.calls[0] as unknown as [{ where: { workflowInstance: unknown } }])[0].where.workflowInstance;
+      expect(where).toEqual({ organizationId: ORG, status: 'IN_PROGRESS', OR: [{ objectType: 'COMMITTEE', objectId: { in: ['cmt-1'] } }] });
+      expect(result.total).toBe(1);
+      expect(result.rows[0]!.record.nameEn).toBe('Name of cmt-1');
+    });
+
+    it('a holder of committees:view reads no membership', async () => {
+      const { service, prisma } = setup([entry()]);
+      await service.awaitingMe(ORG, VIEWER, VIEW);
+      expect(prisma.committeeMember.findMany).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('awaiting-me membership', async () => {
+      const { service, prisma } = setup([], {}, [], ['cmt-1']);
+      await service.awaitingMe('org-b', VIEWER, []);
+      const where = (prisma.committeeMember.findMany.mock.calls[0] as unknown as [{ where: { organizationId: string; committee: { organizationId: string } } }])[0].where;
+      expect(where.organizationId).toBe('org-b');
+      expect(where.committee.organizationId).toBe('org-b');
+    });
+  });
+
+  // ACC-281 — ?skip=&take=: today's answer with neither; the total and oldestSince
+  // always over everything waiting.
+  describe('paging (ACC-281)', () => {
+    const seven = () => Array.from({ length: 7 }, (_, i) => entry({ id: `e${i}`, enteredAt: new Date(Date.UTC(2026, 9, 1 + i)) }));
+
+    it('no page: exactly the oldest five, the total and oldestSince', async () => {
+      const { service } = setup(seven());
+      const result = await service.awaitingMe(ORG, VIEWER, VIEW);
+      expect(result.rows.map((r) => r.instanceStageId)).toEqual(['e0', 'e1', 'e2', 'e3', 'e4']);
+      expect(result.total).toBe(7);
+      expect(result.oldestSince).toEqual(new Date(Date.UTC(2026, 9, 1)));
+    });
+
+    it('skip and take page the same order; total and oldestSince do not move', async () => {
+      const { service } = setup(seven());
+      const page2 = await service.awaitingMe(ORG, VIEWER, VIEW, { skip: 3, take: 3 });
+      expect(page2.rows.map((r) => r.instanceStageId)).toEqual(['e3', 'e4', 'e5']);
+      expect(page2.total).toBe(7);
+      expect(page2.oldestSince).toEqual(new Date(Date.UTC(2026, 9, 1)));
+    });
+
+    it('skip alone pages by five; past the end is an empty page with the same total', async () => {
+      const { service } = setup(seven());
+      expect((await service.awaitingMe(ORG, VIEWER, VIEW, { skip: 5 })).rows.map((r) => r.instanceStageId)).toEqual(['e5', 'e6']);
+      const past = await service.awaitingMe(ORG, VIEWER, VIEW, { skip: 50, take: 10 });
+      expect(past.rows).toEqual([]);
+      expect(past.total).toBe(7);
+    });
   });
 
   it('a record it cannot name is left out (fail closed)', async () => {

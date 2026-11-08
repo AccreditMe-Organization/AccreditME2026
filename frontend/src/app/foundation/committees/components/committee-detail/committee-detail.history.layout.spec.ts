@@ -117,7 +117,7 @@ const COMMITTEE: CommitteeDetailDto = {
   isDissolving: false,
   stageRules: ACTIVE_RULES,
   typeValue: { id: 'type-1', key: 'quality', labelEn: 'Quality Committee', labelAr: 'لجنة الجودة', offered: true },
-  orgUnit: { id: 'unit-1', nameEn: 'Al Nakheel Specialist Hospital', nameAr: 'مستشفى النخيل التخصصي' },
+  orgUnit: { id: 'unit-1', nameEn: 'Al Nakheel Specialist Hospital', nameAr: 'مستشفى النخيل التخصصي' }, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null,
 };
 
 @Component({

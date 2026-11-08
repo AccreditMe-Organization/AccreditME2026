@@ -6,6 +6,7 @@ import { WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
+import { AwaitingMeQueryDto } from './dto/awaiting-me-query.dto';
 import { WorkflowService } from './workflow.service';
 import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
@@ -31,12 +32,14 @@ export class WorkflowController {
   // means an empty answer, never another person's work. One segment, so it
   // cannot clash with 'instances/:id'.
   @Get('awaiting-me')
+  // ACC-281 — ?skip=&take= pages it (take 1–50); with neither, today's answer.
   getAwaitingMe(
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
+    @Query() query: AwaitingMeQueryDto,
   ): Promise<IWorkflowAwaitingMe> {
-    return this.awaiting.awaitingMe(tenantId, actorId, actorPermissions);
+    return this.awaiting.awaitingMe(tenantId, actorId, actorPermissions, { skip: query.skip, take: query.take });
   }
 
   @Get('instances/:id')
@@ -62,8 +65,9 @@ export class WorkflowController {
     @Query('objectId') objectId: string,
     @CurrentTenant() tenantId: string,
     @CurrentUserPermissions() actorPermissions: string[],
+    @CurrentUser() actorId: string,
   ): Promise<IWorkflowInstance[]> {
-    return this.workflowService.getInstancesByObject(objectType, objectId, tenantId, actorPermissions);
+    return this.workflowService.getInstancesByObject(objectType, objectId, tenantId, actorPermissions, actorId);
   }
 
   // ACC-76 — the object-detail stage indicator's data.

@@ -44,7 +44,7 @@ const COMMITTEE = (stageRules: CommitteeStageRulesDto): CommitteeDetailDto => ({
   isDissolving: false,
   stageRules,
   typeValue: null,
-  orgUnit: null,
+  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null,
 });
 
 

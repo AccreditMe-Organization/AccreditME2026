@@ -100,6 +100,20 @@ export interface CommitteeDetailDto extends CommitteeDto {
   typeValue: CommitteeTypeValueDto | null;
   /** ACC-265 — the owning unit, named; null for none, or a unit not in this organisation. */
   orgUnit: CommitteeOrgUnitDto | null;
+  /** ACC-281 — the parent and Reports to, named; mayOpen says whether this viewer may open each. */
+  parent: CommitteeRefDto | null;
+  reportsTo: CommitteeRefDto | null;
+  /** ACC-281 — the current stage's name, so the page reads no committee list for it. */
+  currentStageNameEn: string | null;
+  currentStageNameAr: string | null;
+}
+
+/** ACC-281 — another committee a record names, and whether this viewer may open it. */
+export interface CommitteeRefDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+  mayOpen: boolean;
 }
 
 /** ACC-265 — a committee's owning unit as its record read names it. */
@@ -137,6 +151,11 @@ export interface CommitteeMembershipEventDto {
   reason: string | null;
   approvedBy: string | null;
   createdAt: string;
+  /** ACC-281 — named by the read, so the panel needs no users or lookups read. */
+  userName?: string | null;
+  approvedByName?: string | null;
+  roleLabelEn?: string | null;
+  roleLabelAr?: string | null;
 }
 
 export interface CreateCommitteeDto {
@@ -200,6 +219,8 @@ export interface SubCommitteeRowDto {
   stageNameEn: string | null;
   stageNameAr: string | null;
   memberCount: number;
+  /** ACC-281 — committees:view, or this viewer is a member of the sub-committee. */
+  mayOpen: boolean;
 }
 
 export interface CommitteePageDto<T> {

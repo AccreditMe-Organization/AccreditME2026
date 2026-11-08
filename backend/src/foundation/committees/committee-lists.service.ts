@@ -2,8 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupService } from '../lookup/lookup.service';
 import { CommitteeMembersPageQueryDto, SubCommitteesQueryDto } from './dto/committee-list-query.dto';
-import { ICommitteeMemberRow, ICommitteePage, ISubCommitteeRow } from './interfaces/committee.interface';
+import { ICommitteeMemberRow, ICommitteeMembershipEventRow, ICommitteePage, ISubCommitteeRow } from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
+import { CommitteeViewer, assertMaySeeCommittee, memberCommitteeIds, seesEveryCommittee } from '../../common/services/committee-membership';
 
 const COMMITTEE_MEMBER_ROLE_CATEGORY = 'committee_member_role';
 const PAGE = 50;
@@ -33,7 +34,10 @@ export class CommitteeListsService {
     committeeId: string,
     query: CommitteeMembersPageQueryDto,
     organizationId: string,
+    viewer: CommitteeViewer,
   ): Promise<ICommitteePage<ICommitteeMemberRow>> {
+    // ACC-281 — committees:view, or an active member of this committee.
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer);
     await this.assertCommittee(committeeId, organizationId);
     const [members, seats] = await Promise.all([
       this.prisma.committeeMember.findMany({
@@ -86,13 +90,23 @@ export class CommitteeListsService {
     committeeId: string,
     query: SubCommitteesQueryDto,
     organizationId: string,
+    viewer: CommitteeViewer,
   ): Promise<ICommitteePage<ISubCommitteeRow>> {
+    // ACC-281 — committees:view, or an active member of this committee.
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer);
     await this.assertCommittee(committeeId, organizationId);
     const children = await this.prisma.committee.findMany({
       where: { organizationId, parentCommitteeId: committeeId },
       select: { id: true, nameEn: true, nameAr: true },
     });
-    const facts = await committeeStagesAndCounts(this.prisma, organizationId, children.map((c) => c.id));
+    const childIds = children.map((c) => c.id);
+    // ACC-281 — a child is named (it is part of this committee's terms) and opens
+    // only for a viewer who may see it: one membership read for all of them.
+    const oversight = seesEveryCommittee(viewer.permissions);
+    const [facts, mine] = await Promise.all([
+      committeeStagesAndCounts(this.prisma, organizationId, childIds),
+      oversight ? Promise.resolve(new Set<string>()) : memberCommitteeIds(this.prisma, viewer.id, organizationId, childIds),
+    ]);
     const rows: ISubCommitteeRow[] = children.map((c) => {
       const fact = facts.get(c.id);
       return {
@@ -102,6 +116,7 @@ export class CommitteeListsService {
         stageNameEn: fact?.stageNameEn ?? null,
         stageNameAr: fact?.stageNameAr ?? null,
         memberCount: fact?.memberCount ?? 0,
+        mayOpen: oversight || mine.has(c.id),
       };
     });
 
@@ -134,6 +149,38 @@ export class CommitteeListsService {
       }
     });
     return { items: page(sorted, query), total: rows.length, matching: matching.length };
+  }
+
+  /**
+   * ACC-281 — Membership history, named: who, the seat as this tenant names it,
+   * and who approved. A member of the committee reads it without committees:view
+   * (Ahmad, 7 Nov), and needs neither users:view nor lookups:view for the names.
+   * Queries: the events and, in parallel, the people (one) and the seats (three, in
+   * lookups) — whatever the number of events.
+   */
+  async membershipEvents(committeeId: string, organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeMembershipEventRow[]> {
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer);
+    await this.assertCommittee(committeeId, organizationId);
+    const events = await this.prisma.committeeMembershipEvent.findMany({
+      where: { committeeId, organizationId },
+      orderBy: { effectiveDate: 'desc' },
+    });
+    const people = [...new Set(events.flatMap((e) => [e.userId, e.approvedBy]).filter((id): id is string => !!id))];
+    const [users, seats] = await Promise.all([
+      people.length
+        ? this.prisma.user.findMany({ where: { id: { in: people }, organizationId }, select: { id: true, name: true } })
+        : Promise.resolve([] as { id: string; name: string }[]),
+      this.lookups.getValues(COMMITTEE_MEMBER_ROLE_CATEGORY, organizationId),
+    ]);
+    const nameOf = new Map(users.map((u) => [u.id, u.name]));
+    const seatOf = new Map(seats.map((s) => [s.id, s]));
+    return events.map((e) => ({
+      ...e,
+      userName: nameOf.get(e.userId) ?? null,
+      approvedByName: e.approvedBy ? (nameOf.get(e.approvedBy) ?? null) : null,
+      roleLabelEn: seatOf.get(e.roleValueId)?.labelEn ?? null,
+      roleLabelAr: seatOf.get(e.roleValueId)?.labelAr ?? null,
+    }));
   }
 
   /** The committee, in this organisation — or the identical 404 for any other id. */

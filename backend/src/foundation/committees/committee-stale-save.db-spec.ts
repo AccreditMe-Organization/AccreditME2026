@@ -50,7 +50,7 @@ describe('Committee stale save against a real database (ACC-238)', () => {
     // A live stage that allows editing (ACC-255 PR 2: no instance allows nothing, D14).
     await putCommitteeInEditableStage(prisma, o.id, c.id);
     // What the dialog holds: the record page's read, serialised as JSON is.
-    const read = await committees.getCommitteeDetail(c.id, o.id);
+    const read = await committees.getCommitteeDetail(c.id, o.id, { id: 'viewer-1', permissions: ['committees:view'] });
     return { organizationId: o.id, actorId: actor.id, id: c.id, loaded: JSON.parse(JSON.stringify(read)).updatedAt as string };
   }
 
@@ -61,7 +61,7 @@ describe('Committee stale save against a real database (ACC-238)', () => {
     );
 
   const save = (c: Awaited<ReturnType<typeof committee>>, dto: Record<string, unknown>, organizationId = c.organizationId) =>
-    outcome(committees.updateCommittee(c.id, { ...dto, expectedUpdatedAt: c.loaded } as never, organizationId, c.actorId));
+    outcome(committees.updateCommittee(c.id, { ...dto, expectedUpdatedAt: c.loaded } as never, organizationId, c.actorId, ['committees:view']));
 
   const audits = (objectId: string) => prisma.auditLog.count({ where: { objectId, action: 'UPDATE' } });
 
@@ -115,7 +115,7 @@ describe('Committee stale save against a real database (ACC-238)', () => {
     const other = await committee();
 
     const sent = await outcome(
-      committees.updateCommittee(c.id, { quorumCount: 1, expectedUpdatedAt: c.loaded } as never, other.organizationId, other.actorId),
+      committees.updateCommittee(c.id, { quorumCount: 1, expectedUpdatedAt: c.loaded } as never, other.organizationId, other.actorId, ['committees:view']),
     );
 
     expect(sent).toMatch(/Committee not found/);

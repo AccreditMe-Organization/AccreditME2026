@@ -92,6 +92,15 @@ export interface ICommitteeListItem extends ICommittee {
   stageRules: ICommitteeStageRules;
 }
 
+/** ACC-281 — another committee a record names, and whether the viewer may open it. */
+export interface ICommitteeRef {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+  /** committees:view, or an active member of THAT committee. */
+  mayOpen: boolean;
+}
+
 // ACC-238 — a single committee as its record page reads it: the row plus
 // whether its current stage is dissolving, from the same helper as the list
 // rows, and what that stage allows (stageRules). No stage key (ACC-265).
@@ -107,6 +116,13 @@ export interface ICommitteeDetail extends ICommittee {
   orgUnit: ICommitteeOrgUnit | null;
   // ACC-255 — what the current stage allows and means.
   stageRules: ICommitteeStageRules;
+  // ACC-281 — the parent and Reports to, named by the record itself so the page
+  // reads no committee list; mayOpen says whether this viewer may open each.
+  parent: ICommitteeRef | null;
+  reportsTo: ICommitteeRef | null;
+  // ACC-281 — the current stage's name, so the page reads no committee list for it.
+  currentStageNameEn: string | null;
+  currentStageNameAr: string | null;
 }
 
 /** ACC-265 — the committee's owning unit, as the record page names it. */
@@ -165,6 +181,17 @@ export interface ICommitteeMemberRow {
   joinedAt: Date;
 }
 
+// ACC-281 — one row of Membership history, NAMED by the read itself, so a member
+// without users:view or lookups:view reads who joined, the seat, and who approved.
+export interface ICommitteeMembershipEventRow extends ICommitteeMembershipEvent {
+  /** The person's name; null for someone no longer in the organisation. */
+  userName: string | null;
+  approvedByName: string | null;
+  /** The seat, as this tenant names it; null for a value it no longer offers. */
+  roleLabelEn: string | null;
+  roleLabelAr: string | null;
+}
+
 // ACC-230 — one row of the Sub-committees panel and its "See all" list.
 export interface ISubCommitteeRow {
   id: string;
@@ -174,6 +201,8 @@ export interface ISubCommitteeRow {
   stageNameEn: string | null;
   stageNameAr: string | null;
   memberCount: number;
+  /** ACC-281 — whether this viewer may open the sub-committee (committees:view, or a member of it). */
+  mayOpen: boolean;
 }
 
 export interface ICommitteePage<T> {

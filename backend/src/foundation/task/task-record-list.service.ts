@@ -167,7 +167,7 @@ export class TaskRecordListService {
     if (dto.sourceType && dto.sourceId) {
       if (dto.view) throw new BadRequestException('A view is for the organisation-wide list, not one record');
       // ACC-101 clause a: the request names the parent, so it is checked first.
-      await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions);
+      await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id);
       const ctx = await this.visibility.contextFor(viewer, organizationId);
       const seesAll = await this.visibility.seesWholeRecord(ctx, dto.sourceType, dto.sourceId);
       return {
@@ -297,7 +297,7 @@ export class TaskRecordListService {
     const covered = new Set(scope.ctx.coveredCreatorIds);
     const pools = scope.ctx.pools;
     const stillInStep = await this.stillInStep(ordered, organizationId);
-    const records = orgWide ? await recordNamesOf(this.prisma, ordered, organizationId, viewer.permissions) : null;
+    const records = orgWide ? await recordNamesOf(this.prisma, ordered, organizationId, viewer.permissions, viewer.id) : null;
 
     const result: ITaskRecordRow[] = [];
     for (const task of ordered) {

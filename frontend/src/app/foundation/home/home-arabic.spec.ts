@@ -28,7 +28,7 @@ describe('ar.json — singular address, no gendered verb about a person (ACC-279
   });
 
   it('the add-member date hint says nothing about the person\'s gender', () => {
-    expect(get('committee.memberForm.joinedHint')).toBe('اليوم، ما لم يكن الانضمام قبل ذلك.');
+    expect(get('committee.memberForm.joinedHint')).toBe('اليوم، ما لم يكن الانضمام قد تمّ قبل ذلك.');
   });
 
   it('Home\'s greeting has two forms only, before and after noon', () => {
