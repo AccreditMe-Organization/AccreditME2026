@@ -6,7 +6,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { Prisma } from '../../../generated/prisma/client';
 import { TaskService, TaskViewer } from './task.service';
 import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, poolTargetOf, toPoolView } from './task-pool';
-import { holdsTaskKey, taskKeysOf, TASK_RECORD_TYPES } from './task-record-types';
+import { holdsCreateKey, holdsTaskKey, taskKeysOf, TASK_RECORD_TYPES } from './task-record-types';
 import { TaskVisibilityService } from './task-visibility.service';
 import {
   createdBySql,
@@ -82,12 +82,14 @@ export class TaskRecordListService {
   async panel(dto: RecordPanelQueryDto, organizationId: string, viewer: TaskViewer): Promise<ITaskRecordPanel> {
     const list = await this.run({ sourceType: dto.sourceType, sourceId: dto.sourceId, take: 5 }, organizationId, viewer, false);
     // ACC-244 — New task on the record's own panel: Create tasks on its type
-    // (the record is visible: run() refused it otherwise).
+    // (the record is visible: run() refused it otherwise). ACC-280: the same rule
+    // POST /tasks applies, holdsCreateKey(), so a member who holds the key without
+    // committees:view is offered New task exactly when create would accept it.
     return {
       total: list.total,
       scope: list.scope,
       rows: list.items,
-      canCreate: holdsTaskKey(viewer.permissions, dto.sourceType, 'CREATE'),
+      canCreate: holdsCreateKey(viewer.permissions, dto.sourceType),
     };
   }
 
