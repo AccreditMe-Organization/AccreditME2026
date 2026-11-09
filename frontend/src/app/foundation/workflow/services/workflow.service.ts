@@ -132,8 +132,12 @@ export class WorkflowService {
    * person's decision, as the server decides it. Self-scoped, so it needs no
    * permission and never 403s for a signed-in person.
    */
-  getAwaitingMe(): Observable<WorkflowAwaitingMeDto> {
-    return this.http.get<WorkflowAwaitingMeDto>(`${this.base}/awaiting-me`);
+  getAwaitingMe(page?: { skip: number; take: number }): Observable<WorkflowAwaitingMeDto> {
+    // ACC-120 — the Awaiting my action page pages through every row (take 1–50).
+    // Without a page this is exactly Home's request: no query params.
+    if (!page) return this.http.get<WorkflowAwaitingMeDto>(`${this.base}/awaiting-me`);
+    const params = new HttpParams().set('skip', page.skip).set('take', page.take);
+    return this.http.get<WorkflowAwaitingMeDto>(`${this.base}/awaiting-me`, { params });
   }
 
   getInstance(id: string): Observable<WorkflowInstanceDto> {

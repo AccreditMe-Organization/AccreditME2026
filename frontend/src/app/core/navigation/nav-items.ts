@@ -59,7 +59,9 @@ export interface NavItem {
   // - myTasks (ACC-120): the person's open tasks, from MyWorkCountsService,
   //   which the shell loads after sign-in. The sidebar only reads its signals
   //   and fetches nothing.
-  badge?: 'setupHealth' | 'myTasks';
+  // - awaiting (ACC-120): what waits on the person's decision, from the same
+  //   service's awaiting read (stages total + change requests). Read only.
+  badge?: 'setupHealth' | 'myTasks' | 'awaiting';
   // ACC-281 — a second way to meet requiredPermission. With 'committeeMember'
   // the item also shows, and its route also opens, for someone who sits on at
   // least one active committee, without the permission. The answer comes from
@@ -132,6 +134,9 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
       // ACC-120 — the badge is the person's open-task count, the number Home's
       // My tasks tile shows; red when any of them is overdue.
       { key: 'tasks', labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks', badge: 'myTasks' },
+      // ACC-120 — every record and change request waiting on this person's
+      // decision. Self-scoped, so no permission (and no ROUTE_PERMISSIONS entry).
+      { key: 'awaiting', labelKey: 'home.awaiting', icon: 'pi pi-inbox', route: '/awaiting', badge: 'awaiting' },
     ],
   },
   {
