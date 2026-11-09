@@ -2853,6 +2853,10 @@
       "openTasksOverdue": {
         "one": "{{count}} open task, overdue",
         "other": "{{count}} open tasks, some overdue"
+      },
+      "awaitingItems": {
+        "one": "{{count}} item waiting",
+        "other": "{{count}} items waiting"
       }
     },
     "setupHealth": {

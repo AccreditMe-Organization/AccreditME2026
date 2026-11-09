@@ -10986,6 +10986,12 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     collapsed label.
   - `SidebarComponent.badgeFor()` returns `{ count, alert, sentence }` for
     both badges. The sidebar never calls `init()`, `reload()` or a `load*`.
+- **The rail's Awaiting my action badge (ACC-120)**, on the `awaiting` item
+  after Tasks, reads `awaiting()`:
+  - the count is `stages.total` plus `changes.length`, as Home's panel counts it;
+  - it is always neutral;
+  - nothing shows while it loads, after it fails, or at 0;
+  - the sentence is `plural.shell.awaitingItems`.
 - **`GET /committees/mine`** (`CommitteeHomeService.mine()`) is self-scoped
   with no `@Permissions`: being a member is the entitlement (Q2).
   - It covers active memberships on active committees, five of them, by the
@@ -11035,6 +11041,48 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
 - **Specs:** `home.component.spec.ts`, `home-panels.spec.ts`,
   `home-admin.component.spec.ts`, `my-work-counts.service.spec.ts`,
   `core/my-work/my-work-events.spec.ts`, `home-arabic.spec.ts`.
+
+#### The Awaiting my action page (ACC-120)
+
+`/awaiting` (`foundation/awaiting/`) lists everything waiting on the signed-in
+person's decision: the full list behind Home's panel. It has a rail item in My
+work, after Tasks, with no permission, because both reads are self-scoped.
+
+- **Two reads:**
+  - `GET /workflows/awaiting-me?skip=&take=50` returns the records at the
+    person's stage, paged by the server. `getAwaitingMe()` takes an optional
+    page; with none it sends Home's request unchanged.
+  - `GET /committee-change-requests/awaiting-decision` returns every change
+    request the person may decide, capped at 200 by the server. It is asked
+    only of `committees:approve` holders, as Home does, and only on the first
+    load. Both reads run in parallel.
+- **Rows** are Home's panel rows, built by the pure functions in
+  `awaiting-rows.ts` (`stageRow`, `changeRow`, `waitingText`), so Home can use
+  them too.
+- **The merge rule (`mergeAwaiting`):**
+  - the list is oldest first, by `since` and then id;
+  - every loaded stage row shows;
+  - a change request shows once it falls no later than the last loaded stage
+    row, in that same order, so an equal `since` is resolved by id;
+  - once no stage rows remain, every change request shows.
+
+  Load more therefore only appends below what is shown: no row moves, repeats
+  or is skipped.
+- **Load more** asks for the next 50 stage rows (`skip` = stage rows loaded)
+  and never re-reads the change requests. It shows only while stage rows
+  remain, and an empty page stops it.
+- **The header count** is the stage total plus the number of change requests.
+- **States:**
+  - the first load shows a skeleton;
+  - either read failing shows one error line, whose Retry re-runs both reads,
+    because a partial list is a wrong list;
+  - with nothing waiting it says "Nothing is waiting for you.";
+  - a failed Load more keeps the rows shown and offers Retry, which asks the
+    same page.
+- **No search, filter or sort**: the order is fixed.
+- **No polling:** opening the page reads afresh.
+- **Home's panel still has no See all.** Turning one on is the Home team's
+  change.
 
 ## 11. Known Cross-Cutting Gaps
 

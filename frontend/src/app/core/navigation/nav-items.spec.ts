@@ -86,7 +86,7 @@ describe('nav-items (ACC-79)', () => {
     // it — and nothing he cannot use.
     it('sees My work, and no empty headings for the groups he cannot use', () => {
       expect(keysOf(visibleNavGroups(access({})))).toEqual([
-        { group: 'work', items: ['home', 'tasks'] },
+        { group: 'work', items: ['home', 'tasks', 'awaiting'] },
       ]);
     });
   });
@@ -161,7 +161,7 @@ describe('nav-items (ACC-79)', () => {
         access({ permissions: [ADMIN_ACCESS, 'lookups:view'] }),
       );
       expect(keysOf(groups)).toEqual([
-        { group: 'work', items: ['home', 'tasks'] },
+        { group: 'work', items: ['home', 'tasks', 'awaiting'] },
         { group: 'admin', items: ['lookups'] },
       ]);
     });
@@ -178,7 +178,7 @@ describe('nav-items (ACC-79)', () => {
       // ACC-120 slice 11, PR F — his org:view now opens the read-only
       // Organisation page under Quality management, never Administration.
       expect(keysOf(groups)).toEqual([
-        { group: 'work', items: ['home', 'tasks'] },
+        { group: 'work', items: ['home', 'tasks', 'awaiting'] },
         { group: 'quality', items: ['organizationReadOnly'] },
       ]);
     });
@@ -199,7 +199,7 @@ describe('nav-items (ACC-79)', () => {
     it('shows nothing in the section to a role holding admin:access and no page permission', () => {
       const groups = visibleNavGroups(access({ permissions: [ADMIN_ACCESS] }));
       expect(keysOf(groups)).toEqual([
-        { group: 'work', items: ['home', 'tasks'] },
+        { group: 'work', items: ['home', 'tasks', 'awaiting'] },
       ]);
     });
 
@@ -289,7 +289,7 @@ describe('nav-items (ACC-79)', () => {
     it('a quality manager (org:view, no admin:access) gets it under Quality management, and no Administration', () => {
       const groups = visibleNavGroups(access({ permissions: ['org:view', 'users:view', 'committees:view'] }));
       expect(keysOf(groups)).toEqual([
-        { group: 'work', items: ['home', 'tasks'] },
+        { group: 'work', items: ['home', 'tasks', 'awaiting'] },
         { group: 'quality', items: ['committees', 'organizationReadOnly'] },
       ]);
       expect(orgItems(groups)).toEqual(['quality:/org']);
