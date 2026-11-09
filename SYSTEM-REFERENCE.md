@@ -8502,8 +8502,20 @@ A wording convention, kept by review: **no scan checks it.**
 
 - **The reader is addressed in the singular:** ك، لديك، معك. Never the plural
   كم، لديكم، معكم، إليكم.
-- **"Your organisation's" is مؤسستك:** «في مؤسستك», «لدى مؤسستك», «تخزين
-  مؤسستك الخاص».
+- **The organisation is «المنشأة», never «المؤسسة» (ACC-120, CC-224).**
+  "Your organisation's" is «منشأتك»: «في منشأتك», «لدى منشأتك», «تخزين منشأتك
+  الخاص». The plural is «المنشآت» (the platform's Tenants). This replaced the
+  earlier «مؤسستك» rule, and all 62 strings in `ar.json` moved together, so
+  the product has one word. Two «مؤسس» strings stay, because they mean
+  something else:
+  - `aiCredits.plan.ENTERPRISE` «المؤسسية»: the Enterprise plan's name;
+  - `storage.test.fail.SHAREPOINT.SHAREPOINT_APP_DISABLED` «تطبيقات المؤسسة»:
+    Microsoft Entra's own label for Enterprise applications, quoted so the
+    admin can find it.
+
+  **Not covered:** the backend's own Arabic (notification bodies, the
+  seeded root role «مسؤول المؤسسة») still says «مؤسسة». A role's Arabic name
+  is tenant data, so a renamed seed does not reach existing organisations.
 - **No masculine verb or pronoun has a specific person as its subject or
   referent**, because the platform stores no gender. That person may be
   `{{name}}`, `{{person}}`, `{{incoming}}`, `{{current}}`, or the user a
@@ -8517,9 +8529,10 @@ A wording convention, kept by review: **no scan checks it.**
   specific person only. A pronoun that refers to a thing (a role, a position,
   an account, a record) is fine.
 - **Imperatives to the reader are fine:** اطلب، اختر، تحقق.
-- **Where the longer مؤسستك would wrap a measured dialog, the singular «لديك»
-  is used instead.** For example, the storage request hint: at 560 px wide,
-  «في مؤسستك» took the Arabic dialog from 385 px to 405 px.
+- **Where the longer «منشأتك» would wrap a measured dialog, the singular
+  «لديك» is used instead.** For example, the storage request hint: at 560 px
+  wide, «في مؤسستك» (as it then read) took the Arabic dialog from 385 px to
+  405 px.
 
 ### 9.5 What's Explicitly Not Covered Here
 
