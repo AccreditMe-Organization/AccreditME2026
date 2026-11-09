@@ -17,6 +17,51 @@ listed in §6. **Plan only; no code yet.**
 
 ---
 
+## Decisions (Ahmad, 9 Nov)
+
+These override the recommendations below where they differ.
+
+1. **The `POST /tasks` gap (§0) is fixed first, in its own PR**: `fix/ACC-280-create-task-key`.
+   `createForViewer()` always requires the type's create key, then the record check.
+2. **A member holding `committees:create_tasks` but not `committees:view` may create tasks on
+   their own committees** (Q2 "Yes"). `create.types` gains the member branch of §2.
+3. **One create type: no type field; the label names the type.** The decision comes from the
+   server's `create.types`, never from a frontend list (`SOURCE_TYPES` stops deciding it).
+4. **Allowed on a type, but no record of it:** a message in the field and in the list. No extra
+   read on every page.
+5. **The committee page's own New task moves onto the shared dialog** (`TaskNewDialogComponent`,
+   with a locked record). §6 is updated.
+6. **Home reads `create.types` when Home opens**: `GET /tasks/views`, once on entry.
+7. **Inactive and dissolved committees are left out of the picker, and `POST /tasks` refuses
+   them too, by the same server rule**, so the list and create always agree. **Dissolution
+   Pending stays in.** "Dissolved" must be recognised from the stage's flags or rules, never its
+   name or key.
+
+   **No flag can tell Dissolved from Dissolution Pending, so this stops here** (Ahmad, 9 Nov:
+   "say so in the plan and stop there"). What the code holds today:
+
+   | | Dissolution Pending | Dissolved |
+   | -- | -- | -- |
+   | Flags (`WorkflowStage.flags`) | `DISSOLVING` | `DISSOLVING`: **the same** |
+   | Final stage (`isFinal`) | no | yes |
+   | Record actions allowed | add / remove / change seat | none |
+   | `Committee.isActive`, `dissolvedAt` | unchanged | **unchanged**: nothing writes either when a committee reaches Dissolved |
+
+   So only stage RULES differ (final, and allows nothing). Each is tenant-editable and means
+   something else elsewhere: "final" is also a Rejected or Withdrawn stage, and "allows nothing"
+   is a configuration choice. Nothing is designed here until Ahmad chooses. The options to
+   choose from:
+   - (a) a new stage flag, e.g. `DISSOLVED` (or `CLOSED`), seeded on Dissolved and backfilled;
+   - (b) `DISSOLVING` AND `isFinal`;
+   - (c) Dissolved also sets `Committee.isActive = false` (and `dissolvedAt`), so "inactive" covers
+     it. That needs an app move or a module write on the transition, plus a backfill for
+     committees already Dissolved.
+
+   The "inactive" half (`Committee.isActive = false`) needs no choice: the picker and
+   `POST /tasks` leave it out once the rule above is settled.
+
+---
+
 ## 0. First: a gap ACC-281 opened in `POST /tasks` (decide before this ticket)
 
 **Today a committee member may create a task on their own committee with no task key at all.**
@@ -252,11 +297,11 @@ not.
 
 | File | Change |
 | -- | -- |
-| `components/task-form/task-form.component.ts` | the typed `sourceId` input becomes the record picker (§3); the type select only with several types; the `'DOCUMENT'` default goes |
-| `components/task-record-picker/task-record-picker.component.ts` (**new**) | the field, its search button and the list dialog (`am-list-dialog` + `am-simple-list`), generic in its type |
+| `components/task-form/task-form.component.ts` | the typed `sourceId` input becomes the record picker (§3); the type field shows only when the server's `create.types` names more than one type, and otherwise the label names the type (decision 3); `SOURCE_TYPES` stops deciding which types appear; the `'DOCUMENT'` default goes |
+| `components/task-record-picker/task-record-picker.component.ts` (**new**) | the field, its search button and the list dialog (`am-list-dialog` + `am-simple-list`), generic in its type; the "no records" message in the field and the list (decision 4) |
 | `components/task-record-picker/task-record-picker.component.spec.ts` (**new**) | §7 |
-| `components/task-new-dialog/task-new-dialog.component.ts` (**new**) | the one New task dialog (§5) |
-| `components/task-new-dialog/task-new-dialog.component.spec.ts` (**new**) | §7 |
+| `components/task-new-dialog/task-new-dialog.component.ts` (**new**) | the one New task dialog (§5), for `/tasks`, Home AND the committee page: a `locked` record input (type, id, label) for the committee page (decision 5) |
+| `components/task-new-dialog/task-new-dialog.component.spec.ts` (**new**) | §7, including the locked case |
 | `components/tasks-shell/tasks-shell.component.ts` | uses `TaskNewDialogComponent`; the inline dialog is deleted |
 | `components/tasks-shell/tasks-shell.component.spec.ts` | follows |
 | `components/task-form/task-form.component.spec.ts` | the typed-id cases (lines 251, 420-447) become picker cases |
@@ -269,7 +314,9 @@ not.
 - the backend: `task-record-types.ts`, `task-visibility.ts`, `task.controller.ts`, a new
   `task-record-choices.service.ts`, a DTO, and specs;
 - `foundation/home/home.component.ts` and its specs;
-- `committee-detail.component.ts`, if Q5 is "Yes";
+- `committees/components/committee-detail/committee-detail.component.ts`: its inline New task
+  dialog (form, steps, footer, `app-edit-dialog`) is replaced by `TaskNewDialogComponent` with
+  the committee locked (decision 5); and the committee-detail specs that open New task;
 - `en.json` / `ar.json`, SYSTEM-REFERENCE §3.19 and §10.24, and CLAUDE.md.
 
 ---
@@ -340,8 +387,10 @@ not.
 ## 9. Progress
 
 - [x] Plan (this file), committed, not pushed
-- [ ] Ahmad's answers to §8; lane A agrees §6
-- [ ] The §0 hotfix (if Q1 is "Hotfix")
+- [x] Ahmad's answers to §8 (9 Nov, "Decisions" above)
+- [ ] Lane A agrees §6
+- [ ] The §0 fix, its own PR: `fix/ACC-280-create-task-key`
+- [ ] Decision 7: Ahmad chooses how "Dissolved" is recognised (a, b or c)
 - [ ] Backend: `create.types` (Q2), `GET /tasks/record-choices`, the registry entry, specs
 - [ ] Frontend: the record picker, the shared New task dialog, Home's button, specs
 - [ ] Docs: SYSTEM-REFERENCE §3.19 and §10.24; CLAUDE.md Key Architecture Decisions (ACC-280)
