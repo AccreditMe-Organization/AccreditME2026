@@ -18,7 +18,6 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { AuthService } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
-import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import {
   IAvailableTaskListItemDto,
@@ -278,7 +277,6 @@ export class MyTasksSectionsComponent {
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly language = inject(LanguageService);
-  private readonly access = inject(NavigationAccessService);
   private readonly auth = inject(AuthService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -522,7 +520,7 @@ export class MyTasksSectionsComponent {
     if (!record) return { label: this.translate.instant(taskRecordTypeKey('OTHER')), href: null };
     return {
       label: record.nameEn ? this.language.bilingual(record.nameEn, record.nameAr) : this.translate.instant(taskRecordTypeKey(record.type)),
-      href: taskRecordHref(record, (p) => this.access.hasPermission(p)),
+      href: taskRecordHref(record),
     };
   }
 
