@@ -288,7 +288,12 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
   it('a caller who may open the record reads its workflow without workflows:view; outside the pool, no moves', async () => {
     callerPermissions = ['committees:view'];
 
-    const [instances, history, one, pressable] = await Promise.all([instancesByObject(), stageHistory(), instanceById(), moves()]);
+    // One at a time: each supertest request against an unlistened server opens its
+    // own listener, and four at once had one connection reset under CI load.
+    const instances = await instancesByObject();
+    const history = await stageHistory();
+    const one = await instanceById();
+    const pressable = await moves();
 
     expect(instances.status).toBe(200);
     expect(instances.body).toHaveLength(1);
@@ -320,7 +325,10 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
   it('serves a caller holding both the child and the parent permission', async () => {
     callerPermissions = ['workflows:view', 'committees:view'];
 
-    const [instances, history, pressable] = await Promise.all([instancesByObject(), stageHistory(), moves()]);
+    // One at a time, for the same reason as the case above.
+    const instances = await instancesByObject();
+    const history = await stageHistory();
+    const pressable = await moves();
 
     expect(instances.status).toBe(200);
     expect(instances.body).toHaveLength(1);
