@@ -11017,8 +11017,11 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     "On hold until …", with the "n overdue" chip and "All my tasks".
   - **My committees** (`home-my-committees.component.ts`): rows show the name,
     the status chip (`committeeStatusOf()`, `committees/committee-status.ts`,
-    shared with the list), and "seat · stage". The name and "All committees"
-    link only for `committees:view`.
+    shared with the list), and "seat · stage". Every name links to its
+    committee: each row is one of the viewer's own active memberships, which a
+    member may open since ACC-281. "All committees" follows the rail's own rule
+    for the Committees item (`isNavItemVisible(tenantNavItemForRoute('committees'),
+    injectNavAccess())`: `committees:view`, or a member), never a copy of it.
   - **Awaiting my action** (`home-awaiting.component.ts`) is always shown,
     with "Nothing is waiting for you." or a failure with Try again; until
     ACC-279 it vanished on both. Rows end "3 days waiting". It has no "View
