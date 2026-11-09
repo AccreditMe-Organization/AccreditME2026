@@ -148,7 +148,7 @@ describe('Closed-task notices, against a real database (ACC-271 PR 4)', () => {
     const omar = await o.person('Omar');
     const c = await committeeWithTask(o, [o.adminId, nora, omar]);
 
-    await workflow.triggerTransition(c.instanceId, { transitionId: c.revise.id }, o.id, o.adminId, []);
+    await workflow.triggerTransition(c.instanceId, { transitionId: c.revise.id }, o.id, o.adminId, ['committees:view']);
 
     const [toNora] = await inbox(nora);
     expect(toNora).toMatchObject({
@@ -177,7 +177,7 @@ describe('Closed-task notices, against a real database (ACC-271 PR 4)', () => {
     const prepare = jest.spyOn(stageTasks, 'prepareEntryTasks').mockResolvedValueOnce({ tasks: [{ data: {} } as never], warnings: [] });
     const insert = jest.spyOn(tasks, 'insertPrepared').mockRejectedValueOnce(new Error('the task could not be written'));
 
-    await expect(workflow.triggerTransition(c.instanceId, { transitionId: c.revise.id }, o.id, o.adminId, [])).rejects.toThrow(
+    await expect(workflow.triggerTransition(c.instanceId, { transitionId: c.revise.id }, o.id, o.adminId, ['committees:view'])).rejects.toThrow(
       'the task could not be written',
     );
 
@@ -214,7 +214,7 @@ describe('Closed-task notices, against a real database (ACC-271 PR 4)', () => {
     // An assignee row naming another organisation's person: never told.
     const c = await committeeWithTask(a, [nora, stranger]);
 
-    await workflow.triggerTransition(c.instanceId, { transitionId: c.revise.id }, a.id, a.adminId, []);
+    await workflow.triggerTransition(c.instanceId, { transitionId: c.revise.id }, a.id, a.adminId, ['committees:view']);
 
     expect(await inbox(nora)).toHaveLength(1);
     expect(await inbox(stranger)).toEqual([]);

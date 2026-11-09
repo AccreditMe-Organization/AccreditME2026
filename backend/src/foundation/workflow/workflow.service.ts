@@ -37,6 +37,8 @@ import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-tas
 import { WorkflowRefusalException } from './workflow-refusal';
 import { assertTransitionPreconditions } from './transition-preconditions';
 import { StagePool, StagePoolRequest, StagePoolService, mayActInStagePool } from './stage-pool.service';
+import { INSTANCE_NOT_FOUND, InstanceAccess } from './instance-access';
+import type { IWorkflowMoves } from './interfaces/workflow-instance.interface';
 import { APP_MOVER_WHERE, transitionMover } from './workflow-pool';
 
 // The client inside this.prisma.$transaction(async (tx) => …) — read off
@@ -104,7 +106,14 @@ export class WorkflowService {
     private readonly stageTaskDefinitions: StageTaskDefinitionService,
     // ACC-271 — who works a converted stage (its assignee entries).
     private readonly stagePool: StagePoolService,
-  ) {}
+  ) {
+    this.access = new InstanceAccess(objectVisibility, stagePool);
+  }
+
+  // ACC-282 — who may read a record's workflow and who may act on it: the ONE
+  // place that rule lives (instance-access.ts). Built from the two services above,
+  // so it needs no wiring of its own.
+  private readonly access: InstanceAccess;
 
   // ── Instance lifecycle ───────────────────────────────────────────────────────
 
@@ -256,15 +265,9 @@ export class WorkflowService {
   ): Promise<IWorkflowInstance> {
     const instance = await this.getInstanceById(id, organizationId);
     // Read-first, so the refusal is shaped as not-found — see
-    // ObjectVisibilityService.assertCanViewOrNotFound() for why.
-    await this.objectVisibility.assertCanViewOrNotFound(
-      instance.objectType,
-      instance.objectId,
-      organizationId,
-      viewerPermissions,
-      'Workflow instance not found',
-      viewerId,
-    );
+    // ObjectVisibilityService.assertCanViewOrNotFound() for why. ACC-282: whoever
+    // may open the record may read its workflow (InstanceAccess).
+    await this.access.assertMayReadInstance(instance, organizationId, { id: viewerId, permissions: viewerPermissions });
     return instance;
   }
 
@@ -285,30 +288,50 @@ export class WorkflowService {
     organizationId: string,
     viewerPermissions: readonly string[],
     viewerId: string,
-  ): Promise<{ transitionIds: string[] }> {
+  ): Promise<IWorkflowMoves> {
+    const none: IWorkflowMoves = { transitionIds: [], moves: [] };
     const instance = await this.getInstanceByIdForViewer(id, organizationId, viewerPermissions, viewerId);
-    if (!instance.currentStageId) return { transitionIds: [] };
+    if (!instance.currentStageId) return none;
     const [stage, transitions] = await Promise.all([
       this.prisma.workflowStage.findFirst({
         where: { id: instance.currentStageId, workflowTemplate: { organizationId } },
         select: { id: true, whoMode: true },
       }),
+      // ACC-282 — each move carries what its button shows (label, kind) and the
+      // stage it leads to, so no screen reads the whole template for them.
       this.prisma.workflowTransition.findMany({
         where: { fromStageId: instance.currentStageId, fromStage: { workflowTemplate: { organizationId } } },
-        select: { id: true, mover: true },
+        select: {
+          id: true,
+          mover: true,
+          labelEn: true,
+          labelAr: true,
+          kind: true,
+          toStageId: true,
+          toStage: { select: { nameEn: true, nameAr: true } },
+        },
         orderBy: { id: 'asc' },
       }),
     ]);
-    if (!stage) return { transitionIds: [] };
+    if (!stage) return none;
     // PR 6a — no permission branch: a stage with no `who` has an empty pool, so nothing.
     const byPerson = transitions.filter((t) => transitionMover(t) === 'PERSON');
-    if (byPerson.length === 0) return { transitionIds: [] };
-    const pool = await this.stagePool.resolve(organizationId, stage.id, {
-      id: instance.id,
-      objectType: instance.objectType as WorkflowObjectType,
-      objectId: instance.objectId,
-    });
-    return { transitionIds: mayActInStagePool(pool, viewerId) ? byPerson.map((t) => t.id) : [] };
+    if (byPerson.length === 0) return none;
+    // ACC-282 — moves stay pool-only: anyone else who may open the record gets none.
+    const pool = await this.access.poolOf(organizationId, stage.id, instance);
+    if (!this.access.mayAct(pool, viewerId)) return none;
+    return {
+      transitionIds: byPerson.map((t) => t.id),
+      moves: byPerson.map((t) => ({
+        id: t.id,
+        labelEn: t.labelEn,
+        labelAr: t.labelAr,
+        kind: t.kind,
+        toStageId: t.toStageId,
+        toStageNameEn: t.toStage.nameEn,
+        toStageNameAr: t.toStage.nameAr,
+      })),
+    };
   }
 
   // ACC-76 — the real path an object took through its workflow.
@@ -340,15 +363,9 @@ export class WorkflowService {
 
     // Same not-found shaping as getInstanceByIdForViewer(): the instance had to
     // be read to learn its object, so a distinguishable refusal would confirm
-    // that an instance with this id exists.
-    await this.objectVisibility.assertCanViewOrNotFound(
-      instance.objectType,
-      instance.objectId,
-      organizationId,
-      viewerPermissions,
-      'Workflow instance not found',
-      viewerId,
-    );
+    // that an instance with this id exists. ACC-282: open to whoever may open the
+    // record (Ahmad, 8 Nov), like the instance itself.
+    await this.access.assertMayReadInstance(instance, organizationId, { id: viewerId, permissions: viewerPermissions });
 
     const [visitRows, stages, transitions] = await Promise.all([
       // WorkflowInstanceStage has NO organizationId of its own — tenancy is
@@ -477,15 +494,10 @@ export class WorkflowService {
     viewerPermissions: readonly string[],
     viewerId?: string,
   ): Promise<IWorkflowInstance[]> {
-    // ACC-281 — viewerId lets an active member of the committee through the
-    // parent check (the route still needs workflows:view).
-    await this.objectVisibility.assertCanView(
-      objectType,
-      objectId,
-      organizationId,
-      viewerPermissions,
-      viewerId,
-    );
+    // ACC-282 — whoever may open the record may read its workflow (InstanceAccess);
+    // the route no longer needs workflows:view. Without a viewer, the parent check
+    // is permission-only (ACC-281's fail-closed default).
+    await this.access.assertMayReadRecord(objectType, objectId, organizationId, { id: viewerId ?? '', permissions: viewerPermissions });
 
     const instances = await this.prisma.workflowInstance.findMany({
       where: { organizationId, objectType: objectType as WorkflowObjectType, objectId },
@@ -561,14 +573,17 @@ export class WorkflowService {
       throw new ConflictException('Workflow instance has no current stage');
     }
 
+    // ACC-282 — every by-id read names the organisation in the same where clause.
     const transition = await this.prisma.workflowTransition.findFirst({
-      where: { id: dto.transitionId, fromStageId: instance.currentStageId },
+      where: { id: dto.transitionId, fromStageId: instance.currentStageId, fromStage: { workflowTemplate: { organizationId } } },
     });
     if (!transition) {
       throw new NotFoundException("This transition is not available from the instance's current stage");
     }
 
-    const fromStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.fromStageId } });
+    const fromStage = await this.prisma.workflowStage.findFirst({
+      where: { id: transition.fromStageId, workflowTemplate: { organizationId } },
+    });
     if (!fromStage) throw new NotFoundException('Current stage not found');
 
     // ACC-271 — the stage says who may move the record out of it: its pool
@@ -583,8 +598,8 @@ export class WorkflowService {
     if (mover !== 'PERSON') {
       throw new ForbiddenException('This transition can only be fired by a system process');
     }
-    const pool = await this.stagePool.resolve(organizationId, fromStage.id, instance);
-    this.assertInStagePool(pool, fromStage, actorId);
+    // ACC-282 — may open the record (the identical 404 otherwise), then in the pool.
+    const pool = await this.access.assertMayAct(instance, fromStage, organizationId, { id: actorId, permissions: userPermissions });
 
     const currentInstanceStage = await this.prisma.workflowInstanceStage.findFirst({
       where: { workflowInstanceId: instanceId, stageId: fromStage.id, exitedAt: null },
@@ -708,6 +723,8 @@ export class WorkflowService {
     dto: SubmitApprovalDto,
     organizationId: string,
     actorId: string,
+    // ACC-282 — the parent check needs the voter's permissions.
+    actorPermissions: readonly string[],
   ): Promise<IWorkflowApproval> {
     const instanceStage = await this.prisma.workflowInstanceStage.findFirst({
       where: { id: instanceStageId, workflowInstance: { organizationId } },
@@ -719,21 +736,23 @@ export class WorkflowService {
       );
     }
 
-    const stage = await this.prisma.workflowStage.findFirst({ where: { id: instanceStage.stageId } });
+    // ACC-282 — every by-id read names the organisation in the same where clause.
+    const stage = await this.prisma.workflowStage.findFirst({
+      where: { id: instanceStage.stageId, workflowTemplate: { organizationId } },
+    });
     if (!stage) throw new NotFoundException('Workflow stage not found');
 
     // The stage's pool is resolved for this record, so the instance is read
     // here (triggerTransition() already has it loaded).
     const instance = await this.prisma.workflowInstance.findFirst({
-      where: { id: instanceStage.workflowInstanceId },
+      where: { id: instanceStage.workflowInstanceId, organizationId },
     });
-    if (!instance) throw new NotFoundException('Workflow instance not found');
+    if (!instance) throw new NotFoundException(INSTANCE_NOT_FOUND);
 
     // ACC-271 — the stage's pool decides who may vote, and an EMPTY pool refuses
-    // everyone (plan gap 3). PR 6a removed the old approver-pool branch: a stage
-    // with no `who` has an empty pool, so it is refused STAGE_HAS_NO_ONE.
-    const pool = await this.stagePool.resolve(organizationId, stage.id, instance);
-    this.assertInStagePool(pool, stage, actorId);
+    // everyone (plan gap 3). ACC-282: the voter must also be able to open the
+    // record, with the identical 404 otherwise, checked first (InstanceAccess).
+    const pool = await this.access.assertMayAct(instance, stage, organizationId, { id: actorId, permissions: actorPermissions });
 
     // ACC-190 (Ahmad, 9 Oct, J) — the approval path is gated too, and a deciding
     // vote is refused BEFORE it is recorded.
@@ -1524,17 +1543,6 @@ export class WorkflowService {
   /** ACC-271 PR 4 — the sweep's leaver rule on "All of them" entries (StagePoolService.recordPoolChanges()). */
   async recordPoolChanges(organizationId: string, pools: ReadonlyMap<string, StagePool>): Promise<{ joined: number; left: number }> {
     return this.stagePool.recordPoolChanges(organizationId, pools);
-  }
-
-  // ACC-271 — who may act on a converted stage: the pool's members, or someone
-  // the pool names directly who is away (they may still act themselves). An
-  // empty pool refuses everyone, worded from the stage.
-  private assertInStagePool(pool: StagePool, stage: PrismaWorkflowStage, actorId: string): void {
-    const stageNames = { stageNameEn: stage.nameEn, stageNameAr: stage.nameAr };
-    if (pool.members.length === 0) throw new WorkflowRefusalException('STAGE_HAS_NO_ONE', stageNames);
-    if (!mayActInStagePool(pool, actorId)) {
-      throw new WorkflowRefusalException('NOT_IN_STAGE_POOL', stageNames);
-    }
   }
 
   // Whether one person's action decides the stage: a stage worked by Any one of

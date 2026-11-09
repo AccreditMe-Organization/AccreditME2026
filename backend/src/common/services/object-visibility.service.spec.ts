@@ -95,9 +95,30 @@ describe('ObjectVisibilityService (ACC-101)', () => {
       expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
     });
 
-    it('a change request does not admit members through this rule', async () => {
-      mockPrisma.committeeMember.findFirst.mockResolvedValue({ id: 'cm-1' });
-      await expect(service.assertCanView('COMMITTEE_CHANGE_REQUEST', 'cr-1', ORG_A, [], MEMBER)).rejects.toThrow(ForbiddenException);
+    // ACC-282 (Ahmad, 8 Nov) — a change request is part of its committee's record,
+    // so a member of THAT committee may read its workflow. ACC-281 had left this
+    // rule committees:view; the request's own routes already admitted members.
+    it("a change request admits a member of the request's committee, in one query", async () => {
+      mockPrisma.committeeMember.findFirst.mockResolvedValueOnce({ id: 'cm-1' });
+      await expect(service.assertCanView('COMMITTEE_CHANGE_REQUEST', 'cr-1', ORG_A, [], MEMBER)).resolves.toBeUndefined();
+      expect(mockPrisma.committeeMember.findFirst).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.committeeMember.findFirst).toHaveBeenCalledWith({
+        where: {
+          userId: MEMBER,
+          organizationId: ORG_A,
+          isActive: true,
+          committee: { organizationId: ORG_A, isActive: true, changeRequests: { some: { id: 'cr-1', organizationId: ORG_A } } },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('a change request refuses anyone else with the identical 403', async () => {
+      mockPrisma.committeeMember.findFirst.mockResolvedValue(null);
+      const real = await service.assertCanView('COMMITTEE_CHANGE_REQUEST', 'cr-1', ORG_A, [], MEMBER).catch((e: Error) => e);
+      const invented = await service.assertCanView('COMMITTEE_CHANGE_REQUEST', 'no-such', ORG_A, [], MEMBER).catch((e: Error) => e);
+      expect(real).toEqual(new ForbiddenException('Required permission: committees:view'));
+      expect(invented).toEqual(real);
     });
 
     it('the read-first form admits a member, and answers a non-member with its own 404', async () => {

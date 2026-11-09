@@ -82,6 +82,22 @@ describe('WorkflowController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  // ACC-282 (Ahmad, 8 Nov) — the workflow reads follow the record, decided in the
+  // service (InstanceAccess): no route permission on them. Pressing and voting had
+  // none already. Cancel keeps workflows:manage. Pinned route by route.
+  describe('route permissions (ACC-282)', () => {
+    const meta = (handler: keyof WorkflowController) => Reflect.getMetadata(PERMISSIONS_KEY, WorkflowController.prototype[handler]);
+
+    it.each(['getInstanceById', 'getInstancesByObject', 'getStageHistory', 'getMoves', 'triggerTransition', 'submitApproval'] as const)(
+      '%s carries no @Permissions',
+      (handler) => expect(meta(handler)).toBeUndefined(),
+    );
+
+    it('cancelInstance keeps workflows:manage', () => {
+      expect(meta('cancelInstance')).toEqual(['workflows:manage']);
+    });
+  });
+
   // ACC-271 — Home's "Awaiting my action". Self-scoped, so it carries no
   // @Permissions: the service answers only for the caller, row by row.
   describe('getAwaitingMe', () => {
@@ -156,8 +172,8 @@ describe('WorkflowController', () => {
   describe('submitApproval', () => {
     it('delegates to workflowService.submitApproval', async () => {
       const dto = { decision: 'APPROVED' } as never;
-      const result = await controller.submitApproval('instance-stage-1', dto, TENANT_ID, ACTOR_ID);
-      expect(service.submitApproval).toHaveBeenCalledWith('instance-stage-1', dto, TENANT_ID, ACTOR_ID);
+      const result = await controller.submitApproval('instance-stage-1', dto, TENANT_ID, ACTOR_ID, ['committees:view']);
+      expect(service.submitApproval).toHaveBeenCalledWith('instance-stage-1', dto, TENANT_ID, ACTOR_ID, ['committees:view']);
       expect(result).toEqual(MOCK_APPROVAL);
     });
   });

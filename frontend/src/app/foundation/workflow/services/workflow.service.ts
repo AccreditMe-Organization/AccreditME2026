@@ -5,6 +5,22 @@ import { Observable, tap } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ResolvedDelegationDto } from '../../tasks/services/task.service';
 
+/** ACC-282 — one move this person may press, with what its button shows and where it leads. */
+export interface WorkflowMoveDto {
+  id: string;
+  labelEn: string;
+  labelAr: string | null;
+  kind: 'ADVANCE' | 'RETURN' | 'EXIT';
+  toStageId: string;
+  toStageNameEn: string;
+  toStageNameAr: string | null;
+}
+
+export interface WorkflowMovesDto {
+  transitionIds: string[];
+  moves: WorkflowMoveDto[];
+}
+
 export interface WorkflowInstanceDto {
   id: string;
   organizationId: string;
@@ -156,11 +172,12 @@ export class WorkflowService {
 
   /**
    * ACC-271 PR 2 — the moves out of the record's current stage the signed-in
-   * person may press, as the server decides it (a converted stage's pool, or
-   * today's permission rule). The record page's buttons show exactly these.
+   * person may press, as the server decides it (the stage's pool). The record
+   * page's buttons show exactly these. ACC-282: each carries its label and the
+   * stage it leads to; empty for anyone outside the pool.
    */
-  getMoves(instanceId: string): Observable<{ transitionIds: string[] }> {
-    return this.http.get<{ transitionIds: string[] }>(`${this.base}/instances/${instanceId}/moves`);
+  getMoves(instanceId: string): Observable<WorkflowMovesDto> {
+    return this.http.get<WorkflowMovesDto>(`${this.base}/instances/${instanceId}/moves`);
   }
 
   triggerTransition(instanceId: string, dto: TriggerTransitionDto): Observable<WorkflowInstanceDto> {

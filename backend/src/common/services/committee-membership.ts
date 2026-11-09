@@ -48,6 +48,30 @@ export async function isActiveMember(
 }
 
 /**
+ * ACC-282 — is `userId` an active member of the active committee this change request
+ * belongs to? A change request is part of its committee's record (ACC-239), so a
+ * member who may open the request (ACC-281) may read its workflow too. One query:
+ * the membership row, its committee and the request, together.
+ */
+export async function isActiveMemberOfRequestCommittee(
+  client: MembershipClient,
+  requestId: string,
+  userId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const row = await client.committeeMember.findFirst({
+    where: {
+      userId,
+      organizationId,
+      isActive: true,
+      committee: { organizationId, isActive: true, changeRequests: { some: { id: requestId, organizationId } } },
+    },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
  * The active committees `userId` is an active member of, among `among` when given.
  * One query, for a list or a batch: never call isActiveMember() once per row.
  */

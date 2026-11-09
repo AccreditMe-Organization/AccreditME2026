@@ -2469,7 +2469,8 @@ misconfiguration).
 
 ### 2.14 `getStageHistory()` — Where a Record Is, Two Ways (ACC-76)
 
-`GET /workflows/instances/:id/stage-history`, gated `workflows:view`.
+`GET /workflows/instances/:id/stage-history`: open to whoever may open the record
+(ACC-282, §2.19.1; it was `workflows:view`).
 Returns **both** views, because they answer different questions and
 neither substitutes for the other:
 
@@ -3139,12 +3140,13 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
     through `TenantService.assignWorkflowStartingAssignments()` (no new
     module edge). Two queries; a second run writes nothing. The INVITED admin
     is in no pool until they accept.
-  - **`GET /workflows/instances/:id/moves`** (`getMovesForViewer()`,
-    `workflows:view` and the instance read's visibility): the ids of the
+  - **`GET /workflows/instances/:id/moves`** (`getMovesForViewer()`, the
+    instance read's visibility — no route permission since ACC-282): the
     moves out of the current stage this viewer may press — a converted
-    stage's PERSON moves for whoever works it, today's permission rule on any
-    other. `WorkflowTransitionActionsComponent` shows exactly those; it no
-    longer reads `requiredPermission`.
+    stage's PERSON moves for whoever works it, none for anyone else.
+    `WorkflowTransitionActionsComponent` shows exactly those; it no
+    longer reads `requiredPermission`. Since ACC-282 each move carries its
+    label, kind and next stage (§2.19.1).
   - **`whoFromLegacy()`** (`workflow-who.ts`) is the one mapping from the old
     columns, used by `backfill-acc271-stage-assignees`; `moverForTrigger()`
     by `backfill-acc271-transition-movers`. Both backfills run after the
@@ -3604,6 +3606,48 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
   `overlay-select.component.spec.ts` and `stage-who.component.spec.ts`.
 
 ---
+
+#### 2.19.1 Who may read a record's workflow, and who may act on it (ACC-282)
+
+Plan and Ahmad's answers (8 Nov): `backend/Plans/step-282-pool-member-moves.md`.
+The rule lives in ONE file, `foundation/workflow/instance-access.ts`
+(`InstanceAccess`); `WorkflowService` builds it from the two services it already
+has and keeps no copy.
+
+| Route | Who | Anyone else |
+| -- | -- | -- |
+| `GET /workflows/instances?objectType=&objectId=` | whoever may open the record | the parent's 403, before any read (ACC-101 clause a) |
+| `GET /workflows/instances/:id` | whoever may open the record | 404 "Workflow instance not found" (clause b) |
+| `GET /workflows/instances/:id/stage-history` | whoever may open the record | the same 404 |
+| `GET /workflows/instances/:id/moves` | whoever may open the record; moves listed only for someone in the current stage's pool, else `{ transitionIds: [], moves: [] }` | the same 404 |
+| `POST /workflows/instances/:id/transitions` (a press; on an ALL or COMMITTEE_VOTE stage, the vote) | may open the record, THEN in the pool | the same 404 before any pool is read; outside the pool, `NOT_IN_STAGE_POOL` as before |
+| `POST /workflows/instance-stages/:id/approvals` | the same | the same |
+
+- **"May open the record"** is the parent rule (§1.9) with the viewer's id:
+  for a committee, `committees:view` or an active member of THAT committee
+  (ACC-281); for a change request, the same of the request's committee (ACC-282
+  added that member clause). `workflows:view` is no longer needed to read, and was
+  never enough alone (ACC-101).
+- **A former member named directly in a pool** (a SPECIFIC_USER entry) may not
+  open the record, so every read and every press is the 404.
+- **Each move carries what its button shows:** `moves: [{ id, labelEn, labelAr,
+  kind, toStageId, toStageNameEn, toStageNameAr }]` beside `transitionIds`, from the
+  same transitions read. The buttons read no template (`GET /workflow-templates/:id`
+  needs `workflows:view`).
+- **The four by-id reads in pressing and voting name the organisation** in the same
+  `where` (the transition, the from-stage, the vote's stage and instance).
+- **Cost:** the read rule is the parent check these routes already made, so no query
+  is added for anyone, `workflows:view` holders included. A press or a vote gains
+  that same parent check (one indexed read); the pool is resolved once
+  (StagePoolService batches by kind). Nothing runs on the per-request path.
+- **A seed quirk, not changed:** the committee template's Approve moves are not
+  approval-path moves (`isApprovalPath` false), so on an ALL stage a single press of
+  one fires at once. Committee stages are ANY_ONE in the seed, so nothing live is
+  affected.
+- **Specs:** `instance-access.spec.ts`; `pool-member-moves.db-spec.ts` (a pool member,
+  a member outside the pool, a former member named directly, a `workflows:view`
+  holder, a vote on an ALL stage, a change request, and another organisation's
+  record); `workflow-parent-visibility.spec.ts`; the controller's route metadata.
 
 ## 3. Task System
 
@@ -5955,8 +5999,9 @@ cached.
   `memberCommitteeIds()` query for the committee ids the permission does not cover, never
   one per row. **Task visibility (`taskVisibleSql`, §3.19) is unchanged:** membership does
   not widen which tasks a member sees.
-- **The stage routes keep `workflows:view`.** A member without it reads the stage name from
-  the committee read and sees no timeline or move buttons. That gap is ACC-282.
+- **The workflow reads follow the record (ACC-282, §2.19.1).** A member reads the
+  committee's instance, its Lifecycle and its Stage history without `workflows:view`, and
+  is offered moves only when in the current stage's pool.
 
 #### Writes
 
@@ -6003,8 +6048,9 @@ The committee services' write methods take the caller's permissions as a trailin
 
 - **The committee page sends only the reads this viewer may make:**
   - no `GET /committees` (the read names parent, Reports to and the stage);
-  - the user list only with `users:view`, the seat lookup only with `lookups:view`, the
-    instance read only with `workflows:view`;
+  - the user list only with `users:view`, the seat lookup only with `lookups:view`;
+  - the instance read for everyone the page admits (ACC-282), so the Lifecycle card and
+    Stage history show; the buttons are the moves read's;
   - Membership history for everyone who may open the page.
   - A panel whose read is not sent is absent, never an error.
 - **Parent and Reports to link only where `mayOpen`;** otherwise the name is plain text. The
@@ -9377,9 +9423,9 @@ page can place them separately, as Committee's does.
 - Stage and transition names are tenant-editable data: rendered by
   `isArabic()` selection, **never** `| translate` (9.3). For the same
   reason `StatusBadgeComponent` (10.2) is correctly not used here.
-- Fails silently — a caller without `workflows:view` gets a 403 and the
-  component renders nothing, exactly as the plain "Current Stage" label
-  it replaced already did.
+- Fails silently — a caller who may not open the record gets a 404 and the
+  component renders nothing (ACC-282; it was a 403 for a caller without
+  `workflows:view`).
 
 **Dates and numerals inside RTL text use `dir="ltr"` +
 `unicode-bidi: isolate`** here and across Committee's record page — the

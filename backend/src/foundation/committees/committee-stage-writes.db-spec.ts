@@ -252,7 +252,7 @@ describe("A committee's direct writes, decided by its stage, against a real data
         const c = await o.committeeAt('formation');
         const [edit, move] = await Promise.all([
           outcome(committees.updateCommittee(c.id, { nameEn: `Renamed ${round}` } as never, o.id, o.actorId, ['committees:view'])),
-          outcome(workflow.triggerTransition(c.instanceId, { transitionId: submit.id } as never, o.id, o.actorId, ['committees:manage'])),
+          outcome(workflow.triggerTransition(c.instanceId, { transitionId: submit.id } as never, o.id, o.actorId, ['committees:view', 'committees:manage'])),
         ]);
 
         // The move always lands; the edit lands before it, or is refused by

@@ -148,7 +148,7 @@ describe('CommitteeDetailComponent — every panel lines up in its grid row', ()
         },
         { provide: LookupService, useValue: { getValues: () => of(SEATS) } },
         { provide: UserService, useValue: { listAllUsers: () => of(USERS) } },
-        { provide: WorkflowService, useValue: { getInstancesByObject: () => of([]), getStageHistory: () => of(null), getMoves: () => of({ transitionIds: [] }) } },
+        { provide: WorkflowService, useValue: { getInstancesByObject: () => of([]), getStageHistory: () => of(null), getMoves: () => of({ transitionIds: [], moves: [] }) } },
       ],
     });
     loadTranslationsForTest({ en, ar });

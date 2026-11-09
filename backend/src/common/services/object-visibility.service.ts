@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../constants/permissions';
-import { isActiveMember } from './committee-membership';
+import { isActiveMember, isActiveMemberOfRequestCommittee } from './committee-membership';
 
 /**
  * ACC-244 — the permission that lets a caller see records of each type: the
@@ -72,9 +72,9 @@ export class ObjectVisibilityService {
       member: (id, organizationId, viewerId) => isActiveMember(this.prisma, id, viewerId, organizationId),
     },
     // ACC-239 — a change request is part of its committee's record: seeing it
-    // takes what seeing the committee takes. ACC-281: change requests are read
-    // through their committee's own routes, which apply membership there; this
-    // rule stays committees:view.
+    // takes what seeing the committee takes. ACC-282 (Ahmad, 8 Nov): so an active
+    // member of the request's committee, who may open the request (ACC-281), may
+    // read its workflow too. Asked only when the permission is missing.
     COMMITTEE_CHANGE_REQUEST: {
       permission: RECORD_VIEW_PERMISSION['COMMITTEE_CHANGE_REQUEST']!,
       exists: (id, organizationId) =>
@@ -82,6 +82,7 @@ export class ObjectVisibilityService {
           where: { id, organizationId },
           select: { id: true },
         }),
+      member: (id, organizationId, viewerId) => isActiveMemberOfRequestCommittee(this.prisma, id, viewerId, organizationId),
     },
     MEETING: {
       permission: RECORD_VIEW_PERMISSION['MEETING']!,

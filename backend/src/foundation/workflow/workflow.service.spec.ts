@@ -231,6 +231,7 @@ const poolOf = (members: string[], extra: Partial<StagePool> = {}): StagePool =>
 // needs with poolOf(). Since PR 6b nothing in the engine resolves people itself.
 describe('WorkflowService', () => {
   let service: WorkflowService;
+  let mockVisibility: { assertCanView: jest.Mock; assertCanViewOrNotFound: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -271,6 +272,9 @@ describe('WorkflowService', () => {
     mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
     mockStagePool.recordPoolChanges.mockResolvedValue({ joined: 0, left: 0 });
 
+    // ACC-282 — a fresh permissive stub per test; a case that needs a refusal says so.
+    mockVisibility = { assertCanView: jest.fn(), assertCanViewOrNotFound: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkflowService,
@@ -284,7 +288,7 @@ describe('WorkflowService', () => {
         // at the route, in workflow-parent-visibility.spec.ts.
         {
           provide: ObjectVisibilityService,
-          useValue: { assertCanView: jest.fn(), assertCanViewOrNotFound: jest.fn() },
+          useValue: mockVisibility,
         },
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
@@ -1438,7 +1442,7 @@ describe('WorkflowService', () => {
         mockPrisma.workflowTransition.findFirst.mockResolvedValue({ kind: 'ADVANCE' });
         mockPrisma.task.findMany.mockResolvedValue(openMandatory);
 
-        const error = await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR).catch((e: unknown) => e);
+        const error = await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']).catch((e: unknown) => e);
 
         expect((error as WorkflowRefusalException).code).toBe('STAGE_TASKS_OPEN');
         expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
@@ -1451,7 +1455,7 @@ describe('WorkflowService', () => {
         mockPrisma.task.findMany.mockResolvedValue(openMandatory);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'RETURNED' }));
 
-        await service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR);
+        await service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR, ['committees:view']);
 
         expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
       });
@@ -1767,7 +1771,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(SINGLE_STAGE);
 
-      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']);
 
       expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
     });
@@ -1776,7 +1780,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_B, ACTOR),
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_B, ACTOR, ['committees:view']),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -1786,7 +1790,7 @@ describe('WorkflowService', () => {
       );
 
       await expect(
-        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -1813,7 +1817,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
     });
@@ -1824,7 +1828,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
       mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
 
-      await service.submitApproval('instance-stage-1', { decision: 'ABSTAINED' }, ORG_A, ACTOR);
+      await service.submitApproval('instance-stage-1', { decision: 'ABSTAINED' }, ORG_A, ACTOR, ['committees:view']);
 
       expect(mockPrisma.workflowTransition.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
@@ -1849,7 +1853,7 @@ describe('WorkflowService', () => {
       );
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
 
-      await service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR);
+      await service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR, ['committees:view']);
 
       expect(mockPrisma.workflowTransition.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { fromStageId: 'stage-parallel', isApprovalPath: false } }),
@@ -1869,7 +1873,7 @@ describe('WorkflowService', () => {
       mockStagePool.resolve.mockResolvedValue(poolOf(['user-1', 'user-2', ACTOR]));
       mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
 
-      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']);
 
       expect(mockPrisma.workflowTransition.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
@@ -1889,7 +1893,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -1906,7 +1910,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR),
+        service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR, ['committees:view']),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -1920,7 +1924,7 @@ describe('WorkflowService', () => {
         mockPrisma.workflowStage.findFirst.mockResolvedValue(null);
 
         await expect(
-          service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+          service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']),
         ).rejects.toThrow(NotFoundException);
         expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
       });
@@ -1961,7 +1965,7 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.submitApproval('stage-belonging-to-org-a', { decision: 'APPROVED' }, ORG_B, ACTOR),
+        service.submitApproval('stage-belonging-to-org-a', { decision: 'APPROVED' }, ORG_B, ACTOR, ['committees:view']),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
     });
@@ -2058,6 +2062,51 @@ describe('WorkflowService', () => {
         moved();
         expect(mockStagePool.resolve).toHaveBeenCalledWith(ORG_A, 'stage-pool', expect.objectContaining({ id: 'instance-1' }));
         expect(mockPrisma.userRole.findFirst).not.toHaveBeenCalled();
+      });
+
+      // ACC-282 (Ahmad, 8 Nov, Q3) — pressing (and so voting) also needs the
+      // record: someone who may not open it gets the identical 404, before any
+      // pool is read, even if an entry names them.
+      it('refuses someone who may not open the record with the 404, before the pool is read', async () => {
+        arrange(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+        mockVisibility.assertCanViewOrNotFound.mockRejectedValueOnce(new NotFoundException('Workflow instance not found'));
+
+        await expect(trigger([])).rejects.toEqual(new NotFoundException('Workflow instance not found'));
+        expect(mockVisibility.assertCanViewOrNotFound).toHaveBeenCalledWith('DOCUMENT', 'object-1', ORG_A, [], 'Workflow instance not found', ACTOR);
+        expect(mockStagePool.resolve).not.toHaveBeenCalled();
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      });
+
+      it('submitApproval refuses someone who may not open the record with the same 404, recording nothing', async () => {
+        arrange(POOL_STAGE);
+        mockVisibility.assertCanViewOrNotFound.mockRejectedValueOnce(new NotFoundException('Workflow instance not found'));
+
+        await expect(service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, [])).rejects.toEqual(
+          new NotFoundException('Workflow instance not found'),
+        );
+        expect(mockStagePool.resolve).not.toHaveBeenCalled();
+        expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+      });
+
+      // ACC-282 (Q6) — every by-id read in pressing and voting names the
+      // organisation in the same where clause, not only by reachability.
+      itEnforcesTenantIsolation('triggerTransition and submitApproval: every by-id read names the organisation', async () => {
+        arrange(POOL_STAGE);
+        mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+        await trigger([]);
+        expect(mockPrisma.workflowTransition.findFirst).toHaveBeenCalledWith({
+          where: { id: 'transition-1', fromStageId: 'stage-pool', fromStage: { workflowTemplate: { organizationId: ORG_A } } },
+        });
+        expect(mockPrisma.workflowStage.findFirst).toHaveBeenCalledWith({ where: { id: 'stage-pool', workflowTemplate: { organizationId: ORG_A } } });
+
+        mockPrisma.workflowStage.findFirst.mockClear();
+        mockPrisma.workflowInstance.findFirst.mockClear();
+        await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, []).catch(() => undefined);
+        expect(mockPrisma.workflowStage.findFirst).toHaveBeenCalledWith({ where: { id: 'stage-pool', workflowTemplate: { organizationId: ORG_A } } });
+        expect(mockPrisma.workflowInstance.findFirst).toHaveBeenCalledWith({
+          where: { id: POOL_INSTANCE_STAGE.workflowInstanceId, organizationId: ORG_A },
+        });
       });
 
       it('refuses someone outside the pool with NOT_IN_STAGE_POOL (403), whatever permissions they hold', async () => {
@@ -2278,7 +2327,7 @@ describe('WorkflowService', () => {
         mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
       }
-      const vote = () => service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+      const vote = () => service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']);
 
       it('records the vote of a pool member', async () => {
         arrangeVote(ALL_STAGE);
@@ -2433,13 +2482,32 @@ describe('WorkflowService', () => {
     });
 
     describe('getMovesForViewer', () => {
+      // ACC-282 — each move carries what its button shows and where it leads.
+      const move = (id: string, mover: string | null) => ({
+        id,
+        mover,
+        labelEn: `Label ${id}`,
+        labelAr: null,
+        kind: 'ADVANCE',
+        toStageId: `to-${id}`,
+        toStage: { nameEn: `Stage ${id}`, nameAr: null },
+      });
       const moves = [
-        { id: 'move-approve', mover: 'PERSON' },
-        { id: 'move-app', mover: 'APP' },
-        { id: 'move-open', mover: 'PERSON' },
+        move('move-approve', 'PERSON'),
+        move('move-app', 'APP'),
+        move('move-open', 'PERSON'),
         // ACC-271 PR 6b — a move with no mover is nobody's: never offered.
-        { id: 'move-none', mover: null },
+        move('move-none', null),
       ];
+      const shown = (id: string) => ({
+        id,
+        labelEn: `Label ${id}`,
+        labelAr: null,
+        kind: 'ADVANCE',
+        toStageId: `to-${id}`,
+        toStageNameEn: `Stage ${id}`,
+        toStageNameAr: null,
+      });
       function arrangeMoves(stage: Record<string, unknown>) {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
         mockPrisma.workflowStage.findFirst.mockResolvedValue(stage);
@@ -2451,14 +2519,14 @@ describe('WorkflowService', () => {
         arrangeMoves(POOL_STAGE);
         mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
 
-        expect(await ask([])).toEqual({ transitionIds: ['move-approve', 'move-open'] });
+        expect(await ask([])).toEqual({ transitionIds: ['move-approve', 'move-open'], moves: [shown('move-approve'), shown('move-open')] });
       });
 
       it('a converted stage: someone outside the pool gets nothing, whatever permissions they hold', async () => {
         arrangeMoves(POOL_STAGE);
         mockStagePool.resolve.mockResolvedValue(poolOf(['user-nora']));
 
-        expect(await ask(['committees:approve'])).toEqual({ transitionIds: [] });
+        expect(await ask(['committees:approve'])).toEqual({ transitionIds: [], moves: [] });
       });
 
       // ACC-271 PR 6a — no permission rule any more: a stage with no `who` has an
@@ -2467,7 +2535,7 @@ describe('WorkflowService', () => {
         arrangeMoves({ ...POOL_STAGE, whoMode: null });
         mockStagePool.resolve.mockResolvedValue(poolOf([]));
 
-        expect(await ask(['committees:approve'])).toEqual({ transitionIds: [] });
+        expect(await ask(['committees:approve'])).toEqual({ transitionIds: [], moves: [] });
         expect(mockStagePool.resolve).toHaveBeenCalledWith(ORG_A, 'stage-pool', expect.anything());
       });
 
@@ -2481,7 +2549,11 @@ describe('WorkflowService', () => {
           expect.objectContaining({ where: { id: 'stage-pool', workflowTemplate: { organizationId: ORG_A } } }),
         );
         expect(mockPrisma.workflowTransition.findMany).toHaveBeenCalledWith(
-          expect.objectContaining({ where: { fromStageId: 'stage-pool', fromStage: { workflowTemplate: { organizationId: ORG_A } } } }),
+          expect.objectContaining({
+            where: { fromStageId: 'stage-pool', fromStage: { workflowTemplate: { organizationId: ORG_A } } },
+            // ACC-282 — the label and the next stage come with the move, in the same read.
+            select: expect.objectContaining({ labelEn: true, labelAr: true, kind: true, toStageId: true, toStage: { select: { nameEn: true, nameAr: true } } }),
+          }),
         );
       });
 

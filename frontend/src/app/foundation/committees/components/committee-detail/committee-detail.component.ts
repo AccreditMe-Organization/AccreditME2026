@@ -159,6 +159,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                 <app-workflow-transition-actions
                   [instance]="instance"
                   [recordLabel]="displayName(c)"
+                  [stageLabel]="currentStageName()"
                   (transitioned)="onWorkflowTransitioned($event)"
                 />
               }
@@ -879,9 +880,10 @@ export class CommitteeDetailComponent implements OnInit {
   // Current lifecycle stage is read live from the workflow engine, never a
   // stored field on Committee (ACC-22 Pending Discussion #5).
   private loadCurrentStage(): void {
-    // ACC-281 — the instance read needs workflows:view; without it the header still
-    // shows the stage (from the committee read), and the timeline is absent.
-    if (!this.navigationAccess.hasPermission('workflows:view')) return;
+    // ACC-282 (Ahmad, 8 Nov) — whoever may open the committee may read its workflow,
+    // so the instance read is sent for every viewer this page admits: the Lifecycle
+    // card and Stage history show for them. The buttons are the moves read's, which
+    // lists moves only for someone in the current stage's pool.
     this.workflowService.getInstancesByObject('COMMITTEE', this.committeeId).subscribe({
       next: (instances) => {
         const instance = instances[0];

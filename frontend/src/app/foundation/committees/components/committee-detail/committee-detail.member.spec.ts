@@ -16,7 +16,8 @@ import { CommitteeDetailDto, CommitteeService } from '../../services/committee.s
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { UserService } from '../../../user/services/user.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
-import { WorkflowService } from '../../../workflow/services/workflow.service';
+import { WorkflowInstanceDto, WorkflowMovesDto, WorkflowService } from '../../../workflow/services/workflow.service';
+import { WorkflowTemplateService } from '../../../workflow/services/workflow-template.service';
 import { ACTIVE_RULES } from '../../testing';
 import { CommitteeDetailComponent } from './committee-detail.component';
 
@@ -55,12 +56,38 @@ const COMMITTEE = (over: Partial<CommitteeDetailDto> = {}): CommitteeDetailDto =
   ...over,
 });
 
+// ACC-282 — the committee's workflow, as GET /workflows/instances answers it.
+const INSTANCE: WorkflowInstanceDto = {
+  id: 'inst-1',
+  organizationId: 'org',
+  workflowTemplateId: 'tpl-1',
+  objectType: 'COMMITTEE',
+  objectId: 'c-1',
+  status: 'IN_PROGRESS',
+  currentStageId: 'stage-active',
+  createdAt: '2026-09-01T08:00:00Z',
+  updatedAt: '2026-10-10T08:00:00Z',
+  unassignedTaskWarnings: [],
+};
+const MOVES: WorkflowMovesDto = {
+  transitionIds: ['t-suspend'],
+  moves: [
+    { id: 't-suspend', labelEn: 'Suspend Committee', labelAr: null, kind: 'ADVANCE', toStageId: 'stage-suspended', toStageNameEn: 'Suspended', toStageNameAr: null },
+  ],
+};
+const NO_MOVES: WorkflowMovesDto = { transitionIds: [], moves: [] };
+
 describe('CommitteeDetailComponent — a member without committees:view (ACC-281)', () => {
   preserveDocumentLanguage();
 
   let calls: string[];
 
-  function render(held: string[], committee = COMMITTEE(), lang: 'en' | 'ar' = 'en'): HTMLElement {
+  function render(
+    held: string[],
+    committee = COMMITTEE(),
+    lang: 'en' | 'ar' = 'en',
+    workflow: { instances?: WorkflowInstanceDto[]; moves?: WorkflowMovesDto } = {},
+  ): HTMLElement {
     calls = [];
     const record =
       <T>(name: string, value: T) =>
@@ -94,7 +121,16 @@ describe('CommitteeDetailComponent — a member without committees:view (ACC-281
         { provide: LookupService, useValue: { getValues: record('lookups', []) } },
         { provide: UserService, useValue: { listAllUsers: record('listAllUsers', []) } },
         { provide: OrgUnitService, useValue: { getFlat: record('getFlat', []) } },
-        { provide: WorkflowService, useValue: { getInstancesByObject: record('getInstancesByObject', []) } },
+        {
+          provide: WorkflowService,
+          useValue: {
+            getInstancesByObject: record('getInstancesByObject', workflow.instances ?? []),
+            getMoves: record('getMoves', workflow.moves ?? NO_MOVES),
+            getStageHistory: record('getStageHistory', { instanceId: 'inst-1', stages: [], visits: [] }),
+          },
+        },
+        // ACC-282 — the buttons read no template (workflows:view); a call here is a regression.
+        { provide: WorkflowTemplateService, useValue: { getTemplate: record('getTemplate', null) } },
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -116,7 +152,8 @@ describe('CommitteeDetailComponent — a member without committees:view (ACC-281
     expect(calls).not.toContain('listCommittees');
     expect(calls).not.toContain('listAllUsers');
     expect(calls).not.toContain('lookups:committee_member_role');
-    expect(calls).not.toContain('getInstancesByObject');
+    // ACC-282 — whoever may open the committee may read its workflow.
+    expect(calls).toContain('getInstancesByObject');
   });
 
   it('each read gated on a permission is sent once the viewer holds it', () => {
@@ -153,9 +190,39 @@ describe('CommitteeDetailComponent — a member without committees:view (ACC-281
     expect(page.querySelector('[data-testid="committee-reports-to"]')).toBeNull();
   });
 
-  it('names the stage from the committee read, with no instance read', () => {
+  it('names the stage from the committee read, with no workflow shown when there is none', () => {
     const page = render([]);
     expect(page.textContent).toContain('Active');
-    expect(calls).not.toContain('getInstancesByObject');
+    expect(page.querySelector('[data-lifecycle-card]')).toBeNull();
+    expect(calls).not.toContain('getMoves');
+  });
+
+  // ACC-282 (Ahmad, 8 Nov) — a member reads the committee's workflow; the buttons
+  // are the moves read's, which lists moves only for someone in the stage's pool.
+  describe('the workflow, without workflows:view (ACC-282)', () => {
+    const button = (page: HTMLElement, label: string) =>
+      Array.from(page.querySelectorAll('button')).find((b) => b.textContent?.includes(label)) ?? null;
+
+    it('a member in the pool: the Lifecycle card, Stage history and the move, labelled from the moves read', () => {
+      const page = render([], COMMITTEE(), 'en', { instances: [INSTANCE], moves: MOVES });
+      // Non-vacuity: the workflow did load.
+      expect(calls).withContext('the instance read').toContain('getInstancesByObject');
+      expect(page.querySelector('[data-lifecycle-card]')).withContext('the Lifecycle card').not.toBeNull();
+      expect(page.querySelector('[data-stage-history]')).withContext('Stage history').not.toBeNull();
+      expect(calls).toContain('getStageHistory');
+      expect(calls).toContain('getMoves');
+
+      expect(button(page, 'Suspend Committee')).withContext('the move').not.toBeNull();
+      expect(calls).not.toContain('getTemplate');
+    });
+
+    it('a member outside the pool: the Lifecycle card and Stage history, and no move', () => {
+      const page = render([], COMMITTEE(), 'en', { instances: [INSTANCE], moves: NO_MOVES });
+      expect(page.querySelector('[data-lifecycle-card]')).not.toBeNull();
+      expect(page.querySelector('[data-stage-history]')).not.toBeNull();
+      expect(calls).toContain('getMoves');
+      expect(button(page, 'Suspend Committee')).toBeNull();
+      expect(calls).not.toContain('getTemplate');
+    });
   });
 });

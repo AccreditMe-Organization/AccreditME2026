@@ -473,6 +473,7 @@ ACC-271: Stage pools (PRs 1, 2, 4 merged; 3 and 5 to come)
 ACC-272: Role permissions as a grouped list, and "A user's permissions" ✅
 ACC-279: Home to the App Shell design: one Home, admin block, work counts
 ACC-281: Committee members open their own committees; paged awaiting reads
+ACC-282: A record's workflow follows the record; pool members press their moves
 
 ### Onboarding
 Tenant Onboarding wizard
@@ -4684,7 +4685,30 @@ SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes
   `committees:view`. A platform admin's `init()` asks nothing.
 - **The stage routes keep `workflows:view`**: a member without it has no timeline or move
   buttons. ACC-282.
+  Superseded (ACC-282): the workflow reads follow the record, and moves are pool-only (below).
 - **No migration.** Nothing on the per-request path.
+
+## Key Architecture Decisions (ACC-282)
+
+A record's workflow, for whoever may open the record. Full mechanism: SYSTEM-REFERENCE.md
+§2.19.1. Plan and Ahmad's answers (8 Nov): `backend/Plans/step-282-pool-member-moves.md`.
+Briefly:
+
+- **READING A WORKFLOW NEEDS ONLY WHAT OPENING THE RECORD NEEDS.** The instance list, an
+  instance, its stage history and its moves list lost `workflows:view`; the parent rule
+  decides (for a committee, `committees:view` or active membership, ACC-281). Anyone
+  else gets the refusal a missing record gets.
+- **MOVES STAY POOL-ONLY**, listed with each move's label, kind and next stage, so the
+  buttons read no template.
+- **PRESSING AND VOTING CHECK THE RECORD FIRST** (the identical 404, before any pool is
+  read), then the pool. A former member named directly in a pool is refused.
+- **ONE PLACE: `InstanceAccess`** (`foundation/workflow/instance-access.ts`), built by
+  `WorkflowService`. Never a second copy.
+- **A change request's workflow admits members of its committee** (the parent rule's
+  member clause).
+- **No query added for `workflows:view` holders, none on the per-request path**; a press
+  gains one indexed parent check.
+- **No migration.**
 
 ## Open / Deferred Items
 
