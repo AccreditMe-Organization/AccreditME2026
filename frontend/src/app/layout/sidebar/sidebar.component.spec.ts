@@ -11,7 +11,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import en from '../../../assets/i18n/en.json';
 import ar from '../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../core/formatting/testing';
-import { Loadable, MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
+import { AwaitingAnswer, Loadable, MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
 import { ITaskRecordListDto } from '../../foundation/tasks/services/task.service';
 import { MyCommitteesDto } from '../../foundation/committees/services/committee.service';
 import { environment } from '../../../environments/environment';
@@ -264,6 +264,7 @@ describe('SidebarComponent (ACC-79)', () => {
       const fake = {
         myTasks: signal({ state: 'loading' }),
         myOverdue: signal({ state: 'loading' }),
+        awaiting: signal({ state: 'loading' }),
         myCommittees,
         isCommitteeMember: computed(() => {
           const c = myCommittees();
@@ -323,6 +324,123 @@ describe('SidebarComponent (ACC-79)', () => {
     const committeesLinkText = (el: HTMLElement) => committeesLink(el)?.textContent?.trim() ?? null;
   });
 
+  // ACC-120 — the Awaiting my action item: everything waiting on the person's
+  // decision (stages total + change requests), read from the counts the shell
+  // loaded. Always neutral. The rail starts nothing and requests nothing.
+  describe('Awaiting my action badge (ACC-120)', () => {
+    let http: HttpTestingController;
+    let awaiting: WritableSignal<Loadable<AwaitingAnswer>>;
+    let calls: string[];
+
+    const ready = (stagesTotal: number, changes: number): Loadable<AwaitingAnswer> => ({
+      state: 'ready',
+      value: {
+        stages: { total: stagesTotal, rows: [], oldestSince: null },
+        changes: Array.from({ length: changes }, (_, i) => ({ id: `cr-${i}` })) as unknown as AwaitingAnswer['changes'],
+      },
+    });
+
+    function renderAwaiting(opts: { collapsed?: boolean; language?: 'en' | 'ar' } = {}): HTMLElement {
+      awaiting = signal<Loadable<AwaitingAnswer>>({ state: 'loading' });
+      calls = [];
+      const record = (name: string) => () => {
+        calls.push(name);
+      };
+      const fake = {
+        myTasks: signal({ state: 'loading' }),
+        myOverdue: signal({ state: 'loading' }),
+        awaiting,
+        isCommitteeMember: signal(false),
+        init: record('init'),
+        reload: record('reload'),
+        refreshOnEntry: record('refreshOnEntry'),
+        loadAwaiting: record('loadAwaiting'),
+      };
+      const el = render({
+        collapsed: opts.collapsed,
+        extraProviders: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideFormatTesting(),
+          { provide: MyWorkCountsService, useValue: fake },
+        ],
+      });
+      loadTranslationsForTest({ en, ar });
+      TestBed.inject(TranslateService).use(opts.language ?? 'en');
+      http = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+      return el;
+    }
+    const set = (answer: Loadable<AwaitingAnswer>) => {
+      awaiting.set(answer);
+      fixture.detectChanges();
+    };
+    const link = (el: HTMLElement) => el.querySelector('a[href="/awaiting"]')!;
+    const badge = (el: HTMLElement) => link(el).querySelector('.am-rail-badge');
+    const srText = (el: HTMLElement) => badge(el)?.querySelector('.sr-only')?.textContent?.trim();
+
+    afterEach(() => {
+      http.verify();
+      expect(calls).withContext('the rail called the counts service').toEqual([]);
+    });
+
+    it('the item is in My work after Tasks, for everyone (no permission)', () => {
+      const el = renderAwaiting();
+      const work = Array.from(el.querySelectorAll('a[href]')).map((a) => a.getAttribute('href'));
+      expect(work.indexOf('/awaiting')).toBe(work.indexOf('/tasks') + 1);
+    });
+
+    it('no badge while loading, after a failure, or at 0', () => {
+      const el = renderAwaiting();
+      expect(badge(el)).withContext('loading').toBeNull();
+      set({ state: 'failed' });
+      expect(badge(el)).withContext('failed').toBeNull();
+      set(ready(0, 0));
+      expect(badge(el)).withContext('0').toBeNull();
+    });
+
+    it('ready: stages total plus change requests, neutral, read as "3 items waiting"', () => {
+      const el = renderAwaiting();
+      set(ready(2, 1));
+      expect(badge(el)?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('3');
+      expect(badge(el)?.classList).not.toContain('am-rail-badge--alert');
+      expect(srText(el)).toBe('3 items waiting');
+      set(ready(1, 0));
+      expect(srText(el)).toBe('1 item waiting');
+    });
+
+    it('collapsed: the neutral dot, and the label carries the sentence', () => {
+      const el = renderAwaiting({ collapsed: true });
+      set(ready(3, 0));
+      const dot = badge(el)!;
+      expect(dot.getAttribute('aria-hidden')).toBe('true');
+      expect(dot.classList).not.toContain('am-rail-badge--alert');
+      expect(link(el).getAttribute('aria-label')).toBe('Awaiting my action — 3 items waiting');
+    });
+
+    it('updates when the count changes, with no request of its own', () => {
+      const el = renderAwaiting();
+      set(ready(3, 0));
+      set(ready(5, 2));
+      expect(srText(el)).toBe('7 items waiting');
+      http.expectNone(() => true);
+    });
+
+    it('in Arabic, the sentence takes the plural form for 1, 2, 3 and 11', () => {
+      const el = renderAwaiting({ language: 'ar' });
+      const cases: [number, string][] = [
+        [1, 'عنصر واحد بالانتظار'],
+        [2, 'عنصران بالانتظار'],
+        [3, '3 عناصر بالانتظار'],
+        [11, '11 عنصرًا بالانتظار'],
+      ];
+      for (const [n, sentence] of cases) {
+        set(ready(n, 0));
+        expect(srText(el)).withContext(String(n)).toBe(sentence);
+      }
+    });
+  });
+
   // ACC-120 — the Tasks item shows the person's open tasks: Home's My tasks
   // count, read from MyWorkCountsService, which the shell loads. The rail only
   // reads its signals; it starts nothing and requests nothing.
@@ -348,6 +466,7 @@ describe('SidebarComponent (ACC-79)', () => {
       const fake = {
         myTasks,
         myOverdue,
+        awaiting: signal({ state: 'loading' }),
         // ACC-281 — the rail reads membership too; not a member here.
         isCommitteeMember: signal(false),
         init: record('init'),

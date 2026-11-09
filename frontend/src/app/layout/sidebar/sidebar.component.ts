@@ -360,6 +360,8 @@ export class SidebarComponent {
       }
       case 'myTasks':
         return this.myTasksBadge();
+      case 'awaiting':
+        return this.awaitingBadge();
       default:
         return null;
     }
@@ -376,6 +378,17 @@ export class SidebarComponent {
     const overdue = this.myWork.myOverdue();
     const alert = overdue.state === 'ready' && overdue.value > 0;
     return { count, alert, sentence: this.format.count(alert ? 'shell.openTasksOverdue' : 'shell.openTasks', count) };
+  }
+
+  // ACC-120 — everything waiting on the person's decision: the stage total
+  // plus the change requests, as Home's panel counts it. Always the neutral
+  // tone. Nothing while it loads, after it fails, or at 0.
+  private awaitingBadge(): RailBadge | null {
+    const answer = this.myWork.awaiting();
+    if (answer.state !== 'ready') return null;
+    const count = answer.value.stages.total + answer.value.changes.length;
+    if (count === 0) return null;
+    return { count, alert: false, sentence: this.format.count('shell.awaitingItems', count) };
   }
 
   collapsedLabel(item: NavItem): string {

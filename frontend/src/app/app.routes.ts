@@ -125,6 +125,15 @@ export const routes: Routes = [
           import('./foundation/tasks/tasks.routes').then((m) => m.TASKS_ROUTES),
       },
       {
+        // ACC-120 — Awaiting my action: self-scoped (the server answers the
+        // person's own), so its nav item has no permission and the guard has no
+        // entry for it.
+        path: 'awaiting',
+        canActivate: [permissionGuard],
+        loadComponent: () =>
+          import('./foundation/awaiting/awaiting-page.component').then((m) => m.AwaitingPageComponent),
+      },
+      {
         // ACC-82 — setup:view, via the nav item's ROUTE_PERMISSIONS entry.
         path: 'setup-health',
         canActivate: [permissionGuard],
