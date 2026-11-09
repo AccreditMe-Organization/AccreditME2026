@@ -115,14 +115,35 @@ describe('Home panels (ACC-279)', () => {
       expect(one('home-committees-count')!.textContent!.trim()).toBe('4');
     });
 
-    it('links the committee and All committees only for committees:view (Q2: every member sees the panel)', () => {
+    // Every row is one of the viewer's own active committees, which a member may
+    // open since ACC-281: every row links. "All committees" follows the rail's own
+    // rule for the Committees item (committees:view, or a member).
+    it('a member without committees:view: every row links to its committee, and All committees shows', () => {
+      build({ permissions: [], committees: { total: 1, rows: [committeeRow()] } });
+      const row = all('home-committee-row')[0]!;
+      expect(row.textContent).withContext('the row rendered').toContain('Infection Prevention & Control');
+      expect(row.querySelector('a')!.getAttribute('href')).toBe('/committees/c-1');
+      expect(one('home-committees-all')!.getAttribute('href')).toBe('/committees');
+    });
+
+    it('a committees:view holder: the row link and All committees, as before', () => {
       build({ permissions: ['committees:view'], committees: { total: 1, rows: [committeeRow()] } });
       expect(all('home-committee-row')[0]!.querySelector('a')!.getAttribute('href')).toBe('/committees/c-1');
       expect(one('home-committees-all')).not.toBeNull();
+    });
 
-      build({ permissions: [], committees: { total: 1, rows: [committeeRow()] } });
-      expect(all('home-committee-row')[0]!.textContent).toContain('Infection Prevention & Control');
-      expect(all('home-committee-row')[0]!.querySelector('a')).toBeNull();
+    it('someone on no committee and without committees:view gets no All committees', () => {
+      build({ permissions: [], committees: { total: 0, rows: [] } });
+      expect(one('home-committees-empty')).withContext('the panel rendered').not.toBeNull();
+      expect(one('home-committees-all')).toBeNull();
+    });
+
+    // A platform admin's work counts ask nothing (ACC-281), so the panel holds no
+    // committee and offers no link.
+    it('a platform admin: no committee row, no row link and no All committees', () => {
+      build({ permissions: [], platformAdmin: true, committees: { total: 1, rows: [committeeRow()] } });
+      expect(calls.committees).withContext('My committees is not asked').toBe(0);
+      expect(all('home-committee-row')).toEqual([]);
       expect(one('home-committees-all')).toBeNull();
     });
 

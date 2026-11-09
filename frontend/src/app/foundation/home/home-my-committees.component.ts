@@ -2,7 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LanguageService } from '../../core/services/language.service';
-import { NavigationAccessService } from '../../core/services/navigation-access.service';
+import { injectNavAccess } from '../../core/navigation/nav-access';
+import { isNavItemVisible, tenantNavItemForRoute } from '../../core/navigation/nav-items';
 import { CappedPanelComponent, CappedPanelState } from '../../shared/components/capped-panel/capped-panel.component';
 import { StatusChipComponent } from '../../shared/components/status-chip/status-chip.component';
 import { CommitteeListStatus, committeeStatusOf } from '../committees/committee-status';
@@ -12,8 +13,8 @@ import { MyWorkCountsService, panelState } from './my-work-counts.service';
 interface CommitteeRow {
   id: string;
   name: string;
-  /** The committee's page, only for a viewer who may open it (committees:view). */
-  link: string[] | null;
+  /** The committee's page: every row is the viewer's own active committee, which they may open. */
+  link: string[];
   seat: string;
   stage: string;
   status: CommitteeListStatus;
@@ -25,8 +26,12 @@ interface CommitteeRow {
  * ONE rule the committees list uses (committeeStatusOf, ACC-256).
  *
  * Every member sees it, with or without committees:view (Ahmad, 6 Nov, Q2):
- * being a member is the entitlement. The name links to the committee only for a
- * viewer who may open it, and "All committees" shows only for them.
+ * being a member is the entitlement. Every row is one of the viewer's own ACTIVE
+ * memberships of an ACTIVE committee (committee-home.service.ts), and since
+ * ACC-281 a member may open those, so every name links to its committee.
+ * "All committees" shows when the rail would show Committees: the rail's own rule
+ * (isNavItemVisible on the Committees item: committees:view, or a member), never a
+ * copy of it.
  */
 @Component({
   selector: 'app-home-my-committees',
@@ -46,17 +51,13 @@ interface CommitteeRow {
       testIdPrefix="home-committees"
       (retry)="counts.loadMyCommittees()"
     >
-      @if (mayOpen()) {
+      @if (showsAll()) {
         <a amPanelActions class="am-hc__link" routerLink="/committees" data-testid="home-committees-all">{{ 'home.allCommittees' | translate }}</a>
       }
       @for (r of rows(); track r.id) {
         <li class="am-cp-row" data-testid="home-committee-row">
           <span class="am-cp-l1">
-            @if (r.link; as to) {
-              <a class="am-cp-cut am-hc__name am-hc__name--link" [routerLink]="to">{{ r.name }}</a>
-            } @else {
-              <span class="am-cp-cut am-hc__name">{{ r.name }}</span>
-            }
+            <a class="am-cp-cut am-hc__name am-hc__name--link" [routerLink]="r.link">{{ r.name }}</a>
             <app-status-chip variant="committee" labelPrefix="committee.status" [value]="r.status" />
           </span>
           <span class="am-cp-l2">
@@ -82,11 +83,15 @@ interface CommitteeRow {
 })
 export class HomeMyCommitteesComponent {
   protected readonly counts = inject(MyWorkCountsService);
-  private readonly access = inject(NavigationAccessService);
+  private readonly nav = injectNavAccess();
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
 
-  readonly mayOpen = computed(() => this.access.hasPermission('committees:view'));
+  /** The rail's rule for the Committees item; no item means no link (fail closed). */
+  readonly showsAll = computed(() => {
+    const item = tenantNavItemForRoute('committees');
+    return !!item && isNavItemVisible(item, this.nav);
+  });
   /** The panel calls a failure `error`. */
   readonly state = computed((): CappedPanelState => panelState(this.counts.myCommittees().state));
   readonly total = computed(() => {
@@ -98,11 +103,10 @@ export class HomeMyCommitteesComponent {
     this.translate.currentLang();
     const answer = this.counts.myCommittees();
     if (answer.state !== 'ready') return [];
-    const mayOpen = this.mayOpen();
-    return answer.value.rows.map((c) => this.toRow(c, mayOpen));
+    return answer.value.rows.map((c) => this.toRow(c));
   });
 
-  private toRow(c: MyCommitteeRowDto, mayOpen: boolean): CommitteeRow {
+  private toRow(c: MyCommitteeRowDto): CommitteeRow {
     const seat = c.seat.labelEn
       ? this.language.bilingual(c.seat.labelEn, c.seat.labelAr)
       : (this.translate.instant('home.seatUnknown') as string);
@@ -110,7 +114,7 @@ export class HomeMyCommitteesComponent {
     return {
       id: c.committeeId,
       name: this.language.bilingual(c.nameEn, c.nameAr),
-      link: mayOpen ? ['/committees', c.committeeId] : null,
+      link: ['/committees', c.committeeId],
       seat,
       stage,
       status: committeeStatusOf(c),
