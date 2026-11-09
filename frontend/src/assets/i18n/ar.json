@@ -2186,7 +2186,11 @@
     "limitMin": "الحد 1 على الأقل.",
     "limitWhole": "أدخل عددًا صحيحًا.",
     "editFeatureCost": "تعديل {{feature}}",
-    "editPlanNamed": "تعديل {{plan}}"
+    "editPlanNamed": "تعديل {{plan}}",
+    "searchTenants": "ابحث بالاسم أو المعرّف الفرعي أو الخطة",
+    "searchPlans": "ابحث في الخطط",
+    "searchAiCreditPacks": "ابحث في الباقات",
+    "searchAiFeatureCosts": "ابحث في مفاتيح الميزات"
   },
   "account": {
     "trial": "تجريبي",
