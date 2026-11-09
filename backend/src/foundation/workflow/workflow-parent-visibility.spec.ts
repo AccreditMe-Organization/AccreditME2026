@@ -276,7 +276,10 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
   it('a caller who may not open the record gets the 404 a missing record gets, on every read-first route', async () => {
     callerPermissions = [];
 
-    const [history, pressable, one] = await Promise.all([stageHistory(), moves(), instanceById()]);
+    // One at a time, for the same reason as the cases below (c669e1f).
+    const history = await stageHistory();
+    const pressable = await moves();
+    const one = await instanceById();
 
     for (const response of [history, pressable, one]) {
       expect(response.status).toBe(404);
