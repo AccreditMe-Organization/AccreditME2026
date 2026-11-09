@@ -17,6 +17,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { SignInLanguageService } from '../../../../core/services/sign-in-language.service';
 import { AuthService } from '../../../../core/services/auth.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { LANDING_ROUTE, PLATFORM_LANDING } from '../../../../core/navigation/landing-route';
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
 import { LoginComponent } from './login.component';
@@ -192,7 +193,7 @@ describe('LoginComponent — Sign in on the auth layout (ACC-120 slice 9d)', () 
   const refusal = (body: Record<string, unknown>, status = 401) =>
     new HttpErrorResponse({ status, error: { statusCode: status, ...body } });
 
-  async function render(language: 'en' | 'ar' = 'en') {
+  async function render(language: 'en' | 'ar' = 'en', platformAdmin = false) {
     login = jasmine.createSpy('login').and.returnValue(of({ mfaRequired: true }));
     verifyMfa = jasmine.createSpy('verifyMfa').and.returnValue(of({}));
     TestBed.resetTestingModule();
@@ -213,7 +214,7 @@ describe('LoginComponent — Sign in on the auth layout (ACC-120 slice 9d)', () 
         },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
         { provide: AuthService, useValue: { login, verifyMfa, isAuthenticated: () => false } },
-        { provide: NavigationAccessService, useValue: { loadAccess: () => of(undefined), isPlatformAdmin: () => false } },
+        { provide: NavigationAccessService, useValue: { loadAccess: () => of(undefined), isPlatformAdmin: () => platformAdmin } },
         { provide: TenantHostService, useValue: { slug: 'al-nakheel' } },
         ...LAYOUT_PROVIDERS,
       ],
@@ -240,6 +241,22 @@ describe('LoginComponent — Sign in on the auth layout (ACC-120 slice 9d)', () 
   }
 
   afterEach(() => document.querySelectorAll('app-login').forEach((n) => n.remove()));
+
+  // ACC-120 — one name for each landing: a platform admin is sent to the
+  // platform's, everyone else to Home.
+  for (const [who, platformAdmin, landing] of [
+    ['a tenant user', false, LANDING_ROUTE],
+    ['a platform admin', true, PLATFORM_LANDING],
+  ] as const) {
+    it(`sends ${who} to ${landing} after signing in`, async () => {
+      const { fixture, submit, fill } = await render('en', platformAdmin);
+      login.and.returnValue(of({ mfaRequired: false }));
+      fill('someone@example.test', 'pw');
+      await submit();
+      const router = fixture.debugElement.injector.get(Router);
+      expect(router.navigate).toHaveBeenCalledWith([landing]);
+    });
+  }
 
   it('sits on the auth layout, with the fields in am-field', async () => {
     const { el } = await render();

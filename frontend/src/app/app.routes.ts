@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { platformAdminGuard } from './core/guards/platform-admin.guard';
 import { permissionGuard } from './core/guards/permission.guard';
+import { platformHomeRedirectGuard } from './core/guards/platform-home-redirect.guard';
 import { orgReadOnlyRedirectGuard } from './foundation/organization/org-read-only.guard';
 import { ORG_READ_ONLY_DATA } from './foundation/organization/org-pages';
 import { AppShellComponent } from './layout/app-shell/app-shell.component';
@@ -45,7 +46,12 @@ export const routes: Routes = [
         // entry. This is where every user is sent after login, including one
         // holding no permissions at all, so guarding it would make it the
         // thing it exists to prevent.
+        //
+        // ACC-120 — its one guard sends a platform admin to the platform's
+        // landing (their Home has no tenant work) and lets every tenant user,
+        // with or without permissions, through: it is not a permission check.
         path: 'home',
+        canActivate: [platformHomeRedirectGuard],
         loadComponent: () =>
           import('./foundation/home/home.component').then(
             (m) => m.HomeComponent,

@@ -7,7 +7,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { AuthService } from '../../../../core/services/auth.service';
-import { LANDING_ROUTE } from '../../../../core/navigation/landing-route';
+import { LANDING_ROUTE, PLATFORM_LANDING } from '../../../../core/navigation/landing-route';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { FormatService } from '../../../../core/formatting/format.service';
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
@@ -369,7 +369,7 @@ export class LoginComponent {
         return;
       }
 
-      const destination = this.navigationAccessService.isPlatformAdmin() ? '/platform' : LANDING_ROUTE;
+      const destination = this.navigationAccessService.isPlatformAdmin() ? PLATFORM_LANDING : LANDING_ROUTE;
       void this.router.navigate([destination]);
     });
   }

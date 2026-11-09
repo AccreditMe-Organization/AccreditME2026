@@ -108,7 +108,8 @@ describe('MyTasksSectionsComponent (ACC-120 slice 3)', () => {
     document.querySelectorAll('.p-dialog-mask, .cdk-overlay-container').forEach((n) => n.remove());
   });
 
-  function setup(language: 'en' | 'ar' = 'en'): void {
+  /** `permissions` is what the viewer holds; omitted, every permission. */
+  function setup(language: 'en' | 'ar' = 'en', permissions?: readonly string[]): void {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MyTasksSectionsComponent],
@@ -121,7 +122,7 @@ describe('MyTasksSectionsComponent (ACC-120 slice 3)', () => {
         provideFormatTesting(),
         ConfirmationService,
         { provide: AuthService, useValue: { currentUser: () => ({ id: 'me' }) } },
-        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => !permissions || permissions.includes(p) } },
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -418,6 +419,19 @@ describe('MyTasksSectionsComponent (ACC-120 slice 3)', () => {
       expect(named!.getAttribute('href')).toBe('/committees/c-9');
       expect(hidden!.tagName).toBe('SPAN');
       expect(text(hidden!)).toBe('Committee');
+    });
+
+    it('links a named committee for a viewer holding no permissions: the name is the server’s "may open"', () => {
+      // A committee member without committees:view (ACC-281): the server names
+      // the committee only because they may open it, so the row links it.
+      setup('en', []);
+      answer({ requests: [request('r1')], available: [available('p1')] });
+      const records = all('mts-record');
+      expect(records.length).toBe(2);
+      for (const record of records) {
+        expect(record.tagName).toBe('A');
+        expect(record.getAttribute('href')).toBe('/committees/c-9');
+      }
     });
 
     it('names a record with no page of its own as plain text', () => {
