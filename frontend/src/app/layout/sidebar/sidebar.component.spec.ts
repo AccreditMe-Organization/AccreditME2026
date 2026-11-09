@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { Component, WritableSignal } from '@angular/core';
+import { Component, WritableSignal, computed } from '@angular/core';
 import { signal } from '@angular/core';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { SidebarComponent } from './sidebar.component';
@@ -13,6 +13,7 @@ import ar from '../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../core/formatting/testing';
 import { Loadable, MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
 import { ITaskRecordListDto } from '../../foundation/tasks/services/task.service';
+import { MyCommitteesDto } from '../../foundation/committees/services/committee.service';
 import { environment } from '../../../environments/environment';
 import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
 
@@ -246,6 +247,82 @@ describe('SidebarComponent (ACC-79)', () => {
     });
   });
 
+  // ACC-281 — a member of an active committee sees Committees without
+  // committees:view, once membership is known. The rail reads the counts the
+  // shell loaded; it starts nothing and requests nothing.
+  describe('Committees for a committee member (ACC-281)', () => {
+    let http: HttpTestingController;
+    let myCommittees: WritableSignal<Loadable<MyCommitteesDto>>;
+    let calls: string[];
+
+    function renderMember(permissions: string[] = []): HTMLElement {
+      myCommittees = signal<Loadable<MyCommitteesDto>>({ state: 'loading' });
+      calls = [];
+      const record = (name: string) => () => {
+        calls.push(name);
+      };
+      const fake = {
+        myTasks: signal({ state: 'loading' }),
+        myOverdue: signal({ state: 'loading' }),
+        myCommittees,
+        isCommitteeMember: computed(() => {
+          const c = myCommittees();
+          return c.state === 'ready' && c.value.total > 0;
+        }),
+        init: record('init'),
+        reload: record('reload'),
+        refreshOnEntry: record('refreshOnEntry'),
+        loadMyCommittees: record('loadMyCommittees'),
+      };
+      const el = render({
+        permissions,
+        extraProviders: [provideHttpClient(), provideHttpClientTesting(), { provide: MyWorkCountsService, useValue: fake }],
+      });
+      http = TestBed.inject(HttpTestingController);
+      return el;
+    }
+    const committeesLink = (el: HTMLElement) => el.querySelector('a[href="/committees"]');
+    const settle = (answer: Loadable<MyCommitteesDto>) => {
+      myCommittees.set(answer);
+      fixture.detectChanges();
+    };
+    const member = (total: number): Loadable<MyCommitteesDto> => ({ state: 'ready', value: { total, rows: [] } as unknown as MyCommitteesDto });
+
+    afterEach(() => {
+      http.verify();
+      expect(calls).withContext('the rail called the counts service').toEqual([]);
+    });
+
+    it('a member without committees:view sees Committees', () => {
+      const el = renderMember();
+      settle(member(1));
+      expect(committeesLinkText(el)).toBe('nav.committees');
+    });
+
+    it('while membership loads the item is absent, and it appears when the answer is known, with no request', () => {
+      const el = renderMember();
+      expect(committeesLink(el)).withContext('loading').toBeNull();
+      settle({ state: 'failed' });
+      expect(committeesLink(el)).withContext('failed').toBeNull();
+      settle(member(2));
+      expect(committeesLink(el)).withContext('ready').not.toBeNull();
+      http.expectNone(() => true);
+    });
+
+    it('not a member (ready, 0) and no committees:view: no item', () => {
+      const el = renderMember();
+      settle(member(0));
+      expect(committeesLink(el)).toBeNull();
+    });
+
+    it('committees:view shows it whatever the membership', () => {
+      const el = renderMember(['committees:view']);
+      expect(committeesLink(el)).not.toBeNull();
+    });
+
+    const committeesLinkText = (el: HTMLElement) => committeesLink(el)?.textContent?.trim() ?? null;
+  });
+
   // ACC-120 — the Tasks item shows the person's open tasks: Home's My tasks
   // count, read from MyWorkCountsService, which the shell loads. The rail only
   // reads its signals; it starts nothing and requests nothing.
@@ -271,6 +348,8 @@ describe('SidebarComponent (ACC-79)', () => {
       const fake = {
         myTasks,
         myOverdue,
+        // ACC-281 — the rail reads membership too; not a member here.
+        isCommitteeMember: signal(false),
         init: record('init'),
         reload: record('reload'),
         refreshOnEntry: record('refreshOnEntry'),
