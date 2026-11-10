@@ -2186,7 +2186,11 @@
     "limitMin": "The limit is at least 1.",
     "limitWhole": "Enter a whole number.",
     "editFeatureCost": "Edit {{feature}}",
-    "editPlanNamed": "Edit {{plan}}"
+    "editPlanNamed": "Edit {{plan}}",
+    "searchTenants": "Search name, slug or plan",
+    "searchPlans": "Search plans",
+    "searchAiCreditPacks": "Search credit packs",
+    "searchAiFeatureCosts": "Search feature keys"
   },
   "account": {
     "trial": "Trial",

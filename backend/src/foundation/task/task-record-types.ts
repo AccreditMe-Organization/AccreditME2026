@@ -62,6 +62,32 @@ export function holdsTaskKey(permissions: readonly string[], type: string, kind:
   return !!entry && seesRecordType(permissions, type) && permissions.includes(entry.keys[kind]);
 }
 
+/**
+ * ACC-280 — Create tasks on this type: its own CREATE key, whether or not the caller
+ * holds the type's view permission. Who may see the RECORD is decided apart, by the
+ * record check (committees:view, or an active member of THAT committee, ACC-281), so
+ * a member is held to the same key as a committees:view holder. A type with no key
+ * has no tasks to create (false). POST /tasks and a record panel's canCreate both
+ * read this, so the panel offers exactly what create allows.
+ */
+export function holdsCreateKey(permissions: readonly string[], type: string): boolean {
+  const key = taskKeyOf(type, 'CREATE');
+  return key !== null && permissions.includes(key);
+}
+
+/**
+ * ACC-280 — the refusal POST /tasks and "Draft with AI" both give, BEFORE the record
+ * check: a type with a CREATE key needs it (403 naming the key), whatever the caller's
+ * view permission. A type with no key keeps its old path: refused with "Create tasks"
+ * when its view permission is held, else left to the record check that follows. The
+ * one copy of this order; never re-derive it.
+ */
+export function assertHoldsCreateKey(permissions: readonly string[], type: string): void {
+  const key = taskKeyOf(type, 'CREATE');
+  const refused = key !== null ? !holdsCreateKey(permissions, type) : seesRecordType(permissions, type);
+  if (refused) throw new ForbiddenException(`Required permission: ${key ?? 'Create tasks'}`);
+}
+
 /** Every type on which this permission set holds the key of this kind, record visible. */
 export function typesHolding(permissions: readonly string[], kind: TaskKeyKind): string[] {
   return Object.keys(TASK_RECORD_TYPES).filter((type) => holdsTaskKey(permissions, type, kind));

@@ -105,3 +105,11 @@ export class AmNumberPipe extends ContextAwarePipe<number | null | undefined> {
     return this.format.number(value);
   }
 }
+
+/** ACC-120 — a price: whole, or exactly two decimals (FormatService.money). */
+@Pipe({ name: 'amMoney', pure: false })
+export class AmMoneyPipe extends ContextAwarePipe<number | null | undefined> {
+  protected render(value: number | null | undefined): string {
+    return this.format.money(value);
+  }
+}

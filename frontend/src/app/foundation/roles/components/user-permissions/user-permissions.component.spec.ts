@@ -347,7 +347,7 @@ describe("UserPermissionsComponent (ACC-272, A user's permissions)", () => {
 
     it(`${lang}: a user from another organisation is a 404: "This user isn't in your organization"`, () => {
       render({ lang, getById: () => throwError(() => new HttpErrorResponse({ status: 404 })) });
-      expect(t('[data-up-not-found]')).toBe(lang === 'en' ? "This user isn't in your organization" : 'هذا المستخدم ليس ضمن مؤسستك');
+      expect(t('[data-up-not-found]')).toBe(lang === 'en' ? "This user isn't in your organization" : 'هذا المستخدم ليس ضمن منشأتك');
       expect(q('[data-up-error]')).toBeNull();
       expect(q('[data-up-card]')).toBeNull();
     });

@@ -5,7 +5,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { catchError, filter, map, of, startWith, switchMap } from 'rxjs';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { injectNavAccess } from '../../core/navigation/nav-access';
-import { LANDING_ROUTE } from '../../core/navigation/landing-route';
+import { LANDING_ROUTE, PLATFORM_LANDING } from '../../core/navigation/landing-route';
 import { BreadcrumbParentService } from '../../core/navigation/breadcrumb-parent.service';
 import {
   normalizePath,
@@ -20,8 +20,6 @@ export interface BreadcrumbItem {
   // null for a crumb that is not a page — a rail group has nowhere to go.
   url: string | null;
 }
-
-const PLATFORM_LANDING = '/platform/tenants';
 
 // ACC-79 — THE BREADCRUMB IS ANCESTRY, AND STOPS AT THE PARENT.
 //

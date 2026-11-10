@@ -9,3 +9,8 @@
 // Named rather than inlined so the three sites cannot drift apart again, and
 // so a future change of landing destination is one edit.
 export const LANDING_ROUTE = '/home';
+
+// ACC-120 — the platform's own landing, for a platform admin: where login
+// sends them, where /home sends them (platformHomeRedirectGuard), and the
+// breadcrumb's root on platform pages. '/platform' itself redirects here.
+export const PLATFORM_LANDING = '/platform/tenants';
