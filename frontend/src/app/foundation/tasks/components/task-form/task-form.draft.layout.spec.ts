@@ -52,6 +52,12 @@ import { TaskFormStepsComponent } from './task-form-steps.component';
 // NON-VACUITY FIRST (ACC-120): a body that measured 0 would pass "<= 420"
 // perfectly. Each case asserts the body is really laid out, that the state
 // being measured is on screen, and that the real font is the one measured.
+//
+// ACC-280 — THE RECORD PICKER on the unlocked form (/tasks, Home) takes the
+// place of the typed type-and-id row: one type (no type field), the longest
+// seeded committee name chosen, "none to choose", several types (the type field
+// beside it), and its tallest state, the required error under the field WITH a
+// refusal and Try again above it.
 
 const API = environment.apiUrl;
 const CAP = 420;
@@ -69,6 +75,9 @@ function words(source: string, n: number): string {
 
 const EN_WORDS = 'check every dispenser and the store then reorder through supply and agree a weekly check with the charge nurse';
 const AR_WORDS = 'فحص كل موزع وفي المستودع ثم طلب الكمية عبر الإمداد والاتفاق على فحص أسبوعي مع رئيسة التمريض في الجناح';
+
+/** ACC-280 — the longest committee name in the realistic seed, in each language. */
+const LONGEST = { en: 'Quality & Patient Safety Committee', ar: 'لجنة الصحة والسلامة بالحرم الجامعي' };
 
 /** The server's caps (backend draft-answer.ts): title, purpose, to do, done when. */
 const CAPS = { title: 60, purpose: 120, toDo: 180, doneWhen: 120 };
@@ -105,6 +114,7 @@ function worstDraft(language: 'en' | 'ar', wording: Wording = 'prose', stretch =
         [lockedSourceType]="locked ? 'COMMITTEE' : null"
         [lockedSourceId]="locked ? 'cmt-1' : null"
         [lockedSourceLabel]="locked ? 'Infection Control Committee' : null"
+        [allowedSourceTypes]="locked ? null : types"
         (ready)="formRef.set($event)"
       />
     </ng-template>
@@ -120,6 +130,8 @@ function worstDraft(language: 'en' | 'ar', wording: Wording = 'prose', stretch =
 })
 class HostComponent {
   locked = true;
+  /** ACC-280 — the server's create.types, for the unlocked form. */
+  types: string[] = ['COMMITTEE'];
   readonly formRef = signal<TaskFormComponent | null>(null);
 }
 
@@ -136,8 +148,12 @@ describe('New task, step 2 with Draft with AI — the 420px body cap (ACC-197)',
     fixture.detectChanges();
   }
 
-  /** Opens New task in the dialog, on step 2, with AI available. */
-  async function open(language: 'en' | 'ar', locked = true): Promise<TaskFormComponent> {
+  /**
+   * Opens New task in the dialog, on step 2, with AI available. Unlocked, the
+   * record picker's one small read (how many committees there are) is answered
+   * with `records`.
+   */
+  async function open(language: 'en' | 'ar', locked = true, types: string[] = ['COMMITTEE'], records = 12): Promise<TaskFormComponent> {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [HostComponent],
@@ -158,6 +174,7 @@ describe('New task, step 2 with Draft with AI — the 420px body cap (ACC-197)',
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(HostComponent);
     fixture.componentInstance.locked = locked;
+    fixture.componentInstance.types = types;
     fixture.detectChanges();
     await settle();
     http.expectOne(`${API}/tasks/assignment/units`).flush([]);
@@ -178,6 +195,12 @@ describe('New task, step 2 with Draft with AI — the 420px body cap (ACC-197)',
     form.form.patchValue({ title: 'Hand rub', description: 'follow up hand rub stock ward 6A' });
     form.step.set(2);
     await settle();
+    if (!locked) {
+      const count = http.expectOne((r) => r.url === `${API}/tasks/record-choices` && r.params.get('take') === '1');
+      expect(count.request.params.get('type')).toBe('COMMITTEE');
+      count.flush({ items: [], total: records, matching: records });
+      await settle();
+    }
     return form;
   }
 
@@ -312,12 +335,53 @@ describe('New task, step 2 with Draft with AI — the 420px body cap (ACC-197)',
         expect(document.querySelector('#requiresEvidence')).not.toBeNull();
       });
 
-      it('the standalone screen (source typed by hand) fits too: idle, and a refusal with Try again', async () => {
+      // ACC-280 — the record picker, one type: the field's label names the type, no type field.
+      it('the record picker, one type: idle, and the longest seeded committee name chosen on one line', async () => {
         await open(language, false);
-        await measure('unlocked source · idle', language, '#sourceId');
+        await measure('record picker · idle', language, '[data-record-field]');
+        expect(document.querySelector('[data-record-type]')).withContext('one type shows no type field').toBeNull();
+
+        // Choose through the list, as a person does.
+        document.querySelector<HTMLButtonElement>('[data-record-find]')!.click();
+        await settle();
+        const page = http.expectOne((r) => r.url === `${API}/tasks/record-choices` && r.params.get('take') === '50');
+        page.flush({ items: [{ id: 'cmt-9', nameEn: LONGEST.en, nameAr: LONGEST.ar }], total: 12, matching: 12 });
+        await settle();
+        document.querySelector<HTMLButtonElement>('.am-sl__pick')!.click();
+        await settle();
+        const field = document.querySelector<HTMLInputElement>('[data-record-field]')!;
+        expect(field.value).toBe(language === 'ar' ? LONGEST.ar : LONGEST.en);
+        const before = body().scrollHeight;
+        await measure('record picker · longest name chosen', language, '[data-record-field]');
+        // One line: a long name is cut with an ellipsis, never wrapped, so the row keeps its height.
+        expect(field.getBoundingClientRect().height).toBeLessThanOrEqual(40);
+        expect(body().scrollHeight).toBe(before);
+      });
+
+      it('the record picker, its tallest state: the required error under the field, with a refusal and Try again above', async () => {
+        const form = await open(language, false);
         await pressTrigger();
         draftRequest().flush({ statusCode: 502, message: 'x', code: 'AI_PROVIDER_FAILED' }, { status: 502, statusText: 'Bad Gateway' });
-        await measure('unlocked source · refusal with Try again', language, 'app-task-draft-card .am-ai__refusal .am-ai__secondary');
+        await measure('record picker · refusal with Try again', language, 'app-task-draft-card .am-ai__refusal .am-ai__secondary');
+        form.onSubmit(); // no record chosen: the field says so
+        await settle();
+        await measure('record picker · refusal + "Choose a committee" error', language, 'app-task-record-picker .am-field__message--error');
+        expect(document.querySelector('app-task-draft-card .am-ai__refusal')).withContext('the refusal is still showing').not.toBeNull();
+      });
+
+      it('the record picker with no committee to choose: the field says so', async () => {
+        await open(language, false, ['COMMITTEE'], 0);
+        await measure('record picker · none to choose', language, '[data-record-field]');
+        const none = language === 'ar' ? ar.task.record.committee.none : en.task.record.committee.none;
+        expect(document.querySelector<HTMLInputElement>('[data-record-field]')!.placeholder).toBe(none);
+      });
+
+      it('several types: the type field beside the record field, idle and with the error', async () => {
+        const form = await open(language, false, ['COMMITTEE', 'MEETING']);
+        await measure('record picker · several types', language, '[data-record-type]');
+        form.onSubmit();
+        await settle();
+        await measure('record picker · several types · error', language, 'app-task-record-picker .am-field__message--error');
       });
     });
   }
