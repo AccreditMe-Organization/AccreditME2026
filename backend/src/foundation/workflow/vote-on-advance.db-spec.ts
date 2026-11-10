@@ -201,6 +201,48 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
       expect(await prisma.workflowApproval.count({ where: { workflowInstanceStageId: w.entryId } })).toBe(2);
     });
 
+    it('a replaced vote is audited: the old move and the new move, who and when; the same move again adds nothing', async () => {
+      const w = await world('ALL', 2);
+      const suspend = await prisma.workflowTransition.create({
+        data: { fromStageId: w.termsId, toStageId: w.stages.suspended, labelEn: 'Suspend', labelAr: 'تعليق', kind: 'ADVANCE', mover: 'PERSON' },
+      });
+      const rows = () =>
+        prisma.auditLog.findMany({
+          where: { organizationId: w.org, objectType: 'WorkflowApproval' },
+          orderBy: { createdAt: 'asc' },
+          select: { action: true, actorId: true, objectId: true, before: true, after: true, createdAt: true },
+        });
+      const started = new Date(Date.now() - 1000);
+
+      expect(await outcome(press(w, 0, w.moves.approve.id))).toBe('OK');
+      const first = await rows();
+      expect(first.length).toBe(1);
+      expect(first[0]).toMatchObject({
+        action: 'CREATE',
+        actorId: w.people[0],
+        after: { decision: 'APPROVED', move: { id: w.moves.approve.id, labelEn: w.moves.approve.labelEn, labelAr: w.moves.approve.labelAr } },
+      });
+
+      // The same member presses another move: their vote is replaced, and the change is recorded.
+      expect(await outcome(press(w, 0, suspend.id))).toBe('OK');
+      const second = await rows();
+      expect(second.length).toBe(2);
+      const vote = await prisma.workflowApproval.findFirstOrThrow({ where: { workflowInstanceStageId: w.entryId, approverId: w.people[0]! } });
+      expect(second[1]).toMatchObject({
+        action: 'UPDATE',
+        actorId: w.people[0], // who
+        objectId: vote.id,
+        before: { decision: 'APPROVED', move: { id: w.moves.approve.id, labelEn: w.moves.approve.labelEn, labelAr: w.moves.approve.labelAr } },
+        after: { decision: 'APPROVED', move: { id: suspend.id, labelEn: 'Suspend', labelAr: 'تعليق' } },
+      });
+      expect(second[1]!.createdAt.getTime()).toBeGreaterThanOrEqual(started.getTime()); // when
+      expect(second[1]!.createdAt.getTime()).toBeGreaterThanOrEqual(second[0]!.createdAt.getTime());
+
+      // Pressing the same move again changes nothing, and records nothing.
+      expect(await outcome(press(w, 0, suspend.id))).toBe('OK');
+      expect((await rows()).length).toBe(2);
+    });
+
     it('the gate holds only the DECIDING vote: with a required task open, the first vote is recorded and the last is refused before it is', async () => {
       const w = await world('ALL', 2);
       await prisma.task.create({

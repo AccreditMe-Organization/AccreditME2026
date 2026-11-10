@@ -171,7 +171,7 @@ const mockPrisma = {
   workflowTransition: { findFirst: jest.fn(), findMany: jest.fn() },
   workflowTransitionAction: { findMany: jest.fn() },
   workflowActionLog: { create: jest.fn() },
-  workflowApproval: { upsert: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  workflowApproval: { upsert: jest.fn(), findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
   // ACC-65 — allPreviousStageTasksComplete queries Task directly. Defaults to
   // [] in beforeEach so every pre-existing transition test is unaffected.
   task: { findMany: jest.fn() },
@@ -236,6 +236,9 @@ describe('WorkflowService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([]);
+    // ACC-284 — recordVote() reads the member's current vote first: none, by default.
+    mockPrisma.workflowApproval.findUnique.mockResolvedValue(null);
+    mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
     // ACC-65 — default to no outstanding stage tasks, so every transition
     // test that does not care about task gating is unaffected.
     mockPrisma.task.findMany.mockResolvedValue([]);
