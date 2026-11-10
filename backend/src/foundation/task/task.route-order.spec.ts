@@ -89,6 +89,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     panel: jest.fn().mockResolvedValue({ total: 0, scope: 'own', rows: [] }),
     list: jest.fn().mockResolvedValue({ items: [] }),
     views: jest.fn().mockResolvedValue({ mine: true, all: null, unassigned: null, unit: null, create: { types: [] } }),
+    recordChoices: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
   };
 
   beforeAll(async () => {
@@ -156,6 +157,8 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     ['/tasks/record-list', () => recordList.list],
     // ACC-244 — self-scoped, no @Permissions.
     ['/tasks/views', () => recordList.views],
+    // ACC-280 — New task's record picker, self-scoped like views.
+    ['/tasks/record-choices?type=COMMITTEE', () => recordList.recordChoices],
   ])('GET %s reaches its own handler', async (path, delegate) => {
     const res = await request(app.getHttpServer()).get(path);
 
@@ -171,7 +174,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
 
     expect(availability.status).toBe(200);
     expect(draft.status).toBe(200);
-    expect(drafts.availability).toHaveBeenCalledWith('org-a', []);
+    expect(drafts.availability).toHaveBeenCalledWith('org-a', expect.objectContaining({ permissions: [] }));
     expect(drafts.draft).toHaveBeenCalledTimes(1);
   });
 
@@ -235,7 +238,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     const res = await request(app.getHttpServer()).get('/tasks/sla-preview');
 
     expect(res.status).toBe(200);
-    expect(taskService.slaPreview).toHaveBeenCalledWith('org-a', []);
+    expect(taskService.slaPreview).toHaveBeenCalledWith('org-a', expect.objectContaining({ permissions: [] }));
   });
 
   it('GET /tasks/:id/sla-preview and PATCH /tasks/:id reach their handlers with no route permission', async () => {

@@ -148,9 +148,10 @@ export class TaskController {
   @Get('sla-preview')
   getSlaPreview(
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
   ): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
-    return this.taskService.slaPreview(tenantId, permissions);
+    return this.taskService.slaPreview(tenantId, viewer(userId, permissions));
   }
 
   // ACC-197 — "Draft with AI" on New task. Both are gated like creating a
@@ -162,9 +163,10 @@ export class TaskController {
   @Get('draft/availability')
   getDraftAvailability(
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
   ): Promise<ITaskDraftAvailability> {
-    return this.drafts.availability(tenantId, permissions);
+    return this.drafts.availability(tenantId, viewer(userId, permissions));
   }
 
   // A draft is returned and NOT stored: a task exists only when the person

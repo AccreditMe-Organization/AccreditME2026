@@ -1,16 +1,22 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { RecordChoicesQueryDto } from './dto/record-choices-query.dto';
-import { holdsCreateKey, seesRecordType, TASK_RECORD_TYPES } from './task-record-types';
+import { holdsCreateKey, seesRecordType, TASK_RECORD_TYPES, taskKeysOf } from './task-record-types';
 
 /**
  * ACC-280 — New task's record picker, and the rules it shares with POST /tasks.
  *
  * - createTypes(): the types New task offers (`create.types` of GET /tasks/views).
- *   The type's Create tasks key, and either its view permission or an active
- *   membership of one of its records (decision 2). The membership query runs only
- *   for a caller holding the key WITHOUT the view, one per such type, together.
+ *   The type's Create tasks key, and the type open to the caller: its view
+ *   permission, or an active membership of one of its records that takes new tasks
+ *   (decision 2). The membership query runs only for a caller holding the key
+ *   WITHOUT the view, one per such type, together.
+ * - mayCreateTasks() / assertMayCreateTasks(): "may create tasks at all", for New
+ *   task's own reads that name no record (the assignee picker, the SLA preview,
+ *   Draft with AI's availability and a draft with no record): createTypes() is not
+ *   empty. Never a second copy of it. A key holder who is neither a viewer nor a
+ *   member gets the 403 naming the key.
  * - recordChoices(): GET /tasks/record-choices. The records the caller may open
  *   (every record with the view permission, else their own by membership) that take
  *   new tasks (acceptsTasksSql); a type they hold no key on has an empty page. Two
@@ -131,13 +137,26 @@ export async function assertRecordAcceptsTasks(
   if (!row?.open) throw new TaskRecordClosedException();
 }
 
+/** May this caller create tasks at all? createTypes() names at least one type. */
+export async function mayCreateTasks(client: ChoicesClient, viewer: RecordChoicesViewer, organizationId: string): Promise<boolean> {
+  return (await createTypes(client, viewer, organizationId)).length > 0;
+}
+
+/** mayCreateTasks(), or the 403 naming every Create tasks key. */
+export async function assertMayCreateTasks(client: ChoicesClient, viewer: RecordChoicesViewer, organizationId: string): Promise<void> {
+  if (!(await mayCreateTasks(client, viewer, organizationId))) {
+    throw new ForbiddenException(`Required permission: ${taskKeysOf('CREATE').join(' or ')}`);
+  }
+}
+
+/** An active member of at least one record of the type that takes new tasks. */
 async function isMemberOfAny(client: ChoicesClient, type: string, viewerId: string, organizationId: string): Promise<boolean> {
   const choices = TASK_RECORD_TYPES[type]?.choices;
   if (!choices) return false;
   const [row] = await client.$queryRaw<{ member: boolean }[]>`
     SELECT EXISTS (
       SELECT 1 FROM ${choices.fromSql}
-      WHERE r."organizationId" = ${organizationId} AND ${choices.memberSql(viewerId)}
+      WHERE r."organizationId" = ${organizationId} AND ${choices.memberSql(viewerId)} AND ${choices.acceptsTasksSql}
     ) AS member`;
   return !!row?.member;
 }

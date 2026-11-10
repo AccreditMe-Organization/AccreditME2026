@@ -292,8 +292,8 @@ describe('TaskController', () => {
     });
 
     it("availability is asked for the caller’s own organisation, with their permissions", async () => {
-      await expect(controller.getDraftAvailability('org-a', ['committees:create_tasks'])).resolves.toEqual({ available: true });
-      expect(drafts.availability).toHaveBeenCalledWith('org-a', ['committees:create_tasks']);
+      await expect(controller.getDraftAvailability('org-a', 'user-1', ['committees:create_tasks'])).resolves.toEqual({ available: true });
+      expect(drafts.availability).toHaveBeenCalledWith('org-a', { id: 'user-1', permissions: ['committees:create_tasks'] });
     });
 
     it('draft forwards the caller, their permissions and their organisation — never one from the body', async () => {
@@ -551,7 +551,7 @@ describe('TaskController', () => {
     await controller.getTaskSlaPreview('task-1', TENANT_ID, USER_ID, perms, 'true');
     expect(service.slaPreviewForTask).toHaveBeenLastCalledWith('task-1', viewer, TENANT_ID, true);
 
-    await controller.getSlaPreview(TENANT_ID, perms);
-    expect(service.slaPreview).toHaveBeenCalledWith(TENANT_ID, perms);
+    await controller.getSlaPreview(TENANT_ID, USER_ID, perms);
+    expect(service.slaPreview).toHaveBeenCalledWith(TENANT_ID, viewer);
   });
 });

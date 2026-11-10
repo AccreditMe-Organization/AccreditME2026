@@ -29,6 +29,11 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { RecordChoicesQueryDto } from './dto/record-choices-query.dto';
 import { TaskService, TaskViewer } from './task.service';
 import { createTypes, recordChoices, TASK_RECORD_CLOSED } from './task-record-choices';
+import { AssignmentViewer, TaskAssignmentService } from './task-assignment.service';
+import { TaskAuthorityService } from './task-authority.service';
+import { LookupService } from '../lookup/lookup.service';
+import { AiService } from '../ai/ai.service';
+import { TaskDraftService } from '../ai-task-draft/task-draft.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -56,7 +61,7 @@ describe('New task picks its record: the choices, the create types and the close
   let B = '';
   const ids: Record<string, string> = {};
   let otherOrgCommittee = '';
-  const people = { holder: '', viewerOnly: '', keyedMember: '', loneMember: '', stranger: '', member: '' };
+  const people = { holder: '', viewerOnly: '', keyedMember: '', loneMember: '', stranger: '', member: '', dissolvedOnly: '' };
 
   beforeAll(async () => {
     await prisma.onModuleInit();
@@ -108,6 +113,8 @@ describe('New task picks its record: the choices, the create types and the close
     await seat(ids['Delta'], people.keyedMember);
     await seat(ids['Echo'], people.keyedMember);
     await seat(ids['Echo'], people.loneMember);
+    // dissolvedOnly (with the key) sits only on Delta, a committee that takes no tasks.
+    await seat(ids['Delta'], people.dissolvedOnly);
     await seat(ids['Alpha'], people.member);
   });
 
@@ -203,6 +210,59 @@ describe('New task picks its record: the choices, the create types and the close
       expect(page.items.map((i) => i.id)).toEqual([ids['Alpha']]);
       expect(page.items.map((i) => i.id)).not.toContain(otherOrgCommittee);
       expect((await recordChoices(prisma, query({ q: 'Alpha' }), B, holder())).items.map((i) => i.id)).toEqual([otherOrgCommittee]);
+    });
+  });
+
+  // ACC-280 — "may create tasks at all" is create.types' own rule (mayCreateTasks()),
+  // for New task's reads that name no record: the assignee picker, the SLA preview and
+  // Draft with AI's availability. The key alone is not enough: the type must be open
+  // to the caller, as a viewer or as an active member of a committee that takes tasks.
+  describe("New task's own reads follow create.types", () => {
+    const assignment = new TaskAssignmentService(prisma, {} as TaskAuthorityService, {} as LookupService);
+    const slaPreview = TaskService.prototype.slaPreview.bind({
+      prisma,
+      sla: { preview: () => Promise.resolve({}) },
+    }) as (organizationId: string, viewer: TaskViewer) => Promise<unknown>;
+    const run = jest.fn(() => Promise.reject(new Error('the AI must not be called by this spec')));
+    const drafts = new TaskDraftService(prisma, { run } as unknown as AiService, new ObjectVisibilityService(prisma));
+    const REFUSAL = `403 Required permission: ${KEY}`;
+
+    /** Each read's answer: 'OK', or the refusal's status and message. */
+    const reads = async (v: TaskViewer): Promise<string[]> => {
+      const answer = (p: Promise<unknown>) =>
+        p.then(
+          () => 'OK',
+          (e: unknown) => {
+            if (e instanceof ForbiddenException) return `403 ${e.message}`;
+            throw e;
+          },
+        );
+      return Promise.all([
+        answer(assignment.listUnits(v as AssignmentViewer, A)),
+        answer(slaPreview(A, v)),
+        answer(drafts.availability(A, v)),
+      ]);
+    };
+
+    it('a key holder who is neither a viewer nor a member: the same 403 as before, from all three', async () => {
+      expect(await reads(viewer('stranger', [KEY]))).toEqual([REFUSAL, REFUSAL, REFUSAL]);
+    });
+
+    it('a key holder whose only committees take no tasks (dissolved, inactive): the same 403', async () => {
+      expect(await reads(viewer('dissolvedOnly', [KEY]))).toEqual([REFUSAL, REFUSAL, REFUSAL]);
+      expect(await reads(viewer('loneMember', [KEY]))).toEqual([REFUSAL, REFUSAL, REFUSAL]);
+      expect(await createTypes(prisma, viewer('dissolvedOnly', [KEY]), A)).toEqual([]);
+    });
+
+    it('a key holder who is a member of a committee that takes tasks, and a viewer with the key: all three open', async () => {
+      expect(await reads(viewer('keyedMember', [KEY]))).toEqual(['OK', 'OK', 'OK']);
+      expect(await reads(holder())).toEqual(['OK', 'OK', 'OK']);
+    });
+
+    it('a viewer or a member without the key: the same 403', async () => {
+      expect(await reads(viewer('viewerOnly', [VIEW]))).toEqual([REFUSAL, REFUSAL, REFUSAL]);
+      expect(await reads(viewer('member', []))).toEqual([REFUSAL, REFUSAL, REFUSAL]);
+      expect(run).not.toHaveBeenCalled();
     });
   });
 
