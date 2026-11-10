@@ -55,3 +55,34 @@ export class OrgUnitHasDependenciesRefusal extends ConflictException {
     });
   }
 }
+
+/**
+ * ACC-288 — the root unit always keeps a head or an acting head in force
+ * (Ahmad, 10 Nov). A change that would leave it with neither is refused.
+ *
+ * The body names the root (`unitNameEn` / `unitNameAr`, the organisation's own
+ * name) so the screen can say the sentence in the reader's language with the
+ * name in place; the screen says it from `code`, never from the English
+ * `message`. Thrown only by `root-unit-head.invariant.ts`.
+ */
+export const ROOT_UNIT_NEEDS_HEAD = 'ROOT_UNIT_NEEDS_HEAD';
+
+export class RootUnitNeedsHeadRefusal extends ConflictException {
+  readonly code = ROOT_UNIT_NEEDS_HEAD;
+
+  constructor(
+    readonly unitId: string,
+    readonly unitNameEn: string,
+    readonly unitNameAr: string | null,
+  ) {
+    super({
+      statusCode: 409,
+      message: `${unitNameEn} must always have a head or an acting head. Appoint a successor or an acting head first.`,
+      error: 'Conflict',
+      code: ROOT_UNIT_NEEDS_HEAD,
+      unitId,
+      unitNameEn,
+      unitNameAr,
+    });
+  }
+}

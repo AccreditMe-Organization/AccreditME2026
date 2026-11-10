@@ -16,6 +16,7 @@ import { AssignHeadDto } from './dto/assign-head.dto';
 import { AssignActingHeadDto } from './dto/assign-acting-head.dto';
 import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
 import { findCurrentHeadHolders, findRunningActingCover } from './unit-headship';
+import { assertRootUnitRetainsAHead, captureRootHeadBaseline, reportRootUnitHeadBreach } from './root-unit-head.invariant';
 
 /** ACC-133 — how far back an ended cover still earns the "new 90-day period" warning. */
 const RECENT_COVER_DAYS = 7;
@@ -364,7 +365,7 @@ export class OrgUnitHeadService {
       throw new ConflictException('No handover is currently in progress for this unit');
     }
 
-    await this.performHandoverCompletion(orgUnit, organizationId, actorId);
+    await this.performHandoverCompletion(orgUnit, organizationId, actorId, true);
   }
 
   // Reverts the INCOMING successor's positionId grant — the original
@@ -445,17 +446,23 @@ export class OrgUnitHeadService {
     orgUnit: { id: string; pendingHeadUserId: string | null },
     organizationId: string,
   ): Promise<void> {
-    await this.performHandoverCompletion(orgUnit, organizationId, null);
+    // ACC-288 — the sweep can't be refused: a breach of the root-head rule is
+    // logged, never thrown.
+    await this.performHandoverCompletion(orgUnit, organizationId, null, false);
   }
 
   // Shared by completeHandoverNow() (explicit early completion) and
   // completeHandoverAutomatically() (the sweep, above) — actorId is null
   // for the automatic path, matching
   // sweepExpiredActingOrgUnitAssignments()'s own no-human-actor precedent.
+  //
+  // ACC-288 — the headship writes are one transaction with the root-head rule:
+  // `refusable` (a person pressed Complete now) asserts it; the sweep reports.
   private async performHandoverCompletion(
     orgUnit: { id: string; pendingHeadUserId: string | null },
     organizationId: string,
     actorId: string | null,
+    refusable: boolean,
   ): Promise<void> {
     const pendingHeadUserId = orgUnit.pendingHeadUserId as string; // callers already confirmed set
 
@@ -474,28 +481,35 @@ export class OrgUnitHeadService {
     const outgoingHolder = currentHolders.find((u) => u.id !== pendingHeadUserId);
     const incomingHolder = currentHolders.find((u) => u.id === pendingHeadUserId);
 
-    if (outgoingHolder) {
-      await this.prisma.user.update({
-        where: { id: outgoingHolder.id },
-        data: { positionId: null },
+    await this.prisma.$transaction(async (tx) => {
+      const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
+
+      if (outgoingHolder) {
+        await tx.user.update({
+          where: { id: outgoingHolder.id },
+          data: { positionId: null },
+        });
+      }
+
+      await tx.orgUnit.update({
+        where: { id: orgUnit.id },
+        data: { pendingHeadUserId: null, headHandoverEffectiveDate: null },
       });
-    }
 
-    await this.prisma.orgUnit.update({
-      where: { id: orgUnit.id },
-      data: { pendingHeadUserId: null, headHandoverEffectiveDate: null },
-    });
+      await tx.orgUnitHeadEvent.create({
+        data: {
+          organizationId,
+          orgUnitId: orgUnit.id,
+          userId: pendingHeadUserId,
+          positionId: incomingHolder?.positionId ?? null,
+          action: 'HANDOVER_COMPLETED',
+          effectiveDate: new Date(),
+          approvedBy: actorId,
+        },
+      });
 
-    await this.prisma.orgUnitHeadEvent.create({
-      data: {
-        organizationId,
-        orgUnitId: orgUnit.id,
-        userId: pendingHeadUserId,
-        positionId: incomingHolder?.positionId ?? null,
-        action: 'HANDOVER_COMPLETED',
-        effectiveDate: new Date(),
-        approvedBy: actorId,
-      },
+      if (refusable) await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
+      else await reportRootUnitHeadBreach(organizationId, tx, rootHeaded);
     });
 
     await this.auditLog.log({
@@ -631,21 +645,27 @@ export class OrgUnitHeadService {
       throw new ConflictException('This unit has no active Head to vacate');
     }
 
-    await this.prisma.user.update({
-      where: { id: currentHolder.id },
-      data: { positionId: null },
-    });
-
-    await this.prisma.orgUnitHeadEvent.create({
-      data: {
-        organizationId,
-        orgUnitId,
-        userId: currentHolder.id,
-        positionId: currentHolder.positionId,
-        action: 'VACATED',
-        effectiveDate: new Date(),
-        approvedBy: actorId,
-      },
+    // ACC-288 — the vacate and its VACATED event are one transaction with the
+    // root-head rule: the root's last head can't be vacated without a successor
+    // or a cover.
+    await this.prisma.$transaction(async (tx) => {
+      const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
+      await tx.user.update({
+        where: { id: currentHolder.id },
+        data: { positionId: null },
+      });
+      await tx.orgUnitHeadEvent.create({
+        data: {
+          organizationId,
+          orgUnitId,
+          userId: currentHolder.id,
+          positionId: currentHolder.positionId,
+          action: 'VACATED',
+          effectiveDate: new Date(),
+          approvedBy: actorId,
+        },
+      });
+      await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
     });
 
     await this.auditLog.log({
@@ -889,26 +909,31 @@ export class OrgUnitHeadService {
     // reported by ACTING_HEAD_OPEN_ENDED); endedAt records that a person ended
     // it rather than it lapsing on its own date. This is the operation the
     // overlap refusal offers as "End that period early".
-    await this.prisma.orgUnitHeadAssignment.updateMany({
-      where: { organizationId, orgUnitId, kind: 'ACTING', endedAt: null },
-      data: { validTo: endedAt, endedAt, endedById: actorId },
-    });
-
-    await this.prisma.orgUnit.update({
-      where: { id: orgUnitId },
-      data: { actingHeadUserId: null },
-    });
-
-    await this.prisma.orgUnitHeadEvent.create({
-      data: {
-        organizationId,
-        orgUnitId,
-        userId: actingHeadUserId,
-        positionId: null,
-        action: 'ACTING_ENDED',
-        effectiveDate: new Date(),
-        approvedBy: actorId,
-      },
+    //
+    // ACC-288 — the three writes are one transaction with the root-head rule:
+    // ending the root's cover is refused when the root has no head holder.
+    await this.prisma.$transaction(async (tx) => {
+      const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
+      await tx.orgUnitHeadAssignment.updateMany({
+        where: { organizationId, orgUnitId, kind: 'ACTING', endedAt: null },
+        data: { validTo: endedAt, endedAt, endedById: actorId },
+      });
+      await tx.orgUnit.update({
+        where: { id: orgUnitId },
+        data: { actingHeadUserId: null },
+      });
+      await tx.orgUnitHeadEvent.create({
+        data: {
+          organizationId,
+          orgUnitId,
+          userId: actingHeadUserId,
+          positionId: null,
+          action: 'ACTING_ENDED',
+          effectiveDate: new Date(),
+          approvedBy: actorId,
+        },
+      });
+      await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
     });
 
     await this.auditLog.log({

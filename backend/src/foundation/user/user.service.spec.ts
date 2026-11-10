@@ -14,6 +14,9 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 import { resolveAppLinkConfig } from '../../common/config/app-url.config';
 import { renderEmailHtml } from '../notification/email-html';
 import type { StagePoolService } from '../workflow/stage-pool.service';
+import * as rootHead from '../organization/root-unit-head.invariant';
+import { RootUnitNeedsHeadRefusal } from '../organization/org-unit-refusals';
+import { countWrites, recordTransactionWrites } from '../../common/testing/transaction-writes';
 
 // ACC-271 — deactivation reads the stage pools a person leaves; none here.
 const noStagePools = (): StagePoolService =>
@@ -73,7 +76,10 @@ describe('UserService', () => {
   beforeEach(() => {
     mockPrisma = {
       user: {
-        findMany: jest.fn(),
+        // ACC-288 — [] by default: the root-head invariant reads the root's
+        // head holders through it (unit-headship.ts) whenever a test's
+        // orgUnit.findFirst answers with a root.
+        findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
@@ -98,6 +104,8 @@ describe('UserService', () => {
       // the platform organisation by isPlatformOrg. findUnique is the seat
       // check's (ACC-83). Both, because both callers are now in this file.
       organization: { findUnique: jest.fn(), findFirst: jest.fn() },
+      // ACC-288 — the root-head invariant's acting-cover read; none by default.
+      orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       // ACC-120 — count() is the root-role invariant's own read: holders of
       // TENANT_ADMIN joined to User and filtered to ACTIVE. Defaults to 1 so
@@ -127,6 +135,10 @@ describe('UserService', () => {
       },
     };
     mockPrisma.$transaction = jest.fn((callback: (tx: unknown) => unknown) => callback(mockPrisma));
+    // ACC-288 — the root-head invariant's advisory lock. With orgUnit.findFirst
+    // defaulting to null there is no root to keep headed, so the rule passes;
+    // root-unit-head.invariant.spec.ts covers it.
+    mockPrisma.$queryRaw = jest.fn().mockResolvedValue([]);
     // ACC-120 defaults: a real tenant (not the platform org) that has an
     // administrator. Tests about the invariant override these themselves.
     mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: false });
@@ -916,6 +928,25 @@ describe('UserService', () => {
       mockPrisma.user.update.mockImplementation(({ where, data }: { where: { id: string }; data: unknown }) =>
         Promise.resolve({ ...DEPARTING_USER, id: where.id, ...(data as object) }),
       );
+    });
+
+    // ACC-288 — moving the root unit's last head out is refused inside
+    // transaction #1: its writes roll back and nothing after commit runs.
+    it('refuses moving the root’s last head out (ACC-288), and transaction #1 rolls back', async () => {
+      const writes = recordTransactionWrites(mockPrisma);
+      const refusal = new RootUnitNeedsHeadRefusal('root-a', 'Al-Nakheel Hospital', null);
+      const assertSpy = jest.spyOn(rootHead, 'assertRootUnitRetainsAHead').mockRejectedValue(refusal);
+      try {
+        await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toBe(refusal);
+
+        expect(countWrites(writes, 'user.update')).toBe(1);
+        expect(countWrites(writes, 'userTransferEvent.create')).toBe(1);
+        expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
+        expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+        expect(mockAuditLog.log).not.toHaveBeenCalled();
+      } finally {
+        assertSpy.mockRestore();
+      }
     });
 
     it('performs an ordinary (non-promotion, no-subordinates) transfer end to end', async () => {
@@ -2946,6 +2977,31 @@ describe('UserService', () => {
     });
   });
 
+  // ACC-288 — deactivating the root unit's last head (no cover in force) is
+  // refused: the flip went through the transaction (so it rolls back), and
+  // nothing after commit ran — sessions, vacancy refresh, role revoke, tasks.
+  describe('deactivate — the root unit keeps a head (ACC-288)', () => {
+    let assertSpy: jest.SpyInstance;
+    const REFUSAL = new RootUnitNeedsHeadRefusal('root-a', 'Al-Nakheel Hospital', null);
+    afterEach(() => assertSpy.mockRestore());
+
+    it('refuses, and the status flip rolls back with nothing after commit', async () => {
+      const writes = recordTransactionWrites(mockPrisma);
+      assertSpy = jest.spyOn(rootHead, 'assertRootUnitRetainsAHead').mockRejectedValue(REFUSAL);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'head-1', organizationId: ORG_A, status: 'ACTIVE', primaryOrgUnitId: 'root-a', positionId: 'pos-head' });
+      mockPrisma.user.update.mockResolvedValue({});
+
+      await expect(service.deactivate('head-1', ORG_A, 'admin-1')).rejects.toBe(REFUSAL);
+
+      expect(countWrites(writes, 'user.update')).toBe(1);
+      expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
+      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+      expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deactivate', () => {
     it('sets status INACTIVE, invalidates sessions, and logs the audit trail', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A, status: 'ACTIVE' });
@@ -3757,6 +3813,9 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
       userRole: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(1) },
     };
     realMockPrisma['$transaction'] = jest.fn((callback: (tx: unknown) => unknown) => callback(realMockPrisma));
+    // ACC-288 — the root-head invariant's advisory lock (no root here: it passes).
+    realMockPrisma['$queryRaw'] = jest.fn().mockResolvedValue([]);
+    realMockPrisma['organization'] = { findFirst: jest.fn().mockResolvedValue(null) };
 
     const realMockAuditLog = { log: jest.fn() };
     const realMockNotification = { create: jest.fn() };
