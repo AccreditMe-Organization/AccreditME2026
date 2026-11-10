@@ -233,7 +233,7 @@ describe('AdminConsoleComponent (ACC-292)', () => {
       find(el, 'تقويم');
       expect(cards(el)).toEqual(['workingCalendar']);
       expect(marks(el)).toEqual(['التقويم']);
-      expect(text(el.querySelector('[data-testid="admin-console-result"]'))).toBe('يطابق إعداد واحد');
+      expect(text(el.querySelector('[data-testid="admin-console-result"]'))).toBe('إعداد واحد مطابق');
       TestBed.inject(TranslateService).use('en');
     });
 
