@@ -31,6 +31,9 @@ import { TaskService, TaskViewer } from './task.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskVisibilityService } from './task-visibility.service';
 import { TaskRecordListService } from './task-record-list.service';
+import { AiService } from '../ai/ai.service';
+import { AiRefusalException } from '../ai/ai-refusal';
+import { TaskDraftService } from '../ai-task-draft/task-draft.service';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -136,5 +139,53 @@ describe('POST /tasks needs Create tasks, and the panel agrees, on a real databa
     expect(await outcome(createForViewer(dto(), org, v))).toBe(`403 Required permission: ${KEY}`);
     expect(create).not.toHaveBeenCalled();
     expect(await panel(v)).toBe('canCreate=false');
+  });
+
+  // ACC-280 — "Draft with AI" on a record takes POST /tasks' rule, through the same
+  // helper (assertHoldsCreateKey) and the same record check. The AI is a stub that
+  // fails the test if it is ever called: no real AI call, and no organisation's
+  // credits are touched (the test organisation has no allowance, so a caller who
+  // passes both checks meets the AI availability refusal instead).
+  describe('"Draft with AI" on a record, the same four people', () => {
+    const run = jest.fn(() => Promise.reject(new Error('the AI must not be called by this spec')));
+    const drafts = new TaskDraftService(prisma, { run } as unknown as AiService, visibility);
+    const draft = (v: TaskViewer) =>
+      drafts.draft(v, org, { note: 'Collect the committee minutes for October', language: 'en', sourceType: 'COMMITTEE', sourceId: committee });
+    const draftOutcome = (v: TaskViewer): Promise<string> =>
+      draft(v).then(
+        () => 'DRAFTED',
+        (e: unknown) => {
+          if (e instanceof AiRefusalException) return `AI ${e.code}`;
+          if (e instanceof ForbiddenException || e instanceof NotFoundException) {
+            return `${e.getStatus()} ${(e.getResponse() as { message: string }).message}`;
+          }
+          throw e;
+        },
+      );
+    const creditsUsed = async () => (await prisma.organization.findUniqueOrThrow({ where: { id: org }, select: { aiCreditsUsed: true } })).aiCreditsUsed;
+
+    beforeEach(() => run.mockClear());
+
+    it('the three refused people get exactly the refusals POST /tasks gives', async () => {
+      const cases: [TaskViewer, string][] = [
+        [{ id: people.member, permissions: [] }, `403 Required permission: ${KEY}`],
+        [{ id: people.keyedStranger, permissions: [KEY] }, `403 Required permission: ${VIEW}`],
+        [{ id: people.viewer, permissions: [VIEW] }, `403 Required permission: ${KEY}`],
+      ];
+      for (const [v, refusal] of cases) {
+        expect(await draftOutcome(v)).toBe(refusal);
+        expect(await outcome(createForViewer(dto(), org, v))).toBe(refusal);
+      }
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it('a member WITH the key, without committees:view, passes the key and record checks (and no AI call is made)', async () => {
+      const before = await creditsUsed();
+      const answer = await draftOutcome({ id: people.keyedMember, permissions: [KEY] });
+      // Past both checks: whatever stops it now is the AI's availability, never a 403 or 404.
+      expect(answer).toMatch(/^AI /);
+      expect(run).not.toHaveBeenCalled();
+      expect(await creditsUsed()).toBe(before);
+    });
   });
 });
