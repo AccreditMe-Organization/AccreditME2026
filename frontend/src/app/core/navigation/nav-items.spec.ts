@@ -1,10 +1,14 @@
 import {
+  ADMIN_CONSOLE_GROUPS,
   NavAccess,
   NavItem,
   PLATFORM_NAV_GROUPS,
   ROUTE_PERMISSIONS,
   TENANT_NAV_GROUPS,
+  canOpenAdminConsole,
   isNavItemVisible,
+  railNavGroups,
+  visibleAdminConsoleItems,
   visibleNavGroups,
 } from './nav-items';
 import { ADMIN_ACCESS } from './admin-access';
@@ -467,5 +471,129 @@ describe('Tasks owns everything under /tasks (ACC-228, ACC-120 slice 3)', () => 
   it('needs no alsoActiveFor pattern: the prefix covers /tasks/:id', () => {
     expect(tasks.route).toBe('/tasks');
     expect(tasks.alsoActiveFor).toBeUndefined();
+  });
+});
+
+// ACC-292 — the Administration console's cards come from the admin items, and
+// the rail draws the group as ONE item to /admin.
+describe('the Administration console in the nav model (ACC-292)', () => {
+  const access = (permissions: string[], platformAdmin = false): NavAccess => ({
+    hasPermission: (p) => permissions.includes(p),
+    isModuleEnabled: () => false,
+    isPlatformAdmin: () => platformAdmin,
+  });
+  const admin = TENANT_NAV_GROUPS.find((g) => g.key === 'admin')!;
+  const lookup = (dict: unknown, key: string): unknown =>
+    key.split('.').reduce<unknown>((node, part) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined), dict);
+
+  it('gives every admin item a card except Setup health', () => {
+    expect(admin.items.filter((i) => !i.console).map((i) => i.key)).toEqual(['setupHealth']);
+  });
+
+  it('orders the cards as the design does: 13, in four groups', () => {
+    const carded = admin.items.filter((i) => i.console);
+    expect(carded.map((i) => `${i.console!.group}:${i.key}`)).toEqual([
+      'people:users',
+      'people:roles',
+      'organisation:organization',
+      'organisation:orgPositions',
+      'organisation:organizationProfile',
+      'work:workflows',
+      'work:workingCalendar',
+      'work:taskSla',
+      'work:lookups',
+      'connections:emailProvider',
+      'connections:aiCredits',
+      'connections:fileStorage',
+      'connections:recycleBin',
+    ]);
+    expect(ADMIN_CONSOLE_GROUPS.map((g) => g.key)).toEqual(['people', 'organisation', 'work', 'connections']);
+  });
+
+  it('resolves every card line and console group name in English and Arabic', () => {
+    const keys = [...ADMIN_CONSOLE_GROUPS.map((g) => g.labelKey), ...admin.items.filter((i) => i.console).map((i) => i.console!.lineKey)];
+    for (const key of keys) {
+      expect(typeof lookup(en, key)).withContext(`en: ${key}`).toBe('string');
+      expect(typeof lookup(ar, key)).withContext(`ar: ${key}`).toBe('string');
+    }
+  });
+
+  it('keeps synonyms in lower case, with the design’s own example', () => {
+    for (const item of admin.items) {
+      for (const synonym of item.console?.synonyms ?? []) expect(synonym).withContext(item.key).toBe(synonym.toLowerCase());
+    }
+    expect(admin.items.find((i) => i.key === 'emailProvider')!.console!.synonyms).toContain('smtp');
+  });
+
+  it('gives the group its own page, /admin', () => {
+    expect(admin.route).toBe('/admin');
+    for (const group of TENANT_NAV_GROUPS.filter((g) => g.key !== 'admin')) expect(group.route).withContext(group.key).toBeUndefined();
+  });
+
+  describe('canOpenAdminConsole', () => {
+    it('no admin:access: no (whatever page permissions)', () => {
+      expect(canOpenAdminConsole(access(['users:view', 'org:view', 'lookups:view']))).toBe(false);
+    });
+    it('admin:access and no admin page: no', () => {
+      expect(canOpenAdminConsole(access([ADMIN_ACCESS]))).toBe(false);
+    });
+    it('admin:access and one admin page: yes', () => {
+      expect(canOpenAdminConsole(access([ADMIN_ACCESS, 'roles:view']))).toBe(true);
+    });
+    it('a platform admin: no', () => {
+      expect(canOpenAdminConsole(access([ADMIN_ACCESS, 'users:view'], true))).toBe(false);
+    });
+    it('STANDALONE_ROUTE_PERMISSIONS maps admin to admin:access, the floor', () => {
+      expect(ROUTE_PERMISSIONS.get('admin')).toEqual([ADMIN_ACCESS]);
+    });
+  });
+
+  describe('visibleAdminConsoleItems', () => {
+    it('a custom role: only the carded items it may see', () => {
+      expect(visibleAdminConsoleItems(access([ADMIN_ACCESS, 'setup:view', 'users:view', 'roles:view'])).map((i) => i.key)).toEqual([
+        'users',
+        'roles',
+      ]);
+    });
+    it('no admin:access: none', () => {
+      expect(visibleAdminConsoleItems(access(['users:view']))).toEqual([]);
+    });
+  });
+
+  describe('railNavGroups', () => {
+    const railAdmin = (permissions: string[]) => railNavGroups(access(permissions)).find((g) => g.key === 'admin');
+
+    it('draws the admin group as one item to /admin, named as the group', () => {
+      const group = railAdmin([ADMIN_ACCESS, 'users:view', 'roles:view', 'tenant:manage_config'])!;
+      expect(group.items.length).toBe(1);
+      expect(group.items[0]!.route).toBe('/admin');
+      expect(group.items[0]!.labelKey).toBe('nav.groups.admin');
+    });
+
+    it('no admin group at all without access', () => {
+      expect(railAdmin(['users:view'])).toBeUndefined();
+      expect(railAdmin([ADMIN_ACCESS])).toBeUndefined();
+    });
+
+    it('carries the Setup health badge only for a setup:view holder', () => {
+      expect(railAdmin([ADMIN_ACCESS, 'setup:view'])!.items[0]!.badge).toBe('setupHealth');
+      expect(railAdmin([ADMIN_ACCESS, 'setup:view'])!.items[0]!.collapsedLabelKey).toBe('shell.adminOpenProblems');
+      expect(railAdmin([ADMIN_ACCESS, 'users:view'])!.items[0]!.badge).toBeUndefined();
+    });
+
+    it('is lit on every admin route and below it, never on a look-alike', () => {
+      const pattern = railAdmin([ADMIN_ACCESS, 'users:view'])!.items[0]!.alsoActiveFor!;
+      for (const item of admin.items) {
+        expect(pattern.test(item.route)).withContext(item.route).toBe(true);
+        expect(pattern.test(`${item.route}/x`)).withContext(`${item.route}/x`).toBe(true);
+      }
+      for (const path of ['/users-guide', '/home', '/tasks', '/admin-settings']) expect(pattern.test(path)).withContext(path).toBe(false);
+    });
+
+    it('leaves every other group as it is', () => {
+      const groups = railNavGroups(access([ADMIN_ACCESS, 'users:view', 'committees:view']));
+      const plain = visibleNavGroups(access([ADMIN_ACCESS, 'users:view', 'committees:view']));
+      expect(groups.filter((g) => g.key !== 'admin')).toEqual(plain.filter((g) => g.key !== 'admin'));
+    });
   });
 });

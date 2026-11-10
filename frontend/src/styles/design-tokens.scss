@@ -75,6 +75,11 @@
   --am-neutral-chip-bg:     #F1F4F8;
   --am-neutral-chip-border: #E2E8F0;
 
+  // ACC-292 — a find-as-you-type match, marked inside the text it was found in
+  // (AccreditMe Administration design, Find a setting). The card inks on it,
+  // primary-700 and ink-700, both pass AA.
+  --am-mark-bg: #FFF1B8;
+
   // Restricted relation (artboard 4, "hidden"). Hatch rather than grey,
   // because grey already means disabled or empty.
   --am-restricted-ink:         #5A6779;
@@ -133,6 +138,8 @@
   --am-form-control-height: 36px;
   --am-form-row-gap:        12px;
   --am-form-max-width:      640px;
+  // ACC-292 — a find box above a page of cards: "Find a setting" at most 420px.
+  --am-find-max-width:      420px;
 
   // ─── Dialog widths (artboard 7) ────────────────────────────────────────
   --am-dialog-confirm: 420px;

@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { platformAdminGuard } from './core/guards/platform-admin.guard';
 import { permissionGuard } from './core/guards/permission.guard';
+import { adminConsoleGuard } from './core/guards/admin-console.guard';
 import { platformHomeRedirectGuard } from './core/guards/platform-home-redirect.guard';
 import { orgReadOnlyRedirectGuard } from './foundation/organization/org-read-only.guard';
 import { ORG_READ_ONLY_DATA } from './foundation/organization/org-pages';
@@ -161,6 +162,18 @@ export const routes: Routes = [
         canActivate: [platformAdminGuard],
         loadChildren: () =>
           import('./platform/platform.routes').then((m) => m.PLATFORM_ROUTES),
+      },
+      {
+        // ACC-292 — the Administration console: one card per Administration
+        // page this user may open, grouped, with Find a setting and the Setup
+        // health strip. Its guard asks the rail item's own rule
+        // (canOpenAdminConsole), so the link and the route agree.
+        path: 'admin',
+        canActivate: [adminConsoleGuard],
+        loadComponent: () =>
+          import('./foundation/admin-console/admin-console.component').then(
+            (m) => m.AdminConsoleComponent,
+          ),
       },
       {
         path: 'admin-settings',
