@@ -27,6 +27,7 @@ import {
 } from '../../../../shared/components/data-list/data-list.source';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { rootUnitNeedsHeadMessage } from '../../../organization/root-unit-refusal';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmNumberPipe } from '../../../../core/formatting';
@@ -437,8 +438,11 @@ export class PositionListComponent {
         this.orgPositionService.deactivate(position.id).subscribe({
           next: () => this.loadPositions(),
           error: (err: unknown) =>
+            // ACC-288 — the root head's position can't be deactivated without a
+            // successor or a cover; said here, on the page that made the call.
             this.error.set(
-              extractErrorMessage(err, this.translate.instant('orgPosition.errorDeactivate')),
+              rootUnitNeedsHeadMessage(err, this.translate, this.languageService) ??
+                extractErrorMessage(err, this.translate.instant('orgPosition.errorDeactivate')),
             ),
         });
       },

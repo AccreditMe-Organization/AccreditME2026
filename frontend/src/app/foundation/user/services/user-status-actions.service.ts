@@ -4,6 +4,7 @@ import { FormatService } from '../../../core/formatting';
 import { LanguageService } from '../../../core/services/language.service';
 import { extractErrorMessage } from '../../../shared/utils/http-error.util';
 import { refusalCode } from '../../../core/http/refusal';
+import { rootUnitNeedsHeadMessage } from '../../organization/root-unit-refusal';
 import { RoleService, UserRoleGrantDto } from '../../roles/services/role.service';
 import { IUserDto, UserService } from './user.service';
 import { AmConfirmService } from '../../../shared/components/confirm/am-confirm.service';
@@ -210,6 +211,9 @@ export class UserStatusActionsService {
     if (refusalCode(err) === 'ACCOUNT_OWNER_PROTECTED') {
       return this.translate.instant('user.refusal.accountOwnerProtected');
     }
+    // ACC-288 — the root unit's last head (no cover in force) can't be deactivated.
+    const rootNeedsHead = rootUnitNeedsHeadMessage(err, this.translate, this.languageService);
+    if (rootNeedsHead) return rootNeedsHead;
     return extractErrorMessage(err, fallback);
   }
 }

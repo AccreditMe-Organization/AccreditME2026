@@ -18,6 +18,8 @@ import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { OrgPositionService, IOrgPositionDto } from '../../services/org-position.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
+import { LanguageService } from '../../../../core/services/language.service';
+import { rootUnitNeedsHeadMessage } from '../../../organization/root-unit-refusal';
 // ACC-41 — OverlaySelectComponent replaces p-select here: this field lives
 // inside EditDialogComponent, one of the DOM contexts where PrimeNG's own
 // scroll-chaining bug is reachable. See CLAUDE.md's PrimeNG-components-only
@@ -44,6 +46,11 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+      <!-- ACC-288 — turning the root head's position off is refused by the
+           server; said here, in the dialog that made the call. -->
+      @if (saveError(); as message) {
+        <p-message severity="error" [text]="message" data-testid="position-save-error" />
+      }
       @if (step() === 1) {
       <!-- ACC-120 slice 6 — am-field. The required marker is DERIVED from each
            control's own validators, so the hand-written asterisks are gone:
@@ -160,6 +167,10 @@ export class PositionFormComponent implements OnInit {
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly roleService = inject(RoleService);
   private readonly translate = inject(TranslateService);
+  private readonly language = inject(LanguageService);
+
+  /** ACC-288 — a refusal the server answered the save with, in the reader's language. */
+  readonly saveError = signal<string | null>(null);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
   readonly position = input<IOrgPositionDto | null>(null);
@@ -336,6 +347,7 @@ export class PositionFormComponent implements OnInit {
       return;
     }
     this.saving.set(true);
+    this.saveError.set(null);
 
     const value = this.form.getRawValue();
     // ACC-43 — non-blocking: set alongside the request below, never in
@@ -361,7 +373,10 @@ export class PositionFormComponent implements OnInit {
         this.saving.set(false);
         this.saved.emit({ position: saved, hadVacantRoleWarning: this.showVacantRoleWarning() });
       },
-      error: () => this.saving.set(false),
+      error: (err: unknown) => {
+        this.saving.set(false);
+        this.saveError.set(rootUnitNeedsHeadMessage(err, this.translate, this.language));
+      },
     });
   }
 }
