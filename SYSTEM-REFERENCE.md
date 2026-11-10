@@ -3631,6 +3631,13 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - A member has one vote per stage entry. Pressing again, on any voting move,
     replaces it.
   - Acting at once records the press as RETURNED, with its move.
+  - **Every vote is audited** (`recordVote()`, the one writer, for a press and for
+    `submitApproval()`):
+    - a first vote is CREATE;
+    - a replaced vote is UPDATE, with `before` the old move and decision and
+      `after` the new ones (each move by id and both labels). The row's actor and
+      `createdAt` are who and when;
+    - the same move pressed again records nothing.
 - **A move goes through when ITS OWN threshold is met** (`isApprovalThresholdMet(…, move)`):
   - **"All of them":** every current pool member's vote is for that move. Votes
     for different moves block each other until the members agree.

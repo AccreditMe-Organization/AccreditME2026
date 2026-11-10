@@ -466,6 +466,11 @@ nothing reads.
   - `isApprovalThresholdMet()` takes the move and counts `votesFor()` it;
   - `submitApproval()` finds its move by kind (`voteMoveFor()`, 409 `VOTE_MOVE_AMBIGUOUS`).
 - **`VOTE_MOVE_AMBIGUOUS`** has no screen string: `submitApproval()` has no frontend caller.
+- **A replaced vote is audited** (Ahmad, 10 Nov), by `recordVote()`, the one writer of a vote:
+  - CREATE for a first vote;
+  - UPDATE with the old move and decision before, and the new ones after;
+  - nothing for the same move pressed again;
+  - db-spec case added; removing the write turns it red.
 - **Specs:** `vote-on-advance.db-spec.ts`, 12 cases.
 - **Mutation-checked:**
 
