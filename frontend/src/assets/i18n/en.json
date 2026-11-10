@@ -1695,6 +1695,27 @@
     "deactivateConfirmHead": "Nobody new can be given it. Whoever holds it now keeps it, but no longer counts as the Head of their unit."
   },
   "task": {
+    "record": {
+      "committee": {
+        "label": "Committee",
+        "choose": "Choose a committee",
+        "find": "Find a committee",
+        "search": "Search committees",
+        "none": "No committees you can add tasks to.",
+        "column": "Committee"
+      },
+      "generic": {
+        "label": "Record",
+        "choose": "Choose a record",
+        "find": "Find a record",
+        "search": "Search records",
+        "none": "No records you can add tasks to.",
+        "column": "Record"
+      },
+      "noMatch": "Nothing matches “{{q}}”.",
+      "closeList": "Close",
+      "closed": "This committee is dissolved or inactive, so it takes no new tasks."
+    },
     "title": "Title",
     "newTask": "New Task",
     "description": "Description",
@@ -2774,6 +2795,28 @@
       }
     },
     "task": {
+      "record": {
+        "committee": {
+          "count": {
+            "one": "{{count}} committee",
+            "other": "{{count}} committees"
+          },
+          "countMatch": {
+            "one": "{{count}} committee matches",
+            "other": "{{count}} committees match"
+          }
+        },
+        "generic": {
+          "count": {
+            "one": "{{count}} record",
+            "other": "{{count}} records"
+          },
+          "countMatch": {
+            "one": "{{count}} record matches",
+            "other": "{{count}} records match"
+          }
+        }
+      },
       "overdue": {
         "one": "{{count}} overdue",
         "other": "{{count}} overdue"
