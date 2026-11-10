@@ -1417,6 +1417,8 @@ model WorkflowTransition {
   fromStage WorkflowStage              @relation("TransitionFrom", fields: [fromStageId], references: [id])
   toStage   WorkflowStage              @relation("TransitionTo", fields: [toStageId], references: [id])
   actions   WorkflowTransitionAction[]
+  // ACC-284 — the votes cast for this move.
+  votes     WorkflowApproval[]
 
   @@index([fromStageId])
   @@index([toStageId])
@@ -1513,13 +1515,19 @@ model WorkflowApproval {
   // ACC-40 Section 2.6.3 — same shape as WorkflowInstanceStage's own pair.
   delegationReason        DelegationReason?
   delegationContextId     String?
+  // ACC-284 — the move this vote is for. Votes count per move: a move goes
+  // through when its own threshold is met. Null on a vote cast before ACC-284,
+  // which counts for the stage's ADVANCE moves, as it did.
+  transitionId            String?
 
   workflowInstanceStage WorkflowInstanceStage @relation(fields: [workflowInstanceStageId], references: [id])
   approver              User                  @relation(fields: [approverId], references: [id])
+  transition            WorkflowTransition?   @relation(fields: [transitionId], references: [id], onDelete: SetNull)
 
   @@unique([workflowInstanceStageId, approverId])
   @@index([workflowInstanceStageId])
   @@index([approverId])
+  @@index([transitionId])
 }
 
 model WorkflowTransitionAction {
