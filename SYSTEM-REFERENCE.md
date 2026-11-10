@@ -1827,6 +1827,9 @@ In order, exactly as executed:
    transition **is** the vote). A `RETURNED` vote fires the return
    transition immediately, no threshold needed. An `APPROVED` vote
    checks `isApprovalThresholdMet()` (2.7) before advancing.
+   Superseded (ACC-284): the move's `kind` decides, never `isApprovalPath`,
+   and each vote records its move — see "A press on a stage decided together"
+   in §2.19.
 
 **Only `ASSIGNEE_POOL` (ACC-28) checks whether `actorId` is a member of
 the resolved assignee/approver pool for this stage — every other
@@ -3610,6 +3613,50 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
 
 ---
 
+#### A press on a stage decided together: a vote by kind, counted per move (ACC-284)
+
+Plan and Ahmad's decisions (10 Nov): `backend/Plans/step-284-vote-on-advance.md`.
+The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
+
+| kind | "All of them" (ALL) | Committee vote (COMMITTEE_VOTE) |
+| -- | -- | -- |
+| ADVANCE | a vote for the move | a vote for the move |
+| RETURN | acts at once | acts at once |
+| EXIT | acts at once | **a vote for the move** |
+
+"Any one of them" (ANY_ONE) is unchanged: one press moves the record.
+
+- **A vote names its move.** `WorkflowApproval.transitionId` (nullable, additive
+  migration `acc284_vote_move`) records the move pressed.
+  - A member has one vote per stage entry. Pressing again, on any voting move,
+    replaces it.
+  - Acting at once records the press as RETURNED, with its move.
+- **A move goes through when ITS OWN threshold is met** (`isApprovalThresholdMet(…, move)`):
+  - **"All of them":** every current pool member's vote is for that move. Votes
+    for different moves block each other until the members agree.
+  - **Committee vote:**
+    - the quorum counts every vote cast in the entry, for any move;
+    - the move needs MORE than half of them.
+  - **A vote cast before ACC-284** names no move, and counts for the stage's
+    ADVANCE moves, as it did.
+- **The outcome stored on the entry:** ADVANCE → APPROVED; RETURN and EXIT → REJECTED.
+- **The gate (ACC-190 J):** for an ADVANCE, only the DECIDING vote is checked against
+  open mandatory tasks, before it is recorded.
+- **`submitApproval()`** (no frontend caller) finds its move by kind:
+  - approval → the stage's ADVANCE;
+  - return → its RETURN;
+  - not exactly one → 409 `VOTE_MOVE_AMBIGUOUS`, naming the stage.
+- **`isApprovalPath` is no longer read** by anything that decides.
+  - The API still accepts, stores, returns and audits it (expand).
+  - The transition panel no longer offers it, and the list no longer tags it.
+  - Lane B's follow-up ticket drops it (contract).
+- **No backfill:** on the shared database (10 Nov), 0 stored moves change behaviour.
+  Every seeded stage decided together already had its one ADVANCE marked.
+- **Specs:**
+  - `vote-on-advance.db-spec.ts`: the seeded committee moves on both who modes,
+    votes per move, the gate, a pre-ACC-284 vote, and isolation; mutation-checked;
+  - `pool-member-moves.db-spec.ts` no longer marks Approve.
+
 #### 2.19.1 Who may read a record's workflow, and who may act on it (ACC-282)
 
 Plan and Ahmad's answers (8 Nov): `backend/Plans/step-282-pool-member-moves.md`.
@@ -3647,6 +3694,8 @@ has and keeps no copy.
   approval-path moves (`isApprovalPath` false), so on an ALL stage a single press of
   one fires at once. Committee stages are ANY_ONE in the seed, so nothing live is
   affected.
+  **Fixed (ACC-284):** the engine decides by the move's kind, so the seeded Approve
+  is a vote on a stage decided together (§2.19, "A press on a stage decided together").
 - **Specs:** `instance-access.spec.ts`; `pool-member-moves.db-spec.ts` (a pool member,
   a member outside the pool, a former member named directly, a `workflows:view`
   holder, a vote on an ALL stage, a change request, and another organisation's

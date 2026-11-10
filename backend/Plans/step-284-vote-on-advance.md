@@ -451,7 +451,30 @@ nothing reads.
 
 - [x] Plan (this file), committed, not pushed
 - [x] Ahmad's answers to §6 (10 Nov, "Decisions" above)
-- [ ] Backend: decide by kind; Q1's choice; specs (db-spec on 55432), mutation checks
-- [ ] Frontend: the checkbox and the tag
-- [ ] Docs: SYSTEM-REFERENCE §2.19 and §2.19.1; CLAUDE.md
+- [x] Backend: decide by kind; votes per move (`WorkflowApproval.transitionId`); specs (db-spec on 55432), mutation checks
+- [x] Frontend: the checkbox and the tag
+- [x] Docs: SYSTEM-REFERENCE §2.19 and §2.19.1; CLAUDE.md
 - [ ] Gate, PR
+
+### As built (10 Nov)
+
+- **The migration** `20261110181510_acc284_vote_move`: `WorkflowApproval.transitionId`,
+  nullable, indexed, SET NULL on the move's delete. Created and applied on 55432 only.
+- **`workflow-vote.ts`:** `isVotingMove()`, `moveOutcome()`, `votesFor()`.
+- **The engine:**
+  - `triggerTransition()` decides by `isVotingMove()`;
+  - `isApprovalThresholdMet()` takes the move and counts `votesFor()` it;
+  - `submitApproval()` finds its move by kind (`voteMoveFor()`, 409 `VOTE_MOVE_AMBIGUOUS`).
+- **`VOTE_MOVE_AMBIGUOUS`** has no screen string: `submitApproval()` has no frontend caller.
+- **Specs:** `vote-on-advance.db-spec.ts`, 12 cases.
+- **Mutation-checked:**
+
+  | Mutation | Tests red |
+  | -- | -- |
+  | reading `isApprovalPath` again | 7 |
+  | RETURN as a vote | 3 |
+  | EXIT acting at once on a committee vote | 2 |
+  | EXIT as a vote on "All of them" | 1 |
+  | no per-move filter | 2 |
+  | the old transition panel put back | 3 |
+  | the old transition list put back | 1 |

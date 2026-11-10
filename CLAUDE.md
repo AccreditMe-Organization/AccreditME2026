@@ -4590,6 +4590,33 @@ Briefly:
   committee page (locked). A create tells `MyWorkEvents`.
 - **No migration.**
 
+## Key Architecture Decisions (ACC-284)
+
+A press on a stage decided together is a vote by the move's kind. Full mechanism:
+SYSTEM-REFERENCE.md §2.19 ("A press on a stage decided together"). Plan and Ahmad's
+decisions (10 Nov): `backend/Plans/step-284-vote-on-advance.md`. Briefly:
+
+- **THE MOVE'S KIND DECIDES, NEVER `isApprovalPath`.** On "All of them":
+  - ADVANCE is a vote;
+  - RETURN and EXIT act at once.
+
+  On a committee vote:
+  - ADVANCE and EXIT are votes;
+  - RETURN acts at once.
+
+  "Any one of them" is unchanged. The rule is `workflow-vote.ts`.
+- **EACH VOTE NAMES ITS MOVE, AND A MOVE GOES THROUGH ON ITS OWN THRESHOLD.**
+  `WorkflowApproval.transitionId` (nullable, additive).
+  - **"All of them":** every member's vote is for that move.
+  - **Committee vote:** the quorum counts every vote cast; the move needs more
+    than half.
+  - **A vote from before** counts for the ADVANCE moves.
+- **`isApprovalPath` IS DEAD:**
+  - the API still takes it (expand), and the screens no longer show it;
+  - lane B's follow-up ticket drops the column;
+  - do not read it again.
+- **No backfill.** The migration runs in the pre-deploy step, never before.
+
 ## Key Architecture Decisions (ACC-221)
 
 The organisation's account owner. Full mechanism: SYSTEM-REFERENCE.md §1.15.
