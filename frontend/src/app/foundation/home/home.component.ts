@@ -73,12 +73,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     <div class="am-home">
       <app-page-header [title]="greeting()" [tabTitle]="'nav.home' | translate">
         <div pageActions>
-          @if (createTypes().length > 0) {
+          @if (canCreate()) {
             <p-button [label]="'task.newTask' | translate" icon="pi pi-plus" (onClick)="newTaskOpen.set(true)" data-testid="home-task-new" />
           }
         </div>
       </app-page-header>
-      @if (createTypes().length > 0) {
+      @if (canCreate()) {
         <app-task-new-dialog [(visible)]="newTaskOpen" [createTypes]="createTypes()" />
       }
 
@@ -202,6 +202,8 @@ export class HomeComponent implements OnInit {
   /** ACC-280 — New task's record types (GET /tasks/views), read on entry; empty hides the button. */
   readonly createTypes = signal<readonly string[]>([]);
   readonly newTaskOpen = signal(false);
+  /** New task shows exactly when /tasks shows it: the server names a create type (check:create-gating). */
+  readonly canCreate = computed(() => this.createTypes().length > 0);
   readonly available = signal<AvailableState>({ state: 'loading' });
 
   /** "Good morning, Layla" in the organisation's time zone (Arabic: two forms only). */
