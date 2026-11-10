@@ -21,7 +21,6 @@ describe('TaskVisibilityService', () => {
     recordTypes: ['COMMITTEE'],
     viewAllTypes: ['COMMITTEE'],
     manageTypes: [],
-    createTypes: [],
     unitScope: [],
     unitRoots: [],
   };

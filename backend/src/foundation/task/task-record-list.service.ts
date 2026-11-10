@@ -22,6 +22,8 @@ import { OPEN_REQUEST_INCLUDE, toOpenRequest } from './task-request-lifecycle';
 import { taskActionsFor } from './task-actions';
 import { RECORD_LIST_STATUSES, RecordListQueryDto, RecordListSort, RecordListStatus, RecordPanelQueryDto } from './dto/record-list-query.dto';
 import { recordNameMatchSql, recordNamesOf, recordOf } from './task-record-names';
+import { createTypes, recordChoices, TaskRecordChoicesPage } from './task-record-choices';
+import { RecordChoicesQueryDto } from './dto/record-choices-query.dto';
 import { ITaskRecordList, ITaskRecordListFacets, ITaskRecordPanel, ITaskRecordRow, ITaskViews } from './interfaces/task-record-row.interface';
 
 const PAGE = 50;
@@ -103,7 +105,13 @@ export class TaskRecordListService {
    * Self-scoped: it describes the caller and reads no task.
    */
   async views(organizationId: string, viewer: TaskViewer): Promise<ITaskViews> {
-    const ctx = await this.visibility.contextFor(viewer, organizationId);
+    // ACC-280 — New task's types are createTypes(): the key, and the view permission
+    // or (decision 2) membership of one of the type's records. Independent of the
+    // context, so read beside it.
+    const [ctx, createTypeList] = await Promise.all([
+      this.visibility.contextFor(viewer, organizationId),
+      createTypes(this.prisma, viewer, organizationId),
+    ]);
     const rootIds = [...new Set(ctx.unitRoots.map((r) => r.orgUnitId))];
     const names = rootIds.length
       ? await this.prisma.orgUnit.findMany({
@@ -124,8 +132,13 @@ export class TaskRecordListService {
       unit: unitTypes.length && units.length ? { types: unitTypes, units } : null,
       // ACC-120 slice 3 — like My tasks, always: it lists the viewer's own work.
       created: true,
-      create: { types: ctx.createTypes },
+      create: { types: createTypeList },
     };
+  }
+
+  /** ACC-280 — GET /tasks/record-choices: New task's record picker (task-record-choices.ts). */
+  recordChoices(dto: RecordChoicesQueryDto, organizationId: string, viewer: TaskViewer): Promise<TaskRecordChoicesPage> {
+    return recordChoices(this.prisma, dto, organizationId, viewer);
   }
 
   private async run(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer, withFacets: boolean): Promise<ITaskRecordList> {
