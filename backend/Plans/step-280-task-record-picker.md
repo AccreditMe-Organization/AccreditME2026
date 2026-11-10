@@ -37,8 +37,26 @@ These override the recommendations below where they differ.
    Pending stays in.** "Dissolved" must be recognised from the stage's flags or rules, never its
    name or key.
 
-   **No flag can tell Dissolved from Dissolution Pending, so this stops here** (Ahmad, 9 Nov:
-   "say so in the plan and stop there"). What the code holds today:
+   **DECIDED (Ahmad, 10 Nov): option (b).** A committee counts as **dissolved** when its CURRENT
+   stage carries the `DISSOLVING` flag AND is a final stage (`isFinal`). **Inactive committees**
+   (`Committee.isActive = false`) are left out too.
+   - **One server helper, used by both the picker and `POST /tasks`:** a per-type entry in the
+     task registry (`TASK_RECORD_TYPES`, `task-record-types.ts`), e.g. `acceptsTasksSql`, the one
+     SQL condition "this record takes new tasks".
+     - **For COMMITTEE:** `isActive`, and NOT (the newest instance's current stage has
+       `DISSOLVING` in `flags` AND `isFinal`).
+     - **The picker** puts it in its `WHERE`.
+     - **`POST /tasks`** asks it of the one record, after the key and the record check. That is
+       one indexed `EXISTS` query, inside the create request only.
+     - So the list and create cannot disagree.
+   - **Never a stage name or key.** A tenant that renames Dissolved, or adds its own final
+     dissolving stage, is read by its flags and rules alone.
+   - **Dissolution Pending stays in:** `DISSOLVING`, but not final.
+   - **The refusal, proposed:** 409 with a code, `TASK_RECORD_CLOSED` ("This committee is
+     dissolved or inactive, so it takes no new tasks."), said from the code on screen. A record
+     the caller may not see keeps its 403/404, which the record check gives first.
+
+   What the code held before the choice (9 Nov), kept for the reasoning:
 
    | | Dissolution Pending | Dissolved |
    | -- | -- | -- |
@@ -49,16 +67,13 @@ These override the recommendations below where they differ.
 
    So only stage RULES differ (final, and allows nothing). Each is tenant-editable and means
    something else elsewhere: "final" is also a Rejected or Withdrawn stage, and "allows nothing"
-   is a configuration choice. Nothing is designed here until Ahmad chooses. The options to
-   choose from:
+   is a configuration choice. The options that were offered (Ahmad chose (b)):
    - (a) a new stage flag, e.g. `DISSOLVED` (or `CLOSED`), seeded on Dissolved and backfilled;
    - (b) `DISSOLVING` AND `isFinal`;
    - (c) Dissolved also sets `Committee.isActive = false` (and `dissolvedAt`), so "inactive" covers
      it. That needs an app move or a module write on the transition, plus a backfill for
      committees already Dissolved.
 
-   The "inactive" half (`Committee.isActive = false`) needs no choice: the picker and
-   `POST /tasks` leave it out once the rule above is settled.
 
 ---
 
@@ -390,7 +405,7 @@ not.
 - [x] Ahmad's answers to §8 (9 Nov, "Decisions" above)
 - [ ] Lane A agrees §6
 - [ ] The §0 fix, its own PR: `fix/ACC-280-create-task-key`
-- [ ] Decision 7: Ahmad chooses how "Dissolved" is recognised (a, b or c)
+- [x] Decision 7: (b), DISSOLVING and a final stage, plus inactive (Ahmad, 10 Nov)
 - [ ] Backend: `create.types` (Q2), `GET /tasks/record-choices`, the registry entry, specs
 - [ ] Frontend: the record picker, the shared New task dialog, Home's button, specs
 - [ ] Docs: SYSTEM-REFERENCE §3.19 and §10.24; CLAUDE.md Key Architecture Decisions (ACC-280)
