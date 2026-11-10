@@ -88,6 +88,18 @@ export function assertHoldsCreateKey(permissions: readonly string[], type: strin
   if (refused) throw new ForbiddenException(`Required permission: ${key ?? 'Create tasks'}`);
 }
 
+/**
+ * ACC-280 — may this permission set create tasks at all? The Create tasks key on some
+ * type, whether or not its view permission is held (holdsCreateKey()'s rule): a
+ * member who holds the key creates on their own committees (decision 2). For New
+ * task's own reads that name no record (the SLA preview, Draft with AI's
+ * availability, the assignee picker). Which RECORDS is decided apart: by the record
+ * check, and by GET /tasks/record-choices.
+ */
+export function holdsAnyCreateKey(permissions: readonly string[]): boolean {
+  return Object.keys(TASK_RECORD_TYPES).some((type) => holdsCreateKey(permissions, type));
+}
+
 /** Every type on which this permission set holds the key of this kind, record visible. */
 export function typesHolding(permissions: readonly string[], kind: TaskKeyKind): string[] {
   return Object.keys(TASK_RECORD_TYPES).filter((type) => holdsTaskKey(permissions, type, kind));
@@ -110,12 +122,12 @@ export function taskKeysOf(kind: TaskKeyKind): string[] {
  */
 export function assertMayCreateTasks(permissions: readonly string[], sourceType?: string | null): void {
   if (sourceType) {
-    if (!holdsTaskKey(permissions, sourceType, 'CREATE')) {
+    if (!holdsCreateKey(permissions, sourceType)) {
       throw new ForbiddenException(`Required permission: ${taskKeyOf(sourceType, 'CREATE') ?? 'Create tasks'}`);
     }
     return;
   }
-  if (typesHolding(permissions, 'CREATE').length === 0) {
+  if (!holdsAnyCreateKey(permissions)) {
     throw new ForbiddenException(`Required permission: ${taskKeysOf('CREATE').join(' or ')}`);
   }
 }

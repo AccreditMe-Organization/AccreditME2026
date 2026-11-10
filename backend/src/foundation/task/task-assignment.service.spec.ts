@@ -114,9 +114,18 @@ describe('TaskAssignmentService (ACC-167)', () => {
       expect(await captureError(service.listUnits(reassigner, ORG_A, 'task-1'))).toBeInstanceOf(NotFoundException);
     });
 
-    it('does not count Create tasks without the record type\'s own view permission (rule 1)', async () => {
-      const blind: AssignmentViewer = { id: 'blind', permissions: ['committees:create_tasks'] };
-      expect(await captureError(service.listUnits(blind, ORG_A))).toBeInstanceOf(ForbiddenException);
+    // ACC-280 (decision 2) — the key alone, like POST /tasks: a member holding Create
+    // tasks without committees:view creates on their own committees, so New task's
+    // picker opens for them. Which RECORD is decided by the record check, not here.
+    it('counts Create tasks without the record type\'s own view permission (ACC-280)', async () => {
+      const member: AssignmentViewer = { id: 'member', permissions: ['committees:create_tasks'] };
+      await expect(service.listUnits(member, ORG_A)).resolves.toEqual([]);
+      expect(mockPrisma.task.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('still refuses someone with no Create tasks key at all', async () => {
+      const viewerOnly: AssignmentViewer = { id: 'viewer', permissions: ['committees:view'] };
+      expect(await captureError(service.listUnits(viewerOnly, ORG_A))).toBeInstanceOf(ForbiddenException);
     });
 
     // ACC-208 (Ahmad, Q1) — configuring a stage task chooses a target too.
