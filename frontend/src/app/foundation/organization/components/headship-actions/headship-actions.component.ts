@@ -4,6 +4,8 @@ import { FormatService } from '../../../../core/formatting';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { LanguageService } from '../../../../core/services/language.service';
+import { rootUnitNeedsHeadMessage } from '../../root-unit-refusal';
 import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { IOrgPositionDto, OrgPositionService } from '../../../org-position/services/org-position.service';
 import { UserService } from '../../../user/services/user.service';
@@ -72,6 +74,7 @@ export class HeadshipActionsComponent implements OnInit {
   private readonly positionService = inject(OrgPositionService);
   private readonly confirm = inject(AmConfirmService);
   private readonly translate = inject(TranslateService);
+  private readonly language = inject(LanguageService);
   private readonly format = inject(FormatService);
   private readonly access = inject(NavigationAccessService);
 
@@ -171,7 +174,11 @@ export class HeadshipActionsComponent implements OnInit {
       },
       error: (err: unknown) => {
         this.busy.set(false);
-        this.actionError.set(extractErrorMessage(err, 'headship.saveFailed'));
+        // ACC-288 — vacating, ending a cover or completing a handover that would
+        // leave the root unit with nobody is refused; said here, in the panel.
+        this.actionError.set(
+          rootUnitNeedsHeadMessage(err, this.translate, this.language) ?? extractErrorMessage(err, 'headship.saveFailed'),
+        );
       },
     });
   }

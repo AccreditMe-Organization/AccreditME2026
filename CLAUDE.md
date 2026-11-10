@@ -4734,6 +4734,31 @@ Briefly:
   gains one indexed parent check.
 - **No migration.**
 
+## Key Architecture Decisions (ACC-288)
+
+The root unit always keeps a head or an acting head. Full mechanism:
+SYSTEM-REFERENCE.md §5.15.6. Briefly:
+
+- **AT LEAST ONE ACTIVE PERSON HEADS THE ROOT UNIT** — a current head holder, or
+  an acting cover in force. A change that would leave neither is 409
+  `ROOT_UNIT_NEEDS_HEAD`, with nothing written.
+- **ONE ASSERTION, `root-unit-head.invariant.ts`**, the root role's shape
+  (ACC-120): a baseline taken first inside the transaction, under the
+  per-organisation advisory lock `root-head:<org>`, and the check after the
+  writes. Seven paths call it: deactivate a person, transfer (transaction #1),
+  vacate, end cover, start the new head today, deactivate a head position, and
+  turn a position's head flag off. **Never write a second copy**; a new path
+  that can remove headship calls these two functions.
+- **Headship is read only through `unit-headship.ts`**, scoped by organisation.
+- **The platform organisation is excluded**, structurally.
+- **A root already headless logs and passes**: refusing it would block the
+  fix. Setup health's existing `ORG_UNIT_WITHOUT_HEAD` lists it; **no new
+  condition type**.
+- **The handover sweep never refuses**; it completes and logs.
+- **Screens say it from the code** (`root-unit-refusal.ts`), one key pair,
+  nothing disabled before the click.
+- **No migration.**
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

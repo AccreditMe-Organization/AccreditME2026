@@ -6,6 +6,7 @@ import { CreateOrgPositionDto } from './dto/create-org-position.dto';
 import { UpdateOrgPositionDto } from './dto/update-org-position.dto';
 import { IOrgPosition } from './interfaces/org-position.interface';
 import { DEFAULT_POSITIONS } from './org-position.seed';
+import { assertRootUnitRetainsAHead, captureRootHeadBaseline } from '../organization/root-unit-head.invariant';
 
 @Injectable()
 export class OrgPositionService {
@@ -116,10 +117,20 @@ export class OrgPositionService {
       await this.validateRoleReference(dto.roleId, organizationId);
     }
 
-    const position = await this.prisma.orgPosition.update({
-      where: { id },
-      data: dto,
-    });
+    // ACC-288 — turning a position's head flag off un-heads every unit its
+    // holders head, so that write is one transaction with the root-head rule.
+    const turnsHeadOff = existing.isUnitHeadPosition && dto.isUnitHeadPosition === false;
+    const position = turnsHeadOff
+      ? await this.prisma.$transaction(async (tx) => {
+          const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
+          const updated = await tx.orgPosition.update({ where: { id }, data: dto });
+          await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
+          return updated;
+        })
+      : await this.prisma.orgPosition.update({
+          where: { id },
+          data: dto,
+        });
 
     await this.auditLog.log({
       action: 'UPDATE',
@@ -138,10 +149,19 @@ export class OrgPositionService {
     const existing = await this.getPositionById(id, organizationId);
     if (!existing.isActive) return; // idempotent — already inactive
 
-    const position = await this.prisma.orgPosition.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    // ACC-288 — a deactivated head position confers nothing (D13), so
+    // deactivating one is one transaction with the root-head rule.
+    const position = existing.isUnitHeadPosition
+      ? await this.prisma.$transaction(async (tx) => {
+          const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
+          const updated = await tx.orgPosition.update({ where: { id }, data: { isActive: false } });
+          await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
+          return updated;
+        })
+      : await this.prisma.orgPosition.update({
+          where: { id },
+          data: { isActive: false },
+        });
 
     await this.auditLog.log({
       action: 'UPDATE',

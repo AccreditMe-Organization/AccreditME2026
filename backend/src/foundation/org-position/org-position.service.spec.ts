@@ -5,6 +5,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { OrganizationService } from '../organization/organization.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import * as rootHead from '../organization/root-unit-head.invariant';
+import { RootUnitNeedsHeadRefusal } from '../organization/org-unit-refusals';
+import { countWrites, recordTransactionWrites } from '../../common/testing/transaction-writes';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -46,6 +49,11 @@ const mockPrisma = {
   userRole: {
     findMany: jest.fn(),
   },
+  // ACC-288 — the root-head invariant: its lock and organisation read. No
+  // organisation row by default, so there is no root to keep headed.
+  organization: { findFirst: jest.fn() },
+  $queryRaw: jest.fn(),
+  $transaction: jest.fn(),
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -64,6 +72,9 @@ describe('OrgPositionService', () => {
     // every head-conferring position in the catalog. Safe no-op default
     // (no conflicting holder) unless a test explicitly overrides it.
     mockPrisma.user.count.mockResolvedValue(0);
+    mockPrisma.organization.findFirst.mockResolvedValue(null);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+    mockPrisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(mockPrisma));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -793,5 +804,79 @@ describe('OrgPositionService', () => {
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
       );
     });
+  });
+});
+
+// ACC-288 — a head position's deactivation, and turning its head flag off,
+// are one transaction with the root-head rule. Refused: the refusal reaches the
+// caller, the flag write went through the transaction (so it rolls back), and
+// no audit row or vacancy refresh ran.
+describe('OrgPositionService — the root unit keeps a head (ACC-288)', () => {
+  let service: OrgPositionService;
+  let writes: string[];
+  let assertSpy: jest.SpyInstance;
+  const REFUSAL = new RootUnitNeedsHeadRefusal('root-a', 'Al-Nakheel Hospital', null);
+  const HEAD = { ...BASE_POSITION, isUnitHeadPosition: true, isSingleAssignee: true };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockPrisma.user.findMany.mockResolvedValue([]);
+    mockPrisma.organization.findFirst.mockResolvedValue(null);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+    mockPrisma.orgPosition.update.mockResolvedValue({ ...HEAD, isActive: false });
+    writes = recordTransactionWrites(mockPrisma);
+    assertSpy = jest.spyOn(rootHead, 'assertRootUnitRetainsAHead').mockRejectedValue(REFUSAL);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        OrgPositionService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: AuditLogService, useValue: mockAuditLog },
+        { provide: OrganizationService, useValue: mockOrganizationService },
+      ],
+    }).compile();
+    service = module.get(OrgPositionService);
+  });
+  afterEach(() => assertSpy.mockRestore());
+
+  it('deactivating the root head’s position is refused, and the flag write rolls back', async () => {
+    mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD);
+
+    await expect(service.deactivatePosition(HEAD.id, ORG_A, 'admin-1')).rejects.toBe(REFUSAL);
+
+    expect(countWrites(writes, 'orgPosition.update')).toBe(1);
+    expect(mockPrisma.orgPosition.update).toHaveBeenCalledTimes(1);
+    expect(mockAuditLog.log).not.toHaveBeenCalled();
+    expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+  });
+
+  it('turning a head position’s head flag off is refused, and the write rolls back', async () => {
+    mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD);
+
+    await expect(
+      service.updatePosition(HEAD.id, { isUnitHeadPosition: false, isSingleAssignee: false }, ORG_A, 'admin-1'),
+    ).rejects.toBe(REFUSAL);
+
+    expect(countWrites(writes, 'orgPosition.update')).toBe(1);
+    expect(mockPrisma.orgPosition.update).toHaveBeenCalledTimes(1);
+    expect(mockAuditLog.log).not.toHaveBeenCalled();
+  });
+
+  it('a position that is not a head position is deactivated without the lock or the rule', async () => {
+    mockPrisma.orgPosition.findFirst.mockResolvedValue(BASE_POSITION);
+
+    await service.deactivatePosition(BASE_POSITION.id, ORG_A, 'admin-1');
+
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(assertSpy).not.toHaveBeenCalled();
+  });
+
+  it('an edit that leaves the head flag on takes neither the lock nor the rule', async () => {
+    mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD);
+    mockPrisma.orgPosition.update.mockResolvedValue({ ...HEAD, nameEn: 'Chief' });
+
+    await service.updatePosition(HEAD.id, { nameEn: 'Chief' }, ORG_A, 'admin-1');
+
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(assertSpy).not.toHaveBeenCalled();
   });
 });

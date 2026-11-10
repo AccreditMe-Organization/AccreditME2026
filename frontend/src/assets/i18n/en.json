@@ -152,7 +152,8 @@
     "loadUnitsFailed": "Couldn't load the units.",
     "saveFailed": "Couldn't save the unit.",
     "refusal": {
-      "parentCycle": "A unit can't be placed under itself or one of its own sub-units."
+      "parentCycle": "A unit can't be placed under itself or one of its own sub-units.",
+      "rootNeedsHead": "{{unit}} must always have a head or an acting head. Appoint a successor or an acting head first."
     },
     "tree": {
       "tabsLabel": "Organization views",
