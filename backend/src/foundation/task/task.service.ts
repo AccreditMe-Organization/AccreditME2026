@@ -17,7 +17,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
-import { assertMayCreateTasks, holdsCreateKey, holdsTaskKey, seesRecordType, taskKeyOf } from './task-record-types';
+import { assertHoldsCreateKey, assertMayCreateTasks, holdsTaskKey } from './task-record-types';
 import { CreateTaskDto, type CreateTaskInternal } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { RejectTaskDto } from './dto/reject-task.dto';
@@ -217,11 +217,7 @@ export class TaskService {
   // names committees:view). A type with no key keeps its old path: refused with
   // "Create tasks" when its view permission is held, else by the record check.
   async createForViewer(dto: CreateTaskDto, organizationId: string, viewer: TaskViewer): Promise<ITask> {
-    const key = taskKeyOf(dto.sourceType, 'CREATE');
-    const refused = key !== null ? !holdsCreateKey(viewer.permissions, dto.sourceType) : seesRecordType(viewer.permissions, dto.sourceType);
-    if (refused) {
-      throw new ForbiddenException(`Required permission: ${key ?? 'Create tasks'}`);
-    }
+    assertHoldsCreateKey(viewer.permissions, dto.sourceType);
     await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id);
     return this.create(dto, organizationId, viewer.id);
   }
