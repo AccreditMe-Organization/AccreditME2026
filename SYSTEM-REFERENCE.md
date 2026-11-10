@@ -5814,8 +5814,41 @@ Before this, both checked the key only for a `committees:view` holder. That was 
 while the record check refused everyone else, but since ACC-281 it admits members, so
 a member without the key could create a task, or draft one and spend credits. **Both
 are closed**, pinned in `create-task-key.db-spec.ts` (the draft cases make no AI
-call and touch no credits). `create.types` (`GET /tasks/views`) still needs
-`committees:view`; its member branch is ACC-280's picker work.
+call and touch no credits).
+
+**ACC-280 — New task picks its record (`task-record-choices.ts`).** Three readers
+of one registry entry, `TASK_RECORD_TYPES[type].choices` (`task-record-types.ts`):
+the record table, ACC-281's membership as SQL (`memberSql`), and
+**`acceptsTasksSql`, the ONE rule for "this record takes new tasks"**. For
+COMMITTEE: `isActive`, and NOT (the newest instance's current stage carries
+`DISSOLVING` AND is final). Read from the stage's flags and `isFinal`, never a
+name or key, so Dissolution Pending (`DISSOLVING`, not final) still takes tasks.
+A type with no `choices` entry has no choices (fail closed).
+
+- **`createTypes()` is `create.types`** (`GET /tasks/views`): the type's key, and
+  the type open to the caller, as a view-permission holder or as an active member
+  of at least one of its records that takes tasks (decision 2). The membership
+  query runs only for a key holder without the view permission.
+- **`mayCreateTasks()` / `assertMayCreateTasks()`** are that rule asked as "may
+  create tasks at all", for New task's reads that name no record: the assignee
+  picker (`TaskAssignmentService.assertMayAssign`), `GET /tasks/sla-preview`,
+  Draft with AI's availability, and a draft with no record. **The key alone is
+  not enough**: a key holder who is neither a viewer nor a member gets the 403
+  naming the key. Never a second copy of it.
+- **`GET /tasks/record-choices?type=&q=&skip=&take=&lang=`** (no `@Permissions`,
+  declared before `:id`): the records of one type the caller may open (every one
+  with the view permission, else their own by membership) that take new tasks.
+  `{ items: [{ id, nameEn, nameAr }], total, matching }`, `take` 1–50, two
+  queries in `Promise.all` (the rows, and both counts in one statement),
+  `organizationId` in every `WHERE`, sorted by the name in the reader's language
+  then id. A type without the caller's key is an empty page, read from nothing.
+- **`POST /tasks` on a closed record is 409 `TASK_RECORD_CLOSED`**
+  (`assertRecordAcceptsTasks()`, the same SQL asked of one record), after the
+  key and the record check, so a record the caller may not see keeps its 403 or
+  404. The screen says it from the code.
+
+Pinned on a real Postgres in `task-record-choices.db-spec.ts` (every kind of
+committee, the people who may and may not, isolation), mutation-checked.
 
 **Removed:** `GET /tasks?sourceType=&sourceId=` and `GET /tasks/:id` — the
 frontend had no caller, and both service methods went with them. The task page
@@ -10991,8 +11024,13 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
   `isNavModuleOpen(itemKey)` (`core/navigation/nav-items.ts`), the rail
   item's own `moduleKey`. Committees has none today, so it is open, and Home
   follows the day the rail gains one.
-- **No purpose line and no header actions.** Both drawn lines fail ACC-79's
-  two tests. New task arrives with ACC-280's record picker (Q7).
+- **No purpose line; one header action, New task (ACC-280).** Both drawn lines
+  fail ACC-79's two tests. New task shows exactly when `/tasks` shows it: when
+  `GET /tasks/views` names a create type, read once on entry, no poll. If the
+  read fails the button is absent. It opens the shared `TaskNewDialogComponent`
+  (`tasks/components/task-new-dialog/`), the same dialog `/tasks` and the
+  committee page use (there with the committee locked), and a create tells
+  `MyWorkEvents`, so the counts read again.
 - **The H1 greets by the part of the day in the organisation's zone**
   (`FormatService.dayPart()`). English has three bands: before 12:00, before
   17:00, and after. Arabic has two forms: «صباح الخير» and «مساء الخير». The AI

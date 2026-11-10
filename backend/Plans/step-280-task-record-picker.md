@@ -403,9 +403,52 @@ not.
 
 - [x] Plan (this file), committed, not pushed
 - [x] Ahmad's answers to §8 (9 Nov, "Decisions" above)
-- [ ] Lane A agrees §6
-- [ ] The §0 fix, its own PR: `fix/ACC-280-create-task-key`
+- [x] Lane A agrees §6 (Ahmad, 10 Nov: the §6 list, plus Home, the committee page, en/ar and the docs)
+- [x] The §0 fix, its own PR: `fix/ACC-280-create-task-key` (#274)
 - [x] Decision 7: (b), DISSOLVING and a final stage, plus inactive (Ahmad, 10 Nov)
-- [ ] Backend: `create.types` (Q2), `GET /tasks/record-choices`, the registry entry, specs
-- [ ] Frontend: the record picker, the shared New task dialog, Home's button, specs
-- [ ] Docs: SYSTEM-REFERENCE §3.19 and §10.24; CLAUDE.md Key Architecture Decisions (ACC-280)
+- [x] Backend: `create.types` (Q2), `GET /tasks/record-choices`, the registry entry, specs
+- [x] Frontend: the record picker, the shared New task dialog, Home's button, specs
+- [x] Docs: SYSTEM-REFERENCE §3.19 and §10.24; CLAUDE.md Key Architecture Decisions (ACC-280)
+
+---
+
+## 10. As built (10 Nov)
+
+**Where the build differs from the plan above:**
+
+- **No service class.** The choices live in `task-record-choices.ts` as functions
+  over the Prisma client (`createTypes`, `recordChoices`, `assertRecordAcceptsTasks`,
+  `mayCreateTasks` / `assertMayCreateTasks`), so `TaskService`'s constructor and the
+  db-specs that build it are unchanged. The registry entry is `choices: { fromSql,
+  acceptsTasksSql, memberSql }`.
+- **The answer carries `matching`** as well as `total` (`am-simple-list`'s page). Still
+  two queries: the rows, and both counts in one statement (`count(*) FILTER`).
+- **"May create tasks at all" is `create.types`' own rule (Ahmad, 10 Nov).** The
+  assignee picker, the SLA preview, Draft with AI's availability and a draft with no
+  record all ask `mayCreateTasks()`: the key, and the type open to the caller, as a
+  viewer or as an active member of a committee that TAKES TASKS. The key alone gets
+  the 403 naming the key, as before. Mutation-checked: the key alone turns three
+  db-spec cases red; membership of any committee (not only one taking tasks) turns
+  one red.
+- **The field learns "none" from one small read** (`take=1`) the first time it shows
+  for a type in a dialog; `TaskRecordChoiceStore` (provided by the form) keeps the
+  answer and the chosen record across the form's steps. Never on a page load.
+
+**The 420px cap, measured** (`task-form.draft.layout.spec.ts`, step 2, the real dialog,
+font and translations):
+
+| State (record picker, unlocked) | English | Arabic |
+| -- | -- | -- |
+| idle, one type (no type field) | 297 | 311 |
+| the longest seeded committee name chosen (one line) | 297 | 311 |
+| none to choose | 297 | 311 |
+| several types (the type field beside it), with and without the error | 297 | 311 |
+| a refusal with Try again | 383 | 403 |
+| **tallest: the refusal, Try again AND "Choose a committee" under the field** | **383** | **403** |
+| a draft suggestion (hides the record row, unchanged) | 377 | 410 |
+
+The record row is the field wrapper (`am-field`, with its reserved message slot), so an
+error adds no height. That slot is the +18 / +21 against the old typed row
+(365 / 382). Arabic keeps 17px, a full meta line, at its tallest. Step 1 is
+unchanged (the picker is on step 2): `task-workload.layout.spec.ts` still passes with
+the workload hint in every state.

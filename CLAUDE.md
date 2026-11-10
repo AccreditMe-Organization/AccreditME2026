@@ -4566,6 +4566,30 @@ ACC-274; briefly:
   /users/:userId/roles`: `roles:view`, plus `users:view` unless reading
   yourself, checked before any read.
 
+## Key Architecture Decisions (ACC-280)
+
+New task picks its record. Full mechanism: SYSTEM-REFERENCE.md §3.19 and §10.24.
+Plan and Ahmad's decisions (9–10 Nov): `backend/Plans/step-280-task-record-picker.md`.
+Briefly:
+
+- **NEVER A TYPED ID.** The record field shows a name; its search button opens
+  `GET /tasks/record-choices` in `am-list-dialog` as its own layer
+  (`TaskRecordPickerComponent`). The type field shows only when the server names
+  more than one type; the form keeps no list of types of its own.
+- **ONE RULE FOR "THIS RECORD TAKES NEW TASKS"**: `acceptsTasksSql` in
+  `TASK_RECORD_TYPES`. A committee that is inactive, or whose newest instance's
+  current stage is `DISSOLVING` AND final, is left out of the picker, and
+  `POST /tasks` refuses it with 409 `TASK_RECORD_CLOSED`. Flags and `isFinal`,
+  never a stage name or key; Dissolution Pending stays in.
+- **`create.types` IS THE RULE FOR "MAY CREATE TASKS AT ALL"**
+  (`createTypes()` / `mayCreateTasks()`): the key, and the type open to the
+  caller, as a viewer or an active member of a committee that takes tasks. The
+  assignee picker, the SLA preview and Draft with AI's availability read it; the
+  key alone is not enough.
+- **ONE NEW TASK DIALOG**, `TaskNewDialogComponent`: `/tasks`, Home and the
+  committee page (locked). A create tells `MyWorkEvents`.
+- **No migration.**
+
 ## Key Architecture Decisions (ACC-221)
 
 The organisation's account owner. Full mechanism: SYSTEM-REFERENCE.md §1.15.
