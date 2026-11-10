@@ -16,6 +16,71 @@ behaviour of 0 moves today (§3.3).
 
 ---
 
+## Decisions (Ahmad, 10 Nov)
+
+These override the plan below where they differ.
+
+1. **Q1 (i): every vote records which move it is for.** One nullable column,
+   `WorkflowApproval.transitionId` (additive migration, `acc284_vote_move`). Votes count per move:
+   a move goes through when ITS OWN threshold is met.
+2. **Q2: RETURN acts at once on every group stage.** EXIT acts at once on an "All of them" stage,
+   **but on a committee vote stage EXIT is a vote, like ADVANCE**, and needs the committee's
+   threshold. Specs for both, with mutation checks.
+3. **Q3: hide** the approval-path checkbox and the "Approval Path" tag now. The API still accepts
+   the field, so nothing breaks, but the engine does not read it.
+4. **Q4:** lane B opens the follow-up ticket that drops `isApprovalPath`.
+5. **The migration** must not reach the shared database before the deploy. It runs in the
+   pre-deploy step as usual. Locally it is created and applied on 55432 only.
+
+### The rules, as built
+
+**Which press is a vote** (a "group stage" is whoMode ALL or COMMITTEE_VOTE; ANY_ONE stages are
+unchanged, and one press moves the record):
+
+| kind | "All of them" (ALL) | Committee vote (COMMITTEE_VOTE) |
+| -- | -- | -- |
+| ADVANCE | a vote for this move | a vote for this move |
+| RETURN | acts at once | acts at once |
+| EXIT | acts at once | **a vote for this move** |
+
+- **A vote** is the member's one `WorkflowApproval` row in this stage entry: decision APPROVED,
+  `transitionId` = the move pressed.
+  - Pressing again, on the same or another voting move, replaces their vote (the existing upsert
+    on entry + member). So a member can change their mind, and is never counted twice.
+- **Acting at once** writes the member's row as RETURNED (`transitionId` = the move) and moves the
+  record with outcome REJECTED, as a send-back does today.
+- **The outcome stored on the stage entry:** ADVANCE → APPROVED; RETURN and EXIT (at once or by
+  vote) → REJECTED.
+
+**When a voting move M goes through** (`isApprovalThresholdMet(stage, entry, M)`). The votes
+counted are the entry's APPROVED rows, after the pressing member's new vote replaces their old one.
+
+- **"All of them":** every CURRENT pool member has a vote for M. A member standing in for someone
+  away covers them, as today, and someone who left is no longer waited for (ACC-271 Q6).
+  - "Everyone has voted" is not enough on its own: members who voted for different moves block
+    each move until they agree. This is the per-move rule (decision 1).
+  - An empty pool decides nothing, as today.
+- **Committee vote:**
+  - **quorum:** the votes cast in the entry, for ANY move, reach the quorum saved at stage entry
+    (`quorumCount`, ACC-239; else the live one);
+  - **majority:** the votes for M are MORE than half of the votes cast;
+  - so with quorum 3 and votes 2 for ADVANCE and 1 for EXIT, ADVANCE goes through (3 cast, 2 > 1.5);
+  - a vote for another move counts toward the quorum, never toward M;
+  - a stage whose committee resolves to none decides nothing, as today.
+- **A vote cast before this deploy** (`transitionId` null) counts for the stage's ADVANCE moves, as
+  it did. On the shared database there are none: 0 open entries on group stages, 0 votes (§3.3).
+
+**The gate (ACC-190 J):** for an ADVANCE, the deciding vote (the one that makes M's threshold) is
+refused before it is recorded while a mandatory task is open, and the record's preconditions are
+checked, as today. RETURN and EXIT have no task gate.
+
+**`submitApproval()`** (no frontend caller): APPROVED / APPROVED_WITH_COMMENTS is a vote for the
+stage's ADVANCE; RETURNED / REJECTED acts at once along its RETURN. When a stage has not exactly
+one such move, the answer is 409 `VOTE_MOVE_AMBIGUOUS`, naming the stage. ABSTAINED is recorded and
+decides nothing, as today.
+
+---
+
 ## 1. What was read
 
 - **The ticket:** ACC-284 (Todo, Medium). It proposes fix A: set `isApprovalPath` on the seeded
@@ -385,7 +450,7 @@ nothing reads.
 ## 7. Progress
 
 - [x] Plan (this file), committed, not pushed
-- [ ] Ahmad's answers to §6
+- [x] Ahmad's answers to §6 (10 Nov, "Decisions" above)
 - [ ] Backend: decide by kind; Q1's choice; specs (db-spec on 55432), mutation checks
 - [ ] Frontend: the checkbox and the tag
 - [ ] Docs: SYSTEM-REFERENCE §2.19 and §2.19.1; CLAUDE.md
