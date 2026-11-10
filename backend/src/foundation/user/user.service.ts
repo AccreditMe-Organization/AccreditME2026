@@ -56,6 +56,7 @@ import {
   captureAdministratorBaseline,
 } from '../roles/tenant-administrator.invariant';
 import { assertNotAccountOwner } from '../roles/account-owner';
+import { assertRootUnitRetainsAHead, captureRootHeadBaseline } from '../organization/root-unit-head.invariant';
 import { AccountOwnerProtectedException } from '../roles/role-permission-refusal';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
@@ -605,6 +606,10 @@ export class UserService {
     // own established "side-effecting calls stay outside the transaction"
     // convention (2.6.h).
     const updatedUser = await this.prisma.$transaction(async (tx) => {
+      // ACC-288 — the root-head lock first, then whether the root is headed. A
+      // replacement who takes the source head position keeps the root headed.
+      const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
+
       // Step 5 — Case B cascade.
       if (replacement) {
         await tx.user.updateMany({
@@ -655,6 +660,9 @@ export class UserService {
           },
         });
       }
+
+      // ACC-288 — moving the root's last head out is refused, and nothing above commits.
+      await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
 
       return updated;
     });
@@ -1484,11 +1492,15 @@ export class UserService {
     // person's sessions or moved their tasks on the way to being refused.
     // ACC-271 — the "left the stage's pool" events commit with the flip.
     await this.prisma.$transaction(async (tx) => {
+      // ACC-288 — the root-head lock first, then whether the root is headed.
+      const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
       // ACC-221 — the account owner is never deactivated inside the tenant.
       await assertNotAccountOwner(tx, organizationId, id);
       const baseline = await captureAdministratorBaseline(organizationId, tx);
       await tx.user.update({ where: { id }, data: { status: 'INACTIVE' } });
       await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
+      // ACC-288 — the root's last head can't be deactivated without a successor or a cover.
+      await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
       await this.stagePool.recordPoolMemberLeftInTx(tx, organizationId, leftPoolEntryIds, id, 'DEACTIVATED');
     });
 

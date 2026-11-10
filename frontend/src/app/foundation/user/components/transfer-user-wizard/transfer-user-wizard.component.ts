@@ -13,6 +13,8 @@ import {
 } from '../../../organization/services/org-unit.service';
 import { OrgUnitHeadService } from '../../../organization/services/org-unit-head.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { LanguageService } from '../../../../core/services/language.service';
+import { rootUnitNeedsHeadMessage } from '../../../organization/root-unit-refusal';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 // ACC-46 Section 2.6.b — the transfer wizard. Pure content, no dialog
@@ -302,6 +304,7 @@ export class TransferUserWizardComponent implements OnInit {
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly orgUnitHeadService = inject(OrgUnitHeadService);
   private readonly translate = inject(TranslateService);
+  private readonly language = inject(LanguageService);
 
   readonly currentStep = signal(1);
   readonly loading = signal(false);
@@ -546,7 +549,11 @@ export class TransferUserWizardComponent implements OnInit {
       },
       error: (err: unknown) => {
         this.submitting.set(false);
-        this.error.set(extractErrorMessage(err, 'user.transfer.errorSubmit'));
+        // ACC-288 — moving the root unit's last head out is refused; said here, in the wizard.
+        this.error.set(
+          rootUnitNeedsHeadMessage(err, this.translate, this.language) ??
+            extractErrorMessage(err, 'user.transfer.errorSubmit'),
+        );
       },
     });
   }

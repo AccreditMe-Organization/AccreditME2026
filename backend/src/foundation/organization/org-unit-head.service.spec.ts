@@ -7,6 +7,9 @@ import { UserService } from '../user/user.service';
 import { RoleService } from '../roles/role.service';
 import { OrganizationService } from './organization.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import * as rootHead from './root-unit-head.invariant';
+import { RootUnitNeedsHeadRefusal } from './org-unit-refusals';
+import { countWrites, recordTransactionWrites } from '../../common/testing/transaction-writes';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -29,6 +32,12 @@ const mockPrisma = {
   user: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   orgUnitHeadEvent: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
   orgUnitHeadAssignment: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
+  // ACC-288 — the root-head invariant: its lock, and its organisation read.
+  // organization.findFirst resolves null, so there is no root to keep headed
+  // and the rule passes; root-unit-head.invariant.spec.ts covers the rule.
+  organization: { findFirst: jest.fn() },
+  $queryRaw: jest.fn(),
+  $transaction: jest.fn(),
 };
 const mockAuditLog = { log: jest.fn() };
 const mockUserService = {
@@ -58,6 +67,9 @@ describe('OrgUnitHeadService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.orgUnitHeadEvent.create.mockResolvedValue({});
+    mockPrisma.organization.findFirst.mockResolvedValue(null);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+    mockPrisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(mockPrisma));
     mockPrisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(null);
     // ACC-133 — getHeadStatus()'s ledger and period reads; empty unless a test
     // says otherwise.
@@ -1508,7 +1520,13 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
       orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}) },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       userRole: { findMany: jest.fn() },
+      // ACC-288 — the root-head invariant: no organisation row, so no root to
+      // keep headed (and none of the orgUnit.findFirst returns above is used).
+      organization: { findFirst: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      $transaction: jest.fn(),
     };
+    realMockPrisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(realMockPrisma));
     const realMockAuditLog = { log: jest.fn() };
     const realMockUserService = {
       validatePositionAssignment: jest.fn(),
@@ -1549,4 +1567,102 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
     });
   });
 
+});
+
+// ACC-288 — each headship path is one transaction with the root-head rule. When
+// the rule refuses, the refusal reaches the caller, every headship write was
+// made through that transaction (so it rolls back), and nothing after commit
+// ran: no audit row, no vacancy refresh, no role change.
+describe('OrgUnitHeadService — the root unit keeps a head (ACC-288)', () => {
+  let service: OrgUnitHeadService;
+  let writes: string[];
+  let assertSpy: jest.SpyInstance;
+  let reportSpy: jest.SpyInstance;
+  const REFUSAL = new RootUnitNeedsHeadRefusal('root-a', 'Al-Nakheel Hospital', 'مستشفى النخيل');
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockPrisma.orgUnitHeadEvent.create.mockResolvedValue({});
+    mockPrisma.organization.findFirst.mockResolvedValue(null);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+    mockPrisma.orgUnitHeadAssignment.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.orgUnit.update.mockResolvedValue({});
+    mockPrisma.user.update.mockResolvedValue({});
+    writes = recordTransactionWrites(mockPrisma);
+    assertSpy = jest.spyOn(rootHead, 'assertRootUnitRetainsAHead').mockRejectedValue(REFUSAL);
+    reportSpy = jest.spyOn(rootHead, 'reportRootUnitHeadBreach').mockResolvedValue(undefined);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        OrgUnitHeadService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: AuditLogService, useValue: mockAuditLog },
+        { provide: UserService, useValue: mockUserService },
+        { provide: OrganizationService, useValue: mockOrganizationService },
+        { provide: RoleService, useValue: mockRoleService },
+      ],
+    }).compile();
+    service = module.get(OrgUnitHeadService);
+  });
+  afterEach(() => {
+    assertSpy.mockRestore();
+    reportSpy.mockRestore();
+  });
+
+  const nothingAfterCommit = () => {
+    expect(mockAuditLog.log).not.toHaveBeenCalled();
+    expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+    expect(mockUserService.syncHeadAuthorityRoleGrant).not.toHaveBeenCalled();
+    expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
+  };
+
+  it('vacateHead: the root’s last head is refused, and the vacate and its VACATED event roll back', async () => {
+    mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+    mockPrisma.user.findFirst.mockResolvedValue(OUTGOING_HOLDER);
+
+    await expect(service.vacateHead(UNIT_1, ORG_A, 'admin-1')).rejects.toBe(REFUSAL);
+
+    expect(countWrites(writes, 'user.update')).toBe(1);
+    expect(countWrites(writes, 'orgUnitHeadEvent.create')).toBe(1);
+    expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.orgUnitHeadEvent.create).toHaveBeenCalledTimes(1);
+    nothingAfterCommit();
+  });
+
+  it('clearActingHead: ending the root’s only cover is refused, and all three writes roll back', async () => {
+    mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+
+    await expect(service.clearActingHead(UNIT_1, ORG_A, 'admin-1')).rejects.toBe(REFUSAL);
+
+    expect(countWrites(writes, 'orgUnitHeadAssignment.updateMany')).toBe(1);
+    expect(countWrites(writes, 'orgUnit.update')).toBe(1);
+    expect(countWrites(writes, 'orgUnitHeadEvent.create')).toBe(1);
+    expect(mockPrisma.orgUnitHeadAssignment.updateMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.orgUnit.update).toHaveBeenCalledTimes(1);
+    nothingAfterCommit();
+  });
+
+  it('completeHandoverNow: a completion that un-heads the root is refused, and its writes roll back', async () => {
+    mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, pendingHeadUserId: INCOMING_SUCCESSOR.id });
+    mockPrisma.user.findMany.mockResolvedValue([OUTGOING_HOLDER, { ...INCOMING_SUCCESSOR, positionId: HEAD_POSITION_ID }]);
+
+    await expect(service.completeHandoverNow(UNIT_1, ORG_A, 'admin-1')).rejects.toBe(REFUSAL);
+
+    expect(countWrites(writes, 'user.update')).toBe(1);
+    expect(countWrites(writes, 'orgUnit.update')).toBe(1);
+    expect(countWrites(writes, 'orgUnitHeadEvent.create')).toBe(1);
+    expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
+    nothingAfterCommit();
+  });
+
+  it('completeHandoverAutomatically (the sweep): never refused — it reports, and completes', async () => {
+    mockPrisma.user.findMany.mockResolvedValue([OUTGOING_HOLDER, { ...INCOMING_SUCCESSOR, positionId: HEAD_POSITION_ID }]);
+
+    await expect(
+      service.completeHandoverAutomatically({ id: UNIT_1, pendingHeadUserId: INCOMING_SUCCESSOR.id }, ORG_A),
+    ).resolves.toBeUndefined();
+
+    expect(assertSpy).not.toHaveBeenCalled();
+    expect(reportSpy).toHaveBeenCalledWith(ORG_A, expect.anything(), expect.any(Boolean));
+    expect(mockAuditLog.log).toHaveBeenCalled();
+  });
 });

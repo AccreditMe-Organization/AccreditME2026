@@ -7101,6 +7101,83 @@ the tree opens exactly what the panel's button opens. It is rendered whether or
 not the status has arrived, so the people and positions are read as soon as it
 exists, as the panel did; only for `org:manage`.
 
+#### 5.15.6 The root unit always keeps a head or an acting head (ACC-288)
+
+**The rule.** At least one ACTIVE person heads the root unit (`parentId` null):
+a current head holder (`headHolderWhere()`), or an acting cover in force
+(`runningActingCoverWhere(now)`). A change that would leave neither is refused
+with 409 `ROOT_UNIT_NEEDS_HEAD` (`RootUnitNeedsHeadRefusal`,
+`org-unit-refusals.ts`), whose body names the root (`unitId`, `unitNameEn`,
+`unitNameAr`). Nothing is written.
+
+**One assertion, in one file: `root-unit-head.invariant.ts`.**
+- `captureRootHeadBaseline(organizationId, tx)` runs FIRST inside the change's
+  transaction. It takes the per-organisation advisory lock
+  `root-head:<organizationId>` (`pg_advisory_xact_lock`, ACC-177's shape) and
+  records whether the root is headed now.
+- `assertRootUnitRetainsAHead(organizationId, tx, baseline)` runs after the
+  writes, still inside the transaction, and refuses only a change that CROSSED
+  the line (headed before, headless after).
+- Headship is read only through `unit-headship.ts` (§5.15.2), scoped by
+  organisation. No second copy of "who heads the root".
+
+**Why the lock.** A root with one head AND one cover may lose either, not both.
+Two changes saved at the same moment (end the cover, deactivate the head's
+position) would each see the other still in place and both commit. The lock
+makes the second wait for the first and then see it. Proved against a real
+Postgres by `root-unit-head.db-spec.ts` (CI's `test:db`): exactly one of the two
+is refused, and the root stays headed.
+
+**Seven paths take the assertion:**
+
+| Path | Removes |
+|---|---|
+| `UserService.deactivate()` | the head holder, or the acting head |
+| `UserService.transferUser()`, transaction #1 | the head moved to another unit or position |
+| `OrgUnitHeadService.vacateHead()` | the head holder |
+| `OrgUnitHeadService.clearActingHead()` | the cover |
+| `OrgUnitHeadService.completeHandoverNow()` | the outgoing head (Start new head today) |
+| `OrgPositionService.deactivatePosition()` | every holder of a head position |
+| `OrgPositionService.updatePosition()`, head flag true → false | the same |
+
+`vacateHead`, `clearActingHead` and the handover completion now write in ONE
+transaction each (they were separate writes), so a refusal leaves nothing
+behind. A position save takes the transaction only when it can remove headship
+(a head position deactivated, or its head flag turned off); any other save is
+unchanged.
+
+**The handover SWEEP never refuses.** `completeHandoverAutomatically()` runs the
+same completion with `refusable: false`: a scheduled date that would leave the
+root headless still completes, and `reportRootUnitHeadBreach()` logs it (ids
+only) instead of throwing. A job cannot answer a refusal, and stopping a
+handover nobody is watching would leave it pending for good.
+
+**Excluded, and why:**
+- **The platform organisation** has no headship and is skipped structurally,
+  like the root role's holder rule (ACC-120).
+- **A root ALREADY headless** is not refused an unrelated change; the assertion
+  logs it (ids only) and passes. Refusing it would block the changes needed to
+  fix it. The open condition is Setup health's existing `ORG_UNIT_WITHOUT_HEAD`
+  (§13), which already lists a headless root; no new condition type.
+
+**Two non-paths, stated so nobody adds a check for them:**
+- **`updateProfile()`** cannot move an ACTIVE, placed person's unit or position
+  (ACC-222: that is the transfer wizard's job), so it cannot remove a head.
+- **A cover lapsing on its own end date** is not a change anyone saves. When it
+  lapses with no head, Setup health's `ORG_UNIT_WITHOUT_HEAD` opens on the next
+  reconciliation.
+
+**Screens.** Every caller says the refusal from its code through
+`rootUnitNeedsHeadMessage()` (`foundation/organization/root-unit-refusal.ts`),
+one key pair (`organization.refusal.rootNeedsHead`), naming the root in the
+reader's language (Arabic through `{{unitWithLam}}`), in the dialog or row that
+made the call: deactivating a person, the transfer wizard, the headship panel
+(Vacate, End cover, Start new head today), and positions (Deactivate, the head
+flag off on save). Nothing is disabled before the click: the server decides.
+
+Measured before shipping (read only, 10 Nov): al-manara and al-nakheel each
+have one root, headed by one holder, with no cover. No root was headless.
+
 ---
 
 ## 6. Lookup System
