@@ -141,7 +141,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
 
   // ── What it shows ─────────────────────────────────────────────────────────
 
-  it('a person’s move: names, From and To read-only, Kind with its help, Approval path, and the template · from → to line', async () => {
+  it('a person’s move: names, From and To read-only, Kind with its help (no Approval path, ACC-284), and the template · from → to line', async () => {
     await setup();
     expect(text(q('[data-panel-heading]'))).toBe('Send to Legal review');
     expect(text(q('[data-panel-context]'))).toBe('Policy review · Under review → Legal review');
@@ -152,7 +152,9 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     expect(q('[data-to-select]')).withContext('To is read-only once the move exists').toBeNull();
     expect(text(q('[data-kind-select]'))).toContain('Advance');
     expect(text(el())).toContain('Moves the record on.');
-    expect(q('#tp-isApprovalPath')).not.toBeNull();
+    // ACC-284 — no "approval path" box: Kind says whether a press is a vote.
+    expect(q('#tp-isApprovalPath')).toBeNull();
+    expect(text(el())).not.toContain('approval path');
   });
 
   it('nothing about who may press it beyond the stage: no trigger, role, permission or validator', async () => {
@@ -190,7 +192,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
 
   // ── What a save sends ─────────────────────────────────────────────────────
 
-  it('Add sends the names, both stages, Kind and Approval path — and none of the removed fields', async () => {
+  it('Add sends the names, both stages and Kind — and none of the removed fields (ACC-284: nor Approval path)', async () => {
     const p = await setup({ transition: null });
     expect(text(q('[data-panel-heading]'))).toBe('Add Transition');
     expect(text(q('[data-panel-context]'))).toBe('Policy review · from Under review');
@@ -199,25 +201,25 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     type('tp-labelEn', 'Escalate');
     await choose('[data-to-select]', 'Approved');
     await choose('[data-kind-select]', 'Send back');
-    q<HTMLInputElement>('#tp-isApprovalPath')!.click();
-    fixture.detectChanges();
 
     const req = save();
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ labelEn: 'Escalate', labelAr: '', kind: 'RETURN', isApprovalPath: true, fromStageId: 's1', toStageId: 's3' });
+    // ACC-284 — Approval path is not sent: the engine decides by Kind.
+    expect(req.request.body).toEqual({ labelEn: 'Escalate', labelAr: '', kind: 'RETURN', fromStageId: 's1', toStageId: 's3' });
     const saved = jasmine.createSpy('saved');
     p.saved.subscribe(saved);
     req.flush({ transition: { ...PERSON, id: 't-new' } });
     expect(saved).toHaveBeenCalledWith(jasmine.objectContaining({ id: 't-new' }));
   });
 
-  it('Edit sends the names, Kind and Approval path only, so stored trigger, permission and validator stay', async () => {
+  // ACC-284 — nor Approval path: the stored value stays, unread, until it is dropped.
+  it('Edit sends the names and Kind only, so stored trigger, permission, validator and approval path stay', async () => {
     await setup();
     type('tp-labelEn', 'Send for legal review');
     const req = save();
     expect(req.request.method).toBe('PATCH');
     expect(req.request.url).toBe(`${TRANSITIONS_URL}/t1`);
-    expect(Object.keys(req.request.body).sort()).toEqual(['isApprovalPath', 'kind', 'labelAr', 'labelEn']);
+    expect(Object.keys(req.request.body).sort()).toEqual(['kind', 'labelAr', 'labelEn']);
     expect(req.request.body.labelEn).toBe('Send for legal review');
     req.flush({ transition: { ...PERSON, labelEn: 'Send for legal review' } });
     fixture.detectChanges();
@@ -256,8 +258,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     fixture.componentRef.setInput('transition', { ...PERSON, id: 't-new', labelEn: 'Escalate', toStageId: 's3' });
     fixture.detectChanges();
     expect(text(q('[data-change-count]'))).toBe('Transition saved');
-    q<HTMLInputElement>('#tp-isApprovalPath')!.click();
-    fixture.detectChanges();
+    type('tp-labelEn', 'Escalate now');
     expect(text(q('[data-change-count]'))).not.toContain('saved');
   });
 
@@ -429,8 +430,7 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     expect(names[0]).toBe('tp-labelEn');
     expect(names[1]).toBe('tp-labelAr');
     expect(at('data-kind-select')).toBeGreaterThan(at('tp-labelAr'));
-    expect(at('tp-isApprovalPath')).toBeGreaterThan(at('data-kind-select'));
-    expect(at('data-stage-link')).toBeGreaterThan(at('tp-isApprovalPath'));
+    expect(at('data-stage-link')).toBeGreaterThan(at('data-kind-select'));
     expect(at('data-open-actions')).toBeGreaterThan(at('data-stage-link'));
     expect(at('data-panel-remove')).toBeLessThan(at('data-panel-save'));
     expect(at('data-panel-cancel')).toBeLessThan(at('data-panel-save'));
