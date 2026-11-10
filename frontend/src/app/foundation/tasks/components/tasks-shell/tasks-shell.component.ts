@@ -1,18 +1,15 @@
-import { Component, TemplateRef, ViewChild, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
-import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 import { ITaskViewsDto, TaskRecordListView, TaskService } from '../../services/task.service';
 import { MyTasksSectionsComponent } from '../my-tasks-sections/my-tasks-sections.component';
 import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
-import { TaskFormComponent } from '../task-form/task-form.component';
-import { TaskFormFooterComponent } from '../task-form/task-form-footer.component';
-import { TaskFormStepsComponent } from '../task-form/task-form-steps.component';
+import { TaskNewDialogComponent } from '../task-new-dialog/task-new-dialog.component';
 
 /** The views of /tasks, in their fixed order (Task Screens; the Unit Tasks View drawing). */
 export type TaskViewKey = 'mine' | TaskRecordListView;
@@ -60,12 +57,9 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
     TranslatePipe,
     ButtonModule,
     PageHeaderComponent,
-    EditDialogComponent,
     MyTasksSectionsComponent,
     TaskListViewComponent,
-    TaskFormComponent,
-    TaskFormFooterComponent,
-    TaskFormStepsComponent,
+    TaskNewDialogComponent,
   ],
   template: `
     <div class="flex flex-col gap-3" [class.h-full]="current() !== 'mine'">
@@ -154,32 +148,8 @@ const LABELS: Readonly<Record<TaskViewKey, string>> = {
       }
     </div>
 
-    <ng-template #formTpl>
-      <app-task-form
-        [allowedSourceTypes]="createTypes()"
-        (saved)="onSaved()"
-        (cancelled)="taskDialog.requestClose()"
-        (dirtyChange)="formDirty.set($event)"
-        (ready)="taskFormRef.set($event)"
-      />
-    </ng-template>
-    <ng-template #taskStepsTpl>
-      <app-task-form-steps [form]="taskFormRef()" />
-    </ng-template>
-    <ng-template #taskFooterTpl>
-      <app-task-form-footer [form]="taskFormRef()" />
-    </ng-template>
-    <!-- Cancel goes through requestClose(), the one place the unsaved-work
-         question is asked (ACC-96). -->
-    <app-edit-dialog
-      #taskDialog
-      [(visible)]="formVisible"
-      [header]="'task.newTask' | translate"
-      [content]="formTpl"
-      [dirty]="formDirty()"
-      [headerExtra]="taskStepsTpl"
-      [footer]="taskFooterTpl"
-    />
+    <!-- ACC-280 — the one New task dialog, shared with Home and a record's page. -->
+    <app-task-new-dialog [(visible)]="formVisible" [createTypes]="createTypes()" (created)="onSaved()" />
   `,
   styles: [
     `
@@ -248,15 +218,11 @@ export class TasksShellComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
-
   readonly views = signal<ITaskViewsDto | null>(null);
   readonly viewsState = signal<'loading' | 'ready' | 'error'>('loading');
   /** The open list view was refused by the server (a 403). */
   readonly listDenied = signal(false);
   readonly formVisible = signal(false);
-  readonly formDirty = signal(false);
-  readonly taskFormRef = signal<TaskFormComponent | null>(null);
   /** A Setup health Fix's task (?reassign=<id>), read once on the Unassigned view. */
   readonly reassignId = signal<string | null>(null);
   /** A ?request= link's request, once "Waiting for your decision" shows it. */
@@ -388,8 +354,8 @@ export class TasksShellComponent {
     this.list()?.reload();
   }
 
+  /** A task was created (the dialog has closed): the open list and My tasks' sections read again. */
   onSaved(): void {
-    this.formVisible.set(false);
     this.list()?.reload();
     this.sections()?.reload();
   }
