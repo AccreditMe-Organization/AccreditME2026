@@ -662,33 +662,9 @@ export class WorkflowService {
     // delegation status, never a stale first-vote snapshot.
     const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId, pool);
 
-    await this.prisma.workflowApproval.upsert({
-      where: {
-        workflowInstanceStageId_approverId: {
-          workflowInstanceStageId: currentInstanceStage.id,
-          approverId: actorId,
-        },
-      },
-      // ACC-284 — the vote names its move; pressing another replaces it.
-      update: {
-        decision,
-        transitionId: transition.id,
-        comment: dto.comment ?? null,
-        decidedAt: new Date(),
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-      create: {
-        workflowInstanceStageId: currentInstanceStage.id,
-        approverId: actorId,
-        decision,
-        transitionId: transition.id,
-        comment: dto.comment ?? null,
-        decidedAt: new Date(),
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-    });
+    // ACC-284 — the vote names its move; pressing another replaces it, and the
+    // replacement is audited with the old move and the new one (recordVote()).
+    await this.recordVote(organizationId, actorId, currentInstanceStage.id, decision, transition, dto.comment, delegationStamp);
 
     if (!isVote) {
       // RETURN, and EXIT on "All of them", fire immediately — no threshold
@@ -776,42 +752,80 @@ export class WorkflowService {
     // reflects the actor's CURRENT delegation status.
     const delegationStamp = await this.resolveDelegationStamp(actorId, stage, instance, organizationId, pool);
 
-    const approval = await this.prisma.workflowApproval.upsert({
-      where: {
-        workflowInstanceStageId_approverId: { workflowInstanceStageId: instanceStageId, approverId: actorId },
-      },
-      update: {
-        decision: dto.decision,
-        transitionId: move?.id ?? null,
-        comment: dto.comment ?? null,
-        decidedAt: new Date(),
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-      create: {
-        workflowInstanceStageId: instanceStageId,
-        approverId: actorId,
-        decision: dto.decision,
-        transitionId: move?.id ?? null,
-        comment: dto.comment ?? null,
-        decidedAt: new Date(),
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-    });
-
-    await this.auditLog.log({
-      tenantId: organizationId,
-      actorId,
-      action: 'UPDATE',
-      objectType: 'WorkflowApproval',
-      objectId: approval.id,
-      after: { decision: approval.decision },
-    });
+    // ACC-284 — one way to record a vote, audited with its move before and after.
+    const approval = await this.recordVote(organizationId, actorId, instanceStageId, dto.decision, move, dto.comment, delegationStamp);
 
     await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto, instance, move, pool);
 
     return this.mapApproval(approval);
+  }
+
+  /**
+   * ACC-284 — records a member's vote in a stage entry, and audits it.
+   *
+   * One vote per member per entry (the upsert on entry + member): pressing again
+   * REPLACES it. The audit row says what changed, with who (the actor) and when
+   * (its createdAt):
+   *   - a first vote: CREATE, after = the decision and the move;
+   *   - a vote whose move or decision changed: UPDATE, before = the OLD move and
+   *     decision, after = the NEW ones (each move by id and both labels);
+   *   - the same move and decision pressed again: no row (nothing changed).
+   * One indexed read of the member's current vote first, inside this press only.
+   */
+  private async recordVote(
+    organizationId: string,
+    actorId: string,
+    workflowInstanceStageId: string,
+    decision: PrismaWorkflowApproval['decision'],
+    move: Pick<PrismaWorkflowTransition, 'id' | 'labelEn' | 'labelAr'> | null,
+    comment: string | undefined,
+    delegationStamp: Awaited<ReturnType<WorkflowService['resolveDelegationStamp']>>,
+  ): Promise<PrismaWorkflowApproval> {
+    const key = { workflowInstanceStageId_approverId: { workflowInstanceStageId, approverId: actorId } };
+    const previous = await this.prisma.workflowApproval.findUnique({
+      where: key,
+      select: { decision: true, transitionId: true, transition: { select: { id: true, labelEn: true, labelAr: true } } },
+    });
+    const fields = {
+      decision,
+      transitionId: move?.id ?? null,
+      comment: comment ?? null,
+      decidedAt: new Date(),
+      delegationReason: delegationStamp?.delegationReason ?? null,
+      delegationContextId: delegationStamp?.delegationContextId ?? null,
+    };
+    const approval = await this.prisma.workflowApproval.upsert({
+      where: key,
+      update: fields,
+      create: { workflowInstanceStageId, approverId: actorId, ...fields },
+    });
+
+    const named = (m: Pick<PrismaWorkflowTransition, 'id' | 'labelEn' | 'labelAr'> | null) =>
+      m ? { id: m.id, labelEn: m.labelEn, labelAr: m.labelAr } : null;
+    const after = { decision, move: named(move) };
+    if (!previous) {
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'CREATE',
+        objectType: 'WorkflowApproval',
+        objectId: approval.id,
+        after,
+        metadata: { workflowInstanceStageId },
+      });
+    } else if (previous.decision !== decision || (previous.transitionId ?? null) !== (move?.id ?? null)) {
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'UPDATE',
+        objectType: 'WorkflowApproval',
+        objectId: approval.id,
+        before: { decision: previous.decision, move: named(previous.transition) },
+        after,
+        metadata: { workflowInstanceStageId, replaced: true },
+      });
+    }
+    return approval;
   }
 
   // ── Internal: shared advance logic ───────────────────────────────────────────
