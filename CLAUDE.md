@@ -2566,6 +2566,7 @@ Section 1.8 (module entitlements). The decisions, briefly:
   else; those four are now rail items. "AI Settings" is labelled **AI
   credits** — the page is a credit balance and an overage toggle with no
   provider configuration, because provider selection is unbuilt.
+  Superseded (ACC-292): the rail's Administration group is one item to the console at /admin, which reads these items as cards; see Key Architecture Decisions (ACC-292).
 - **A child route of a path that has no nav item must carry its own
   `canActivate`.** `permissionGuard` allows an unmapped path, and a child
   with no `canActivate` never runs the guard. Removing the hub's nav entry
@@ -4758,6 +4759,34 @@ SYSTEM-REFERENCE.md §5.15.6. Briefly:
 - **Screens say it from the code** (`root-unit-refusal.ts`), one key pair,
   nothing disabled before the click.
 - **No migration.**
+
+## Key Architecture Decisions (ACC-292)
+
+The Administration console. Full mechanism: SYSTEM-REFERENCE.md §10.11 ("The
+Administration console"). Design: `frontend/design-reference/AccreditMe
+Administration.dc.html`. Briefly:
+
+- **THE RAIL'S ADMINISTRATION GROUP IS ONE ITEM, TO `/admin`.** It shows when
+  the group would (`admin:access` and at least one admin item,
+  `canOpenAdminConsole()`, which `/admin`'s guard reads too). It is lit on every
+  admin page, and it carries Setup health's badge for a `setup:view` holder.
+  The badge's poll is unchanged.
+- **THE CONSOLE READS THE NAV MODEL; IT KEEPS NO LIST OF ITS OWN.** Each card
+  is an Administration item: its name is the item's `labelKey`, its link the
+  item's route, its permission the item's. The item adds only `console: {
+  group, lineKey, synonyms }`. So it cannot drift from the rail, the guard, the
+  breadcrumb or the tab title, as the old hub's hand-copied card array did.
+- **This supersedes ACC-79's "The Admin Settings hub was removed".** That hub
+  repeated the rail; the console replaces the rail's list and is the only one.
+  The admin items stay in `nav-items.ts` (guard, breadcrumb, title, cards) but
+  are not drawn as rail rows.
+- **The breadcrumb's Administration crumb links to `/admin`** (`NavGroup.route`),
+  and `/admin` itself has no parent crumb.
+- **Find a setting matches both languages**, loading the other language's file
+  through the app's own loader without switching to it.
+- **The Setup health strip reads the rail's summary**; the console requests
+  nothing.
+- **No backend change, no migration.**
 
 ## Open / Deferred Items
 
