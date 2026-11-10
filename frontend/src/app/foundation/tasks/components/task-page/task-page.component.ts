@@ -7,7 +7,6 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { Observable, map, of } from 'rxjs';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { FormatContext } from '../../../../core/formatting/format-context';
-import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { BreadcrumbParentService } from '../../../../core/navigation/breadcrumb-parent.service';
@@ -528,7 +527,6 @@ export class TaskPageComponent implements OnDestroy {
   private readonly language = inject(LanguageService);
   private readonly breadcrumb = inject(BreadcrumbParentService);
   private readonly formatContext = inject(FormatContext);
-  private readonly access = inject(NavigationAccessService);
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly evidenceList = viewChild(TaskEvidenceListComponent);
@@ -672,7 +670,7 @@ export class TaskPageComponent implements OnDestroy {
   /** By the one rule (task-row-display.ts): the record's page, for a viewer it admits. */
   readonly recordLink = computed<string[] | null>(() => {
     const r = this.view()?.record;
-    return r?.canOpen ? taskRecordHref(r, (p) => this.access.hasPermission(p)) : null;
+    return r?.canOpen ? taskRecordHref(r) : null;
   });
 
   readonly withLine = computed(() => {

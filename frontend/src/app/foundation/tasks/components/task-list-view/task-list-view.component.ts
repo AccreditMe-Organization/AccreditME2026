@@ -21,7 +21,6 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 import { AmDatePipe, AmNumberPipe, FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
-import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { SortHeaderComponent, SortState, nextSort } from '../../../../shared/components/sort-header/sort-header.component';
@@ -544,7 +543,6 @@ export class TaskListViewComponent {
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   private readonly language = inject(LanguageService);
-  private readonly access = inject(NavigationAccessService);
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
 
@@ -1116,7 +1114,7 @@ export class TaskListViewComponent {
 
   /** Where the record opens, by the one rule (task-row-display.ts). */
   private recordHref(record: NonNullable<ITaskRecordRowDto['record']>): string[] | null {
-    return taskRecordHref(record, (p) => this.access.hasPermission(p));
+    return taskRecordHref(record);
   }
 
   private recordTypeWord(type: string): string {

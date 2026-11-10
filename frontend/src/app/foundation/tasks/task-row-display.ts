@@ -1,4 +1,3 @@
-import { ROUTE_PERMISSIONS } from '../../core/navigation/nav-items';
 import { recordPageLink } from '../../shared/utils/record-link.util';
 import { TaskRecordRefDto } from './services/task.service';
 
@@ -9,18 +8,18 @@ import { TaskRecordRefDto } from './services/task.service';
  */
 
 /**
- * Where the record opens: only a type with a page today (recordPageLink, the
- * one list of record pages), only with a name (a nameless record is one the
- * viewer may not open), and only for a viewer the page's route admits —
- * hidden, never a link the guard then refuses.
+ * Where the record opens: a type with a page today (recordPageLink, the one
+ * list of record pages), and only when the server named the record.
+ *
+ * The name IS the server's "may open": it names a record only for a viewer its
+ * own read admits (task-record-names.ts on the backend: committees:view, or an
+ * active member of that committee since ACC-281), and the route admits the
+ * same people. So no permission is checked here: a frontend copy of the rule
+ * is how a member saw their committee's name with no link.
  */
-export function taskRecordHref(record: TaskRecordRefDto, hasPermission: (key: string) => boolean): string[] | null {
+export function taskRecordHref(record: TaskRecordRefDto): string[] | null {
   const link = recordPageLink(record.type, record.id);
-  if (!link || !record.nameEn) return null;
-  // The route's key in ROUTE_PERMISSIONS: '/committees' → 'committees'.
-  const route = link[0]!.replace(/^\//, '');
-  const needs = ROUTE_PERMISSIONS.get(route) ?? [];
-  return needs.every((p) => hasPermission(p)) ? link : null;
+  return link && record.nameEn ? link : null;
 }
 
 /** The translation key of a record type's word ("Committee"); an unknown type reads "Record". */

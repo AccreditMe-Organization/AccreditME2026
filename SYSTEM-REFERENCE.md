@@ -713,7 +713,10 @@ break. Denial redirects to `LANDING_ROUTE`.
 **`LANDING_ROUTE`** (`core/navigation/landing-route.ts`) is the single
 name for `/home`. It replaced the string `'/organization'`, which had
 been repeated across five redirect sites, none of which could guarantee
-the arriving user held `org:view`.
+the arriving user held `org:view`. **`PLATFORM_LANDING`** (`/platform/tenants`,
+same file, ACC-120) is the platform's: login sends a platform admin there,
+`/home` redirects one there, and it is the breadcrumb's root on platform pages
+(§10.11).
 
 **`NavigationAccessService.loadAccess()` runs its two requests with
 INDEPENDENT recovery**, and that is load-bearing rather than stylistic:
@@ -5888,6 +5891,14 @@ no endpoint. The design reference is
     is unchanged.
   - **The record and the priority read by one rule**, `tasks/task-row-display.ts`,
     for the sections and the list.
+  - **A row links its record when the record has a page** (`recordPageLink()`)
+    **and the server named it** (`taskRecordHref()`, ACC-120; also the task
+    page, behind its `canOpen`). The name IS the server's "may open":
+    `recordNamesOf()` names a committee for `committees:view` holders and for
+    an active member of it (ACC-281), the same people its read and the
+    `/committees` route admit. No permission is checked on the frontend; the
+    `ROUTE_PERMISSIONS` check it used to make left a member's committee named
+    with no link.
   - **Links** (a briefing's, ACC-198) are read by the shell, once: `?request=`
     marks its row in "Waiting for your decision"; `?task=` marks it in
     Available when it is there, and otherwise opens the list at it (`around`;
@@ -9890,6 +9901,27 @@ four child screens would have been open to any signed-in user.
 `admin-settings.routes.spec.ts` asserts the guard is wired (a mapping test
 cannot see route config). `tasks/all` is the earlier instance of the same
 shape.
+
+#### `/home` sends a platform admin to the platform (ACC-120)
+
+`/home` is the tenant landing, and a platform admin has no tenant work: its
+counts never load for them. Login already sent a platform admin to the
+platform, but `/home` is also reached by the bare `'/'` redirect, a bookmark
+and `permissionGuard`'s fallback to `LANDING_ROUTE`. So the `home` route runs
+**`platformHomeRedirectGuard`** (`core/guards/`): with both trust signals real
+and `isPlatformAdmin()` true it returns a `UrlTree` to `PLATFORM_LANDING`;
+otherwise `true`.
+- **It is not a permission check.** `/home` still has no `permissionGuard` and
+  no `ROUTE_PERMISSIONS` entry (ACC-70): every tenant user, with or without
+  permissions, still lands there.
+- **An impersonation session lands on `/home`.** It reads the tenant's
+  entitlements, so `isPlatformOrg` is false and `isPlatformAdmin()` is false.
+- **An untrustworthy answer falls open to `/home`**, like `platformAdminGuard`:
+  the worse outcome would be a tenant user sent to the platform.
+- **One name for the platform landing**, `PLATFORM_LANDING`
+  (`core/navigation/landing-route.ts`, `/platform/tenants`), read by the guard,
+  login and the breadcrumb. It was a breadcrumb constant, and login used
+  `'/platform'`, which redirects to the same page.
 
 #### Breadcrumb — ancestry, stops at the parent
 
