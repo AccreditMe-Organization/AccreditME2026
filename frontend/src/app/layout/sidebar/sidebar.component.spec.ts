@@ -16,6 +16,7 @@ import { ITaskRecordListDto } from '../../foundation/tasks/services/task.service
 import { MyCommitteesDto } from '../../foundation/committees/services/committee.service';
 import { environment } from '../../../environments/environment';
 import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
+import { SetupHealthService } from '../../foundation/setup-health/services/setup-health.service';
 
 // ACC-79 — the rail's own behaviour. WHICH items appear is nav-items.spec.ts's
 // job; this covers what the rail derives and how it presents groups.
@@ -190,7 +191,8 @@ describe('SidebarComponent (ACC-79)', () => {
       fixture.detectChanges();
     };
 
-    const badge = (el: HTMLElement) => el.querySelector('a[href="/setup-health"] .am-rail-badge');
+    // ACC-292 — the badge rides on the one Administration item (/admin).
+    const badge = (el: HTMLElement) => el.querySelector('a[href="/admin"] .am-rail-badge');
 
     afterEach(() => http.verify());
 
@@ -231,19 +233,103 @@ describe('SidebarComponent (ACC-79)', () => {
     // The item is gated on setup:view, and so is the request: the rail must
     // never ask for a count the user would be refused.
     it('never requests the count for a user without setup:view', () => {
-      renderWithHttp({ permissions: [ADMIN_ACCESS, 'users:view', 'roles:view'] });
+      const el = renderWithHttp({ permissions: [ADMIN_ACCESS, 'users:view', 'roles:view'] });
 
       http.expectNone(SUMMARY_URL);
+      // ACC-292 — the Administration item is there, with no badge.
+      expect(el.querySelector('a[href="/admin"]')).withContext('non-vacuity: the item renders').not.toBeNull();
+      expect(badge(el)).toBeNull();
     });
 
-    it('carries the count in the label when the rail is collapsed', () => {
+    // ACC-292 — collapsed: the dot, and one counted sentence naming the item.
+    it('carries the count in the label when the rail is collapsed: "Administration · 7 open problems"', () => {
       const el = renderWithHttp({ permissions: [ADMIN_ACCESS, 'setup:view'], collapsed: true });
       loadTranslationsForTest({ en });
       flushSummary(7, 0);
 
-      expect(el.querySelector('a[href="/setup-health"]')?.getAttribute('aria-label')).toContain(
-        '7 open conditions',
-      );
+      const item = el.querySelector('a[href="/admin"]');
+      expect(item?.getAttribute('aria-label')).toBe('Administration · 7 open problems');
+      expect(item?.querySelector('.am-rail-badge.w-\\[7px\\]')).withContext('the 7px dot').not.toBeNull();
+    });
+
+    it('in Arabic, the collapsed label takes the plural form: 1, 2, 3 and 11', () => {
+      const el = renderWithHttp({ permissions: [ADMIN_ACCESS, 'setup:view'], collapsed: true });
+      loadTranslationsForTest({ en, ar });
+      TestBed.inject(TranslateService).use('ar');
+      const label = (open: number) => {
+        http.expectOne(SUMMARY_URL).flush({ open, blocksWork: 0 });
+        fixture.detectChanges();
+        const text = el.querySelector('a[href="/admin"]')?.getAttribute('aria-label');
+        // The next poll is five minutes away: ask again by hand.
+        TestBed.inject(SetupHealthService).getSummary().subscribe();
+        return text;
+      };
+      expect(label(1)).toBe('الإدارة · مشكلة مفتوحة واحدة');
+      expect(label(2)).toBe('الإدارة · مشكلتان مفتوحتان');
+      expect(label(3)).toBe('الإدارة · 3 مشكلات مفتوحة');
+      expect(label(11)).toBe('الإدارة · 11 مشكلة مفتوحة');
+      http.expectOne(SUMMARY_URL).flush({ open: 0, blocksWork: 0 });
+      TestBed.inject(TranslateService).use('en');
+    });
+  });
+
+  // ACC-292 — the Administration group is ONE rail item, to the console.
+  describe('Administration as one item (ACC-292)', () => {
+    const adminPermissions = [
+      ADMIN_ACCESS,
+      'setup:view',
+      'users:view',
+      'roles:view',
+      'org:view',
+      'positions:view',
+      'workflows:manage',
+      'lookups:view',
+      'tenant:view',
+      'tenant:manage_config',
+    ];
+    const ADMIN_PAGES = [
+      '/setup-health',
+      '/users',
+      '/roles',
+      '/organization',
+      '/org-positions',
+      '/workflows',
+      '/lookups',
+      '/working-calendar',
+      '/admin-settings/task-sla',
+      '/admin-settings/organization-profile',
+      '/admin-settings/email-provider',
+      '/admin-settings/ai-settings',
+      '/admin-settings/storage',
+      '/admin-settings/recycle-bin',
+    ];
+    const links = (el: HTMLElement) => Array.from(el.querySelectorAll('nav a')).map((a) => a.getAttribute('href'));
+
+    it('no administration access: no item and no heading', () => {
+      const el = render({ permissions: ['users:view', 'org:view', 'lookups:view'] });
+      expect(links(el)).not.toContain('/admin');
+      expect(el.textContent ?? '').not.toContain('nav.groups.admin');
+    });
+
+    it('admin:access with no admin page: no item', () => {
+      const el = render({ permissions: [ADMIN_ACCESS] });
+      expect(links(el)).not.toContain('/admin');
+    });
+
+    it('one admin page: the heading, and one item to /admin named Administration', () => {
+      const el = render({ permissions: [ADMIN_ACCESS, 'users:view'] });
+      expect(links(el).filter((href) => href === '/admin').length).toBe(1);
+      expect(links(el)).not.toContain('/users');
+      const item = el.querySelector('a[href="/admin"]')!;
+      expect(item.textContent?.trim()).toBe('nav.groups.admin');
+      expect(item.querySelector('i')?.className).toContain('pi-cog');
+    });
+
+    it('a full administrator: still one item, and no admin page is a rail row', () => {
+      const el = render({ permissions: adminPermissions });
+      expect(links(el).filter((href) => href === '/admin').length).toBe(1);
+      for (const page of ADMIN_PAGES) expect(links(el)).withContext(page).not.toContain(page);
+      expect(links(el)).withContext('non-vacuity: My work still renders').toContain('/home');
     });
   });
 
@@ -591,6 +677,76 @@ describe('SidebarComponent (ACC-79)', () => {
       set(ready(3), { state: 'ready', value: 1 });
       expect(srText(el)).toBe('3 مهام مفتوحة، بعضها متأخر');
     });
+  });
+});
+
+// ACC-292 — the Administration item is lit on the console and on every admin
+// page, including pages below them.
+describe('SidebarComponent — Administration is lit on every admin page (ACC-292)', () => {
+  @Component({ template: '', standalone: true })
+  class StubPageComponent {}
+
+  async function railAt(url: string): Promise<HTMLElement> {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SidebarComponent],
+      providers: [
+        provideRouter([{ path: '**', component: StubPageComponent }]),
+        provideTranslateService(),
+        {
+          provide: NavigationAccessService,
+          useValue: {
+            hasPermission: (p: string) => [ADMIN_ACCESS, 'users:view', 'tenant:manage_config', 'org:view'].includes(p),
+            isModuleEnabled: () => false,
+            isPlatformAdmin: () => false,
+            tenantName: signal('Al Nakheel').asReadonly(),
+          },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            currentUser: signal({ id: 'u1', email: 'x@y.test', name: 'Omar Haddad' }).asReadonly(),
+            displayPreferences: signal(null).asReadonly(),
+          },
+        },
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
+    });
+    await TestBed.inject(Router).navigateByUrl(url);
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('collapsed', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const active = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll('a.am-rail-item--active')).map((a) => a.getAttribute('href'));
+
+  for (const url of [
+    '/admin',
+    '/users',
+    '/users/u-2',
+    '/organization/units/unit-1',
+    '/admin-settings/task-sla',
+    '/admin-settings/storage',
+    // A page the user may not open still belongs to Administration.
+    '/roles/r-1/permissions',
+  ]) {
+    it(`on ${url}, Administration is the one current item`, async () => {
+      const el = await railAt(url);
+      expect(active(el)).toEqual(['/admin']);
+      expect(el.querySelector('a[href="/admin"]')!.getAttribute('aria-current')).toBe('page');
+    });
+  }
+
+  it('is not lit outside Administration (Home, Tasks, a look-alike path)', async () => {
+    for (const url of ['/home', '/tasks', '/administration-help', '/users-guide']) {
+      const el = await railAt(url);
+      expect(active(el)).withContext(url).not.toContain('/admin');
+    }
   });
 });
 
