@@ -249,8 +249,8 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
   describe('Create on step 1', () => {
     it('is withheld while a required field lives on step 2', () => {
       // No locked source, so sourceType and sourceId are required and live on
-      // step 2. Template 3: "use Create from there when step 2 has no required
-      // fields" — here it has two.
+      // step 2 (ACC-280: the record is picked there). Template 3: "use Create
+      // from there when step 2 has no required fields" — here it has two.
       component.form.patchValue({ title: 'Raise an urgent task' });
       expect(component.canCreateFromStep1()).toBe(false);
     });
@@ -416,13 +416,15 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     // ACC-167 removed "assigneeUserIds":[] — with nobody chosen the form now
     // sends neither assignment field, which the server reads the same way: an
     // UNASSIGNED task. Those are the two deliberate changes since capture.
+    // ACC-280 — the record is COMMITTEE, the only type the server names; the
+    // picker sets sourceId (its own spec picks it), so the shape is unchanged.
     const wire =
-      '{"title":"ACC-96 payload probe","sourceType":"DOCUMENT","sourceId":"acc96-probe",' +
+      '{"title":"ACC-96 payload probe","sourceType":"COMMITTEE","sourceId":"acc96-probe",' +
       `"priority":"MEDIUM","dueDate":"${picked.toISOString()}","requiresEvidence":false}`;
 
     component.form.patchValue({
       title: 'ACC-96 payload probe',
-      sourceType: 'DOCUMENT',
+      sourceType: 'COMMITTEE',
       sourceId: 'acc96-probe',
     });
     // A LOCAL date, not an instant: "2026-09-25T06:00:00.000Z" is 24 Sep in
@@ -443,8 +445,8 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     const picked = new Date(NEXT_WORKING_DAY);
     component.form.patchValue({
       title: 'Collect the audit sample',
-      sourceType: 'DOCUMENT',
-      sourceId: 'doc-1',
+      sourceType: 'COMMITTEE',
+      sourceId: 'cmt-1',
       requiresEvidence: true,
     });
     component.onDayPicked(new Date(picked.getFullYear(), picked.getMonth(), picked.getDate()));
