@@ -2,7 +2,6 @@ import { Component, EventEmitter, Input, Output, computed, inject, signal } from
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import {
   WorkflowTemplateService,
@@ -46,7 +45,7 @@ export interface TransitionOpenEvent {
 @Component({
   selector: 'app-workflow-transition-editor',
   standalone: true,
-  imports: [TranslatePipe, TableModule, ButtonModule, TagModule, TooltipModule, RowMenuComponent, TransitionActionsDialogComponent],
+  imports: [TranslatePipe, TableModule, ButtonModule, TooltipModule, RowMenuComponent, TransitionActionsDialogComponent],
   template: `
     <div class="flex flex-col gap-3">
       <div class="flex items-center justify-between">
@@ -96,9 +95,6 @@ export interface TransitionOpenEvent {
                 >{{ transitionLabel(transition) }}</button>
                 @if (transition.mover === 'APP') {
                   <span class="am-tr-chip am-tr-chip--app" data-tr-app>{{ 'workflow.mover.APP' | translate }}</span>
-                }
-                @if (transition.isApprovalPath) {
-                  <p-tag [value]="'workflow.approvalPath' | translate" severity="success" />
                 }
               </td>
               <td class="am-tr-wrap" data-tr-to>{{ stageName(transition.toStageId) }}</td>
