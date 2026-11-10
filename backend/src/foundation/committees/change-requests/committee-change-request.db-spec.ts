@@ -435,8 +435,13 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       });
       return { tpl, stage };
     }
+    // ACC-284 — the threshold is a MOVE's. These votes name no move (written as
+    // before ACC-284), so they count for the stage's ADVANCE: ask about one.
     const thresholdMet = (stage: unknown, entry: unknown, org: string, instance: unknown): Promise<boolean> =>
-      (workflow as unknown as { isApprovalThresholdMet: (...a: unknown[]) => Promise<boolean> }).isApprovalThresholdMet(stage, entry, org, instance);
+      (workflow as unknown as { isApprovalThresholdMet: (...a: unknown[]) => Promise<boolean> }).isApprovalThresholdMet(stage, entry, org, instance, {
+        id: 'the-advance',
+        kind: 'ADVANCE',
+      });
 
     it('is saved when a record enters a committee-approval stage, and the vote counts against it — not the live quorum', async () => {
       const w = await world();
