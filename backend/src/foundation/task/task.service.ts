@@ -17,7 +17,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
-import { assertMayCreateTasks, holdsTaskKey, seesRecordType, taskKeyOf } from './task-record-types';
+import { assertHoldsCreateKey, assertMayCreateTasks, holdsTaskKey } from './task-record-types';
 import { CreateTaskDto, type CreateTaskInternal } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { RejectTaskDto } from './dto/reject-task.dto';
@@ -207,13 +207,17 @@ export class TaskService {
    */
   //
   // ACC-244 PR 2 — and Create tasks on the record's type, replacing the flat
-  // tasks:create. Both permission refusals come before the record is read:
-  // without the record type's own view permission, assertCanView's 403 names
-  // it; with it but without Create tasks, the 403 names that key.
+  // tasks:create. Both permission refusals come before the record is read.
+  //
+  // ACC-280 — the key is ALWAYS required when the type has one, whatever the
+  // caller's view permission. It used to be checked only for a committees:view
+  // holder, which was safe while the record check refused everyone else; since
+  // ACC-281 it admits a committee's members, so a member without Create tasks
+  // could create. Then the record check: committees:view, or a member (its 403
+  // names committees:view). A type with no key keeps its old path: refused with
+  // "Create tasks" when its view permission is held, else by the record check.
   async createForViewer(dto: CreateTaskDto, organizationId: string, viewer: TaskViewer): Promise<ITask> {
-    if (seesRecordType(viewer.permissions, dto.sourceType) && !holdsTaskKey(viewer.permissions, dto.sourceType, 'CREATE')) {
-      throw new ForbiddenException(`Required permission: ${taskKeyOf(dto.sourceType, 'CREATE') ?? 'Create tasks'}`);
-    }
+    assertHoldsCreateKey(viewer.permissions, dto.sourceType);
     await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id);
     return this.create(dto, organizationId, viewer.id);
   }

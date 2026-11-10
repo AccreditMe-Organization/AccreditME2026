@@ -14,7 +14,7 @@ import {
   draftSystemPrompt,
   parseDraftAnswer,
 } from './draft-answer';
-import { assertMayCreateTasks, seesRecordType } from '../task/task-record-types';
+import { assertHoldsCreateKey, assertMayCreateTasks } from '../task/task-record-types';
 import { draftRecordContext } from './draft-record-context';
 import { DraftRefusalException } from './draft-refusal';
 import { ITaskDraft, ITaskDraftAvailability } from './interfaces/task-draft.interface';
@@ -80,10 +80,14 @@ export class TaskDraftService {
     const sourceType = request.sourceType || null;
     const sourceId = request.sourceId || null;
     // ACC-244 — gated like New task, before anything else: Create tasks on the
-    // named record's type (a type the caller cannot see is assertCanView's 403
-    // below, which names the record's permission), or on any type with none.
+    // named record's type, or on any type with none.
+    // ACC-280 — with a record, exactly POST /tasks' rule (assertHoldsCreateKey): the
+    // type's key ALWAYS, whatever the caller's view permission, then the record
+    // check below (committees:view, or a member of that committee). It used to skip
+    // the key for a caller without committees:view, so a member without Create tasks
+    // could draft (and spend credits) for a task they could not create.
     if (!sourceType) assertMayCreateTasks(viewer.permissions);
-    else if (seesRecordType(viewer.permissions, sourceType)) assertMayCreateTasks(viewer.permissions, sourceType);
+    else assertHoldsCreateKey(viewer.permissions, sourceType);
 
     const note = request.note.trim();
     if (countLetters(note) < NOTE_MIN_LETTERS) throw new DraftRefusalException('DRAFT_NOTE_TOO_SHORT');

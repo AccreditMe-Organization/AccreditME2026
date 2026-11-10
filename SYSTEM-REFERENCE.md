@@ -5797,6 +5797,26 @@ or unit scope over it), else `'own'`.
 `GET /tasks/record-panel` gains **`canCreate`**: Create tasks on the record's
 type (the record is visible — it is being shown).
 
+**ACC-280 — `POST /tasks` ALWAYS needs the type's Create tasks key, then the
+record check.** One rule in `task-record-types.ts`: `holdsCreateKey()`, and
+`assertHoldsCreateKey()` for the refusal and its order. `POST /tasks`, "Draft with AI"
+on a record (`task-draft.service.ts`) and the panel's `canCreate` all read it, so they
+say the same thing:
+
+| Caller (no other permission) | `POST /tasks` and "Draft with AI" | the panel's `canCreate` |
+| -- | -- | -- |
+| member, no key | 403 "Required permission: committees:create_tasks" | `false` |
+| member with the key, no `committees:view` | allowed (create: created; draft: on to the AI's own checks) | `true` |
+| non-member with the key, no `committees:view` | 403 "Required permission: committees:view" | the panel is refused the same way |
+| `committees:view`, no key | 403 naming the key | `false` |
+
+Before this, both checked the key only for a `committees:view` holder. That was safe
+while the record check refused everyone else, but since ACC-281 it admits members, so
+a member without the key could create a task, or draft one and spend credits. **Both
+are closed**, pinned in `create-task-key.db-spec.ts` (the draft cases make no AI
+call and touch no credits). `create.types` (`GET /tasks/views`) still needs
+`committees:view`; its member branch is ACC-280's picker work.
+
 **Removed:** `GET /tasks?sourceType=&sourceId=` and `GET /tasks/:id` — the
 frontend had no caller, and both service methods went with them. The task page
 is `GET /tasks/:id/view`; a record's tasks are the panel and the list. The
