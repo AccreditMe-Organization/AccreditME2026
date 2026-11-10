@@ -8522,8 +8522,20 @@ A wording convention, kept by review: **no scan checks it.**
 
 - **The reader is addressed in the singular:** ك، لديك، معك. Never the plural
   كم، لديكم، معكم، إليكم.
-- **"Your organisation's" is مؤسستك:** «في مؤسستك», «لدى مؤسستك», «تخزين
-  مؤسستك الخاص».
+- **The organisation is «المنشأة», never «المؤسسة» (ACC-120, CC-224).**
+  "Your organisation's" is «منشأتك»: «في منشأتك», «لدى منشأتك», «تخزين منشأتك
+  الخاص». The plural is «المنشآت» (the platform's Tenants). This replaced the
+  earlier «مؤسستك» rule, and all 62 strings in `ar.json` moved together, so
+  the product has one word. Two «مؤسس» strings stay, because they mean
+  something else:
+  - `aiCredits.plan.ENTERPRISE` «المؤسسية»: the Enterprise plan's name;
+  - `storage.test.fail.SHAREPOINT.SHAREPOINT_APP_DISABLED` «تطبيقات المؤسسة»:
+    Microsoft Entra's own label for Enterprise applications, quoted so the
+    admin can find it.
+
+  **Not covered:** the backend's own Arabic (notification bodies, the
+  seeded root role «مسؤول المؤسسة») still says «مؤسسة». A role's Arabic name
+  is tenant data, so a renamed seed does not reach existing organisations.
 - **No masculine verb or pronoun has a specific person as its subject or
   referent**, because the platform stores no gender. That person may be
   `{{name}}`, `{{person}}`, `{{incoming}}`, `{{current}}`, or the user a
@@ -8537,9 +8549,10 @@ A wording convention, kept by review: **no scan checks it.**
   specific person only. A pronoun that refers to a thing (a role, a position,
   an account, a record) is fine.
 - **Imperatives to the reader are fine:** اطلب، اختر، تحقق.
-- **Where the longer مؤسستك would wrap a measured dialog, the singular «لديك»
-  is used instead.** For example, the storage request hint: at 560 px wide,
-  «في مؤسستك» took the Arabic dialog from 385 px to 405 px.
+- **Where the longer «منشأتك» would wrap a measured dialog, the singular
+  «لديك» is used instead.** For example, the storage request hint: at 560 px
+  wide, «في مؤسستك» (as it then read) took the Arabic dialog from 385 px to
+  405 px.
 
 ### 9.5 What's Explicitly Not Covered Here
 
@@ -8578,13 +8591,15 @@ date, a time span, a number or a count into text.
 * `FormatService` — by meaning, never by format string:
   `date` "15 Sep 2026", `dateTime` "15 Sep 2026, 14:05" (24-hour),
   `relative` "3 days ago" / "قبل 3 أيام", `duration` "5 hours" / "5 ساعات",
-  `elapsed(from, to)`, `number`, `count(key, n, params)`, and `zoneLabel()`
+  `elapsed(from, to)`, `number`, `money` (ACC-120: a price, whole "4,800" or
+  exactly two decimals "4,800.50", never "4,800.5"; no currency),
+  `count(key, n, params)`, and `zoneLabel()`
   "Asia/Riyadh (GMT+3)". Every method reads the context signals, so it
   re-evaluates inside a `computed()` (the ACC-55 concern is met by
   construction, and is specced). Arabic formats as `ar-SA`, whose default digits
   are Arabic-Indic, so the Latin pin is load-bearing and a spec fails without it.
 * Pipes, impure: `amDate`, `amDateTime`, `amRelative`, `amDuration`,
-  `amNumber`, `amCount`. They read the context signals on every call — the
+  `amNumber`, `amMoney`, `amCount`. They read the context signals on every call — the
   memo reads them before reusing text — which is what keeps an OnPush view
   current on a language switch. A memo that skipped the read would silently
   unsubscribe the view; `format.pipes.spec.ts` proves it with an OnPush host.
@@ -9801,6 +9816,31 @@ specs excluded): 10 consumers — `user-list`, `role-list`,
 `lookup-value-list`, `position-list`, `public-holiday-list`, `recycle-bin`,
 and `workflow-template-list` (the Workflows list).*
 
+*ACC-120 (the platform lists): 14 consumers. The four platform list pages
+joined, each read whole and sliced in memory with `clientSideSource()`, as
+`position-list` is:*
+- *`tenant-list`: searches name, slug and plan; opens sorted by name, A to Z;
+  Suspend (with its confirm) and Reactivate in the row's ⋯ menu
+  (`am-row-menu`). At the phone width the name cell carries "slug · plan" and
+  only Status keeps a column. `GET /platform/tenants` has no paging, so it
+  should page on the server once tenants reach the low hundreds.*
+- *`plan-list`: searches the English and Arabic name; opens sorted by monthly
+  price, lowest first; Edit is the row's one action. Prices are the stored
+  decimals through `amMoney` (whole, or exactly two decimals; a plan holds no
+  currency).*
+- *`ai-credit-pack-list`: searches the name; opens sorted by credits, fewest
+  first; no row action (there is no edit endpoint).*
+- *`ai-feature-cost-list`: searches the feature key; opens sorted by it, A to
+  Z; Edit is the row's one action.*
+
+*Each keeps its own empty sentence (`emptyTitle`) and load-error sentence,
+through `app-data-list`'s opt-in **`errorMessage`** input: empty keeps the
+shared "This list could not be loaded", and Retry is the list's either way.
+The Add credit pack and Add/Edit feature cost dialogs follow the dialog
+rules: Save is never disabled (Save on an invalid form reveals every error
+and sends nothing), every field is an `am-field` with its control, and the
+actions are the footer.*
+
 **The Workflows list adds two shapes other consumers can copy:**
 - **Group headings are rows of their own.** Its source returns a heading row,
   then that group's workflows. A heading carries no `amListRow`, so ↑/↓ skip
@@ -10791,6 +10831,8 @@ sorts uses it.
     sort button after PR #186 reached `dev`. Name, Type, Stage and Members
     are headers, on the same fields as before (`nameEn` / `nameAr` by
     language, `type`, `stage`, `members`). Parent and Status stay text.
+  - The four platform list pages (ACC-120, §10.10): Tenants, Plans, AI credit
+    packs and AI feature costs, through their `#listHeader` templates.
   - Add member's person picker (§3.16), an `am-simple-list`. Its Person
     column sorts by `name`, either way, which is the one sort its
     `loadPeople()` honours. Unit and Availability stay text. Its `selectable`

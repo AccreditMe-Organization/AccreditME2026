@@ -333,7 +333,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
       @if (outcome().status === 'error') {
         <!-- Nothing to show: the request failed on a FIRST load. -->
         <div class="p-4 flex flex-col items-center gap-2">
-          <p-message severity="error" [text]="'list.errorLoad' | translate" />
+          <p-message severity="error" [text]="errorMessage() || ('list.errorLoad' | translate)" />
           <p-button size="small" [label]="'list.retry' | translate" (onClick)="retry()" />
         </div>
       } @else if (outcome().status === 'denied') {
@@ -530,6 +530,10 @@ export class DataListComponent<T> implements OnInit {
   // match"). Empty keeps the shared sentence. Already translated.
   readonly noResultsTitle = input<string>('');
   readonly noResultsMessage = input<string>('');
+  // ACC-120 — a page's own words for a first load that failed ("Failed to load
+  // data." on the platform lists). Empty keeps the shared sentence; Retry is
+  // the list's either way. Already translated.
+  readonly errorMessage = input<string>('');
   // ACC-260 PR D — the sort a list starts with when nothing is saved for it,
   // so its header shows it (the bin opens soonest to expire first). A saved or
   // shared sort still wins. Null: no sort until one is chosen.

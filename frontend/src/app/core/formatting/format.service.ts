@@ -200,6 +200,17 @@ export class FormatService {
     return this.numberFormat(LOCALE[language], {}).format(value);
   }
 
+  // ACC-120 — a price. A whole amount stays whole ("4,800"); one with a
+  // fraction shows exactly two decimals ("4,800.50", "49.90"), never "4,800.5".
+  // Grouped, Latin digits in both languages, like number(). No currency: the
+  // prices shown today carry none.
+  money(value: number | null | undefined): string {
+    const { language } = this.snapshot();
+    if (value === null || value === undefined || !Number.isFinite(value)) return EMPTY_VALUE;
+    const digits = Math.round(value * 100) % 100 === 0 ? 0 : 2;
+    return this.numberFormat(LOCALE[language], { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+  }
+
   // A counted string (decision D1): the form Intl.PluralRules picks for the
   // UI language — six categories in Arabic, two in English — with {{count}}
   // formatted in Latin digits. Keys come only from the translation files'

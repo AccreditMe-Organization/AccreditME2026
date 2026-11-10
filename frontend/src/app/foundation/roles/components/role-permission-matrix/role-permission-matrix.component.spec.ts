@@ -241,9 +241,9 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
       expect(assign.calls.mostRecent().args[1]).toContain('roles:manage');
     });
 
-    it('Arabic: «أي شخص لديه هذه الصلاحية يستطيع أن يجعل نفسه مسؤول المؤسسة.»', () => {
+    it('Arabic: «أي شخص لديه هذه الصلاحية يستطيع أن يجعل نفسه مسؤول المنشأة.»', () => {
       render({ lang: 'ar', held: [...HELD, 'roles:manage'] });
-      expect(plain(text(warning()))).toBe('⚠ أي شخص لديه هذه الصلاحية يستطيع أن يجعل نفسه مسؤول المؤسسة.');
+      expect(plain(text(warning()))).toBe('⚠ أي شخص لديه هذه الصلاحية يستطيع أن يجعل نفسه مسؤول المنشأة.');
     });
   });
 
