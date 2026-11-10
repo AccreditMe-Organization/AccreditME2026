@@ -35,6 +35,11 @@
 // English with it locked (a committee record) — all against the 420 cap, none
 // scrolling. FORM density holds: three blocks, not five.
 //
+// ACC-280 — the unlocked source is now the record PICKER (never a typed id), in
+// the field wrapper with its reserved message slot. Measured with Draft with
+// AI's tallest refusal and "Choose a committee" under the field: 383px English,
+// 403px Arabic (task-form.draft.layout.spec.ts).
+//
 // Template 3's delegation label is still not built: it waits for stage task
 // definitions (CF-07), and a disabled placeholder would be worse than nothing.
 //
