@@ -291,6 +291,23 @@ export interface ITaskViewsDto {
   create: { types: string[] };
 }
 
+/** ACC-280 — one record New task's record picker offers (GET /tasks/record-choices). */
+export interface TaskRecordChoiceDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+}
+
+/** ACC-280 — a page of record choices: `total` before the search, `matching` after it (am-simple-list's page). */
+export interface TaskRecordChoicesPageDto {
+  items: TaskRecordChoiceDto[];
+  total: number;
+  matching: number;
+}
+
+/** ACC-280 — 409 from POST /tasks: the record (an inactive or dissolved committee) takes no new tasks. */
+export const TASK_RECORD_CLOSED = 'TASK_RECORD_CLOSED';
+
 export interface ITaskRecordListDto {
   items: ITaskRecordRowDto[];
   total: number;
@@ -772,6 +789,19 @@ export class TaskService {
     return this.http.get<ITaskViewsDto>(`${this.base}/views`);
   }
 
+  // ACC-280 — New task's record picker: the records of one type the caller may
+  // open and create tasks on, that take new tasks. Searched and paged on the
+  // server, at most 50 a page.
+  getRecordChoices(
+    type: string,
+    query: { q?: string; take: number; skip: number },
+    lang: 'en' | 'ar',
+  ): Observable<TaskRecordChoicesPageDto> {
+    let params = new HttpParams().set('type', type).set('take', String(query.take)).set('skip', String(query.skip)).set('lang', lang);
+    if (query.q) params = params.set('q', query.q);
+    return this.http.get<TaskRecordChoicesPageDto>(`${this.base}/record-choices`, { params });
+  }
+
   // ACC-228 — the task page. No permission: who may open a task is decided by
   // the server from the task; everyone else gets the same not-found.
   getPage(id: string): Observable<ITaskPageViewDto> {
@@ -782,8 +812,9 @@ export class TaskService {
     return this.http.get<ITaskHistoryEventDto[]>(`${this.base}/${encodeURIComponent(id)}/history`);
   }
 
+  // ACC-280 — a new task may be the creator's own work: Home's counts read again.
   create(dto: CreateTaskDto): Observable<ITaskDto> {
-    return this.http.post<ITaskDto>(this.base, dto);
+    return this.http.post<ITaskDto>(this.base, dto).pipe(tap(() => this.myWork.changed()));
   }
 
   complete(id: string): Observable<ITaskDto> {

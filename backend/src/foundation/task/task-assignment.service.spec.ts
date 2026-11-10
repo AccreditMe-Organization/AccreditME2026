@@ -23,6 +23,8 @@ const mockPrisma = {
   committee: { findFirst: jest.fn() },
   committeeMember: { findMany: jest.fn(), groupBy: jest.fn() },
   lookupValue: { findMany: jest.fn() },
+  // ACC-280 — mayCreateTasks()' membership answer, for a key holder without committees:view.
+  $queryRaw: jest.fn(),
 };
 
 // ACC-208 (B5) — LookupService's own resolution, which the catalogue reuses.
@@ -114,9 +116,28 @@ describe('TaskAssignmentService (ACC-167)', () => {
       expect(await captureError(service.listUnits(reassigner, ORG_A, 'task-1'))).toBeInstanceOf(NotFoundException);
     });
 
-    it('does not count Create tasks without the record type\'s own view permission (rule 1)', async () => {
-      const blind: AssignmentViewer = { id: 'blind', permissions: ['committees:create_tasks'] };
-      expect(await captureError(service.listUnits(blind, ORG_A))).toBeInstanceOf(ForbiddenException);
+    // ACC-280 (decision 2) — create.types' rule (mayCreateTasks()): Create tasks
+    // without committees:view counts for an active member of a committee that takes
+    // tasks. The membership answer is the one $queryRaw here.
+    it('counts Create tasks without committees:view for a member of a committee that takes tasks (ACC-280)', async () => {
+      mockPrisma.$queryRaw = jest.fn().mockResolvedValue([{ member: true }]);
+      const member: AssignmentViewer = { id: 'member', permissions: ['committees:create_tasks'] };
+      await expect(service.listUnits(member, ORG_A)).resolves.toEqual([]);
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.task.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('does not count the key alone: neither a viewer nor a member is refused as before (ACC-280)', async () => {
+      mockPrisma.$queryRaw = jest.fn().mockResolvedValue([{ member: false }]);
+      const keyOnly: AssignmentViewer = { id: 'stranger', permissions: ['committees:create_tasks'] };
+      const error = await captureError(service.listUnits(keyOnly, ORG_A));
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
+    });
+
+    it('still refuses someone with no Create tasks key at all', async () => {
+      const viewerOnly: AssignmentViewer = { id: 'viewer', permissions: ['committees:view'] };
+      expect(await captureError(service.listUnits(viewerOnly, ORG_A))).toBeInstanceOf(ForbiddenException);
     });
 
     // ACC-208 (Ahmad, Q1) — configuring a stage task chooses a target too.

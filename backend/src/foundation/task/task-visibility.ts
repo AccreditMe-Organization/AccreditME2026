@@ -49,7 +49,6 @@ export interface TaskVisibilityContext {
   recordTypes: string[];
   viewAllTypes: string[];
   manageTypes: string[];
-  createTypes: string[];
   /** Per type, the units (sub-units included) whose records' tasks the viewer sees. */
   unitScope: { type: string; unitIds: string[] }[];
   /** The roots of that scope, for the views API. */
@@ -111,7 +110,6 @@ export async function buildTaskVisibilityContext(
     recordTypes,
     viewAllTypes: typesHolding(viewer.permissions, 'VIEW_ALL'),
     manageTypes: typesHolding(viewer.permissions, 'MANAGE'),
-    createTypes: typesHolding(viewer.permissions, 'CREATE'),
     unitScope,
     unitRoots: unitRoots.filter((r) => r.types.length > 0),
   };

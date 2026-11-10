@@ -35,6 +35,11 @@
 // English with it locked (a committee record) — all against the 420 cap, none
 // scrolling. FORM density holds: three blocks, not five.
 //
+// ACC-280 — the unlocked source is now the record PICKER (never a typed id), in
+// the field wrapper with its reserved message slot. Measured with Draft with
+// AI's tallest refusal and "Choose a committee" under the field: 383px English,
+// 403px Arabic (task-form.draft.layout.spec.ts).
+//
 // Template 3's delegation label is still not built: it waits for stage task
 // definitions (CF-07), and a disabled placeholder would be worse than nothing.
 //
@@ -65,7 +70,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { InputMaskModule } from 'primeng/inputmask';
 import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
-import { ITaskDto, SlaPreviewDto, TaskPriority, TaskService, UpdateTaskDto } from '../../services/task.service';
+import { ITaskDto, SlaPreviewDto, TASK_RECORD_CLOSED, TaskPriority, TaskService, UpdateTaskDto } from '../../services/task.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { DueDateService, DuePreset } from '../../services/due-date.service';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
@@ -82,23 +87,15 @@ import { followedHint } from '../task-assignee-picker/followed-hint';
 import { TaskDraftStore } from './task-draft.store';
 import { TaskDraftTriggerComponent } from './task-draft-trigger.component';
 import { TaskDraftCardComponent } from './task-draft-card.component';
+import {
+  TaskRecordChoiceStore,
+  TaskRecordPickerComponent,
+  recordWordsFor,
+} from '../task-record-picker/task-record-picker.component';
 
-const SOURCE_TYPES = [
-  'MEETING',
-  'DOCUMENT',
-  'AUDIT',
-  'CAPA',
-  'INCIDENT',
-  'CORRECTIVE_ACTION',
-  'STANDARD',
-  'KPI',
-  'GAP',
-  'QUALITY_IMPROVEMENT_PLAN',
-  // ACC-76 — was missing, though TaskSourceType has carried it since ACC-22
-  // and TaskController's own query union lists it. Manual creation of a
-  // committee task was therefore impossible from this form.
-  'COMMITTEE',
-];
+// ACC-280 (decision 3) — no list of record types lives here any more. Which
+// types New task offers is the server's `create.types` (GET /tasks/views),
+// passed in as allowedSourceTypes; a type appears the day the server names it.
 
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
@@ -120,12 +117,14 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     TaskAssigneePickerComponent,
     TaskDraftTriggerComponent,
     TaskDraftCardComponent,
+    TaskRecordPickerComponent,
   ],
   // ACC-197 — one draft state per dialog: it outlives the step switch and ends
   // with the form.
   // ACC-199 — "✦ Suggest someone"'s answers, kept for the dialog: the picker
   // is rebuilt on every step switch.
-  providers: [TaskDraftStore, TaskWorkloadHintStore],
+  // ACC-280 — the record picked, kept across the steps (the picker is rebuilt on each).
+  providers: [TaskDraftStore, TaskWorkloadHintStore, TaskRecordChoiceStore],
   template: `
     <form id="taskForm" [formGroup]="form" (ngSubmit)="onSubmit()" class="am-task-form flex flex-col gap-4">
       @if (step() === 1) {
@@ -278,20 +277,31 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
             <p class="text-sm text-[var(--am-ink-500)]">{{ lockedSourceLabel() }}</p>
             <small class="am-hint">{{ 'task.sourceLockedHint' | translate }}</small>
           </div>
-        } @else {
-          <div class="flex gap-4">
-            <div class="flex flex-col gap-1 flex-1">
-              <label for="sourceType" class="text-sm font-medium">
-                {{ 'task.sourceType' | translate }} <span class="text-red-500">*</span>
-              </label>
-              <app-overlay-select formControlName="sourceType" [options]="sourceTypes()" />
-            </div>
-            <div class="flex flex-col gap-1 flex-1">
-              <label for="sourceId" class="text-sm font-medium">
-                {{ 'task.sourceId' | translate }} <span class="text-red-500">*</span>
-              </label>
-              <input pInputText id="sourceId" formControlName="sourceId" />
-            </div>
+        } @else if (chosenType(); as type) {
+          <!-- ACC-280 — the record is PICKED, never typed (plan §3). The type
+               field shows only when the server names more than one type; with
+               one, the record field's own label names it (decision 3). -->
+          <div class="flex gap-4 min-w-0">
+            @if (showTypeField()) {
+              <div class="flex flex-col gap-1 flex-1 min-w-0">
+                <label for="sourceType" class="text-sm font-medium">
+                  {{ 'task.sourceType' | translate }} <span class="text-red-500">*</span>
+                </label>
+                <app-overlay-select
+                  formControlName="sourceType"
+                  [options]="sourceTypeOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                  data-record-type
+                />
+              </div>
+            }
+            <app-task-record-picker
+              class="flex-[2] min-w-0"
+              [sourceType]="type"
+              [control]="form.controls.sourceId"
+              [forceShowErrors]="showSourceErrors()"
+            />
           </div>
         }
         }
@@ -796,11 +806,23 @@ export class TaskFormComponent implements OnInit {
    * ACC-120 slice 3 — the record types New task may create on (GET /tasks/views' create.types).
    * Null offers every type, as before.
    */
+  //
+  // ACC-280 — the server's list, and nothing else: no type is offered that the
+  // server did not name (decision 3). Without it (Edit, a locked record) none.
   readonly allowedSourceTypes = input<readonly string[] | null>(null);
-  readonly sourceTypes = computed(() => {
-    const allowed = this.allowedSourceTypes();
-    return allowed ? SOURCE_TYPES.filter((t) => allowed.includes(t)) : SOURCE_TYPES;
+  readonly sourceTypes = computed(() => [...(this.allowedSourceTypes() ?? [])]);
+  /** One type: no type field, the record field's label names it. */
+  readonly showTypeField = computed(() => this.sourceTypes().length > 1);
+  readonly sourceTypeOptions = computed(() => {
+    this.translate.currentLang();
+    return this.sourceTypes().map((value) => ({ value, label: this.translate.instant(recordWordsFor(value).label) as string }));
   });
+  /** The record type the picker lists: the form's sourceType, as a signal. */
+  readonly chosenType = signal<string | null>(null);
+  /** ACC-280 — the record chosen in the picker (its name for the field, its id in sourceId). */
+  private readonly records = inject(TaskRecordChoiceStore);
+  /** Set by a Create that found no record chosen. */
+  readonly showSourceErrors = signal(false);
   readonly priorities = PRIORITIES;
   /** Set by a Create that found the assignment incomplete (a unit, no position). */
   readonly showAssignErrors = signal(false);
@@ -932,7 +954,7 @@ export class TaskFormComponent implements OnInit {
   readonly form = this.fb.group({
     title: ['', [Validators.required, Validators.maxLength(255)]],
     description: ['', [Validators.maxLength(2000)]],
-    sourceType: ['DOCUMENT', [Validators.required]],
+    sourceType: ['', [Validators.required]],
     sourceId: ['', [Validators.required]],
     assignTo: createAssignGroup(false),
     priority: ['MEDIUM'],
@@ -992,11 +1014,18 @@ export class TaskFormComponent implements OnInit {
   ngOnInit(): void {
     this.dueDates.load();
 
-    // A default the viewer may not create on gives way to the first type they may.
+    // ACC-280 — the first type the server names; a change of type clears the
+    // chosen record, which belongs to the old type.
     const types = this.sourceTypes();
-    if (!this.task() && !this.isSourceLocked() && types.length && !types.includes(this.form.controls.sourceType.value ?? '')) {
-      this.form.controls.sourceType.setValue(types[0]!);
-      this.form.controls.sourceType.markAsPristine();
+    if (!this.task() && !this.isSourceLocked() && types.length) {
+      this.form.controls.sourceType.setValue(types[0]!, { emitEvent: false });
+      this.chosenType.set(types[0]!);
+      this.form.controls.sourceType.valueChanges.subscribe((type) => {
+        if (!type || type === this.chosenType()) return;
+        this.chosenType.set(type);
+        this.records.chosen.set(null);
+        this.form.controls.sourceId.setValue('');
+      });
     }
 
     const task = this.task();
@@ -1234,6 +1263,7 @@ export class TaskFormComponent implements OnInit {
         this.showAssignErrors.set(true);
         this.goToStep(1);
       } else if (this.form.controls.sourceId.invalid || this.form.controls.sourceType.invalid) {
+        this.showSourceErrors.set(true);
         this.step.set(2);
       }
       return;
@@ -1269,7 +1299,9 @@ export class TaskFormComponent implements OnInit {
         },
         error: (err: unknown) => {
           this.saving.set(false);
-          this.saveError.set(extractErrorMessage(err, 'task.errorAction'));
+          // ACC-280 — said from the code, never the server's English.
+          const code = (err as { error?: { code?: string } } | null)?.error?.code;
+          this.saveError.set(code === TASK_RECORD_CLOSED ? 'task.record.closed' : extractErrorMessage(err, 'task.errorAction'));
         },
       });
   }
@@ -1282,10 +1314,16 @@ export class TaskFormComponent implements OnInit {
     this.draft.request({
       note: value.description ?? '',
       title: value.title ?? '',
-      // The record is context only when the dialog was opened from one.
-      sourceType: this.isSourceLocked() ? this.lockedSourceType() : null,
-      sourceId: this.isSourceLocked() ? this.lockedSourceId() : null,
+      // The record is context when the dialog was opened from one, or (ACC-280)
+      // once one is picked; the server checks the viewer may open it.
+      ...this.draftRecord(),
     });
+  }
+
+  private draftRecord(): { sourceType: string | null; sourceId: string | null } {
+    if (this.isSourceLocked()) return { sourceType: this.lockedSourceType(), sourceId: this.lockedSourceId() };
+    const chosen = this.records.chosen();
+    return chosen ? { sourceType: this.form.controls.sourceType.value || null, sourceId: chosen.id } : { sourceType: null, sourceId: null };
   }
 
   /** Accept, and Edit (which also puts the cursor in the field). */

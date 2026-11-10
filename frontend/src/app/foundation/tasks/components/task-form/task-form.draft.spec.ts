@@ -17,6 +17,7 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { ITaskDraft, ITaskDto } from '../../services/task.service';
 import { TaskFormComponent } from './task-form.component';
+import { TaskRecordChoiceStore } from '../task-record-picker/task-record-picker.component';
 
 const API = environment.apiUrl;
 const NOTE = 'follow up hand rub stock ward 6A';
@@ -212,6 +213,17 @@ describe('TaskFormComponent — Draft with AI (ACC-197)', () => {
     await open({ locked: false });
     const req = await pressDraft();
     expect(req.request.body).toEqual({ note: NOTE, language: 'en', title: 'Hand rub' });
+    req.flush(DRAFT);
+  });
+
+  // ACC-280 — once a record is picked, the draft reads it as the opened-from record
+  // (the server checks the viewer may open it, as for a locked one).
+  it('on the standalone screen, once a record is picked, it sends that record', async () => {
+    await open({ locked: false });
+    fixture.debugElement.injector.get(TaskRecordChoiceStore).chosen.set({ id: 'cmt-5', nameEn: 'Quality Committee', nameAr: null });
+    component.form.patchValue({ sourceType: 'COMMITTEE', sourceId: 'cmt-5' });
+    const req = await pressDraft();
+    expect(req.request.body).toEqual({ note: NOTE, language: 'en', title: 'Hand rub', sourceType: 'COMMITTEE', sourceId: 'cmt-5' });
     req.flush(DRAFT);
   });
 

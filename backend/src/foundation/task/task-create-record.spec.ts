@@ -40,10 +40,16 @@ describe('TaskService.createForViewer — the task\'s record comes first (ACC-24
       return row ? { id: row.id } : null;
     });
     // ACC-281 — nobody is a member of the record here, so membership admits no one.
-    const prisma = { committee: { findFirst }, committeeMember: { findFirst: jest.fn().mockResolvedValue(null) } } as unknown as PrismaService;
+    // ACC-280 — $queryRaw answers the closed-record check: every committee here takes tasks.
+    const prisma = {
+      committee: { findFirst },
+      committeeMember: { findFirst: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn().mockResolvedValue([{ open: true }]),
+    } as unknown as PrismaService;
     create = jest.fn().mockResolvedValue({ id: 'new-task' });
     createForViewer = TaskService.prototype.createForViewer.bind({
       objectVisibility: new ObjectVisibilityService(prisma),
+      prisma,
       create,
     }) as typeof createForViewer;
   });

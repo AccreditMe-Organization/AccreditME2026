@@ -239,15 +239,17 @@ describe('TaskDraftService.draft (ACC-197)', () => {
 describe('TaskDraftService.availability (ACC-197)', () => {
   it('true when AI is on and the feature is open; false otherwise — and nothing else is told', async () => {
     const { service, prisma } = setup();
-    await expect(service.availability(ORG, VIEWER.permissions)).resolves.toEqual({ available: true });
+    await expect(service.availability(ORG, VIEWER)).resolves.toEqual({ available: true });
     prisma.organization.findFirst.mockResolvedValue({ ...orgRow, aiMonthlyCredits: 0 });
-    await expect(service.availability(ORG, VIEWER.permissions)).resolves.toEqual({ available: false });
+    await expect(service.availability(ORG, VIEWER)).resolves.toEqual({ available: false });
   });
 
   // ACC-244 — gated like New task: Create tasks on at least one record type.
   it('refuses a caller without Create tasks on any type, naming the key, before anything is read', async () => {
     const { service, prisma } = setup();
-    await expect(service.availability(ORG, ['committees:view'])).rejects.toThrow('Required permission: committees:create_tasks');
+    await expect(service.availability(ORG, { id: 'viewer', permissions: ['committees:view'] })).rejects.toThrow(
+      'Required permission: committees:create_tasks',
+    );
     expect(prisma.organization.findFirst).not.toHaveBeenCalled();
   });
 });

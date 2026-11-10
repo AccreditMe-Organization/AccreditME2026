@@ -14,7 +14,8 @@ import {
   draftSystemPrompt,
   parseDraftAnswer,
 } from './draft-answer';
-import { assertHoldsCreateKey, assertMayCreateTasks } from '../task/task-record-types';
+import { assertHoldsCreateKey } from '../task/task-record-types';
+import { assertMayCreateTasks } from '../task/task-record-choices';
 import { draftRecordContext } from './draft-record-context';
 import { DraftRefusalException } from './draft-refusal';
 import { ITaskDraft, ITaskDraftAvailability } from './interfaces/task-draft.interface';
@@ -70,8 +71,9 @@ export class TaskDraftService {
    * press answers "used up". ACC-244 — gated like New task: Create tasks on at
    * least one record type.
    */
-  async availability(organizationId: string, permissions: readonly string[]): Promise<ITaskDraftAvailability> {
-    assertMayCreateTasks(permissions);
+  // ACC-280 — assertMayCreateTasks(): the rule create.types is built from.
+  async availability(organizationId: string, viewer: DraftViewer): Promise<ITaskDraftAvailability> {
+    await assertMayCreateTasks(this.prisma, viewer, organizationId);
     const { available } = await aiFeatureAvailability(this.prisma, organizationId, DRAFT_FEATURE);
     return { available };
   }
@@ -86,7 +88,7 @@ export class TaskDraftService {
     // check below (committees:view, or a member of that committee). It used to skip
     // the key for a caller without committees:view, so a member without Create tasks
     // could draft (and spend credits) for a task they could not create.
-    if (!sourceType) assertMayCreateTasks(viewer.permissions);
+    if (!sourceType) await assertMayCreateTasks(this.prisma, viewer, organizationId);
     else assertHoldsCreateKey(viewer.permissions, sourceType);
 
     const note = request.note.trim();

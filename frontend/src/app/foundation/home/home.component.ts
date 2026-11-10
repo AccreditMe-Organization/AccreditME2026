@@ -2,12 +2,14 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { forkJoin } from 'rxjs';
+import { ButtonModule } from 'primeng/button';
 import { FormatService, type PluralKey } from '../../core/formatting';
 import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
 import { ITaskListItemDto, TaskService } from '../tasks/services/task.service';
 import { taskPoolLabel } from '../tasks/task-pool-label';
+import { TaskNewDialogComponent } from '../tasks/components/task-new-dialog/task-new-dialog.component';
 import { HomeAdminComponent } from './home-admin.component';
 import { HomeAwaitingComponent } from './home-awaiting.component';
 import { HomeBriefingComponent } from './home-briefing.component';
@@ -44,7 +46,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // panels below them, and "Nothing here about configuring the system" stopped
 // being true when the admin block came onto this page.
 //
-// NO HEADER ACTIONS (Ahmad, Q7): New task comes with ACC-280's record picker.
+// ONE HEADER ACTION, New task (ACC-280, reversing Q7's "no header actions" for
+// this button as Q12 planned): shown exactly when /tasks shows it, that is when
+// GET /tasks/views names a create type. Read once on entry (decision 6), no
+// poll; if the read fails the button is absent, so nothing is offered that the
+// server might refuse. The dialog is the shared one (TaskNewDialogComponent),
+// and a create tells MyWorkEvents, so the counts read again.
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -58,11 +65,22 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     HomeAwaitingComponent,
     RouterLink,
     TranslatePipe,
+    ButtonModule,
+    TaskNewDialogComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="am-home">
-      <app-page-header [title]="greeting()" [tabTitle]="'nav.home' | translate" />
+      <app-page-header [title]="greeting()" [tabTitle]="'nav.home' | translate">
+        <div pageActions>
+          @if (canCreate()) {
+            <p-button [label]="'task.newTask' | translate" icon="pi pi-plus" (onClick)="newTaskOpen.set(true)" data-testid="home-task-new" />
+          }
+        </div>
+      </app-page-header>
+      @if (canCreate()) {
+        <app-task-new-dialog [(visible)]="newTaskOpen" [createTypes]="createTypes()" />
+      }
 
       <app-home-admin />
 
@@ -181,6 +199,11 @@ export class HomeComponent implements OnInit {
   private readonly format = inject(FormatService);
 
   readonly decision = signal<DecisionState>({ state: 'loading' });
+  /** ACC-280 — New task's record types (GET /tasks/views), read on entry; empty hides the button. */
+  readonly createTypes = signal<readonly string[]>([]);
+  readonly newTaskOpen = signal(false);
+  /** New task shows exactly when /tasks shows it: the server names a create type (check:create-gating). */
+  readonly canCreate = computed(() => this.createTypes().length > 0);
   readonly available = signal<AvailableState>({ state: 'loading' });
 
   /** "Good morning, Layla" in the organisation's time zone (Arabic: two forms only). */
@@ -272,6 +295,15 @@ export class HomeComponent implements OnInit {
     this.counts.refreshOnEntry();
     this.loadDecisions();
     this.loadAvailable();
+    this.loadCreateTypes();
+  }
+
+  /** ACC-280 — once on entry; a failure leaves the button absent. */
+  private loadCreateTypes(): void {
+    this.taskService.getViews().subscribe({
+      next: (views) => this.createTypes.set(views.create.types),
+      error: () => this.createTypes.set([]),
+    });
   }
 
   // ACC-198 — the briefing's "Show the full list": the panels below, focused.

@@ -6,9 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
-import { TaskFormComponent } from '../../../tasks/components/task-form/task-form.component';
-import { TaskFormFooterComponent } from '../../../tasks/components/task-form/task-form-footer.component';
-import { TaskFormStepsComponent } from '../../../tasks/components/task-form/task-form-steps.component';
+import { TaskNewDialogComponent, TaskNewLockedRecord } from '../../../tasks/components/task-new-dialog/task-new-dialog.component';
 import { RecordTasksPanelComponent } from '../../../tasks/components/record-tasks-panel/record-tasks-panel.component';
 import { CommitteeMembersPanelComponent } from '../committee-members-panel/committee-members-panel.component';
 import { CommitteeSubCommitteesPanelComponent } from '../committee-sub-committees-panel/committee-sub-committees-panel.component';
@@ -63,9 +61,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     MessageModule,
     RecordPanelComponent,
     RouterLink,
-    TaskFormComponent,
-    TaskFormFooterComponent,
-    TaskFormStepsComponent,
+    TaskNewDialogComponent,
     RecordTasksPanelComponent,
     CommitteeMembersPanelComponent,
     CommitteeSubCommitteesPanelComponent,
@@ -411,12 +407,6 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
          context line, exactly as Template 3 draws it — so it does not change
          when the date view substitutes the body, and costs nothing against
          the 420px body cap. -->
-    <ng-template #taskStepsTpl>
-      <app-task-form-steps [form]="taskFormRef()" />
-    </ng-template>
-    <ng-template #taskFooterTpl>
-      <app-task-form-footer [form]="taskFormRef()" />
-    </ng-template>
     <!-- ACC-238 — the three-tab Edit dialog owns its own dialog shell. -->
     <app-committee-form
       [visible]="formVisible()"
@@ -426,34 +416,11 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
       (reloaded)="committee.set($event)"
     />
 
-    <ng-template #taskFormTpl>
-      @if (committee(); as c) {
-        <!-- Source prefilled and locked: the task belongs to this committee,
-             so it is not a question to ask. -->
-        <app-task-form
-          lockedSourceType="COMMITTEE"
-          [lockedSourceId]="committeeId"
-          [lockedSourceLabel]="displayName(c)"
-          (saved)="onTaskSaved()"
-          (cancelled)="taskDialog.requestClose()"
-          (dirtyChange)="taskFormDirty.set($event)"
-        (ready)="taskFormRef.set($event)"
-        />
-      }
-    </ng-template>
-    <!-- ACC-96 — [dirty] is an opt-in input on the DIALOG, and task-form sits
-         inside it, so the state travels outward through (dirtyChange). Without
-         it Escape discards a part-filled task silently. -->
-    <app-edit-dialog
-      #taskDialog
-      [(visible)]="taskFormVisible"
-      [header]="'task.newTask' | translate"
-      [context]="committee() ? ('task.raisedFrom' | translate: { record: displayName(committee()!) }) : ''"
-      [content]="taskFormTpl"
-      [dirty]="taskFormDirty()"
-      [headerExtra]="taskStepsTpl"
-      [footer]="taskFooterTpl"
-    />
+    <!-- ACC-280 (decision 5) — the one New task dialog, with this committee
+         locked: the task belongs to it, so it is not a question to ask. -->
+    @if (lockedTaskRecord(); as record) {
+      <app-task-new-dialog [(visible)]="taskFormVisible" [locked]="record" (created)="onTaskSaved()" />
+    }
 
 
     <ng-template #memberFormTpl>
@@ -589,8 +556,11 @@ export class CommitteeDetailComponent implements OnInit {
     });
   }
   readonly taskFormVisible = signal(false);
-  readonly taskFormDirty = signal(false);
-  readonly taskFormRef = signal<TaskFormComponent | null>(null);
+  /** ACC-280 — New task's locked record: this committee, once it has loaded. */
+  readonly lockedTaskRecord = computed<TaskNewLockedRecord | null>(() => {
+    const c = this.committee();
+    return c ? { type: 'COMMITTEE', id: this.committeeId, label: this.displayName(c) } : null;
+  });
 
   // "5 of 9 members" — the configured quorum against who is actually on the
   // committee. Either number alone is half the picture: a quorum of 5 means
@@ -775,7 +745,6 @@ export class CommitteeDetailComponent implements OnInit {
 
   // ACC-229 — the panel reads its five again; All tasks too, if it is open.
   onTaskSaved(): void {
-    this.taskFormVisible.set(false);
     this.tasksPanel()?.reload();
   }
 

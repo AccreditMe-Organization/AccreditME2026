@@ -2,6 +2,7 @@ import { EnvironmentProviders, Provider } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideTranslateLoader, provideTranslateService, TranslateNoOpLoader } from '@ngx-translate/core';
 import { Observable, of, throwError } from 'rxjs';
+import { ConfirmationService } from 'primeng/api';
 import { provideFormatTesting } from '../../core/formatting/testing';
 import { AuthService } from '../../core/services/auth.service';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
@@ -69,6 +70,8 @@ export interface HomeSpecOptions {
   committees?: Answer<MyCommitteesDto>;
   summary?: Answer<HomeAdminSummaryDto>;
   available?: Answer<ITaskListItemDto[]>;
+  /** ACC-280 — GET /tasks/views' create.types: New task's record types. */
+  createTypes?: Answer<string[]>;
   name?: string;
   /** ACC-281 — signed in as a platform admin. */
   platformAdmin?: boolean;
@@ -82,16 +85,20 @@ export interface HomeSpecCalls {
   committees: number;
   summary: number;
   myTasksLegacy: number;
+  /** ACC-280 — GET /tasks/views, read once on entry for New task. */
+  views: number;
 }
 
 export function homeProviders(opts: HomeSpecOptions = {}): { providers: (Provider | EnvironmentProviders)[]; calls: HomeSpecCalls } {
-  const calls: HomeSpecCalls = { recordList: [], awaitingMe: 0, changes: 0, committees: 0, summary: 0, myTasksLegacy: 0 };
+  const calls: HomeSpecCalls = { recordList: [], awaitingMe: 0, changes: 0, committees: 0, summary: 0, myTasksLegacy: 0, views: 0 };
   const held = new Set(opts.permissions ?? []);
   const providers: (Provider | EnvironmentProviders)[] = [
     provideRouter([]),
     provideTranslateService({ lang: 'en' }),
     provideTranslateLoader(TranslateNoOpLoader),
     provideFormatTesting(),
+    // ACC-280 — the New task dialog's unsaved-work question (provided app-wide in app.config).
+    ConfirmationService,
     {
       provide: TaskService,
       useValue: {
@@ -105,6 +112,13 @@ export function homeProviders(opts: HomeSpecOptions = {}): { providers: (Provide
           return answer(opts.myTasks ?? recordList([]));
         },
         getAwaitingDecision: () => of([]),
+        getViews: () => {
+          calls.views++;
+          const types = opts.createTypes ?? [];
+          return types === 'fail'
+            ? answer<never>('fail')
+            : of({ mine: true, created: true, all: null, unassigned: null, unit: null, create: { types } });
+        },
         getAvailable: () => answer(opts.available ?? []),
         // Home no longer reads the unbounded list; a call here is a regression.
         getMyTasks: () => {

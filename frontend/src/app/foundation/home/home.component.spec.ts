@@ -4,6 +4,8 @@ import { loadTranslationsForTest } from '../../core/formatting/testing';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { TestFormatContext } from '../../core/formatting/format-context';
 import { HomeComponent } from './home.component';
+import { By } from '@angular/platform-browser';
+import { TaskNewDialogComponent } from '../tasks/components/task-new-dialog/task-new-dialog.component';
 import { MyWorkCountsService } from './my-work-counts.service';
 import { HomeSpecCalls, HomeSpecOptions, awaitingMe, awaitingRow, homeProviders, recordList, taskRow } from './home.testing';
 import en from '../../../assets/i18n/en.json';
@@ -69,11 +71,44 @@ describe('HomeComponent (ACC-279)', () => {
     });
   });
 
-  it('has no purpose line and no header actions (Q7: New task comes with ACC-280)', () => {
+  it('has no purpose line, and no header action when the server names no create type', () => {
     build({ permissions: ['committees:create_tasks', 'users:invite', 'setup:view'] });
     const header = el().querySelector('app-page-header')!;
     expect(header.querySelector('p')).toBeNull();
     expect(header.querySelectorAll('button, a').length).toBe(0);
+  });
+
+  // ACC-280 — New task on Home: exactly when /tasks shows it (create.types from
+  // GET /tasks/views, read once on entry), never from a permission read here.
+  describe('New task (ACC-280)', () => {
+    it('is the one header action when GET /tasks/views names a create type, read once on entry', () => {
+      build({ createTypes: ['COMMITTEE'] });
+      const header = el().querySelector('app-page-header')!;
+      expect(header.querySelectorAll('button').length).toBe(1);
+      expect(q('home-task-new')?.textContent).toContain('New Task');
+      expect(calls.views).toBe(1);
+    });
+
+    it('is absent when the views read fails: nothing is offered the server might refuse', () => {
+      build({ createTypes: 'fail', permissions: ['committees:create_tasks', 'committees:view'] });
+      expect(q('home-task-new')).toBeNull();
+    });
+
+    it('is absent with no create type, whatever the permissions say (the server decides)', () => {
+      build({ createTypes: [], permissions: ['committees:create_tasks', 'committees:view'] });
+      expect(q('home-task-new')).toBeNull();
+      expect(el().querySelector('app-task-new-dialog')).toBeNull();
+    });
+
+    it('opens the shared New task dialog, with the server\'s types', () => {
+      build({ createTypes: ['COMMITTEE'] });
+      const dialog = fixture.debugElement.query(By.directive(TaskNewDialogComponent)).componentInstance as TaskNewDialogComponent;
+      expect(dialog.createTypes()).toEqual(['COMMITTEE']);
+      expect(dialog.visible()).toBeFalse();
+      // The press opens it; the form inside is the dialog's own spec's to render.
+      (q('home-task-new')!.querySelector('button') as HTMLButtonElement).click();
+      expect(fixture.componentInstance.newTaskOpen()).toBeTrue();
+    });
   });
 
   it('reads neither the notifications nor the unbounded my-tasks list', () => {

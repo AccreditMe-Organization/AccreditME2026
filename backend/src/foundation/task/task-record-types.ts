@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import { COMMITTEE_TASKS_PERMISSIONS } from '../../common/constants/permissions';
 import { RECORD_VIEW_PERMISSION } from '../../common/services/object-visibility.service';
+import { STAGE_FLAG } from '../workflow/record-registry';
 
 /**
  * ACC-244 — THE RECORD TYPES THAT HAVE TASKS, and the four task keys each one
@@ -34,6 +35,27 @@ export interface TaskRecordType {
   keys: Readonly<Record<TaskKeyKind, string>>;
   ownerUnitSql: Prisma.Sql | null;
   recordInOrgSql: Prisma.Sql;
+  /** ACC-280 — what New task's record picker lists. A type without it has no choices (fail closed). */
+  choices?: TaskRecordChoices;
+}
+
+/**
+ * ACC-280 — the record picker's source, and the ONE rule for "this record takes new
+ * tasks". Every expression is over the record row `r`, read from `fromSql`.
+ *
+ * `acceptsTasksSql` is decision 7's single server helper: the picker puts it in its
+ * WHERE, and POST /tasks asks it of the one record, so the list and create cannot
+ * disagree. Read from the record and its stage's FLAGS and RULES, never a stage name
+ * or key.
+ *
+ * `memberSql` is ACC-281's membership rule as SQL: the viewer is an active member of
+ * this active record. It scopes the picker, and New task's create types, for a
+ * caller holding the type's Create tasks key without its view permission (decision 2).
+ */
+export interface TaskRecordChoices {
+  fromSql: Prisma.Sql;
+  acceptsTasksSql: Prisma.Sql;
+  memberSql: (viewerId: string) => Prisma.Sql;
 }
 
 export const TASK_RECORD_TYPES: Readonly<Record<string, TaskRecordType>> = {
@@ -47,6 +69,30 @@ export const TASK_RECORD_TYPES: Readonly<Record<string, TaskRecordType>> = {
     },
     ownerUnitSql: Prisma.sql`(SELECT oc."orgUnitId" FROM "Committee" oc WHERE oc.id = t."sourceId" AND oc."organizationId" = t."organizationId")`,
     recordInOrgSql: Prisma.sql`EXISTS (SELECT 1 FROM "Committee" rc WHERE rc.id = t."sourceId" AND rc."organizationId" = t."organizationId")`,
+    choices: {
+      fromSql: Prisma.sql`"Committee" r`,
+      // Decision 7 (Ahmad, 10 Nov): active, and not dissolved. Dissolved is the CURRENT
+      // stage of the committee's NEWEST workflow instance (committeeStagesAndCounts'
+      // rule) carrying DISSOLVING AND being final. Dissolution Pending (DISSOLVING, not
+      // final) still takes tasks. A committee with no instance is not dissolved.
+      acceptsTasksSql: Prisma.sql`(r."isActive" AND NOT EXISTS (
+        SELECT 1
+        FROM (
+          SELECT wi."currentStageId"
+          FROM "WorkflowInstance" wi
+          WHERE wi."organizationId" = r."organizationId" AND wi."objectType"::text = 'COMMITTEE' AND wi."objectId" = r.id
+          ORDER BY wi."createdAt" DESC
+          LIMIT 1
+        ) latest
+        JOIN "WorkflowStage" s ON s.id = latest."currentStageId"
+        JOIN "WorkflowTemplate" wt ON wt.id = s."workflowTemplateId" AND wt."organizationId" = r."organizationId"
+        WHERE ${STAGE_FLAG.DISSOLVING} = ANY(s.flags) AND s."isFinal"
+      ))`,
+      memberSql: (viewerId) => Prisma.sql`(r."isActive" AND EXISTS (
+        SELECT 1 FROM "CommitteeMember" m
+        WHERE m."committeeId" = r.id AND m."organizationId" = r."organizationId" AND m."userId" = ${viewerId} AND m."isActive"
+      ))`,
+    },
   },
 };
 
@@ -101,21 +147,4 @@ export function taskKeyOf(type: string, kind: TaskKeyKind): string | null {
 /** Every task key of this kind, for a refusal that names no type. */
 export function taskKeysOf(kind: TaskKeyKind): string[] {
   return Object.values(TASK_RECORD_TYPES).map((t) => t.keys[kind]);
-}
-
-/**
- * May this permission set create tasks at all, or on this type? For New task's
- * own reads (the SLA preview, Draft with AI), which name no record or one. 403
- * naming the key(s), before anything is read.
- */
-export function assertMayCreateTasks(permissions: readonly string[], sourceType?: string | null): void {
-  if (sourceType) {
-    if (!holdsTaskKey(permissions, sourceType, 'CREATE')) {
-      throw new ForbiddenException(`Required permission: ${taskKeyOf(sourceType, 'CREATE') ?? 'Create tasks'}`);
-    }
-    return;
-  }
-  if (typesHolding(permissions, 'CREATE').length === 0) {
-    throw new ForbiddenException(`Required permission: ${taskKeysOf('CREATE').join(' or ')}`);
-  }
 }

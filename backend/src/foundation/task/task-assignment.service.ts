@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { COMMITTEES_PERMISSIONS, WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
-import { holdsTaskKey, taskKeysOf, typesHolding } from './task-record-types';
+import { holdsTaskKey, taskKeysOf } from './task-record-types';
+import { mayCreateTasks } from './task-record-choices';
 import { LookupService } from '../lookup/lookup.service';
 import { AssignTargetDto } from './dto/assign-target.dto';
 import {
@@ -64,7 +65,10 @@ export class TaskAssignmentService {
 
   async assertMayAssign(viewer: AssignmentViewer, organizationId: string, taskId?: string): Promise<void> {
     // ACC-244 — Create tasks on any record type replaces the flat tasks:create.
-    if (typesHolding(viewer.permissions, 'CREATE').length > 0) return;
+    // ACC-280 — the rule create.types is built from (mayCreateTasks()): the key, and
+    // the type open to the caller, as a viewer or as an active member of a committee
+    // that takes tasks (decision 2). The key alone is not enough.
+    if (await mayCreateTasks(this.prisma, viewer, organizationId)) return;
     if (!taskId && viewer.permissions.includes(WORKFLOWS_PERMISSIONS.MANAGE)) return;
     if (!taskId) {
       throw new ForbiddenException(`Required permission: ${taskKeysOf('CREATE').join(' or ')}`);

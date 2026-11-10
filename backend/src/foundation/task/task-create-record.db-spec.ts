@@ -37,6 +37,7 @@ describe('POST /tasks checks the record first, on a real database (ACC-244)', ()
   const create = jest.fn();
   const createForViewer = TaskService.prototype.createForViewer.bind({
     objectVisibility: new ObjectVisibilityService(prisma),
+    prisma,
     create,
   }) as (dto: CreateTaskDto, organizationId: string, viewer: TaskViewer) => Promise<unknown>;
 

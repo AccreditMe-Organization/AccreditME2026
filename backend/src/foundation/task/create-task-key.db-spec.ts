@@ -51,7 +51,7 @@ describe('POST /tasks needs Create tasks, and the panel agrees, on a real databa
   const prisma = new PrismaService();
   const visibility = new ObjectVisibilityService(prisma);
   const create = jest.fn();
-  const createForViewer = TaskService.prototype.createForViewer.bind({ objectVisibility: visibility, create }) as (
+  const createForViewer = TaskService.prototype.createForViewer.bind({ objectVisibility: visibility, prisma, create }) as (
     dto: CreateTaskDto,
     organizationId: string,
     viewer: TaskViewer,

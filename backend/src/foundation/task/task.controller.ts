@@ -20,6 +20,8 @@ import { CurrentTenant } from '../../common/decorators/current-tenant.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { TaskService } from './task.service';
+import { RecordChoicesQueryDto } from './dto/record-choices-query.dto';
+import { TaskRecordChoicesPage } from './task-record-choices';
 import { AssignmentViewer, TaskAssignmentService } from './task-assignment.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
@@ -146,9 +148,10 @@ export class TaskController {
   @Get('sla-preview')
   getSlaPreview(
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
   ): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
-    return this.taskService.slaPreview(tenantId, permissions);
+    return this.taskService.slaPreview(tenantId, viewer(userId, permissions));
   }
 
   // ACC-197 — "Draft with AI" on New task. Both are gated like creating a
@@ -160,9 +163,10 @@ export class TaskController {
   @Get('draft/availability')
   getDraftAvailability(
     @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
   ): Promise<ITaskDraftAvailability> {
-    return this.drafts.availability(tenantId, permissions);
+    return this.drafts.availability(tenantId, viewer(userId, permissions));
   }
 
   // A draft is returned and NOT stored: a task exists only when the person
@@ -318,6 +322,20 @@ export class TaskController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<ITaskViews> {
     return this.recordList.views(tenantId, viewer(userId, permissions));
+  }
+
+  // ACC-280 — New task's record picker: the records of one type the caller may open
+  // and create tasks on, that take new tasks. No @Permissions, like views: a type
+  // without the caller's Create tasks key has an empty page. Paged on the server, at
+  // most 50 a page. Static, so declared before ':id'.
+  @Get('record-choices')
+  getRecordChoices(
+    @Query() query: RecordChoicesQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<TaskRecordChoicesPage> {
+    return this.recordList.recordChoices(query, tenantId, viewer(userId, permissions));
   }
 
   @Get('record-list')

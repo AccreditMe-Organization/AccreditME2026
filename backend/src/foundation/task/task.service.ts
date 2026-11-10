@@ -17,7 +17,8 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
-import { assertHoldsCreateKey, assertMayCreateTasks, holdsTaskKey } from './task-record-types';
+import { assertHoldsCreateKey, holdsTaskKey } from './task-record-types';
+import { assertMayCreateTasks, assertRecordAcceptsTasks } from './task-record-choices';
 import { CreateTaskDto, type CreateTaskInternal } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { RejectTaskDto } from './dto/reject-task.dto';
@@ -219,6 +220,10 @@ export class TaskService {
   async createForViewer(dto: CreateTaskDto, organizationId: string, viewer: TaskViewer): Promise<ITask> {
     assertHoldsCreateKey(viewer.permissions, dto.sourceType);
     await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id);
+    // ACC-280 decision 7 — the record picker's own rule: an inactive or dissolved
+    // committee takes no new tasks (409 TASK_RECORD_CLOSED). After the record check,
+    // so a record the caller may not see keeps its 403/404.
+    await assertRecordAcceptsTasks(this.prisma, dto.sourceType, dto.sourceId, organizationId);
     return this.create(dto, organizationId, viewer.id);
   }
 
@@ -1169,8 +1174,9 @@ export class TaskService {
    * and the limit, counted from now. Gated by tasks:create at the route.
    */
   // ACC-244 — gated like New task: Create tasks on at least one record type.
-  slaPreview(organizationId: string, permissions: readonly string[]): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
-    assertMayCreateTasks(permissions);
+  // ACC-280 — assertMayCreateTasks(): the rule create.types is built from.
+  async slaPreview(organizationId: string, viewer: TaskViewer): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
+    await assertMayCreateTasks(this.prisma, viewer, organizationId);
     return this.sla.preview(new Date(), organizationId);
   }
 
