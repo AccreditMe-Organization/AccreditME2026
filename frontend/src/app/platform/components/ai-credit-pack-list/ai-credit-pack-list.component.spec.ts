@@ -87,7 +87,7 @@ describe('AiCreditPackListComponent (ACC-120)', () => {
     const el = render();
     expect(cells(el, 'pack-name')).toEqual(['Small', 'Medium', 'Large']);
     expect(cells(el, 'pack-credits')).toEqual(['500', '1,500', '5,000']);
-    expect(cells(el, 'pack-price')).toEqual(['49.9', '140', '450']);
+    expect(cells(el, 'pack-price')).toEqual(['49.90', '140', '450']);
     const sorted = el.querySelector('am-sort-header[aria-sort]');
     expect(sorted?.getAttribute('aria-sort')).toBe('ascending');
     expect(sorted?.textContent).toContain('Credits');

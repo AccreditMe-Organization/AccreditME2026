@@ -8,7 +8,7 @@ import { PlanService, IPlan } from '../../services/plan.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../core/services/language.service';
-import { AmNumberPipe } from '../../../core/formatting';
+import { AmMoneyPipe, AmNumberPipe } from '../../../core/formatting';
 import { DataListColumn, DataListComponent } from '../../../shared/components/data-list/data-list.component';
 import { DataListSource, clientSideSource } from '../../../shared/components/data-list/data-list.source';
 import { SortHeaderComponent } from '../../../shared/components/sort-header/sort-header.component';
@@ -32,13 +32,14 @@ function seatsOf(value: number | null): number {
  * Org positions does. A platform has a handful of plans.
  *
  * Opens sorted by monthly price, lowest first: the order a plan ladder reads.
- * Prices are the stored decimals through the formatting layer; the plan holds
- * no currency, so none is shown. Edit is the row's one action.
+ * Prices are the stored decimals through the formatting layer's `amMoney`
+ * (whole, or exactly two decimals); the plan holds no currency, so none is
+ * shown. Edit is the row's one action.
  */
 @Component({
   selector: 'app-plan-list',
   standalone: true,
-  imports: [PageHeaderComponent, RouterLink, TranslatePipe, ButtonModule, TagModule, AmNumberPipe, DataListComponent, SortHeaderComponent],
+  imports: [PageHeaderComponent, RouterLink, TranslatePipe, ButtonModule, TagModule, AmNumberPipe, AmMoneyPipe, DataListComponent, SortHeaderComponent],
   template: `
     <div class="flex h-full flex-col gap-4">
       <app-page-header [title]="'platform.plans' | translate">
@@ -97,10 +98,10 @@ function seatsOf(value: number | null): number {
               </span>
             }
             @if (v('monthlyPrice')) {
-              <span class="min-w-0 truncate tabular-nums" data-testid="plan-monthly-price">{{ priceOf(plan.monthlyPrice) | amNumber }}</span>
+              <span class="min-w-0 truncate tabular-nums" data-testid="plan-monthly-price">{{ priceOf(plan.monthlyPrice) | amMoney }}</span>
             }
             @if (v('annualPrice')) {
-              <span class="min-w-0 truncate tabular-nums" data-testid="plan-annual-price">{{ priceOf(plan.annualPrice) | amNumber }}</span>
+              <span class="min-w-0 truncate tabular-nums" data-testid="plan-annual-price">{{ priceOf(plan.annualPrice) | amMoney }}</span>
             }
             @if (v('aiCredits')) {
               <span class="min-w-0 truncate tabular-nums" data-testid="plan-ai-credits">{{ plan.aiCreditsPerMonth | amNumber }}</span>

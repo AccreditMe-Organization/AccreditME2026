@@ -8571,13 +8571,15 @@ date, a time span, a number or a count into text.
 * `FormatService` — by meaning, never by format string:
   `date` "15 Sep 2026", `dateTime` "15 Sep 2026, 14:05" (24-hour),
   `relative` "3 days ago" / "قبل 3 أيام", `duration` "5 hours" / "5 ساعات",
-  `elapsed(from, to)`, `number`, `count(key, n, params)`, and `zoneLabel()`
+  `elapsed(from, to)`, `number`, `money` (ACC-120: a price, whole "4,800" or
+  exactly two decimals "4,800.50", never "4,800.5"; no currency),
+  `count(key, n, params)`, and `zoneLabel()`
   "Asia/Riyadh (GMT+3)". Every method reads the context signals, so it
   re-evaluates inside a `computed()` (the ACC-55 concern is met by
   construction, and is specced). Arabic formats as `ar-SA`, whose default digits
   are Arabic-Indic, so the Latin pin is load-bearing and a spec fails without it.
 * Pipes, impure: `amDate`, `amDateTime`, `amRelative`, `amDuration`,
-  `amNumber`, `amCount`. They read the context signals on every call — the
+  `amNumber`, `amMoney`, `amCount`. They read the context signals on every call — the
   memo reads them before reusing text — which is what keeps an OnPush view
   current on a language switch. A memo that skipped the read would silently
   unsubscribe the view; `format.pipes.spec.ts` proves it with an OnPush host.
@@ -9804,7 +9806,8 @@ joined, each read whole and sliced in memory with `clientSideSource()`, as
   should page on the server once tenants reach the low hundreds.*
 - *`plan-list`: searches the English and Arabic name; opens sorted by monthly
   price, lowest first; Edit is the row's one action. Prices are the stored
-  decimals through `amNumber` (a plan holds no currency).*
+  decimals through `amMoney` (whole, or exactly two decimals; a plan holds no
+  currency).*
 - *`ai-credit-pack-list`: searches the name; opens sorted by credits, fewest
   first; no row action (there is no edit endpoint).*
 - *`ai-feature-cost-list`: searches the feature key; opens sorted by it, A to

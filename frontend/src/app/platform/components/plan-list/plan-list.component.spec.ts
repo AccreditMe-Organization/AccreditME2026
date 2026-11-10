@@ -125,9 +125,14 @@ describe('PlanListComponent — the shared list (ACC-120)', () => {
     expect(sorted?.textContent).toContain('Monthly Price');
   }));
 
-  it('shows prices through the formatting layer', fakeAsync(() => {
+  it('shows prices through amMoney: whole, or exactly two decimals', fakeAsync(() => {
     const el = render(PLANS);
-    expect(cells(el, 'plan-monthly-price')).toEqual(['300', '1,200', '4,800.5']);
+    expect(cells(el, 'plan-monthly-price')).toEqual(['300', '1,200', '4,800.50']);
+  }));
+
+  it('in Arabic, prices keep two decimals and Latin digits', fakeAsync(() => {
+    const el = render(PLANS, 'ar');
+    expect(cells(el, 'plan-monthly-price')).toEqual(['300', '1,200', '4,800.50']);
   }));
 
   it('searches the English and the Arabic name', fakeAsync(() => {

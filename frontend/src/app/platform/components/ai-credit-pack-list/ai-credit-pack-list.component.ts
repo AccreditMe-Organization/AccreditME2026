@@ -18,7 +18,7 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
 import { EditDialogComponent } from '../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../shared/components/field/field.component';
 import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
-import { AmNumberPipe } from '../../../core/formatting';
+import { AmMoneyPipe, AmNumberPipe } from '../../../core/formatting';
 import { NavigationAccessService } from '../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../core/services/language.service';
 import { DataListColumn, DataListComponent } from '../../../shared/components/data-list/data-list.component';
@@ -58,6 +58,7 @@ function priceOf(value: string): number | null {
     EditDialogComponent,
     FieldComponent,
     AmNumberPipe,
+    AmMoneyPipe,
     DataListComponent,
     SortHeaderComponent,
   ],
@@ -114,7 +115,7 @@ function priceOf(value: string): number | null {
               <span class="min-w-0 truncate tabular-nums" data-testid="pack-credits">{{ pack.credits | amNumber }}</span>
             }
             @if (v('price')) {
-              <span class="min-w-0 truncate tabular-nums" data-testid="pack-price">{{ priceOf(pack.price) | amNumber }}</span>
+              <span class="min-w-0 truncate tabular-nums" data-testid="pack-price">{{ priceOf(pack.price) | amMoney }}</span>
             }
           </div>
         </ng-template>
