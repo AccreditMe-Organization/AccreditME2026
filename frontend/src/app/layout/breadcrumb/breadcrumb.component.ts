@@ -35,7 +35,8 @@ export interface BreadcrumbItem {
 //   below a section    root / group / section (link)         (a committee)
 //
 //   root   the tenant's own name, or "Platform" on the platform shell
-//   group  the rail group — plain text, since a group is not a page
+//   group  the rail group — plain text, since a group is not a page; except a
+//          group with its own page (ACC-292: Administration links to /admin)
 //
 // The reference shows record pages as ".../ Committees / QMC-014", with the
 // record's human-readable ID as the last crumb and its name in the H1. No record
@@ -174,7 +175,9 @@ export class BreadcrumbComponent {
     // The platform shell has one group, labelled "Platform" — the same word as
     // its root. Repeating it would read "Platform / Platform".
     if (location.group.key !== 'platform') {
-      trail.push({ labelKey: location.group.labelKey, url: null });
+      // ACC-292 — a group with its own page links to it (Administration to the
+      // console); the nav model says which, never route data.
+      trail.push({ labelKey: location.group.labelKey, url: location.group.route ?? null });
     }
 
     if (!location.isSectionPage) {

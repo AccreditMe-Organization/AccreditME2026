@@ -36,6 +36,8 @@ const routes: Routes = [
     component: StubShellComponent,
     children: [
       { path: 'home', component: StubLeafComponent },
+      { path: 'admin', component: StubLeafComponent },
+      { path: 'admin-settings/task-sla', component: StubLeafComponent },
       { path: 'committees', loadChildren: lazy },
       { path: 'users', loadChildren: lazy },
       {
@@ -123,9 +125,30 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
     const { crumb } = await trailAt('/users');
     expect(crumb.items()).toEqual([
       { text: TENANT, url: '/home' },
-      { labelKey: 'nav.groups.admin', url: null },
+      { labelKey: 'nav.groups.admin', url: '/admin' },
     ]);
     expect(crumb.items().some((i) => i.labelKey === 'nav.users')).toBe(false);
+  });
+
+  // ACC-292 — the Administration crumb is the console's link, from the nav model
+  // (the admin group's route), on every admin page.
+  it('links Administration to the console on an admin page (Task SLA)', async () => {
+    configure({ permissions: [ADMIN_ACCESS, 'tenant:manage_config'] });
+    const { harness, crumb } = await trailAt('/admin-settings/task-sla');
+    expect(crumb.items()).toEqual([
+      { text: TENANT, url: '/home' },
+      { labelKey: 'nav.groups.admin', url: '/admin' },
+    ]);
+    const link = (harness.fixture.nativeElement as HTMLElement).querySelector('app-breadcrumb a[href="/admin"]');
+    expect(link?.textContent?.trim()).toBe('nav.groups.admin');
+  });
+
+  // ACC-292 — on the console itself there is no parent crumb: the H1 owns the
+  // name, and a crumb to /admin would link to the page already open.
+  it('shows no Administration crumb on the console itself', async () => {
+    configure({ permissions: [ADMIN_ACCESS, 'users:view'] });
+    const { crumb } = await trailAt('/admin');
+    expect(crumb.items()).toEqual([{ text: TENANT, url: '/home' }]);
   });
 
   it('ignores the query string, so a filtered list keeps the same trail', async () => {
@@ -215,7 +238,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
       const { crumb } = await trailAt('/organization/units/pharm');
       expect(crumb.items()).toEqual([
         { text: TENANT, url: '/home' },
-        { labelKey: 'nav.groups.admin', url: null },
+        { labelKey: 'nav.groups.admin', url: '/admin' },
         { labelKey: 'nav.organization', url: '/organization' },
         { text: 'Al Nakheel Hospital', url: '/organization/units/root' },
         { text: 'Medical Services', url: '/organization/units/med' },
@@ -231,7 +254,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
       const { crumb } = await trailAt('/organization/units/root');
       expect(crumb.items()).toEqual([
         { text: TENANT, url: '/home' },
-        { labelKey: 'nav.groups.admin', url: null },
+        { labelKey: 'nav.groups.admin', url: '/admin' },
         { labelKey: 'nav.organization', url: '/organization' },
       ]);
     });
@@ -272,7 +295,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
     configure({ permissions: [ADMIN_ACCESS, 'users:view'], tenantName: '' });
     const { harness, crumb } = await trailAt('/users');
     expect(crumb.items()).toEqual([
-      { labelKey: 'nav.groups.admin', url: null },
+      { labelKey: 'nav.groups.admin', url: '/admin' },
     ]);
 
     tenantName.set(TENANT);

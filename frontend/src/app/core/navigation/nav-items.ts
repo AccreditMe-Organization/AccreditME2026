@@ -36,8 +36,35 @@
 // permission, and a group renders when at least one of its items does.
 
 import { ADMIN_ACCESS } from './admin-access';
+import type { PluralKey } from '../formatting/plural-key';
 
 export type NavGroupKey = 'work' | 'quality' | 'admin' | 'platform';
+
+// ACC-292 — the Administration console's groups, in the order the console
+// shows them (frontend/design-reference/AccreditMe Administration.dc.html).
+export type AdminConsoleGroupKey = 'people' | 'organisation' | 'work' | 'connections';
+
+export const ADMIN_CONSOLE_GROUPS: readonly { key: AdminConsoleGroupKey; labelKey: string }[] = [
+  { key: 'people', labelKey: 'adminConsole.groups.people' },
+  { key: 'organisation', labelKey: 'adminConsole.groups.organisation' },
+  { key: 'work', labelKey: 'adminConsole.groups.work' },
+  { key: 'connections', labelKey: 'adminConsole.groups.connections' },
+];
+
+/**
+ * ACC-292 — an Administration item's card on the console (/admin). The card's
+ * NAME is the item's own labelKey; this adds only what the rail never needed:
+ * which console group it sits in, the line under its name, and a few words a
+ * person might type for it ("smtp" for Email Provider). The console reads the
+ * nav model, so a card cannot exist for a page the rail and the guard do not
+ * know, and cannot show to someone the item is hidden from.
+ */
+export interface AdminConsoleCard {
+  group: AdminConsoleGroupKey;
+  lineKey: string;
+  /** Lower case. Matched whatever the language, never shown. */
+  synonyms?: readonly string[];
+}
 
 export interface NavItem {
   // Stable identity for tracking and tests. Never shown.
@@ -89,6 +116,15 @@ export interface NavItem {
   // comes from requiredPermission below, and /org sends an administrator to
   // /organization by its own guard.
   hiddenWithPermission?: string;
+  // ACC-292 — the item's card on the Administration console. Present on every
+  // Administration item except Setup health, which the console reaches through
+  // its strip and the rail through its badge.
+  console?: AdminConsoleCard;
+  // ACC-292 — the whole collapsed-rail label when the item carries a badge: a
+  // counted string read with the badge's count ("Administration · 3 open
+  // problems"). Without it the label is the item's name, a dash and the
+  // badge's sentence.
+  collapsedLabelKey?: PluralKey;
 }
 
 export interface NavGroup {
@@ -106,6 +142,10 @@ export interface NavGroup {
   // questions is the fix: the item permission still says what the PAGE reads,
   // and this says whether the person administers at all. Both must pass.
   requiredPermission?: string;
+  // ACC-292 — the group's own page. Present only on Administration (/admin, the
+  // console): the rail draws the group as ONE item to it, and the breadcrumb's
+  // group crumb links to it. A group without one is plain text in the trail.
+  route?: string;
   items: readonly NavItem[];
 }
 
@@ -195,10 +235,18 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
     // tenant granted it one — the "each item still requires its own page
     // permission as well" half of the decision.
     requiredPermission: ADMIN_ACCESS,
+    // ACC-292 — the rail draws this group as ONE item, Administration, to the
+    // console at /admin (railNavGroups() below). The items stay here: they are
+    // still what permissionGuard, the breadcrumb and the tab title read, and
+    // now the console's cards too. They are simply not rail rows any more.
+    route: '/admin',
+    // In the console's order: its four groups, then each group's cards. ACC-79
+    // ordered these for a flat rail list; the console's groups do that work now.
     items: [
-      // ACC-82 — first, as in the reference: it is the one Administration item
-      // that is about what is wrong NOW rather than a screen to configure. Its
-      // badge counts open conditions (SYSTEM-REFERENCE §13.9).
+      // ACC-82 — the one Administration item about what is wrong NOW rather
+      // than a screen to configure. Its badge counts open conditions
+      // (SYSTEM-REFERENCE §13.9); since ACC-292 the rail's Administration item
+      // carries it, and the console's strip links to the page. No card.
       {
         key: 'setupHealth',
         labelKey: 'nav.setupHealth',
@@ -213,6 +261,7 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-users',
         route: '/users',
         requiredPermission: 'users:view',
+        console: { group: 'people', lineKey: 'adminConsole.lines.users', synonyms: ['invite', 'people'] },
       },
       {
         key: 'roles',
@@ -220,13 +269,7 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-shield',
         route: '/roles',
         requiredPermission: 'roles:view',
-      },
-      {
-        key: 'orgPositions',
-        labelKey: 'nav.orgPositions',
-        icon: 'pi pi-briefcase',
-        route: '/org-positions',
-        requiredPermission: 'positions:view',
+        console: { group: 'people', lineKey: 'adminConsole.lines.roles', synonyms: ['permission', 'permissions'] },
       },
       {
         key: 'organization',
@@ -234,6 +277,28 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-building',
         route: '/organization',
         requiredPermission: 'org:view',
+        console: { group: 'organisation', lineKey: 'adminConsole.lines.organization', synonyms: ['department', 'unit'] },
+      },
+      {
+        key: 'orgPositions',
+        labelKey: 'nav.orgPositions',
+        icon: 'pi pi-briefcase',
+        route: '/org-positions',
+        requiredPermission: 'positions:view',
+        console: { group: 'organisation', lineKey: 'adminConsole.lines.orgPositions', synonyms: ['job title'] },
+      },
+      // tenant:view, not manage_config — the page reads GET /tenant. Its save
+      // is PATCH /tenant, which needs tenant:update, so a custom role holding
+      // only tenant:view sees a form whose save is refused. Pre-existing, and
+      // unreachable with the seeded roles: only TENANT_ADMIN holds any tenant:*
+      // permission.
+      {
+        key: 'organizationProfile',
+        labelKey: 'nav.organizationProfile',
+        icon: 'pi pi-id-card',
+        route: '/admin-settings/organization-profile',
+        requiredPermission: 'tenant:view',
+        console: { group: 'organisation', lineKey: 'adminConsole.lines.organizationProfile', synonyms: ['logo'] },
       },
       {
         key: 'workflows',
@@ -247,13 +312,7 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         // health still read through the API). The guard reads this, so
         // /workflows and every page under it follow.
         requiredPermission: 'workflows:manage',
-      },
-      {
-        key: 'lookups',
-        labelKey: 'nav.lookups',
-        icon: 'pi pi-list',
-        route: '/lookups',
-        requiredPermission: 'lookups:view',
+        console: { group: 'work', lineKey: 'adminConsole.lines.workflows', synonyms: ['approval'] },
       },
       {
         key: 'workingCalendar',
@@ -261,19 +320,16 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-calendar',
         route: '/working-calendar',
         requiredPermission: 'org:view',
+        console: { group: 'work', lineKey: 'adminConsole.lines.workingCalendar', synonyms: ['holiday', 'working hours'] },
       },
       // ── ACC-79: the four screens the Admin Settings hub used to front. ──
       //
       // The hub was a page of cards duplicating the rail — seven of its cards
-      // pointed at screens already listed above, with their permissions copied
-      // by hand — plus four screens that lived nowhere else. Those four now sit
-      // here and the hub is gone. Its URLs are kept (/admin-settings/...), so
-      // nothing that links to them moves.
-      //
-      // Twelve items is long for a flat list. Merging screens was considered and
-      // rejected: none of the four genuinely belong together (the reasoning is
-      // on each). The order does the work instead — people, structure, time,
-      // then the tenant's own settings.
+      // pointed at screens already listed here, with their permissions copied
+      // by hand — plus four screens that lived nowhere else. Those four became
+      // items and the hub went. Its URLs are kept (/admin-settings/...), so
+      // nothing that links to them moves. ACC-292's console is not that hub
+      // back: it READS these items, so there is no second list to drift.
       //
       // Task SLA sits beside Working calendar: SLA hours are counted through
       // the calendar, and TaskService reads this config for real.
@@ -283,18 +339,15 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-clock',
         route: '/admin-settings/task-sla',
         requiredPermission: 'tenant:manage_config',
+        console: { group: 'work', lineKey: 'adminConsole.lines.taskSla', synonyms: ['sla', 'escalation'] },
       },
-      // tenant:view, not manage_config — the page reads GET /tenant. Its save
-      // is PATCH /tenant, which needs tenant:update, so a custom role holding
-      // only tenant:view sees a form whose save is refused. Pre-existing, and
-      // unreachable with the seeded roles: only TENANT_ADMIN holds any tenant:*
-      // permission.
       {
-        key: 'organizationProfile',
-        labelKey: 'nav.organizationProfile',
-        icon: 'pi pi-id-card',
-        route: '/admin-settings/organization-profile',
-        requiredPermission: 'tenant:view',
+        key: 'lookups',
+        labelKey: 'nav.lookups',
+        icon: 'pi pi-list',
+        route: '/lookups',
+        requiredPermission: 'lookups:view',
+        console: { group: 'work', lineKey: 'adminConsole.lines.lookups', synonyms: ['dropdown'] },
       },
       // NOT ACTIVE YET, and the page says so (ACC-181 D1). It stores a tenant's
       // own provider in Organization.emailConfig — typed per provider, secrets
@@ -307,6 +360,8 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-envelope',
         route: '/admin-settings/email-provider',
         requiredPermission: 'tenant:manage_config',
+        // The design's own example: "smtp" finds Email Provider (its Q5).
+        console: { group: 'connections', lineKey: 'adminConsole.lines.emailProvider', synonyms: ['smtp', 'mail', 'exchange'] },
       },
       // Labelled "AI credits", not "AI settings": the page is a credit balance
       // and an overage toggle. It holds NO provider configuration — provider
@@ -319,6 +374,7 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-microchip-ai',
         route: '/admin-settings/ai-settings',
         requiredPermission: 'tenant:manage_config',
+        console: { group: 'connections', lineKey: 'adminConsole.lines.aiCredits' },
       },
       // ACC-260 — File storage: where the organisation's files are kept, and
       // the state of that location. Until a location is confirmed, uploads are
@@ -329,6 +385,7 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-database',
         route: '/admin-settings/storage',
         requiredPermission: 'tenant:manage_config',
+        console: { group: 'connections', lineKey: 'adminConsole.lines.fileStorage', synonyms: ['sharepoint', 'minio', 'upload'] },
       },
       // ACC-260 PR D — the Recycle bin: files deleted from any record wait here
       // 30 days before the daily job purges them. The API it reads needs
@@ -339,6 +396,7 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-trash',
         route: '/admin-settings/recycle-bin',
         requiredPermission: 'tenant:manage_config',
+        console: { group: 'connections', lineKey: 'adminConsole.lines.recycleBin', synonyms: ['trash', 'deleted', 'restore'] },
       },
     ],
   },
@@ -463,6 +521,57 @@ export function visibleNavGroups(access: NavAccess): NavGroup[] {
 }
 
 /**
+ * ACC-292 — whether this user may open the Administration console: the
+ * Administration group would show, i.e. admin:access AND at least one admin
+ * item visible. ONE rule, read by the rail's item and by /admin's guard, so the
+ * link and the route cannot disagree. Never for a platform admin (the platform
+ * shell has no such group).
+ */
+export function canOpenAdminConsole(access: NavAccess): boolean {
+  return visibleNavGroups(access).some((group) => group.key === 'admin');
+}
+
+/** ACC-292 — the Administration items this user may see that have a console card. */
+export function visibleAdminConsoleItems(access: NavAccess): NavItem[] {
+  const admin = visibleNavGroups(access).find((group) => group.key === 'admin');
+  return (admin?.items ?? []).filter((item) => !!item.console);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * ACC-292 — the rail: visibleNavGroups(), with a group that has its own page
+ * (Administration) drawn as ONE item to it. The item:
+ *   - is labelled with the group's name and opens the group's page;
+ *   - is lit on that page AND on every one of the group's routes, and below
+ *     them (alsoActiveFor), so a person always knows which part they are in;
+ *   - carries a badge only when one of the group's VISIBLE items has one
+ *     (Setup health's, for a setup:view holder), so the poll that feeds it
+ *     starts exactly when it did before.
+ * The breadcrumb and the tab title keep reading visibleNavGroups(), where the
+ * items are still themselves.
+ */
+export function railNavGroups(access: NavAccess): NavGroup[] {
+  return visibleNavGroups(access).map((group) => {
+    if (!group.route) return group;
+    const source = TENANT_NAV_GROUPS.find((g) => g.key === group.key);
+    const routes = (source?.items ?? group.items).map((item) => escapeRegExp(item.route));
+    const badge = group.items.find((item) => item.badge)?.badge;
+    const item: NavItem = {
+      key: `${group.key}Console`,
+      labelKey: group.labelKey,
+      icon: 'pi pi-cog',
+      route: group.route,
+      alsoActiveFor: new RegExp(`^(?:${routes.join('|')})(?:/|$)`),
+      ...(badge ? { badge, collapsedLabelKey: 'shell.adminOpenProblems' } : {}),
+    };
+    return { ...group, items: [item] };
+  });
+}
+
+/**
  * ACC-272 — "A user's permissions" (/roles/user-permissions[/:userId]): who
  * may open it, and who sees its two ways in (the Roles list header button and
  * the user record's "See permissions"). ONE list, read by the route map below
@@ -482,8 +591,13 @@ export const USER_PERMISSIONS_LOOKUP: readonly string[] = [ADMIN_ACCESS, 'roles:
 // ACC-272 — roles/user-permissions, a child of Roles with a stricter list than
 // Roles' own; the :userId child walks up to it. Both routes carry their own
 // canActivate (roles.routes.ts), which is what makes the guard read this entry.
+//
+// ACC-292 — admin, the Administration console. admin:access is its floor; its
+// own guard (adminConsoleGuard) asks the whole rule, canOpenAdminConsole(), and
+// the route-guard invariant pins that the route runs it.
 export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ['roles/user-permissions', USER_PERMISSIONS_LOOKUP],
+  ['admin', [ADMIN_ACCESS]],
 ]);
 
 // Route path -> the permissions required to open it, ALL of which must be held.

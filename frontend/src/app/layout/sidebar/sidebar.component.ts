@@ -18,7 +18,7 @@ import {
   NavItem,
   PLATFORM_NAV_GROUPS,
   TENANT_NAV_GROUPS,
-  visibleNavGroups,
+  railNavGroups,
 } from '../../core/navigation/nav-items';
 import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
 import { injectNavAccess } from '../../core/navigation/nav-access';
@@ -310,7 +310,10 @@ export class SidebarComponent {
   // loads — including the same-tab logout→login case, where loadAccess() is
   // re-run from AppShellComponent without a page reload — and when committee
   // membership turns known (ACC-281).
-  readonly groups = computed<NavGroup[]>(() => visibleNavGroups(this.navAccess));
+  //
+  // ACC-292 — railNavGroups(): the Administration group is ONE item, to the
+  // console at /admin, carrying Setup health's badge for a setup:view holder.
+  readonly groups = computed<NavGroup[]>(() => railNavGroups(this.navAccess));
 
   private readonly setupHealthService = inject(SetupHealthService);
   // ACC-120 — the Tasks badge. The shell loads these counts after sign-in
@@ -321,7 +324,9 @@ export class SidebarComponent {
 
   // ACC-82 — polls the Setup health counts only while the item is on the rail,
   // i.e. only for a user holding setup:view, so the rail never requests an
-  // endpoint that would refuse the user. Conditions are reconciled hourly, so a
+  // endpoint that would refuse the user. ACC-292 — the badge rides on the
+  // Administration item now, which carries it only for that same user, so the
+  // poll starts and stops exactly as before. Conditions are reconciled hourly, so a
   // five-minute poll is ample; opening the page refreshes the count at once.
   private readonly showsSetupHealth = computed(() =>
     this.groups().some((g) => g.items.some((i) => i.badge === 'setupHealth')),
@@ -394,7 +399,10 @@ export class SidebarComponent {
   collapsedLabel(item: NavItem): string {
     const label = this.translate.instant(item.labelKey);
     const badge = this.badgeFor(item);
-    return badge ? `${label} — ${badge.sentence}` : label;
+    if (!badge) return label;
+    // ACC-292 — "Administration · 3 open problems": one counted sentence.
+    if (item.collapsedLabelKey) return this.format.count(item.collapsedLabelKey, badge.count);
+    return `${label} — ${badge.sentence}`;
   }
 
   // ACC-79 — the platform palette (tokens.scss, .am-rail--platform). Derived

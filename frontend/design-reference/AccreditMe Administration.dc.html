@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AccreditMe Administration</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 10 Nov 2026 · Administration console and Calendar availability · round 1 · on App Shell, Settings template, Storage Settings (SharePoint, as built), Meeting Screens round 5</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Administration</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 104ch; text-wrap: pretty;">The sidebar's Administration group becomes one item that opens a console of every admin page, grouped and searchable; each page keeps its address, permission and look. Then the new Calendar availability page, which lets the Meetings clash warning see when invitees are busy in Outlook. English and Arabic, desktop 1130 and phone 390. Example: Al Nakheel Specialist Hospital, tenant alnakheel.example.test. Card descriptions and every string the product doesn't have yet are drafts, listed in <a href="#q">7</a> for the product owner.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="6">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="5">
+  <section id="{{ sec.id }}" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">{{ sec.n }}</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{{ sec.title }}</h2>
+      <span style="font-size: 12.5px; color: #5A6779; text-wrap: pretty;">{{ sec.sub }}</span>
+    </div>
+    <sc-for list="{{ sec.groups }}" as="grp" hint-placeholder-count="2">
+      <div style="margin-block-end: 18px;">
+        <sc-if value="{{ grp.title }}" hint-placeholder-val="{{ true }}"><h3 style="margin: 0 0 4px; font-size: 15px; font-weight: 600;">{{ grp.title }}</h3></sc-if>
+        <sc-if value="{{ grp.sub }}" hint-placeholder-val="{{ false }}"><div style="font-size: 12px; color: #4A5568; margin-block-end: 8px; max-width: 150ch; text-wrap: pretty;">{{ grp.sub }}</div></sc-if>
+        <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+          <sc-for list="{{ grp.panels }}" as="pn" hint-placeholder-count="2">
+            <div style="{{ pn.outer }}">
+              <div style="{{ pn.capStyle }}">{{ pn.cap }}</div>
+              <div dir="{{ pn.dir }}" style="{{ pn.frame }}">
+                <sc-for list="{{ pn.blocks }}" as="b" hint-placeholder-count="4">
+                  <div style="{{ b.style }}">
+                    <sc-for list="{{ b.cells }}" as="c" hint-placeholder-count="1">
+                      <div style="{{ c.style }}">
+                        <sc-for list="{{ c.segs }}" as="s" hint-placeholder-count="2">
+                          <sc-if value="{{ s.btn }}" hint-placeholder-val="{{ false }}"><button aria-label="{{ s.aria }}" style="{{ s.style }}">{{ s.text }}</button></sc-if>
+                          <sc-if value="{{ s.sw }}" hint-placeholder-val="{{ false }}"><button role="switch" aria-checked="{{ s.on }}" aria-label="{{ s.aria }}" style="{{ s.style }}"><span style="{{ s.knob }}"></span></button></sc-if>
+                          <sc-if value="{{ s.link }}" hint-placeholder-val="{{ false }}"><a href="{{ s.href }}" style="{{ s.style }}">{{ s.text }}</a></sc-if>
+                          <sc-if value="{{ s.span }}" hint-placeholder-val="{{ true }}"><span dir="{{ s.dir }}" style="{{ s.style }}">{{ s.text }}</span></sc-if>
+                          <sc-if value="{{ s.row }}" hint-placeholder-val="{{ false }}"><span style="{{ s.style }}"><sc-for list="{{ s.parts }}" as="q" hint-placeholder-count="2"><sc-if value="{{ q.span }}" hint-placeholder-val="{{ true }}"><span dir="{{ q.dir }}" style="{{ q.style }}">{{ q.text }}</span></sc-if><sc-if value="{{ q.link }}" hint-placeholder-val="{{ false }}"><a href="{{ q.href }}" style="{{ q.style }}">{{ q.text }}</a></sc-if><sc-if value="{{ q.btn }}" hint-placeholder-val="{{ false }}"><button aria-label="{{ q.aria }}" style="{{ q.style }}">{{ q.text }}</button></sc-if><sc-if value="{{ q.sw }}" hint-placeholder-val="{{ false }}"><button role="switch" aria-checked="{{ q.on }}" aria-label="{{ q.aria }}" style="{{ q.style }}"><span style="{{ q.knob }}"></span></button></sc-if><sc-if value="{{ q.row }}" hint-placeholder-val="{{ false }}"><span style="{{ q.style }}"><sc-for list="{{ q.parts }}" as="r" hint-placeholder-count="3"><span dir="{{ r.dir }}" style="{{ r.style }}">{{ r.text }}</span></sc-for></span></sc-if></sc-for></span></sc-if>
+                        </sc-for>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ pn.note }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ pn.note }}</div></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+    <sc-if value="{{ sec.notes }}" hint-placeholder-val="{{ false }}">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 0 18px;">
+          <sc-for list="{{ sec.notes }}" as="n" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </section>
+  </sc-for>
+
+  <section id="q" style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #FEDF89; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">7</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Questions for the product owner, and drafted strings</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Each question has a recommendation; none is decided in the drawing. Then every string drawn here that the product doesn't have yet.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="10">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div>
+          <div style="font-size: 12px; color: #4A5568; padding-block-start: 3px; text-wrap: pretty;">{{ q.why }}</div>
+          <div style="font-size: 12px; color: #4A5568; padding-block-start: 3px; text-wrap: pretty;"><strong style="color: #067647;">Recommendation:</strong> {{ q.rec }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <h3 style="margin: 18px 0 6px; font-size: 16px; font-weight: 600;">Drafted strings · for the product owner</h3>
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow-x: auto;">
+      <div style="display: flex; gap: 12px; padding: 7px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779; min-width: 760px;"><span style="flex: none; width: 150px;">Where</span><span style="flex: 1 1 0; min-width: 0;">English</span><span style="flex: 1 1 0; min-width: 0;">Arabic</span></div>
+      <sc-for list="{{ drafts }}" as="x" hint-placeholder-count="12">
+        <div style="display: flex; gap: 12px; padding: 7px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12.5px; min-width: 760px;"><span style="flex: none; width: 150px; color: #5A6779; font-weight: 600;">{{ x.w }}</span><span style="flex: 1 1 0; min-width: 0; text-wrap: pretty;">{{ x.en }}</span><span dir="rtl" style="flex: 1 1 0; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13.5px; text-wrap: pretty;">{{ x.ar }}</span></div>
+      </sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const iso = (t) => "⁦" + t + "⁩";
+    const AF = " font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const TONE = { info: "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;", warn: "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;", danger: "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;", muted: "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;", ok: "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;", new: "color: #1F5480; background: #fff; border: 1px dashed #2E6FA3;" };
+    const BTN = { primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;", secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;", text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;", danger: "background: #B42318; color: #fff; border: 1px solid #912018; font-weight: 600;", dangerOut: "background: #fff; color: #B42318; border: 1px solid #B42318; font-weight: 600;", off: "background: #DCE5EE; color: #4A5568; border: 1px solid #DCE5EE; font-weight: 600; cursor: not-allowed;", busy: "background: #fff; color: #5A6779; border: 1px solid #CBD5E0; font-weight: 500; cursor: progress;" };
+    const SH = { bg: "oklch(0.27 0.02 258)", rule: "oklch(0.34 0.02 258)", kicker: "oklch(0.7 0.02 255)", navInk: "oklch(0.84 0.012 255)", glyph: "oklch(0.7 0.02 255)", active: "oklch(0.4 0.07 255)", mark: "oklch(0.62 0.13 250)", badgeBg: "oklch(0.36 0.03 258)", badgeInk: "oklch(0.9 0.012 255)", alert: "oklch(0.55 0.16 30)" };
+
+    // ── kit: panels › blocks › cells › segments ──
+    const KIT = (ar) => {
+      const k = ar ? 1 : 0;
+      const w = (e, a) => ar ? a : e;
+      const tx = (sz, o) => { o = o || {}; return "display: " + (o.inl ? "inline" : "block") + "; font-size: " + (sz + k) + "px; line-height: " + (o.lh || Math.round((sz + k) * (ar ? 1.65 : 1.5))) + "px; font-weight: " + (o.w || 400) + "; color: " + (o.c || "#2D3748") + "; text-wrap: pretty;" + (o.x ? " " + o.x : ""); };
+      const base = { span: false, btn: false, link: false, row: false, sw: false, aria: "", dir: "auto", href: "#a1", on: false, knob: "", parts: [] };
+      const S = (text, sz, o) => Object.assign({}, base, { span: true, text, style: tx(sz, o), dir: o && o.ltr ? "ltr" : "auto" });
+      const L = (text, sz, o, href) => Object.assign({}, base, { link: true, text, href: href || "#a1", style: tx(sz, Object.assign({ c: "#2E6FA3", w: 500 }, o || {})) + " text-decoration: none;" });
+      const Bt = (text, kind, x) => Object.assign({}, base, { btn: true, text, aria: text, style: "font-family: inherit; font-size: " + (13 + k) + "px; border-radius: 6px; padding: 7px 13px; white-space: nowrap; cursor: pointer; " + BTN[kind] + (x ? " " + x : "") });
+      const chip = (text, tone, x) => Object.assign({}, base, { span: true, text, style: "display: inline-flex; align-items: center; font-size: " + (11 + k) + "px; font-weight: 600; border-radius: 999px; padding: 1px 8px; white-space: nowrap; " + TONE[tone] + (x ? " " + x : "") });
+      const box = (text, o) => { o = o || {}; return Object.assign({}, base, { span: true, text, dir: o.ltr ? "ltr" : "auto", style: "display: flex; align-items: center; gap: 8px; height: " + (o.h || 36) + "px; box-sizing: border-box; border-radius: 4px; padding: 0 10px; font-size: " + (13 + k) + "px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; unicode-bidi: isolate; text-align: start; " + (o.locked || o.set ? "background: #F4F7FA; border: 1px solid #E2E8F0; font-weight: 500;" : o.err ? "background: #fff; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);" : o.focus ? "background: #fff; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);" : "background: #fff; border: 1px solid #8A94A6;") + " color: " + (o.ph ? "#8A94A6" : "#2D3748") + ";" + (o.secret ? " letter-spacing: 0.12em;" : "") + (o.x ? " " + o.x : "") }); };
+      const RW = (parts, style) => Object.assign({}, base, { row: true, parts, style: style || "display: flex; align-items: center; gap: 8px;" });
+      const SW = (on, aria) => Object.assign({}, base, { sw: true, on, aria, style: "flex: none; position: relative; width: 40px; height: 22px; border-radius: 999px; padding: 0; cursor: pointer; border: 1px solid " + (on ? "#1F5480" : "#8A94A6") + "; background: " + (on ? "#2E6FA3" : "#fff") + ";", knob: "position: absolute; top: 2px; " + (on ? "inset-inline-end: 2px;" : "inset-inline-start: 2px;") + " width: 16px; height: 16px; border-radius: 50%; background: " + (on ? "#fff" : "#8A94A6") + ";" });
+      const C = (segs, style) => ({ segs, style: "min-width: 0;" + (style ? " " + style : "") });
+      const R = (cells, style) => ({ cells, style: style || "" });
+      const P = (segs, style) => R([C(segs)], style || "");
+      return { k, w, tx, S, L, Bt, chip, box, RW, SW, C, R, P };
+    };
+    const PN = (o) => ({ cap: o.cap, note: o.note || null, dir: o.ar ? "rtl" : "ltr",
+      outer: "flex: 0 1 " + (o.w || 420) + "px; min-width: 0;",
+      capStyle: "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;",
+      frame: "width: 100%; max-width: " + (o.w || 420) + "px; box-sizing: border-box; background: " + (o.bg || "#F4F7FA") + "; border: 1px solid " + (o.bd || "#CBD5E0") + "; border-radius: " + (o.r || 8) + "px; overflow: hidden;" + (o.ar ? AF : "") + (o.frame ? " " + o.frame : ""),
+      blocks: o.blocks });
+    const E = KIT(false), A = KIT(true);
+
+    // ── A2 · the sidebar ──
+    const rail = (K, ar, o) => {
+      o = o || {};
+      const open = !o.collapsed;
+      const item = (g, label, on, badge, alert) => K.RW([
+        K.S(g, 13, { c: on ? "oklch(0.93 0.03 250)" : SH.glyph, x: "flex: none; width: 18px; text-align: center;" }),
+      ].concat(open ? [K.S(label, 13, { w: on ? 600 : 400, c: on ? "#fff" : SH.navInk, x: "flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" })] : [])
+       .concat(badge ? [K.S(badge, 10.5, { w: 700, c: alert ? "#fff" : SH.badgeInk, x: "flex: none; min-width: 19px; text-align: center; border-radius: 999px; padding: 0 6px; background: " + (alert ? SH.alert : SH.badgeBg) + ";" + (open ? "" : " position: absolute; top: -4px; inset-inline-end: -2px; min-width: 15px; padding: 0 4px; font-size: 9.5px;") })] : []),
+        "position: relative; display: flex; align-items: center; gap: 10px; padding: 7px 10px; margin-block-end: 1px; border-radius: 6px; background: " + (on ? SH.active : "transparent") + "; justify-content: " + (open ? "flex-start" : "center") + ";");
+      const head = (t) => open ? K.S(t, 10.5, { w: 700, c: SH.kicker, x: "letter-spacing: 0.06em; text-transform: uppercase; padding: 12px 10px 4px;" }) : K.S("", 1, { x: "height: 1px; margin: 10px 6px; background: " + SH.rule + ";" });
+      const segs = [
+        K.RW([K.S("◆", 14, { c: SH.mark, x: "flex: none;" })].concat(open ? [K.S("AccreditMe", 14, { w: 700, c: "#fff" }), K.S(K.w("Tenant admin", "إدارة المنشأة"), 11, { c: SH.kicker, x: "margin-inline-start: auto;" })] : []), "display: flex; align-items: center; gap: 8px; padding: 6px 10px 10px; border-block-end: 1px solid " + SH.rule + "; margin-block-end: 6px;" + (open ? "" : " justify-content: center;")),
+        head(K.w("My work", "عملي")),
+        item("◱", K.w("Home", "الرئيسية"), o.active === "home"), item("✓", K.w("My tasks", "مهامي"), false, "7", true), item("◇", K.w("My committees", "لجاني")), item("◷", K.w("Awaiting my action", "بانتظار إجرائي"), false, "2"),
+        head(K.w("Quality management", "إدارة الجودة")),
+        item("▤", K.w("Standards", "المعايير")), item("▭", K.w("Documents", "الوثائق")), item("◇", K.w("Committees", "اللجان")), item("◷", K.w("Meetings", "الاجتماعات")), item("△", K.w("Incidents", "الحوادث"))
+      ];
+      if (o.admin !== false) {
+        segs.push(head(K.w("Administration", "الإدارة")));
+        segs.push(item("⚙", K.w("Administration", "الإدارة"), o.active === "admin", o.badge === undefined ? "3" : o.badge, true));
+      }
+      if (o.tooltip) segs.push(K.RW([K.S(K.w("Administration · 3 open problems", "الإدارة · " + iso("3") + " مشكلات مفتوحة"), 12, { w: 500, c: "#fff" })], "position: absolute; top: " + (o.tipTop || 446) + "px; inset-inline-start: 60px; z-index: 2; width: max-content; padding: 5px 9px; border-radius: 6px; background: #1A202C; box-shadow: 0 6px 16px rgba(16,24,40,0.25); white-space: nowrap;"));
+      return K.C(segs, "position: relative; flex: none; width: " + (open ? 232 : 56) + "px; box-sizing: border-box; padding: 10px 8px; background: " + SH.bg + "; align-self: stretch;");
+    };
+
+    // ── A3 · the console ──
+    const CARDS = [
+      { g: ["People and access", "الأشخاص والصلاحيات"], items: [
+        ["users", "▣", "Users", "المستخدمون", "Add and invite people, deactivate accounts, and see each person's roles.", "إضافة الأشخاص ودعوتهم، وتعطيل الحسابات، ومعرفة أدوار كل شخص."],
+        ["roles", "◈", "Roles", "الأدوار", "Decide what each role can see and do.", "تحديد ما يراه كل دور وما يفعله."] ] },
+      { g: ["Organisation", "المنشأة"], items: [
+        ["structure", "⑉", "Organization Structure", "الهيكل التنظيمي", "Departments and units, and who heads each.", "الإدارات والوحدات، ومن يرأس كلًّا منها."],
+        ["positions", "⬡", "Org Positions", "المسميات الوظيفية", "Positions, and who holds each one.", "المسميات الوظيفية، ومن يشغل كلًّا منها."],
+        ["profile", "◧", "Organization Profile", "الملف التعريفي للمؤسسة", "Your organisation's name, logo and contact details.", "اسم المنشأة وشعارها وبيانات التواصل."] ] },
+      { g: ["Work and time", "العمل والوقت"], items: [
+        ["workflows", "⇄", "Workflows", "سير العمل", "Stages, moves and who works each stage, per record type.", "المراحل والانتقالات ومن يعمل على كل مرحلة، لكل نوع سجل."],
+        ["calendar", "▢", "Working Calendar", "التقويم الرسمي", "Working days, hours and holidays used for due dates.", "أيام العمل وساعاته والإجازات المعتمدة في مواعيد الاستحقاق."],
+        ["sla", "◔", "Task SLA", "مهلة المهام", "Due times by priority, and when late tasks escalate.", "مواعيد الاستحقاق حسب الأولوية، ومتى تُصعَّد المهام المتأخرة."],
+        ["lookups", "≡", "Lookups", "القوائم المرجعية", "The lists people pick from, such as categories and locations.", "القوائم التي يختار منها الناس، مثل الفئات والمواقع."] ] },
+      { g: ["Connections and data", "الاتصالات والبيانات"], items: [
+        ["email", "✉", "Email Provider", "مزوّد البريد الإلكتروني", "How AccreditMe sends email for your organisation.", "كيف ترسل AccreditMe البريد الإلكتروني باسم منشأتك."],
+        ["ai", "◌", "AI Credits", "أرصدة الذكاء الاصطناعي", "Your AI balance and how it's being used.", "رصيد الذكاء الاصطناعي وكيف يُستهلك."],
+        ["files", "▦", "File storage", "تخزين الملفات", "Where uploaded files are kept, and how much is used.", "أين تُحفظ الملفات المرفوعة، وحجم المستخدم منها."],
+        ["avail", "◑", "Calendar availability", "توفّر التقويم", "Let meeting scheduling see when people are busy in Outlook.", "السماح لجدولة الاجتماعات بمعرفة أوقات انشغال الأشخاص في Outlook.", 1],
+        ["bin", "⌫", "Recycle bin", "سلة المحذوفات", "Restore or purge deleted files.", "استعادة الملفات المحذوفة أو حذفها نهائيًا."] ] }
+    ];
+    const MK = " background: #FFF1B8; border-radius: 2px;";
+    const marked = (K, text, q, sz, o, x) => {
+      let i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
+      if (i < 0) return K.S(text, sz, Object.assign({}, o, { x: (o.x || "") + " " + x }));
+      let j = i + q.length;
+      if (/[\u0600-\u06FF]/.test(q)) { while (i > 0 && text[i - 1] !== " ") i--; while (j < text.length && !/[ .،]/.test(text[j])) j++; }
+      const pt = (t, m) => K.S(t, sz, Object.assign({}, o, { inl: 1, x: m ? MK : "" }));
+      return K.RW([pt(text.slice(0, i)), pt(text.slice(i, j), 1), pt(text.slice(j))].filter(z => z.text), "display: block; " + x);
+    };
+    const card = (K, ar, c, q) => K.RW([
+      K.S(c[1], 15, { c: "#1F5480", x: "grid-row: span 2; width: 32px; height: 32px; border-radius: 7px; background: #E4EEF6; display: flex; align-items: center; justify-content: center; line-height: 1;" }),
+      marked(K, ar ? c[3] : c[2], q, 14, { w: 600, c: "#1F5480" }, "")
+    ].concat(c[6] ? [K.chip(K.w("New", "جديد"), "new", "justify-self: start; grid-column: 3; grid-row: 1;")] : [])
+     .concat([marked(K, ar ? c[5] : c[4], (ar ? c[3] : c[2]).toLowerCase().indexOf((q || "").toLowerCase()) >= 0 ? null : q, 12, { c: "#4A5568" }, "grid-column: 2 / -1;")]),
+      "display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-content: start; column-gap: 10px; row-gap: 2px; align-items: start; padding: 12px 14px; background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; min-height: 64px; box-sizing: border-box;");
+    const strip = (K, ar, quiet) => quiet
+      ? K.RW([K.S("✓", 13, { c: "#067647", w: 700 }), K.S(K.w("Setup health: nothing open.", "سلامة الإعداد: لا شيء مفتوح."), 13, { c: "#4A5568" })], "grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff;")
+      : K.RW([K.S(K.w("Setup health", "سلامة الإعداد"), 13, { w: 600 }), K.chip(K.w("● 1 blocks work", "● " + iso("1") + " يعطّل العمل"), "danger"), K.chip(K.w("● 2 at risk", "● " + iso("2") + " معرّضة للخطر"), "warn"), Object.assign(K.L(K.w("Open Setup health", "فتح سلامة الإعداد"), 13, { w: 600 }), { style: K.tx(13, { w: 600, c: "#2E6FA3", x: "margin-inline-start: auto; text-decoration: none;" }) })], "grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; border: 1px solid #FECDCA; border-radius: 8px; background: #fff;");
+    const finder = (K, ar, q) => K.box(q ? q : K.w("Find a setting", "ابحث عن إعداد"), { ph: !q, focus: !!q, h: 38, x: "grid-column: 1 / -1; max-width: 420px;" + (q ? "" : "") });
+    const consoleSegs = (K, ar, o) => {
+      o = o || {};
+      const out = [
+        o.crumbless ? null : null,
+        K.S(K.w("Administration", "الإدارة"), 22, { w: 600, x: "grid-column: 1 / -1;" }),
+        K.S(K.w("Every setting for your organisation, in one place. Each opens its own page.", "كل إعدادات منشأتك في مكان واحد. يفتح كلٌّ منها صفحته."), 13, { c: "#4A5568", x: "grid-column: 1 / -1; margin-block-start: -6px;" }),
+        strip(K, ar, o.quiet),
+        Object.assign(finder(K, ar, o.q), {}),
+        o.q ? K.S(o.qline, 12, { c: "#5A6779", x: "grid-column: 1 / -1; margin-block-start: -4px;" }) : null
+      ].filter(Boolean);
+      CARDS.forEach(gr => {
+        const its = gr.items.filter(c => (!o.only || o.only.indexOf(c[0]) >= 0) && (!o.match || o.match.indexOf(c[0]) >= 0));
+        if (!its.length) return;
+        out.push(K.S(ar ? gr.g[1] : gr.g[0], 11, { w: 700, c: "#5A6779", x: "grid-column: 1 / -1; letter-spacing: " + (ar ? "0" : "0.06em; text-transform: uppercase") + "; margin-block-start: 6px;" }));
+        its.forEach(c => out.push(card(K, ar, c, o.q)));
+      });
+      return out;
+    };
+    const consoleFrame = (K, ar, o) => [K.R([rail(K, ar, { active: "admin", badge: o.quiet ? "" : undefined }), K.C(consoleSegs(K, ar, o), "flex: 1 1 auto; padding: 18px 22px 24px; display: grid; grid-template-columns: repeat(" + (o.cols || 3) + ", minmax(0, 1fr)); gap: 10px; align-content: start;")], "display: flex; min-height: " + (o.h || 760) + "px;")];
+    const phoneConsole = (K, ar, o) => [K.R([K.C([
+      K.RW([K.S("☰", 16, { c: "#2D3748" }), K.S("AccreditMe", 14, { w: 700 }), K.S("⚙ 3", 12, { w: 700, c: "#fff", x: "margin-inline-start: auto; padding: 1px 8px; border-radius: 999px; background: " + SH.alert + ";" })], "grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin: -14px -14px 4px; background: #fff; border-block-end: 1px solid #E2E8F0;")
+    ].concat(consoleSegs(K, ar, o).map(s => Object.assign({}, s, { style: s.style.replace("max-width: 420px;", "") }))), "padding: 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-content: start;")])];
+
+    // ── A4 · breadcrumb on an existing admin page ──
+    const crumbPage = (K, ar) => [K.R([rail(K, ar, { active: "admin" }), K.C([
+      K.RW([Object.assign(K.L(K.w("Administration", "الإدارة"), 12.5, {}, "#a3"), {}), K.S("›", 12.5, { c: "#8A94A6" }), K.S(K.w("File storage", "تخزين الملفات"), 12.5, { c: "#5A6779" })], "display: flex; gap: 6px; align-items: baseline;"),
+      K.S(K.w("File storage", "تخزين الملفات"), 22, { w: 600, x: "margin-block-start: 2px;" }),
+      K.S(K.w("Where your organisation's uploaded files are kept: task evidence now, meeting attachments and documents later.", "مكان حفظ الملفات التي ترفعها مؤسستك: أدلة المهام الآن، ومرفقات الاجتماعات والمستندات لاحقًا."), 13, { c: "#4A5568" }),
+      K.S(K.w("The accepted File storage page continues here, unchanged (Storage Settings 1 and 8).", "تستمر صفحة تخزين الملفات المعتمدة هنا دون تغيير."), 12.5, { c: "#5A6779", x: "margin-block-start: 12px; padding: 40px 16px; text-align: center; border: 1px dashed #CBD5E0; border-radius: 8px; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px);" })
+    ], "flex: 1 1 auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 4px;")], "display: flex; min-height: 520px;")];
+
+    // ── PART B · Calendar availability ──
+    const TV = { tenant: "alnakheel.example.test", client: "8d41b2e7-5c3a-4f19-a6e2-0b7c9d14f358", date: "15 Apr 2027", dots: "••••••••••••••••••••", me: "nora.alotaibi@alnakheel.example.test" };
+    const STR = (ar) => ar ? {
+      title: "توفّر التقويم", crumb: "الإدارة", sub: "تتحقق AccreditMe عند جدولة اجتماع مما إذا كان المدعوون مشغولين في Outlook. تقرأ «مشغول» أو «متاح» فقط، ولا تقرأ موضوع الاجتماع أبدًا، ولا تخزّن شيئًا.",
+      provider: "المزوّد: Microsoft 365", status: "الحالة",
+      notConn: "غير متصل", connOn: "✓ متصل · الفحص مفعّل", connOff: "متصل · الفحص متوقف", cantReach: "✕ تعذّر الوصول",
+      adminBox: "ما يفعله مسؤول Microsoft في مؤسستك أولًا", s1: "تسجيل تطبيق في Microsoft Entra.", s2: "منحه صلاحية التطبيق Calendars.ReadBasic في Microsoft Graph، والموافقة عليها بصفة المسؤول.", s3: "إنشاء سر للعميل.", s4: "اختياري: قصر التطبيق على صناديق بريد الموظفين باستخدام RBAC for Applications في Exchange Online.",
+      matching: "تتم مطابقة الأشخاص بالبريد الإلكتروني المسجّل في AccreditMe، ويجب أن يكون صندوق بريدهم في Microsoft.",
+      tenant: "معرّف المستأجر (Tenant ID)", client: "معرّف العميل (Client ID)", secret: "سر العميل", expires: "ينتهي السر في", opt: " · اختياري", req: " · مطلوب",
+      hTenant: "معرّف الدليل (tenant ID) من صفحة «نظرة عامة» للتطبيق، أو نطاق Microsoft لمؤسستك", hClient: "معرّف التطبيق (Application (client) ID)، من الصفحة نفسها", hSecret: "«قيمة» السر (Value) لا معرّفه (Secret ID). لا يُعرض مرة أخرى بعد الحفظ", hExpires: "تذكّرك AccreditMe قبل 30 يومًا",
+      steps: ["فحص الإعدادات", "تسجيل الدخول إلى Microsoft", "قراءة أوقات الانشغال"], testBtn: "اختبار الاتصال", testAgain: "اختبار مرة أخرى", notTested: "لم يُختبر بعد",
+      idle: "يسجّل الدخول بتطبيقك ويقرأ أوقات انشغالك أنت اليوم.", pass: "✓ الاتصال يعمل · اختُبر " + iso("09:30"), passFound: "قُرئت أوقات انشغالك اليوم: " + iso("3") + " فترات.",
+      failHead: "يمكن للتطبيق تسجيل الدخول لكنه لا يستطيع قراءة التقويمات", noPerm: "يمكن للتطبيق تسجيل الدخول لكنه غير مسموح له بقراءة التقويمات. اطلب من مسؤول Microsoft إضافة Calendars.ReadBasic والموافقة عليها بصفة المسؤول.",
+      noMbHead: "لا يوجد صندوق بريد لعنوانك", noMb: "لا يوجد لدى Microsoft صندوق بريد لعنوان بريدك الإلكتروني، " + iso(TV.me) + ". تتم مطابقة الأشخاص بالبريد الإلكتروني.",
+      skipped: "تم تخطيها", save: "حفظ", testFirst: "اختبر الاتصال أولًا", fixAgain: "أصلح المشكلة واختبر مرة أخرى", tested: "اختُبر بهذه القيم تحديدًا",
+      useTitle: "الاستخدام", sw: "فحص تقويمات Outlook عند جدولة الاجتماعات", swOn: "مفعّل منذ أول حفظ. عند الإيقاف تبقى الإعدادات محفوظة.", swOff: "متوقف: تفحص الاجتماعات اجتماعات AccreditMe فقط. الإعدادات محفوظة.",
+      connTitle: "الاتصال", set: "محفوظ", replace: "استبدال", changeClient: "تغيير معرّف العميل", changeDate: "تغيير التاريخ", locked: "مقفلة",
+      working: "✓ يعمل · آخر اختبار " + iso("10 Nov 2026, 08:10"), lastFail: "فشل آخر اختبار · " + iso("10 Nov 2026, 08:10"),
+      remove: "إزالة الاتصال…", removeLine: "يمكن إزالته في أي وقت. تعود الاجتماعات إلى فحص اجتماعات AccreditMe فقط.",
+      expiring: "ينتهي سر العميل في " + iso("15 Apr 2027") + ". أنشئ سرًا جديدًا في Microsoft واستبدله هنا.", expired: "انتهى سر العميل في " + iso("15 Apr 2027") + ". أنشئ سرًا جديدًا في Microsoft واستبدله هنا.",
+      wTitle: "تعذّر على AccreditMe الوصول إلى تقويمات Outlook", wWhy: "رفضت Microsoft سر العميل: إنه غير صالح أو منتهي الصلاحية. أنشئ سرًا جديدًا للتطبيق في Microsoft Entra.", wSince: "منذ " + iso("9 Nov 2026") + ". تستمر الاجتماعات بفحص اجتماعات AccreditMe فقط.", wFix: "أصلحت المشكلة في Microsoft؟ اختبر الاتصال أدناه: النجاح يُنهي هذا التنبيه فورًا.",
+      datePh: "DD MMM YYYY", eTenant: "أدخل معرّف المستأجر أو النطاق."
+    } : {
+      title: "Calendar availability", crumb: "Administration", sub: "When a meeting is scheduled, AccreditMe checks whether invitees are busy in Outlook. It reads busy or free only, never what a meeting is, and stores nothing.",
+      provider: "Provider: Microsoft 365", status: "Status",
+      notConn: "Not connected", connOn: "✓ Connected · checking on", connOff: "Connected · checking off", cantReach: "✕ Can't be reached",
+      adminBox: "What your Microsoft administrator does first", s1: "Register an app in Microsoft Entra.", s2: "Give it the Microsoft Graph application permission Calendars.ReadBasic, and grant admin consent.", s3: "Create a client secret.", s4: "Optional: limit the app to staff mailboxes with Exchange Online's RBAC for Applications.",
+      matching: "People are matched by their AccreditMe email, which must be their Microsoft mailbox.",
+      tenant: "Tenant ID", client: "Client ID", secret: "Client secret", expires: "Secret expires on", opt: " · optional", req: " · required",
+      hTenant: "The Directory (tenant) ID from the app's Overview page, or your organisation's Microsoft domain", hClient: "The Application (client) ID, from the same page", hSecret: "The secret's Value, not its Secret ID. Never shown again after saving", hExpires: "AccreditMe reminds you 30 days before",
+      steps: ["Check the settings", "Sign in to Microsoft", "Read busy times"], testBtn: "Test connection", testAgain: "Test again", notTested: "Not tested yet",
+      idle: "Signs in as your app and reads your own busy times for today.", pass: "✓ Connection works · tested 09:30", passFound: "Read your busy times for today: 3 periods.",
+      failHead: "The app signs in but can't read calendars", noPerm: "The app can sign in but isn't allowed to read calendars. Ask your Microsoft administrator to add Calendars.ReadBasic and grant admin consent.",
+      noMbHead: "No mailbox for your address", noMb: "Microsoft has no mailbox for your email address, " + TV.me + ". People are matched by email.",
+      skipped: "skipped", save: "Save", testFirst: "Test the connection first", fixAgain: "Fix the problem and test again", tested: "Tested with exactly these values",
+      useTitle: "Use", sw: "Check Outlook calendars when meetings are scheduled", swOn: "On since the first save. Turning it off keeps the settings.", swOff: "Off: meetings check AccreditMe meetings only. The settings are kept.",
+      connTitle: "Connection", set: "Set", replace: "Replace", changeClient: "Change client ID", changeDate: "Change date", locked: "Locked",
+      working: "✓ Working · last tested 10 Nov 2026, 08:10", lastFail: "Last test failed · 10 Nov 2026, 08:10",
+      remove: "Remove connection…", removeLine: "It can be removed at any time. Meetings go back to checking AccreditMe meetings only.",
+      expiring: "The client secret expires on 15 Apr 2027. Create a new one in Microsoft and replace it here.", expired: "The client secret expired on 15 Apr 2027. Create a new one in Microsoft and replace it here.",
+      wTitle: "AccreditMe can't reach Outlook calendars", wWhy: "Microsoft refused the client secret: it is invalid or has expired. Create a new client secret for the app in Microsoft Entra.", wSince: "Since 9 Nov 2026. Meetings carry on with AccreditMe-only checks.", wFix: "Fixed it in Microsoft? Test the connection below: a pass ends this warning at once.",
+      datePh: "DD MMM YYYY", eTenant: "Enter the tenant ID or domain."
+    };
+    const field = (K, t, o) => K.C([
+      K.RW([K.S(o.label, 12, { w: 500, c: "#4A5568", inl: 1 }), K.S(o.req ? t.req : o.opt ? t.opt : "", 12, { c: "#5A6779", inl: 1 })].concat(o.labAct ? [Object.assign(K.Bt(o.labAct, "text", "padding: 0; font-size: " + (12 + K.k) + "px; font-weight: 600; margin-inline-start: auto;"), {})] : []), "display: flex; align-items: baseline; gap: 0; margin-block-end: 4px;"),
+      o.action ? K.RW([K.S(o.value || o.ph || "", 13, { ltr: o.ltr, c: o.ph && !o.value ? "#8A94A6" : "#2D3748", w: o.st ? 500 : 400, x: "flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate; text-align: start;" + (o.secret ? " letter-spacing: 0.12em;" : "") }), Object.assign(K.S(o.action, 12, { w: 600, c: o.actMuted ? "#5A6779" : "#2E6FA3", x: "flex: none;" }), {})], "display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; border-radius: 4px; padding: 0 10px; " + (o.st ? "background: #F4F7FA; border: 1px solid #E2E8F0;" : o.err ? "background: #fff; border: 1px solid #B42318;" : "background: #fff; border: 1px solid #8A94A6;"))
+        : K.box(o.value || o.ph || "", { ltr: o.ltr, ph: o.ph && !o.value, secret: o.secret, err: o.err, set: !!o.st }),
+      K.S(o.help || "", 11.5, { c: o.err ? "#B42318" : o.tone === "info" ? "#1F5480" : "#5A6779", w: o.err ? 500 : 400, x: "margin-block-start: 4px; min-height: " + (K.k ? 20 : 17) + "px;" })
+    ], "flex: 1 1 0;");
+    const fieldsRow = (K, a, b, phone) => K.R([a, b], "display: flex; flex-direction: " + (phone ? "column" : "row") + "; gap: 12px; padding: 0 18px 12px;");
+    const testBox = (K, t, o) => {
+      const tone = { idle: "background: #FBFCFD; border: 1px solid #E2E8F0;", pass: "background: #ECFDF3; border: 1px solid #ABEFC6;", fail: "background: #FEF3F2; border: 1px solid #FECDCA;" }[o.tone];
+      const ink = { idle: "#2D3748", pass: "#067647", fail: "#B42318" }[o.tone];
+      const segs = [K.RW([K.S(o.head, 13, { w: 600, c: ink, x: "flex: 1 1 auto;" }), K.Bt(o.btn, "secondary", "padding: 5px 12px;")], "display: flex; flex-wrap: wrap; align-items: center; gap: 8px;")];
+      (o.steps || []).forEach((s, i) => {
+        const g = { done: "✓", fail: "✕", skip: "–" }[s];
+        segs.push(K.RW([K.S(g, 12, { w: 700, c: s === "done" ? "#067647" : s === "fail" ? "#B42318" : "#8A94A6", x: "flex: none; width: 16px; text-align: center;" }), K.S(t.steps[i], 13, { w: s === "fail" ? 600 : 400, c: s === "fail" ? "#B42318" : s === "skip" ? "#5A6779" : "#2D3748" })].concat(s === "skip" ? [K.S(t.skipped, 11.5, { c: "#5A6779" })] : []), "display: flex; align-items: baseline; gap: 6px; margin-block-start: " + (i ? 3 : 8) + "px;"));
+        if (s === "fail" && o.why) segs.push(K.S(o.why, 12, { x: "padding-inline-start: 22px;" }));
+      });
+      if (o.note) segs.push(K.S(o.note, 12, { c: o.tone === "pass" ? "#2D3748" : "#4A5568", x: "margin-block-start: 6px;" + (o.tone === "pass" ? " padding-block-start: 6px; border-block-start: 1px solid #ABEFC6;" : "") }));
+      return K.P(segs, "margin: 0 18px 12px; padding: 10px 12px; border-radius: 6px; " + tone);
+    };
+    const cardOpen = (K, title, sub) => K.R([K.C([K.S(title, 14, { w: 600 })].concat(sub ? [K.S(sub, 12, { c: "#5A6779" })] : []))], "margin: 12px 18px 0; padding: 10px 18px; background: #fff; border: 1px solid #E2E8F0; border-block-end: 1px solid #F0F3F7; border-radius: 8px 8px 0 0;");
+    const CH = " margin-inline: 18px; background: #fff; border-inline: 1px solid #E2E8F0;";
+    const inCard = (b) => b.cells.length === 1 && /margin:/.test(b.style || "")
+      ? { cells: [{ segs: b.cells[0].segs, style: b.cells[0].style + " " + b.style.replace(/margin:[^;]*;/, "") }], style: "padding: 12px 18px;" + CH }
+      : Object.assign({}, b, { style: (b.style || "") + CH });
+    const cardClose = (K, segs, style) => K.R([K.C(segs)], "margin: 0 18px; padding: 10px 18px; background: #F4F7FA; border: 1px solid #E2E8F0; border-block-start: 0; border-radius: 0 0 8px 8px; display: block;" + (style || ""));
+    const banner = (K, tone, title, body, lines) => K.P([].concat(title ? [K.S(title, 14, { w: 600, c: tone === "danger" ? "#B42318" : "#B54708" })] : []).concat([K.S(body, 13)]).concat((lines || []).map(l => K.S(l, 13, { x: "margin-block-start: 4px;" }))), "margin: 12px 18px 0; padding: 10px 12px; border-radius: 6px; " + (tone === "danger" ? "background: #FEF3F2; border: 1px solid #FECDCA;" : "background: #FFFAEB; border: 1px solid #FEDF89;"));
+
+    const availPage = (K, ar, st, phone) => {
+      const t = STR(ar);
+      const bl = [];
+      bl.push(K.P([K.RW([K.L(t.crumb, 12.5, {}, "#a3"), K.S("›", 12.5, { c: "#8A94A6" }), K.S(t.title, 12.5, { c: "#5A6779" })], "display: flex; gap: 6px; align-items: baseline;"), K.S(t.title, 22, { w: 600, x: "margin-block-start: 2px;" }), K.S(t.sub, 13, { c: "#4A5568", x: "max-width: 82ch;" })], "padding: 16px 18px 0;"));
+      const statusTxt = { none: t.notConn, filled: t.notConn, fail: t.notConn, on: t.connOn, off: t.connOff, expiring: t.connOn, expired: t.connOn, reach: t.cantReach }[st];
+      const statusTone = { none: "muted", filled: "muted", fail: "muted", on: "ok", off: "muted", expiring: "ok", expired: "ok", reach: "danger" }[st];
+      bl.push(K.R([K.C([K.S(t.status, 11, { w: 700, c: "#5A6779", x: ar ? "" : "letter-spacing: 0.07em; text-transform: uppercase;" }), K.RW([K.chip(statusTxt, statusTone), K.S(t.provider, 12.5, { c: "#4A5568" })], "display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-block-start: 2px;")])], "margin: 12px 18px 0; padding: 10px 16px; background: #fff; border: 1px solid " + (st === "reach" ? "#FECDCA" : "#E2E8F0") + "; border-radius: 8px;"));
+      const connected = ["on", "off", "expiring", "expired", "reach"].indexOf(st) >= 0;
+      if (st === "expiring") bl.push(banner(K, "warn", null, t.expiring));
+      if (st === "expired") bl.push(banner(K, "warn", null, t.expired));
+      if (st === "reach") bl.push(banner(K, "danger", t.wTitle, t.wWhy, [t.wSince, t.wFix]));
+      if (connected) {
+        bl.push(cardOpen(K, t.useTitle));
+        bl.push(inCard(K.R([K.C([K.RW([K.SW(st !== "off", t.sw), K.S(t.sw, 13.5, { w: 500 })], "display: flex; align-items: center; gap: 10px;"), K.S(st === "off" ? t.swOff : t.swOn, 12, { c: "#4A5568", x: "margin-block-start: 4px; padding-inline-start: 50px;" })])], "padding: 12px 18px;")));
+        bl.push(K.R([], "margin: 0 18px; height: 6px; background: #fff; border: 1px solid #E2E8F0; border-block-start: 0; border-radius: 0 0 8px 8px;"));
+      }
+      bl.push(cardOpen(K, t.connTitle, connected ? null : t.matching));
+      if (!connected) {
+        bl.push(inCard(K.P([K.S(t.adminBox, 13, { w: 600 }), K.S("1  " + t.s1, 13, { x: "margin-block-start: 4px;" }), K.S("2  " + t.s2, 13), K.S("3  " + t.s3, 13), K.S(t.s4, 12, { c: "#4A5568", x: "margin-block-start: 4px;" })], "margin: 12px 18px; padding: 10px 12px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px;")));
+        const empty = st === "none";
+        bl.push(inCard(fieldsRow(K, field(K, t, { label: t.tenant, req: 1, value: empty ? "" : TV.tenant, ltr: 1, help: t.hTenant }), field(K, t, { label: t.client, req: 1, value: empty ? "" : TV.client, ltr: 1, help: t.hClient }), phone)));
+        bl.push(inCard(fieldsRow(K, field(K, t, { label: t.secret, req: 1, value: empty ? "" : TV.dots, ltr: 1, secret: !empty, help: t.hSecret }), field(K, t, { label: t.expires, opt: 1, value: empty ? "" : TV.date, ph: t.datePh, ltr: 1, action: "▢", actMuted: 1, help: t.hExpires }), phone)));
+        if (st === "none") bl.push(inCard(testBox(K, t, { tone: "idle", head: t.notTested, btn: t.testBtn, note: t.idle })));
+        if (st === "filled") bl.push(inCard(testBox(K, t, { tone: "pass", head: t.pass, btn: t.testAgain, steps: ["done", "done", "done"], note: t.passFound })));
+        if (st === "fail") bl.push(inCard(testBox(K, t, { tone: "fail", head: t.failHead, btn: t.testAgain, steps: ["done", "done", "fail"], why: t.noPerm })));
+        bl.push(cardClose(K, [K.RW([K.S(st === "filled" ? t.tested : st === "fail" ? t.fixAgain : t.testFirst, 12, { c: "#4A5568", x: "flex: 1 1 auto;" }), K.Bt(t.save, st === "filled" ? "primary" : "off")], "display: flex; flex-wrap: wrap; align-items: center; gap: 8px;")]));
+      } else {
+        bl.push(inCard(fieldsRow(K, field(K, t, { label: t.tenant, value: TV.tenant, ltr: 1, st: "locked", action: "🔒", actMuted: 1, help: t.locked }), field(K, t, { label: t.client, value: TV.client, ltr: 1, st: "set", labAct: t.changeClient, help: "" }), phone)));
+        bl.push(inCard(fieldsRow(K, field(K, t, { label: t.secret, value: t.set, st: "set", action: t.replace, help: "" }), field(K, t, { label: t.expires, value: TV.date, ltr: 1, st: "set", labAct: t.changeDate, help: "" }), phone)));
+        bl.push(inCard(st === "reach" ? testBox(K, t, { tone: "fail", head: t.lastFail, btn: t.testBtn, steps: ["done", "fail", "skip"] }) : testBox(K, t, { tone: "pass", head: t.working, btn: t.testBtn })));
+        bl.push(cardClose(K, [K.RW([K.Bt(t.remove, "dangerOut", "padding: 5px 12px;"), K.S(t.removeLine, 12, { c: "#4A5568" })], "display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;")]));
+      }
+      bl.push(K.P([], "height: 16px;"));
+      return bl;
+    };
+    const mbFail = (K, ar) => { const t = STR(ar); return [testBox(K, t, { tone: "fail", head: t.noMbHead, btn: t.testAgain, steps: ["done", "done", "fail"], why: t.noMb })].map(b => Object.assign({}, b, { style: b.style.replace("margin: 0 18px 12px;", "margin: 12px;") })); };
+
+    const removeDlg = (K, ar) => [
+      K.R([K.C([K.S(K.w("Remove connection?", "إزالة الاتصال؟"), 16, { w: 600 }), K.S(K.w("Calendar availability · Microsoft 365", "توفّر التقويم · Microsoft 365"), 12, { c: "#5A6779" })], "flex: 1 1 auto;"), K.C([K.S("✕", 13, { c: "#5A6779" })])], "display: flex; gap: 10px; padding: 12px 20px; border-block-end: 1px solid #E2E8F0; background: #fff;"),
+      K.P([K.S(K.w("Meetings stop checking Outlook calendars at once. The app and its permission stay in your Microsoft tenant: your Microsoft administrator removes them there.", "تتوقف الاجتماعات عن فحص تقويمات Outlook فورًا. يبقى التطبيق وصلاحيته في مستأجر Microsoft لديكم: يزيلهما مسؤول Microsoft لديكم هناك."), 14, { lh: K.k ? 24 : 21 }),
+        K.S(K.w("Tenant", "المستأجر"), 12, { w: 500, c: "#5A6779", x: "margin-block-start: 12px;" }), K.S(TV.tenant, 13, { w: 500, ltr: 1, x: "unicode-bidi: isolate; text-align: start;" })], "padding: 16px 20px; background: #fff;"),
+      K.R([K.C([], "flex: 1 1 auto;"), K.C([K.Bt(K.w("Cancel", "إلغاء"), "text"), K.Bt(K.w("Remove", "إزالة"), "danger")], "display: flex; gap: 8px;")], "display: flex; padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;")
+    ];
+    const healthRows = (K, ar) => [K.R([K.C([K.S(K.w("System health · tenant admins", "سلامة النظام · مسؤولو المنشأة"), 13, { w: 600 })])], "padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;")].concat([
+      [K.w("Calendar availability", "توفّر التقويم"), K.w("The client secret expires on 15 Apr 2027. After that, meetings check AccreditMe meetings only.", "ينتهي سر العميل في " + iso("15 Apr 2027") + ". بعد ذلك تفحص الاجتماعات اجتماعات AccreditMe فقط.")],
+      [K.w("Calendar availability", "توفّر التقويم"), K.w("AccreditMe can't reach Outlook calendars. Since 9 Nov 2026. Meetings carry on with AccreditMe-only checks.", "تعذّر على AccreditMe الوصول إلى تقويمات Outlook. منذ " + iso("9 Nov 2026") + ". تستمر الاجتماعات بفحص اجتماعات AccreditMe فقط.")]
+    ].map(r => K.R([K.C([K.chip(K.w("● At risk", "● معرّض للخطر"), "warn")], "flex: none;"), K.C([K.S(r[0], 13, { w: 500 }), K.S(r[1], 11.5, { c: "#5A6779" })], "flex: 1 1 auto;"), K.C([K.L(K.w("Open", "فتح"), 12.5, { w: 600 })], "flex: none;")], "display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-block-end: 1px solid #F0F3F7; background: #fff;")));
+
+    const W = 1130;
+    const sections = [
+      { id: "a1", n: "1", title: "The sidebar · one Administration item", sub: "Where the Administration group was. It carries Setup health's badge (open problems), is highlighted on every admin page, and appears only for people with administration access.",
+        groups: [{ title: null, sub: null, panels: [
+          PN({ cap: "Expanded rail · on an admin page", w: 234, blocks: [K0(E, rail(E, false, { active: "admin" }))], note: "Fifteen admin items become one. Setup health stays one click away through the console's strip and this badge." }),
+          PN({ cap: "العربية", ar: true, w: 234, blocks: [K0(A, rail(A, true, { active: "admin" }))] }),
+          PN({ cap: "Collapsed rail · tooltip on hover or focus", w: 300, bg: "transparent", bd: "transparent", blocks: [K0(E, rail(E, false, { active: "admin", collapsed: true, tooltip: true, tipTop: 431 }))], note: "The badge sits on the glyph's corner. The tooltip names the item and the count in words." }),
+          PN({ cap: "A person without administration access", w: 234, blocks: [K0(E, rail(E, false, { active: "home", admin: false }))], note: "No Administration heading and no item: absent, not greyed, as today." })
+        ] }],
+        notes: [
+          { k: "One item, not a group.", v: "The group heading stays, so the rail's rhythm doesn't change, with one item under it: ⚙ Administration. It opens /admin." },
+          { k: "The badge is Setup health's.", v: "The same open-problems count, in the alert colour. It never counts anything else, so the number means the same thing in both places." },
+          { k: "Highlighted on every admin page.", v: "/admin and every /admin-settings/… page light up this one item, so people always know which part of the app they're in." },
+          { k: "Not ACC-79's hub.", v: "That hub sat beside the sidebar's list and repeated it. Here the sidebar keeps one entry, and the console is the only list." }
+        ] },
+      { id: "a3", n: "2", title: "The console · /admin", sub: "Desktop 1130 with the shell. Title, the Setup health strip, “Find a setting”, then cards in groups. Cards are links to each page's own address; no live status in v1.",
+        groups: [
+          { title: "The full console, English and Arabic", sub: null, panels: [
+            PN({ cap: "English · desktop 1130 · tenant admin", w: W, blocks: consoleFrame(E, false, {}), note: "Fourteen cards in four groups. Each card shows only if the admin may open that page; a group with no cards is hidden. Calendar availability carries a “New” chip until the product owner says otherwise (Q3)." }),
+            PN({ cap: "Arabic (RTL) · desktop 1130", ar: true, w: W, blocks: consoleFrame(A, true, {}) })
+          ] },
+          { title: "A custom admin role · Users and Roles only", sub: "Only the cards that role may open, so only one group. Drawn with the quiet Setup health line and no badge, because none of the open problems is on a page this role can open (Q4).", panels: [
+            PN({ cap: "English · custom role", w: W, blocks: consoleFrame(E, false, { only: ["users", "roles"], quiet: true, h: 420 }) })
+          ] },
+          { title: "Find a setting · filtering as you type", sub: "Matches names in both languages and the card's line. Groups with no match are hidden; the match is marked (in Arabic, the whole word, so letters stay joined).", panels: [
+            PN({ cap: "English · “calendar”", w: W, blocks: consoleFrame(E, false, { q: "calendar", qline: "2 settings match", match: ["calendar", "avail"], h: 460 }) }),
+            PN({ cap: "Arabic · «تقويم»", ar: true, w: W, blocks: consoleFrame(A, true, { q: "تقويم", qline: "يطابق إعدادان", match: ["calendar", "avail"], h: 460 }) })
+          ] },
+          { title: "Phone 390", sub: "The rail becomes the menu; the badge rides on the header. Cards stack in one column.", panels: [
+            PN({ cap: "English", w: 390, r: 16, blocks: phoneConsole(E, false, { cols: 1 }) }),
+            PN({ cap: "العربية", ar: true, w: 390, r: 16, blocks: phoneConsole(A, true, { cols: 1 }) }),
+            PN({ cap: "Find a setting on phone", w: 390, r: 16, blocks: phoneConsole(E, false, { cols: 1, q: "outlook", qline: "1 setting matches", match: ["avail"] }), note: "“outlook” finds Calendar availability through its line (Q5)." })
+          ] }
+        ],
+        notes: [
+          { k: "Names are the product's.", v: "Each card uses the page's product name word for word, in both languages. The line under it is a draft for the product owner (7)." },
+          { k: "Every card is a plain link.", v: "To the page's own address; nothing opens inside the console, and a page's look and permission don't change." },
+          { k: "No status on cards in v1.", v: "What's wrong is in the strip and Setup health, not repeated on cards. The strip's quiet form is one line, “Setup health: nothing open.”" },
+          { k: "Find a setting.", v: "Filters as you type, in either language, matching names and the card's line. It's a filter, so the URL and the cards stay as they are; clearing it brings every group back. No match: “No settings match “…”.”" },
+          { k: "Groups.", v: "People and access · Organisation · Work and time · Connections and data. Three columns at 1130, two below 900, one on phone." }
+        ] },
+      { id: "a4", n: "3", title: "The breadcrumb on every admin page", sub: "“Administration › File storage”; Administration links back to the console. Drawn once, on File storage, with the rail's single item highlighted.",
+        groups: [{ title: null, sub: null, panels: [
+          PN({ cap: "English · File storage", w: 760, blocks: crumbPage(E, false) }),
+          PN({ cap: "العربية", ar: true, w: 560, blocks: crumbPage(A, true), note: "In Arabic the same › mirrors to point left, after «الإدارة»." })
+        ] }] },
+      { id: "b", n: "4", title: "Calendar availability · /admin-settings/calendar-availability", sub: "The Settings page template, at 1130 of content. The four fields, hints, errors and secret behaviour are SharePoint's as built (Storage Settings 8); the test has three steps.",
+        groups: [
+          { title: "Not connected", sub: "One-sentence explanation, the administrator's three steps and the optional fourth, the matching line, empty fields and the test. Save waits for a pass.", panels: [
+            PN({ cap: "English · desktop", w: W, blocks: availPage(E, false, "none") }), PN({ cap: "Arabic (RTL)", ar: true, w: W, blocks: availPage(A, true, "none") })
+          ] },
+          { title: "Filled and passed · Save", sub: null, panels: [
+            PN({ cap: "English", w: W, blocks: availPage(E, false, "filled"), note: "The third step reads the signed-in admin's own busy times for today; the line under the steps says what it read, never what the meetings are. Save turns checking on by default the first time." }), PN({ cap: "Arabic", ar: true, w: W, blocks: availPage(A, true, "filled") })
+          ] },
+          { title: "A failed test · no permission", sub: "Tenant, client or secret failures reuse SharePoint's sign-in strings (Couldn't sign in to Microsoft, and its reason). No permission and no mailbox are new.", panels: [
+            PN({ cap: "English", w: W, blocks: availPage(E, false, "fail") }), PN({ cap: "Arabic", ar: true, w: W, blocks: availPage(A, true, "fail") }),
+            PN({ cap: "No mailbox · the test box only", w: 560, bg: "#fff", blocks: mbFail(E, false) }), PN({ cap: "العربية", ar: true, w: 560, bg: "#fff", blocks: mbFail(A, true) })
+          ] },
+          { title: "Connected · checking on", sub: "Tenant ID locked; Change client ID, Replace and Change date behave as in SharePoint: test before saving a new secret or app, with the new expiry field. Remove connection… any time.", panels: [
+            PN({ cap: "English", w: W, blocks: availPage(E, false, "on") }), PN({ cap: "Arabic", ar: true, w: W, blocks: availPage(A, true, "on") })
+          ] },
+          { title: "Connected · checking off", sub: null, panels: [
+            PN({ cap: "English", w: W, blocks: availPage(E, false, "off") }), PN({ cap: "Arabic", ar: true, w: W, blocks: availPage(A, true, "off") })
+          ] },
+          { title: "Secret expiring, and expired", sub: "From 30 days before the date, then after it, exactly as SharePoint words them. Each is also a System health row.", panels: [
+            PN({ cap: "English · expiring", w: W, blocks: availPage(E, false, "expiring") }), PN({ cap: "Arabic · expiring", ar: true, w: W, blocks: availPage(A, true, "expiring") }),
+            PN({ cap: "English · expired (the date entered has passed)", w: W, blocks: availPage(E, false, "expired") })
+          ] },
+          { title: "Can't reach Outlook calendars", sub: "Microsoft's reason, the date, and that meetings carry on with AccreditMe-only checks. A passing test ends it.", panels: [
+            PN({ cap: "English", w: W, blocks: availPage(E, false, "reach") }), PN({ cap: "Arabic", ar: true, w: W, blocks: availPage(A, true, "reach") })
+          ] },
+          { title: "Remove connection · Confirm 420, and System health", sub: null, panels: [
+            PN({ cap: "Remove connection · Confirm 420", w: 420, bg: "#fff", frame: "box-shadow: 0 12px 28px rgba(16,24,40,0.14);", blocks: removeDlg(E, false), note: "Sentence 63 (3 × 21) + 12 + pair 40 = 115 of 420. Arabic 72 (3 × 24) + 12 + 44 = 128. Unlike storage, nothing depends on it: it can be removed any time. Remove is the filled danger button only inside this confirm." }),
+            PN({ cap: "إزالة الاتصال · العربية", ar: true, w: 420, bg: "#fff", frame: "box-shadow: 0 12px 28px rgba(16,24,40,0.14);", blocks: removeDlg(A, true), note: "128 of 420." }),
+            PN({ cap: "System health · two Calendar availability rows", w: 560, bg: "#fff", blocks: healthRows(E, false), note: "Both At risk, object “Calendar availability”, linking here. Each clears itself on a passing test or a saved new secret or date." }),
+            PN({ cap: "العربية", ar: true, w: 560, bg: "#fff", blocks: healthRows(A, true) })
+          ] },
+          { title: "Phone 390", sub: "Fields go to one column; the switch row and Remove connection stack.", panels: [
+            PN({ cap: "Not connected", w: 390, r: 16, blocks: availPage(E, false, "none", true) }), PN({ cap: "العربية", ar: true, w: 390, r: 16, blocks: availPage(A, true, "none", true) }),
+            PN({ cap: "Connected · checking on", w: 390, r: 16, blocks: availPage(E, false, "on", true) }), PN({ cap: "العربية", ar: true, w: 390, r: 16, blocks: availPage(A, true, "on", true) })
+          ] }
+        ],
+        notes: [
+          { k: "Busy or free, nothing else.", v: "The explanation says so up front, and the Meetings rows say only “busy in Outlook” with a time. Nothing is stored; each check asks Microsoft at the moment a meeting is scheduled." },
+          { k: "The same app shape as SharePoint.", v: "Same four fields, same hints and errors, same write-only secret, same two-column grid, so an administrator who set up storage recognises it." },
+          { k: "Three test steps.", v: "Check the settings · Sign in to Microsoft · Read busy times. The last reads the signed-in admin's own busy times for today, so it proves both the permission and the email matching." },
+          { k: "Save, then a switch.", v: "After a pass, Save; checking is on by default after the first save. The switch can turn it off without losing the settings. Remove connection… clears them, any time." },
+          { k: "Warnings don't block meetings.", v: "Expiring and expired are amber; can't reach is red but says meetings carry on with AccreditMe-only checks. All three are System health rows, At risk." },
+          { k: "Room for a second provider.", v: "“Provider: Microsoft 365” sits in the status strip as plain text. A choice can appear there later without moving anything." }
+        ] }
+    ];
+    function K0(K, cell) { return K.R([cell], "display: flex; min-height: 640px;"); }
+
+    return {
+      decisions: [
+        { t: "1 · One sidebar item", b: "The Administration group becomes one item, ⚙ Administration, with Setup health's badge. It's highlighted on every admin page and absent for people without administration access." },
+        { t: "2 · A console, not a hub", b: "/admin lists every admin page as a card in four groups, filtered by permission, with a Setup health strip and Find a setting. It replaces the sidebar group; ACC-79's hub duplicated it." },
+        { t: "3 · Pages don't change", b: "Every admin page keeps its address, permission and look. The breadcrumb reads “Administration › File storage”, and Administration links back." },
+        { t: "4 · Calendar availability reads busy or free", b: "A Microsoft 365 app with Calendars.ReadBasic, set up like SharePoint's: four fields, a three-step test, Save, then a switch. Nothing is stored." },
+        { t: "5 · Never blocks a meeting", b: "If Outlook can't be read, meetings carry on with AccreditMe-only checks; warnings go to the page and System health." },
+        { t: "6 · Drafts are marked", b: "Card lines and every Calendar availability string the product doesn't have yet are listed in 7 for the product owner." }
+      ],
+      sections,
+      questions: [
+        { n: "Q1", q: "Where do Setup health and Plan & modules go?", why: "Both are in today's Administration group but not in the console's card list.", rec: "Setup health stays reachable from the strip and the badge, with no card. Plan & modules becomes a card in a fifth group, “Your plan”, shown only to whoever may change the plan." },
+        { n: "Q2", q: "A flyout from the sidebar item?", why: "Some admins will miss reaching a page in one click from the rail.", rec: "No flyout in v1: one click to the console, Find a setting, then the page. Revisit with usage data." },
+        { n: "Q3", q: "How long does the “New” chip stay on Calendar availability?", why: "Drawn so admins notice the new page.", rec: "30 days from release, or until the admin first opens the page, whichever is sooner." },
+        { n: "Q4", q: "What does a custom admin role see in the Setup health strip?", why: "Drawn quiet for a Users-and-Roles role.", rec: "Only conditions on pages that role can open; when there are none, the quiet line. The sidebar badge counts the same set." },
+        { n: "Q5", q: "What does Find a setting match?", why: "Drawn matching names in both languages and the card's line, so “outlook” finds Calendar availability.", rec: "Names, lines, and a short synonym list per card (SMTP → Email Provider, Outlook → Calendar availability)." },
+        { n: "Q6", q: "One Microsoft app for storage and calendars, or two?", why: "Many hospitals will want to register one app.", rec: "Two: SharePoint needs site access, this needs Calendars.ReadBasic only. The administrator's box can say so in one line." },
+        { n: "Q7", q: "Invitees whose email has no mailbox", why: "The test checks only the admin's own address.", rec: "Skipped silently in the clash check; Setup health shows a count only if more than a set share of users have no mailbox." },
+        { n: "Q8", q: "Warnings while checking is switched off", why: "The settings are kept, so the secret can still expire.", rec: "Expiring and expired still show (the settings exist); can't reach doesn't, since nothing is checked." },
+        { n: "Q9", q: "Is the card shown without the Meetings module?", why: "Calendar availability only serves the Meetings clash warning today.", rec: "Show the card only when Meetings is in the plan." },
+        { n: "Q10", q: "Who may change Calendar availability?", why: "It touches every user's calendar, even if only busy or free.", rec: "Tenant admins only by default, as a permission a custom role can be given." }
+      ],
+      drafts: [
+        { w: "Sidebar tooltip", en: "Administration · 3 open problems", ar: "الإدارة · 3 مشكلات مفتوحة" },
+        { w: "Console", en: "Every setting for your organisation, in one place. Each opens its own page.", ar: "كل إعدادات منشأتك في مكان واحد. يفتح كلٌّ منها صفحته." },
+        { w: "Console", en: "Find a setting · 2 settings match · No settings match “…”.", ar: "ابحث عن إعداد · يطابق إعدادان" },
+        { w: "Console strip", en: "Setup health · ● 1 blocks work · ● 2 at risk · Open Setup health · Setup health: nothing open.", ar: "سلامة الإعداد · يعطّل العمل · معرّضة للخطر · فتح سلامة الإعداد · سلامة الإعداد: لا شيء مفتوح." },
+        { w: "Group names", en: "People and access · Organisation · Work and time · Connections and data", ar: "الأشخاص والصلاحيات · المنشأة · العمل والوقت · الاتصالات والبيانات" },
+        { w: "Card lines", en: "All fourteen lines under the card names (2).", ar: "الأسطر الأربعة عشر تحت أسماء البطاقات" },
+        { w: "Page name", en: "Calendar availability", ar: "توفّر التقويم" },
+        { w: "Explanation", en: "When a meeting is scheduled, AccreditMe checks whether invitees are busy in Outlook. It reads busy or free only, never what a meeting is, and stores nothing.", ar: "تتحقق AccreditMe عند جدولة اجتماع مما إذا كان المدعوون مشغولين في Outlook…" },
+        { w: "Admin steps", en: "From the brief, word for word in English.", ar: "ترجمة الرسم" },
+        { w: "Test", en: "Read busy times · Signs in as your app and reads your own busy times for today. · Read your busy times for today: 3 periods.", ar: "قراءة أوقات الانشغال · …" },
+        { w: "Failures", en: "The app signs in but can't read calendars · No mailbox for your address (heads; the reasons are the brief's).", ar: "ترجمة الرسم" },
+        { w: "Switch", en: "On since the first save. Turning it off keeps the settings. · Off: meetings check AccreditMe meetings only. The settings are kept.", ar: "ترجمة الرسم" },
+        { w: "Connected", en: "Status · Provider: Microsoft 365 · ✓ Connected · checking on · Connected · checking off · It can be removed at any time…", ar: "ترجمة الرسم" },
+        { w: "Can't reach", en: "Since 9 Nov 2026. Meetings carry on with AccreditMe-only checks.", ar: "منذ … تستمر الاجتماعات بفحص اجتماعات AccreditMe فقط." },
+        { w: "Remove confirm", en: "Remove connection? · Meetings stop checking Outlook calendars at once. The app and its permission stay in your Microsoft tenant: your Microsoft administrator removes them there. · Remove", ar: "إزالة الاتصال؟ · … · إزالة" },
+        { w: "System health", en: "The client secret expires on 15 Apr 2027. After that, meetings check AccreditMe meetings only.", ar: "ترجمة الرسم" },
+        { w: "Arabic, generally", en: "Product Arabic is used for every SharePoint string reused here. Arabic for new strings is the drawing's.", ar: "" }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

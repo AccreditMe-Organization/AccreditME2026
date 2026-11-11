@@ -10040,12 +10040,14 @@ English and Arabic, and a zero-permission user — not only by tests.
 #### One model, four readers
 
 `core/navigation/nav-items.ts` holds `TENANT_NAV_GROUPS` (My work →
-Quality management → Administration) and `PLATFORM_NAV_GROUPS`. Four things
-read it, and nothing else holds a label or a permission for a nav page:
+Quality management → Administration) and `PLATFORM_NAV_GROUPS`. Five things
+read it (four until ACC-292 added the console), and nothing else holds a label
+or a permission for a nav page:
 
 | Reader | How |
 |---|---|
-| Rail (`SidebarComponent`) | `visibleNavGroups(access)` |
+| Rail (`SidebarComponent`) | `railNavGroups(access)`: `visibleNavGroups()` with Administration as one item (ACC-292) |
+| Administration console (`/admin`, ACC-292) | `visibleAdminConsoleItems(access)`; its guard reads `canOpenAdminConsole(access)` |
 | Route guard (`permissionGuard`) | `ROUTE_PERMISSIONS`, derived from the groups + `STANDALONE_ROUTE_PERMISSIONS` |
 | Breadcrumb | `resolveNavLocation(url, access)` (`nav-location.ts`) |
 | Tab title (`DocumentTitleService`) | `resolveNavLocation`, as the fallback page name |
@@ -10107,6 +10109,87 @@ four child screens would have been open to any signed-in user.
 `admin-settings.routes.spec.ts` asserts the guard is wired (a mapping test
 cannot see route config). `tasks/all` is the earlier instance of the same
 shape.
+
+#### The Administration console (ACC-292)
+
+Built against `frontend/design-reference/AccreditMe Administration.dc.html`. The
+rail's Administration group is ONE item, and it opens `/admin`, a console of
+cards for every Administration page the person may open.
+
+**The rail item** (`railNavGroups()`, `nav-items.ts`). It is
+`visibleNavGroups()` with any group that has its own page (`NavGroup.route`,
+only Administration's `/admin`) drawn as one item to it:
+- **Label and icon:** the group's own name (`nav.groups.admin`) and `pi-cog`.
+  The group heading stays above it, so the rail keeps its rhythm.
+- **When it shows:** exactly when the group would: `admin:access` AND at least
+  one Administration item visible. The rule is `canOpenAdminConsole()`, which
+  `/admin`'s guard reads too.
+- **Lit (`alsoActiveFor`):** on `/admin` and on every Administration item's
+  route, and below it (`/users/:id`, `/organization/units/:id`,
+  `/admin-settings/storage`), never on a look-alike such as `/users-guide`.
+- **Badge:** Setup health's (§13.9), carried only when the Setup health item is
+  visible (a `setup:view` holder). The sidebar's poll is unchanged: it runs
+  while a rail item carries that badge, so it starts and stops exactly as
+  before. No new request.
+- **Collapsed:** the 7px dot, and one counted label from
+  `collapsedLabelKey` (`shell.adminOpenProblems`): "Administration · 3 open
+  problems".
+
+**The items stay in `nav-items.ts`.** They are not rail rows any more, but they
+are still what `permissionGuard`, the breadcrumb and the tab title read, and now
+the console's cards too. Each carries `console: { group, lineKey, synonyms }`;
+Setup health has none, because the strip and the badge reach it. The items are
+ordered as the console shows them. The four groups and their names are
+`ADMIN_CONSOLE_GROUPS`.
+
+**The page** (`foundation/admin-console/`, route `admin`, `adminConsoleGuard`):
+- **Guard:** `canOpenAdminConsole()`, else the landing route. A platform admin
+  is refused (their shell has no such group). An untrustworthy permission load
+  admits (ACC-70). `STANDALONE_ROUTE_PERMISSIONS` maps `admin` to
+  `admin:access` (the floor), so the route-guard invariant pins that the route
+  runs `adminConsoleGuard`.
+- **Header:** the H1 "Administration" and the design's line, through
+  `PageHeaderComponent`.
+- **Cards:** `visibleAdminConsoleItems()`, the Administration items this person
+  may see that have a card, in four groups (People and access, Organisation,
+  Work and time, Connections and data). A group with no card is hidden. Each card
+  is one link to the item's route: a 32px icon box (the item's own icon), the
+  item's `labelKey` as the name, and its line. Three columns from 1280px, two
+  from 768px, one below. Styled from tokens only: `--am-mark-bg` and
+  `--am-find-max-width` were added for it.
+- **The Setup health strip:** only where the Setup health item is visible. It
+  reads `SetupHealthService.summary`, the signal the rail's poll fills, so the
+  console makes no request. "blocks work" is `blocksWork`, "at risk" is
+  `open − blocksWork`, each a counted chip shown above 0, with "Open Setup
+  health". With nothing open it is the quiet line. Before the summary arrives,
+  or if it failed, there is no strip, never a false "nothing open".
+- **Find a setting** (`admin-console-find.ts`): a labelled input at most 420px
+  wide.
+  - **It matches** the name and the line in BOTH languages, and the card's
+    synonyms ("smtp" finds Email Provider), ignoring case, Arabic marks, the
+    tatweel and the alef forms.
+  - **The other language's file** is loaded once through the app's own
+    `TranslateLoader` and stored with `setTranslation()`, which does not switch
+    the language (ngx-translate v18's service has no load-only call). Until it
+    arrives, or if it fails, the reader's language still matches.
+  - **The mark** goes on the name when it holds the match, else on the line. In
+    Arabic it covers the whole word, so joined letters are never split.
+  - **The result line** is a polite live region, empty until something is
+    typed: "2 settings match" (a counted string), or "No settings match “…”.".
+  - **Groups with no match** are hidden.
+
+**The breadcrumb:** the group crumb links to `NavGroup.route` when the group
+has one, so on every Administration page "Administration" links to `/admin`.
+On `/admin` there is no parent crumb: `resolveNavLocation` finds no item for it
+and the H1 owns the name. Through the nav model, never route data.
+
+**Not ACC-79's hub.** That hub kept its own card array beside the rail, with
+permissions copied by hand, and it drifted. The console reads the nav model, so
+a card cannot exist for a page the guard does not know, and cannot show to
+someone the item is hidden from.
+
+**Not built:** the design's Calendar availability card (ACC-293, waits for
+Meetings), a "New" chip, a flyout from the rail item, and a Plan & modules card.
 
 #### `/home` sends a platform admin to the platform (ACC-120)
 
@@ -10238,6 +10321,9 @@ the impersonation banner the last item ends at 705px with ~185px to spare; on a
 ~720px-tall viewport the item list scrolls inside its own `overflow-y-auto`
 region. Administration will reach 14 when Setup health and Plan & modules
 exist.
+
+**Superseded (ACC-292):** Administration is one rail item now, so a tenant
+admin's rail holds 5 items (3 + 1 + 1). The pages are cards on the console.
 
 #### Findings recorded here because they came from the shell work
 

@@ -4,6 +4,7 @@ import { ROUTE_PERMISSIONS } from './nav-items';
 import { permissionGuard } from '../guards/permission.guard';
 import { ownProfileGuard } from '../guards/own-profile.guard';
 import { platformAdminGuard } from '../guards/platform-admin.guard';
+import { adminConsoleGuard } from '../guards/admin-console.guard';
 
 // THE INVARIANT: if a route needs a permission, something in its chain enforces
 // it.
@@ -84,6 +85,13 @@ describe('Route guard invariant — a mapped route is guarded somewhere in its c
         'ACC-13 — /platform is gated as a whole on isPlatformOrg AND platform:admin, ' +
         'never on a tenant permission. Its routes are deliberately absent from ' +
         'ROUTE_PERMISSIONS, so this is belt-and-braces rather than load-bearing.',
+    },
+    {
+      guard: adminConsoleGuard,
+      why:
+        'ACC-292 — admin, the Administration console. Its rule is admin:access AND at ' +
+        'least one Administration item the user may see (canOpenAdminConsole), the ' +
+        "rail item's own; permissionGuard could check only the admin:access floor.",
     },
   ];
   const ACCEPTED = [permissionGuard, ...ALTERNATIVE_GUARDS.map((a) => a.guard)];
@@ -181,6 +189,12 @@ describe('Route guard invariant — a mapped route is guarded somewhere in its c
     // The one that was never actually broken. Pinned so the correction cannot
     // quietly reverse.
     expect(chainGuarded('roles/:id/permissions')).toBe(true);
+  });
+
+  // ACC-292 — the console is mapped (admin:access), so it must run its guard.
+  it('guards the Administration console with adminConsoleGuard', () => {
+    expect(requirementFor('admin')).toEqual(['admin:access']);
+    expect(walked.some((r) => r.fullPath === 'admin' && r.isScreen && r.guardedInChain)).toBe(true);
   });
 
   it('records a reason for every guard it accepts besides permissionGuard', () => {

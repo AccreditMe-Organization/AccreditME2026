@@ -2905,6 +2905,10 @@
       "awaitingItems": {
         "one": "{{count}} item waiting",
         "other": "{{count}} items waiting"
+      },
+      "adminOpenProblems": {
+        "one": "Administration · {{count}} open problem",
+        "other": "Administration · {{count}} open problems"
       }
     },
     "setupHealth": {
@@ -3263,6 +3267,20 @@
       "spLockedByFiles": {
         "one": "Nothing changed: {{count}} file is stored in SharePoint now. AccreditMe moves it first: request a change.",
         "other": "Nothing changed: {{count}} files are stored in SharePoint now. AccreditMe moves them first: request a change."
+      }
+    },
+    "adminConsole": {
+      "matches": {
+        "one": "{{count}} setting matches",
+        "other": "{{count}} settings match"
+      },
+      "blocksWork": {
+        "one": "{{count}} blocks work",
+        "other": "{{count}} block work"
+      },
+      "atRisk": {
+        "one": "{{count}} at risk",
+        "other": "{{count}} at risk"
       }
     }
   },
@@ -4278,5 +4296,38 @@
     "out": "Zoom out",
     "in": "Zoom in",
     "fit": "Fit"
+  },
+  "adminConsole": {
+    "purpose": "Every setting for your organisation, in one place. Each opens its own page.",
+    "find": {
+      "label": "Find a setting",
+      "none": "No settings match “{{query}}”."
+    },
+    "groups": {
+      "people": "People and access",
+      "organisation": "Organisation",
+      "work": "Work and time",
+      "connections": "Connections and data"
+    },
+    "lines": {
+      "users": "Add and invite people, deactivate accounts, and see each person's roles.",
+      "roles": "Decide what each role can see and do.",
+      "organization": "Departments and units, and who heads each.",
+      "orgPositions": "Positions, and who holds each one.",
+      "organizationProfile": "Your organisation's name, logo and contact details.",
+      "workflows": "Stages, moves and who works each stage, per record type.",
+      "workingCalendar": "Working days, hours and holidays used for due dates.",
+      "taskSla": "Due times by priority, and when late tasks escalate.",
+      "lookups": "The lists people pick from, such as categories and locations.",
+      "emailProvider": "How AccreditMe sends email for your organisation.",
+      "aiCredits": "Your AI balance and how it's being used.",
+      "fileStorage": "Where uploaded files are kept, and how much is used.",
+      "recycleBin": "Restore or purge deleted files."
+    },
+    "strip": {
+      "title": "Setup health",
+      "open": "Open Setup health",
+      "quiet": "Setup health: nothing open."
+    }
   }
 }
