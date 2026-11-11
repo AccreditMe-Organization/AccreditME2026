@@ -87,7 +87,8 @@ describe('CommitteeMembershipsService.forUser (ACC-295)', () => {
 
   it('leaves out inactive memberships and inactive committees: both are in the read itself', async () => {
     await service.forUser(ORG_A, VIEWER, 'user-1');
-    const { where } = prisma.committeeMember.findMany.mock.calls[0]![0] as { where: Record<string, unknown> };
+    const calls = prisma.committeeMember.findMany.mock.calls as unknown as [{ where: Record<string, unknown> }][];
+    const { where } = calls[0]![0];
     expect(where['isActive']).toBe(true);
     expect(where['committee']).toEqual({ organizationId: ORG_A, isActive: true });
   });
@@ -127,7 +128,8 @@ describe('CommitteeMembershipsService.forUser (ACC-295)', () => {
     expect(result.total).toBe(237);
     // The stage rules are read for the shown rows only, in ONE call.
     expect(stageRules.stageRulesFor).toHaveBeenCalledTimes(1);
-    expect((stageRules.stageRulesFor.mock.calls[0]![2] as string[]).length).toBe(100);
+    const ruleCalls = stageRules.stageRulesFor.mock.calls as unknown as [string, string, string[]][];
+    expect(ruleCalls[0]![2].length).toBe(100);
   });
 
   it('stage and mayRemove come from ONE stageRulesFor call: false where REMOVE_MEMBER is not allowed, or with no stage', async () => {

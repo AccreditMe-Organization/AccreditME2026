@@ -31,7 +31,7 @@ const VIEWER = { permissions: ['committees:view', 'users:view'] };
 describe('One person’s committee memberships, on a real database (ACC-295)', () => {
   const prisma = new PrismaService();
   // The seats are not what this spec is about: none are seeded, so every seat has null labels.
-  const lookups = { getValues: async () => [] } as unknown as LookupService;
+  const lookups = { getValues: () => Promise.resolve([]) } as unknown as LookupService;
   const service = new CommitteeMembershipsService(prisma, lookups, new StageRulesService(prisma));
 
   async function org(tag: string) {

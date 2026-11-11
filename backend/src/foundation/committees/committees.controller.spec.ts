@@ -161,7 +161,8 @@ describe('CommitteesController', () => {
     const result = await controller.getMemberships({ userId: 'user-9' }, TENANT_ID, PERMS);
     expect(memberships.forUser).toHaveBeenCalledWith(TENANT_ID, { permissions: PERMS }, 'user-9');
     expect(result).toEqual({ total: 0, rows: [] });
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getMemberships)).toEqual(['committees:view']);
+    const handler = Object.getOwnPropertyDescriptor(CommitteesController.prototype, 'getMemberships')!.value as object;
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual(['committees:view']);
   });
 
   // ACC-281 — no read gates on committees:view at the route: the service decides
