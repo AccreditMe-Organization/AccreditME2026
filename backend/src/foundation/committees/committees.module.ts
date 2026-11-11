@@ -7,6 +7,7 @@ import { CommitteesService } from './committees.service';
 import { CommitteeListsService } from './committee-lists.service';
 import { CommitteeFormChoicesService } from './committee-form-choices.service';
 import { CommitteeHomeService } from './committee-home.service';
+import { CommitteeMembershipsService } from './committee-memberships.service';
 import { OrganizationModule } from '../organization/organization.module';
 import { LookupModule } from '../lookup/lookup.module';
 import { TaskModule } from '../task/task.module';
@@ -37,7 +38,15 @@ import {
     forwardRef(() => OrganizationModule),
   ],
   controllers: [CommitteesController, CommitteeChangeRequestsByCommitteeController, CommitteeChangeRequestsController],
-  providers: [CommitteesService, CommitteeListsService, CommitteeChangeRequestService, CommitteeFormChoicesService, CommitteeHomeService],
+  // ACC-295 — CommitteeMembershipsService: one person's memberships, for the Transfer wizard.
+  providers: [
+    CommitteesService,
+    CommitteeListsService,
+    CommitteeChangeRequestService,
+    CommitteeFormChoicesService,
+    CommitteeHomeService,
+    CommitteeMembershipsService,
+  ],
   exports: [CommitteesService, CommitteeHomeService],
 })
 export class CommitteesModule {}
