@@ -44,6 +44,17 @@
 // "Defined" means a `--am-x:` declaration anywhere, an Angular
 // `[style.--am-x]` binding, or a `setProperty('--am-x', …)`.
 //
+// ACC-290 — and the collapsed rail's count dot, in BOTH rail palettes.
+//
+// The rail's colours live in src/styles/tokens.scss, in oklch, with the
+// platform palette overriding them under .am-rail--platform. Each dot token is
+// checked against the rail, a hovered item and the active item at 3:1 (1.4.11),
+// in each palette: 12 pairs. The values are READ, never typed here: oklch is
+// converted to sRGB (OKLab, clamped to the gamut, then gamma-encoded), and a
+// var() is resolved the way CSS does it, in the scope that declares it. So a
+// platform palette that forgets to redeclare a var()-based token is measured
+// with the tenant value it really inherits, exactly as the browser paints it.
+//
 // Run: npm run check:contrast        (CI: frontend job, beside check:formatting)
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -52,6 +63,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const tokenFile = join(root, 'src', 'styles', 'design-tokens.scss');
+const railFile = join(root, 'src', 'styles', 'tokens.scss');
 
 const TEXT = 4.5;
 const NON_TEXT = 3.0;
@@ -114,6 +126,81 @@ export function contrast(a, b) {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
+
+// ── ACC-290 — the rail palettes, read from tokens.scss ─────────────────────
+export function oklchToHex(L, C, H) {
+  const h = (H * Math.PI) / 180;
+  const a = C * Math.cos(h);
+  const b = C * Math.sin(h);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const linear = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+  return (
+    '#' +
+    linear
+      .map((v) => {
+        const c = Math.min(1, Math.max(0, v));
+        const g = c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
+        return Math.round(g * 255).toString(16).padStart(2, '0');
+      })
+      .join('')
+      .toUpperCase()
+  );
+}
+
+function parseColour(raw) {
+  const value = raw.trim();
+  const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hex) return hex[1].length === 3 ? '#' + [...hex[1]].map((c) => c + c).join('') : value;
+  const ok = value.match(/^oklch\(\s*([\d.]+)(%?)\s+([\d.]+)\s+([\d.]+)\s*\)$/i);
+  if (ok) return oklchToHex(Number(ok[1]) / (ok[2] ? 100 : 1), Number(ok[3]), Number(ok[4]));
+  return null;
+}
+
+function cssBlock(source, selector) {
+  const start = source.indexOf(`\n${selector} {`);
+  const end = source.indexOf('\n}', start + 1);
+  if (start < 0 || end < 0) throw new Error(`no ${selector} block in ${railFile}`);
+  return new Map([...source.slice(start, end).matchAll(/--am-([a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2]]));
+}
+
+// A var() resolves in the scope that DECLARES it (its own declarations first,
+// then what it inherits), which is CSS's rule for custom properties.
+function resolveScope(declared, inherited) {
+  const visit = (name, seen) => {
+    if (!declared.has(name)) return inherited.get(name) ?? null;
+    if (seen.has(name)) throw new Error(`--am-${name} refers to itself`);
+    seen.add(name);
+    const raw = declared.get(name).trim();
+    const ref = raw.match(/^var\(\s*--am-([a-z0-9-]+)\s*\)$/);
+    return ref ? visit(ref[1], seen) : parseColour(raw);
+  };
+  const computed = new Map(inherited);
+  for (const name of declared.keys()) computed.set(name, visit(name, new Set()));
+  return computed;
+}
+
+function readRailPalettes() {
+  const source = '\n' + readFileSync(railFile, 'utf8');
+  const tenant = resolveScope(cssBlock(source, ':root'), new Map());
+  const platform = resolveScope(cssBlock(source, '.am-rail--platform'), tenant);
+  return [
+    ['tenant', tenant],
+    ['platform', platform],
+  ];
+}
+
+const RAIL_DOTS = ['rail-dot', 'rail-dot-alert'];
+const RAIL_GROUNDS = [
+  ['rail-bg', 'the rail'],
+  ['rail-hover', 'a hovered item'],
+  ['rail-active', 'the active item'],
+];
 
 const tokens = readTokens();
 const resolve = (ref) => (ref.startsWith('#') ? ref : tokens.get(ref));
@@ -189,12 +276,34 @@ for (const pair of PAIRS) {
   }
 }
 
+// ── ACC-290 — the collapsed rail's count dot, 3:1 in both palettes ─────────
+let railPairs = 0;
+for (const [palette, values] of readRailPalettes()) {
+  for (const dot of RAIL_DOTS) {
+    for (const [ground, where] of RAIL_GROUNDS) {
+      railPairs++;
+      const fg = values.get(dot);
+      const bg = values.get(ground);
+      const name = `${dot} on ${ground} (${palette} rail, collapsed count dot on ${where})`;
+      if (!fg || !bg) {
+        failures.push(`${name}: token not found or not a colour in tokens.scss (${!fg ? dot : ground})`);
+        continue;
+      }
+      const ratio = contrast(fg, bg);
+      const passes = ratio >= NON_TEXT;
+      lines.push(`  ${passes ? 'pass' : 'fail'}  ${ratio.toFixed(2).padStart(5)}:1  (min ${NON_TEXT})  ${name}  ${fg}/${bg}`);
+      if (!passes) failures.push(`${name}: ${ratio.toFixed(2)}:1 is below ${NON_TEXT}:1 (${fg} on ${bg})`);
+    }
+  }
+}
+
 console.log(lines.join('\n'));
 for (const n of notices) console.log(`notice: ${n}`);
 if (failures.length > 0) {
   console.error(`\nContrast (ACC-111): ${failures.length} failure(s)\n`);
   console.error(failures.join('\n'));
   console.error('\nPairs are artboard 9 of the design system; values come from src/styles/design-tokens.scss.');
+  console.error('The rail dot pairs (ACC-290) read src/styles/tokens.scss, both palettes.');
   process.exit(1);
 }
-console.log(`\nContrast (ACC-111): ${PAIRS.length} pairs checked, no failures.`);
+console.log(`\nContrast (ACC-111, ACC-290): ${PAIRS.length + railPairs} pairs checked, no failures.`);

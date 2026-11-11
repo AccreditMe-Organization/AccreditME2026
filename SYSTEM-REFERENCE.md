@@ -10352,6 +10352,13 @@ for admins and fired four requests a non-admin could only get 403s from. Now:
 not a branch. The old `--am-sidebar-*` tokens and the green active stripe were
 removed (CLAUDE.md, Brand Design Tokens, records both as superseded).
 
+**The collapsed count dot (ACC-290)** has its own tokens, `--am-rail-dot` (the
+badge ink) and `--am-rail-dot-alert`, never the badge fills: a 7px dot is only its
+colour, so it needs 3:1 (WCAG 1.4.11) against the rail, a hovered item and the
+active item. `check:contrast` asserts those 12 pairs in both palettes, read from
+`tokens.scss`. `.am-rail--platform` redeclares `--am-rail-dot`, because a `var()`
+in a custom property resolves where it is declared.
+
 **Length.** A tenant admin's rail holds 15 items (2 + 1 + 12). At 1589×945 with
 the impersonation banner the last item ends at 705px with ~185px to spare; on a
 ~720px-tall viewport the item list scrolls inside its own `overflow-y-auto`
