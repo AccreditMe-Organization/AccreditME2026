@@ -14,11 +14,13 @@ import { CommitteesService } from './committees.service';
 import { CommitteeListsService } from './committee-lists.service';
 import { CommitteeFormChoicesService } from './committee-form-choices.service';
 import { CommitteeHomeService } from './committee-home.service';
+import { CommitteeMembershipsService } from './committee-memberships.service';
 
 describe('Committee routes — /committees/mine is not swallowed by :id (ACC-279)', () => {
   let app: INestApplication<App>;
   const service = { getCommitteeDetail: jest.fn().mockResolvedValue({}) };
   const home = { mine: jest.fn().mockResolvedValue({ total: 0, rows: [] }) };
+  const memberships = { forUser: jest.fn().mockResolvedValue({ total: 0, rows: [] }) };
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -28,6 +30,7 @@ describe('Committee routes — /committees/mine is not swallowed by :id (ACC-279
         { provide: CommitteeListsService, useValue: {} },
         { provide: CommitteeFormChoicesService, useValue: {} },
         { provide: CommitteeHomeService, useValue: home },
+        { provide: CommitteeMembershipsService, useValue: memberships },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -63,5 +66,15 @@ describe('Committee routes — /committees/mine is not swallowed by :id (ACC-279
     await request(app.getHttpServer()).get('/committees/mine').expect(200, { total: 0, rows: [] });
     expect(home.mine).toHaveBeenCalledWith('org-a', 'user-1');
     expect(service.getCommitteeDetail).not.toHaveBeenCalled();
+  });
+
+  // ACC-295 — 'memberships' is a route of its own, declared above ':id'. This caller
+  // holds no permission: ':id' (no route permission) would answer 200 from the detail
+  // read, so the route's OWN committees:view refusal proves 'memberships' got there.
+  it('GET /committees/memberships?userId= reaches its own route (its committees:view gate), never the detail read', async () => {
+    const res = await request(app.getHttpServer()).get('/committees/memberships?userId=user-9').expect(403);
+    expect(JSON.stringify(res.body)).toContain('committees:view');
+    expect(service.getCommitteeDetail).not.toHaveBeenCalled();
+    expect(memberships.forUser).not.toHaveBeenCalled();
   });
 });

@@ -6210,6 +6210,42 @@ The committee services' write methods take the caller's permissions as a trailin
   filter removed, the cap removed, the page's `users:view` gate, and the Reports to
   `mayOpen` rule.
 
+### 3.21.1 One person's committee memberships (ACC-295)
+
+For lane A's user Transfer wizard: the seats the person holds, each with what a remove needs.
+
+- **Route:** `GET /api/v1/committees/memberships?userId=<id>`, declared above `:id`
+  (`committees.route-order.spec.ts` pins it). `CommitteeMembershipsService.forUser()`.
+- **Gate:**
+  - `committees:view` on the route, and also in the service;
+  - `users:view` in the service.
+  - Both are checked BEFORE any read (ACC-101 clause a): a 403 naming the permission,
+    with no query.
+- **Shape:**
+  `{ total, rows: [{ memberId, committeeId, nameEn, nameAr, seat: { id, labelEn, labelAr }, joinedAt, stage: { nameEn, nameAr }, mayRemove }] }`.
+  - `memberId` is what `DELETE /committees/:id/members/:memberId` takes. The removes
+    stay that route, each with its own stage check.
+  - `mayRemove` is the current stage's `REMOVE_MEMBER` (`COMMITTEE_ACTIONS`), from ONE
+    `StageRulesService.stageRulesFor()` call. It is false with no stage, and on
+    Dissolved.
+- **Rows:**
+  - active memberships on active committees, both scoped by the tenant's
+    `organizationId`;
+  - another organisation's user, or an invented id, answers `{ total: 0, rows: [] }`,
+    never a 404;
+  - in seat order (the tenant's `committee_member_role` order), then longest-served,
+    then the committee id. That is `seatOrderedMemberships()` (`committee-memberships.ts`),
+    shared with `CommitteeHomeService.mine()`, whose response is unchanged.
+- **Cap:** 100 rows, chosen by seat from up to 200 read; `total` is the true count.
+- **Cost:** at most 8 queries, whatever the count.
+  - The memberships, the count and the seats in one `Promise.all`; then `stageRulesFor` (≤ 3).
+  - No query in a row loop; nothing on the per-request path.
+- **Specs:**
+  - `committee-memberships.service.spec.ts`;
+  - `committee-memberships.db-spec.ts` (real rows, seeded stage actions, isolation);
+  - the route-order and controller specs;
+  - mutation-checked.
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +
