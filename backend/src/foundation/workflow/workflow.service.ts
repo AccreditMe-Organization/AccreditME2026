@@ -35,6 +35,7 @@ import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
+import { isVotingMove, moveOutcome, votesFor } from './workflow-vote';
 import { assertTransitionPreconditions } from './transition-preconditions';
 import { StagePool, StagePoolRequest, StagePoolService, mayActInStagePool } from './stage-pool.service';
 import { INSTANCE_NOT_FOUND, InstanceAccess } from './instance-access';
@@ -76,12 +77,11 @@ const STAGE_CHANGE_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 // transitions through WorkflowService" — every future functional module calls
 // these methods, never manages its own status field.
 //
-// NOTE on multi-approver routing: WorkflowTransition.isApprovalPath marks
-// which outgoing transition of a stage represents the "advance" outcome vs
-// a "return/reject" outcome. This exists specifically because a stage can
-// have more than one outgoing transition (e.g. an "Approve" path and a
-// "Reject" path both landing on higher-order stages), so stage order alone
-// cannot distinguish them.
+// NOTE on multi-approver routing (ACC-284): on a stage decided together (ALL or
+// COMMITTEE_VOTE) the move's KIND (ACC-190) says what a press is — a vote for
+// that move, or an act at once (workflow-vote.ts). Each vote records its move,
+// and a move goes through when its own threshold is met. The old
+// WorkflowTransition.isApprovalPath is no longer read; it is dropped later.
 //
 // ACC-271 PR 6a — who works a stage, who may move a record out of it and how
 // its votes decide come from the stage's pool and who mode only
@@ -610,6 +610,10 @@ export class WorkflowService {
 
     await this.checkValidatorConfig(transition, currentInstanceStage, organizationId);
 
+    // ACC-284 — what this press is: on a stage decided together, a vote for this
+    // move (ADVANCE; EXIT on a committee vote), else an act at once.
+    const isVote = isVotingMove(fromStage.whoMode, transition.kind);
+
     // ACC-190 — the gate, early: an ADVANCE this request would actually fire is
     // refused while a mandatory task of this entry is open. On a multi-approver
     // stage that is only the DECIDING vote, refused before it is recorded
@@ -618,13 +622,13 @@ export class WorkflowService {
     // the authoritative one.
     if (transition.kind === 'ADVANCE') {
       const fires =
-        this.decidesAlone(fromStage) ||
-        !transition.isApprovalPath ||
+        !isVote ||
         (await this.isApprovalThresholdMet(
           fromStage,
           currentInstanceStage,
           organizationId,
           instance,
+          transition,
           { approverId: actorId, approved: true },
           pool,
         ));
@@ -648,44 +652,24 @@ export class WorkflowService {
       );
     }
 
-    // Multi-approver stage: naming a specific transitionId is itself the vote
-    // — isApprovalPath maps it to APPROVED (advance) or RETURNED (send back).
-    const decision = transition.isApprovalPath ? 'APPROVED' : 'RETURNED';
+    // Multi-approver stage: naming a specific transitionId is itself the press.
+    // ACC-284 — a voting move is an APPROVED vote FOR THAT MOVE; any other
+    // (RETURN; EXIT on "All of them") is recorded RETURNED and acts at once.
+    const decision = isVote ? 'APPROVED' : 'RETURNED';
 
     // ACC-40 Section 2.6.3 — stamped on both branches (create AND update)
     // so a re-vote by the same actor always reflects their CURRENT
     // delegation status, never a stale first-vote snapshot.
     const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId, pool);
 
-    await this.prisma.workflowApproval.upsert({
-      where: {
-        workflowInstanceStageId_approverId: {
-          workflowInstanceStageId: currentInstanceStage.id,
-          approverId: actorId,
-        },
-      },
-      update: {
-        decision,
-        comment: dto.comment ?? null,
-        decidedAt: new Date(),
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-      create: {
-        workflowInstanceStageId: currentInstanceStage.id,
-        approverId: actorId,
-        decision,
-        comment: dto.comment ?? null,
-        decidedAt: new Date(),
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-    });
+    // ACC-284 — the vote names its move; pressing another replaces it, and the
+    // replacement is audited with the old move and the new one (recordVote()).
+    await this.recordVote(organizationId, actorId, currentInstanceStage.id, decision, transition, dto.comment, delegationStamp);
 
-    if (!transition.isApprovalPath) {
-      // Any single non-approval-path vote fires immediately — no threshold
-      // required to send something back: a RETURNED decision halts the stage
-      // at once, whoever works it.
+    if (!isVote) {
+      // RETURN, and EXIT on "All of them", fire immediately — no threshold
+      // required to send something back or end it: the stage halts at once,
+      // whoever works it.
       return this.performTransition(
         instance,
         currentInstanceStage,
@@ -699,9 +683,10 @@ export class WorkflowService {
       );
     }
 
-    const satisfied = await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId, instance, undefined, pool);
+    // ACC-284 — this move's own threshold: votes for other moves never count for it.
+    const satisfied = await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId, instance, transition, undefined, pool);
     if (!satisfied) {
-      // Threshold not yet met — approval recorded, instance unchanged.
+      // Threshold not yet met — the vote is recorded, the instance unchanged.
       return this.mapInstance(instance);
     }
 
@@ -712,7 +697,7 @@ export class WorkflowService {
       organizationId,
       actorId,
       dto.comment,
-      'APPROVED',
+      moveOutcome(transition.kind),
       fromStage,
       { pool },
     );
@@ -754,49 +739,93 @@ export class WorkflowService {
     // record, with the identical 404 otherwise, checked first (InstanceAccess).
     const pool = await this.access.assertMayAct(instance, stage, organizationId, { id: actorId, permissions: actorPermissions });
 
+    // ACC-284 — the decision's move, by kind: an approval votes for the stage's
+    // ADVANCE, a return acts along its RETURN; exactly one, else a 409.
+    const move = await this.voteMoveFor(stage, dto.decision);
+
     // ACC-190 (Ahmad, 9 Oct, J) — the approval path is gated too, and a deciding
     // vote is refused BEFORE it is recorded.
-    await this.assertDecidingVoteMayAdvance(stage, instanceStage, organizationId, instance, actorId, dto.decision, pool);
+    await this.assertDecidingVoteMayAdvance(stage, instanceStage, organizationId, instance, actorId, dto.decision, move, pool);
 
     // ACC-40 Section 2.6.3 — stamped on both branches, same reasoning as
     // triggerTransition()'s own upsert: a re-submitted approval always
     // reflects the actor's CURRENT delegation status.
     const delegationStamp = await this.resolveDelegationStamp(actorId, stage, instance, organizationId, pool);
 
-    const approval = await this.prisma.workflowApproval.upsert({
-      where: {
-        workflowInstanceStageId_approverId: { workflowInstanceStageId: instanceStageId, approverId: actorId },
-      },
-      update: {
-        decision: dto.decision,
-        comment: dto.comment ?? null,
-        decidedAt: new Date(),
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-      create: {
-        workflowInstanceStageId: instanceStageId,
-        approverId: actorId,
-        decision: dto.decision,
-        comment: dto.comment ?? null,
-        decidedAt: new Date(),
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-    });
+    // ACC-284 — one way to record a vote, audited with its move before and after.
+    const approval = await this.recordVote(organizationId, actorId, instanceStageId, dto.decision, move, dto.comment, delegationStamp);
 
-    await this.auditLog.log({
-      tenantId: organizationId,
-      actorId,
-      action: 'UPDATE',
-      objectType: 'WorkflowApproval',
-      objectId: approval.id,
-      after: { decision: approval.decision },
-    });
-
-    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto, instance, pool);
+    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto, instance, move, pool);
 
     return this.mapApproval(approval);
+  }
+
+  /**
+   * ACC-284 — records a member's vote in a stage entry, and audits it.
+   *
+   * One vote per member per entry (the upsert on entry + member): pressing again
+   * REPLACES it. The audit row says what changed, with who (the actor) and when
+   * (its createdAt):
+   *   - a first vote: CREATE, after = the decision and the move;
+   *   - a vote whose move or decision changed: UPDATE, before = the OLD move and
+   *     decision, after = the NEW ones (each move by id and both labels);
+   *   - the same move and decision pressed again: no row (nothing changed).
+   * One indexed read of the member's current vote first, inside this press only.
+   */
+  private async recordVote(
+    organizationId: string,
+    actorId: string,
+    workflowInstanceStageId: string,
+    decision: PrismaWorkflowApproval['decision'],
+    move: Pick<PrismaWorkflowTransition, 'id' | 'labelEn' | 'labelAr'> | null,
+    comment: string | undefined,
+    delegationStamp: Awaited<ReturnType<WorkflowService['resolveDelegationStamp']>>,
+  ): Promise<PrismaWorkflowApproval> {
+    const key = { workflowInstanceStageId_approverId: { workflowInstanceStageId, approverId: actorId } };
+    const previous = await this.prisma.workflowApproval.findUnique({
+      where: key,
+      select: { decision: true, transitionId: true, transition: { select: { id: true, labelEn: true, labelAr: true } } },
+    });
+    const fields = {
+      decision,
+      transitionId: move?.id ?? null,
+      comment: comment ?? null,
+      decidedAt: new Date(),
+      delegationReason: delegationStamp?.delegationReason ?? null,
+      delegationContextId: delegationStamp?.delegationContextId ?? null,
+    };
+    const approval = await this.prisma.workflowApproval.upsert({
+      where: key,
+      update: fields,
+      create: { workflowInstanceStageId, approverId: actorId, ...fields },
+    });
+
+    const named = (m: Pick<PrismaWorkflowTransition, 'id' | 'labelEn' | 'labelAr'> | null) =>
+      m ? { id: m.id, labelEn: m.labelEn, labelAr: m.labelAr } : null;
+    const after = { decision, move: named(move) };
+    if (!previous) {
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'CREATE',
+        objectType: 'WorkflowApproval',
+        objectId: approval.id,
+        after,
+        metadata: { workflowInstanceStageId },
+      });
+    } else if (previous.decision !== decision || (previous.transitionId ?? null) !== (move?.id ?? null)) {
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'UPDATE',
+        objectType: 'WorkflowApproval',
+        objectId: approval.id,
+        before: { decision: previous.decision, move: named(previous.transition) },
+        after,
+        metadata: { workflowInstanceStageId, replaced: true },
+      });
+    }
+    return approval;
   }
 
   // ── Internal: shared advance logic ───────────────────────────────────────────
@@ -810,56 +839,41 @@ export class WorkflowService {
     // Caller-supplied (submitApproval() already fetched it), rather than this
     // method re-fetching the same row a second time in the same request.
     instance: PrismaWorkflowInstance,
+    // ACC-284 — the decision's move (voteMoveFor()); null for ABSTAINED.
+    move: PrismaWorkflowTransition | null,
     // ACC-271 — a converted stage's pool, already resolved by the caller.
     pool?: StagePool,
   ): Promise<void> {
     // ABSTAINED never auto-routes — per module-designs.md, majority-abstained
     // requires Quality Officer escalation, not automatic advancement.
-    if (dto.decision === 'ABSTAINED') return;
+    if (dto.decision === 'ABSTAINED' || !move) return;
 
     const isApprovalDecision = dto.decision === 'APPROVED' || dto.decision === 'APPROVED_WITH_COMMENTS';
 
     if (!isApprovalDecision) {
-      const returnTransition = await this.prisma.workflowTransition.findFirst({
-        where: { fromStageId: stage.id, isApprovalPath: false },
-      });
-      if (!returnTransition) {
-        throw new ConflictException('No return-path transition is configured for this stage');
-      }
-      await this.performTransition(
-        instance,
-        instanceStage,
-        returnTransition,
-        organizationId,
-        actorId,
-        dto.comment,
-        'REJECTED',
-        stage,
-        { pool },
-      );
+      await this.performTransition(instance, instanceStage, move, organizationId, actorId, dto.comment, 'REJECTED', stage, { pool });
       return;
     }
 
-    const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, undefined, pool);
+    const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, move, undefined, pool);
     if (!satisfied) return;
+    await this.performTransition(instance, instanceStage, move, organizationId, actorId, dto.comment, 'APPROVED', stage, { pool });
+  }
 
-    const approveTransition = await this.prisma.workflowTransition.findFirst({
-      where: { fromStageId: stage.id, isApprovalPath: true },
-    });
-    if (!approveTransition) {
-      throw new ConflictException('No approval-path transition is configured for this stage');
+  /**
+   * ACC-284 — the move a recorded decision is about, by KIND: an approval votes for
+   * the stage's ADVANCE, a return acts along its RETURN. Exactly one, else 409
+   * VOTE_MOVE_AMBIGUOUS naming the stage (a person presses the move itself instead).
+   * ABSTAINED is about no move.
+   */
+  private async voteMoveFor(stage: PrismaWorkflowStage, decision: SubmitApprovalDto['decision']): Promise<PrismaWorkflowTransition | null> {
+    if (decision === 'ABSTAINED') return null;
+    const kind = decision === 'APPROVED' || decision === 'APPROVED_WITH_COMMENTS' ? 'ADVANCE' : 'RETURN';
+    const moves = await this.prisma.workflowTransition.findMany({ where: { fromStageId: stage.id, kind }, take: 2 });
+    if (moves.length !== 1) {
+      throw new WorkflowRefusalException('VOTE_MOVE_AMBIGUOUS', { stageNameEn: stage.nameEn, stageNameAr: stage.nameAr });
     }
-    await this.performTransition(
-      instance,
-      instanceStage,
-      approveTransition,
-      organizationId,
-      actorId,
-      dto.comment,
-      'APPROVED',
-      stage,
-      { pool },
-    );
+    return moves[0]!;
   }
 
   // ACC-190 — the approval path's gate. Which transition this decision would
@@ -872,23 +886,21 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     actorId: string,
     decision: SubmitApprovalDto['decision'],
+    // ACC-284 — the decision's move (voteMoveFor()); null for ABSTAINED.
+    move: PrismaWorkflowTransition | null,
     pool?: StagePool,
   ): Promise<void> {
-    if (decision === 'ABSTAINED') return;
+    if (decision === 'ABSTAINED' || !move) return;
     const approved = decision === 'APPROVED' || decision === 'APPROVED_WITH_COMMENTS';
     // A return fires at once; an approval only when this vote completes the
-    // threshold — asked first, so a vote that decides nothing costs no lookup.
+    // move's threshold.
     const fires =
       !approved ||
-      (await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, { approverId: actorId, approved }, pool));
+      (await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, move, { approverId: actorId, approved }, pool));
     if (!fires) return;
-    const transition = await this.prisma.workflowTransition.findFirst({
-      where: { fromStageId: stage.id, isApprovalPath: approved },
-      select: { kind: true },
-    });
-    if (transition?.kind === 'ADVANCE') {
+    if (move.kind === 'ADVANCE') {
       await this.assertMandatoryTasksDone(this.prisma, instanceStage.id, organizationId);
-      await this.assertPreconditions(this.prisma, instance, stage, transition.kind, organizationId);
+      await this.assertPreconditions(this.prisma, instance, stage, move.kind, organizationId);
     }
   }
 
@@ -957,27 +969,36 @@ export class WorkflowService {
 
   // `assumedVote` counts a vote not yet recorded, replacing any earlier one by
   // the same approver — how ACC-190 asks "would this vote decide it?".
+  // ACC-284 — the threshold of ONE move. Votes count per move: a vote for another
+  // move never counts for this one (a committee vote's quorum still counts every
+  // vote cast). A vote cast before ACC-284 names no move and counts for the
+  // stage's ADVANCE moves, as it did (votesFor()).
   private async isApprovalThresholdMet(
     fromStage: PrismaWorkflowStage,
     currentInstanceStage: PrismaWorkflowInstanceStage,
     organizationId: string,
     instance: PrismaWorkflowInstance,
+    move: Pick<PrismaWorkflowTransition, 'id' | 'kind'>,
     assumedVote?: { approverId: string; approved: boolean },
     // ACC-271 — a converted stage's pool, when the caller already has it.
     pool?: StagePool,
   ): Promise<boolean> {
     const recorded = await this.prisma.workflowApproval.findMany({
       where: { workflowInstanceStageId: currentInstanceStage.id },
+      select: { approverId: true, decision: true, transitionId: true },
     });
     const approvals = assumedVote
       ? [
           ...recorded.filter((a) => a.approverId !== assumedVote.approverId),
-          { approverId: assumedVote.approverId, decision: assumedVote.approved ? 'APPROVED' : 'RETURNED' },
+          {
+            approverId: assumedVote.approverId,
+            decision: assumedVote.approved ? ('APPROVED' as const) : ('RETURNED' as const),
+            transitionId: move.id,
+          },
         ]
       : recorded;
-    const approvedCount = approvals.filter(
-      (a) => a.decision === 'APPROVED' || a.decision === 'APPROVED_WITH_COMMENTS',
-    ).length;
+    const forMove = approvals.filter((a) => votesFor(a, move));
+    const approvedCount = forMove.length;
 
     // ACC-271 — the stage decides by its who mode (plan §4.3). PR 6a removed
     // the old approval-mode branch.
@@ -1004,11 +1025,7 @@ export class WorkflowService {
     // the absent member they stand in for. An empty pool decides nothing (gap
     // 3), and so does a stage with no `who` (PR 6a: its pool is empty).
     if (stagePool.members.length === 0) return false;
-    const approvedBy = new Set(
-      approvals
-        .filter((a) => a.decision === 'APPROVED' || a.decision === 'APPROVED_WITH_COMMENTS')
-        .map((a) => a.approverId),
-    );
+    const approvedBy = new Set(forMove.map((a) => a.approverId));
     return stagePool.members.every((member) => {
       const covered = stagePool.coveringFor.get(member);
       return approvedBy.has(member) || (covered !== undefined && approvedBy.has(covered));

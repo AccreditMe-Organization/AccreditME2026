@@ -171,7 +171,7 @@ const mockPrisma = {
   workflowTransition: { findFirst: jest.fn(), findMany: jest.fn() },
   workflowTransitionAction: { findMany: jest.fn() },
   workflowActionLog: { create: jest.fn() },
-  workflowApproval: { upsert: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  workflowApproval: { upsert: jest.fn(), findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
   // ACC-65 — allPreviousStageTasksComplete queries Task directly. Defaults to
   // [] in beforeEach so every pre-existing transition test is unaffected.
   task: { findMany: jest.fn() },
@@ -236,13 +236,24 @@ describe('WorkflowService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([]);
+    // ACC-284 — recordVote() reads the member's current vote first: none, by default.
+    mockPrisma.workflowApproval.findUnique.mockResolvedValue(null);
+    mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
     // ACC-65 — default to no outstanding stage tasks, so every transition
     // test that does not care about task gating is unaffected.
     mockPrisma.task.findMany.mockResolvedValue([]);
     mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
     mockPrisma.workflowInstanceStage.update.mockResolvedValue(BASE_INSTANCE_STAGE);
-    // Default: no outgoing transitions to list.
-    mockPrisma.workflowTransition.findMany.mockResolvedValue([]);
+    // Default: no outgoing transitions to list. ACC-284 — asked by KIND
+    // (submitApproval()'s voteMoveFor()), the stage has exactly one move of it.
+    mockPrisma.workflowTransition.findMany.mockImplementation(
+      ({ where }: { where?: { fromStageId?: string; kind?: 'ADVANCE' | 'RETURN' | 'EXIT' } } = {}) =>
+        Promise.resolve(
+          where?.kind
+            ? [makeTransition({ id: `${where.kind.toLowerCase()}-move`, fromStageId: where.fromStageId, toStageId: 'stage-target', kind: where.kind })]
+            : [],
+        ),
+    );
     // Default: no user is out-of-office.
     mockPrisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
       Promise.resolve(
@@ -1022,7 +1033,8 @@ describe('WorkflowService', () => {
       );
     });
 
-    it('fires a non-approval-path transition immediately, with no threshold', async () => {
+    // ACC-284 — what acts at once is a RETURN (and EXIT on "All of them"), by kind.
+    it('fires a RETURN immediately, with no threshold', async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-parallel' }));
       mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
         Promise.resolve(
@@ -1030,7 +1042,7 @@ describe('WorkflowService', () => {
         ),
       );
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ id: 'return-transition', fromStageId: 'stage-parallel', toStageId: 'stage-target', isApprovalPath: false }),
+        makeTransition({ id: 'return-transition', fromStageId: 'stage-parallel', toStageId: 'stage-target', kind: 'RETURN' }),
       );
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
         makeInstanceStage({ stageId: 'stage-parallel' }),
@@ -1062,7 +1074,7 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalledTimes(2);
     });
 
-    it('fires the transition where isApprovalPath is true, not any other outgoing transition from that stage', async () => {
+    it('fires the transition that was pressed, not any other outgoing transition from that stage', async () => {
       const approveTransition = makeTransition({
         id: 'approve-transition',
         fromStageId: 'stage-parallel',
@@ -1849,14 +1861,15 @@ describe('WorkflowService', () => {
       );
       mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
-        makeTransition({ fromStageId: 'stage-parallel', toStageId: 'stage-target', isApprovalPath: false }),
+        makeTransition({ fromStageId: 'stage-parallel', toStageId: 'stage-target', kind: 'RETURN' }),
       );
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
 
       await service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR, ['committees:view']);
 
-      expect(mockPrisma.workflowTransition.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { fromStageId: 'stage-parallel', isApprovalPath: false } }),
+      // ACC-284 — the return's move, by kind.
+      expect(mockPrisma.workflowTransition.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { fromStageId: 'stage-parallel', kind: 'RETURN' } }),
       );
       expect(mockPrisma.workflowInstance.update).toHaveBeenCalled();
     });
@@ -1879,39 +1892,58 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictException when no approval-path transition is configured for the stage', async () => {
+    // ACC-284 — a recorded decision is about the stage's one move of its kind:
+    // none, or several, is VOTE_MOVE_AMBIGUOUS (409, naming the stage), and
+    // nothing is written. A person presses the move itself instead.
+    it.each([
+      ['APPROVED', 'ADVANCE', 0],
+      ['APPROVED', 'ADVANCE', 2],
+      ['RETURNED', 'RETURN', 0],
+      ['RETURNED', 'RETURN', 2],
+    ] as const)('refuses %s with VOTE_MOVE_AMBIGUOUS when the stage has %s moves: %i', async (decision, kind, count) => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-parallel', workflowInstanceId: 'instance-1' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-parallel' }));
+      mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
+      mockPrisma.workflowTransition.findMany.mockResolvedValue(
+        Array.from({ length: count }, (_, i) => makeTransition({ id: `move-${i}`, fromStageId: 'stage-parallel', kind })),
+      );
+
+      const error = await service
+        .submitApproval('instance-stage-1', { decision }, ORG_A, ACTOR, ['committees:view'])
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(WorkflowRefusalException);
+      expect((error as WorkflowRefusalException).getStatus()).toBe(409);
+      expect((error as WorkflowRefusalException).getResponse()).toEqual(
+        expect.objectContaining({ code: 'VOTE_MOVE_AMBIGUOUS', stageNameEn: PARALLEL_STAGE.nameEn }),
+      );
+      expect(mockPrisma.workflowTransition.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { fromStageId: 'stage-parallel', kind } }),
+      );
+      expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+    });
+
+    it('records which move the vote is for', async () => {
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
         makeInstanceStage({ stageId: 'stage-parallel', workflowInstanceId: 'instance-1' }),
       );
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
-      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
-        makeInstance({ currentStageId: 'stage-parallel' }),
-      );
-      mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
-      mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-parallel' }));
+      mockStagePool.resolve.mockResolvedValue(poolOf(['user-2', ACTOR]));
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
 
-      await expect(
-        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']),
-      ).rejects.toThrow(ConflictException);
-    });
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR, ['committees:view']);
 
-    it('throws ConflictException when no return-path transition is configured for the stage', async () => {
-      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
-        makeInstanceStage({ stageId: 'stage-parallel', workflowInstanceId: 'instance-1' }),
+      expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ transitionId: 'advance-move' }),
+          create: expect.objectContaining({ transitionId: 'advance-move' }),
+        }),
       );
-      mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'RETURNED' }));
-      mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
-      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
-        makeInstance({ currentStageId: 'stage-parallel' }),
-      );
-      mockStagePool.resolve.mockResolvedValue(poolOf([ACTOR]));
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR, ['committees:view']),
-      ).rejects.toThrow(ConflictException);
     });
 
     // ACC-33 item 7 (SYSTEM-REFERENCE.md Section 2.8 / Section 11 Tier 2) —

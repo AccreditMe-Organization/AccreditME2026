@@ -159,7 +159,7 @@ describe('am-transition-panel — fits the page column (ACC-271 PR 5b)', () => {
 
         expect(scrollers(panel)).withContext('scrolls inside the panel').toEqual([]);
         expect(panel.scrollWidth).withContext('the panel sideways').toBeLessThanOrEqual(panel.clientWidth + 1);
-        for (const sel of ['am-field', '[data-pressed-by]', '[data-actions-summary]', '[data-open-actions]', '[data-panel-save]', '[data-panel-remove]', '[data-panel-cancel]', '#tp-isApprovalPath']) {
+        for (const sel of ['am-field', '[data-pressed-by]', '[data-actions-summary]', '[data-open-actions]', '[data-panel-save]', '[data-panel-remove]', '[data-panel-cancel]']) {
           for (const el of Array.from(panel.querySelectorAll(sel))) inside(panel, el, sel);
         }
         // The stage link reads inline, inside its sentence.

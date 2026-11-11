@@ -34,6 +34,8 @@ export type WorkflowRefusalCode =
   | 'NOT_IN_STAGE_POOL'
   // ACC-271 PR 6b — a move with no mover (none exist): nobody can make it.
   | 'MOVE_HAS_NO_MOVER'
+  // ACC-284 — a recorded decision (submitApproval) needs exactly one move of its kind.
+  | 'VOTE_MOVE_AMBIGUOUS'
   // ACC-271 PR 3 — a stage save's `who` (stage-who.ts).
   | 'WHO_MODE_UNKNOWN'
   | 'WHO_ENTRIES_REQUIRED'
@@ -73,6 +75,7 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_HAS_NO_ONE: HttpStatus.CONFLICT,
   NOT_IN_STAGE_POOL: HttpStatus.FORBIDDEN,
   MOVE_HAS_NO_MOVER: HttpStatus.CONFLICT,
+  VOTE_MOVE_AMBIGUOUS: HttpStatus.CONFLICT,
   WHO_MODE_UNKNOWN: HttpStatus.BAD_REQUEST,
   WHO_ENTRIES_REQUIRED: HttpStatus.BAD_REQUEST,
   WHO_ENTRY_DUPLICATE: HttpStatus.BAD_REQUEST,
@@ -113,6 +116,7 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   STAGE_HAS_NO_ONE: "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it",
   NOT_IN_STAGE_POOL: 'Only whoever works this stage can do this',
   MOVE_HAS_NO_MOVER: "Nobody is set to make this move, so the record can't move this way. Ask an administrator",
+  VOTE_MOVE_AMBIGUOUS: "This stage doesn't have exactly one move for this decision, so it can't be recorded. Press the move itself instead",
   WHO_MODE_UNKNOWN: 'Choose how the people of this stage decide',
   WHO_ENTRIES_REQUIRED: 'A stage needs at least one assignee',
   WHO_ENTRY_DUPLICATE: 'This entry is already in the list',

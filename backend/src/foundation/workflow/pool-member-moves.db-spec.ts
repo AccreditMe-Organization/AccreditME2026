@@ -248,10 +248,8 @@ describe('Pool members see and press their moves, against a real database (ACC-2
     // member may not open the record, so their vote can never be cast, and ALL
     // waits on everyone who may act. Remove the direct entry for this case.
     await prisma.workflowStageAssignee.deleteMany({ where: { kind: 'SPECIFIC_USER', userId: w.formerNamed.id } });
-    // The seeded Approve is not an approval-path move, so on an ALL stage a single
-    // press of it would fire at once (a pre-existing seed quirk; committee stages
-    // are ANY_ONE). Mark it, so the press is a vote.
-    await prisma.workflowTransition.update({ where: { id: w.approve.id }, data: { isApprovalPath: true } });
+    // ACC-284 — the seeded Approve is used as it is: an ADVANCE on an ALL stage is a
+    // vote by its kind, whatever its isApprovalPath (the old workaround is gone).
 
     expect(await outcome(press(w, w.poolMember))).toBe('OK');
     expect(await prisma.workflowApproval.count({ where: { workflowInstanceStageId: w.entryId, decision: 'APPROVED' } })).toBe(1);

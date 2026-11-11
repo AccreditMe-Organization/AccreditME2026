@@ -18,7 +18,6 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { CheckboxModule } from 'primeng/checkbox';
 import { AmCountPipe } from '../../../../core/formatting';
 import {
   WorkflowTemplateService,
@@ -46,7 +45,6 @@ const FIELD_LABELS: Record<string, string> = {
   labelAr: 'workflow.nameAr',
   toStageId: 'workflow.transitionPanel.to',
   kind: 'workflow.kind.label',
-  isApprovalPath: 'workflow.approvalPath',
 };
 
 // ACC-208 — literal keys, so the translation-keys spec sees each one.
@@ -94,7 +92,6 @@ const MARK = '\u0001';
     AmCountPipe,
     ButtonModule,
     InputTextModule,
-    CheckboxModule,
     FieldComponent,
     OverlaySelectComponent,
     TransitionActionsDialogComponent,
@@ -214,11 +211,9 @@ const MARK = '\u0001';
             </am-field>
           </div>
 
-          <span class="am-tp__check">
-            <p-checkbox formControlName="isApprovalPath" [binary]="true" inputId="tp-isApprovalPath" />
-            <label for="tp-isApprovalPath">{{ 'workflow.isApprovalPath' | translate }}</label>
-          </span>
-
+          <!-- ACC-284 — no "approval path" box: on a stage decided together, the
+               move's Kind says whether a press is a vote, and the engine no longer
+               reads the flag. Edits leave the stored value alone (it is dropped later). -->
           <section class="am-tp__section" aria-labelledby="tp-moves-title" data-section="how-it-moves">
             <h3 id="tp-moves-title" class="am-tp__section-title">{{ 'workflow.transitionPanel.howItMoves' | translate }}</h3>
             <!-- Only "A person" for now: "Automatically" waits for step 2. -->
@@ -351,12 +346,6 @@ const MARK = '\u0001';
       }
       .am-tp__row > * {
         min-inline-size: 0;
-      }
-      .am-tp__check {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--am-space-8);
-        font-size: var(--am-type-body-size);
       }
       .am-tp__section {
         display: flex;
@@ -503,7 +492,6 @@ export class TransitionPanelComponent implements OnChanges {
     labelAr: ['', [Validators.maxLength(100)]],
     toStageId: [null as string | null],
     kind: ['ADVANCE' as WorkflowTransitionKind, [Validators.required]],
-    isApprovalPath: [false],
   });
 
   readonly adding = computed(() => this.transitionSig() === null);
@@ -653,7 +641,6 @@ export class TransitionPanelComponent implements OnChanges {
         labelAr: transition?.labelAr ?? '',
         toStageId: transition?.toStageId ?? null,
         kind: transition?.kind ?? 'ADVANCE',
-        isApprovalPath: transition?.isApprovalPath ?? false,
       });
     } finally {
       this.refilling = false;
@@ -708,14 +695,14 @@ export class TransitionPanelComponent implements OnChanges {
 
     const raw = this.form.getRawValue();
     const transition = this.transition;
-    // ACC-271 PR 5b — the names, the kind and Approval path, and on add the two
-    // stages. Never a trigger, role, person, permission or validator: the stage
-    // says who presses it, and an edit that leaves them out leaves them stored.
+    // ACC-271 PR 5b — the names and the kind, and on add the two stages. Never a
+    // trigger, role, person, permission or validator: the stage says who presses
+    // it, and an edit that leaves them out leaves them stored. ACC-284 — nor
+    // Approval path: the engine no longer reads it, so it is left as stored.
     const shared = {
       labelEn: raw.labelEn!,
       labelAr: raw.labelAr ?? '',
       kind: raw.kind!,
-      isApprovalPath: raw.isApprovalPath ?? false,
     };
     const request$ = transition
       ? this.workflowTemplateService.updateTransition(transition.id, shared satisfies UpdateWorkflowTransitionDto)

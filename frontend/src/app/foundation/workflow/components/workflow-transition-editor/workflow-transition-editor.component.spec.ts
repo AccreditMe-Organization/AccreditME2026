@@ -112,6 +112,14 @@ describe('WorkflowTransitionEditorComponent — a stage’s transitions list (AC
     }
   });
 
+  // ACC-284 — Kind says whether a press is a vote; the old flag is not shown, even when stored.
+  it('shows no "Approval Path" tag, even for a move stored with isApprovalPath true', () => {
+    const el = setup({ transitions: [{ ...PERSON, isApprovalPath: true }] });
+    expect(text(row(el, 'transition-1').querySelector('[data-tr-kind]'))).toBe('workflow.kind.advance');
+    expect(el.querySelector('p-tag')).toBeNull();
+    expect(text(el)).not.toContain('workflow.approvalPath');
+  });
+
   it('names the move and its destination in Arabic in an Arabic session', () => {
     const el = setup({ arabic: true });
     expect(text(row(el, 'transition-1').querySelector('[data-tr-label]'))).toBe('اعتماد اللجنة');
