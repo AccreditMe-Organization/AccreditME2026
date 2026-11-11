@@ -1,12 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupService } from '../lookup/lookup.service';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import { committeeStagesAndCounts } from './committee-stage-counts';
+import { seatOrderedMemberships } from './committee-memberships';
 import { ICommitteeHomeCounts, IMyCommitteeRow, IMyCommittees } from './interfaces/committee.interface';
-
-const COMMITTEE_MEMBER_ROLE_CATEGORY = 'committee_member_role';
 
 /** Home shows at most this many of a person's committees; `total` counts past it. */
 export const MY_COMMITTEES_ROWS = 5;
@@ -39,46 +37,20 @@ export class CommitteeHomeService {
    * longest-served, then the committee's id. That is the Members panel's order
    * (ACC-230), and it does not depend on the reader's language.
    *
-   * Queries: the memberships, their count and the seats (3, in lookups) in one wave;
-   * then the stage facts of the five shown (3). That is 8, however many memberships
-   * there are.
+   * Queries: the memberships, their count and the seats (3, in lookups) in one wave
+   * (seatOrderedMemberships(), shared with ACC-295's read); then the stage facts of the
+   * five shown (3). That is 8, however many memberships there are.
    */
   async mine(organizationId: string, userId: string): Promise<IMyCommittees> {
-    const where: Prisma.CommitteeMemberWhereInput = {
+    const { memberships, total, seatById } = await seatOrderedMemberships(
+      this.prisma,
+      this.lookups,
       organizationId,
       userId,
-      isActive: true,
-      committee: { organizationId, isActive: true },
-    };
-    const [memberships, total, seats] = await Promise.all([
-      this.prisma.committeeMember.findMany({
-        where,
-        select: {
-          roleValueId: true,
-          joinedAt: true,
-          committee: { select: { id: true, nameEn: true, nameAr: true, isActive: true } },
-        },
-        orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
-        take: MY_COMMITTEES_READ_CAP,
-      }),
-      this.prisma.committeeMember.count({ where }),
-      // The seats as THIS tenant names and orders them (hidden values and label
-      // overrides applied), the same resolution the Members panel reads.
-      this.lookups.getValues(COMMITTEE_MEMBER_ROLE_CATEGORY, organizationId),
-    ]);
+      MY_COMMITTEES_READ_CAP,
+    );
     if (memberships.length === 0) return { total, rows: [] };
-
-    const seatIndex = new Map(seats.map((s, i) => [s.id, i]));
-    const seatById = new Map(seats.map((s) => [s.id, s]));
-    const seatOf = (roleValueId: string) => seatIndex.get(roleValueId) ?? Number.MAX_SAFE_INTEGER;
-    const shown = [...memberships]
-      .sort(
-        (a, b) =>
-          seatOf(a.roleValueId) - seatOf(b.roleValueId) ||
-          a.joinedAt.getTime() - b.joinedAt.getTime() ||
-          a.committee.id.localeCompare(b.committee.id),
-      )
-      .slice(0, MY_COMMITTEES_ROWS);
+    const shown = memberships.slice(0, MY_COMMITTEES_ROWS);
 
     const facts = await committeeStagesAndCounts(
       this.prisma,
