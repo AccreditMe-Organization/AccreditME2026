@@ -249,7 +249,12 @@ describe('SidebarComponent (ACC-79)', () => {
 
       const item = el.querySelector('a[href="/admin"]');
       expect(item?.getAttribute('aria-label')).toBe('Administration · 7 open problems');
-      expect(item?.querySelector('.am-rail-badge.w-\\[7px\\]')).withContext('the 7px dot').not.toBeNull();
+      // ACC-290 — the 7px dot in its own class (neutral here: nothing blocks
+      // work), never the badge's.
+      const dot = item?.querySelector('.am-rail-dot.w-\\[7px\\]');
+      expect(dot).withContext('the 7px dot').not.toBeNull();
+      expect(dot?.classList).not.toContain('am-rail-dot--alert');
+      expect(item?.querySelector('.am-rail-badge')).toBeNull();
     });
 
     it('in Arabic, the collapsed label takes the plural form: 1, 2, 3 and 11', () => {
@@ -495,12 +500,17 @@ describe('SidebarComponent (ACC-79)', () => {
       expect(srText(el)).toBe('1 item waiting');
     });
 
-    it('collapsed: the neutral dot, and the label carries the sentence', () => {
+    // ACC-290 — the collapsed dot has its own tokens: .am-rail-dot, never the
+    // badge's fill (.am-rail-badge), which fails 3:1 against the rail.
+    it('collapsed: the neutral dot (.am-rail-dot, never .am-rail-badge), and the label carries the sentence', () => {
       const el = renderAwaiting({ collapsed: true });
       set(ready(3, 0));
-      const dot = badge(el)!;
+      const dot = link(el).querySelector('.am-rail-dot')!;
+      expect(dot).withContext('the dot renders').not.toBeNull();
       expect(dot.getAttribute('aria-hidden')).toBe('true');
-      expect(dot.classList).not.toContain('am-rail-badge--alert');
+      expect(dot.classList).not.toContain('am-rail-dot--alert');
+      expect(dot.classList).not.toContain('am-rail-badge');
+      expect(link(el).querySelector('.am-rail-badge')).toBeNull();
       expect(link(el).getAttribute('aria-label')).toBe('Awaiting my action — 3 items waiting');
     });
 
@@ -641,13 +651,18 @@ describe('SidebarComponent (ACC-79)', () => {
       expect(srText(el)).toBe('7 open tasks');
     });
 
-    it('collapsed: the dot, and the label carries the sentence', () => {
+    // ACC-290 — an alert count's dot is .am-rail-dot--alert, never the badge's.
+    it('collapsed: the alert dot (.am-rail-dot--alert, never .am-rail-badge), and the label carries the sentence', () => {
       const el = renderTasks({ collapsed: true });
       set(ready(7), { state: 'ready', value: 2 });
-      const dot = badge(el)!;
+      const dot = tasksLink(el).querySelector('.am-rail-dot')!;
+      expect(dot).withContext('the dot renders').not.toBeNull();
       expect(dot.getAttribute('aria-hidden')).toBe('true');
       expect(dot.textContent?.trim()).toBe('');
-      expect(dot.classList).toContain('am-rail-badge--alert');
+      expect(dot.classList).toContain('am-rail-dot--alert');
+      expect(dot.classList).not.toContain('am-rail-badge');
+      expect(dot.classList).not.toContain('am-rail-badge--alert');
+      expect(tasksLink(el).querySelector('.am-rail-badge')).toBeNull();
       expect(tasksLink(el).getAttribute('aria-label')).toBe('Tasks — 7 open tasks, some overdue');
     });
 
