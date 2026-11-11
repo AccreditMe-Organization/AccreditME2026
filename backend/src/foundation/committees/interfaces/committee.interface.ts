@@ -235,6 +235,30 @@ export interface IMyCommittees {
   rows: IMyCommitteeRow[];
 }
 
+// ACC-295 — one person's committee memberships, for the Transfer wizard
+// (GET /committees/memberships?userId=). Seat order, then longest-served.
+export interface ICommitteeMembershipRow {
+  /** The CommitteeMember row: what DELETE /committees/:id/members/:memberId takes. */
+  memberId: string;
+  committeeId: string;
+  nameEn: string;
+  nameAr: string | null;
+  /** The person's seat, as this tenant names it; null labels when the value is gone. */
+  seat: { id: string; labelEn: string | null; labelAr: string | null };
+  joinedAt: Date;
+  /** The committee's current stage; null names when it has no workflow instance. */
+  stage: { nameEn: string | null; nameAr: string | null };
+  /** The current stage allows REMOVE_MEMBER (false with no stage, and on Dissolved). */
+  mayRemove: boolean;
+}
+
+export interface ICommitteeMemberships {
+  /** Every active membership on an active committee, counted past the cap. */
+  total: number;
+  /** At most 100. */
+  rows: ICommitteeMembershipRow[];
+}
+
 // ACC-279 — the admin summary's committees part.
 export interface ICommitteeHomeCounts {
   inForce: number;
