@@ -57,18 +57,46 @@ describe('CommitteeMembershipsService.forUser (ACC-295)', () => {
     expect(stageRules.stageRulesFor).not.toHaveBeenCalled();
   };
 
+  // ACC-295 follow-up (Ahmad, 11 Nov): whoever holds Transfer users sees everything in
+  // the transfer — users:transfer opens the read on its own; otherwise committees:view
+  // AND users:view. A refusal names users:transfer, the one key that opens it alone.
   describe('who may ask (ACC-101 clause a: refused before any read)', () => {
-    it('without committees:view: 403 naming it, and no query', async () => {
-      const error = await service.forUser(ORG_A, { permissions: ['users:view'] }, 'user-9').catch((e: unknown) => e);
+    const REFUSAL = 'Required permission: users:transfer';
+    const refusal = async (permissions: string[]) => {
+      const error = await service.forUser(ORG_A, { permissions }, 'user-9').catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ForbiddenException);
-      expect((error as ForbiddenException).message).toBe('Required permission: committees:view');
+      return (error as ForbiddenException).message;
+    };
+
+    it('users:transfer alone is admitted, and reads', async () => {
+      prisma.committeeMember.findMany.mockResolvedValue([membership(1, 'seat-chair', '2026-01-01T00:00:00Z')]);
+      prisma.committeeMember.count.mockResolvedValue(1);
+      const result = await service.forUser(ORG_A, { permissions: ['users:transfer'] }, 'user-9');
+      expect(result.total).toBe(1);
+      expect(result.rows.length).toBe(1);
+      expect(prisma.committeeMember.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('committees:view and users:view, without users:transfer, are still admitted', async () => {
+      await expect(service.forUser(ORG_A, { permissions: ['committees:view', 'users:view'] }, 'user-9')).resolves.toEqual({
+        total: 0,
+        rows: [],
+      });
+      expect(prisma.committeeMember.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('committees:view alone: refused naming users:transfer, and no query', async () => {
+      expect(await refusal(['committees:view'])).toBe(REFUSAL);
       noRead();
     });
 
-    it('with committees:view but without users:view: 403 naming users:view, and no query', async () => {
-      const error = await service.forUser(ORG_A, { permissions: ['committees:view'] }, 'user-9').catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(ForbiddenException);
-      expect((error as ForbiddenException).message).toBe('Required permission: users:view');
+    it('users:view alone: refused naming users:transfer, and no query', async () => {
+      expect(await refusal(['users:view'])).toBe(REFUSAL);
+      noRead();
+    });
+
+    it('no permission at all: refused, and no query', async () => {
+      expect(await refusal([])).toBe(REFUSAL);
       noRead();
     });
   });
