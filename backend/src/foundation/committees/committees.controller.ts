@@ -20,6 +20,7 @@ import {
   ICommitteeMember,
   ICommitteeMemberRow,
   ICommitteeMembershipEventRow,
+  ICommitteeMemberships,
   ICommitteePage,
   IMyCommittees,
   ISubCommitteeRow,
@@ -27,6 +28,8 @@ import {
 import { CommitteeListsService } from './committee-lists.service';
 import { CommitteeFormChoicesService } from './committee-form-choices.service';
 import { CommitteeHomeService } from './committee-home.service';
+import { CommitteeMembershipsService } from './committee-memberships.service';
+import { CommitteeMembershipsQueryDto } from './dto/committee-memberships-query.dto';
 import { CommitteeMembersPageQueryDto, SubCommitteesQueryDto } from './dto/committee-list-query.dto';
 
 // Lifecycle transitions (FORMATION -> ... -> DISSOLVED) go through the
@@ -41,6 +44,7 @@ export class CommitteesController {
     private readonly lists: CommitteeListsService,
     private readonly formChoices: CommitteeFormChoicesService,
     private readonly home: CommitteeHomeService,
+    private readonly memberships: CommitteeMembershipsService,
   ) {}
 
   // ACC-281 — no route permission: committees:view lists every committee, anyone
@@ -72,6 +76,20 @@ export class CommitteesController {
   @Get('mine')
   getMine(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IMyCommittees> {
     return this.home.mine(tenantId, userId);
+  }
+
+  // ACC-295 — one person's committee memberships, for lane A's Transfer wizard.
+  // committees:view here; users:view in the service, both before any read (ACC-101
+  // clause a). Another organisation's user, or an invented id, is an empty list.
+  // Declared ABOVE ':id' so 'memberships' is not read as an id.
+  @Get('memberships')
+  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
+  getMemberships(
+    @Query() query: CommitteeMembershipsQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ICommitteeMemberships> {
+    return this.memberships.forUser(tenantId, { permissions }, query.userId);
   }
 
   // ACC-281 — no route permission: committees:view OR an active member of the
