@@ -454,7 +454,7 @@ nothing reads.
 - [x] Backend: decide by kind; votes per move (`WorkflowApproval.transitionId`); specs (db-spec on 55432), mutation checks
 - [x] Frontend: the checkbox and the tag
 - [x] Docs: SYSTEM-REFERENCE §2.19 and §2.19.1; CLAUDE.md
-- [ ] Gate, PR
+- [x] Gate (head `e513a5a`: backend 217 suites / 4,394 tests, isolation 262, test:db 40 suites / 449, frontend 3,819, 20 scans), PR
 
 ### As built (10 Nov)
 
