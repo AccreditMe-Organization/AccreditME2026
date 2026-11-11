@@ -138,10 +138,12 @@ export interface RailBadge {
                       <span class="sr-only">{{ badge.sentence }}</span>
                     </span>
                   } @else {
-                    <!-- Collapsed, a dot; the count is in the label and tooltip. -->
+                    <!-- Collapsed, a dot; the count is in the label and tooltip.
+                         ACC-290 — its own tokens, not the badge's fill: a dot is
+                         only its colour, so it needs 3:1 against the rail. -->
                     <span
-                      class="am-rail-badge absolute top-[5px] end-[14px] w-[7px] h-[7px] rounded-full"
-                      [class.am-rail-badge--alert]="badge.alert"
+                      class="am-rail-dot absolute top-[5px] end-[14px] w-[7px] h-[7px] rounded-full"
+                      [class.am-rail-dot--alert]="badge.alert"
                       aria-hidden="true"
                     ></span>
                   }
@@ -281,6 +283,12 @@ export interface RailBadge {
       .am-rail-badge--alert {
         background: var(--am-rail-badge-alert-bg);
         color: var(--am-rail-badge-alert-ink);
+      }
+      .am-rail-dot {
+        background: var(--am-rail-dot);
+      }
+      .am-rail-dot--alert {
+        background: var(--am-rail-dot-alert);
       }
     `,
   ],

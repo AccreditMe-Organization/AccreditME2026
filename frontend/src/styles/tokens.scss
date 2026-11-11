@@ -104,6 +104,14 @@
   --am-rail-badge-ink:      oklch(0.90 0.012 255);
   --am-rail-badge-alert-bg: oklch(0.55 0.16 30);
   --am-rail-badge-alert-ink: #fff;
+  // ACC-290 — the collapsed rail's count dot, and nothing else. A 7px dot is
+  // non-text UI, so it needs 3:1 (WCAG 1.4.11) against the rail, a hovered item
+  // and the active item. The badge fills above sit too close to the rail's own
+  // lightness for that (1.1 to 2.9:1), which is fine for a badge that carries a
+  // number in its ink, and not for a dot that is only its fill. check:contrast
+  // asserts the six pairs in both palettes.
+  --am-rail-dot:       var(--am-rail-badge-ink);
+  --am-rail-dot-alert: oklch(0.70 0.17 30);
 }
 
 // Platform shell palette (ACC-79) — overrides the rail tokens above for a
@@ -129,4 +137,9 @@
   --am-rail-avatar: oklch(0.42 0.09 320);
   --am-rail-badge-bg:  oklch(0.34 0.05 320);
   --am-rail-badge-ink: oklch(0.90 0.03 320);
+  // ACC-290 — redeclared, not inherited: a var() in a custom property is
+  // resolved where it is declared, so the :root one is the TENANT's ink, and
+  // without this line the platform dot would keep it. The alert dot is the same
+  // in both palettes.
+  --am-rail-dot: var(--am-rail-badge-ink);
 }
