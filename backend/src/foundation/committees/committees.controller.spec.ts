@@ -4,6 +4,7 @@ import { CommitteesService } from './committees.service';
 import { CommitteeListsService } from './committee-lists.service';
 import { CommitteeFormChoicesService } from './committee-form-choices.service';
 import { CommitteeHomeService } from './committee-home.service';
+import { CommitteeMembershipsService } from './committee-memberships.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
@@ -67,6 +68,7 @@ describe('CommitteesController', () => {
   let lists: { members: jest.Mock; subCommittees: jest.Mock; membershipEvents: jest.Mock };
   let formChoices: { forOrganization: jest.Mock };
   let home: { mine: jest.Mock };
+  let memberships: { forUser: jest.Mock };
   let service: {
     listCommittees: jest.Mock;
     getCommitteeDetail: jest.Mock;
@@ -95,6 +97,7 @@ describe('CommitteesController', () => {
     formChoices = { forOrganization: jest.fn().mockResolvedValue({ committeeTypes: [], orgUnits: [] }) };
 
     home = { mine: jest.fn().mockResolvedValue({ total: 0, rows: [] }) };
+    memberships = { forUser: jest.fn().mockResolvedValue({ total: 0, rows: [] }) };
 
     lists = {
       members: jest.fn().mockResolvedValue({ items: [], total: 0, matching: 0 }),
@@ -109,6 +112,7 @@ describe('CommitteesController', () => {
         { provide: CommitteeListsService, useValue: lists },
         { provide: CommitteeFormChoicesService, useValue: formChoices },
         { provide: CommitteeHomeService, useValue: home },
+        { provide: CommitteeMembershipsService, useValue: memberships },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -149,6 +153,15 @@ describe('CommitteesController', () => {
     expect(home.mine).toHaveBeenCalledWith(TENANT_ID, 'user-1');
     expect(result).toEqual({ total: 0, rows: [] });
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getMine)).toBeUndefined();
+  });
+
+  // ACC-295 — one person's memberships: committees:view at the route (users:view in the
+  // service), and the caller's permissions and the query's userId passed on.
+  it('getMemberships delegates with the tenant, the caller\'s permissions and the userId, under committees:view', async () => {
+    const result = await controller.getMemberships({ userId: 'user-9' }, TENANT_ID, PERMS);
+    expect(memberships.forUser).toHaveBeenCalledWith(TENANT_ID, { permissions: PERMS }, 'user-9');
+    expect(result).toEqual({ total: 0, rows: [] });
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getMemberships)).toEqual(['committees:view']);
   });
 
   // ACC-281 — no read gates on committees:view at the route: the service decides
