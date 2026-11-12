@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -11,7 +11,6 @@ import ar from '../../../../../assets/i18n/ar.json';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
-import { AmConfirmOptions, AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { CommitteeDetailDto, CommitteeMemberDto, CommitteeService } from '../../services/committee.service';
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { UserService } from '../../../user/services/user.service';
@@ -22,8 +21,12 @@ import { ACTIVE_RULES } from '../../testing';
 
 // ACC-240 (lane A's handover) — Remove member asks the question by the person's
 // name and states the server's consequence: no date is sent, so the membership
-// ends today (committees.service.ts:397, :401–403), and a LEFT event keeps it
-// in the history (:406–413). Read from the REAL translation files.
+// ends today, and a LEFT event keeps it in the history.
+// ACC-298 — it asks in a dialog with a required reason
+// (CommitteeRemoveMemberDialogComponent, whose own spec covers the field, the
+// request and the refusals). This spec covers the page's half: Remove opens
+// that dialog for the right person, and a removal reloads what the page shows.
+// Read from the REAL translation files.
 
 const COMMITTEE: CommitteeDetailDto = {
   id: 'c-1',
@@ -60,12 +63,13 @@ const MEMBER: CommitteeMemberDto = {
   isActive: true,
 };
 
-describe('CommitteeDetailComponent — the Remove member confirm (ACC-240)', () => {
+describe('CommitteeDetailComponent — Remove member opens the reason dialog (ACC-240, ACC-298)', () => {
   preserveDocumentLanguage();
-  let asked: AmConfirmOptions[];
+  let fixture: ComponentFixture<CommitteeDetailComponent>;
+  let reads: { members: number; events: number };
 
   function page(lang: 'en' | 'ar'): CommitteeDetailComponent {
-    asked = [];
+    reads = { members: 0, events: 0 };
     TestBed.configureTestingModule({
       imports: [CommitteeDetailComponent],
       providers: [
@@ -76,7 +80,6 @@ describe('CommitteeDetailComponent — the Remove member confirm (ACC-240)', () 
         provideTranslateService({ lang }),
         provideFormatTesting(),
         ConfirmationService,
-        { provide: AmConfirmService, useValue: { ask: (o: AmConfirmOptions) => asked.push(o) } },
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) }, queryParamMap: of(convertToParamMap({})) } },
         { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
         {
@@ -84,8 +87,14 @@ describe('CommitteeDetailComponent — the Remove member confirm (ACC-240)', () 
           useValue: {
             getById: () => of(COMMITTEE),
             listCommittees: () => of([]),
-            listMembers: () => of([MEMBER]),
-            listMembershipEvents: () => of([]),
+            listMembers: () => {
+              reads.members++;
+              return of([MEMBER]);
+            },
+            listMembershipEvents: () => {
+              reads.events++;
+              return of([]);
+            },
             membersPage: () => of({ items: [], total: 0, matching: 0 }),
             subCommittees: () => of({ items: [], total: 0, matching: 0 }),
           },
@@ -98,23 +107,30 @@ describe('CommitteeDetailComponent — the Remove member confirm (ACC-240)', () 
     });
     loadTranslationsForTest({ en, ar });
     TestBed.inject(TranslateService).use(lang);
-    const fixture = TestBed.createComponent(CommitteeDetailComponent);
+    fixture = TestBed.createComponent(CommitteeDetailComponent);
     fixture.detectChanges();
     return fixture.componentInstance;
   }
 
-  afterEach(() => TestBed.resetTestingModule());
+  afterEach(() => {
+    document.querySelectorAll('.p-dialog-mask, .p-dialog').forEach((n) => n.remove());
+    TestBed.resetTestingModule();
+  });
 
-  const said = () => {
-    expect(asked.length).withContext('asked exactly once').toBe(1);
-    const o = asked[0]!;
-    return { tone: o.tone, header: o.header, message: o.message, accept: o.acceptLabel };
-  };
+  /** What the open dialog shows: its title, its consequence line, its button. */
+  const shown = () => ({
+    header: document.querySelector('.p-dialog-title')?.textContent?.trim(),
+    message: document.querySelector('[data-testid="remove-member-consequence"]')?.textContent?.trim(),
+    accept: document.querySelector('[data-testid="remove-member-submit"]')?.textContent?.trim(),
+  });
 
-  it('English: names the person, says the membership ends today and stays in the history, and is destructive', () => {
-    page('en').onRemoveMember(MEMBER);
-    expect(said()).toEqual({
-      tone: 'destructive',
+  it('English: opens the dialog for that person, says the membership ends today and stays in the history', () => {
+    const p = page('en');
+    expect(shown().header).withContext('closed before Remove').toBeUndefined();
+    p.onRemoveMember(MEMBER);
+    fixture.detectChanges();
+    expect(p.removeTarget()).toEqual({ memberId: 'm-1', name: 'Sara Al-Mutairi' });
+    expect(shown()).toEqual({
       header: 'Remove Sara Al-Mutairi from this committee?',
       message: "Their membership ends today and stays in the committee's history.",
       accept: 'Remove',
@@ -122,12 +138,20 @@ describe('CommitteeDetailComponent — the Remove member confirm (ACC-240)', () 
   });
 
   it('Arabic: the same, in Arabic, with the name as stored (a person has one name)', () => {
-    page('ar').onRemoveMember(MEMBER);
-    expect(said()).toEqual({
-      tone: 'destructive',
+    const p = page('ar');
+    p.onRemoveMember(MEMBER);
+    fixture.detectChanges();
+    expect(shown()).toEqual({
       header: 'إزالة Sara Al-Mutairi من هذه اللجنة؟',
       message: 'تنتهي العضوية اليوم وتبقى في سجل اللجنة.',
       accept: 'إزالة',
     });
+  });
+
+  it('a removal reloads the members and their history', () => {
+    const p = page('en');
+    const before = { ...reads };
+    p.onMemberRemoved();
+    expect(reads).toEqual({ members: before.members + 1, events: before.events + 1 });
   });
 });

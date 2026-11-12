@@ -195,9 +195,11 @@ export interface ChangeCommitteeMemberRoleDto {
   reason?: string;
 }
 
+// ACC-298 — a removal needs a reason (trimmed, non-empty, at most 2000
+// characters); the server refuses one without.
 export interface RemoveCommitteeMemberDto {
   effectiveDate?: string;
-  reason?: string;
+  reason: string;
 }
 
 // ACC-230 — a row of the Members panel and its See all list.
