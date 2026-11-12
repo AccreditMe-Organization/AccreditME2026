@@ -17,6 +17,16 @@ export interface MembershipsViewer {
 }
 
 /**
+ * ACC-295 follow-up — the gate, with no query: `users:transfer` alone, or
+ * `committees:view` AND `users:view`. Anyone else: 403 naming `users:transfer`.
+ */
+export function assertMayReadMemberships(permissions: readonly string[]): void {
+  if (permissions.includes(USERS_PERMISSIONS.TRANSFER)) return;
+  if (permissions.includes(COMMITTEES_PERMISSIONS.VIEW) && permissions.includes(USERS_PERMISSIONS.VIEW)) return;
+  throw new ForbiddenException(`Required permission: ${USERS_PERMISSIONS.TRANSFER}`);
+}
+
+/**
  * ACC-295 — one person's committee memberships, for lane A's Transfer wizard: each seat
  * with what a remove needs (`memberId`) and whether the committee's stage allows one
  * (`mayRemove`). The removes stay `DELETE /committees/:id/members/:memberId`, each with
@@ -28,23 +38,14 @@ export interface MembershipsViewer {
  * read, so a refusal is a 403 and costs no query (ACC-101 clause a: the request names
  * the parent, a person). The refusal names `users:transfer` whichever key is missing:
  * it is the one key that opens the read alone. Removing a seat is unchanged (its own
- * route and key); whether `users:transfer` may also remove is still open with Ahmad.
+ * route and key); users:transfer gives no remove right: removing stays with
+ * committees:remove_member (Ahmad, 11 Nov).
  *
  * WHAT IS READ: active memberships on active committees, both in the caller's
  * organisation (from the tenant, never the request). Another organisation's user, or
  * an invented id, has none: `{ total: 0, rows: [] }`, never a 404 that would say the
  * person exists.
  */
-/**
- * ACC-295 follow-up — the gate, with no query: `users:transfer` alone, or
- * `committees:view` AND `users:view`. Anyone else: 403 naming `users:transfer`.
- */
-export function assertMayReadMemberships(permissions: readonly string[]): void {
-  if (permissions.includes(USERS_PERMISSIONS.TRANSFER)) return;
-  if (permissions.includes(COMMITTEES_PERMISSIONS.VIEW) && permissions.includes(USERS_PERMISSIONS.VIEW)) return;
-  throw new ForbiddenException(`Required permission: ${USERS_PERMISSIONS.TRANSFER}`);
-}
-
 @Injectable()
 export class CommitteeMembershipsService {
   constructor(

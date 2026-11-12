@@ -6225,8 +6225,8 @@ For lane A's user Transfer wizard: the seats the person holds, each with what a 
     (ACC-101 clause a);
   - a refusal is a 403 "Required permission: users:transfer", whichever key is
     missing, with no query.
-  - Removing a seat is unchanged: its own route and key. Whether `users:transfer` may
-    also remove is still open with Ahmad.
+  - Removing a seat is unchanged: its own route and key. users:transfer gives no
+    remove right: removing stays with committees:remove_member (Ahmad, 11 Nov).
 - **Shape:**
   `{ total, rows: [{ memberId, committeeId, nameEn, nameAr, seat: { id, labelEn, labelAr }, joinedAt, stage: { nameEn, nameAr }, mayRemove }] }`.
   - `memberId` is what `DELETE /committees/:id/members/:memberId` takes. The removes
