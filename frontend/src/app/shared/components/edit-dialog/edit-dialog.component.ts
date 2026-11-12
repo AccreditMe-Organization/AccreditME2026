@@ -72,7 +72,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
       [closable]="false"
       [role]="role()"
       appendTo="body"
-      [style]="{ width: resolvedWidth() }"
+      [style]="frame()"
       [attr.data-density]="density()"
     >
       <!-- ACC-96 — the title and, when the caller gives one, a context line
@@ -420,6 +420,15 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    */
 
   protected readonly resolvedWidth = computed(() => this.width() || DIALOG_WIDTH[this.size()]);
+
+  // ACC-299 — the width, and a cap at the screen less its gutters, as the
+  // dialog's own style (confirm-host's shape), so both hold whatever
+  // breakpoints PrimeNG writes. The cap applies to a size and to an explicit
+  // width alike: at 390px a 560px form or the 640px Transfer wizard is 358.
+  protected readonly frame = computed(() => ({
+    width: this.resolvedWidth(),
+    maxWidth: 'var(--am-dialog-max-inline)',
+  }));
 
   private readonly layers = inject(LayerStackService);
   private readonly listFocus = inject(ListFocusService);

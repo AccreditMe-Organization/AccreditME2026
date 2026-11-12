@@ -92,12 +92,14 @@ class ScrollAffordanceHostComponent {
       [content]="formTpl"
       [footer]="withFooter ? footerTpl : null"
       [size]="size"
+      [width]="width"
       [dirty]="dirty"
       [saving]="saving"
     />
   `,
 })
 class ShellHostComponent {
+  width = '';
   visible = false;
   withFooter = true;
   dirty = false;
@@ -366,6 +368,29 @@ describe('EditDialogComponent', () => {
       const fixture = await open((h) => (h.size = 'confirm'));
       const dialog = document.querySelector('.p-dialog') as HTMLElement;
       expect(dialog.style.width).toContain('--am-dialog-confirm');
+    });
+
+    // ACC-299 — every form dialog is capped at the screen less its gutters.
+    for (const size of ['confirm', 'form', 'picker'] as const) {
+      it(`caps a ${size} dialog at var(--am-dialog-max-inline)`, async () => {
+        await open((h) => (h.size = size));
+        const dialog = document.querySelector('.p-dialog') as HTMLElement;
+        expect(dialog.style.width).toContain(`--am-dialog-${size}`);
+        expect(dialog.style.maxWidth).toBe('var(--am-dialog-max-inline)');
+      });
+    }
+
+    it("caps an explicit width too (the Transfer wizard's 640px)", async () => {
+      await open((h) => (h.width = '640px'));
+      const dialog = document.querySelector('.p-dialog') as HTMLElement;
+      expect(dialog.style.width).toBe('640px');
+      expect(dialog.style.maxWidth).toBe('var(--am-dialog-max-inline)');
+    });
+
+    it('the token is the screen less a 16px gutter each side', () => {
+      const token = getComputedStyle(document.documentElement).getPropertyValue('--am-dialog-max-inline').trim();
+      // Read back resolved: var(--am-space-16) is 16px.
+      expect(token).toBe('calc(100vw - 2 * 16px)');
     });
 
     it('renders the footer OUTSIDE the scrolling body, so it cannot scroll away', async () => {
