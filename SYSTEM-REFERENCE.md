@@ -12240,9 +12240,10 @@ re-checked-at-submit-time gates, never trusted as sole authority:
 (`user/components/transfer-user-wizard/`), a thin wrapper around
 PrimeNG's `p-stepper` family (not `EditDialogComponent`, not a fully
 custom stepper — confirmed via the component's own header comment
-this was a deliberate choice, not a default). Up to 5 visible steps
+this was a deliberate choice, not a default). Up to 6 visible steps
 (Destination Unit → Replacement [conditional, shown only when
-`hasActiveDirectReports`] → Position → Manager → Review), driven by a
+`hasActiveDirectReports`] → Position → Manager → Committees [conditional,
+ACC-296, below] → Review), driven by a
 `stepValues()` computed mapping rather than fixed numeric step values
 — confirmed against PrimeNG's own source (`primeng-stepper.mjs`) that
 a `p-step`'s number badge is literally its declared `[value]`, so the
@@ -12253,6 +12254,70 @@ Reuses `OverlaySelectComponent` (Section 10.7) for its pickers, not
 through a TemplateRef so every opening starts at step one, each binding the
 wizard's `dirtyChange` to the shell's `[dirty]`. The raw `p-dialog` on the
 old profile page is gone with that page.
+
+**The Committees step (ACC-296)** — keep or remove the person's committee
+seats as part of the transfer. Frontend only; it reads §3.21.1 and removes
+through the existing member route.
+
+- **The read:** `TransferCommitteesService.forUser()` (`user/services/`), once,
+  when the wizard opens. No polling.
+- **When the step shows:** only with at least one row.
+  - A 403 hides it, and nothing is said. Build against "200 or 403", never
+    against which permission refused.
+  - 0 rows hides it.
+  - Any other failure shows it with "Couldn't load this person's
+    committees." and Try again. Next still works: the step never blocks
+    the transfer.
+  - `stepValues()` places it after Manager and Review after it, with and
+    without Replacement; every Back and Next follows its presence.
+- **Each row:** the committee, the seat and the stage (bilingual), and Keep or
+  Remove, Keep by default. The choice is two native radios drawn as one
+  segmented control (`stage-who`'s pattern). `p-selectButton` is not usable
+  here: its options are `p-togglebutton`s with a bare `[ngModel]`, which
+  Angular refuses inside the wizard's `<form>` (NG01350).
+- **What decides Remove:** it is offered only when the row's `mayRemove` is
+  true AND the viewer holds `committees:remove_member`.
+  - Without the permission, the row says "Your role can't remove committee
+    members." (checked first: it is true of every row).
+  - Otherwise, with `mayRemove` false, it says the stage refusal sentence
+    (`committee.refusal.membersNotAllowedInStage`, the stage named in the
+    reader's language).
+- **Over the cap:** with `total` above the rows shown, "Showing {{shown}} of
+  {{total}}. Remove the others from each committee's page.", a counted string,
+  held at the foot of the list.
+- **The 420px body cap:** the list scrolls inside itself (a focusable region
+  named "Committee seats"), 136px high, 112px below a 480px container (the step
+  list and the intro wrap on a phone). The body never scrolls and the cap is
+  not raised. `transfer-user-wizard.committees.layout.spec.ts` measures 1, 5 and
+  100 rows in both languages at 1280 and 390: at most 373px of 420.
+- **Every step's 18px:** PrimeNG pads `.p-steppanels` 18px at the foot, and
+  `p-step-panels` is an inline element, so that padding took no space and only
+  overflowed: the body scrolled 18px, with its "more below" cue, on EVERY step.
+  The wizard sets `padding-block-end: 0` on its own `p-step-panels`
+  (`.am-transfer-panels`); nothing else moves. The layout spec fails if anything
+  paints below the stepper again.
+- **Review:** "Committees: Keep {{kept}} · Remove {{removed}}" (counted), only
+  when the step showed, with the Remove committees listed under it.
+- **After Submit:** the removes run ONLY when `transferUser()` returned —
+  any branch, the promotion's partial failure included. A failed transfer
+  removes nothing.
+  - `removeSeats(rows, reason)` is the one method: one DELETE after another
+    (`concatMap`), each with its own `catchError`, so one failure never stops
+    the rest.
+  - Every DELETE carries `{ reason }` from `transferSeatReason()`, built ONCE
+    at Submit in the admin's interface language and reused by Try again:
+    "Transferred from {{from}} to {{to}}." or, within one unit, "Moved to a
+    new position in {{unit}}.". Unit names go through
+    `LanguageService.bilingual()`.
+  - The terminal state keeps the transfer's own message, then "Removed from
+    {{count}} committees." or a warning with one line per failed row: the stage
+    refusal sentence for 409 `STAGE_ACTION_NOT_ALLOWED`, "Not a member any
+    more." for 404, else the server's message. Try again retries only the
+    failed rows; Close is always there. `dirtyChange` stays false.
+- **Tests:** `transfer-user-wizard.committees.spec.ts` (presence, the offers,
+  Review, the removes and their reason), mutation-checked: the `mayRemove`
+  check, removes before the transfer, the per-row `catchError`, the reason
+  sent, and the same-unit test.
 
 ### 12.10 The User Record Page (ACC-120 slice 5)
 
