@@ -157,12 +157,14 @@ describe('CommitteesController', () => {
 
   // ACC-295 — one person's memberships: committees:view at the route (users:view in the
   // service), and the caller's permissions and the query's userId passed on.
-  it('getMemberships delegates with the tenant, the caller\'s permissions and the userId, under committees:view', async () => {
+  // ACC-295 follow-up — the route admits either key (PermissionGuard is any-of); the
+  // service decides: users:transfer alone, or committees:view AND users:view.
+  it('getMemberships delegates with the tenant, the caller\'s permissions and the userId, under committees:view or users:transfer', async () => {
     const result = await controller.getMemberships({ userId: 'user-9' }, TENANT_ID, PERMS);
     expect(memberships.forUser).toHaveBeenCalledWith(TENANT_ID, { permissions: PERMS }, 'user-9');
     expect(result).toEqual({ total: 0, rows: [] });
     const handler = Object.getOwnPropertyDescriptor(CommitteesController.prototype, 'getMemberships')!.value as object;
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual(['committees:view']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual(['committees:view', 'users:transfer']);
   });
 
   // ACC-281 — no read gates on committees:view at the route: the service decides

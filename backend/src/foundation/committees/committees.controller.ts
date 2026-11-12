@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } f
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
-import { COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEES_PERMISSIONS, USERS_PERMISSIONS } from '../../common/constants/permissions';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
@@ -79,11 +79,14 @@ export class CommitteesController {
   }
 
   // ACC-295 — one person's committee memberships, for lane A's Transfer wizard.
-  // committees:view here; users:view in the service, both before any read (ACC-101
-  // clause a). Another organisation's user, or an invented id, is an empty list.
-  // Declared ABOVE ':id' so 'memberships' is not read as an id.
+  // ACC-295 follow-up (Ahmad, 11 Nov): whoever holds Transfer users sees everything in
+  // the transfer, so users:transfer opens it on its own; otherwise committees:view AND
+  // users:view. The route admits either key (PermissionGuard is any-of); the service
+  // decides, before any read (ACC-101 clause a). Another organisation's user, or an
+  // invented id, is an empty list. Declared ABOVE ':id' so 'memberships' is not read
+  // as an id.
   @Get('memberships')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
+  @Permissions(COMMITTEES_PERMISSIONS.VIEW, USERS_PERMISSIONS.TRANSFER)
   getMemberships(
     @Query() query: CommitteeMembershipsQueryDto,
     @CurrentTenant() tenantId: string,

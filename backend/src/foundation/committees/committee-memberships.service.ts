@@ -17,14 +17,29 @@ export interface MembershipsViewer {
 }
 
 /**
+ * ACC-295 follow-up — the gate, with no query: `users:transfer` alone, or
+ * `committees:view` AND `users:view`. Anyone else: 403 naming `users:transfer`.
+ */
+export function assertMayReadMemberships(permissions: readonly string[]): void {
+  if (permissions.includes(USERS_PERMISSIONS.TRANSFER)) return;
+  if (permissions.includes(COMMITTEES_PERMISSIONS.VIEW) && permissions.includes(USERS_PERMISSIONS.VIEW)) return;
+  throw new ForbiddenException(`Required permission: ${USERS_PERMISSIONS.TRANSFER}`);
+}
+
+/**
  * ACC-295 — one person's committee memberships, for lane A's Transfer wizard: each seat
  * with what a remove needs (`memberId`) and whether the committee's stage allows one
  * (`mayRemove`). The removes stay `DELETE /committees/:id/members/:memberId`, each with
  * its own stage check under lock; `mayRemove` only says what that check will answer.
  *
- * WHO MAY ASK: `committees:view` (also on the route) AND `users:view`, both checked
- * BEFORE any read, so the refusal is a 403 naming the permission and costs no query
- * (ACC-101 clause a: the request names the parent, a person).
+ * WHO MAY ASK (ACC-295 follow-up, Ahmad, 11 Nov): whoever holds Transfer users sees
+ * everything in the transfer, so `users:transfer` opens this read on its own. Otherwise
+ * the caller needs `committees:view` AND `users:view`, as before. Checked BEFORE any
+ * read, so a refusal is a 403 and costs no query (ACC-101 clause a: the request names
+ * the parent, a person). The refusal names `users:transfer` whichever key is missing:
+ * it is the one key that opens the read alone. Removing a seat is unchanged (its own
+ * route and key); users:transfer gives no remove right: removing stays with
+ * committees:remove_member (Ahmad, 11 Nov).
  *
  * WHAT IS READ: active memberships on active committees, both in the caller's
  * organisation (from the tenant, never the request). Another organisation's user, or
@@ -50,11 +65,7 @@ export class CommitteeMembershipsService {
    * path.
    */
   async forUser(organizationId: string, viewer: MembershipsViewer, userId: string): Promise<ICommitteeMemberships> {
-    for (const permission of [COMMITTEES_PERMISSIONS.VIEW, USERS_PERMISSIONS.VIEW]) {
-      if (!viewer.permissions.includes(permission)) {
-        throw new ForbiddenException(`Required permission: ${permission}`);
-      }
-    }
+    assertMayReadMemberships(viewer.permissions);
 
     const { memberships, total, seatById } = await seatOrderedMemberships(
       this.prisma,
