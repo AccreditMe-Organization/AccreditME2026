@@ -158,7 +158,7 @@ describe("A committee's direct writes, decided by its stage, against a real data
     const changes = (o: Org, c: { id: string; memberId: string }, newUserId: string) => ({
       add_member: () => committees.addMember(c.id, { userId: newUserId, roleValueId: 'member' } as never, o.id, o.actorId, ['committees:view']),
       change_member_role: () => committees.changeMemberRole(c.id, c.memberId, { roleValueId: 'secretary' } as never, o.id, o.actorId, ['committees:view']),
-      remove_member: () => committees.removeMember(c.id, c.memberId, {} as never, o.id, o.actorId, ['committees:view']),
+      remove_member: () => committees.removeMember(c.id, c.memberId, { reason: 'Left the unit' }, o.id, o.actorId, ['committees:view']),
     });
     const newUser = async (o: Org) =>
       (await prisma.user.create({ data: { organizationId: o.id, email: `${randomUUID()}@example.test`, name: 'New member', status: 'ACTIVE' } })).id;
@@ -278,7 +278,7 @@ describe("A committee's direct writes, decided by its stage, against a real data
         await expect(committees.addMember(id, { userId: mine.memberUserId, roleValueId: 'member' } as never, mine.id, mine.actorId, ['committees:view'])).rejects.toThrow(
           NotFoundException,
         );
-        await expect(committees.removeMember(id, c.memberId, {} as never, mine.id, mine.actorId, ['committees:view'])).rejects.toThrow(NotFoundException);
+        await expect(committees.removeMember(id, c.memberId, { reason: 'Left the unit' }, mine.id, mine.actorId, ['committees:view'])).rejects.toThrow(NotFoundException);
       }
       expect((await prisma.committee.findFirstOrThrow({ where: { id: c.id } })).nameEn).toBe('Committee formation');
       expect(await prisma.committeeMember.count({ where: { committeeId: c.id, isActive: true } })).toBe(1);

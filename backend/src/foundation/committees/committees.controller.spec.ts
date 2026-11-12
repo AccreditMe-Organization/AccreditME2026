@@ -247,7 +247,7 @@ describe('CommitteesController', () => {
   });
 
   it("removeMember delegates with tenant, actor and the actor's permissions", async () => {
-    const dto = {};
+    const dto = { reason: 'Left the unit' };
     await controller.removeMember('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID, PERMS);
 
     expect(service.removeMember).toHaveBeenCalledWith('committee-1', 'member-1', dto, TENANT_ID, USER_ID, PERMS);
