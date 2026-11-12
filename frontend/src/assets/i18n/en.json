@@ -2072,7 +2072,23 @@
       "errorReplacement": "Failed to validate the replacement.",
       "errorPosition": "Failed to validate the selected position.",
       "errorSubmit": "Failed to complete the transfer.",
-      "menuAction": "Transfer to another unit"
+      "menuAction": "Transfer to another unit",
+      "stepCommittees": "Committees",
+      "reviewCommittees": "Committees",
+      "committees": {
+        "intro": "{{name}} keeps these seats unless you choose Remove.",
+        "keep": "Keep",
+        "remove": "Remove",
+        "noPermission": "Your role can't remove committee members.",
+        "loadFailed": "Couldn't load this person's committees.",
+        "tryAgain": "Try again",
+        "listLabel": "Committee seats",
+        "removing": "Removing committee seats…",
+        "notMember": "Not a member any more.",
+        "removeFailed": "The seat couldn't be removed.",
+        "reasonMoved": "Transferred from {{from}} to {{to}}.",
+        "reasonSameUnit": "Moved to a new position in {{unit}}."
+      }
     },
     "status": {
       "title": "Status",
@@ -2886,6 +2902,30 @@
       "tasksReturned": {
         "one": "{{count}} task returned to them",
         "other": "{{count}} tasks returned to them"
+      },
+      "transfer": {
+        "committees": {
+          "overCap": {
+            "one": "Showing {{shown}} of {{count}}. Remove the others from each committee's page.",
+            "other": "Showing {{shown}} of {{count}}. Remove the others from each committee's page."
+          },
+          "reviewKeep": {
+            "one": "Keep {{count}}",
+            "other": "Keep {{count}}"
+          },
+          "reviewRemove": {
+            "one": "Remove {{count}}",
+            "other": "Remove {{count}}"
+          },
+          "removedAll": {
+            "one": "Removed from {{count}} committee.",
+            "other": "Removed from {{count}} committees."
+          },
+          "someFailed": {
+            "one": "{{count}} seat wasn't removed:",
+            "other": "{{count}} seats weren't removed:"
+          }
+        }
       }
     },
     "shell": {
