@@ -1,6 +1,8 @@
 import { Component, DestroyRef, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { catchError, concatMap, from, map, of, toArray } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
@@ -16,6 +18,16 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { LanguageService } from '../../../../core/services/language.service';
 import { rootUnitNeedsHeadMessage } from '../../../organization/root-unit-refusal';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { FormatService } from '../../../../core/formatting';
+import { CommitteeService } from '../../../committees/services/committee.service';
+import { committeeStageRefusal } from '../../../committees/committee-stage-refusal';
+import {
+  TransferCommitteeSeatDto,
+  TransferCommitteesDto,
+  TransferCommitteesService,
+} from '../../services/transfer-committees.service';
+import { transferSeatReason } from './transfer-seat-reason';
 
 // ACC-46 Section 2.6.b — the transfer wizard. Pure content, no dialog
 // wrapper of its own. Both hosts — the Users list (ACC-79) and the user
@@ -50,10 +62,29 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 // Plan's own Step 2 (context load) is not a separate visible step here —
 // it's the automatic fetch that gates advancing out of Step 1, exactly as
 // the plan describes it ("automatic, not a user action").
+//
+// ACC-296 — a Committees step between Manager and Review: the person's
+// committee seats, each kept or removed. It shows only when the seats read
+// (GET /committees/memberships, read ONCE when the wizard opens) returned at
+// least one row, or failed for a reason other than a 403 (then with a Try
+// again line; it never blocks the transfer). Remove is offered only when the
+// committee's stage allows it AND the viewer holds committees:remove_member;
+// the transfer permission never grants it. The removes run AFTER the transfer
+// returns, one after another, each carrying the wizard's own reason
+// (transferSeatReason), and one failure never stops the rest
+// (removeSeats()). stepValues() places the step: it, and Review after it,
+// shift with both conditional steps.
 @Component({
   selector: 'app-transfer-user-wizard',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, ButtonModule, MessageModule, StepperModule, OverlaySelectComponent],
+  imports: [
+    ReactiveFormsModule,
+    TranslatePipe,
+    ButtonModule,
+    MessageModule,
+    StepperModule,
+    OverlaySelectComponent,
+  ],
   template: `
     <form [formGroup]="form" class="flex flex-col gap-4">
       @if (error()) {
@@ -67,6 +98,36 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
              transient toast, so it stays visible until the user
              deliberately closes. -->
         <p-message [severity]="result.promotionCompleted === false ? 'warn' : 'success'" [text]="result.message" />
+        <!-- ACC-296 — the chosen seat removes, after the transfer. -->
+        @if (seatRemoval(); as removal) {
+          @if (removal.running) {
+            <p class="m-0 text-sm text-[var(--am-text-secondary)]" role="status" data-testid="transfer-seats-running">
+              {{ 'user.transfer.committees.removing' | translate }}
+            </p>
+          } @else if (removal.failed.length === 0) {
+            <p-message severity="success" [text]="removedAllText()" data-testid="transfer-seats-done" />
+          } @else {
+            <div class="flex flex-col gap-2" data-testid="transfer-seats-failed">
+              <p-message severity="warn" [text]="someFailedText()" />
+              <ul class="m-0 ps-5 text-sm">
+                @for (failure of removal.failed; track failure.row.memberId) {
+                  <li [attr.data-failed-seat]="failure.row.memberId">
+                    <span class="font-medium">{{ committeeName(failure.row) }}</span>: {{ failureText(failure.error) }}
+                  </li>
+                }
+              </ul>
+              <div>
+                <p-button
+                  [label]="'user.transfer.committees.tryAgain' | translate"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryFailedSeats()"
+                  data-testid="transfer-seats-retry"
+                />
+              </div>
+            </div>
+          }
+        }
         <div class="flex justify-end pt-2">
           <p-button [label]="'common.close' | translate" (onClick)="saved.emit()" />
         </div>
@@ -79,10 +140,13 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
             }
             <p-step [value]="stepValues().position">{{ 'user.transfer.stepPosition' | translate }}</p-step>
             <p-step [value]="stepValues().manager">{{ 'user.transfer.stepManager' | translate }}</p-step>
+            @if (showsCommittees()) {
+              <p-step [value]="stepValues().committees">{{ 'user.transfer.stepCommittees' | translate }}</p-step>
+            }
             <p-step [value]="stepValues().review">{{ 'user.transfer.stepReview' | translate }}</p-step>
           </p-step-list>
 
-          <p-step-panels>
+          <p-step-panels class="am-transfer-panels">
             <!-- Step 1 — Destination Unit -->
             <p-step-panel [value]="1">
               <ng-template #content let-activateCallback="activateCallback">
@@ -197,11 +261,113 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
                   }
                   <div class="flex justify-between pt-2">
                     <p-button [label]="'common.back' | translate" severity="secondary" [text]="true" (onClick)="activateCallback(stepValues().position)" />
-                    <p-button [label]="'common.next' | translate" (onClick)="goFromManager(activateCallback)" />
+                    <p-button [label]="'common.next' | translate" [loading]="loading()" (onClick)="goFromManager(activateCallback)" />
                   </div>
                 </div>
               </ng-template>
             </p-step-panel>
+
+            <!-- ACC-296 — Committees (conditional): keep or remove each seat. -->
+            @if (showsCommittees()) {
+              <p-step-panel [value]="stepValues().committees">
+                <ng-template #content let-activateCallback="activateCallback">
+                  <div class="am-transfer-committees flex flex-col gap-3 py-3" data-testid="transfer-committees">
+                    @if (committeesLoad() === 'failed') {
+                      <p class="m-0 text-sm" role="status" data-testid="transfer-committees-failed">
+                        {{ 'user.transfer.committees.loadFailed' | translate }}
+                      </p>
+                      <div>
+                        <p-button
+                          [label]="'user.transfer.committees.tryAgain' | translate"
+                          severity="secondary"
+                          [outlined]="true"
+                          [loading]="committeesRetrying()"
+                          (onClick)="loadCommittees()"
+                          data-testid="transfer-committees-retry"
+                        />
+                      </div>
+                    } @else {
+                      <p class="m-0 text-sm text-[var(--am-text-secondary)]" data-testid="transfer-committees-intro">
+                        {{ 'user.transfer.committees.intro' | translate: { name: departingUser()?.name ?? '' } }}
+                      </p>
+                      <!-- The list is what grows, so IT scrolls, inside the
+                           dialog's 420px body (EditDialogComponent's
+                           inner-scroll rule): nothing in it floats. -->
+                      <div
+                        class="am-transfer-seats"
+                        role="region"
+                        tabindex="0"
+                        [attr.aria-label]="'user.transfer.committees.listLabel' | translate"
+                        data-testid="transfer-seats-list"
+                      >
+                        <ul class="m-0 list-none p-0">
+                          @for (seat of seatRows(); track seat.id) {
+                            <li class="am-transfer-seat" [attr.data-seat]="seat.id" [attr.data-offer]="seat.offer">
+                              <div class="min-w-0 flex-1">
+                                <div class="text-[length:var(--am-type-value-size)] leading-[var(--am-type-value-line)] font-semibold text-[var(--am-ink-900)]" [id]="'am-seat-' + seat.id" data-seat-name>{{ seat.name }}</div>
+                                <div class="text-[length:var(--am-type-meta-size)] leading-[var(--am-type-meta-line)] text-[var(--am-ink-500)]" data-seat-meta>{{ seat.meta }}</div>
+                                @if (seat.offer === 'stage') {
+                                  <div class="text-[length:var(--am-type-meta-size)] leading-[var(--am-type-meta-line)] text-[var(--am-ink-500)]" data-seat-why="stage">{{ stageWhy(seat.row) }}</div>
+                                }
+                                @if (seat.offer === 'permission') {
+                                  <div class="text-[length:var(--am-type-meta-size)] leading-[var(--am-type-meta-line)] text-[var(--am-ink-500)]" data-seat-why="permission">
+                                    {{ 'user.transfer.committees.noPermission' | translate }}
+                                  </div>
+                                }
+                              </div>
+                              @if (seat.offer === 'choice') {
+                                <!-- Two radios as one segmented control (stage-who's
+                                     pattern). Not p-selectButton: its options are
+                                     p-togglebuttons with a bare [ngModel], which
+                                     Angular refuses inside this <form> (NG01350). -->
+                                <div
+                                  class="am-transfer-seat__choice"
+                                  role="radiogroup"
+                                  [attr.aria-labelledby]="'am-seat-' + seat.id"
+                                  [attr.data-seat-choice]="seat.id"
+                                >
+                                  @for (option of seatOptions; track option.value) {
+                                    <label
+                                      class="am-transfer-seat__option"
+                                      [class.am-transfer-seat__option--on]="seat.choice === option.value"
+                                    >
+                                      <input
+                                        type="radio"
+                                        class="sr-only"
+                                        [name]="'am-seat-choice-' + seat.id"
+                                        [value]="option.value"
+                                        [checked]="seat.choice === option.value"
+                                        (change)="setSeatChoice(seat.id, option.value)"
+                                        [attr.data-choice]="option.value"
+                                      />
+                                      {{ option.labelKey | translate }}
+                                    </label>
+                                  }
+                                </div>
+                              }
+                            </li>
+                          }
+                        </ul>
+                        <!-- Inside the list, held at its foot: it stays in view
+                             without adding to the body's height. -->
+                        @if (overCapText(); as line) {
+                          <p class="am-transfer-seats__more" data-testid="transfer-seats-over-cap">{{ line }}</p>
+                        }
+                      </div>
+                    }
+                    <div class="flex justify-between pt-2">
+                      <p-button
+                        [label]="'common.back' | translate"
+                        severity="secondary"
+                        [text]="true"
+                        (onClick)="activateCallback(stepValues().manager)"
+                      />
+                      <p-button [label]="'common.next' | translate" (onClick)="activateCallback(stepValues().review)" />
+                    </div>
+                  </div>
+                </ng-template>
+              </p-step-panel>
+            }
 
             <!-- Step 5 — Review & Confirm -->
             <p-step-panel [value]="stepValues().review">
@@ -227,6 +393,19 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
                         <span class="text-[var(--am-text-secondary)]">{{ 'user.transfer.reviewManager' | translate }}</span>
                         <span>{{ summary.manager }}</span>
                       </div>
+                      @if (reviewCommittees(); as committees) {
+                        <div class="flex justify-between gap-3" data-testid="transfer-review-committees">
+                          <span class="text-[var(--am-text-secondary)]">{{ 'user.transfer.reviewCommittees' | translate }}</span>
+                          <span class="text-end">{{ committees.counts }}</span>
+                        </div>
+                        @if (committees.removedNames.length > 0) {
+                          <ul class="m-0 ps-5 text-[var(--am-text-secondary)]" data-testid="transfer-review-removed">
+                            @for (committeeName of committees.removedNames; track $index) {
+                              <li>{{ committeeName }}</li>
+                            }
+                          </ul>
+                        }
+                      }
                     </div>
                   }
                   @if (isPromotion()) {
@@ -236,7 +415,13 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
                     />
                   }
                   <div class="flex justify-between pt-2">
-                    <p-button [label]="'common.back' | translate" severity="secondary" [text]="true" (onClick)="activateCallback(stepValues().manager)" [disabled]="submitting()" />
+                    <p-button
+                      [label]="'common.back' | translate"
+                      severity="secondary"
+                      [text]="true"
+                      (onClick)="activateCallback(showsCommittees() ? stepValues().committees : stepValues().manager)"
+                      [disabled]="submitting()"
+                    />
                     <p-button [label]="'common.submit' | translate" [loading]="submitting()" (onClick)="submit()" />
                   </div>
                 </div>
@@ -283,6 +468,84 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
         text-align: center;
         line-height: 1.2;
       }
+      /* ACC-296 — the seats list scrolls inside itself so the dialog body
+         keeps 20px under its 420px cap (measured in the PR: 1 / 5 / 100 rows,
+         both languages, 1280 and 390). The phone height is lower because the
+         step list and the intro wrap there. */
+      .am-transfer-committees {
+        container-type: inline-size;
+      }
+      /* PrimeNG pads .p-steppanels 18px at the foot, but p-step-panels is an
+         inline element, so that padding takes no space and only overflows: the
+         dialog body scrolled 18px, with its "more below" cue, on every step.
+         Only the foot: the rest of the padding is what spaces the panels today. */
+      .am-transfer-panels {
+        padding-block-end: 0;
+      }
+      .am-transfer-seats {
+        max-block-size: 136px;
+        overflow-y: auto;
+        border: 1px solid var(--am-border);
+        border-radius: var(--am-radius-card);
+      }
+      @container (max-width: 480px) {
+        .am-transfer-seats {
+          max-block-size: 112px;
+        }
+      }
+      .am-transfer-seats__more {
+        position: sticky;
+        inset-block-end: 0;
+        margin: 0;
+        padding: var(--am-space-4) var(--am-space-12);
+        border-block-start: 1px solid var(--am-border);
+        background: var(--am-surface-raised);
+        font-size: var(--am-type-meta-size);
+        line-height: var(--am-type-meta-line);
+        color: var(--am-ink-500);
+      }
+      .am-transfer-seats:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+      .am-transfer-seat {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--am-space-8) var(--am-space-12);
+        padding: var(--am-space-8) var(--am-space-12);
+        border-block-end: 1px solid var(--am-row-rule);
+      }
+      .am-transfer-seat:last-child {
+        border-block-end: 0;
+      }
+      .am-transfer-seat__choice {
+        display: inline-flex;
+        flex: none;
+        border: 1px solid var(--am-control-border);
+        border-radius: var(--am-radius-control);
+        overflow: hidden;
+      }
+      .am-transfer-seat__option {
+        padding: var(--am-space-2) var(--am-space-12);
+        font-size: var(--am-type-meta-size);
+        line-height: var(--am-type-meta-line);
+        color: var(--am-ink-700);
+        background: var(--am-control-bg);
+        cursor: pointer;
+      }
+      .am-transfer-seat__option + .am-transfer-seat__option {
+        border-inline-start: 1px solid var(--am-control-border);
+      }
+      .am-transfer-seat__option--on {
+        color: var(--am-surface-raised);
+        background: var(--am-primary-600);
+        font-weight: 600;
+      }
+      .am-transfer-seat__option:has(input:focus-visible) {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
     `,
   ],
 })
@@ -305,6 +568,10 @@ export class TransferUserWizardComponent implements OnInit {
   private readonly orgUnitHeadService = inject(OrgUnitHeadService);
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
+  private readonly access = inject(NavigationAccessService);
+  private readonly format = inject(FormatService);
+  private readonly committeeService = inject(CommitteeService);
+  private readonly transferCommittees = inject(TransferCommitteesService);
 
   readonly currentStep = signal(1);
   readonly loading = signal(false);
@@ -332,10 +599,109 @@ export class TransferUserWizardComponent implements OnInit {
   // the displayed sequence is always contiguous (1,2,3,4 or 1,2,3,4,5).
   // Safe as computed() (unlike isPromotion/reviewSummary above) because
   // it only reads transferContext(), a real tracked signal dependency.
+  //
+  // ACC-296 — the Committees step sits between Manager and Review, and is
+  // conditional too: Review moves up one more when it shows.
   readonly stepValues = computed(() => {
     const offset = this.transferContext()?.hasActiveDirectReports ? 0 : -1;
-    return { destination: 1, replacement: 2, position: 3 + offset, manager: 4 + offset, review: 5 + offset };
+    const committees = this.showsCommittees() ? 1 : 0;
+    return {
+      destination: 1,
+      replacement: 2,
+      position: 3 + offset,
+      manager: 4 + offset,
+      committees: 5 + offset,
+      review: 5 + offset + committees,
+    };
   });
+
+  // ── ACC-296 — the person's committee seats ─────────────────────────────
+  /** loading → ready (200), forbidden (403: not this caller's to see), or failed. */
+  readonly committeesLoad = signal<'loading' | 'ready' | 'forbidden' | 'failed'>('loading');
+  readonly committees = signal<TransferCommitteesDto | null>(null);
+  readonly committeesRetrying = signal(false);
+  /** Manager's Next, pressed while the read was still loading, waits for it. */
+  private afterCommitteesLoad: (() => void) | null = null;
+
+  /** Present with a row to decide, or with the failure line; absent for 0 rows or a 403. */
+  readonly showsCommittees = computed(() => {
+    const state = this.committeesLoad();
+    return state === 'failed' || (state === 'ready' && (this.committees()?.rows.length ?? 0) > 0);
+  });
+
+  /** Removing a seat stays with this permission; the transfer permission never grants it. */
+  readonly canRemoveSeats = computed(() => this.access.hasPermission('committees:remove_member'));
+
+  readonly seatOptions = [
+    { value: 'keep', labelKey: 'user.transfer.committees.keep' },
+    { value: 'remove', labelKey: 'user.transfer.committees.remove' },
+  ] as const;
+
+  /** memberId → the admin's choice. Absent means Keep. */
+  readonly seatChoices = signal<ReadonlyMap<string, 'keep' | 'remove'>>(new Map());
+
+  readonly seatRows = computed(() =>
+    (this.committees()?.rows ?? []).map((row) => {
+      const stage = this.stageName(row);
+      const seat = this.language.bilingual(row.seat.labelEn, row.seat.labelAr);
+      // No permission says so first (it is true of every row); otherwise a
+      // stage that does not allow removing says why.
+      const offer: 'choice' | 'stage' | 'permission' = !this.canRemoveSeats()
+        ? 'permission'
+        : !row.mayRemove
+          ? 'stage'
+          : 'choice';
+      return {
+        id: row.memberId,
+        row,
+        name: this.committeeName(row),
+        meta: stage ? `${seat} · ${stage}` : seat,
+        offer,
+        choice: offer === 'choice' ? (this.seatChoices().get(row.memberId) ?? 'keep') : 'keep',
+      };
+    }),
+  );
+
+  /** The seats to remove: only a row that offered the choice, set to Remove. */
+  readonly seatsToRemove = computed(() =>
+    this.seatRows()
+      .filter((seat) => seat.offer === 'choice' && seat.choice === 'remove')
+      .map((seat) => seat.row),
+  );
+
+  /** "Showing 100 of 140. Remove the others from each committee's page." */
+  readonly overCapText = computed(() => {
+    const dto = this.committees();
+    if (!dto || dto.total <= dto.rows.length) return null;
+    return this.format.count('user.transfer.committees.overCap', dto.total, { shown: this.format.number(dto.rows.length) });
+  });
+
+  /** Review's line: only once the seats were read and shown. */
+  readonly reviewCommittees = computed(() => {
+    if (!this.showsCommittees() || this.committeesLoad() !== 'ready') return null;
+    const removed = this.seatsToRemove();
+    const kept = Math.max(0, (this.committees()?.total ?? 0) - removed.length);
+    return {
+      counts: `${this.format.count('user.transfer.committees.reviewKeep', kept)} · ${this.format.count('user.transfer.committees.reviewRemove', removed.length)}`,
+      removedNames: removed.map((row) => this.committeeName(row)),
+    };
+  });
+
+  /** After Submit: the removes, running or done, and the rows that failed. */
+  readonly seatRemoval = signal<{
+    running: boolean;
+    removed: number;
+    failed: { row: TransferCommitteeSeatDto; error: unknown }[];
+  } | null>(null);
+  /** Written ONCE at Submit, reused for Try again (a language switch cannot change it). */
+  private seatReason = '';
+
+  readonly removedAllText = computed(() =>
+    this.format.count('user.transfer.committees.removedAll', this.seatRemoval()?.removed ?? 0),
+  );
+  readonly someFailedText = computed(() =>
+    this.format.count('user.transfer.committees.someFailed', this.seatRemoval()?.failed.length ?? 0),
+  );
 
   // Derived from the selected position's own isUnitHeadPosition flag —
   // picking a head-conferring position *is* what makes this a promotion
@@ -378,6 +744,124 @@ export class TransferUserWizardComponent implements OnInit {
       .subscribe(() => this.dirtyChange.emit(this.form.dirty && !this.submitResult()));
     this.userService.getById(this.userId()).subscribe({ next: (u) => this.departingUser.set(u) });
     this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
+    // ACC-296 — once, beside the other loads. No polling.
+    this.loadCommittees();
+  }
+
+  /** The seats read: on open, and again only when the admin presses Try again. */
+  loadCommittees(): void {
+    if (this.committeesLoad() === 'failed') this.committeesRetrying.set(true);
+    this.transferCommittees
+      .forUser(this.userId())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (dto) => {
+          this.committees.set(dto);
+          this.committeesLoad.set('ready');
+          this.committeesLoaded();
+        },
+        error: (err: unknown) => {
+          // A 403 is "not this caller's to see": the step is absent and nothing is said.
+          this.committeesLoad.set(err instanceof HttpErrorResponse && err.status === 403 ? 'forbidden' : 'failed');
+          this.committeesLoaded();
+        },
+      });
+  }
+
+  private committeesLoaded(): void {
+    this.committeesRetrying.set(false);
+    const then = this.afterCommitteesLoad;
+    this.afterCommitteesLoad = null;
+    then?.();
+  }
+
+  setSeatChoice(memberId: string, choice: 'keep' | 'remove'): void {
+    const next = new Map(this.seatChoices());
+    next.set(memberId, choice);
+    this.seatChoices.set(next);
+    if (!this.submitResult()) this.dirtyChange.emit(true);
+  }
+
+  committeeName(row: TransferCommitteeSeatDto): string {
+    return this.language.bilingual(row.nameEn, row.nameAr);
+  }
+
+  private stageName(row: TransferCommitteeSeatDto): string {
+    return row.stage.nameEn || row.stage.nameAr ? this.language.bilingual(row.stage.nameEn ?? '', row.stage.nameAr) : '';
+  }
+
+  /** Why a seat cannot be removed in its stage: the committee screens' own sentence. */
+  stageWhy(row: TransferCommitteeSeatDto): string {
+    const stage = this.stageName(row);
+    return stage
+      ? (this.translate.instant('committee.refusal.membersNotAllowedInStage', { stage }) as string)
+      : (this.translate.instant('committee.refusal.membersNotAllowedNoStage') as string);
+  }
+
+  /** One failed remove, said for the admin: the stage refusal, no longer a member, or the server's error. */
+  failureText(error: unknown): string {
+    const stage = committeeStageRefusal(error);
+    if (stage) {
+      const name =
+        stage.stageNameEn || stage.stageNameAr ? this.language.bilingual(stage.stageNameEn ?? '', stage.stageNameAr) : '';
+      return this.translate.instant(stage.key, { stage: name }) as string;
+    }
+    if (error instanceof HttpErrorResponse && error.status === 404) {
+      return this.translate.instant('user.transfer.committees.notMember') as string;
+    }
+    return this.translate.instant(extractErrorMessage(error, 'user.transfer.committees.removeFailed')) as string;
+  }
+
+  /**
+   * ACC-296 — THE one place seats are removed. One after another (concatMap),
+   * each with its own catchError, so one failure never stops the rest. Every
+   * DELETE carries the wizard's reason. Called only after the transfer
+   * returned, and by Try again with the failed rows alone.
+   */
+  removeSeats(rows: readonly TransferCommitteeSeatDto[], reason: string): void {
+    if (rows.length === 0) return;
+    const before = this.seatRemoval();
+    this.seatRemoval.set({ running: true, removed: before?.removed ?? 0, failed: before?.failed ?? [] });
+    from(rows)
+      .pipe(
+        concatMap((row) =>
+          this.committeeService.removeMember(row.committeeId, row.memberId, { reason }).pipe(
+            map(() => ({ row, ok: true as const, error: null as unknown })),
+            catchError((error: unknown) => of({ row, ok: false as const, error })),
+          ),
+        ),
+        toArray(),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((outcomes) => {
+        const failed = outcomes.filter((outcome) => !outcome.ok).map(({ row, error }) => ({ row, error }));
+        this.seatRemoval.set({
+          running: false,
+          removed: (before?.removed ?? 0) + outcomes.length - failed.length,
+          failed,
+        });
+      });
+  }
+
+  /** Try again: ONLY the rows that failed, with the reason written at Submit. */
+  retryFailedSeats(): void {
+    const failed = this.seatRemoval()?.failed.map((failure) => failure.row) ?? [];
+    this.removeSeats(failed, this.seatReason);
+  }
+
+  /** The reason for the removes, from the units' names in the admin's language. */
+  private buildSeatReason(): string {
+    const sourceId = this.departingUser()?.primaryOrgUnitId ?? null;
+    const destinationId = this.form.controls.destinationOrgUnitId.value;
+    const unitName = (id: string | null): string => {
+      const unit = this.orgUnits().find((u) => u.id === id);
+      return unit ? this.language.bilingual(unit.nameEn, unit.nameAr) : '—';
+    };
+    return transferSeatReason(this.translate, {
+      from: unitName(sourceId),
+      to: unitName(destinationId),
+      sameUnit: !!sourceId && sourceId === destinationId,
+    });
   }
 
   // Step 1 -> Step 2 (context load, 2.6.b Step 2 — automatic, not a user
@@ -501,7 +985,19 @@ export class TransferUserWizardComponent implements OnInit {
         : (this.destinationManagerCandidates().find((c) => c.id === newManagerId)?.name ?? '—'),
     });
 
-    activateCallback(this.stepValues().review);
+    // ACC-296 — to Committees when it shows, else Review. A seats read still
+    // loading is waited for, so the next step is the right one.
+    const advance = (): void =>
+      activateCallback(this.showsCommittees() ? this.stepValues().committees : this.stepValues().review);
+    if (this.committeesLoad() === 'loading') {
+      this.loading.set(true);
+      this.afterCommitteesLoad = () => {
+        this.loading.set(false);
+        advance();
+      };
+      return;
+    }
+    advance();
   }
 
   submit(): void {
@@ -515,6 +1011,10 @@ export class TransferUserWizardComponent implements OnInit {
       newManagerId: this.isPromotion() ? undefined : (value.newManagerId ?? undefined),
       replacementUserId: value.replacementUserId ?? undefined,
     };
+
+    // ACC-296 — what to remove and why, fixed now: the reason is written once.
+    const seatsToRemove = this.seatsToRemove();
+    this.seatReason = this.buildSeatReason();
 
     this.submitting.set(true);
     this.error.set(null);
@@ -546,6 +1046,10 @@ export class TransferUserWizardComponent implements OnInit {
           });
           this.dirtyChange.emit(false);
         }
+        // ACC-296 — the transfer returned (whichever branch, the promotion's
+        // partial failure included): now the chosen seats. Never before, and
+        // never when the transfer failed.
+        this.removeSeats(seatsToRemove, this.seatReason);
       },
       error: (err: unknown) => {
         this.submitting.set(false);
