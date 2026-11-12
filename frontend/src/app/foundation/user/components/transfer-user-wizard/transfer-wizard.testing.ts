@@ -25,6 +25,8 @@ const unit = (id: string, nameEn: string, nameAr: string, parentId: string | nul
 export const SOURCE_UNIT = unit('u-src', 'Pharmacy', 'الصيدلية', 'u-root');
 export const DESTINATION_UNIT = unit('u-dst', 'Intensive Care', 'العناية المركزة', 'u-root');
 export const UNITS = [unit('u-root', 'Al-Nakheel Hospital', 'مستشفى النخيل', null), SOURCE_UNIT, DESTINATION_UNIT];
+/** The same units with no Arabic names (an organisation that does not work in Arabic). */
+export const UNITS_EN_ONLY = UNITS.map((u) => ({ ...u, nameAr: null }));
 
 export const PERSON = { id: 'user-1', name: 'Huda Al-Harbi', primaryOrgUnitId: SOURCE_UNIT.id };
 
@@ -47,13 +49,21 @@ export function seats(n: number, total = n): TransferCommitteesDto {
 }
 
 /** The UserService the wizard calls, answering every step without a server. */
-export function fakeUserService(opts: { reports?: boolean; transfer?: () => Observable<unknown>; log?: string[] } = {}) {
+export function fakeUserService(
+  opts: {
+    reports?: boolean;
+    transfer?: () => Observable<unknown>;
+    log?: string[];
+    /** The one available position's names; Nurse / ممرضة by default. */
+    position?: { nameEn: string; nameAr: string | null };
+  } = {},
+) {
   return {
     getById: () => of(PERSON),
     getTransferContext: () =>
       of({
         hasActiveDirectReports: opts.reports ?? false,
-        availablePositions: [{ id: 'p-1', nameEn: 'Nurse', nameAr: 'ممرضة', isUnitHeadPosition: false }],
+        availablePositions: [{ id: 'p-1', ...(opts.position ?? { nameEn: 'Nurse', nameAr: 'ممرضة' }), isUnitHeadPosition: false }],
         currentDestinationHead: null,
       }),
     validateTransferReplacement: () => of(undefined),

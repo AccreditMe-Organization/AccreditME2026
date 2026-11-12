@@ -17,7 +17,7 @@ import { CommitteeService, RemoveCommitteeMemberDto } from '../../../committees/
 import { TransferCommitteesDto, TransferCommitteesService } from '../../services/transfer-committees.service';
 import { TransferUserWizardComponent } from './transfer-user-wizard.component';
 import { transferSeatReason } from './transfer-seat-reason';
-import { PERSON, SOURCE_UNIT, UNITS, fakeUserService, seat, seats, walkToAfterManager } from './transfer-wizard.testing';
+import { PERSON, SOURCE_UNIT, UNITS, UNITS_EN_ONLY, fakeUserService, seat, seats, walkToAfterManager } from './transfer-wizard.testing';
 
 // ACC-296 — the Transfer wizard's Committees step: when it shows, what it
 // offers, what Review says, and the removes after the transfer.
@@ -49,6 +49,8 @@ describe('TransferUserWizard — the Committees step (ACC-296)', () => {
     transfer?: () => Observable<unknown>;
     /** memberId → what its DELETE answers; absent = success. Each call takes the next answer. */
     removes?: Record<string, (() => Observable<void>)[]>;
+    position?: { nameEn: string; nameAr: string | null };
+    units?: typeof UNITS_EN_ONLY;
   }
 
   function render(opts: Options = {}): HTMLElement {
@@ -65,8 +67,11 @@ describe('TransferUserWizard — the Committees step (ACC-296)', () => {
         providePrimeNG({}),
         provideTranslateService({ lang: 'en' }),
         provideFormatTesting(),
-        { provide: UserService, useValue: fakeUserService({ reports: opts.reports, transfer: opts.transfer, log }) },
-        { provide: OrgUnitService, useValue: { getFlat: () => of(UNITS) } },
+        {
+          provide: UserService,
+          useValue: fakeUserService({ reports: opts.reports, transfer: opts.transfer, log, position: opts.position }),
+        },
+        { provide: OrgUnitService, useValue: { getFlat: () => of(opts.units ?? UNITS) } },
         { provide: OrgUnitHeadService, useValue: {} },
         {
           provide: NavigationAccessService,
@@ -300,6 +305,69 @@ describe('TransferUserWizard — the Committees step (ACC-296)', () => {
       go();
       toReview();
       expect(el().querySelector('[data-testid="transfer-review-committees"]')).toBeNull();
+    });
+  });
+
+  describe("names in the reader's language", () => {
+    afterEach(() => TestBed.inject(TranslateService).use('en'));
+
+    it('in Arabic, the position picker and Review name the unit and position in Arabic', () => {
+      render({ position: { nameEn: 'Clinical Pharmacist', nameAr: 'صيدلي سريري' } });
+      TestBed.inject(TranslateService).use('ar');
+      go();
+      expect(wizard.positionOptions()).toEqual([{ id: 'p-1', label: 'صيدلي سريري' }]);
+      toReview();
+      expect(text(el().querySelector('[data-testid="transfer-review-unit"]'))).toBe('العناية المركزة');
+      expect(text(el().querySelector('[data-testid="transfer-review-position"]'))).toBe('صيدلي سريري');
+    });
+
+    it('Review follows a language switch made after Manager', () => {
+      render({ position: { nameEn: 'Clinical Pharmacist', nameAr: 'صيدلي سريري' } });
+      go();
+      toReview();
+      expect(text(el().querySelector('[data-testid="transfer-review-position"]'))).toBe('Clinical Pharmacist');
+      TestBed.inject(TranslateService).use('ar');
+      fixture.detectChanges();
+      expect(text(el().querySelector('[data-testid="transfer-review-unit"]'))).toBe('العناية المركزة');
+      expect(text(el().querySelector('[data-testid="transfer-review-position"]'))).toBe('صيدلي سريري');
+    });
+
+    it('the success message names the unit in Arabic', () => {
+      render();
+      TestBed.inject(TranslateService).use('ar');
+      go();
+      submit();
+      expect(wizard.submitResult()?.message).toContain('العناية المركزة');
+      expect(wizard.submitResult()?.message).not.toContain('Intensive Care');
+    });
+
+    it('with no Arabic names, Arabic falls back to the English ones, never blank', () => {
+      render({ position: { nameEn: 'Clinical Pharmacist', nameAr: null }, units: UNITS_EN_ONLY });
+      TestBed.inject(TranslateService).use('ar');
+      go();
+      expect(wizard.positionOptions()).toEqual([{ id: 'p-1', label: 'Clinical Pharmacist' }]);
+      toReview();
+      expect(text(el().querySelector('[data-testid="transfer-review-unit"]'))).toBe('Intensive Care');
+      expect(text(el().querySelector('[data-testid="transfer-review-position"]'))).toBe('Clinical Pharmacist');
+    });
+  });
+
+  describe('Arabic wording (gender-neutral)', () => {
+    const c = ar.user.transfer.committees;
+    const pc = ar.plural.user.transfer.committees;
+
+    it('the intro asks no one to choose: «ما لم تُحدَّد «إزالة».»', () => {
+      expect(c.intro).toBe('تبقى هذه المقاعد باسم {{name}} ما لم تُحدَّد «إزالة».');
+    });
+
+    it('the over-cap line in every form: «يمكن إزالة البقية…»', () => {
+      for (const form of ['zero', 'one', 'two', 'few', 'many', 'other'] as const) {
+        expect(pc.overCap[form]).withContext(form).toBe('يُعرض {{shown}} من {{count}}. يمكن إزالة البقية من صفحة كل لجنة.');
+      }
+    });
+
+    it('"Removed from n committees", many: the accusative «لجنةً»', () => {
+      expect(pc.removedAll.many).toBe('تمت الإزالة من {{count}} لجنةً.');
     });
   });
 

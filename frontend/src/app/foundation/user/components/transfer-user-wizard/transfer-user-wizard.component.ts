@@ -212,8 +212,8 @@ import { transferSeatReason } from './transfer-seat-reason';
                     </label>
                     <app-overlay-select
                       formControlName="newPositionId"
-                      [options]="transferContext()?.availablePositions ?? []"
-                      optionLabel="nameEn"
+                      [options]="positionOptions()"
+                      optionLabel="label"
                       optionValue="id"
                     />
                   </div>
@@ -377,11 +377,11 @@ import { transferSeatReason } from './transfer-seat-reason';
                     <div class="flex flex-col gap-2 text-sm">
                       <div class="flex justify-between">
                         <span class="text-[var(--am-text-secondary)]">{{ 'user.transfer.reviewDestinationUnit' | translate }}</span>
-                        <span>{{ summary.destinationUnit }}</span>
+                        <span data-testid="transfer-review-unit">{{ summary.destinationUnit }}</span>
                       </div>
                       <div class="flex justify-between">
                         <span class="text-[var(--am-text-secondary)]">{{ 'user.transfer.reviewPosition' | translate }}</span>
-                        <span>{{ summary.position }}</span>
+                        <span data-testid="transfer-review-position">{{ summary.position }}</span>
                       </div>
                       @if (summary.replacement) {
                         <div class="flex justify-between">
@@ -597,7 +597,7 @@ export class TransferUserWizardComponent implements OnInit {
   // hidden. This computed keeps a single source of truth: Position/
   // Manager/Review shift down by one whenever Replacement is absent, so
   // the displayed sequence is always contiguous (1,2,3,4 or 1,2,3,4,5).
-  // Safe as computed() (unlike isPromotion/reviewSummary above) because
+  // Safe as computed() (unlike isPromotion/reviewPicks below) because
   // it only reads transferContext(), a real tracked signal dependency.
   //
   // ACC-296 — the Committees step sits between Manager and Review, and is
@@ -717,19 +717,43 @@ export class TransferUserWizardComponent implements OnInit {
   // Step 3 — so a computed() here would permanently cache `false` and
   // never reflect the user's actual selection. Same class of bug (and
   // same fix) as invite-user.component.ts's isRootUnitHeadInvite, and as
-  // reviewSummary below. Set imperatively in goFromPosition(), the one
+  // reviewPicks below. Set imperatively in goFromPosition(), the one
   // place newPositionId is finalized before it matters downstream.
   readonly isPromotion = signal(false);
 
-  // Snapshot of the review step's own display values, populated
-  // imperatively in goFromManager() — see isPromotion's comment above
-  // for why this can't be a computed() reading FormControl values.
-  readonly reviewSummary = signal<{
-    destinationUnit: string;
-    position: string;
+  // Snapshot of what the review step shows, taken imperatively in
+  // goFromManager() — see isPromotion's comment above for why this can't be
+  // a computed() reading FormControl values. ACC-296: it keeps the picked
+  // unit and position by id, and reviewSummary names them in the reader's
+  // language (LanguageService.bilingual reads a signal), so Review, the
+  // promotion note and the success message follow a language switch.
+  private readonly reviewPicks = signal<{
+    destinationOrgUnitId: string | null;
+    newPositionId: string | null;
     replacement: string | null;
     manager: string;
   } | null>(null);
+
+  readonly reviewSummary = computed(() => {
+    const picks = this.reviewPicks();
+    if (!picks) return null;
+    const unit = this.orgUnits().find((u) => u.id === picks.destinationOrgUnitId);
+    const position = this.transferContext()?.availablePositions.find((p) => p.id === picks.newPositionId);
+    return {
+      destinationUnit: unit ? this.language.bilingual(unit.nameEn, unit.nameAr) : '—',
+      position: position ? this.language.bilingual(position.nameEn, position.nameAr) : '—',
+      replacement: picks.replacement,
+      manager: picks.manager,
+    };
+  });
+
+  // ACC-296 — the position picker's labels, in the reader's language.
+  readonly positionOptions = computed(() =>
+    (this.transferContext()?.availablePositions ?? []).map((p) => ({
+      id: p.id,
+      label: this.language.bilingual(p.nameEn, p.nameAr),
+    })),
+  );
 
   readonly form = this.fb.group({
     destinationOrgUnitId: [null as string | null, [Validators.required]],
@@ -879,7 +903,7 @@ export class TransferUserWizardComponent implements OnInit {
     );
     this.derivedManagerText.set(null);
     this.isPromotion.set(false);
-    this.reviewSummary.set(null);
+    this.reviewPicks.set(null);
 
     this.userService.getTransferContext(this.userId(), destinationOrgUnitId).subscribe({
       next: (ctx) => {
@@ -967,16 +991,16 @@ export class TransferUserWizardComponent implements OnInit {
     }
     this.error.set(null);
 
-    // Snapshot the review step's display values here, imperatively — see
-    // reviewSummary's own declaration comment for why this can't be a
+    // Snapshot the review step's picks here, imperatively — see
+    // reviewPicks's own declaration comment for why this can't be a
     // set of computed()s reading FormControl values directly.
     const destinationOrgUnitId = this.form.controls.destinationOrgUnitId.value;
     const newPositionId = this.form.controls.newPositionId.value;
     const replacementUserId = this.form.controls.replacementUserId.value;
     const newManagerId = this.form.controls.newManagerId.value;
-    this.reviewSummary.set({
-      destinationUnit: this.orgUnits().find((u) => u.id === destinationOrgUnitId)?.nameEn ?? '—',
-      position: this.transferContext()?.availablePositions.find((p) => p.id === newPositionId)?.nameEn ?? '—',
+    this.reviewPicks.set({
+      destinationOrgUnitId,
+      newPositionId,
       replacement: replacementUserId
         ? (this.sourceUnitCandidates().find((c) => c.id === replacementUserId)?.name ?? '—')
         : null,
@@ -1093,7 +1117,8 @@ export class TransferUserWizardComponent implements OnInit {
       return;
     }
     const parentUnitId = unit.parentId;
-    const parentUnitName = this.orgUnits().find((u) => u.id === parentUnitId)?.nameEn ?? '';
+    const parentUnit = this.orgUnits().find((u) => u.id === parentUnitId);
+    const parentUnitName = parentUnit ? this.language.bilingual(parentUnit.nameEn, parentUnit.nameAr) : '';
     this.orgUnitHeadService.getHeadStatus(parentUnitId).subscribe({
       next: (status) => {
         const holder = status.holders[0];
