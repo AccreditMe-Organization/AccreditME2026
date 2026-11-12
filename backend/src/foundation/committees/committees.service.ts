@@ -518,7 +518,9 @@ export class CommitteesService {
           roleValueId: existing.roleValueId,
           action: 'LEFT',
           effectiveDate,
-          reason: dto.reason ?? null,
+          // ACC-298 — required, and trimmed by the DTO; trimmed again here so a
+          // caller inside the app that skips the DTO stores the same value.
+          reason: dto.reason.trim(),
           approvedBy: actorId,
         },
       });
