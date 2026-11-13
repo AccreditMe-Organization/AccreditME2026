@@ -17,7 +17,6 @@ function tenant(ai: Partial<ITenant['ai']> = {}, plan: ITenant['plan'] = 'STARTE
     nameAr: null,
     slug: 'org-a',
     country: 'SA',
-    timezone: 'Asia/Riyadh',
     language: 'en',
     logo: null,
     isPlatformOrg: false,

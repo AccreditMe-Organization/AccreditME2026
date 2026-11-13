@@ -12,7 +12,8 @@ export interface ITenant {
   nameAr: string | null;
   slug: string;
   country: string;
-  timezone: string;
+  // No timezone (ACC-97): the organisation's time zone is the working
+  // calendar's, and screens read it through FormatContext.
   language: string;
   logo: string | null;
   isPlatformOrg: boolean;
