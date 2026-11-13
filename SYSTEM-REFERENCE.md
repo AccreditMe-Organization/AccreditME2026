@@ -8925,26 +8925,38 @@ on the backend and stored; they do not pass through this layer. ACC-95,
 including why "due in 2 days" would disagree with an SLA counted in working
 days.
 
-### 9.7 The Tenant's Time Zone — Which Field Is Authoritative (ACC-94, D3)
+### 9.7 The Tenant's Time Zone — One Field (ACC-94 D3, ACC-97)
 
-Two fields hold the tenant's time zone:
-
-| Field | Edited by | Read by |
-| -- | -- | -- |
-| `WorkingCalendar.timezone` | Working Calendar screen | **`WorkingCalendarService.calculateDeadline()`** (every SLA due date), **`SlaMonitorProcessor.isWithinWorkingHours()`**, and **all frontend date display** (via `GET /auth/me`) |
-| `Organization.timezone` | tenant create / update DTOs | returned by `GET /tenant`; **nothing that computes a date** |
-
-**`WorkingCalendar.timezone` is authoritative.** Display uses the zone the SLA
-engine computes in, so "due" on screen and "due" in the engine cannot disagree.
+**`WorkingCalendar.timezone` is the organisation's ONLY time zone.** It is
+edited on the Working Calendar screen (`PATCH /working-calendar`) and read by
+**`WorkingCalendarService.calculateDeadline()`** (every SLA due date),
+**`SlaMonitorProcessor.isWithinWorkingHours()`**, and **all frontend date
+display** (via `GET /auth/me`). Display uses the zone the SLA engine computes
+in, so "due" on screen and "due" in the engine cannot disagree.
 `WorkingCalendarService.getEffectiveTimeZone()` resolves it **read-only**: the
 calendar row's zone, or `GCC_DEFAULT.timezone` when the tenant has none — the
 value `getOrCreate()` would store — without creating a row, because
 `GET /auth/me` must not write.
 
-Known gap, not fixed here: `getOrCreate()` seeds a new calendar from
-`GCC_DEFAULT`, ignoring `Organization.timezone`, so a tenant created in
-`Asia/Dubai` gets a Riyadh calendar. Two fields holding one fact is the shape
-that produced ACC-82's stale vacancy flag. **ACC-97.**
+**`Organization.timezone` is RETIRED (ACC-97, Ahmad 13 Nov), expand-then-
+contract.** Two fields holding one fact is the shape that produced ACC-82's
+stale vacancy flag. It was writable only through `PATCH /tenant` (tenant
+creation never set it; every row holds the column default) and returned by
+`GET /tenant`, and nothing that computes a date ever read it. Since ACC-97:
+
+- **Nothing reads or writes it.** `GET /tenant` and `PATCH /tenant`'s answer no
+  longer carry `timezone` (`ITenant`, `TenantResponseDto`, `mapToITenant`), and
+  the frontend `ITenant` has no such field.
+- **`PATCH /tenant` refuses it**: `UpdateTenantDto` no longer declares it, so
+  the global pipe's `forbidNonWhitelisted` answers 400 and nothing is written —
+  the `storageProvider` shape (ACC-185). Pinned by
+  `tenant-timezone.contract.spec.ts`.
+- **The column is dropped in a later contract step**, by its own migration,
+  once no deployed code names it.
+
+A new organisation's calendar starts at the GCC default (`getOrCreate()` seeds
+`GCC_DEFAULT`); a tenant outside that zone sets it on the Working Calendar
+screen.
 
 ---
 

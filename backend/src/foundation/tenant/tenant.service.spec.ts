@@ -141,6 +141,26 @@ describe('TenantService', () => {
       expect(result).not.toHaveProperty('stripeCustomerId');
     });
 
+    // ACC-97 — GET /tenant carries no time zone; the working calendar's is the
+    // only one. Not vacuous: ORG_A is a database row and still HAS timezone
+    // (the column is dropped in a later contract step), so the mapper is what
+    // leaves it out.
+    it('returns no timezone, although the row still has the column (ACC-97)', async () => {
+      expect(ORG_A.timezone).toBe('Asia/Riyadh');
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      const result = await service.findById('org-a');
+      expect(Object.keys(result)).not.toContain('timezone');
+    });
+
+    // PATCH /tenant answers with the same mapper.
+    it('returns no timezone from an update either (ACC-97)', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.organization.update.mockResolvedValue({ ...ORG_A, language: 'ar' });
+      const result = await service.update('org-a', { language: 'ar' }, 'user-1');
+      expect(result.language).toBe('ar');
+      expect(Object.keys(result)).not.toContain('timezone');
+    });
+
     it('defaults modules/ai when settings is absent', async () => {
       prisma.organization.findUnique.mockResolvedValue(ORG_A);
       const result = await service.findById('org-a');
@@ -348,10 +368,10 @@ describe('TenantService', () => {
       prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, nameAr: 'اسم' });
       prisma.organization.update.mockResolvedValue({ ...ORG_A, nameAr: 'اسم' });
 
-      await service.update('org-a', { timezone: 'Asia/Dubai' }, 'user-1');
+      await service.update('org-a', { language: 'ar' }, 'user-1');
 
       expect(prisma.organization.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { timezone: 'Asia/Dubai' } }),
+        expect.objectContaining({ data: { language: 'ar' } }),
       );
     });
   });

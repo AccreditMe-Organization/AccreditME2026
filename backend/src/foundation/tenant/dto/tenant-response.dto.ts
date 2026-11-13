@@ -7,7 +7,6 @@ export class TenantResponseDto implements ITenant {
   nameAr!: string | null;
   slug!: string;
   country!: string;
-  timezone!: string;
   language!: string;
   authProvider!: 'LOCAL' | 'AZURE_AD' | 'GOOGLE';
   storageProvider!: 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM' | 'SHAREPOINT';
