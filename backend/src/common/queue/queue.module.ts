@@ -30,6 +30,9 @@ import { logWorkerRegistration } from './workers.config';
     // ACC-194 — the hourly AI credit renewal. No retry options, like
     // setup-health: the next hourly run tries again.
     BullModule.registerQueue({ name: 'ai-credits' }),
+    // ACC-297 — the delayed notice to a committee's officers after a transfer.
+    // Each job sets its own delay, id and single attempt (CommitteeTransferNoticeService).
+    BullModule.registerQueue({ name: 'committee-transfer-notice' }),
     BullModule.registerQueue({
       name: 'email-delivery',
       defaultJobOptions: {
