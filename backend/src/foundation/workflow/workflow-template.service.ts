@@ -570,7 +570,7 @@ export class WorkflowTemplateService {
     const updated = await this.prisma.$transaction(async (tx) => {
       if (becomesDefault) {
         await this.lockTemplate(tx, id, organizationId);
-        await assertHasStartingStage(tx, id);
+        await assertHasStartingStage(tx, id, organizationId);
       }
       return tx.workflowTemplate.update({
         where: { id },
@@ -607,7 +607,7 @@ export class WorkflowTemplateService {
     // default: startInstance() would throw at whoever next creates a record.
     await this.prisma.$transaction(async (tx) => {
       await this.lockTemplate(tx, id, organizationId);
-      await assertHasStartingStage(tx, id);
+      await assertHasStartingStage(tx, id, organizationId);
       await tx.workflowTemplate.updateMany({
         where: { organizationId, objectType: template.objectType, NOT: { id } },
         data: { isDefault: false },
@@ -684,9 +684,9 @@ export class WorkflowTemplateService {
       // ACC-57 — a new stage always changes the template's start and end, so
       // the template is locked and read before the write, and checked after.
       await this.lockTemplate(tx, templateId, organizationId);
-      const before = await readStartEnd(tx, templateId);
+      const before = await readStartEnd(tx, templateId, organizationId);
       // Q1 — a new starting stage takes over from the old one.
-      const moved = dto.isInitial ? await clearOtherStartingStages(tx, templateId, before) : [];
+      const moved = dto.isInitial ? await clearOtherStartingStages(tx, templateId, organizationId, before) : [];
       const created = await tx.workflowStage.create({
       data: {
         workflowTemplateId: templateId,
@@ -713,7 +713,7 @@ export class WorkflowTemplateService {
       // ACC-271 PR 5-be — the entries, in the transaction that creates the stage.
       await this.replaceStageWho(tx, created.id, organizationId, wantedWho, actorId);
       await this.assertFlagCardinality(tx, templateId, counted);
-      await assertStartAndEnd(tx, templateId, before, created);
+      await assertStartAndEnd(tx, templateId, organizationId, before, created);
       return { stage: created, movedFrom: moved };
     });
     await this.auditStartingStageMoved(movedFrom, organizationId, actorId);
@@ -826,11 +826,11 @@ export class WorkflowTemplateService {
 
     const { updated, actionsBefore, actionsAfter, movedFrom } = await this.prisma.$transaction(async (tx) => {
       if (counted.length > 0 || touchesStartEnd) await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
-      const before = touchesStartEnd ? await readStartEnd(tx, stage.workflowTemplateId) : null;
+      const before = touchesStartEnd ? await readStartEnd(tx, stage.workflowTemplateId, organizationId) : null;
       // Q1 — ticking Initial moves the starting stage here.
       const moved =
         before && dto.isInitial === true && !stage.isInitial
-          ? await clearOtherStartingStages(tx, stage.workflowTemplateId, before, id)
+          ? await clearOtherStartingStages(tx, stage.workflowTemplateId, organizationId, before, id)
           : [];
       // The update takes the stage's row lock, so the action rows read next
       // are the ones no other save is changing.
@@ -857,7 +857,7 @@ export class WorkflowTemplateService {
       // ACC-271 PR 3 — the entries, under the stage's row lock the update took.
       if (whoChanged && wantedWho) await this.replaceStageWho(tx, id, organizationId, wantedWho, actorId);
       await this.assertFlagCardinality(tx, stage.workflowTemplateId, counted);
-      if (before) await assertStartAndEnd(tx, stage.workflowTemplateId, before, written);
+      if (before) await assertStartAndEnd(tx, stage.workflowTemplateId, organizationId, before, written);
       return { updated: written, actionsBefore: replaced.before, actionsAfter: replaced.after, movedFrom: moved };
     });
     await this.auditStartingStageMoved(movedFrom, organizationId, actorId);
@@ -938,10 +938,10 @@ export class WorkflowTemplateService {
       // ACC-57 — removing the starting stage while others remain leaves the
       // template with none (STAGE_INITIAL_REQUIRED, which replaced the old
       // codeless refusal); removing the last stage leaves a template not yet built.
-      const before = await readStartEnd(tx, stage.workflowTemplateId);
+      const before = await readStartEnd(tx, stage.workflowTemplateId, organizationId);
       await tx.workflowStage.delete({ where: { id } });
       await this.assertFlagCardinality(tx, stage.workflowTemplateId, counted);
-      await assertStartAndEnd(tx, stage.workflowTemplateId, before, stage);
+      await assertStartAndEnd(tx, stage.workflowTemplateId, organizationId, before, stage);
     });
 
     // ACC-255 — the whole removed stage, its actions and flags included.

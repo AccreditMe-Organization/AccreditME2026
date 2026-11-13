@@ -93,10 +93,14 @@ export function startEndRefusal(
   return null;
 }
 
-/** A template's stages as the rule reads them, in stage order. Run inside the save's transaction, after the template lock. */
-export function readStartEnd(tx: EngineTx, templateId: string): Promise<StartEndStage[]> {
+/**
+ * A template's stages as the rule reads them, in stage order. Run inside the
+ * save's transaction, after the template lock. Scoped by organisation as well as
+ * template (the stage has no organisation column of its own).
+ */
+export function readStartEnd(tx: EngineTx, templateId: string, organizationId: string): Promise<StartEndStage[]> {
   return tx.workflowStage.findMany({
-    where: { workflowTemplateId: templateId },
+    where: { workflowTemplateId: templateId, workflowTemplate: { organizationId } },
     select: { id: true, nameEn: true, nameAr: true, isInitial: true, isFinal: true },
     orderBy: { order: 'asc' },
   });
@@ -106,10 +110,11 @@ export function readStartEnd(tx: EngineTx, templateId: string): Promise<StartEnd
 export async function assertStartAndEnd(
   tx: EngineTx,
   templateId: string,
+  organizationId: string,
   before: readonly StartEndStage[],
   subject?: NamedStage,
 ): Promise<void> {
-  const refusal = startEndRefusal(before, await readStartEnd(tx, templateId), subject);
+  const refusal = startEndRefusal(before, await readStartEnd(tx, templateId, organizationId), subject);
   if (refusal) throw refusal;
 }
 
@@ -123,13 +128,14 @@ export async function assertStartAndEnd(
 export async function clearOtherStartingStages(
   tx: EngineTx,
   templateId: string,
+  organizationId: string,
   before: readonly StartEndStage[],
   except?: string,
 ): Promise<NamedStage[]> {
   const others = before.filter((s) => s.isInitial && s.id !== except);
   if (others.length === 0) return [];
   await tx.workflowStage.updateMany({
-    where: { workflowTemplateId: templateId, id: { in: others.map((s) => s.id) } },
+    where: { workflowTemplateId: templateId, workflowTemplate: { organizationId }, id: { in: others.map((s) => s.id) } },
     data: { isInitial: false },
   });
   return others.map(({ id, nameEn, nameAr }) => ({ id, nameEn, nameAr }));
@@ -141,8 +147,8 @@ export async function clearOtherStartingStages(
  * stage throws at whoever creates a record, not at the admin who chose it.
  * Strict, unlike a stage save: becoming the default is the moment it must work.
  */
-export async function assertHasStartingStage(tx: EngineTx, templateId: string): Promise<void> {
-  const stages = await readStartEnd(tx, templateId);
+export async function assertHasStartingStage(tx: EngineTx, templateId: string, organizationId: string): Promise<void> {
+  const stages = await readStartEnd(tx, templateId, organizationId);
   if (startEndViolations(stages, { requireStages: true }).some((v) => v.kind === 'NO_INITIAL')) {
     throw new WorkflowRefusalException('STAGE_INITIAL_REQUIRED', { stageIds: [], stageNames: [] });
   }

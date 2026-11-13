@@ -99,6 +99,8 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
+    // ACC-57 (Q1) — ticking Initial clears it on the template's other stages.
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
   workflowTransition: {
     findFirst: jest.fn(),
@@ -1206,6 +1208,41 @@ describe('WorkflowTemplateService', () => {
   // ── tenant isolation ─────────────────────────────────────────────────────────
 
   describe('tenant isolation', () => {
+    // ACC-57 / ACC-191 — every query the new checks make carries the caller's
+    // organisation: the start/end read and the move of the starting stage (the
+    // stage has no organisation column, so through its template), and each
+    // in-use count. Named for CI's isolation gate.
+    it('should NOT return records belonging to a different tenant — the start/end read, the moved starting stage and the in-use counts are scoped by organisation', async () => {
+      const asRead = (id: string, isInitial: boolean) => ({ id, nameEn: id, nameAr: null, isInitial, isFinal: false });
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: false }));
+      mockPrisma.workflowStage.update.mockResolvedValue(makeStage({ isInitial: true }));
+      mockPrisma.workflowStage.findMany.mockResolvedValueOnce([asRead('stage-0', true), asRead('stage-1', false)]).mockResolvedValueOnce([
+        asRead('stage-0', false),
+        asRead('stage-1', true),
+      ]);
+
+      await service.updateStage('stage-1', { isInitial: true } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowStage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { workflowTemplateId: 'template-1', workflowTemplate: { organizationId: ORG_A } } }),
+      );
+      expect(mockPrisma.workflowStage.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ workflowTemplate: { organizationId: ORG_A } }) }),
+      );
+
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: false }));
+      await service.removeStage('stage-1', ORG_A, ACTOR);
+      expect(mockPrisma.workflowTransition.count).toHaveBeenCalledWith({
+        where: { OR: [{ fromStageId: 'stage-1' }, { toStageId: 'stage-1' }], fromStage: { workflowTemplate: { organizationId: ORG_A } } },
+      });
+      // The records count binds the organisation as a query value.
+      expect(mockPrisma.$queryRaw.mock.calls.some((call: unknown[]) => call.slice(1).includes(ORG_A) && String(call[0]).includes('WorkflowInstanceStage'))).toBe(true);
+
+      mockPrisma.workflowTransitionAction.findFirst.mockResolvedValue(BASE_ACTION);
+      await service.removeTransitionAction('action-1', ORG_A, ACTOR);
+      expect(mockPrisma.workflowActionLog.count).toHaveBeenCalledWith({ where: { organizationId: ORG_A, workflowTransitionActionId: 'action-1' } });
+    });
+
     it('should NOT return records belonging to a different tenant', async () => {
       const templateA = makeTemplate({ id: 'template-a', organizationId: ORG_A });
       const templateB = makeTemplate({ id: 'template-b', organizationId: ORG_B });
