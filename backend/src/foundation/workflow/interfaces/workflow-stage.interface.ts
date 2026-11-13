@@ -62,4 +62,7 @@ export interface IWorkflowStage {
   who?: IStageWho | null;
   // ACC-271 PR 3 — the read-back sentence, built by the server (stage-who.ts).
   whoSentence?: { en: string; ar: string } | null;
+  // ACC-57 — on a stage save that ticked Initial: the stage(s) that stopped
+  // being the starting stage (Q1: the starting stage moves). Absent otherwise.
+  startingStageMovedFrom?: { id: string; nameEn: string; nameAr: string | null }[];
 }

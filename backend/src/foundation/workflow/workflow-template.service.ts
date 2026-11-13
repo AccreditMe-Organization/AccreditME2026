@@ -58,6 +58,13 @@ import {
 import { appMoveFor } from './app-moves';
 import { auditSecretsOf, headerChanges, maskActionConfig, mergeActionConfig } from './webhook-config-secrets';
 import { transitionMover } from './workflow-pool';
+import {
+  assertHasStartingStage,
+  assertStartAndEnd,
+  clearOtherStartingStages,
+  readStartEnd,
+  type NamedStage,
+} from './workflow-start-end';
 
 /** Stage fields a protected template's stage may still change (names, description, deadline and its escalation). */
 const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr', 'description', 'slaWorkingHours', 'escalationConfig']);
@@ -557,14 +564,23 @@ export class WorkflowTemplateService {
       refuseProtected('REPLACE_DEFAULT');
     }
 
-    const updated = await this.prisma.workflowTemplate.update({
-      where: { id },
-      data: {
-        ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
-        ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
-        ...(dto.objectType !== undefined && { objectType: dto.objectType }),
-        ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
-      },
+    // ACC-57 (Q2) — becoming the default needs a starting stage, checked under
+    // the template lock a stage save takes, so the two cannot interleave.
+    const becomesDefault = dto.isDefault === true && !template.isDefault;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (becomesDefault) {
+        await this.lockTemplate(tx, id, organizationId);
+        await assertHasStartingStage(tx, id);
+      }
+      return tx.workflowTemplate.update({
+        where: { id },
+        data: {
+          ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
+          ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
+          ...(dto.objectType !== undefined && { objectType: dto.objectType }),
+          ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
+        },
+      });
     });
 
     await this.auditLog.log({
@@ -587,13 +603,17 @@ export class WorkflowTemplateService {
     // ACC-239 — a protected type keeps its seeded template as the default.
     if (PROTECTED_TEMPLATES.has(template.objectType)) refuseProtected('REPLACE_DEFAULT');
 
-    await this.prisma.$transaction([
-      this.prisma.workflowTemplate.updateMany({
+    // ACC-57 (Q2) — a template with no starting stage can't become the
+    // default: startInstance() would throw at whoever next creates a record.
+    await this.prisma.$transaction(async (tx) => {
+      await this.lockTemplate(tx, id, organizationId);
+      await assertHasStartingStage(tx, id);
+      await tx.workflowTemplate.updateMany({
         where: { organizationId, objectType: template.objectType, NOT: { id } },
         data: { isDefault: false },
-      }),
-      this.prisma.workflowTemplate.update({ where: { id }, data: { isDefault: true } }),
-    ]);
+      });
+      await tx.workflowTemplate.update({ where: { id }, data: { isDefault: true } });
+    });
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -660,8 +680,13 @@ export class WorkflowTemplateService {
     const whoRefs = await this.assertWhoReferences(wantedWho, organizationId);
 
     const counted = exactlyOneFlags(template.objectType).filter((f) => flags.includes(f));
-    const stage = await this.prisma.$transaction(async (tx) => {
-      if (counted.length > 0) await this.lockTemplate(tx, templateId, organizationId);
+    const { stage, movedFrom } = await this.prisma.$transaction(async (tx) => {
+      // ACC-57 — a new stage always changes the template's start and end, so
+      // the template is locked and read before the write, and checked after.
+      await this.lockTemplate(tx, templateId, organizationId);
+      const before = await readStartEnd(tx, templateId);
+      // Q1 — a new starting stage takes over from the old one.
+      const moved = dto.isInitial ? await clearOtherStartingStages(tx, templateId, before) : [];
       const created = await tx.workflowStage.create({
       data: {
         workflowTemplateId: templateId,
@@ -688,8 +713,10 @@ export class WorkflowTemplateService {
       // ACC-271 PR 5-be — the entries, in the transaction that creates the stage.
       await this.replaceStageWho(tx, created.id, organizationId, wantedWho, actorId);
       await this.assertFlagCardinality(tx, templateId, counted);
-      return created;
+      await assertStartAndEnd(tx, templateId, before, created);
+      return { stage: created, movedFrom: moved };
     });
+    await this.auditStartingStageMoved(movedFrom, organizationId, actorId);
 
     // ACC-271 PR 5-be — the new stage's who, named once for the audit and the
     // response from the references its check already read.
@@ -717,6 +744,7 @@ export class WorkflowTemplateService {
     return {
       ...this.mapStage(stage, undefined, actions),
       ...this.whoRead(stage.whoMode, entries, whoRefs, holders),
+      ...(movedFrom.length > 0 && { startingStageMovedFrom: movedFrom }),
     };
   }
 
@@ -791,8 +819,19 @@ export class WorkflowTemplateService {
     const counted =
       newFlags === undefined ? [] : exactlyOneFlags(objectType).filter((f) => storedFlags.includes(f) !== newFlags.includes(f));
 
-    const { updated, actionsBefore, actionsAfter } = await this.prisma.$transaction(async (tx) => {
-      if (counted.length > 0) await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
+    // ACC-57 — a save that changes Initial or Final is checked against the
+    // template's start and end, under the template lock, after the write.
+    const touchesStartEnd =
+      (dto.isInitial !== undefined && dto.isInitial !== stage.isInitial) || (dto.isFinal !== undefined && dto.isFinal !== stage.isFinal);
+
+    const { updated, actionsBefore, actionsAfter, movedFrom } = await this.prisma.$transaction(async (tx) => {
+      if (counted.length > 0 || touchesStartEnd) await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
+      const before = touchesStartEnd ? await readStartEnd(tx, stage.workflowTemplateId) : null;
+      // Q1 — ticking Initial moves the starting stage here.
+      const moved =
+        before && dto.isInitial === true && !stage.isInitial
+          ? await clearOtherStartingStages(tx, stage.workflowTemplateId, before, id)
+          : [];
       // The update takes the stage's row lock, so the action rows read next
       // are the ones no other save is changing.
       const written = await tx.workflowStage.update({
@@ -818,8 +857,10 @@ export class WorkflowTemplateService {
       // ACC-271 PR 3 — the entries, under the stage's row lock the update took.
       if (whoChanged && wantedWho) await this.replaceStageWho(tx, id, organizationId, wantedWho, actorId);
       await this.assertFlagCardinality(tx, stage.workflowTemplateId, counted);
-      return { updated: written, actionsBefore: replaced.before, actionsAfter: replaced.after };
+      if (before) await assertStartAndEnd(tx, stage.workflowTemplateId, before, written);
+      return { updated: written, actionsBefore: replaced.before, actionsAfter: replaced.after, movedFrom: moved };
     });
+    await this.auditStartingStageMoved(movedFrom, organizationId, actorId);
 
     // ACC-271 PR 3 — the stage's who as it now stands, named once for the audit and the response.
     const entriesAfter: StoredWhoEntry[] = whoChanged
@@ -856,6 +897,7 @@ export class WorkflowTemplateService {
     return {
       ...this.mapStage(updated, undefined, orderedActionKeys(objectType, actionsAfter)),
       ...this.whoRead(updated.whoMode, entriesAfter, refs, holders),
+      ...(movedFrom.length > 0 && { startingStageMovedFrom: movedFrom }),
     };
   }
 
@@ -870,34 +912,36 @@ export class WorkflowTemplateService {
     if (!stage) throw new NotFoundException('Workflow stage not found');
     if (PROTECTED_TEMPLATES.has(stage.workflowTemplate.objectType)) refuseProtected('REMOVE_STAGE');
 
-    const referencingTransition = await this.prisma.workflowTransition.findFirst({
-      where: { OR: [{ fromStageId: id }, { toStageId: id }] },
-    });
-    if (referencingTransition) {
-      throw new ConflictException(
-        'This stage is still referenced by a transition and cannot be removed',
-      );
-    }
-
-    if (stage.isInitial) {
-      const siblingCount = await this.prisma.workflowStage.count({
-        where: { workflowTemplateId: stage.workflowTemplateId, NOT: { id } },
-      });
-      if (siblingCount > 0) {
-        throw new ConflictException(
-          'The initial stage cannot be removed while other stages exist in this template',
-        );
-      }
-    }
-
     // ACC-255 — the action rows go with the stage (cascade); an exactly-one
     // flag it carried must still sit on exactly one stage afterwards.
     const objectType = stage.workflowTemplate.objectType;
     const counted = exactlyOneFlags(objectType).filter((f) => (stage.flags ?? []).includes(f));
     await this.prisma.$transaction(async (tx) => {
-      if (counted.length > 0) await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
+      // Template, then stage: the order every stage save takes. The stage's
+      // row lock holds off anything that would reference it (a transition, a
+      // record entering it) until the delete commits, so the counts below
+      // cannot go stale between the count and the delete.
+      await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
+      await tx.$queryRaw`SELECT id FROM "WorkflowStage" WHERE id = ${id} FOR UPDATE`;
+
+      // ACC-191 (Q4) — the transitions in and out go first, said from a code.
+      const transitionCount = await tx.workflowTransition.count({
+        where: { OR: [{ fromStageId: id }, { toStageId: id }], fromStage: { workflowTemplate: { organizationId } } },
+      });
+      if (transitionCount > 0) throw new WorkflowRefusalException('STAGE_HAS_TRANSITIONS', { transitionCount });
+
+      // ACC-191 — a stage a record has entered is kept: its history names it
+      // (WorkflowInstanceStage.stageId, RESTRICT). It can be renamed.
+      const recordCount = await this.recordsThatEntered(tx, id, organizationId);
+      if (recordCount > 0) throw new WorkflowRefusalException('STAGE_IN_USE', { recordCount });
+
+      // ACC-57 — removing the starting stage while others remain leaves the
+      // template with none (STAGE_INITIAL_REQUIRED, which replaced the old
+      // codeless refusal); removing the last stage leaves a template not yet built.
+      const before = await readStartEnd(tx, stage.workflowTemplateId);
       await tx.workflowStage.delete({ where: { id } });
       await this.assertFlagCardinality(tx, stage.workflowTemplateId, counted);
+      await assertStartAndEnd(tx, stage.workflowTemplateId, before, stage);
     });
 
     // ACC-255 — the whole removed stage, its actions and flags included.
@@ -954,6 +998,36 @@ export class WorkflowTemplateService {
       await tx.workflowStageRecordAction.createMany({ data: add.map((actionKey) => ({ organizationId, stageId, actionKey })) });
     }
     return { before, after: wanted };
+  }
+
+  /**
+   * ACC-191 — how many records have entered a stage: distinct records, so one
+   * that came back through the stage counts once. Any entry at all blocks the
+   * delete (RESTRICT); a count of 0 with entries cannot happen, since every
+   * entry has an instance and every instance a record.
+   */
+  private async recordsThatEntered(tx: EngineTx, stageId: string, organizationId: string): Promise<number> {
+    const [row] = await tx.$queryRaw<{ entries: number; records: number }[]>`
+      SELECT COUNT(*)::int AS entries, COUNT(DISTINCT (wi."objectType", wi."objectId"))::int AS records
+      FROM "WorkflowInstanceStage" e
+      JOIN "WorkflowInstance" wi ON wi.id = e."workflowInstanceId"
+      WHERE e."stageId" = ${stageId} AND wi."organizationId" = ${organizationId}`;
+    return row && row.entries > 0 ? Math.max(row.records, 1) : 0;
+  }
+
+  /** ACC-57 (Q1) — one audit row per stage that stopped being the starting stage because another took over. */
+  private async auditStartingStageMoved(movedFrom: NamedStage[], organizationId: string, actorId: string): Promise<void> {
+    for (const stage of movedFrom) {
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'UPDATE',
+        objectType: 'WorkflowStage',
+        objectId: stage.id,
+        before: { isInitial: true },
+        after: { isInitial: false },
+      });
+    }
   }
 
   /** Locks the template row, so two saves touching an exactly-one flag count one after the other. */
@@ -1098,8 +1172,20 @@ export class WorkflowTemplateService {
     if (!transition) throw new NotFoundException('Workflow transition not found');
     if (PROTECTED_TEMPLATES.has(transition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
 
-    await this.prisma.workflowTransitionAction.deleteMany({ where: { workflowTransitionId: id } });
-    await this.prisma.workflowTransition.delete({ where: { id } });
+    // ACC-191 (Q3) — a transition whose actions have run is kept: their log
+    // rows name the actions (WorkflowActionLog, RESTRICT). Counted and deleted
+    // in one transaction, under the transition's and its actions' row locks, so
+    // no run can be logged between the count and the delete.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "WorkflowTransition" WHERE id = ${id} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM "WorkflowTransitionAction" WHERE "workflowTransitionId" = ${id} FOR UPDATE`;
+      const runCount = await tx.workflowActionLog.count({
+        where: { organizationId, workflowTransitionAction: { workflowTransitionId: id } },
+      });
+      if (runCount > 0) throw new WorkflowRefusalException('TRANSITION_IN_USE', { runCount });
+      await tx.workflowTransitionAction.deleteMany({ where: { workflowTransitionId: id } });
+      await tx.workflowTransition.delete({ where: { id } });
+    });
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -1227,7 +1313,15 @@ export class WorkflowTemplateService {
     if (!action) throw new NotFoundException('Workflow transition action not found');
     if (PROTECTED_TEMPLATES.has(action.workflowTransition.fromStage.workflowTemplate.objectType)) refuseProtected('TRANSITION');
 
-    await this.prisma.workflowTransitionAction.delete({ where: { id } });
+    // ACC-191 — an action that has run is kept: its log rows name it
+    // (WorkflowActionLog, RESTRICT). It can be turned off instead. Counted and
+    // deleted under the action's row lock, so no run is logged in between.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "WorkflowTransitionAction" WHERE id = ${id} FOR UPDATE`;
+      const runCount = await tx.workflowActionLog.count({ where: { organizationId, workflowTransitionActionId: id } });
+      if (runCount > 0) throw new WorkflowRefusalException('TRANSITION_ACTION_IN_USE', { runCount });
+      await tx.workflowTransitionAction.delete({ where: { id } });
+    });
 
     await this.auditLog.log({
       tenantId: organizationId,
