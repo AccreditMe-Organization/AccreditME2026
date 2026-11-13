@@ -6295,6 +6295,74 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
   trimmed reason on the LEFT event), the dialog's spec and layout spec, and the
   page's `committee-detail.remove.spec.ts`. Mutation-checked.
 
+### 3.21.3 Telling a committee after a member is transferred (ACC-297)
+
+Ahmad, 11 Nov. After a person is transferred, the officers of each committee they
+sat on are told, so someone holding "Remove members from a committee" can decide on
+the seat. The transfer never waits for this, and nothing here removes a seat.
+
+- **The hook:** `UserService.transferUser()` takes `since` (the app's clock) just
+  before its transaction opens. Right after the transaction commits, it calls
+  `CommitteeTransferNoticeService.schedule()`.
+  - Every success path passes that call: an ordinary transfer, a promotion, and a
+    promotion that fails after the move. A rollback never reaches it.
+  - A failed schedule is logged with ids only and never fails the transfer.
+    `schedule()` gives up after 3 seconds, so a queue outage cannot hold the
+    request.
+- **The job:** one delayed job on the `committee-transfer-notice` queue, 2 minutes
+  out (`COMMITTEE_TRANSFER_NOTICE_DELAY_MS`), so the seats the Transfer wizard
+  removes right after the transfer are told as removed.
+  - Its id is `transfer-notice_{organisation}_{user}_{since in ms}`, so a second
+    schedule of the same transfer is ignored. It has one attempt: the only write
+    is the last step.
+  - `CommitteeTransferNoticeProcessor` is registered only behind `workersEnabled()`.
+- **The run** (`run()`), three waves, each one `Promise.all`, no query per row:
+  1. the person's active seats on active committees (`seatOrderedMemberships()`,
+     which now also returns each committee's `orgUnitId`); their LEFT events in the
+     organisation created at or after `since`, newest first; the person and their
+     unit now.
+  2. each committee's chair and secretary (seat keys `chairman`, `secretary`,
+     active holders who are ACTIVE users), in one query; the owning units' head
+     holders and covers in force (`unit-headship.ts`).
+  3. which recipients are ACTIVE, which hold `committees:view`, and which are
+     active members of which of these committees.
+  Then ONE `createInAppMany()`, after all the reads, never inside a transaction.
+- **Each committee is one line:** "still holds {seat}" when the person holds a
+  seat now (this wins over an earlier removal); otherwise, for the latest LEFT
+  since the transfer:
+  - "was removed from {seat} as part of the transfer to {new unit}" when the
+    event's `approvedBy` is the transfer's actor. The stored reason is not
+    quoted, since the wizard writes it in the admin's language.
+  - "was removed from {seat}. Reason given: "{reason}"" when someone else removed it.
+  - "was removed from {seat}; no reason was given" when someone else removed it
+    without one (older rows).
+- **Who is told,** per committee and then deduplicated, so each person gets one
+  notice listing their committees:
+  - its chair and secretary;
+  - the owning unit's acting cover in force INSTEAD of its head, else its head
+    holders (two during a handover); nobody in that role with neither.
+  - Never the transferred person or the actor; only ACTIVE users.
+- **The notice:** in-app only, both languages stored. It names the person and
+  their new unit, lists the lines, and says that anyone with "Remove members from
+  a committee" can remove a seat.
+  - A committee's name and link appear only for a reader who may open it
+    (`committees:view`, or an active member of it, the committee page's rule).
+    Anyone else reads "a committee".
+  - The link is the first listed committee the reader may open.
+  - With no lines, nothing is sent.
+  - Arabic has no verb whose subject is the person («تم نقل», and the lines'
+    verbs are about the membership).
+- **The module:** `CommitteeTransferNoticeModule` imports only `PrismaModule` and
+  `QueueModule`, and provides its own `LookupService`, `NotificationService` and
+  `AuditLogService` (stateless). Importing `LookupModule` or `NotificationModule`
+  would reach `TenantModule`, and from it `UserModule`, closing a cycle. So
+  `UserModule` imports it with no `forwardRef`.
+- **Specs:** `committee-transfer-notice.spec.ts` (words, recipients),
+  `committee-transfer-notice.service.spec.ts` (in-process run, schedule, tenant
+  isolation), `committee-transfer-notice.db-spec.ts` (real rows), the hook tests
+  in `user.service.spec.ts`, and the worker registration spec. Mutation-checked.
+- **No migration.**
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +
