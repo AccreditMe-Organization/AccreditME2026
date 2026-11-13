@@ -6349,6 +6349,14 @@ the seat. The transfer never waits for this, and nothing here removes a seat.
 - **The notice:** in-app only, both languages stored. It names the person and
   their new unit, lists the lines, and says that anyone with "Remove members from
   a committee" can remove a seat.
+  - **The title IS the whole notice, and the body is the same text**, as the
+    closed-task notices store theirs: the bell shows only a notice's title (the
+    live check on 13 Nov found a short title hid every committee line).
+  - **No length limit applies:** the columns are `TEXT`, and
+    `CreateNotificationDto`'s `@MaxLength(200)` is never checked on this path
+    (`createInAppMany()` takes plain rows). With several committees the title is
+    long; the bell (320px wide) wraps it and its list scrolls past 384px. Nothing
+    cuts it.
   - A committee's name and link appear only for a reader who may open it
     (`committees:view`, or an active member of it, the committee page's rule).
     Anyone else reads "a committee".

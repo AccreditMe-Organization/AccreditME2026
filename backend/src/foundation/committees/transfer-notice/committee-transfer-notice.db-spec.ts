@@ -137,7 +137,11 @@ describe('The committee notice after a transfer, against a real database (ACC-29
     expect(chairNotice.bodyEn).toContain('Safety Committee: was removed from Secretary as part of the transfer to Pharmacy.');
     expect(chairNotice.bodyEn).not.toContain('admin wording');
     expect(chairNotice.bodyEn).not.toContain('Old Committee'); // removed before `since`
-    expect(chairNotice.titleAr).toBe('تم نقل person إلى «Pharmacy»');
+    // The title is the whole notice (the bell shows only the title); the body is the same.
+    expect(chairNotice.titleEn).toBe(chairNotice.bodyEn);
+    expect(chairNotice.titleAr).toBe(chairNotice.bodyAr);
+    expect(chairNotice.titleAr!.startsWith('تم نقل person إلى «Pharmacy». ')).toBe(true);
+    expect(chairNotice.titleEn).toContain('Quality Council: still holds Member.');
     expect([chairNotice.objectType, chairNotice.objectId]).toEqual(['COMMITTEE', quality]);
 
     // The secretary: an active member of Quality only, so Quality is named and linked.
