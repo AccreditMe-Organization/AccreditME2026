@@ -4829,8 +4829,10 @@ Briefly:
   WAITS FOR IT.** `UserService.transferUser()` calls
   `CommitteeTransferNoticeService.schedule()` once, right after its transaction
   commits, so every success path passes it (the promotion's partial failure
-  included). A failed schedule is logged with ids only; the transfer still
-  succeeds.
+  included). A failed schedule is logged with ids and the error's kind, never
+  its message (it can name the Redis server); the transfer still succeeds. A
+  late `add()` failure, after the 3-second limit, is logged the same way and
+  swallowed.
 - **THE DELAY IS WHAT LETS REMOVED SEATS BE TOLD AS REMOVED.** The Transfer
   wizard removes seats right after the transfer; the job reads, two minutes
   later, which seats remain and which LEFT events were written since `since`

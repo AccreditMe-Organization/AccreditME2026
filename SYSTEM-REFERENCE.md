@@ -6306,9 +6306,13 @@ the seat. The transfer never waits for this, and nothing here removes a seat.
   `CommitteeTransferNoticeService.schedule()`.
   - Every success path passes that call: an ordinary transfer, a promotion, and a
     promotion that fails after the move. A rollback never reaches it.
-  - A failed schedule is logged with ids only and never fails the transfer.
-    `schedule()` gives up after 3 seconds, so a queue outage cannot hold the
-    request.
+  - A failed schedule is logged with the ids and the error's kind (its name and
+    code, `errorKind()`: "Error / ECONNREFUSED", "TimeoutError"), never its
+    message, which can name the Redis server. It never fails the transfer.
+  - `schedule()` gives up after 3 seconds with a `TimeoutError`, so a queue outage
+    cannot hold the request. A failure of `add()` after that is caught by the
+    `.catch` on `add()` itself, logged by kind with ids, and swallowed; the timer
+    is cleared whichever way it ends.
 - **The job:** one delayed job on the `committee-transfer-notice` queue, 2 minutes
   out (`COMMITTEE_TRANSFER_NOTICE_DELAY_MS`), so the seats the Transfer wizard
   removes right after the transfer are told as removed.
