@@ -16,6 +16,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 import { LayerStackService } from '../../shared/overlay/layer-stack.service';
 import { ConfirmHostComponent } from '../../shared/components/confirm/confirm-host.component';
+import { ConfirmHostGate } from '../../shared/components/confirm/confirm-host-gate';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { ImpersonationBannerComponent } from '../impersonation-banner/impersonation-banner.component';
@@ -64,8 +65,13 @@ export const SHELL_PHONE_BELOW_PX = 768;
          BOTH, full width: it is the one indicator that every action is being
          taken as someone else, so it never shrinks into a column. -->
     <!-- ACC-122 — inside the shell, so it exists only for a signed-in user
-         and never over the login page. -->
-    <app-idle-warning />
+         and never over the login page.
+         ACC-90 — loaded after start-up: once the browser is idle, or at once
+         if the warning is due first. IdleService (started by this shell)
+         keeps the time either way; this only draws it. -->
+    @defer (on idle; when idleService.warningVisible()) {
+      <app-idle-warning />
+    }
 
     <div class="h-screen flex flex-col">
       <app-impersonation-banner />
@@ -122,8 +128,13 @@ export const SHELL_PHONE_BELOW_PX = 768;
     <!-- ACC-120 slice 10 — the app's one confirmation dialog. Every confirm
          goes through AmConfirmService.ask(), which sets its tone, verb, layer
          and focus; the host owns the 420 width and the button styles, and
-         still carries amCloseLabel for the × (ACC-83). -->
-    <am-confirm-host />
+         still carries amCloseLabel for the × (ACC-83).
+         ACC-90 — loaded after start-up: once the browser is idle, or at once
+         when a confirm is asked for first. ConfirmHostGate holds that confirm
+         until the host is listening, so it is shown, not lost. -->
+    @defer (on idle; when confirmGate.needed()) {
+      <am-confirm-host />
+    }
   `,
   // ACC-38 — the same scroll-chaining bug ACC-36 fixed for
   // EditDialogComponent's own scroll area is not dialog-specific: this
@@ -148,7 +159,9 @@ export const SHELL_PHONE_BELOW_PX = 768;
   ],
 })
 export class AppShellComponent implements OnInit {
-  private readonly idleService = inject(IdleService);
+  protected readonly idleService = inject(IdleService);
+  /** ACC-90 — asks for the confirm host before idle when a confirm is waiting. */
+  protected readonly confirmGate = inject(ConfirmHostGate);
   private readonly myWork = inject(MyWorkCountsService);
   private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly document = inject(DOCUMENT);

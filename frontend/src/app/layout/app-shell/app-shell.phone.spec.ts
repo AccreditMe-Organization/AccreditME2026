@@ -105,7 +105,8 @@ describe('AppShellComponent — the phone shell (ACC-232)', () => {
             displayPreferences: signal(null).asReadonly(),
           },
         },
-        { provide: IdleService, useValue: { start: () => undefined, stop: () => undefined } },
+        // ACC-90 — the shell's @defer reads warningVisible() for the idle warning.
+        { provide: IdleService, useValue: { start: () => undefined, stop: () => undefined, warningVisible: () => false } },
       ],
     });
     TestBed.overrideComponent(TopbarComponent, {
