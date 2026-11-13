@@ -18,7 +18,7 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { AmCountPipe } from '../../../../core/formatting';
+import { AmCountPipe, FormatService } from '../../../../core/formatting';
 import {
   WorkflowTemplateService,
   WorkflowTemplateDto,
@@ -31,7 +31,7 @@ import {
 } from '../../services/workflow-template.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { plainWorkflowRefusalKey, removeRefusal } from '../../workflow-refusal';
 import { workflowLabelKey } from '../../workflow-labels';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
@@ -468,6 +468,7 @@ export class TransitionPanelComponent implements OnChanges {
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
   private readonly fb = inject(FormBuilder);
   private readonly layers = inject(LayerStackService);
   private readonly confirm = inject(AmConfirmService);
@@ -744,9 +745,12 @@ export class TransitionPanelComponent implements OnChanges {
       accept: () => {
         this.workflowTemplateService.removeTransition(transition.id).subscribe({
           next: () => this.removed.emit(transition.id),
+          // ACC-191 (Q3) — a transition that has been used says how many times.
           error: (err: unknown) =>
             this.refusal.set(
-              this.translate.instant(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')) as string,
+              this.translate.instant(
+                removeRefusal(err, (key, n) => this.format.count(key, n)) ?? extractErrorMessage(err, 'workflow.error.removeFailed'),
+              ) as string,
             ),
         });
       },

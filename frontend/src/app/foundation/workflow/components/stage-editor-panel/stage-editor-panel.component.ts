@@ -23,6 +23,7 @@ import {
   deadlineBeforeTasks,
   finalStageTaskCount,
   flagExactlyOne,
+  startEndRefusal,
   plainWorkflowRefusalKey,
   whoRefusal,
 } from '../../workflow-refusal';
@@ -193,8 +194,16 @@ interface PanelRefusal {
                 }
               }
             </div>
+            <!-- ACC-57 — said under the box it is about, from the refusal's code and the stage it names. -->
+            @if (initialRefusal(); as refusal) {
+              <small class="am-sep__refusal" role="alert" data-initial-refusal>{{ refusal }}</small>
+            }
             @if (finalRefusal(); as refusal) {
               <small class="am-sep__refusal" role="alert" data-final-refusal>{{ refusal }}</small>
+            }
+            <!-- ACC-57 (Q1) — ticking Initial moved the starting stage here: the stage it left is named. -->
+            @if (initialMovedNote(); as note) {
+              <p class="am-sep__note" role="status" data-initial-moved>{{ note }}</p>
             }
           </div>
 
@@ -486,6 +495,10 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
   // ACC-208 — a refusal shown under its own field; cleared when that field changes.
   readonly slaRefusal = signal<string | null>(null);
   readonly finalRefusal = signal<string | null>(null);
+  // ACC-57 — a start/end refusal under Initial; and, after a save that moved the
+  // starting stage here, which stage stopped being it (the server's answer).
+  readonly initialRefusal = signal<string | null>(null);
+  readonly initialMovedNote = signal<string | null>(null);
   /** ACC-271 PR 5a — "Who works this stage" while it is edited; loaded with the stage. */
   readonly whoDraft = new StageWhoDraft();
 
@@ -618,7 +631,10 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     this.form.valueChanges.subscribe(() => {
       this.formTick.update((n) => n + 1);
       // The saved line stays until the person next changes something here.
-      if (!this.refilling) this.savedNotice.set(false);
+      if (!this.refilling) {
+        this.savedNotice.set(false);
+        this.initialMovedNote.set(null);
+      }
     });
     // "Who works this stage" is edited outside the form: a change there takes
     // the saved line away too.
@@ -628,6 +644,7 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     // ACC-208 — a refusal stands only until the field it is about changes.
     this.form.controls.slaWorkingHours.valueChanges.subscribe(() => this.slaRefusal.set(null));
     this.form.controls.isFinal.valueChanges.subscribe(() => this.finalRefusal.set(null));
+    this.form.controls.isInitial.valueChanges.subscribe(() => this.initialRefusal.set(null));
   }
 
   ngOnInit(): void {
@@ -651,6 +668,7 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
       // and so does its saved line. Any other switch starts without one.
       if (previous !== null || changes['stage'].firstChange) {
         this.savedNotice.set(false);
+        this.initialMovedNote.set(null);
         this.focusHeading();
       }
     }
@@ -685,6 +703,7 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     this.baseFlags.set(flags);
     this.slaRefusal.set(null);
     this.finalRefusal.set(null);
+    this.initialRefusal.set(null);
   }
 
   toggleAction(key: string, checked: boolean): void {
@@ -775,6 +794,15 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
         this.baseFlags.set(this.flags());
         this.whoDraft.markSaved();
         this.savedNotice.set(true);
+        // ACC-57 (Q1) — the server moved the starting stage here; say from where.
+        const movedFrom = saved.startingStageMovedFrom ?? [];
+        this.initialMovedNote.set(
+          movedFrom.length
+            ? (this.translate.instant('workflow.editor.initialMoved', {
+                stage: movedFrom.map((m) => this.languageService.bilingual(m.nameEn, m.nameAr)).join(this.listSeparator()),
+              }) as string)
+            : null,
+        );
         this.saved.emit(saved);
       },
       error: (err: unknown) => {
@@ -790,6 +818,28 @@ export class StageEditorPanelComponent implements OnInit, OnChanges {
     // ACC-271 PR 5a — a refused `who` lands in its slot: the section, the mode, or a row's field.
     const who = whoRefusal(err);
     if (who && this.whoDraft.applyRefusal(who)) return true;
+    // ACC-57 — the template's start and end. Under Final for a stage both
+    // starting and final; under Initial otherwise, naming the stage when the
+    // server named this one (an edit), else the plain sentence (an add).
+    const startEnd = startEndRefusal(err);
+    if (startEnd) {
+      if (startEnd.code === 'STAGE_INITIAL_AND_FINAL') {
+        this.finalRefusal.set(this.translate.instant(startEnd.key) as string);
+        document.getElementById('sep-isFinal')?.focus();
+        return true;
+      }
+      const names = startEnd.stages.map((s) => this.languageService.bilingual(s.nameEn, s.nameAr));
+      const thisStage = !!this.stage && startEnd.stages[0]?.id === this.stage.id;
+      const text =
+        startEnd.code === 'STAGE_INITIAL_REQUIRED' && thisStage
+          ? this.translate.instant('workflow.editor.initialRequiredNamed', { stage: names[0] })
+          : startEnd.code === 'STAGE_INITIAL_NOT_UNIQUE' && names.length > 1
+            ? this.translate.instant('workflow.editor.initialNotUniqueNamed', { stages: names.join(this.listSeparator()) })
+            : this.translate.instant(startEnd.key);
+      this.initialRefusal.set(text as string);
+      document.getElementById('sep-isInitial')?.focus();
+      return true;
+    }
     const deadline = deadlineBeforeTasks(err);
     if (deadline) {
       this.slaRefusal.set(

@@ -20,7 +20,7 @@ import { TransitionPanelComponent } from '../transition-panel/transition-panel.c
 import { WorkflowStripComponent } from '../workflow-strip/workflow-strip.component';
 import { StageTaskListComponent, StageTaskSummary } from '../stage-task-list/stage-task-list.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { plainWorkflowRefusalKey, removeRefusal } from '../../workflow-refusal';
 import { LanguageService } from '../../../../core/services/language.service';
 import {
   DataListColumn,
@@ -741,8 +741,12 @@ export class WorkflowStageListComponent implements OnInit {
             if (this.editingStage()?.id === stage.id) this.closePanel();
             this.loadTemplate();
           },
+          // ACC-191 — a stage records have entered says how many; ACC-57 / Q4 — the
+          // starting stage and one with transitions say why, from their codes.
           error: (err: unknown) =>
-            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')),
+            this.error.set(
+              removeRefusal(err, (key, n) => this.format.count(key, n)) ?? extractErrorMessage(err, 'workflow.error.removeFailed'),
+            ),
         });
       },
     });

@@ -1,4 +1,5 @@
 import { refusalBody, refusalCode } from '../../core/http/refusal';
+import type { PluralKey } from '../../core/formatting/plural-key';
 import type { TaskPriority, WhoEntryField } from './services/workflow-template.service';
 
 /**
@@ -41,6 +42,15 @@ export type WorkflowRefusalCode =
   | 'NOT_IN_STAGE_POOL'
   // ACC-271 PR 6b — a move with no mover (none exist): nobody can make it.
   | 'MOVE_HAS_NO_MOVER'
+  // ACC-57 — a template's starting and final stages (startEndRefusal() below).
+  | 'STAGE_INITIAL_REQUIRED'
+  | 'STAGE_INITIAL_NOT_UNIQUE'
+  | 'STAGE_INITIAL_AND_FINAL'
+  // ACC-191 — removing what a record has used (inUseRefusal() below).
+  | 'STAGE_HAS_TRANSITIONS'
+  | 'STAGE_IN_USE'
+  | 'TRANSITION_ACTION_IN_USE'
+  | 'TRANSITION_IN_USE'
   // ACC-271 PR 3 — a stage's `who` refused; said in its slot (whoRefusal() below).
   | WhoRefusalCode;
 
@@ -143,6 +153,15 @@ const PLAIN_REFUSAL_KEYS: Partial<Record<WorkflowRefusalCode, string>> = {
   STAGE_HAS_NO_ONE: 'workflow.refusal.stageHasNoOne',
   NOT_IN_STAGE_POOL: 'workflow.refusal.notInStagePool',
   MOVE_HAS_NO_MOVER: 'workflow.refusal.moveHasNoMover',
+  // ACC-57 — the plain sentences; the stage editor names the stage (startEndRefusal()).
+  STAGE_INITIAL_REQUIRED: 'workflow.refusal.initialRequired',
+  STAGE_INITIAL_NOT_UNIQUE: 'workflow.refusal.initialNotUnique',
+  STAGE_INITIAL_AND_FINAL: 'workflow.refusal.initialAndFinal',
+  // ACC-191 — the plain sentences; a Remove says the count (inUseRefusal()).
+  STAGE_HAS_TRANSITIONS: 'workflow.refusal.stageHasTransitions',
+  STAGE_IN_USE: 'workflow.refusal.stageInUse',
+  TRANSITION_ACTION_IN_USE: 'workflow.refusal.actionInUse',
+  TRANSITION_IN_USE: 'workflow.refusal.transitionInUse',
 };
 
 /**
@@ -287,4 +306,70 @@ export function flagExactlyOne(
       : [];
   });
   return { flag: body['flag'], stages };
+}
+
+// ── ACC-57: a template's starting and final stages ──────────────────────────
+
+/**
+ * One of the three start/end refusals, with the stages it names (ids beside
+ * names, STAGE_FLAG_EXACTLY_ONE's shape), so the stage editor can say it under
+ * the box it is about. Read through plainWorkflowRefusalKey(): a code that has
+ * no plain sentence is not one of these.
+ */
+export function startEndRefusal(
+  err: unknown,
+): { code: 'STAGE_INITIAL_REQUIRED' | 'STAGE_INITIAL_NOT_UNIQUE' | 'STAGE_INITIAL_AND_FINAL'; key: string; stages: { id: string; nameEn: string; nameAr: string | null }[] } | null {
+  const key = plainWorkflowRefusalKey(err);
+  const code = refusalCode(err);
+  if (!key || (code !== 'STAGE_INITIAL_REQUIRED' && code !== 'STAGE_INITIAL_NOT_UNIQUE' && code !== 'STAGE_INITIAL_AND_FINAL')) return null;
+  const body = refusalBody(err) ?? {};
+  const names = Array.isArray(body['stageNames']) ? (body['stageNames'] as { nameEn?: unknown; nameAr?: unknown }[]) : [];
+  const ids = Array.isArray(body['stageIds']) ? (body['stageIds'] as unknown[]) : [];
+  const stages = ids.flatMap((id, i) => {
+    const name = names[i];
+    return typeof id === 'string' && name && typeof name.nameEn === 'string'
+      ? [{ id, nameEn: name.nameEn, nameAr: typeof name.nameAr === 'string' ? name.nameAr : null }]
+      : [];
+  });
+  return { code, key, stages };
+}
+
+// ── ACC-191: removing what a record has used ─────────────────────────────────
+
+/**
+ * The plural object each counted refusal is said with, keyed by its PLAIN key
+ * (plainWorkflowRefusalKey()), so the code is read in one place. Plural keys
+ * live in the translation files' `plural` section (ACC-94): every Arabic
+ * category, through FormatService.count().
+ */
+const IN_USE_PLURAL_KEYS: Readonly<Record<string, { pluralKey: PluralKey; countField: string }>> = {
+  'workflow.refusal.stageInUse': { pluralKey: 'workflow.stageInUse', countField: 'recordCount' },
+  'workflow.refusal.actionInUse': { pluralKey: 'workflow.actionInUse', countField: 'runCount' },
+  'workflow.refusal.transitionInUse': { pluralKey: 'workflow.transitionInUse', countField: 'runCount' },
+};
+
+/**
+ * An in-use refusal's counted sentence: its plural key and the count the
+ * server sent. Null for any other refusal, or one with no usable count — the
+ * caller then says plainWorkflowRefusalKey()'s plain sentence.
+ */
+export function inUseRefusal(err: unknown): { pluralKey: PluralKey; count: number } | null {
+  const key = plainWorkflowRefusalKey(err);
+  const counted = key ? IN_USE_PLURAL_KEYS[key] : undefined;
+  if (!counted) return null;
+  const count = refusalBody(err)?.[counted.countField];
+  return isNumber(count) && count > 0 ? { pluralKey: counted.pluralKey, count } : null;
+}
+
+/**
+ * ACC-191 — what a refused Remove says: the counted sentence when the server
+ * sent a count (inUseRefusal()), else plainWorkflowRefusalKey()'s key, else
+ * null for the caller's own fallback. The first is already in words (a plural
+ * cannot go through `| translate`); the second is a key. Both read correctly
+ * through the screens' `| translate` / instant(), which return a sentence that
+ * is not a key unchanged.
+ */
+export function removeRefusal(err: unknown, count: (pluralKey: PluralKey, n: number) => string): string | null {
+  const counted = inUseRefusal(err);
+  return counted ? count(counted.pluralKey, counted.count) : plainWorkflowRefusalKey(err);
 }
