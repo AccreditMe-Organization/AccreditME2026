@@ -9,6 +9,7 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { UserHomeCountsService } from './user-home-counts.service';
 import { StagePoolModule } from '../workflow/stage-pool.module';
+import { CommitteeTransferNoticeModule } from '../committees/transfer-notice/committee-transfer-notice.module';
 
 // TaskModule closes a transitive cycle the same shape as Step 8's own
 // TaskModule -> forwardRef TenantModule edge (UserModule -> forwardRef
@@ -46,6 +47,9 @@ import { StagePoolModule } from '../workflow/stage-pool.module';
     // ACC-271 — deactivation records the stage pools a person leaves.
     // StagePoolModule depends on Prisma alone, so this edge closes no cycle.
     StagePoolModule,
+    // ACC-297 — the committee notice after a transfer. Its module imports only
+    // Prisma and the queues, so this edge closes no cycle.
+    CommitteeTransferNoticeModule,
   ],
   controllers: [UserController],
   providers: [UserService, UserHomeCountsService],

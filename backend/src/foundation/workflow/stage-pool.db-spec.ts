@@ -40,6 +40,7 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 import { WorkflowService } from './workflow.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
+import type { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { applyWorkflowSeed } from './workflow-seed-apply';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 
@@ -87,6 +88,8 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     {} as OrgUnitHeadService,
     {} as OrgPositionService,
     pools,
+    // ACC-297 — no transfer here, so the committee notice is never scheduled.
+    { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
   );
 
   interface Org {

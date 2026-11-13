@@ -1599,9 +1599,10 @@ Language:           All AI outputs in user's preferred language (Arabic/English)
 Never block API requests with long-running tasks.
 Always run as background jobs:
 
-**Corrected (ACC-274), against dev `487a0a8`:** exactly six queues have a
-processor (`grep -rn "@Processor(" backend/src`). The other seven below are
-planned and NOT built — nothing enqueues them and nothing consumes them.
+**Corrected (ACC-274), against dev `487a0a8`; updated by ACC-297:** exactly
+seven queues have a processor (`grep -rn "@Processor(" backend/src`). The other
+seven below are planned and NOT built — nothing enqueues them and nothing
+consumes them.
 
 Built:
 
@@ -1619,6 +1620,9 @@ ai-credits          Hourly — renew each organisation's AI credit period once i
 workflow-actions    Each WEBHOOK transition action, enqueued by
                     WorkflowService.fireTransitionActions(); every attempt is
                     logged in WorkflowActionLog
+committee-transfer-notice
+                    A delayed job, 2 minutes after each transfer commits, one
+                    attempt: tells the person's committees (ACC-297)
 ```
 
 Planned, not built:
@@ -4814,6 +4818,40 @@ Administration.dc.html`. Briefly:
 - **The Setup health strip reads the rail's summary**; the console requests
   nothing.
 - **No backend change, no migration.**
+
+## Key Architecture Decisions (ACC-297)
+
+Telling a committee after a member is transferred. Full mechanism:
+SYSTEM-REFERENCE.md §3.21.3. The rule is Ahmad's (11 Nov, lane A's thread).
+Briefly:
+
+- **A TRANSFER TELLS THE PERSON'S COMMITTEES, TWO MINUTES LATER, AND NEVER
+  WAITS FOR IT.** `UserService.transferUser()` calls
+  `CommitteeTransferNoticeService.schedule()` once, right after its transaction
+  commits, so every success path passes it (the promotion's partial failure
+  included). A failed schedule is logged with ids and the error's kind, never
+  its message (it can name the Redis server); the transfer still succeeds. A
+  late `add()` failure, after the 3-second limit, is logged the same way and
+  swallowed.
+- **THE DELAY IS WHAT LETS REMOVED SEATS BE TOLD AS REMOVED.** The Transfer
+  wizard removes seats right after the transfer; the job reads, two minutes
+  later, which seats remain and which LEFT events were written since `since`
+  (the app's clock just before the transaction, the same clock Prisma stamps
+  `createdAt` with). A removal by the transfer's actor reads "as part of the
+  transfer to {unit}"; anyone else's quotes its stored reason.
+- **ONE JOB PER TRANSFER**: its id is organisation + user + `since` in ms, one
+  attempt (the only write is the last step), consumed only behind
+  `workersEnabled()`. Verify it in-process, never by enqueueing.
+- **WHO IS TOLD, PER COMMITTEE, THEN ONE NOTICE EACH**: chair and secretary, and
+  the owning unit's cover in force instead of its head. Never the person or the
+  actor; only ACTIVE users. A committee is named and linked only for a reader
+  who may open it.
+- **A MODULE OF ITS OWN, SO NO CYCLE**: `CommitteeTransferNoticeModule` imports
+  only Prisma and the queues and provides its own stateless Lookup, Notification
+  and audit services. `UserModule` imports it with no `forwardRef`.
+- **`user.service.ts` is lane A's file**: the hook is the injection, `since` and
+  the one guarded call, nothing else.
+- **No migration.**
 
 ## Open / Deferred Items
 

@@ -81,6 +81,12 @@ const PROCESSORS = [
     modulePath: '../../foundation/notification/notification.module',
     exportName: 'NotificationModule',
   },
+  // ACC-297 — the committee notice after a transfer, a delayed job on its own queue.
+  {
+    processor: 'CommitteeTransferNoticeProcessor',
+    modulePath: '../../foundation/committees/transfer-notice/committee-transfer-notice.module',
+    exportName: 'CommitteeTransferNoticeModule',
+  },
 ];
 
 describe('ACC-92 — queue processors register only when RUN_WORKERS=true', () => {
