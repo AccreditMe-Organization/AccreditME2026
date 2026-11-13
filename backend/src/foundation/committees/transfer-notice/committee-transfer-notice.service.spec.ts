@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import type { PrismaService } from '../../../prisma/prisma.service';
 import type { LookupService } from '../../lookup/lookup.service';
@@ -133,18 +134,86 @@ describe('CommitteeTransferNoticeService.schedule (ACC-297)', () => {
     expect(a).not.toContain(':');
   });
 
-  it('gives up, by throwing, when the queue does not answer in time: the transfer is never held by it', async () => {
+  it('gives up with a TimeoutError when the queue does not answer in time: the transfer is never held by it', async () => {
     jest.useFakeTimers();
     try {
       const { service, queue } = build(baseWorld());
       queue.add.mockImplementation(() => new Promise(() => undefined));
       const scheduled = service.schedule({ organizationId: ORG, userId: PERSON, actorId: ACTOR, since: new Date(SINCE) });
-      const settled = expect(scheduled).rejects.toThrow('enqueue timed out');
+      const settled = expect(scheduled).rejects.toMatchObject({ name: 'TimeoutError', message: 'enqueue timed out' });
       await jest.advanceTimersByTimeAsync(COMMITTEE_TRANSFER_NOTICE_ENQUEUE_TIMEOUT_MS);
       await settled;
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('clears its timer when add() wins', async () => {
+    jest.useFakeTimers();
+    try {
+      const { service } = build(baseWorld());
+      await service.schedule({ organizationId: ORG, userId: PERSON, actorId: ACTOR, since: new Date(SINCE) });
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a failure from add() IN time reaches the caller, which logs it, and the timer is cleared', async () => {
+    jest.useFakeTimers();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const { service, queue } = build(baseWorld());
+      const refused = Object.assign(new Error('connect ECONNREFUSED secret-host'), { code: 'ECONNREFUSED' });
+      queue.add.mockImplementation(() => Promise.reject(refused));
+      await expect(service.schedule({ organizationId: ORG, userId: PERSON, actorId: ACTOR, since: new Date(SINCE) })).rejects.toBe(refused);
+      expect(jest.getTimerCount()).toBe(0);
+      expect(warn).not.toHaveBeenCalled(); // the caller logs this one, not schedule()
+    } finally {
+      warn.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  // Lane A's review. How "never unhandled" is checked: Jest itself fails the test
+  // that leaves a rejection unhandled, with that rejection as the error. Checked
+  // on 13 Nov with a deliberate orphan Promise.reject(): the test failed with it,
+  // and a process.on('unhandledRejection') listener added in the test was NEVER
+  // called (Jest takes the event first). So such a listener would be silent
+  // either way, and this spec relies on Jest instead. The mutation that leaves
+  // add() with no handler at all turns this test red through exactly that.
+  describe('a rejection from add() AFTER the time limit (lane A\'s review)', () => {
+    // Two macrotask turns: long enough for Node, and Jest, to decide a rejection is unhandled.
+    const nodeHasDecided = async () => {
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+    };
+
+    it('is never unhandled: it is logged by kind with ids only, and swallowed', async () => {
+      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const { service, queue } = build(baseWorld());
+        let rejectAdd: (e: unknown) => void = () => undefined;
+        queue.add.mockImplementation(() => new Promise((_, reject) => (rejectAdd = reject)));
+        const scheduled = service.schedule({ organizationId: ORG, userId: PERSON, actorId: ACTOR, since: new Date(SINCE) });
+        const settled = expect(scheduled).rejects.toMatchObject({ name: 'TimeoutError' });
+        await jest.advanceTimersByTimeAsync(COMMITTEE_TRANSFER_NOTICE_ENQUEUE_TIMEOUT_MS);
+        await settled;
+
+        // The time limit has answered; now add() fails, late.
+        rejectAdd(Object.assign(new Error('connect ECONNREFUSED secret-host:6379'), { code: 'ECONNREFUSED' }));
+        await nodeHasDecided();
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        const message = String(warn.mock.calls[0]![0]);
+        expect(message).toBe(`Committee transfer notice: the enqueue failed after its time limit (Error / ECONNREFUSED): organisation ${ORG}, user ${PERSON}.`);
+        expect(message).not.toContain('secret-host');
+      } finally {
+        warn.mockRestore();
+        jest.useRealTimers();
+      }
+    });
   });
 });
 

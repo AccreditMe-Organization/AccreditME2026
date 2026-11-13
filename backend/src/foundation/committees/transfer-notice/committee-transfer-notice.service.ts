@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -14,6 +14,7 @@ import {
   type Named,
   type TransferNoticeLine,
 } from './committee-transfer-notice';
+import { errorKind } from './error-kind';
 
 export const COMMITTEE_TRANSFER_NOTICE_QUEUE = 'committee-transfer-notice';
 export const COMMITTEE_TRANSFER_NOTICE_JOB = 'notify-committees-after-transfer';
@@ -73,6 +74,8 @@ interface CommitteeLine {
  */
 @Injectable()
 export class CommitteeTransferNoticeService {
+  private readonly logger = new Logger(CommitteeTransferNoticeService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly lookups: LookupService,
@@ -82,8 +85,12 @@ export class CommitteeTransferNoticeService {
 
   /**
    * Adds the delayed job. Throws if it cannot (the caller logs and carries on),
-   * including when Redis does not answer within the enqueue timeout, so a
-   * transfer request is never held by a queue outage.
+   * including a TimeoutError when Redis does not answer within the enqueue
+   * timeout, so a transfer request is never held by a queue outage.
+   *
+   * After the timeout has answered, nobody waits for add() any more: its own
+   * .catch logs a late failure by kind (ids only) and swallows it. The timer is
+   * cleared whichever way it ends.
    */
   async schedule(input: { organizationId: string; userId: string; actorId: string; since: Date }): Promise<void> {
     const job: TransferNoticeJob = {
@@ -93,22 +100,36 @@ export class CommitteeTransferNoticeService {
       sinceMs: input.since.getTime(),
     };
     let timer: NodeJS.Timeout | undefined;
+    let timedOut = false;
+    const adding = this.queue
+      .add(COMMITTEE_TRANSFER_NOTICE_JOB, job, {
+        jobId: transferNoticeJobId(job),
+        delay: COMMITTEE_TRANSFER_NOTICE_DELAY_MS,
+        // One attempt: the only write is the last step, and a retry after it
+        // could tell everyone twice. A failed run stays in the failed list.
+        attempts: 1,
+        removeOnComplete: { age: 7 * 24 * 3600 },
+        removeOnFail: { age: 30 * 24 * 3600 },
+      })
+      .catch((err: unknown) => {
+        // In time: the caller is told (it logs and carries on).
+        if (!timedOut) throw err;
+        // Too late: nobody is waiting; logged by kind and swallowed.
+        this.logger.warn(
+          `Committee transfer notice: the enqueue failed after its time limit (${errorKind(err)}): organisation ${job.organizationId}, user ${job.userId}.`,
+        );
+        return undefined;
+      });
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('enqueue timed out')), COMMITTEE_TRANSFER_NOTICE_ENQUEUE_TIMEOUT_MS);
+      timer = setTimeout(() => {
+        timedOut = true;
+        const error = new Error('enqueue timed out');
+        error.name = 'TimeoutError';
+        reject(error);
+      }, COMMITTEE_TRANSFER_NOTICE_ENQUEUE_TIMEOUT_MS);
     });
     try {
-      await Promise.race([
-        this.queue.add(COMMITTEE_TRANSFER_NOTICE_JOB, job, {
-          jobId: transferNoticeJobId(job),
-          delay: COMMITTEE_TRANSFER_NOTICE_DELAY_MS,
-          // One attempt: the only write is the last step, and a retry after it
-          // could tell everyone twice. A failed run stays in the failed list.
-          attempts: 1,
-          removeOnComplete: { age: 7 * 24 * 3600 },
-          removeOnFail: { age: 30 * 24 * 3600 },
-        }),
-        timeout,
-      ]);
+      await Promise.race([adding, timeout]);
     } finally {
       clearTimeout(timer);
     }
