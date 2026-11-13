@@ -182,6 +182,40 @@ rows expire within 7 days. Making the column `NOT NULL` and removing the fallbac
 an optional later contract step, safe from 7 days after the deploy. It is not needed
 for correctness.
 
+**A session running at the deploy is measured from its last rotation, not its real
+sign-in (accepted, Ahmad, 13 Nov).**
+- The row it presents first after the deploy was written by its last rotation
+  before the deploy. Its `createdAt` is that rotation, not the sign-in, and nothing
+  else records the sign-in.
+- So such a session can run up to 12 hours past the deploy, however long it had
+  already been open. A session signed in at 08:00 and still active at a 16:00
+  deploy is measured from about 16:00, not 08:00.
+- Every session that signs in after the deploy is measured from its real sign-in.
+
+**The later contract step (NOT NULL, fallback removed) DELETES the remaining null
+rows. It never backfills them.**
+- **Run it only after a check finds no live null row.** "Live" means unexpired and
+  unrevoked:
+  `SELECT count(*) FROM "RefreshToken" WHERE "sessionStartedAt" IS NULL AND "revokedAt" IS NULL AND "expiresAt" > now()`
+  must be 0. That is true from 7 days after the deploy (a pre-ACC-126 row lives at
+  most 7 days).
+- **Then the migration does two things in one step:**
+  - it deletes every row whose `sessionStartedAt` is null, all of which are by then
+    expired or revoked;
+  - it sets the column `NOT NULL`.
+- **The same PR removes the `?? createdAt` fallback** from `sessionStartOf()`.
+- **Why delete, not backfill:**
+  - **Nothing can use these rows.** `refresh()` refuses a revoked or expired row
+    before it reads its start, so a backfilled start would be read by nothing.
+  - **A backfill would write a false fact into a security record.** The only
+    available value is `createdAt`, which is the row's last rotation, not the
+    session's sign-in. Stored as `sessionStartedAt`, it would claim the session
+    began then, in the column the code treats as the truth.
+  - **Deleting them loses no record anyone relies on.** Sign-ins are recorded in
+    `AuditLog` (`LOGIN`) and `LoginAttempt`, not in refresh-token rows.
+- **It is safe while the old container serves:** at that point the running code
+  already handles a null by its fallback, and no null rows remain.
+
 ---
 
 ## d. Impersonation and MFA
@@ -422,3 +456,44 @@ under its mutation.
 so two concurrent refreshes of the same token can both succeed. The frontend
 serialises refreshes (`SessionRenewalService`), and both resulting rows carry the
 same start, so the cap still holds. It is noted here, not fixed.
+
+---
+
+## h. As built (CC-253, 13 Nov)
+
+Ahmad's decisions: Option A, with a 10-minute warning, "Continue working" and "Sign
+out now", and no "Stay signed in". Sessions open at the deploy use the row's
+`createdAt`.
+
+**Where the build differs from §a–g:**
+- **Impersonation creates no `RefreshToken` row.** It replaces the access cookie
+  only, so "every path that creates a row sets the start" covers sign-in, after
+  MFA, and refresh.
+  - Impersonation start and end carry the platform admin's start in the token's
+    `sst` (§d).
+  - `refresh-token-writes.scan.spec.ts` pins that `issueRefreshToken()` is the only
+    place a row is created (no second `create`, `createMany`, `upsert` or raw
+    `INSERT` under `src/` or `prisma/`). Its start is a required `Date`, and its
+    create writes it.
+- **`signAccessToken()` returns `{ token, expiresAt }`** so each cookie's `maxAge`
+  is the credential's own life.
+- **The frontend splits the state from the timer:**
+  - `SessionLimitState` (no dependencies) holds the deadline and the refusal note.
+  - `SessionLimitService` holds the once-a-second clock and the warning, and signs
+    out through `IdleService.signOut('limit')`.
+  - Putting the state in a service that injects `IdleService` would close the
+    injection cycle AuthService → … → IdleService → AuthService.
+- **The clock runs outside Angular's zone.** A timer that never ends kept the zone
+  from ever being stable; the sign-out goes back into the zone to navigate.
+- **The phone-shell and workflow-scroll specs stub the limit warning**, as they
+  already stub the idle warning. Not stubbed, the real dialog shell's document
+  Escape listener (attached at construction) read its required `visible` input
+  in the instant between a deferred block creating the component and binding its
+  inputs.
+  - That gap is the shared dialog shell's, on dev too.
+  - It is noted here, not changed.
+
+**Performance:** no query is added to TenantGuard or any per-request path. The
+guard copies the already-verified `sst` claim onto the request. Specs pin the guard
+at its one user query, and `refresh()` at no user query when it refuses at the
+limit.
