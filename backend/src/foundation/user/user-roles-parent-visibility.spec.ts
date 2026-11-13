@@ -38,6 +38,7 @@ import { TaskService } from '../task/task.service';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
+import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 
 const TENANT_ID = 'org-a';
 const CALLER_ID = 'user-caller';
@@ -73,6 +74,8 @@ describe("A user's roles are gated by that user's own visibility (ACC-101)", () 
         { provide: AUTH_PROVIDER, useValue: {} },
         { provide: OrgUnitHeadService, useValue: {} },
         { provide: OrgPositionService, useValue: {} },
+        // ACC-297 — the committee notice a transfer schedules; no transfer here.
+        { provide: CommitteeTransferNoticeService, useValue: { schedule: jest.fn() } },
       ],
     })
       .overrideGuard(TenantGuard)

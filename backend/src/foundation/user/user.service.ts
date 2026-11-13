@@ -5,6 +5,7 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
@@ -39,6 +40,7 @@ import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 // start:dev boot, not just tsc/jest.
 import { OrgPositionService } from '../org-position/org-position.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
+import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
@@ -160,6 +162,8 @@ export function toSafeUser(user: IUser): IUser {
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
@@ -177,6 +181,8 @@ export class UserService {
     private readonly orgPositionService: OrgPositionService,
     // ACC-271 — the stage pools a departing person leaves (decision 7).
     private readonly stagePool: StagePoolService,
+    // ACC-297 — tells the person's committees after a transfer (lane B).
+    private readonly committeeTransferNotice: CommitteeTransferNoticeService,
   ) {}
 
   // ACC-78 — counts per status for the list's filter chips.
@@ -605,6 +611,9 @@ export class UserService {
     // AuditLogService.log()) run after commit, matching this codebase's
     // own established "side-effecting calls stay outside the transaction"
     // convention (2.6.h).
+    // ACC-297 — the app's clock just before the transaction opens: the committee
+    // notice reads the seats removed from here on.
+    const since = new Date();
     const updatedUser = await this.prisma.$transaction(async (tx) => {
       // ACC-288 — the root-head lock first, then whether the root is headed. A
       // replacement who takes the source head position keeps the root headed.
@@ -666,6 +675,16 @@ export class UserService {
 
       return updated;
     });
+
+    // ACC-297 — the transfer has committed, and every success path below (an
+    // ordinary transfer, a promotion, a promotion that failed after the move)
+    // passes here. The person's committees are told two minutes later. A failed
+    // schedule is logged, ids only, and never fails the transfer.
+    try {
+      await this.committeeTransferNotice.schedule({ organizationId, userId: user.id, actorId, since });
+    } catch {
+      this.logger.warn(`Committee transfer notice not scheduled: organisation ${organizationId}, user ${user.id}.`);
+    }
 
     // Step 7 — refresh vacancy for both source and destination units.
     // Destination skipped when isPromotion — assignHead() (step 11)
