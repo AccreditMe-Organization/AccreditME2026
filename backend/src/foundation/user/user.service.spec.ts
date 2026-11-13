@@ -1165,8 +1165,13 @@ describe('UserService', () => {
         }
       });
 
-      it('a schedule that throws is logged with ids only, and the transfer still succeeds', async () => {
-        mockCommitteeTransferNotice.schedule.mockRejectedValue(new Error('redis://secret-host:6379 refused'));
+      // Lane A's review: the error's kind (name, and code when it has one), never
+      // its message, which can name the Redis server.
+      it.each([
+        ['a connection error', Object.assign(new Error('connect ECONNREFUSED redis://secret-host:6379'), { code: 'ECONNREFUSED' }), 'Error / ECONNREFUSED'],
+        ['the enqueue time limit', Object.assign(new Error('enqueue timed out at secret-host'), { name: 'TimeoutError' }), 'TimeoutError'],
+      ])('a schedule that throws (%s) is logged with ids and its kind only, and the transfer still succeeds', async (_label, error, kind) => {
+        mockCommitteeTransferNotice.schedule.mockRejectedValue(error);
         const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
         try {
           const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
@@ -1174,7 +1179,8 @@ describe('UserService', () => {
           expect(mockAuditLog.log).toHaveBeenCalled(); // the steps after it still ran
           expect(warn).toHaveBeenCalledTimes(1);
           const message = String(warn.mock.calls[0]![0]);
-          expect(message).toBe(`Committee transfer notice not scheduled: organisation ${ORG_A}, user u1.`);
+          expect(message).toBe(`Committee transfer notice not scheduled (${kind}): organisation ${ORG_A}, user u1.`);
+          expect(message).not.toContain('secret-host');
           expect(message).not.toContain('redis');
         } finally {
           warn.mockRestore();

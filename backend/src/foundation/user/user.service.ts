@@ -41,6 +41,7 @@ import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
 import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
+import { errorKind } from '../committees/transfer-notice/error-kind';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
@@ -679,11 +680,14 @@ export class UserService {
     // ACC-297 — the transfer has committed, and every success path below (an
     // ordinary transfer, a promotion, a promotion that failed after the move)
     // passes here. The person's committees are told two minutes later. A failed
-    // schedule is logged, ids only, and never fails the transfer.
+    // schedule is logged with ids and the error's kind (never its message, which
+    // can name the Redis server), and never fails the transfer.
     try {
       await this.committeeTransferNotice.schedule({ organizationId, userId: user.id, actorId, since });
-    } catch {
-      this.logger.warn(`Committee transfer notice not scheduled: organisation ${organizationId}, user ${user.id}.`);
+    } catch (err) {
+      this.logger.warn(
+        `Committee transfer notice not scheduled (${errorKind(err)}): organisation ${organizationId}, user ${user.id}.`,
+      );
     }
 
     // Step 7 — refresh vacancy for both source and destination units.
