@@ -183,6 +183,8 @@ export class AppShellComponent implements OnInit {
   private layerId: number | null = null;
 
   constructor() {
+    // ACC-90 — the confirm host is deferred: confirms wait for it (ConfirmHostGate).
+    this.confirmGate.expectHost();
     // ACC-79 — tab titles follow the page while the shell is alive, and reset
     // when it is destroyed (logout), so the sign-in tab names no tenant.
     inject(DocumentTitleService).attach(inject(Injector));

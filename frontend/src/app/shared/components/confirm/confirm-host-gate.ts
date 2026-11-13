@@ -12,6 +12,11 @@ import { Injectable, signal } from '@angular/core';
  * to whenReady(): it runs now if the host is listening, and otherwise as soon as
  * the host says it is.
  *
+ * Ready unless told otherwise: only the shell, which defers the host, says it
+ * is coming (expectHost(), at construction, before any page can ask). Anything
+ * rendered without the shell — a spec with its own p-confirmDialog — is
+ * served at once, as before.
+ *
  * Its own file, apart from AmConfirmService, so the shell can read `needed`
  * without pulling the confirm service into the start-up bundle.
  */
@@ -20,7 +25,7 @@ export class ConfirmHostGate {
   /** True once a confirm has been asked for before the host was there. */
   readonly needed = signal(false);
 
-  private ready = false;
+  private ready = true;
   private queue: (() => void)[] = [];
 
   /** Run `open` now if the host is listening, else as soon as it is. */
@@ -31,6 +36,11 @@ export class ConfirmHostGate {
     }
     this.queue.push(open);
     this.needed.set(true);
+  }
+
+  /** The shell defers the host: hold confirms until it reports in. */
+  expectHost(): void {
+    this.ready = false;
   }
 
   /** The host calls this once its p-confirmDialog is subscribed. */
