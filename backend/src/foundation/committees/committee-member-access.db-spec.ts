@@ -227,7 +227,7 @@ describe('Committee access for members, against a real database (ACC-281)', () =
       expect(await outcome(seat(w.member))).toBe('OK');
       expect(await outcome(seat(w.oversight))).toBe('OK');
 
-      const remove = (v: CommitteeViewer) => committees.removeMember(w.committee, added.id, {}, w.org, v.id, v.permissions);
+      const remove = (v: CommitteeViewer) => committees.removeMember(w.committee, added.id, { reason: 'Left the unit' }, w.org, v.id, v.permissions);
       expect(await outcome(remove(w.former))).toBe(WRITE_REFUSED);
       expect(await outcome(remove(w.stranger))).toBe(WRITE_REFUSED);
       expect(await outcome(remove(w.member))).toBe('OK');

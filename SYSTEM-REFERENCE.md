@@ -5299,7 +5299,8 @@ is in `CommitteeListsService`:
   - **Row menu:** each row's `am-row-menu` holds Change role
     (`committees:change_member_role`) and Remove
     (`committees:remove_member`), only those the viewer holds. A viewer with
-    neither gets no ⋯. Both open the page's existing dialog and confirm.
+    neither gets no ⋯. Change role opens the page's member dialog; Remove
+    opens the Remove member dialog, which asks for a reason (§3.21.2).
     `reload()` re-reads the panel and an open popup.
   - **Popup:** compact, with Member, Seat and Since columns, each a header
     sorting by `name`, `seat` or `since` (ACC-234). It opens on seat.
@@ -6251,6 +6252,48 @@ For lane A's user Transfer wizard: the seats the person holds, each with what a 
   - `committee-memberships.db-spec.ts` (real rows, seeded stage actions, isolation);
   - the route-order and controller specs;
   - mutation-checked.
+
+### 3.21.2 Removing a member needs a reason (ACC-298)
+
+Ahmad, 11 Nov: "removal from committee requires a reason."
+
+- **Server:** `DELETE /committees/:id/members/:memberId` requires `reason`
+  (`RemoveCommitteeMemberDto`).
+  - It is trimmed first, then must be a non-empty string of at most 2000
+    characters. Missing, blank or whitespace-only is a 400 from the validation
+    pipe, before the handler runs, so nothing is written.
+  - `effectiveDate` stays optional.
+  - `removeMember()` stores the trimmed reason on the LEFT
+    `CommitteeMembershipEvent`. ACC-297's notice to the committee's officers
+    reads it from there.
+  - No migration: `CommitteeMembershipEvent.reason` stays nullable, and removals
+    made before ACC-298 keep null.
+- **Committee page:** Remove opens `CommitteeRemoveMemberDialogComponent`
+  (`committees/components/committee-remove-member-dialog/`), which replaced
+  ACC-240's plain confirm.
+  - It is built the way Cancel task is: the form dialog shell, one required
+    Reason textarea (`am-field`, at most 2000 characters, trimmed), and a hint
+    saying the reason is kept in the committee's membership history.
+  - The title names the person (`committee.confirmRemoveMember`), and the
+    consequence line is kept (`committee.confirmRemoveMemberMessage`).
+  - Remove is never disabled. An empty reason reveals the field's error ("Give
+    a reason for removing.") and moves focus to the field.
+  - It sends `{ reason }`. A refusal is said in the dialog, which stays open
+    with the reason typed: a stage refusal from its code
+    (`committeeStageRefusal()`), anything else through `extractErrorMessage()`.
+    The page's own banner no longer shows a stage refusal; nothing else on the
+    page set it.
+  - A removal reloads what it did before: the members, their history and the
+    Members panel (`onMemberRemoved()`).
+  - Measured against the 420px cap in English and Arabic, at 1280 and on a 390
+    phone: empty, with its error, filled, at the 2000-character limit and
+    refused by the stage. The tallest body is 226px; nothing scrolls except, at
+    the limit, the textarea itself.
+- **Lane A's Transfer wizard** already sends a reason with each removal.
+- **Changing a member's role needs no reason.**
+- **Specs:** `remove-committee-member.dto.spec.ts`, the service spec (the
+  trimmed reason on the LEFT event), the dialog's spec and layout spec, and the
+  page's `committee-detail.remove.spec.ts`. Mutation-checked.
 
 ## 4. Notification System
 
@@ -11258,7 +11301,9 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
     enum; one with no translation reads "Unknown".
   - **Remove member and Complete task were reworded in ACC-240 PR 3a** (#205):
     Remove reads "Remove {name} from this committee?" / "Their membership ends
-    today and stays in the committee's history."
+    today and stays in the committee's history." Since ACC-298 those two lines
+    are the title and consequence of the Remove member dialog, which asks for a
+    reason, and no longer a confirm (§3.21.2).
 - **Specs:**
   - `am-confirm.service.spec.ts`: tone to classes, colour and focus; required
     labels; layer push and pop on accept, Cancel and Escape; focus back,

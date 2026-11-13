@@ -1257,7 +1257,7 @@ describe('CommitteesService', () => {
         makeMember({ leftAt: new Date(), isActive: false }),
       );
 
-      await service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR, ['committees:view']);
+      await service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, ['committees:view']);
 
       expect(mockPrisma.committeeMember.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ isActive: false }) }),
@@ -1267,12 +1267,34 @@ describe('CommitteesService', () => {
       );
     });
 
+    // ACC-298 (Ahmad, 11 Nov) — removing requires a reason; the LEFT event keeps
+    // it, trimmed. ACC-297's notice to the committee's officers reads it from there.
+    it('stores the trimmed reason on the LEFT event', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+      mockPrisma.committeeMember.findFirst.mockResolvedValue(makeMember());
+      mockPrisma.committeeMember.update.mockResolvedValue(makeMember({ leftAt: new Date(), isActive: false }));
+
+      await service.removeMember(
+        'committee-1',
+        'member-1',
+        { reason: '  Moved to another unit  ' },
+        ORG_A,
+        ACTOR,
+        ['committees:view'],
+      );
+
+      expect(mockPrisma.committeeMembershipEvent.create).toHaveBeenCalledTimes(1);
+      const data = (mockPrisma.committeeMembershipEvent.create.mock.calls[0] as [{ data: Record<string, unknown> }])[0].data;
+      expect(data['action']).toBe('LEFT');
+      expect(data['reason']).toBe('Moved to another unit');
+    });
+
     it('throws NotFoundException for a member not active in this committee', async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.committeeMember.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR, ['committees:view']),
+        service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, ['committees:view']),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
@@ -1281,7 +1303,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.removeMember('committee-1', 'member-1', {} as never, ORG_B, ACTOR, ['committees:view']),
+        service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_B, ACTOR, ['committees:view']),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
@@ -1337,7 +1359,7 @@ describe('CommitteesService', () => {
     const memberWrites: [string, string, () => Promise<unknown>][] = [
       ['addMember', 'add_member', () => service.addMember('committee-1', { userId: 'user-1', roleValueId: 'member' } as never, ORG_A, ACTOR, ['committees:view'])],
       ['changeMemberRole', 'change_member_role', () => service.changeMemberRole('committee-1', 'member-1', { roleValueId: 'secretary' } as never, ORG_A, ACTOR, ['committees:view'])],
-      ['removeMember', 'remove_member', () => service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR, ['committees:view'])],
+      ['removeMember', 'remove_member', () => service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, ['committees:view'])],
     ];
 
     it.each(memberWrites)('%s asks for its own action (%s), FOR SHARE, inside the transaction, before reading the member', async (_name, action, call) => {

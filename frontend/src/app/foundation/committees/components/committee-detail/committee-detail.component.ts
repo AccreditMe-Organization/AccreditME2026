@@ -1,7 +1,7 @@
 import { Component, DestroyRef, ElementRef, OnInit, TemplateRef, ViewChild, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
@@ -36,14 +36,15 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { FormatService } from '../../../../core/formatting';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { COMMITTEE_HEADER_GRID, COMMITTEE_PANEL_GRID } from './committee-panel-grid';
-import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { committeeOffers } from '../../committee-offers';
-import { CommitteeStageRefusal, committeeStageRefusal } from '../../committee-stage-refusal';
+import {
+  CommitteeRemoveMemberDialogComponent,
+  RemoveMemberTarget,
+} from '../committee-remove-member-dialog/committee-remove-member-dialog.component';
 import { ChangeRequestBannerComponent, ChangeRequestBannerState } from '../../change-requests/change-request-banner.component';
 import { CommitteeChangeRequestsPanelComponent } from '../../change-requests/committee-change-requests-panel.component';
 import { ChangeRequestDto, ChangeRequestService } from '../../change-requests/change-request.service';
@@ -70,19 +71,16 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
+    CommitteeRemoveMemberDialogComponent,
     WorkflowTransitionActionsComponent,
     EditDialogComponent,
     ChangeRequestBannerComponent,
     CommitteeChangeRequestsPanelComponent,
   ],
   template: `
-    @if (stageRefusal(); as r) {
-      <p-message
-        severity="error"
-        [text]="r.key | translate: { stage: stageName(r) }"
-        data-testid="committee-stage-refusal"
-      />
-    } @else if (error()) {
+    <!-- ACC-298 — a refused removal is said in its own dialog, so the page's
+         banner is for load errors only. -->
+    @if (error()) {
       <p-message severity="error" [text]="error()! | translate" />
     }
 
@@ -439,6 +437,14 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
       [content]="memberFormTpl"
       [dirty]="memberFormDirty()"
     />
+
+    <!-- ACC-298 — removing asks for a reason. -->
+    <app-committee-remove-member-dialog
+      [(visible)]="removeMemberVisible"
+      [committeeId]="committeeId"
+      [target]="removeTarget()"
+      (removed)="onMemberRemoved()"
+    />
   `,
   styles: [
     `
@@ -467,9 +473,7 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly workflowService = inject(WorkflowService);
   private readonly languageService = inject(LanguageService);
-  private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
-  private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
 
   readonly committeeId = this.route.snapshot.paramMap.get('id')!;
@@ -489,14 +493,6 @@ export class CommitteeDetailComponent implements OnInit {
   readonly membershipEvents = signal<CommitteeMembershipEventDto[]>([]);
   readonly membersLoading = signal(false);
   readonly error = signal<string | null>(null);
-  /** ACC-255 — a change the committee's stage does not allow (STAGE_ACTION_NOT_ALLOWED). */
-  readonly stageRefusal = signal<CommitteeStageRefusal | null>(null);
-
-  /** The stage's own name, in the reader's language (English when it has no Arabic). */
-  stageName(refusal: CommitteeStageRefusal): string {
-    return this.languageService.bilingual(refusal.stageNameEn ?? refusal.stageNameAr ?? '', refusal.stageNameAr);
-  }
-
   readonly memberRoles = signal<LookupValueDto[]>([]);
   readonly users = signal<IUserDto[]>([]);
   readonly currentInstance = signal<WorkflowInstanceDto | null>(null);
@@ -618,6 +614,9 @@ export class CommitteeDetailComponent implements OnInit {
   readonly memberFormVisible = signal(false);
   readonly memberFormDirty = signal(false);
   readonly editingMember = signal<CommitteeMemberDto | null>(null);
+  /** ACC-298 — the Remove member dialog, and whom it removes. */
+  readonly removeMemberVisible = signal(false);
+  readonly removeTarget = signal<RemoveMemberTarget | null>(null);
 
   ngOnInit(): void {
     // ACC-265 — the type and the owning unit are named by the committee read
@@ -749,31 +748,21 @@ export class CommitteeDetailComponent implements OnInit {
   }
 
   // ACC-240 — the question names the person; the consequence is the server's:
-  // no date is sent, so the membership ends now (committees.service.ts:397,
-  // :401–403), and a LEFT event keeps it in the history (:406–413). A person has
-  // one name (User.name, no Arabic form), so there is no bilingual choice here.
+  // no date is sent, so the membership ends now, and a LEFT event keeps it in
+  // the history. A person has one name (User.name, no Arabic form), so there is
+  // no bilingual choice here. ACC-298 — the dialog asks for the reason the LEFT
+  // event keeps, and says any refusal itself (CommitteeRemoveMemberDialogComponent).
   onRemoveMember(member: CommitteeMemberDto): void {
-    this.amConfirm.ask({
-      tone: 'destructive',
-      header: this.translate.instant('committee.confirmRemoveMember', { name: this.userName(member.userId) }),
-      message: this.translate.instant('committee.confirmRemoveMemberMessage'),
-      acceptLabel: this.translate.instant('common.remove'),
-      accept: () => {
-        this.stageRefusal.set(null);
-        this.committeeService.removeMember(this.committeeId, member.id, {}).subscribe({
-          next: () => {
-            this.loadMembers();
-            this.loadMembershipEvents();
-            this.membersPanel()?.reload();
-          },
-          error: (err: unknown) => {
-            // ACC-255 — refused by the committee's stage: said, with its name.
-            this.stageRefusal.set(committeeStageRefusal(err));
-            if (!this.stageRefusal()) this.error.set(extractErrorMessage(err, 'committee.errorAction'));
-          },
-        });
-      },
-    });
+    this.removeTarget.set({ memberId: member.id, name: this.userName(member.userId) });
+    this.removeMemberVisible.set(true);
+  }
+
+  // What a removal changes on this page, read again: the members, their history,
+  // and the Members panel.
+  onMemberRemoved(): void {
+    this.loadMembers();
+    this.loadMembershipEvents();
+    this.membersPanel()?.reload();
   }
 
   // Feeds four things, three of which can change from this page: the header
