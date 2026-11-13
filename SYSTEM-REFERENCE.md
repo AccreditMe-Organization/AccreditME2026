@@ -6295,6 +6295,78 @@ Ahmad, 11 Nov: "removal from committee requires a reason."
   trimmed reason on the LEFT event), the dialog's spec and layout spec, and the
   page's `committee-detail.remove.spec.ts`. Mutation-checked.
 
+### 3.21.3 Telling a committee after a member is transferred (ACC-297)
+
+Ahmad, 11 Nov. After a person is transferred, the officers of each committee they
+sat on are told, so someone holding "Remove members from a committee" can decide on
+the seat. The transfer never waits for this, and nothing here removes a seat.
+
+- **The hook:** `UserService.transferUser()` takes `since` (the app's clock) just
+  before its transaction opens. Right after the transaction commits, it calls
+  `CommitteeTransferNoticeService.schedule()`.
+  - Every success path passes that call: an ordinary transfer, a promotion, and a
+    promotion that fails after the move. A rollback never reaches it.
+  - A failed schedule is logged with the ids and the error's kind (its name and
+    code, `errorKind()`: "Error / ECONNREFUSED", "TimeoutError"), never its
+    message, which can name the Redis server. It never fails the transfer.
+  - `schedule()` gives up after 3 seconds with a `TimeoutError`, so a queue outage
+    cannot hold the request. A failure of `add()` after that is caught by the
+    `.catch` on `add()` itself, logged by kind with ids, and swallowed; the timer
+    is cleared whichever way it ends.
+- **The job:** one delayed job on the `committee-transfer-notice` queue, 2 minutes
+  out (`COMMITTEE_TRANSFER_NOTICE_DELAY_MS`), so the seats the Transfer wizard
+  removes right after the transfer are told as removed.
+  - Its id is `transfer-notice_{organisation}_{user}_{since in ms}`, so a second
+    schedule of the same transfer is ignored. It has one attempt: the only write
+    is the last step.
+  - `CommitteeTransferNoticeProcessor` is registered only behind `workersEnabled()`.
+- **The run** (`run()`), three waves, each one `Promise.all`, no query per row:
+  1. the person's active seats on active committees (`seatOrderedMemberships()`,
+     which now also returns each committee's `orgUnitId`); their LEFT events in the
+     organisation created at or after `since`, newest first; the person and their
+     unit now.
+  2. each committee's chair and secretary (seat keys `chairman`, `secretary`,
+     active holders who are ACTIVE users), in one query; the owning units' head
+     holders and covers in force (`unit-headship.ts`).
+  3. which recipients are ACTIVE, which hold `committees:view`, and which are
+     active members of which of these committees.
+  Then ONE `createInAppMany()`, after all the reads, never inside a transaction.
+- **Each committee is one line:** "still holds {seat}" when the person holds a
+  seat now (this wins over an earlier removal); otherwise, for the latest LEFT
+  since the transfer:
+  - "was removed from {seat} as part of the transfer to {new unit}" when the
+    event's `approvedBy` is the transfer's actor. The stored reason is not
+    quoted, since the wizard writes it in the admin's language.
+  - "was removed from {seat}. Reason given: "{reason}"" when someone else removed it.
+  - "was removed from {seat}; no reason was given" when someone else removed it
+    without one (older rows).
+- **Who is told,** per committee and then deduplicated, so each person gets one
+  notice listing their committees:
+  - its chair and secretary;
+  - the owning unit's acting cover in force INSTEAD of its head, else its head
+    holders (two during a handover); nobody in that role with neither.
+  - Never the transferred person or the actor; only ACTIVE users.
+- **The notice:** in-app only, both languages stored. It names the person and
+  their new unit, lists the lines, and says that anyone with "Remove members from
+  a committee" can remove a seat.
+  - A committee's name and link appear only for a reader who may open it
+    (`committees:view`, or an active member of it, the committee page's rule).
+    Anyone else reads "a committee".
+  - The link is the first listed committee the reader may open.
+  - With no lines, nothing is sent.
+  - Arabic has no verb whose subject is the person («تم نقل», and the lines'
+    verbs are about the membership).
+- **The module:** `CommitteeTransferNoticeModule` imports only `PrismaModule` and
+  `QueueModule`, and provides its own `LookupService`, `NotificationService` and
+  `AuditLogService` (stateless). Importing `LookupModule` or `NotificationModule`
+  would reach `TenantModule`, and from it `UserModule`, closing a cycle. So
+  `UserModule` imports it with no `forwardRef`.
+- **Specs:** `committee-transfer-notice.spec.ts` (words, recipients),
+  `committee-transfer-notice.service.spec.ts` (in-process run, schedule, tenant
+  isolation), `committee-transfer-notice.db-spec.ts` (real rows), the hook tests
+  in `user.service.spec.ts`, and the worker registration spec. Mutation-checked.
+- **No migration.**
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +
@@ -11330,6 +11402,10 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
     dialog's trash button name.
   - Mutation-checked: ten mutations (no layer, focus, the danger class and ink, the text Cancel, focus return, the ⋯ fallback, the required label, and the Actions dialog's layer and its top-layer check) each turned at least one of these red.
 
+**The host loads after start-up (ACC-90):** `ask()` hands the confirm to
+`ConfirmHostGate`, which shows it once the deferred host is listening. See
+§10.25.
+
 ### 10.23 `am-relation` — the Relation Field, in a Record Header (ACC-120 slice 11, PR D)
 
 `shared/components/relation/relation.component.ts`: the Design System's
@@ -11556,6 +11632,70 @@ work, after Tasks, with no permission, because both reads are self-scoped.
 - **No polling:** opening the page reads afresh.
 - **Home's panel still has no See all.** Turning one on is the Home team's
   change.
+
+### 10.25 The Start-up Bundle (ACC-90)
+
+What the browser loads before the first screen. `ng build` reports it as
+**Initial total**: 929.89 kB raw / 225.47 kB transfer on dev `9f35689`, and
+**791.05 kB / 201.51 kB** after ACC-90. Measured with `ng build --stats-json`;
+by package, it is now `@angular/core` 164 kB, `primeng` 81, `@angular/cdk` 78,
+`@angular/router` 73, `@primeuix/themes` 55, `src/styles` 53, `zone.js` 35,
+`@angular/common` 30 and `@primeuix/styles` 28. The budgets in `angular.json`
+were not raised to get there.
+
+**The theme carries only the components the app renders.** `AccreditMePreset`
+(`core/theme/accreditme-preset.ts`) is built the way `@primeuix/themes/aura`
+composes itself, `{ ...base, components, css }`, with `components` limited to
+`RENDERED_COMPONENTS`: 27 token modules instead of Aura's 88. That took
+`@primeuix/themes` from 106 kB to 55 kB.
+- **"Rendered" is computed, never picked.** It is every `primeng/<module>`
+  imported by a non-spec file (api and config excluded), plus what those
+  import in turn (from `node_modules/primeng/fesm2022`), keyed by each module's
+  own style name (`class TableStyle extends BaseStyle { name = 'datatable' }`),
+  kept where Aura has tokens. `scroller` comes in through `select` and
+  `treetable`, as `virtualscroller`.
+- **`npm run check:theme-components`** computes that list and fails, naming the
+  key, when a rendered component has no tokens in the preset or the preset
+  carries one nothing renders. Its selftest proves both failures and an
+  untokened component. **A new primeng import is the moment to add its key.**
+- **Nothing changed on screen:** `accreditme-preset.spec.ts` requires each kept
+  component, and the primitive, semantic and css sections, to deep-equal
+  `definePreset(full Aura, PRESET_OVERRIDES)`. A fingerprint of the overrides
+  turns it red if one changes; a deliberate theme change updates the
+  fingerprint with its reason.
+- Import from `@primeuix/themes`, never `@primeng/themes`.
+
+**The shell's pop-ups load when first needed** (`@defer`), because each pulled
+PrimeNG overlays into every page's start-up:
+- **The confirm host** loads on idle, or at once when a confirm is asked for
+  first: `@defer (on idle; when confirmGate.needed())`. PrimeNG's
+  ConfirmationService emits through a Subject, so a confirm asked for while the
+  host loads would be lost. `AmConfirmService.ask()` hands it to
+  `ConfirmHostGate.whenReady()`, which shows it once the host reports in
+  (`afterNextRender`), focus handling included. The gate is ready by default;
+  only the shell, which defers the host, calls `expectHost()` at construction,
+  so a spec or screen rendered without the shell is served at once. A confirm
+  still waiting when the shell goes (sign-out) is dropped, never shown by the
+  next shell: the shell calls `hostGone()` on destroy (its host may never have
+  loaded), which releases each waiting confirm's layer and returns focus without
+  running accept or reject, and resets the gate.
+- **The idle warning** loads on idle, or at once when it is due:
+  `@defer (on idle; when idleService.warningVisible())`. The shell still starts
+  `IdleService`; only the drawing waits.
+- **The bell's panel** is `NotificationBellPanelComponent`, loaded on the first
+  press, which also opens it. The bell and its count stay eager.
+- Together they took primeng's dialog, confirmdialog, popover, motion and
+  focustrap, and the edit-dialog shell, out of start-up: about 87 kB. Angular's
+  `@defer` runtime added 7.6 kB once.
+- **Defer a LOCAL component, never inline template dependencies.** When the
+  bell deferred its popover inline, Angular loaded RouterLink and
+  NgTemplateOutlet through dynamic imports of their whole packages, and
+  esbuild kept all of `@angular/common` and the router module: start-up grew
+  74 kB. An NgModule (`PopoverModule`) is never deferred at all, and a
+  dependency named anywhere else in the file stays eager.
+- Specs: `app-shell.deferred.spec.ts` (idle held back, so only `when` can load:
+  removing it turns the early-confirm test red) and the bell spec's
+  `DeferBlockBehavior.Manual` case.
 
 ## 11. Known Cross-Cutting Gaps
 

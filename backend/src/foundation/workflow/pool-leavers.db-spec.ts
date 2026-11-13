@@ -43,6 +43,7 @@ import type { AuthProvider } from '../../providers/auth/auth.provider';
 import { WorkflowService } from './workflow.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
+import type { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { applyWorkflowSeed } from './workflow-seed-apply';
 import { writeStartingAssignments } from './workflow-who';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
@@ -89,6 +90,8 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     {} as OrgUnitHeadService,
     {} as OrgPositionService,
     pools,
+    // ACC-297 — no transfer here, so the committee notice is never scheduled.
+    { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
   );
 
   interface Org {

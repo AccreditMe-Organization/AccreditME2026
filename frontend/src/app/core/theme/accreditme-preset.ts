@@ -17,7 +17,80 @@
 //
 // darkModeSelector is false in app.config.ts, so only the light scheme exists.
 import { definePreset } from '@primeuix/themes';
-import Aura from '@primeng/themes/aura';
+import base from '@primeuix/themes/aura/base';
+import auraCss from '@primeuix/themes/aura/css';
+import type { ExtendedCSS } from '@primeuix/themes/types';
+import badge from '@primeuix/themes/aura/badge';
+import button from '@primeuix/themes/aura/button';
+import checkbox from '@primeuix/themes/aura/checkbox';
+import confirmdialog from '@primeuix/themes/aura/confirmdialog';
+import datatable from '@primeuix/themes/aura/datatable';
+import datepicker from '@primeuix/themes/aura/datepicker';
+import dialog from '@primeuix/themes/aura/dialog';
+import drawer from '@primeuix/themes/aura/drawer';
+import iconfield from '@primeuix/themes/aura/iconfield';
+import inputnumber from '@primeuix/themes/aura/inputnumber';
+import inputtext from '@primeuix/themes/aura/inputtext';
+import message from '@primeuix/themes/aura/message';
+import paginator from '@primeuix/themes/aura/paginator';
+import popover from '@primeuix/themes/aura/popover';
+import progressspinner from '@primeuix/themes/aura/progressspinner';
+import radiobutton from '@primeuix/themes/aura/radiobutton';
+import ripple from '@primeuix/themes/aura/ripple';
+import select from '@primeuix/themes/aura/select';
+import selectbutton from '@primeuix/themes/aura/selectbutton';
+import stepper from '@primeuix/themes/aura/stepper';
+import tag from '@primeuix/themes/aura/tag';
+import textarea from '@primeuix/themes/aura/textarea';
+import togglebutton from '@primeuix/themes/aura/togglebutton';
+import toggleswitch from '@primeuix/themes/aura/toggleswitch';
+import tooltip from '@primeuix/themes/aura/tooltip';
+import treetable from '@primeuix/themes/aura/treetable';
+import virtualscroller from '@primeuix/themes/aura/virtualscroller';
+
+// ACC-90 — Aura as Aura composes itself (@primeuix/themes/aura: base, every
+// component's tokens, css), with only the components this app RENDERS. Full
+// Aura carries tokens for 88 components; the app's primeng imports reach 27
+// (its direct imports and what they import in turn, by each module's style
+// name). The rest were ~70 kB in the start-up bundle for nothing.
+// check:theme-components keeps this list equal to what is rendered, in both
+// directions, and accreditme-preset.spec.ts proves the tokens are Aura's own.
+export const RENDERED_COMPONENTS = {
+  badge,
+  button,
+  checkbox,
+  confirmdialog,
+  datatable,
+  datepicker,
+  dialog,
+  drawer,
+  iconfield,
+  inputnumber,
+  inputtext,
+  message,
+  paginator,
+  popover,
+  progressspinner,
+  radiobutton,
+  ripple,
+  select,
+  selectbutton,
+  stepper,
+  tag,
+  textarea,
+  togglebutton,
+  toggleswitch,
+  tooltip,
+  treetable,
+  virtualscroller,
+};
+
+// Aura's global css, as Aura itself imports it: the module's default export,
+// a string. Its .d.ts declares a named export instead, so the default reads as
+// the namespace to TypeScript; the cast states what the runtime value is.
+const css = auraCss as unknown as ExtendedCSS;
+
+const AuraRendered = { ...base, components: RENDERED_COMPONENTS, css };
 
 const token = (name: string): string => `var(--am-${name})`;
 
@@ -26,7 +99,8 @@ const token = (name: string): string => `var(--am-${name})`;
 const mix = (base: string, other: 'white' | 'black', percent: number): string =>
   `color-mix(in srgb, ${token(base)}, ${other} ${percent}%)`;
 
-export const AccreditMePreset = definePreset(Aura, {
+// The overrides, unchanged. Exported so a spec can apply them to full Aura.
+export const PRESET_OVERRIDES = {
   semantic: {
     // Aura's components read shades of this ramp directly (tags, messages,
     // toggle buttons), so every position needs a value. The four the design
@@ -173,4 +247,6 @@ export const AccreditMePreset = definePreset(Aura, {
       },
     },
   },
-});
+};
+
+export const AccreditMePreset = definePreset(AuraRendered, PRESET_OVERRIDES);

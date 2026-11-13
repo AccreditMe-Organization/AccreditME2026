@@ -3,6 +3,7 @@ import { Injectable, NgZone, inject } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
 import { Confirmation, ConfirmationService } from 'primeng/api';
 import { LayerStackService } from '../../overlay/layer-stack.service';
+import { ConfirmHostGate } from './confirm-host-gate';
 
 /**
  * Destructive: the action is filled danger and Cancel gets focus. Neutral: the
@@ -78,6 +79,7 @@ export class AmConfirmService {
   private readonly translate = inject(TranslateService);
   private readonly document = inject(DOCUMENT);
   private readonly zone = inject(NgZone);
+  private readonly gate = inject(ConfirmHostGate);
 
   ask(options: AmConfirmOptions): void {
     if (!options.acceptLabel?.trim()) {
@@ -92,6 +94,9 @@ export class AmConfirmService {
     const layer = this.layers.push();
     let settled = false;
 
+    // Set when the confirm is actually shown (see below).
+    let stopFocusing: () => void = () => {};
+
     const settle = (then?: () => void): void => {
       if (settled) return;
       settled = true;
@@ -100,8 +105,6 @@ export class AmConfirmService {
       then?.();
       this.returnFocus(opener);
     };
-
-    const stopFocusing = this.focusOnOpen(destructive ? CONFIRM_REJECT_CLASS : CONFIRM_ACCEPT_CLASS);
 
     const confirmation: AmConfirmation = {
       header: options.header,
@@ -115,7 +118,18 @@ export class AmConfirmService {
       accept: () => settle(options.accept),
       reject: () => settle(options.reject),
     };
-    this.confirmation.confirm(confirmation);
+    // ACC-90 — the host loads after start-up. The gate shows the confirm now,
+    // or as soon as the host is listening, and the focus watcher starts with
+    // it, so a slow load cannot run out its four seconds first. If the shell
+    // goes first (sign-out), the confirm is dropped: its layer released and
+    // focus returned, and neither accept nor reject runs.
+    this.gate.whenReady(
+      () => {
+        stopFocusing = this.focusOnOpen(destructive ? CONFIRM_REJECT_CLASS : CONFIRM_ACCEPT_CLASS);
+        this.confirmation.confirm(confirmation);
+      },
+      () => settle(),
+    );
   }
 
   /**

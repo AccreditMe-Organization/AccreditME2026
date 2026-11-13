@@ -25,6 +25,7 @@ import { TaskService } from '../task/task.service';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
+import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 
 const TENANT_ID = 'org-a';
 const CALLER_ID = 'user-caller';
@@ -61,6 +62,8 @@ describe("GET /users/:userId/permissions follows the user's own visibility (ACC-
         { provide: AUTH_PROVIDER, useValue: {} },
         { provide: OrgUnitHeadService, useValue: {} },
         { provide: OrgPositionService, useValue: {} },
+        // ACC-297 — the committee notice a transfer schedules; no transfer here.
+        { provide: CommitteeTransferNoticeService, useValue: { schedule: jest.fn() } },
       ],
     })
       .overrideGuard(TenantGuard)
