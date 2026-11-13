@@ -1,5 +1,5 @@
 import { IUser } from './interfaces/user.interface';
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { UserService, toSafeUser } from './user.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -14,6 +14,7 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 import { resolveAppLinkConfig } from '../../common/config/app-url.config';
 import { renderEmailHtml } from '../notification/email-html';
 import type { StagePoolService } from '../workflow/stage-pool.service';
+import type { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import * as rootHead from '../organization/root-unit-head.invariant';
 import { RootUnitNeedsHeadRefusal } from '../organization/org-unit-refusals';
 import { countWrites, recordTransactionWrites } from '../../common/testing/transaction-writes';
@@ -68,6 +69,8 @@ describe('UserService', () => {
   };
   // ACC-271 — the stage pools a departing person leaves.
   let mockStagePool: { openEntriesWithMember: jest.Mock; recordPoolMemberLeftInTx: jest.Mock };
+  // ACC-297 — the committee notice a transfer schedules after its commit.
+  let mockCommitteeTransferNotice: { schedule: jest.Mock };
   let mockOrgPositionService: {
     listAvailablePositionsForUser: jest.Mock;
     hasAnyHeadConferringHolder: jest.Mock;
@@ -190,6 +193,7 @@ describe('UserService', () => {
     };
 
     mockStagePool = { openEntriesWithMember: jest.fn().mockResolvedValue([]), recordPoolMemberLeftInTx: jest.fn() };
+    mockCommitteeTransferNotice = { schedule: jest.fn().mockResolvedValue(undefined) };
     service = new UserService(
       mockPrisma as unknown as PrismaService,
       mockAuditLog as unknown as AuditLogService,
@@ -201,6 +205,7 @@ describe('UserService', () => {
       mockOrgUnitHeadService as unknown as OrgUnitHeadService,
       mockOrgPositionService as unknown as OrgPositionService,
       mockStagePool as unknown as StagePoolService,
+      mockCommitteeTransferNotice as unknown as CommitteeTransferNoticeService,
     );
   });
 
@@ -1088,6 +1093,95 @@ describe('UserService', () => {
     // is a separate, dedicated integration-style test below (real
     // OrgUnitHeadService, not mocked), since a mock can't prove its own
     // internals are correct.
+    // ACC-297 — after the transfer commits, the person's committees are told
+    // (CommitteeTransferNoticeService.schedule()). Every success path passes the
+    // call; a rollback never reaches it; a failed schedule never fails the transfer.
+    describe('the committee notice after the commit (ACC-297)', () => {
+      const HEAD_POSITION = { id: 'pos-new', isSingleAssignee: true, isUnitHeadPosition: true, isActive: true };
+      const ROOT_UNIT = { id: 'unit-dest', organizationId: ORG_A, parentId: null };
+      let order: string[];
+      let txOpenedAt: number;
+
+      beforeEach(() => {
+        order = [];
+        mockPrisma.$transaction = jest.fn(async (callback: (tx: unknown) => unknown) => {
+          txOpenedAt = Date.now();
+          order.push('transaction opened');
+          const result = await callback(mockPrisma);
+          order.push('committed');
+          return result;
+        });
+        mockCommitteeTransferNotice.schedule.mockImplementation(() => {
+          order.push('scheduled');
+          return Promise.resolve();
+        });
+      });
+
+      const expectScheduledOnceAfterCommit = () => {
+        expect(mockCommitteeTransferNotice.schedule).toHaveBeenCalledTimes(1);
+        expect(order).toEqual(['transaction opened', 'committed', 'scheduled']);
+        const input = mockCommitteeTransferNotice.schedule.mock.calls[0]![0] as { organizationId: string; userId: string; actorId: string; since: Date };
+        expect({ organizationId: input.organizationId, userId: input.userId, actorId: input.actorId }).toEqual({
+          organizationId: ORG_A,
+          userId: 'u1',
+          actorId: 'admin-1',
+        });
+        // `since` is taken just before the transaction opens.
+        expect(input.since).toBeInstanceOf(Date);
+        expect(input.since.getTime()).toBeLessThanOrEqual(txOpenedAt);
+      };
+
+      it('an ordinary transfer schedules it once, after the commit', async () => {
+        const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+        expect(result.promotionCompleted).toBe(true);
+        expectScheduledOnceAfterCommit();
+      });
+
+      it('a promotion schedules it once, after the commit', async () => {
+        mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+        const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+        expect(result.promotionCompleted).toBe(true);
+        expectScheduledOnceAfterCommit();
+      });
+
+      it('a promotion that fails after the move (the partial-failure result) still schedules it once, after the commit', async () => {
+        mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+        mockOrgUnitHeadService.assignHead.mockRejectedValue(new ConflictException('destination position no longer vacant'));
+        const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+        expect(result.promotionCompleted).toBe(false);
+        expectScheduledOnceAfterCommit();
+      });
+
+      it('a transfer that rolls back schedules nothing', async () => {
+        const refusal = new RootUnitNeedsHeadRefusal('root-a', 'Al-Nakheel Hospital', null);
+        const assertSpy = jest.spyOn(rootHead, 'assertRootUnitRetainsAHead').mockRejectedValue(refusal);
+        try {
+          await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toBe(refusal);
+          expect(mockCommitteeTransferNotice.schedule).not.toHaveBeenCalled();
+        } finally {
+          assertSpy.mockRestore();
+        }
+      });
+
+      it('a schedule that throws is logged with ids only, and the transfer still succeeds', async () => {
+        mockCommitteeTransferNotice.schedule.mockRejectedValue(new Error('redis://secret-host:6379 refused'));
+        const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+        try {
+          const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+          expect(result.promotionCompleted).toBe(true);
+          expect(mockAuditLog.log).toHaveBeenCalled(); // the steps after it still ran
+          expect(warn).toHaveBeenCalledTimes(1);
+          const message = String(warn.mock.calls[0]![0]);
+          expect(message).toBe(`Committee transfer notice not scheduled: organisation ${ORG_A}, user u1.`);
+          expect(message).not.toContain('redis');
+        } finally {
+          warn.mockRestore();
+        }
+      });
+    });
+
     describe('promotion branch', () => {
       const HEAD_POSITION = { id: 'pos-new', isSingleAssignee: true, isUnitHeadPosition: true, isActive: true };
       const ROOT_UNIT = { id: 'unit-dest', organizationId: ORG_A, parentId: null };
@@ -3857,6 +3951,7 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
       {} as OrgUnitHeadService, // placeholder, patched below
       realMockOrgPositionService as unknown as OrgPositionService,
       noStagePools(),
+      { schedule: jest.fn().mockResolvedValue(undefined) } as unknown as CommitteeTransferNoticeService,
     );
     const realOrgUnitHeadService = new OrgUnitHeadService(
       realMockPrisma as unknown as PrismaService,
