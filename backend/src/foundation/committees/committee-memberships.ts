@@ -9,7 +9,8 @@ export interface SeatOrderedMembership {
   id: string;
   roleValueId: string;
   joinedAt: Date;
-  committee: { id: string; nameEn: string; nameAr: string | null; isActive: boolean };
+  /** ACC-297 — `orgUnitId` is the owning unit, for the transfer notice's unit head. */
+  committee: { id: string; nameEn: string; nameAr: string | null; isActive: boolean; orgUnitId: string };
 }
 
 export interface SeatOrderedMemberships {
@@ -58,7 +59,7 @@ export async function seatOrderedMemberships(
         id: true,
         roleValueId: true,
         joinedAt: true,
-        committee: { select: { id: true, nameEn: true, nameAr: true, isActive: true } },
+        committee: { select: { id: true, nameEn: true, nameAr: true, isActive: true, orgUnitId: true } },
       },
       orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
       take: readCap,
