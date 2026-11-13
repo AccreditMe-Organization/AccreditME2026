@@ -1599,10 +1599,10 @@ Language:           All AI outputs in user's preferred language (Arabic/English)
 Never block API requests with long-running tasks.
 Always run as background jobs:
 
-**Corrected (ACC-274), against dev `487a0a8`:** exactly six queues have a
-processor (`grep -rn "@Processor(" backend/src`). The other seven below are
-planned and NOT built — nothing enqueues them and nothing consumes them.
-ACC-297 added a seventh, `committee-transfer-notice`.
+**Corrected (ACC-274), against dev `487a0a8`; updated by ACC-297:** exactly
+seven queues have a processor (`grep -rn "@Processor(" backend/src`). The other
+seven below are planned and NOT built — nothing enqueues them and nothing
+consumes them.
 
 Built:
 
@@ -1621,8 +1621,8 @@ workflow-actions    Each WEBHOOK transition action, enqueued by
                     WorkflowService.fireTransitionActions(); every attempt is
                     logged in WorkflowActionLog
 committee-transfer-notice
-                    One delayed job per transfer, 2 minutes after it commits:
-                    tells the person's committees (ACC-297)
+                    A delayed job, 2 minutes after each transfer commits, one
+                    attempt: tells the person's committees (ACC-297)
 ```
 
 Planned, not built:
