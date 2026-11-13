@@ -120,11 +120,16 @@ export class AmConfirmService {
     };
     // ACC-90 — the host loads after start-up. The gate shows the confirm now,
     // or as soon as the host is listening, and the focus watcher starts with
-    // it, so a slow load cannot run out its four seconds first.
-    this.gate.whenReady(() => {
-      stopFocusing = this.focusOnOpen(destructive ? CONFIRM_REJECT_CLASS : CONFIRM_ACCEPT_CLASS);
-      this.confirmation.confirm(confirmation);
-    });
+    // it, so a slow load cannot run out its four seconds first. If the shell
+    // goes first (sign-out), the confirm is dropped: its layer released and
+    // focus returned, and neither accept nor reject runs.
+    this.gate.whenReady(
+      () => {
+        stopFocusing = this.focusOnOpen(destructive ? CONFIRM_REJECT_CLASS : CONFIRM_ACCEPT_CLASS);
+        this.confirmation.confirm(confirmation);
+      },
+      () => settle(),
+    );
   }
 
   /**

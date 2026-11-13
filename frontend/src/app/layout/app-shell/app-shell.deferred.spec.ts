@@ -16,6 +16,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { IdleService } from '../../core/services/idle.service';
 import { AmConfirmService, CONFIRM_ACCEPT_CLASS } from '../../shared/components/confirm/am-confirm.service';
+import { ConfirmHostGate } from '../../shared/components/confirm/confirm-host-gate';
+import { LayerStackService } from '../../shared/overlay/layer-stack.service';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { BreadcrumbComponent } from '../breadcrumb/breadcrumb.component';
@@ -202,6 +204,60 @@ describe('AppShellComponent — pop-ups loaded after start-up (ACC-90)', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(confirm()).withContext('shown with no load to wait for').not.toBeNull();
+  });
+
+  /** Sign-out, then sign-in: this shell goes, and a new one is built in the same app. */
+  async function signOutAndIn(): Promise<void> {
+    fixture.destroy();
+    fixture.nativeElement.remove();
+    fixture = TestBed.createComponent(AppShellComponent);
+    document.body.appendChild(fixture.nativeElement);
+    await settle();
+  }
+
+  it('a confirm still waiting at sign-out is dropped: the next shell never shows it', async () => {
+    await render();
+    const layers = TestBed.inject(LayerStackService);
+    expect(layers.depth()).withContext('no layer before the confirm').toBe(0);
+    const accept = jasmine.createSpy('accept');
+    const reject = jasmine.createSpy('reject');
+    TestBed.inject(AmConfirmService).ask({
+      header: 'Remove the seat?',
+      message: 'Huda leaves the committee.',
+      acceptLabel: 'Remove',
+      tone: 'neutral',
+      accept,
+      reject,
+    });
+    // Non-vacuity: it is waiting for a host that has not loaded, with its layer.
+    expect(TestBed.inject(ConfirmHostGate).needed()).withContext('the confirm is waiting').toBeTrue();
+    expect(layers.depth()).withContext('its layer is pushed').toBe(1);
+    expect(host()).toBeNull();
+
+    // Signed out before the host loaded, then signed in again: the new shell's host loads.
+    await signOutAndIn();
+    await goIdle();
+    expect(host()).withContext("the new shell's host loaded").not.toBeNull();
+    await until(() => true, 'a turn');
+    await settle();
+
+    expect(confirm()).withContext('the old confirm is never shown').toBeNull();
+    expect(accept).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+    expect(layers.depth()).withContext('its layer was released').toBe(0);
+  });
+
+  it("after sign-in, a confirm asked for once the new shell's host is ready shows as normal", async () => {
+    await render();
+    await signOutAndIn();
+    await goIdle();
+    expect(host()).withContext("the new shell's host loaded").not.toBeNull();
+    ask();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(confirm()).withContext('shown at once').not.toBeNull();
+    expect(confirm()!.textContent).toContain('Remove the seat?');
   });
 
   it('the idle warning loads the moment it is due, before idle', async () => {

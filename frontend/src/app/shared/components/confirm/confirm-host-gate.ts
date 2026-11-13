@@ -17,6 +17,10 @@ import { Injectable, signal } from '@angular/core';
  * rendered without the shell — a spec with its own p-confirmDialog — is
  * served at once, as before.
  *
+ * A confirm still waiting when the shell goes (sign-out) is DROPPED, never
+ * shown by the next shell's host: its callbacks belong to components that no
+ * longer exist. hostGone() returns the gate to its starting state.
+ *
  * Its own file, apart from AmConfirmService, so the shell can read `needed`
  * without pulling the confirm service into the start-up bundle.
  */
@@ -26,15 +30,18 @@ export class ConfirmHostGate {
   readonly needed = signal(false);
 
   private ready = true;
-  private queue: (() => void)[] = [];
+  private queue: { open: () => void; drop: () => void }[] = [];
 
-  /** Run `open` now if the host is listening, else as soon as it is. */
-  whenReady(open: () => void): void {
+  /**
+   * Run `open` now if the host is listening, else as soon as it is. `drop`
+   * runs instead if the shell goes before the host ever listened.
+   */
+  whenReady(open: () => void, drop: () => void): void {
     if (this.ready) {
       open();
       return;
     }
-    this.queue.push(open);
+    this.queue.push({ open, drop });
     this.needed.set(true);
   }
 
@@ -48,11 +55,19 @@ export class ConfirmHostGate {
     this.ready = true;
     const waiting = this.queue;
     this.queue = [];
-    for (const open of waiting) open();
+    for (const { open } of waiting) open();
   }
 
-  /** The host is gone (the shell was torn down): wait for the next one. */
+  /**
+   * The shell is gone (sign-out), and its host with it, loaded or not. Every
+   * waiting confirm is dropped, and the gate is as it was before any shell:
+   * ready, nothing needed. The next shell's expectHost() makes it wait again.
+   */
   hostGone(): void {
-    this.ready = false;
+    const waiting = this.queue;
+    this.queue = [];
+    this.ready = true;
+    this.needed.set(false);
+    for (const { drop } of waiting) drop();
   }
 }
