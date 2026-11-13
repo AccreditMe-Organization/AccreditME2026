@@ -11318,6 +11318,10 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
     dialog's trash button name.
   - Mutation-checked: ten mutations (no layer, focus, the danger class and ink, the text Cancel, focus return, the ⋯ fallback, the required label, and the Actions dialog's layer and its top-layer check) each turned at least one of these red.
 
+**The host loads after start-up (ACC-90):** `ask()` hands the confirm to
+`ConfirmHostGate`, which shows it once the deferred host is listening. See
+§10.25.
+
 ### 10.23 `am-relation` — the Relation Field, in a Record Header (ACC-120 slice 11, PR D)
 
 `shared/components/relation/relation.component.ts`: the Design System's
@@ -11544,6 +11548,66 @@ work, after Tasks, with no permission, because both reads are self-scoped.
 - **No polling:** opening the page reads afresh.
 - **Home's panel still has no See all.** Turning one on is the Home team's
   change.
+
+### 10.25 The Start-up Bundle (ACC-90)
+
+What the browser loads before the first screen. `ng build` reports it as
+**Initial total**: 929.89 kB raw / 225.47 kB transfer on dev `9f35689`, and
+**790.91 kB / 201.39 kB** after ACC-90. Measured with `ng build --stats-json`;
+by package, it is now `@angular/core` 164 kB, `primeng` 81, `@angular/cdk` 78,
+`@angular/router` 73, `@primeuix/themes` 55, `src/styles` 53, `zone.js` 35,
+`@angular/common` 30 and `@primeuix/styles` 28. The budgets in `angular.json`
+were not raised to get there.
+
+**The theme carries only the components the app renders.** `AccreditMePreset`
+(`core/theme/accreditme-preset.ts`) is built the way `@primeuix/themes/aura`
+composes itself, `{ ...base, components, css }`, with `components` limited to
+`RENDERED_COMPONENTS`: 27 token modules instead of Aura's 88. That took
+`@primeuix/themes` from 106 kB to 55 kB.
+- **"Rendered" is computed, never picked.** It is every `primeng/<module>`
+  imported by a non-spec file (api and config excluded), plus what those
+  import in turn (from `node_modules/primeng/fesm2022`), keyed by each module's
+  own style name (`class TableStyle extends BaseStyle { name = 'datatable' }`),
+  kept where Aura has tokens. `scroller` comes in through `select` and
+  `treetable`, as `virtualscroller`.
+- **`npm run check:theme-components`** computes that list and fails, naming the
+  key, when a rendered component has no tokens in the preset or the preset
+  carries one nothing renders. Its selftest proves both failures and an
+  untokened component. **A new primeng import is the moment to add its key.**
+- **Nothing changed on screen:** `accreditme-preset.spec.ts` requires each kept
+  component, and the primitive, semantic and css sections, to deep-equal
+  `definePreset(full Aura, PRESET_OVERRIDES)`. A fingerprint of the overrides
+  turns it red if one changes; a deliberate theme change updates the
+  fingerprint with its reason.
+- Import from `@primeuix/themes`, never `@primeng/themes`.
+
+**The shell's pop-ups load when first needed** (`@defer`), because each pulled
+PrimeNG overlays into every page's start-up:
+- **The confirm host** loads on idle, or at once when a confirm is asked for
+  first: `@defer (on idle; when confirmGate.needed())`. PrimeNG's
+  ConfirmationService emits through a Subject, so a confirm asked for while the
+  host loads would be lost. `AmConfirmService.ask()` hands it to
+  `ConfirmHostGate.whenReady()`, which shows it once the host reports in
+  (`afterNextRender`), focus handling included. The gate is ready by default;
+  only the shell, which defers the host, calls `expectHost()` at construction,
+  so a spec or screen rendered without the shell is served at once.
+- **The idle warning** loads on idle, or at once when it is due:
+  `@defer (on idle; when idleService.warningVisible())`. The shell still starts
+  `IdleService`; only the drawing waits.
+- **The bell's panel** is `NotificationBellPanelComponent`, loaded on the first
+  press, which also opens it. The bell and its count stay eager.
+- Together they took primeng's dialog, confirmdialog, popover, motion and
+  focustrap, and the edit-dialog shell, out of start-up: about 87 kB. Angular's
+  `@defer` runtime added 7.6 kB once.
+- **Defer a LOCAL component, never inline template dependencies.** When the
+  bell deferred its popover inline, Angular loaded RouterLink and
+  NgTemplateOutlet through dynamic imports of their whole packages, and
+  esbuild kept all of `@angular/common` and the router module: start-up grew
+  74 kB. An NgModule (`PopoverModule`) is never deferred at all, and a
+  dependency named anywhere else in the file stays eager.
+- Specs: `app-shell.deferred.spec.ts` (idle held back, so only `when` can load:
+  removing it turns the early-confirm test red) and the bell spec's
+  `DeferBlockBehavior.Manual` case.
 
 ## 11. Known Cross-Cutting Gaps
 
