@@ -73,6 +73,7 @@ import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 import { SessionRenewalService } from '../services/session-renewal.service';
 import { SessionAddressState } from '../tenant/session-address-state';
+import { isSessionTimeLimitRefusal } from '../services/session-limit-state';
 
 /**
  * Auth endpoints whose own 401 must never be answered with a renewal.
@@ -96,13 +97,15 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const withCredentialsReq = req.clone({ withCredentials: true });
 
   /** The pre-ACC-122 behaviour: the session is over. */
-  const endSession = (error: unknown) => {
+  const endSession = (error: unknown, reason?: 'limit') => {
     authService.clearSession();
     void router.navigate(['/login'], {
       // ACC-122 — so signing in again returns the user to the page they were
       // on rather than dropping them on Home. Never set for /auth/me, which
       // does not reach this branch at all.
-      queryParams: { returnUrl: router.url },
+      // ACC-126 — and why, when the renewal was refused for the session's
+      // 12-hour limit (a tab asleep through the warning lands here).
+      queryParams: { returnUrl: router.url, ...(reason ? { reason } : {}) },
     });
     return throwError(() => error);
   };
@@ -143,8 +146,11 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         ),
         // Renewal failed — refresh token expired, revoked, the user
         // deactivated, or a forced logout (ACC-122's tokenVersion check).
-        // This is the one place a session genuinely ends.
-        catchError(() => endSession(error)),
+        // This is the one place a session genuinely ends. ACC-126 — the
+        // renewal's own refusal says whether it was the 12-hour limit.
+        catchError((renewError: unknown) =>
+          endSession(error, isSessionTimeLimitRefusal(renewError) ? 'limit' : undefined),
+        ),
       );
     }),
   );

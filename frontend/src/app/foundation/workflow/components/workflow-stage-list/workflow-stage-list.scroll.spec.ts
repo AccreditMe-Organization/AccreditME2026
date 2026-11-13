@@ -24,6 +24,7 @@ import { LanguageToggleComponent } from '../../../../layout/language-toggle/lang
 import { ImpersonationBannerComponent } from '../../../../layout/impersonation-banner/impersonation-banner.component';
 import { NotificationBellComponent } from '../../../notification/components/notification-bell/notification-bell.component';
 import { IdleWarningComponent } from '../../../../core/components/idle-warning/idle-warning.component';
+import { SessionLimitWarningComponent } from '../../../../core/components/session-limit-warning/session-limit-warning.component';
 import { AppShellComponent } from '../../../../layout/app-shell/app-shell.component';
 import { ALL_KINDS, WHO_RULES, storedEntry } from '../stage-who/stage-who-options.testing';
 import { WorkflowStageListComponent } from './workflow-stage-list.component';
@@ -64,6 +65,8 @@ class LanguageToggleStub {}
 class BannerStub {}
 @Component({ selector: 'app-idle-warning', standalone: true, template: '' })
 class IdleWarningStub {}
+@Component({ selector: 'app-session-limit-warning', standalone: true, template: '' })
+class SessionLimitWarningStub {}
 
 const CASES = [
   { name: 'at 1280', width: 1280, phone: false },
@@ -200,8 +203,8 @@ describe('WorkflowStageListComponent — one vertical scroll, inside the shell (
       add: { imports: [BreadcrumbStub, BellStub, LanguageToggleStub] },
     });
     TestBed.overrideComponent(AppShellComponent, {
-      remove: { imports: [ImpersonationBannerComponent, IdleWarningComponent] },
-      add: { imports: [BannerStub, IdleWarningStub] },
+      remove: { imports: [ImpersonationBannerComponent, IdleWarningComponent, SessionLimitWarningComponent] },
+      add: { imports: [BannerStub, IdleWarningStub, SessionLimitWarningStub] },
     });
     loadTranslationsForTest({ en, ar });
     TestBed.inject(TranslateService).use(lang);
