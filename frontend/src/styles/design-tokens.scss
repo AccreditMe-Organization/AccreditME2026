@@ -146,6 +146,10 @@
   --am-dialog-form:    560px;
   --am-dialog-picker:  520px;
   --am-dialog-form-body-max: 420px;
+  // ACC-299 — no dialog is wider than the screen less a 16px gutter each side.
+  // The edit-dialog shell and the confirm host cap their width with it, so a
+  // form or a 640px wizard fits a 390px phone. It bites only below width + 32.
+  --am-dialog-max-inline: calc(100vw - 2 * var(--am-space-16));
 
   // ─── Drawer (File Viewer drawing, 9 Oct · am-drawer, ACC-189) ──────────
   // 60% of the window and never under 720px: an A4 page at fit width (640

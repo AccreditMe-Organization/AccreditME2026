@@ -46,7 +46,7 @@ import { AmConfirmation, CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from 
     `
       .am-confirm.p-dialog {
         inline-size: var(--am-dialog-confirm);
-        max-inline-size: calc(100vw - 32px);
+        max-inline-size: var(--am-dialog-max-inline);
       }
       .am-confirm .p-confirmdialog-message {
         margin: 0;
@@ -90,5 +90,5 @@ export class ConfirmHostComponent {
 
   // Width and its cap as the dialog's own style, so they apply whatever the
   // breakpoints PrimeNG writes for its dialogs.
-  protected readonly frame = { width: 'var(--am-dialog-confirm)', maxWidth: 'calc(100vw - 32px)' };
+  protected readonly frame = { width: 'var(--am-dialog-confirm)', maxWidth: 'var(--am-dialog-max-inline)' };
 }

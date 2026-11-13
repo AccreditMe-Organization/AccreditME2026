@@ -92,6 +92,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
           [min]="1"
           [max]="10"
           [showButtons]="true"
+          styleClass="max-w-full min-w-0"
+          inputStyleClass="min-w-0"
         />
       </am-field>
 

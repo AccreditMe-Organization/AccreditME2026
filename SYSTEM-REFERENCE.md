@@ -9264,6 +9264,19 @@ column, so the tab underline stopped 32px short of the header's right edge.
   the title's, and the strip spans the header's content box. Putting the old
   header back turns both red.
 
+**No dialog is wider than the screen (ACC-299).** The shell's style is
+`{ width, maxWidth: var(--am-dialog-max-inline) }`. The width is the size token
+or the caller's own (the Transfer wizard's 640px); the cap is
+`calc(100vw - 2 * var(--am-space-16))` in `design-tokens.scss`, the screen less
+a 16px gutter each side. Both are the dialog's own style, so they hold whatever
+breakpoints PrimeNG writes. The cap bites only below width + 32, so desktop is
+unchanged; at 390 every form dialog is 358 wide. The confirm host
+(`confirm-host.component.ts`) reads the same token: one rule, two users.
+`am-list-dialog` keeps its own rule (a full-screen sheet below 760px).
+`edit-dialog.phone-width.layout.spec.ts` holds the Transfer wizard and New task
+to 358 with nothing scrolling sideways, in both languages; removing the cap
+turns it red.
+
 ### 10.6 `WorkflowTransitionActionsComponent` — the Generic Reuse Pattern
 
 `frontend/src/app/foundation/workflow/components/workflow-transition-actions/`.
@@ -11243,8 +11256,8 @@ anywhere else (its mutation test: `check:confirm-through-helper:selftest`).
     buttons don't carry, and nothing calls it), and its dialog focuses the first
     footer button. So `ask()` moves focus once, the first time focus enters
     the confirm.
-- **Width:** `--am-dialog-confirm` (420px), capped at `calc(100vw - 32px)`, so
-  358 at 390. Before this, the width followed the message: 275–805px, and
+- **Width:** `--am-dialog-confirm` (420px), capped at `--am-dialog-max-inline`
+  (ACC-299, the screen less a 16px gutter each side), so 358 at 390. Before this, the width followed the message: 275–805px, and
   edge to edge on a phone.
 - **Every confirm is a LAYER** (`LayerStackService`) while open. So one Escape
   closes the confirm and never the dialog under it. Before this, only

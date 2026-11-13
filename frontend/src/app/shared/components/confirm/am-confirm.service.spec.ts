@@ -148,6 +148,8 @@ describe('AmConfirmService.ask() (ACC-120 slice 10)', () => {
       await ask();
       const frame = confirmEl()!;
       expect(frame.style.width).toContain('--am-dialog-confirm');
+      // ACC-299 — the same cap as every form dialog: one token, two users.
+      expect(frame.style.maxWidth).toBe('var(--am-dialog-max-inline)');
       // Measured, not read back: the token is 420px, and the cap leaves a 16px
       // gutter each side on a narrow screen.
       const token = getComputedStyle(document.documentElement).getPropertyValue('--am-dialog-confirm').trim();
