@@ -1,8 +1,11 @@
 # ACC-57, ACC-191, ACC-202: workflow stage checks
 
-One workflow PR. Branch `fix/workflow-stage-checks`, from `dev` at `9f35689`.
-Decisions are Ahmad's 13 Nov comments on each ticket. This plan was written
-before any code. Its open questions (§7) need answers before building.
+One workflow PR, with ACC-202 split across it and a follow-up PR. Branch
+`fix/workflow-stage-checks`, from `dev` at `9f35689`. Decisions are Ahmad's
+13 Nov comments on each ticket and his answers in §7.
+- §1 to §6 are the plan as written before any code.
+- §8 is what was built, including the ACC-202 split (Prompt 26), which
+  supersedes §1.3's deploy reasoning and §2.3's single PR.
 
 ---
 
@@ -144,6 +147,11 @@ scope.**
 
 ### 1.3 ACC-202: the outcome a stage is left with
 
+> **PR 1 of 2 (§8.3).** This PR adds the values and teaches every reader. The
+> writer change described below ships in PR 2, after PR 1 is live. The
+> deploy-skew reasoning at the end of this section was WRONG and is corrected in
+> §8.3.
+
 **Every writer of `WorkflowInstanceStage.outcome`:**
 
 | Path | Where | Today |
@@ -202,7 +210,7 @@ the shared database before the code that knows them):
 - **The migration runs in the pre-deploy step** while the old container
   serves. It only adds enum values. No row holds one until the NEW code writes
   it, and nothing is ever applied to the shared database by hand.
-- **Old backend, new values:** the only window is Railway's overlap, after the
+- **Old backend, new values — DISPROVED, see §8.3:** the only window is Railway's overlap, after the
   new container serves a move and before the old one stops. The old code reads
   outcomes only in `getStageHistory()` / `getInstance()`, as a string. **To be
   verified, not assumed:** before merging, read a `RETURNED` row on
@@ -279,7 +287,7 @@ a tick of Initial, clear it on the other stage, Q1) → `assertStartAndEnd`.
 - "the initial stage while others exist" becomes ACC-57's
   `STAGE_INITIAL_REQUIRED`, since that IS the rule.
 
-### 2.3 ACC-202
+### 2.3 ACC-202 (PR 1 of 2: everything below but "The outcome", which is PR 2)
 
 - **The migration** `acc202_stage_outcome_returned_exited`:
   `ALTER TYPE "WorkflowInstanceStageOutcome" ADD VALUE 'RETURNED'` and
@@ -493,3 +501,115 @@ mapping in this PR. If wanted, it is its own ticket (§1.2).
   rollback case).
 - Every on-screen refusal goes through `plainWorkflowRefusalKey()`.
 - Each new refusal and the outcome rule are mutation-checked.
+
+---
+
+## 8. As built
+
+### 8.1 ACC-57
+
+As designed in §2.1, with the Q1 move (`clearOtherStartingStages()`) and Q2.
+- **Q2's check covers two paths:** `setDefault` and `updateTemplate` with
+  `isDefault: true`. The second also makes a template the default, so it has to
+  be checked too.
+- **The template lock:**
+  - `addStage` and `removeStage` now always lock the template;
+  - `updateStage` locks it when Initial or Final changes, or an exactly-one
+    flag does;
+  - lock order everywhere: template, then stage.
+- **The seed pin:** `workflow.seed.spec.ts`, "start and end (ACC-57)", one case
+  per seeded workflow.
+
+### 8.2 ACC-191
+
+As designed in §2.2. `removeStage` checks, inside one transaction, in this
+order:
+1. the template lock, then the stage lock;
+2. transitions (`STAGE_HAS_TRANSITIONS`);
+3. records (`STAGE_IN_USE`);
+4. the delete, then the start/end check.
+
+So a used starting stage says it is in use before it says it is the starting
+one. Every count is scoped by organisation.
+
+### 8.3 ACC-202: split in two (Prompt 26, 13 Nov)
+
+**The rollback proof failed, and the split follows from it.**
+- **What was run:** `origin/dev`'s backend, unpacked into a scratch folder with
+  its own generated client, against `accreditme_wf` after the acc202 migration,
+  with one entry RETURNED and one EXITED.
+- **What happened:** `getStageHistory()` threw
+  `Value 'RETURNED' not found in enum 'WorkflowInstanceStageOutcome'`. Prisma
+  7's client rejects a value it was not generated with. It does not pass it
+  through as a string, as §1.3 assumed.
+- **What that means:** a deploy that adds the value AND writes it would 500
+  every sent-back record's stage history on a rollback, and briefly during the
+  overlap. ACC-173's rule (no new value before the deploy) does not cover a
+  rollback.
+
+**PR 1 (this PR):**
+- the migration, applied to `accreditme_wf` only;
+- `arrivedBy` and the chip, "Sent back" / «إعادة» and "Ended" / «إنهاء»;
+- the engine writes today's outcomes;
+- `stage-outcome-writes.scan.spec.ts` and `stage-history-arrived-by.db-spec.ts`
+  pin that nothing writes the new values.
+
+**PR 2 (after PR 1 is live; not started):**
+- `stageExitOutcome(kind)` wired into `performTransition()`;
+- the outcome argument removed from every caller, including the change
+  request service's four (withdraw and reject → EXITED, return → RETURNED);
+- `vote-on-advance.db-spec.ts`'s four REJECTED pins changed, and the scan spec
+  deleted;
+- `stage-history-arrived-by.db-spec.ts`'s second case (a real press "still
+  leaves an outcome the deployed client knows") turned round to require the
+  kind's outcome, and its `arrivedBy` to match;
+- the scratch rollback check repeated with PR 1's generated client.
+
+The PR 2 code exists already: it was written, then removed from this PR, and
+is kept as a git stash on top of PR 1's commits (see the handover in the PR).
+
+CLAUDE.md's Prisma rules gained the two-deploy rule for enum values.
+
+### 8.4 Files (PR 1)
+
+- **Backend:**
+  - `prisma/schema.prisma` (two enum values);
+  - the migration `20261113120000_acc202_stage_outcome_returned_exited`;
+  - `workflow-start-end.ts` (new);
+  - `workflow-template.service.ts`;
+  - `workflow-refusal.ts`;
+  - `workflow.service.ts` (`arrivedBy` only);
+  - the two interfaces.
+- **Backend specs:**
+  - `workflow-start-end.spec.ts`, `workflow-start-end.db-spec.ts`;
+  - `workflow-delete-in-use.db-spec.ts`;
+  - `stage-history-arrived-by.db-spec.ts`;
+  - `stage-outcome-writes.scan.spec.ts`;
+  - `workflow-template.service.spec.ts` (removal and `setDefault` cases);
+  - `workflow.seed.spec.ts`.
+- **Frontend:**
+  - `workflow-refusal.ts` (codes, `startEndRefusal()`, `inUseRefusal()`,
+    `removeRefusal()`);
+  - `workflow-labels.ts` (`arrivedBy`);
+  - the stage editor panel, the stages list, the action configurator, the
+    transition panel and editor;
+  - the stage indicator;
+  - the two services' DTOs;
+  - `en.json` and `ar.json`;
+  - `scripts/check-workflow-enum-display.mjs`.
+- **Frontend specs:**
+  - `workflow-stage-checks.screens.spec.ts` (new);
+  - `workflow-refusal.spec.ts`;
+  - `workflow-labels.spec.ts`;
+  - the transition panel's spec.
+- **Docs:**
+  - CLAUDE.md (the Prisma rule, and Key Architecture Decisions (ACC-57,
+    ACC-191, ACC-202));
+  - SYSTEM-REFERENCE.md §2.20, plus notes in §2.2, §2.14 and the ACC-284
+    section.
+
+### 8.5 No dialog changed
+
+The stage editor is a page panel, and the start/end refusals and the moved
+note are lines inside it, as `STAGE_TASK_ON_FINAL_STAGE`'s already was. No
+dialog's content changed, so no dialog layout spec was added.

@@ -1742,7 +1742,8 @@ WorkflowTriggerCondition    SPECIFIC_USER, ROLE_BASED, ANY_AUTHENTICATED, SYSTEM
 WorkflowActionType          CREATE_TASK, SEND_NOTIFICATION, GENERATE_PDF, LOCK_DOCUMENT,
                             LOG_AUDIT, WEBHOOK
 WorkflowApprovalDecision    PENDING, APPROVED, APPROVED_WITH_COMMENTS, RETURNED, ABSTAINED
-WorkflowInstanceStageOutcome PENDING, APPROVED, REJECTED, SKIPPED
+WorkflowInstanceStageOutcome PENDING, APPROVED, REJECTED, SKIPPED,
+                            RETURNED, EXITED (ACC-202; read since PR 1, written from PR 2 — §2.20)
 ```
 
 **Code comment worth preserving verbatim** (`workflow.service.ts`, the "NOTE on SEQUENTIAL/COMMITTEE" comment):
@@ -2528,6 +2529,12 @@ interesting part:
   consequence, accepted: a comment written when the last visit is
   exited (`cancelInstance()` exits the open stage with outcome
   `SKIPPED`) has no following row to appear on.
+
+**`arrivedBy` (ACC-202, §2.20)** — how the record arrived at this visit:
+`RETURNED` (sent back) or `EXITED` (its record ended), else null. Derived like
+`comment`, from the PREVIOUS visit's outcome, because an outcome is written on
+the row being left. The history line shows it as a chip, "Sent back" / «إعادة»
+or "Ended" / «إنهاء».
 
 Consumers: `WorkflowStageIndicatorComponent` (10.9). Delegation stamps
 on each visit are resolved by `DelegationLabelService` (3.8).
@@ -3647,6 +3654,8 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - **A vote cast before ACC-284** names no move, and counts for the stage's
     ADVANCE moves, as it did.
 - **The outcome stored on the entry:** ADVANCE → APPROVED; RETURN and EXIT → REJECTED.
+  To be superseded (ACC-202 PR 2): RETURN → RETURNED, EXIT → EXITED, on every path. PR 1
+  adds the values and the reader only (§2.20).
 - **The gate (ACC-190 J):** for an ADVANCE, only the DECIDING vote is checked against
   open mandatory tasks, before it is recorded.
 - **`submitApproval()`** (no frontend caller) finds its move by kind:
@@ -3707,6 +3716,151 @@ has and keeps no copy.
   a member outside the pool, a former member named directly, a `workflows:view`
   holder, a vote on an ALL stage, a change request, and another organisation's
   record); `workflow-parent-visibility.spec.ts`; the controller's route metadata.
+
+### 2.20 A template's start and end, removing what a record has used, and stage outcomes (ACC-57, ACC-191, ACC-202)
+
+Plan and Ahmad's answers (13 Nov, Q1–Q8): `backend/Plans/step-57-191-202-workflow-checks.md`.
+One PR; ACC-202's writer is a second PR after it (below).
+
+#### 2.20.1 Exactly one starting stage, never also final (ACC-57)
+
+- **Before ACC-57** a stage save could leave a template with no starting stage,
+  two, or one that was also final. `startInstance()` then threw "no initial
+  stage" at whoever created a record, not at the admin who configured it.
+- **One helper, `workflow-start-end.ts`.**
+  - `startEndViolations()` is pure. It finds NO_INITIAL, MULTIPLE_INITIAL and
+    INITIAL_AND_FINAL, and nothing for a template with no stages (one not yet
+    built).
+  - `startEndRefusal(before, after, subject)` refuses only a save that made the
+    template WORSE (ACC-120's root-role shape): a breach that was not there, or
+    more starting stages than before. So a template already in breach can be
+    renamed and mended.
+  - `assertStartAndEnd()` reads the template after the write, inside the save's
+    transaction.
+- **Who calls it**, each under the template's row lock (`lockTemplate()`,
+  ACC-255's), with the template read before the write:
+  - `addStage`: always (a new stage changes the shape; the first stage must be
+    the starting one);
+  - `updateStage`: only when `isInitial` or `isFinal` CHANGES (a rename takes no
+    lock and no check);
+  - `removeStage`: always (it replaced the old codeless "initial stage while
+    siblings exist" 409).
+- **Ticking Initial MOVES the starting stage (Q1).**
+  `clearOtherStartingStages()` clears it on the old stage in the same
+  transaction. Each cleared stage gets an UPDATE audit row (`isInitial` true →
+  false), beside the saved stage's own. The save answers
+  `startingStageMovedFrom: [{ id, nameEn, nameAr }]`, and the panel says
+  "{{stage}} is no longer the starting stage." Two saves ticking different
+  stages at once serialise on the lock and end with one starting stage (proved
+  ten times in `workflow-start-end.db-spec.ts`).
+- **Becoming the default needs a starting stage (Q2):** `setDefault`, and
+  `updateTemplate` with `isDefault: true`, call `assertHasStartingStage()`
+  (strict: an empty template is refused too). "Creating a template as default
+  leaves two defaults" is a separate ticket.
+- **The seed is pinned, not checked at run time:** `workflow.seed.spec.ts`
+  requires one starting stage, not final, in every seeded workflow. A protected
+  template cannot reach any of the three states (`isInitial` and `isFinal` are
+  not in `PROTECTED_STAGE_EDITABLE`, and adding or removing a stage is refused).
+- **Refusals**, each with `stageIds` and `stageNames` in the same order
+  (`STAGE_FLAG_EXACTLY_ONE`'s shape):
+
+  | Code | Status | Names |
+  |---|---|---|
+  | `STAGE_INITIAL_REQUIRED` | 409 | the stage the save was about (none for `setDefault`, or for a first stage added unticked: there the subject is the new stage) |
+  | `STAGE_INITIAL_NOT_UNIQUE` | 409 | every starting stage after the save |
+  | `STAGE_INITIAL_AND_FINAL` | 400 | the stage(s) newly both |
+
+- **On the shared database, 13 Nov:** 18 templates in 2 organisations, none in
+  breach.
+
+#### 2.20.2 Something a record has used is never deleted (ACC-191)
+
+Every foreign key into a stage, a transition or a transition action, and what
+it does to a delete:
+
+| Child | Column | On delete | Covered by |
+|---|---|---|---|
+| `WorkflowInstanceStage` | `stageId` | RESTRICT | `STAGE_IN_USE` |
+| `WorkflowTransition` | `fromStageId`, `toStageId` | RESTRICT | `STAGE_HAS_TRANSITIONS` |
+| `WorkflowStageRecordAction`, `WorkflowStageAssignee`, `WorkflowStageTaskDefinition` | `stageId` | CASCADE | goes with the stage |
+| `WorkflowInstance` | `currentStageId` | no FK | an open entry exists, so `STAGE_IN_USE` |
+| `Task` | `sourceStageId` | no FK | engine-set for an entered stage, so `STAGE_IN_USE` |
+| `WorkflowActionLog` | `workflowTransitionActionId` | RESTRICT | `TRANSITION_ACTION_IN_USE`; through the actions, `TRANSITION_IN_USE` |
+| `WorkflowTransitionAction` | `workflowTransitionId` | RESTRICT | deleted first by `removeTransition` |
+| `WorkflowApproval` | `transitionId` | SET NULL | harmless |
+
+- **Each check runs inside the delete's transaction, after `FOR UPDATE` on the
+  row:**
+  - `removeStage`: the template lock, then the stage row;
+  - `removeTransition`: the transition and its actions;
+  - `removeTransitionAction`: the action.
+- **Why the lock first:** a reference being written at that moment holds a
+  key-share lock on the parent, so the delete waits for it, counts it, and
+  refuses. Without the lock it would fail with Prisma's P2003, a 500.
+  `workflow-delete-in-use.db-spec.ts` proves each with an uncommitted writer.
+- **Refusals, all 409:**
+  - `STAGE_HAS_TRANSITIONS` `{ transitionCount }`;
+  - `STAGE_IN_USE` `{ recordCount }`: DISTINCT records, so one that came back
+    through the stage counts once;
+  - `TRANSITION_ACTION_IN_USE` `{ runCount }` and `TRANSITION_IN_USE`
+    `{ runCount }`: log rows (Q5).
+- **No blanket P2003 mapping in `HttpExceptionFilter` (Q6).** P2003 also means
+  a missing parent on a write, which is a defect, and an unexpected 500 is the
+  only signal while Sentry is not wired.
+- **On the shared database, 13 Nov:** 8 of 120 stages have entries, 9 of 244
+  actions have log rows, and 7 transitions have a logged action.
+
+#### 2.20.3 Stage outcomes by the move's kind, in two deploys (ACC-202)
+
+- **The decision (13 Nov):** a stage is left with the outcome of the move's
+  KIND (ADVANCE → APPROVED, RETURN → RETURNED, EXIT → EXITED), on every path.
+  Old rows are not backfilled.
+- **Two deploys, and why:** Prisma 7's client THROWS on an enum value it was
+  not generated with. Proved 13 Nov with dev's own code and client: its
+  `getStageHistory()` failed with "Value 'RETURNED' not found in enum
+  'WorkflowInstanceStageOutcome'". A deploy that adds a value AND writes it
+  would 500 every record's stage history on a rollback, and briefly during the
+  deploy overlap. CLAUDE.md's Prisma rules now say so.
+- **PR 1 (this one):**
+  - the additive migration `acc202_stage_outcome_returned_exited`;
+  - `arrivedBy` on stage history (§2.14) and its chip;
+  - nothing writes the new values. `stage-outcome-writes.scan.spec.ts` fails
+    on a literal, an enum member, PR 2's `stageExitOutcome`, or a writer type
+    that admits either value. `stage-history-arrived-by.db-spec.ts` presses each
+    kind on ANY_ONE and ALL and requires an outcome the old client knows.
+- **PR 2 (after PR 1 is live):**
+  - `stageExitOutcome(kind)` in `performTransition()`; the outcome argument is
+    removed from every caller (the person path, the vote path, `submitApproval`,
+    and the change request's `triggerSystemTransition` calls: withdraw and
+    reject become EXITED, return RETURNED);
+  - the scan spec is deleted;
+  - the rollback check is repeated with PR 1's client.
+- **Readers:** none switches on the outcome. It is typed `string` end to end,
+  and no screen read it before `arrivedBy`.
+- **On the shared database, 13 Nov:**
+  - 4 entries left by a RETURN are stored APPROVED (the bug);
+  - 1 RETURN is REJECTED;
+  - 2 EXITs are SKIPPED (change request withdrawals);
+  - 13 ADVANCEs are APPROVED.
+
+#### 2.20.4 On screen
+
+- **Every refusal is said from its code**, in both languages: `PLAIN_REFUSAL_KEYS`
+  has all seven, so a screen that only calls `plainWorkflowRefusalKey()` already
+  says something true.
+- **The stage editor panel** says the start/end refusals under their box
+  (`startEndRefusal()`), naming the stage in the reader's language, and focuses
+  it: under Final for `STAGE_INITIAL_AND_FINAL`, under Initial otherwise.
+- **A Remove** (the stages list, the action configurator, the transition panel
+  and editor) says the counted sentence through `removeRefusal()`: the plural
+  object (`plural.workflow.stageInUse` / `actionInUse` / `transitionInUse`,
+  every Arabic category) when a count came back, else the plain key.
+- **Stage history's chip** goes through `workflowLabelKey('arrivedBy', …)`;
+  `check:workflow-enum-display` fails a raw `arrivedBy`.
+- **Specs:**
+  - `workflow-stage-checks.screens.spec.ts` (every screen, both languages);
+  - `workflow-refusal.spec.ts`;
+  - the transition panel's spec.
 
 ## 3. Task System
 
