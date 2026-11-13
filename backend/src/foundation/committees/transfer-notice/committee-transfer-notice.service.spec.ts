@@ -302,11 +302,49 @@ describe('CommitteeTransferNoticeService.run (ACC-297), in-process', () => {
   it("each reader's notice is stored in both languages, and the reader sees their own", async () => {
     const { service, row } = build(baseWorld());
     await service.run(JOB);
+    // The chair of both committees: the title is the whole notice, in each language,
+    // because the bell shows only the title. The body is the same text.
     const r = row('chair');
-    expect(r.titleEn).toBe('Sara Al-Mutairi was transferred to Pharmacy');
-    expect(r.titleAr).toBe('تم نقل Sara Al-Mutairi إلى «الصيدلية»');
-    expect(r.bodyAr).toContain('«مجلس الجودة»: ما زالت العضوية بصفة «عضو» قائمة.');
-    expect(r.bodyAr).toContain('تتيح صلاحية «إزالة أعضاء من اللجنة» إزالة المقعد.');
+    expect(r.titleEn).toBe(
+      'Sara Al-Mutairi was transferred to Pharmacy. Quality Council: still holds Member. ' +
+        'Safety Committee: was removed from Secretary as part of the transfer to Pharmacy. ' +
+        'Anyone with "Remove members from a committee" can remove a seat.',
+    );
+    expect(r.titleAr).toBe(
+      'تم نقل Sara Al-Mutairi إلى «الصيدلية». «مجلس الجودة»: ما زالت العضوية بصفة «عضو» قائمة. ' +
+        '«لجنة السلامة»: أُنهيت العضوية بصفة «أمين السر» ضمن النقل إلى «الصيدلية». ' +
+        'تتيح صلاحية «إزالة أعضاء من اللجنة» إزالة المقعد.',
+    );
+    expect([r.bodyEn, r.bodyAr]).toEqual([r.titleEn, r.titleAr]);
+  });
+
+  it('one committee: the title is the full sentence, and a reader who may not open it reads "a committee" in it', async () => {
+    const world = baseWorld();
+    world.left = [];
+    const { service, row } = build(world);
+    await service.run(JOB);
+    // The chair holds committees:view: named.
+    expect(row('chair').titleEn).toBe(
+      'Sara Al-Mutairi was transferred to Pharmacy. Quality Council: still holds Member. Anyone with "Remove members from a committee" can remove a seat.',
+    );
+    // In this world the secretary is neither a viewer nor listed as a member: "A committee".
+    expect(row('secretary').titleEn).toBe(
+      'Sara Al-Mutairi was transferred to Pharmacy. A committee: still holds Member. Anyone with "Remove members from a committee" can remove a seat.',
+    );
+    // Quality's head, a member of it here too: named; the cover of Safety is no longer told (no Safety line).
+    expect(row('head-quality').titleAr).toBe(
+      'تم نقل Sara Al-Mutairi إلى «الصيدلية». «مجلس الجودة»: ما زالت العضوية بصفة «عضو» قائمة. تتيح صلاحية «إزالة أعضاء من اللجنة» إزالة المقعد.',
+    );
+  });
+
+  it('the title keeps the may-open rule: "a committee" for a reader who may not open it, in both languages', async () => {
+    const { service, row } = build(baseWorld());
+    await service.run(JOB);
+    const r = row('cover-safety');
+    expect(r.titleEn).toContain('A committee: was removed from Secretary');
+    expect(r.titleEn).not.toContain('Safety Committee');
+    expect(r.titleAr).toContain('لجنة: أُنهيت العضوية بصفة «أمين السر»');
+    expect(r.titleAr).not.toContain('لجنة السلامة');
   });
 
   describe("a committee's name and link: only for a reader who may open it", () => {

@@ -72,26 +72,28 @@ function lineAr(line: TransferNoticeLine, unitAr: string): string {
   }
 }
 
-/** The notice in both languages. Call only with at least one line: no lines, no notice. */
+/**
+ * The notice in both languages. Call only with at least one line: no lines, no notice.
+ *
+ * The title IS the full text, and the body is the same text, as the closed-task
+ * notices store theirs (TaskClosedNoticeService): the bell shows only a notice's
+ * title, so a short title would leave out every committee line (found in ACC-297's
+ * live check, 13 Nov). The bell wraps a long title; it never cuts it.
+ */
 export function transferNoticeText(f: TransferNoticeFacts): TransferNoticeText {
   const unitEn = f.newUnit ? f.newUnit.nameEn : 'another unit';
   const unitAr = f.newUnit ? `«${ar(f.newUnit)}»` : 'وحدة أخرى';
-  const titleEn = `${f.personName} was transferred to ${unitEn}`;
-  const titleAr = `تم نقل ${f.personName} إلى ${unitAr}`;
-  return {
-    titleEn,
-    titleAr,
-    bodyEn: [
-      `${titleEn}.`,
-      ...f.lines.map((l) => lineEn(l, unitEn)),
-      `Anyone with "${REMOVE_PERMISSION.en}" can remove a seat.`,
-    ].join(' '),
-    bodyAr: [
-      `${titleAr}.`,
-      ...f.lines.map((l) => lineAr(l, unitAr)),
-      `تتيح صلاحية «${REMOVE_PERMISSION.ar}» إزالة المقعد.`,
-    ].join(' '),
-  };
+  const en = [
+    `${f.personName} was transferred to ${unitEn}.`,
+    ...f.lines.map((l) => lineEn(l, unitEn)),
+    `Anyone with "${REMOVE_PERMISSION.en}" can remove a seat.`,
+  ].join(' ');
+  const arText = [
+    `تم نقل ${f.personName} إلى ${unitAr}.`,
+    ...f.lines.map((l) => lineAr(l, unitAr)),
+    `تتيح صلاحية «${REMOVE_PERMISSION.ar}» إزالة المقعد.`,
+  ].join(' ');
+  return { titleEn: en, titleAr: arText, bodyEn: en, bodyAr: arText };
 }
 
 /** What a committee contributes: who is told about it, before anyone is left out. */

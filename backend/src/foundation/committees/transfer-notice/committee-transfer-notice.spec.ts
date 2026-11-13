@@ -11,16 +11,40 @@ const text = (lines: TransferNoticeLine[], newUnit: { nameEn: string; nameAr: st
   transferNoticeText({ personName: 'Sara Al-Mutairi', newUnit, lines });
 
 describe('transferNoticeText (ACC-297)', () => {
-  it('still holds: English and Arabic', () => {
+  // The bell shows only a notice's title, so the title IS the full sentence, and
+  // the body is the same text: the closed-task notices' precedent (live check, 13 Nov).
+  it('one committee: the title is the full sentence, in English and Arabic, and the body is the same', () => {
     const t = text([{ kind: 'HOLDS', committee: QUALITY, seat: MEMBER }]);
-    expect(t.titleEn).toBe('Sara Al-Mutairi was transferred to Pharmacy');
-    expect(t.bodyEn).toBe(
+    expect(t.titleEn).toBe(
       'Sara Al-Mutairi was transferred to Pharmacy. Quality Council: still holds Member. Anyone with "Remove members from a committee" can remove a seat.',
     );
-    expect(t.titleAr).toBe('تم نقل Sara Al-Mutairi إلى «الصيدلية»');
-    expect(t.bodyAr).toBe(
+    expect(t.titleAr).toBe(
       'تم نقل Sara Al-Mutairi إلى «الصيدلية». «مجلس الجودة»: ما زالت العضوية بصفة «عضو» قائمة. تتيح صلاحية «إزالة أعضاء من اللجنة» إزالة المقعد.',
     );
+    expect(t.bodyEn).toBe(t.titleEn);
+    expect(t.bodyAr).toBe(t.titleAr);
+  });
+
+  it('several committees: the title is the full sentence with every line, in English and Arabic, and the body is the same', () => {
+    const t = text([
+      { kind: 'HOLDS', committee: QUALITY, seat: MEMBER },
+      { kind: 'REMOVED_IN_TRANSFER', committee: { nameEn: 'Safety Committee', nameAr: 'لجنة السلامة' }, seat: SECRETARY },
+      { kind: 'REMOVED_WITH_REASON', committee: null, seat: MEMBER, reason: 'Left for the night roster' },
+    ]);
+    expect(t.titleEn).toBe(
+      'Sara Al-Mutairi was transferred to Pharmacy. Quality Council: still holds Member. ' +
+        'Safety Committee: was removed from Secretary as part of the transfer to Pharmacy. ' +
+        'A committee: was removed from Member. Reason given: "Left for the night roster". ' +
+        'Anyone with "Remove members from a committee" can remove a seat.',
+    );
+    expect(t.titleAr).toBe(
+      'تم نقل Sara Al-Mutairi إلى «الصيدلية». «مجلس الجودة»: ما زالت العضوية بصفة «عضو» قائمة. ' +
+        '«لجنة السلامة»: أُنهيت العضوية بصفة «أمين السر» ضمن النقل إلى «الصيدلية». ' +
+        'لجنة: أُنهيت العضوية بصفة «عضو». السبب المذكور: «Left for the night roster». ' +
+        'تتيح صلاحية «إزالة أعضاء من اللجنة» إزالة المقعد.',
+    );
+    expect(t.bodyEn).toBe(t.titleEn);
+    expect(t.bodyAr).toBe(t.titleAr);
   });
 
   it('removed as part of the transfer: worded in each language, never the stored reason', () => {
@@ -61,8 +85,8 @@ describe('transferNoticeText (ACC-297)', () => {
 
   it('a person with no unit now: "another unit"', () => {
     const t = text([{ kind: 'HOLDS', committee: QUALITY, seat: MEMBER }], null);
-    expect(t.titleEn).toBe('Sara Al-Mutairi was transferred to another unit');
-    expect(t.titleAr).toBe('تم نقل Sara Al-Mutairi إلى وحدة أخرى');
+    expect(t.titleEn.startsWith('Sara Al-Mutairi was transferred to another unit. ')).toBe(true);
+    expect(t.titleAr.startsWith('تم نقل Sara Al-Mutairi إلى وحدة أخرى. ')).toBe(true);
   });
 
   it('Arabic has no verb whose subject is the person, and no organisation word', () => {
