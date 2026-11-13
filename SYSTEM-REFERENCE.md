@@ -11553,7 +11553,7 @@ work, after Tasks, with no permission, because both reads are self-scoped.
 
 What the browser loads before the first screen. `ng build` reports it as
 **Initial total**: 929.89 kB raw / 225.47 kB transfer on dev `9f35689`, and
-**790.91 kB / 201.39 kB** after ACC-90. Measured with `ng build --stats-json`;
+**791.05 kB / 201.51 kB** after ACC-90. Measured with `ng build --stats-json`;
 by package, it is now `@angular/core` 164 kB, `primeng` 81, `@angular/cdk` 78,
 `@angular/router` 73, `@primeuix/themes` 55, `src/styles` 53, `zone.js` 35,
 `@angular/common` 30 and `@primeuix/styles` 28. The budgets in `angular.json`
@@ -11590,7 +11590,11 @@ PrimeNG overlays into every page's start-up:
   `ConfirmHostGate.whenReady()`, which shows it once the host reports in
   (`afterNextRender`), focus handling included. The gate is ready by default;
   only the shell, which defers the host, calls `expectHost()` at construction,
-  so a spec or screen rendered without the shell is served at once.
+  so a spec or screen rendered without the shell is served at once. A confirm
+  still waiting when the shell goes (sign-out) is dropped, never shown by the
+  next shell: the shell calls `hostGone()` on destroy (its host may never have
+  loaded), which releases each waiting confirm's layer and returns focus without
+  running accept or reject, and resets the gate.
 - **The idle warning** loads on idle, or at once when it is due:
   `@defer (on idle; when idleService.warningVisible())`. The shell still starts
   `IdleService`; only the drawing waits.
