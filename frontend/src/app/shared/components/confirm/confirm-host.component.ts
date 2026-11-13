@@ -1,7 +1,8 @@
-import { Component, ViewEncapsulation } from '@angular/core';
+import { Component, DestroyRef, ViewEncapsulation, afterNextRender, inject } from '@angular/core';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ConfirmDialogCloseLabel } from '../../directives/confirm-dialog-close-label.directive';
 import { AmConfirmation, CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from './am-confirm.service';
+import { ConfirmHostGate } from './confirm-host-gate';
 
 /**
  * ACC-120 slice 10 — the app's ONE confirmation dialog, rendered once by the
@@ -84,6 +85,18 @@ import { AmConfirmation, CONFIRM_DESTRUCTIVE_CLASS, CONFIRM_REJECT_CLASS } from 
   ],
 })
 export class ConfirmHostComponent {
+  // ACC-90 — the shell loads this host after start-up (@defer). p-confirmDialog
+  // subscribes to ConfirmationService in its constructor, so once this view has
+  // rendered it is listening: tell the gate, which shows any confirm asked for
+  // while the host was loading. After render, outside change detection, so the
+  // confirm it shows starts a fresh check rather than changing this one.
+  private readonly gate = inject(ConfirmHostGate);
+
+  constructor() {
+    afterNextRender(() => this.gate.hostReady());
+    inject(DestroyRef).onDestroy(() => this.gate.hostGone());
+  }
+
   protected detailsOf(c: AmConfirmation | null | undefined): readonly string[] | null {
     return c?.amDetails?.length ? c.amDetails : null;
   }

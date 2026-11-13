@@ -1,22 +1,26 @@
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
-import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
+import { Component, DestroyRef, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { FormatService } from '../../../../core/formatting';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, of, startWith, switchMap } from 'rxjs';
-import { TranslatePipe } from '@ngx-translate/core';
-import { RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { BadgeModule } from 'primeng/badge';
-import { PopoverModule, Popover } from 'primeng/popover';
 import { NotificationService, NotificationDto } from '../../services/notification.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NotificationBellPanelComponent } from './notification-bell-panel.component';
+import { isNotificationRecordLink, notificationLink } from './notification-links';
 
 const POLL_INTERVAL_MS = 30000;
+
+/** What the bell calls on its panel. */
+interface PanelHandle {
+  toggle(event: Event): void;
+  show(event: Event | null, target?: HTMLElement): void;
+}
 
 @Component({
   selector: 'app-notification-bell',
   standalone: true,
-  imports: [AmDateTimePipe, TranslatePipe, ButtonModule, BadgeModule, PopoverModule, RouterLink, NgTemplateOutlet],
+  imports: [ButtonModule, BadgeModule, NotificationBellPanelComponent],
   template: `
     <div class="relative inline-flex">
       <!-- ACC-264 — the bell's name says how many are unread: the badge is drawn, not read. -->
@@ -25,7 +29,7 @@ const POLL_INTERVAL_MS = 30000;
         [text]="true"
         [rounded]="true"
         [ariaLabel]="bellLabel()"
-        (onClick)="onToggle($event, panel)"
+        (onClick)="onToggle($event)"
         data-testid="notification-bell"
       />
       @if (unreadCount() > 0) {
@@ -37,80 +41,23 @@ const POLL_INTERVAL_MS = 30000;
       }
     </div>
 
-    <p-popover #panel>
-      <div class="flex flex-col gap-2 w-80">
-        <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold">{{ 'notification.title' | translate }}</h3>
-          @if (unreadCount() > 0) {
-            <p-button
-              [label]="'notification.markAllRead' | translate"
-              [text]="true"
-              size="small"
-              (onClick)="onMarkAllRead()"
-            />
-          }
-        </div>
-
-        @if (loading()) {
-          <p class="text-sm text-surface-400">{{ 'common.loading' | translate }}</p>
-        } @else if (error()) {
-          <p class="text-sm text-red-500">{{ error() | translate }}</p>
-        } @else if (recent().length === 0) {
-          <p class="text-sm text-surface-400 py-4 text-center">
-            {{ 'notification.noNotifications' | translate }}
-          </p>
-        } @else {
-          <div class="flex flex-col gap-1 max-h-96 overflow-y-auto">
-            @for (item of recent(); track item.id) {
-              <!-- ACC-228 — a task's notification opens the task's own page.
-                   A real link, so it is reachable by keyboard and opens in a
-                   new tab like any link; it still marks the item read. -->
-              @if (itemLink(item); as link) {
-                <a
-                  class="am-bell-item flex flex-col gap-0.5 p-2 rounded hover:bg-surface-50"
-                  [class.font-semibold]="item.status === 'UNREAD'"
-                  [routerLink]="link"
-                  (click)="onItemClick(item); panel.hide()"
-                >
-                  <ng-container *ngTemplateOutlet="itemText; context: { $implicit: item }" />
-                </a>
-              } @else {
-                <div
-                  class="flex flex-col gap-0.5 p-2 rounded cursor-pointer hover:bg-surface-50"
-                  [class.font-semibold]="item.status === 'UNREAD'"
-                  (click)="onItemClick(item)"
-                >
-                  <ng-container *ngTemplateOutlet="itemText; context: { $implicit: item }" />
-                </div>
-              }
-            }
-            <ng-template #itemText let-item>
-              <span class="text-sm">
-                {{ isArabic() && item.titleAr ? item.titleAr : item.titleEn }}
-              </span>
-              <!-- ACC-271 PR 4 — a closed-task notice opens the record it is about. -->
-              @if (isRecordLink(item)) {
-                <span class="text-xs text-primary">{{ 'notification.openRecord' | translate }}</span>
-              }
-              <span class="text-xs text-surface-400">{{ item.createdAt | amDateTime }}</span>
-            </ng-template>
-          </div>
-        }
-      </div>
-    </p-popover>
+    <!-- ACC-90 — the panel loads on the first press, not at start-up: the
+         bell and its count are eager; the panel (p-popover and the list) is
+         its own component in its own chunk. The press that loads it opens it
+         (onToggle / the effect below). -->
+    @defer (when panelWanted()) {
+      <app-notification-bell-panel
+        #panel
+        [recent]="recent()"
+        [loading]="loading()"
+        [error]="error()"
+        [unreadCount]="unreadCount()"
+        [arabic]="isArabic()"
+        (markAllRead)="onMarkAllRead()"
+        (itemClick)="onItemClick($event)"
+      />
+    }
   `,
-  styles: [
-    `
-      .am-bell-item {
-        color: inherit;
-        text-decoration: none;
-      }
-      .am-bell-item:focus-visible {
-        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
-        outline-offset: -2px;
-      }
-    `,
-  ],
 })
 export class NotificationBellComponent implements OnInit {
   private readonly notificationService = inject(NotificationService);
@@ -124,6 +71,25 @@ export class NotificationBellComponent implements OnInit {
   readonly recent = signal<NotificationDto[]>([]);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+
+  /** ACC-90 — set by the first press; the panel's @defer loads on it. */
+  readonly panelWanted = signal(false);
+  // By template name, and typed by what is called on it: @defer can lazy-load
+  // the panel only if this file names it nowhere but `imports` and the block.
+  private readonly panel = viewChild<PanelHandle>('panel');
+  /** The bell button the first press came from, until the panel has loaded. */
+  private pendingAnchor: HTMLElement | null = null;
+
+  constructor() {
+    // The press that loaded the panel opens it, anchored to the bell.
+    effect(() => {
+      const panel = this.panel();
+      if (!panel || !this.pendingAnchor) return;
+      const anchor = this.pendingAnchor;
+      this.pendingAnchor = null;
+      panel.show(null, anchor);
+    });
+  }
 
   ngOnInit(): void {
     interval(POLL_INTERVAL_MS)
@@ -155,8 +121,15 @@ export class NotificationBellComponent implements OnInit {
     return this.languageService.isArabic();
   }
 
-  onToggle(event: Event, panel: Popover): void {
-    panel.toggle(event);
+  onToggle(event: Event): void {
+    const panel = this.panel();
+    if (panel) {
+      panel.toggle(event);
+    } else {
+      // First press: load the panel, then open it from the same button.
+      this.pendingAnchor = ((event.currentTarget ?? event.target) as HTMLElement | null) ?? null;
+      this.panelWanted.set(true);
+    }
     this.loadRecent();
   }
 
@@ -166,14 +139,11 @@ export class NotificationBellComponent implements OnInit {
    * may open it (the server leaves it out for anyone else): a committee.
    */
   itemLink(item: NotificationDto): string[] | null {
-    if (!item.objectId) return null;
-    if (item.objectType === 'Task') return ['/tasks', item.objectId];
-    if (item.objectType === 'COMMITTEE') return ['/committees', item.objectId];
-    return null;
+    return notificationLink(item);
   }
 
   isRecordLink(item: NotificationDto): boolean {
-    return item.objectType === 'COMMITTEE' && !!item.objectId;
+    return isNotificationRecordLink(item);
   }
 
   onItemClick(item: NotificationDto): void {
