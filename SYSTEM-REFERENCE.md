@@ -4539,25 +4539,62 @@ step for every other tenant in the same cycle. Same failure shape as
 ACC-48, one scope narrower. Not attempted by ACC-49 (whose scope was
 explicitly the step level) and not currently tracked by its own ticket.
 
-### 3.5 Out-of-Office Routing — A Real Limitation
+### 3.5 Out-of-office routing for new tasks (ACC-302)
 
-**`TaskService.create()` does not apply out-of-office substitution at
-all.** Confirmed by reading the full method: `filterActiveUsers()`
-filters strictly on `User.status === 'ACTIVE'` (excludes
-suspended/invited users) and never references `outOfOfficeFrom`,
-`outOfOfficeTo`, or `actingUserId`. Out-of-office routing (Absence
-Management Pattern 1) is implemented exactly once in the codebase —
-`WorkflowService.applyOutOfOfficeRouting()` (Section 2.5.1) — which
-runs **before** `WorkflowService.executeCreateTask()` calls
-`TaskService.create()`, substituting acting users into the assignee
-list upstream. **Net effect**: a task created via the workflow engine's
-`CREATE_TASK` action gets correct out-of-office substitution. A task
-created directly through `POST /tasks` (any user holding `tasks:create`,
-manually) does **not** — if it's assigned to a user currently
-out-of-office, no substitution happens, and no coverage-gap
-notification fires either (that notification path,
-`notifyTenantAdminsOfCoverageGap()`, also lives only inside
-`WorkflowService`, not `TaskService`).
+**Rewritten (ACC-302, 14 Nov).** This section described
+`WorkflowService.applyOutOfOfficeRouting()` running before CREATE_TASK, and
+manual tasks getting no routing. Both are gone: ACC-190 retired CREATE_TASK, and
+the engine's old routing went with it. What is true now:
+
+- **One rule, one file: `common/services/out-of-office-cover.ts`.**
+  - `isOutOfOffice()` is the window test: both dates set, now inside them,
+    inclusive. It is the one copy, used by `StagePoolService`,
+    `TaskAuthorityService` (ACC-173) and the workload hint (ACC-199).
+  - `activeCoverOf()` is the cover test: away, `actingUserId` set, and that user
+    ACTIVE in the same organisation.
+  - `coversOf()` / `routeToCovers()` are the TASK rule. One read for any number
+    of people, scoped by organisation.
+- **The task rule (Ahmad, 13–14 Nov).** A NEW task for an ACTIVE person who is
+  away with an active cover goes to the cover.
+  - It applies only to a placement's direct people: a chosen person (unit →
+    position → person, or a committee's chosen member) and a one-holder
+    position's holder.
+  - **One hop:** a cover who is away too means the task stays with the person.
+  - **Never:**
+    - pools (a position or seat with several people), which still leave covers
+      out (6 Oct);
+    - the named-people path or `prepareRecordTask()`;
+    - a task already held. Nothing moves when someone goes away or returns
+      (ACC-132).
+- **Who calls it, batched:**
+  - `TaskAssignmentService.resolvePlacement()`, so New task and Reassign agree;
+  - `StageTaskDefinitionService.prepareEntryTasks()`, ONE read for every
+    definition of a stage entry.
+- **What is recorded:**
+  - the cover's `TaskAssignee` row carries `delegationReason =
+    OUT_OF_OFFICE_COVERAGE` and `delegationContextId` = the away person;
+  - the CREATE (or DELEGATE) audit row's `metadata.outOfOfficeCover` lists
+    `[{ forUserId, coverUserId }]`, by id;
+  - the cover's notice says "(covering for {name})", and the away person is told
+    nothing;
+  - "covering for" on screen follows ACC-101's qualifier rule, unchanged
+    (`DelegationLabelService`).
+- **The creator is told before Create task.** The picker's person rows
+  (`GET /tasks/assignees`, `GET /tasks/assignees/committee`) carry
+  `cover: { userId, name } | null`: who a new task for that person goes to now.
+  - It is filled for every caller the picker serves, in one read for the list.
+  - It never carries dates or a reason.
+- **"✦ Suggest someone"** is never offered or answered for a covered person:
+  their row's `canSuggest` is false, and `POST /tasks/assignment/workload-hint`
+  refuses them with `WORKLOAD_NO_SUGGESTION` before any call or charge.
+- **Stage pools are unchanged** (ACC-271, Q7): they still include an away
+  member's cover, with no one-hop check.
+- **Specs:**
+  - `out-of-office-cover.spec.ts`;
+  - `workload-cover.spec.ts`;
+  - `task-cover-routing.db-spec.ts` (real Postgres). Five mutations turn it red:
+    the one-hop check, the ACTIVE check, the stage path's call,
+    `resolvePlacement()`'s call, and the picker's `cover`.
 
 ### 3.6 Permission Model
 

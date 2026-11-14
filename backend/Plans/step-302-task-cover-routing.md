@@ -286,6 +286,8 @@ merge waits for lane A's #293.
 
 - [x] Plan: counts, the three window copies, both placement paths, notices, picker, hint (14 Nov)
 - [x] Ahmad's answers to §9 (14 Nov, §9.1)
-- [ ] PR 1 (backend)
+- [x] PR 1 (backend) built (14 Nov): the shared rule, both paths, Reassign, the picker's `cover`, the
+  suggest-someone refusal, stamps, audit and notice; five mutations checked. Handoff for lane A:
+  `step-302-handoff-lane-a.md`
 - [ ] PR 2 (screens)
 - [ ] Live proof
