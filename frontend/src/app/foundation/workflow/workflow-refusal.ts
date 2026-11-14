@@ -30,6 +30,9 @@ export type WorkflowRefusalCode =
   | 'VALIDATOR_RETIRED'
   // ACC-238 — a committee leaves Formation only with a quorum of at least 1.
   | 'COMMITTEE_QUORUM_NOT_SET'
+  // ACC-286 — a committee goes live only with its quorum of members and every required seat filled.
+  | 'COMMITTEE_MEMBERS_BELOW_QUORUM'
+  | 'COMMITTEE_REQUIRED_SEATS_EMPTY'
   // ACC-239 — the committee change request workflow's shape is fixed.
   | 'WORKFLOW_TEMPLATE_PROTECTED'
   // ACC-255 — stage rules: what a stage allows, and what a stage save may name.
@@ -146,6 +149,10 @@ const PLAIN_REFUSAL_KEYS: Partial<Record<WorkflowRefusalCode, string>> = {
   ACTION_TYPE_RETIRED: 'workflow.refusal.actionTypeRetired',
   VALIDATOR_RETIRED: 'workflow.refusal.validatorRetired',
   COMMITTEE_QUORUM_NOT_SET: 'workflow.refusal.committeeQuorumNotSet',
+  // ACC-286 — the plain forms; the record page says the numbers and the seats
+  // (membersBelowQuorum(), requiredSeatsEmpty()).
+  COMMITTEE_MEMBERS_BELOW_QUORUM: 'workflow.refusal.membersBelowQuorum',
+  COMMITTEE_REQUIRED_SEATS_EMPTY: 'workflow.refusal.requiredSeatsEmptyPlain',
   WORKFLOW_TEMPLATE_PROTECTED: 'workflow.refusal.templateProtected',
   // A committee screen names the stage (committee-stage-refusal.ts); a workflow
   // screen has no stage to name, so it says the plain sentence.
@@ -316,6 +323,26 @@ export function flagExactlyOne(
       : [];
   });
   return { flag: body['flag'], stages };
+}
+
+// ── ACC-286: a committee going live ──────────────────────────────────────────
+
+/** Fewer members (ACTIVE users) than the quorum: both numbers, or null for any other refusal. */
+export function membersBelowQuorum(err: unknown): { quorum: number; members: number } | null {
+  const body = bodyIf(err, 'COMMITTEE_MEMBERS_BELOW_QUORUM');
+  if (!body || !isNumber(body['quorum']) || !isNumber(body['members'])) return null;
+  return { quorum: body['quorum'], members: body['members'] };
+}
+
+/** The required seats nobody fills, in seat order, as the server named them; null for any other refusal. */
+export function requiredSeatsEmpty(err: unknown): { id: string; labelEn: string; labelAr: string | null }[] | null {
+  const seats = bodyIf(err, 'COMMITTEE_REQUIRED_SEATS_EMPTY')?.['seats'];
+  if (!Array.isArray(seats)) return null;
+  return (seats as { id?: unknown; labelEn?: unknown; labelAr?: unknown }[]).flatMap((s) =>
+    typeof s.id === 'string' && typeof s.labelEn === 'string'
+      ? [{ id: s.id, labelEn: s.labelEn, labelAr: typeof s.labelAr === 'string' ? s.labelAr : null }]
+      : [],
+  );
 }
 
 // ── ACC-57: a template's starting and final stages ──────────────────────────

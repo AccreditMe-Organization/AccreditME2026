@@ -7,7 +7,12 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { CommitteeStageRefusal, committeeStageRefusal } from '../../committee-stage-refusal';
+import {
+  CommitteeSeatRefusal,
+  CommitteeStageRefusal,
+  committeeSeatRefusal,
+  committeeStageRefusal,
+} from '../../committee-stage-refusal';
 import { CommitteeService } from '../../services/committee.service';
 
 /** The longest reason the server accepts (RemoveCommitteeMemberDto). */
@@ -65,7 +70,11 @@ export interface RemoveMemberTarget {
             rows="3"
           ></textarea>
         </am-field>
-        @if (stageRefusal(); as r) {
+        @if (seatRefusal(); as s) {
+          <p class="text-meta text-[var(--am-danger-ink)] m-0" role="alert" data-testid="committee-seat-refusal">
+            {{ 'committee.refusal.requiredSeatLastHolder' | translate: { seat: seatName(s) } }}
+          </p>
+        } @else if (stageRefusal(); as r) {
           <p class="text-meta text-[var(--am-danger-ink)] m-0" role="alert" data-testid="committee-stage-refusal">
             {{ r.key | translate: { stage: stageName(r) } }}
           </p>
@@ -122,6 +131,8 @@ export class CommitteeRemoveMemberDialogComponent {
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly stageRefusal = signal<CommitteeStageRefusal | null>(null);
+  /** ACC-286 — removing the last holder of a required seat of a committee in force. */
+  readonly seatRefusal = signal<CommitteeSeatRefusal | null>(null);
   readonly showErrors = signal(false);
 
   // The textarea sits in a template the shell renders inside <body>, outside this
@@ -140,6 +151,7 @@ export class CommitteeRemoveMemberDialogComponent {
         this.form.reset({ reason: '' });
         this.error.set(null);
         this.stageRefusal.set(null);
+        this.seatRefusal.set(null);
         this.showErrors.set(false);
       }
     });
@@ -147,6 +159,11 @@ export class CommitteeRemoveMemberDialogComponent {
 
   stageName(refusal: CommitteeStageRefusal): string {
     return this.languageService.bilingual(refusal.stageNameEn ?? refusal.stageNameAr ?? '', refusal.stageNameAr);
+  }
+
+  /** The seat's own name, in the reader's language (tenant data, ACC-160). */
+  seatName(refusal: CommitteeSeatRefusal): string {
+    return this.languageService.bilingual(refusal.seatEn, refusal.seatAr);
   }
 
   submit(): void {
@@ -160,6 +177,7 @@ export class CommitteeRemoveMemberDialogComponent {
     this.saving.set(true);
     this.error.set(null);
     this.stageRefusal.set(null);
+    this.seatRefusal.set(null);
     const reason = this.form.getRawValue().reason!.trim();
     this.committeeService.removeMember(this.committeeId(), target.memberId, { reason }).subscribe({
       next: () => {
@@ -171,8 +189,10 @@ export class CommitteeRemoveMemberDialogComponent {
       error: (err: unknown) => {
         this.saving.set(false);
         // ACC-255 — refused by the committee's stage: said, with its name.
+        // ACC-286 — refused because it would empty a required seat: said, with the seat.
+        this.seatRefusal.set(committeeSeatRefusal(err));
         this.stageRefusal.set(committeeStageRefusal(err));
-        if (!this.stageRefusal()) this.error.set(extractErrorMessage(err, 'committee.errorAction'));
+        if (!this.stageRefusal() && !this.seatRefusal()) this.error.set(extractErrorMessage(err, 'committee.errorAction'));
       },
     });
   }
