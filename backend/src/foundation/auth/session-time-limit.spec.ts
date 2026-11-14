@@ -6,6 +6,7 @@ import { NotificationService } from '../notification/notification.service';
 import { LoginAttemptService } from './login-attempt.service';
 import { UserService } from '../user/user.service';
 import { PasswordResetService } from './password-reset/password-reset.service';
+import type { SecurityNoticeService } from '../notification/security-notice';
 import { verifyJwt } from '../../common/guards/tenant.guard';
 import { useFixedClock } from '../../common/testing/fixed-clock';
 
@@ -116,6 +117,7 @@ describe('the 12-hour session limit (ACC-126)', () => {
       } as unknown as LoginAttemptService,
       {} as UserService,
       {} as unknown as PasswordResetService,
+      {} as unknown as SecurityNoticeService,
     );
   });
 

@@ -39,6 +39,7 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
 import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
+import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 
 const TENANT_ID = 'org-a';
 const CALLER_ID = 'user-caller';
@@ -62,6 +63,8 @@ describe("A user's roles are gated by that user's own visibility (ACC-101)", () 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
+        // ACC-164 — the reset service the controller now takes; unused here.
+        { provide: UserMfaResetService, useValue: {} },
         UserService,
         // ACC-271 — real: it runs only for converted workflow stages.
         StagePoolService,

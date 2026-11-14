@@ -49,6 +49,9 @@ import {
   BETTER_AUTH_TWO_FACTOR_CODES,
 } from './better-auth.contract';
 import { AuthRefusalException } from './auth-refusal';
+import { MfaChangeRefusalException } from './mfa-change-refusal';
+import type { AttemptSource } from './attempt-source';
+import { SecurityNoticeService } from '../notification/security-notice';
 import { InvitationRefusalException } from './invitation-refusal';
 import {
   PasswordRefusalException,
@@ -56,6 +59,7 @@ import {
 } from './password-refusal';
 import { INVITATION_TOKEN_SHAPE, isOpenInvitation } from './open-invitation';
 import {
+  attemptsBeforeLock,
   attemptsRemaining,
   challengeIdentifierFromRequest,
   challengeIdentifierFromSetCookies,
@@ -205,6 +209,8 @@ export class AuthService {
     private readonly loginAttemptService: LoginAttemptService,
     private readonly userService: UserService,
     private readonly passwordReset: PasswordResetService,
+    // ACC-164 — the mfa_disabled notice (email only).
+    private readonly securityNotice: SecurityNoticeService,
   ) {
     this.auth = createBetterAuthInstance(this.prisma);
   }
@@ -1099,9 +1105,20 @@ export class AuthService {
   // that session to generate + store a new TOTP secret. MFA is NOT active
   // yet after this call — twoFactor.verified stays false, and
   // AuthUser.twoFactorEnabled stays false, until verifySetupMfa() succeeds.
-  async setupMfa(userId: string, organizationId: string, dto: SetupMfaDto): Promise<MfaSetupResult> {
+  async setupMfa(
+    userId: string,
+    organizationId: string,
+    dto: SetupMfaDto,
+    source: AttemptSource = {},
+  ): Promise<MfaSetupResult> {
     const appUser = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
     if (!appUser) throw new UnauthorizedException('Invalid credentials');
+
+    // ACC-164 — the same form family as turning it off: the sign-in lock is
+    // checked first, and a wrong password is recorded against it and answered
+    // 400, never 401 (see mfa-change-refusal.ts for why 401 is wrong here).
+    const attemptKey = { organizationId, email: appUser.email.toLowerCase() };
+    await this.refuseIfPasswordLocked(attemptKey, source);
 
     const namespacedEmail = AuthService.namespacedEmail(organizationId, appUser.email);
 
@@ -1124,7 +1141,8 @@ export class AuthService {
         signInResult.status === 401 &&
         signInBody.code === BETTER_AUTH_INVALID_CREDENTIALS
       ) {
-        throw new UnauthorizedException('Invalid password');
+        await this.recordWrongPassword(attemptKey, source);
+        throw new MfaChangeRefusalException('INVALID_CREDENTIALS');
       }
       // Not a password problem — a fault. Nothing has been enabled.
       throw new Error(
@@ -1200,42 +1218,107 @@ export class AuthService {
     });
   }
 
-  // Same re-auth pattern as setupMfa() — disableTwoFactor also requires a
-  // live Better Auth session and the caller's password.
-  async disableMfa(userId: string, organizationId: string, dto: DisableMfaDto): Promise<void> {
+  /**
+   * ACC-164 — the person turns their own two-step sign-in off, with their
+   * password AND a current code (backend/Plans/step-164-mfa-off.md §3, §0b).
+   *
+   * Every Better Auth answer is read as a RETURNED Response (`asResponse`),
+   * never as a rejected promise, as `login()` and `verifyMfa()` do. In order:
+   *
+   *   0. The sign-in lock (wrong passwords) is checked first.
+   *   1. A sign-in proves the password. A wrong one is recorded against the
+   *      sign-in lock exactly as a sign-in records it.
+   *   2. No challenge in the answer means it is not on: the stray session is
+   *      ended and the answer is MFA_NOT_ENABLED.
+   *   3. The challenge that sign-in issued is answered with the code. A wrong
+   *      code counts towards Better Auth's own two-step lock, as on sign-in.
+   *      Every press makes its own challenge, so it is cleared after a refusal.
+   *   4. Better Auth's own `disableTwoFactor` turns it off, in the session
+   *      that step 3 made, and that session is then ended: none is left behind.
+   *   5. Audited, then the `mfa_disabled` security notice (email only).
+   *
+   * Every refusal is a 400 (`MfaChangeRefusalException`), never a 401. The
+   * person's OTHER sessions are not ended (Ahmad, 14 Nov).
+   */
+  async disableMfa(
+    userId: string,
+    organizationId: string,
+    dto: DisableMfaDto,
+    source: AttemptSource = {},
+  ): Promise<void> {
     const appUser = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
     if (!appUser) throw new UnauthorizedException('Invalid credentials');
 
-    const namespacedEmail = AuthService.namespacedEmail(organizationId, appUser.email);
+    const attemptKey = { organizationId, email: appUser.email.toLowerCase() };
+    await this.refuseIfPasswordLocked(attemptKey, source);
 
-    let signInResult: Response;
-    try {
-      signInResult = (await this.auth.api.signInEmail({
-        body: { email: namespacedEmail, password: dto.password },
-        asResponse: true,
-      })) as unknown as Response;
-    } catch {
-      throw new UnauthorizedException('Invalid password');
+    const signIn = await this.auth.api.signInEmail({
+      body: {
+        email: AuthService.namespacedEmail(organizationId, appUser.email),
+        password: dto.password,
+      },
+      asResponse: true,
+    });
+    const signInBody = (await signIn.json()) as {
+      twoFactorRedirect?: boolean;
+      code?: string;
+    };
+    if (!signIn.ok) {
+      if (signIn.status === 401 && signInBody.code === BETTER_AUTH_INVALID_CREDENTIALS) {
+        await this.recordWrongPassword(attemptKey, source);
+        throw new MfaChangeRefusalException('INVALID_CREDENTIALS');
+      }
+      throw new Error(
+        `Better Auth sign-in returned ${signIn.status}${signInBody.code ? ` ${signInBody.code}` : ''}`,
+      );
     }
 
-    // KNOWN BROKEN — ACC-164. For an account that HAS two-step sign-in on,
-    // which is the only account this method is for, the sign-in above answers
-    // with `twoFactorRedirect` and no user, so this line refuses every attempt
-    // with "Invalid password" whatever was typed. Turning two-step sign-in off
-    // therefore never works. Left as it is until ACC-164 (ACC-120 slice 5
-    // moved the screen, not the behaviour; SYSTEM-REFERENCE.md §1.12 records it).
-    const signInBody = (await signInResult.json()) as { user?: { id: string } };
-    if (!signInBody.user?.id) throw new UnauthorizedException('Invalid password');
+    const signInCookies = signIn.headers.getSetCookie();
+    if (!signInBody.twoFactorRedirect) {
+      // A correct password and no challenge: it is not on. That sign-in made a
+      // Better Auth session; end it so none is left behind.
+      await this.endBetterAuthSession(buildCookieHeader(signInCookies));
+      throw new MfaChangeRefusalException('MFA_NOT_ENABLED');
+    }
 
-    const sessionCookie = buildCookieHeader(signInResult.headers.getSetCookie());
+    const identifier = challengeIdentifierFromSetCookies(signInCookies);
+    if (!identifier || !appUser.authUserId) {
+      throw new Error('Two-step challenge issued but not readable');
+    }
 
+    const verify = await this.auth.api.verifyTOTP({
+      body: { code: dto.code },
+      headers: new Headers({ cookie: buildCookieHeader(signInCookies) }),
+      asResponse: true,
+    });
+    const verifyBody = (await verify.json()) as { code?: string };
+    if (!verify.ok) {
+      // Each press starts its own challenge: never leave one live.
+      await clearChallenge(this.prisma, identifier);
+      throw await this.disableMfaCodeRefusal(verify.status, verifyBody.code, appUser.authUserId);
+    }
+
+    // verifyTOTP made a Better Auth session (verify-two-factor.mjs, valid());
+    // disableTwoFactor runs in it and re-issues it. Whichever is live at the
+    // end is signed out, success or not.
+    let liveSession = buildCookieHeader(verify.headers.getSetCookie());
     try {
-      await this.auth.api.disableTwoFactor({
+      const disabled = await this.auth.api.disableTwoFactor({
         body: { password: dto.password },
-        headers: new Headers({ cookie: sessionCookie }),
+        headers: new Headers({ cookie: liveSession }),
+        asResponse: true,
       });
-    } catch {
-      throw new BadRequestException('Failed to disable two-factor authentication');
+      if (!disabled.ok) {
+        const disabledBody = (await disabled.json()) as { code?: string };
+        // The password was proved in step 1, so a refusal here is a race or a
+        // defect, not the person's mistake: a fault, and nothing is audited.
+        throw new Error(
+          `Better Auth disableTwoFactor returned ${disabled.status}${disabledBody.code ? ` ${disabledBody.code}` : ''}`,
+        );
+      }
+      liveSession = buildCookieHeader(disabled.headers.getSetCookie());
+    } finally {
+      await this.endBetterAuthSession(liveSession);
     }
 
     await this.auditLog.log({
@@ -1246,6 +1329,91 @@ export class AuthService {
       objectId: appUser.id,
       metadata: { event: 'mfa_disabled' },
     });
+    await this.securityNotice.enqueue({
+      organizationId,
+      userId: appUser.id,
+      notice: 'mfa_disabled',
+    });
+  }
+
+  /**
+   * ACC-164 — a refused code on Turn off, as one of ours (plan §0b, (1)).
+   * Each press makes a fresh challenge and answers it at once, so only a wrong
+   * code (a stale one included) and the two-step lock can follow from what the
+   * person typed. Anything else — the challenge missing or spent, no secret
+   * row — cannot, and is a fault.
+   */
+  private async disableMfaCodeRefusal(
+    status: number,
+    code: string | undefined,
+    authUserId: string,
+  ): Promise<Error> {
+    switch (code) {
+      case BETTER_AUTH_TWO_FACTOR_CODES.INVALID_CODE:
+        return new MfaChangeRefusalException('MFA_INVALID', {
+          attemptsRemaining: await attemptsBeforeLock(this.prisma, authUserId),
+        });
+      case BETTER_AUTH_TWO_FACTOR_CODES.ACCOUNT_LOCKED:
+        return new MfaChangeRefusalException('ACCOUNT_LOCKED', {
+          lockedUntil: await twoFactorLockedUntil(this.prisma, authUserId),
+        });
+      default:
+        return new Error(`Better Auth verifyTOTP returned ${status}${code ? ` ${code}` : ''}`);
+    }
+  }
+
+  /**
+   * ACC-164 — the sign-in lock, checked before a signed-in form checks the
+   * password. A locked attempt is recorded, as on sign-in, and the lift time is
+   * read after recording it (it moves the lock later).
+   */
+  private async refuseIfPasswordLocked(
+    key: { organizationId: string; email: string },
+    source: AttemptSource,
+  ): Promise<void> {
+    if (!(await this.loginAttemptService.isLocked(key.organizationId, key.email))) return;
+    await this.loginAttemptService.record({
+      ...key,
+      success: false,
+      failureReason: 'locked',
+      ipAddress: source.ipAddress,
+      userAgent: source.userAgent,
+    });
+    throw new MfaChangeRefusalException('ACCOUNT_LOCKED', {
+      lockedUntil: await this.loginAttemptService.lockedUntil(key.organizationId, key.email),
+    });
+  }
+
+  /** ACC-164 — a wrong password on a signed-in form counts exactly as on sign-in. */
+  private async recordWrongPassword(
+    key: { organizationId: string; email: string },
+    source: AttemptSource,
+  ): Promise<void> {
+    await this.loginAttemptService.record({
+      ...key,
+      success: false,
+      failureReason: 'invalid_password',
+      ipAddress: source.ipAddress,
+      userAgent: source.userAgent,
+    });
+  }
+
+  /**
+   * ACC-164 — end a Better Auth session made only to run one call. A failure
+   * is logged, never surfaced: the change it followed is already made.
+   */
+  private async endBetterAuthSession(sessionCookie: string): Promise<void> {
+    try {
+      const result = await this.auth.api.signOut({
+        headers: new Headers({ cookie: sessionCookie }),
+        asResponse: true,
+      });
+      if (!result.ok) this.logger.warn(`Better Auth signOut returned ${result.status}`);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Better Auth signOut failed: ${error instanceof Error ? error.name : 'unknown'}`,
+      );
+    }
   }
 
   async getMfaStatus(userId: string, organizationId: string): Promise<{ enabled: boolean }> {

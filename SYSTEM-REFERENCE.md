@@ -1364,9 +1364,10 @@ read off the Response, and only `INVALID_EMAIL_OR_PASSWORD` counts as a failed
 attempt: another refusal, or a thrown error such as a database outage, is a 500
 and records nothing, so an outage cannot lock people out. **`setupMfa()`**
 re-checks the password the same way and now reads the Response too: a wrong
-password is "Invalid password" as before, a `twoFactorRedirect` is **409 "MFA is
+password is 400 `INVALID_CREDENTIALS`, recorded against the lock (ACC-164, §1.17), a `twoFactorRedirect` is **409 "MFA is
 already enabled"**, and any other refusal is a 500 with nothing enabled.
 
+**FIXED (ACC-164, §1.17) — what follows was true until then.**
 **`disableMfa()` CANNOT SUCCEED FOR ANY USER — known, unchanged, tracked
 separately.** It re-checks the password with a sign-in and needs the session
 that sign-in creates. But for an account with MFA on — the only accounts that
@@ -1729,6 +1730,106 @@ its body would be copied into the audit trail.
   "Back to sign in" under it; Used offers Sign in, then "Forgot password?";
   Replaced offers "Back to sign in".
 - **On success**, Sign in shows the notice above its title, once.
+
+### 1.17 Turning two-step sign-in off, and the administrator reset (ACC-164)
+
+Plan, Ahmad's four rules, lane B's floor and the as-built notes:
+`backend/Plans/step-164-mfa-off.md` (§0b, §12). The design:
+`frontend/design-reference/AccreditMe Two-step Sign-in.dc.html`.
+
+**Turning it off yourself: `POST /auth/mfa/disable { password, code }`**
+(TenantGuard; `code` is six digits). `AuthService.disableMfa()` reads every
+Better Auth answer as a returned Response:
+
+| # | Step | Outcome |
+|---|---|---|
+| 0 | The sign-in lock (`LoginAttemptService`) | locked: a `locked` attempt is recorded, `ACCOUNT_LOCKED` + `lockedUntil` |
+| 1 | `signInEmail` proves the password | `INVALID_EMAIL_OR_PASSWORD`: an `invalid_password` attempt is recorded (it counts towards the lock), `INVALID_CREDENTIALS` |
+| 2 | No `twoFactorRedirect` | it is not on: the stray session is signed out, `MFA_NOT_ENABLED` |
+| 3 | `verifyTOTP` answers the challenge step 1 issued | `INVALID_CODE`: `MFA_INVALID` + `attemptsRemaining`; `ACCOUNT_TEMPORARILY_LOCKED`: `ACCOUNT_LOCKED` + the two-step lock's end. Any other code is a fault. The challenge is cleared after every refusal |
+| 4 | `disableTwoFactor` in the session step 3 made | a refusal is a fault (the password was proved in step 1); that session is signed out either way |
+| 5 | Audit `UPDATE` / `User` `{ event: 'mfa_disabled' }`, then the `mfa_disabled` security notice | — |
+
+- **Every refusal is 400** (`MfaChangeRefusalException`, `mfa-change-refusal.ts`),
+  with the sign-in codes and details. A 401 on a signed-in route is renewed and
+  retried by the app's interceptor, which would submit a wrong password twice.
+  `setupMfa()` got the same fix: the lock check first, a wrong password recorded,
+  and 400 `INVALID_CREDENTIALS`.
+- **Two locks, not one counter.** Wrong passwords count towards the sign-in lock;
+  wrong codes towards Better Auth's per-person two-step lock (ten, fifteen
+  minutes). `attemptsRemaining` is the codes left before that lock
+  (`attemptsBeforeLock()`): every press has a fresh challenge, so the
+  per-challenge five never binds here.
+- **No "code expired" answer.** A stale authenticator code fails the TOTP check
+  and is `INVALID_CODE`. A missing or spent challenge cannot follow from what the
+  person typed, so it is a fault.
+- **Other sessions are not ended** (Ahmad, rule 3).
+
+**The administrator reset: `POST /users/:id/mfa/reset`** (`users:reset_mfa`,
+204). `UserMfaResetService.resetMfa()`, every check before any write:
+
+| Order | Check | Refusal |
+|---|---|---|
+| 1 | `findFirst({ id, organizationId })` | 404 `User not found`, the body an invented id gets |
+| 2 | yourself | 409 `MFA_RESET_SELF` |
+| 3 | impersonating | 409 `MFA_RESET_IMPERSONATING` |
+| 4 | the account owner (`ownedOrganizations`) | 409 `ACCOUNT_OWNER_PROTECTED` |
+| 5 | the floor: the person holds the active root role and the actor does not (`holdsActiveRootRole()`, one indexed read each, only when needed) | 409 `MFA_RESET_HIGHER_ACCOUNT` |
+| 6 | no sign-in yet, or already off | 409 `MFA_NOT_ENABLED` |
+
+Then ONE transaction: the person's row `FOR UPDATE`, `assertNotAccountOwner()`,
+the flag re-read under the lock (a second administrator's press is
+`MFA_NOT_ENABLED` and writes nothing), `resetTwoFactorInTx()`,
+`endEverySessionInTx()`. After the commit: the audit row (`UPDATE` / `User`,
+actor the administrator, `{ event: 'mfa_reset' }`), then the `mfa_reset`
+security notice. An INACTIVE person can be reset, for when they return.
+
+**`resetTwoFactorInTx()` (`foundation/auth/two-factor-reset.ts`)** makes exactly
+the writes Better Auth's `disableTwoFactor` makes, inside our transaction:
+`AuthUser.twoFactorEnabled = false`, the `AuthTwoFactor` row deleted, and the
+person's open `2fa-*` challenges and their counters deleted. **The row must
+go:** `enableTwoFactor` gives a new secret `verified = the old row was
+verified`, and `verifyTOTP` turns the flag on only for an unverified secret, so a
+leftover row makes the next set-up say "on" while sign-in never asks for a code.
+`better-auth.contract.spec.ts` pins each of these facts;
+`two-factor-writes.scan.spec.ts` fails any write of two-step state outside this
+file.
+
+**Who sees the status (Ahmad, rule 4).** `GET /users/:id` answers
+`twoStep: { enabled, mayReset } | null`, from `twoFactorEnabled` read in the
+record's own query and `UserMfaResetService.twoStepFor()`:
+- `null` (no panel at all, never "Off") for a viewer without `users:reset_mfa`,
+  on your own record (which reads `/auth/mfa/status`), on the account owner's,
+  and below the floor — the same rule the route refuses with, in one file,
+  `mfa-reset-rule.ts`;
+- `mayReset` is `enabled` and not impersonating.
+The users list carries nothing. Nothing is on the per-request path.
+
+**The permission.** `users:reset_mfa` ("Reset another person's two-step
+sign-in"), checked from day one, grantable to any role, seeded to Organization
+Administrator only (Platform Administrator holds the whole catalogue by
+construction). It sits in Users' "Account access" group with Deactivate and
+Reactivate; the seventh key split Users into "People and profiles" and "Account
+access". Existing organisations get it from
+`npm run backfill:acc164-reset-mfa-permission` (grant-only, the Permission row
+upserted, one audit row per organisation, the platform organisation skipped):
+dry run, `-- --execute` after the deploy, then a dry run reporting 0.
+
+**Screens.**
+- **Turn off** (your own record) is a 420 confirm with Password and "Code from
+  your authenticator app". A wrong password is said under Password, which is
+  cleared and focused; a wrong code under Code, cleared and focused, with "1
+  attempt left." / "2 attempts left." on its own line. Locked, unreachable and
+  "already off" are a message above the buttons; "already off" leaves only Close.
+  While sending, Cancel is disabled and Escape is ignored. Done: "Two-step
+  sign-in is off."
+- **Reset** (someone else's record) is the Two-step panel's red action, opening
+  a destructive confirm that names the person (a left-to-right isolate). The
+  owner refusal replaces the paragraph; owner, already off and impersonating
+  leave only Close. Done: "Two-step sign-in was reset.", and the panel reads
+  "Off.".
+- Every refusal is said from its code (`two-step-refusal.ts`), never the English
+  message. The tallest body measured 337 px against the 420 cap.
 
 ---
 
@@ -12726,8 +12827,8 @@ the log.
   secret, but **MFA is not active yet** — `verified` stays `false` on
   `AuthTwoFactor` and `AuthUser.twoFactorEnabled` stays `false` until
   `verifySetupMfa()` succeeds with a real code from the user's
-  authenticator app. `disableMfa()` also re-verifies password before
-  turning it off.
+  authenticator app. `disableMfa()` takes the password AND a current
+  code, and an administrator can reset another person's (ACC-164, §1.17).
 
 Full frontend-consumption detail for the Auth surface (`/auth/me`,
 `/accept-invitation`, `/forgot-password`, `/reset-password`, the four
@@ -12765,6 +12866,9 @@ users:transfer   — UserController: getTransferContext,
                    transferUser (all four — ACC-46, Section 12.9)
 users:reactivate — UserController: reactivate (ACC-83; the mirror of
                    users:deactivate, a separate key)
+users:reset_mfa  — UserController: resetMfa (ACC-164); and
+                   UserMfaResetService.twoStepFor() fills GET /users/:id's
+                   twoStep only for a holder (§1.17)
 ```
 
 **A user's roles and permissions are read on the user's routes, gated as roles
@@ -13043,7 +13147,7 @@ enforces:
 | Reactivate | `users:reactivate`, an inactive user |
 | Revoke invitation | `users:invite`, an invited user; afterwards back to `/users`, since the record is deleted |
 | Manage roles | `roles:manage`, on the Roles panel; the existing dialog, hosted as the list hosts it |
-| Two-step sign-in | own record only — the endpoints act on the caller |
+| Two-step sign-in | own record: Set up / Turn off (the endpoints act on the caller). Someone else's: the panel only when `twoStep` is sent, Reset when `mayReset` (ACC-164, §1.17) |
 
 **The status actions are written once**, in `UserStatusActionsService`
 (`statusActionFor()` decides which applies; the three confirms are the

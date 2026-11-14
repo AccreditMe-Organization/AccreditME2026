@@ -151,6 +151,26 @@ export async function attemptsRemaining(
   return Math.max(0, Math.min(onChallenge, beforeLock));
 }
 
+/**
+ * ACC-164 — wrong codes the person may still enter before their two-step
+ * sign-in locks, across challenges. Turning it off makes a fresh challenge for
+ * every press, so the per-challenge allowance never binds there and only this
+ * count is honest.
+ */
+export async function attemptsBeforeLock(
+  prisma: PrismaService,
+  authUserId: string,
+): Promise<number> {
+  const twoFactor = await prisma.authTwoFactor.findUnique({
+    where: { userId: authUserId },
+    select: { failedVerificationCount: true },
+  });
+  return Math.max(
+    0,
+    TWO_FACTOR_MAX_FAILURES_PER_USER - (twoFactor?.failedVerificationCount ?? 0),
+  );
+}
+
 /** When the user's MFA lock lifts, or null when it is not locked. */
 export async function twoFactorLockedUntil(
   prisma: PrismaService,

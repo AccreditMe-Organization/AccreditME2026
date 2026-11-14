@@ -535,7 +535,7 @@ describe('UserService', () => {
     it('allows self-view with zero permissions (ACC-43)', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [] });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u1', []);
-      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false });
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false, twoFactorEnabled: false });
     });
 
     it('rejects viewing another user without users:view', async () => {
@@ -546,7 +546,7 @@ describe('UserService', () => {
     it('allows viewing another user with users:view', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [] });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
-      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false });
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: false, twoFactorEnabled: false });
     });
 
     // ACC-221 — whether the person is the account owner comes with the same
@@ -554,12 +554,26 @@ describe('UserService', () => {
     it('says the account owner is the account owner, from the same query (ACC-221)', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [{ id: ORG_A }] });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
-      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: true });
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A, isAccountOwner: true, twoFactorEnabled: false });
       expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(1);
       expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
         where: { id: 'u1', organizationId: ORG_A },
-        include: { ownedOrganizations: { where: { id: ORG_A }, select: { id: true } } },
+        include: {
+          ownedOrganizations: { where: { id: ORG_A }, select: { id: true } },
+          authUser: { select: { twoFactorEnabled: true } },
+        },
       });
+    });
+
+    // ACC-164 — whether two-step sign-in is on comes in the SAME query (one
+    // join, no second read); who may see it is UserMfaResetService.twoStepFor()'s.
+    it('reads whether two-step sign-in is on in the same query (ACC-164)', async () => {
+      const findFirst = (mockPrisma as { user: { findFirst: jest.Mock } }).user.findFirst;
+      findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A, ownedOrganizations: [], authUser: { twoFactorEnabled: true } });
+      const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
+      expect(result.twoFactorEnabled).toBe(true);
+      expect(result).not.toHaveProperty('authUser');
+      expect(findFirst).toHaveBeenCalledTimes(1);
     });
   });
 

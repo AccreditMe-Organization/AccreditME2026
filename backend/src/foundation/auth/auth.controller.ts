@@ -20,6 +20,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
+import { attemptSource } from './attempt-source';
 
 // Every endpoint here is deliberately pre-authentication or self-service —
 // no @UseGuards(TenantGuard, PermissionGuard) at class level, unlike every
@@ -187,8 +188,9 @@ export class AuthController {
     @Body() dto: SetupMfaDto,
     @CurrentUser() userId: string,
     @CurrentTenant() organizationId: string,
+    @Req() req: Request,
   ) {
-    return this.authService.setupMfa(userId, organizationId, dto);
+    return this.authService.setupMfa(userId, organizationId, dto, attemptSource(req));
   }
 
   @Post('mfa/setup/verify')
@@ -209,8 +211,9 @@ export class AuthController {
     @Body() dto: DisableMfaDto,
     @CurrentUser() userId: string,
     @CurrentTenant() organizationId: string,
+    @Req() req: Request,
   ) {
-    return this.authService.disableMfa(userId, organizationId, dto);
+    return this.authService.disableMfa(userId, organizationId, dto, attemptSource(req));
   }
 
   @Get('mfa/status')

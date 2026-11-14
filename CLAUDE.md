@@ -1102,9 +1102,10 @@ Permission strings follow {module}:{action} pattern.
 
 **Regenerated (ACC-274) from `backend/src/common/constants/permissions.ts`** on
 dev `487a0a8`: every `*_PERMISSIONS` group, which is exactly what
-`permission.seed.ts` seeds (74 keys). A key marked `*` is in
-`PERMISSIONS_NOT_YET_CHECKED`: no code decides anything with it yet, so a role
-cannot gain it (ACC-120 slice 5). That file is the source; this list is a copy.
+`permission.seed.ts` seeds (75 keys since ACC-164 added `users:reset_mfa`). A
+key marked `*` is in `PERMISSIONS_NOT_YET_CHECKED`: no code decides anything with
+it yet, so a role cannot gain it (ACC-120 slice 5). That file is the source; this
+list is a copy.
 
 ```
 tenant:view                 tenant:update             tenant:manage_config
@@ -1114,6 +1115,7 @@ org:view                    org:manage
 positions:view              positions:manage
 users:view                  users:manage              users:invite
 users:deactivate            users:reactivate          users:transfer
+users:reset_mfa
 roles:view                  roles:manage
 lookups:view                lookups:manage
 workflows:view              workflows:manage
@@ -5032,6 +5034,64 @@ four rules, lane B's review and the as-built notes (14 Nov):
   open, and the request must come from the link's organisation's address.
 - **One additive migration**, number 64 (`acc188_password_reset_link`), after
   #290's 63. It runs in the pre-deploy step, never before.
+
+## Key Architecture Decisions (ACC-164)
+
+Turning two-step sign-in off, and the administrator reset. Full mechanism:
+SYSTEM-REFERENCE.md §1.17. Plan, Ahmad's four rules, lane B's floor and the
+as-built notes (14 Nov): `backend/Plans/step-164-mfa-off.md` (§0b, §12).
+Briefly:
+
+- **TURNING IT OFF YOURSELF NEEDS YOUR PASSWORD AND A CURRENT CODE**
+  (`POST /auth/mfa/disable { password, code }`). Every Better Auth answer is
+  read as a returned Response. It ends no other session (Ahmad, rule 3); the
+  `mfa_disabled` security notice tells the person.
+- **TWO LOCKS, NOT ONE COUNTER.**
+  - A wrong password counts towards the sign-in lock (`LoginAttempt`), exactly
+    as a sign-in does.
+  - A wrong code counts towards Better Auth's own two-step lock.
+  - "Attempts left" is sent only with a wrong code (`attemptsRemaining`, codes
+    left before the two-step lock), and the screen shows it only for 1 or 2.
+- **NO "CODE EXPIRED".** Each press makes its own challenge and answers it at
+  once, so a stale code is a wrong code; a missing or spent challenge is a fault.
+- **THE SIGNED-IN TWO-STEP ROUTES REFUSE WITH 400, NEVER 401**
+  (`MfaChangeRefusalException`, the sign-in codes), because the interceptor
+  renews and retries a 401. `setupMfa()` got the same fix, the lock check and the
+  failure record.
+- **AN ADMINISTRATOR RESETS ANOTHER PERSON'S TWO-STEP SIGN-IN**
+  (`POST /users/:id/mfa/reset`, `users:reset_mfa`).
+  - The writes are `two-factor-reset.ts`: exactly what Better Auth's
+    `disableTwoFactor` writes (the flag off, the `AuthTwoFactor` row deleted) and
+    the person's open challenges. A row left behind would make their next set-up
+    say "on" and never ask for a code; the contract spec pins why.
+  - It runs in ONE transaction under the person's row lock, with
+    `endEverySessionInTx()`. After the commit: one audit row, then the
+    `mfa_reset` security notice (an email only).
+  - **Only `two-factor-reset.ts` writes two-step state**;
+    `two-factor-writes.scan.spec.ts` fails a write anywhere else.
+- **WHO MAY RESET WHOM IS ONE RULE, `mfa-reset-rule.ts`**, read by the route
+  (which refuses) and by the user record read (which hides). In order, after the
+  404 and before any write:
+  - yourself: 409 `MFA_RESET_SELF`;
+  - while impersonating: 409 `MFA_RESET_IMPERSONATING`;
+  - the account owner: 409 `ACCOUNT_OWNER_PROTECTED` (Ahmad, rule 1; AccreditMe
+    support resets the owner);
+  - **the floor** (lane B): a holder without Organization Administrator can't
+    reset someone who has it, 409 `MFA_RESET_HIGHER_ACCOUNT`. "Has it" is the
+    root role while the role is active.
+  - Then 409 `MFA_NOT_ENABLED` when it is already off.
+- **THE STATUS SHOWS ONLY ON THE RECORD PAGE, ONLY TO PEOPLE ALLOWED TO RESET
+  IT** (Ahmad, rule 4). `GET /users/:id` answers `twoStep: { enabled, mayReset }`
+  or `null` (no panel at all). The list gets nothing. Your own record reads
+  `/auth/mfa/status`, unchanged.
+- **`users:reset_mfa` IS GRANTABLE, SEEDED TO ORGANIZATION ADMINISTRATOR ONLY**
+  (Ahmad, rule 2). It is in Users' "Account access" group beside Deactivate and
+  Reactivate; the seventh key split Users into two groups.
+  `npm run backfill:acc164-reset-mfa-permission` grants it to existing
+  organisations (grant-only, one audit row per organisation, the platform
+  organisation skipped): dry run, `-- --execute` AFTER the deploy, then a dry
+  run reporting 0.
+- **No migration.**
 
 ## Open / Deferred Items
 

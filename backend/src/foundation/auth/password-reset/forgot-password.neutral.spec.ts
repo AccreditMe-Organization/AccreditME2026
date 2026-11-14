@@ -57,6 +57,7 @@ describe('Forgot password is neutral (ACC-188)', () => {
       {} as LoginAttemptService,
       {} as UserService,
       passwordReset,
+      {} as unknown as SecurityNoticeService,
     );
     const controller = new AuthController(auth, {} as UserService, {} as WorkingCalendarService);
     const dto = (await pipe.transform(body, { type: 'body', metatype: ForgotPasswordDto })) as ForgotPasswordDto;
