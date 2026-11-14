@@ -599,6 +599,12 @@ migration.
   purpose: an inactive Organization Administrator who is reactivated is an
   administrator again, so their second factor stays above a non-administrator.
   The conservative reading of lane B's "the target's ACTIVE roles".
+  **Lane B OK'd this departure (CC-265)**, and asked for the spec that pins it:
+  `user-mfa-reset.service.spec.ts`, "counts an INACTIVE Organization
+  Administrator". A holder of `users:reset_mfa` below the floor gets 409
+  `MFA_RESET_HIGHER_ACCOUNT` for her, and an administrator can still reset her.
+  The test double now honours a status filter, so a floor that counted only
+  ACTIVE holders turns it red (mutation run: 1 failing test, then restored).
 - **`GET /users/:id` answers `twoStep`** from `twoFactorEnabled`, read in the
   record's own query; `twoStepFor()` reads the root role only when the floor
   could apply (one indexed read for the person, one for the viewer).

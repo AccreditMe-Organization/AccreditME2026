@@ -76,10 +76,13 @@ function build() {
   };
 
   const userRoleFindFirst = jest.fn(
-    ({ where }: { where: { userId: string; user: { organizationId: string }; role: { organizationId: string; key: string; isActive: true } } }) => {
+    ({ where }: { where: { userId: string; user: { organizationId: string; status?: string }; role: { organizationId: string; key: string; isActive: true } } }) => {
       const user = users.find((u) => u.id === where.userId && u.organizationId === where.user.organizationId);
+      // Honours a status filter if the query ever sends one, so a floor that
+      // stopped counting inactive holders is caught (lane B, CC-265).
       const holds =
         user !== undefined &&
+        (where.user.status === undefined || user.status === where.user.status) &&
         where.role.key === 'TENANT_ADMIN' &&
         state.rootRoleActive &&
         state.rootHolders.get(where.role.organizationId)?.has(where.userId) === true;
@@ -291,6 +294,25 @@ describe('UserMfaResetService.resetMfa (ACC-164)', () => {
       expect(r).toMatchObject({ status: 409, body: { code: 'MFA_RESET_HIGHER_ACCOUNT' } });
       expect(t.state.twoFactorEnabled.get('au-nora')).toBe(true);
       expect(t.prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('counts an INACTIVE Organization Administrator: still 409 MFA_RESET_HIGHER_ACCOUNT (lane B)', async () => {
+      const t = build();
+      // Rana holds the root role but is deactivated. Reactivated, she is an
+      // administrator again, so someone below the floor can't reset her now.
+      t.state.users.push({ id: 'u-rana', organizationId: ORG, authUserId: 'au-rana', status: 'INACTIVE', tokenVersion: 4 });
+      t.state.rootHolders.get(ORG)!.add('u-rana');
+      t.state.twoFactorEnabled.set('au-rana', true);
+      t.state.twoFactorRows.set('au-rana', { verified: true });
+
+      const r = await bodyOf(t.service.resetMfa('u-rana', ORG, 'u-samir', false));
+      expect(r).toMatchObject({ status: 409, body: { code: 'MFA_RESET_HIGHER_ACCOUNT' } });
+      expect(t.state.twoFactorEnabled.get('au-rana')).toBe(true);
+      expect(t.prisma.$transaction).not.toHaveBeenCalled();
+
+      // The administrator above the floor can still reset her, for when she returns.
+      await t.service.resetMfa('u-rana', ORG, 'u-nora', false);
+      expect(t.state.twoFactorEnabled.get('au-rana')).toBe(false);
     });
 
     it('lets him reset someone without Organization Administrator', async () => {
