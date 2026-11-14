@@ -552,6 +552,53 @@ describe('Committee change requests against a real database (ACC-239)', () => {
     });
   });
 
+  // ── The stage outcomes the app's moves record (ACC-202) ───────────────────────
+
+  // ACC-202 — the app's own moves record the outcome of their KIND, as a
+  // person's press does: there is no outcome option any more. Before ACC-202
+  // withdraw recorded SKIPPED and return and reject REJECTED.
+  describe('stage outcomes (ACC-202)', () => {
+    /** The request's stage entries, oldest first, as "key:outcome". */
+    const trail = async (w: World, requestId: string): Promise<string[]> => {
+      const instance = await prisma.workflowInstance.findFirstOrThrow({
+        where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST', objectId: requestId },
+      });
+      const entries = await prisma.workflowInstanceStage.findMany({
+        where: { workflowInstanceId: instance.id },
+        orderBy: { enteredAt: 'asc' },
+        select: { outcome: true, stage: { select: { key: true } } },
+      });
+      return entries.map((e) => `${e.stage.key}:${e.outcome}`);
+    };
+
+    it('submit is APPROVED, return RETURNED, submit again APPROVED, reject EXITED', async () => {
+      const w = await world();
+      const r = await submitted(w);
+      await requests.returnForChanges(r.id, { note: 'Say which members' }, w.org, w.approver);
+      await requests.submit(r.id, w.org, w.requester);
+      await requests.reject(r.id, { reason: 'Not needed' }, w.org, w.approver);
+      expect(await trail(w, r.id)).toEqual([
+        'draft:APPROVED',
+        'under_review:RETURNED',
+        'returned:APPROVED',
+        'under_review:EXITED',
+        'rejected:PENDING',
+      ]);
+    });
+
+    it('approve is APPROVED, and withdraw is EXITED', async () => {
+      const w = await world();
+      const r = await submitted(w);
+      await requests.approve(r.id, w.org, w.approver);
+      expect(await trail(w, r.id)).toEqual(['draft:APPROVED', 'under_review:APPROVED', 'approved:PENDING']);
+
+      const w2 = await world();
+      const draft = await requests.create(w2.committee, { changes: { quorumCount: 4 } as never, reason: 'Grew' }, w2.org, w2.requester);
+      await requests.withdraw(draft.id, w2.org, w2.requester);
+      expect(await trail(w2, draft.id)).toEqual(['draft:EXITED', 'withdrawn:PENDING']);
+    });
+  });
+
   // ── Another organisation ─────────────────────────────────────────────────────
 
   describe('tenant isolation', () => {
