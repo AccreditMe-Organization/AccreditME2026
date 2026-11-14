@@ -216,8 +216,9 @@ describe('AuthController', () => {
 
   it('setupMfa delegates to AuthService.setupMfa', async () => {
     const dto = { password: 'pw' };
-    const result = await controller.setupMfa(dto, 'user-1', 'org-1');
-    expect(service.setupMfa).toHaveBeenCalledWith('user-1', 'org-1', dto);
+    const req = { ip: '203.0.113.9', headers: { 'user-agent': 'UA' } };
+    const result = await controller.setupMfa(dto, 'user-1', 'org-1', req as never);
+    expect(service.setupMfa).toHaveBeenCalledWith('user-1', 'org-1', dto, { ipAddress: '203.0.113.9', userAgent: 'UA' });
     expect(result).toEqual({ qrCodeDataUrl: 'data:image/png;base64,x', secret: 'SECRET', backupCodes: ['a1b2'] });
   });
 
@@ -228,9 +229,10 @@ describe('AuthController', () => {
   });
 
   it('disableMfa delegates to AuthService.disableMfa', async () => {
-    const dto = { password: 'pw' };
-    await controller.disableMfa(dto, 'user-1', 'org-1');
-    expect(service.disableMfa).toHaveBeenCalledWith('user-1', 'org-1', dto);
+    const dto = { password: 'pw', code: '123456' };
+    const req = { ip: '203.0.113.9', headers: { 'user-agent': 'UA' } };
+    await controller.disableMfa(dto, 'user-1', 'org-1', req as never);
+    expect(service.disableMfa).toHaveBeenCalledWith('user-1', 'org-1', dto, { ipAddress: '203.0.113.9', userAgent: 'UA' });
   });
 
   it('getMfaStatus delegates to AuthService.getMfaStatus', async () => {
