@@ -55,10 +55,12 @@ export class UpdateTenantDto {
   @Transform(trimToNull)
   nameAr?: string | null;
 
-  @IsString()
-  @IsOptional()
-  @MaxLength(100)
-  timezone?: string;
+  // ACC-97 — timezone is NOT settable here. The organisation's one time zone is
+  // the working calendar's (PATCH /working-calendar), which the SLA engine and
+  // every displayed date read. Organization.timezone was a second copy that
+  // nothing computing a date ever read; with forbidNonWhitelisted, sending it is
+  // now a 400 rather than a write to a column nobody reads. The column itself is
+  // dropped in a later contract step.
 
   @IsString()
   @IsOptional()

@@ -93,9 +93,9 @@ export class WorkingCalendarService {
   // SLA engine computes due dates in, so "due" on screen and "due" in the
   // engine cannot disagree: the calendar row's zone, or the GCC default that
   // getOrCreate() would store. Read-only on purpose — GET /auth/me calls this,
-  // and a read must not create a calendar row. WorkingCalendar.timezone is
-  // authoritative; Organization.timezone is read by nothing that computes a
-  // date (ACC-97).
+  // and a read must not create a calendar row. WorkingCalendar.timezone is the
+  // organisation's ONLY time zone (ACC-97): Organization.timezone is retired,
+  // read and written by nothing, and its column is dropped in a later step.
   async getEffectiveTimeZone(organizationId: string): Promise<string> {
     const calendar = await this.prisma.workingCalendar.findUnique({
       where: { organizationId },

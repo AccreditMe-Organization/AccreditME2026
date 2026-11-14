@@ -175,7 +175,6 @@ export class TenantService {
     nameAr: string | null;
     slug: string;
     country: string;
-    timezone: string;
     language: string;
     authProvider: ITenant['authProvider'];
     storageProvider: ITenant['storageProvider'];
@@ -205,7 +204,6 @@ export class TenantService {
       nameAr: org.nameAr,
       slug: org.slug,
       country: org.country,
-      timezone: org.timezone,
       language: org.language,
       authProvider: org.authProvider,
       storageProvider: org.storageProvider,

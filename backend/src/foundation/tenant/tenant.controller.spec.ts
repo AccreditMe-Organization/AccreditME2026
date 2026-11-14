@@ -14,7 +14,6 @@ const MOCK_TENANT = {
   name: 'Test Org',
   slug: 'test',
   country: 'SA',
-  timezone: 'Asia/Riyadh',
   language: 'en',
   authProvider: 'LOCAL' as const,
   storageProvider: 'S3' as const,

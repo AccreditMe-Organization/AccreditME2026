@@ -59,10 +59,10 @@ describe('UpdateTenantDto — nameAr (ACC-120)', () => {
   // DECLARED property, so the key exists carrying undefined. The key's presence
   // is not the behaviour; the value is.
   it('is undefined when omitted, so an unrelated update cannot clear it', () => {
-    const dto = parse({ timezone: 'Asia/Dubai' });
+    const dto = parse({ language: 'ar' });
     expect(dto.nameAr).toBeUndefined();
     expect(dto.nameAr).not.toBeNull();
-    expect(errorsOn({ timezone: 'Asia/Dubai' })).toEqual([]);
+    expect(errorsOn({ language: 'ar' })).toEqual([]);
   });
 
   it('refuses a value longer than the column allows', () => {
@@ -88,5 +88,13 @@ describe('UpdateTenantDto — nameAr (ACC-120)', () => {
   // lock. It is refused now, for every value.
   it.each(['S3', 'MINIO', 'LOCAL_FILESYSTEM', 'SHAREPOINT'])('refuses storageProvider %p — only Confirm sets it', (value) => {
     expect(errorsOn({ storageProvider: value })).toEqual(['storageProvider']);
+  });
+
+  // ACC-97 — the organisation's time zone is the working calendar's. This DTO
+  // used to accept timezone and write it to Organization.timezone, a second
+  // copy nothing computing a date read. The HTTP refusal is pinned in
+  // tenant-timezone.contract.spec.ts.
+  it('refuses timezone — the working calendar holds the time zone', () => {
+    expect(errorsOn({ timezone: 'Asia/Dubai' })).toEqual(['timezone']);
   });
 });
