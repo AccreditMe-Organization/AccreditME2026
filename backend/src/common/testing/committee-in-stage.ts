@@ -13,6 +13,10 @@ import { COMMITTEE_ACTIONS } from '../../foundation/workflow/record-registry';
  * One template and stage per organisation, made on first use; each committee
  * gets its own instance there. The stage has no key, so nothing here can be
  * mistaken for a seeded stage.
+ *
+ * ACC-286 — the stage is also flagged IN_FORCE, so these committees are in
+ * force and can be pointed at as a parent or a Reports to (only a committee in
+ * force can). A spec about the going-live rules builds its own stages.
  */
 const EVERY_DIRECT_CHANGE = [
   COMMITTEE_ACTIONS.EDIT_DETAILS,
@@ -33,6 +37,7 @@ async function editableStage(prisma: PrismaService, organizationId: string): Pro
       nameEn: 'Formation (spec)',
       order: 10,
       isInitial: true,
+      flags: ['IN_FORCE'],
       recordActions: { create: EVERY_DIRECT_CHANGE.map((actionKey) => ({ organizationId, actionKey })) },
     },
   });

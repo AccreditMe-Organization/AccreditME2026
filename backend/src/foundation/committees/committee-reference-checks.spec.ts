@@ -19,7 +19,8 @@ interface Fake {
   units: Map<string, { organizationId: string; isActive: boolean }>;
   parentReaches: boolean;
   reportsToReaches: boolean;
-  stage: Map<string, { stageId: string; flags: string[] } | null>; // committee -> current stage (ACC-255: its flags)
+  // committee -> current stage (ACC-255: its flags), and (ACC-286) whether the committee is active, true unless said
+  stage: Map<string, { stageId: string; flags: string[]; isActive?: boolean } | null>;
 }
 
 function fakeTx(fake: Fake) {
@@ -45,7 +46,7 @@ function fakeTx(fake: Fake) {
       if (sql.includes('"WorkflowInstance"')) {
         const committeeId = values[1] as string;
         const stage = fake.stage.get(committeeId);
-        return Promise.resolve(stage ? [stage] : []);
+        return Promise.resolve(stage ? [{ ...stage, isActive: stage.isActive ?? true }] : []);
       }
       throw new Error(`unexpected query: ${sql}`);
     }),
@@ -136,11 +137,11 @@ describe('Committee reference checks (ACC-233)', () => {
       const fake = world({ stage: new Map([['other', { stageId: 's', flags: ['DISSOLVING'] }]]) });
       expect(await refusal(fake, { committeeId: 'self', reportingToCommitteeId: 'other' })).toBe('COMMITTEE_REPORTS_TO_DISSOLVING');
     });
-    it('a stage without the flag is allowed, whatever else it is flagged', async () => {
-      for (const flags of [[], ['IN_FORCE']]) {
-        const fake = world({ stage: new Map([['other', { stageId: 's', flags }]]) });
-        expect(await refusal(fake, { committeeId: 'self', parentCommitteeId: 'other' })).toBeNull();
-      }
+    it('a stage without the flag is not dissolving: in force it is allowed, otherwise it is refused as not in force (ACC-286)', async () => {
+      const inForce = world({ stage: new Map([['other', { stageId: 's', flags: ['IN_FORCE'] }]]) });
+      expect(await refusal(inForce, { committeeId: 'self', parentCommitteeId: 'other' })).toBeNull();
+      const notYet = world({ stage: new Map([['other', { stageId: 's', flags: [] }]]) });
+      expect(await refusal(notYet, { committeeId: 'self', parentCommitteeId: 'other' })).toBe('COMMITTEE_PARENT_NOT_LIVE');
     });
     it('reads the stage FLAGS, not its key', async () => {
       const { tx, raw } = fakeTx(world());
@@ -149,8 +150,8 @@ describe('Committee reference checks (ACC-233)', () => {
       expect((read[0] as TemplateStringsArray).join('?')).toContain('ws."flags"');
       expect((read[0] as TemplateStringsArray).join('?')).not.toContain('ws."key"');
     });
-    it('a committee with no workflow instance is not dissolving', async () => {
-      expect(await refusal(world({ stage: new Map() }), { committeeId: 'self', parentCommitteeId: 'other' })).toBeNull();
+    it('a committee with no workflow instance is not dissolving — and not in force either (ACC-286)', async () => {
+      expect(await refusal(world({ stage: new Map() }), { committeeId: 'self', parentCommitteeId: 'other' })).toBe('COMMITTEE_PARENT_NOT_LIVE');
     });
     it('the stage read takes a share lock on the instance, scoped to the organisation', async () => {
       const { tx, raw } = fakeTx(world());
@@ -158,6 +159,37 @@ describe('Committee reference checks (ACC-233)', () => {
       const read = raw.$queryRaw.mock.calls.find(([s]) => (s as TemplateStringsArray).join('?').includes('"WorkflowInstance"'))!;
       expect((read[0] as TemplateStringsArray).join('?')).toContain('FOR SHARE OF wi');
       expect(read.slice(1)).toEqual([ORG_A, 'other']);
+    });
+  });
+
+  // ACC-286 — only a committee in force can be pointed at: its stage flagged
+  // IN_FORCE AND the committee active, read in the same one query.
+  describe('rule 6 — only a committee in force (ACC-286)', () => {
+    it('a parent or reports-to not yet in force is refused, each with its own code', async () => {
+      const fake = world({ stage: new Map([['other', { stageId: 's', flags: [] }]]) });
+      expect(await refusal(fake, { committeeId: 'self', parentCommitteeId: 'other' })).toBe('COMMITTEE_PARENT_NOT_LIVE');
+      expect(await refusal(fake, { committeeId: 'self', reportingToCommitteeId: 'other' })).toBe('COMMITTEE_REPORTS_TO_NOT_LIVE');
+    });
+    it('an inactive committee is not in force, whatever its stage', async () => {
+      const fake = world({ stage: new Map([['other', { stageId: 's', flags: ['IN_FORCE'], isActive: false }]]) });
+      expect(await refusal(fake, { committeeId: 'self', parentCommitteeId: 'other' })).toBe('COMMITTEE_PARENT_NOT_LIVE');
+      expect(await refusal(fake, { committeeId: 'self', reportingToCommitteeId: 'other' })).toBe('COMMITTEE_REPORTS_TO_NOT_LIVE');
+    });
+    it('dissolving keeps its own, more specific sentence', async () => {
+      const fake = world({ stage: new Map([['other', { stageId: 's', flags: ['DISSOLVING'] }]]) });
+      expect(await refusal(fake, { committeeId: 'self', parentCommitteeId: 'other' })).toBe('COMMITTEE_PARENT_DISSOLVING');
+    });
+    it('clearing a parent or reports-to is never checked', async () => {
+      const { tx, raw } = fakeTx(world({ stage: new Map() }));
+      await assertCommitteeReferences(tx, { organizationId: ORG_A, committeeId: 'self', parentCommitteeId: null, reportingToCommitteeId: null }, logger);
+      expect(raw.$queryRaw).not.toHaveBeenCalled();
+    });
+    it('the activity is read in the same one query, scoped to the organisation', async () => {
+      const { tx, raw } = fakeTx(world());
+      await assertCommitteeReferences(tx, { organizationId: ORG_A, committeeId: null, parentCommitteeId: 'other' }, logger);
+      const reads = raw.$queryRaw.mock.calls.filter(([s]) => (s as TemplateStringsArray).join('?').includes('"WorkflowInstance"'));
+      expect(reads).toHaveLength(1);
+      expect((reads[0]![0] as TemplateStringsArray).join('?')).toContain('c."organizationId" = wi."organizationId"');
     });
   });
 
