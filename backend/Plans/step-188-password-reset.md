@@ -626,6 +626,67 @@ The app's interceptor answers a 401 by renewing the session and retrying. So:
 
 The design file is copied unchanged into `frontend/design-reference/`.
 
-## 8. As built
+## 8. As built (14 Nov)
 
-(Filled in when the build is done.)
+Built as §7 says. Mechanism: SYSTEM-REFERENCE §1.16; the rules: CLAUDE.md, Key
+Architecture Decisions (ACC-188).
+
+**Files.**
+- **Backend:**
+  - `foundation/auth/password-reset/`:
+    - `password-reset.service.ts` (`request`, `issue`, `lookup`, `reset`);
+    - `password-reset.processor.ts`;
+    - `password-reset.module.ts`, which imports only Prisma and the queues, so
+      it never loads Better Auth;
+    - `password-reset-verification.ts`, the contained Better Auth write;
+    - `password-breach-check.service.ts`;
+    - `reset-link.config.ts`;
+    - `reset-link-refusal.ts`;
+    - `reset-email.ts`.
+  - `foundation/auth/session-revocation.ts`.
+  - `foundation/notification/transactional-email.service.ts` and
+    `security-notice.ts`.
+  - Edits:
+    - the Better Auth config: no `sendResetPassword`,
+      `revokeSessionsOnPasswordReset`, the `storeIdentifier` override;
+    - `auth.service.ts`: forgot, lookup, reset, and the new-IP sentence;
+    - `auth.controller.ts`: the lookup route;
+    - the contract module and its spec;
+    - the rate limits;
+    - the queue, the workers list and its spec;
+    - `prisma.service.ts`;
+    - the schema and migration 64.
+- **Frontend:**
+  - `forgot-password` restored;
+  - `reset-password` (new) and its route;
+  - Sign in's one-time notice;
+  - `AuthService.lookupResetLink()`;
+  - `auth.forgot.*`, `auth.reset.*` and `auth.recovery.*` in both languages;
+  - `auth.forgotPasswordUnavailable` removed;
+  - the design file copied unchanged into `frontend/design-reference/`.
+
+**Departures, each with its reason:**
+1. **Better Auth's row for a REPLACED link is not deleted.** We hold only its
+   token's SHA-256, and Better Auth keys the row by a different hash. The ledger
+   refuses a replaced link before Better Auth is called, and the row expires
+   within the hour (§7.2).
+2. **The retention delete runs BEFORE the REPLACED update** in the issuing
+   transaction. The other order gave a long-expired open link a fresh `endedAt`
+   and kept it 30 more days. The spec caught it.
+3. **"Breach check unavailable" uses the design's own sentence** ("…your link
+   still works"), not Accept invitation's. Hint, required, too short, too long
+   and breached are the `auth.invitation.*` strings, as decided.
+4. **Sign in's notice sits above the title,** as the design draws it. The
+   invitation notice keeps its place below the title.
+5. **A failed or rate-limited link check shows its message with Retry.** This is
+   the "Retry only while checking" rule; the design draws "unreachable" only on
+   the forms.
+6. **The migration was written with `prisma migrate diff --from-schema
+   --to-schema`.** Prisma 7 renamed the `-datamodel` flags. The SQL is exactly
+   the enum and the table.
+7. **Not applied locally.** There is no `accreditme_a2` database, no `a2db.mjs`,
+   no local Postgres and no Docker on this machine. The real-database spec
+   (`password-reset-link.db-spec.ts`) runs in CI's `test:db` step, after CI's
+   `prisma migrate deploy` applies migration 64.
+8. **Screenshots on port 4202, not 4201.** Port 4201 was serving another
+   checkout (`D:\Accredit-me-2`), which was left alone.
