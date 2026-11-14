@@ -4319,11 +4319,45 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 - **`reassignAllForUser()`** — the bulk version, called from exactly one
   place: `UserService.deactivate()` (`user.service.ts`, the
   departure flow) — confirmed via grep, no other caller exists. For
-  every task the departing user is still an active assignee on: if a
+  every OPEN task the departing user is still an active assignee on: if a
   valid `toUserId` (their `actingUserId`, resolved and re-validated by
   the caller) is given, reassigns to them; otherwise, if no other active
   assignee remains on that task, flags it `UNASSIGNED`. Every change
   audit-logged individually with `metadata: { event: 'departure_reassignment' }`.
+
+  **ACC-165 — three rules, each in `reassign()`'s shape (ACC-163):**
+  - **OPEN TASKS ONLY (decided, Ahmad).** A `COMPLETED` or `CANCELLED` task
+    keeps its rows exactly as they are: no `removedAt` on the leaver, no row
+    for the acting user, no `DELEGATE` audit row, no notice.
+    - **Why:** a completer's own row stays active by design, and the engine's
+      stage cancel leaves assignees attached on purpose. Before, departure
+      "reassigned" those closed tasks too, with an audit row each.
+    - **Where it's decided:** filtered in the query (`status` not closed), and
+      decided again **under the row lock**, because a task can close between
+      the query and the lock.
+    - **On the shared database on 14 Nov:** 1 departure audit row in total,
+      0 of them on a task closed then or now. 0 active rows of inactive users
+      on closed tasks. Nothing depended on the old behaviour.
+  - **ONE ROW PER PERSON PER TASK.** `TaskAssignee` is unique on
+    `(taskId, userId)` with no exemption for removed rows. The old
+    unconditional create therefore failed, and the whole deactivation with it,
+    whenever the acting user was already on the task:
+    - **held it before:** their removed row is **reactivated**: `removedAt`
+      cleared, `assignedAt`/`assignedById` set, the delegation stamp and
+      `pickedAt` cleared, as `reassign()` does;
+    - **is an active co-assignee:** their row is **left as it is**.
+  - **EACH TASK IS ONE TRANSACTION, under `lockTaskRow()`.** The leaver's
+    row, the acting user's row, the status and the request cancels commit
+    together, so no task is ever half-reassigned. Audit rows and notifications
+    are written after each task commits, never under the lock.
+    - **The boundary is the task, not the departure.**
+      `UserService.deactivate()` commits the status flip and its invariants in
+      its own transaction and keeps side effects outside it on purpose: a
+      refused deactivation must not move anyone's work. And one transaction
+      across every task would hold every task's lock at once.
+    - **A failure stops at a whole task.** The tasks before it are done and
+      the rest untouched. Running it again picks up exactly those, because a
+      finished task no longer has the leaver's active row.
   **ACC-167 — the pool branch, checked first:** for an OPEN task with a pool
   target — whether the departing user picked it up or was chosen directly —
   their row is stamped `removedAt` and no row is created for the acting user.
@@ -4335,8 +4369,8 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   - **others are still on it** → it stays with them:
     `{ event: 'departure_left_with_others' }`, not counted, nobody told.
 
-  A CLOSED pool task is left to the old path (returning it would reopen it)
-  — that path is ACC-165's to change.
+  A CLOSED pool task is never returned to its pool (that would reopen it).
+  Since ACC-165 it is not touched at all: departure handles open tasks only.
 - **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
   idempotent ACC-52) — the recovery half of the unassigned-task
   lifecycle, called from exactly one place:
@@ -4378,9 +4412,8 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
     **latent bug in `reassign()` itself** (reachable manually too:
     reassign A → B → A) — not fixed by ACC-51, not inherited by it, and
     **fixed in ACC-163**, which made `reassign()` reuse the row in place.
-    `reassignAllForUser()` still creates a row for its `toUserId` without
-    checking for a removed one, so a departure reassignment to someone who
-    held the task before can hit the same constraint; not yet ticketed.
+    `reassignAllForUser()` had the same defect, and ACC-165 fixed it the
+    same way.
 - **`hasUnassignedStageTasks()`** (ACC-52) — a `count > 0` existence
   check for orphaned `UNASSIGNED` tasks on a given
   `(workflowInstanceId, sourceStageId)` pair, tenant-scoped like every

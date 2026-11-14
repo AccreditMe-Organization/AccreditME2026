@@ -1430,20 +1430,56 @@ describe('TaskService', () => {
   });
 
   describe('reassignAllForUser', () => {
-    const ASSIGNMENT_SOLO = {
-      id: 'ta-1',
-      taskId: 'task-1',
-      userId: USER_A,
-      removedAt: null,
-      task: {
-        id: 'task-1',
-        status: 'PENDING',
-        assignees: [{ id: 'ta-1', userId: USER_A, removedAt: null }],
-      },
+    // ACC-165 — each task is re-read UNDER ITS LOCK, inside its own
+    // transaction, so a departure's tasks are given twice: the open assignments
+    // the query finds, and the locked read of each task by id.
+    type Row = {
+      id: string;
+      taskId: string;
+      userId: string;
+      removedAt: Date | null;
+      assignedById?: string;
+      assignedAt?: Date;
+      delegationReason?: string | null;
+      delegationContextId?: string | null;
+      pickedAt?: Date | null;
+    };
+    type LockedTask = { id: string; organizationId: string; status: string; priority: string; assignees: Row[] };
+
+    const solo = (over: Partial<LockedTask> = {}): LockedTask => ({
+      id: 'task-1',
+      organizationId: ORG_A,
+      status: 'PENDING',
+      priority: 'MEDIUM',
+      assignees: [{ id: 'ta-1', taskId: 'task-1', userId: USER_A, removedAt: null }],
+      ...over,
+    });
+
+    /** The departure's query finds these tasks; the locked read returns each by id, in its organisation only. */
+    const givenDeparting = (...tasks: LockedTask[]): void => {
+      mockPrisma.taskAssignee.findMany.mockResolvedValue(tasks.map((t) => ({ taskId: t.id })));
+      mockPrisma.task.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(tasks.find((t) => t.id === where.id && t.organizationId === where.organizationId) ?? null),
+      );
     };
 
-    it('reassigns every active task to the acting user when one is given', async () => {
-      mockPrisma.taskAssignee.findMany.mockResolvedValue([ASSIGNMENT_SOLO]);
+    const originalTransaction = (mockPrisma as unknown as { $transaction: jest.Mock }).$transaction.getMockImplementation();
+    afterEach(() => {
+      // clearAllMocks() keeps implementations; these fakes must not follow later tests.
+      for (const mock of [
+        mockPrisma.task.findFirst,
+        mockPrisma.task.update,
+        mockPrisma.taskAssignee.findMany,
+        mockPrisma.taskAssignee.update,
+        mockPrisma.taskAssignee.create,
+      ]) {
+        mock.mockReset();
+      }
+      (mockPrisma as unknown as { $transaction: jest.Mock }).$transaction.mockImplementation(originalTransaction!);
+    });
+
+    it('reassigns every open task to the acting user when one is given', async () => {
+      givenDeparting(solo());
       mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
 
       const result = await service.reassignAllForUser(USER_A, USER_B, ORG_A, ACTOR);
@@ -1458,8 +1494,42 @@ describe('TaskService', () => {
       expect(result).toEqual({ reassignedCount: 1, unassignedCount: 0, returnedToPoolCount: 0 });
     });
 
+    // ACC-165 — asks only for OPEN tasks; a closed one is never even read.
+    it('asks only for the leaver\'s rows on OPEN tasks, in this organisation', async () => {
+      givenDeparting();
+
+      await service.reassignAllForUser(USER_A, null, ORG_A, ACTOR);
+
+      expect(mockPrisma.taskAssignee.findMany).toHaveBeenCalledWith({
+        where: {
+          userId: USER_A,
+          removedAt: null,
+          task: { organizationId: ORG_A, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+        },
+        select: { taskId: true },
+      });
+    });
+
+    // ACC-165 — reassign()'s shape: the row lock, then the read, then the
+    // writes, in ONE transaction per task.
+    it('locks each task row before reading it, in one transaction per task', async () => {
+      givenDeparting(solo(), solo({ id: 'task-2', assignees: [{ id: 'ta-2', taskId: 'task-2', userId: USER_A, removedAt: null }] }));
+
+      await service.reassignAllForUser(USER_A, null, ORG_A, ACTOR);
+
+      const tx = (mockPrisma as unknown as { $transaction: jest.Mock }).$transaction;
+      expect(tx).toHaveBeenCalledTimes(2);
+      expect(lockCall(0).values).toEqual(['task-1', ORG_A]);
+      expect(lockCall(1).values).toEqual(['task-2', ORG_A]);
+      expect(mockQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(mockPrisma.task.findFirst.mock.invocationCallOrder[0]!);
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith({
+        where: { id: 'task-1', organizationId: ORG_A },
+        include: { assignees: true },
+      });
+    });
+
     it('flags a task UNASSIGNED when no acting user is given and no other assignee remains', async () => {
-      mockPrisma.taskAssignee.findMany.mockResolvedValue([ASSIGNMENT_SOLO]);
+      givenDeparting(solo());
 
       const result = await service.reassignAllForUser(USER_A, null, ORG_A, ACTOR);
 
@@ -1471,27 +1541,25 @@ describe('TaskService', () => {
     });
 
     it('does NOT flag UNASSIGNED when another active assignee remains on the task (multi-assignee)', async () => {
-      const multiAssignment = {
-        ...ASSIGNMENT_SOLO,
-        task: {
-          id: 'task-1',
-          status: 'PENDING',
+      givenDeparting(
+        solo({
           assignees: [
-            { id: 'ta-1', userId: USER_A, removedAt: null },
-            { id: 'ta-2', userId: USER_B, removedAt: null },
+            { id: 'ta-1', taskId: 'task-1', userId: USER_A, removedAt: null },
+            { id: 'ta-2', taskId: 'task-1', userId: USER_B, removedAt: null },
           ],
-        },
-      };
-      mockPrisma.taskAssignee.findMany.mockResolvedValue([multiAssignment]);
+        }),
+      );
 
       const result = await service.reassignAllForUser(USER_A, null, ORG_A, ACTOR);
 
+      // Non-vacuity: the leaver's row WAS removed — the task was reached.
+      expect(mockPrisma.taskAssignee.update).toHaveBeenCalledWith({ where: { id: 'ta-1' }, data: { removedAt: expect.any(Date) } });
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
       expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0, returnedToPoolCount: 0 });
     });
 
     it('falls back to UNASSIGNED when the requested acting user is not active in this tenant', async () => {
-      mockPrisma.taskAssignee.findMany.mockResolvedValue([ASSIGNMENT_SOLO]);
+      givenDeparting(solo());
       mockPrisma.user.findMany.mockResolvedValue([]); // acting user not found/inactive
 
       const result = await service.reassignAllForUser(USER_A, 'inactive-user', ORG_A, ACTOR);
@@ -1500,8 +1568,8 @@ describe('TaskService', () => {
       expect(result).toEqual({ reassignedCount: 0, unassignedCount: 1, returnedToPoolCount: 0 });
     });
 
-    it('logs an audit entry per reassigned task', async () => {
-      mockPrisma.taskAssignee.findMany.mockResolvedValue([ASSIGNMENT_SOLO]);
+    it('logs an audit entry per reassigned task, after the task commits', async () => {
+      givenDeparting(solo());
       mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
 
       await service.reassignAllForUser(USER_A, USER_B, ORG_A, ACTOR);
@@ -1514,16 +1582,197 @@ describe('TaskService', () => {
           metadata: expect.objectContaining({ event: 'departure_reassignment', fromUserId: USER_A }),
         }),
       );
+      expect(mockAuditLog.log.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mockPrisma.taskAssignee.create.mock.invocationCallOrder[0]!,
+      );
     });
 
-    it('should NOT reassign tasks belonging to a different tenant', async () => {
-      mockPrisma.taskAssignee.findMany.mockImplementation(({ where }) =>
-        Promise.resolve(where.task.organizationId === ORG_A ? [ASSIGNMENT_SOLO] : []),
-      );
+    // ── ACC-165: the acting user's row is reused, never duplicated ──────────
+    //
+    // Against a small stateful fake that enforces TaskAssignee's
+    // (taskId, userId) uniqueness the way the database does (the ACC-163
+    // A → B → A spec is the pattern), so the old unconditional create fails
+    // here exactly as it did live.
+    describe('the acting user already on the task (ACC-165)', () => {
+      let rows: Row[];
+      let status: string;
 
+      const useFake = (initial: Row[]): void => {
+        rows = initial.map((r) => ({ ...r }));
+        status = 'PENDING';
+        mockPrisma.taskAssignee.findMany.mockResolvedValue([{ taskId: 'task-1' }]);
+        mockPrisma.task.findFirst.mockImplementation(() =>
+          Promise.resolve({ ...solo(), status, assignees: rows.map((r) => ({ ...r })) }),
+        );
+        mockPrisma.taskAssignee.update.mockImplementation(({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
+          Object.assign(rows.find((r) => r.id === where.id)!, data);
+          return Promise.resolve({});
+        });
+        mockPrisma.taskAssignee.create.mockImplementation(({ data }: { data: Row }) => {
+          if (rows.some((r) => r.taskId === data.taskId && r.userId === data.userId)) {
+            return Promise.reject(new Error('Unique constraint failed on (taskId, userId)'));
+          }
+          rows.push({ ...data, id: `ta-${rows.length + 1}`, removedAt: null });
+          return Promise.resolve({});
+        });
+        mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
+      };
+
+      it('the fake enforces the constraint: a second row for the same person is refused', async () => {
+        useFake([{ id: 'ta-b', taskId: 'task-1', userId: USER_B, removedAt: new Date() }]);
+        await expect(
+          mockPrisma.taskAssignee.create({ data: { taskId: 'task-1', userId: USER_B, assignedById: ACTOR } }),
+        ).rejects.toThrow('Unique constraint failed');
+      });
+
+      // The crash ACC-165 is about: the acting user held the task before (it
+      // was reassigned away from them, or they rejected it).
+      it('reactivates the acting user\'s REMOVED row — the original crash — with no delegation stamp and not as a pick', async () => {
+        useFake([
+          { id: 'ta-1', taskId: 'task-1', userId: USER_A, removedAt: null },
+          {
+            id: 'ta-b',
+            taskId: 'task-1',
+            userId: USER_B,
+            removedAt: new Date('2026-01-10'),
+            assignedById: 'someone-else',
+            delegationReason: 'ACTING_HEAD',
+            delegationContextId: 'unit-1',
+            pickedAt: new Date('2026-01-05'),
+          },
+        ]);
+
+        const result = await service.reassignAllForUser(USER_A, USER_B, ORG_A, ACTOR);
+
+        expect(result).toEqual({ reassignedCount: 1, unassignedCount: 0, returnedToPoolCount: 0 });
+        expect(rows.filter((r) => r.userId === USER_B)).toHaveLength(1);
+        expect(rows.find((r) => r.userId === USER_B)).toEqual(
+          expect.objectContaining({
+            id: 'ta-b',
+            removedAt: null,
+            assignedAt: expect.any(Date),
+            assignedById: ACTOR,
+            delegationReason: null,
+            delegationContextId: null,
+            pickedAt: null,
+          }),
+        );
+        expect(rows.find((r) => r.userId === USER_A)!.removedAt).not.toBeNull();
+        expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
+      });
+
+      // The create collided here too: the acting user is already a co-assignee.
+      it('leaves an ACTIVE co-assignee\'s row exactly as it is — no duplicate, no update', async () => {
+        const since = new Date('2026-01-12T08:00:00Z');
+        useFake([
+          { id: 'ta-1', taskId: 'task-1', userId: USER_A, removedAt: null },
+          { id: 'ta-b', taskId: 'task-1', userId: USER_B, removedAt: null, assignedById: 'someone-else', assignedAt: since },
+        ]);
+
+        const result = await service.reassignAllForUser(USER_A, USER_B, ORG_A, ACTOR);
+
+        expect(result).toEqual({ reassignedCount: 1, unassignedCount: 0, returnedToPoolCount: 0 });
+        expect(rows.filter((r) => r.userId === USER_B)).toHaveLength(1);
+        expect(rows.find((r) => r.userId === USER_B)).toEqual(
+          expect.objectContaining({ removedAt: null, assignedById: 'someone-else', assignedAt: since }),
+        );
+        // Only the leaver's row was written.
+        expect(mockPrisma.taskAssignee.update).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.taskAssignee.update).toHaveBeenCalledWith({ where: { id: 'ta-1' }, data: { removedAt: expect.any(Date) } });
+        expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
+      });
+    });
+
+    // ACC-165 — each task commits whole or not at all. A transaction fake that
+    // ROLLS BACK on a throw, over a two-task store whose second task fails at
+    // its last write: the first stays fully reassigned, the second untouched.
+    it('a failure partway through leaves no task half-reassigned', async () => {
+      type Store = Record<string, { status: string; rows: Row[] }>;
+      let store: Store = {
+        'task-1': { status: 'PENDING', rows: [{ id: 'ta-1', taskId: 'task-1', userId: USER_A, removedAt: null }] },
+        'task-2': { status: 'UNASSIGNED', rows: [{ id: 'ta-2', taskId: 'task-2', userId: USER_A, removedAt: null }] },
+      };
+      const clone = (s: Store): Store => JSON.parse(JSON.stringify(s)) as Store;
+      (mockPrisma as unknown as { $transaction: jest.Mock }).$transaction.mockImplementation(
+        async (callback: (tx: unknown) => Promise<unknown>) => {
+          const snapshot = clone(store);
+          try {
+            return await callback(mockPrisma);
+          } catch (error) {
+            store = snapshot; // the rollback
+            throw error;
+          }
+        },
+      );
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([{ taskId: 'task-1' }, { taskId: 'task-2' }]);
+      mockPrisma.task.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve({ ...solo({ id: where.id }), status: store[where.id]!.status, assignees: store[where.id]!.rows.map((r) => ({ ...r, removedAt: r.removedAt ? new Date(r.removedAt) : null })) }),
+      );
+      mockPrisma.taskAssignee.update.mockImplementation(({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
+        for (const t of Object.values(store)) Object.assign(t.rows.find((r) => r.id === where.id) ?? {}, data);
+        return Promise.resolve({});
+      });
+      mockPrisma.taskAssignee.create.mockImplementation(({ data }: { data: Row }) => {
+        store[data.taskId]!.rows.push({ ...data, id: `new-${data.taskId}`, removedAt: null });
+        return Promise.resolve({});
+      });
+      // The second task's status write fails, AFTER its rows were written.
+      mockPrisma.task.update.mockImplementation(({ where }: { where: { id: string } }) =>
+        where.id === 'task-2' ? Promise.reject(new Error('connection lost')) : Promise.resolve({}),
+      );
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
+
+      await expect(service.reassignAllForUser(USER_A, USER_B, ORG_A, ACTOR)).rejects.toThrow('connection lost');
+
+      // The first task committed whole.
+      expect(store['task-1']!.rows.find((r) => r.userId === USER_A)!.removedAt).not.toBeNull();
+      expect(store['task-1']!.rows.find((r) => r.userId === USER_B)!.removedAt).toBeNull();
+      // The second is exactly as it was: the leaver still on it, nobody added.
+      expect(store['task-2']!.rows).toEqual([{ id: 'ta-2', taskId: 'task-2', userId: USER_A, removedAt: null }]);
+      expect(store['task-2']!.status).toBe('UNASSIGNED');
+      // Nothing was audited for the task that rolled back.
+      expect(mockAuditLog.log).not.toHaveBeenCalledWith(expect.objectContaining({ objectId: 'task-2' }));
+    });
+
+    // ACC-165 — decided: departure touches OPEN tasks only. A task that closed
+    // between the query and the lock is left exactly as it is.
+    it.each(['COMPLETED', 'CANCELLED'])('leaves a %s task exactly as it is — no row written, no audit, no notice', async (closed) => {
+      givenDeparting(solo({ status: closed }));
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
+
+      const result = await service.reassignAllForUser(USER_A, USER_B, ORG_A, ACTOR);
+
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0, returnedToPoolCount: 0 });
+      // Non-vacuity: the task WAS reached, and locked.
+      expect(lockCall().values).toEqual(['task-1', ORG_A]);
+      expect(mockPrisma.taskAssignee.update).not.toHaveBeenCalled();
+      expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('reassignAllForUser: the query and each locked read are scoped by organisation', async () => {
+      // The query names ORG_B, so it finds nothing of ORG_A's…
+      mockPrisma.taskAssignee.findMany.mockImplementation(({ where }: { where: { task: { organizationId: string } } }) =>
+        Promise.resolve(where.task.organizationId === ORG_A ? [{ taskId: 'task-1' }] : []),
+      );
+      const none = await service.reassignAllForUser(USER_A, null, ORG_B, ACTOR);
+      expect(none).toEqual({ reassignedCount: 0, unassignedCount: 0, returnedToPoolCount: 0 });
+
+      // …and even handed ORG_A's task id, the locked read in ORG_B finds
+      // nothing and writes nothing.
+      givenDeparting(solo()); // belongs to ORG_A
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([{ taskId: 'task-1' }]);
       const result = await service.reassignAllForUser(USER_A, null, ORG_B, ACTOR);
 
       expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0, returnedToPoolCount: 0 });
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'task-1', organizationId: ORG_B } }),
+      );
+      expect(lockCall().values).toEqual(['task-1', ORG_B]);
+      expect(mockPrisma.taskAssignee.update).not.toHaveBeenCalled();
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
     });
   });
 
