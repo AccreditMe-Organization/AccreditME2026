@@ -76,6 +76,8 @@ import {
 } from '../../common/config/session-cookies';
 import { verifySessionIdentity } from '../../common/guards/tenant.guard';
 import { isAtOwnAddress } from '../../common/tenant/session-address';
+import { PasswordResetService } from './password-reset/password-reset.service';
+import { buildTenantUrl } from '../../common/config/app-url.config';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -179,8 +181,9 @@ export class AuthService {
     private readonly notificationService: NotificationService,
     private readonly loginAttemptService: LoginAttemptService,
     private readonly userService: UserService,
+    private readonly passwordReset: PasswordResetService,
   ) {
-    this.auth = createBetterAuthInstance(this.prisma, this.notificationService);
+    this.auth = createBetterAuthInstance(this.prisma);
   }
 
   // Public only for use by other Commit-3-adjacent flows that need the same
@@ -291,7 +294,8 @@ export class AuthService {
   ): Promise<PublicUser & { language: string }> {
     const user = await this.prisma.user.findFirst({
       where: { id: appUserId },
-      include: { organization: { select: { status: true } } },
+      // ACC-188 — the slug builds the new-IP email's Forgot password link.
+      include: { organization: { select: { status: true, slug: true } } },
     });
     if (!user) throw new AuthRefusalException('INVALID_CREDENTIALS');
     // ACC-168 — reached here only on the MFA path, by an organisation closed
@@ -343,13 +347,17 @@ export class AuthService {
     });
 
     if (wasNewIp) {
+      // ACC-188 — the sentence now points at the real Forgot password page on
+      // the person's own address, built by buildTenantUrl(). It carries no
+      // secret, so this stays an ordinary notification.
+      const forgotPasswordUrl = buildTenantUrl(user.organization.slug, '/forgot-password');
       await this.notificationService.create(
         {
           userId: user.id,
           titleEn: 'New sign-in to your AccreditMe account',
           titleAr: 'تسجيل دخول جديد إلى حسابك في AccreditMe',
-          bodyEn: `We noticed a sign-in from a new IP address (${req.ip ?? 'unknown'}). If this wasn't you, reset your password immediately.`,
-          bodyAr: `لاحظنا تسجيل دخول من عنوان IP جديد (${req.ip ?? 'غير معروف'}). إذا لم يكن هذا أنت، فأعد تعيين كلمة المرور فورًا.`,
+          bodyEn: `We noticed a sign-in from a new IP address (${req.ip ?? 'unknown'}). If this wasn't you, reset your password now: ${forgotPasswordUrl}`,
+          bodyAr: `لاحظنا تسجيل دخول من عنوان IP جديد (${req.ip ?? 'غير معروف'}). إذا لم يكن هذا منك، فأعد تعيين كلمة المرور الآن: ${forgotPasswordUrl}`,
           channel: 'EMAIL',
         },
         user.organizationId,
@@ -965,33 +973,48 @@ export class AuthService {
   }
 
   /**
-   * PASSWORD RESET IS NOT SERVED, so this does nothing (CC-64, ACC-186/148).
-   *
-   * It used to call Better Auth's requestPasswordReset, which created a token
-   * (an AuthVerification row) and queued an email whose link pointed at
-   * Better Auth's own handler — never mounted here — so the link could not
-   * work, and was sent to real people. The route, its rate limits and its
-   * neutral 200 stay, identical for a real and an unknown address, so nothing
-   * about an account can be learned from it; nothing is written and nothing is
-   * sent. The Forgot password screen no longer calls it either (slice 9d).
-   *
-   * The self-service password-reset ticket (not yet filed; it comes after
-   * ACC-120 slice 9) builds the real flow: a token, a link from
-   * buildTenantUrl() to a reset screen, and this method calling
-   * requestPasswordReset again. better-auth.config.ts keeps sendResetPassword
-   * for it, unreachable until then.
+   * Forgot password — ACC-188. ONE queue add, the same for a real and an
+   * unknown address, and the same neutral 200 (the controller returns nothing).
+   * The account is looked up, and the link made and emailed, in the worker
+   * (PasswordResetService.issue()), so neither the answer nor its timing tells
+   * an account apart. Better Auth's requestPasswordReset is never called: its
+   * sendResetPassword is not configured, so it would refuse.
    */
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
-    // The body is still validated by its DTO and still keys the per-email rate
-    // limit (LimitResetsPerEmail); it is simply not acted on.
-    void dto;
-    return Promise.resolve();
+    await this.passwordReset.request({
+      organizationSlug: dto.organizationSlug,
+      email: dto.email,
+    });
   }
 
-  async resetPassword(dto: ResetPasswordDto): Promise<void> {
-    await this.auth.api.resetPassword({
-      body: { newPassword: dto.password, token: dto.token },
-    });
+  /** ACC-188 — is this reset link still usable? Read-only. */
+  lookupResetLink(
+    body: unknown,
+    origin: string | string[] | undefined,
+  ): Promise<{ state: 'open'; expiresAt: string }> {
+    return this.passwordReset.lookup(body, origin);
+  }
+
+  /**
+   * ACC-188 — set a new password from a reset link. PasswordResetService does
+   * everything; this hands it the one Better Auth call it needs, read as a
+   * returned Response (asResponse), never as a rejected promise.
+   */
+  async resetPassword(
+    dto: ResetPasswordDto,
+    origin: string | string[] | undefined,
+    ipAddress: string | undefined,
+  ): Promise<void> {
+    await this.passwordReset.reset(
+      { token: dto.token, password: dto.password },
+      origin,
+      ipAddress,
+      (token, newPassword) =>
+        this.auth.api.resetPassword({
+          body: { token, newPassword },
+          asResponse: true,
+        }),
+    );
   }
 
   // Re-verifies the password via signInEmail to obtain a fresh Better Auth

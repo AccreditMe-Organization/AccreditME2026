@@ -5,6 +5,7 @@ import { TenantModule } from '../tenant/tenant.module';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from './notification.service';
 import { NotificationEmailProcessor } from './notification-email.processor';
+import { TransactionalEmailService } from './transactional-email.service';
 import { workersEnabled } from '../../common/queue/workers.config';
 
 // @Global() — unlike WorkflowModule, every future functional module in
@@ -21,7 +22,11 @@ import { workersEnabled } from '../../common/queue/workers.config';
   // stolen sweep: a laptop consuming this queue sends real mail, from the
   // deployment's own backlog, over the developer's network. NotificationService
   // stays registered — producing a notification is API work, not worker work.
-  providers: [NotificationService, ...(workersEnabled() ? [NotificationEmailProcessor] : [])],
+  providers: [
+    NotificationService,
+    TransactionalEmailService,
+    ...(workersEnabled() ? [NotificationEmailProcessor] : []),
+  ],
   exports: [NotificationService],
 })
 export class NotificationModule {}

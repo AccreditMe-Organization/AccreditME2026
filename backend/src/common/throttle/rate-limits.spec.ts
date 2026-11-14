@@ -33,6 +33,8 @@ describe('rate limits (ACC-129)', () => {
       forgotPassword: { limit: 20, ttl: HOUR },
       forgotPasswordPerEmail: { limit: 3, ttl: HOUR },
       resetPassword: { limit: 20, ttl: HOUR },
+      // ACC-188 — the reset page's first read, per address.
+      resetPasswordLookup: { limit: 30, ttl: MINUTE },
       // ACC-197 — per signed-in user.
       taskDraft: { limit: 10, ttl: MINUTE },
       workloadHint: { limit: 20, ttl: MINUTE },

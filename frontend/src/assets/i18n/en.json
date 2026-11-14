@@ -1971,6 +1971,37 @@
     "reassignRejectedBy": "Rejected by {{name}}"
   },
   "auth": {
+    "forgot": {
+      "intro": "Enter the email address you sign in with. If it has an account here, we'll send a link to choose a new password.",
+      "submit": "Send reset link",
+      "sentTitle": "Check your email",
+      "sentBody": "If {{email}} has an account at this organisation, a link to reset the password is on its way. The link works once, for 1 hour. If nothing arrives in a few minutes, check your spam folder.",
+      "sentNote": "Asking again sends a new link, and the earlier one stops working."
+    },
+    "reset": {
+      "title": "Choose a new password",
+      "intro": "Your new password replaces the old one, and signs you out everywhere.",
+      "newPassword": "New password",
+      "confirm": "Confirm new password",
+      "confirmRequired": "Enter the new password again.",
+      "mismatch": "The two passwords don't match.",
+      "checkUnavailable": "We couldn't check your password just now. Try again; your link still works.",
+      "submit": "Set new password",
+      "successNotice": "Your password is changed. Sign in with your new password.",
+      "expiredTitle": "This link has expired",
+      "expiredBody": "Reset links work for 1 hour. Ask for a new one.",
+      "usedTitle": "This link has already been used",
+      "usedBody": "Your password was set with this link. Sign in with it, or ask for a new link if you've forgotten it again.",
+      "replacedTitle": "A newer link was sent",
+      "replacedBody": "You asked for another reset link, so this one no longer works. Use the link in the latest email.",
+      "invalidTitle": "This link can't be used",
+      "invalidBody": "It may be incomplete, or for a different organisation's address. Ask for a new link.",
+      "sendNewLink": "Send a new link"
+    },
+    "recovery": {
+      "unreachable": "We couldn't reach AccreditMe. Check your connection and try again.",
+      "rateLimited": "Too many attempts. Wait a few minutes, then try again."
+    },
     "login": "Sign in",
     "logout": "Sign out",
     "openOrganisationAddress": "Open your organisation's address to sign in, for example yourorg.accreditme.app.",
@@ -2000,7 +2031,6 @@
       "acceptedNotice": "Your password is set. Sign in to continue."
     },
     "forgotPasswordTitle": "Forgot password",
-    "forgotPasswordUnavailable": "Password reset by email isn't available yet. Ask your organisation's administrator for help signing in.",
     "signIn": {
       "backToSignIn": "Back to sign in",
       "emailRequired": "Enter your email.",
