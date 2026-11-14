@@ -327,6 +327,7 @@ under a brief lock.
 
 - [x] Plan: scan, two-deploy proof, counts, enums, backfills, ordering (14 Nov)
 - [x] Ahmad's answers to §7 (14 Nov, §7.1)
-- [ ] PR A
+- [x] PR A built (14 Nov): `@ignore` (migrate diff empty, mutation-checked), backfills and
+  helpers deleted, docs; the 10 calls passed with the columns dropped (dev's client: 3 of 10)
 - [ ] PR A live for a release
 - [ ] PR B (after #289 and #290)

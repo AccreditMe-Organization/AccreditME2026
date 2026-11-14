@@ -4254,8 +4254,9 @@ Ahmad's answers (Q1–Q10) and the dry runs:
 - **THE FLAT `tasks:*` KEYS ARE RETIRED** — from the catalogue and the seed,
   and from existing roles by `npm run backfill:acc244-retire-flat-task-keys`
   (dry run first, `-- --execute` AFTER the deploy; it refuses customers, a
-  transition gated on one, or any changed count). `retired-task-keys.spec.ts`
-  fails if any non-spec source names one again.
+  transition gated on one, or any changed count; executed, then deleted in
+  ACC-278). `retired-task-keys.spec.ts` fails if any non-spec source names one
+  again.
 - **HEADSHIP IS READ FROM `unit-headship.ts`, NEVER RE-DERIVED**:
   `headHolderWhere()`, `runningActingCoverWhere(now)`, the reverse lookups
   (`findUnitHeadedBy`, `findUnitsCoveredBy`) and the sub-unit walk
@@ -4447,7 +4448,8 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
   `npm run backfill:acc271-stage-assignees` and `-transition-movers`, AFTER
   the deploy (dry run, `-- --execute`, dry run 0), with plan §6.4's counts.
   **Both have been executed on the shared database (29 Oct)**: every stage in
-  every organisation is converted, and every transition has a `mover`.
+  every organisation is converted, and every transition has a `mover`. Both
+  were deleted in ACC-278.
 - **A TASK CLOSED BY SOMEONE ELSE'S ACTION IS TOLD, AFTER THE COMMIT (PR 4).**
   `TaskClosedNoticeService`: in-app, never the actor, to the ACTIVE row holder
   directly (an away member is told themselves, never through their acting
@@ -4505,7 +4507,18 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
     its only check. It is a seed-time umbrella only (see ACC-28 above).
   - **Kept until 6c:** the columns, `whoFromLegacy` / `moverForTrigger` /
     `decidesTogether` (the executed backfills import them), and those
-    backfills.
+    backfills. Superseded (ACC-278 PR A): see the next bullet.
+- **6c (ACC-278) — THE OLD WHO COLUMNS LEAVE IN TWO DEPLOYS.** Plan and Ahmad's
+  answers (14 Nov): `backend/Plans/step-278-drop-old-who-columns.md`.
+  - **PR A, done (no migration):** the 13 old columns, their two relations and
+    two back-relations are `@ignore` — out of the generated client, still in
+    the database. The four executed backfills, their specs and scripts, and
+    `whoFromLegacy` / `moverForTrigger` / `decidesTogether` are deleted;
+    `writeStartingAssignments` stays.
+  - **PR B, next:** one migration drops the columns, their foreign keys and
+    four enum types, and makes `whoMode` and `mover` NOT NULL — at least a day
+    after PR A is live. **Once PR B ships, never roll Railway back past PR A**:
+    older code's client names the dropped columns (P2022 on every stage read).
 
 ## Key Architecture Decisions (ACC-260)
 
