@@ -13,6 +13,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import type { AuditLogService } from '../../common/services/audit-log.service';
 import type { NotificationService } from '../notification/notification.service';
 import type { LoginAttemptService } from './login-attempt.service';
+import { PasswordResetService } from './password-reset/password-reset.service';
 
 // The filter imports isAPIError from better-auth/api, which is ESM-only.
 jest.mock('better-auth/api', () => ({ isAPIError: () => false }));
@@ -108,6 +109,7 @@ describe('POST /auth/invitations/lookup (ACC-120 slice 9c)', () => {
       {} as NotificationService,
       {} as LoginAttemptService,
       {} as UserService,
+      {} as unknown as PasswordResetService,
     );
 
     const moduleRef = await Test.createTestingModule({
