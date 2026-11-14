@@ -5,7 +5,8 @@ import { assertCommitteeReferences, CommitteeTx, lockCommitteeHierarchy } from '
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageRules, StageRulesService } from '../workflow/stage-rules.service';
-import { COMMITTEE_ACTIONS } from '../workflow/record-registry';
+import { COMMITTEE_ACTIONS, STAGE_FLAG } from '../workflow/record-registry';
+import { CommitteeSeatRefusal, requiredSeats, seatHolders } from './committee-seat-rules';
 import { CreateCommitteeDto } from './dto/create-committee.dto';
 import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
@@ -447,8 +448,13 @@ export class CommitteesService {
     // ACC-255 PR 2 — the stage first (FOR SHARE of the instance), then the
     // member: a missing member is still a 404 only where the stage allows it.
     const { existing, member } = await this.prisma.$transaction(async (tx) => {
-      await this.assertStage(tx, committeeId, COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, organizationId);
+      const rules = await this.assertStage(tx, committeeId, COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, organizationId);
+      // ACC-286 — then the committee row, so two writes emptying one seat queue.
+      await this.lockCommitteeRow(tx, committeeId, organizationId);
       const existing = await this.getActiveMember(committeeId, memberId, organizationId, tx);
+      if (dto.roleValueId !== existing.roleValueId) {
+        await this.assertSeatStaysFilled(tx, rules, committeeId, existing, organizationId);
+      }
 
       const member = await tx.committeeMember.update({
         where: { id: memberId },
@@ -500,8 +506,11 @@ export class CommitteesService {
 
     // ACC-255 PR 2 — the stage first (FOR SHARE of the instance), then the member.
     const { existing, member } = await this.prisma.$transaction(async (tx) => {
-      await this.assertStage(tx, committeeId, COMMITTEE_ACTIONS.REMOVE_MEMBER, organizationId);
+      const rules = await this.assertStage(tx, committeeId, COMMITTEE_ACTIONS.REMOVE_MEMBER, organizationId);
+      // ACC-286 — then the committee row, so two writes emptying one seat queue.
+      await this.lockCommitteeRow(tx, committeeId, organizationId);
       const existing = await this.getActiveMember(committeeId, memberId, organizationId, tx);
+      await this.assertSeatStaysFilled(tx, rules, committeeId, existing, organizationId);
 
       // isActive derived STRICTLY from leftAt (ACC-22 Pending Discussion #6)
       // — never set independently of it.
@@ -547,11 +556,50 @@ export class CommitteesService {
    * that writes, and BEFORE the committee row lock (instance, then committee).
    * A committee with no instance allows nothing (D14).
    */
-  private assertStage(tx: CommitteeTx, committeeId: string, action: string, organizationId: string): Promise<void> {
+  private assertStage(tx: CommitteeTx, committeeId: string, action: string, organizationId: string): Promise<StageRules> {
     return this.stageRules.assertStageAllows('COMMITTEE', committeeId, action, organizationId, tx, {
       lock: 'share',
       message: (stageNameEn) => committeeStageRefusalMessage(action, stageNameEn),
     });
+  }
+
+  /**
+   * ACC-286 — the committee row FOR UPDATE, AFTER the instance (assertStage):
+   * the engine's order, and updateCommittee()'s. It is what makes "the last
+   * holder of a seat" a fact rather than a race — two removals of the two
+   * Chairmen at once would otherwise each see the other still seated — and
+   * what a going-live transition's FOR SHARE read of the row waits on.
+   */
+  private async lockCommitteeRow(tx: CommitteeTx, committeeId: string, organizationId: string): Promise<void> {
+    await tx.$queryRaw`SELECT id FROM "Committee" WHERE id = ${committeeId} AND "organizationId" = ${organizationId} FOR UPDATE`;
+  }
+
+  /**
+   * ACC-286 — rule 3: while the committee is IN FORCE (its stage's flag, never
+   * a key), a member write may not empty a required seat. Refused 409
+   * COMMITTEE_REQUIRED_SEAT_LAST_HOLDER, naming the seat, when `leaving` fills
+   * a required seat and nobody else does. A member whose user is not ACTIVE
+   * fills nothing (committee-seat-rules.ts), so removing them empties nothing
+   * and is never refused — that is how an administrator clears a departed
+   * Chairman. Outside IN_FORCE a seat may empty; going live checks it again.
+   */
+  private async assertSeatStaysFilled(
+    tx: CommitteeTx,
+    rules: StageRules,
+    committeeId: string,
+    leaving: ICommitteeMember,
+    organizationId: string,
+  ): Promise<void> {
+    if (!rules.flags.includes(STAGE_FLAG.IN_FORCE)) return;
+    const seat = (await requiredSeats(tx, organizationId)).find((s) => s.id === leaving.roleValueId);
+    if (!seat) return;
+    const holders = await seatHolders(tx, organizationId, committeeId, [seat.id]);
+    if (!holders.some((h) => h.memberId === leaving.id)) return;
+    if (holders.some((h) => h.memberId !== leaving.id)) return;
+    this.logger.log(
+      `Refused, last holder of a required seat: committeeId=${committeeId} memberId=${leaving.id} seatId=${seat.id} organizationId=${organizationId}`,
+    );
+    throw new CommitteeSeatRefusal(seat);
   }
 
   private async assertCommitteeExists(tx: CommitteeTx, id: string, organizationId: string): Promise<void> {
