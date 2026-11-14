@@ -48,7 +48,16 @@ export type WorkflowRefusalCode =
   | 'WHO_REFERENCE_NOT_FOUND'
   | 'WHO_USER_NOT_ACTIVE'
   // ACC-271 PR 6a — a new stage must say who works it.
-  | 'WHO_REQUIRED';
+  | 'WHO_REQUIRED'
+  // ACC-57 — a template's starting and final stages (workflow-start-end.ts).
+  | 'STAGE_INITIAL_REQUIRED'
+  | 'STAGE_INITIAL_NOT_UNIQUE'
+  | 'STAGE_INITIAL_AND_FINAL'
+  // ACC-191 — removing something a record has used.
+  | 'STAGE_HAS_TRANSITIONS'
+  | 'STAGE_IN_USE'
+  | 'TRANSITION_ACTION_IN_USE'
+  | 'TRANSITION_IN_USE';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -88,6 +97,13 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   WHO_REFERENCE_NOT_FOUND: HttpStatus.NOT_FOUND,
   WHO_USER_NOT_ACTIVE: HttpStatus.BAD_REQUEST,
   WHO_REQUIRED: HttpStatus.BAD_REQUEST,
+  STAGE_INITIAL_REQUIRED: HttpStatus.CONFLICT,
+  STAGE_INITIAL_NOT_UNIQUE: HttpStatus.CONFLICT,
+  STAGE_INITIAL_AND_FINAL: HttpStatus.BAD_REQUEST,
+  STAGE_HAS_TRANSITIONS: HttpStatus.CONFLICT,
+  STAGE_IN_USE: HttpStatus.CONFLICT,
+  TRANSITION_ACTION_IN_USE: HttpStatus.CONFLICT,
+  TRANSITION_IN_USE: HttpStatus.CONFLICT,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -128,6 +144,13 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   WHO_REFERENCE_NOT_FOUND: 'One of the chosen people, positions, units, committees or roles was not found',
   WHO_USER_NOT_ACTIVE: "A deactivated person can't work a stage",
   WHO_REQUIRED: 'Choose who works this stage',
+  STAGE_INITIAL_REQUIRED: 'A workflow needs a starting stage. Mark another stage as the starting stage instead',
+  STAGE_INITIAL_NOT_UNIQUE: 'Only one stage can be the starting stage',
+  STAGE_INITIAL_AND_FINAL: "A stage can't be both the starting stage and a final stage",
+  STAGE_HAS_TRANSITIONS: 'Remove the transitions into and out of this stage first',
+  STAGE_IN_USE: "Records have entered this stage, so it can't be removed. You can rename it",
+  TRANSITION_ACTION_IN_USE: "This action has run, so it can't be removed. You can turn it off",
+  TRANSITION_IN_USE: "This transition has been used, so it can't be removed. You can rename it",
 };
 
 export class WorkflowRefusalException extends HttpException {

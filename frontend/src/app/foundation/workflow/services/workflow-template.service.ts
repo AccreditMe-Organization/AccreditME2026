@@ -153,6 +153,9 @@ export interface WorkflowStageDto {
   // which none has) and the server's read-back sentence, in both languages.
   who?: StageWhoDto | null;
   whoSentence?: { en: string; ar: string } | null;
+  // ACC-57 (Q1) — on a stage save that ticked Initial: the stage(s) that
+  // stopped being the starting stage. Absent otherwise.
+  startingStageMovedFrom?: { id: string; nameEn: string; nameAr: string | null }[];
 }
 
 export interface WorkflowTransitionDto {

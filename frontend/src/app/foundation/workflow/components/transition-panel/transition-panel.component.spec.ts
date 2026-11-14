@@ -8,6 +8,7 @@ import { ConfirmationService } from 'primeng/api';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { environment } from '../../../../../environments/environment';
+import { FormatService } from '../../../../core/formatting';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { LanguageService } from '../../../../core/services/language.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
@@ -313,6 +314,29 @@ describe('am-transition-panel — a transition in a page panel (ACC-271 PR 5b)',
     req.flush(null);
     expect(removed).toHaveBeenCalledWith('t1');
   });
+
+  // ACC-191 (Q3) — a transition that has been used is kept; Remove says how many
+  // times, from the code and the count, never the server's English.
+  for (const lang of ['en', 'ar'] as const) {
+    it(`[${lang}] Remove on a transition that has been used says how many times, and keeps the panel`, async () => {
+      const p = await setup({ lang });
+      const removed = jasmine.createSpy('removed');
+      p.removed.subscribe(removed);
+      q<HTMLButtonElement>('[data-panel-remove] button')!.click();
+      ask.calls.mostRecent().args[0].accept();
+      http
+        .expectOne(`${TRANSITIONS_URL}/t1`)
+        .flush(
+          { statusCode: 409, message: 'English for a log', error: 'Conflict', code: 'TRANSITION_IN_USE', runCount: 4 },
+          { status: 409, statusText: 'Conflict' },
+        );
+      fixture.detectChanges();
+      const banner = q<HTMLElement>('[data-panel-refusal]')!.textContent ?? '';
+      expect(banner).toContain(TestBed.inject(FormatService).count('workflow.transitionInUse', 4));
+      expect(banner).not.toContain('English for a log');
+      expect(removed).not.toHaveBeenCalled();
+    });
+  }
 
   // ── Read-only: a move the app runs, and a protected workflow ───────────────
 

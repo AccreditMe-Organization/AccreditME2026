@@ -1039,6 +1039,10 @@ User departure triggers bulk-reassignment flow:
 - **Every migration is EXPAND-THEN-CONTRACT** — mandatory since ACC-127,
   see Key Architecture Decisions (ACC-127) below for why a rule that used
   to be advice is now a requirement
+- **A new enum value ships in two deploys** (ACC-202): the first adds it and
+  teaches every reader; only the second writes it, because Prisma 7's client
+  throws on a value it wasn't generated with, so a rollback or the deploy
+  overlap would 500.
 - **A backfill or seed script run from a developer machine against the shared
   database passes an explicit transaction timeout** (`{ maxWait: 10_000,
   timeout: 60_000 }`, the scripts' `BACKFILL_TX`): Prisma's default 5 seconds
@@ -4853,6 +4857,71 @@ Briefly:
 - **`user.service.ts` is lane A's file**: the hook is the injection, `since` and
   the one guarded call, nothing else.
 - **No migration.**
+
+## Key Architecture Decisions (ACC-57, ACC-191, ACC-202)
+
+Workflow stage checks, in one PR. Full mechanism: SYSTEM-REFERENCE.md §2.20.
+Plan and Ahmad's answers (13 Nov, Q1–Q8):
+`backend/Plans/step-57-191-202-workflow-checks.md`. Briefly:
+
+- **A TEMPLATE HAS EXACTLY ONE STARTING STAGE, AND IT IS NOT ALSO FINAL**
+  (ACC-57).
+  - One helper, `workflow-start-end.ts`. `addStage`, `updateStage` (when
+    Initial or Final changes) and `removeStage` call it inside their
+    transaction, under the template's row lock, after the write.
+  - Refusals: 409 `STAGE_INITIAL_REQUIRED`, 409 `STAGE_INITIAL_NOT_UNIQUE` and
+    400 `STAGE_INITIAL_AND_FINAL`, each with `stageIds` and `stageNames`
+    (`STAGE_FLAG_EXACTLY_ONE`'s shape).
+  - A template with no stages is one not yet built; its first stage must be
+    the starting one.
+- **TICKING INITIAL MOVES THE STARTING STAGE** (Q1). The old one is cleared in
+  the same save, both stages are audited, and the save answers
+  `startingStageMovedFrom`. Refusing both "none" and "two" would otherwise
+  leave no way to move it.
+- **ONLY A SAVE THAT MAKES A TEMPLATE WORSE IS REFUSED** (ACC-120's shape). A
+  template already in breach can be renamed and mended. On 13 Nov no template
+  on the shared database was in breach.
+- **`setDefault`, and `updateTemplate` making a template the default, refuse
+  one with no starting stage** (Q2): the default is what `startInstance()`
+  reads. "Creating a template as default leaves two defaults" is its own
+  ticket.
+- **THE SEED IS PINNED, NOT CHECKED AT RUN TIME:** `workflow.seed.spec.ts`
+  fails if a seeded workflow has other than one starting stage, or one that is
+  final.
+- **SOMETHING A RECORD HAS USED IS NEVER DELETED** (ACC-191). Each of these
+  was a RESTRICT foreign key that reached the caller as a 500:
+  - a stage records have entered: 409 `STAGE_IN_USE` with `recordCount`
+    (distinct records);
+  - an action that has run: 409 `TRANSITION_ACTION_IN_USE` with `runCount`
+    (log rows);
+  - a transition whose actions have run (Q3): 409 `TRANSITION_IN_USE`.
+
+  Each is counted inside the delete's transaction, after `FOR UPDATE` on the
+  row. A reference being written at that moment holds a key-share lock, so the
+  delete waits, then refuses. `removeStage`'s two old codeless refusals became
+  `STAGE_HAS_TRANSITIONS` and `STAGE_INITIAL_REQUIRED` (Q4).
+- **NO BLANKET P2003 → 409 IN THE FILTER** (Q6). P2003 also means "a parent is
+  missing", which is a defect, and an unexpected 500 is our only signal while
+  Sentry is not wired.
+- **A STAGE IS LEFT WITH THE OUTCOME OF THE MOVE'S KIND, IN TWO DEPLOYS**
+  (ACC-202).
+  - **This PR (1 of 2):** adds `RETURNED` and `EXITED` to
+    `WorkflowInstanceStageOutcome` (additive migration
+    `acc202_stage_outcome_returned_exited`). Stage history reads them as
+    `arrivedBy`, the PREVIOUS visit's outcome, shown as "Sent back" / «إعادة»
+    and "Ended" / «إنهاء». Nothing writes them:
+    `stage-outcome-writes.scan.spec.ts` pins that.
+  - **Proved 13 Nov:** the dev backend's own client threw "Value 'RETURNED' not
+    found in enum" on stage history. Writing a new value in the deploy that adds
+    it would make a rollback, or the deploy overlap, 500 (the Prisma rule
+    above).
+  - **PR 2, after this is live:** `stageExitOutcome(kind)` in
+    `performTransition()`, the outcome argument removed from every caller, and
+    the rollback check repeated with PR 1's client.
+  - Old rows are not backfilled.
+- **Every refusal is said from its code** through `plainWorkflowRefusalKey()`,
+  in both languages. The counted ones use plural objects.
+- **One additive migration.** It runs in the pre-deploy step, never before.
 
 ## Open / Deferred Items
 

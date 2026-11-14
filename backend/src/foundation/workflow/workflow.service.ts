@@ -474,6 +474,11 @@ export class WorkflowService {
           // outcome SKIPPED) has no following row to appear on. Dropping it
           // beats showing it against the wrong event.
           comment: previous?.comment ?? null,
+          // ACC-202 — the previous visit's outcome, for the same reason as the
+          // comment: it describes the move INTO this visit. PR 1 of 2 only
+          // READS the new values; nothing writes them until PR 2 (a value the
+          // deployed client was not generated with would 500 on a rollback).
+          arrivedBy: previous?.outcome === 'RETURNED' || previous?.outcome === 'EXITED' ? previous.outcome : null,
           isUnassigned: visit.isUnassigned,
           delegation: this.delegationLabels.lookup(visit, delegations),
         };
