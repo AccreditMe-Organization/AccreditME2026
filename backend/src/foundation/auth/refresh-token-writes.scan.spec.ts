@@ -64,7 +64,8 @@ describe('RefreshToken writes carry the session start (ACC-126)', () => {
   });
 
   it('issueRefreshToken() requires the start, and its create writes it', () => {
-    const text = readFileSync(AUTH_SERVICE, 'utf8');
+    // Line endings normalised: a Windows checkout has CRLF, the CI runner LF.
+    const text = readFileSync(AUTH_SERVICE, 'utf8').replace(/\r\n/g, '\n');
     const start = text.indexOf('private async issueRefreshToken(');
     const end = text.indexOf('return { token: rawToken, expiresAt };', start);
     expect(start).toBeGreaterThan(-1);
