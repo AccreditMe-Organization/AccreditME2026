@@ -267,10 +267,25 @@ is where the creator chooses the person.
    this ticket.* The task page shows it (PR 2); the rows need a batched label read per page, sized on
    its own.
 
+### 9.1 Ahmad's answers (14 Nov)
+
+1. **Yes:** a chosen committee member follows the same rule.
+2. **Leave as is:** the named-people path and `prepareRecordTask()` are unchanged.
+3. **No dates:** the dialog names the person and the cover only.
+4. **Keep ACC-101** as it is.
+5. **Yes:** the cover's notice names whom they cover.
+6. **Yes:** a covered person is never suggested against. The suggest-someone endpoint refuses or skips
+   them, so the screen does not decide.
+7. **Leave stage pools,** with no ticket yet.
+8. **Not in this ticket:** "covering for" on list rows.
+
+**Who builds what:** lane A decides who builds PR 2 (the screens). This branch builds PR 1 only. The
+merge waits for lane A's #293.
+
 ## 10. Progress
 
 - [x] Plan: counts, the three window copies, both placement paths, notices, picker, hint (14 Nov)
-- [ ] Ahmad's answers to §9
+- [x] Ahmad's answers to §9 (14 Nov, §9.1)
 - [ ] PR 1 (backend)
 - [ ] PR 2 (screens)
 - [ ] Live proof
