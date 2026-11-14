@@ -1,6 +1,7 @@
 import { Component, input } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { USER_PANEL_GRID } from './user-panel-grid';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-232 — the user record's panel grid at 320px, narrower than its 330px
 // minimum. The host reads the page's own constant, never a copy.
@@ -21,6 +22,7 @@ class PanelsHost {
 }
 
 describe('the user record panel grid (ACC-232)', () => {
+  useLayoutFonts();
   async function measure(width: number) {
     TestBed.configureTestingModule({ imports: [PanelsHost] });
     const fixture = TestBed.createComponent(PanelsHost);

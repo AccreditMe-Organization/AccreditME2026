@@ -17,6 +17,7 @@ import { preserveDocumentLanguage } from '../../../../testing/document-language'
 import { IStorageSettings } from './storage-settings.service';
 import { StorageSettingsComponent } from './storage-settings.component';
 import { TODAY, cloud, minio, requested, sharepoint, unconfirmed } from './storage-fixtures';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-260, PR A — the File storage page's layout, with the real theme, in both
 // languages, at the CONTENT widths the shell leaves at 1280, 390 and 360 (988,
@@ -48,6 +49,7 @@ class FrameComponent {
 }
 
 describe('StorageSettings — layout (ACC-260, PR A)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<FrameComponent>;
   const measured: string[] = [];

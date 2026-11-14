@@ -21,6 +21,7 @@ import { CommitteeChangeRequestPageComponent } from './committee-change-request-
 import { ChangeRequestDto, ChangeRequestService, ChangeValues } from './change-request.service';
 import { REQUEST, fakePhone } from './change-request.testing';
 import { ACTIVE_RULES } from '../testing';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-240 — the four dialogs, MEASURED in both languages, in the real theme and
 // font, opened from the real request page (plan §3.4, §4):
@@ -93,6 +94,7 @@ const TYPO: ChangeValues = { nameEn: 'Quality Councll' };
 class Host {}
 
 describe('Change request dialogs — layout, measured (ACC-240)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
   let fixture: ComponentFixture<Host>;
@@ -155,7 +157,6 @@ describe('Change request dialogs — layout, measured (ACC-240)', () => {
 
   async function settle(): Promise<void> {
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
   }
 
@@ -188,7 +189,6 @@ describe('Change request dialogs — layout, measured (ACC-240)', () => {
 
   /** A body: under the cap with the room, laid out, and scrolling nowhere. */
   function check(label: string, language: string, body: HTMLElement, frame: HTMLElement, width: number): void {
-    expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
     const height = body.scrollHeight;
     measured.push(`${label} [${language}]: body ${height}px, room ${CAP - height}px, width ${Math.round(frame.getBoundingClientRect().width)}`);
     expect(height).withContext(`${label} [${language}] not laid out`).toBeGreaterThan(FLOOR);

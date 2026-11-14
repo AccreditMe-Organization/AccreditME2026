@@ -18,6 +18,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { TaskPageComponent } from './task-page.component';
 import { HISTORY, pageView } from './task-page.fixtures';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-228 — the task page MEASURED, in both languages, in the real theme, font
 // and translations (plan §1.8). A page, not a dialog: there is no 420 cap. What
@@ -54,6 +55,7 @@ class HostComponent {
 }
 
 describe('TaskPageComponent — layout, measured (ACC-228)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
 
   const measured: string[] = [];
@@ -113,13 +115,11 @@ describe('TaskPageComponent — layout, measured (ACC-228)', () => {
     await fixture.whenStable();
     http.match(`${API}/task-1/evidence`).forEach((r) => r.flush({ items: [], canAdd: true, closed: false }));
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
     const el = fixture.nativeElement as HTMLElement;
-    // Non-vacuity: the page is on screen, laid out, in the real font.
+    // Non-vacuity: the page is on screen and laid out (the real font: useLayoutFonts).
     expect(el.querySelector('[data-testid="task-page"]')).withContext('the page did not render').not.toBeNull();
-    expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
     expect(el.querySelector('h1')!.getBoundingClientRect().height).withContext('the page is not laid out').toBeGreaterThan(0);
     return el;
   }

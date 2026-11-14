@@ -14,6 +14,7 @@ import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitati
 import { PASSWORD_RESET_NOTICE } from '../reset-password/reset-password.component';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
 import { SessionAddressState } from '../../../../core/tenant/session-address-state';
+import { SessionLimitState } from '../../../../core/services/session-limit-state';
 import { NoOrganisationAddressComponent } from '../no-organisation-address/no-organisation-address.component';
 import { AuthLayoutComponent } from '../auth-layout/auth-layout.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
@@ -78,6 +79,11 @@ import { SIGN_IN_REFUSAL_KEYS, SignInRefusal, describeSignInRefusal } from './si
              which is what the 15-minute bug felt like. -->
         @if (signedOutForIdle) {
           <p-message severity="info" [text]="'session.signedOutIdle' | translate" />
+        }
+
+        <!-- ACC-126 — the session reached its 12 hours, however active. -->
+        @if (signedOutForLimit) {
+          <p-message severity="info" [text]="'session.signedOutLimit' | translate" />
         }
 
         <!-- ACC-204 — this browser's session belongs to another organisation's
@@ -219,6 +225,15 @@ export class LoginComponent {
   /** Set when the idle rule ended the last session (IdleService). */
   protected readonly signedOutForIdle =
     this.route.snapshot.queryParamMap.get('reason') === 'idle';
+
+  /**
+   * ACC-126 — set when the session ended at its 12-hour limit: by the warning's
+   * own sign-out or a refused renewal (reason=limit), or by a refusal met where
+   * nothing navigates (restoreSession(), noted in SessionLimitState).
+   */
+  protected readonly signedOutForLimit =
+    this.route.snapshot.queryParamMap.get('reason') === 'limit' ||
+    inject(SessionLimitState).signedOutForLimit();
 
   /**
    * ACC-120 slice 9e — set by the navigation that brought them here from

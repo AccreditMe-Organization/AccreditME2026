@@ -58,7 +58,7 @@ audit's starting point, not be mistaken for having already done it.
 
 ## Table of Contents
 
-1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal and the idle rule, ACC-122; 1.15 = the account owner, ACC-221; 1.2 corrected — a revocation applies on the next request)
+1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal, the idle rule (ACC-122) and the 12-hour limit (ACC-126); 1.15 = the account owner, ACC-221; 1.2 corrected — a revocation applies on the next request)
 2. Workflow Engine — ✅ complete
 3. Task System — ✅ complete
 4. Notification System — ✅ complete
@@ -1179,6 +1179,84 @@ and is clamped to the 15-minute default — a stray variable on a deployed
 environment must not be able to hand out day-long access tokens. A test-only
 affordance that can make production less safe is not test-only.
 
+#### The 12-hour limit (ACC-126)
+
+**Every session ends 12 hours after sign-in, however active the person is**
+(Ahmad, 13 Nov 2026). The rule is the same for everyone, with nothing set per
+organisation. The 30-minute idle rule above is separate and unchanged. Plan and as-built
+notes: `backend/Plans/step-126-session-max-length.md`.
+
+**The rule lives in one file, `foundation/auth/session-limit.ts`**
+(`SESSION_MAX_LENGTH_SECONDS` = 12 h). There is deliberately no override:
+a variable that could lengthen it on a deployed environment is the trap
+`AUTH_ACCESS_TOKEN_TTL_SECONDS` was clamped to avoid.
+
+**The session's start is kept in two places, and both are copied, never
+renewed:**
+- `RefreshToken.sessionStartedAt` (nullable, migration
+  `acc126_refresh_token_session_started_at`). Every row a rotation writes copies
+  the presented row's start unchanged.
+- The access token's signed claim `sst` (epoch seconds).
+
+**Where the start comes from:**
+- **Sign-in** sets it in `completeLogin()`, after every check and after the MFA
+  code when there is one.
+- **A rotation** carries `old.sessionStartedAt ?? old.createdAt`, never the new
+  row's `createdAt`.
+- **The only place a row is created is `issueRefreshToken()`.** Its start is a
+  required `Date`, and a scan spec fails any second create site.
+
+**Three places enforce it:**
+- **The access token** expires at `min(now + 15 min, start + 12 h)`, and its
+  cookie lives exactly as long. `verifyJwt()` already refuses an expired `exp` in
+  memory, so nobody works past the limit until the next renewal, and **no query
+  is added on the per-request path**. TenantGuard only copies the verified `sst`
+  onto the request, for `/auth/me` and impersonation.
+- **A refresh-token row** expires at `min(now + 7 days, start + 12 h)`.
+- **`refresh()` refuses past start + 12 h with `SESSION_TIME_LIMIT`** (§1.12).
+  The check comes first: before the row's own expiry (which would otherwise
+  answer first with no reason), the user query and the ACC-204 address check. The
+  token is revoked and both cookies are cleared.
+
+**A session open at the deploy has no start on its row.**
+- Its row's own `createdAt` stands in. That is its last rotation, a lower bound,
+  so nobody is signed out early.
+- Such a session is measured from its last rotation, not its real sign-in, so it
+  can run up to 12 hours past the deploy (accepted).
+- The later contract step deletes the leftover null rows, never backfills them
+  (plan §c).
+
+**Impersonation creates no row.** Its token carries the platform admin's own
+`sst`, so its expiry is capped by their 12 hours, and ending impersonation
+restores the same start. Neither resets the limit.
+
+**On screen: a warning 10 minutes before, then the sign-out.**
+- **The deadline:** `GET /auth/me`, `POST /auth/login` and `POST /auth/mfa/verify`
+  return `sessionEndsAt`. `SessionLimitState` (`core/services/session-limit-state.ts`,
+  no dependencies, so no injection cycle) holds it.
+- **The clock:** `SessionLimitService` keeps it once a second, outside Angular's
+  zone so the zone can still become stable.
+- **The warning:** `SessionLimitWarningComponent` is deferred in the shell like the
+  idle warning. It is an `alertdialog` on the dialog shell: "Your session ends
+  soon" / «تنتهي الجلسة قريبًا», with the time of the sign-out in the
+  organisation's zone (`FormatService.timeOfDay()`).
+  - Its actions are "Continue working" (Escape does the same: it dismisses the
+    warning and does not move the deadline) and "Sign out now".
+  - **There is no "Stay signed in"**: nothing can extend the session.
+- **At the deadline:** `IdleService.signOut('limit')`, the idle rule's own path. It
+  calls `POST /auth/logout`, broadcasts the reason to the other tabs, and goes to
+  `/login?reason=limit`.
+
+**A server refusal reaches the sign-in page too.** This covers a tab asleep
+through the warning.
+- `authInterceptor` reads the renewal's own refusal and adds `reason=limit` for
+  `SESSION_TIME_LIMIT`.
+- `restoreSession()`, which never navigates (ACC-24), has the renewal service note
+  the refusal in `SessionLimitState`, and the sign-in page reads that note.
+- The page says: "You were signed out because a session ends 12 hours after
+  sign-in. Sign in again to continue." / «تم تسجيل الخروج لأن الجلسة تنتهي بعد
+  12 ساعة من تسجيل الدخول. يُرجى تسجيل الدخول من جديد للمتابعة.»
+
 ### 1.12 Sign-in outcomes — the codes, and what each must not reveal (ACC-120 slice 9b)
 
 **Every sign-in refusal carries a stable `code`** in the body, inside the error
@@ -1199,6 +1277,7 @@ logs.
 | `MFA_EXPIRED` | 401 | the challenge cookie is missing, tampered with or past its 10 minutes; or its five attempts are spent | — | — |
 | `ORGANIZATION_UNAVAILABLE` | 401 | the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING — at sign-in (after a correct password, before MFA), on session refresh, and on every authenticated request (ACC-168) | — | anything to someone without the password: at sign-in it is checked after the password, and a wrong password stays `INVALID_CREDENTIALS`. A 401, so the frontend's existing 401 handling signs the person out. |
 | `SESSION_OTHER_ORGANIZATION` | 401 | NOT a sign-in outcome (ACC-204): a COOKIE session used at another organisation's address, or with no usable `Origin` — on every authenticated request (TenantGuard) and on session refresh, where it is refused before the rotation and revokes nothing | — | which organisation the session belongs to: the message names neither. The app reads it as "not signed in at this address" (§15.16). |
+| `SESSION_TIME_LIMIT` | 401 | NOT a sign-in outcome (ACC-126): on session refresh, 12 hours or more after the session's sign-in, however active the person is. Checked first, before the row's own expiry, the user query and the address check; the presented token is revoked and both cookies are cleared | — | — (it says only that the session's time is up). The app reads it as "signed out at the 12-hour limit" (`reason=limit`, §1.11). |
 
 **What Sign in shows for each (ACC-120 slice 9d).** One sentence per code, in
 the one message slot above the button (`foundation/auth/components/login/
@@ -1825,7 +1904,8 @@ WorkflowActionType          CREATE_TASK, SEND_NOTIFICATION, GENERATE_PDF, LOCK_D
                             LOG_AUDIT, WEBHOOK
 WorkflowApprovalDecision    PENDING, APPROVED, APPROVED_WITH_COMMENTS, RETURNED, ABSTAINED
 WorkflowInstanceStageOutcome PENDING, APPROVED, REJECTED, SKIPPED,
-                            RETURNED, EXITED (ACC-202; read since PR 1, written from PR 2 — §2.20)
+                            RETURNED, EXITED (ACC-202, §2.20: RETURN and EXIT write these
+                            since PR 2; REJECTED is what older ones wrote)
 ```
 
 **Code comment worth preserving verbatim** (`workflow.service.ts`, the "NOTE on SEQUENTIAL/COMMITTEE" comment):
@@ -3150,6 +3230,7 @@ every stage on every database is still unconverted and behaves as §2.4–§2.8 
 Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts a new organisation, and both PR 2 backfills ran on the shared database on 29 Oct, so every stage is converted. §2.4–§2.8 describe only a stage whose `whoMode` is null. PR 3, the APIs, is built (see "PR 3" below); PR 5, the screens, is not started.
 Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only the stage's pool; a stage whose `whoMode` is null has an EMPTY pool (fail closed), and a new stage must say `who` (`WHO_REQUIRED`). §2.4–§2.8 and §2.13 are history: they describe code that no longer exists. See "PR 6a" below.
 Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the seed.** The columns stay in the schema until 6c. See "PR 6b" below.
+Updated (ACC-278 PR A): **the old columns are out of the generated client** (`@ignore`) and still in the database; PR B drops them. See "6c" below.
 
 - **The transition window (plan §4.6).** A stage with `WorkflowStage.whoMode`
   set is CONVERTED: its `WorkflowStageAssignee` entries say who works it, and
@@ -3245,7 +3326,8 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
   - **`whoFromLegacy()`** (`workflow-who.ts`) is the one mapping from the old
     columns, used by `backfill-acc271-stage-assignees`; `moverForTrigger()`
     by `backfill-acc271-transition-movers`. Both backfills run after the
-    deploy (plan §6, §6.4). An Org unit head stage maps to "the head of the
+    deploy (plan §6, §6.4). Both ran on 29 Oct, and ACC-278 deleted them with
+    the two mappings. An Org unit head stage maps to "the head of the
     record's unit" only where its record type has a unit route
     (`RECORD_ROUTES`); elsewhere it gets the starting assignment, as the seed
     gives a new organisation (29 Oct), so the mapping matches the seed on all
@@ -3670,6 +3752,7 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
     backfills (`backfill-acc271-stage-assignees`,
     `backfill-acc271-transition-movers`) and what they import from
     `workflow-who.ts` (`whoFromLegacy`, `moverForTrigger`, `decidesTogether`).
+    Done in 6c PR A (ACC-278), below, except the columns and enums: PR B.
   - **Frontend.** The old fields left `workflow-template.service.ts`'s types;
     the approval mode, threshold and assignee labels left `workflow-labels.ts`
     and both translation files; `check:workflow-enum-display` no longer scans
@@ -3680,6 +3763,44 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
     cases of `workflow.service.spec.ts`, and the two `committees:manage` cases
     of `role.service.spec.ts`. Mutation-checked: an old field back in the DTO,
     or `transitionMover()` falling back to `triggerCondition`, turns them red.
+- **6c (ACC-278) — the old who columns leave, in two deploys.** Plan and
+  Ahmad's answers (14 Nov): `backend/Plans/step-278-drop-old-who-columns.md`.
+  A client that knows a column names it in every `findMany` / `findFirst`
+  without a `select` and every write that returns the row, so dropping the
+  columns while such a client serves is P2022 on every stage read (the ACC-48
+  shape). Hence two deploys.
+  - **PR A (no migration), done.** In `schema.prisma` the 13 old columns, the
+    relations `assigneePosition` / `assigneeOrgUnit` and the back-relations
+    `OrgPosition.workflowStages` / `OrgUnit.assigneeForWorkflowStages` are
+    `@ignore`: out of the generated client, still in the database
+    (`prisma migrate diff` from the migrations to the schema is empty). A row
+    the client inserts takes the database defaults in the three NOT NULL old
+    columns (`approvalMode` SINGLE, `assigneeStrategy` ROLE,
+    `triggerCondition` ROLE_BASED).
+  - **Deleted in PR A, once executed on the shared database:**
+    - the backfills `backfill-acc271-stage-assignees`,
+      `backfill-acc271-transition-movers`,
+      `backfill-acc244-retire-flat-task-keys` and
+      `backfill-retire-tasks-complete`, their db-specs and npm scripts;
+    - `whoFromLegacy`, `moverForTrigger` and `decidesTogether` in
+      `workflow-who.ts`. `writeStartingAssignments()` stays (the template
+      service and four db-specs use it).
+  - **Proved on a scratch database:** with the columns dropped, PR A's client
+    made 10 real calls (stage and transition reads without a `select`, creates
+    and updates returning the row, the template read with stages and
+    transitions), all OK; dev's client before PR A, 3 of 10 (7 P2022).
+  - **PR B (not built):** one migration drops the 13 columns, their two foreign
+    keys and the four old enum types (`WorkflowApprovalMode`,
+    `WorkflowParallelThreshold`, `WorkflowAssigneeStrategy`,
+    `WorkflowTriggerCondition`, each used by one old column only), and makes
+    `whoMode` and `mover` NOT NULL. At least a day after PR A is live (Ahmad).
+    **Once PR B ships, never roll Railway back past PR A.**
+  - **Kept, decided (Ahmad, 14 Nov):** `TransitionMover.AUTOMATIC` (reserved),
+    `dto/old-who-fields.dto.spec.ts`. The branches NOT NULL makes unreachable
+    (`MOVE_HAS_NO_MOVER` and others) go in a follow-up after ACC-202 part 2.
+  - **Specs:** `old-who-columns.client.spec.ts` (out of the client, still in
+    the schema; mutation-checked: one `@ignore` removed turns it red, naming
+    the field).
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
@@ -3736,8 +3857,8 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - **A vote cast before ACC-284** names no move, and counts for the stage's
     ADVANCE moves, as it did.
 - **The outcome stored on the entry:** ADVANCE → APPROVED; RETURN and EXIT → REJECTED.
-  To be superseded (ACC-202 PR 2): RETURN → RETURNED, EXIT → EXITED, on every path. PR 1
-  adds the values and the reader only (§2.20).
+  Superseded (ACC-202 PR 2): RETURN → RETURNED and EXIT → EXITED, on every path,
+  from `stageExitOutcome(kind)` (§2.20.3).
 - **The gate (ACC-190 J):** for an ADVANCE, only the DECIDING vote is checked against
   open mandatory tasks, before it is recorded.
 - **`submitApproval()`** (no frontend caller) finds its move by kind:
@@ -3838,7 +3959,7 @@ One PR; ACC-202's writer is a second PR after it (below).
 - **Becoming the default needs a starting stage (Q2):** `setDefault`, and
   `updateTemplate` with `isDefault: true`, call `assertHasStartingStage()`
   (strict: an empty template is refused too). "Creating a template as default
-  leaves two defaults" is a separate ticket.
+  leaves two defaults" is a separate ticket. Done in ACC-303, §2.20.5.
 - **The seed is pinned, not checked at run time:** `workflow.seed.spec.ts`
   requires one starting stage, not final, in every seeded workflow. A protected
   template cannot reach any of the three states (`isInitial` and `isFinal` are
@@ -3873,7 +3994,11 @@ it does to a delete:
 
 - **Each check runs inside the delete's transaction, after `FOR UPDATE` on the
   row:**
-  - `removeStage`: the template lock, then the stage row;
+  - `removeStage`: the template lock, then the stage row; then RECORDS, then
+    transitions (ACC-202 PR 2). A stage records have entered always has
+    transitions too, and "remove its transitions first" sent the admin to
+    transitions that had run and could not be removed either (live check,
+    14 Nov). `STAGE_IN_USE` is the final answer, so it is said first;
   - `removeTransition`: the transition and its actions;
   - `removeTransitionAction`: the action.
 - **Why the lock first:** a reference being written at that moment holds a
@@ -3903,20 +4028,27 @@ it does to a delete:
   'WorkflowInstanceStageOutcome'". A deploy that adds a value AND writes it
   would 500 every record's stage history on a rollback, and briefly during the
   deploy overlap. CLAUDE.md's Prisma rules now say so.
-- **PR 1 (this one):**
+- **PR 1 (#289, `9b49be0`):**
   - the additive migration `acc202_stage_outcome_returned_exited`;
   - `arrivedBy` on stage history (§2.14) and its chip;
-  - nothing writes the new values. `stage-outcome-writes.scan.spec.ts` fails
-    on a literal, an enum member, PR 2's `stageExitOutcome`, or a writer type
-    that admits either value. `stage-history-arrived-by.db-spec.ts` presses each
-    kind on ANY_ONE and ALL and requires an outcome the old client knows.
-- **PR 2 (after PR 1 is live):**
-  - `stageExitOutcome(kind)` in `performTransition()`; the outcome argument is
-    removed from every caller (the person path, the vote path, `submitApproval`,
-    and the change request's `triggerSystemTransition` calls: withdraw and
-    reject become EXITED, return RETURNED);
-  - the scan spec is deleted;
-  - the rollback check is repeated with PR 1's client.
+  - nothing wrote the new values (a scan spec pinned it until PR 2).
+- **PR 2 (written):**
+  - `performTransition()` derives the outcome from `stageExitOutcome(kind)`
+    (`STAGE_EXIT_OUTCOME` in `workflow-vote.ts`) and takes no outcome argument,
+    so the person path, the vote path, `submitApproval()` and the app's own moves
+    cannot disagree with the move. `triggerSystemTransition()` lost its
+    `outcome` option.
+  - **Change requests:** withdraw and reject record EXITED, return RETURNED,
+    submit and approve APPROVED.
+  - `cancelInstance()` is not a move and still records SKIPPED.
+  - The scan spec is deleted. `stage-history-arrived-by.db-spec.ts` presses each
+    kind on ANY_ONE and ALL and requires its kind's outcome and the matching
+    `arrivedBy`.
+  - **The rollback was proved before merge:** #289's own code and generated
+    client, against a database holding PR 2's rows (64 instances, 82 visits with
+    a new outcome), read stage history, both instance reads, the committee
+    detail and list, and the change request read and list, all without
+    failing.
 - **Readers:** none switches on the outcome. It is typed `string` end to end,
   and no screen read it before `arrivedBy`.
 - **On the shared database, 13 Nov:**
@@ -3943,6 +4075,42 @@ it does to a delete:
   - `workflow-stage-checks.screens.spec.ts` (every screen, both languages);
   - `workflow-refusal.spec.ts`;
   - the transition panel's spec.
+
+#### 2.20.5 One default template per record type (ACC-303)
+
+- **Exactly one ACTIVE default per (organisation, record type)**, the one
+  `startInstance()` reads. Ahmad's answers, 14 Nov.
+- **`workflow-default.ts` holds the rule:**
+  - `lockTypeDefaults()` takes a per-(organisation, record type) advisory lock;
+  - `makeDefaultInTx()` sets the default and clears the old one, by
+    organisation and type only.
+- **Every path that changes a type's default goes through the service's
+  `inDefaultTx()`.** It takes, in order: the type locks (sorted), the template
+  row lock, then a fresh read. A type change committed in between makes it run
+  again under the new type.
+- **What each path does:**
+  - **create with `isDefault: true`:** 409 `DEFAULT_NEEDS_STAGES`, with nothing
+    written. A new template has no starting stage.
+  - **`setDefault` and update-to-default:** clear the old default. They are
+    refused for a deactivated template (`DEFAULT_TEMPLATE_INACTIVE`), as well as
+    by ACC-57's starting-stage check.
+  - **Changing the default's type:** `DEFAULT_TEMPLATE_TYPE_CHANGE`.
+  - **`isDefault: false` on the default, or deactivating it:**
+    `DEFAULT_TEMPLATE_REQUIRED`. Set as default on another template moves it.
+- **Unchanged:** the protected template's refusals (ACC-239). The seed creates
+  a default only where none exists.
+- **The list offers** Set as default and Deactivate on an active row that is not
+  the default, and only Open on the default.
+- **The four codes are in `PLAIN_REFUSAL_KEYS`**, in both languages.
+- **Shared database, 14 Nov:** 18 (organisation, type) pairs, each with exactly
+  one active default.
+- **Specs:** `workflow-default.db-spec.ts` (real Postgres).
+  - Concurrent promotions end with one default, and both specs go red without
+    the lock.
+  - Each refusal writes nothing.
+  - Another organisation and another type are untouched.
+- **No migration.** A partial unique index on `(organizationId, objectType)
+  WHERE isDefault` was not added.
 
 ## 3. Task System
 
@@ -4673,7 +4841,7 @@ units and positions (ids, names, `parentId`, `isSingleAssignee`,
 **`tasks:complete` is retired (ACC-162)**, which settles ACC-77's question
 of whether it should survive. Existing tenants lose it through
 `backfill-retire-tasks-complete.ts`, which also deletes the catalog row so
-the role matrix stops offering it. **ACC-77** still carries the seed defects
+the role matrix stops offering it (executed; deleted in ACC-278). **ACC-77** still carries the seed defects
 this only worked around
 (`QUALITY_OFFICER` cannot create; `tasks:manage` implies none of its
 specific strings, against ACC-44's required pattern).
@@ -5977,7 +6145,8 @@ membership query (§3.21).
 **The keys, per record type.** The four flat keys (`tasks:view`,
 `tasks:create`, `tasks:reassign`, `tasks:manage`) are RETIRED — from the
 catalogue, the seed, and existing roles by
-`backfill:acc244-retire-flat-task-keys`. Each record type has four instead;
+`backfill:acc244-retire-flat-task-keys` (executed; deleted in ACC-278). Each
+record type has four instead;
 committees are the only type with them today:
 
 | Key | Says | Was |
@@ -6166,7 +6335,8 @@ Four people (two Quality Officers, two Auditors) lose the All tasks link, a
 page that already listed nothing for them: none holds `committees:view`.
 
 **The retire backfill** (`npm run backfill:acc244-retire-flat-task-keys`, dry
-run by default, `-- --execute` after the deploy): one audit row per
+run by default, `-- --execute` after the deploy; executed, then deleted in
+ACC-278 with its db-spec): one audit row per
 revocation, one transaction (`BACKFILL_TX`), idempotent; a catalogue row is
 deleted only once nothing references it. It prints each active user's
 visible-task count by the rule before and after the revocation, and refuses
@@ -8922,6 +9092,47 @@ patched file by file at least five times before.
   files in bundle order, which differs between Windows and the Linux runner,
   so CI's seed may not replay locally. Narrow the run with `--include` to the
   suspect pair and search seeds instead.
+
+#### 9.1.2 In specs — layout is measured in the real font (ACC-305)
+
+**Until IBM Plex Sans Arabic arrives, text is laid out in the fallback.**
+- The fallback is `system-ui` (`--am-font-family`): Segoe UI on Windows, and a
+  wider face on the Linux CI runner.
+- So a spec that measured before the font loaded passed on Windows and failed
+  on CI, depending on whether it happened to run before the font arrived
+  (set-acting-head's overflow, 494 vs 488).
+
+**The rule:** every `describe` that reads layout (`getBoundingClientRect`,
+`offsetWidth/Height`, `scrollWidth/Height`, `clientWidth/Height`) calls
+`useLayoutFonts({ rtl })` (`frontend/src/testing/layout-fonts.ts`) at its top,
+like `preserveDocumentLanguage()`. It registers a `beforeAll` that:
+- loads every weight `fonts.css` declares (400/500/600/700) by name, Latin and,
+  with `rtl`, Arabic (a separate file by `unicode-range`), with
+  `document.fonts.load()`;
+- waits for `document.fonts.ready`;
+- **checks** each weight, failing with `measured in a fallback font: <weight>`.
+  A too-early measurement therefore fails on any machine, not only where the
+  fallback is wider.
+
+**Three details that matter:**
+- **A `beforeAll`, not a wait inside one test.** Jasmine shuffles the tests in
+  a file. The font set belongs to the page, so once loaded it stays loaded.
+- **`fonts.ready` alone is not enough.** It resolves whenever nothing is
+  loading, which is also true before any text has asked for a weight. Proved
+  under a font hold: without the `load()` calls it fails.
+- **It carries its own 20-second timeout.** A browser fetches at most six files
+  at once, so a slow font server delivers the eight Plex files in two waves,
+  which outlasts Jasmine's 5-second default.
+
+**The guard:** `npm run check:layout-spec-fonts` fails a spec that reads layout
+in code (comments stripped) without calling `useLayoutFonts(`. It keys off the
+file's own content, so it has no list and no allowlist.
+
+**Reproducing it** needs no CI log. Run the file alone (`--include`) with a
+scratch copy of the Karma config whose `beforeMiddleware` holds every
+`.woff2`/`.woff`/`.ttf` response for 3 seconds. Run alone, the file measures
+while `document.fonts.status` is still `loading`, as it did when CI ran it
+first.
 
 ### 9.2 Resolution Chain — Backend and Frontend, Precisely
 

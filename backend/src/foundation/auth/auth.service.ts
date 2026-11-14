@@ -78,6 +78,14 @@ import { verifySessionIdentity } from '../../common/guards/tenant.guard';
 import { isAtOwnAddress } from '../../common/tenant/session-address';
 import { PasswordResetService } from './password-reset/password-reset.service';
 import { buildTenantUrl } from '../../common/config/app-url.config';
+import {
+  accessTokenExp,
+  cookieMaxAgeMs,
+  isPastSessionLimit,
+  refreshRowExpiresAt,
+  sessionEndsAt,
+  sessionStartOf,
+} from './session-limit';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -115,7 +123,6 @@ function resolveAccessTokenTtlSeconds(): number {
 }
 
 export const ACCESS_TOKEN_TTL_SECONDS = resolveAccessTokenTtlSeconds();
-const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // matches "Refresh token expiry: 7 days"
 
 export interface PublicUser {
   id: string;
@@ -136,22 +143,38 @@ function buildCookieHeader(setCookieHeaders: string[]): string {
   return setCookieHeaders.map((raw) => raw.split(';')[0]).join('; ');
 }
 
+/** A minted access token, and when it (and so its cookie) expires. */
+export interface SignedAccessToken {
+  token: string;
+  expiresAt: Date;
+}
+
 // Exported for PlatformTenantService's impersonation flow (ACC-13), which
 // mints the same JWT shape with an added impersonatedBy claim rather than
 // duplicating HS256 signing logic.
+//
+// ACC-126 — `sessionStartedAt` is REQUIRED, so no path can mint a token
+// without the session's start. The token carries it as the signed claim `sst`,
+// and its `exp` is min(now + TTL, start + 12h) (session-limit.ts). verifyJwt()
+// already refuses an expired `exp` in memory, so the limit costs no query.
 export function signAccessToken(
   payload: { sub: string; organizationId: string; tokenVersion: number; impersonatedBy?: string },
   secret: string,
-): string {
+  sessionStartedAt: Date,
+): SignedAccessToken {
   const header = { alg: 'HS256', typ: 'JWT' };
   const base64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString('base64url');
-  const exp = Math.floor(Date.now() / 1000) + ACCESS_TOKEN_TTL_SECONDS;
+  const exp = accessTokenExp(new Date(), sessionStartedAt, ACCESS_TOKEN_TTL_SECONDS);
+  const sst = Math.floor(sessionStartedAt.getTime() / 1000);
   const headerB64 = base64url(header);
-  const payloadB64 = base64url({ ...payload, exp });
+  const payloadB64 = base64url({ ...payload, sst, exp });
   const signature = createHmac('sha256', secret)
     .update(`${headerB64}.${payloadB64}`)
     .digest('base64url');
-  return `${headerB64}.${payloadB64}.${signature}`;
+  return {
+    token: `${headerB64}.${payloadB64}.${signature}`,
+    expiresAt: new Date(exp * 1000),
+  };
 }
 
 const MFA_SETUP_SESSION_TTL_MS = 5 * 60 * 1000;
@@ -207,16 +230,20 @@ export class AuthService {
     return org.id;
   }
 
-  private mintAccessToken(user: {
-    id: string;
-    organizationId: string;
-    tokenVersion: number;
-  }): string {
+  private mintAccessToken(
+    user: {
+      id: string;
+      organizationId: string;
+      tokenVersion: number;
+    },
+    sessionStartedAt: Date,
+  ): SignedAccessToken {
     const secret = process.env['JWT_SECRET'];
     if (!secret) throw new Error('JWT_SECRET is not configured');
     return signAccessToken(
       { sub: user.id, organizationId: user.organizationId, tokenVersion: user.tokenVersion },
       secret,
+      sessionStartedAt,
     );
   }
 
@@ -224,14 +251,21 @@ export class AuthService {
   // refresh() tell "this session predates a forced logout" from "this session
   // is current", which it could not do before: refresh tokens rotate, so the
   // row is the only place a session's origin can be written down.
+  //
+  // ACC-126 — THE ONLY PLACE A RefreshToken ROW IS CREATED (a scan spec pins
+  // that), and `sessionStartedAt` is a required parameter: sign-in passes the
+  // moment of sign-in, refresh() passes the presented row's start, unchanged.
+  // The row expires at min(now + 7 days, start + 12h).
   private async issueRefreshToken(
     userId: string,
     organizationId: string,
     tokenVersion: number,
+    sessionStartedAt: Date,
     req: ExpressRequest,
-  ): Promise<string> {
+  ): Promise<{ token: string; expiresAt: Date }> {
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = refreshRowExpiresAt(new Date(), sessionStartedAt);
 
     await this.prisma.refreshToken.create({
       data: {
@@ -239,22 +273,29 @@ export class AuthService {
         organizationId,
         tokenHash,
         tokenVersion,
-        expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
+        sessionStartedAt,
+        expiresAt,
         deviceInfo: req.headers['user-agent'],
         ipAddress: req.ip,
       },
     });
 
-    return rawToken;
+    return { token: rawToken, expiresAt };
   }
 
   // ACC-186 — always Secure, never keyed off NODE_ENV, and the options come
   // from one place so a clear always matches its set (session-cookies.ts).
-  private setSessionCookies(res: ExpressResponse, accessToken: string, refreshToken: string): void {
+  // ACC-126 — each cookie lives exactly as long as its credential, which the
+  // 12-hour limit can make shorter than 15 minutes, or than 7 days.
+  private setSessionCookies(
+    res: ExpressResponse,
+    accessToken: SignedAccessToken,
+    refreshToken: { token: string; expiresAt: Date },
+  ): void {
     res.cookie(
       ACCESS_TOKEN_COOKIE,
-      accessToken,
-      accessTokenCookieOptions(ACCESS_TOKEN_TTL_SECONDS * 1000),
+      accessToken.token,
+      accessTokenCookieOptions(cookieMaxAgeMs(accessToken.expiresAt)),
     );
     // Scoped to the auth routes (/api/v1/auth), so the browser sends it to the
     // two that read it — refresh, and sign-out, which revokes it (ACC-203) —
@@ -262,8 +303,8 @@ export class AuthService {
     // why no sign-out had ever revoked a session (session-cookies.ts).
     res.cookie(
       REFRESH_TOKEN_COOKIE,
-      refreshToken,
-      refreshTokenCookieOptions(REFRESH_TOKEN_TTL_SECONDS * 1000),
+      refreshToken.token,
+      refreshTokenCookieOptions(cookieMaxAgeMs(refreshToken.expiresAt)),
     );
   }
 
@@ -291,7 +332,7 @@ export class AuthService {
     req: ExpressRequest,
     res: ExpressResponse,
     attempt: { organizationId: string; email: string },
-  ): Promise<PublicUser & { language: string }> {
+  ): Promise<PublicUser & { language: string; sessionEndsAt: string }> {
     const user = await this.prisma.user.findFirst({
       where: { id: appUserId },
       // ACC-188 — the slug builds the new-IP email's Forgot password link.
@@ -323,11 +364,15 @@ export class AuthService {
 
     const wasNewIp = this.loginAttemptService.isNewIp(user.lastLoginIp, req.ip);
 
-    const accessToken = this.mintAccessToken(user);
+    // ACC-126 — the session starts HERE: after every check, and after the MFA
+    // code on that path. Every rotation copies this instant unchanged.
+    const sessionStartedAt = new Date();
+    const accessToken = this.mintAccessToken(user, sessionStartedAt);
     const refreshToken = await this.issueRefreshToken(
       user.id,
       user.organizationId,
       user.tokenVersion,
+      sessionStartedAt,
       req,
     );
     this.setSessionCookies(res, accessToken, refreshToken);
@@ -368,7 +413,13 @@ export class AuthService {
     // GET /auth/me) so a saved preference applies immediately on a fresh
     // login, not only after a subsequent page-refresh restoreSession().
     const language = await this.resolveLanguage(user.language, user.organizationId);
-    return { id: user.id, email: user.email, name: user.name, language };
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      language,
+      sessionEndsAt: sessionEndsAt(sessionStartedAt).toISOString(),
+    };
   }
 
   async login(
@@ -376,7 +427,7 @@ export class AuthService {
     req: ExpressRequest,
     res: ExpressResponse,
   ): Promise<
-    | { success: true; user: PublicUser; language: string }
+    | { success: true; user: PublicUser; language: string; sessionEndsAt: string }
     | { mfaRequired: true; mfaExpiresAt?: string }
   > {
     const organizationId = await this.resolveOrganizationId(dto.organizationSlug);
@@ -526,7 +577,7 @@ export class AuthService {
     if (!body.user?.id)
       throw new Error('Better Auth sign-in returned 200 without a user');
 
-    const { language, ...user } = await this.completeLogin(
+    const { language, sessionEndsAt: endsAt, ...user } = await this.completeLogin(
       appUser.id,
       req,
       res,
@@ -535,7 +586,7 @@ export class AuthService {
         email: dto.email,
       },
     );
-    return { success: true, user, language };
+    return { success: true, user, language, sessionEndsAt: endsAt };
   }
 
   // ACC-120 slice 9b, ACC-168 — a sign-in refused although the password was
@@ -560,7 +611,7 @@ export class AuthService {
     dto: VerifyMfaDto,
     req: ExpressRequest,
     res: ExpressResponse,
-  ): Promise<{ success: true; user: PublicUser; language: string }> {
+  ): Promise<{ success: true; user: PublicUser; language: string; sessionEndsAt: string }> {
     // ACC-120 slice 9b — like signInEmail, verifyTOTP RETURNS a refusal as a
     // Response rather than throwing it, so the outcome is read off the
     // Response. A thrown error is a fault and propagates as a 500.
@@ -586,7 +637,7 @@ export class AuthService {
     // The lockout's key for this person: their organization, and their email
     // as login() normalised it (LoginDto lower-cases it; the stored email is
     // lower-cased the same way here so the two always agree).
-    const { language, ...user } = await this.completeLogin(
+    const { language, sessionEndsAt: endsAt, ...user } = await this.completeLogin(
       appUser.id,
       req,
       res,
@@ -595,7 +646,7 @@ export class AuthService {
         email: appUser.email.toLowerCase(),
       },
     );
-    return { success: true, user, language };
+    return { success: true, user, language, sessionEndsAt: endsAt };
   }
 
   // ACC-120 slice 9b — abandon a pending MFA challenge. The challenge is real
@@ -668,7 +719,28 @@ export class AuthService {
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const existing = await this.prisma.refreshToken.findFirst({ where: { tokenHash } });
 
-    if (!existing || existing.revokedAt || existing.expiresAt < new Date()) {
+    if (!existing || existing.revokedAt) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    // ACC-126 — THE 12-HOUR LIMIT, checked FIRST, before the row's own expiry:
+    // a row's expiresAt is capped at start + 12h, so the generic refusal below
+    // would otherwise answer first and the person would get no reason. Also
+    // before the user query and the ACC-204 address check: it needs only the
+    // row, and a session past its limit is over at every address, so revoking
+    // it takes nothing the person still has. One conditional revoke, and both
+    // cookies cleared, so the dead session leaves nothing behind.
+    const sessionStartedAt = sessionStartOf(existing);
+    if (isPastSessionLimit(sessionStartedAt)) {
+      await this.prisma.refreshToken.updateMany({
+        where: { id: existing.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      this.clearSessionCookies(res);
+      throw new AuthRefusalException('SESSION_TIME_LIMIT');
+    }
+
+    if (existing.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -742,11 +814,15 @@ export class AuthService {
       throw new UnauthorizedException('Session has been revoked');
     }
 
-    const accessToken = this.mintAccessToken(user);
+    // ACC-126 — the new row and token carry the SAME start: the presented
+    // row's (or, for a row written before ACC-126, its createdAt). Never the
+    // new row's own createdAt, or every rotation would restart the 12 hours.
+    const accessToken = this.mintAccessToken(user, sessionStartedAt);
     const newRefreshToken = await this.issueRefreshToken(
       user.id,
       user.organizationId,
       user.tokenVersion,
+      sessionStartedAt,
       req,
     );
     this.setSessionCookies(res, accessToken, newRefreshToken);

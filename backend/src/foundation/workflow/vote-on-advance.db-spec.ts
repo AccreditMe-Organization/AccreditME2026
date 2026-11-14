@@ -72,7 +72,7 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
    * One organisation; one committee in Terms Review, worked by the committee itself
    * (`members` active members, quorum `quorum`), with the stage set to `whoMode`.
    */
-  async function world(whoMode: 'ALL' | 'COMMITTEE_VOTE', members: number, quorum = 1) {
+  async function world(whoMode: 'ANY_ONE' | 'ALL' | 'COMMITTEE_VOTE', members: number, quorum = 1) {
     const slug = `acc284-${randomUUID().slice(0, 8)}`;
     const org = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } })).id;
     await applyWorkflowSeed(prisma, org, [COMMITTEE_SEED, CR_SEED]);
@@ -148,6 +148,36 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
     await prisma.onModuleDestroy();
   });
 
+  // ACC-202 — the ticket's own case: on "Any one of them" a person's press moves
+  // the record at once, and the stage it left records the move's KIND. Before
+  // ACC-202 every one of these stored APPROVED.
+  describe('"Any one of them": the outcome is the move’s kind (ACC-202)', () => {
+    it('ADVANCE leaves the stage APPROVED', async () => {
+      const w = await world('ANY_ONE', 1);
+      expect(await outcome(press(w, 0, w.moves.approve.id))).toBe('OK');
+      expect(await leftWith(w)).toBe('APPROVED');
+      // A forward move shows nothing in stage history.
+      const history = await workflow.getStageHistory(w.instanceId, w.org, ['committees:view'], w.people[0]!);
+      expect(history.visits.map((v) => v.arrivedBy)).toEqual([null, null]);
+    });
+
+    it('RETURN leaves it RETURNED, and stage history says the next visit was arrived at by a send-back', async () => {
+      const w = await world('ANY_ONE', 1);
+      expect(await outcome(press(w, 0, w.moves.revise.id))).toBe('OK');
+      expect(await leftWith(w)).toBe('RETURNED');
+      const history = await workflow.getStageHistory(w.instanceId, w.org, ['committees:view'], w.people[0]!);
+      expect(history.visits.map((v) => v.arrivedBy)).toEqual([null, 'RETURNED']);
+    });
+
+    it('EXIT leaves it EXITED, and the next visit was arrived at by an end', async () => {
+      const w = await world('ANY_ONE', 1);
+      expect(await outcome(press(w, 0, w.moves.end.id))).toBe('OK');
+      expect(await leftWith(w)).toBe('EXITED');
+      const history = await workflow.getStageHistory(w.instanceId, w.org, ['committees:view'], w.people[0]!);
+      expect(history.visits.map((v) => v.arrivedBy)).toEqual([null, 'EXITED']);
+    });
+  });
+
   describe('"All of them"', () => {
     it('the seeded Approve (isApprovalPath false): the first press is a vote and the committee waits; the last press moves it', async () => {
       const w = await world('ALL', 2);
@@ -166,7 +196,8 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
       const w = await world('ALL', 2);
       expect(await outcome(press(w, 0, w.moves.revise.id))).toBe('OK');
       expect(await stageOf(w)).toBe(w.stages.formation);
-      expect(await leftWith(w)).toBe('REJECTED');
+      // ACC-202 — left with the move's kind's outcome: sent back.
+      expect(await leftWith(w)).toBe('RETURNED');
       expect(await votes(w)).toEqual([{ approverId: w.people[0], decision: 'RETURNED', transitionId: w.moves.revise.id }]);
     });
 
@@ -181,7 +212,7 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
       const w = await world('ALL', 2);
       expect(await outcome(press(w, 0, w.moves.end.id))).toBe('OK');
       expect(await stageOf(w)).toBe(w.stages.dissolved);
-      expect(await leftWith(w)).toBe('REJECTED');
+      expect(await leftWith(w)).toBe('EXITED');
     });
 
     it('votes count per move: two forward moves wait until everyone agrees on one, and pressing again changes a vote', async () => {
@@ -290,7 +321,8 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
       expect(await votes(w)).toEqual([{ approverId: w.people[0], decision: 'APPROVED', transitionId: w.moves.end.id }]);
       expect(await outcome(press(w, 1, w.moves.end.id))).toBe('OK');
       expect(await stageOf(w)).toBe(w.stages.dissolved);
-      expect(await leftWith(w)).toBe('REJECTED');
+      // ACC-202 — an EXIT that a vote decided is still ended, not rejected.
+      expect(await leftWith(w)).toBe('EXITED');
     });
 
     it('votes count per move: quorum counts every vote cast, and a move needs more than half of them', async () => {
@@ -308,7 +340,7 @@ describe('A press on a stage decided together is a vote by the move’s kind, pe
       const w = await world('COMMITTEE_VOTE', 3, 2);
       expect(await outcome(press(w, 0, w.moves.revise.id))).toBe('OK');
       expect(await stageOf(w)).toBe(w.stages.formation);
-      expect(await leftWith(w)).toBe('REJECTED');
+      expect(await leftWith(w)).toBe('RETURNED');
     });
   });
 

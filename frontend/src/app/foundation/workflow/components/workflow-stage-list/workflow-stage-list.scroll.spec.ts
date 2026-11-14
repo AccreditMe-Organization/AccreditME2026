@@ -24,9 +24,11 @@ import { LanguageToggleComponent } from '../../../../layout/language-toggle/lang
 import { ImpersonationBannerComponent } from '../../../../layout/impersonation-banner/impersonation-banner.component';
 import { NotificationBellComponent } from '../../../notification/components/notification-bell/notification-bell.component';
 import { IdleWarningComponent } from '../../../../core/components/idle-warning/idle-warning.component';
+import { SessionLimitWarningComponent } from '../../../../core/components/session-limit-warning/session-limit-warning.component';
 import { AppShellComponent } from '../../../../layout/app-shell/app-shell.component';
 import { ALL_KINDS, WHO_RULES, storedEntry } from '../stage-who/stage-who-options.testing';
 import { WorkflowStageListComponent } from './workflow-stage-list.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-271 PR 5a — the Stages page scrolls in ONE place: the shell's <main>.
 // Found by Ahmad on Committee Management (an overflowing strip): the window
@@ -64,6 +66,8 @@ class LanguageToggleStub {}
 class BannerStub {}
 @Component({ selector: 'app-idle-warning', standalone: true, template: '' })
 class IdleWarningStub {}
+@Component({ selector: 'app-session-limit-warning', standalone: true, template: '' })
+class SessionLimitWarningStub {}
 
 const CASES = [
   { name: 'at 1280', width: 1280, phone: false },
@@ -146,6 +150,7 @@ const media = (matches: boolean) =>
   ({ matches, addEventListener: () => undefined, removeEventListener: () => undefined }) as unknown as MediaQueryList;
 
 describe('WorkflowStageListComponent — one vertical scroll, inside the shell (ACC-271 PR 5a)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<AppShellComponent>;
   let http: HttpTestingController;
@@ -200,8 +205,8 @@ describe('WorkflowStageListComponent — one vertical scroll, inside the shell (
       add: { imports: [BreadcrumbStub, BellStub, LanguageToggleStub] },
     });
     TestBed.overrideComponent(AppShellComponent, {
-      remove: { imports: [ImpersonationBannerComponent, IdleWarningComponent] },
-      add: { imports: [BannerStub, IdleWarningStub] },
+      remove: { imports: [ImpersonationBannerComponent, IdleWarningComponent, SessionLimitWarningComponent] },
+      add: { imports: [BannerStub, IdleWarningStub, SessionLimitWarningStub] },
     });
     loadTranslationsForTest({ en, ar });
     TestBed.inject(TranslateService).use(lang);
@@ -231,7 +236,6 @@ describe('WorkflowStageListComponent — one vertical scroll, inside the shell (
       fixture.detectChanges();
       await new Promise((r) => setTimeout(r, 0));
     }
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     fixture.detectChanges();
   }

@@ -12,6 +12,7 @@ import {
   CONFIRM_REJECT_CLASS,
 } from './am-confirm.service';
 import { ConfirmHostComponent } from './confirm-host.component';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 /**
  * ACC-120 slice 10 — what `tone` decides, and what every confirm now gets.
@@ -44,6 +45,7 @@ class HostComponent {
 }
 
 describe('AmConfirmService.ask() (ACC-120 slice 10)', () => {
+  useLayoutFonts();
   let fixture: ComponentFixture<HostComponent>;
   let layers: LayerStackService;
 

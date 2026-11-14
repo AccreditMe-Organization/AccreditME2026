@@ -1,16 +1,15 @@
 /**
- * ACC-202, PR 1 of 2 — stage history READS the two new outcomes, and the
- * engine does not WRITE them yet. Against a REAL Postgres (npm run test:db).
+ * ACC-202 — stage history reads the two new outcomes (PR 1 of 2), and the
+ * engine writes them (PR 2 of 2). Against a REAL Postgres (npm run test:db).
  * Plan: backend/Plans/step-57-191-202-workflow-checks.md.
  *
  *   - `arrivedBy` on each visit is the PREVIOUS visit's outcome when it was
  *     RETURNED or EXITED, and null otherwise (a forward move, an old REJECTED
- *     or SKIPPED, the first visit). Rows are written here directly, as PR 2's
- *     engine will write them.
- *   - The engine itself still leaves every move with an outcome the deployed
- *     client knows (APPROVED, REJECTED, SKIPPED): a real press of each kind, on
- *     "Any one of them" and "All of them". The static half of the same
- *     guarantee is stage-outcome-writes.scan.spec.ts.
+ *     or SKIPPED, the first visit). Rows are written here directly, so old
+ *     and new outcomes sit side by side, as on a real database (no backfill).
+ *   - PR 2: a real press of each kind, on "Any one of them" and "All of them",
+ *     leaves the stage with its KIND's outcome (ADVANCE → APPROVED, RETURN →
+ *     RETURNED, EXIT → EXITED), and the next visit shows how it arrived.
  *
  * Same guards as the other db-specs: it FAILS, never skips, without a
  * database, and refuses any database that is not on this machine.
@@ -47,9 +46,14 @@ jest.setTimeout(180_000);
 
 const COMMITTEE_SEED = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'COMMITTEE')!;
 /** What the client deployed before ACC-202 can read. */
-const KNOWN_BEFORE_ACC202: readonly string[] = ['PENDING', 'APPROVED', 'REJECTED', 'SKIPPED'];
+/** ACC-202 PR 2 — the outcome each kind of move leaves, and what the next visit then shows. */
+const BY_KIND = {
+  advance: { outcome: 'APPROVED', arrivedBy: null },
+  back: { outcome: 'RETURNED', arrivedBy: 'RETURNED' },
+  end: { outcome: 'EXITED', arrivedBy: 'EXITED' },
+} as const;
 
-describe('Stage history reads RETURNED and EXITED; the engine does not write them yet (ACC-202, PR 1 of 2)', () => {
+describe('Stage history reads RETURNED and EXITED, and the engine writes them by the move’s kind (ACC-202)', () => {
   const prisma = new PrismaService();
   const audit = new AuditLogService(prisma);
   const labels = new DelegationLabelService(prisma);
@@ -134,15 +138,14 @@ describe('Stage history reads RETURNED and EXITED; the engine does not write the
     expect((await history(w)).visits.map((v) => v.arrivedBy)).toEqual([null, null, 'RETURNED', null, null, 'EXITED']);
   });
 
-  it.each(['ANY_ONE', 'ALL'] as const)('on "%s", a real press of each kind still leaves an outcome the deployed client knows', async (whoMode) => {
+  it.each(['ANY_ONE', 'ALL'] as const)('on "%s", a real press of each kind leaves its kind’s outcome, and history shows how the record arrived', async (whoMode) => {
     for (const kind of ['advance', 'back', 'end'] as const) {
       const w = await world(whoMode);
       await workflow.triggerTransition(w.instanceId, { transitionId: w.moves[kind].id }, w.org, w.member, ['committees:view']);
       const left = await prisma.workflowInstanceStage.findUniqueOrThrow({ where: { id: w.entryId } });
       expect(left.exitedAt).not.toBeNull();
-      expect(KNOWN_BEFORE_ACC202).toContain(left.outcome);
-      // So stage history shows no "Sent back" or "Ended" for a move made by this PR's engine.
-      expect((await history(w)).visits.map((v) => v.arrivedBy)).toEqual([null, null]);
+      expect({ kind, outcome: left.outcome }).toEqual({ kind, outcome: BY_KIND[kind].outcome });
+      expect((await history(w)).visits.map((v) => v.arrivedBy)).toEqual([null, BY_KIND[kind].arrivedBy]);
     }
   });
 });

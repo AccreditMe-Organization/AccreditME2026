@@ -23,6 +23,7 @@ import { PASSWORD_RESET_NOTICE } from '../reset-password/reset-password.componen
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
 import { LoginComponent } from './login.component';
 import { SESSION_OTHER_ORGANIZATION, SessionAddressState } from '../../../../core/tenant/session-address-state';
+import { SESSION_TIME_LIMIT, SessionLimitState } from '../../../../core/services/session-limit-state';
 
 /** The auth layout's language plumbing and the formatting layer, held still. */
 const LAYOUT_PROVIDERS = [
@@ -543,5 +544,76 @@ describe('LoginComponent — a session at another organisation’s address (ACC-
     );
     expect(arText).toMatch(/[\u0600-\u06FF]/);
     expect(arText).not.toBe(enText);
+  });
+});
+
+// ACC-126 — the session ended at its 12-hour limit: the sign-in page says so,
+// whether it was told by the URL (the warning's own sign-out, or a refused
+// renewal in the interceptor) or by a refusal met where nothing navigates
+// (restoreSession(), noted in SessionLimitState).
+describe('LoginComponent — signed out at the 12-hour limit (ACC-126)', () => {
+  const NOTE_KEY = 'session.signedOutLimit';
+
+  function load(opts: { reason?: string; noted?: boolean }): HTMLElement {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [LoginComponent],
+      providers: [
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        {
+          provide: Router,
+          useValue: {
+            currentNavigation: () => null,
+            navigate: jasmine.createSpy('navigate'),
+            navigateByUrl: jasmine.createSpy('navigateByUrl'),
+            createUrlTree: () => ({}),
+            serializeUrl: () => '',
+            events: { subscribe: () => ({ unsubscribe: () => {} }) },
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { queryParamMap: convertToParamMap(opts.reason ? { reason: opts.reason } : {}) },
+          },
+        },
+        { provide: AuthService, useValue: { isAuthenticated: () => false } },
+        { provide: NavigationAccessService, useValue: {} },
+        { provide: TenantHostService, useValue: { slug: 'al-nakheel' } },
+        ...LAYOUT_PROVIDERS,
+      ],
+    });
+    if (opts.noted) {
+      TestBed.inject(SessionLimitState).note(
+        new HttpErrorResponse({ status: 401, statusText: 'Unauthorized', error: { code: SESSION_TIME_LIMIT } }),
+      );
+    }
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.detectChanges();
+    return fixture.nativeElement;
+  }
+
+  it('says why on reason=limit', () => {
+    expect(load({ reason: 'limit' }).textContent).toContain(NOTE_KEY);
+  });
+
+  it('says why when a refusal was noted where nothing navigated', () => {
+    expect(load({ noted: true }).textContent).toContain(NOTE_KEY);
+  });
+
+  it('says nothing of the kind on a plain visit, or for the idle sign-out', () => {
+    expect(load({}).textContent).not.toContain(NOTE_KEY);
+    const idle = load({ reason: 'idle' }).textContent ?? '';
+    expect(idle).not.toContain(NOTE_KEY);
+    expect(idle).toContain('session.signedOutIdle');
+  });
+
+  it('has the exact wording in both languages', () => {
+    expect(en.session.signedOutLimit).toBe(
+      'You were signed out because a session ends 12 hours after sign-in. Sign in again to continue.',
+    );
+    expect(ar.session.signedOutLimit).toBe(
+      'تم تسجيل الخروج لأن الجلسة تنتهي بعد 12 ساعة من تسجيل الدخول. يُرجى تسجيل الدخول من جديد للمتابعة.',
+    );
   });
 });

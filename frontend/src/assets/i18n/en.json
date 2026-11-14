@@ -1111,6 +1111,10 @@
       "stageHasNoOne": "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it.",
       "notInStagePool": "Only whoever works this stage can do this.",
       "moveHasNoMover": "Nobody is set to make this move, so the record can't move this way. Ask an administrator.",
+      "defaultNeedsStages": "Add a starting stage, then set this template as the default.",
+      "defaultTypeChange": "The default workflow's record type can't be changed. Make another template the default first.",
+      "defaultRequired": "This is the default workflow for its record type. Make another template the default first.",
+      "defaultInactive": "A deactivated workflow can't be the default.",
       "protected": {
         "CREATE_TEMPLATE": "There is already a committee change request workflow, and there can be only one. Rename its stages or set their deadlines instead.",
         "REPLACE_DEFAULT": "The committee change request workflow cannot be replaced by another workflow.",
@@ -1146,7 +1150,6 @@
     },
     "confirmRemoveStageHeader": "Remove the stage “{{name}}”?",
     "confirmDeactivateTemplateHeader": "Deactivate the template “{{name}}”?",
-    "confirmDeactivateDefaultTemplate": "Records already on it carry on. It's the default, so new records of its type can't start until another template is made the default.",
     "confirmRemoveTransitionHeader": "Remove the transition “{{name}}”?",
     "who": {
       "title": "Who works this stage",
@@ -3428,7 +3431,13 @@
       "signOutNow": "Sign out now"
     },
     "signedOutIdle": "You were signed out because there was no activity for a while.",
-    "signedInElsewhere": "You're signed in to another organisation in this browser. Signing in here will sign you out there."
+    "signedInElsewhere": "You're signed in to another organisation in this browser. Signing in here will sign you out there.",
+    "limit": {
+      "title": "Your session ends soon",
+      "body": "For security, a session lasts 12 hours. You'll be signed out at {{time}}. Save your work, then sign in again.",
+      "continueWorking": "Continue working"
+    },
+    "signedOutLimit": "You were signed out because a session ends 12 hours after sign-in. Sign in again to continue."
   },
   "manageRoles": {
     "comesWithPosition": "Comes with their head position, {{position}}. It ends when that headship ends, so change it in Headship, not here.",

@@ -18,6 +18,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { OrgChartNodeDto, OrgChartResponseDto, OrgUnitService } from '../../services/org-unit.service';
 import { CONNECTOR } from './org-chart-model';
 import { OrgUnitChartComponent, PANEL_WIDTH } from './org-unit-chart.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-120 slice 11, PR E — the chart's layout, measured with the real theme in
 // both languages, at the CONTENT widths the shell leaves at 1280, 390 and 360
@@ -116,6 +117,7 @@ class RouteComponent {
 type Rect = { left: number; right: number; top: number; bottom: number; width: number; height: number };
 
 describe('OrgUnitChart — layout (ACC-120 slice 11, PR E)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
   let harness: RouterTestingHarness;

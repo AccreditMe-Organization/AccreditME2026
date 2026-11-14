@@ -17,6 +17,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { OrgStructureNodeDto, OrgUnitHistoryPageDto, OrgUnitService, OrgUnitSummaryDto } from '../../services/org-unit.service';
 import { HeadshipPanelComponent } from '../headship-panel/headship-panel.component';
 import { OrgUnitRecordComponent } from './org-unit-record.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-120 slice 11, PR D — the record's layout, with the real theme and both
 // languages, at the CONTENT widths the shell leaves at 1280, 390 and 360
@@ -118,6 +119,7 @@ const HISTORY: OrgUnitHistoryPageDto = {
 };
 
 describe('OrgUnitRecord — layout (ACC-120 slice 11, PR D)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
 

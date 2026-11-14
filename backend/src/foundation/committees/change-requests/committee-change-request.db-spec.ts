@@ -552,6 +552,53 @@ describe('Committee change requests against a real database (ACC-239)', () => {
     });
   });
 
+  // ── The stage outcomes the app's moves record (ACC-202) ───────────────────────
+
+  // ACC-202 — the app's own moves record the outcome of their KIND, as a
+  // person's press does: there is no outcome option any more. Before ACC-202
+  // withdraw recorded SKIPPED and return and reject REJECTED.
+  describe('stage outcomes (ACC-202)', () => {
+    /** The request's stage entries, oldest first, as "key:outcome". */
+    const trail = async (w: World, requestId: string): Promise<string[]> => {
+      const instance = await prisma.workflowInstance.findFirstOrThrow({
+        where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST', objectId: requestId },
+      });
+      const entries = await prisma.workflowInstanceStage.findMany({
+        where: { workflowInstanceId: instance.id },
+        orderBy: { enteredAt: 'asc' },
+        select: { outcome: true, stage: { select: { key: true } } },
+      });
+      return entries.map((e) => `${e.stage.key}:${e.outcome}`);
+    };
+
+    it('submit is APPROVED, return RETURNED, submit again APPROVED, reject EXITED', async () => {
+      const w = await world();
+      const r = await submitted(w);
+      await requests.returnForChanges(r.id, { note: 'Say which members' }, w.org, w.approver);
+      await requests.submit(r.id, w.org, w.requester);
+      await requests.reject(r.id, { reason: 'Not needed' }, w.org, w.approver);
+      expect(await trail(w, r.id)).toEqual([
+        'draft:APPROVED',
+        'under_review:RETURNED',
+        'returned:APPROVED',
+        'under_review:EXITED',
+        'rejected:PENDING',
+      ]);
+    });
+
+    it('approve is APPROVED, and withdraw is EXITED', async () => {
+      const w = await world();
+      const r = await submitted(w);
+      await requests.approve(r.id, w.org, w.approver);
+      expect(await trail(w, r.id)).toEqual(['draft:APPROVED', 'under_review:APPROVED', 'approved:PENDING']);
+
+      const w2 = await world();
+      const draft = await requests.create(w2.committee, { changes: { quorumCount: 4 } as never, reason: 'Grew' }, w2.org, w2.requester);
+      await requests.withdraw(draft.id, w2.org, w2.requester);
+      expect(await trail(w2, draft.id)).toEqual(['draft:EXITED', 'withdrawn:PENDING']);
+    });
+  });
+
   // ── Another organisation ─────────────────────────────────────────────────────
 
   describe('tenant isolation', () => {
@@ -804,8 +851,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
 
     // ACC-271 PR 6a — "votes that keep their quorum" are the open entries of
     // Committee vote stages (whoMode COMMITTEE_VOTE) whose vote committee is this
-    // one: the stage's Committee entry's own committee, else the record's. It
-    // read approvalMode COMMITTEE before, which no converted stage has.
+    // one: the stage's Committee entry's own committee, else the record's. A
+    // Committee entry alone does not make a vote: the mode does.
     describe('open votes the preview counts', () => {
       /** A stage made a Committee vote, on `committeeId` (null: the record's own). */
       const voteStage = async (w: World, key: string, committeeId: string | null) => {
@@ -821,8 +868,10 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         const w = await world();
         await voteStage(w, 'terms_review', null); // the record's own committee
         await voteStage(w, 'formation', w.other); // always the other committee
-        // An old-style committee approval that is not a Committee vote stage: not counted.
-        await prisma.workflowStage.update({ where: { id: w.stageOf['dissolution_pending'] }, data: { whoMode: 'ANY_ONE', approvalMode: 'COMMITTEE' } });
+        // A stage worked by this committee that is NOT a vote (Any one of them): not counted.
+        // ACC-278 — this was an old approvalMode COMMITTEE decoy; that column left the client.
+        await prisma.workflowStage.update({ where: { id: w.stageOf['dissolution_pending'] }, data: { whoMode: 'ANY_ONE' } });
+        await prisma.workflowStageAssignee.create({ data: { organizationId: w.org, stageId: w.stageOf['dissolution_pending']!, order: 1, kind: 'COMMITTEE', committeeId: null } });
 
         await openEntry(w, w.committee, 'terms_review'); // this committee's own vote: 1
         await openEntry(w, w.committee, 'terms_review', new Date()); // closed: 0
