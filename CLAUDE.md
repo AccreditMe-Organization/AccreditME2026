@@ -1216,6 +1216,7 @@ POST /auth/accept-invitation      20 / min per address
 POST /auth/forgot-password         3 / hour per organisation + email
                                   AND 20 / hour per address
 POST /auth/reset-password         20 / hour per address
+POST /auth/reset-password/lookup   30 / min per address (ACC-188)
 POST /tasks/draft                 10 / min per signed-in USER (ACC-197)
 POST /tasks/assignment/workload-hint
                                   20 / min per signed-in USER (ACC-199)
@@ -1407,9 +1408,19 @@ header — SYSTEM-REFERENCE §15.15.
   Better Auth never builds a tenant-facing link — `buildTenantUrl()` does. Its
   HTTP handler is not mounted and every call is a direct `auth.api.*`, so no auth
   URL is derived from a request (verified, SYSTEM-REFERENCE §15.14).
-- **Forgot password sends nothing.** `POST /auth/forgot-password` keeps its route,
-  rate limits and neutral 200, but no longer calls `requestPasswordReset`: no
-  token, no email. Password reset is its own ticket, after ACC-120 slice 9.
+- **Password reset by email works (ACC-188).**
+  - **Forgot password** only enqueues a `password-reset` job and answers the
+    same neutral 200 for every address. The worker issues a link only to an
+    ACTIVE person in an open organisation.
+  - **The link** is `buildTenantUrl(slug, '/reset-password?token=…')`, a
+    32-byte token that lasts 1 hour and works once. Only the newest link works;
+    asking again ends the earlier one REPLACED.
+  - **A reset** ends every session (`endEverySessionInTx()`), clears the
+    wrong-password lock (not the MFA code lock), and never signs anyone in, so
+    MFA is never bypassed.
+  - **Better Auth's `requestPasswordReset` is never used.** `sendResetPassword`
+    is not configured, so it refuses. Full rules: Key Architecture Decisions
+    (ACC-188).
 
 ### Audit Trail
 - AuditLog table: actor, timestamp, action, objectType, objectId, before, after, tenantId, ip
@@ -1619,8 +1630,8 @@ Language:           All AI outputs in user's preferred language (Arabic/English)
 Never block API requests with long-running tasks.
 Always run as background jobs:
 
-**Corrected (ACC-274), against dev `487a0a8`; updated by ACC-297:** exactly
-seven queues have a processor (`grep -rn "@Processor(" backend/src`). The other
+**Corrected (ACC-274), against dev `487a0a8`; updated by ACC-297 and ACC-188:**
+exactly eight queues have a processor (`grep -rn "@Processor(" backend/src`). The other
 seven below are planned and NOT built — nothing enqueues them and nothing
 consumes them.
 
@@ -1643,6 +1654,10 @@ workflow-actions    Each WEBHOOK transition action, enqueued by
 committee-transfer-notice
                     A delayed job, 2 minutes after each transfer commits, one
                     attempt: tells the person's committees (ACC-297)
+password-reset      One per Forgot password press, one attempt: finds the
+                    account, makes the link, emails it (ACC-188). Also,
+                    email-delivery sends `security-notice` jobs (an email only,
+                    never a Notification row)
 ```
 
 Planned, not built:
@@ -4964,6 +4979,59 @@ Plan and Ahmad's answers (13 Nov, Q1–Q8):
 - **Every refusal is said from its code** through `plainWorkflowRefusalKey()`,
   in both languages. The counted ones use plural objects.
 - **One additive migration.** It runs in the pre-deploy step, never before.
+
+## Key Architecture Decisions (ACC-188)
+
+Password reset by email. Full mechanism: SYSTEM-REFERENCE.md §1.16. Plan, Ahmad's
+four rules, lane B's review and the as-built notes (14 Nov):
+`backend/Plans/step-188-password-reset.md` (§7, §8). Briefly:
+
+- **FORGOT PASSWORD ENQUEUES AND NOTHING ELSE.** One `password-reset` job
+  `{ organizationSlug, email }`, the same 200, the same work, for every address.
+  The worker issues a link only to an ACTIVE person, with a password, in an open
+  organisation. Never enqueue to verify locally (shared Redis): call
+  `PasswordResetService.issue()` in-process.
+- **THE LINK IS A TENANT LINK**, `buildTenantUrl(slug, '/reset-password?token=…')`.
+  - The token is 32 random bytes (base64url, 43 characters).
+  - It is never in a log, audit row, job or notification; the email carries it
+    once.
+  - Better Auth's `requestPasswordReset` cannot be used: it makes 24-character
+    tokens, and `sendResetPassword` is NOT configured, so it refuses and its
+    `data.url` cannot be sent.
+- **`PasswordResetLink` IS THE LEDGER**, one row per link, `tokenHash` = SHA-256
+  hex.
+  - `endReason` is `USED` / `REPLACED` / `VOID`, which gives each dead link its
+    own answer.
+  - **One open link per person**, under the User row lock; the earlier link is
+    ended REPLACED in the same transaction.
+  - The same transaction deletes that person's links that ended or expired more
+    than 30 days ago. There is no sweep.
+- **BETTER AUTH'S RESET ROW IS WRITTEN BY US**, in the issuing transaction
+  (`password-reset-verification.ts`), with its identifier stored hashed (the
+  `storeIdentifier` override for `reset-password:`).
+  - Better Auth's `resetPassword` still consumes it and sets the password.
+  - Every fact this relies on is pinned in `better-auth.contract.ts` and its
+    spec.
+- **BETTER AUTH CONSUMES BEFORE IT HASHES**, so the breached-password check would
+  burn the link. `PasswordBreachCheckService` runs the same k-anonymity check
+  first. A breach found only afterwards voids the link (`RESET_LINK_INVALID`).
+- **AHMAD'S FOUR RULES:**
+  - 1 hour, once, newest only;
+  - signed out everywhere (`endEverySessionInTx()`, shared with ACC-164);
+  - the wrong-password lock cleared by a `LoginAttempt` success
+    `'password_reset'`, the MFA code lock untouched;
+  - never signed in, so MFA is never bypassed.
+- **A SECURITY NOTICE IS AN EMAIL ONLY**, never a Notification row: an
+  `email-delivery` job named `security-notice` with who and which notice
+  (`security-notice.ts`). ACC-164 adds its two notices there.
+- **REFUSALS ARE NEVER 401**, because the interceptor renews and retries a 401.
+  `RESET_LINK_INVALID` / `_EXPIRED` / `_USED` / `_REPLACED` are 400, and the
+  password codes are `PasswordRefusalException`'s.
+- **The reset page reads the token once, then takes it out of the address bar.**
+  It shows no form until `POST /auth/reset-password/lookup` says the link is
+  open, and the request must come from the link's organisation's address.
+- **One additive migration**, number 64 (`acc188_password_reset_link`), after
+  #290's 63. It runs in the pre-deploy step, never before.
 
 ## Open / Deferred Items
 

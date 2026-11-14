@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AccreditMe Sign-in Pages</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+</style>
+</helmet>
+
+<div style="max-width: 1520px; margin-inline: auto; padding: 20px 12px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 14 Nov 2026 · Sign-in pages · Forgot password and Reset password (ACC-188) · round 1 · on the live Sign in and Accept invitation</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Sign-in pages</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 110ch; text-wrap: pretty;">Two full pages on the shared sign-in card: Forgot password, restored, and Reset password, new. The card is drawn from the live Sign in and Accept invitation: 340 wide, 24 padding, the EN | ع switch, the field wrapper with its message slot, the password input with show and hide. No organisation name or logo, as decided on 4 Oct for Login and Forgot password; Reset password follows them. English and Arabic, desktop and phone 390. Example address al-nakheel.accreditme.app, person Hessa Al-Dosari. Copy is the developers' brief, with the product's own strings where it already says the same thing; every change and draft is listed in <a href="#q">5</a>.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">Decided before drawing</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="6">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="4">
+  <section id="{{ sec.id }}" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 14px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">{{ sec.n }}</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{{ sec.title }}</h2>
+      <span style="font-size: 12.5px; color: #5A6779; text-wrap: pretty;">{{ sec.sub }}</span>
+    </div>
+    <sc-for list="{{ sec.groups }}" as="grp" hint-placeholder-count="2">
+      <div style="margin-block-end: 18px;">
+        <h3 style="margin: 0 0 4px; font-size: 15px; font-weight: 600;">{{ grp.title }}</h3>
+        <sc-if value="{{ grp.sub }}" hint-placeholder-val="{{ false }}"><div style="font-size: 12px; color: #4A5568; margin-block-end: 8px; max-width: 150ch; text-wrap: pretty;">{{ grp.sub }}</div></sc-if>
+        <div style="display: flex; flex-wrap: wrap; gap: 18px 12px; align-items: flex-start; background: #F4F7FA; border-radius: 8px; padding: 10px;">
+          <sc-for list="{{ grp.sets }}" as="set" hint-placeholder-count="2"><div style="display: flex; flex-wrap: wrap; gap: 18px 12px; align-items: flex-start;">
+          <sc-for list="{{ set.panels }}" as="pn" hint-placeholder-count="2">
+            <div style="{{ pn.outer }}">
+              <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ pn.cap }}</div>
+              <div style="{{ pn.frame }}">
+                <sc-if value="{{ pn.bar }}" hint-placeholder-val="{{ false }}"><div dir="ltr" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; background: #fff; border-block-end: 1px solid #E2E8F0; font-size: 12px; color: #4A5568;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #CBD5E0;"></span><span>{{ pn.bar }}</span></div></sc-if>
+                <div style="{{ pn.page }}">
+                  <div dir="{{ pn.dir }}" lang="{{ pn.lang }}" style="{{ pn.card }}">
+                    <sc-for list="{{ pn.items }}" as="it" hint-placeholder-count="8">
+                      <div style="{{ it.style }}"><sc-for list="{{ it.parts }}" as="p" hint-placeholder-count="2"><sc-if value="{{ p.a }}" hint-placeholder-val="{{ false }}"><a href="{{ p.href }}" style="{{ p.style }}">{{ p.text }}</a></sc-if><sc-if value="{{ p.s }}" hint-placeholder-val="{{ true }}"><span dir="{{ p.dir }}" style="{{ p.style }}">{{ p.text }}</span></sc-if></sc-for></div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+              <sc-if value="{{ pn.note }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ pn.note }}</div></sc-if>
+            </div>
+          </sc-for>
+          </div></sc-for>
+        </div>
+      </div>
+    </sc-for>
+    <sc-if value="{{ sec.notes }}" hint-placeholder-val="{{ false }}">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 0 18px;">
+          <sc-for list="{{ sec.notes }}" as="n" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </section>
+  </sc-for>
+
+  <section id="q" style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #FEDF89; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Questions for the product owner, and copy changes</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Each question has a recommendation; none is decided in the drawing. Then every place the copy differs from the brief, and every string drawn here that the product or the brief doesn't have.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="10">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div>
+          <div style="font-size: 12px; color: #4A5568; padding-block-start: 3px; text-wrap: pretty;">{{ q.why }}</div>
+          <div style="font-size: 12px; color: #4A5568; padding-block-start: 3px; text-wrap: pretty;"><strong style="color: #067647;">Recommendation:</strong> {{ q.rec }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <h3 style="margin: 18px 0 6px; font-size: 16px; font-weight: 600;">Copy: changes from the brief, and drafts</h3>
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow-x: auto;">
+      <div style="display: flex; gap: 12px; padding: 7px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779; min-width: 900px;"><span style="flex: none; width: 110px;">Kind</span><span style="flex: none; width: 150px;">Where</span><span style="flex: 1 1 0; min-width: 0;">English</span><span style="flex: 1 1 0; min-width: 0;">Arabic</span></div>
+      <sc-for list="{{ copy }}" as="x" hint-placeholder-count="10">
+        <div style="display: flex; gap: 12px; padding: 7px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12.5px; min-width: 900px;"><span style="flex: none; width: 110px; font-weight: 700; color: {{ x.c }};">{{ x.k }}</span><span style="flex: none; width: 150px; color: #5A6779; font-weight: 600;">{{ x.w }}</span><span style="flex: 1 1 0; min-width: 0; text-wrap: pretty;">{{ x.en }}</span><span dir="rtl" style="flex: 1 1 0; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13.5px; text-wrap: pretty;">{{ x.ar }}</span></div>
+      </sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const EMAIL = "hessa.aldosari@alnakheel.example.test";
+    const HOST = "al-nakheel.accreditme.app";
+    const TX = {
+      en: {
+        signin: "Sign in", email: "Email", password: "Password", forgot: "Forgot password?", back: "Back to sign in",
+        emailReq: "Enter your email.", emailBad: "Enter a valid email address.",
+        fpTitle: "Forgot password", fpIntro: "Enter the email address you sign in with. If it has an account here, we'll send a link to choose a new password.", fpBtn: "Send reset link",
+        sentTitle: "Check your email", sentBody: "If {email} has an account at this organisation, a link to reset the password is on its way. The link works once, for 1 hour. If nothing arrives in a few minutes, check your spam folder.", sentNote: "Asking again sends a new link, and the earlier one stops working.",
+        unreach: "We couldn't reach AccreditMe. Check your connection and try again.", r429: "Too many attempts. Wait a few minutes, then try again.", retry: "Retry",
+        rpTitle: "Choose a new password", rpIntro: "Your new password replaces the old one, and signs you out everywhere.", newPw: "New password", hint: "8 to 128 characters",
+        pwReq: "Enter a new password.", short: "Use at least 8 characters.", long: "Use no more than 128 characters.", confirm: "Confirm new password", confReq: "Enter the new password again.", mismatch: "The two passwords don't match.",
+        breached: "This password has appeared in a data breach. Choose a different one.", unavail: "We couldn't check your password just now. Try again; your link still works.", rpBtn: "Set new password", slow: "This is taking longer than usual.",
+        notice: "Your password is changed. Sign in with your new password.",
+        expT: "This link has expired", expB: "Reset links work for 1 hour. Ask for a new one.",
+        usedT: "This link has already been used", usedB: "Your password was set with this link. Sign in with it, or ask for a new link if you've forgotten it again.",
+        repT: "A newer link was sent", repB: "You asked for another reset link, so this one no longer works. Use the link in the latest email.",
+        invT: "This link can't be used", invB: "It may be incomplete, or for a different organisation's address. Ask for a new link.", sendNew: "Send a new link",
+        noOrg: "The existing “no organisation address” note, unchanged. Its text isn't in this project yet: copy it from the live Sign in at " + "accreditme.app" + "."
+      },
+      ar: {
+        signin: "تسجيل الدخول", email: "البريد الإلكتروني", password: "كلمة المرور", forgot: "نسيت كلمة المرور؟", back: "العودة إلى تسجيل الدخول",
+        emailReq: "أدخل بريدك الإلكتروني.", emailBad: "أدخل بريدًا إلكترونيًا صحيحًا.",
+        fpTitle: "نسيت كلمة المرور", fpIntro: "أدخل البريد الإلكتروني الذي تستخدمه لتسجيل الدخول. إذا كان له حساب هنا، فسنرسل رابطًا لاختيار كلمة مرور جديدة.", fpBtn: "إرسال رابط إعادة التعيين",
+        sentTitle: "تحقّق من بريدك الإلكتروني", sentBody: "إذا كان للبريد {email} حساب في هذه المنشأة، فسيصل رابط لإعادة تعيين كلمة المرور. يعمل الرابط مرة واحدة خلال ساعة. إذا لم يصل شيء خلال بضع دقائق، فتحقّق من مجلد الرسائل غير المرغوب فيها.", sentNote: "عند طلب رابط جديد، يتوقف الرابط السابق عن العمل.",
+        unreach: "تعذّر الوصول إلى AccreditMe. تحقّق من اتصالك ثم أعد المحاولة.", r429: "محاولات كثيرة جدًا. انتظر بضع دقائق ثم أعد المحاولة.", retry: "إعادة المحاولة",
+        rpTitle: "اختر كلمة مرور جديدة", rpIntro: "تحلّ كلمة المرور الجديدة محل القديمة، ويتم تسجيل خروجك من كل الأجهزة.", newPw: "كلمة المرور الجديدة", hint: "من 8 إلى 128 حرفًا",
+        pwReq: "أدخل كلمة مرور جديدة.", short: "استخدم 8 أحرف على الأقل.", long: "استخدم 128 حرفًا على الأكثر.", confirm: "تأكيد كلمة المرور الجديدة", confReq: "أدخل كلمة المرور الجديدة مرة أخرى.", mismatch: "كلمتا المرور غير متطابقتين.",
+        breached: "ظهرت كلمة المرور هذه في تسريب للبيانات. اختر كلمة مرور أخرى.", unavail: "تعذّر التحقق من كلمة المرور الآن. أعد المحاولة؛ الرابط ما زال صالحًا.", rpBtn: "تعيين كلمة المرور الجديدة", slow: "يستغرق هذا وقتًا أطول من المعتاد.",
+        notice: "تم تغيير كلمة المرور. سجّل الدخول بكلمة المرور الجديدة.",
+        expT: "انتهت صلاحية هذا الرابط", expB: "تعمل روابط إعادة التعيين لمدة ساعة. اطلب رابطًا جديدًا.",
+        usedT: "تم استخدام هذا الرابط من قبل", usedB: "تم تعيين كلمة المرور بهذا الرابط. سجّل الدخول بها، أو اطلب رابطًا جديدًا إذا نسيتها مرة أخرى.",
+        repT: "تم إرسال رابط أحدث", repB: "طُلب رابط آخر لإعادة التعيين، لذلك لم يعد هذا الرابط يعمل. استخدم الرابط في أحدث رسالة.",
+        invT: "لا يمكن استخدام هذا الرابط", invB: "قد يكون الرابط ناقصًا، أو خاصًا بعنوان منشأة أخرى. اطلب رابطًا جديدًا.", sendNew: "إرسال رابط جديد",
+        noOrg: "ملاحظة «لا يوجد عنوان منشأة» الحالية، دون تغيير. نصّها ليس في هذا المشروع بعد: يُنسخ من صفحة تسجيل الدخول الحية."
+      }
+    };
+
+    // ── card kit ──
+    const KIT = (ar) => {
+      const k = ar ? 1 : 0;
+      const t = TX[ar ? "ar" : "en"];
+      const P = (o) => Object.assign({ a: false, s: false, href: "#", dir: "auto", text: "", style: "" }, o);
+      const sp = (text, style, dir) => P({ s: true, text, style, dir: dir || "auto" });
+      const ln = (text, style, href) => P({ a: true, text, style, href: href || "#" });
+      const I = (parts, style) => ({ parts, style: style || "" });
+      const ty = (sz, wt, c, x) => "font-size: " + (sz + k) + "px; line-height: " + Math.round((sz + k) * (ar ? 1.6 : 1.5)) + "px; font-weight: " + (wt || 400) + "; color: " + (c || "#2D3748") + ";" + (x ? " " + x : "");
+      const seg = (on, first) => "display: inline-flex; align-items: center; justify-content: center; height: 20px; min-width: 28px; box-sizing: border-box; padding: 0 8px; font-size: " + (first ? 11 : 12) + "px; font-weight: 700; " + (on ? "background: #2E6FA3; color: #fff; border: 1px solid #2E6FA3;" : "background: #fff; color: #4A5568; border: 1px solid #CBD5E0;") + (first ? " border-start-start-radius: 4px; border-end-start-radius: 4px;" : " border-start-end-radius: 4px; border-end-end-radius: 4px; border-inline-start: 0; font-family: 'IBM Plex Sans Arabic', sans-serif;");
+      const toggle = () => I([sp("EN", seg(!ar, true), "ltr"), sp("ع", seg(ar, false), "rtl")], "display: flex; justify-content: flex-end; margin-block-end: 18px;");
+      const title = (s, tight) => I([sp(s, ty(16, 600))], "margin-block-end: " + (tight ? 10 : 18) + "px;");
+      const para = (s, o) => { o = o || {}; return I([sp(s, ty(o.sz || 13, 400, o.c || "#2D3748"))], "margin-block-end: " + (o.mb === undefined ? 18 : o.mb) + "px;"); };
+      const eye = () => sp("", "flex: none; width: 15px; height: 9px; border: 1.5px solid #4A5568; border-radius: 50%; background: radial-gradient(circle, #4A5568 0 2.2px, transparent 2.8px);");
+      const caret = () => sp("", "flex: none; width: 1px; height: 18px; background: #2D3748;");
+      const BOX = {
+        rest: "background: #fff; border: 1px solid #8A94A6;",
+        focus: "background: #fff; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);",
+        err: "background: #fff; border: 1px solid #B42318;",
+        errFocus: "background: #fff; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);",
+        ro: "background: #F4F7FA; border: 1px solid #CBD5E0;"
+      };
+      // o: { label, value, pwd, ltr, st, msg, err }
+      const field = (o) => {
+        const st = o.st || "rest";
+        const isErr = st === "err" || st === "errFocus";
+        const val = o.value || "";
+        const vparts = [];
+        if (val) vparts.push(sp(val, ty(14, 400, st === "ro" ? "#4A5568" : "#1A202C", "flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; unicode-bidi: isolate;" + (o.pwd ? " letter-spacing: 1px;" : "") + (o.ltr && ar ? " text-align: right;" : "")), o.ltr || o.pwd ? "ltr" : "auto"));
+        if (!val && (st === "focus" || st === "errFocus")) vparts.push(caret());
+        if (!val) vparts.push(sp("", "flex: 1 1 auto;"));
+        if (o.pwd) vparts.push(eye());
+        return [
+          I([sp(o.label, ty(11.5, 500, "#4A5568")), sp("*", ty(11.5, 700, "#B42318", "margin-inline-start: 4px;"))], "margin-block-end: 6px;"),
+          I(vparts, "display: flex; align-items: center; gap: 8px; height: 38px; box-sizing: border-box; padding: 0 12px; border-radius: 4px; overflow: hidden; " + BOX[st]),
+          I([sp(o.msg || "", ty(11, isErr ? 500 : 400, isErr ? "#B42318" : "#4A5568"))], "margin-block-start: 4px; min-height: " + (ar ? 19 : 16) + "px; margin-block-end: 18px;")
+        ];
+      };
+      const box = (s, tone, retry) => I([sp(s, ty(12.5, 400, tone === "ok" ? "#067647" : "#B42318", tone === "ok" ? "font-weight: 500;" : ""))].concat(retry ? [ln(t.retry, ty(12.5, 600, "#B42318", "margin-inline-start: 6px; text-decoration: underline; text-underline-offset: 2px;"))] : []),
+        "padding: 8px 10px; border-radius: 6px; margin-block-end: " + (tone === "ok" ? 16 : 12) + "px; " + (tone === "ok" ? "background: #ECFDF3; border: 1px solid #ABEFC6;" : "background: #FEF3F2; border: 1px solid #FECDCA;"));
+      const button = (s, o) => { o = o || {}; return I((o.spin ? [sp("", "flex: none; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;")] : []).concat([sp(s, ty(15, 600, o.secondary ? "#2D3748" : "#fff"))]),
+        "display: flex; align-items: center; justify-content: center; gap: 8px; height: 38px; box-sizing: border-box; border-radius: 4px; " + (o.secondary ? "background: #fff; border: 1px solid #5A6779;" : "background: #2E6FA3; border: 1px solid #2E6FA3;") + (o.spin ? " cursor: progress;" : "") + (o.mt ? " margin-block-start: " + o.mt + "px;" : "")); };
+      const link = (s, o) => { o = o || {}; return I([ln(s, ty(13, 400, "#2D3748", "text-decoration: underline; text-underline-offset: 2px;"))], "text-align: " + (o.center ? "center" : "start") + "; margin-block-start: " + (o.mt || 0) + "px; margin-block-end: " + (o.mb || 0) + "px;"); };
+      const bar = (w, h, mb) => I([], "width: " + w + "; height: " + h + "px; border-radius: 4px; background: #E9EEF3; margin-block-end: " + mb + "px;");
+      const withEmail = (s, sz, c) => { const i = s.indexOf("{email}"); return I([sp(s.slice(0, i), ty(sz, 400, c)), sp(EMAIL, ty(sz, 600, c, "unicode-bidi: isolate; overflow-wrap: anywhere;"), "ltr"), sp(s.slice(i + 7), ty(sz, 400, c))], "margin-block-end: 10px;"); };
+      return { t, I, sp, ty, toggle, title, para, field, box, button, link, bar, withEmail };
+    };
+
+    // ── the three cards ──
+    const signIn = (ar, o) => {
+      o = o || {}; const K = KIT(ar), t = K.t;
+      return [K.toggle()].concat(o.notice ? [K.box(t.notice, "ok")] : []).concat([K.title(t.signin)])
+        .concat(K.field({ label: t.email, value: o.filled ? EMAIL : "", ltr: 1, st: o.notice ? "focus" : "rest" }))
+        .concat(K.field({ label: t.password, value: o.filled ? "••••••••••••••••" : "", pwd: 1 }))
+        .concat([K.link(t.forgot, { mb: 18 }), K.button(t.signin)]);
+    };
+    const forgot = (ar, st) => {
+      const K = KIT(ar), t = KIT(ar).t;
+      if (st === "sent") return [K.toggle(), K.title(t.sentTitle), K.withEmail(t.sentBody, 13, "#2D3748"), K.para(t.sentNote, { sz: 12.5, c: "#4A5568", mb: 6 }), K.link(t.back, { center: 1, mt: 16 })];
+      if (st === "noorg") return [K.toggle(), K.I([K.sp(t.noOrg, K.ty(12.5, 400, "#4A5568"))], "padding: 22px 14px; border: 1px dashed #8A94A6; border-radius: 6px; background: repeating-linear-gradient(135deg, #FCFDFE 0 6px, #F4F7FA 6px 12px); text-align: center;")];
+      const f = { empty: { v: "", s: "rest" }, req: { v: "", s: "errFocus", m: t.emailReq }, bad: { v: "hessa.aldosari.alnakheel.example.test", s: "errFocus", m: t.emailBad }, sending: { v: EMAIL, s: "ro" }, unreach: { v: EMAIL, s: "rest" }, r429: { v: EMAIL, s: "rest" } }[st];
+      return [K.toggle(), K.title(t.fpTitle, 1), K.para(t.fpIntro)]
+        .concat(K.field({ label: t.email, value: f.v, ltr: 1, st: f.s, msg: f.m }))
+        .concat(st === "unreach" ? [K.box(t.unreach, "danger", 1)] : st === "r429" ? [K.box(t.r429, "danger")] : [])
+        .concat([K.button(t.fpBtn, { spin: st === "sending" }), K.link(t.back, { center: 1, mt: 16 })]);
+    };
+    const DOTS = "••••••••••••";
+    const reset = (ar, st) => {
+      const K = KIT(ar), t = K.t;
+      if (st === "shell") return [K.toggle(), K.I([], "height: 300px;")];
+      if (st === "skel" || st === "slow") {
+        const b = [K.toggle(), K.bar("62%", 20, 16), K.bar("100%", 12, 8), K.bar("78%", 12, 22), K.bar("34%", 10, 8), K.bar("100%", 38, 26), K.bar("44%", 10, 8), K.bar("100%", 38, 26), K.bar("100%", 38, 0)];
+        return st === "slow" ? b.slice(0, 8).concat([K.I([K.sp(t.slow, K.ty(13, 500, "#2D3748"))], "margin-block-end: 10px;"), K.button(t.retry, { secondary: 1 })]) : b;
+      }
+      const dead = { expired: [t.expT, t.expB, t.sendNew], used: [t.usedT, t.usedB, t.signin, t.forgot], replaced: [t.repT, t.repB, t.back], invalid: [t.invT, t.invB, t.sendNew] }[st];
+      if (dead) return [K.toggle(), K.title(dead[0], 1), K.para(dead[1]), K.button(dead[2])].concat(dead[3] ? [K.link(dead[3], { center: 1, mt: 16 })] : []);
+      const S = {
+        open: [["", "rest", ""], ["", "rest", ""]],
+        both: [["", "errFocus", t.pwReq, 1], ["", "err", t.confReq, 1]],
+        short: [["•••••", "errFocus", t.short, 1], ["•••••", "rest", ""]],
+        long: [["••••••••••••••••••••••••••••••••••••••••", "errFocus", t.long, 1], ["••••••••••••••••••••••••••••••••••••••••", "rest", ""]],
+        confirm: [[DOTS, "rest", ""], ["", "errFocus", t.confReq, 1]],
+        mismatch: [[DOTS, "rest", ""], ["•••••••••••", "errFocus", t.mismatch, 1]],
+        breached: [[DOTS, "errFocus", t.breached, 1], [DOTS, "rest", ""]],
+        unavail: [[DOTS, "rest", ""], [DOTS, "rest", ""]],
+        sending: [[DOTS, "ro", ""], [DOTS, "ro", ""]],
+        r429: [[DOTS, "rest", ""], [DOTS, "rest", ""]],
+        unreach: [[DOTS, "rest", ""], [DOTS, "rest", ""]]
+      }[st];
+      return [K.toggle(), K.title(t.rpTitle, 1), K.para(t.rpIntro)]
+        .concat(K.field({ label: t.newPw, value: S[0][0], pwd: 1, st: S[0][1], msg: S[0][3] ? S[0][2] : t.hint }))
+        .concat(K.field({ label: t.confirm, value: S[1][0], pwd: 1, st: S[1][1], msg: S[1][2] }))
+        .concat(st === "unavail" ? [K.box(t.unavail, "danger")] : st === "r429" ? [K.box(t.r429, "danger")] : st === "unreach" ? [K.box(t.unreach, "danger", 1)] : [])
+        .concat([K.button(t.rpBtn, { spin: st === "sending" })]);
+    };
+
+    // ── frames ──
+    const AF = " font-family: 'IBM Plex Sans Arabic', 'IBM Plex Sans', sans-serif;";
+    const LF = " font-family: 'IBM Plex Sans', 'IBM Plex Sans Arabic', sans-serif;";
+    const cardStyle = (ar, w) => "box-sizing: border-box; width: " + w + "; background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 24px; text-align: start;" + (ar ? AF : LF);
+    const C = (cap, ar, items, note) => ({ cap, note: note || null, bar: null, dir: ar ? "rtl" : "ltr", lang: ar ? "ar" : "en", items,
+      outer: "flex: 0 0 340px; width: 340px; min-width: 0;", frame: "", page: "", card: cardStyle(ar, "100%") });
+    const PH = (cap, ar, items, note) => ({ cap, note: note || null, bar: null, dir: ar ? "rtl" : "ltr", lang: ar ? "ar" : "en", items,
+      outer: "flex: 0 1 390px; width: 390px; min-width: 0;", frame: "width: 100%; box-sizing: border-box; border: 1px solid #CBD5E0; border-radius: 16px; overflow: hidden; background: #F4F7FA;",
+      page: "display: flex; align-items: center; min-height: 720px; box-sizing: border-box; padding: 24px 16px;", card: cardStyle(ar, "100%") });
+    const DT = (cap, ar, items, path, note) => ({ cap, note: note || null, bar: path ? HOST + path : null, dir: ar ? "rtl" : "ltr", lang: ar ? "ar" : "en", items,
+      outer: "flex: 0 1 1130px; width: 1130px; min-width: 0;", frame: "width: 100%; box-sizing: border-box; border: 1px solid #CBD5E0; border-radius: 8px; overflow: hidden; background: #F4F7FA;",
+      page: "display: flex; align-items: center; justify-content: center; min-height: 600px; box-sizing: border-box; padding: 32px 16px;", card: cardStyle(ar, "340px") });
+    const pair = (cap, fn, st, note, noteAr) => [C(cap + " · English", false, fn(false, st), note), C(cap + " · العربية", true, fn(true, st), noteAr)];
+
+    const sections = [
+      { id: "s0", n: "1", title: "Sign in · as built", sub: "Unchanged. Drawn once so the new pages sit next to it. The way into Forgot password is its “Forgot password?” link.",
+        groups: [
+          { title: "Desktop", sub: null, panels: [DT("Sign in · English · desktop, as live", false, signIn(false, { filled: 1 }), null, "The card sits in the middle of the page at every desktop width. Card 340, padding 24, fields 38 high, button 38. Under each field a message slot of one line, so errors don't move the layout.")] },
+          { title: "The card, both languages", sub: null, panels: pair("Sign in", (ar) => signIn(ar, { filled: 1 }), null, "Email and password filled, as in the screenshot.", "The Arabic labels and «نسيت كلمة المرور؟» are inferred from the Arabic copy in the brief; check them against the live page (5).") }
+        ],
+        notes: [
+          { k: "Matched to the live page.", v: "The EN | ع switch at the card's top end; label above with a red asterisk; field with a one-line message slot; “Forgot password?” as an underlined link above the button; one full-width button. No logo and no organisation name, as decided on 4 Oct (Settings Screens)." },
+          { k: "Fonts.", v: "IBM Plex Sans and IBM Plex Sans Arabic, as on the live page. Arabic is 1px larger, with taller lines." },
+          { k: "Email stays left to right.", v: "In Arabic the address is drawn left to right, placed at the field's right edge. Check that this is what the live page does." }
+        ] },
+      { id: "s1", n: "2", title: "Shared states · both pages", sub: "The no-organisation note, the server out of reach, and too many attempts. What was typed is always kept.",
+        groups: [
+          { title: "No organisation in the address (the apex, www)", sub: "The existing note, unchanged. Its text isn't in this project, so the drawing holds its place.", panels: pair("accreditme.app/forgot-password", forgot, "noorg", "Same on /reset-password.") },
+          { title: "Server unreachable or timed out · on Forgot password", sub: "One message above the button, with a Retry. The typed email stays.", panels: pair("Unreachable", forgot, "unreach", "Retry sends the same request again, as the button does (Q1).") },
+          { title: "Too many attempts (429) · on Reset password", sub: "One message above the button. No Retry: it can't help until the wait is over. The typed passwords stay.", panels: pair("429", reset, "r429") }
+        ],
+        notes: [
+          { k: "One place for page-level messages.", v: "Above the button, in the danger tone, so it sits where the eye goes after pressing. A message about one field goes under that field instead." },
+          { k: "Retry only when it can help.", v: "Unreachable gets a Retry; 429 doesn't, because pressing again inside the wait only extends it." },
+          { k: "Never disabled.", v: "In every state the button can be pressed; pressing it reveals errors or sends again." }
+        ] },
+      { id: "s2", n: "3", title: "Forgot password · /forgot-password", sub: "The form restored. Reached from “Forgot password?” on Sign in and from the new-IP email.",
+        groups: [
+          { title: "Desktop", sub: null, panels: [DT("Forgot password · English · empty", false, forgot(false, "empty"), "/forgot-password", "Title, intro, Email, Send reset link, and Back to sign in under the button.")] },
+          { title: "Empty, and the email missing", sub: "Errors show on submit, under the field, in place of its message slot; focus stays on the field.", panels: pair("Empty", forgot, "empty").concat(pair("Email missing · on submit", forgot, "req")) },
+          { title: "Email malformed, and sending", sub: null, panels: pair("Malformed · on submit", forgot, "bad").concat(pair("Sending", forgot, "sending", "Spinner in the button, field read-only. A second press does nothing.")) },
+          { title: "Sent · the same for a real and an unknown address", sub: "The form is replaced. It never says whether an account exists. No “Send again”: the note says plainly what asking again does.", panels: pair("Check your email", forgot, "sent", "The address is shown as typed, so a typo is visible. Back to sign in stays.", "The address is a left-to-right isolate inside the Arabic sentence.") },
+          { title: "Phone 390", sub: null, panels: [PH("Empty · English", false, forgot(false, "empty")), PH("Email missing · العربية", true, forgot(true, "req")), PH("Sent · English", false, forgot(false, "sent")), PH("Sent · العربية", true, forgot(true, "sent"))] }
+        ],
+        notes: [
+          { k: "Product strings for the email.", v: "“Enter your email.” and “Enter a valid email address.” are Sign in's, so a person sees the same words on both pages (5)." },
+          { k: "Back to sign in under the button.", v: "Centred and quiet, so Send reset link stays the only strong action. It stays on the confirmation, where it is the only action." },
+          { k: "Neutral confirmation.", v: "The same words whether the address exists or not, and the same timing on the server, so nothing on the page or in the timing tells an account apart." }
+        ] },
+      { id: "s3", n: "4", title: "Reset password · /reset-password?token=…", sub: "Opened from the email. The token leaves the address bar at once. No form until the link has been checked.",
+        groups: [
+          { title: "Desktop", sub: null, panels: [DT("Reset password · العربية · open", true, reset(true, "open"), "/reset-password", "The address bar already shows no token, so a refresh lands on the invalid-link state.")] },
+          { title: "Checking the link", sub: "Card shell only for 200 ms, then the skeleton. After 8 s, a line and Retry, as Accept invitation does.", panels: [C("0 to 200 ms · shell", false, reset(false, "shell")), C("After 200 ms · skeleton", false, reset(false, "skel"), "The skeleton has the open form's shape, so nothing jumps when it arrives."), C("After 8 s · English", false, reset(false, "slow")), C("After 8 s · العربية", true, reset(true, "slow"))] },
+          { title: "Open: empty, and submitted empty", sub: "The rules are New password's hint, always visible. Submitting empty shows both errors and moves focus to New password.", panels: pair("Open", reset, "open").concat(pair("Submitted empty", reset, "both")) },
+          { title: "Too short, too long, Confirm missing", sub: "The error takes the hint's place under New password.", panels: pair("Too short", reset, "short").concat([C("Too long · English", false, reset(false, "long")), C("Confirm missing · English", false, reset(false, "confirm"), "Focus moves to Confirm.")]) },
+          { title: "Mismatch, and breached", sub: "Mismatch is checked on submit; focus moves to Confirm. Breached is the server's answer, under New password; the link still works.", panels: pair("Mismatch", reset, "mismatch").concat(pair("Breached · server", reset, "breached")) },
+          { title: "Breach check unavailable, and sending", sub: "Unavailable is about no field, so it sits above the button; pressing the button again is the retry.", panels: pair("Check unavailable · server", reset, "unavail").concat(pair("Sending", reset, "sending", "Spinner, both fields read-only.")) },
+          { title: "Dead links · no form", sub: "Title, body and one main action. A link lost to another tab while submitting turns into “already been used”.", panels: pair("Expired", reset, "expired", "Send a new link opens an empty Forgot password form: the link never reveals the email.").concat(pair("Used", reset, "used", "Sign in first, Forgot password second.")) },
+          { title: "Replaced and invalid", sub: "Invalid covers unknown, malformed, refreshed, inactive account or organisation, and another organisation's address. One neutral wording for all of them.", panels: pair("Replaced", reset, "replaced").concat(pair("Invalid", reset, "invalid")) },
+          { title: "Success · back on Sign in", sub: "The page goes to Sign in, which shows the notice above the form. Not signed in: the person signs in with the new password, then MFA if they have it.", panels: pair("Sign in with the notice", (ar) => signIn(ar, { notice: 1 }), null, "The notice is announced on arrival (a status region); focus is on Email.") },
+          { title: "Phone 390", sub: null, panels: [PH("Mismatch · English", false, reset(false, "mismatch")), PH("Mismatch · العربية", true, reset(true, "mismatch")), PH("Expired · العربية", true, reset(true, "expired")), PH("Sign in with the notice · English", false, signIn(false, { notice: 1 }))] }
+        ],
+        notes: [
+          { k: "Confirm stays (decided).", v: "The person can't see the old password to compare, and a typo would lock them out again." },
+          { k: "The hint is the rule.", v: "8 to 128 characters, always visible, the product's own wording from Accept invitation. The breach check can't be shown in advance; it comes back as a refusal under New password." },
+          { k: "Dead links have no form.", v: "Nobody types a password into a link that can't work. Each says what happened and offers the one useful next step." },
+          { k: "Used: Sign in first (decided).", v: "The likeliest reader just set the password in another tab or came back with the browser's Back button." },
+          { k: "Success lands on Sign in.", v: "With a green notice above the title. Setting the password signs the person out everywhere, so Sign in is where every device ends up." }
+        ] }
+    ];
+
+    // keep each English / Arabic pair together when the row wraps
+    sections.forEach(sec => sec.groups.forEach(g => {
+      const sets = []; const ps = g.panels;
+      for (let i = 0; i < ps.length; i++) {
+        const a = ps[i], b = ps[i + 1];
+        if (b && / · English$/.test(a.cap) && b.cap === a.cap.replace(/ · English$/, " · العربية")) { sets.push({ panels: [a, b] }); i++; }
+        else sets.push({ panels: [a] });
+      }
+      g.sets = sets; delete g.panels;
+    }));
+
+    return {
+      decisions: [
+        { t: "Shared card, as live", b: "Sign in and Accept invitation set the card: 340 wide, 24 padding, EN | ع switch, field wrapper, password show and hide. No logo or organisation name (4 Oct)." },
+        { t: "Product strings first", b: "Email required and malformed are Sign in's. The hint, too short, too long, required and breached are Accept invitation's. “Back to sign in” and “Forgot password?” are the product's." },
+        { t: "Q1 · Send a new link", b: "Opens an empty Forgot password form. The link never reveals the email." },
+        { t: "Q2 · Confirm new password", b: "Kept." },
+        { t: "Q3 · Used link", b: "Sign in is the main action, Forgot password the second." },
+        { t: "Success notice", b: "On Sign in, above the form: “Your password is changed. Sign in with your new password.”" }
+      ],
+      sections,
+      questions: [
+        { n: "Q1", q: "Retry on the forms when AccreditMe can't be reached?", why: "The brief adds a Retry to the unreachable message on both pages. On the forms it does exactly what the button does; for Breach check unavailable the brief already says the button is the retry.", rec: "Keep Retry only while checking the link (no button there). On the two forms, drop it and let the button retry; the message already says “try again”." },
+        { n: "Q2", q: "Back to sign in on Expired and Invalid?", why: "Drawn as briefed: one button, Send a new link. Someone who remembers the password after all has no way back but the address bar.", rec: "Add “Back to sign in” as the quiet centred link under the button on Expired and Invalid, as on Forgot password." },
+        { n: "Q3", q: "How long does the success notice stay?", why: "It's shown when Reset password hands over to Sign in.", rec: "Once: gone on refresh and after the next sign-in attempt, so it never sits beside a wrong-password error." },
+        { n: "Q4", q: "Prefill the email on Sign in after a reset?", why: "The server knows whose password just changed, so it could.", rec: "No. It would put the address on screen for whoever holds the link, which the link must never reveal." },
+        { n: "Q5", q: "Does 429 on Forgot password depend on the address?", why: "If only real accounts are rate-limited, the 429 message tells an account apart.", rec: "Count by address and by IP whether or not the account exists, so 429 reveals nothing." },
+        { n: "Q6", q: "Mismatch only on submit?", why: "Drawn on submit, per the rule. Some people expect it when leaving Confirm.", rec: "On submit only in v1, as every other error on these pages." },
+        { n: "Q7", q: "One show and hide per password field?", why: "Two eyes are drawn, one in each field, as am-password-input gives.", rec: "Keep one per field; showing one doesn't show the other." },
+        { n: "Q8", q: "Where does the new-IP email land?", why: "The brief says it links to Forgot password too.", rec: "The same empty form; never prefilled from the email's link, for the same reason as Q4." }
+      ],
+      copy: [
+        { k: "Changed", c: "#B54708", w: "Forgot · required", en: "Enter your email. (brief: Enter your email address.)", ar: "أدخل بريدك الإلكتروني. (كما في الموجز)" },
+        { k: "Changed", c: "#B54708", w: "Forgot · malformed", en: "Enter a valid email address. (brief: Enter an email address like name@example.com.)", ar: "أدخل بريدًا إلكترونيًا صحيحًا. (الموجز: أدخل بريدًا إلكترونيًا بصيغة name@example.com.)" },
+        { k: "Product", c: "#067647", w: "Reset · password lines", en: "8 to 128 characters · Enter a new password. · Use at least 8 characters. · Use no more than 128 characters. · This password has appeared in a data breach. Choose a different one.", ar: "Accept invitation's, word for word, as the brief has them." },
+        { k: "Product", c: "#067647", w: "Links", en: "Back to sign in · Forgot password?", ar: "العودة إلى تسجيل الدخول · نسيت كلمة المرور؟ (Arabic of the second: check)" },
+        { k: "Inferred", c: "#1F5480", w: "Sign in, Arabic", en: "Sign in · Email · Password", ar: "تسجيل الدخول · البريد الإلكتروني · كلمة المرور (from the brief's Arabic; check against the live page)" },
+        { k: "Drafted", c: "#B42318", w: "Retry, Arabic", en: "Retry", ar: "إعادة المحاولة" },
+        { k: "Placeholder", c: "#B42318", w: "No-organisation note", en: "Not drawn word for word: its text isn't in this project. Please paste it.", ar: "" },
+        { k: "As briefed", c: "#5A6779", w: "Everything else", en: "All other copy is the brief's, unchanged. Nothing broke a layout: the longest Arabic button, «تعيين كلمة المرور الجديدة», fits in one line.", ar: "" }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

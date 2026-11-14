@@ -22,4 +22,12 @@ export const AUTH_ROUTES: Routes = [
         (m) => m.ForgotPasswordComponent,
       ),
   },
+  // ACC-188 — opened from the reset email: /reset-password?token=…
+  {
+    path: 'reset-password',
+    loadComponent: () =>
+      import('./components/reset-password/reset-password.component').then(
+        (m) => m.ResetPasswordComponent,
+      ),
+  },
 ];

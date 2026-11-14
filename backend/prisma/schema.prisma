@@ -525,6 +525,7 @@ model Organization {
   orgUnitHeadAssignments   OrgUnitHeadAssignment[]
 
   workflowStageTaskDefinitions WorkflowStageTaskDefinition[] // ACC-190
+  passwordResetLinks           PasswordResetLink[]
 
   @@index([slug])
   @@index([status])
@@ -700,6 +701,7 @@ model User {
   userTransferEventsAsNewManager  UserTransferEvent[]        @relation("UserTransferEventNewManager")
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionUser") // ACC-190
+  passwordResetLinks   PasswordResetLink[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -2472,4 +2474,33 @@ model RefreshToken {
 
   @@index([userId])
   @@index([organizationId])
+}
+
+// ACC-188 — why a reset link stopped working: set password, a newer link, or voided after Better Auth consumed it.
+enum PasswordResetLinkEndReason {
+  USED
+  REPLACED
+  VOID
+}
+
+// ACC-188 — one row per emailed reset link, so a used, replaced or expired
+// link each gets its own answer. Better Auth keeps nothing once a token is
+// consumed. Holds only a SHA-256 of the token, never the token. At most one
+// open row per user, enforced under the User row lock in the issuing
+// transaction, which also deletes this user's rows that ended or expired more
+// than 30 days ago (step-188 plan §7.2).
+model PasswordResetLink {
+  id             String                      @id @default(cuid())
+  organizationId String
+  userId         String
+  tokenHash      String                      @unique // SHA-256 (hex) of the 43-character token; the token itself is never stored
+  expiresAt      DateTime
+  endedAt        DateTime?
+  endReason      PasswordResetLinkEndReason?
+  createdAt      DateTime                    @default(now())
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, userId, endedAt])
 }

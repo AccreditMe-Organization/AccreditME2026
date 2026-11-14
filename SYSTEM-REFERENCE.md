@@ -1305,15 +1305,11 @@ verified or counted (`assertTwoFactorNotLocked()`, two-factor
 `totp/index.mjs:137`), so a code tried while locked does not move
 `twoFactor.lockedUntil`.
 
-**Forgot password sends nothing** (slice 9d, then CC-64). Reset is not served:
-the email Better Auth would queue carried a link to its own handler, which this
-API never mounts, and there is no reset screen. So the page says reset by email
-isn't available and points at the administrator, and since ACC-186/148 the
-endpoint `POST /auth/forgot-password` does nothing either: same route, rate
-limits and neutral 200, no `requestPasswordReset`, no `AuthVerification` row, no
-notification. `sendResetPassword` stays in the Better Auth config, unreachable,
-for the self-service reset ticket — which must build its link with
-`buildTenantUrl()`, not send Better Auth's `data.url`.
+**Forgot password works again, by email (ACC-188).** From slice 9d / CC-64 until
+ACC-188 it sent nothing, because Better Auth's email carried a link to a handler
+this API never mounts. Now the form is back, the link is a tenant link, and
+`sendResetPassword` is gone from the Better Auth config, so Better Auth can never
+send its own `data.url`. The whole flow: §1.16.
 
 **The MFA challenge cookie is `__Secure-better-auth.two_factor`** since
 ACC-186 (`advanced.useSecureCookies: true`); `two-factor-challenge.ts` reads both
@@ -1647,6 +1643,92 @@ deactivate, suspend or offboard. Only a platform admin moves the ownership.
   ticked on any other role: anyone with it can make themselves Organization
   Administrator. The platform tenant page names the owner and transfers it to
   another active Organization Administrator after a confirm.
+
+### 1.16 Password reset by email (ACC-188)
+
+Plan, decisions and as-built notes: `backend/Plans/step-188-password-reset.md`.
+Code: `backend/src/foundation/auth/password-reset/`, `session-revocation.ts`,
+`foundation/notification/security-notice.ts` and `transactional-email.service.ts`.
+
+**The routes** (public; refusals are never 401, because the app's interceptor
+renews and retries a 401):
+
+| Route | Limit | Answers |
+|---|---|---|
+| `POST /auth/forgot-password` `{ organizationSlug, email }` | 20 / hour per address, 3 / hour per organisation + email | 200, no body, for every address |
+| `POST /auth/reset-password/lookup` `{ token }` (untyped body, shape-checked) | 30 / min per address | 200 `{ state: 'open', expiresAt }`, or 400 `RESET_LINK_INVALID` / `_EXPIRED` / `_USED` / `_REPLACED` |
+| `POST /auth/reset-password` `{ token, password }` | 20 / hour per address | 200; the four link codes; `PASSWORD_TOO_SHORT` / `_TOO_LONG` / `_COMPROMISED` (400), `PASSWORD_CHECK_UNAVAILABLE` (503) |
+
+**Forgot password.** `PasswordResetService.request()` makes one `queue.add` on
+`password-reset` (`{ organizationSlug, email }`, one attempt,
+`removeOnComplete`) and nothing else. Neither the answer nor its work tells an
+account apart. A failed add is logged by the error's kind and still answers 200.
+
+**The worker** (`PasswordResetProcessor`, behind `workersEnabled()`) runs
+`issue()`:
+1. An open organisation by slug, and a user in it by email (case-insensitive)
+   who is ACTIVE with an `authUserId`; otherwise nothing.
+2. One transaction:
+   - the User row `FOR UPDATE`;
+   - delete this person's links that ended or expired more than 30 days ago;
+   - end every open link `REPLACED`;
+   - create the `PasswordResetLink` (`tokenHash` = SHA-256 hex, 1 hour);
+   - write Better Auth's reset row (`password-reset-verification.ts`: identifier
+     `reset-password:<token>`, stored as base64url SHA-256 by the
+     `storeIdentifier` override; value: the AuthUser id).
+3. The link `buildTenantUrl(slug, '/reset-password?token=…')`, emailed directly
+   in the person's language (person, else organisation) through
+   `TransactionalEmailService`. A failed send voids the link and throws an error
+   that names no token.
+4. Audit `UPDATE` / `User`, `{ event: 'password_reset_requested' }`.
+
+**Lookup and reset.** The link is found by `tokenHash` alone (the 256-bit token
+IS the key, as with invitations). The request's `Origin` must be the link's
+organisation's address (`isAtOwnAddress`), else `RESET_LINK_INVALID`. In order:
+- **USED, then REPLACED**, each its own code;
+- **VOID**, an inactive person or a closed organisation are `RESET_LINK_INVALID`;
+- **a passed `expiresAt`** is `RESET_LINK_EXPIRED`.
+
+`reset()` then:
+1. Checks the length (8–128).
+2. Runs `PasswordBreachCheckService` (the k-anonymity request), BEFORE anything is
+   spent, because Better Auth's `resetPassword` consumes the token and only then
+   hashes (where its breach check runs).
+3. Calls `auth.api.resetPassword({ asResponse: true })` and reads the Response:
+   - `INVALID_TOKEN` is `USED` (another request won), or `EXPIRED`;
+   - a breach found only now voids the link and answers `RESET_LINK_INVALID`.
+4. One transaction:
+   - the User row `FOR UPDATE`;
+   - the link `USED`;
+   - `endEverySessionInTx()`: `tokenVersion + 1`, live refresh rows revoked, and
+     Better Auth sessions deleted;
+   - a `LoginAttempt` `{ success: true, failureReason: 'password_reset' }`. This
+     ends the wrong-password lock. The MFA code lock (`AuthTwoFactor`) is not
+     touched.
+5. After the commit: audit `{ event: 'password_reset' }`, and the
+   `password_changed` security notice.
+
+It never signs anyone in, so the next sign-in asks for the code when MFA is on.
+
+**Security notices** are emails only: an `email-delivery` job named
+`security-notice` with `{ organizationId, userId, notice }`, rendered by
+`NotificationEmailProcessor` from `SECURITY_NOTICES`. Never a Notification row,
+because a row would sit in the bell, readable by whoever holds the session, and
+its body would be copied into the audit trail.
+
+**The new-IP sign-in email** now says "reset your password now:" with
+`buildTenantUrl(slug, '/forgot-password')`.
+
+**Screens.**
+- **Forgot password** is the form again. The confirmation is neutral and names
+  the address as typed (a left-to-right isolate).
+- **Reset password** (`/reset-password`) reads the token once and removes it
+  from the address bar. It shows a skeleton after 200 ms, and a line plus Retry
+  after 8 s.
+- **A dead link has no form.** Expired and Invalid offer "Send a new link" with
+  "Back to sign in" under it; Used offers Sign in, then "Forgot password?";
+  Replaced offers "Back to sign in".
+- **On success**, Sign in shows the notice above its title, once.
 
 ---
 

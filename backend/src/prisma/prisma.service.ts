@@ -90,6 +90,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get authTwoFactor() { return this._client.authTwoFactor; }
   get loginAttempt() { return this._client.loginAttempt; }
   get refreshToken() { return this._client.refreshToken; }
+  get passwordResetLink() { return this._client.passwordResetLink; } // ACC-188
   get plan() { return this._client.plan; }
   get planModule() { return this._client.planModule; }
   get aiCreditPack() { return this._client.aiCreditPack; }

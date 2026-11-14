@@ -31,6 +31,7 @@ describe('AuthController', () => {
     acceptInvitation: jest.Mock;
     forgotPassword: jest.Mock;
     resetPassword: jest.Mock;
+    lookupResetLink: jest.Mock;
     setupMfa: jest.Mock;
     verifySetupMfa: jest.Mock;
     disableMfa: jest.Mock;
@@ -54,6 +55,7 @@ describe('AuthController', () => {
       acceptInvitation: jest.fn().mockResolvedValue(undefined),
       forgotPassword: jest.fn().mockResolvedValue(undefined),
       resetPassword: jest.fn().mockResolvedValue(undefined),
+      lookupResetLink: jest.fn().mockResolvedValue({ state: 'open', expiresAt: '2026-11-14T13:00:00.000Z' }),
       setupMfa: jest.fn().mockResolvedValue({ qrCodeDataUrl: 'data:image/png;base64,x', secret: 'SECRET', backupCodes: ['a1b2'] }),
       verifySetupMfa: jest.fn().mockResolvedValue(undefined),
       disableMfa: jest.fn().mockResolvedValue(undefined),
@@ -206,10 +208,18 @@ describe('AuthController', () => {
     expect(service.forgotPassword).toHaveBeenCalledWith(dto);
   });
 
-  it('resetPassword delegates to AuthService.resetPassword', async () => {
+  it('resetPassword passes the body, the Origin and the address to AuthService.resetPassword', async () => {
     const dto = { token: 'tok', password: 'newpassword123' };
-    await controller.resetPassword(dto);
-    expect(service.resetPassword).toHaveBeenCalledWith(dto);
+    const req = { headers: { origin: 'https://acme.accreditme.app' }, ip: '203.0.113.9' };
+    await controller.resetPassword(dto, req as never);
+    expect(service.resetPassword).toHaveBeenCalledWith(dto, 'https://acme.accreditme.app', '203.0.113.9');
+  });
+
+  it('lookupResetLink passes the untyped body and the Origin to AuthService.lookupResetLink', async () => {
+    const body = { token: 'tok' };
+    const req = { headers: { origin: 'https://acme.accreditme.app' } };
+    await controller.lookupResetLink(body, req as never);
+    expect(service.lookupResetLink).toHaveBeenCalledWith(body, 'https://acme.accreditme.app');
   });
 
   it('setupMfa delegates to AuthService.setupMfa', async () => {
