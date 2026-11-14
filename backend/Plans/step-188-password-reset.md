@@ -1,7 +1,9 @@
 # Step 188 — Reset a forgotten password (ACC-188)
 
-Plan only. No code is written until Ahmad has answered §3 and the design
-thread has drawn the two screens (the design brief is kept outside the repo).
+**Decided (14 Nov).** Ahmad answered §3, lane B reviewed the migration, and the
+design is final. **§7 records every decision since the first draft, and where §7
+and an earlier section differ, §7 wins.** The earlier sections are kept as the
+reasoning that led there.
 
 Read against `dev` at `b62c3a4` and `better-auth@1.6.22` (14 Nov). Every
 statement about Better Auth below is taken from its installed source, with the
@@ -500,3 +502,130 @@ source like its existing blocks). It pins:
 - **The live proof runs after the deploy**, with an account whose inbox we
   control. Seeded addresses are not ours to mail.
 - **The migration runs in the pre-deploy step on merge, never before.**
+
+## 7. Decisions in (14 Nov) — these win over §0–§6
+
+All are on Linear ACC-188.
+
+### 7.1 Ahmad's four rules
+
+1. **A link lasts 1 hour and works once, and only the newest works.** Asking
+   again ends the earlier link (`REPLACED`).
+2. **A successful reset signs the person out everywhere** (§7.4).
+3. **A reset clears the wrong-password lock, but not the MFA code lock.**
+   - The wrong-password lock is cleared with a `LoginAttempt` `{ success: true,
+     failureReason: 'password_reset' }`; nothing is deleted.
+   - `AuthTwoFactor.lockedUntil` and `failedVerificationCount` are not touched.
+4. **A reset never bypasses MFA.** It never signs anyone in. Sign in asks for the
+   password and then, with MFA on, the code.
+
+### 7.2 Lane B's review of the migration
+
+- **`endReason` is an enum**, `PasswordResetLinkEndReason { USED REPLACED VOID }`,
+  with a one-line comment. Creating it together with the table is one deploy.
+  Adding a value later takes two: add it, then write it (ACC-202).
+- **The foreign keys use RefreshToken's and LoginAttempt's onDelete**: none
+  stated, so the database default (`RESTRICT`), and tenant teardown works as it
+  does for those tables.
+- **One open link per user, under a lock.** The issuing transaction takes the
+  User row `FOR UPDATE` (scoped by `id` and `organizationId`), ends every open
+  link `REPLACED`, and creates the new one, all in that transaction (ACC-173's
+  shape). Prisma can't express a partial unique index.
+- **Retention: the transaction that creates a new link deletes that person's
+  links that ended or expired more than 30 days ago.** There is no sweep. A
+  person who never asks again keeps at most their last few rows, which hold only
+  a hash and dates.
+- **`tokenHash` is a plain SHA-256 (hex) of the token text.** The token is 32
+  random bytes, base64url, which is 43 characters. **It is never written to a
+  log, an audit row, a job or a notification.** It exists only in the email Resend
+  sends and in the person's browser.
+- **The migration is number 64**, after #290's 63:
+  `20261114120000_acc188_password_reset_link`.
+
+**What lane B's 32-byte token changes, and why.** Better Auth's
+`requestPasswordReset` makes its own 24-character token (`generateId(24)`, §2.1),
+so it cannot issue a 32-byte one. So:
+- **We issue the token ourselves**, and write Better Auth's reset row in the same
+  transaction as the ledger row.
+- **Better Auth's row:** `identifier = reset-password:<token>`, `value = AuthUser
+  id`, `expiresAt` as the ledger's. It is stored HASHED by the
+  `verification.storeIdentifier` override for the `reset-password:` prefix.
+- **Better Auth's `resetPassword` still consumes the token and sets the
+  password** (argon2id, the credential account, Better Auth's own sessions).
+- **The write sits in one contained module**, `password-reset-verification.ts`,
+  behind `better-auth.contract.ts`. The contract spec pins the prefix, the value
+  being the user id, the hasher (SHA-256, base64url, no padding), and that
+  `resetPassword` consumes before it hashes.
+- **`sendResetPassword` is removed from the Better Auth config.** With it gone,
+  `requestPasswordReset` refuses (`RESET_PASSWORD_DISABLED`), so Better Auth's
+  `data.url` cannot be sent by any path. This is a structural guarantee in place
+  of the ALS capture in §2.5, step 3c.
+- **A replaced link's Better Auth row is not deleted.** We hold only its token's
+  hash, and Better Auth keys the row by a different hash. The ledger is the gate:
+  `reset()` refuses a REPLACED link before Better Auth is called. The row expires
+  within the hour and Better Auth's own cleanup removes it.
+
+### 7.3 The queue
+
+**`password-reset` stays its own queue.** Its job looks the account up and makes
+the link; it is not only an email.
+- It is registered behind `workersEnabled()`.
+- It is in `worker-registration.spec`.
+- It is added to `WORKER_QUEUES`.
+- CLAUDE.md's queue list becomes eight.
+- The job carries `{ organizationSlug, email }` and nothing else, with one
+  attempt, `removeOnComplete: true` and `removeOnFail: { age: 7 days }`.
+
+### 7.4 The ACC-164 correction, built here
+
+- **The "password changed" notice is an `email-delivery` job named
+  `security-notice`**, carrying `{ organizationId, userId, notice:
+  'password_changed' }`. It is never a `Notification` row.
+  - The processor reads the person and the organisation (both ids), resolves the
+    language person → organisation → `en`, renders from one template table, and
+    sends.
+  - ACC-164 adds `mfa_reset` and `mfa_disabled` to the same table.
+- **`endEverySessionInTx(tx, userId, authUserId)`** is in
+  `foundation/auth/session-revocation.ts`. ACC-164 reuses it. It:
+  - raises `User.tokenVersion` by 1;
+  - revokes every live `RefreshToken` row (`revokedAt = now`);
+  - deletes Better Auth's `authSession` rows.
+
+  It never creates a refresh row (#290's write scan).
+- **One Resend sender**, `TransactionalEmailService`, extracted from
+  `NotificationEmailProcessor`, is used by the notification path, the security
+  notice and the reset link.
+
+### 7.5 Refusals are never 401
+
+The app's interceptor answers a 401 by renewing the session and retrying. So:
+- every link refusal is **400** with a code;
+- the password refusals are `PasswordRefusalException`'s **400**;
+- Forgot password answers 200 or the throttler's 429.
+
+### 7.6 The design is final ("AccreditMe Sign-in Pages")
+
+**Decided:**
+- Retry shows only while the link is being checked. On the two forms, pressing
+  the button again is the retry.
+- "Back to sign in" sits under the button on Expired and Invalid.
+- Sign in's success notice shows once. It is gone on refresh and after the next
+  sign-in attempt.
+- The email is never prefilled.
+- 429 is counted the same whether or not the account exists.
+- A mismatch is checked on submit only.
+- Each password field has one show/hide.
+- The email field keeps the page's direction.
+
+**Where a drawing and the product's strings differ, the strings win:**
+- the no-organisation note is `auth.openOrganisationAddress`;
+- the link is `auth.forgotPassword` («هل نسيت كلمة المرور؟»);
+- the email errors are `auth.signIn.emailRequired` and `emailInvalid`;
+- the password lines (hint, required, too short, too long, breached) are the
+  `auth.invitation.*` strings.
+
+The design file is copied unchanged into `frontend/design-reference/`.
+
+## 8. As built
+
+(Filled in when the build is done.)
