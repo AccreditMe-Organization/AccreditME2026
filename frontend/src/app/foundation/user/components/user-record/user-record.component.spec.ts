@@ -367,6 +367,67 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     expect(panel.querySelector('[data-action="twoStepSetUp"]')).not.toBeNull();
   });
 
+  // ACC-164 — someone else's two-step sign-in, drawn only from the server's
+  // `twoStep` (rule 4: only to people allowed to reset it).
+  describe("someone else's two-step sign-in (ACC-164)", () => {
+    const RESETTER = [...ADMIN, 'users:reset_mfa'];
+    const panelOf = (el: HTMLElement) => el.querySelector('[data-panel="twoStepOther"]');
+
+    it('is drawn, with Reset, when the server says it is on and may be reset', () => {
+      const ctx = render({ permissions: RESETTER });
+      flushUser(ctx, record({ twoStep: { enabled: true, mayReset: true } }));
+      const panel = panelOf(ctx.el)!;
+      expect(panel.textContent).toContain('On. A code from an authenticator app is asked for at every sign-in.');
+      expect(panel.querySelector('[data-action="twoStepReset"]')?.textContent?.trim()).toBe('Reset');
+      expect(ctx.el.querySelector('[data-panel="twoStep"]')).toBeNull();
+    });
+
+    it('reads "Off." with no action when it is off', () => {
+      const ctx = render({ permissions: RESETTER });
+      flushUser(ctx, record({ twoStep: { enabled: false, mayReset: false } }));
+      const panel = panelOf(ctx.el)!;
+      expect(panel.querySelector('[data-two-step-status]')?.textContent?.trim()).toBe('Off.');
+      expect(panel.querySelector('[data-action]')).toBeNull();
+    });
+
+    it('hides Reset while signed in as someone else (mayReset false), keeping the status', () => {
+      const ctx = render({ permissions: RESETTER });
+      flushUser(ctx, record({ twoStep: { enabled: true, mayReset: false } }));
+      const panel = panelOf(ctx.el)!;
+      expect(panel.textContent).toContain('On.');
+      expect(panel.querySelector('[data-action="twoStepReset"]')).toBeNull();
+    });
+
+    it('draws no panel at all — never "Off" — when the server sends none', () => {
+      for (const twoStep of [null, undefined]) {
+        const ctx = render({ permissions: RESETTER });
+        flushUser(ctx, record({ twoStep }));
+        expect(panelOf(ctx.el)).toBeNull();
+      }
+    });
+
+    it('Reset opens the confirm naming the person', () => {
+      const ctx = render({ permissions: RESETTER });
+      flushUser(ctx, record({ twoStep: { enabled: true, mayReset: true } }));
+      (ctx.el.querySelector('[data-action="twoStepReset"]') as HTMLButtonElement).click();
+      ctx.fixture.detectChanges();
+      ctx.fixture.detectChanges();
+      expect(document.querySelector('.p-dialog')?.textContent).toContain(
+        'Reset two-step sign-in for ⁨Dr. Yasser Al-Amri⁩?',
+      );
+      ctx.fixture.destroy();
+    });
+
+    it('Arabic: «إعادة ضبط» and «غير مفعّل.»', () => {
+      const on = render({ permissions: RESETTER, arabic: true });
+      flushUser(on, record({ twoStep: { enabled: true, mayReset: true } }));
+      expect(on.el.querySelector('[data-action="twoStepReset"]')?.textContent?.trim()).toBe('إعادة ضبط');
+      const off = render({ permissions: RESETTER, arabic: true });
+      flushUser(off, record({ twoStep: { enabled: false, mayReset: false } }));
+      expect(panelOf(off.el)?.querySelector('[data-two-step-status]')?.textContent?.trim()).toBe('غير مفعّل.');
+    });
+  });
+
   it('9 · the status request is never made on someone else\'s record', () => {
     TestBed.resetTestingModule();
     const getMfaStatus = jasmine.createSpy('getMfaStatus').and.returnValue(of({ enabled: false }));

@@ -27,6 +27,10 @@ export interface IUserDto {
   // ACC-221 — whether this person is the organisation's account owner. Only
   // GET /users/:id sends it; absent elsewhere, which reads as "not the owner".
   isAccountOwner?: boolean;
+  // ACC-164 — someone else's two-step sign-in, only for a viewer allowed to
+  // reset it (the server's UserMfaResetService.twoStepFor()). null or absent:
+  // draw no panel at all, never "Off". Your own record reads /auth/mfa/status.
+  twoStep?: { enabled: boolean; mayReset: boolean } | null;
   // ACC-172 — the person's position names. Only GET /users (the list) sends
   // it; absent elsewhere. nameAr is null when the position has no Arabic name.
   position?: { nameEn: string; nameAr: string | null } | null;
@@ -210,6 +214,12 @@ export class UserService {
 
   // ACC-83 — withdraws an invitation nobody accepted. Deletes the row, so the
   // seat frees and the same email can be invited again.
+  // ACC-164 — reset another person's two-step sign-in (users:reset_mfa). The
+  // server answers 204; every refusal is a 404 or a 409 with a code.
+  resetMfa(id: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/mfa/reset`, {});
+  }
+
   revokeInvitation(id: string): Observable<void> {
     return this.http.post<void>(`${this.base}/${id}/revoke-invitation`, {});
   }

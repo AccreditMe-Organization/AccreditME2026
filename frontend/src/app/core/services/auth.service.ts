@@ -180,8 +180,9 @@ export class AuthService {
     return this.http.post<void>(`${this.baseUrl}/mfa/setup/verify`, { code });
   }
 
-  disableMfa(password: string): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/mfa/disable`, { password });
+  // ACC-164 — the password AND a current code from the authenticator app.
+  disableMfa(password: string, code: string): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/mfa/disable`, { password, code });
   }
 
   getMfaStatus(): Observable<{ enabled: boolean }> {

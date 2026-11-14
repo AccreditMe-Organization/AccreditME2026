@@ -638,6 +638,7 @@
         "users:transfer": "Move someone to a new unit or position",
         "users:deactivate": "Deactivate a user",
         "users:reactivate": "Reactivate a deactivated user",
+        "users:reset_mfa": "Reset another person's two-step sign-in",
         "roles:view": "See roles and what they allow",
         "roles:manage": "Create, change and assign roles",
         "lookups:view": "See lookup lists and their values",
@@ -689,6 +690,10 @@
           "records": "Committee records",
           "members": "Members",
           "tasks": "Tasks on committees"
+        },
+        "users": {
+          "people": "People and profiles",
+          "access": "Account access"
         }
       }
     },
@@ -3026,6 +3031,10 @@
       "mfaAttemptsLeft": {
         "one": "1 attempt left for this sign-in.",
         "other": "{{count}} attempts left for this sign-in."
+      },
+      "twoStepAttemptsLeft": {
+        "one": "1 attempt left.",
+        "other": "{{count}} attempts left."
       }
     },
     "files": {
@@ -3712,7 +3721,28 @@
       "passwordRequired": "Enter your password.",
       "codeInvalid": "Enter the 6-digit code.",
       "continue": "Continue",
-      "offTitle": "Turn off two-step sign-in"
+      "offTitle": "Turn off two-step sign-in",
+      "offOther": "Off.",
+      "intro": "Enter your password and a code from your authenticator app. Signing in will then need only your password.",
+      "code": "Code from your authenticator app",
+      "codeHint": "The 6-digit code showing in your app now.",
+      "passwordWrong": "That password isn't right.",
+      "locked": "Too many unsuccessful attempts. You can try again {{when}}.",
+      "lockedNoTime": "Too many unsuccessful attempts. Try again later.",
+      "alreadyOff": "Two-step sign-in is already off.",
+      "unreachable": "We couldn't reach AccreditMe. Check your connection and try again.",
+      "offDone": "Two-step sign-in is off.",
+      "reset": "Reset",
+      "resetTitle": "Reset two-step sign-in for {{name}}?",
+      "resetBody": "This turns two-step sign-in off for this person and signs them out everywhere. They then sign in with their password and set it up again. They're emailed that it was reset.",
+      "resetDone": "Two-step sign-in was reset.",
+      "resetOwner": "The account owner's two-step sign-in can't be reset here. AccreditMe support can help.",
+      "resetAlreadyOff": "Two-step sign-in is already off for this person.",
+      "resetActingAs": "This can't be done while signed in as someone else.",
+      "resetHigher": "Only an Organization Administrator can reset an Organization Administrator's two-step sign-in.",
+      "resetSelf": "You can't reset your own two-step sign-in here. Turn it off with your password and a code.",
+      "resetFailed": "Two-step sign-in wasn't reset. Try again.",
+      "offFailed": "Two-step sign-in wasn't turned off. Try again."
     },
     "editProfileDialog": {
       "nameRequired": "Enter a name.",
