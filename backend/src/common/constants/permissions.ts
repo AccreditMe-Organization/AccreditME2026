@@ -59,8 +59,8 @@ export const WORKFLOWS_PERMISSIONS = {
 // tasks:reassign and tasks:manage were the flat task keys; each is replaced by
 // a key PER RECORD TYPE (COMMITTEE_TASKS_PERMISSIONS below, read through
 // foundation/task/task-record-types.ts), and a relationship to a task needs no
-// key at all. backfill:acc244-retire-flat-task-keys removes them from existing
-// tenants. tasks:complete went the same way in ACC-162. Do not reintroduce a
+// key at all. backfill:acc244-retire-flat-task-keys removed them from existing
+// tenants (executed, then deleted in ACC-278). tasks:complete went the same way in ACC-162. Do not reintroduce a
 // flat task key: retired-task-keys.spec.ts fails on any code that names one.
 
 export const COMMITTEES_PERMISSIONS = {
