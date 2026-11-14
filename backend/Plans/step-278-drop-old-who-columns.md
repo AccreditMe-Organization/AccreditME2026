@@ -15,7 +15,7 @@ planned from `origin/dev` at `b62c3a4`, fast-forwarded to `9b49be0` (#289 merged
    - drops the 13 columns (their 2 foreign keys go with them) and the 4 old enum types;
    - makes `whoMode` and `mover` NOT NULL.
 
-   It is migration **64**, after #289 (62) and #290 (63).
+   It is migration **64 or 65**, after #290 (63): see §6.
 
 Every claim below was measured on 14 Nov:
 - **Code and fixtures:** dev at `b62c3a4`.
@@ -228,7 +228,12 @@ under a brief lock.
 1. #289 (ACC-202 PR 1, migration 62).
 2. Lane A's #290 (ACC-126, migration 63).
 3. **PR A** (no migration). It can merge before or after them, since it adds none.
-4. **PR B**, migration 64, after both and after PR A has been live for a release.
+4. **PR B**, at least a day after PR A is live (`b26b27d`, 14 Nov), and after #290 (migration 63).
+   - **Its number is 64 or 65**, whichever of PR B and lane A's ACC-188 (password reset link,
+     migration 64) merges first. PR B does not depend on ACC-188.
+   - **Whichever merges second must have a migration timestamp later than everything already on
+     `dev`.** If PR B is second, regenerate its migration folder name (a fresh `migrate dev`, never a
+     hand-edited file) so it sorts last; Prisma applies migrations in folder-name order.
 
 **Overlaps:**
 - **#289:** touches `schema.prisma` (the `WorkflowInstanceStageOutcome` enum, another block),
@@ -304,7 +309,7 @@ under a brief lock.
 - **Docs:** SYSTEM-REFERENCE (the stage-who section and its "6c" notes) and CLAUDE.md's ACC-271
   entry.
 
-### PR B: the database drops them (migration 64)
+### PR B: the database drops them (migration 64 or 65, §6)
 
 - **`schema.prisma`:**
   - remove the 13 columns, 2 relations, 2 back-relations and 4 enums;
@@ -329,5 +334,5 @@ under a brief lock.
 - [x] Ahmad's answers to §7 (14 Nov, §7.1)
 - [x] PR A built (14 Nov): `@ignore` (migrate diff empty, mutation-checked), backfills and
   helpers deleted, docs; the 10 calls passed with the columns dropped (dev's client: 3 of 10)
-- [ ] PR A live for a release
-- [ ] PR B (after #289 and #290)
+- [x] PR A merged and live (`b26b27d`, 14 Nov)
+- [ ] PR B (a day after PR A is live, after #290; 64 or 65 against ACC-188, §6)
