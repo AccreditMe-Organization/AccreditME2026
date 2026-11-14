@@ -152,6 +152,18 @@ export class AuthService {
     return this.http.post<void>(`${this.baseUrl}/forgot-password`, { organizationSlug, email });
   }
 
+  /**
+   * ACC-188 — is this reset link still usable? POST, so the token travels in
+   * the body and never lands in a URL or an access log. A dead link is a 400
+   * with RESET_LINK_INVALID, _EXPIRED, _USED or _REPLACED.
+   */
+  lookupResetLink(token: string): Observable<{ state: 'open'; expiresAt: string }> {
+    return this.http.post<{ state: 'open'; expiresAt: string }>(
+      `${this.baseUrl}/reset-password/lookup`,
+      { token },
+    );
+  }
+
   resetPassword(token: string, password: string): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/reset-password`, { token, password });
   }

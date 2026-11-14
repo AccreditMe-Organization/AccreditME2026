@@ -1,4 +1,4 @@
-import { Component, ElementRef, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, afterNextRender, computed, inject, signal } from '@angular/core';
 import { Location } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -11,6 +11,7 @@ import { LANDING_ROUTE, PLATFORM_LANDING } from '../../../../core/navigation/lan
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { FormatService } from '../../../../core/formatting/format.service';
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
+import { PASSWORD_RESET_NOTICE } from '../reset-password/reset-password.component';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
 import { SessionAddressState } from '../../../../core/tenant/session-address-state';
 import { NoOrganisationAddressComponent } from '../no-organisation-address/no-organisation-address.component';
@@ -56,6 +57,20 @@ import { SIGN_IN_REFUSAL_KEYS, SignInRefusal, describeSignInRefusal } from './si
       <app-no-organisation-address titleKey="auth.login" />
     } @else {
       <app-auth-layout>
+        <!-- ACC-188 — arriving from Reset password: the notice sits ABOVE the
+             title, as the design draws it ("AccreditMe Sign-in Pages" §4).
+             Shown once: gone on a refresh (clearNotice) and after the next
+             sign-in attempt, so it never sits beside a wrong-password message.
+             p-message hard-codes role="alert"; this is a status (see below). -->
+        @if (passwordReset()) {
+          <p-message
+            data-testid="password-reset-notice"
+            severity="success"
+            [attr.role]="'status'"
+            [text]="'auth.reset.successNotice' | translate"
+          />
+        }
+
         <h1 class="text-heading font-semibold">{{ 'auth.login' | translate }}</h1>
 
         <!-- ACC-122 — why they are looking at this page. Without it, an idle
@@ -219,6 +234,11 @@ export class LoginComponent {
   protected readonly invitationAccepted =
     this.router.currentNavigation()?.extras.state?.['notice'] === INVITATION_ACCEPTED_NOTICE;
 
+  /** ACC-188 — set by Reset password's navigation; cleared by the next sign-in attempt. */
+  protected readonly passwordReset = signal(
+    this.router.currentNavigation()?.extras.state?.['notice'] === PASSWORD_RESET_NOTICE,
+  );
+
   private readonly location = inject(Location);
 
   readonly submitting = signal(false);
@@ -265,7 +285,11 @@ export class LoginComponent {
   });
 
   constructor() {
-    if (this.invitationAccepted) this.clearNotice();
+    if (this.invitationAccepted || this.passwordReset()) this.clearNotice();
+    // ACC-188 — after a reset, focus is on Email, ready to sign in (design §4).
+    if (this.passwordReset()) {
+      afterNextRender(() => this.host.nativeElement.querySelector<HTMLInputElement>('#email')?.focus());
+    }
   }
 
   /**
@@ -285,6 +309,7 @@ export class LoginComponent {
   }
 
   onSubmitLogin(): void {
+    this.passwordReset.set(false);
     if (this.loginForm.invalid) {
       // am-field reveals the errors on submit; focus goes to the first one.
       focusFirstInvalid(this.loginForm, this.host);
