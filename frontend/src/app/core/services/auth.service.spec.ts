@@ -11,6 +11,7 @@ import {
   NO_ORGANISATION_IN_ADDRESS,
 } from './auth.service';
 import { LanguageService } from './language.service';
+import { SessionLimitState } from './session-limit-state';
 
 // ACC-94 (D2) — the display context (tenant time zone, Hijri preference) that
 // the formatting layer reads. The case that matters most is a FRESH LOGIN: its
@@ -166,6 +167,51 @@ describe('AuthService — display preferences (ACC-94)', () => {
 
     expect(service.isAuthenticated()).toBe(true);
     expect(service.displayPreferences()).not.toBeNull();
+  });
+
+  // ACC-126 — the session's deadline, for the 10-minute warning, comes with the
+  // sign-in and with /auth/me; a refused renewal notes the limit for the
+  // sign-in page; a fresh sign-in clears that note.
+  describe('the 12-hour limit (ACC-126)', () => {
+    const END = '2026-11-13T18:00:00.000Z';
+    const limitRefusal = { statusCode: 401, code: 'SESSION_TIME_LIMIT', message: 'x', error: 'Unauthorized' };
+
+    it('a sign-in sets the deadline', () => {
+      const state = TestBed.inject(SessionLimitState);
+      service.login('a@example.com', 'pw').subscribe();
+      httpMock
+        .expectOne(LOGIN_URL)
+        .flush({ success: true, user: { id: 'user-1', email: 'a@example.com', name: 'A User' }, language: 'en', sessionEndsAt: END });
+      httpMock.expectOne(ME_URL).flush(me({ sessionEndsAt: END }));
+      expect(state.endsAt()).toBe(Date.parse(END));
+    });
+
+    it('restoreSession() sets it from /auth/me, and clearSession() drops it', () => {
+      const state = TestBed.inject(SessionLimitState);
+      service.restoreSession().subscribe();
+      httpMock.expectOne(ME_URL).flush(me({ sessionEndsAt: END }));
+      expect(state.endsAt()).toBe(Date.parse(END));
+      service.clearSession();
+      expect(state.endsAt()).toBeNull();
+    });
+
+    it('a start-up renewal refused for the limit is noted for the sign-in page, without signing anyone in', () => {
+      const state = TestBed.inject(SessionLimitState);
+      service.restoreSession().subscribe();
+      httpMock.expectOne(ME_URL).flush('unauthorized', { status: 401, statusText: 'Unauthorized' });
+      httpMock.expectOne(`${environment.apiUrl}/auth/refresh`).flush(limitRefusal, { status: 401, statusText: 'Unauthorized' });
+
+      expect(service.isAuthenticated()).toBe(false);
+      expect(state.signedOutForLimit()).toBe(true);
+
+      // The next sign-in is a fresh session: nothing left to explain.
+      service.login('a@example.com', 'pw').subscribe();
+      httpMock
+        .expectOne(LOGIN_URL)
+        .flush({ success: true, user: { id: 'user-1', email: 'a@example.com', name: 'A User' }, language: 'en', sessionEndsAt: END });
+      httpMock.expectOne(ME_URL).flush(me({ sessionEndsAt: END }));
+      expect(state.signedOutForLimit()).toBe(false);
+    });
   });
 });
 

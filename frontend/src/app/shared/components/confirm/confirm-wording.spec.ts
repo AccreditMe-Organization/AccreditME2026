@@ -423,15 +423,6 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
     );
   });
 
-  both('#19 Deactivate the default template says new records cannot start', (lang) => {
-    create(WorkflowTemplateListComponent).onDeactivate({ id: 'w2', nameEn: 'Committee', nameAr: 'لجنة', isDefault: true } as never, stop);
-    expect(said().message).toBe(
-      lang === 'en'
-        ? "Records already on it carry on. It's the default, so new records of its type can't start until another template is made the default."
-        : 'تستمر السجلات الموجودة عليه. ولأنه القالب الافتراضي، لن تبدأ سجلات جديدة من نوعه حتى يُعيَّن قالب آخر افتراضيًا.',
-    );
-  });
-
   both('#20 Remove transition, in the session\'s language', (lang) => {
     create(WorkflowTransitionEditorComponent, { stageId: 's1', transitions: [], availableStages: [] }).onRemove({
       id: 't1', labelEn: 'Approve', labelAr: 'اعتماد',

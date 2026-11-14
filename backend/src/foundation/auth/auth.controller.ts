@@ -4,6 +4,8 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { ImpersonatedBy } from '../../common/decorators/impersonated-by.decorator';
+import { SessionStartedAt } from '../../common/decorators/session-started-at.decorator';
+import { sessionEndsAt } from './session-limit';
 import { UserService } from '../user/user.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { AuthService } from './auth.service';
@@ -47,6 +49,7 @@ export class AuthController {
     @CurrentUser() userId: string,
     @CurrentTenant() organizationId: string,
     @ImpersonatedBy() impersonatedByUserId: string | undefined,
+    @SessionStartedAt() sessionStartedAt: Date | undefined,
   ) {
     const user = await this.userService.getById(userId, organizationId);
     const impersonatedBy = impersonatedByUserId
@@ -61,7 +64,18 @@ export class AuthController {
       this.workingCalendarService.getEffectiveTimeZone(organizationId),
       this.userService.getHijriDisplay(userId, organizationId),
     ]);
-    return { id: user.id, email: user.email, name: user.name, language, timeZone, hijriDisplay, impersonatedBy };
+    // ACC-126 — when this session's 12 hours end, from the token's own claim
+    // (no query); null only for a token minted before ACC-126.
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      language,
+      timeZone,
+      hijriDisplay,
+      impersonatedBy,
+      sessionEndsAt: sessionStartedAt ? sessionEndsAt(sessionStartedAt).toISOString() : null,
+    };
   }
 
   // ACC-129 — the public auth routes each have their own limit, counted per

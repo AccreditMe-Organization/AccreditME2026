@@ -1,5 +1,5 @@
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
-import { whoFromLegacy, decidesTogether } from './workflow-who';
+import { isVotingMove } from './workflow-vote';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 
 // ACC-271 PR 2 (plan §5) — who works each seeded stage, pinned stage by stage.
@@ -42,7 +42,7 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
   it('puts the one forward move of every All of them stage on the approval path', () => {
     let checked = 0;
     for (const workflow of SYSTEM_WORKFLOW_SEED) {
-      for (const stage of workflow.stages.filter((s) => decidesTogether(s.who.mode))) {
+      for (const stage of workflow.stages.filter((s) => isVotingMove(s.who.mode, 'ADVANCE'))) {
         const advances = workflow.transitions.filter((t) => t.fromStageKey === stage.key && (t.kind ?? 'ADVANCE') === 'ADVANCE');
         expect([`${workflow.objectType}.${stage.key}`, advances.length, advances.every((t) => t.isApprovalPath === true)]).toEqual([
           `${workflow.objectType}.${stage.key}`,
@@ -80,67 +80,6 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
     expect(all.filter(({ t }) => t.mover === 'PERSON')).toHaveLength(67);
   });
 
-});
-
-describe('whoFromLegacy (the backfill mapping, plan §6.1)', () => {
-  const base = {
-    assigneeStrategy: 'ROLE',
-    approvalMode: 'SINGLE',
-    parallelThreshold: null,
-    assigneeUserId: null,
-    assigneePositionId: null,
-    assigneeOrgUnitId: null,
-    committeeId: null,
-    assigneeCommitteeRoleValueId: null,
-  };
-
-  it.each([
-    ['SPECIFIC_USER', { assigneeUserId: 'u1' }, [{ kind: 'SPECIFIC_USER', userId: 'u1' }]],
-    ['POSITION_FIXED', { assigneePositionId: 'p1', assigneeOrgUnitId: 'ou1' }, [{ kind: 'POSITION_IN_UNIT', positionId: 'p1', orgUnitId: 'ou1' }]],
-
-    ['SELF', {}, [{ kind: 'CREATOR' }]],
-    ['COMMITTEE', { committeeId: 'c1', assigneeCommitteeRoleValueId: 'chair' }, [{ kind: 'COMMITTEE', committeeId: 'c1', committeeRoleValueId: 'chair' }]],
-    ['ROLE', {}, []],
-    ['ROUND_ROBIN', {}, []],
-  ])('%s', (strategy, extra, entries) => {
-    const mapped = whoFromLegacy({ ...base, assigneeStrategy: strategy, ...extra }, true);
-    expect(mapped.entries).toEqual(entries);
-    expect(mapped.startingAssignment).toBe(entries.length === 0);
-  });
-
-  // Ahmad, 29 Oct — "the record's unit" only where the record type can name one.
-  it("ORG_UNIT_HEAD on a record type with a unit route: the head of the record's unit", () => {
-    const mapped = whoFromLegacy({ ...base, assigneeStrategy: 'ORG_UNIT_HEAD' }, true);
-    expect(mapped.entries).toEqual([{ kind: 'ORG_UNIT_HEAD', orgUnitId: null }]);
-    expect(mapped.startingAssignment).toBe(false);
-  });
-
-  it('ORG_UNIT_HEAD on a record type with no unit route: the starting assignment, said in the notes', () => {
-    const mapped = whoFromLegacy({ ...base, assigneeStrategy: 'ORG_UNIT_HEAD' }, false);
-    expect(mapped.entries).toEqual([]);
-    expect(mapped.startingAssignment).toBe(true);
-    expect(mapped.notes).toEqual(["Org unit head on a record type with no unit of its own yet: starting assignment"]);
-  });
-
-  it.each([
-    ['SINGLE', null, 'ROLE', 'ANY_ONE'],
-    ['PARALLEL', 'ANY', 'ROLE', 'ANY_ONE'],
-    ['PARALLEL', 'ALL', 'ROLE', 'ALL'],
-    ['PARALLEL', 'MAJORITY', 'ROLE', 'ALL'],
-    ['PARALLEL', 'MAJORITY', 'COMMITTEE', 'COMMITTEE_VOTE'],
-    ['SEQUENTIAL', null, 'ROLE', 'ALL'],
-    ['COMMITTEE', null, 'COMMITTEE', 'COMMITTEE_VOTE'],
-    ['COMMITTEE', null, 'ROLE', 'ANY_ONE'],
-  ])('%s %s on a %s stage → %s', (approvalMode, parallelThreshold, assigneeStrategy, whoMode) => {
-    expect(whoFromLegacy({ ...base, approvalMode, parallelThreshold, assigneeStrategy, committeeId: 'c1' }, true).whoMode).toBe(whoMode);
-  });
-
-  it('reports what it decided for the rare modes, so the dry run can name them', () => {
-    expect(whoFromLegacy({ ...base, approvalMode: 'PARALLEL', parallelThreshold: 'MAJORITY' }, true).notes).toEqual(['Majority became All of them']);
-    expect(whoFromLegacy({ ...base, approvalMode: 'COMMITTEE' }, true).notes).toEqual([
-      'Committee approval with no single Committee entry became Any one of them',
-    ]);
-  });
 });
 
 // ACC-57 — what a new organisation starts with must already obey the rule a

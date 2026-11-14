@@ -18,6 +18,7 @@ import { preserveDocumentLanguage } from '../../../../testing/document-language'
 import { IStorageSettings } from './storage-settings.service';
 import { StorageSettingsComponent } from './storage-settings.component';
 import { HESSA, TODAY, cloud, minio, requested, unconfirmed, unconfirmedOnPrem } from './storage-fixtures';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-260, PR B — layout with the real theme, in both languages:
 //   - the setup states at the content widths 988, 358 and 328px: nothing wider
@@ -50,6 +51,7 @@ const STATES: [string, () => IStorageSettings, Step | null, string][] = [
 ];
 
 describe('StorageSettings — setup layout (ACC-260, PR B)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<FrameComponent>;
   const measured: string[] = [];

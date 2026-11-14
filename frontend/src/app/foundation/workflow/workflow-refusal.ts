@@ -51,6 +51,11 @@ export type WorkflowRefusalCode =
   | 'STAGE_IN_USE'
   | 'TRANSITION_ACTION_IN_USE'
   | 'TRANSITION_IN_USE'
+  // ACC-303 — exactly one default template per record type.
+  | 'DEFAULT_NEEDS_STAGES'
+  | 'DEFAULT_TEMPLATE_TYPE_CHANGE'
+  | 'DEFAULT_TEMPLATE_REQUIRED'
+  | 'DEFAULT_TEMPLATE_INACTIVE'
   // ACC-271 PR 3 — a stage's `who` refused; said in its slot (whoRefusal() below).
   | WhoRefusalCode;
 
@@ -162,6 +167,11 @@ const PLAIN_REFUSAL_KEYS: Partial<Record<WorkflowRefusalCode, string>> = {
   STAGE_IN_USE: 'workflow.refusal.stageInUse',
   TRANSITION_ACTION_IN_USE: 'workflow.refusal.actionInUse',
   TRANSITION_IN_USE: 'workflow.refusal.transitionInUse',
+  // ACC-303 — a type's default template: set it, keep it, keep its type.
+  DEFAULT_NEEDS_STAGES: 'workflow.refusal.defaultNeedsStages',
+  DEFAULT_TEMPLATE_TYPE_CHANGE: 'workflow.refusal.defaultTypeChange',
+  DEFAULT_TEMPLATE_REQUIRED: 'workflow.refusal.defaultRequired',
+  DEFAULT_TEMPLATE_INACTIVE: 'workflow.refusal.defaultInactive',
 };
 
 /**

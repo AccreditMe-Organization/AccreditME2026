@@ -208,6 +208,7 @@ describe('AuthService', () => {
         success: true,
         user: { id: 'user-1', email: 'a@example.com', name: 'A User' },
         language: 'en',
+        sessionEndsAt: expect.any(String),
       });
       expect(res.cookie).toHaveBeenCalledWith('access_token', expect.any(String), expect.any(Object));
       expect(res.cookie).toHaveBeenCalledWith('refresh_token', expect.any(String), expect.any(Object));
@@ -449,6 +450,7 @@ describe('AuthService', () => {
         id: 'rt-1',
         userId: 'user-1',
         revokedAt: null,
+        createdAt: new Date(),
         tokenVersion: 2,
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
@@ -481,6 +483,7 @@ describe('AuthService', () => {
         id: 'rt-1',
         userId: 'user-1',
         revokedAt: new Date(),
+        createdAt: new Date(),
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
 
@@ -493,6 +496,7 @@ describe('AuthService', () => {
         id: 'rt-1',
         userId: 'user-1',
         revokedAt: null,
+        createdAt: new Date(),
         expiresAt: new Date(Date.now() - 1000),
       });
 
@@ -730,6 +734,7 @@ describe('AuthService', () => {
       organizationId: ORG_A,
       tokenVersion: 1,
       revokedAt: null,
+      createdAt: new Date(),
       expiresAt: new Date(Date.now() + 86_400_000),
     });
     beforeEach(() => {
@@ -809,6 +814,7 @@ describe('AuthService', () => {
         organizationId: ORG_A,
         tokenVersion: 1,
         revokedAt: null,
+        createdAt: new Date(),
         expiresAt: new Date(Date.now() + 86_400_000),
       });
       mockPrisma.user.findFirst.mockResolvedValue({
@@ -1510,6 +1516,7 @@ describe('AuthService', () => {
       id: 'rt-1',
       userId: 'user-1',
       revokedAt: null,
+      createdAt: new Date(),
       tokenVersion: 2,
       expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       ...over,

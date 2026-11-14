@@ -18,6 +18,7 @@ import { IdleService } from '../../core/services/idle.service';
 import { AmConfirmService, CONFIRM_ACCEPT_CLASS } from '../../shared/components/confirm/am-confirm.service';
 import { ConfirmHostGate } from '../../shared/components/confirm/confirm-host-gate';
 import { LayerStackService } from '../../shared/overlay/layer-stack.service';
+import { SessionLimitState } from '../../core/services/session-limit-state';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { BreadcrumbComponent } from '../breadcrumb/breadcrumb.component';
@@ -82,7 +83,7 @@ describe('AppShellComponent — pop-ups loaded after start-up (ACC-90)', () => {
     await settle();
   }
 
-  async function render(): Promise<void> {
+  async function render(opts: { limitEndsInMs?: number } = {}): Promise<void> {
     idleCallbacks = [];
     warningVisible.set(false);
     spyOn(window, 'requestIdleCallback').and.callFake((cb: IdleRequestCallback) => {
@@ -144,6 +145,9 @@ describe('AppShellComponent — pop-ups loaded after start-up (ACC-90)', () => {
     });
     loadTranslationsForTest({ en, ar });
     TestBed.inject(TranslateService).use('en');
+    if (opts.limitEndsInMs !== undefined) {
+      TestBed.inject(SessionLimitState).setEndsAt(new Date(Date.now() + opts.limitEndsInMs).toISOString());
+    }
 
     fixture = TestBed.createComponent(AppShellComponent);
     document.body.appendChild(fixture.nativeElement);
@@ -171,6 +175,9 @@ describe('AppShellComponent — pop-ups loaded after start-up (ACC-90)', () => {
     await render();
     expect(host()).withContext('the confirm host is not loaded at start-up').toBeNull();
     expect(document.querySelector('app-idle-warning')).withContext('the idle warning is not loaded at start-up').toBeNull();
+    expect(document.querySelector('app-session-limit-warning'))
+      .withContext('the 12-hour limit warning is not loaded at start-up')
+      .toBeNull();
     expect(idleCallbacks.length).withContext('both wait on idle').toBeGreaterThan(0);
   });
 
@@ -269,5 +276,20 @@ describe('AppShellComponent — pop-ups loaded after start-up (ACC-90)', () => {
     const dialog = document.querySelector<HTMLElement>('.p-dialog[role="alertdialog"]');
     expect(dialog).withContext('the warning is on screen').not.toBeNull();
     expect(dialog!.textContent).toContain(en.session.idle.staySignedIn);
+  });
+
+  // ACC-126 — the 12-hour limit warning, deferred like the idle warning: it
+  // loads the moment it is due, without waiting for idle.
+  it("the session limit warning loads the moment it is due, before idle", async () => {
+    await render({ limitEndsInMs: 5 * 60 * 1000 });
+    expect(document.querySelector("app-session-limit-warning")).withContext("loaded when due").not.toBeNull();
+    const dialog = document.querySelector<HTMLElement>(".p-dialog[role=\"alertdialog\"]");
+    expect(dialog).withContext("the warning is on screen").not.toBeNull();
+    expect(dialog!.textContent).toContain(en.session.limit.title);
+  });
+
+  it("the session limit warning stays unloaded while the limit is more than 10 minutes away", async () => {
+    await render({ limitEndsInMs: 3 * 60 * 60 * 1000 });
+    expect(document.querySelector("app-session-limit-warning")).toBeNull();
   });
 });

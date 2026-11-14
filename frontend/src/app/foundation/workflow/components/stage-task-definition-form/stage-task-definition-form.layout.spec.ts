@@ -18,6 +18,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowStageDto, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { StageTaskDefinitionFormComponent } from './stage-task-definition-form.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-208 — the 420px body cap (ACC-111), measured rather than assumed
 // (ACC-120): every state of both steps, in both languages, in the real dialog
@@ -79,6 +80,7 @@ class HostComponent {
 }
 
 describe('StageTaskDefinitionForm — the 420px body cap (ACC-208)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
 
   let http: HttpTestingController;

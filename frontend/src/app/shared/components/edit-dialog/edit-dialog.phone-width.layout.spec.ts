@@ -34,6 +34,7 @@ import {
 import { TaskFormComponent } from '../../../foundation/tasks/components/task-form/task-form.component';
 import { TaskFormFooterComponent } from '../../../foundation/tasks/components/task-form/task-form-footer.component';
 import { TaskFormStepsComponent } from '../../../foundation/tasks/components/task-form/task-form-steps.component';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-299 — a form dialog fits a phone. The shell caps every dialog's width at
 // var(--am-dialog-max-inline), the screen less a 16px gutter each side, so at
@@ -97,6 +98,7 @@ class NewTaskHostComponent {
 }
 
 describe('Form dialogs at a 390px phone width (ACC-299)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
   let fixture: ComponentFixture<unknown>;

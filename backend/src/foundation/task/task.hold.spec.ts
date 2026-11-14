@@ -126,7 +126,7 @@ describe('TaskService — holds and requests (ACC-173)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TaskService,
+        TaskService,
 
         { provide: TaskClosedNoticeService, useValue: { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) } },
         TaskAssignmentService,
@@ -305,7 +305,13 @@ describe('TaskService — holds and requests (ACC-173)', () => {
 
   // ── departure ───────────────────────────────────────────────────────────
   describe('departure (reassignAllForUser)', () => {
-    const departing = (t: ReturnType<typeof task>) => [{ id: `ta-${ASSIGNEE}`, task: t }];
+    // ACC-165 — the departure's query finds the task, then reads it again under
+    // its row lock: that locked read answers first, any later read keeps the
+    // test's own value.
+    const departing = (t: ReturnType<typeof task>) => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(t);
+      return [{ taskId: t.id }];
+    };
 
     it('a held task going to the acting user keeps its hold; only the leaver\'s request is cancelled', async () => {
       mockPrisma.taskAssignee.findMany.mockResolvedValue(departing(onHold()));

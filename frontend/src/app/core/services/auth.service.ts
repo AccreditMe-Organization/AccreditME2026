@@ -13,6 +13,7 @@ import { Observable, catchError, map, of, switchMap, tap, throwError } from 'rxj
 import { environment } from '../../../environments/environment';
 import { TenantHostService } from '../tenant/tenant-host';
 import { SessionAddressState } from '../tenant/session-address-state';
+import { SessionLimitState } from './session-limit-state';
 import { SessionRenewalService } from './session-renewal.service';
 import { LanguageService } from './language.service';
 
@@ -35,6 +36,9 @@ export interface MeResponse extends PublicUser {
   timeZone: string;
   hijriDisplay: boolean;
   impersonatedBy: { id: string; email: string; name: string } | null;
+  // ACC-126 — when this session's 12 hours end (ISO-8601); null only for a
+  // token minted before ACC-126.
+  sessionEndsAt?: string | null;
 }
 
 export interface DisplayPreferences {
@@ -49,6 +53,8 @@ export interface LoginResult {
   user?: PublicUser;
   language?: string;
   mfaRequired?: true;
+  /** ACC-126 — when the new session's 12 hours end (ISO-8601). */
+  sessionEndsAt?: string;
 }
 
 /**
@@ -79,6 +85,7 @@ export class AuthService {
   private readonly baseUrl = `${environment.apiUrl}/auth`;
   private readonly sessionRenewalService = inject(SessionRenewalService);
   private readonly addressState = inject(SessionAddressState);
+  private readonly limitState = inject(SessionLimitState);
   // ACC-139 — the organisation for sign-in and password reset is the address
   // the page was opened at. Reads only DOCUMENT, so it is safe to inject here.
   private readonly tenantHost = inject(TenantHostService);
@@ -196,6 +203,9 @@ export class AuthService {
     this._currentUser.set(null);
     this._impersonatedBy.set(null);
     this._displayPreferences.set(null);
+    // ACC-126 — no session, nothing to count down. A time-limit note stays,
+    // so the sign-in page can still say why.
+    this.limitState.endSession();
   }
 
   // Called once via APP_INITIALIZER on app startup — currentUser is
@@ -258,6 +268,8 @@ export class AuthService {
         this._currentUser.set({ id: response.id, email: response.email, name: response.name });
         this._impersonatedBy.set(response.impersonatedBy);
         this.applyDisplayPreferences(response);
+        // ACC-126 — the session's deadline, for the 10-minute warning.
+        this.limitState.setEndsAt(response.sessionEndsAt);
       }),
     );
   }
@@ -274,6 +286,10 @@ export class AuthService {
         // in this browser: the note no longer applies.
         this.addressState.clear();
         this._currentUser.set(user);
+        // ACC-126 — a fresh session: its own deadline, and nothing left to
+        // explain about the last one.
+        this.limitState.clearNote();
+        this.limitState.setEndsAt(result.sessionEndsAt);
       }),
       // ACC-94 — the login response carries no display context, and widening it
       // was not part of decision D2. /auth/me is asked once instead, so dates

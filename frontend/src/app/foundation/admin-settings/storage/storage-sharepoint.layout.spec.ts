@@ -18,6 +18,7 @@ import { preserveDocumentLanguage } from '../../../../testing/document-language'
 import { IStorageSettings, IStorageTestResult } from './storage-settings.service';
 import { StorageSettingsComponent } from './storage-settings.component';
 import { HESSA, SP_CLIENT_ID, SP_LIBRARY, SP_SITE_URL, SP_TENANT, TODAY, TYPED_SP_SECRET, sharepoint, spFound, spTestFailed, spTestPassed, unconfirmed } from './storage-fixtures';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-260, PR C — SharePoint laid out with the real theme, EN and AR, at the
 // page specs' content widths 988, 358 and 328px: nothing wider than the frame,
@@ -97,6 +98,7 @@ const STATES: [string, () => IStorageSettings, Step | null, string][] = [
 ];
 
 describe('StorageSettings — SharePoint layout (ACC-260, PR C)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<FrameComponent>;
   let http: HttpTestingController;

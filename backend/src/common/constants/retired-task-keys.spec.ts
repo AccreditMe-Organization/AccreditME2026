@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { ALL_PERMISSIONS } from '../../foundation/roles/permission.seed';
 
@@ -20,14 +20,15 @@ import { ALL_PERMISSIONS } from '../../foundation/roles/permission.seed';
  * A mention in prose (a comment saying what a key USED to be) is fine and is
  * not matched: the pattern needs the quotes.
  *
- * Out of scope, by path: backend/prisma, where the backfills that grant and
- * retire the keys have to name them (outside both roots below), and specs,
+ * Out of scope, by path: backend/prisma, where earlier backfills that granted
+ * and removed the keys name them (outside both roots below), and specs,
  * which use them as arbitrary "some other key" fixtures, and in the grant
  * script's own spec as the keys it reads. A spec cannot open a path.
  *
  * NON-VACUITY: the scan must read a real number of files from each root, and
- * the patterns must match the one file known to name the keys (the retire
- * backfill), or the green below means nothing.
+ * the patterns must match every key in every quoting a source could use, or the
+ * green below means nothing. That used to be read from the retire backfill;
+ * ACC-278 deleted it once executed, so the same keys are named here instead.
  */
 
 const REPO = join(__dirname, '..', '..', '..', '..');
@@ -37,6 +38,12 @@ const THIS_FILE = /common[\\/]constants[\\/]retired-task-keys\.spec\.ts$/;
 const RETIRED = ['tasks:view', 'tasks:create', 'tasks:reassign', 'tasks:manage'] as const;
 const LITERAL = /(['"`])tasks:(view|create|reassign|manage)\1/g;
 const CONSTANT = /(?<![A-Z_])TASKS_PERMISSIONS\b/g;
+
+/** A source naming every retired key in each quoting, and the constant: what the scan must catch. */
+const NAMES_EVERY_KEY = [
+  ...RETIRED.flatMap((key) => [`grant('${key}')`, `grant("${key}")`, 'grant(`' + key + '`)']),
+  'const keys = TASKS_PERMISSIONS;',
+].join('\n');
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -66,11 +73,13 @@ describe('ACC-244 — the retired flat task keys', () => {
     }
   });
 
-  it('matches the retire backfill, which has to name every key (non-vacuity)', () => {
-    const backfill = join(REPO, 'backend', 'prisma', 'backfill-acc244-retire-flat-task-keys.ts');
-    expect(existsSync(backfill)).toBe(true);
-    const found = new Set(findings(readFileSync(backfill, 'utf8')).map((f) => f.slice(1, -1)));
-    for (const key of RETIRED) expect(found.has(key)).toBe(true);
+  it('matches every key in every quoting, and the constant (non-vacuity)', () => {
+    const found = findings(NAMES_EVERY_KEY);
+    for (const key of RETIRED) {
+      for (const quote of ["'", '"', '`']) expect(found).toContain(`${quote}${key}${quote}`);
+    }
+    expect(found).toContain('TASKS_PERMISSIONS');
+    expect(found).toHaveLength(RETIRED.length * 3 + 1);
     // A mention in prose is not a reading.
     expect(findings('// tasks:view was the flat key')).toEqual([]);
     expect(findings('COMMITTEE_TASKS_PERMISSIONS.MANAGE')).toEqual([]);

@@ -5,6 +5,7 @@ import { ConfirmationService } from 'primeng/api';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { ListFocusService } from '../data-list/list-focus.service';
 import { EditDialogComponent } from './edit-dialog.component';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 let probeInstanceCounter = 0;
 
@@ -175,6 +176,7 @@ class DeleteFlowHost {
 }
 
 describe('EditDialogComponent', () => {
+  useLayoutFonts();
   // ACC-111 — the dialog now asks before discarding unsaved work and reads its
   // discard wording from the translation files, so both services are real
   // dependencies rather than test scaffolding.

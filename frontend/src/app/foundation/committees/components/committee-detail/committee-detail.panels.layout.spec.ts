@@ -21,6 +21,7 @@ import { UserService } from '../../../user/services/user.service';
 import { WorkflowService } from '../../../workflow/services/workflow.service';
 import { ACTIVE_RULES } from '../../testing';
 import { CommitteeDetailComponent } from './committee-detail.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // The committee page's panel grid, MEASURED in the real theme, font and
 // translations. Members, Tasks, Sub-committees and Change requests were on
@@ -118,6 +119,7 @@ class PageHost {
 }
 
 describe('CommitteeDetailComponent — every panel lines up in its grid row', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<PageHost>;
 
@@ -157,7 +159,6 @@ describe('CommitteeDetailComponent — every panel lines up in its grid row', ()
     fixture = TestBed.createComponent(PageHost);
     fixture.componentRef.setInput('width', width);
     fixture.detectChanges();
-    await document.fonts.ready;
     for (let i = 0; i < 3; i++) {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       fixture.detectChanges();
