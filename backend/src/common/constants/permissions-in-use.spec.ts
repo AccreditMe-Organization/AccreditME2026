@@ -68,7 +68,7 @@ describe('PERMISSIONS_NOT_YET_CHECKED (ACC-120 slice 5, R2)', () => {
 
   it('the catalogue is seeded once per key — the list is not flattened into it', () => {
     expect(new Set(catalogue).size).toBe(catalogue.length);
-    expect(catalogue).toHaveLength(74); // ACC-244: +4 committee task keys, -4 retired tasks:* keys
+    expect(catalogue).toHaveLength(75); // ACC-244: +4 committee task keys, -4 retired tasks:* keys; ACC-164: +users:reset_mfa
   });
 
   it('names only catalogue keys, each once', () => {
@@ -79,7 +79,7 @@ describe('PERMISSIONS_NOT_YET_CHECKED (ACC-120 slice 5, R2)', () => {
   it('the list plus the in-use keys are the catalogue, exactly', () => {
     const inUse = catalogue.filter((k) => !notYet.has(k));
     expect([...inUse, ...PERMISSIONS_NOT_YET_CHECKED].sort()).toEqual([...catalogue].sort());
-    expect(inUse).toHaveLength(35); // ACC-244: -4 tasks:*, +4 committee task keys; ACC-271 PR 6b: -committees:manage
+    expect(inUse).toHaveLength(36); // ACC-244: -4 tasks:*, +4 committee task keys; ACC-271 PR 6b: -committees:manage; ACC-164: +users:reset_mfa
     expect(PERMISSIONS_NOT_YET_CHECKED).toHaveLength(39);
   });
 
