@@ -570,3 +570,72 @@ contained modules.
    **Recommend the record page only**, for key holders. The list mark is a
    convenience that widens where the fact appears. (The design thread can answer
    this one if Ahmad prefers.)
+
+## 12. As built (14 Nov)
+
+Branch `feature/acc-164-mfa-off`, with `origin/feature/acc-188-password-reset`
+(#293) merged in for `endEverySessionInTx()` and the security-notice path. No
+migration.
+
+### 12.1 Backend
+
+- **`POST /auth/mfa/disable { password, code }`** — `AuthService.disableMfa()`,
+  §3's table with §0b's two decisions: no `MFA_EXPIRED` here (a missing or spent
+  challenge is a fault), and `attemptsRemaining` is the codes left before the
+  two-step lock (`attemptsBeforeLock()` in `two-factor-challenge.ts`).
+  Refusals are `MfaChangeRefusalException` (400). `setupMfa()` gained the lock
+  check, the failure record and the 400.
+- **The sign-in mapping was not shared.** §3 planned one `mfaRefusal()` with an
+  identifier parameter. The two routes answer differently (sign-in has
+  `MFA_EXPIRED` and the per-challenge count; this route has neither, by §0b), so
+  this route has its own small `disableMfaCodeRefusal()` and sign-in's is
+  unchanged.
+- **`POST /users/:id/mfa/reset`** — `UserMfaResetService` (new, in
+  `foundation/user/mfa-reset/`, so `user.service.ts` gains one join and nothing
+  else). The order is §4.4's with the floor added after the owner check;
+  `mfa-reset-rule.ts` is the one rule the route and the record read share.
+- **The floor counts the root role while the ROLE is active, whatever the
+  person's status.** §0b said "the target being ACTIVE". Built otherwise, on
+  purpose: an inactive Organization Administrator who is reactivated is an
+  administrator again, so their second factor stays above a non-administrator.
+  The conservative reading of lane B's "the target's ACTIVE roles".
+- **`GET /users/:id` answers `twoStep`** from `twoFactorEnabled`, read in the
+  record's own query; `twoStepFor()` reads the root role only when the floor
+  could apply (one indexed read for the person, one for the viewer).
+- **`two-factor-reset.ts`**, `resetTwoFactorInTx()`: §4.3 as planned.
+- **Security notices**: `mfa_disabled` and `mfa_reset` were added to
+  `security-notice.ts`'s table (its header said "ACC-164 adds its two notices
+  here"). The enqueue path, the job and the processor are #293's, unchanged.
+  `SecurityNoticeService` is provided in `AuthModule` and `UserModule`, which
+  now import `QueueModule`.
+- **Permission**: `USERS_PERMISSIONS.RESET_MFA`; the catalogue is 75 keys, 36 in
+  use. The backfill is `prisma/backfill-acc164-reset-mfa-permission.ts`
+  (`npm run backfill:acc164-reset-mfa-permission`).
+
+### 12.2 Frontend
+
+- `two-step-off-dialog.component.ts` rebuilt to screen 1;
+  `two-step-reset-dialog.component.ts` (new) to screen 2;
+  `two-step-message.component.ts` (new) for the message above the buttons;
+  `two-step-refusal.ts` (new) words every code.
+- The record page draws someone else's panel only from `twoStep`; its success
+  lines use the page's existing success message (the design's dark toast was a
+  stand-in, and the product has no toast).
+- **Users is split into two groups** in the role permissions list: "People and
+  profiles" (view, invite, manage, transfer) and "Account access" (deactivate,
+  reactivate, reset two-step sign-in). The seventh key took Users over the
+  six-key threshold (ACC-272), so a split was required, not chosen.
+- Copy is the design's. Not drawn, so written here: `resetHigher`, `resetSelf`
+  (fallbacks the panel never offers), `offFailed` and `resetFailed` (a refusal
+  with no code). "Code expired" is not built.
+
+### 12.3 Verified
+
+- Backend: every spec, including `mfa-disable.spec.ts`,
+  `user-mfa-reset.service.spec.ts`, the contract pins and the write scan. The
+  real-database specs (`user-mfa-reset.db-spec.ts`, the backfill's db-spec) run
+  in CI's `test:db`: there is no local database on this machine.
+- Nine mutations, each turning a named spec red (the report lists them).
+- Playwright on port 4202, every call mocked, 0 unmocked, 0 external: 27
+  states × EN/AR × 1280/390 (108 screenshots). The tallest dialog body is 337 px
+  (Turn off, locked, English, phone), under the 420 cap; none scrolls.
