@@ -388,6 +388,9 @@ in English.
 
 ### 8.2 Lane A's part (to send to them)
 
+**As sent: `step-286-lane-a.md`**, which supersedes the list below where they
+differ (the endpoint, the wording and what the wizard must do, as built).
+
 1. **Lookups → Committee Member Role**: a "Required seat" toggle on each seat.
    - **SYSTEM values:** Chairman and Secretary ticked by default. The toggle
      calls the new endpoint, `PATCH /lookups/values/:id/attributes` with
@@ -459,3 +462,155 @@ in English.
 - **Recommendation:** keep your wording, "Appoint another {{seat}} first."
 - The Arabic avoids a gendered adjective on the seat label: «يلزم تعيين عضو آخر
   في مقعد «{{seat}}» أولاً.»
+
+### Answers (Ahmad, 14 Nov, Prompt 42)
+
+**A1. Required lives on the shared seat row, and an organisation unticks it
+through its override, with no backfill.**
+- An override that already exists (a renamed seat) must not lose the default:
+  the override's `attributes` merge over the shared ones KEY BY KEY, never
+  replacing the whole object.
+- A spec covers an organisation with a label-only override.
+- **Proved before building:**
+  - `.railway/railway.ts:110` (`preDeploy: "sh scripts/pre-deploy.sh"`) runs
+    `backend/scripts/pre-deploy.sh:113` on every deployment, with no condition;
+  - that line is `node "$SEED_ENTRY"`, where `SEED_ENTRY` is
+    `dist/src/foundation/lookup/seed-system-lookups.cli.js` (line 94);
+  - it calls `seedSystemData()` (`seed-system-lookups.cli.ts:98`), which
+    overwrites each SYSTEM value's `attributes` (`lookup.service.ts:76-89`).
+  - Tenant bootstrap also calls it (`tenant.service.ts:469`).
+
+**A2. The going-live check runs whenever a committee ENTERS a stage flagged
+`IN_FORCE`**, read from the flag, never a stage key. That covers leaving
+Formation and Terms Review → Active.
+- The existing `COMMITTEE_QUORUM_NOT_SET` check out of Formation (ACC-238) is
+  unchanged.
+
+**A3.** Only `ACTIVE` users fill seats and count toward the quorum.
+
+**A4.** Deactivation doesn't end memberships: not in this ticket (ACC-306).
+
+**A5.** The last-holder rule applies in the transfer wizard too. It is lane A's
+screen; what they must handle is in `step-286-lane-a.md`.
+
+**A6.** No below-quorum condition in this ticket (ACC-307).
+
+**A7.** The new condition's severity is `AT_RISK`.
+
+**A8.** "Appoint another {{seat}} first." The Arabic avoids «آخر» or any
+gendered adjective; an imperative noun phrase is used.
+
+**Migration:** `20261115000000_acc286_setup_committee_missing_seat`. Its
+timestamp is after everything on `dev` (`d62c820`) and after the two migrations
+pushed on other branches: ACC-126's `20261113170000` and ACC-188's
+`20261114120000`. It becomes 66 once lane A's 63 and ACC-188 / ACC-278 PR B's
+64 and 65 land.
+
+---
+
+## 10. As built (PR 1, 14 Nov)
+
+### 10.1 What PR 1 contains
+
+- **Lookups:** the seed's schema and Chairman and Secretary's `required: true`;
+  `getValues()` merges override attributes key by key (`mergeAttributes()`);
+  `PATCH /lookups/values/:id/attributes` (`overrideAttributes()`), audited,
+  `LOOKUP_ATTRIBUTE_INVALID` for an undeclared key or a wrong type.
+- **`committee-seat-rules.ts`:** `requiredSeats()`, `seatHolders()`,
+  `activeMemberCount()`, `emptyRequiredSeats()`, and `CommitteeSeatRefusal`.
+- **Rule 2:** the `COMMITTEE` precondition, with `goesLive()` and both stages'
+  flags in its context. The engine passes the destination it has read inside
+  the transaction; the two early callers read the destination's flags, and
+  only for a record type with a precondition (`hasTransitionPrecondition()`).
+- **Rule 3:** `removeMember` and `changeMemberRole` take the committee row
+  `FOR UPDATE` after `assertStage()`, which now returns the stage's rules
+  (`assertStageAllows()` returns them).
+- **Rule 4:** `isDissolving()` became `targetStageFacts()`, the same one query
+  plus `Committee.isActive`.
+- **Setup health:** the enum value and its migration, deferred; the frontend's
+  type, order, Fix and wording.
+- **Screens:** the move buttons (`workflow-transition-actions`), Remove member,
+  Change role, and the committee and change-request pickers.
+- **Lane A's file:** `step-286-lane-a.md`.
+
+### 10.2 Decisions made while building
+
+- **"Enters a stage flagged IN_FORCE" is read as "from a stage that is not"
+  (A2).** A move between two in-force stages is not going live: otherwise
+  Active → Suspended, and Suspended → Active, would be refused for a committee
+  missing its Chairman, and a broken committee could not be suspended. On the
+  seed, the check fires on Terms Review → Active. Leaving Formation goes to
+  Terms Review, which is not in force, so it keeps only
+  `COMMITTEE_QUORUM_NOT_SET`. A tenant workflow whose Formation leads straight
+  to an in-force stage is checked there.
+- **Any kind of move** into an in-force stage is checked, not only an ADVANCE.
+  The early check runs only for an ADVANCE (as before); the in-transaction one
+  catches the rest, which a spec proves with a RETURN into Active.
+- **A member whose user is not ACTIVE fills nothing, so removing them is never
+  refused.** That is how an administrator clears a departed Chairman.
+- **A role change within the same seat** is not a seat change, so it is not
+  checked.
+- **`AGE_BASIS` has no entry in PR 1**, unlike §6.1's table: a deferred type is
+  excluded from `ActiveSetupConditionType`, so the exhaustive maps do not ask
+  for it. PR 2 adds it when it takes the type off the deferred list, and the
+  compiler then requires it.
+- **The endpoint is `PATCH /lookups/values/:id/attributes`**, as planned.
+  `null` removes the organisation's own value for one key.
+- **Arabic, matching the existing committee sentences:** "parent committee" is
+  «لجنة رئيسية» (the app's term, not «لجنة أم»), and the imperative is «اختر»,
+  as in the other reference refusals.
+- **Existing engine db-specs** (pools, votes, stage history) that approve a
+  committee into Active now give it that shape through
+  `common/testing/committee-going-live.ts`: the organisation unticks its
+  required seats (as a tenant can), and plain members are added up to the
+  quorum where none exist. No pool in those specs is the committee's own where
+  members are added. `putCommitteeInEditableStage()`'s stage is flagged
+  `IN_FORCE`, so its committees can be pointed at.
+
+### 10.3 Wording as built
+
+| Code | EN | AR |
+|---|---|---|
+| `COMMITTEE_REQUIRED_SEATS_EMPTY` | Fill the required seats first: {{seats}}. | يلزم شغل المقاعد المطلوبة أولاً: {{seats}}. |
+| (plain, if the body can't be read) | Fill the committee's required seats first. | يلزم شغل المقاعد المطلوبة في اللجنة أولاً. |
+| `COMMITTEE_MEMBERS_BELOW_QUORUM` (plural object, by the quorum) | Add members first: the quorum needs {{count}} member(s), and this committee has {{members}}. | يلزم إضافة أعضاء أولاً: عدد الأعضاء الذي يتطلبه النصاب {{count}}، وفي اللجنة {{members}}. |
+| (plain) | Add members first: this committee has fewer members than its quorum. | يلزم إضافة أعضاء أولاً: عدد أعضاء اللجنة أقل من نصابها. |
+| `COMMITTEE_REQUIRED_SEAT_LAST_HOLDER` | Appoint another {{seat}} first. | تعيين عضو في مقعد «{{seat}}» أولاً. |
+| `COMMITTEE_PARENT_NOT_LIVE` | Choose a parent committee that is in force. | اختر لجنة رئيسية سارية. |
+| `COMMITTEE_REPORTS_TO_NOT_LIVE` | Choose a committee that is in force to report to. | اختر لجنة سارية ترفع إليها اللجنة تقاريرها. |
+
+The Setup health row's wording is in `step-286-lane-a.md` §2.
+
+### 10.4 Specs and mutations
+
+Each mutation was applied alone, its spec run, and the file restored. All 15
+turned their spec red:
+
+| Mutation | Spec that went red |
+|---|---|
+| the override merge dropped from `requiredSeats()` | `committee-seat-rules.db-spec` |
+| INVITED users counted as holders | `committee-seat-rules.db-spec` |
+| `getValues()` replaces attributes instead of merging | `lookup.service.spec` |
+| the attribute type check dropped | `lookup.service.spec` |
+| the quorum check dropped | `committee-going-live.db-spec` |
+| the seats check dropped | `committee-going-live.db-spec` |
+| a move between two in-force stages checked too | `committee-going-live.db-spec` |
+| only the early check (none in the transaction) | `committee-going-live.db-spec` |
+| rule 3's IN_FORCE condition dropped | `committee-going-live.db-spec` |
+| the committee row lock dropped | `committee-going-live.db-spec` (the concurrent removals) |
+| a holder who is not ACTIVE still refused | `committee-going-live.db-spec` |
+| the unchanged parent checked too | `committee-reference-checks.db-spec` |
+| not-in-force ignored | `committee-reference-checks.db-spec` |
+| an inactive committee counted as in force | `committee-reference-checks.db-spec` |
+| in force read without the flag | `committee-reference-checks.db-spec` |
+
+On the screens, three more, each red in its Karma spec:
+
+| Mutation | Spec that went red |
+|---|---|
+| the seat refusal said as the generic sentence | Remove member and Change role specs |
+| going live said as the plain sentence (no seats, no numbers) | `workflow-transition-actions.going-live.spec` |
+| the pickers offer committees not in force | `committee-references.spec` |
+
+The screens' specs (Remove member, Change role, the move buttons) read the real
+translation files in both languages.

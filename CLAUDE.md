@@ -4965,6 +4965,60 @@ Plan and Ahmad's answers (13 Nov, Q1–Q8):
   in both languages. The counted ones use plural objects.
 - **One additive migration.** It runs in the pre-deploy step, never before.
 
+## Key Architecture Decisions (ACC-286)
+
+A committee's structure rules: required seats, going live, live references.
+PR 1 ships the rules and every reader; PR 2 the Setup health detector. Full
+mechanism: SYSTEM-REFERENCE.md §3.21.4 (and §3.15, §6.2, §13.2). Plan and
+Ahmad's answers (14 Nov, A1–A8):
+`backend/Plans/step-286-committee-structure-rules.md`; lane A's part:
+`backend/Plans/step-286-lane-a.md`. Briefly:
+
+- **"REQUIRED" IS A SEAT ATTRIBUTE ON THE SHARED ROWS, WITH NO BACKFILL** (A1).
+  - Chairman and Secretary carry `required: true` on the SYSTEM
+    `committee_member_role` values. `seedSystemData()` rewrites them on every
+    deploy (`pre-deploy.sh`), so every organisation has the default.
+  - An organisation unticks a seat through its override row,
+    `PATCH /lookups/values/:id/attributes` (`lookups:manage`). Only schema keys
+    of their declared type are accepted (`LOOKUP_ATTRIBUTE_INVALID`).
+  - **An override's attributes merge over the shared ones KEY BY KEY**, never
+    replacing the object, so a renamed seat keeps the default.
+- **ONE READER, `committee-seat-rules.ts`.** `requiredSeats()` equals
+  `getValues()` filtered by `required` (a db-spec pins it). Never a second copy.
+- **ONLY AN ACTIVE USER FILLS A SEAT OR COUNTS TOWARD THE QUORUM** (A3).
+  Deactivation ends no membership (ACC-306), so a departed holder's seat reads
+  empty while the row stays.
+- **GOING LIVE IS ENTERING AN `IN_FORCE` STAGE FROM ONE THAT IS NOT** (A2),
+  read from the flags in `TRANSITION_PRECONDITIONS`, any kind of move.
+  - It needs the quorum of members (`COMMITTEE_MEMBERS_BELOW_QUORUM`), then
+    every required seat filled (`COMMITTEE_REQUIRED_SEATS_EMPTY`).
+  - On the seed that is Terms Review → Active. Active ↔ Suspended is not going
+    live, so a committee in force can still be suspended. Leaving Formation
+    keeps only `COMMITTEE_QUORUM_NOT_SET`.
+  - The authoritative check is inside the stage-change transaction, with the
+    committee row `FOR SHARE`.
+- **WHILE IN FORCE, THE LAST ACTIVE HOLDER OF A REQUIRED SEAT CAN'T LEAVE IT**
+  (`COMMITTEE_REQUIRED_SEAT_LAST_HOLDER`, naming the seat). It covers Remove
+  member, Change role and the transfer wizard (A5).
+  - The member writes now take the committee row `FOR UPDATE` after the
+    instance `FOR SHARE`: the engine's order.
+  - Two removals of two Chairmen at once: one lands. Approve against removing
+    the only Chairman: never both, never a deadlock. Both proved against a real
+    Postgres, ten rounds each.
+- **A PARENT OR REPORTS TO MUST BE IN FORCE** (`COMMITTEE_PARENT_NOT_LIVE`,
+  `COMMITTEE_REPORTS_TO_NOT_LIVE`): its stage flagged `IN_FORCE` and the
+  committee active. Checked after "dissolving", and only when the value
+  changes. The pickers leave such committees out.
+- **THE NEW SETUP HEALTH TYPE SHIPS IN TWO DEPLOYS** (CLAUDE.md's enum rule).
+  PR 1 adds `COMMITTEE_MISSING_REQUIRED_SEAT` (`AT_RISK`, A7) and every reader,
+  and defers it, so nothing writes it. PR 2 adds the detector, after a rollback
+  check like ACC-202's.
+- **TEST FIXTURES:** engine db-specs that move a committee into Active use
+  `common/testing/committee-going-live.ts`. `putCommitteeInEditableStage()`'s
+  stage is flagged `IN_FORCE`.
+- **Nothing on the per-request path.** One additive migration
+  (`acc286_setup_committee_missing_seat`), run in the pre-deploy step.
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

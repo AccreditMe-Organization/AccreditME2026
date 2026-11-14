@@ -5657,6 +5657,7 @@ the committee tree wrong. The rules and their codes live in ONE file,
 | Not itself | own parent / reports to itself | `COMMITTEE_OWN_PARENT`, `COMMITTEE_REPORTS_TO_ITSELF` |
 | No loops | under one of its own sub-committees / reporting to a committee that reports to it | `COMMITTEE_PARENT_LOOP`, `COMMITTEE_REPORTS_TO_LOOP` |
 | Not dissolving | a parent or reports-to whose current stage is flagged `DISSOLVING` (ACC-255 PR 2; seeded on Dissolution Pending and Dissolved) | `COMMITTEE_PARENT_DISSOLVING`, `COMMITTEE_REPORTS_TO_DISSOLVING` |
+| In force (ACC-286) | a parent or reports-to that is not in force: its stage is not flagged `IN_FORCE`, or the committee is inactive. Checked after "not dissolving", whose sentence is more specific. §3.21.4 | `COMMITTEE_PARENT_NOT_LIVE`, `COMMITTEE_REPORTS_TO_NOT_LIVE` |
 | Owning unit | sent empty (`''`, or `null` on update) / missing, inactive or another organisation's | `COMMITTEE_UNIT_REQUIRED`, `COMMITTEE_UNIT_NOT_FOUND` |
 | Exists here | missing, or another organisation's | `COMMITTEE_PARENT_NOT_FOUND`, `COMMITTEE_REPORTS_TO_NOT_FOUND` |
 
@@ -5674,6 +5675,9 @@ from it. These were 404s with English labels before ACC-233.
   `FOR SHARE OF wi`, joined to its current stage's `flags` (§2.18): flagged
   `DISSOLVING` is dissolving, whatever the stage is named or keyed (ACC-255
   PR 2; it was the KEY before). No instance or no stage is not dissolving.
+  **ACC-286:** the same one query also reads `Committee.isActive`
+  (`targetStageFacts()`), and the target is IN FORCE when its stage is flagged
+  `IN_FORCE` and it is active. No instance or no stage is not in force.
 - **Only a value that CHANGES is checked** on update. The dialog sends every
   field, and a committee whose parent has since begun dissolving, or whose unit
   was since deactivated, must stay editable for its name.
@@ -5702,9 +5706,10 @@ transaction:
 `foundation/committees/committee-references.ts`):
 - **The pickers leave out what the server would refuse:** the committee itself,
   every committee whose `isDissolving` is true (computed on the server from the
-  key, so the frontend keeps no list of keys), and, when editing, every
-  committee whose chain leads back to this one. The saved value always stays in
-  its list.
+  key, so the frontend keeps no list of keys), every committee not in force
+  (ACC-286: `committeeListStatus()` of its `stageRules.flags` and `isActive`),
+  and, when editing, every committee whose chain leads back to this one. The
+  saved value always stays in its list.
 - **A refusal is said from its code under its field**
   (`committee.refusal.*`, both languages), never from the English `message`.
   The dialog stays open and keeps what was typed. A refusal with no field gets
@@ -6698,6 +6703,93 @@ the seat. The transfer never waits for this, and nothing here removes a seat.
   isolation), `committee-transfer-notice.db-spec.ts` (real rows), the hook tests
   in `user.service.spec.ts`, and the worker registration spec. Mutation-checked.
 - **No migration.**
+
+### 3.21.4 Required seats, going live, and live references (ACC-286)
+
+Plan, Ahmad's answers (14 Nov, A1–A8) and the as-built notes:
+`backend/Plans/step-286-committee-structure-rules.md` (§9, §10). Lane A's part:
+`backend/Plans/step-286-lane-a.md`. PR 1 ships the rules; PR 2 ships the Setup
+health detector.
+
+**A required seat** is a `committee_member_role` value whose attributes say
+`required: true`.
+- **The default lives on the shared SYSTEM rows** (Ahmad, A1): Chairman and
+  Secretary. `seedSystemData()` writes them on EVERY deploy
+  (`.railway/railway.ts` `preDeploy` → `scripts/pre-deploy.sh` →
+  `seed-system-lookups.cli.ts`), so every organisation has the default and no
+  backfill exists.
+- **An organisation unticks (or ticks) a seat through its override row**
+  (§6.2, `PATCH /lookups/values/:id/attributes`); its own seats carry
+  `required` like any attribute. A hidden seat is not required.
+- **ONE reader: `foundation/committees/committee-seat-rules.ts`.**
+  `requiredSeats()` is one raw query that answers exactly what `getValues()`
+  shows, filtered by `required` (a db-spec pins the two together);
+  `seatHolders()` and `activeMemberCount()` count members. Every rule below
+  reads them. Never a second copy.
+- **Who counts** (A3): an active membership of a user whose status is `ACTIVE`.
+  An invited, inactive or suspended user fills no seat and is no member for
+  the quorum. Deactivation ends no membership (ACC-306), so a departed
+  Chairman's seat is EMPTY for every rule while the row stays.
+
+**Rule 2 — going live** (`TRANSITION_PRECONDITIONS.COMMITTEE`, A2).
+- **When:** a move of any kind INTO a stage flagged `IN_FORCE` FROM a stage
+  that is not (`goesLive()`), read from the flags, never a key. On the seed:
+  Terms Review → Active. Active ↔ Suspended is not going live (both in force),
+  so a committee already in force can still be suspended.
+- **Checks, in order:** fewer active members than the quorum → 409
+  `COMMITTEE_MEMBERS_BELOW_QUORUM` `{ quorum, members }`; any required seat
+  empty → 409 `COMMITTEE_REQUIRED_SEATS_EMPTY` `{ seats: [{ id, labelEn,
+  labelAr }] }`, in seat order. Nothing moves.
+- **Leaving Formation** keeps ACC-238's `COMMITTEE_QUORUM_NOT_SET` only; on the
+  seed it leads to Terms Review, which is not in force.
+- **It runs early and again inside the stage-change transaction** (the
+  authoritative one), where the committee row is read `FOR SHARE`. The engine
+  passes both stages' flags; an early caller reads the destination's flags,
+  and only for a record type with a precondition (`hasTransitionPrecondition()`).
+- **On the record page** (`workflow-transition-actions`): the numbers through
+  the plural object `workflow.membersBelowQuorum`, the seats by their names in
+  the reader's language joined by `common.listSeparator`; plain sentences if
+  the body cannot be read. Never the server's English.
+
+**Rule 3 — keeping a required seat filled** (`removeMember`,
+`changeMemberRole`).
+- After `assertStage()` (the instance `FOR SHARE`, which now returns the
+  stage's rules), each takes the **committee row `FOR UPDATE`**, then reads the
+  member. Instance, then committee row: the engine's order and
+  `updateCommittee()`'s.
+- **Only while the stage is flagged `IN_FORCE`:** if the member fills a
+  required seat (an ACTIVE user) and nobody else does, 409
+  `COMMITTEE_REQUIRED_SEAT_LAST_HOLDER` `{ seat: { id, labelEn, labelAr } }`,
+  nothing written. A change of role within the same seat is not checked. A
+  member whose user is not ACTIVE fills nothing, so removing them is allowed.
+- **Proved against a real Postgres:** two removals of two Chairmen at once,
+  exactly one lands (ten rounds); Approve and removing the only Chairman at
+  once, never both, never a deadlock (ten rounds).
+- **The transfer wizard** removes seats through the same endpoint (A5); what
+  it must say is lane A's (`step-286-lane-a.md` §3).
+- **Screens:** Remove member and Change role say
+  `committee.refusal.requiredSeatLastHolder` ("Appoint another {{seat}}
+  first.") from the code (`committeeSeatRefusal()`).
+
+**Rule 4 — only a committee in force can be pointed at:** §3.15.
+
+**Setup health:** `COMMITTEE_MISSING_REQUIRED_SEAT`, deferred in PR 1 (§13.2).
+The frontend already reads it (type, order, Fix, wording), so PR 2 only writes
+it.
+
+**Specs:** `committee-seat-rules.db-spec.ts`, `committee-going-live.db-spec.ts`,
+`committee-reference-checks.db-spec.ts` (extended), `transition-preconditions.spec.ts`,
+and the unit and screen specs beside each change. Engine db-specs that move a
+committee into Active use `common/testing/committee-going-live.ts`
+(`untickRequiredSeats()`, `seatMembersForQuorum()`), and
+`putCommitteeInEditableStage()`'s stage is flagged `IN_FORCE`.
+Mutation-checked (plan §10).
+
+**Per-request path:** nothing added. Each check runs only on the write that
+needs it.
+
+**One additive migration:** `20261115000000_acc286_setup_committee_missing_seat`
+(the enum value).
 
 ## 4. Notification System
 
@@ -7830,6 +7922,19 @@ time (`lookup.service.ts`, `getValues()`):
    original if the override field itself is null), everything else
    about the SYSTEM value unchanged. If no TENANT row matches → the
    SYSTEM value passes through as-is.
+   **ACC-286 — and the override's `attributes` merge over the SYSTEM
+   value's KEY BY KEY** (`mergeAttributes()`), never replacing the whole
+   object: a label-only override (a renamed committee seat) keeps every
+   shared default. The organisation sets its own values on a SYSTEM value
+   with `PATCH /lookups/values/:id/attributes` (`overrideAttributes()`,
+   `lookups:manage`): only keys the category's `attributeSchema` declares,
+   each of its declared type (boolean, number, else string), else 400
+   `LOOKUP_ATTRIBUTE_INVALID` naming the key, nothing written; `null`
+   removes the organisation's own value for that key; keys not sent keep
+   what the override has; audited (UPDATE on LookupValue, before and
+   after). It upserts the same override row as hide and the label. This is
+   the first place the backend checks attributes against the schema; a
+   tenant's own values (create, update) are still not checked.
 4. Any TENANT row **not** matched to a SYSTEM value by key is a
    genuinely tenant-added value — included as-is.
 5. Result re-sorted by `sortOrder`.
@@ -7842,7 +7947,9 @@ same category — not by any separate type field:
 (b) `labelOverrideEn`/`labelOverrideAr` set, `isHidden: false` → relabels
 a SYSTEM value,
 (c) `key` matches no SYSTEM value → a genuinely new tenant-defined value.
-`hideSystemValue()`/`unhideSystemValue()`/`overrideLabel()` all
+**ACC-286:** an (a)/(b) row may also carry `attributes`, the organisation's
+own values for that SYSTEM value's attributes (above).
+`hideSystemValue()`/`unhideSystemValue()`/`overrideLabel()`/`overrideAttributes()` all
 `upsert()` against the same `@@unique([categoryId, key, organizationId])`
 constraint precisely to create/reuse the same underlying row for
 purposes (a)/(b) rather than risk two conflicting TENANT rows for one
@@ -13041,6 +13148,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
+| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | — | **deferred in PR 1**: the value, its migration and every reader ship first, and it is in `DEFERRED_SETUP_CONDITION_TYPES`, so nothing writes it. PR 2 adds the detector (a committee in force with an empty required seat) and reports it. Fix: `/committees/:id` (`committees:view` + `committees:add_member`). §3.21.4 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a
