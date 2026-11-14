@@ -45,6 +45,7 @@ import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
 import type { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { applyWorkflowSeed } from './workflow-seed-apply';
+import { seatMembersForQuorum, untickRequiredSeats } from '../../common/testing/committee-going-live';
 import { writeStartingAssignments } from './workflow-who';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 
@@ -106,6 +107,8 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     const slug = `acc271l-${randomUUID().slice(0, 8)}`;
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
     await applyWorkflowSeed(prisma, o.id, [COMMITTEE_SEED]);
+    // ACC-286 — going live needs every required seat filled; this spec is about the engine.
+    await untickRequiredSeats(prisma, o.id);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Quality', code: `Q-${slug}` } });
     let n = 0;
@@ -173,6 +176,8 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     const stays = await o.person('Stays', { positionId: post.id, primaryOrgUnitId: o.unitId });
     const t = await termsReviewAll(o, [{ kind: 'POSITION_IN_UNIT', positionId: post.id, orgUnitId: o.unitId }]);
     const c = await committeeEnteringTermsReview(o);
+    // ACC-286 — its quorum met, so Approve can put it in force. The pool is a position's, not the committee's.
+    await seatMembersForQuorum(prisma, o.id, c.committeeId);
 
     // Entering the stage recorded who its pool starts with.
     expect((await events(c.entryId)).map((e) => `${e.kind}:${e.userId}`).sort()).toEqual([`POOL_MEMBER_JOINED:${leaves}`, `POOL_MEMBER_JOINED:${stays}`].sort());

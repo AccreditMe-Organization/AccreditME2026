@@ -32,6 +32,7 @@ import { WorkflowService } from './workflow.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
 import { applyWorkflowSeed } from './workflow-seed-apply';
+import { untickRequiredSeats } from '../../common/testing/committee-going-live';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import type { WorkflowInstanceStageOutcome } from '../../../generated/prisma/client';
 
@@ -74,6 +75,8 @@ describe('Stage history reads RETURNED and EXITED, and the engine writes them by
     const slug = `acc202-${randomUUID().slice(0, 8)}`;
     const org = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } })).id;
     await applyWorkflowSeed(prisma, org, [COMMITTEE_SEED]);
+    // ACC-286 — going live needs every required seat filled; this spec is about the engine.
+    await untickRequiredSeats(prisma, org);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: org, objectType: 'COMMITTEE', isDefault: true } });
     const stage = async (key: string) => (await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key } })).id;
     const [formation, terms, active, dissolved] = [await stage('formation'), await stage('terms_review'), await stage('active'), await stage('dissolved')];
