@@ -2739,9 +2739,10 @@ authoritative time-zone field); decisions and evidence in
   sentence needs an ICU `select` (gender, say), weighed against that sentence.
 - **`WorkingCalendar.timezone` is the tenant's time zone (D3)** — the zone the
   SLA engine computes due dates in, so the screen and the engine cannot
-  disagree. `Organization.timezone` is read by nothing that computes a date.
-  Two fields holding one fact is the ACC-82 stale-flag shape; merging them is
-  ACC-97.
+  disagree. **ACC-97 retired `Organization.timezone`** (Ahmad, 13 Nov): two
+  fields holding one fact is the ACC-82 stale-flag shape, so nothing reads or
+  writes it, `GET /tenant` no longer returns it, and `PATCH /tenant` refuses it
+  (400). Dropping the column follows in a later contract migration.
 - **Hijri is display only (D4):** Hijri first, Gregorian in brackets, from the
   platform's `Intl` Umm al-Qura calendar. Anything a person types or picks,
   and anything machine-readable, stays Gregorian.
