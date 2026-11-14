@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserController } from './user.controller';
+import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 import { UserService, toSafeUser } from './user.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
@@ -30,7 +31,13 @@ describe('UserController', () => {
     removeRoleFromUser: jest.Mock;
   };
 
+  let mfaReset: { twoStepFor: jest.Mock; resetMfa: jest.Mock };
+
   beforeEach(async () => {
+    mfaReset = {
+      twoStepFor: jest.fn().mockResolvedValue(null),
+      resetMfa: jest.fn().mockResolvedValue(undefined),
+    };
     service = {
       // ACC-78 — the envelope, not a bare array.
       listUsers: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 25 }),
@@ -63,7 +70,10 @@ describe('UserController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
-      providers: [{ provide: UserService, useValue: service }],
+      providers: [
+        { provide: UserService, useValue: service },
+        { provide: UserMfaResetService, useValue: mfaReset },
+      ],
     })
       .overrideGuard(TenantGuard)
       .useValue({ canActivate: () => true })
@@ -114,13 +124,13 @@ describe('UserController', () => {
       actingUser: null,
     };
     service.resolveReferenceNames.mockResolvedValue(references);
-    const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, []);
+    const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, [], undefined);
     expect(service.resolveReferenceNames).toHaveBeenCalledWith({ id: USER_ID }, TENANT_ID);
     expect(result.references).toEqual(references);
   });
 
   it('getById delegates to UserService.getByIdForViewer with actor context', async () => {
-    await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view']);
+    await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view'], undefined);
     expect(service.getByIdForViewer).toHaveBeenCalledWith(USER_ID, TENANT_ID, USER_ID, ['users:view']);
   });
 
@@ -128,8 +138,28 @@ describe('UserController', () => {
   // the service's own read; true and false both reach the response.
   it.each([true, false])('getById passes isAccountOwner %s through', async (isAccountOwner) => {
     service.getByIdForViewer.mockResolvedValue({ id: USER_ID, isAccountOwner });
-    const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view']);
+    const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view'], undefined);
     expect(result.isAccountOwner).toBe(isAccountOwner);
+  });
+
+  // ACC-164 — someone else's two-step sign-in is decided by UserMfaResetService
+  // (rule 4: only people allowed to reset it see it), from the record's own read.
+  it('getById asks the reset rule about the record it read, with whether the viewer is impersonating', async () => {
+    service.getByIdForViewer.mockResolvedValue({ id: 'u-other', isAccountOwner: false, twoFactorEnabled: true });
+    mfaReset.twoStepFor.mockResolvedValue({ enabled: true, mayReset: false });
+    const result = await controller.getById('u-other', TENANT_ID, USER_ID, ['users:reset_mfa'], 'platform-admin');
+    expect(mfaReset.twoStepFor).toHaveBeenCalledWith(
+      TENANT_ID,
+      { id: USER_ID, permissions: ['users:reset_mfa'], impersonating: true },
+      { id: 'u-other', isAccountOwner: false, twoFactorEnabled: true },
+    );
+    expect(result.twoStep).toEqual({ enabled: true, mayReset: false });
+    expect(result).not.toHaveProperty('twoFactorEnabled');
+  });
+
+  it('resetMfa delegates with the caller and whether they are impersonating', async () => {
+    await controller.resetMfa('u-other', TENANT_ID, USER_ID, undefined);
+    expect(mfaReset.resetMfa).toHaveBeenCalledWith('u-other', TENANT_ID, USER_ID, false);
   });
 
   // ACC-46 Section 2.6.b Step 2
@@ -314,7 +344,7 @@ describe('UserController', () => {
 
     it('getById strips invitationToken and every other internal-only field', async () => {
       service.getByIdForViewer.mockResolvedValue(RAW_USER_WITH_SECRETS);
-      const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view']);
+      const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view'], undefined);
       for (const field of SENSITIVE_FIELDS) expect(result).not.toHaveProperty(field);
       expect(result.id).toBe(USER_ID);
     });

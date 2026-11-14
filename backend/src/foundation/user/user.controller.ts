@@ -7,6 +7,8 @@ import { CurrentTenant } from '../../common/decorators/current-tenant.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { UserService, toSafeUser } from './user.service';
+import { ImpersonatedBy } from '../../common/decorators/impersonated-by.decorator';
+import { TwoStepForViewer, UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
 import { ValidateTransferPositionDto } from './dto/validate-transfer-position.dto';
@@ -25,7 +27,11 @@ import { ITransferResult } from './interfaces/transfer-result.interface';
 @Controller('users')
 @UseGuards(TenantGuard, PermissionGuard)
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    // ACC-164 — the administrator reset of two-step sign-in.
+    private readonly mfaReset: UserMfaResetService,
+  ) {}
 
   @Get()
   @Permissions(USERS_PERMISSIONS.VIEW)
@@ -97,14 +103,21 @@ export class UserController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
-  ): Promise<IUser & { references: IUserReferenceNames; isAccountOwner: boolean }> {
+    @ImpersonatedBy() impersonatedBy: string | undefined,
+  ): Promise<IUser & { references: IUserReferenceNames; isAccountOwner: boolean; twoStep: TwoStepForViewer | null }> {
     // ACC-45 — see listUsers() above.
     const user = await this.userService.getByIdForViewer(id, tenantId, actorId, actorPermissions);
     // ACC-79 — names for the ids on the record, so a read-only profile can show
     // them without the permission-gated lists (see IUserReferenceNames).
     const references = await this.userService.resolveReferenceNames(user, tenantId);
+    // ACC-164 — someone else's two-step sign-in, only for those allowed to reset it.
+    const twoStep = await this.mfaReset.twoStepFor(
+      tenantId,
+      { id: actorId, permissions: actorPermissions, impersonating: impersonatedBy !== undefined },
+      { id: user.id, isAccountOwner: user.isAccountOwner, twoFactorEnabled: user.twoFactorEnabled },
+    );
     // ACC-221 — read in getByIdForViewer()'s own query, not a second request.
-    return { ...toSafeUser(user), isAccountOwner: user.isAccountOwner, references };
+    return { ...toSafeUser(user), isAccountOwner: user.isAccountOwner, references, twoStep };
   }
 
   @Post('invite')
@@ -214,6 +227,21 @@ export class UserController {
   ): Promise<ITransferResult> {
     const result = await this.userService.transferUser(id, dto, tenantId, actorId);
     return { ...result, user: toSafeUser(result.user) };
+  }
+
+  // ACC-164 — reset another person's two-step sign-in. The rule (yourself,
+  // impersonating, the account owner, the Organization Administrator floor) is
+  // UserMfaResetService's, shared with the record read above.
+  @Post(':id/mfa/reset')
+  @Permissions(USERS_PERMISSIONS.RESET_MFA)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  resetMfa(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+    @ImpersonatedBy() impersonatedBy: string | undefined,
+  ): Promise<void> {
+    return this.mfaReset.resetMfa(id, tenantId, actorId, impersonatedBy !== undefined);
   }
 
   @Post(':id/deactivate')
