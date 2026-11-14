@@ -1095,6 +1095,9 @@
       "openedFrom": "Opened from “{{transition}}”"
     },
     "refusal": {
+      "requiredSeatsEmpty": "Fill the required seats first: {{seats}}.",
+      "requiredSeatsEmptyPlain": "Fill the committee's required seats first.",
+      "membersBelowQuorum": "Add members first: this committee has fewer members than its quorum.",
       "actionTypeRetired": "Create task is no longer an action. Add tasks to the destination stage instead.",
       "validatorRetired": "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves.",
       "stageActionNotAllowed": "This can't be done while the record is at its current stage.",
@@ -1373,6 +1376,9 @@
       "stage": "Stage"
     },
     "refusal": {
+      "parentNotLive": "Choose a parent committee that is in force.",
+      "reportsToNotLive": "Choose a committee that is in force to report to.",
+      "requiredSeatLastHolder": "Appoint another {{seat}} first.",
       "ownParent": "A committee can't be its own parent committee.",
       "parentLoop": "A committee can't sit under one of its own sub-committees.",
       "parentDissolving": "A committee that is being dissolved, or has been, can't be a parent committee.",
@@ -2419,6 +2425,7 @@
       "AT_RISK": "At risk"
     },
     "types": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Committee missing a required seat",
       "ORG_UNIT_WITHOUT_HEAD": "Org unit without a head",
       "ORG_UNIT_WITHOUT_TYPE": "Org unit without a type",
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
@@ -2433,6 +2440,7 @@
       "template": "Workflow: {{name}}"
     },
     "consequence": {
+      "committeeMissingSeat": "Required seats with no one in them: {{seats}}.",
       "unitCovered": "No head. Work routed to its head escalates to a parent unit or an acting head in the meantime.",
       "unitUncovered": "No head, and no one covers it by escalation. Approvals and escalations routed to its head have nowhere to go.",
       "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
@@ -2462,6 +2470,7 @@
       "detected": "First detected {{relative}}"
     },
     "fix": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Appoint members",
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
       "ORG_UNIT_WITHOUT_TYPE": "Set type",
       "STAGE_WITHOUT_ASSIGNEE": "Review stage",
@@ -2473,6 +2482,7 @@
       "STAGE_ON_STARTING_ASSIGNMENT": "Review stage"
     },
     "fixNeeds": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Fixing this needs permission to add committee members.",
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
       "ORG_UNIT_WITHOUT_TYPE": "Fixing this needs permission to manage the organization structure.",
       "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
@@ -3042,6 +3052,10 @@
       }
     },
     "workflow": {
+      "membersBelowQuorum": {
+        "one": "Add members first: the quorum needs {{count}} member, and this committee has {{members}}.",
+        "other": "Add members first: the quorum needs {{count}} members, and this committee has {{members}}."
+      },
       "editorChanges": {
         "one": "{{count}} change",
         "other": "{{count}} changes"

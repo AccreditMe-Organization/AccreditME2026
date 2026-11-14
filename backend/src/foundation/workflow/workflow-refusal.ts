@@ -22,6 +22,9 @@ export type WorkflowRefusalCode =
   | 'VALIDATOR_RETIRED'
   // ACC-238 — a transition precondition (transition-preconditions.ts).
   | 'COMMITTEE_QUORUM_NOT_SET'
+  // ACC-286 — a committee goes live only with its quorum of members and every required seat filled.
+  | 'COMMITTEE_MEMBERS_BELOW_QUORUM'
+  | 'COMMITTEE_REQUIRED_SEATS_EMPTY'
   // ACC-239 — an edit to a template whose shape code relies on (PROTECTED_TEMPLATES).
   | 'WORKFLOW_TEMPLATE_PROTECTED'
   // ACC-255 — stage rules: what a stage allows (StageRulesService) and what a stage save may name.
@@ -81,6 +84,8 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   ACTION_TYPE_RETIRED: HttpStatus.BAD_REQUEST,
   VALIDATOR_RETIRED: HttpStatus.BAD_REQUEST,
   COMMITTEE_QUORUM_NOT_SET: HttpStatus.CONFLICT,
+  COMMITTEE_MEMBERS_BELOW_QUORUM: HttpStatus.CONFLICT,
+  COMMITTEE_REQUIRED_SEATS_EMPTY: HttpStatus.CONFLICT,
   WORKFLOW_TEMPLATE_PROTECTED: HttpStatus.CONFLICT,
   STAGE_ACTION_NOT_ALLOWED: HttpStatus.CONFLICT,
   STAGE_ACTION_UNKNOWN: HttpStatus.BAD_REQUEST,
@@ -132,6 +137,8 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   ACTION_TYPE_RETIRED: 'Create task is no longer an action. Add tasks to the destination stage instead',
   VALIDATOR_RETIRED: "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves",
   COMMITTEE_QUORUM_NOT_SET: 'Set a quorum of at least 1 before submitting this committee for approval',
+  COMMITTEE_MEMBERS_BELOW_QUORUM: 'Add members first: this committee has fewer members than its quorum',
+  COMMITTEE_REQUIRED_SEATS_EMPTY: 'Fill the required seats first',
   WORKFLOW_TEMPLATE_PROTECTED:
     'The committee change request workflow is fixed: its stages can be renamed and given deadlines, and nothing else changed',
   STAGE_ACTION_NOT_ALLOWED: "This can't be done while the record is at its current stage",

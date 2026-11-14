@@ -9,7 +9,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../.
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
-import { FORMATION_RULES } from '../../testing';
+import { ACTIVE_RULES } from '../../testing';
 
 // ACC-233 — the committee dialog leaves out what the server would refuse, says
 // a refusal from its code under the field it is about, keeps what was typed,
@@ -41,7 +41,8 @@ const committee = (id: string, over: Partial<CommitteeListItemDto> = {}): Commit
   memberCount: 7,
   currentStageNameEn: null,
   currentStageNameAr: null,
-  stageRules: FORMATION_RULES,
+  // ACC-286 — in force, so the pickers may offer it (only a committee in force can be a parent).
+  stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: null,
   ...over,

@@ -3,7 +3,14 @@ import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { WorkflowService, WorkflowInstanceDto, WorkflowMoveDto } from '../../services/workflow.service';
-import { OpenStageTask, openStageTasks, plainWorkflowRefusalKey } from '../../workflow-refusal';
+import {
+  OpenStageTask,
+  membersBelowQuorum,
+  openStageTasks,
+  plainWorkflowRefusalKey,
+  requiredSeatsEmpty,
+} from '../../workflow-refusal';
+import { FormatService } from '../../../../core/formatting';
 import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -90,6 +97,7 @@ export class WorkflowTransitionActionsComponent {
   /** ACC-208 — a move refused for open mandatory tasks: what was pressed, where to, and which tasks. */
   readonly cantMove = signal<{ label: string; toStage: string; tasks: OpenStageTask[] } | null>(null);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
 
   /** "Infection Control Committee · Terms Review" — the record, then the stage it is held in. */
   readonly refusalContext = computed(() => {
@@ -133,9 +141,27 @@ export class WorkflowTransitionActionsComponent {
           });
           return;
         }
-        this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.errorTransition'));
+        this.error.set(this.goingLiveRefusal(err) ?? plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.errorTransition'));
       },
     });
+  }
+
+  /**
+   * ACC-286 — a committee refused going live, in words: how many members it
+   * has against its quorum, or which required seats are empty (tenant data,
+   * named in the reader's language). Null for any other refusal.
+   */
+  private goingLiveRefusal(err: unknown): string | null {
+    const below = membersBelowQuorum(err);
+    if (below) return this.format.count('workflow.membersBelowQuorum', below.quorum, { members: this.format.number(below.members) });
+    const seats = requiredSeatsEmpty(err);
+    if (seats) {
+      const names = seats
+        .map((s) => this.languageService.bilingual(s.labelEn, s.labelAr))
+        .join(this.translate.instant('common.listSeparator'));
+      return this.translate.instant('workflow.refusal.requiredSeatsEmpty', { seats: names || '—' }) as string;
+    }
+    return null;
   }
 
   private loadTransitions(instance: WorkflowInstanceDto): void {

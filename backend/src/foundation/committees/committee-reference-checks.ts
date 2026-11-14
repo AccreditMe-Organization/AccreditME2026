@@ -23,6 +23,9 @@ export const COMMITTEE_REFUSALS = {
   COMMITTEE_REPORTS_TO_LOOP: "A committee can't report to a committee that reports to it.",
   COMMITTEE_PARENT_DISSOLVING: "A committee that is being dissolved, or has been, can't be a parent committee.",
   COMMITTEE_REPORTS_TO_DISSOLVING: "A committee can't report to a committee that is being dissolved, or has been.",
+  // ACC-286 — only a committee in force (its stage flagged IN_FORCE, and active) can be pointed at.
+  COMMITTEE_PARENT_NOT_LIVE: 'Choose a parent committee that is in force.',
+  COMMITTEE_REPORTS_TO_NOT_LIVE: 'Choose a committee that is in force to report to.',
   COMMITTEE_PARENT_NOT_FOUND: "That parent committee doesn't exist.",
   COMMITTEE_REPORTS_TO_NOT_FOUND: "That committee doesn't exist.",
   COMMITTEE_UNIT_REQUIRED: 'Choose the unit that owns this committee.',
@@ -76,7 +79,9 @@ export async function assertCommitteeReferences(tx: Tx, change: CommitteeReferen
     if (committeeId && (await parentChainReaches(tx, target, committeeId, organizationId))) {
       throw new CommitteeReferenceRefusal('COMMITTEE_PARENT_LOOP');
     }
-    if (await isDissolving(tx, target, organizationId, logger)) throw new CommitteeReferenceRefusal('COMMITTEE_PARENT_DISSOLVING');
+    const facts = await targetStageFacts(tx, target, organizationId, logger);
+    if (facts.dissolving) throw new CommitteeReferenceRefusal('COMMITTEE_PARENT_DISSOLVING');
+    if (!facts.live) throw new CommitteeReferenceRefusal('COMMITTEE_PARENT_NOT_LIVE');
   }
 
   if (change.reportingToCommitteeId) {
@@ -86,9 +91,9 @@ export async function assertCommitteeReferences(tx: Tx, change: CommitteeReferen
     if (committeeId && (await reportsToChainReaches(tx, target, committeeId, organizationId))) {
       throw new CommitteeReferenceRefusal('COMMITTEE_REPORTS_TO_LOOP');
     }
-    if (await isDissolving(tx, target, organizationId, logger)) {
-      throw new CommitteeReferenceRefusal('COMMITTEE_REPORTS_TO_DISSOLVING');
-    }
+    const facts = await targetStageFacts(tx, target, organizationId, logger);
+    if (facts.dissolving) throw new CommitteeReferenceRefusal('COMMITTEE_REPORTS_TO_DISSOLVING');
+    if (!facts.live) throw new CommitteeReferenceRefusal('COMMITTEE_REPORTS_TO_NOT_LIVE');
   }
 
   if (change.orgUnitId !== undefined) {
@@ -139,24 +144,37 @@ async function reportsToChainReaches(tx: Tx, start: string, committeeId: string,
 }
 
 /**
- * Whether the committee's CURRENT stage — its newest COMMITTEE workflow
- * instance — is flagged DISSOLVING (ACC-255 PR 2: the stage's own meaning,
- * configured per tenant, never its key, name or order).
+ * What the target committee's CURRENT stage — its newest COMMITTEE workflow
+ * instance — means (ACC-255 PR 2: the stage's own flags, configured per
+ * tenant, never its key, name or order), in ONE query:
+ * - `dissolving`: the stage is flagged DISSOLVING;
+ * - `live` (ACC-286): the stage is flagged IN_FORCE AND the committee is active.
  *
  * The instance row is read FOR SHARE: a transition on that committee takes the
- * instance's row lock (ACC-190), so a dissolution already in flight finishes
- * before this answers, and one started now waits for this save.
+ * instance's row lock (ACC-190), so a move already in flight finishes before
+ * this answers, and one started now waits for this save.
  *
- * A committee with no instance or no current stage is not dissolving.
+ * A committee with no instance or no current stage is neither dissolving nor
+ * live.
  */
-async function isDissolving(tx: Tx, committeeId: string, organizationId: string, _logger: Logger): Promise<boolean> {
-  const rows = await tx.$queryRaw<{ flags: string[] | null }[]>`
-    SELECT ws."flags" AS "flags"
+async function targetStageFacts(
+  tx: Tx,
+  committeeId: string,
+  organizationId: string,
+  _logger: Logger,
+): Promise<{ dissolving: boolean; live: boolean }> {
+  const rows = await tx.$queryRaw<{ flags: string[] | null; isActive: boolean | null }[]>`
+    SELECT ws."flags" AS "flags",
+           (SELECT c."isActive" FROM "Committee" c WHERE c.id = wi."objectId" AND c."organizationId" = wi."organizationId") AS "isActive"
     FROM "WorkflowInstance" wi
     LEFT JOIN "WorkflowStage" ws ON ws.id = wi."currentStageId"
     WHERE wi."organizationId" = ${organizationId} AND wi."objectType" = 'COMMITTEE' AND wi."objectId" = ${committeeId}
     ORDER BY wi."createdAt" DESC
     LIMIT 1
     FOR SHARE OF wi`;
-  return (rows[0]?.flags ?? []).includes(STAGE_FLAG.DISSOLVING);
+  const flags = rows[0]?.flags ?? [];
+  return {
+    dissolving: flags.includes(STAGE_FLAG.DISSOLVING),
+    live: flags.includes(STAGE_FLAG.IN_FORCE) && rows[0]?.isActive === true,
+  };
 }
