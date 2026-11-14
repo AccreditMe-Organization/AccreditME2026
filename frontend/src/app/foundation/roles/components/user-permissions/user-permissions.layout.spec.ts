@@ -18,6 +18,7 @@ import { grant, nouraGrants, person } from '../../permission-matrix/user-permiss
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-272 — "A user's permissions" laid out, EN and AR, at 1280, 988, 390 and
 // 328: one column, nothing sideways at any depth, and long names, source lines
@@ -61,6 +62,7 @@ class MainHostComponent {
 }
 
 describe('UserPermissionsComponent layout (ACC-272)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<MainHostComponent>;
   const measured: string[] = [];

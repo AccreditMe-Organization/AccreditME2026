@@ -17,6 +17,7 @@ import { CommitteeMemberDto } from '../../services/committee.service';
 import { CommitteeMemberFormComponent, addMemberRefusal } from './committee-member-form.component';
 import { HttpErrorResponse } from '@angular/common/http';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-120 slice 4 — Add member: the person picker as its own layer, the joined
 // date, the field wrapper, and refusals said from their status. Hosted the way
@@ -77,6 +78,7 @@ class HostComponent {
 }
 
 describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => {
+  useLayoutFonts({ rtl: true });
   // The Dissolved-stage refusal is also said in Arabic, which turns <html> right to left.
   preserveDocumentLanguage();
 
@@ -476,6 +478,7 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
 
 // A pure function: no form, no HTTP.
 describe('addMemberRefusal (ACC-120 slice 4)', () => {
+  useLayoutFonts({ rtl: true });
   it('maps each status to its own sentence', () => {
     const err = (status: number) => new HttpErrorResponse({ status });
     expect(addMemberRefusal(err(409))).toBe('committee.memberForm.errorAlreadyMember');

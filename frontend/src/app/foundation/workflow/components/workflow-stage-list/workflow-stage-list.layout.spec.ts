@@ -17,6 +17,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowStageListComponent } from './workflow-stage-list.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-254 (ACC-255 PR 3, plan §10.1) — /workflows/:id/stages, MEASURED in the
 // real theme, font and translations, at the widths the page's content column
@@ -151,6 +152,7 @@ class StagesHost {
 }
 
 describe('WorkflowStageListComponent — the stages page fits its column (ACC-254)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<StagesHost>;
   let http: HttpTestingController;
@@ -190,7 +192,6 @@ describe('WorkflowStageListComponent — the stages page fits its column (ACC-25
     (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="stage-expand"]')!.click();
     fixture.detectChanges();
     drain();
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     fixture.detectChanges();
     return fixture.nativeElement.querySelector('[data-host]') as HTMLElement;

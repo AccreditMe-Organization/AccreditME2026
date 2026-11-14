@@ -27,6 +27,7 @@ import { IdleWarningComponent } from '../../../../core/components/idle-warning/i
 import { AppShellComponent } from '../../../../layout/app-shell/app-shell.component';
 import { ALL_KINDS, WHO_RULES, storedEntry } from '../stage-who/stage-who-options.testing';
 import { WorkflowStageListComponent } from './workflow-stage-list.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-271 PR 5a — the Stages page scrolls in ONE place: the shell's <main>.
 // Found by Ahmad on Committee Management (an overflowing strip): the window
@@ -146,6 +147,7 @@ const media = (matches: boolean) =>
   ({ matches, addEventListener: () => undefined, removeEventListener: () => undefined }) as unknown as MediaQueryList;
 
 describe('WorkflowStageListComponent — one vertical scroll, inside the shell (ACC-271 PR 5a)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<AppShellComponent>;
   let http: HttpTestingController;
@@ -231,7 +233,6 @@ describe('WorkflowStageListComponent — one vertical scroll, inside the shell (
       fixture.detectChanges();
       await new Promise((r) => setTimeout(r, 0));
     }
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     fixture.detectChanges();
   }

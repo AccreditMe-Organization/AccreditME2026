@@ -15,6 +15,7 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-272 — the grouped list laid out, EN and AR, at 1280, 988, 390 and 328:
 // nothing sideways at any depth, the module heading sticky while its rows
@@ -60,6 +61,7 @@ class MainHostComponent {
 }
 
 describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<MainHostComponent>;
   const measured: string[] = [];

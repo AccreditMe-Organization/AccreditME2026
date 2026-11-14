@@ -12,6 +12,7 @@ import { FileViewerComponent } from './file-viewer.component';
 import { IFileViewerRequest, IViewableFile } from './file-viewer.model';
 import { IFileSummaryView, SummaryLanguage } from './file-summary.model';
 import { PdfJsLoader } from './pdf-loader';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-193 — Summarize in the viewer: the header button, the panel above the
 // file, and every state from the drawing.
@@ -87,6 +88,7 @@ class SummaryStub {
 }
 
 describe('FileViewerComponent — Summarize (ACC-193)', () => {
+  useLayoutFonts({ rtl: true });
   let bytes: BytesStub;
   let summaries: SummaryStub;
   let fixture: ComponentFixture<FileViewerComponent>;

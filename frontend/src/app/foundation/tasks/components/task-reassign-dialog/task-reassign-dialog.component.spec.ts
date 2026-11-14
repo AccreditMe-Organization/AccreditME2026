@@ -13,6 +13,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { ITaskDto } from '../../services/task.service';
 import { COMMITTEE_SCOPE } from '../task-assignee-picker/task-assignee-picker.component';
 import { TaskReassignDialogComponent, TaskRejection } from './task-reassign-dialog.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-163 — the reassign dialog, extracted from Unassigned tasks so the
 // committee record can host it for a rejected task's creator (Q4).
@@ -59,6 +60,7 @@ class HostComponent {
 }
 
 describe('TaskReassignDialogComponent (ACC-163, ACC-167)', () => {
+  useLayoutFonts();
   let http: HttpTestingController;
 
   function setup(

@@ -19,6 +19,7 @@ import { ITaskDraft } from '../../services/task.service';
 import { TaskFormComponent } from './task-form.component';
 import { TaskFormFooterComponent } from './task-form-footer.component';
 import { TaskFormStepsComponent } from './task-form-steps.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-197 — the 420px body cap (ACC-111), MEASURED and not assumed (ACC-120):
 // step 2 of New task in every state of "Draft with AI" — idle, working, the
@@ -136,6 +137,7 @@ class HostComponent {
 }
 
 describe('New task, step 2 with Draft with AI — the 420px body cap (ACC-197)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
 
   let http: HttpTestingController;
@@ -213,10 +215,7 @@ describe('New task, step 2 with Draft with AI — the 420px body cap (ACC-197)',
   /** The body's full content height — what it would need to show without scrolling. */
   async function measure(label: string, language: 'en' | 'ar', onScreen: string): Promise<number> {
     await settle();
-    // The real font, loaded — a fallback font wraps lines elsewhere.
-    await document.fonts.ready;
     await settle();
-    expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
     // Non-vacuity: the state under measurement is really on screen.
     expect(document.querySelector(onScreen)).withContext(`${label} [${language}]: ${onScreen} is not on screen`).not.toBeNull();
     const height = body().scrollHeight;

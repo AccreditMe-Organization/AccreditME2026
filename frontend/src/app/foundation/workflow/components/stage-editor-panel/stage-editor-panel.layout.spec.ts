@@ -18,6 +18,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowStageListComponent } from '../workflow-stage-list/workflow-stage-list.component';
 import { ALL_KINDS, WHO_RULES, storedEntry } from '../stage-who/stage-who-options.testing';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-255 PR 4b (plan §17.6) — the stages page with the stage editor panel
 // open, MEASURED in the real theme, font and translations, at the content
@@ -170,6 +171,7 @@ class Host {
 }
 
 describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<Host>;
   let http: HttpTestingController;
@@ -227,7 +229,6 @@ describe('StageEditorPanelComponent — the panel fits the page (ACC-255 PR 4b)'
     });
     fixture.detectChanges();
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     fixture.detectChanges();
     if (wideFont) {

@@ -9,6 +9,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { AppShellComponent } from './app-shell.component';
+import { useLayoutFonts } from '../../../testing/layout-fonts';
 
 function makeListContainer(
   cls: string,
@@ -30,6 +31,7 @@ function fireWheel(shell: AppShellComponent, target: HTMLElement, deltaY: number
 }
 
 describe('AppShellComponent scroll-boundary wheel guard (ACC-38)', () => {
+  useLayoutFonts();
   let shell: AppShellComponent;
 
   beforeEach(() => {

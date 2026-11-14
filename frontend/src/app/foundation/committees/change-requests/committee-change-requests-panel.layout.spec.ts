@@ -17,6 +17,7 @@ import { CommitteeChangeRequestsPanelComponent } from './committee-change-reques
 import { ChangeRequestDto, ChangeRequestListQuery, ChangeRequestService } from './change-request.service';
 import { fakePhone } from './change-request.testing';
 import { requestRow } from './committee-change-requests-panel.component.spec';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-240 — the Change requests panel and its See all, MEASURED in both
 // languages, in the real theme and font (ACC-230 / ACC-234's shape):
@@ -82,6 +83,7 @@ class PanelHost {
 }
 
 describe('Committee change requests panel — layout, measured (ACC-240)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
   let rows: ChangeRequestDto[] = [];
@@ -118,7 +120,6 @@ describe('Committee change requests panel — layout, measured (ACC-240)', () =>
 
   async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
   }
 
@@ -143,7 +144,6 @@ describe('Committee change requests panel — layout, measured (ACC-240)', () =>
             await settle(fixture);
 
             const el = fixture.nativeElement as HTMLElement;
-            expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
             const panel = el.querySelector<HTMLElement>('am-committee-change-requests-panel')!;
             const body = el.querySelector<HTMLElement>('[data-testid="committee-crs-body"]')!;
             // Non-vacuity: laid out, and as many rows as asked for.
