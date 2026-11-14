@@ -167,7 +167,7 @@ describe('TaskService — pools (ACC-167)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TaskService,
+        TaskService,
 
         { provide: TaskClosedNoticeService, useValue: { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) } },
         TaskAssignmentService,
@@ -797,7 +797,13 @@ describe('TaskService — pools (ACC-167)', () => {
 
   // ── departure ────────────────────────────────────────────────────────────
   describe('departure (reassignAllForUser)', () => {
-    const departing = (task: ReturnType<typeof poolTask>) => [{ id: `ta-${HOLDER_A}`, task }];
+    // ACC-165 — the departure's query finds the task, then reads it again under
+    // its row lock: that locked read answers first, any later read (the pool
+    // notice) keeps the test's own value.
+    const departing = (task: ReturnType<typeof poolTask>) => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(task);
+      return [{ taskId: task.id }];
+    };
 
     it.each([
       ['picked up', new Date()],
@@ -868,8 +874,9 @@ describe('TaskService — pools (ACC-167)', () => {
       );
     });
 
-    // This loop also reaches closed tasks (ACC-165's scope). Returning one to
-    // its pool would reopen it, so a closed task keeps the old behaviour.
+    // ACC-165 — a departure touches OPEN tasks only. A pool task that closed
+    // before its lock is never returned to its pool (that would reopen it),
+    // and nothing else is written either.
     it('never returns a CLOSED pool task to its pool', async () => {
       mockPrisma.taskAssignee.findMany.mockResolvedValue(departing(poolTask({ status: 'COMPLETED', assignees: [row(HOLDER_A)] })));
 
@@ -879,6 +886,9 @@ describe('TaskService — pools (ACC-167)', () => {
       expect(mockPrisma.task.update).not.toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ pooledAt: expect.any(Date) }) }),
       );
+      // ACC-165 — and nothing else: the leaver's row stays, no audit row.
+      expect(mockPrisma.taskAssignee.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
   });
 });
