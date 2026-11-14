@@ -983,16 +983,21 @@ export class WorkflowTemplateService {
       await this.lockTemplate(tx, stage.workflowTemplateId, organizationId);
       await tx.$queryRaw`SELECT id FROM "WorkflowStage" WHERE id = ${id} FOR UPDATE`;
 
-      // ACC-191 (Q4) — the transitions in and out go first, said from a code.
+      // ACC-191 — a stage a record has entered is kept: its history names it
+      // (WorkflowInstanceStage.stageId, RESTRICT). It can be renamed. Checked
+      // BEFORE the transitions: a stage records entered always has some, and
+      // "remove its transitions first" sent the admin to transitions that had
+      // run and could not be removed either (live check, 14 Nov). This is the
+      // final answer, so it is said first.
+      const recordCount = await this.recordsThatEntered(tx, id, organizationId);
+      if (recordCount > 0) throw new WorkflowRefusalException('STAGE_IN_USE', { recordCount });
+
+      // ACC-191 (Q4) — then the transitions in and out, said from a code: a
+      // stage nobody has entered can be removed once they are gone.
       const transitionCount = await tx.workflowTransition.count({
         where: { OR: [{ fromStageId: id }, { toStageId: id }], fromStage: { workflowTemplate: { organizationId } } },
       });
       if (transitionCount > 0) throw new WorkflowRefusalException('STAGE_HAS_TRANSITIONS', { transitionCount });
-
-      // ACC-191 — a stage a record has entered is kept: its history names it
-      // (WorkflowInstanceStage.stageId, RESTRICT). It can be renamed.
-      const recordCount = await this.recordsThatEntered(tx, id, organizationId);
-      if (recordCount > 0) throw new WorkflowRefusalException('STAGE_IN_USE', { recordCount });
 
       // ACC-57 — removing the starting stage while others remain leaves the
       // template with none (STAGE_INITIAL_REQUIRED, which replaced the old

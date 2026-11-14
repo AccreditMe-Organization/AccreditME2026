@@ -1743,7 +1743,8 @@ WorkflowActionType          CREATE_TASK, SEND_NOTIFICATION, GENERATE_PDF, LOCK_D
                             LOG_AUDIT, WEBHOOK
 WorkflowApprovalDecision    PENDING, APPROVED, APPROVED_WITH_COMMENTS, RETURNED, ABSTAINED
 WorkflowInstanceStageOutcome PENDING, APPROVED, REJECTED, SKIPPED,
-                            RETURNED, EXITED (ACC-202; read since PR 1, written from PR 2 — §2.20)
+                            RETURNED, EXITED (ACC-202, §2.20: RETURN and EXIT write these
+                            since PR 2; REJECTED is what older ones wrote)
 ```
 
 **Code comment worth preserving verbatim** (`workflow.service.ts`, the "NOTE on SEQUENTIAL/COMMITTEE" comment):
@@ -3695,8 +3696,8 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - **A vote cast before ACC-284** names no move, and counts for the stage's
     ADVANCE moves, as it did.
 - **The outcome stored on the entry:** ADVANCE → APPROVED; RETURN and EXIT → REJECTED.
-  To be superseded (ACC-202 PR 2): RETURN → RETURNED, EXIT → EXITED, on every path. PR 1
-  adds the values and the reader only (§2.20).
+  Superseded (ACC-202 PR 2): RETURN → RETURNED and EXIT → EXITED, on every path,
+  from `stageExitOutcome(kind)` (§2.20.3).
 - **The gate (ACC-190 J):** for an ADVANCE, only the DECIDING vote is checked against
   open mandatory tasks, before it is recorded.
 - **`submitApproval()`** (no frontend caller) finds its move by kind:
@@ -3832,7 +3833,11 @@ it does to a delete:
 
 - **Each check runs inside the delete's transaction, after `FOR UPDATE` on the
   row:**
-  - `removeStage`: the template lock, then the stage row;
+  - `removeStage`: the template lock, then the stage row; then RECORDS, then
+    transitions (ACC-202 PR 2). A stage records have entered always has
+    transitions too, and "remove its transitions first" sent the admin to
+    transitions that had run and could not be removed either (live check,
+    14 Nov). `STAGE_IN_USE` is the final answer, so it is said first;
   - `removeTransition`: the transition and its actions;
   - `removeTransitionAction`: the action.
 - **Why the lock first:** a reference being written at that moment holds a
@@ -3862,20 +3867,27 @@ it does to a delete:
   'WorkflowInstanceStageOutcome'". A deploy that adds a value AND writes it
   would 500 every record's stage history on a rollback, and briefly during the
   deploy overlap. CLAUDE.md's Prisma rules now say so.
-- **PR 1 (this one):**
+- **PR 1 (#289, `9b49be0`):**
   - the additive migration `acc202_stage_outcome_returned_exited`;
   - `arrivedBy` on stage history (§2.14) and its chip;
-  - nothing writes the new values. `stage-outcome-writes.scan.spec.ts` fails
-    on a literal, an enum member, PR 2's `stageExitOutcome`, or a writer type
-    that admits either value. `stage-history-arrived-by.db-spec.ts` presses each
-    kind on ANY_ONE and ALL and requires an outcome the old client knows.
-- **PR 2 (after PR 1 is live):**
-  - `stageExitOutcome(kind)` in `performTransition()`; the outcome argument is
-    removed from every caller (the person path, the vote path, `submitApproval`,
-    and the change request's `triggerSystemTransition` calls: withdraw and
-    reject become EXITED, return RETURNED);
-  - the scan spec is deleted;
-  - the rollback check is repeated with PR 1's client.
+  - nothing wrote the new values (a scan spec pinned it until PR 2).
+- **PR 2 (written):**
+  - `performTransition()` derives the outcome from `stageExitOutcome(kind)`
+    (`STAGE_EXIT_OUTCOME` in `workflow-vote.ts`) and takes no outcome argument,
+    so the person path, the vote path, `submitApproval()` and the app's own moves
+    cannot disagree with the move. `triggerSystemTransition()` lost its
+    `outcome` option.
+  - **Change requests:** withdraw and reject record EXITED, return RETURNED,
+    submit and approve APPROVED.
+  - `cancelInstance()` is not a move and still records SKIPPED.
+  - The scan spec is deleted. `stage-history-arrived-by.db-spec.ts` presses each
+    kind on ANY_ONE and ALL and requires its kind's outcome and the matching
+    `arrivedBy`.
+  - **The rollback was proved before merge:** #289's own code and generated
+    client, against a database holding PR 2's rows (64 instances, 82 visits with
+    a new outcome), read stage history, both instance reads, the committee
+    detail and list, and the change request read and list, all without
+    failing.
 - **Readers:** none switches on the outcome. It is typed `string` end to end,
   and no screen read it before `arrivedBy`.
 - **On the shared database, 13 Nov:**
