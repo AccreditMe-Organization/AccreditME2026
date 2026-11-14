@@ -12,6 +12,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { taskSlaFromSettings } from '../tenant/task-sla-settings';
 import { PreparedTask, TaskService } from '../task/task.service';
 import type { ResolvedPlacement } from '../task/task-assignment.service';
+import { coversOf, routeWithCovers } from '../../common/services/out-of-office-cover';
 import { PoolTarget, isPoolMember, resolvePoolMemberIds } from '../task/task-pool';
 import {
   CreateStageTaskDefinitionDto,
@@ -358,8 +359,20 @@ export class StageTaskDefinitionService {
 
     const tasks: PreparedTask[] = [];
     const warnings: string[] = [];
-    for (const definition of definitions) {
-      const placement = await this.placementAtEntry(definition, instance, organizationId);
+    const placements: (ResolvedPlacement | null)[] = [];
+    for (const definition of definitions) placements.push(await this.placementAtEntry(definition, instance, organizationId));
+    // ACC-302 — a chosen person or a one-holder position's holder who is away
+    // goes to their cover (the task rule, out-of-office-cover.ts): ONE read for
+    // every definition of the entry, never one per definition. Pools untouched.
+    const covers = await coversOf(
+      this.prisma,
+      organizationId,
+      placements.flatMap((p) => (p && !p.pooled ? p.directUserIds : [])),
+      enteredAt,
+    );
+    for (const [index, definition] of definitions.entries()) {
+      const resolved = placements[index] ?? null;
+      const placement = resolved && !resolved.pooled ? withCovers(resolved, covers) : resolved;
       const prepared = await this.taskService.prepareStageEntryTask(
         {
           title: definition.titleEn,
@@ -604,4 +617,10 @@ export class StageTaskDefinitionService {
 /** The keys of a PATCH body that were actually sent (undefined is "not sent"; null is "clear"). */
 function definedOnly<T extends object>(dto: T): Partial<T> {
   return Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
+/** ACC-302 — a direct placement routed to covers, from the entry's one read. */
+function withCovers(placement: ResolvedPlacement, covers: Parameters<typeof routeWithCovers>[1]): ResolvedPlacement {
+  const routing = routeWithCovers(placement.directUserIds, covers);
+  return { ...placement, directUserIds: routing.userIds, ...(routing.delegations.size ? { delegations: routing.delegations } : {}) };
 }

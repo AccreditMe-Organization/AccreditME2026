@@ -29,6 +29,7 @@ import { IAvailableTaskListItem, IMyTaskListItem, ITaskListItem } from './interf
 import { recordNamesOf, recordOf } from './task-record-names';
 import { ReleaseTaskDto } from './dto/release-task.dto';
 import { ResolvedPlacement, TaskAssignmentService } from './task-assignment.service';
+import { OutOfOfficeCoverEntry, coverEntries } from '../../common/services/out-of-office-cover';
 import {
   POOL_LABEL_INCLUDE,
   PoolLabelRelations,
@@ -309,7 +310,12 @@ export class TaskService {
         ...poolClock,
       },
       eligibleAssigneeIds,
-      delegations: new Map((internal?.assigneeDelegations ?? []).map((d) => [d.userId, d])),
+      // ACC-302 — a chosen person or a one-holder position's holder who is away
+      // went to their cover in resolvePlacement(); the cover's row says so.
+      delegations: new Map([
+        ...(placement?.delegations ?? new Map()),
+        ...(internal?.assigneeDelegations ?? []).map((d) => [d.userId, d] as const),
+      ]),
       pooled,
     };
 
@@ -403,7 +409,8 @@ export class TaskService {
         ...poolClock,
       },
       eligibleAssigneeIds,
-      delegations: new Map(),
+      // ACC-302 — routed to covers once for the whole stage entry.
+      delegations: new Map(draft.placement?.delegations ?? []),
       pooled,
     };
   }
@@ -521,12 +528,16 @@ export class TaskService {
    */
   async announceCreated(
     task: ITask,
-    prepared: Pick<PreparedTask, 'eligibleAssigneeIds' | 'pooled'>,
+    prepared: Pick<PreparedTask, 'eligibleAssigneeIds' | 'pooled'> & Partial<Pick<PreparedTask, 'delegations'>>,
     organizationId: string,
     actorId: string,
     // ACC-197 — { aiDraft } when the creator accepted an AI draft (verified).
     metadata?: Record<string, unknown>,
   ): Promise<void> {
+    // ACC-302 — who stands in for whom, by id, on the audit row; and the
+    // cover's notice names whom they cover. The away person is told nothing.
+    const covered = coverEntries(prepared.delegations);
+    const allMetadata = { ...(metadata ?? {}), ...(covered.length ? { outOfOfficeCover: covered } : {}) };
     await this.auditLog.log({
       action: 'CREATE',
       objectType: 'Task',
@@ -534,8 +545,9 @@ export class TaskService {
       actorId,
       tenantId: organizationId,
       after: task as unknown as Record<string, unknown>,
-      ...(metadata ? { metadata } : {}),
+      ...(Object.keys(allMetadata).length ? { metadata: allMetadata } : {}),
     });
+    const coveringFor = await this.namesOfCovered(covered, organizationId);
 
     // ACC-82 — an UNASSIGNED task no longer notifies every Tenant Admin. It is a
     // Setup health condition (TASK_WITHOUT_OWNER), listed until someone is
@@ -546,7 +558,7 @@ export class TaskService {
         {
           userId,
           titleEn: 'New task assigned',
-          bodyEn: `You have been assigned: "${task.title}"`,
+          bodyEn: `You have been assigned: "${task.title}"${coveringSuffix(coveringFor.get(userId))}`,
           objectType: 'Task',
           objectId: task.id,
         },
@@ -1421,7 +1433,7 @@ export class TaskService {
       throw new BadRequestException('Choose who the task goes to: a unit and position, or named people');
     }
 
-    const { existing, task, eligibleAssigneeIds, pooled, cancelled } = await this.prisma.$transaction(async (tx) => {
+    const { existing, task, eligibleAssigneeIds, pooled, cancelled, covered } = await this.prisma.$transaction(async (tx) => {
       await this.lockTaskRow(tx, id, organizationId);
       const existing = await tx.task.findFirst({
         where: { id, organizationId },
@@ -1464,23 +1476,23 @@ export class TaskService {
 
       for (const userId of eligibleAssigneeIds) {
         const previous = existing.assignees.find((a) => a.userId === userId);
+        // ACC-302 — a row that receives the task AS A COVER is stamped with whom
+        // it covers (resolvePlacement() routed it). Any other row carries no
+        // delegation: a stamp left from an engine assignment would label this
+        // person as covering for someone they are not.
+        const delegation = placement?.delegations?.get(userId);
+        const stamp = {
+          delegationReason: delegation?.delegationReason ?? null,
+          delegationContextId: delegation?.delegationContextId ?? null,
+        };
         if (previous) {
-          // A manual reassignment carries no delegation: a stamp left from an
-          // engine assignment would label this person as covering for someone
-          // they are not. Nor is it a pick (ACC-167).
+          // Nor is it a pick (ACC-167).
           await tx.taskAssignee.update({
             where: { id: previous.id },
-            data: {
-              removedAt: null,
-              assignedAt: now,
-              assignedById: actorId,
-              delegationReason: null,
-              delegationContextId: null,
-              pickedAt: null,
-            },
+            data: { removedAt: null, assignedAt: now, assignedById: actorId, ...stamp, pickedAt: null },
           });
         } else {
-          await tx.taskAssignee.create({ data: { taskId: id, userId, assignedById: actorId } });
+          await tx.taskAssignee.create({ data: { taskId: id, userId, assignedById: actorId, ...(delegation ? stamp : {}) } });
         }
       }
 
@@ -1498,7 +1510,7 @@ export class TaskService {
         include: { assignees: true },
       });
       const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'task_reassigned');
-      return { existing, task, eligibleAssigneeIds, pooled, cancelled };
+      return { existing, task, eligibleAssigneeIds, pooled, cancelled, covered: coverEntries(placement?.delegations) };
     });
 
     const aiWorkloadHint = await this.verifiedAiWorkloadHint(
@@ -1522,16 +1534,19 @@ export class TaskService {
         pooled,
         // ACC-199 — the person came from "✦ Suggest someone" (verified).
         ...(aiWorkloadHint ? { aiWorkloadHint } : {}),
+        // ACC-302 — who stands in for whom, by id.
+        ...(covered.length ? { outOfOfficeCover: covered } : {}),
       },
     });
     await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
+    const coveringFor = await this.namesOfCovered(covered, organizationId);
 
     for (const userId of eligibleAssigneeIds) {
       await this.notificationService.create(
         {
           userId,
           titleEn: 'Task reassigned to you',
-          bodyEn: `"${task.title}" has been reassigned to you. Reason: ${dto.reason}`,
+          bodyEn: `"${task.title}" has been reassigned to you${coveringSuffix(coveringFor.get(userId))}. Reason: ${dto.reason}`,
           objectType: 'Task',
           objectId: task.id,
         },
@@ -2367,6 +2382,20 @@ export class TaskService {
   //
   // `client` lets reassign() read inside its transaction; everyone else reads
   // through the ordinary client.
+  /**
+   * ACC-302 — the name of whom each cover stands in for, keyed by the cover's
+   * id: one read for the task, scoped by organisation. Empty when nobody covers.
+   */
+  private async namesOfCovered(covered: readonly OutOfOfficeCoverEntry[], organizationId: string): Promise<Map<string, string>> {
+    if (covered.length === 0) return new Map();
+    const people = await this.prisma.user.findMany({
+      where: { organizationId, id: { in: covered.map((c) => c.forUserId) } },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(people.map((p) => [p.id, p.name]));
+    return new Map(covered.flatMap((c) => (nameById.has(c.forUserId) ? [[c.coverUserId, nameById.get(c.forUserId)!] as const] : [])));
+  }
+
   private async filterActiveUsers(
     userIds: string[],
     organizationId: string,
@@ -2384,4 +2413,9 @@ export class TaskService {
 // ACC-174 — the people currently on a task, less the person acting.
 function activeAssigneeIds(task: TaskWithAssigneeRows, exceptUserId: string): string[] {
   return task.assignees.filter((a) => a.removedAt === null && a.userId !== exceptUserId).map((a) => a.userId);
+}
+
+/** ACC-302 — the cover's notice names whom they cover; nothing for anyone else. */
+function coveringSuffix(coveredName: string | undefined): string {
+  return coveredName ? ` (covering for ${coveredName})` : '';
 }
