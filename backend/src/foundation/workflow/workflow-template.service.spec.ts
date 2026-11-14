@@ -99,12 +99,20 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
+    // ACC-57 (Q1) — ticking Initial clears it on the template's other stages.
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
   workflowTransition: {
     findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    // ACC-191 — removeStage counts the transitions in and out (STAGE_HAS_TRANSITIONS).
+    count: jest.fn().mockResolvedValue(0),
+  },
+  // ACC-191 — removing an action or a transition counts its runs.
+  workflowActionLog: {
+    count: jest.fn().mockResolvedValue(0),
   },
   // ACC-271 — who works a seeded stage (a CREATOR entry where the seed names one).
   workflowStageAssignee: {
@@ -211,6 +219,13 @@ describe('WorkflowTemplateService', () => {
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
     mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', organizationId: ORG_A });
     mockPrisma.lookupValue.findFirst.mockResolvedValue({ id: 'lookup-chairman-id', organizationId: null });
+    // ACC-57 / ACC-191 — clearAllMocks keeps implementations a test set, so
+    // the reads the new checks make start empty in every test: no stages read
+    // back (readStartEnd), no lock rows, nothing referencing, nothing run.
+    mockPrisma.workflowStage.findMany.mockResolvedValue([]);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+    mockPrisma.workflowTransition.count.mockResolvedValue(0);
+    mockPrisma.workflowActionLog.count.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -619,6 +634,8 @@ describe('WorkflowTemplateService', () => {
   describe('setDefault', () => {
     it('marks the template default and unsets any sibling default for the same objectType', async () => {
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ isDefault: false }));
+      // ACC-57 (Q2) — it has a starting stage.
+      mockPrisma.workflowStage.findMany.mockResolvedValueOnce([{ id: 'stage-1', nameEn: 'Draft', nameAr: null, isInitial: true, isFinal: false }]);
       mockPrisma.workflowTemplate.updateMany.mockResolvedValue({ count: 1 });
       mockPrisma.workflowTemplate.update.mockResolvedValue(makeTemplate({ isDefault: true }));
 
@@ -634,6 +651,33 @@ describe('WorkflowTemplateService', () => {
         expect.objectContaining({ data: { isDefault: true } }),
       );
       expect(mockAuditLog.log).toHaveBeenCalled();
+    });
+
+    // ACC-57 (Q2) — the default is what startInstance() reads, so one with no
+    // starting stage would throw at whoever next creates a record.
+    it('refuses 409 STAGE_INITIAL_REQUIRED for a template with no starting stage, or no stages, changing nothing', async () => {
+      for (const stages of [[], [{ id: 'stage-1', nameEn: 'Draft', nameAr: null, isInitial: false, isFinal: false }]]) {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ isDefault: false }));
+        mockPrisma.workflowStage.findMany.mockResolvedValueOnce(stages);
+
+        await expect(service.setDefault('template-1', ORG_A, ACTOR)).rejects.toMatchObject({
+          status: 409,
+          response: { code: 'STAGE_INITIAL_REQUIRED' },
+        });
+      }
+      expect(mockPrisma.workflowTemplate.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowTemplate.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('refuses the same when an update makes a template with no starting stage the default', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ isDefault: false }));
+      mockPrisma.workflowStage.findMany.mockResolvedValueOnce([]);
+
+      await expect(service.updateTemplate('template-1', { isDefault: true } as never, ORG_A, ACTOR)).rejects.toMatchObject({
+        response: { code: 'STAGE_INITIAL_REQUIRED' },
+      });
+      expect(mockPrisma.workflowTemplate.update).not.toHaveBeenCalled();
     });
 
     it('is a no-op when the template is already default', async () => {
@@ -765,41 +809,57 @@ describe('WorkflowTemplateService', () => {
   // ── removeStage ──────────────────────────────────────────────────────────────
 
   describe('removeStage', () => {
+    // The template's stages as readStartEnd() returns them, before and after the delete.
+    const asRead = (id: string, isInitial: boolean) => ({ id, nameEn: id, nameAr: null, isInitial, isFinal: false });
+
     it('deletes the stage when nothing references it', async () => {
       mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: false }));
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
 
       await service.removeStage('stage-1', ORG_A, ACTOR);
 
       expect(mockPrisma.workflowStage.delete).toHaveBeenCalledWith({ where: { id: 'stage-1' } });
-      expect(mockPrisma.workflowStage.count).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictException when a transition still references it', async () => {
+    // ACC-191 (Q4) — the old codeless refusal, now said from a code.
+    it('refuses 409 STAGE_HAS_TRANSITIONS, with the count, while a transition still references it', async () => {
       mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: false }));
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransition.count.mockResolvedValueOnce(2);
 
-      await expect(service.removeStage('stage-1', ORG_A, ACTOR)).rejects.toThrow(
-        ConflictException,
-      );
+      const refusal = service.removeStage('stage-1', ORG_A, ACTOR);
+      await expect(refusal).rejects.toMatchObject({ status: 409, response: { code: 'STAGE_HAS_TRANSITIONS', transitionCount: 2 } });
       expect(mockPrisma.workflowStage.delete).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictException when removing the initial stage while sibling stages exist', async () => {
-      mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: true }));
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
-      mockPrisma.workflowStage.count.mockResolvedValue(1);
+    // ACC-191 — a stage a record has entered is kept (WorkflowInstanceStage is RESTRICT).
+    it('refuses 409 STAGE_IN_USE, counting records, when a record has entered the stage', async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: false }));
+      // The template lock, the stage lock, then the records count.
+      mockPrisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([{ entries: 3, records: 2 }]);
 
-      await expect(service.removeStage('stage-1', ORG_A, ACTOR)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.removeStage('stage-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'STAGE_IN_USE', recordCount: 2 },
+      });
       expect(mockPrisma.workflowStage.delete).not.toHaveBeenCalled();
+    });
+
+    // ACC-57 (Q4) — the old "initial stage while siblings exist" refusal is the rule's own.
+    it('refuses 409 STAGE_INITIAL_REQUIRED, naming it, when removing the starting stage leaves others with none', async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: true }));
+      mockPrisma.workflowStage.findMany
+        .mockResolvedValueOnce([asRead('stage-1', true), asRead('stage-2', false)])
+        .mockResolvedValueOnce([asRead('stage-2', false)]);
+
+      await expect(service.removeStage('stage-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'STAGE_INITIAL_REQUIRED', stageIds: ['stage-1'] },
+      });
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
 
     it('succeeds removing the initial stage when it is the only stage left', async () => {
       mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: true }));
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
-      mockPrisma.workflowStage.count.mockResolvedValue(0);
+      mockPrisma.workflowStage.findMany.mockResolvedValueOnce([asRead('stage-1', true)]).mockResolvedValueOnce([]);
 
       await service.removeStage('stage-1', ORG_A, ACTOR);
 
@@ -935,6 +995,22 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowTransition.delete).toHaveBeenCalledWith({
         where: { id: 'transition-1' },
       });
+    });
+
+    // ACC-191 (Q3) — a transition whose actions have run is kept.
+    it('refuses 409 TRANSITION_IN_USE, with the runs, and deletes nothing', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowActionLog.count.mockResolvedValueOnce(5);
+
+      await expect(service.removeTransition('transition-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'TRANSITION_IN_USE', runCount: 5 },
+      });
+      expect(mockPrisma.workflowActionLog.count).toHaveBeenCalledWith({
+        where: { organizationId: ORG_A, workflowTransitionAction: { workflowTransitionId: 'transition-1' } },
+      });
+      expect(mockPrisma.workflowTransitionAction.deleteMany).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowTransition.delete).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundException for a cross-tenant transition', async () => {
@@ -1106,6 +1182,19 @@ describe('WorkflowTemplateService', () => {
       });
     });
 
+    // ACC-191 — an action that has run is kept; it can be turned off instead.
+    it('refuses 409 TRANSITION_ACTION_IN_USE, with the runs, and deletes nothing', async () => {
+      mockPrisma.workflowTransitionAction.findFirst.mockResolvedValue(BASE_ACTION);
+      mockPrisma.workflowActionLog.count.mockResolvedValueOnce(12);
+
+      await expect(service.removeTransitionAction('action-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'TRANSITION_ACTION_IN_USE', runCount: 12 },
+      });
+      expect(mockPrisma.workflowActionLog.count).toHaveBeenCalledWith({ where: { organizationId: ORG_A, workflowTransitionActionId: 'action-1' } });
+      expect(mockPrisma.workflowTransitionAction.delete).not.toHaveBeenCalled();
+    });
+
     it('throws NotFoundException for a cross-tenant action', async () => {
       mockPrisma.workflowTransitionAction.findFirst.mockResolvedValue(null);
 
@@ -1119,6 +1208,41 @@ describe('WorkflowTemplateService', () => {
   // ── tenant isolation ─────────────────────────────────────────────────────────
 
   describe('tenant isolation', () => {
+    // ACC-57 / ACC-191 — every query the new checks make carries the caller's
+    // organisation: the start/end read and the move of the starting stage (the
+    // stage has no organisation column, so through its template), and each
+    // in-use count. Named for CI's isolation gate.
+    it('should NOT return records belonging to a different tenant — the start/end read, the moved starting stage and the in-use counts are scoped by organisation', async () => {
+      const asRead = (id: string, isInitial: boolean) => ({ id, nameEn: id, nameAr: null, isInitial, isFinal: false });
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: false }));
+      mockPrisma.workflowStage.update.mockResolvedValue(makeStage({ isInitial: true }));
+      mockPrisma.workflowStage.findMany.mockResolvedValueOnce([asRead('stage-0', true), asRead('stage-1', false)]).mockResolvedValueOnce([
+        asRead('stage-0', false),
+        asRead('stage-1', true),
+      ]);
+
+      await service.updateStage('stage-1', { isInitial: true } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowStage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { workflowTemplateId: 'template-1', workflowTemplate: { organizationId: ORG_A } } }),
+      );
+      expect(mockPrisma.workflowStage.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ workflowTemplate: { organizationId: ORG_A } }) }),
+      );
+
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(makeStage({ isInitial: false }));
+      await service.removeStage('stage-1', ORG_A, ACTOR);
+      expect(mockPrisma.workflowTransition.count).toHaveBeenCalledWith({
+        where: { OR: [{ fromStageId: 'stage-1' }, { toStageId: 'stage-1' }], fromStage: { workflowTemplate: { organizationId: ORG_A } } },
+      });
+      // The records count binds the organisation as a query value.
+      expect(mockPrisma.$queryRaw.mock.calls.some((call: unknown[]) => call.slice(1).includes(ORG_A) && String(call[0]).includes('WorkflowInstanceStage'))).toBe(true);
+
+      mockPrisma.workflowTransitionAction.findFirst.mockResolvedValue(BASE_ACTION);
+      await service.removeTransitionAction('action-1', ORG_A, ACTOR);
+      expect(mockPrisma.workflowActionLog.count).toHaveBeenCalledWith({ where: { organizationId: ORG_A, workflowTransitionActionId: 'action-1' } });
+    });
+
     it('should NOT return records belonging to a different tenant', async () => {
       const templateA = makeTemplate({ id: 'template-a', organizationId: ORG_A });
       const templateB = makeTemplate({ id: 'template-b', organizationId: ORG_B });
@@ -1176,6 +1300,7 @@ describe('WorkflowTemplateService', () => {
       mockPrisma.workflowTemplate.update.mockResolvedValue(
         makeTemplate({ id: 'template-b', organizationId: ORG_B, isDefault: true }),
       );
+      mockPrisma.workflowStage.findMany.mockResolvedValueOnce([{ id: 'stage-1', nameEn: 'Draft', nameAr: null, isInitial: true, isFinal: false }]);
 
       await service.setDefault('template-b', ORG_B, ACTOR);
 
@@ -1656,8 +1781,6 @@ describe('WorkflowTemplateService', () => {
         mockPrisma.workflowStage.findFirst.mockResolvedValue(
           committeeStage({ isInitial: false, flags: ['DISSOLVING'], recordActions: rows('remove_member', 'add_member') }),
         );
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(null);
-
         await service.removeStage('stage-1', ORG_A, ACTOR);
 
         expect(mockPrisma.workflowStage.delete).toHaveBeenCalledWith({ where: { id: 'stage-1' } });

@@ -21,6 +21,7 @@ import { TaskFormComponent } from '../task-form/task-form.component';
 import { TaskFormFooterComponent } from '../task-form/task-form-footer.component';
 import { TaskFormStepsComponent } from '../task-form/task-form-steps.component';
 import { TaskReassignDialogComponent, TaskRejection } from '../task-reassign-dialog/task-reassign-dialog.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-199 — the 420px body cap (ACC-111), MEASURED and not assumed (ACC-120):
 // New task, step 1, and Reassign, with "✦ Suggest someone" in every state —
@@ -115,6 +116,7 @@ class ReassignHost {
 }
 
 describe('"✦ Suggest someone" — the 420px body cap, New task step 1 and Reassign (ACC-199)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
 
   let http: HttpTestingController;
@@ -157,9 +159,7 @@ describe('"✦ Suggest someone" — the 420px body cap, New task step 1 and Reas
 
   async function measure(label: string, language: 'en' | 'ar', onScreen: string): Promise<number> {
     await settle();
-    await document.fonts.ready;
     await settle();
-    expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
     expect(document.querySelector(onScreen)).withContext(`${label} [${language}]: ${onScreen} is not on screen`).not.toBeNull();
     const height = body().scrollHeight;
     measured.push(`${label} [${language}]: ${height}px`);
@@ -296,7 +296,6 @@ describe('"✦ Suggest someone" — the 420px body cap, New task step 1 and Reas
         const rowHeights = async (): Promise<{ rows: number[]; counts: number }> => {
           document.querySelector<HTMLElement>('.am-picker__person .am-overlay-select-trigger')!.click();
           await settle();
-          await document.fonts.ready;
           const rows = Array.from(document.querySelectorAll<HTMLElement>('.am-overlay-select-option')).map((r) => Math.round(r.getBoundingClientRect().height));
           const counts = document.querySelectorAll('.am-picker__counts').length;
           document.querySelector<HTMLElement>('.am-picker__person .am-overlay-select-trigger')!.click();

@@ -21,6 +21,7 @@ import { CommitteeMembersPanelComponent } from './committee-members-panel.compon
 import { CommitteeSubCommitteesPanelComponent } from '../committee-sub-committees-panel/committee-sub-committees-panel.component';
 import { memberRow, subRow } from './committee-members-panel.component.spec';
 import { COMMITTEE_PANEL_GRID } from '../committee-detail/committee-panel-grid';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-230 — the Members and Sub-committees panels, and the plain list behind
 // their See all, MEASURED in both languages, in the real theme and font:
@@ -81,6 +82,7 @@ class ListHost {
 }
 
 describe('Committee Members and Sub-committees — layout, measured (ACC-230)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
   let http: HttpTestingController;
@@ -111,7 +113,6 @@ describe('Committee Members and Sub-committees — layout, measured (ACC-230)', 
 
   async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
   }
 
@@ -135,7 +136,6 @@ describe('Committee Members and Sub-committees — layout, measured (ACC-230)', 
           await settle(fixture);
 
           const el = fixture.nativeElement as HTMLElement;
-          expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
           for (const prefix of ['committee-members', 'committee-subs']) {
             const head = el.querySelector<HTMLElement>(`[data-testid="${prefix}-head"]`)!;
             const body = el.querySelector<HTMLElement>(`[data-testid="${prefix}-body"]`)!;

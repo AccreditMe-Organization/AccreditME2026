@@ -840,6 +840,9 @@
       "flagOnOther": "{{flag}} is already on {{stage}}. A workflow has exactly one.",
       "flagMissing": "This workflow needs one stage that {{need}}.",
       "flagMissingNamed": "This workflow needs one stage marked “{{flag}}”.",
+      "initialRequiredNamed": "{{stage}} is the only starting stage. To change it, mark another stage as the starting stage.",
+      "initialNotUniqueNamed": "Only one stage can be the starting stage: {{stages}} are all marked.",
+      "initialMoved": "{{stage}} is no longer the starting stage.",
       "openStage": "Open {{name}}",
       "protectedTitle": "Protected workflow",
       "protectedBody": "AccreditMe keeps this workflow working: you can rename its stages and set their deadlines, but not change what they allow or mean."
@@ -977,6 +980,8 @@
       "lifecycle": "Lifecycle",
       "inStage": "in stage {{duration}}",
       "revisited": "revisited ×{{count}}",
+      "arrivedByReturned": "Sent back",
+      "arrivedByExited": "Ended",
       "since": "since {{date}}"
     },
     "stageName": "Stage",
@@ -1096,6 +1101,13 @@
       "stageActionUnknown": "This kind of record has no such action.",
       "stageFlagUnknown": "This kind of record has no such stage meaning.",
       "stageFlagExactlyOne": "Exactly one stage of this workflow must carry this meaning.",
+      "initialRequired": "A workflow needs a starting stage. Mark a stage as the starting stage first.",
+      "initialNotUnique": "Only one stage can be the starting stage.",
+      "initialAndFinal": "A stage can't be both the starting stage and a final stage.",
+      "stageHasTransitions": "This stage still has transitions into or out of it. Remove them first.",
+      "stageInUse": "Records have entered this stage, so it can't be removed. You can rename it.",
+      "actionInUse": "This action has run, so it can't be removed. You can turn it off instead.",
+      "transitionInUse": "This transition has been used, so it can't be removed. You can rename it.",
       "stageHasNoOne": "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it.",
       "notInStagePool": "Only whoever works this stage can do this.",
       "moveHasNoMover": "Nobody is set to make this move, so the record can't move this way. Ask an administrator.",
@@ -3062,6 +3074,18 @@
       "stageTasks": {
         "one": "{{count}} task",
         "other": "{{count}} tasks"
+      },
+      "stageInUse": {
+        "one": "{{count}} record has entered this stage, so it can't be removed. You can rename it.",
+        "other": "{{count}} records have entered this stage, so it can't be removed. You can rename it."
+      },
+      "actionInUse": {
+        "one": "This action has run once, so it can't be removed. You can turn it off instead.",
+        "other": "This action has run {{count}} times, so it can't be removed. You can turn it off instead."
+      },
+      "transitionInUse": {
+        "one": "This transition has been used once, so it can't be removed. You can rename it.",
+        "other": "This transition has been used {{count}} times, so it can't be removed. You can rename it."
       },
       "who": {
         "heldBy": {

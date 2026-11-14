@@ -35,7 +35,7 @@ import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
-import { isVotingMove, moveOutcome, votesFor } from './workflow-vote';
+import { isVotingMove, stageExitOutcome, votesFor } from './workflow-vote';
 import { assertTransitionPreconditions } from './transition-preconditions';
 import { StagePool, StagePoolRequest, StagePoolService, mayActInStagePool } from './stage-pool.service';
 import { INSTANCE_NOT_FOUND, InstanceAccess } from './instance-access';
@@ -474,6 +474,9 @@ export class WorkflowService {
           // outcome SKIPPED) has no following row to appear on. Dropping it
           // beats showing it against the wrong event.
           comment: previous?.comment ?? null,
+          // ACC-202 — the previous visit's outcome, for the same reason as the
+          // comment: it describes the move INTO this visit.
+          arrivedBy: previous?.outcome === 'RETURNED' || previous?.outcome === 'EXITED' ? previous.outcome : null,
           isUnassigned: visit.isUnassigned,
           delegation: this.delegationLabels.lookup(visit, delegations),
         };
@@ -639,17 +642,7 @@ export class WorkflowService {
     }
 
     if (this.decidesAlone(fromStage)) {
-      return this.performTransition(
-        instance,
-        currentInstanceStage,
-        transition,
-        organizationId,
-        actorId,
-        dto.comment,
-        'APPROVED',
-        fromStage,
-        { pool },
-      );
+      return this.performTransition(instance, currentInstanceStage, transition, organizationId, actorId, dto.comment, fromStage, { pool });
     }
 
     // Multi-approver stage: naming a specific transitionId is itself the press.
@@ -670,17 +663,7 @@ export class WorkflowService {
       // RETURN, and EXIT on "All of them", fire immediately — no threshold
       // required to send something back or end it: the stage halts at once,
       // whoever works it.
-      return this.performTransition(
-        instance,
-        currentInstanceStage,
-        transition,
-        organizationId,
-        actorId,
-        dto.comment,
-        'REJECTED',
-        fromStage,
-        { pool },
-      );
+      return this.performTransition(instance, currentInstanceStage, transition, organizationId, actorId, dto.comment, fromStage, { pool });
     }
 
     // ACC-284 — this move's own threshold: votes for other moves never count for it.
@@ -690,17 +673,7 @@ export class WorkflowService {
       return this.mapInstance(instance);
     }
 
-    return this.performTransition(
-      instance,
-      currentInstanceStage,
-      transition,
-      organizationId,
-      actorId,
-      dto.comment,
-      moveOutcome(transition.kind),
-      fromStage,
-      { pool },
-    );
+    return this.performTransition(instance, currentInstanceStage, transition, organizationId, actorId, dto.comment, fromStage, { pool });
   }
 
   async submitApproval(
@@ -851,13 +824,13 @@ export class WorkflowService {
     const isApprovalDecision = dto.decision === 'APPROVED' || dto.decision === 'APPROVED_WITH_COMMENTS';
 
     if (!isApprovalDecision) {
-      await this.performTransition(instance, instanceStage, move, organizationId, actorId, dto.comment, 'REJECTED', stage, { pool });
+      await this.performTransition(instance, instanceStage, move, organizationId, actorId, dto.comment, stage, { pool });
       return;
     }
 
     const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, move, undefined, pool);
     if (!satisfied) return;
-    await this.performTransition(instance, instanceStage, move, organizationId, actorId, dto.comment, 'APPROVED', stage, { pool });
+    await this.performTransition(instance, instanceStage, move, organizationId, actorId, dto.comment, stage, { pool });
   }
 
   /**
@@ -924,7 +897,8 @@ export class WorkflowService {
     toStageKey: string,
     organizationId: string,
     actorId: string,
-    options: { comment?: string; outcome?: 'APPROVED' | 'REJECTED' | 'SKIPPED'; inTx?: (tx: EngineTx) => Promise<void> } = {},
+    // ACC-202 — no outcome option: the stage is left with the move's kind's outcome.
+    options: { comment?: string; inTx?: (tx: EngineTx) => Promise<void> } = {},
   ): Promise<IWorkflowInstance> {
     const instance = await this.prisma.workflowInstance.findFirst({ where: { id: instanceId, organizationId } });
     if (!instance) throw new NotFoundException('Workflow instance not found');
@@ -954,17 +928,9 @@ export class WorkflowService {
     });
     if (!currentInstanceStage) throw new ConflictException('No active stage entry found for this instance');
 
-    return this.performTransition(
-      instance,
-      currentInstanceStage,
-      transition,
-      organizationId,
-      actorId,
-      options.comment,
-      options.outcome ?? 'APPROVED',
-      fromStage,
-      { inTx: options.inTx },
-    );
+    return this.performTransition(instance, currentInstanceStage, transition, organizationId, actorId, options.comment, fromStage, {
+      inTx: options.inTx,
+    });
   }
 
   // `assumedVote` counts a vote not yet recorded, replacing any earlier one by
@@ -1039,7 +1005,6 @@ export class WorkflowService {
     organizationId: string,
     actorId: string,
     comment: string | undefined,
-    outcome: 'APPROVED' | 'REJECTED' | 'SKIPPED',
     // ACC-40 Section 2.6.3 — the stage actorId was resolved eligible
     // against (not toStage) — every caller already has this in scope
     // (triggerTransition()'s own fromStage local, or
@@ -1104,9 +1069,10 @@ export class WorkflowService {
         await hook.inTx(tx);
       }
 
+      // ACC-202 — left with the outcome of the move's kind, whoever made it.
       await tx.workflowInstanceStage.update({
         where: { id: currentInstanceStage.id },
-        data: { exitedAt: enteredAt, outcome, ...(comment !== undefined && { comment }) },
+        data: { exitedAt: enteredAt, outcome: stageExitOutcome(transition.kind), ...(comment !== undefined && { comment }) },
       });
 
       // ACC-68, ACC-190 — the entry just left takes its open tasks with it.

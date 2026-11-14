@@ -13,6 +13,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { pickBilingualName } from '../../../../shared/utils/bilingual-name.util';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // The signed-in viewer — someone other than every user these specs list, so
 // the own-row rule (CC-88, A1) only applies where a test says so.
@@ -29,6 +30,7 @@ let VIEWER_ID = 'cmtviewer0000ocp1notinlist';
  * afterwards.
  */
 describe('UserListComponent — reactivation confirmation (ACC-83)', () => {
+  useLayoutFonts();
   let captured: Confirmation | null;
   let reactivate: jasmine.Spy;
 
@@ -204,6 +206,7 @@ describe('UserListComponent — reactivation confirmation (ACC-83)', () => {
  * clicking the position a row had occupied a moment before a refusal appeared.
  */
 describe('UserListComponent — the message slot does not move the rows (ACC-83)', () => {
+  useLayoutFonts();
   function render() {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({

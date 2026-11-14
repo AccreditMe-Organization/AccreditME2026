@@ -23,6 +23,7 @@ import { NotificationBellComponent } from '../../foundation/notification/compone
 import { IdleWarningComponent } from '../../core/components/idle-warning/idle-warning.component';
 import { SessionLimitWarningComponent } from '../../core/components/session-limit-warning/session-limit-warning.component';
 import { AppShellComponent, SHELL_PHONE_BELOW_PX } from './app-shell.component';
+import { useLayoutFonts } from '../../../testing/layout-fonts';
 
 // ACC-232 — the phone shell. Below SHELL_PHONE_BELOW_PX the rail never sits
 // beside <main>: it starts closed and opens over the page with a scrim, the
@@ -67,6 +68,7 @@ class FakeMedia {
 }
 
 describe('AppShellComponent — the phone shell (ACC-232)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<AppShellComponent>;
   let media: FakeMedia;

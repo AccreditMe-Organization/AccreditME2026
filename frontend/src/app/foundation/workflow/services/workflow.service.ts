@@ -69,6 +69,11 @@ export interface WorkflowStageVisitDto {
   // comment is written at exit, so it explains the transition into the NEXT
   // stage, not the row it physically sits on.
   comment: string | null;
+  // ACC-202 — how the record arrived at this visit, when it was sent back
+  // (RETURNED) or its record ended (EXITED); null otherwise. The server derives
+  // it from the PREVIOUS visit's outcome, as it does `comment`. Optional: a
+  // backend from before ACC-202 does not send it, and nothing is shown.
+  arrivedBy?: 'RETURNED' | 'EXITED' | null;
   isUnassigned: boolean;
   delegation: ResolvedDelegationDto | null;
 }

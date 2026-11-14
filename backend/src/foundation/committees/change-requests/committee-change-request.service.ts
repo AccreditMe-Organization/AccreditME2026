@@ -399,7 +399,6 @@ export class CommitteeChangeRequestService {
     assertCommitteeStageAllows(await this.committeeStage(this.prisma, loaded.row.committeeId, organizationId, 'none'), 'withdraw');
 
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.withdraw, organizationId, viewer.userId, {
-      outcome: 'SKIPPED',
       inTx: async (tx) => {
         if (!allowed(await instanceStageKey(tx, loaded.instanceId))) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_REQUESTER');
         await tx.committeeChangeRequest.update({
@@ -455,7 +454,6 @@ export class CommitteeChangeRequestService {
     // flagged APPLIES_APPROVED_CHANGE, never a fixed key.
     const approvedStageKey = await this.approvedStageKey(loaded.instanceId, organizationId);
     await this.workflow.triggerSystemTransition(loaded.instanceId, approvedStageKey, organizationId, viewer.userId, {
-      outcome: 'APPROVED',
       inTx: async (tx) => {
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'approve');
 
@@ -533,7 +531,6 @@ export class CommitteeChangeRequestService {
     const loaded = await this.loadDecision(id, organizationId, viewer, 'return');
     const note = dto.note.trim();
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.return, organizationId, viewer.userId, {
-      outcome: 'REJECTED',
       comment: note,
       inTx: async (tx) => {
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'return');
@@ -566,7 +563,6 @@ export class CommitteeChangeRequestService {
     const loaded = await this.loadDecision(id, organizationId, viewer, 'reject');
     const reason = dto.reason.trim();
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.reject, organizationId, viewer.userId, {
-      outcome: 'REJECTED',
       comment: reason,
       inTx: async (tx) => {
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'reject');

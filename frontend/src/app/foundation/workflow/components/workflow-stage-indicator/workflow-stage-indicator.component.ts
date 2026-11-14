@@ -8,6 +8,7 @@ import {
 import { LanguageService } from '../../../../core/services/language.service';
 import { AmDatePipe, FormatService } from '../../../../core/formatting';
 import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
+import { workflowLabelKey } from '../../workflow-labels';
 
 // ACC-76 — where a record is in its workflow, answered two ways, in one
 // component. Generic over object type, like WorkflowTransitionActionsComponent
@@ -139,6 +140,13 @@ import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
                 @if (transitionLabel(visit.transitionLabelEn, visit.transitionLabelAr); as label) {
                   <span class="text-[var(--am-text-secondary)]"> — {{ label }}</span>
                 }
+                <!-- ACC-202 — the move into this visit sent the record back, or
+                     ended it: the server's arrivedBy (the previous visit's
+                     outcome), in words. Absent for a forward move, and for any
+                     visit made before ACC-202. -->
+                @if (arrivedByKey(visit.arrivedBy); as key) {
+                  <span class="am-arrived-by" data-arrived-by>{{ key | translate }}</span>
+                }
                 @if (visit.comment) {
                   <span class="text-[var(--am-text-secondary)]"> — {{ visit.comment }}</span>
                 }
@@ -160,6 +168,24 @@ import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
       }
     }
   `,
+  styles: [
+    `
+      /* ACC-202 — "Sent back" / "Ended" on a history line: the stage list's meaning chip, smaller. */
+      .am-arrived-by {
+        display: inline-block;
+        margin-inline-start: var(--am-space-4);
+        padding: 0 var(--am-space-4);
+        font-size: var(--am-type-micro-size);
+        font-weight: 600;
+        line-height: 16px;
+        white-space: nowrap;
+        color: var(--am-primary-700);
+        background: var(--am-card);
+        border: 1px solid var(--am-primary-600);
+        border-radius: var(--am-radius-control);
+      }
+    `,
+  ],
 })
 export class WorkflowStageIndicatorComponent {
   private readonly workflowService = inject(WorkflowService);
@@ -281,6 +307,11 @@ export class WorkflowStageIndicatorComponent {
 
   // ACC-160 — `?? ''` here hid a blank Arabic transition label. labelEn is null
   // only when the visit had no transition at all, which nulls both halves.
+  /** ACC-202 — the chip's key for a send-back or an end; null shows nothing. */
+  arrivedByKey(arrivedBy: 'RETURNED' | 'EXITED' | null | undefined): string | null {
+    return arrivedBy ? workflowLabelKey('arrivedBy', arrivedBy) : null;
+  }
+
   transitionLabel(labelEn: string | null, labelAr: string | null): string {
     return labelEn ? this.languageService.bilingual(labelEn, labelAr) : '';
   }

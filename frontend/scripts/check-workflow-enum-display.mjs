@@ -32,6 +32,9 @@
 // kind (ADVANCE, RETURN, EXIT) on the objects that carry one: a `transition`,
 // a `move`, a `tr`, or the page's `editingTransition()`.
 //
+// ACC-202 — widened to how a record arrived at a stage-history visit
+// (`arrivedBy`: RETURNED, EXITED), on any object.
+//
 // A PREDICATE, not a baseline (CLAUDE.md, ACC-120): what puts a template in
 // scope is what makes it a defect, so a screen written tomorrow is covered.
 // NON-VACUITY: the patterns are checked against known-bad and known-good
@@ -47,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
-const FIELDS = 'objectType|actionType|mover';
+const FIELDS = 'objectType|actionType|mover|arrivedBy';
 // ACC-271 PR 5a — the who fields, on the objects that carry them (see above).
 const WHO = String.raw`(?:\bwho\??\.mode|\b(?:draft|whoDraft|d)(?:\(\))?\.mode\(\)|\b(?:entry|saved|whoEntry)\??\.kind)`;
 // ACC-271 PR 5b — a transition's kind, on the objects that carry one (see above).
@@ -81,6 +84,9 @@ const MUST_FLAG = [
   '{{ transition?.kind }}',
   '[label]="move.kind"',
   '{{ editingTransition()?.kind }}',
+  // ACC-202 — how a record arrived at a history visit.
+  '{{ visit.arrivedBy }}',
+  '[label]="v?.arrivedBy"',
 ];
 const MUST_PASS = [
   "{{ workflowLabelKey('objectType', template.objectType) | translate }}",
@@ -96,6 +102,8 @@ const MUST_PASS = [
   "{{ workflowLabelKey('mover', transition.mover) | translate }}",
   '{{ kindLabelKey(transition) | translate }}',
   "@if (transition.mover === 'APP') {",
+  // ACC-202 — in words.
+  '@if (arrivedByKey(visit.arrivedBy); as key) {',
   '[class]="\'am-tr-chip am-tr-chip--\' + kindOf(transition).toLowerCase()"',
 ];
 const selftest = [];

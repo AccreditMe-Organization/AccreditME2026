@@ -12,6 +12,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 import { RoleDto, RoleService } from '../../services/role.service';
 import { RoleListComponent } from './role-list.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-235 — the Roles row ⋯ is am-row-menu: attached to the page body under its
 // own row's ⋯, so it can never widen the list or make the page scroll sideways
@@ -40,6 +41,7 @@ const ROLES = [
 ];
 
 describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<RoleListComponent>;
   let el: HTMLElement;
   let service: jasmine.SpyObj<RoleService>;

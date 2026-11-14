@@ -17,10 +17,12 @@ import { ITaskPageViewDto } from '../../services/task.service';
 import { TaskPageComponent } from './task-page.component';
 import { FileViewerService } from '../../../../shared/files/viewer/file-viewer.service';
 import { HISTORY, pageView } from './task-page.fixtures';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 const API = `${environment.apiUrl}/tasks`;
 
 describe('TaskPageComponent — the task page (ACC-228)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
 
   let http: HttpTestingController;
