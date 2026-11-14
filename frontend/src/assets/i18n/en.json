@@ -1111,6 +1111,10 @@
       "stageHasNoOne": "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it.",
       "notInStagePool": "Only whoever works this stage can do this.",
       "moveHasNoMover": "Nobody is set to make this move, so the record can't move this way. Ask an administrator.",
+      "defaultNeedsStages": "Add a starting stage, then set this template as the default.",
+      "defaultTypeChange": "The default workflow's record type can't be changed. Make another template the default first.",
+      "defaultRequired": "This is the default workflow for its record type. Make another template the default first.",
+      "defaultInactive": "A deactivated workflow can't be the default.",
       "protected": {
         "CREATE_TEMPLATE": "There is already a committee change request workflow, and there can be only one. Rename its stages or set their deadlines instead.",
         "REPLACE_DEFAULT": "The committee change request workflow cannot be replaced by another workflow.",
@@ -1146,7 +1150,6 @@
     },
     "confirmRemoveStageHeader": "Remove the stage “{{name}}”?",
     "confirmDeactivateTemplateHeader": "Deactivate the template “{{name}}”?",
-    "confirmDeactivateDefaultTemplate": "Records already on it carry on. It's the default, so new records of its type can't start until another template is made the default.",
     "confirmRemoveTransitionHeader": "Remove the transition “{{name}}”?",
     "who": {
       "title": "Who works this stage",
