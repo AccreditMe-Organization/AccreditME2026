@@ -1,7 +1,8 @@
 # Step 164 — Turn two-step sign-in off, and the administrator reset (ACC-164)
 
-Plan only. No code is written until Ahmad has answered §11 and the design
-thread has drawn the screens in §9 (the design brief is kept outside the repo).
+**Decisions are in (14 Nov), and §0b records them.** Where §0b and a later
+section disagree, §0b wins; the later sections are kept as they were planned.
+§12 is the as-built record.
 
 Read against `origin/dev` at `9b49be0` and `better-auth@1.6.22` (14 Nov). Every
 statement about Better Auth quotes the installed file and line. "Two-step
@@ -16,6 +17,118 @@ uses that wording for anything a person reads.
 - An administrator can reset it for ANOTHER person in their organisation.
 
 `allowPasswordless` stays off, and impersonation is out (ACC-99).
+
+## 0b. Decisions in (14 Nov) — from ACC-164 on Linear
+
+### Ahmad's four rules (answers to §11)
+
+1. **Nobody in the organisation resets the account owner's two-step sign-in.**
+   409 `ACCOUNT_OWNER_PROTECTED`, through ACC-221's `assertNotAccountOwner()`.
+   The owner is reset by AccreditMe support (ACC-99).
+2. **`users:reset_mfa` may be given to other roles.** Only Organization
+   Administrator gets it by default. It is not root-only.
+3. **Turning it off yourself ends no other sessions.**
+4. **The status shows only on the user's record page, to people allowed to
+   reset it.** The users list gets no field and no mark. (§8's list half and
+   §9.2's row-menu action are dropped.)
+
+### Lane B's floor (because rule 2 is "grantable")
+
+- **A holder without Organization Administrator can't reset someone who has
+  it.** 409 `MFA_RESET_HIGHER_ACCOUNT`.
+- **Where it runs:** after the 404 and before any write, as single reads: the
+  tenant's root role (`key: TENANT_ADMIN`, `isActive: true`) joined to the
+  target's role rows, the target being ACTIVE (`hasActiveRootRole()`), and the
+  same for the actor.
+  - An inactive root role grants nothing (`getUserPermissions()` reads
+    `role: { isActive: true }`), so it doesn't count either side.
+  - "Holds" means an ACTIVE user with the role: an INACTIVE target is not
+    above anyone, which matches ACC-120's "holding a role is not being able to
+    act".
+- **The same rule hides the action.** `GET /users/:id` answers
+  `twoStep: { enabled, mayReset } | null`, built from the service's ONE
+  function, `mfaResetBlock()`, which the reset route also calls. So the screen
+  never offers a reset the server refuses.
+  - `null` (no panel at all, never "Off") unless the viewer holds
+    `users:reset_mfa`, the record is someone else's, it is not the account
+    owner's, and the floor passes. That is rule 4: only people allowed to reset
+    it see the status.
+  - `mayReset` is `enabled` and not impersonating. The impersonation refusal
+    stays as the fallback.
+  - Your own record keeps reading `GET /auth/mfa/status`, unchanged, and gets
+    `null` here.
+- A mutation-checked spec pins it.
+
+### Lane B's permission conditions
+
+- **`users:reset_mfa`** in the Users group, beside Deactivate/Reactivate,
+  with §5's sentences. Checked from day one, so NOT on
+  `PERMISSIONS_NOT_YET_CHECKED`.
+- **CLAUDE.md's key list goes from 74 to 75.**
+- **The seed gives it to Organization Administrator only.** (Platform
+  Administrator's set is "every key" by construction and is frozen; it is inert
+  in a tenant, and `PlatformGuard` is its real gate. No other seeded role gets
+  it.)
+- **Backfill, grant-only, in ACC-83's shape:**
+  `npm run backfill:acc164-reset-mfa-permission`
+  (`prisma/backfill-acc164-reset-mfa-permission.ts`).
+  - It upserts the Permission row and writes the RolePermission directly
+    (`assignPermissions()` refuses the frozen root role).
+  - It writes one audit row per organisation (one grant each).
+  - It is idempotent: a dry run by default, `-- --execute` AFTER the deploy,
+    then a dry run reporting 0.
+  - **The platform organisation is skipped**, and the header says so: nobody
+    holds Organization Administrator there (ACC-120 measured 0), and its people
+    hold Platform Administrator.
+
+### The design is final
+
+`frontend/design-reference/AccreditMe Two-step Sign-in.dc.html` (copied
+unchanged), with the build notes in
+`design-review-mfa-off-reset-2026-11-14.md`. What changed from §9:
+- **Turn off is a 420 confirm-size dialog** with two fields. Focus goes to
+  Password on open. A wrong password is cleared and focused; the code is kept.
+- **"Already off" and the owner refusal show only Close.** The owner refusal
+  replaces the paragraph.
+- **While sending,** Cancel is disabled, and Escape and the backdrop are
+  ignored, on both dialogs.
+- **Reset is hidden while impersonating**; the refusal stays as the fallback.
+- **A success toast after Turn off:** "Two-step sign-in is off." | «تم إيقاف
+  التحقق بخطوتين.» (and the design's "Two-step sign-in was reset." after Reset).
+- **Arabic:** «تطبيقك» in the code lines; «إعادة ضبط» is two-step sign-in's
+  reset word, «إعادة تعيين» the password's.
+- **`{{when}}`** comes from `relative()`, with a no-time sentence, as Sign in.
+- **New plural keys** for attempts left.
+- Existing keys are reused where the notes name them
+  (`userRecord.twoStep.off`, `userRecord.twoStep.setUp`).
+
+### The two open calls, decided
+
+**(1) "Code expired" is not a real answer on this route.**
+- Each press makes its own sign-in challenge and spends it at once, so a
+  challenge can't time out or run out of tries between the person typing and
+  the server checking.
+- An authenticator code that has gone stale fails Better Auth's TOTP check,
+  which answers `INVALID_CODE`. A stale code is therefore a wrong code, and it
+  counts as one (Better Auth counts it; we can't tell it apart).
+- So the route never sends `MFA_EXPIRED`. Better Auth answering
+  `INVALID_TWO_FACTOR_COOKIE` or `TOO_MANY_ATTEMPTS_…` here is a fault (500),
+  because nothing a person types can cause it. The design's "That took too
+  long" state is not built.
+
+**(2) Wrong passwords and wrong codes do NOT share a counter.**
+- A wrong password counts towards the sign-in lock (`LoginAttempt`, five in
+  fifteen minutes, per organisation and email), exactly as a sign-in does.
+  This form checks the same password; if it had its own counter, it would be a
+  side door around that lock.
+- A wrong code counts towards Better Auth's per-person two-step lock (ten
+  failures, fifteen minutes), exactly as a sign-in code does.
+- Merging them would need a new counter that neither lock reads.
+- **Attempts left** is sent only with a wrong code: the codes left before the
+  two-step lock (`TWO_FACTOR_MAX_FAILURES_PER_USER − failedVerificationCount`).
+  The per-challenge five is not in it, because every press has a fresh
+  challenge. The screen shows it only for 1 or 2, as Sign in does. A wrong
+  password sends no count.
 
 ## 1. Measured on the shared database (14 Nov, read-only, counts only)
 
@@ -436,7 +549,7 @@ contained modules.
 10. Remove the key from the backfill's grant.
 11. Write `twoFactorEnabled` from a third file. The scan goes red.
 
-## 11. Questions for Ahmad
+## 11. Questions for Ahmad (answered 14 Nov, §0b)
 
 1. **May an administrator reset the ACCOUNT OWNER's two-step sign-in?**
    **Recommend no** (409 `ACCOUNT_OWNER_PROTECTED`, ACC-221's helper). The owner
