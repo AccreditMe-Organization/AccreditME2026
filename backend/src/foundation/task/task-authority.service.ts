@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RECORD_VIEW_PERMISSION } from '../../common/services/object-visibility.service';
 import { taskKeyOf } from './task-record-types';
 import { findRunningActingCover, findUnitsCoveredBy } from '../organization/unit-headship';
+import { isOutOfOffice } from '../../common/services/out-of-office-cover';
 
 // The client inside this.prisma.$transaction(…), or the service itself.
 type AuthorityClient = Pick<PrismaService, 'user' | 'orgUnitHeadAssignment' | 'userRole'>;
@@ -180,14 +181,6 @@ interface CreatorCoverFields {
   outOfOfficeTo: Date | null;
   primaryOrgUnitId: string | null;
   position: { isUnitHeadPosition: boolean } | null;
-}
-
-// Both dates set and now inside them, inclusive — StagePoolService's
-// out-of-office window. An open-ended window is not out of office.
-function isOutOfOffice(user: CreatorCoverFields, now: Date): boolean {
-  return (
-    !!user.outOfOfficeFrom && !!user.outOfOfficeTo && user.outOfOfficeFrom <= now && now <= user.outOfOfficeTo
-  );
 }
 
 // The unit the user heads substantively, by the holder rule; null otherwise.
