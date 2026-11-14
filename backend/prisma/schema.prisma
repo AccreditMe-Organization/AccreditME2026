@@ -2443,10 +2443,10 @@ model LoginAttempt {
 // ---------------------------------------------------------------------------
 
 model RefreshToken {
-  id             String    @id @default(cuid())
-  userId         String
-  organizationId String
-  tokenHash      String    @unique // SHA-256 hash of the raw token — never store it plain
+  id               String    @id @default(cuid())
+  userId           String
+  organizationId   String
+  tokenHash        String    @unique // SHA-256 hash of the raw token — never store it plain
   // ACC-122 — the User.tokenVersion this session was issued against, so
   // /auth/refresh can refuse to renew a session that a forced logout has
   // already ended. NULLABLE on purpose: rows created before this column
@@ -2455,12 +2455,17 @@ model RefreshToken {
   // out every logged-in user the moment the migration ran, for no security
   // gain. Rows rotate on every refresh, so nulls disappear within one refresh
   // cycle (at most the 7-day refresh lifetime).
-  tokenVersion   Int?
-  expiresAt      DateTime
-  createdAt      DateTime  @default(now())
-  revokedAt      DateTime?
-  deviceInfo     String? // browser/device string, for security audit
-  ipAddress      String?
+  tokenVersion     Int?
+  // ACC-126 — when this session signed in. Copied UNCHANGED onto every row a
+  // rotation writes, so it is the session's start, not the row's: refresh()
+  // refuses past start + 12 hours. Nullable for rows written before this
+  // column existed; their own createdAt stands in (session-limit.ts).
+  sessionStartedAt DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+  deviceInfo       String? // browser/device string, for security audit
+  ipAddress        String?
 
   user         User         @relation(fields: [userId], references: [id])
   organization Organization @relation(fields: [organizationId], references: [id])

@@ -3401,7 +3401,13 @@
       "signOutNow": "Sign out now"
     },
     "signedOutIdle": "You were signed out because there was no activity for a while.",
-    "signedInElsewhere": "You're signed in to another organisation in this browser. Signing in here will sign you out there."
+    "signedInElsewhere": "You're signed in to another organisation in this browser. Signing in here will sign you out there.",
+    "limit": {
+      "title": "Your session ends soon",
+      "body": "For security, a session lasts 12 hours. You'll be signed out at {{time}}. Save your work, then sign in again.",
+      "continueWorking": "Continue working"
+    },
+    "signedOutLimit": "You were signed out because a session ends 12 hours after sign-in. Sign in again to continue."
   },
   "manageRoles": {
     "comesWithPosition": "Comes with their head position, {{position}}. It ends when that headship ends, so change it in Headship, not here.",

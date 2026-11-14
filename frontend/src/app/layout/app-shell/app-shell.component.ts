@@ -36,6 +36,8 @@ import { DocumentTitleService } from '../../core/services/document-title.service
 // wrapper doesn't affect how its dropdown behaves.
 import { IdleWarningComponent } from '../../core/components/idle-warning/idle-warning.component';
 import { IdleService } from '../../core/services/idle.service';
+import { SessionLimitWarningComponent } from '../../core/components/session-limit-warning/session-limit-warning.component';
+import { SessionLimitService } from '../../core/services/session-limit.service';
 import { MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
 
 /**
@@ -57,6 +59,7 @@ export const SHELL_PHONE_BELOW_PX = 768;
     SidebarComponent,
     ImpersonationBannerComponent,
     IdleWarningComponent,
+    SessionLimitWarningComponent,
   ],
   template: `
     <!-- ACC-79 — the App Shell reference's layout. The rail runs the full
@@ -71,6 +74,12 @@ export const SHELL_PHONE_BELOW_PX = 768;
          keeps the time either way; this only draws it. -->
     @defer (on idle; when idleService.warningVisible()) {
       <app-idle-warning />
+    }
+    <!-- ACC-126 — the session's 12-hour limit, 10 minutes ahead. Deferred
+         like the idle warning: SessionLimitService (started by this shell)
+         keeps the time; this only draws it. -->
+    @defer (on idle; when sessionLimit.warningVisible()) {
+      <app-session-limit-warning />
     }
 
     <div class="h-screen flex flex-col">
@@ -160,6 +169,8 @@ export const SHELL_PHONE_BELOW_PX = 768;
 })
 export class AppShellComponent implements OnInit {
   protected readonly idleService = inject(IdleService);
+  /** ACC-126 — the session's 12-hour limit and its warning. */
+  protected readonly sessionLimit = inject(SessionLimitService);
   /** ACC-90 — asks for the confirm host before idle when a confirm is waiting. */
   protected readonly confirmGate = inject(ConfirmHostGate);
   private readonly myWork = inject(MyWorkCountsService);
@@ -287,6 +298,9 @@ export class AppShellComponent implements OnInit {
     // ACC-122 — the idle clock runs for the life of the signed-in shell.
     // start() is idempotent, and IdleService stops itself on destroy.
     this.idleService.start();
+    // ACC-126 — the 12-hour limit's clock, for the life of the signed-in shell.
+    this.sessionLimit.start();
+    this.injector.get(DestroyRef).onDestroy(() => this.sessionLimit.stop());
   }
 
   // Mirrors EditDialogComponent.onWheel() exactly — only ever calls

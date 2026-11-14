@@ -15,7 +15,8 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { TenantService } from '../../foundation/tenant/tenant.service';
 import { UserService } from '../../foundation/user/user.service';
 import { RoleService } from '../../foundation/roles/role.service';
-import { signAccessToken, ACCESS_TOKEN_TTL_SECONDS } from '../../foundation/auth/auth.service';
+import { signAccessToken, SignedAccessToken } from '../../foundation/auth/auth.service';
+import { cookieMaxAgeMs } from '../../foundation/auth/session-limit';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantModulesDto } from './dto/update-tenant-modules.dto';
 import { AllocateAiCreditsDto } from './dto/allocate-ai-credits.dto';
@@ -352,11 +353,19 @@ export class PlatformTenantService {
   // own identity, not the impersonated one. Acceptable for this ticket's
   // scope (impersonation sessions are short-lived support actions) but
   // worth knowing if this surfaces confusingly later.
+  //
+  // ACC-126 — the impersonation token carries the PLATFORM ADMIN's own session
+  // start (from their verified token's `sst`), so its expiry is capped by their
+  // 12 hours: impersonating neither resets nor extends them. A token minted
+  // before ACC-126 has no start; the time of this request stands in, which can
+  // add at most this token's 15 minutes (the refresh that follows renews the
+  // admin's own row, which is capped).
   async startImpersonation(
     tenantId: string,
     targetUserId: string,
     platformAdminUserId: string,
     platformOrgId: string,
+    sessionStartedAt: Date | undefined,
     res: ExpressResponse,
   ): Promise<void> {
     // ACC-168 — a closed organisation is refused HERE, before a token is
@@ -395,6 +404,7 @@ export class PlatformTenantService {
         impersonatedBy: platformAdminUserId,
       },
       secret,
+      sessionStartedAt ?? new Date(),
     );
 
     this.setAccessTokenCookie(res, token);
@@ -421,8 +431,16 @@ export class PlatformTenantService {
   // Reads impersonatedBy off the CURRENT request (attached by TenantGuard —
   // see tenant.guard.ts) and mints a fresh normal JWT for that original
   // platform admin. Fails closed if this session was never impersonated.
+  //
+  // ACC-126 — the restored token keeps the session start the impersonation
+  // token carried (the admin's own), so ending impersonation resets nothing.
   async endImpersonation(
-    req: ExpressRequest & { impersonatedBy?: string; userId?: string; tenantId?: string },
+    req: ExpressRequest & {
+      impersonatedBy?: string;
+      userId?: string;
+      tenantId?: string;
+      sessionStartedAt?: Date;
+    },
     res: ExpressResponse,
   ): Promise<void> {
     if (!req.impersonatedBy) {
@@ -442,6 +460,7 @@ export class PlatformTenantService {
         tokenVersion: platformAdmin.tokenVersion,
       },
       secret,
+      req.sessionStartedAt ?? new Date(),
     );
 
     this.setAccessTokenCookie(res, token);
@@ -457,11 +476,13 @@ export class PlatformTenantService {
   }
 
   // ACC-186 — the same options sign-in uses, from the one place they live.
-  private setAccessTokenCookie(res: ExpressResponse, token: string): void {
+  // ACC-126 — the cookie lives exactly as long as the token, which the 12-hour
+  // limit can make shorter than 15 minutes.
+  private setAccessTokenCookie(res: ExpressResponse, token: SignedAccessToken): void {
     res.cookie(
       ACCESS_TOKEN_COOKIE,
-      token,
-      accessTokenCookieOptions(ACCESS_TOKEN_TTL_SECONDS * 1000),
+      token.token,
+      accessTokenCookieOptions(cookieMaxAgeMs(token.expiresAt)),
     );
   }
 

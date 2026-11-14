@@ -58,7 +58,7 @@ audit's starting point, not be mistaken for having already done it.
 
 ## Table of Contents
 
-1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal and the idle rule, ACC-122; 1.15 = the account owner, ACC-221; 1.2 corrected — a revocation applies on the next request)
+1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal, the idle rule (ACC-122) and the 12-hour limit (ACC-126); 1.15 = the account owner, ACC-221; 1.2 corrected — a revocation applies on the next request)
 2. Workflow Engine — ✅ complete
 3. Task System — ✅ complete
 4. Notification System — ✅ complete
@@ -1179,6 +1179,84 @@ and is clamped to the 15-minute default — a stray variable on a deployed
 environment must not be able to hand out day-long access tokens. A test-only
 affordance that can make production less safe is not test-only.
 
+#### The 12-hour limit (ACC-126)
+
+**Every session ends 12 hours after sign-in, however active the person is**
+(Ahmad, 13 Nov 2026). The rule is the same for everyone, with nothing set per
+organisation. The 30-minute idle rule above is separate and unchanged. Plan and as-built
+notes: `backend/Plans/step-126-session-max-length.md`.
+
+**The rule lives in one file, `foundation/auth/session-limit.ts`**
+(`SESSION_MAX_LENGTH_SECONDS` = 12 h). There is deliberately no override:
+a variable that could lengthen it on a deployed environment is the trap
+`AUTH_ACCESS_TOKEN_TTL_SECONDS` was clamped to avoid.
+
+**The session's start is kept in two places, and both are copied, never
+renewed:**
+- `RefreshToken.sessionStartedAt` (nullable, migration
+  `acc126_refresh_token_session_started_at`). Every row a rotation writes copies
+  the presented row's start unchanged.
+- The access token's signed claim `sst` (epoch seconds).
+
+**Where the start comes from:**
+- **Sign-in** sets it in `completeLogin()`, after every check and after the MFA
+  code when there is one.
+- **A rotation** carries `old.sessionStartedAt ?? old.createdAt`, never the new
+  row's `createdAt`.
+- **The only place a row is created is `issueRefreshToken()`.** Its start is a
+  required `Date`, and a scan spec fails any second create site.
+
+**Three places enforce it:**
+- **The access token** expires at `min(now + 15 min, start + 12 h)`, and its
+  cookie lives exactly as long. `verifyJwt()` already refuses an expired `exp` in
+  memory, so nobody works past the limit until the next renewal, and **no query
+  is added on the per-request path**. TenantGuard only copies the verified `sst`
+  onto the request, for `/auth/me` and impersonation.
+- **A refresh-token row** expires at `min(now + 7 days, start + 12 h)`.
+- **`refresh()` refuses past start + 12 h with `SESSION_TIME_LIMIT`** (§1.12).
+  The check comes first: before the row's own expiry (which would otherwise
+  answer first with no reason), the user query and the ACC-204 address check. The
+  token is revoked and both cookies are cleared.
+
+**A session open at the deploy has no start on its row.**
+- Its row's own `createdAt` stands in. That is its last rotation, a lower bound,
+  so nobody is signed out early.
+- Such a session is measured from its last rotation, not its real sign-in, so it
+  can run up to 12 hours past the deploy (accepted).
+- The later contract step deletes the leftover null rows, never backfills them
+  (plan §c).
+
+**Impersonation creates no row.** Its token carries the platform admin's own
+`sst`, so its expiry is capped by their 12 hours, and ending impersonation
+restores the same start. Neither resets the limit.
+
+**On screen: a warning 10 minutes before, then the sign-out.**
+- **The deadline:** `GET /auth/me`, `POST /auth/login` and `POST /auth/mfa/verify`
+  return `sessionEndsAt`. `SessionLimitState` (`core/services/session-limit-state.ts`,
+  no dependencies, so no injection cycle) holds it.
+- **The clock:** `SessionLimitService` keeps it once a second, outside Angular's
+  zone so the zone can still become stable.
+- **The warning:** `SessionLimitWarningComponent` is deferred in the shell like the
+  idle warning. It is an `alertdialog` on the dialog shell: "Your session ends
+  soon" / «تنتهي الجلسة قريبًا», with the time of the sign-out in the
+  organisation's zone (`FormatService.timeOfDay()`).
+  - Its actions are "Continue working" (Escape does the same: it dismisses the
+    warning and does not move the deadline) and "Sign out now".
+  - **There is no "Stay signed in"**: nothing can extend the session.
+- **At the deadline:** `IdleService.signOut('limit')`, the idle rule's own path. It
+  calls `POST /auth/logout`, broadcasts the reason to the other tabs, and goes to
+  `/login?reason=limit`.
+
+**A server refusal reaches the sign-in page too.** This covers a tab asleep
+through the warning.
+- `authInterceptor` reads the renewal's own refusal and adds `reason=limit` for
+  `SESSION_TIME_LIMIT`.
+- `restoreSession()`, which never navigates (ACC-24), has the renewal service note
+  the refusal in `SessionLimitState`, and the sign-in page reads that note.
+- The page says: "You were signed out because a session ends 12 hours after
+  sign-in. Sign in again to continue." / «تم تسجيل الخروج لأن الجلسة تنتهي بعد
+  12 ساعة من تسجيل الدخول. يُرجى تسجيل الدخول من جديد للمتابعة.»
+
 ### 1.12 Sign-in outcomes — the codes, and what each must not reveal (ACC-120 slice 9b)
 
 **Every sign-in refusal carries a stable `code`** in the body, inside the error
@@ -1199,6 +1277,7 @@ logs.
 | `MFA_EXPIRED` | 401 | the challenge cookie is missing, tampered with or past its 10 minutes; or its five attempts are spent | — | — |
 | `ORGANIZATION_UNAVAILABLE` | 401 | the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING — at sign-in (after a correct password, before MFA), on session refresh, and on every authenticated request (ACC-168) | — | anything to someone without the password: at sign-in it is checked after the password, and a wrong password stays `INVALID_CREDENTIALS`. A 401, so the frontend's existing 401 handling signs the person out. |
 | `SESSION_OTHER_ORGANIZATION` | 401 | NOT a sign-in outcome (ACC-204): a COOKIE session used at another organisation's address, or with no usable `Origin` — on every authenticated request (TenantGuard) and on session refresh, where it is refused before the rotation and revokes nothing | — | which organisation the session belongs to: the message names neither. The app reads it as "not signed in at this address" (§15.16). |
+| `SESSION_TIME_LIMIT` | 401 | NOT a sign-in outcome (ACC-126): on session refresh, 12 hours or more after the session's sign-in, however active the person is. Checked first, before the row's own expiry, the user query and the address check; the presented token is revoked and both cookies are cleared | — | — (it says only that the session's time is up). The app reads it as "signed out at the 12-hour limit" (`reason=limit`, §1.11). |
 
 **What Sign in shows for each (ACC-120 slice 9d).** One sentence per code, in
 the one message slot above the button (`foundation/auth/components/login/
