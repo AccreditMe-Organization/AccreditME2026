@@ -3798,7 +3798,7 @@ One PR; ACC-202's writer is a second PR after it (below).
 - **Becoming the default needs a starting stage (Q2):** `setDefault`, and
   `updateTemplate` with `isDefault: true`, call `assertHasStartingStage()`
   (strict: an empty template is refused too). "Creating a template as default
-  leaves two defaults" is a separate ticket.
+  leaves two defaults" is a separate ticket. Done in ACC-303, §2.20.5.
 - **The seed is pinned, not checked at run time:** `workflow.seed.spec.ts`
   requires one starting stage, not final, in every seeded workflow. A protected
   template cannot reach any of the three states (`isInitial` and `isFinal` are
@@ -3914,6 +3914,42 @@ it does to a delete:
   - `workflow-stage-checks.screens.spec.ts` (every screen, both languages);
   - `workflow-refusal.spec.ts`;
   - the transition panel's spec.
+
+#### 2.20.5 One default template per record type (ACC-303)
+
+- **Exactly one ACTIVE default per (organisation, record type)**, the one
+  `startInstance()` reads. Ahmad's answers, 14 Nov.
+- **`workflow-default.ts` holds the rule:**
+  - `lockTypeDefaults()` takes a per-(organisation, record type) advisory lock;
+  - `makeDefaultInTx()` sets the default and clears the old one, by
+    organisation and type only.
+- **Every path that changes a type's default goes through the service's
+  `inDefaultTx()`.** It takes, in order: the type locks (sorted), the template
+  row lock, then a fresh read. A type change committed in between makes it run
+  again under the new type.
+- **What each path does:**
+  - **create with `isDefault: true`:** 409 `DEFAULT_NEEDS_STAGES`, with nothing
+    written. A new template has no starting stage.
+  - **`setDefault` and update-to-default:** clear the old default. They are
+    refused for a deactivated template (`DEFAULT_TEMPLATE_INACTIVE`), as well as
+    by ACC-57's starting-stage check.
+  - **Changing the default's type:** `DEFAULT_TEMPLATE_TYPE_CHANGE`.
+  - **`isDefault: false` on the default, or deactivating it:**
+    `DEFAULT_TEMPLATE_REQUIRED`. Set as default on another template moves it.
+- **Unchanged:** the protected template's refusals (ACC-239). The seed creates
+  a default only where none exists.
+- **The list offers** Set as default and Deactivate on an active row that is not
+  the default, and only Open on the default.
+- **The four codes are in `PLAIN_REFUSAL_KEYS`**, in both languages.
+- **Shared database, 14 Nov:** 18 (organisation, type) pairs, each with exactly
+  one active default.
+- **Specs:** `workflow-default.db-spec.ts` (real Postgres).
+  - Concurrent promotions end with one default, and both specs go red without
+    the lock.
+  - Each refusal writes nothing.
+  - Another organisation and another type are untouched.
+- **No migration.** A partial unique index on `(organizationId, objectType)
+  WHERE isDefault` was not added.
 
 ## 3. Task System
 

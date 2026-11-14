@@ -366,16 +366,21 @@ export class WorkflowTemplateListComponent implements OnInit {
   }
 
   /**
-   * The row's ⋯. Open always; Set as default (not on the default) and
-   * Deactivate (only while active) for whoever may manage workflows. A
-   * protected template offers Open only: the server refuses both for it.
+   * The row's ⋯. Open always; Set as default and Deactivate on an active row
+   * that is not the default, for whoever may manage workflows. The default
+   * offers Open only (ACC-303): its type always needs one, so the server
+   * refuses switching it off, and Set as default on another row moves it. A
+   * deactivated row can't become the default, and a protected template offers
+   * Open only: the server refuses both for them.
    */
   menuFor(template: WorkflowTemplateDto): RowMenuItem[][] {
     const open: RowMenuItem = { id: 'open', label: this.translate.instant('workflow.list.open') };
     if (template.isProtected || !this.canManage()) return [[open]];
     const writes: RowMenuItem[] = [];
-    if (!template.isDefault) writes.push({ id: 'setDefault', label: this.translate.instant('workflow.list.setDefault') });
-    if (template.isActive) writes.push({ id: 'deactivate', label: this.translate.instant('workflow.list.deactivate'), danger: true });
+    if (template.isActive && !template.isDefault) {
+      writes.push({ id: 'setDefault', label: this.translate.instant('workflow.list.setDefault') });
+      writes.push({ id: 'deactivate', label: this.translate.instant('workflow.list.deactivate'), danger: true });
+    }
     return writes.length ? [[open], writes] : [[open]];
   }
 
@@ -405,12 +410,9 @@ export class WorkflowTemplateListComponent implements OnInit {
     this.refusal.set(null);
     this.amConfirm.ask({
       tone: 'destructive',
-      // workflow.service.ts startInstance() starts new records only on the
-      // active DEFAULT template; transitions never check isActive, so records
-      // already on it carry on.
-      message: this.translate.instant(
-        template.isDefault ? 'workflow.confirmDeactivateDefaultTemplate' : 'workflow.confirmDeactivateTemplate',
-      ),
+      // Transitions never check isActive, so records already on it carry on.
+      // Only a template that is not the default is offered (ACC-303).
+      message: this.translate.instant('workflow.confirmDeactivateTemplate'),
       header: this.translate.instant('workflow.confirmDeactivateTemplateHeader', { name: this.templateName(template) }),
       acceptLabel: this.translate.instant('confirm.deactivateTemplate'),
       accept: () => {

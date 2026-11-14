@@ -643,7 +643,7 @@ describe('WorkflowTemplateService', () => {
 
       expect(mockPrisma.workflowTemplate.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { organizationId: ORG_A, objectType: BASE_TEMPLATE.objectType, NOT: { id: 'template-1' } },
+          where: { organizationId: ORG_A, objectType: BASE_TEMPLATE.objectType, isDefault: true, NOT: { id: 'template-1' } },
           data: { isDefault: false },
         }),
       );
@@ -702,7 +702,7 @@ describe('WorkflowTemplateService', () => {
 
   describe('deactivateTemplate', () => {
     it('sets isActive to false', async () => {
-      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ isActive: true }));
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ isActive: true, isDefault: false }));
 
       await service.deactivateTemplate('template-1', ORG_A, ACTOR);
 
@@ -710,6 +710,18 @@ describe('WorkflowTemplateService', () => {
         expect.objectContaining({ data: { isActive: false } }),
       );
       expect(mockAuditLog.log).toHaveBeenCalled();
+    });
+
+    // ACC-303 — new records start on the default, so it can't be switched off.
+    it('refuses 409 DEFAULT_TEMPLATE_REQUIRED for the default, changing nothing', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(makeTemplate({ isActive: true, isDefault: true }));
+
+      await expect(service.deactivateTemplate('template-1', ORG_A, ACTOR)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'DEFAULT_TEMPLATE_REQUIRED' },
+      });
+      expect(mockPrisma.workflowTemplate.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
 
     it('is a no-op when already inactive', async () => {

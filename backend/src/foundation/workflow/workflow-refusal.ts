@@ -57,7 +57,12 @@ export type WorkflowRefusalCode =
   | 'STAGE_HAS_TRANSITIONS'
   | 'STAGE_IN_USE'
   | 'TRANSITION_ACTION_IN_USE'
-  | 'TRANSITION_IN_USE';
+  | 'TRANSITION_IN_USE'
+  // ACC-303 — exactly one default template per record type (workflow-default.ts).
+  | 'DEFAULT_NEEDS_STAGES'
+  | 'DEFAULT_TEMPLATE_TYPE_CHANGE'
+  | 'DEFAULT_TEMPLATE_REQUIRED'
+  | 'DEFAULT_TEMPLATE_INACTIVE';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -104,6 +109,10 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_IN_USE: HttpStatus.CONFLICT,
   TRANSITION_ACTION_IN_USE: HttpStatus.CONFLICT,
   TRANSITION_IN_USE: HttpStatus.CONFLICT,
+  DEFAULT_NEEDS_STAGES: HttpStatus.CONFLICT,
+  DEFAULT_TEMPLATE_TYPE_CHANGE: HttpStatus.CONFLICT,
+  DEFAULT_TEMPLATE_REQUIRED: HttpStatus.CONFLICT,
+  DEFAULT_TEMPLATE_INACTIVE: HttpStatus.CONFLICT,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -151,6 +160,10 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   STAGE_IN_USE: "Records have entered this stage, so it can't be removed. You can rename it",
   TRANSITION_ACTION_IN_USE: "This action has run, so it can't be removed. You can turn it off",
   TRANSITION_IN_USE: "This transition has been used, so it can't be removed. You can rename it",
+  DEFAULT_NEEDS_STAGES: 'Add a starting stage, then set this template as the default.',
+  DEFAULT_TEMPLATE_TYPE_CHANGE: "The default workflow's record type can't be changed. Make another template the default first.",
+  DEFAULT_TEMPLATE_REQUIRED: 'This is the default workflow for its record type. Make another template the default first.',
+  DEFAULT_TEMPLATE_INACTIVE: "A deactivated workflow can't be the default.",
 };
 
 export class WorkflowRefusalException extends HttpException {

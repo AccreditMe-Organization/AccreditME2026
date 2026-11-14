@@ -27,6 +27,7 @@ import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transit
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import { applyWorkflowSeed } from './workflow-seed-apply';
 import { writeStartingAssignments } from './workflow-who';
+import { lockTypeDefaults, makeDefaultInTx } from './workflow-default';
 import { PROTECTED_TEMPLATES } from './workflow-stage-keys';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { RECORD_ROUTES } from './stage-task-record-routes';
@@ -523,13 +524,17 @@ export class WorkflowTemplateService {
   ): Promise<IWorkflowTemplate> {
     // ACC-239 — the seeded template is the only one for a protected type.
     if (PROTECTED_TEMPLATES.has(dto.objectType)) refuseProtected('CREATE_TEMPLATE');
+    // ACC-303 (Ahmad, 14 Nov, Q1) — a new template has no stages, so it can't
+    // start a record (ACC-57 Q2). It becomes the default through Set as
+    // default, once it has a starting stage; nothing is written here.
+    if (dto.isDefault === true) throw new WorkflowRefusalException('DEFAULT_NEEDS_STAGES');
     const template = await this.prisma.workflowTemplate.create({
       data: {
         organizationId,
         nameEn: dto.nameEn,
         nameAr: dto.nameAr,
         objectType: dto.objectType,
-        isDefault: dto.isDefault ?? false,
+        isDefault: false,
         isActive: true,
       },
     });
@@ -564,24 +569,33 @@ export class WorkflowTemplateService {
       refuseProtected('REPLACE_DEFAULT');
     }
 
-    // ACC-57 (Q2) — becoming the default needs a starting stage, checked under
-    // the template lock a stage save takes, so the two cannot interleave.
-    const becomesDefault = dto.isDefault === true && !template.isDefault;
-    const updated = await this.prisma.$transaction(async (tx) => {
-      if (becomesDefault) {
-        await this.lockTemplate(tx, id, organizationId);
-        await assertHasStartingStage(tx, id, organizationId);
-      }
-      return tx.workflowTemplate.update({
-        where: { id },
-        data: {
-          ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
-          ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
-          ...(dto.objectType !== undefined && { objectType: dto.objectType }),
-          ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
-        },
-      });
-    });
+    const data = {
+      ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
+      ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
+      ...(dto.objectType !== undefined && { objectType: dto.objectType }),
+    };
+    // ACC-303 — a save that sends isDefault, or changes the type, may change a
+    // type's default, so it runs under both types' default locks. A rename
+    // takes none.
+    const newType = dto.objectType !== undefined && dto.objectType !== template.objectType ? dto.objectType : null;
+    const updated =
+      newType === null && dto.isDefault === undefined
+        ? await this.prisma.workflowTemplate.update({ where: { id }, data })
+        : await this.inDefaultTx(id, organizationId, newType ? [newType] : [], async (tx, current) => {
+            // Q3 — the default keeps its type; another template becomes the default first.
+            if (newType !== null && current.isDefault) throw new WorkflowRefusalException('DEFAULT_TEMPLATE_TYPE_CHANGE');
+            // A type is never left without a default: Set as default on another moves it.
+            if (dto.isDefault === false && current.isDefault) throw new WorkflowRefusalException('DEFAULT_TEMPLATE_REQUIRED');
+            const becomesDefault = dto.isDefault === true && !current.isDefault;
+            // ACC-57 (Q2) — becoming the default needs a starting stage, checked
+            // under the template lock a stage save takes; and the template must be
+            // active, which is what startInstance() reads.
+            if (becomesDefault) await this.assertCanBecomeDefault(tx, current);
+            const row = await tx.workflowTemplate.update({ where: { id }, data });
+            if (!becomesDefault) return row;
+            await makeDefaultInTx(tx, id, organizationId, row.objectType);
+            return { ...row, isDefault: true };
+          });
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -589,8 +603,8 @@ export class WorkflowTemplateService {
       action: 'UPDATE',
       objectType: 'WorkflowTemplate',
       objectId: id,
-      before: { nameEn: template.nameEn, nameAr: template.nameAr, objectType: template.objectType },
-      after: { nameEn: updated.nameEn, nameAr: updated.nameAr, objectType: updated.objectType },
+      before: { nameEn: template.nameEn, nameAr: template.nameAr, objectType: template.objectType, isDefault: template.isDefault },
+      after: { nameEn: updated.nameEn, nameAr: updated.nameAr, objectType: updated.objectType, isDefault: updated.isDefault },
     });
 
     return this.mapTemplate(updated);
@@ -605,15 +619,15 @@ export class WorkflowTemplateService {
 
     // ACC-57 (Q2) — a template with no starting stage can't become the
     // default: startInstance() would throw at whoever next creates a record.
-    await this.prisma.$transaction(async (tx) => {
-      await this.lockTemplate(tx, id, organizationId);
-      await assertHasStartingStage(tx, id, organizationId);
-      await tx.workflowTemplate.updateMany({
-        where: { organizationId, objectType: template.objectType, NOT: { id } },
-        data: { isDefault: false },
-      });
-      await tx.workflowTemplate.update({ where: { id }, data: { isDefault: true } });
+    // ACC-303 — the old default is cleared in the same transaction, under the
+    // type's default lock, so two promotions end with exactly one default.
+    const changed = await this.inDefaultTx(id, organizationId, [], async (tx, current) => {
+      if (current.isDefault) return false;
+      await this.assertCanBecomeDefault(tx, current);
+      await makeDefaultInTx(tx, id, organizationId, current.objectType);
+      return true;
     });
+    if (!changed) return;
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -632,7 +646,15 @@ export class WorkflowTemplateService {
     if (!template.isActive) return;
     if (PROTECTED_TEMPLATES.has(template.objectType)) refuseProtected('DEACTIVATE');
 
-    await this.prisma.workflowTemplate.update({ where: { id }, data: { isActive: false } });
+    // ACC-303 — the default is what new records start on, so it can't be
+    // switched off: Set as default on another template first.
+    const changed = await this.inDefaultTx(id, organizationId, [], async (tx, current) => {
+      if (!current.isActive) return false;
+      if (current.isDefault) throw new WorkflowRefusalException('DEFAULT_TEMPLATE_REQUIRED');
+      await tx.workflowTemplate.update({ where: { id }, data: { isActive: false } });
+      return true;
+    });
+    if (!changed) return;
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -643,6 +665,43 @@ export class WorkflowTemplateService {
       before: { isActive: true },
       after: { isActive: false },
     });
+  }
+
+  /**
+   * ACC-303 — the one way into a change of a type's default: the type default
+   * lock (workflow-default.ts) for the type the template was read with, plus
+   * `extraTypes` (a type change's new type), then the template's row lock,
+   * then a fresh read. Locks are always taken in that order, so two writers
+   * cannot deadlock. If the type changed between the first read and the lock
+   * (a type change committed in between), nothing is written and the work
+   * runs again under the new type's lock.
+   */
+  private async inDefaultTx<T>(
+    id: string,
+    organizationId: string,
+    extraTypes: WorkflowObjectType[],
+    work: (tx: EngineTx, current: PrismaWorkflowTemplate) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      const seen = await this.prisma.workflowTemplate.findFirst({ where: { id, organizationId }, select: { objectType: true } });
+      if (!seen) throw new NotFoundException('Workflow template not found');
+      const outcome = await this.prisma.$transaction(async (tx) => {
+        await lockTypeDefaults(tx, organizationId, [seen.objectType, ...extraTypes]);
+        await this.lockTemplate(tx, id, organizationId);
+        const current = await tx.workflowTemplate.findFirst({ where: { id, organizationId } });
+        if (!current) throw new NotFoundException('Workflow template not found');
+        if (current.objectType !== seen.objectType) return { retry: true as const };
+        return { retry: false as const, value: await work(tx, current) };
+      });
+      if (!outcome.retry) return outcome.value;
+      if (attempt >= 3) throw new ConflictException('This workflow changed while it was being saved. Reload and try again');
+    }
+  }
+
+  /** ACC-57 (Q2) and ACC-303 — the default must be able to start a record: active, with a starting stage. */
+  private async assertCanBecomeDefault(tx: EngineTx, template: PrismaWorkflowTemplate): Promise<void> {
+    if (!template.isActive) throw new WorkflowRefusalException('DEFAULT_TEMPLATE_INACTIVE');
+    await assertHasStartingStage(tx, template.id, template.organizationId);
   }
 
   // ── Stages ───────────────────────────────────────────────────────────────────
