@@ -108,9 +108,27 @@ describe('Removing what a record has used, against a real database (ACC-191)', (
       expect(await prisma.workflowStage.count({ where: { id: o.loose } })).toBe(1);
     });
 
-    it('one with transitions in or out is refused 409 STAGE_HAS_TRANSITIONS, with the count (Q4)', async () => {
+    it('one with transitions in or out, that no record has entered, is refused 409 STAGE_HAS_TRANSITIONS, with the count (Q4)', async () => {
       const o = await org();
       expect(await refusal(templates.removeStage(o.spare, o.id, o.admin))).toMatchObject({ status: 409, code: 'STAGE_HAS_TRANSITIONS', transitionCount: 1 });
+    });
+
+    // ACC-191, after the 14 Nov live check — a stage records have entered always
+    // has transitions too (the one they came in by). The records are the final
+    // answer, so they are said first: "remove its transitions first" sent the
+    // admin to transitions that had run, which cannot be removed either.
+    it('one with BOTH records and transitions is refused 409 STAGE_IN_USE, with the records, not STAGE_HAS_TRANSITIONS', async () => {
+      const o = await org();
+      const one = await instance(o, 'committee-1');
+      await entry(one.id, o.formation);
+      await entry(one.id, o.review);
+      const two = await instance(o, 'committee-2');
+      await entry(two.id, o.formation);
+      await entry(two.id, o.review);
+      expect(await prisma.workflowTransition.count({ where: { toStageId: o.review } })).toBe(1);
+
+      expect(await refusal(templates.removeStage(o.review, o.id, o.admin))).toMatchObject({ status: 409, code: 'STAGE_IN_USE', recordCount: 2 });
+      expect(await prisma.workflowStage.count({ where: { id: o.review } })).toBe(1);
     });
 
     it('one nothing has used is removed', async () => {
