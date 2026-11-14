@@ -8896,6 +8896,47 @@ patched file by file at least five times before.
   so CI's seed may not replay locally. Narrow the run with `--include` to the
   suspect pair and search seeds instead.
 
+#### 9.1.2 In specs — layout is measured in the real font (ACC-305)
+
+**Until IBM Plex Sans Arabic arrives, text is laid out in the fallback.**
+- The fallback is `system-ui` (`--am-font-family`): Segoe UI on Windows, and a
+  wider face on the Linux CI runner.
+- So a spec that measured before the font loaded passed on Windows and failed
+  on CI, depending on whether it happened to run before the font arrived
+  (set-acting-head's overflow, 494 vs 488).
+
+**The rule:** every `describe` that reads layout (`getBoundingClientRect`,
+`offsetWidth/Height`, `scrollWidth/Height`, `clientWidth/Height`) calls
+`useLayoutFonts({ rtl })` (`frontend/src/testing/layout-fonts.ts`) at its top,
+like `preserveDocumentLanguage()`. It registers a `beforeAll` that:
+- loads every weight `fonts.css` declares (400/500/600/700) by name, Latin and,
+  with `rtl`, Arabic (a separate file by `unicode-range`), with
+  `document.fonts.load()`;
+- waits for `document.fonts.ready`;
+- **checks** each weight, failing with `measured in a fallback font: <weight>`.
+  A too-early measurement therefore fails on any machine, not only where the
+  fallback is wider.
+
+**Three details that matter:**
+- **A `beforeAll`, not a wait inside one test.** Jasmine shuffles the tests in
+  a file. The font set belongs to the page, so once loaded it stays loaded.
+- **`fonts.ready` alone is not enough.** It resolves whenever nothing is
+  loading, which is also true before any text has asked for a weight. Proved
+  under a font hold: without the `load()` calls it fails.
+- **It carries its own 20-second timeout.** A browser fetches at most six files
+  at once, so a slow font server delivers the eight Plex files in two waves,
+  which outlasts Jasmine's 5-second default.
+
+**The guard:** `npm run check:layout-spec-fonts` fails a spec that reads layout
+in code (comments stripped) without calling `useLayoutFonts(`. It keys off the
+file's own content, so it has no list and no allowlist.
+
+**Reproducing it** needs no CI log. Run the file alone (`--include`) with a
+scratch copy of the Karma config whose `beforeMiddleware` holds every
+`.woff2`/`.woff`/`.ttf` response for 3 seconds. Run alone, the file measures
+while `document.fonts.status` is still `loading`, as it did when CI ran it
+first.
+
 ### 9.2 Resolution Chain — Backend and Frontend, Precisely
 
 **Backend** (`AuthService.resolveLanguage()`,
