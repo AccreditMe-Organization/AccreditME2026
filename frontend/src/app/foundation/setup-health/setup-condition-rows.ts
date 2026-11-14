@@ -73,6 +73,14 @@ export function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         // ACC-244 — Manage tasks opens Unassigned AND reassigns from it.
         permissions: ['committees:manage_tasks'],
       };
+    case 'COMMITTEE_MISSING_REQUIRED_SEAT':
+      // ACC-286 — the committee's own page, where Add member is. The route needs
+      // committees:view; the save needs committees:add_member.
+      return {
+        link: ['/committees', condition.objectId],
+        queryParams: {},
+        permissions: ['committees:view', 'committees:add_member'],
+      };
     case 'STORAGE_ALMOST_FULL':
       // ACC-260 PR D — the recycle bin, where deleted files that still count
       // against the limit are purged. Its route and API need tenant:manage_config.
@@ -247,6 +255,14 @@ export class SetupConditionRows {
           workflow: (this.language.isArabic() && s.templateNameAr) || s.templateNameEn || '—',
           stage: this.objectName(condition),
           admin: this.adminName(condition),
+        });
+      case 'COMMITTEE_MISSING_REQUIRED_SEAT':
+        // ACC-286 — the seats by name, in the reader's language (tenant data).
+        return t('committeeMissingSeat', {
+          seats:
+            (s.seats ?? [])
+              .map((seat) => this.language.bilingual(seat.labelEn, seat.labelAr))
+              .join(this.translate.instant('common.listSeparator')) || '—',
         });
     }
   }
