@@ -804,8 +804,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
 
     // ACC-271 PR 6a — "votes that keep their quorum" are the open entries of
     // Committee vote stages (whoMode COMMITTEE_VOTE) whose vote committee is this
-    // one: the stage's Committee entry's own committee, else the record's. It
-    // read approvalMode COMMITTEE before, which no converted stage has.
+    // one: the stage's Committee entry's own committee, else the record's. A
+    // Committee entry alone does not make a vote: the mode does.
     describe('open votes the preview counts', () => {
       /** A stage made a Committee vote, on `committeeId` (null: the record's own). */
       const voteStage = async (w: World, key: string, committeeId: string | null) => {
@@ -821,8 +821,10 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         const w = await world();
         await voteStage(w, 'terms_review', null); // the record's own committee
         await voteStage(w, 'formation', w.other); // always the other committee
-        // An old-style committee approval that is not a Committee vote stage: not counted.
-        await prisma.workflowStage.update({ where: { id: w.stageOf['dissolution_pending'] }, data: { whoMode: 'ANY_ONE', approvalMode: 'COMMITTEE' } });
+        // A stage worked by this committee that is NOT a vote (Any one of them): not counted.
+        // ACC-278 — this was an old approvalMode COMMITTEE decoy; that column left the client.
+        await prisma.workflowStage.update({ where: { id: w.stageOf['dissolution_pending'] }, data: { whoMode: 'ANY_ONE' } });
+        await prisma.workflowStageAssignee.create({ data: { organizationId: w.org, stageId: w.stageOf['dissolution_pending']!, order: 1, kind: 'COMMITTEE', committeeId: null } });
 
         await openEntry(w, w.committee, 'terms_review'); // this committee's own vote: 1
         await openEntry(w, w.committee, 'terms_review', new Date()); // closed: 0
