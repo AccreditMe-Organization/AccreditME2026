@@ -1,6 +1,7 @@
 import { Component, Type, input } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { COMMITTEE_HEADER_GRID, COMMITTEE_PANEL_GRID } from './committee-panel-grid';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-232 — the committee page's two grids at 320px, a phone narrower than any
 // column's minimum. Each host reads the page's own constant, never a copy, and
@@ -61,6 +62,7 @@ async function measure(host: Type<HeaderHost | PanelHost>, width: number) {
 }
 
 describe('the committee page grids at 320px (ACC-232)', () => {
+  useLayoutFonts();
   it('the header grid: the page does not scroll sideways', async () => {
     const m = await measure(HeaderHost, 320);
     expect(m.main.width).withContext('the stand-in <main> not laid out at 320').toBe(320);

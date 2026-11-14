@@ -18,6 +18,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { ITaskRecordRowDto } from '../../services/task.service';
 import { TaskListViewComponent } from './task-list-view.component';
 import { NO_ACTIONS, listPage, rows } from '../record-tasks-panel/record-tasks.fixtures';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-234 — the All tasks list's COLUMNS, MEASURED in the real theme, font and
 // translations, at the widths /tasks/all draws it (measured on the page: a
@@ -175,6 +176,7 @@ function measure(root: HTMLElement): Measured {
 }
 
 describe('All tasks list — columns, measured (ACC-234)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const report: string[] = [];
   let http: HttpTestingController;
@@ -205,7 +207,6 @@ describe('All tasks list — columns, measured (ACC-234)', () => {
 
   async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
   }
 
@@ -227,8 +228,7 @@ describe('All tasks list — columns, measured (ACC-234)', () => {
 
           const root = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="task-list-view"]')!;
           const rowEls = Array.from(root.querySelectorAll<HTMLElement>('[data-task-row]'));
-          // Non-vacuity: laid out, in the real font, with every kind of row.
-          expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
+          // Non-vacuity: laid out, with every kind of row (the real font: useLayoutFonts).
           expect(rowEls.length).withContext('rows rendered').toBe(30);
           expect(root.querySelector('[data-testid="task-list-head"]')!.getBoundingClientRect().width).withContext('the list is not laid out').toBeGreaterThan(900);
           expect(rowEls.filter((r) => r.querySelector('[data-action]')).length).withContext('rows with a next step').toBeGreaterThan(5);
@@ -262,6 +262,7 @@ describe('All tasks list — columns, measured (ACC-234)', () => {
 // width, scrolls inside itself (never the page) on a phone, cuts no chip's
 // label, and a row's Overdue pill stays inside its column.
 describe('Created by me — the status chips and overdue pill, measured (ACC-120 slice 3)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let http: HttpTestingController;
 
@@ -308,14 +309,12 @@ describe('Created by me — the status chips and overdue pill, measured (ACC-120
         view.phone.set(c.phone);
         http.expectOne((r) => r.url === API).flush(listPage(ownRows(language), { total: 30, matching: 30, view: 'created' }));
         await fixture.whenStable();
-        await document.fonts.ready;
         await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
         const host = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="own-host"]')!;
         const row = host.querySelector<HTMLElement>('[data-testid="task-list-status-chips"]')!;
         const chips = Array.from(row.querySelectorAll<HTMLElement>('button'));
-        // Non-vacuity: laid out, in the real font, with every chip.
-        expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
+        // Non-vacuity: laid out, with every chip (the real font: useLayoutFonts).
         expect(chips.length).withContext('chips rendered').toBe(8);
         expect(row.getBoundingClientRect().width).withContext('the chip row is not laid out').toBeGreaterThan(c.width / 2);
         expect(chips.every((b) => b.getBoundingClientRect().width > 20)).withContext('a chip with no width').toBe(true);

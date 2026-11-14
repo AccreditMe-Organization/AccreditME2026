@@ -14,6 +14,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowTemplateDto, WorkflowStageDto, WorkflowTransitionDto } from '../../services/workflow-template.service';
 import { TransitionPanelComponent } from './transition-panel.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-271 PR 5b — the transition panel, MEASURED in the real theme, font and
 // translations, at the page column's width in a 1280, 1440 and 1920 window and
@@ -96,6 +97,7 @@ class Host {
 }
 
 describe('am-transition-panel — fits the page column (ACC-271 PR 5b)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<Host>;
 
@@ -121,7 +123,6 @@ describe('am-transition-panel — fits the page column (ACC-271 PR 5b)', () => {
     fixture.componentRef.setInput('transition', transition);
     fixture.detectChanges();
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     fixture.detectChanges();
     return (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-transition-panel]')!;

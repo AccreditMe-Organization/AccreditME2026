@@ -22,6 +22,7 @@ import { CommitteeService } from '../../../committees/services/committee.service
 import { TransferCommitteesDto, TransferCommitteesService } from '../../services/transfer-committees.service';
 import { TransferUserWizardComponent } from './transfer-user-wizard.component';
 import { PERSON, UNITS, fakeUserService, seat, walkToAfterManager } from './transfer-wizard.testing';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-296 — the Committees step against the dialog body's 420px cap (ACC-111),
 // in the real shell (EditDialogComponent at 640px, as both hosts open it) with
@@ -69,6 +70,7 @@ class HostComponent {
 }
 
 describe('TransferUserWizard — the Committees step fits the 420px body (ACC-296)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<HostComponent>;
   const measured: string[] = [];

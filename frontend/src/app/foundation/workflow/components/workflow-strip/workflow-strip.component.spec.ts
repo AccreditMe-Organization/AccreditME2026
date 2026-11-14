@@ -8,6 +8,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowStageDto, WorkflowTransitionDto } from '../../services/workflow-template.service';
 import { WorkflowStripComponent } from './workflow-strip.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-255 PR 4b — the flow strip (Templates 6b): GENERATED from the stages and
 // their transitions, never authored. Cards are buttons in stage order, each
@@ -61,6 +62,7 @@ class Host {
 }
 
 describe('WorkflowStripComponent (ACC-255 PR 4b)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<Host>;
 

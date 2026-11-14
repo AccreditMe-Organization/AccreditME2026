@@ -21,6 +21,7 @@ import { UserService } from '../../../user/services/user.service';
 import { WorkflowService, WorkflowStageHistoryDto, WorkflowInstanceDto } from '../../../workflow/services/workflow.service';
 import { ACTIVE_RULES } from '../../testing';
 import { CommitteeDetailComponent } from './committee-detail.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-265 item 5 (lane A's comment, Ahmad, 25 Oct) — the committee page's
 // Lifecycle row, MEASURED in the real theme, font and translations, in both
@@ -130,6 +131,7 @@ class PageHost {
 }
 
 describe('CommitteeDetailComponent — Stage history beside the Lifecycle card (ACC-265)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<PageHost>;
 
@@ -172,7 +174,6 @@ describe('CommitteeDetailComponent — Stage history beside the Lifecycle card (
     fixture = TestBed.createComponent(PageHost);
     fixture.componentRef.setInput('width', width);
     fixture.detectChanges();
-    await document.fonts.ready;
     // The row is measured by a ResizeObserver; give it two frames to settle.
     for (let i = 0; i < 3; i++) {
       await new Promise((r) => requestAnimationFrame(() => r(null)));

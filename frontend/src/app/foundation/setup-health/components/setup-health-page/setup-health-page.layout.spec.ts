@@ -17,6 +17,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { SetupConditionDto } from '../../services/setup-health.service';
 import { SetupHealthPageComponent } from './setup-health-page.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-271 PR 5a — Setup health's "Workflow stage still on its starting
 // assignment" rows (drawing section 11), MEASURED in the real theme, font and
@@ -70,6 +71,7 @@ class Host {
 }
 
 describe('SetupHealthPageComponent — the starting-assignment rows fit (ACC-271 PR 5a)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<Host>;
   let http: HttpTestingController;
@@ -115,7 +117,6 @@ describe('SetupHealthPageComponent — the starting-assignment rows fit (ACC-271
     });
     fixture.detectChanges();
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     fixture.detectChanges();
     return fixture.nativeElement.querySelector('[data-host]') as HTMLElement;
