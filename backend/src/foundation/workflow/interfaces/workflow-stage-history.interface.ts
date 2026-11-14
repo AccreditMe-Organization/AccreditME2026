@@ -90,6 +90,13 @@ export interface IWorkflowStageVisit {
   // stage it sent the record to.
   comment: string | null;
 
+  // ACC-202 — how the record ARRIVED here, when it was sent back (RETURNED) or
+  // its record was ended (EXITED); null for a forward move, the first visit,
+  // and every row written before ACC-202 (not backfilled). Like `comment`, it
+  // is the PREVIOUS visit's outcome: an outcome is written on the row being
+  // left, and the move it describes is the one into this visit.
+  arrivedBy: 'RETURNED' | 'EXITED' | null;
+
   isUnassigned: boolean;
   // ACC-40 §2.6.3's stamp — the same pair TaskAssignee carries, resolved the
   // same way by the same service. This is what lets a history row read

@@ -9,7 +9,8 @@ import {
   WorkflowTransitionDto,
 } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { removeRefusal } from '../../workflow-refusal';
+import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -262,6 +263,7 @@ export class WorkflowTransitionEditorComponent {
   private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
   private readonly languageService = inject(LanguageService);
 
   readonly transitionList = signal<WorkflowTransitionDto[]>([]);
@@ -334,8 +336,11 @@ export class WorkflowTransitionEditorComponent {
       accept: () => {
         this.workflowTemplateService.removeTransition(transition.id).subscribe({
           next: () => this.changed.emit(),
+          // ACC-191 (Q3) — a transition that has been used says how many times.
           error: (err: unknown) =>
-            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')),
+            this.error.set(
+              removeRefusal(err, (key, n) => this.format.count(key, n)) ?? extractErrorMessage(err, 'workflow.error.removeFailed'),
+            ),
         });
       },
     });

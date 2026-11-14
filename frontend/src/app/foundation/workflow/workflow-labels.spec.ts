@@ -8,7 +8,8 @@ import { WORKFLOW_VALUE_UNKNOWN, WorkflowEnumKind, workflowLabelKey, workflowOpt
 // ACC-271 PR 5b — the trigger block went with "Who can trigger"; a transition's
 // kind and who moves it were added. PR 6b — the approval mode, threshold and
 // assignee blocks went with those fields.
-const KINDS: WorkflowEnumKind[] = ['objectType', 'stageAssignee', 'whoMode', 'transitionKind', 'mover'];
+// ACC-202 — how a record arrived at a history visit (RETURNED, EXITED).
+const KINDS: WorkflowEnumKind[] = ['objectType', 'stageAssignee', 'whoMode', 'transitionKind', 'mover', 'arrivedBy'];
 const lookup = (lang: unknown, key: string): unknown => key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], lang);
 
 describe('workflow labels (ACC-254)', () => {
@@ -22,7 +23,7 @@ describe('workflow labels (ACC-254)', () => {
         }
       }
     }
-    expect(count).withContext('non-vacuity: every enum was listed').toBe(9 + 5 + 3 + 3 + 3);
+    expect(count).withContext('non-vacuity: every enum was listed').toBe(9 + 5 + 3 + 3 + 3 + 2);
     for (const lang of [en, ar]) expect(typeof lookup(lang, WORKFLOW_VALUE_UNKNOWN)).toBe('string');
   });
 
@@ -45,6 +46,8 @@ describe('workflow labels (ACC-254)', () => {
       // ACC-271 PR 5b — the backend's TransitionKind and TransitionMover.
       transitionKind: ['ADVANCE', 'RETURN', 'EXIT'],
       mover: ['PERSON', 'APP', 'AUTOMATIC'],
+      // ACC-202 — the two stage outcomes stage history shows (WorkflowInstanceStageOutcome).
+      arrivedBy: ['RETURNED', 'EXITED'],
     };
     for (const kind of KINDS) {
       for (const value of backend[kind]) expect(workflowLabelKey(kind, value)).withContext(`${kind}.${value}`).not.toBe(WORKFLOW_VALUE_UNKNOWN);

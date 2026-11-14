@@ -8,7 +8,7 @@
  * `npm run check:workflow-enum-display` fails a template that prints one of
  * those fields directly.
  */
-export type WorkflowEnumKind = 'objectType' | WhoEnumKind | MoveEnumKind;
+export type WorkflowEnumKind = 'objectType' | WhoEnumKind | MoveEnumKind | 'arrivedBy';
 
 /**
  * ACC-271 PR 5a — who works a stage: an entry's kind, and how several people
@@ -57,6 +57,12 @@ const MOVE_KEYS: Readonly<Record<MoveEnumKind, Readonly<Record<string, string>>>
 const KEYS: Readonly<Record<WorkflowEnumKind, Readonly<Record<string, string>>>> = {
   ...WHO_KEYS,
   ...MOVE_KEYS,
+  // ACC-202 — how a record arrived at a stage-history visit: sent back, or its
+  // record ended. Nouns in Arabic (Ahmad, 13 Nov), like the transition kinds.
+  arrivedBy: {
+    RETURNED: 'workflow.stageIndicator.arrivedByReturned',
+    EXITED: 'workflow.stageIndicator.arrivedByExited',
+  },
   objectType: {
     DOCUMENT_REQUEST: 'workflow.objectTypeName.DOCUMENT_REQUEST',
     DOCUMENT: 'workflow.objectTypeName.DOCUMENT',

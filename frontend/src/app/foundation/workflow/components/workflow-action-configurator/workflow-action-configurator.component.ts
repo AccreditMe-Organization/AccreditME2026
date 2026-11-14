@@ -24,7 +24,8 @@ import {
   CreateWorkflowTransitionActionDto,
 } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { plainWorkflowRefusalKey, removeRefusal } from '../../workflow-refusal';
+import { FormatService } from '../../../../core/formatting';
 // ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on this field:
 // this component's own dialog renders inside workflow-transition-editor's
 // "Configure Actions" p-dialog. See CLAUDE.md's PrimeNG-components-only
@@ -455,6 +456,7 @@ export class WorkflowActionConfiguratorComponent {
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
   private readonly fb = inject(FormBuilder);
   private readonly amConfirm = inject(AmConfirmService);
   private readonly navigationAccess = inject(NavigationAccessService);
@@ -631,8 +633,11 @@ export class WorkflowActionConfiguratorComponent {
       accept: () => {
         this.workflowTemplateService.removeTransitionAction(action.id).subscribe({
           next: () => this.changed.emit(),
+          // ACC-191 — an action that has run says how many times.
           error: (err: unknown) =>
-            this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.error.removeFailed')),
+            this.error.set(
+              removeRefusal(err, (key, n) => this.format.count(key, n)) ?? extractErrorMessage(err, 'workflow.error.removeFailed'),
+            ),
         });
       },
     });

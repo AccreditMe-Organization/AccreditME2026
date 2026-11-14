@@ -142,3 +142,15 @@ describe('whoFromLegacy (the backfill mapping, plan §6.1)', () => {
     ]);
   });
 });
+
+// ACC-57 — what a new organisation starts with must already obey the rule a
+// stage save is held to: exactly one starting stage, and it is not also final.
+// The seed is static data, so this pin is its check; nothing checks it at run time.
+describe('the workflow seed: start and end (ACC-57)', () => {
+  it.each(SYSTEM_WORKFLOW_SEED.map((w) => [w.objectType, w] as const))('%s has exactly one starting stage, and it is not final', (_type, workflow) => {
+    const starting = workflow.stages.filter((s) => s.isInitial);
+    expect(starting).toHaveLength(1);
+    expect(starting[0]!.isFinal).toBe(false);
+    expect(workflow.stages.filter((s) => s.isInitial && s.isFinal)).toEqual([]);
+  });
+});

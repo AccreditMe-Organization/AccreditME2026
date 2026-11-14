@@ -5,8 +5,11 @@ import {
   deadlineBeforeTasks,
   dueAfterStageDeadline,
   finalStageTaskCount,
+  inUseRefusal,
   openStageTasks,
   plainWorkflowRefusalKey,
+  removeRefusal,
+  startEndRefusal,
   taskSlaStageConflicts,
   whoRefusal,
 } from './workflow-refusal';
@@ -227,5 +230,53 @@ describe('whoRefusal (ACC-271 PR 5a)', () => {
       field: null,
     });
     expect(whoRefusal(new HttpErrorResponse({ status: 0 }))).toBeNull();
+  });
+});
+
+// ACC-57, ACC-191 — the start/end refusals and the in-use ones, read by code.
+describe('workflow refusals: start and end, and in use (ACC-57, ACC-191)', () => {
+  const START_END = ['STAGE_INITIAL_REQUIRED', 'STAGE_INITIAL_NOT_UNIQUE', 'STAGE_INITIAL_AND_FINAL'];
+  const IN_USE = ['STAGE_HAS_TRANSITIONS', 'STAGE_IN_USE', 'TRANSITION_ACTION_IN_USE', 'TRANSITION_IN_USE'];
+
+  it('every one has a plain sentence in both languages', () => {
+    for (const code of [...START_END, ...IN_USE]) {
+      const key = plainWorkflowRefusalKey(refusal(409, { code }));
+      expect(key).withContext(code).not.toBeNull();
+      expect(typeof lookup(en, key!)).withContext(`en ${key}`).toBe('string');
+      expect(typeof lookup(ar, key!)).withContext(`ar ${key}`).toBe('string');
+    }
+  });
+
+  it('startEndRefusal() reads the code, its plain key and the stages it names, ids beside names', () => {
+    expect(
+      startEndRefusal(refusal(409, { code: 'STAGE_INITIAL_NOT_UNIQUE', stageIds: ['a', 'b'], stageNames: [{ nameEn: 'A', nameAr: 'أ' }, { nameEn: 'B', nameAr: null }] })),
+    ).toEqual({
+      code: 'STAGE_INITIAL_NOT_UNIQUE',
+      key: 'workflow.refusal.initialNotUnique',
+      stages: [
+        { id: 'a', nameEn: 'A', nameAr: 'أ' },
+        { id: 'b', nameEn: 'B', nameAr: null },
+      ],
+    });
+    expect(startEndRefusal(refusal(409, { code: 'STAGE_IN_USE', recordCount: 2 }))).toBeNull();
+  });
+
+  it('inUseRefusal() gives each counted refusal its plural key and the count; none without a usable count', () => {
+    expect(inUseRefusal(refusal(409, { code: 'STAGE_IN_USE', recordCount: 3 }))).toEqual({ pluralKey: 'workflow.stageInUse', count: 3 });
+    expect(inUseRefusal(refusal(409, { code: 'TRANSITION_ACTION_IN_USE', runCount: 12 }))).toEqual({ pluralKey: 'workflow.actionInUse', count: 12 });
+    expect(inUseRefusal(refusal(409, { code: 'TRANSITION_IN_USE', runCount: 1 }))).toEqual({ pluralKey: 'workflow.transitionInUse', count: 1 });
+    expect(inUseRefusal(refusal(409, { code: 'STAGE_IN_USE' }))).toBeNull();
+    expect(inUseRefusal(refusal(409, { code: 'STAGE_HAS_TRANSITIONS', transitionCount: 2 }))).toBeNull();
+    for (const k of ['workflow.stageInUse', 'workflow.actionInUse', 'workflow.transitionInUse']) {
+      expect(typeof lookup(en, `plural.${k}.other`)).withContext(`en ${k}`).toBe('string');
+      for (const form of ['zero', 'one', 'two', 'few', 'many', 'other']) expect(typeof lookup(ar, `plural.${k}.${form}`)).withContext(`ar ${k}.${form}`).toBe('string');
+    }
+  });
+
+  it('removeRefusal() says the counted sentence, else the plain key, else nothing', () => {
+    const count = (key: string, n: number) => `${key}#${n}`;
+    expect(removeRefusal(refusal(409, { code: 'STAGE_IN_USE', recordCount: 3 }), count)).toBe('workflow.stageInUse#3');
+    expect(removeRefusal(refusal(409, { code: 'STAGE_HAS_TRANSITIONS', transitionCount: 1 }), count)).toBe('workflow.refusal.stageHasTransitions');
+    expect(removeRefusal(new HttpErrorResponse({ status: 500 }), count)).toBeNull();
   });
 });

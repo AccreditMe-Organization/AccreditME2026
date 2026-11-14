@@ -159,11 +159,19 @@ enum WorkflowActionLogStatus {
   RETRYING
 }
 
+// ACC-202 — RETURNED (a send-back) and EXITED (an end) ship in two deploys.
+// PR 1 adds them and teaches every reader (stage history's `arrivedBy`); NO
+// code writes them yet, because Prisma 7's client throws on a value it was not
+// generated with, so a rollback or the deploy overlap would 500. PR 2 makes a
+// stage left by a RETURN or EXIT record them. SKIPPED is an administrative
+// cancel (cancelInstance). Old rows are not backfilled.
 enum WorkflowInstanceStageOutcome {
   PENDING
   APPROVED
   REJECTED
   SKIPPED
+  RETURNED
+  EXITED
 }
 
 // ACC-40 Section 2.6.3 — one unified shape for both delegation reasons this
