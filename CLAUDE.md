@@ -1374,8 +1374,24 @@ header — SYSTEM-REFERENCE §15.15.
 - **Max concurrent sessions — NOT BUILT.** This line previously claimed "5 per
   user (configurable per tenant)". There is no field, no counter and no
   configuration anywhere; a user may hold unlimited concurrent sessions.
-- **Absolute session length — NOT BUILT.** A continuously active user is never
-  forced to re-authenticate. That is ACC-126, open.
+- **Absolute session length: 12 hours from sign-in, however active (ACC-126).**
+  Ahmad, 13 Nov: the same for everyone, nothing set per organisation, and the idle
+  rule is unchanged.
+  - **One rule, one file:** `foundation/auth/session-limit.ts`, with no override.
+  - **The start is copied, never renewed:** `RefreshToken.sessionStartedAt` is
+    copied on every rotation, and the access token carries it as the claim `sst`.
+  - **Enforced in three places:**
+    - the access token expires at min(15 min, start + 12 h), so no query is added
+      per request;
+    - a refresh-token row expires at min(7 days, start + 12 h);
+    - `/auth/refresh` refuses past the limit with 401 `SESSION_TIME_LIMIT`.
+  - **On screen:** a warning 10 minutes before ("Continue working", "Sign out
+    now", no "Stay signed in"), then the sign-out, and `/login?reason=limit`
+    explains it.
+  - **Sessions open at the deploy** are measured from their last rotation (the
+    row's `createdAt`).
+  - **Impersonation** keeps the platform admin's own start.
+  - Full detail: SYSTEM-REFERENCE §1.11.
 - **Session cookies are ALWAYS `Secure` (ACC-186)** — `httpOnly`, `sameSite:
   'strict'`, and never keyed off `NODE_ENV`. Railway runs `NODE_ENV=development`,
   so the old `secure: NODE_ENV === 'production'` sent them without `Secure`.

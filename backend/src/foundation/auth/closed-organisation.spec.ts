@@ -407,7 +407,7 @@ describe('closed organisations (ACC-168)', () => {
   }
 
   const tokenFor = (userId: string, organizationId: string, tokenVersion = 1) =>
-    signAccessToken({ sub: userId, organizationId, tokenVersion }, JWT_SECRET);
+    signAccessToken({ sub: userId, organizationId, tokenVersion }, JWT_SECRET, new Date()).token;
   // ACC-204 — every request comes from its own organisation's address (an
   // impersonation token from the platform's), so these specs keep asking about
   // closed organisations, not about addresses.
@@ -516,6 +516,7 @@ describe('closed organisations (ACC-168)', () => {
             'u-hessa',
             'u-admin',
             PLATFORM,
+            undefined,
             r as never,
           ),
         );
@@ -666,6 +667,7 @@ describe('closed organisations (ACC-168)', () => {
         'u-hessa',
         'u-admin',
         PLATFORM,
+        undefined,
         res() as never,
       ),
     );
