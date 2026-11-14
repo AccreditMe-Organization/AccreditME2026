@@ -176,7 +176,7 @@ describe('CommitteeRemoveMemberDialogComponent (ACC-298)', () => {
   // force: said from its code, naming the seat in the reader's language.
   for (const [lang, sentence] of [
     ['en', 'Appoint another Chairman first.'],
-    ['ar', 'تعيين عضو في مقعد «رئيس اللجنة» أولاً.'],
+    ['ar', 'يلزم تعيين عضو في مقعد «رئيس اللجنة» أولاً.'],
   ] as const) {
     it(`the last holder of a required seat is said from its code, naming the seat (${lang}), and the dialog stays open`, () => {
       setup(lang);

@@ -470,7 +470,7 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
   // committee in force: said from its code, naming the seat.
   for (const [lang, sentence] of [
     ['en', 'Appoint another Secretary first.'],
-    ['ar', 'تعيين عضو في مقعد «أمين السر» أولاً.'],
+    ['ar', 'يلزم تعيين عضو في مقعد «أمين السر» أولاً.'],
   ] as const) {
     it(`Change role of the last holder of a required seat names the seat (${lang}), never the server text`, fakeAsync(() => {
       setup(member('u-huda'));

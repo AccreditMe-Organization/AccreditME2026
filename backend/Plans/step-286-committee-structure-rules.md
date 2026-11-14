@@ -375,6 +375,8 @@ in English.
 | `COMMITTEE_PARENT_NOT_LIVE` | the committee form, under Parent | "Choose a parent committee that is in force." | «يلزم اختيار لجنة أم سارية.» |
 | `COMMITTEE_REPORTS_TO_NOT_LIVE` | the committee form, under Reports to | "Choose a committee that is in force to report to." | «يلزم اختيار لجنة سارية تُرفع إليها التقارير.» |
 
+This was the draft. The Arabic as shipped is lane A's (§10.3).
+
 **Ours:**
 - **The record page's move refusals:** `workflow-refusal.ts`, which already
   says `COMMITTEE_QUORUM_NOT_SET`.
@@ -556,9 +558,11 @@ pushed on other branches: ACC-126's `20261113170000` and ACC-188's
   compiler then requires it.
 - **The endpoint is `PATCH /lookups/values/:id/attributes`**, as planned.
   `null` removes the organisation's own value for one key.
-- **Arabic, matching the existing committee sentences:** "parent committee" is
-  «لجنة رئيسية» (the app's term, not «لجنة أم»), and the imperative is «اختر»,
-  as in the other reference refusals.
+- **Arabic:** "parent committee" is «لجنة رئيسية», the app's term, not
+  «لجنة أم». **The final Arabic is lane A's** (Prompt 46): every sentence
+  opens with «يلزم» plus a verbal noun («يلزم اختيار…», «يلزم تعيين…»), with no
+  «آخر» and no gendered adjective. It replaced the build's first «اختر…»
+  forms.
 - **Existing engine db-specs** (pools, votes, stage history) that approve a
   committee into Active now give it that shape through
   `common/testing/committee-going-live.ts`: the organisation unticks its
@@ -573,11 +577,11 @@ pushed on other branches: ACC-126's `20261113170000` and ACC-188's
 |---|---|---|
 | `COMMITTEE_REQUIRED_SEATS_EMPTY` | Fill the required seats first: {{seats}}. | يلزم شغل المقاعد المطلوبة أولاً: {{seats}}. |
 | (plain, if the body can't be read) | Fill the committee's required seats first. | يلزم شغل المقاعد المطلوبة في اللجنة أولاً. |
-| `COMMITTEE_MEMBERS_BELOW_QUORUM` (plural object, by the quorum) | Add members first: the quorum needs {{count}} member(s), and this committee has {{members}}. | يلزم إضافة أعضاء أولاً: عدد الأعضاء الذي يتطلبه النصاب {{count}}، وفي اللجنة {{members}}. |
+| `COMMITTEE_MEMBERS_BELOW_QUORUM` (plural object, by the quorum) | Add members first: the quorum needs {{count}} member(s), and this committee has {{members}}. | يلزم إضافة أعضاء أولاً: عدد الأعضاء الذي يتطلبه النصاب {{count}}، وعدد أعضاء اللجنة {{members}}. |
 | (plain) | Add members first: this committee has fewer members than its quorum. | يلزم إضافة أعضاء أولاً: عدد أعضاء اللجنة أقل من نصابها. |
-| `COMMITTEE_REQUIRED_SEAT_LAST_HOLDER` | Appoint another {{seat}} first. | تعيين عضو في مقعد «{{seat}}» أولاً. |
-| `COMMITTEE_PARENT_NOT_LIVE` | Choose a parent committee that is in force. | اختر لجنة رئيسية سارية. |
-| `COMMITTEE_REPORTS_TO_NOT_LIVE` | Choose a committee that is in force to report to. | اختر لجنة سارية ترفع إليها اللجنة تقاريرها. |
+| `COMMITTEE_REQUIRED_SEAT_LAST_HOLDER` | Appoint another {{seat}} first. | يلزم تعيين عضو في مقعد «{{seat}}» أولاً. |
+| `COMMITTEE_PARENT_NOT_LIVE` | Choose a parent committee that is in force. | يلزم اختيار لجنة رئيسية سارية. |
+| `COMMITTEE_REPORTS_TO_NOT_LIVE` | Choose a committee that is in force to report to. | يلزم اختيار لجنة سارية لرفع التقارير إليها. |
 
 The Setup health row's wording is in `step-286-lane-a.md` §2.
 

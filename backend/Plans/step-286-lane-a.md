@@ -138,7 +138,7 @@ the key's value; the code reads only the keys above.
 
 | Key | EN | AR |
 |---|---|---|
-| `committee.refusal.requiredSeatLastHolder` | Appoint another {{seat}} first. | تعيين عضو في مقعد «{{seat}}» أولاً. |
+| `committee.refusal.requiredSeatLastHolder` | Appoint another {{seat}} first. | يلزم تعيين عضو في مقعد «{{seat}}» أولاً. |
 
 The Arabic avoids «آخر» and any gendered adjective (Ahmad, Q8): an imperative
 noun phrase.
