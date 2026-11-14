@@ -1743,7 +1743,8 @@ WorkflowActionType          CREATE_TASK, SEND_NOTIFICATION, GENERATE_PDF, LOCK_D
                             LOG_AUDIT, WEBHOOK
 WorkflowApprovalDecision    PENDING, APPROVED, APPROVED_WITH_COMMENTS, RETURNED, ABSTAINED
 WorkflowInstanceStageOutcome PENDING, APPROVED, REJECTED, SKIPPED,
-                            RETURNED, EXITED (ACC-202; read since PR 1, written from PR 2 — §2.20)
+                            RETURNED, EXITED (ACC-202, §2.20: RETURN and EXIT write these
+                            since PR 2; REJECTED is what older ones wrote)
 ```
 
 **Code comment worth preserving verbatim** (`workflow.service.ts`, the "NOTE on SEQUENTIAL/COMMITTEE" comment):
@@ -3068,6 +3069,7 @@ every stage on every database is still unconverted and behaves as §2.4–§2.8 
 Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts a new organisation, and both PR 2 backfills ran on the shared database on 29 Oct, so every stage is converted. §2.4–§2.8 describe only a stage whose `whoMode` is null. PR 3, the APIs, is built (see "PR 3" below); PR 5, the screens, is not started.
 Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only the stage's pool; a stage whose `whoMode` is null has an EMPTY pool (fail closed), and a new stage must say `who` (`WHO_REQUIRED`). §2.4–§2.8 and §2.13 are history: they describe code that no longer exists. See "PR 6a" below.
 Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the seed.** The columns stay in the schema until 6c. See "PR 6b" below.
+Updated (ACC-278 PR A): **the old columns are out of the generated client** (`@ignore`) and still in the database; PR B drops them. See "6c" below.
 
 - **The transition window (plan §4.6).** A stage with `WorkflowStage.whoMode`
   set is CONVERTED: its `WorkflowStageAssignee` entries say who works it, and
@@ -3163,7 +3165,8 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
   - **`whoFromLegacy()`** (`workflow-who.ts`) is the one mapping from the old
     columns, used by `backfill-acc271-stage-assignees`; `moverForTrigger()`
     by `backfill-acc271-transition-movers`. Both backfills run after the
-    deploy (plan §6, §6.4). An Org unit head stage maps to "the head of the
+    deploy (plan §6, §6.4). Both ran on 29 Oct, and ACC-278 deleted them with
+    the two mappings. An Org unit head stage maps to "the head of the
     record's unit" only where its record type has a unit route
     (`RECORD_ROUTES`); elsewhere it gets the starting assignment, as the seed
     gives a new organisation (29 Oct), so the mapping matches the seed on all
@@ -3588,6 +3591,7 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
     backfills (`backfill-acc271-stage-assignees`,
     `backfill-acc271-transition-movers`) and what they import from
     `workflow-who.ts` (`whoFromLegacy`, `moverForTrigger`, `decidesTogether`).
+    Done in 6c PR A (ACC-278), below, except the columns and enums: PR B.
   - **Frontend.** The old fields left `workflow-template.service.ts`'s types;
     the approval mode, threshold and assignee labels left `workflow-labels.ts`
     and both translation files; `check:workflow-enum-display` no longer scans
@@ -3598,6 +3602,44 @@ Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the s
     cases of `workflow.service.spec.ts`, and the two `committees:manage` cases
     of `role.service.spec.ts`. Mutation-checked: an old field back in the DTO,
     or `transitionMover()` falling back to `triggerCondition`, turns them red.
+- **6c (ACC-278) — the old who columns leave, in two deploys.** Plan and
+  Ahmad's answers (14 Nov): `backend/Plans/step-278-drop-old-who-columns.md`.
+  A client that knows a column names it in every `findMany` / `findFirst`
+  without a `select` and every write that returns the row, so dropping the
+  columns while such a client serves is P2022 on every stage read (the ACC-48
+  shape). Hence two deploys.
+  - **PR A (no migration), done.** In `schema.prisma` the 13 old columns, the
+    relations `assigneePosition` / `assigneeOrgUnit` and the back-relations
+    `OrgPosition.workflowStages` / `OrgUnit.assigneeForWorkflowStages` are
+    `@ignore`: out of the generated client, still in the database
+    (`prisma migrate diff` from the migrations to the schema is empty). A row
+    the client inserts takes the database defaults in the three NOT NULL old
+    columns (`approvalMode` SINGLE, `assigneeStrategy` ROLE,
+    `triggerCondition` ROLE_BASED).
+  - **Deleted in PR A, once executed on the shared database:**
+    - the backfills `backfill-acc271-stage-assignees`,
+      `backfill-acc271-transition-movers`,
+      `backfill-acc244-retire-flat-task-keys` and
+      `backfill-retire-tasks-complete`, their db-specs and npm scripts;
+    - `whoFromLegacy`, `moverForTrigger` and `decidesTogether` in
+      `workflow-who.ts`. `writeStartingAssignments()` stays (the template
+      service and four db-specs use it).
+  - **Proved on a scratch database:** with the columns dropped, PR A's client
+    made 10 real calls (stage and transition reads without a `select`, creates
+    and updates returning the row, the template read with stages and
+    transitions), all OK; dev's client before PR A, 3 of 10 (7 P2022).
+  - **PR B (not built):** one migration drops the 13 columns, their two foreign
+    keys and the four old enum types (`WorkflowApprovalMode`,
+    `WorkflowParallelThreshold`, `WorkflowAssigneeStrategy`,
+    `WorkflowTriggerCondition`, each used by one old column only), and makes
+    `whoMode` and `mover` NOT NULL. At least a day after PR A is live (Ahmad).
+    **Once PR B ships, never roll Railway back past PR A.**
+  - **Kept, decided (Ahmad, 14 Nov):** `TransitionMover.AUTOMATIC` (reserved),
+    `dto/old-who-fields.dto.spec.ts`. The branches NOT NULL makes unreachable
+    (`MOVE_HAS_NO_MOVER` and others) go in a follow-up after ACC-202 part 2.
+  - **Specs:** `old-who-columns.client.spec.ts` (out of the client, still in
+    the schema; mutation-checked: one `@ignore` removed turns it red, naming
+    the field).
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
@@ -3654,8 +3696,8 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - **A vote cast before ACC-284** names no move, and counts for the stage's
     ADVANCE moves, as it did.
 - **The outcome stored on the entry:** ADVANCE → APPROVED; RETURN and EXIT → REJECTED.
-  To be superseded (ACC-202 PR 2): RETURN → RETURNED, EXIT → EXITED, on every path. PR 1
-  adds the values and the reader only (§2.20).
+  Superseded (ACC-202 PR 2): RETURN → RETURNED and EXIT → EXITED, on every path,
+  from `stageExitOutcome(kind)` (§2.20.3).
 - **The gate (ACC-190 J):** for an ADVANCE, only the DECIDING vote is checked against
   open mandatory tasks, before it is recorded.
 - **`submitApproval()`** (no frontend caller) finds its move by kind:
@@ -3791,7 +3833,11 @@ it does to a delete:
 
 - **Each check runs inside the delete's transaction, after `FOR UPDATE` on the
   row:**
-  - `removeStage`: the template lock, then the stage row;
+  - `removeStage`: the template lock, then the stage row; then RECORDS, then
+    transitions (ACC-202 PR 2). A stage records have entered always has
+    transitions too, and "remove its transitions first" sent the admin to
+    transitions that had run and could not be removed either (live check,
+    14 Nov). `STAGE_IN_USE` is the final answer, so it is said first;
   - `removeTransition`: the transition and its actions;
   - `removeTransitionAction`: the action.
 - **Why the lock first:** a reference being written at that moment holds a
@@ -3821,20 +3867,27 @@ it does to a delete:
   'WorkflowInstanceStageOutcome'". A deploy that adds a value AND writes it
   would 500 every record's stage history on a rollback, and briefly during the
   deploy overlap. CLAUDE.md's Prisma rules now say so.
-- **PR 1 (this one):**
+- **PR 1 (#289, `9b49be0`):**
   - the additive migration `acc202_stage_outcome_returned_exited`;
   - `arrivedBy` on stage history (§2.14) and its chip;
-  - nothing writes the new values. `stage-outcome-writes.scan.spec.ts` fails
-    on a literal, an enum member, PR 2's `stageExitOutcome`, or a writer type
-    that admits either value. `stage-history-arrived-by.db-spec.ts` presses each
-    kind on ANY_ONE and ALL and requires an outcome the old client knows.
-- **PR 2 (after PR 1 is live):**
-  - `stageExitOutcome(kind)` in `performTransition()`; the outcome argument is
-    removed from every caller (the person path, the vote path, `submitApproval`,
-    and the change request's `triggerSystemTransition` calls: withdraw and
-    reject become EXITED, return RETURNED);
-  - the scan spec is deleted;
-  - the rollback check is repeated with PR 1's client.
+  - nothing wrote the new values (a scan spec pinned it until PR 2).
+- **PR 2 (written):**
+  - `performTransition()` derives the outcome from `stageExitOutcome(kind)`
+    (`STAGE_EXIT_OUTCOME` in `workflow-vote.ts`) and takes no outcome argument,
+    so the person path, the vote path, `submitApproval()` and the app's own moves
+    cannot disagree with the move. `triggerSystemTransition()` lost its
+    `outcome` option.
+  - **Change requests:** withdraw and reject record EXITED, return RETURNED,
+    submit and approve APPROVED.
+  - `cancelInstance()` is not a move and still records SKIPPED.
+  - The scan spec is deleted. `stage-history-arrived-by.db-spec.ts` presses each
+    kind on ANY_ONE and ALL and requires its kind's outcome and the matching
+    `arrivedBy`.
+  - **The rollback was proved before merge:** #289's own code and generated
+    client, against a database holding PR 2's rows (64 instances, 82 visits with
+    a new outcome), read stage history, both instance reads, the committee
+    detail and list, and the change request read and list, all without
+    failing.
 - **Readers:** none switches on the outcome. It is typed `string` end to end,
   and no screen read it before `arrivedBy`.
 - **On the shared database, 13 Nov:**
@@ -4591,7 +4644,7 @@ units and positions (ids, names, `parentId`, `isSingleAssignee`,
 **`tasks:complete` is retired (ACC-162)**, which settles ACC-77's question
 of whether it should survive. Existing tenants lose it through
 `backfill-retire-tasks-complete.ts`, which also deletes the catalog row so
-the role matrix stops offering it. **ACC-77** still carries the seed defects
+the role matrix stops offering it (executed; deleted in ACC-278). **ACC-77** still carries the seed defects
 this only worked around
 (`QUALITY_OFFICER` cannot create; `tasks:manage` implies none of its
 specific strings, against ACC-44's required pattern).
@@ -5895,7 +5948,8 @@ membership query (§3.21).
 **The keys, per record type.** The four flat keys (`tasks:view`,
 `tasks:create`, `tasks:reassign`, `tasks:manage`) are RETIRED — from the
 catalogue, the seed, and existing roles by
-`backfill:acc244-retire-flat-task-keys`. Each record type has four instead;
+`backfill:acc244-retire-flat-task-keys` (executed; deleted in ACC-278). Each
+record type has four instead;
 committees are the only type with them today:
 
 | Key | Says | Was |
@@ -6084,7 +6138,8 @@ Four people (two Quality Officers, two Auditors) lose the All tasks link, a
 page that already listed nothing for them: none holds `committees:view`.
 
 **The retire backfill** (`npm run backfill:acc244-retire-flat-task-keys`, dry
-run by default, `-- --execute` after the deploy): one audit row per
+run by default, `-- --execute` after the deploy; executed, then deleted in
+ACC-278 with its db-spec): one audit row per
 revocation, one transaction (`BACKFILL_TX`), idempotent; a catalogue row is
 deleted only once nothing references it. It prints each active user's
 visible-task count by the rule before and after the revocation, and refuses

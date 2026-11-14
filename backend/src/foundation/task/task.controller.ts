@@ -465,7 +465,8 @@ export class TaskController {
   // ACC-162 then ungated addEvidence() on the same grounds, which left
   // tasks:complete gating nothing anywhere, so it was RETIRED: removed from
   // the flat tasks:* group and the seed, and from existing tenants by
-  // backfill-retire-tasks-complete.ts. Do not reintroduce it.
+  // backfill-retire-tasks-complete.ts (executed, then deleted in ACC-278).
+  // Do not reintroduce it.
   @Post(':id/complete')
   complete(
     @Param('id') id: string,

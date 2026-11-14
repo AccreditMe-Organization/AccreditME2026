@@ -4254,8 +4254,9 @@ Ahmad's answers (Q1–Q10) and the dry runs:
 - **THE FLAT `tasks:*` KEYS ARE RETIRED** — from the catalogue and the seed,
   and from existing roles by `npm run backfill:acc244-retire-flat-task-keys`
   (dry run first, `-- --execute` AFTER the deploy; it refuses customers, a
-  transition gated on one, or any changed count). `retired-task-keys.spec.ts`
-  fails if any non-spec source names one again.
+  transition gated on one, or any changed count; executed, then deleted in
+  ACC-278). `retired-task-keys.spec.ts` fails if any non-spec source names one
+  again.
 - **HEADSHIP IS READ FROM `unit-headship.ts`, NEVER RE-DERIVED**:
   `headHolderWhere()`, `runningActingCoverWhere(now)`, the reverse lookups
   (`findUnitHeadedBy`, `findUnitsCoveredBy`) and the sub-unit walk
@@ -4447,7 +4448,8 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
   `npm run backfill:acc271-stage-assignees` and `-transition-movers`, AFTER
   the deploy (dry run, `-- --execute`, dry run 0), with plan §6.4's counts.
   **Both have been executed on the shared database (29 Oct)**: every stage in
-  every organisation is converted, and every transition has a `mover`.
+  every organisation is converted, and every transition has a `mover`. Both
+  were deleted in ACC-278.
 - **A TASK CLOSED BY SOMEONE ELSE'S ACTION IS TOLD, AFTER THE COMMIT (PR 4).**
   `TaskClosedNoticeService`: in-app, never the actor, to the ACTIVE row holder
   directly (an away member is told themselves, never through their acting
@@ -4505,7 +4507,18 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
     its only check. It is a seed-time umbrella only (see ACC-28 above).
   - **Kept until 6c:** the columns, `whoFromLegacy` / `moverForTrigger` /
     `decidesTogether` (the executed backfills import them), and those
-    backfills.
+    backfills. Superseded (ACC-278 PR A): see the next bullet.
+- **6c (ACC-278) — THE OLD WHO COLUMNS LEAVE IN TWO DEPLOYS.** Plan and Ahmad's
+  answers (14 Nov): `backend/Plans/step-278-drop-old-who-columns.md`.
+  - **PR A, done (no migration):** the 13 old columns, their two relations and
+    two back-relations are `@ignore` — out of the generated client, still in
+    the database. The four executed backfills, their specs and scripts, and
+    `whoFromLegacy` / `moverForTrigger` / `decidesTogether` are deleted;
+    `writeStartingAssignments` stays.
+  - **PR B, next:** one migration drops the columns, their foreign keys and
+    four enum types, and makes `whoMode` and `mover` NOT NULL — at least a day
+    after PR A is live. **Once PR B ships, never roll Railway back past PR A**:
+    older code's client names the dropped columns (P2022 on every stage read).
 
 ## Key Architecture Decisions (ACC-260)
 
@@ -4860,7 +4873,8 @@ Briefly:
 
 ## Key Architecture Decisions (ACC-57, ACC-191, ACC-202)
 
-Workflow stage checks, in one PR. Full mechanism: SYSTEM-REFERENCE.md §2.20.
+Workflow stage checks: #289, then ACC-202's writer and ACC-191's order fix in a
+second PR. Full mechanism: SYSTEM-REFERENCE.md §2.20.
 Plan and Ahmad's answers (13 Nov, Q1–Q8):
 `backend/Plans/step-57-191-202-workflow-checks.md`. Briefly:
 
@@ -4900,24 +4914,36 @@ Plan and Ahmad's answers (13 Nov, Q1–Q8):
   row. A reference being written at that moment holds a key-share lock, so the
   delete waits, then refuses. `removeStage`'s two old codeless refusals became
   `STAGE_HAS_TRANSITIONS` and `STAGE_INITIAL_REQUIRED` (Q4).
+  - **`removeStage` checks RECORDS BEFORE TRANSITIONS** (ACC-202 PR 2, after the
+    14 Nov live check). A stage records have entered always has transitions
+    too, and "remove its transitions first" sent the admin to transitions that
+    had run, which can't be removed either. The records are the final answer,
+    so `STAGE_IN_USE` is said first.
 - **NO BLANKET P2003 → 409 IN THE FILTER** (Q6). P2003 also means "a parent is
   missing", which is a defect, and an unexpected 500 is our only signal while
   Sentry is not wired.
 - **A STAGE IS LEFT WITH THE OUTCOME OF THE MOVE'S KIND, IN TWO DEPLOYS**
-  (ACC-202).
-  - **This PR (1 of 2):** adds `RETURNED` and `EXITED` to
+  (ACC-202): ADVANCE → APPROVED, RETURN → RETURNED, EXIT → EXITED.
+  - **PR 1 (#289, `9b49be0`):** adds `RETURNED` and `EXITED` to
     `WorkflowInstanceStageOutcome` (additive migration
     `acc202_stage_outcome_returned_exited`). Stage history reads them as
     `arrivedBy`, the PREVIOUS visit's outcome, shown as "Sent back" / «إعادة»
-    and "Ended" / «إنهاء». Nothing writes them:
-    `stage-outcome-writes.scan.spec.ts` pins that.
+    and "Ended" / «إنهاء». It wrote neither.
   - **Proved 13 Nov:** the dev backend's own client threw "Value 'RETURNED' not
     found in enum" on stage history. Writing a new value in the deploy that adds
     it would make a rollback, or the deploy overlap, 500 (the Prisma rule
     above).
-  - **PR 2, after this is live:** `stageExitOutcome(kind)` in
-    `performTransition()`, the outcome argument removed from every caller, and
-    the rollback check repeated with PR 1's client.
+  - **PR 2 writes them.**
+    - `performTransition()` derives the outcome from `stageExitOutcome(kind)`,
+      the one table in `workflow-vote.ts`, and takes no outcome argument.
+    - So every path agrees with the move: a person's press, a deciding vote,
+      `submitApproval()` and the app's own moves (`triggerSystemTransition()`
+      lost its `outcome` option).
+    - A change request's withdraw and reject now record EXITED, and return
+      records RETURNED. `cancelInstance()` still records SKIPPED.
+  - **PR 2's rollback was proved before merge:** #289's own code and client read
+    every record holding a new outcome, through stage history, the instance
+    reads, the committee detail and list, and the change request read and list.
   - Old rows are not backfilled.
 - **Every refusal is said from its code** through `plainWorkflowRefusalKey()`,
   in both languages. The counted ones use plural objects.
