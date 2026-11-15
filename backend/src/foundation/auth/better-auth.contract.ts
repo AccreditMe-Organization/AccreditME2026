@@ -84,3 +84,25 @@ export const BETTER_AUTH_PASSWORD_CODES = {
  * 500 whose message starts with this, in both of the plugin's outage throws.
  */
 export const BETTER_AUTH_PASSWORD_CHECK_FAILED = 'Failed to check password.';
+
+// ---------------------------------------------------------------------------
+// Password reset — ACC-188.
+//
+// We issue the token (32 random bytes) and write Better Auth's reset row
+// ourselves (password-reset-verification.ts); Better Auth's resetPassword then
+// consumes it (api/routes/password.mjs):
+//   identifier `reset-password:<token>`, value: the AuthUser id
+// consumeVerificationValue() takes the row atomically and returns null for an
+// expired one, and resetPassword CONSUMES BEFORE IT HASHES: the breach check
+// (inside hashing) therefore runs after the token is spent, which is why
+// PasswordResetService checks the password before calling it.
+// With `verification.storeIdentifier` set to 'hashed' for this prefix, the
+// stored identifier is base64url(SHA-256(identifier)), no padding
+// (db/verification-token-storage.mjs, defaultKeyHasher).
+// ---------------------------------------------------------------------------
+
+/** Prefix of Better Auth's reset row identifier. */
+export const BETTER_AUTH_RESET_PASSWORD_PREFIX = 'reset-password:';
+
+/** resetPassword's refusal for a token it cannot consume (used, expired or unknown). */
+export const BETTER_AUTH_INVALID_TOKEN = 'INVALID_TOKEN';

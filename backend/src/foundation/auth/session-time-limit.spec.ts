@@ -5,6 +5,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { LoginAttemptService } from './login-attempt.service';
 import { UserService } from '../user/user.service';
+import { PasswordResetService } from './password-reset/password-reset.service';
 import { verifyJwt } from '../../common/guards/tenant.guard';
 import { useFixedClock } from '../../common/testing/fixed-clock';
 
@@ -114,6 +115,7 @@ describe('the 12-hour session limit (ACC-126)', () => {
         isNewIp: jest.fn().mockReturnValue(false),
       } as unknown as LoginAttemptService,
       {} as UserService,
+      {} as unknown as PasswordResetService,
     );
   });
 

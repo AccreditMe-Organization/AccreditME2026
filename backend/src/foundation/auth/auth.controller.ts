@@ -158,11 +158,22 @@ export class AuthController {
     return this.authService.forgotPassword(dto);
   }
 
+  // ACC-188 — the reset page's first read: is this link still usable? POST, so
+  // the token travels in the body and never lands in a URL or an access log.
+  // The body is deliberately untyped: a malformed one gets the same
+  // RESET_LINK_INVALID as an unknown token (PasswordResetService.lookup()).
+  @Post('reset-password/lookup')
+  @perAddress(RATE_LIMITS.resetPasswordLookup)
+  @HttpCode(HttpStatus.OK)
+  lookupResetLink(@Body() body: unknown, @Req() req: Request) {
+    return this.authService.lookupResetLink(body, req.headers['origin']);
+  }
+
   @Post('reset-password')
   @perAddress(RATE_LIMITS.resetPassword)
   @HttpCode(HttpStatus.OK)
-  resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto);
+  resetPassword(@Body() dto: ResetPasswordDto, @Req() req: Request) {
+    return this.authService.resetPassword(dto, req.headers['origin'], req.ip);
   }
 
   // MFA enrollment (Step 9 follow-up) — distinct from the pre-auth

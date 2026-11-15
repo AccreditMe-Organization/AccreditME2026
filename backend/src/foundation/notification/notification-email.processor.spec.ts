@@ -1,5 +1,6 @@
 import { Job } from 'bullmq';
 import { NotificationEmailProcessor } from './notification-email.processor';
+import { TransactionalEmailService } from './transactional-email.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { PLATFORM_SENDER_MISSING } from '../../common/config/email-sender.config';
@@ -106,6 +107,7 @@ describe('NotificationEmailProcessor (ACC-158)', () => {
     };
     processor = new NotificationEmailProcessor(
       prisma as unknown as PrismaService,
+      new TransactionalEmailService(),
     );
   });
 
@@ -209,5 +211,56 @@ describe('NotificationEmailProcessor (ACC-158)', () => {
       'Resend delivery failed: domain not verified',
     );
     expect(prisma.notification.updateMany).not.toHaveBeenCalled();
+  });
+
+  // ACC-188 — a security notice: an email only, read from the person and the
+  // organisation, never from a Notification row.
+  describe('a security notice', () => {
+    interface PersonRow {
+      id: string;
+      organizationId: string;
+      email: string;
+      language: string | null;
+      organization: { name: string; nameAr: string | null; language: string };
+    }
+    let people: PersonRow[];
+    const notice = (userId: string, organizationId: string): Promise<void> =>
+      processor.process({
+        name: 'security-notice',
+        data: { organizationId, userId, notice: 'password_changed' },
+      } as Job<never>);
+
+    beforeEach(() => {
+      people = [
+        { id: 'u-a', organizationId: ORG_A, email: 'hessa@example.test', language: null, organization: { name: 'Al Nakheel', nameAr: 'مستشفى النخيل', language: 'ar' } },
+        { id: 'u-en', organizationId: ORG_A, email: 'sam@example.test', language: 'en', organization: { name: 'Al Nakheel', nameAr: 'مستشفى النخيل', language: 'ar' } },
+      ];
+      (prisma as unknown as { user: unknown }).user = {
+        findFirst: jest.fn(({ where }: { where: { id: string; organizationId: string } }) =>
+          Promise.resolve(people.find((p) => p.id === where.id && p.organizationId === where.organizationId) ?? null),
+        ),
+      };
+    });
+
+    it("is written in the organisation's language when the person has none, and never touches a notification", async () => {
+      await notice('u-a', ORG_A);
+      const email = sentEmail();
+      expect(email.to).toBe('hessa@example.test');
+      expect(email.subject).toBe('تم تغيير كلمة مرور AccreditMe');
+      expect(email.html).toContain('dir="rtl"');
+      expect(email.html).toContain('منشأة مستشفى النخيل');
+      expect(prisma.notification.findFirst).not.toHaveBeenCalled();
+      expect(prisma.notification.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("is written in the person's own language first", async () => {
+      await notice('u-en', ORG_A);
+      expect(sentEmail().subject).toBe('Your AccreditMe password was changed');
+    });
+
+    itEnforcesTenantIsolation('NotificationEmailProcessor security notice', async () => {
+      await notice('u-a', ORG_B);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
   });
 });

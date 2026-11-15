@@ -1682,6 +1682,34 @@ export class TaskService {
   // toUserId is null/ineligible AND no other active assignee remains on that
   // task, gets flagged UNASSIGNED — same status Step 8 already uses for
   // role-vacancy fallback. Every change logged individually, same as reassign().
+  //
+  // ACC-165 — three changes, each in reassign()'s shape (ACC-163):
+  //
+  // 1. OPEN TASKS ONLY. A COMPLETED or CANCELLED task keeps its rows as they
+  //    are: the completer's own row stays active by design, and the engine's
+  //    stage cancel leaves assignees attached on purpose. Departure used to
+  //    "reassign" those too, with a DELEGATE audit row each. Filtered in the
+  //    query, and decided again UNDER THE LOCK, since a task can close between
+  //    the read and the lock.
+  //
+  // 2. THE ACTING USER'S ROW IS REUSED. TaskAssignee is unique on
+  //    (taskId, userId) with no exemption for removed rows, so the
+  //    unconditional create failed whenever the acting user held the task
+  //    before, or was already on it, and the deactivation errored out. A
+  //    removed row is reactivated as reassign() does it; an active one is left
+  //    as it is. Never a second row.
+  //
+  // 3. EACH TASK IS ONE TRANSACTION under lockTaskRow(): the leaver's row, the
+  //    acting user's row, the status and the request cancels commit together,
+  //    so a failure leaves no task half-reassigned. The boundary is the TASK,
+  //    not the departure: UserService.deactivate() commits the status flip and
+  //    its invariants first and keeps side effects outside that transaction on
+  //    purpose (a refused deactivation must not move anyone's work), and one
+  //    transaction across every task would hold every task's lock at once.
+  //    A failure therefore stops at a whole task; the tasks before it are done,
+  //    the rest untouched, and running it again picks up exactly those, because
+  //    a finished task no longer has the leaver's active row. Audit rows and
+  //    notifications are written after each task commits, never under the lock.
   async reassignAllForUser(
     fromUserId: string,
     toUserId: string | null,
@@ -1689,8 +1717,8 @@ export class TaskService {
     actorId: string,
   ): Promise<{ reassignedCount: number; unassignedCount: number; returnedToPoolCount: number }> {
     const activeAssignments = await this.prisma.taskAssignee.findMany({
-      where: { userId: fromUserId, removedAt: null, task: { organizationId } },
-      include: { task: { include: { assignees: true } } },
+      where: { userId: fromUserId, removedAt: null, task: { organizationId, status: OPEN_STATUS_FILTER } },
+      select: { taskId: true },
     });
 
     const eligibleToUserIds = toUserId ? await this.filterActiveUsers([toUserId], organizationId) : [];
@@ -1700,62 +1728,21 @@ export class TaskService {
     let unassignedCount = 0;
     let returnedToPoolCount = 0;
 
-    for (const assignment of activeAssignments) {
-      const task = assignment.task;
-      const now = new Date();
-
-      await this.prisma.taskAssignee.update({
-        where: { id: assignment.id },
-        data: { removedAt: now },
-      });
-
-      const remainingActiveOthers = task.assignees.filter(
-        (a) => a.id !== assignment.id && a.removedAt === null,
+    for (const { taskId } of activeAssignments) {
+      const outcome = await this.prisma.$transaction(async (tx) =>
+        this.departTaskInTx(tx, taskId, fromUserId, validToUserId, organizationId, actorId),
       );
+      // Gone, closed by now, or no longer theirs: nothing was written.
+      if (!outcome) continue;
 
-      // ACC-173 — a departure and a hold. Going to the acting user, or staying
-      // with others still on it, KEEPS the hold: the reason the work is paused
-      // usually still applies, and the hold still ends on its date. Going back
-      // to a pool, or becoming UNASSIGNED, ENDS it: a held task nobody owns
-      // would be invisible, because Available and the pool sweep skip ON_HOLD.
-      // The leaver's own pending request goes with them either way; a task
-      // that goes back to its pool or to nobody loses every pending request.
-      const wasOnHold = task.status === 'ON_HOLD';
-      const cancelled: CancelledRequest[] = [];
-
-      // ACC-167 — a task with a pool goes back to its pool, whether the
-      // departing person picked it up or was chosen for it directly: the pool
-      // is still a valid owner, and the acting user may not hold the position.
-      // Only an OPEN task — this loop also reaches closed tasks (ACC-165), and
-      // returning one to its pool would reopen it. Creates no row for the
-      // acting user, so it never reaches the duplicate-row create below that
-      // ACC-165 owns.
-      //
-      // It RETURNS to the pool only when nobody else is still on it; otherwise
-      // it stays with them, is not counted as returned, and is audited as
-      // departure_left_with_others.
-      if (poolTargetOf(task) && task.status !== 'COMPLETED' && task.status !== 'CANCELLED') {
-        const returned = remainingActiveOthers.length === 0;
-        if (returned) {
-          await this.prisma.task.update({
-            where: { id: task.id },
-            data: {
-              status: 'PENDING',
-              ...HOLD_CLEARED,
-              ...(await this.poolClock(task.priority, organizationId, now)),
-            },
-          });
-          returnedToPoolCount += 1;
-          cancelled.push(...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure')));
-        } else {
-          cancelled.push(
-            ...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure', fromUserId)),
-          );
-        }
+      const { kind, wasOnHold, cancelled } = outcome;
+      if (kind === 'returned_to_pool' || kind === 'left_with_others') {
+        const returned = kind === 'returned_to_pool';
+        if (returned) returnedToPoolCount += 1;
         await this.auditLog.log({
           action: 'DELEGATE',
           objectType: 'Task',
-          objectId: task.id,
+          objectId: taskId,
           actorId,
           tenantId: organizationId,
           metadata: {
@@ -1765,41 +1752,22 @@ export class TaskService {
           },
         });
         await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
-        // Once, after this task's writes. The departing user was made INACTIVE
+        // Once, after this task commits. The departing user was made INACTIVE
         // before this runs (UserService.deactivate()), so the pool no longer
         // holds them; excluding them anyway keeps that true if the order moves.
         if (returned) {
-          await this.notifyPool(task.id, organizationId, { event: 'departure', excludeUserId: fromUserId });
+          await this.notifyPool(taskId, organizationId, { event: 'departure', excludeUserId: fromUserId });
         }
         continue;
       }
 
-      let holdEnded = false;
-      if (validToUserId) {
-        await this.prisma.taskAssignee.create({
-          data: { taskId: task.id, userId: validToUserId, assignedById: actorId },
-        });
-        if (task.status === 'UNASSIGNED') {
-          await this.prisma.task.update({ where: { id: task.id }, data: { status: 'PENDING' } });
-        }
-        reassignedCount += 1;
-        cancelled.push(...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure', fromUserId)));
-      } else if (remainingActiveOthers.length === 0) {
-        await this.prisma.task.update({
-          where: { id: task.id },
-          data: { status: 'UNASSIGNED', ...(wasOnHold ? HOLD_CLEARED : {}) },
-        });
-        unassignedCount += 1;
-        holdEnded = wasOnHold;
-        cancelled.push(...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure')));
-      } else {
-        cancelled.push(...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure', fromUserId)));
-      }
-
+      if (kind === 'reassigned') reassignedCount += 1;
+      if (kind === 'unassigned') unassignedCount += 1;
+      const holdEnded = kind === 'unassigned' && wasOnHold;
       await this.auditLog.log({
         action: 'DELEGATE',
         objectType: 'Task',
-        objectId: task.id,
+        objectId: taskId,
         actorId,
         tenantId: organizationId,
         metadata: {
@@ -1825,6 +1793,119 @@ export class TaskService {
     }
 
     return { reassignedCount, unassignedCount, returnedToPoolCount };
+  }
+
+  // ACC-165 — one task of a departure, inside its own transaction and under its
+  // row lock. Every decision reads the LOCKED state; returns null when there is
+  // nothing to do (the task is gone, closed, or no longer the leaver's).
+  private async departTaskInTx(
+    tx: TaskTx,
+    taskId: string,
+    fromUserId: string,
+    validToUserId: string | null,
+    organizationId: string,
+    actorId: string,
+  ): Promise<{
+    kind: 'returned_to_pool' | 'left_with_others' | 'reassigned' | 'unassigned' | 'left';
+    wasOnHold: boolean;
+    cancelled: CancelledRequest[];
+  } | null> {
+    await this.lockTaskRow(tx, taskId, organizationId);
+    const task = await tx.task.findFirst({
+      where: { id: taskId, organizationId },
+      include: { assignees: true },
+    });
+    const leaving = task?.assignees.find((a) => a.userId === fromUserId && a.removedAt === null);
+    if (!task || !leaving || (CLOSED_STATUSES as readonly string[]).includes(task.status)) {
+      return null;
+    }
+
+    const now = new Date();
+    await tx.taskAssignee.update({
+      where: { id: leaving.id },
+      data: { removedAt: now },
+    });
+
+    const remainingActiveOthers = task.assignees.filter(
+      (a) => a.id !== leaving.id && a.removedAt === null,
+    );
+
+    // ACC-173 — a departure and a hold. Going to the acting user, or staying
+    // with others still on it, KEEPS the hold: the reason the work is paused
+    // usually still applies, and the hold still ends on its date. Going back
+    // to a pool, or becoming UNASSIGNED, ENDS it: a held task nobody owns
+    // would be invisible, because Available and the pool sweep skip ON_HOLD.
+    // The leaver's own pending request goes with them either way; a task
+    // that goes back to its pool or to nobody loses every pending request.
+    const wasOnHold = task.status === 'ON_HOLD';
+
+    // ACC-167 — a task with a pool goes back to its pool, whether the
+    // departing person picked it up or was chosen for it directly: the pool
+    // is still a valid owner, and the acting user may not hold the position.
+    // Creates no row for the acting user. (Only open tasks reach here since
+    // ACC-165, so returning one to its pool never reopens it.)
+    //
+    // It RETURNS to the pool only when nobody else is still on it; otherwise
+    // it stays with them, is not counted as returned, and is audited as
+    // departure_left_with_others.
+    if (poolTargetOf(task)) {
+      if (remainingActiveOthers.length === 0) {
+        await tx.task.update({
+          where: { id: task.id },
+          data: {
+            status: 'PENDING',
+            ...HOLD_CLEARED,
+            ...(await this.poolClock(task.priority, organizationId, now)),
+          },
+        });
+        const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure');
+        return { kind: 'returned_to_pool', wasOnHold, cancelled };
+      }
+      const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure', fromUserId);
+      return { kind: 'left_with_others', wasOnHold, cancelled };
+    }
+
+    if (validToUserId) {
+      // ACC-165 — one row per person per task, as reassign() keeps it. A
+      // returning acting user's removed row is reactivated, with no delegation
+      // stamp (they are not covering for anyone) and not as a pick; an active
+      // co-assignee keeps their row exactly as it is.
+      const previous = task.assignees.find((a) => a.userId === validToUserId);
+      if (!previous) {
+        await tx.taskAssignee.create({
+          data: { taskId: task.id, userId: validToUserId, assignedById: actorId },
+        });
+      } else if (previous.removedAt !== null) {
+        await tx.taskAssignee.update({
+          where: { id: previous.id },
+          data: {
+            removedAt: null,
+            assignedAt: now,
+            assignedById: actorId,
+            delegationReason: null,
+            delegationContextId: null,
+            pickedAt: null,
+          },
+        });
+      }
+      if (task.status === 'UNASSIGNED') {
+        await tx.task.update({ where: { id: task.id }, data: { status: 'PENDING' } });
+      }
+      const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure', fromUserId);
+      return { kind: 'reassigned', wasOnHold, cancelled };
+    }
+
+    if (remainingActiveOthers.length === 0) {
+      await tx.task.update({
+        where: { id: task.id },
+        data: { status: 'UNASSIGNED', ...(wasOnHold ? HOLD_CLEARED : {}) },
+      });
+      const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure');
+      return { kind: 'unassigned', wasOnHold, cancelled };
+    }
+
+    const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure', fromUserId);
+    return { kind: 'left', wasOnHold, cancelled };
   }
 
   // ACC-51 — the recovery half of the unassigned-task lifecycle. Called only

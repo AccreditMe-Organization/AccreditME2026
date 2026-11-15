@@ -1,9 +1,10 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { createHmac } from 'crypto';
 import {
   BETTER_AUTH_API_ERROR_NAME,
   BETTER_AUTH_INVALID_CREDENTIALS,
+  BETTER_AUTH_INVALID_TOKEN,
+  BETTER_AUTH_RESET_PASSWORD_PREFIX,
   BETTER_AUTH_PASSWORD_CHECK_FAILED,
   BETTER_AUTH_PASSWORD_CODES,
   BETTER_AUTH_TWO_FACTOR_CODES,
@@ -16,6 +17,8 @@ import {
   TWO_FACTOR_MAX_FAILURES_PER_USER,
 } from './better-auth.contract';
 import { verifiedChallengeIdentifier } from './two-factor-challenge';
+import { storedResetIdentifier } from './password-reset/password-reset-verification';
+import { createHash, createHmac } from 'crypto';
 
 /**
  * ACC-120 slice 9b — the facts this codebase relies on INSIDE Better Auth,
@@ -263,6 +266,64 @@ describe('Better Auth contract (ACC-120 slice 9b)', () => {
       }
       expect(service).not.toMatch(/auth\.api\.\w+\(\{[^)]*\brequest\s*:/);
       expect(service).not.toMatch(/['"]x-forwarded-host['"]/i);
+    });
+  });
+
+  // ACC-188 — we write Better Auth's reset row (password-reset-verification.ts)
+  // and Better Auth's resetPassword consumes it. Every fact that pairing relies
+  // on is pinned here.
+  describe('password reset (ACC-188)', () => {
+    const password = (): string => source(`${BETTER_AUTH}/api/routes/password.mjs`);
+    const resetBody = (): string => {
+      const text = password();
+      return text.slice(text.indexOf('const resetPassword = createAuthEndpoint'));
+    };
+
+    it(`keys a reset row as "${BETTER_AUTH_RESET_PASSWORD_PREFIX}<token>" with the AuthUser id as its value`, () => {
+      const text = password();
+      expect(text).toContain('identifier: `reset-password:${verificationToken}`');
+      expect(text).toContain('value: user.user.id,');
+      expect(resetBody()).toContain('const id = `reset-password:${token}`;');
+      expect(resetBody()).toContain('const userId = verification.value;');
+    });
+
+    it(`answers a token it cannot consume with ${BETTER_AUTH_INVALID_TOKEN}`, () => {
+      expect(resetBody()).toContain('if (!verification) throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.INVALID_TOKEN);');
+      const codes = source('@better-auth/core/dist/error/codes.mjs');
+      expect(codes).toContain(`${BETTER_AUTH_INVALID_TOKEN}: `);
+    });
+
+    it('CONSUMES the token BEFORE it hashes the password, so the breach check must run first', () => {
+      const body = resetBody();
+      const consume = body.indexOf('consumeVerificationValue(id)');
+      const hash = body.indexOf('ctx.context.password.hash(newPassword)');
+      expect(consume).toBeGreaterThan(-1);
+      expect(hash).toBeGreaterThan(consume);
+      // ...and checks the length BEFORE consuming, so too short or long keeps the link.
+      expect(body.indexOf('PASSWORD_TOO_SHORT')).toBeLessThan(consume);
+    });
+
+    it('returns null for an expired row when it consumes, deleting it either way', () => {
+      const adapter = source(`${BETTER_AUTH}/db/internal-adapter.mjs`);
+      expect(adapter).toContain('if (!consumed || consumed.expiresAt < /* @__PURE__ */ new Date()) return null;');
+    });
+
+    it('stores a "hashed" identifier as base64url(SHA-256), no padding — what storedResetIdentifier() writes', () => {
+      const storage = source(`${BETTER_AUTH}/db/verification-token-storage.mjs`);
+      expect(storage).toContain('createHash("SHA-256").digest(new TextEncoder().encode(identifier))');
+      expect(storage).toContain('base64Url.encode(new Uint8Array(hash), { padding: false })');
+      expect(storage).toContain('if (option === "hashed") return defaultKeyHasher(identifier);');
+      expect(storage).toContain('for (const [prefix, option] of Object.entries(config.overrides)) if (identifier.startsWith(prefix)) return option;');
+      const token = 'A'.repeat(43);
+      expect(storedResetIdentifier(token)).toBe(
+        createHash('sha256').update(`reset-password:${token}`).digest('base64url'),
+      );
+      expect(storedResetIdentifier(token)).not.toContain('=');
+    });
+
+    it('refuses requestPasswordReset without sendResetPassword, so data.url cannot be sent', () => {
+      expect(password()).toContain('if (!ctx.context.options.emailAndPassword?.sendResetPassword) {');
+      expect(password()).toContain('code: "RESET_PASSWORD_DISABLED"');
     });
   });
 });
