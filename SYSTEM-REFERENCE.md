@@ -10640,6 +10640,24 @@ array-backed list to the same contract, so there is one code path.
   parent does not constrain height, `flex-1` grows to content and no
   scrollbar appears, so the same markup is correct in panel mode
   without a variant branch.
+- **The scroll region reserves NO scrollbar gutter (ACC-309).**
+  - **Where the gutter came from.** `scrollbar-gutter: stable` was ACC-120's
+    first attempt at keeping the headings over their data while the header
+    sat outside the scroller. It was superseded the same day by moving the
+    header inside, and left behind.
+  - **What it broke.** With the gutter EMPTY (a list too short to scroll
+    down, or scrollbars that take no space), Chromium shifts the sideways
+    scroll range by a gutter's width:
+    - right-to-left, the first 15px could not be reached: `scrollLeft` −15
+      on load and again after `scrollLeft = 0`. On Lookups in Arabic at 390,
+      the first label sat 3px past the edge;
+    - left-to-right, the last 15px of a wide list could not be reached.
+  - **The cost of removing it.** A desktop list's width moves by the
+    scrollbar's width when it starts or stops scrolling down. Header and rows
+    move together, so they stay aligned.
+  - **Pinned by** `data-list.rtl-start.layout.spec.ts`: both directions, 358
+    and 988, short and long. It fails in both directions with the gutter back.
+  - **Do not reintroduce a gutter on this element.**
 - **A manually ordered list gives no column a `sortBy`.** Workflow
   Stages never will: its order IS its data and every row carries reorder
   buttons, so re-sorting would leave those buttons pointing at positions

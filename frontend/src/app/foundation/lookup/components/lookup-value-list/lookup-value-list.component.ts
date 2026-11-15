@@ -119,7 +119,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
       }
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-[var(--am-danger-ink)]" role="alert" data-lookup-error>{{ error() }}</p>
       }
 
       <!-- ACC-286 — what "Required seat" means, said ONCE for the list rather
@@ -385,7 +385,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
             />
           </am-field>
           @if (overrideError()) {
-            <p class="text-sm text-red-500">{{ overrideError() }}</p>
+            <p class="text-sm text-[var(--am-danger-ink)]" role="alert" data-override-error>{{ overrideError() }}</p>
           }
         </form>
       </ng-template>
