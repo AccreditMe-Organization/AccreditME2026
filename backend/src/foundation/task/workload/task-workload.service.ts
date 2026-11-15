@@ -172,8 +172,16 @@ export class TaskWorkloadService {
   }
 }
 
-/** Q3 / Q6 — past the threshold against the others who are not out of office. */
+/**
+ * Q3 / Q6 — past the threshold against the others who are not out of office.
+ * ACC-302 (Ahmad, 14 Nov, Q6) — never for a person a new task would not reach:
+ * someone covered (`holder.cover`) hands it to their cover, so suggesting
+ * someone instead of them answers the wrong question. suggest() refuses them
+ * with WORKLOAD_NO_SUGGESTION before any call, and their row says canSuggest:
+ * false, so the screen never offers it.
+ */
 export function canSuggestFor(person: IWorkloadPerson, everyone: readonly IWorkloadPerson[]): boolean {
+  if (person.holder.cover) return false;
   const others = everyone.filter((p) => p !== person && !p.outOfOffice).map((p) => p.workload.open);
   return isPastThreshold(person.workload.open, others);
 }

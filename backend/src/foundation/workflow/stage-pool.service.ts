@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { WorkflowObjectType, WorkflowStageAssignee } from '../../../generated/prisma/client';
 import { findCurrentHeadHoldersForUnits, findRunningActingCoversForUnits } from '../organization/unit-headship';
 import { RECORD_ROUTES } from './stage-task-record-routes';
+import { activeCoverOf } from '../../common/services/out-of-office-cover';
 
 /**
  * ACC-271 — who works a converted stage (plan §4.1). A stage's pool is the
@@ -286,11 +287,9 @@ export class StagePoolService {
       const coveringFor = new Map<string, string>();
       for (const id of direct) {
         const user = userById.get(id)!;
-        const away = !!user.outOfOfficeFrom && !!user.outOfOfficeTo && user.outOfOfficeFrom <= now && now <= user.outOfOfficeTo;
-        const acting =
-          away && user.actingUserId && user.actingUser?.status === 'ACTIVE' && user.actingUser.organizationId === organizationId
-            ? user.actingUserId
-            : null;
+        // ACC-302 — the shared cover test (out-of-office-cover.ts). Stage pools
+        // keep no one-hop check: an away cover still works the stage (Q7).
+        const acting = activeCoverOf(user, organizationId, now);
         if (acting) {
           if (!members.includes(acting)) members.push(acting);
           if (!direct.includes(acting) && !coveringFor.has(acting)) coveringFor.set(acting, id);

@@ -18,6 +18,7 @@ import {
 } from './interfaces/task-assignment.interface';
 import { TaskAuthorityService } from './task-authority.service';
 import { PoolClient, PoolPlacement, PoolTarget, isPoolMember, resolvePoolMemberIds } from './task-pool';
+import { CoverDelegation, TaskCover, coversOf, routeToCovers } from '../../common/services/out-of-office-cover';
 
 const COMMITTEE_MEMBER_ROLE_CATEGORY = 'committee_member_role';
 
@@ -29,6 +30,12 @@ export interface AssignmentViewer {
 /** A chosen target resolved: where the task lands, and who (if anyone) holds it directly. */
 export interface ResolvedPlacement extends PoolPlacement {
   directUserIds: string[];
+  /**
+   * ACC-302 — the people above who stand in for an away person, keyed by
+   * their id: OUT_OF_OFFICE_COVERAGE and whom they cover, for the assignee
+   * row. Absent or empty: nobody was routed to a cover.
+   */
+  delegations?: ReadonlyMap<string, CoverDelegation>;
 }
 
 /**
@@ -143,7 +150,7 @@ export class TaskAssignmentService {
       select: { id: true, name: true, position: { select: { nameEn: true, nameAr: true } } },
       orderBy: { name: 'asc' },
     });
-    return holders.map(toHolder);
+    return this.withCovers(holders.map(toHolder), organizationId);
   }
 
   /**
@@ -228,7 +235,18 @@ export class TaskAssignmentService {
       },
       orderBy: { user: { name: 'asc' } },
     });
-    return members.map((m) => toHolder(m.user));
+    return this.withCovers(members.map((m) => toHolder(m.user)), organizationId);
+  }
+
+  /**
+   * ACC-302 — who a new task for each person goes to now (the task rule in
+   * out-of-office-cover.ts): ONE read for the whole list. Filled for every
+   * caller the picker serves (Ahmad, 14 Nov: the creator is always told), with
+   * the cover's id and name only — never the away person's dates or reason.
+   */
+  private async withCovers(holders: IAssignableHolder[], organizationId: string): Promise<IAssignableHolder[]> {
+    const covers = await coversOf(this.prisma, organizationId, holders.map((h) => h.id), new Date());
+    return holders.map((h) => ({ ...h, cover: covers.get(h.id) ?? null }));
   }
 
   /**
@@ -291,12 +309,22 @@ export class TaskAssignmentService {
             : 'The chosen person does not hold that role on the committee',
         );
       }
-      return { target, pooled: false, directUserIds: [dto.userId] };
+      return this.routed(client, organizationId, target, [dto.userId]);
     }
     if (singleHolder) {
-      return { target, pooled: false, directUserIds: await resolvePoolMemberIds(client, target, organizationId) };
+      return this.routed(client, organizationId, target, await resolvePoolMemberIds(client, target, organizationId));
     }
     return { target, pooled: true, directUserIds: [] };
+  }
+
+  /**
+   * ACC-302 — a placement's direct people (a chosen person, a one-holder
+   * position's holder) go to their covers, in one read. Never a pool: a pooled
+   * placement is returned above, untouched.
+   */
+  private async routed(client: PoolClient, organizationId: string, target: PoolTarget, directUserIds: string[]): Promise<ResolvedPlacement> {
+    const routing = await routeToCovers(client, organizationId, directUserIds, new Date());
+    return { target, pooled: false, directUserIds: routing.userIds, delegations: routing.delegations };
   }
 
   private async requireUnit(orgUnitId: string, organizationId: string): Promise<void> {
@@ -325,5 +353,7 @@ function toHolder(user: {
     positionNameAr: user.position?.nameAr ?? null,
     // ACC-199 — filled in by TaskWorkloadService when a visible record is named.
     workload: null,
+    // ACC-302 — filled in by withCovers().
+    cover: null,
   };
 }
