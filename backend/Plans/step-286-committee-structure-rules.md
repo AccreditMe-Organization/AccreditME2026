@@ -765,7 +765,64 @@ no Chairman and no Secretary. al-manara has no committee in force.
   The Fix already needs `committees:view`, and today only Organization
   Administrator holds `setup:view`, and it holds both.
 
-### 11.6 Order of work
+### 11.5.1 Answers (Ahmad, 15 Nov, Prompt 50)
+
+- **Q-A:** Suspended counts as in force for this condition: the same test as
+  rules 3 and 4 (`isActive` and the stage flagged `IN_FORCE`).
+- **Q-B:** the row's age is "first detected" (`openedAt` null, `AGE_BASIS`
+  `FIRST_DETECTED`).
+- **Q-C:** the row names the committee for any `setup:view` holder, like the
+  other condition types.
+- The db-spec covers tenant isolation and a Suspended committee. Mutation
+  checks cover the in-force test and the required-seat filter.
+
+### 11.6 As built (PR 2, 15 Nov)
+
+**Rollback check (§11.1): passed, before any PR 2 code.**
+- **Setup:** a scratch copy of `9ccdd94` (PR 1, live), its own Prisma client,
+  `accreditme_wf`, with two rows of the new type (one open, one cleared) and one
+  condition of an existing type.
+- **Results:** in PR 1's code, all 5 checks passed:
+  - the page, badge and Home slice answered with the new rows left out;
+  - the tree's unit conditions answered;
+  - the reconciler ran, succeeded and left the new rows byte-identical.
+- **Mutation:** adding the type to the copy's `SETUP_CONDITION_TYPES` turned the
+  page, badge and Home checks red (3 of 5). So the check was reading the
+  filter. The copy was deleted, with its `node_modules` junction removed first.
+
+**Built:**
+- `seatHoldersFor()` in `committee-seat-rules.ts`; `seatHolders()` is now a
+  one-committee call of it.
+- `committeesMissingRequiredSeat()` and its `byType` entry.
+- The type off the deferred list, reported after `TASK_WITHOUT_OWNER`, with
+  `AGE_BASIS` `FIRST_DETECTED`.
+- No migration, no backfill, no frontend code.
+
+**Specs:**
+- `setup-condition.committee-seat.spec.ts` (unit: rows, seat order, query
+  count, the flag read, an isolation-named test);
+- `committee-seat-detector.db-spec.ts` (real Postgres: committees in force
+  including Suspended, those not in force, ACTIVE users only, an organisation's
+  own setting, open then clear, tenant isolation);
+- `committee-seat-rules.db-spec.ts` (`seatHoldersFor()` equals `seatHolders()`);
+- the frontend `setup-condition-rows.committee-seat.spec.ts` (both languages,
+  the Fix, the permission line);
+- the pinned type lists updated in four existing specs.
+
+**Mutations (8, all red, every file restored):**
+
+| Mutation | Spec that went red |
+|---|---|
+| the IN_FORCE flag test dropped | `committee-seat-detector.db-spec` |
+| the committee-active test dropped | `committee-seat-detector.db-spec` |
+| a stage key read instead of the flag | `committee-seat-detector.db-spec` (Suspended) |
+| every seat treated as required | `committee-seat-detector.db-spec` |
+| the organisation's override ignored | `committee-seat-detector.db-spec` |
+| INVITED users counted as holders | `committee-seat-detector.db-spec` |
+| a seat filled on another committee counted here | `setup-condition.committee-seat.spec` |
+| the seats replaced by "—" on the row | frontend `setup-condition-rows.committee-seat.spec` |
+
+### 11.7 Order of work
 
 1. The rollback check (§11.1). Stop on failure.
 2. `seatHoldersFor()`, then the detector, the wiring and `AGE_BASIS`.

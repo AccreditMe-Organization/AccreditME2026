@@ -6888,11 +6888,30 @@ health detector.
 
 **Rule 4 — only a committee in force can be pointed at:** §3.15.
 
-**Setup health:** `COMMITTEE_MISSING_REQUIRED_SEAT`, deferred in PR 1 (§13.2).
-The frontend already reads it (type, order, Fix, wording), so PR 2 only writes
-it.
+**Setup health: `COMMITTEE_MISSING_REQUIRED_SEAT`** (§13.2). PR 1 added the
+value deferred, with every reader. PR 2 (`committeesMissingRequiredSeat()` in
+`setup-condition.detectors.ts`) writes it:
+- **Which committees:** rules 3 and 4's test — active, and the newest COMMITTEE
+  instance's current stage flagged `IN_FORCE`. Suspended counts (Ahmad, 15 Nov,
+  Q-A).
+- **One row per committee** with an empty required seat. It is `AT_RISK`, and
+  its `subject` names the committee and its empty seats in seat order, with
+  the organisation's own labels. The row names the committee for any
+  `setup:view` holder (Q-C).
+- **Age:** "first detected" (`openedAt` null, `AGE_BASIS` `FIRST_DETECTED`,
+  Q-B), because nothing records when a seat emptied.
+- **Cost:** at most three queries per organisation per hourly run: the
+  committees in force, `requiredSeats()`, and `seatHoldersFor()` (the batched
+  holder reader; `seatHolders()` is a one-committee call of it).
+- **It clears itself** on the next run once the seat is filled.
+- **The rollback was proved before PR 2.** PR 1's code (`9ccdd94`), reading a
+  database holding PR 2's rows, answered the page, the badge, Home's slice and
+  the tree's unit conditions with the rows left out, and its reconciler left
+  them byte-identical. A mutation of the type filter turned the check red.
 
 **Specs:** `committee-seat-rules.db-spec.ts`, `committee-going-live.db-spec.ts`,
+`committee-seat-detector.db-spec.ts` (PR 2: a Suspended committee, an
+organisation's own setting, open and clear, tenant isolation),
 `committee-reference-checks.db-spec.ts` (extended), `transition-preconditions.spec.ts`,
 and the unit and screen specs beside each change. Engine db-specs that move a
 committee into Active use `common/testing/committee-going-live.ts`
@@ -13263,7 +13282,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
-| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | — | **deferred in PR 1**: the value, its migration and every reader ship first, and it is in `DEFERRED_SETUP_CONDITION_TYPES`, so nothing writes it. PR 2 adds the detector (a committee in force with an empty required seat) and reports it. Fix: `/committees/:id` (`committees:view` + `committees:add_member`). §3.21.4 |
+| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`). One row per committee in force (active, stage flagged `IN_FORCE`; Suspended counts) with an empty required seat, naming the seats. PR 1 added the value deferred; PR 2 detects and reports it. §3.21.4 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a
