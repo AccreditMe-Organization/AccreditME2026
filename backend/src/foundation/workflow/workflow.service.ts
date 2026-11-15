@@ -36,7 +36,7 @@ import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowRefusalException } from './workflow-refusal';
 import { isVotingMove, stageExitOutcome, votesFor } from './workflow-vote';
-import { assertTransitionPreconditions } from './transition-preconditions';
+import { assertTransitionPreconditions, hasTransitionPrecondition } from './transition-preconditions';
 import { StagePool, StagePoolRequest, StagePoolService, mayActInStagePool } from './stage-pool.service';
 import { INSTANCE_NOT_FOUND, InstanceAccess } from './instance-access';
 import type { IWorkflowMoves } from './interfaces/workflow-instance.interface';
@@ -638,7 +638,7 @@ export class WorkflowService {
       if (fires) await this.assertMandatoryTasksDone(this.prisma, currentInstanceStage.id, organizationId);
       // ACC-238 — the record's own preconditions (a committee's quorum), early
       // for the same reason; checked again under the lock.
-      if (fires) await this.assertPreconditions(this.prisma, instance, fromStage, transition.kind, organizationId);
+      if (fires) await this.assertPreconditions(this.prisma, instance, fromStage, transition, organizationId);
     }
 
     if (this.decidesAlone(fromStage)) {
@@ -873,7 +873,7 @@ export class WorkflowService {
     if (!fires) return;
     if (move.kind === 'ADVANCE') {
       await this.assertMandatoryTasksDone(this.prisma, instanceStage.id, organizationId);
-      await this.assertPreconditions(this.prisma, instance, stage, move.kind, organizationId);
+      await this.assertPreconditions(this.prisma, instance, stage, move, organizationId);
     }
   }
 
@@ -1058,7 +1058,7 @@ export class WorkflowService {
       // ACC-238 — the record's own preconditions, authoritative: the record is
       // read FOR SHARE inside this transaction, so an edit cannot slip between
       // the check and the move.
-      await this.assertPreconditions(tx, instance, fromStage, transition.kind, organizationId);
+      await this.assertPreconditions(tx, instance, fromStage, transition, organizationId, toStage);
 
       // ACC-239 — the module's own write, under this same lock and transaction.
       if (hook.inTx) {
@@ -1203,18 +1203,35 @@ export class WorkflowService {
   // ACC-238 — TRANSITION_PRECONDITIONS for this record's kind (a committee
   // needs a quorum to leave Formation). Fails open: a kind with no entry has
   // none. Read the precondition registry, not this method, for the rules.
+  //
+  // ACC-286 — the precondition also reads both stages' flags (going live). The
+  // early callers load the destination's flags here; performTransition() passes
+  // the stage it has already read. Only a kind with a precondition pays the read.
   private async assertPreconditions(
     client: Pick<EngineTx, '$queryRaw'>,
     instance: PrismaWorkflowInstance,
     fromStage: PrismaWorkflowStage,
-    kind: PrismaWorkflowTransition['kind'],
+    transition: Pick<PrismaWorkflowTransition, 'kind' | 'toStageId'>,
     organizationId: string,
+    toStage?: Pick<PrismaWorkflowStage, 'flags'>,
   ): Promise<void> {
+    if (!hasTransitionPrecondition(instance.objectType)) return;
+    const toStageFlags =
+      toStage?.flags ??
+      (
+        await this.prisma.workflowStage.findFirst({
+          where: { id: transition.toStageId, workflowTemplateId: fromStage.workflowTemplateId },
+          select: { flags: true },
+        })
+      )?.flags ??
+      [];
     await assertTransitionPreconditions(client, instance.objectType, {
       objectId: instance.objectId,
       organizationId,
       fromStageKey: fromStage.key,
-      kind,
+      fromStageFlags: fromStage.flags,
+      toStageFlags,
+      kind: transition.kind,
     });
   }
 

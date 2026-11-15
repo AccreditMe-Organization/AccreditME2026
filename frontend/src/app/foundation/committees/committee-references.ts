@@ -1,4 +1,5 @@
 import { refusalCode } from '../../core/http/refusal';
+import { committeeListStatus } from './committee-status';
 
 /**
  * ACC-233 — what a committee may point at, as the committee dialog sees it.
@@ -25,10 +26,13 @@ const REFUSALS: Readonly<Record<string, CommitteeRefusal>> = {
   COMMITTEE_PARENT_LOOP: { field: 'parentCommitteeId', key: 'committee.refusal.parentLoop' },
   COMMITTEE_PARENT_DISSOLVING: { field: 'parentCommitteeId', key: 'committee.refusal.parentDissolving' },
   COMMITTEE_PARENT_NOT_FOUND: { field: 'parentCommitteeId', key: 'committee.refusal.parentNotFound' },
+  // ACC-286 — only a committee in force can be pointed at.
+  COMMITTEE_PARENT_NOT_LIVE: { field: 'parentCommitteeId', key: 'committee.refusal.parentNotLive' },
   COMMITTEE_REPORTS_TO_ITSELF: { field: 'reportingToCommitteeId', key: 'committee.refusal.reportsToItself' },
   COMMITTEE_REPORTS_TO_LOOP: { field: 'reportingToCommitteeId', key: 'committee.refusal.reportsToLoop' },
   COMMITTEE_REPORTS_TO_DISSOLVING: { field: 'reportingToCommitteeId', key: 'committee.refusal.reportsToDissolving' },
   COMMITTEE_REPORTS_TO_NOT_FOUND: { field: 'reportingToCommitteeId', key: 'committee.refusal.reportsToNotFound' },
+  COMMITTEE_REPORTS_TO_NOT_LIVE: { field: 'reportingToCommitteeId', key: 'committee.refusal.reportsToNotLive' },
   COMMITTEE_UNIT_REQUIRED: { field: 'orgUnitId', key: 'committee.refusal.unitRequired' },
   COMMITTEE_UNIT_NOT_FOUND: { field: 'orgUnitId', key: 'committee.refusal.unitNotFound' },
 };
@@ -45,6 +49,13 @@ export interface CommitteeReferenceRow {
   parentCommitteeId: string | null;
   reportingToCommitteeId: string | null;
   isDissolving: boolean;
+  /**
+   * ACC-286 — read for "in force": the current stage flagged IN_FORCE AND the
+   * committee active, the server's own test (committee-reference-checks.ts),
+   * through the list's one status rule (committeeListStatus()).
+   */
+  isActive: boolean;
+  stageRules?: { flags: readonly string[] } | null;
 }
 
 export type CommitteeChain = 'parent' | 'reportsTo';
@@ -53,6 +64,7 @@ export type CommitteeChain = 'parent' | 'reportsTo';
  * The committees a picker offers. Left out:
  *   - the committee itself;
  *   - any committee being dissolved, or dissolved;
+ *   - (ACC-286) any committee not in force: not yet approved, or inactive;
  *   - (editing) any committee whose chain leads back to this one — a
  *     sub-committee for the parent picker, a committee that reports to it for
  *     the reports-to picker.
@@ -78,6 +90,6 @@ export function referenceOptions<T extends CommitteeReferenceRow>(
     return false;
   };
   return all.filter(
-    (c) => c.id === savedValue || (c.id !== editingId && !c.isDissolving && !leadsBack(c)),
+    (c) => c.id === savedValue || (c.id !== editingId && !c.isDissolving && committeeListStatus(c) === 'IN_FORCE' && !leadsBack(c)),
   );
 }

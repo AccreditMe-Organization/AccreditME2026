@@ -39,3 +39,24 @@ export function committeeStageRefusal(err: unknown): CommitteeStageRefusal | nul
     stageNameAr,
   };
 }
+
+/**
+ * ACC-286 — a member write refused because it would empty a required seat of
+ * a committee in force (409 COMMITTEE_REQUIRED_SEAT_LAST_HOLDER). The seat's
+ * own names, as the server sent them, for "Appoint another {{seat}} first."
+ * (committee.refusal.requiredSeatLastHolder), picked for the reader's language
+ * at render. Null for any other error.
+ */
+export interface CommitteeSeatRefusal {
+  seatEn: string;
+  seatAr: string | null;
+}
+
+export function committeeSeatRefusal(err: unknown): CommitteeSeatRefusal | null {
+  if (refusalCode(err) !== 'COMMITTEE_REQUIRED_SEAT_LAST_HOLDER') return null;
+  const seat = refusalBody(err)?.['seat'];
+  const s = seat && typeof seat === 'object' ? (seat as Record<string, unknown>) : {};
+  const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
+  const seatAr = text(s['labelAr']);
+  return { seatEn: text(s['labelEn']) ?? seatAr ?? '—', seatAr };
+}

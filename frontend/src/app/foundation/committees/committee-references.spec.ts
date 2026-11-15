@@ -9,6 +9,9 @@ const row = (id: string, links: Partial<CommitteeReferenceRow> = {}): CommitteeR
   parentCommitteeId: null,
   reportingToCommitteeId: null,
   isDissolving: false,
+  // ACC-286 — in force unless a test says otherwise.
+  isActive: true,
+  stageRules: { flags: ['IN_FORCE'] },
   ...links,
 });
 const ids = (rows: CommitteeReferenceRow[]) => rows.map((r) => r.id).sort();
@@ -22,10 +25,12 @@ describe('committeeRefusal (ACC-233)', () => {
     ['COMMITTEE_PARENT_LOOP', 'parentCommitteeId', 'committee.refusal.parentLoop'],
     ['COMMITTEE_PARENT_DISSOLVING', 'parentCommitteeId', 'committee.refusal.parentDissolving'],
     ['COMMITTEE_PARENT_NOT_FOUND', 'parentCommitteeId', 'committee.refusal.parentNotFound'],
+    ['COMMITTEE_PARENT_NOT_LIVE', 'parentCommitteeId', 'committee.refusal.parentNotLive'],
     ['COMMITTEE_REPORTS_TO_ITSELF', 'reportingToCommitteeId', 'committee.refusal.reportsToItself'],
     ['COMMITTEE_REPORTS_TO_LOOP', 'reportingToCommitteeId', 'committee.refusal.reportsToLoop'],
     ['COMMITTEE_REPORTS_TO_DISSOLVING', 'reportingToCommitteeId', 'committee.refusal.reportsToDissolving'],
     ['COMMITTEE_REPORTS_TO_NOT_FOUND', 'reportingToCommitteeId', 'committee.refusal.reportsToNotFound'],
+    ['COMMITTEE_REPORTS_TO_NOT_LIVE', 'reportingToCommitteeId', 'committee.refusal.reportsToNotLive'],
     ['COMMITTEE_UNIT_REQUIRED', 'orgUnitId', 'committee.refusal.unitRequired'],
     ['COMMITTEE_UNIT_NOT_FOUND', 'orgUnitId', 'committee.refusal.unitNotFound'],
   ];
@@ -68,6 +73,26 @@ describe('referenceOptions (ACC-233)', () => {
   it('keeps the value already saved, even if it has since begun dissolving', () => {
     const all = [row('self', { parentCommitteeId: 'closing' }), row('closing', { isDissolving: true })];
     expect(ids(referenceOptions(all, 'self', 'parent', 'closing'))).toEqual(['closing']);
+  });
+
+  // ACC-286 — only a committee in force can be pointed at: its stage flagged
+  // IN_FORCE AND the committee active, the server's own test.
+  it('leaves out every committee not in force: not yet approved, or inactive', () => {
+    const all = [
+      row('self'),
+      row('live'),
+      row('formation', { stageRules: { flags: [] } }),
+      row('noStage', { stageRules: null }),
+      row('inactive', { isActive: false }),
+    ];
+    expect(ids(referenceOptions(all, 'self', 'parent', null))).toEqual(['live']);
+    expect(ids(referenceOptions(all, 'self', 'reportsTo', null))).toEqual(['live']);
+    expect(ids(referenceOptions(all, null, 'parent', null))).toEqual(['live', 'self']);
+  });
+
+  it('keeps the value already saved, even if that committee is not in force', () => {
+    const all = [row('self', { reportingToCommitteeId: 'formation' }), row('formation', { stageRules: { flags: [] } })];
+    expect(ids(referenceOptions(all, 'self', 'reportsTo', 'formation'))).toEqual(['formation']);
   });
 
   it('a loop already in the data ends the walk', () => {

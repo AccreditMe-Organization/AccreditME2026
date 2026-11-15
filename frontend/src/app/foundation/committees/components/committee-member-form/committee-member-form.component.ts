@@ -15,7 +15,12 @@ import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.s
 import { LanguageService } from '../../../../core/services/language.service';
 import { FormatService } from '../../../../core/formatting';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-import { CommitteeStageRefusal, committeeStageRefusal } from '../../committee-stage-refusal';
+import {
+  CommitteeSeatRefusal,
+  CommitteeStageRefusal,
+  committeeSeatRefusal,
+  committeeStageRefusal,
+} from '../../committee-stage-refusal';
 // ACC-42 Phase 3 — OverlaySelectComponent replaces p-select on this field:
 // EditDialogComponent context, proves item-template projection (Phase 2)
 // end-to-end for the first time in a real consumer. See CLAUDE.md's
@@ -96,7 +101,11 @@ export function addMemberRefusal(err: unknown): string {
           <input pInputText id="reason" formControlName="reason" />
         </div>
 
-        @if (stageRefusal(); as r) {
+        @if (seatRefusal(); as s) {
+          <p class="text-red-500 text-sm" role="alert" data-testid="member-seat-refusal">
+            {{ 'committee.refusal.requiredSeatLastHolder' | translate: { seat: seatName(s) } }}
+          </p>
+        } @else if (stageRefusal(); as r) {
           <p class="text-red-500 text-sm" role="alert" data-testid="member-stage-refusal">
             {{ r.key | translate: { stage: stageName(r) } }}
           </p>
@@ -214,7 +223,11 @@ export function addMemberRefusal(err: unknown): string {
           <input pInputText id="memberReason" formControlName="reason" class="w-full" />
         </am-field>
 
-        @if (stageRefusal(); as r) {
+        @if (seatRefusal(); as s) {
+          <p class="text-meta text-[var(--am-danger-ink)] m-0 mb-2" role="alert" data-testid="member-seat-refusal">
+            {{ 'committee.refusal.requiredSeatLastHolder' | translate: { seat: seatName(s) } }}
+          </p>
+        } @else if (stageRefusal(); as r) {
           <p class="text-meta text-[var(--am-danger-ink)] m-0 mb-2" role="alert" data-testid="member-stage-refusal">
             {{ r.key | translate: { stage: stageName(r) } }}
           </p>
@@ -365,10 +378,17 @@ export class CommitteeMemberFormComponent implements OnInit {
   readonly saveError = signal<string | null>(null);
   /** ACC-255 — a change the committee's stage does not allow (STAGE_ACTION_NOT_ALLOWED). */
   readonly stageRefusal = signal<CommitteeStageRefusal | null>(null);
+  /** ACC-286 — a role change that would empty a required seat of a committee in force. */
+  readonly seatRefusal = signal<CommitteeSeatRefusal | null>(null);
 
   /** The stage's own name, in the reader's language (English when it has no Arabic). */
   stageName(refusal: CommitteeStageRefusal): string {
     return this.languageService.bilingual(refusal.stageNameEn ?? refusal.stageNameAr ?? '', refusal.stageNameAr);
+  }
+
+  /** The seat's own name, in the reader's language (tenant data, ACC-160). */
+  seatName(refusal: CommitteeSeatRefusal): string {
+    return this.languageService.bilingual(refusal.seatEn, refusal.seatAr);
   }
   /** Active people, once loaded; null until then (the picker shows its skeleton). */
   private readonly users = signal<IUserDto[] | null>(null);
@@ -585,6 +605,7 @@ export class CommitteeMemberFormComponent implements OnInit {
     this.saving.set(true);
     this.saveError.set(null);
     this.stageRefusal.set(null);
+    this.seatRefusal.set(null);
 
     const value = this.form.getRawValue();
     const current = this.member();
@@ -601,8 +622,9 @@ export class CommitteeMemberFormComponent implements OnInit {
             this.saved.emit();
           },
           error: (err: unknown) => {
+            this.seatRefusal.set(committeeSeatRefusal(err));
             this.stageRefusal.set(committeeStageRefusal(err));
-            if (!this.stageRefusal()) this.saveError.set(extractErrorMessage(err, 'Save failed'));
+            if (!this.stageRefusal() && !this.seatRefusal()) this.saveError.set(extractErrorMessage(err, 'Save failed'));
             this.saving.set(false);
           },
         });

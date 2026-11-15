@@ -24,7 +24,10 @@ export type SetupConditionType =
   | 'ACTING_HEAD_OPEN_ENDED'
   // ACC-271 PR 5a — a workflow stage still worked by its seeded starting
   // assignment (the organization's administrator). Listed since this PR.
-  | 'STAGE_ON_STARTING_ASSIGNMENT';
+  | 'STAGE_ON_STARTING_ASSIGNMENT'
+  // ACC-286 — a committee in force with a required seat nobody fills. Learned in
+  // PR 1, before anything writes it; the backend reports it from PR 2.
+  | 'COMMITTEE_MISSING_REQUIRED_SEAT';
 
 export type SetupConditionSeverity = 'BLOCKS_WORK' | 'AT_RISK';
 
@@ -61,6 +64,8 @@ export interface SetupConditionSubject {
   // ACC-271 PR 5a — STAGE_ON_STARTING_ASSIGNMENT: whose the work is until it is
   // replaced (a person's name; null if they were removed).
   adminName?: string | null;
+  // ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT: the empty required seats, in seat order.
+  seats?: { id: string; labelEn: string; labelAr: string | null }[];
 }
 
 export interface SetupConditionDto {

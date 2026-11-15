@@ -171,7 +171,7 @@ export class StageRulesService {
     organizationId: string,
     client: Reader = this.prisma,
     { message, ...options }: AssertStageAllowsOptions = {},
-  ): Promise<void> {
+  ): Promise<StageRules> {
     if (!isRecordAction(objectType, actionKey)) {
       this.logger.error(`Unregistered record action asked: objectType=${objectType} action=${actionKey}`);
       throw new WorkflowRefusalException('STAGE_ACTION_NOT_ALLOWED', { action: actionKey, stageNameEn: null, stageNameAr: null });
@@ -189,6 +189,9 @@ export class StageRulesService {
         ...(message && { message: message(rules.stageNameEn) }),
       });
     }
+    // ACC-286 — returned so a write can ask the same stage's flags (a seat of a
+    // committee in force) without a second read.
+    return rules;
   }
 }
 

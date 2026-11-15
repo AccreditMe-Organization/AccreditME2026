@@ -296,6 +296,10 @@ enum SetupConditionType {
   // (the tenant admin). Expand first: written by PR 3's detector, never before
   // this value is deployed (ACC-173's rule).
   STAGE_ON_STARTING_ASSIGNMENT
+  // ACC-286 — a committee in force with a required seat nobody fills. Two
+  // deploys (CLAUDE.md's enum rule): PR 1 adds the value and teaches every
+  // reader; PR 2's detector is the first writer.
+  COMMITTEE_MISSING_REQUIRED_SEAT
 }
 
 // ACC-271 — who works a stage, one kind per entry; entries join with "or".

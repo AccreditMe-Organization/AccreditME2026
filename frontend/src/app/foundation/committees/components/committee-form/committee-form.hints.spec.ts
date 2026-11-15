@@ -11,7 +11,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../.
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { CommitteeFormComponent } from './committee-form.component';
-import { FORMATION_RULES } from '../../testing';
+import { ACTIVE_RULES, FORMATION_RULES } from '../../testing';
 
 // ACC-240 — Parent committee and Reports to say what they are for, then
 // ACC-233's line saying what their list leaves out (Ahmad, 22 Oct: both). A
@@ -43,7 +43,8 @@ const DETAIL: CommitteeDetailDto = {
   orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null,
 };
 
-const OTHER = { ...DETAIL, id: 'c-9', nameEn: 'Medical Executive Committee', memberCount: 9, currentStageNameEn: null, currentStageNameAr: null } as unknown as CommitteeListItemDto;
+// ACC-286 — in force, so the pickers may offer it.
+const OTHER = { ...DETAIL, id: 'c-9', nameEn: 'Medical Executive Committee', memberCount: 9, currentStageNameEn: null, currentStageNameAr: null, stageRules: ACTIVE_RULES } as unknown as CommitteeListItemDto;
 
 const HINT = {
   en: {

@@ -45,6 +45,7 @@ import { WorkflowService } from './workflow.service';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
 import { applyWorkflowSeed } from './workflow-seed-apply';
+import { untickRequiredSeats } from '../../common/testing/committee-going-live';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 
 const url = process.env['DATABASE_URL'];
@@ -94,6 +95,8 @@ describe('Pool members see and press their moves, against a real database (ACC-2
     const slug = `acc282-${randomUUID().slice(0, 8)}`;
     const org = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } })).id;
     await applyWorkflowSeed(prisma, org, [COMMITTEE_SEED, CR_SEED]);
+    // ACC-286 — going live needs every required seat filled; this spec is about the engine.
+    await untickRequiredSeats(prisma, org);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: org, objectType: 'COMMITTEE', isDefault: true } });
     const stageId = async (key: string) => (await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key } })).id;
     const unit = (await prisma.orgUnit.create({ data: { organizationId: org, nameEn: 'Quality', code: `Q-${slug}` } })).id;

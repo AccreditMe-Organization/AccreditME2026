@@ -22,6 +22,7 @@ import { UpdateLookupCategoryDto } from './dto/update-lookup-category.dto';
 import { CreateLookupValueDto } from './dto/create-lookup-value.dto';
 import { UpdateLookupValueDto } from './dto/update-lookup-value.dto';
 import { OverrideLabelDto } from './dto/override-label.dto';
+import { OverrideAttributesDto } from './dto/override-attributes.dto';
 import { ILookupCategory } from './interfaces/lookup-category.interface';
 import { ILookupValue } from './interfaces/lookup-value.interface';
 
@@ -151,6 +152,20 @@ export class LookupController {
     @CurrentUser() actorId: string,
   ): Promise<void> {
     return this.lookupService.unhideSystemValue(id, tenantId, actorId);
+  }
+
+  // ACC-286 — the organisation's own attribute values on a SYSTEM value (e.g. a
+  // required committee seat unticked); see LookupService.overrideAttributes().
+  @Patch('values/:id/attributes')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions(LOOKUPS_PERMISSIONS.MANAGE)
+  overrideAttributes(
+    @Param('id') id: string,
+    @Body() dto: OverrideAttributesDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<void> {
+    return this.lookupService.overrideAttributes(id, tenantId, dto, actorId);
   }
 
   @Post('values/:id/override-label')

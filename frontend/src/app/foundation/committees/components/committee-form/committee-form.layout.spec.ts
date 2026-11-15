@@ -15,7 +15,7 @@ import { CommitteeDetailDto, CommitteeListItemDto, CommitteeService } from '../.
 import { LookupService } from '../../../lookup/services/lookup.service';
 import { OrgUnitService } from '../../../organization/services/org-unit.service';
 import { CommitteeFormComponent, CommitteeFormTab } from './committee-form.component';
-import { FORMATION_RULES } from '../../testing';
+import { ACTIVE_RULES, FORMATION_RULES } from '../../testing';
 import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-238 — the three-tab committee dialog against the 420px body cap
@@ -89,8 +89,9 @@ const EDITING: CommitteeDetailDto = {
 };
 const LIST = [
   EDITING,
-  ROW('council', { nameEn: 'Quality & Patient Safety Council', nameAr: 'مجلس الجودة وسلامة المرضى' }),
-  ROW('mec', { nameEn: 'Medical Executive Committee', nameAr: 'اللجنة التنفيذية الطبية' }),
+  // ACC-286 — in force, so the pickers may offer them.
+  ROW('council', { nameEn: 'Quality & Patient Safety Council', nameAr: 'مجلس الجودة وسلامة المرضى', stageRules: ACTIVE_RULES }),
+  ROW('mec', { nameEn: 'Medical Executive Committee', nameAr: 'اللجنة التنفيذية الطبية', stageRules: ACTIVE_RULES }),
 ];
 
 describe('CommitteeForm — three tabs against the 420px body cap (ACC-238)', () => {

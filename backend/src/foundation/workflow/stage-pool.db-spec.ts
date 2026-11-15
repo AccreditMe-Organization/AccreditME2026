@@ -42,6 +42,7 @@ import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { StagePoolService } from './stage-pool.service';
 import type { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { applyWorkflowSeed } from './workflow-seed-apply';
+import { seatMembersForQuorum, untickRequiredSeats } from '../../common/testing/committee-going-live';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 
 const url = process.env['DATABASE_URL'];
@@ -108,6 +109,8 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     const roleKeys = new Set<string>(['TENANT_ADMIN']);
     for (const key of roleKeys) await prisma.role.create({ data: { organizationId: o.id, key, nameEn: key, isSystem: true } });
     await applyWorkflowSeed(prisma, o.id, [COMMITTEE_SEED]);
+    // ACC-286 — going live needs every required seat filled; this spec is about the engine.
+    await untickRequiredSeats(prisma, o.id);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
     const parent = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Hospital', code: `H-${slug}` } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Quality', code: `Q-${slug}`, parentId: parent.id } });
@@ -123,6 +126,8 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
         data: { organizationId: o.id, workflowTemplateId: template.id, objectType: 'COMMITTEE', objectId: c.id, status: 'IN_PROGRESS', currentStageId: stage.id },
       });
       const entry = await prisma.workflowInstanceStage.create({ data: { workflowInstanceId: instance.id, stageId: stage.id, enteredAt: new Date(), actorId } });
+      // ACC-286 — and its quorum met, so Approve can put it in force. No pool here is the committee's.
+      await seatMembersForQuorum(prisma, o.id, c.id);
       return { id: c.id, instanceId: instance.id, entryId: entry.id, stageId: stage.id };
     };
     return { id: o.id, templateId: template.id, parentUnitId: parent.id, unitId: unit.id, person, committeeAt };
