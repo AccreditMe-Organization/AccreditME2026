@@ -469,7 +469,9 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
   }
 
   // ── Test 14 (D1) ────────────────────────────────────────────────────────
-  it('14 · Committees, Tasks, Sessions and Access history are absent — not empty, not disabled', () => {
+  // ACC-216: Committees is absent here because ADMIN holds no committees:view
+  // (test 16 covers it with the key); the other three have no read yet.
+  it('14 · without committees:view, Committees, Tasks, Sessions and Access history are absent — not empty, not disabled', () => {
     const ctx = render({ viewer: ME, recordId: ME, permissions: ADMIN });
     flushUser(ctx, record({ id: ME }));
     ctx.http.expectOne((r) => r.url.endsWith(`/users/${ME}/roles`)).flush([]);
@@ -481,6 +483,35 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     for (const absent of ['Committees', 'Sessions', 'Access history', 'Tasks']) {
       expect(text).not.toContain(absent);
     }
+  });
+
+  // ── Test 16 (ACC-216) ───────────────────────────────────────────────────
+  it('16 · ACC-216 · the Committees panel: present with committees:view, absent and never requested without it', () => {
+    const without = render({ viewer: ME, recordId: OTHER, permissions: ['users:view'] });
+    flushUser(without, record());
+    expect(without.el.querySelector('app-user-committees-panel')).toBeNull();
+    expect(without.el.querySelector('[data-panel="committees"]')).toBeNull();
+    expect(urls(without.http).filter((u) => u.includes('/committees'))).toEqual([]);
+
+    const withKey = render({ viewer: ME, recordId: OTHER, permissions: ['users:view', 'committees:view'] });
+    flushUser(withKey, record());
+    const req = withKey.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/committees`) && r.method === 'GET');
+    req.flush({
+      total: 1,
+      rows: [
+        {
+          committee: { id: 'c1', nameEn: 'Quality Committee', nameAr: 'لجنة الجودة' },
+          seat: { id: 's1', labelEn: 'Member', labelAr: 'عضو', layer: 'SYSTEM' },
+          joinedAt: '2026-03-01T00:00:00.000Z',
+          leftAt: null,
+          current: true,
+        },
+      ],
+    });
+    withKey.fixture.detectChanges();
+    const panel = withKey.el.querySelector('[data-panel="committees"]')!;
+    expect(panel).not.toBeNull();
+    expect(panel.querySelector('[data-committee-link]')!.textContent!.trim()).toBe('Quality Committee');
   });
 
   // ── Test 15 ─────────────────────────────────────────────────────────────

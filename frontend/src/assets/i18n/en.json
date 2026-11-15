@@ -3743,6 +3743,14 @@
       "fromPosition": "Comes with the head position {{position}}",
       "fromPositionUnnamed": "Comes with a head position"
     },
+    "committees": {
+      "heading": "Committees",
+      "empty": "Not on any committee",
+      "loadError": "Committees couldn't be loaded.",
+      "since": "Since {{date}}",
+      "range": "{{from}} – {{to}}",
+      "inactiveCommittee": "Committee inactive"
+    },
     "twoStep": {
       "heading": "Two-step sign-in",
       "on": "On. A code from an authenticator app is asked for at every sign-in.",
