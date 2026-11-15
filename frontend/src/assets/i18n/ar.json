@@ -446,7 +446,19 @@
     "valueColumnStatus": "الحالة",
     "valuesEyebrow": "قيم القائمة",
     "valuesSearchPlaceholder": "ابحث في القيم بالمسمّى أو المفتاح",
-    "deleteHeader": "حذف القيمة «{{name}}»؟"
+    "deleteHeader": "حذف القيمة «{{name}}»؟",
+    "attribute": {
+      "required": "مقعد مطلوب",
+      "requiredFor": "مقعد مطلوب: {{name}}",
+      "requiredOn": "مقعد مطلوب",
+      "requiredOff": "مقعد غير مطلوب",
+      "requiredHint": "لا يمكن أن تصبح اللجنة سارية ما لم تكن مقاعدها المطلوبة مشغولة، ولا يمكن لآخر من يشغل مقعدًا مطلوبًا مغادرته وهي سارية."
+    },
+    "refusal": {
+      "attributeInvalid": "تعذّر حفظ هذا الإعداد لهذه القيمة.",
+      "valueGone": "لم تعد هذه القيمة موجودة."
+    },
+    "errorRequiredSeat": "تعذّر حفظ إعداد «مقعد مطلوب»."
   },
   "workingCalendar": {
     "title": "التقويم الرسمي",
@@ -2141,6 +2153,7 @@
         "listLabel": "مقاعد اللجان",
         "removing": "جارٍ إزالة مقاعد اللجان…",
         "notMember": "لم تعد العضوية قائمة.",
+        "openCommittee": "فتح اللجنة",
         "removeFailed": "تعذّرت إزالة المقعد.",
         "reasonMoved": "النقل من {{from}} إلى {{to}}.",
         "reasonSameUnit": "الانتقال إلى مسمى وظيفي جديد في {{unit}}."

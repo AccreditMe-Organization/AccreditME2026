@@ -481,6 +481,99 @@ describe('TransferUserWizard — the Committees step (ACC-296)', () => {
       expect(el().querySelector('[data-testid="transfer-seats-done"]')).toBeNull();
     });
   });
+
+  // ACC-286 — removing the last holder of a required seat on a committee in
+  // force is refused (409 COMMITTEE_REQUIRED_SEAT_LAST_HOLDER), and nothing is
+  // written. The row says so from the code, naming the seat; the other rows
+  // still run; Try again sends that row alone; a committees:view holder gets a
+  // link to the committee, where another holder is appointed.
+  describe('a required seat (ACC-286)', () => {
+    const VIEW = 'committees:view';
+    const seatRefusal = (labelAr: string | null = 'رئيس اللجنة') =>
+      httpError(409, {
+        code: 'COMMITTEE_REQUIRED_SEAT_LAST_HOLDER',
+        message: 'This committee needs someone in Chairman.',
+        seat: { id: 'seat-chair', labelEn: 'Chairman', labelAr },
+      });
+    const failedRow = (memberId: string) => el().querySelector(`[data-failed-seat="${memberId}"]`);
+    const linkOf = (memberId: string) => el().querySelector<HTMLAnchorElement>(`[data-failed-seat-link="${memberId}"]`);
+
+    function refuseFirstOfThree(opts: { permissions?: string[]; language?: 'en' | 'ar'; labelAr?: string | null } = {}) {
+      render({
+        committees: () => of(seats(3)),
+        permissions: opts.permissions ?? [REMOVE, VIEW],
+        removes: { 'm-1': [() => throwError(() => seatRefusal(opts.labelAr)), () => throwError(() => seatRefusal(opts.labelAr))] },
+      });
+      if (opts.language) TestBed.inject(TranslateService).use(opts.language);
+      go();
+      for (const id of ['m-1', 'm-2', 'm-3']) choose(id, 'remove');
+      submit();
+    }
+
+    afterEach(() => TestBed.inject(TranslateService).use('en'));
+
+    it('is said from its code in English, naming the seat, never the server message', () => {
+      refuseFirstOfThree();
+      expect(text(failedRow('m-1'))).toContain('Committee 1: Appoint another Chairman first.');
+      expect(text(el())).not.toContain('needs someone in');
+    });
+
+    it('is said in Arabic, naming the seat in Arabic', () => {
+      refuseFirstOfThree({ language: 'ar' });
+      expect(text(failedRow('m-1'))).toContain('اللجنة 1: يلزم تعيين عضو في مقعد «رئيس اللجنة» أولاً.');
+    });
+
+    it('a seat with no Arabic name is named in English in Arabic, never blank', () => {
+      refuseFirstOfThree({ language: 'ar', labelAr: null });
+      expect(text(failedRow('m-1'))).toContain('يلزم تعيين عضو في مقعد «Chairman» أولاً.');
+    });
+
+    it('the other rows still complete, and the refused one stays in the failed list', () => {
+      refuseFirstOfThree();
+      expect(removeCalls.map((c) => c.memberId)).withContext('every remove attempted').toEqual(['m-1', 'm-2', 'm-3']);
+      expect(wizard.seatRemoval()!.removed).toBe(2);
+      expect(wizard.seatRemoval()!.failed.map((f) => f.row.memberId)).toEqual(['m-1']);
+      expect(failedRow('m-2')).toBeNull();
+      expect(failedRow('m-3')).toBeNull();
+      expect(text(el().querySelector('[data-testid="transfer-seats-failed"] p-message'))).toBe("1 seat wasn't removed:");
+    });
+
+    it('Try again sends ONLY the refused row, and it stays refused while the seat has no one else', () => {
+      refuseFirstOfThree();
+      (el().querySelector('[data-testid="transfer-seats-retry"] button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(removeCalls.slice(3).map((c) => c.memberId)).toEqual(['m-1']);
+      expect(text(failedRow('m-1'))).toContain('Appoint another Chairman first.');
+      expect(wizard.seatRemoval()!.removed).toBe(2);
+    });
+
+    it('with committees:view, the refused row links to its committee', () => {
+      refuseFirstOfThree();
+      const link = linkOf('m-1');
+      expect(link).not.toBeNull();
+      expect(link!.getAttribute('href')).toBe('/committees/c-1');
+      expect(text(link)).toBe('Open the committee');
+    });
+
+    it('without committees:view, no link', () => {
+      refuseFirstOfThree({ permissions: [REMOVE] });
+      expect(failedRow('m-1')).withContext('the row is still said').not.toBeNull();
+      expect(linkOf('m-1')).toBeNull();
+    });
+
+    it('no link on a row refused for another reason', () => {
+      render({
+        committees: () => of(seats(2)),
+        permissions: [REMOVE, VIEW],
+        removes: { 'm-1': [() => throwError(() => httpError(500, { message: 'Busy' }))] },
+      });
+      go();
+      choose('m-1', 'remove');
+      submit();
+      expect(failedRow('m-1')).not.toBeNull();
+      expect(linkOf('m-1')).toBeNull();
+    });
+  });
 });
 
 describe('transferSeatReason (ACC-296)', () => {
