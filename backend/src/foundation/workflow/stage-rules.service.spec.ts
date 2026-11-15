@@ -121,7 +121,12 @@ describe('StageRulesService (ACC-255)', () => {
       const prisma = makePrisma({ current: { instanceId: 'wi', stageId: formation.id }, stage: formation, actions: ['edit_details'] });
       const service = new StageRulesService(prisma as unknown as PrismaService);
       await expect(service.stageAllows('COMMITTEE', 'c-1', 'edit_details', ORG)).resolves.toBe(true);
-      await expect(service.assertStageAllows('COMMITTEE', 'c-1', 'edit_details', ORG)).resolves.toBeUndefined();
+      // ACC-286 — and returns the rules it read, so a write can ask the stage's flags.
+      await expect(service.assertStageAllows('COMMITTEE', 'c-1', 'edit_details', ORG)).resolves.toMatchObject({
+        stageId: 'st-f',
+        flags: [],
+        actions: expect.objectContaining({ edit_details: true }),
+      });
     });
 
     it('refuses 409 STAGE_ACTION_NOT_ALLOWED naming the action and the stage', async () => {

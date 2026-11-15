@@ -1095,6 +1095,9 @@
       "openedFrom": "Opened from “{{transition}}”"
     },
     "refusal": {
+      "requiredSeatsEmpty": "Fill the required seats first: {{seats}}.",
+      "requiredSeatsEmptyPlain": "Fill the committee's required seats first.",
+      "membersBelowQuorum": "Add members first: this committee has fewer members than its quorum.",
       "actionTypeRetired": "Create task is no longer an action. Add tasks to the destination stage instead.",
       "validatorRetired": "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves.",
       "stageActionNotAllowed": "This can't be done while the record is at its current stage.",
@@ -1373,6 +1376,9 @@
       "stage": "Stage"
     },
     "refusal": {
+      "parentNotLive": "Choose a parent committee that is in force.",
+      "reportsToNotLive": "Choose a committee that is in force to report to.",
+      "requiredSeatLastHolder": "Appoint another {{seat}} first.",
       "ownParent": "A committee can't be its own parent committee.",
       "parentLoop": "A committee can't sit under one of its own sub-committees.",
       "parentDissolving": "A committee that is being dissolved, or has been, can't be a parent committee.",
@@ -1974,6 +1980,37 @@
     "reassignRejectedBy": "Rejected by {{name}}"
   },
   "auth": {
+    "forgot": {
+      "intro": "Enter the email address you sign in with. If it has an account here, we'll send a link to choose a new password.",
+      "submit": "Send reset link",
+      "sentTitle": "Check your email",
+      "sentBody": "If {{email}} has an account at this organisation, a link to reset the password is on its way. The link works once, for 1 hour. If nothing arrives in a few minutes, check your spam folder.",
+      "sentNote": "Asking again sends a new link, and the earlier one stops working."
+    },
+    "reset": {
+      "title": "Choose a new password",
+      "intro": "Your new password replaces the old one, and signs you out everywhere.",
+      "newPassword": "New password",
+      "confirm": "Confirm new password",
+      "confirmRequired": "Enter the new password again.",
+      "mismatch": "The two passwords don't match.",
+      "checkUnavailable": "We couldn't check your password just now. Try again; your link still works.",
+      "submit": "Set new password",
+      "successNotice": "Your password is changed. Sign in with your new password.",
+      "expiredTitle": "This link has expired",
+      "expiredBody": "Reset links work for 1 hour. Ask for a new one.",
+      "usedTitle": "This link has already been used",
+      "usedBody": "Your password was set with this link. Sign in with it, or ask for a new link if you've forgotten it again.",
+      "replacedTitle": "A newer link was sent",
+      "replacedBody": "You asked for another reset link, so this one no longer works. Use the link in the latest email.",
+      "invalidTitle": "This link can't be used",
+      "invalidBody": "It may be incomplete, or for a different organisation's address. Ask for a new link.",
+      "sendNewLink": "Send a new link"
+    },
+    "recovery": {
+      "unreachable": "We couldn't reach AccreditMe. Check your connection and try again.",
+      "rateLimited": "Too many attempts. Wait a few minutes, then try again."
+    },
     "login": "Sign in",
     "logout": "Sign out",
     "openOrganisationAddress": "Open your organisation's address to sign in, for example yourorg.accreditme.app.",
@@ -2003,7 +2040,6 @@
       "acceptedNotice": "Your password is set. Sign in to continue."
     },
     "forgotPasswordTitle": "Forgot password",
-    "forgotPasswordUnavailable": "Password reset by email isn't available yet. Ask your organisation's administrator for help signing in.",
     "signIn": {
       "backToSignIn": "Back to sign in",
       "emailRequired": "Enter your email.",
@@ -2419,6 +2455,7 @@
       "AT_RISK": "At risk"
     },
     "types": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Committee missing a required seat",
       "ORG_UNIT_WITHOUT_HEAD": "Org unit without a head",
       "ORG_UNIT_WITHOUT_TYPE": "Org unit without a type",
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
@@ -2433,6 +2470,7 @@
       "template": "Workflow: {{name}}"
     },
     "consequence": {
+      "committeeMissingSeat": "Required seats with no one in them: {{seats}}.",
       "unitCovered": "No head. Work routed to its head escalates to a parent unit or an acting head in the meantime.",
       "unitUncovered": "No head, and no one covers it by escalation. Approvals and escalations routed to its head have nowhere to go.",
       "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
@@ -2462,6 +2500,7 @@
       "detected": "First detected {{relative}}"
     },
     "fix": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Appoint members",
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
       "ORG_UNIT_WITHOUT_TYPE": "Set type",
       "STAGE_WITHOUT_ASSIGNEE": "Review stage",
@@ -2473,6 +2512,7 @@
       "STAGE_ON_STARTING_ASSIGNMENT": "Review stage"
     },
     "fixNeeds": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Fixing this needs permission to add committee members.",
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
       "ORG_UNIT_WITHOUT_TYPE": "Fixing this needs permission to manage the organization structure.",
       "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
@@ -3042,6 +3082,10 @@
       }
     },
     "workflow": {
+      "membersBelowQuorum": {
+        "one": "Add members first: the quorum needs {{count}} member, and this committee has {{members}}.",
+        "other": "Add members first: the quorum needs {{count}} members, and this committee has {{members}}."
+      },
       "editorChanges": {
         "one": "{{count}} change",
         "other": "{{count}} changes"

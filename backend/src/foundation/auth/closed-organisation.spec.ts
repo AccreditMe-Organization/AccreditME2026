@@ -20,6 +20,7 @@ import type { UserService } from '../user/user.service';
 import type { TenantService } from '../tenant/tenant.service';
 import type { RoleService } from '../roles/role.service';
 import type { PermissionResolver } from '../../common/services/permission-resolver.interface';
+import { PasswordResetService } from './password-reset/password-reset.service';
 
 jest.mock('better-auth/api', () => ({ isAPIError: () => false }));
 const mockAuthApi = { signInEmail: jest.fn(), verifyTOTP: jest.fn() };
@@ -337,6 +338,7 @@ describe('closed organisations (ACC-168)', () => {
       { create: jest.fn() } as unknown as NotificationService,
       new LoginAttemptService(prisma),
       {} as unknown as UserService,
+      {} as unknown as PasswordResetService,
     );
     const permissions = {
       getUserPermissions: jest.fn().mockResolvedValue(['users:view']),

@@ -1,13 +1,12 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
-import { Resend } from 'resend';
 import { PrismaService } from '../../prisma/prisma.service';
-import { resolveAppLinkConfig } from '../../common/config/app-url.config';
+import { TransactionalEmailService } from './transactional-email.service';
 import {
-  PLATFORM_SENDER_MISSING,
-  resolvePlatformSender,
-} from '../../common/config/email-sender.config';
-import { renderEmailHtml } from './email-html';
+  SECURITY_NOTICE_JOB,
+  SecurityNoticeJobData,
+  renderSecurityNotice,
+} from './security-notice';
 
 interface EmailDeliveryJobData {
   notificationId: string;
@@ -16,17 +15,23 @@ interface EmailDeliveryJobData {
 
 // First real call to the `resend` package in the codebase (present in
 // package.json since scaffold, never used) — mirrors how Step 6 was the
-// first real activation of BullMQ.
+// first real activation of BullMQ. ACC-188 moved the Resend call itself into
+// TransactionalEmailService, which this worker and the security notices share.
 @Processor('email-delivery')
 export class NotificationEmailProcessor extends WorkerHost {
-  private readonly resend = new Resend(process.env['RESEND_API_KEY']);
-
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly email: TransactionalEmailService,
+  ) {
     super();
   }
 
-  async process(job: Job<EmailDeliveryJobData>): Promise<void> {
-    const { notificationId, organizationId } = job.data;
+  async process(job: Job<EmailDeliveryJobData | SecurityNoticeJobData>): Promise<void> {
+    if (job.name === SECURITY_NOTICE_JOB) {
+      await this.sendSecurityNotice(job.data as SecurityNoticeJobData);
+      return;
+    }
+    const { notificationId, organizationId } = job.data as EmailDeliveryJobData;
 
     // Scoped by id AND organizationId together, like every tenant read. The job
     // carries both because NotificationService.create() enqueues both; reading
@@ -46,34 +51,15 @@ export class NotificationEmailProcessor extends WorkerHost {
       ? (notification.bodyAr ?? notification.bodyEn)
       : notification.bodyEn;
 
-    // ACC-130 — no fallback address: the old one was on accreditme.com, which
-    // is not ours. Throwing makes BullMQ record the failure and leaves sentAt
-    // null, the same signal as a refused send (see email-sender.config.ts).
-    const from = resolvePlatformSender();
-    if (!from) throw new Error(PLATFORM_SENDER_MISSING);
-
-    const result = await this.resend.emails.send({
-      from,
+    // ACC-158 — escaped, with the product's own links as anchors, and an
+    // Arabic body marked right-to-left (TransactionalEmailService). A failed
+    // send throws, which is what makes BullMQ's retry fire.
+    await this.email.send({
       to: notification.user.email,
       subject,
-      // ACC-158 — escaped, with the product's own links as anchors, and an
-      // Arabic body marked right-to-left. See email-html.ts.
-      html: renderEmailHtml(
-        body,
-        useArabic ? 'rtl' : 'ltr',
-        resolveAppLinkConfig(),
-      ),
+      body,
+      direction: useArabic ? 'rtl' : 'ltr',
     });
-
-    if (result.error) {
-      // Resend does not throw on an API-level error — it resolves with
-      // { data: null, error }. Re-throwing here is what makes BullMQ's own
-      // retry (attempts + backoff, configured in QueueModule) actually fire;
-      // without this, a failed send would be silently treated as complete.
-      throw new Error(
-        `Resend delivery failed: ${result.error.message ?? JSON.stringify(result.error)}`,
-      );
-    }
 
     // Only stamped on confirmed success — a null sentAt on an EMAIL/BOTH row
     // after its job should have completed is the failure indicator (see plan
@@ -81,6 +67,36 @@ export class NotificationEmailProcessor extends WorkerHost {
     await this.prisma.notification.updateMany({
       where: { id: notificationId, organizationId },
       data: { sentAt: new Date() },
+    });
+  }
+
+  // ACC-188 — a security notice: an email only, never a Notification row
+  // (security-notice.ts). The language is the person's, else the
+  // organisation's, else English — the same rule as sign-in.
+  private async sendSecurityNotice(data: SecurityNoticeJobData): Promise<void> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: data.userId, organizationId: data.organizationId },
+      select: {
+        email: true,
+        language: true,
+        organization: { select: { name: true, nameAr: true, language: true } },
+      },
+    });
+    if (!user) return;
+
+    const language =
+      (user.language ?? user.organization.language) === 'ar' ? 'ar' : 'en';
+    const organisation =
+      language === 'ar'
+        ? (user.organization.nameAr ?? user.organization.name)
+        : user.organization.name;
+    const { subject, body } = renderSecurityNotice(data.notice, language, organisation);
+
+    await this.email.send({
+      to: user.email,
+      subject,
+      body,
+      direction: language === 'ar' ? 'rtl' : 'ltr',
     });
   }
 }

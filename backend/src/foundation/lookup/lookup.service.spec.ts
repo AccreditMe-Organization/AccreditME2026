@@ -543,6 +543,105 @@ describe('LookupService', () => {
     });
   });
 
+  // ── ACC-286 — attribute overrides ─────────────────────────────────────────────
+
+  describe('attribute overrides (ACC-286)', () => {
+    const SCHEMA = {
+      type: 'object',
+      properties: { required: { type: 'boolean', label: 'Required seat' }, prefix: { type: 'string' }, years: { type: 'number' } },
+    };
+    const SYSTEM_SEAT = makeValue({ id: 'seat-chair', key: 'chairman', attributes: { required: true, prefix: 'CH' } as never });
+
+    it("getValues merges the organisation's attributes over the shared ones KEY BY KEY", async () => {
+      const override = makeValue({ id: 'ov', organizationId: ORG_A, key: 'chairman', layer: 'TENANT', attributes: { required: false } as never });
+      mockPrisma.lookupCategory.findFirst.mockResolvedValue(BASE_CATEGORY);
+      mockPrisma.lookupValue.findMany.mockResolvedValueOnce([SYSTEM_SEAT]).mockResolvedValueOnce([override]);
+
+      const [seat] = await service.getValues('committee_member_role', ORG_A);
+
+      expect(seat!.attributes).toEqual({ required: false, prefix: 'CH' });
+      expect(seat!.id).toBe('seat-chair');
+    });
+
+    it('a label-only override (a renamed seat) keeps every shared default', async () => {
+      const override = makeValue({ id: 'ov', organizationId: ORG_A, key: 'chairman', layer: 'TENANT', labelOverrideEn: 'President', attributes: null as never });
+      mockPrisma.lookupCategory.findFirst.mockResolvedValue(BASE_CATEGORY);
+      mockPrisma.lookupValue.findMany.mockResolvedValueOnce([SYSTEM_SEAT]).mockResolvedValueOnce([override]);
+
+      const [seat] = await service.getValues('committee_member_role', ORG_A);
+
+      expect(seat!.labelEn).toBe('President');
+      expect(seat!.attributes).toEqual({ required: true, prefix: 'CH' });
+    });
+
+    describe('overrideAttributes', () => {
+      beforeEach(() => {
+        mockPrisma.lookupValue.findFirst.mockReset(); // a refusal leaves the second answer queued
+        mockPrisma.lookupValue.findFirst
+          .mockResolvedValueOnce({ ...SYSTEM_SEAT, category: { attributeSchema: SCHEMA } }) // the shared value
+          .mockResolvedValueOnce(null); // no override yet
+        mockPrisma.lookupValue.upsert.mockResolvedValue({});
+      });
+
+      it.each([
+        ['an undeclared key', { colour: 'red' }, 'colour'],
+        ['a boolean sent as a string', { required: 'true' }, 'required'],
+        ['a number sent as a boolean', { years: true }, 'years'],
+      ])('refuses %s: 400 LOOKUP_ATTRIBUTE_INVALID naming it, nothing written or audited', async (_label, attributes, key) => {
+        await expect(service.overrideAttributes('seat-chair', ORG_A, { attributes }, ACTOR)).rejects.toMatchObject({
+          status: 400,
+          response: { code: 'LOOKUP_ATTRIBUTE_INVALID', key },
+        });
+        expect(mockPrisma.lookupValue.upsert).not.toHaveBeenCalled();
+        expect(mockAuditLog.log).not.toHaveBeenCalled();
+      });
+
+      it("writes the organisation's own value on its override row (created with the shared labels), and audits it", async () => {
+        await service.overrideAttributes('seat-chair', ORG_A, { attributes: { required: false } }, ACTOR);
+
+        expect(mockPrisma.lookupValue.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { categoryId_key_organizationId: { categoryId: SYSTEM_SEAT.categoryId, key: 'chairman', organizationId: ORG_A } },
+            create: expect.objectContaining({ layer: 'TENANT', organizationId: ORG_A, labelEn: SYSTEM_SEAT.labelEn, isHidden: false, attributes: { required: false } }),
+            update: { attributes: { required: false } },
+          }),
+        );
+        expect(mockAuditLog.log).toHaveBeenCalledWith(
+          expect.objectContaining({ action: 'UPDATE', tenantId: ORG_A, objectId: 'seat-chair', before: { attributes: {} }, after: { attributes: { required: false } } }),
+        );
+      });
+
+      it('null removes only that key; keys not sent keep what the override already has', async () => {
+        mockPrisma.lookupValue.findFirst.mockReset();
+        mockPrisma.lookupValue.findFirst
+          .mockResolvedValueOnce({ ...SYSTEM_SEAT, category: { attributeSchema: SCHEMA } })
+          .mockResolvedValueOnce({ attributes: { required: false, prefix: 'X' } });
+
+        await service.overrideAttributes('seat-chair', ORG_A, { attributes: { required: null } }, ACTOR);
+
+        expect(mockPrisma.lookupValue.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { attributes: { prefix: 'X' } } }));
+      });
+
+      it('only a SHARED value has an override: anything else is 404', async () => {
+        mockPrisma.lookupValue.findFirst.mockReset();
+        mockPrisma.lookupValue.findFirst.mockResolvedValue(null);
+        await expect(service.overrideAttributes('own-value', ORG_A, { attributes: { required: true } }, ACTOR)).rejects.toThrow(NotFoundException);
+        expect(mockPrisma.lookupValue.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: 'own-value', organizationId: null, layer: 'SYSTEM' } }),
+        );
+      });
+
+      it("should NOT return records belonging to a different tenant: the override row is read and written for the caller's organisation only", async () => {
+        await service.overrideAttributes('seat-chair', ORG_B, { attributes: { required: false } }, ACTOR);
+        expect(mockPrisma.lookupValue.findFirst.mock.calls[1]![0]).toMatchObject({ where: { organizationId: ORG_B } });
+        expect(mockPrisma.lookupValue.upsert.mock.calls[0]![0]).toMatchObject({
+          where: { categoryId_key_organizationId: { organizationId: ORG_B } },
+          create: { organizationId: ORG_B },
+        });
+      });
+    });
+  });
+
   // ── suggestValues ─────────────────────────────────────────────────────────────
 
   describe('suggestValues', () => {

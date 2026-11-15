@@ -1305,15 +1305,11 @@ verified or counted (`assertTwoFactorNotLocked()`, two-factor
 `totp/index.mjs:137`), so a code tried while locked does not move
 `twoFactor.lockedUntil`.
 
-**Forgot password sends nothing** (slice 9d, then CC-64). Reset is not served:
-the email Better Auth would queue carried a link to its own handler, which this
-API never mounts, and there is no reset screen. So the page says reset by email
-isn't available and points at the administrator, and since ACC-186/148 the
-endpoint `POST /auth/forgot-password` does nothing either: same route, rate
-limits and neutral 200, no `requestPasswordReset`, no `AuthVerification` row, no
-notification. `sendResetPassword` stays in the Better Auth config, unreachable,
-for the self-service reset ticket — which must build its link with
-`buildTenantUrl()`, not send Better Auth's `data.url`.
+**Forgot password works again, by email (ACC-188).** From slice 9d / CC-64 until
+ACC-188 it sent nothing, because Better Auth's email carried a link to a handler
+this API never mounts. Now the form is back, the link is a tenant link, and
+`sendResetPassword` is gone from the Better Auth config, so Better Auth can never
+send its own `data.url`. The whole flow: §1.16.
 
 **The MFA challenge cookie is `__Secure-better-auth.two_factor`** since
 ACC-186 (`advanced.useSecureCookies: true`); `two-factor-challenge.ts` reads both
@@ -1647,6 +1643,92 @@ deactivate, suspend or offboard. Only a platform admin moves the ownership.
   ticked on any other role: anyone with it can make themselves Organization
   Administrator. The platform tenant page names the owner and transfers it to
   another active Organization Administrator after a confirm.
+
+### 1.16 Password reset by email (ACC-188)
+
+Plan, decisions and as-built notes: `backend/Plans/step-188-password-reset.md`.
+Code: `backend/src/foundation/auth/password-reset/`, `session-revocation.ts`,
+`foundation/notification/security-notice.ts` and `transactional-email.service.ts`.
+
+**The routes** (public; refusals are never 401, because the app's interceptor
+renews and retries a 401):
+
+| Route | Limit | Answers |
+|---|---|---|
+| `POST /auth/forgot-password` `{ organizationSlug, email }` | 20 / hour per address, 3 / hour per organisation + email | 200, no body, for every address |
+| `POST /auth/reset-password/lookup` `{ token }` (untyped body, shape-checked) | 30 / min per address | 200 `{ state: 'open', expiresAt }`, or 400 `RESET_LINK_INVALID` / `_EXPIRED` / `_USED` / `_REPLACED` |
+| `POST /auth/reset-password` `{ token, password }` | 20 / hour per address | 200; the four link codes; `PASSWORD_TOO_SHORT` / `_TOO_LONG` / `_COMPROMISED` (400), `PASSWORD_CHECK_UNAVAILABLE` (503) |
+
+**Forgot password.** `PasswordResetService.request()` makes one `queue.add` on
+`password-reset` (`{ organizationSlug, email }`, one attempt,
+`removeOnComplete`) and nothing else. Neither the answer nor its work tells an
+account apart. A failed add is logged by the error's kind and still answers 200.
+
+**The worker** (`PasswordResetProcessor`, behind `workersEnabled()`) runs
+`issue()`:
+1. An open organisation by slug, and a user in it by email (case-insensitive)
+   who is ACTIVE with an `authUserId`; otherwise nothing.
+2. One transaction:
+   - the User row `FOR UPDATE`;
+   - delete this person's links that ended or expired more than 30 days ago;
+   - end every open link `REPLACED`;
+   - create the `PasswordResetLink` (`tokenHash` = SHA-256 hex, 1 hour);
+   - write Better Auth's reset row (`password-reset-verification.ts`: identifier
+     `reset-password:<token>`, stored as base64url SHA-256 by the
+     `storeIdentifier` override; value: the AuthUser id).
+3. The link `buildTenantUrl(slug, '/reset-password?token=…')`, emailed directly
+   in the person's language (person, else organisation) through
+   `TransactionalEmailService`. A failed send voids the link and throws an error
+   that names no token.
+4. Audit `UPDATE` / `User`, `{ event: 'password_reset_requested' }`.
+
+**Lookup and reset.** The link is found by `tokenHash` alone (the 256-bit token
+IS the key, as with invitations). The request's `Origin` must be the link's
+organisation's address (`isAtOwnAddress`), else `RESET_LINK_INVALID`. In order:
+- **USED, then REPLACED**, each its own code;
+- **VOID**, an inactive person or a closed organisation are `RESET_LINK_INVALID`;
+- **a passed `expiresAt`** is `RESET_LINK_EXPIRED`.
+
+`reset()` then:
+1. Checks the length (8–128).
+2. Runs `PasswordBreachCheckService` (the k-anonymity request), BEFORE anything is
+   spent, because Better Auth's `resetPassword` consumes the token and only then
+   hashes (where its breach check runs).
+3. Calls `auth.api.resetPassword({ asResponse: true })` and reads the Response:
+   - `INVALID_TOKEN` is `USED` (another request won), or `EXPIRED`;
+   - a breach found only now voids the link and answers `RESET_LINK_INVALID`.
+4. One transaction:
+   - the User row `FOR UPDATE`;
+   - the link `USED`;
+   - `endEverySessionInTx()`: `tokenVersion + 1`, live refresh rows revoked, and
+     Better Auth sessions deleted;
+   - a `LoginAttempt` `{ success: true, failureReason: 'password_reset' }`. This
+     ends the wrong-password lock. The MFA code lock (`AuthTwoFactor`) is not
+     touched.
+5. After the commit: audit `{ event: 'password_reset' }`, and the
+   `password_changed` security notice.
+
+It never signs anyone in, so the next sign-in asks for the code when MFA is on.
+
+**Security notices** are emails only: an `email-delivery` job named
+`security-notice` with `{ organizationId, userId, notice }`, rendered by
+`NotificationEmailProcessor` from `SECURITY_NOTICES`. Never a Notification row,
+because a row would sit in the bell, readable by whoever holds the session, and
+its body would be copied into the audit trail.
+
+**The new-IP sign-in email** now says "reset your password now:" with
+`buildTenantUrl(slug, '/forgot-password')`.
+
+**Screens.**
+- **Forgot password** is the form again. The confirmation is neutral and names
+  the address as typed (a left-to-right isolate).
+- **Reset password** (`/reset-password`) reads the token once and removes it
+  from the address bar. It shows a skeleton after 200 ms, and a line plus Retry
+  after 8 s.
+- **A dead link has no form.** Expired and Invalid offer "Send a new link" with
+  "Back to sign in" under it; Used offers Sign in, then "Forgot password?";
+  Replaced offers "Back to sign in".
+- **On success**, Sign in shows the notice above its title, once.
 
 ---
 
@@ -4319,11 +4401,45 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 - **`reassignAllForUser()`** — the bulk version, called from exactly one
   place: `UserService.deactivate()` (`user.service.ts`, the
   departure flow) — confirmed via grep, no other caller exists. For
-  every task the departing user is still an active assignee on: if a
+  every OPEN task the departing user is still an active assignee on: if a
   valid `toUserId` (their `actingUserId`, resolved and re-validated by
   the caller) is given, reassigns to them; otherwise, if no other active
   assignee remains on that task, flags it `UNASSIGNED`. Every change
   audit-logged individually with `metadata: { event: 'departure_reassignment' }`.
+
+  **ACC-165 — three rules, each in `reassign()`'s shape (ACC-163):**
+  - **OPEN TASKS ONLY (decided, Ahmad).** A `COMPLETED` or `CANCELLED` task
+    keeps its rows exactly as they are: no `removedAt` on the leaver, no row
+    for the acting user, no `DELEGATE` audit row, no notice.
+    - **Why:** a completer's own row stays active by design, and the engine's
+      stage cancel leaves assignees attached on purpose. Before, departure
+      "reassigned" those closed tasks too, with an audit row each.
+    - **Where it's decided:** filtered in the query (`status` not closed), and
+      decided again **under the row lock**, because a task can close between
+      the query and the lock.
+    - **On the shared database on 14 Nov:** 1 departure audit row in total,
+      0 of them on a task closed then or now. 0 active rows of inactive users
+      on closed tasks. Nothing depended on the old behaviour.
+  - **ONE ROW PER PERSON PER TASK.** `TaskAssignee` is unique on
+    `(taskId, userId)` with no exemption for removed rows. The old
+    unconditional create therefore failed, and the whole deactivation with it,
+    whenever the acting user was already on the task:
+    - **held it before:** their removed row is **reactivated**: `removedAt`
+      cleared, `assignedAt`/`assignedById` set, the delegation stamp and
+      `pickedAt` cleared, as `reassign()` does;
+    - **is an active co-assignee:** their row is **left as it is**.
+  - **EACH TASK IS ONE TRANSACTION, under `lockTaskRow()`.** The leaver's
+    row, the acting user's row, the status and the request cancels commit
+    together, so no task is ever half-reassigned. Audit rows and notifications
+    are written after each task commits, never under the lock.
+    - **The boundary is the task, not the departure.**
+      `UserService.deactivate()` commits the status flip and its invariants in
+      its own transaction and keeps side effects outside it on purpose: a
+      refused deactivation must not move anyone's work. And one transaction
+      across every task would hold every task's lock at once.
+    - **A failure stops at a whole task.** The tasks before it are done and
+      the rest untouched. Running it again picks up exactly those, because a
+      finished task no longer has the leaver's active row.
   **ACC-167 — the pool branch, checked first:** for an OPEN task with a pool
   target — whether the departing user picked it up or was chosen directly —
   their row is stamped `removedAt` and no row is created for the acting user.
@@ -4335,8 +4451,8 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   - **others are still on it** → it stays with them:
     `{ event: 'departure_left_with_others' }`, not counted, nobody told.
 
-  A CLOSED pool task is left to the old path (returning it would reopen it)
-  — that path is ACC-165's to change.
+  A CLOSED pool task is never returned to its pool (that would reopen it).
+  Since ACC-165 it is not touched at all: departure handles open tasks only.
 - **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
   idempotent ACC-52) — the recovery half of the unassigned-task
   lifecycle, called from exactly one place:
@@ -4378,9 +4494,8 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
     **latent bug in `reassign()` itself** (reachable manually too:
     reassign A → B → A) — not fixed by ACC-51, not inherited by it, and
     **fixed in ACC-163**, which made `reassign()` reuse the row in place.
-    `reassignAllForUser()` still creates a row for its `toUserId` without
-    checking for a removed one, so a departure reassignment to someone who
-    held the task before can hit the same constraint; not yet ticketed.
+    `reassignAllForUser()` had the same defect, and ACC-165 fixed it the
+    same way.
 - **`hasUnassignedStageTasks()`** (ACC-52) — a `count > 0` existence
   check for orphaned `UNASSIGNED` tasks on a given
   `(workflowInstanceId, sourceStageId)` pair, tenant-scoped like every
@@ -5694,6 +5809,7 @@ the committee tree wrong. The rules and their codes live in ONE file,
 | Not itself | own parent / reports to itself | `COMMITTEE_OWN_PARENT`, `COMMITTEE_REPORTS_TO_ITSELF` |
 | No loops | under one of its own sub-committees / reporting to a committee that reports to it | `COMMITTEE_PARENT_LOOP`, `COMMITTEE_REPORTS_TO_LOOP` |
 | Not dissolving | a parent or reports-to whose current stage is flagged `DISSOLVING` (ACC-255 PR 2; seeded on Dissolution Pending and Dissolved) | `COMMITTEE_PARENT_DISSOLVING`, `COMMITTEE_REPORTS_TO_DISSOLVING` |
+| In force (ACC-286) | a parent or reports-to that is not in force: its stage is not flagged `IN_FORCE`, or the committee is inactive. Checked after "not dissolving", whose sentence is more specific. §3.21.4 | `COMMITTEE_PARENT_NOT_LIVE`, `COMMITTEE_REPORTS_TO_NOT_LIVE` |
 | Owning unit | sent empty (`''`, or `null` on update) / missing, inactive or another organisation's | `COMMITTEE_UNIT_REQUIRED`, `COMMITTEE_UNIT_NOT_FOUND` |
 | Exists here | missing, or another organisation's | `COMMITTEE_PARENT_NOT_FOUND`, `COMMITTEE_REPORTS_TO_NOT_FOUND` |
 
@@ -5711,6 +5827,9 @@ from it. These were 404s with English labels before ACC-233.
   `FOR SHARE OF wi`, joined to its current stage's `flags` (§2.18): flagged
   `DISSOLVING` is dissolving, whatever the stage is named or keyed (ACC-255
   PR 2; it was the KEY before). No instance or no stage is not dissolving.
+  **ACC-286:** the same one query also reads `Committee.isActive`
+  (`targetStageFacts()`), and the target is IN FORCE when its stage is flagged
+  `IN_FORCE` and it is active. No instance or no stage is not in force.
 - **Only a value that CHANGES is checked** on update. The dialog sends every
   field, and a committee whose parent has since begun dissolving, or whose unit
   was since deactivated, must stay editable for its name.
@@ -5739,9 +5858,10 @@ transaction:
 `foundation/committees/committee-references.ts`):
 - **The pickers leave out what the server would refuse:** the committee itself,
   every committee whose `isDissolving` is true (computed on the server from the
-  key, so the frontend keeps no list of keys), and, when editing, every
-  committee whose chain leads back to this one. The saved value always stays in
-  its list.
+  key, so the frontend keeps no list of keys), every committee not in force
+  (ACC-286: `committeeListStatus()` of its `stageRules.flags` and `isActive`),
+  and, when editing, every committee whose chain leads back to this one. The
+  saved value always stays in its list.
 - **A refusal is said from its code under its field**
   (`committee.refusal.*`, both languages), never from the English `message`.
   The dialog stays open and keeps what was typed. A refusal with no field gets
@@ -6735,6 +6855,93 @@ the seat. The transfer never waits for this, and nothing here removes a seat.
   isolation), `committee-transfer-notice.db-spec.ts` (real rows), the hook tests
   in `user.service.spec.ts`, and the worker registration spec. Mutation-checked.
 - **No migration.**
+
+### 3.21.4 Required seats, going live, and live references (ACC-286)
+
+Plan, Ahmad's answers (14 Nov, A1–A8) and the as-built notes:
+`backend/Plans/step-286-committee-structure-rules.md` (§9, §10). Lane A's part:
+`backend/Plans/step-286-lane-a.md`. PR 1 ships the rules; PR 2 ships the Setup
+health detector.
+
+**A required seat** is a `committee_member_role` value whose attributes say
+`required: true`.
+- **The default lives on the shared SYSTEM rows** (Ahmad, A1): Chairman and
+  Secretary. `seedSystemData()` writes them on EVERY deploy
+  (`.railway/railway.ts` `preDeploy` → `scripts/pre-deploy.sh` →
+  `seed-system-lookups.cli.ts`), so every organisation has the default and no
+  backfill exists.
+- **An organisation unticks (or ticks) a seat through its override row**
+  (§6.2, `PATCH /lookups/values/:id/attributes`); its own seats carry
+  `required` like any attribute. A hidden seat is not required.
+- **ONE reader: `foundation/committees/committee-seat-rules.ts`.**
+  `requiredSeats()` is one raw query that answers exactly what `getValues()`
+  shows, filtered by `required` (a db-spec pins the two together);
+  `seatHolders()` and `activeMemberCount()` count members. Every rule below
+  reads them. Never a second copy.
+- **Who counts** (A3): an active membership of a user whose status is `ACTIVE`.
+  An invited, inactive or suspended user fills no seat and is no member for
+  the quorum. Deactivation ends no membership (ACC-306), so a departed
+  Chairman's seat is EMPTY for every rule while the row stays.
+
+**Rule 2 — going live** (`TRANSITION_PRECONDITIONS.COMMITTEE`, A2).
+- **When:** a move of any kind INTO a stage flagged `IN_FORCE` FROM a stage
+  that is not (`goesLive()`), read from the flags, never a key. On the seed:
+  Terms Review → Active. Active ↔ Suspended is not going live (both in force),
+  so a committee already in force can still be suspended.
+- **Checks, in order:** fewer active members than the quorum → 409
+  `COMMITTEE_MEMBERS_BELOW_QUORUM` `{ quorum, members }`; any required seat
+  empty → 409 `COMMITTEE_REQUIRED_SEATS_EMPTY` `{ seats: [{ id, labelEn,
+  labelAr }] }`, in seat order. Nothing moves.
+- **Leaving Formation** keeps ACC-238's `COMMITTEE_QUORUM_NOT_SET` only; on the
+  seed it leads to Terms Review, which is not in force.
+- **It runs early and again inside the stage-change transaction** (the
+  authoritative one), where the committee row is read `FOR SHARE`. The engine
+  passes both stages' flags; an early caller reads the destination's flags,
+  and only for a record type with a precondition (`hasTransitionPrecondition()`).
+- **On the record page** (`workflow-transition-actions`): the numbers through
+  the plural object `workflow.membersBelowQuorum`, the seats by their names in
+  the reader's language joined by `common.listSeparator`; plain sentences if
+  the body cannot be read. Never the server's English.
+
+**Rule 3 — keeping a required seat filled** (`removeMember`,
+`changeMemberRole`).
+- After `assertStage()` (the instance `FOR SHARE`, which now returns the
+  stage's rules), each takes the **committee row `FOR UPDATE`**, then reads the
+  member. Instance, then committee row: the engine's order and
+  `updateCommittee()`'s.
+- **Only while the stage is flagged `IN_FORCE`:** if the member fills a
+  required seat (an ACTIVE user) and nobody else does, 409
+  `COMMITTEE_REQUIRED_SEAT_LAST_HOLDER` `{ seat: { id, labelEn, labelAr } }`,
+  nothing written. A change of role within the same seat is not checked. A
+  member whose user is not ACTIVE fills nothing, so removing them is allowed.
+- **Proved against a real Postgres:** two removals of two Chairmen at once,
+  exactly one lands (ten rounds); Approve and removing the only Chairman at
+  once, never both, never a deadlock (ten rounds).
+- **The transfer wizard** removes seats through the same endpoint (A5); what
+  it must say is lane A's (`step-286-lane-a.md` §3).
+- **Screens:** Remove member and Change role say
+  `committee.refusal.requiredSeatLastHolder` ("Appoint another {{seat}}
+  first.") from the code (`committeeSeatRefusal()`).
+
+**Rule 4 — only a committee in force can be pointed at:** §3.15.
+
+**Setup health:** `COMMITTEE_MISSING_REQUIRED_SEAT`, deferred in PR 1 (§13.2).
+The frontend already reads it (type, order, Fix, wording), so PR 2 only writes
+it.
+
+**Specs:** `committee-seat-rules.db-spec.ts`, `committee-going-live.db-spec.ts`,
+`committee-reference-checks.db-spec.ts` (extended), `transition-preconditions.spec.ts`,
+and the unit and screen specs beside each change. Engine db-specs that move a
+committee into Active use `common/testing/committee-going-live.ts`
+(`untickRequiredSeats()`, `seatMembersForQuorum()`), and
+`putCommitteeInEditableStage()`'s stage is flagged `IN_FORCE`.
+Mutation-checked (plan §10).
+
+**Per-request path:** nothing added. Each check runs only on the write that
+needs it.
+
+**One additive migration:** `20261115000000_acc286_setup_committee_missing_seat`
+(the enum value).
 
 ## 4. Notification System
 
@@ -7867,6 +8074,19 @@ time (`lookup.service.ts`, `getValues()`):
    original if the override field itself is null), everything else
    about the SYSTEM value unchanged. If no TENANT row matches → the
    SYSTEM value passes through as-is.
+   **ACC-286 — and the override's `attributes` merge over the SYSTEM
+   value's KEY BY KEY** (`mergeAttributes()`), never replacing the whole
+   object: a label-only override (a renamed committee seat) keeps every
+   shared default. The organisation sets its own values on a SYSTEM value
+   with `PATCH /lookups/values/:id/attributes` (`overrideAttributes()`,
+   `lookups:manage`): only keys the category's `attributeSchema` declares,
+   each of its declared type (boolean, number, else string), else 400
+   `LOOKUP_ATTRIBUTE_INVALID` naming the key, nothing written; `null`
+   removes the organisation's own value for that key; keys not sent keep
+   what the override has; audited (UPDATE on LookupValue, before and
+   after). It upserts the same override row as hide and the label. This is
+   the first place the backend checks attributes against the schema; a
+   tenant's own values (create, update) are still not checked.
 4. Any TENANT row **not** matched to a SYSTEM value by key is a
    genuinely tenant-added value — included as-is.
 5. Result re-sorted by `sortOrder`.
@@ -7879,7 +8099,9 @@ same category — not by any separate type field:
 (b) `labelOverrideEn`/`labelOverrideAr` set, `isHidden: false` → relabels
 a SYSTEM value,
 (c) `key` matches no SYSTEM value → a genuinely new tenant-defined value.
-`hideSystemValue()`/`unhideSystemValue()`/`overrideLabel()` all
+**ACC-286:** an (a)/(b) row may also carry `attributes`, the organisation's
+own values for that SYSTEM value's attributes (above).
+`hideSystemValue()`/`unhideSystemValue()`/`overrideLabel()`/`overrideAttributes()` all
 `upsert()` against the same `@@unique([categoryId, key, organizationId])`
 constraint precisely to create/reuse the same underlying row for
 purposes (a)/(b) rather than risk two conflicting TENANT rows for one
@@ -13078,6 +13300,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
+| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | — | **deferred in PR 1**: the value, its migration and every reader ship first, and it is in `DEFERRED_SETUP_CONDITION_TYPES`, so nothing writes it. PR 2 adds the detector (a committee in force with an empty required seat) and reports it. Fix: `/committees/:id` (`committees:view` + `committees:add_member`). §3.21.4 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a

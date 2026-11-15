@@ -172,6 +172,33 @@ describe('CommitteeRemoveMemberDialogComponent (ACC-298)', () => {
     expect(dialog.saving()).toBeFalse();
   });
 
+  // ACC-286 — removing the last holder of a required seat of a committee in
+  // force: said from its code, naming the seat in the reader's language.
+  for (const [lang, sentence] of [
+    ['en', 'Appoint another Chairman first.'],
+    ['ar', 'يلزم تعيين عضو في مقعد «رئيس اللجنة» أولاً.'],
+  ] as const) {
+    it(`the last holder of a required seat is said from its code, naming the seat (${lang}), and the dialog stays open`, () => {
+      setup(lang);
+      type('Moving on');
+      removeButton().click();
+      http.expectOne(URL).flush(
+        {
+          code: 'COMMITTEE_REQUIRED_SEAT_LAST_HOLDER',
+          seat: { id: 'seat-chair', labelEn: 'Chairman', labelAr: 'رئيس اللجنة' },
+          message: 'English only',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      fixture.detectChanges();
+      expect(document.querySelector('[data-testid="committee-seat-refusal"]')?.textContent?.trim()).toBe(sentence);
+      expect(document.querySelector('[data-testid="committee-stage-refusal"]')).toBeNull();
+      expect(document.body.textContent).not.toContain('English only');
+      expect(fixture.componentInstance.visible()).toBeTrue();
+      expect(fixture.componentInstance.removedCount).toBe(0);
+    });
+  }
+
   it('any other error is said through extractErrorMessage', () => {
     setup();
     type('Left the hospital');

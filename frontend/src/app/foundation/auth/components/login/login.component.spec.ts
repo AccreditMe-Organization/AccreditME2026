@@ -19,6 +19,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LANDING_ROUTE, PLATFORM_LANDING } from '../../../../core/navigation/landing-route';
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
+import { PASSWORD_RESET_NOTICE } from '../reset-password/reset-password.component';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
 import { LoginComponent } from './login.component';
 import { SESSION_OTHER_ORGANIZATION, SessionAddressState } from '../../../../core/tenant/session-address-state';
@@ -125,6 +126,91 @@ describe('LoginComponent — after accepting an invitation (ACC-120 slice 9e)', 
     location.replaceState('/login', '', { notice: 'somethingElse', navigationId: 1 });
     expect(load().textContent).not.toContain(NOTICE_TEXT);
     expect(location.getState()).toEqual({ notice: 'somethingElse', navigationId: 1 });
+  });
+});
+
+// ACC-188 — arriving from Reset password says the password is changed, ONCE:
+// gone on a refresh, and gone after the next sign-in attempt, so it never sits
+// beside a wrong-password message. Focus is on Email.
+describe('LoginComponent — after resetting a password (ACC-188)', () => {
+  const NOTICE_TEXT = 'auth.reset.successNotice';
+  let location: SpyLocation;
+  let login: jasmine.Spy;
+
+  beforeEach(() => {
+    location = new SpyLocation();
+    login = jasmine.createSpy('login').and.returnValue(
+      throwError(() => new HttpErrorResponse({ status: 401, error: { code: 'INVALID_CREDENTIALS' } })),
+    );
+  });
+
+  function load(): { el: HTMLElement; detect: () => void } {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [LoginComponent],
+      providers: [
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        { provide: Location, useValue: location },
+        {
+          provide: Router,
+          useValue: {
+            currentNavigation: () => {
+              const state = location.getState() as Record<string, unknown> | null;
+              return state ? { extras: { state } } : null;
+            },
+            navigate: jasmine.createSpy('navigate'),
+            navigateByUrl: jasmine.createSpy('navigateByUrl'),
+            createUrlTree: () => ({}),
+            serializeUrl: () => '',
+            events: { subscribe: () => ({ unsubscribe: () => {} }) },
+          },
+        },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+        { provide: AuthService, useValue: { isAuthenticated: () => false, login } },
+        { provide: NavigationAccessService, useValue: {} },
+        { provide: TenantHostService, useValue: { slug: 'al-nakheel' } },
+        ...LAYOUT_PROVIDERS,
+      ],
+    });
+    const fixture = TestBed.createComponent(LoginComponent);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+    return { el: fixture.nativeElement, detect: () => fixture.detectChanges() };
+  }
+
+  const arrive = (): void =>
+    location.replaceState('/login', '', { notice: PASSWORD_RESET_NOTICE, navigationId: 7, ɵrouterPageId: 6 });
+
+  afterEach(() => document.querySelectorAll('app-login').forEach((n) => n.remove()));
+
+  it('shows the notice as a status on arrival, with focus on Email', async () => {
+    arrive();
+    const { el } = load();
+    const notice = el.querySelector('[data-testid="password-reset-notice"]')!;
+    expect(notice.textContent).toContain(NOTICE_TEXT);
+    expect(notice.getAttribute('role')).toBe('status');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(document.activeElement?.id).toBe('email');
+  });
+
+  it('is gone on a reload, and the router keeps its own keys', () => {
+    arrive();
+    expect(load().el.textContent).toContain(NOTICE_TEXT);
+    expect(location.getState()).toEqual({ navigationId: 7, ɵrouterPageId: 6 });
+    expect(load().el.textContent).not.toContain(NOTICE_TEXT);
+  });
+
+  it('is gone after the next sign-in attempt, so it never sits beside a refusal', () => {
+    arrive();
+    const { el, detect } = load();
+    el.querySelector('form')!.dispatchEvent(new Event('submit'));
+    detect();
+    expect(el.textContent).not.toContain(NOTICE_TEXT);
+  });
+
+  it('never prefills the email', () => {
+    arrive();
+    expect(load().el.querySelector<HTMLInputElement>('#email')!.value).toBe('');
   });
 });
 

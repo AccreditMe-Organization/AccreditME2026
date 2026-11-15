@@ -40,13 +40,10 @@ import { twoFactor } from 'better-auth/plugins/two-factor';
 import { haveIBeenPwned } from 'better-auth/plugins/haveibeenpwned';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
-import { NotificationService } from '../../foundation/notification/notification.service';
 import { resolveApiOrigin } from '../../common/config/api-origin.config';
+import { BETTER_AUTH_RESET_PASSWORD_PREFIX } from '../../foundation/auth/better-auth.contract';
 
-export function createBetterAuthInstance(
-  prisma: PrismaService,
-  notificationService: NotificationService,
-) {
+export function createBetterAuthInstance(prisma: PrismaService) {
   return betterAuth({
     // PrismaService exposes exactly the per-model getters (authUser,
     // authSession, authAccount, authVerification) the adapter looks up by
@@ -74,41 +71,32 @@ export function createBetterAuthInstance(
         verify: ({ hash, password }: { hash: string; password: string }) =>
           argon2.verify(hash, password),
       },
-      // UNREACHABLE TODAY (CC-64): AuthService.forgotPassword() no longer calls
-      // requestPasswordReset, so nothing reaches this. It is kept, unchanged,
-      // for the self-service password-reset ticket — which must build the link
-      // with buildTenantUrl() rather than send data.url, Better Auth's own
-      // handler URL, which this API does not mount.
+      // ACC-188 — NO sendResetPassword, on purpose. Without it Better Auth's
+      // requestPasswordReset refuses (RESET_PASSWORD_DISABLED), so its data.url
+      // — a link to a handler this API does not mount — cannot be sent by any
+      // path. Reset links are issued by PasswordResetService (a 32-byte token,
+      // built into a tenant link by buildTenantUrl()), which writes Better
+      // Auth's reset row itself (password-reset-verification.ts). Better Auth's
+      // resetPassword still consumes that row and sets the password.
       //
-      // Required — Better Auth's /request-password-reset throws
-      // RESET_PASSWORD_DISABLED without this callback configured. data.user
-      // here is Better Auth's own AuthUser row (namespaced email); resolve
-      // the real AccreditMe User via the authUserId link before notifying,
-      // since Notification.userId references User.id, not AuthUser.id.
-      sendResetPassword: async (data: { user: { id: string }; url: string }) => {
-        const appUser = await prisma.user.findFirst({
-          where: { authUserId: data.user.id },
-        });
-        if (!appUser) return;
-
-        await notificationService.create(
-          {
-            userId: appUser.id,
-            titleEn: 'Reset your AccreditMe password',
-            titleAr: 'إعادة تعيين كلمة مرور AccreditMe',
-            bodyEn: `Click the link below to reset your password. This link expires in 1 hour.\n\n${data.url}`,
-            bodyAr: `انقر على الرابط أدناه لإعادة تعيين كلمة المرور الخاصة بك. تنتهي صلاحية هذا الرابط خلال ساعة واحدة.\n\n${data.url}`,
-            channel: 'EMAIL',
-          },
-          appUser.organizationId,
-        );
-      },
+      // A reset also deletes Better Auth's own sessions for the user. Ours are
+      // ended by endEverySessionInTx() (session-revocation.ts).
+      revokeSessionsOnPasswordReset: true,
     },
 
     user: { modelName: 'authUser' },
     session: { modelName: 'authSession' },
     account: { modelName: 'authAccount' },
-    verification: { modelName: 'authVerification' },
+    verification: {
+      modelName: 'authVerification',
+      // ACC-188 — a reset row's identifier holds the token, so for that prefix
+      // only it is stored as SHA-256 (base64url). Every other row (the MFA
+      // challenge, two-factor-challenge.ts) is stored as before.
+      storeIdentifier: {
+        default: 'plain',
+        overrides: { [BETTER_AUTH_RESET_PASSWORD_PREFIX]: 'hashed' },
+      },
+    },
 
     advanced: {
       // Prisma's own @default(cuid()) generates every id — defer to it
