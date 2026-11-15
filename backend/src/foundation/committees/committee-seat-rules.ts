@@ -73,13 +73,32 @@ export async function seatHolders(
   committeeId: string,
   seatIds: readonly string[],
 ): Promise<SeatHolder[]> {
-  if (seatIds.length === 0) return [];
-  return client.$queryRaw<SeatHolder[]>`
-    SELECT cm.id AS "memberId", cm."userId", cm."roleValueId"
+  const rows = await seatHoldersFor(client, organizationId, [committeeId], seatIds);
+  return rows.map(({ memberId, userId, roleValueId }) => ({ memberId, userId, roleValueId }));
+}
+
+export interface CommitteeSeatHolder extends SeatHolder {
+  committeeId: string;
+}
+
+/**
+ * ACC-286 PR 2 — `seatHolders()` for many committees in ONE query (the Setup
+ * health detector reads every committee in force at once). The same rule:
+ * an active membership of an ACTIVE user, scoped by organisation.
+ */
+export async function seatHoldersFor(
+  client: SeatClient,
+  organizationId: string,
+  committeeIds: readonly string[],
+  seatIds: readonly string[],
+): Promise<CommitteeSeatHolder[]> {
+  if (committeeIds.length === 0 || seatIds.length === 0) return [];
+  return client.$queryRaw<CommitteeSeatHolder[]>`
+    SELECT cm."committeeId", cm.id AS "memberId", cm."userId", cm."roleValueId"
     FROM "CommitteeMember" cm
     JOIN "User" u ON u.id = cm."userId" AND u."organizationId" = ${organizationId}
     WHERE cm."organizationId" = ${organizationId}
-      AND cm."committeeId" = ${committeeId}
+      AND cm."committeeId" = ANY(${[...committeeIds]}::text[])
       AND cm."isActive"
       AND u.status = 'ACTIVE'
       AND cm."roleValueId" = ANY(${[...seatIds]}::text[])`;
