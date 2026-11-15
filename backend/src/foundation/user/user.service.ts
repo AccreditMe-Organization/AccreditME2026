@@ -303,7 +303,7 @@ export class UserService {
     organizationId: string,
     actorId: string,
     actorPermissions: string[],
-  ): Promise<IUser & { isAccountOwner: boolean }> {
+  ): Promise<IUser & { isAccountOwner: boolean; twoFactorEnabled: boolean }> {
     const isSelf = actorId === id;
     const canView = actorPermissions.includes('users:view');
     if (!isSelf && !canView) throw new ForbiddenException();
@@ -313,11 +313,21 @@ export class UserService {
     // shows here.
     const found = await this.prisma.user.findFirst({
       where: { id, organizationId },
-      include: { ownedOrganizations: { where: { id: organizationId }, select: { id: true } } },
+      // ACC-164 — whether two-step sign-in is on, in the same query. It never
+      // leaves the server as is: UserMfaResetService.twoStepFor() decides who
+      // sees it (rule 4), and toSafeUser() stays the allowlist.
+      include: {
+        ownedOrganizations: { where: { id: organizationId }, select: { id: true } },
+        authUser: { select: { twoFactorEnabled: true } },
+      },
     });
     if (!found) throw new NotFoundException('User not found');
-    const { ownedOrganizations, ...user } = found;
-    return { ...user, isAccountOwner: ownedOrganizations.length > 0 };
+    const { ownedOrganizations, authUser, ...user } = found;
+    return {
+      ...user,
+      isAccountOwner: ownedOrganizations.length > 0,
+      twoFactorEnabled: authUser?.twoFactorEnabled ?? false,
+    };
   }
 
   // ACC-79 — the display names for the ids on a record the caller has already

@@ -218,6 +218,59 @@ describe('Better Auth contract (ACC-120 slice 9b)', () => {
     });
   });
 
+  // ACC-164 — what the administrator reset (two-factor-reset.ts) copies from
+  // disableTwoFactor, and why the secret row must go with the flag.
+  describe('turning two-step sign-in off, and the reset (ACC-164)', () => {
+    const twoFactor = (file: string) =>
+      source(`${BETTER_AUTH}/plugins/two-factor/${file}`);
+
+    it('disableTwoFactor writes exactly the flag and the secret row — what resetTwoFactorInTx() writes', () => {
+      const index = twoFactor('index.mjs');
+      const start = index.indexOf('disableTwoFactor: createAuthEndpoint(');
+      const end = index.indexOf('hooks: { after: [{', start);
+      const disable = index.slice(start, end);
+      expect(disable).toContain('updateUser(user.id, { twoFactorEnabled: false })');
+      expect(disable).toContain('model: opts.twoFactorTable,');
+      // Its only adapter write is the secret row; the rest is its own session
+      // swap and the trust-device row, which we never create (see below).
+      expect(disable.match(/adapter\.(create|update|delete|deleteMany|updateMany)\(/g)).toEqual([
+        'adapter.delete(',
+      ]);
+    });
+
+    it("enableTwoFactor carries an old row's 'verified' onto the new secret — so a reset must delete the row", () => {
+      expect(twoFactor('index.mjs')).toContain(
+        'verified: existingTwoFactor != null && existingTwoFactor.verified !== false',
+      );
+    });
+
+    it('verifyTOTP turns the flag on only for an unverified secret', () => {
+      const totp = twoFactor('totp/index.mjs');
+      expect(totp).toContain('if (twoFactor.verified !== true) {');
+      expect(totp).toContain('updateUser(user.id, { twoFactorEnabled: true })');
+    });
+
+    it('the sign-in hook asks for a code only when the flag is on', () => {
+      expect(twoFactor('index.mjs')).toContain('if (!data?.user.twoFactorEnabled) return;');
+    });
+
+    it("a challenge row's value is the user id, so a reset can find a person's open challenges", () => {
+      expect(twoFactor('index.mjs')).toMatch(
+        /createVerificationValue\(\{\s*value: data\.user\.id,\s*identifier,/,
+      );
+    });
+
+    it('our tables are authUser and authTwoFactor, and we never send trustDevice', () => {
+      const config = readFileSync(
+        join(__dirname, '..', '..', 'providers', 'auth', 'better-auth.config.ts'),
+        'utf8',
+      );
+      expect(config).toContain("user: { modelName: 'authUser' }");
+      expect(config).toContain("twoFactor({ twoFactorTable: 'authTwoFactor' })");
+      expect(readFileSync(join(__dirname, 'auth.service.ts'), 'utf8')).not.toMatch(/trustDevice/);
+    });
+  });
+
   // ACC-148 — why a forged Host cannot influence a URL Better Auth builds. Each
   // fact is read off the INSTALLED source, so an upgrade that changes one fails
   // here by name. Verified on the deployed API too (8 Oct): Railway's edge

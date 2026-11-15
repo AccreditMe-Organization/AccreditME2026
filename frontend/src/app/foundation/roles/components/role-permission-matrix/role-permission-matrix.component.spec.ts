@@ -190,9 +190,11 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     render();
     expect(groupLines('committees')).toEqual(['Committee records · 3 of 4', 'Members · 2 of 3', 'Tasks on committees · 2 of 4']);
     expect(counts('committees')[0]).toBe('7 of 11');
-    // Users has exactly six: no groups.
-    expect(all('[data-pm-group]', mod('users')).length).toBe(0);
-    expect(counts('users')).toEqual(['1 of 6']);
+    // ACC-164 — users:reset_mfa took Users to seven: two labelled groups.
+    expect(groupLines('users')).toEqual(['People and profiles · 1 of 4', 'Account access · 0 of 3']);
+    expect(counts('users')[0]).toBe('1 of 7');
+    // Roles has two: no groups.
+    expect(all('[data-pm-group]', mod('roles')).length).toBe(0);
   });
 
   it("Administration's row has its second line", () => {
