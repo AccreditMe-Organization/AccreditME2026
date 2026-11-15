@@ -7,6 +7,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { LoginAttemptService } from './login-attempt.service';
 import { PasswordResetModule } from './password-reset/password-reset.module';
+import { QueueModule } from '../../common/queue/queue.module';
+import { SecurityNoticeService } from '../notification/security-notice';
 
 // No TenantGuard/PermissionGuard at module level — every endpoint on
 // AuthController is deliberately pre-authentication or self-service by
@@ -24,9 +26,11 @@ import { PasswordResetModule } from './password-reset/password-reset.module';
     UserModule,
     WorkingCalendarModule,
     PasswordResetModule,
+    // ACC-164 — the email-delivery queue the security notice is sent through.
+    QueueModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, LoginAttemptService],
+  providers: [AuthService, LoginAttemptService, SecurityNoticeService],
   exports: [AuthService],
 })
 export class AuthModule {}

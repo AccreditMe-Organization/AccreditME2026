@@ -18,6 +18,7 @@ import { NotificationService } from '../notification/notification.service';
 import { LoginAttemptService } from './login-attempt.service';
 import { UserService } from '../user/user.service';
 import { PasswordResetService } from './password-reset/password-reset.service';
+import { SecurityNoticeService } from '../notification/security-notice';
 
 // Explicit factory — a bare jest.mock(path) auto-mock still requires Jest to
 // load the real module first to infer its shape, which pulls in
@@ -122,6 +123,7 @@ describe('AuthService', () => {
     refreshHeadVacancyAfterActivation: jest.Mock;
   };
   let mockPasswordReset: { request: jest.Mock; lookup: jest.Mock; reset: jest.Mock };
+  let mockSecurityNotice: { enqueue: jest.Mock };
 
   beforeEach(() => {
     process.env['JWT_SECRET'] = 'test-jwt-secret';
@@ -159,6 +161,7 @@ describe('AuthService', () => {
       notifyTenantAdminsOfInviteAcceptanceConflict: jest.fn().mockResolvedValue(undefined),
       refreshHeadVacancyAfterActivation: jest.fn().mockResolvedValue(undefined),
     };
+    mockSecurityNotice = { enqueue: jest.fn().mockResolvedValue(undefined) };
     mockPasswordReset = {
       request: jest.fn().mockResolvedValue(undefined),
       lookup: jest.fn(),
@@ -172,6 +175,7 @@ describe('AuthService', () => {
       mockLoginAttemptService as unknown as LoginAttemptService,
       mockUserService as unknown as UserService,
       mockPasswordReset as unknown as PasswordResetService,
+      mockSecurityNotice as unknown as SecurityNoticeService,
     );
   });
 
@@ -1303,14 +1307,32 @@ describe('AuthService', () => {
 
     // ACC-120 slice 9b — Better Auth's REAL refusal shape: a returned 401
     // Response, never a rejected promise. The message is unchanged.
-    it('throws UnauthorizedException("Invalid password") for a wrong password', async () => {
+    // ACC-164 — a 400 with the sign-in code, never a 401: the app's interceptor
+    // renews and RETRIES a 401 on a signed-in route, which would submit the wrong
+    // password twice. It is recorded against the sign-in lock like a sign-in.
+    it('refuses a wrong password with 400 INVALID_CREDENTIALS and records it against the lock', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
       mockAuthApi.signInEmail.mockResolvedValue(INVALID_EMAIL_OR_PASSWORD);
 
-      const refusal = service.setupMfa('user-1', ORG_A, { password: 'wrong' });
-      await expect(refusal).rejects.toThrow(UnauthorizedException);
-      await expect(refusal).rejects.toThrow('Invalid password');
+      const refusal = service.setupMfa('user-1', ORG_A, { password: 'wrong' }, { ipAddress: '203.0.113.9' });
+      await expect(refusal).rejects.toMatchObject({ status: 400, code: 'INVALID_CREDENTIALS' });
+      await expect(refusal).rejects.not.toThrow(UnauthorizedException);
       expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
+      expect(mockLoginAttemptService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: ORG_A, success: false, failureReason: 'invalid_password', ipAddress: '203.0.113.9' }),
+      );
+    });
+
+    it('is refused while the sign-in lock is on, before the password is checked', async () => {
+      (mockPrisma as { user: { findFirst: jest.Mock } }).user.findFirst.mockResolvedValue(appUserFixture);
+      mockLoginAttemptService.isLocked.mockResolvedValue(true);
+      mockLoginAttemptService.lockedUntil.mockResolvedValue(new Date('2026-11-14T10:15:00Z'));
+
+      await expect(service.setupMfa('user-1', ORG_A, { password: 'pw' })).rejects.toMatchObject({
+        status: 400,
+        code: 'ACCOUNT_LOCKED',
+      });
+      expect(mockAuthApi.signInEmail).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException("MFA is already enabled") when Better Auth answers with a challenge', async () => {
@@ -1416,47 +1438,8 @@ describe('AuthService', () => {
     });
   });
 
-  describe('disableMfa', () => {
-    it('re-authenticates and calls Better Auth disableTwoFactor, then logs the event', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
-      mockAuthApi.signInEmail.mockResolvedValue(
-        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess456; Path=/']),
-      );
-      mockAuthApi.disableTwoFactor.mockResolvedValue({ status: true });
-
-      await service.disableMfa('user-1', ORG_A, { password: 'pw' });
-
-      expect(mockAuthApi.disableTwoFactor).toHaveBeenCalledWith({
-        body: { password: 'pw' },
-        headers: new Headers({ cookie: 'authSession.token=sess456' }),
-      });
-      expect(mockAuditLog.log).toHaveBeenCalledWith(
-        expect.objectContaining({ metadata: { event: 'mfa_disabled' } }),
-      );
-    });
-
-    it('throws UnauthorizedException when the password is wrong', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
-      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
-
-      await expect(service.disableMfa('user-1', ORG_A, { password: 'wrong' })).rejects.toThrow(
-        UnauthorizedException,
-      );
-      expect(mockAuthApi.disableTwoFactor).not.toHaveBeenCalled();
-    });
-
-    it('throws BadRequestException when Better Auth rejects disableTwoFactor', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
-      mockAuthApi.signInEmail.mockResolvedValue(
-        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess456; Path=/']),
-      );
-      mockAuthApi.disableTwoFactor.mockRejectedValue(new Error('boom'));
-
-      await expect(service.disableMfa('user-1', ORG_A, { password: 'pw' })).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-  });
+  // ACC-164 — disableMfa() is covered in mfa-disable.spec.ts, where every Better
+  // Auth answer is modelled as the Response it really returns.
 
   describe('getMfaStatus', () => {
     it('returns enabled: true when the linked AuthUser has twoFactorEnabled set', async () => {
