@@ -19,12 +19,13 @@ import { LookupValueListComponent } from './lookup-value-list.component';
 
 // ACC-286 — the "Required seat" row measured, EN and AR, at the page's content
 // width on a 1280 screen (988, the page specs' width) and on a 390 phone (358),
-// with the real theme and font. The toggle, its label, the hint and a refusal
-// line sit in the Label cell, under the seat's name. What is checked:
-//   - nothing in the Label cell paints outside it (the hint wraps; nothing is
-//     cut or pushed sideways);
-//   - the switch and its label share one line.
-// The row height and the hint's line count are recorded for the PR.
+// with the real theme and font. The toggle, its label and a refusal line sit in
+// the Label cell, under the seat's name; the hint is said ONCE, above the list.
+// What is checked:
+//   - nothing in the Label cell paints outside it;
+//   - the switch and its label share one line;
+//   - the hint is one element, outside the rows, above the list, inside the page.
+// The row height and the hint's size and line count are recorded for the PR.
 //
 // NON-VACUITY FIRST: the row, the switch and the hint must be on screen and laid
 // out, or "nothing outside the cell" would hold of an empty cell.
@@ -141,16 +142,25 @@ describe('LookupValueListComponent — the Required seat row laid out (ACC-286)'
       [988, 1280],
       [358, 390],
     ] as const) {
-      it(`${lang} at ${viewport}: the toggle, its label and the hint stay inside the Label cell`, async () => {
+      it(`${lang} at ${viewport}: the toggle and its label stay inside the Label cell; the hint is one line of text above the list`, async () => {
         await render(lang, width, viewport);
         const toggle = document.querySelector<HTMLElement>('[data-required-seat="chairman"]');
-        // Non-vacuity: the row is on screen and laid out.
+        const hint = document.querySelector<HTMLElement>('[data-required-seat-hint]');
+        // Non-vacuity: the row and the hint are on screen and laid out.
         expect(toggle).withContext('the Required seat line rendered').not.toBeNull();
+        expect(hint).withContext('the hint rendered').not.toBeNull();
         const cell = toggle!.parentElement!;
         const row = cell.parentElement!;
-        const hint = cell.querySelector<HTMLElement>('p')!;
         expect(box(cell).width).withContext('the Label cell is laid out').toBeGreaterThan(100);
-        expect(box(hint).height).withContext('the hint is laid out').toBeGreaterThan(10);
+        expect(box(hint!).height).withContext('the hint is laid out').toBeGreaterThan(10);
+
+        // The hint is said once, above the list, inside the page's frame.
+        expect(document.querySelectorAll('[data-required-seat-hint]').length).toBe(1);
+        expect(cell.querySelector('[data-required-seat-hint]')).withContext('not in a row').toBeNull();
+        const frame = box(document.querySelector('[data-frame]')!);
+        const h = box(hint!);
+        expect(h.left >= frame.left - 1 && h.right <= frame.right + 1).withContext('the hint stays inside the page').toBe(true);
+        expect(h.bottom).withContext('above the list').toBeLessThanOrEqual(box(document.querySelector('app-data-list')!).top + 1);
 
         // Nothing in the cell paints outside it.
         const c = box(cell);
@@ -165,10 +175,13 @@ describe('LookupValueListComponent — the Required seat row laid out (ACC-286)'
         const label = box(toggle!.querySelector('label')!);
         expect(Math.abs(sw.top + sw.height / 2 - (label.top + label.height / 2))).toBeLessThan(4);
 
-        const lineHeight = parseFloat(getComputedStyle(hint).lineHeight) || 16;
-        const lines = Math.round(box(hint).height / lineHeight);
+        // The hint's line count, from the text's own line boxes.
+        const range = document.createRange();
+        range.selectNodeContents(hint!);
+        const lines = new Set(Array.from(range.getClientRects()).map((r) => Math.round(r.top))).size;
+        expect(lines).withContext('non-vacuity: the hint has at least one line').toBeGreaterThan(0);
         measured.push(
-          `${lang} ${viewport}: cell ${Math.round(c.width)}px, row ${Math.round(box(row).height)}px, hint ${lines} line${lines === 1 ? '' : 's'}`,
+          `${lang} ${viewport}: cell ${Math.round(c.width)}px, row ${Math.round(box(row).height)}px, hint above the list ${Math.round(h.width)}px wide, ${lines} line${lines === 1 ? '' : 's'}, ${Math.round(h.height)}px`,
         );
       });
     }

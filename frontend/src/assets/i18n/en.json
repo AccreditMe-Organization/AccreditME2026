@@ -452,7 +452,7 @@
       "requiredFor": "Required seat: {{name}}",
       "requiredOn": "Required seat",
       "requiredOff": "Not a required seat",
-      "requiredHint": "A committee can't go live, and its last holder can't leave while it is in force, unless this seat is filled."
+      "requiredHint": "A committee can't go live until its required seats are filled, and the last holder of a required seat can't leave while the committee is in force."
     },
     "refusal": {
       "attributeInvalid": "This setting can't be saved for this value.",

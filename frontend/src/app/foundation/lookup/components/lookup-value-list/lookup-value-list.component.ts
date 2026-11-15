@@ -122,6 +122,14 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
         <p class="text-red-500">{{ error() }}</p>
       }
 
+      <!-- ACC-286 — what "Required seat" means, said ONCE for the list rather
+           than under every shared seat. Only on the committee seats. -->
+      @if (categoryHasRequiredSeat()) {
+        <p class="m-0 text-sm text-[var(--am-text-secondary)]" data-required-seat-hint>
+          {{ 'lookup.attribute.requiredHint' | translate }}
+        </p>
+      }
+
       <app-data-list
         #list
         variant="page"
@@ -194,11 +202,8 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
                       {{ (isRequiredSeat(val) ? 'lookup.attribute.requiredOn' : 'lookup.attribute.requiredOff') | translate }}
                     </span>
                   }
-                  <p class="m-0 text-xs text-[var(--am-text-secondary)]">
-                    {{ 'lookup.attribute.requiredHint' | translate }}
-                  </p>
                   @if (requiredSeatError()?.id === val.id) {
-                    <p class="m-0 text-xs text-red-500" role="alert" [attr.data-required-seat-error]="val.id">
+                    <p class="m-0 text-xs text-[var(--am-danger-ink)]" role="alert" [attr.data-required-seat-error]="val.id">
                       {{ requiredSeatError()!.key | translate }}
                     </p>
                   }
@@ -515,8 +520,8 @@ export class LookupValueListComponent implements OnInit {
   /** The last refused toggle, said under its row from the code. */
   readonly requiredSeatError = signal<{ id: string; key: string } | null>(null);
 
-  /** The category declares the attribute (from the server's own schema). */
-  private readonly categoryHasRequiredSeat = computed(() => {
+  /** The category declares the attribute (from the server's own schema). The hint line reads it too. */
+  readonly categoryHasRequiredSeat = computed(() => {
     const cat = this.category();
     if (cat?.key !== LookupValueListComponent.SEAT_CATEGORY) return false;
     const properties = (cat.attributeSchema as { properties?: Record<string, { type?: unknown }> } | null)?.properties;

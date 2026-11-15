@@ -170,14 +170,35 @@ describe('LookupValueListComponent — Required seat (ACC-286)', () => {
       expect(text(el().querySelector('[data-required-seat-readonly="member"]'))).toBe('Not a required seat');
     });
 
-    it('says what the seat means, in both languages', async () => {
+    it('says what a required seat means ONCE, above the list, in both languages', async () => {
       render([MANAGE]);
       await settle();
-      expect(text(el())).toContain(en.lookup.attribute.requiredHint);
+      const hints = () => el().querySelectorAll('[data-required-seat-hint]');
+      const count = (needle: string) => text(el()).split(needle).length - 1;
+      expect(hints().length).toBe(1);
+      expect(text(hints()[0]!)).toBe(en.lookup.attribute.requiredHint);
+      expect(count(en.lookup.attribute.requiredHint)).withContext('not repeated under each seat').toBe(1);
+      expect(hints()[0]!.closest('app-data-list')).withContext('above the list, not inside a row').toBeNull();
+
       render([MANAGE], { language: 'ar' });
       await settle();
-      expect(text(el())).toContain(ar.lookup.attribute.requiredHint);
+      expect(hints().length).toBe(1);
+      expect(text(hints()[0]!)).toBe(ar.lookup.attribute.requiredHint);
+      expect(count(ar.lookup.attribute.requiredHint)).toBe(1);
       expect(text(toggleRow('chairman'))).toBe('مقعد مطلوب');
+      expect(switchOf('chairman')!.querySelector('input')!.getAttribute('aria-label')).toBe('مقعد مطلوب: رئيس اللجنة');
+    });
+
+    it('the read-only view says it once too', async () => {
+      render(['lookups:view']);
+      await settle();
+      expect(el().querySelectorAll('[data-required-seat-hint]').length).toBe(1);
+    });
+
+    it('no hint line on another category', async () => {
+      render([MANAGE], { category: seatCategory({ key: 'document_type' }) });
+      await settle();
+      expect(el().querySelector('[data-required-seat-hint]')).toBeNull();
     });
   });
 
@@ -239,6 +260,9 @@ describe('LookupValueListComponent — Required seat (ACC-286)', () => {
       await settle();
       await press('member');
       expect(text(errorOf('member'))).toBe(en.lookup.refusal.attributeInvalid);
+      // The field errors' danger token, never a literal colour (red-500 is ~3.8:1 on white).
+      expect(errorOf('member')!.className).toContain('text-[var(--am-danger-ink)]');
+      expect(errorOf('member')!.className).not.toMatch(/text-red-/);
       expect(text(el())).not.toContain('is invalid');
       expect(errorOf('chairman')).withContext('only under its own row').toBeNull();
     });
