@@ -446,7 +446,19 @@
     "valueColumnStatus": "Status",
     "valuesEyebrow": "Lookup values",
     "valuesSearchPlaceholder": "Search values by label or key",
-    "deleteHeader": "Delete the value “{{name}}”?"
+    "deleteHeader": "Delete the value “{{name}}”?",
+    "attribute": {
+      "required": "Required seat",
+      "requiredFor": "Required seat: {{name}}",
+      "requiredOn": "Required seat",
+      "requiredOff": "Not a required seat",
+      "requiredHint": "A committee can't go live, and its last holder can't leave while it is in force, unless this seat is filled."
+    },
+    "refusal": {
+      "attributeInvalid": "This setting can't be saved for this value.",
+      "valueGone": "This value no longer exists."
+    },
+    "errorRequiredSeat": "The Required seat setting could not be saved."
   },
   "workingCalendar": {
     "title": "Working Calendar",
@@ -2136,6 +2148,7 @@
         "listLabel": "Committee seats",
         "removing": "Removing committee seats…",
         "notMember": "Not a member any more.",
+        "openCommittee": "Open the committee",
         "removeFailed": "The seat couldn't be removed.",
         "reasonMoved": "Transferred from {{from}} to {{to}}.",
         "reasonSameUnit": "Moved to a new position in {{unit}}."
