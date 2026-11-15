@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AccreditMe Two-step Sign-in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+</style>
+</helmet>
+
+<div style="max-width: 1500px; margin-inline: auto; padding: 20px 12px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 14 Nov 2026 · Two-step sign-in · turning it off and the administrator reset (ACC-164) · round 1</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Two-step sign-in</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 112ch; text-wrap: pretty;">The user record page's Two-step sign-in panel, drawn as it is today, then the two changes: Turn off on your own record gains a Code field, and an administrator can reset someone else's two-step sign-in. Only the panel and its two dialogs are drawn; the rest of the record page is a placeholder. English and Arabic, desktop and phone 375. Example: Al Nakheel Specialist Hospital; Lina Haddad, a quality officer; Nora Al-Otaibi, tenant administrator. Every dialog body is measured against the 420 cap in <a href="#m">4</a>; questions and copy in <a href="#q">5</a>.</p>
+  </div>
+
+  <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="3">
+  <section id="{{ sec.id }}" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 14px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">{{ sec.n }}</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{{ sec.title }}</h2>
+      <span style="font-size: 12.5px; color: #5A6779; text-wrap: pretty;">{{ sec.sub }}</span>
+    </div>
+    <sc-for list="{{ sec.groups }}" as="grp" hint-placeholder-count="2">
+      <div style="margin-block-end: 18px;">
+        <h3 style="margin: 0 0 4px; font-size: 15px; font-weight: 600;">{{ grp.title }}</h3>
+        <sc-if value="{{ grp.sub }}" hint-placeholder-val="{{ false }}"><div style="font-size: 12px; color: #4A5568; margin-block-end: 8px; max-width: 150ch; text-wrap: pretty;">{{ grp.sub }}</div></sc-if>
+        <div style="display: flex; flex-wrap: wrap; gap: 18px 14px; align-items: flex-start; background: #F4F7FA; border-radius: 8px; padding: 12px;">
+          <sc-for list="{{ grp.panels }}" as="pn" hint-placeholder-count="2">
+            <div style="{{ pn.outer }}">
+              <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ pn.cap }}</div>
+              <div style="{{ pn.shell }}">
+                <div dir="{{ pn.dir }}" lang="{{ pn.lang }}" style="{{ pn.frame }}">
+                  <sc-for list="{{ pn.blocks }}" as="b" hint-placeholder-count="3">
+                    <div data-m="{{ b.m }}" style="{{ b.style }}">
+                      <sc-for list="{{ b.items }}" as="it" hint-placeholder-count="3">
+                        <div style="{{ it.style }}"><sc-for list="{{ it.parts }}" as="p" hint-placeholder-count="2"><sc-if value="{{ p.s }}" hint-placeholder-val="{{ true }}"><span dir="{{ p.dir }}" style="{{ p.style }}">{{ p.text }}</span></sc-if><sc-if value="{{ p.b }}" hint-placeholder-val="{{ false }}"><button aria-label="{{ p.text }}" aria-busy="{{ p.spin }}" style="{{ p.style }}"><sc-if value="{{ p.spin }}" hint-placeholder-val="{{ false }}"><span style="{{ p.spinStyle }}"></span></sc-if>{{ p.text }}</button></sc-if><sc-if value="{{ p.r }}" hint-placeholder-val="{{ false }}"><span style="{{ p.style }}"><sc-for list="{{ p.parts }}" as="q" hint-placeholder-count="2"><span dir="{{ q.dir }}" style="{{ q.style }}">{{ q.text }}</span></sc-for></span></sc-if></sc-for></div>
+                      </sc-for>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <sc-if value="{{ pn.note }}" hint-placeholder-val="{{ false }}"><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ pn.note }}</div></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+    <sc-if value="{{ sec.notes }}" hint-placeholder-val="{{ false }}">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 0 18px;">
+          <sc-for list="{{ sec.notes }}" as="n" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </section>
+  </sc-for>
+
+  <section id="m" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 14px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Dialog bodies against the 420 cap</h2>
+      <span style="font-size: 12.5px; color: #5A6779; text-wrap: pretty;">{{ measNote }}</span>
+    </div>
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow-x: auto;">
+      <div style="display: flex; gap: 12px; padding: 7px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779; min-width: 860px;"><span style="flex: none; width: 90px;">Dialog</span><span style="flex: 1 1 0; min-width: 0;">State</span><span style="flex: none; width: 120px;">English 420</span><span style="flex: none; width: 120px;">Arabic 420</span><span style="flex: none; width: 120px;">Phone 375</span><span style="flex: none; width: 60px;">Fits</span></div>
+      <sc-for list="{{ meas }}" as="x" hint-placeholder-count="12">
+        <div style="display: flex; gap: 12px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12.5px; min-width: 860px; font-variant-numeric: tabular-nums;"><span style="flex: none; width: 90px; color: #5A6779; font-weight: 600;">{{ x.d }}</span><span style="flex: 1 1 0; min-width: 0;">{{ x.s }}</span><span style="flex: none; width: 120px;">{{ x.en }}</span><span style="flex: none; width: 120px;">{{ x.ar }}</span><span style="flex: none; width: 120px; color: #4A5568;">{{ x.ph }}</span><span style="flex: none; width: 60px; font-weight: 700; color: #067647;">{{ x.ok }}</span></div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="q" style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 14px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #FEDF89; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Questions, and copy</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Each question has a recommendation; none is decided in the drawing. Then each line where the drawn copy differs from the brief or isn't in it.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="10">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div>
+          <div style="font-size: 12px; color: #4A5568; padding-block-start: 3px; text-wrap: pretty;">{{ q.why }}</div>
+          <div style="font-size: 12px; color: #4A5568; padding-block-start: 3px; text-wrap: pretty;"><strong style="color: #067647;">Recommendation:</strong> {{ q.rec }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <h3 style="margin: 18px 0 6px; font-size: 16px; font-weight: 600;">Copy</h3>
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow-x: auto;">
+      <div style="display: flex; gap: 12px; padding: 7px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779; min-width: 900px;"><span style="flex: none; width: 100px;">Kind</span><span style="flex: none; width: 150px;">Where</span><span style="flex: 1 1 0; min-width: 0;">English</span><span style="flex: 1 1 0; min-width: 0;">Arabic</span></div>
+      <sc-for list="{{ copy }}" as="x" hint-placeholder-count="8">
+        <div style="display: flex; gap: 12px; padding: 7px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12.5px; min-width: 900px;"><span style="flex: none; width: 100px; font-weight: 700; color: {{ x.c }};">{{ x.k }}</span><span style="flex: none; width: 150px; color: #5A6779; font-weight: 600;">{{ x.w }}</span><span style="flex: 1 1 0; min-width: 0; text-wrap: pretty;">{{ x.en }}</span><span dir="rtl" style="flex: 1 1 0; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13.5px; text-wrap: pretty;">{{ x.ar }}</span></div>
+      </sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const LINA = "Lina Haddad", LONG = "Abdulrahman Saleh Al-Mutawa Al-Harbi";
+    const TX = {
+      en: {
+        heading: "Two-step sign-in", offOwn: "Off. Signing in needs only your password.", on: "On. A code from an authenticator app is asked for at every sign-in.", off: "Off.",
+        setUp: "Set up", turnOff: "Turn off", reset: "Reset", cancel: "Cancel", close: "Close",
+        t1: "Turn off two-step sign-in", intro: "Enter your password and a code from your authenticator app. Signing in will then need only your password.",
+        pw: "Password", pwReq: "Enter your password.", code: "Code from your authenticator app", hint: "The 6-digit code showing in your app now.", codeBad: "Enter the 6-digit code.",
+        pwWrong: "That password isn't right.", codeWrong: "That code didn't work. Enter the code showing in your app now.", left2: "2 attempts left.", left1: "1 attempt left.",
+        locked: "Too many unsuccessful attempts. You can try again in 15 minutes.", expired: "That took too long. Enter a new code from your app.", alreadyOff: "Two-step sign-in is already off.",
+        unreach: "We couldn't reach AccreditMe. Check your connection and try again.",
+        t2: (n) => ["Reset two-step sign-in for ", n, "?"], body2: "This turns two-step sign-in off for this person and signs them out everywhere. They then sign in with their password and set it up again. They're emailed that it was reset.",
+        success: "Two-step sign-in was reset.", owner: "The account owner's two-step sign-in can't be reset here. AccreditMe support can help.", alreadyOff2: "Two-step sign-in is already off for this person.",
+        actingAs: "This can't be done while signed in as someone else.", others: "Other record panels, unchanged"
+      },
+      ar: {
+        heading: "التحقق بخطوتين", offOwn: "غير مفعّل. يكفي إدخال كلمة المرور لتسجيل الدخول.", on: "مفعّل. يُطلب رمز من تطبيق المصادقة عند كل تسجيل دخول.", off: "غير مفعّل.",
+        setUp: "إعداد", turnOff: "إيقاف", reset: "إعادة ضبط", cancel: "إلغاء", close: "إغلاق",
+        t1: "إيقاف التحقق بخطوتين", intro: "أدخل كلمة المرور ورمزًا من تطبيق المصادقة. بعد ذلك يكفي إدخال كلمة المرور لتسجيل الدخول.",
+        pw: "كلمة المرور", pwReq: "أدخل كلمة المرور.", code: "الرمز من تطبيق المصادقة", hint: "الرمز المكوّن من 6 أرقام الظاهر في تطبيقك الآن.", codeBad: "أدخل الرمز المكوّن من 6 أرقام.",
+        pwWrong: "كلمة المرور غير صحيحة.", codeWrong: "لم ينجح هذا الرمز. أدخل الرمز الظاهر في تطبيقك الآن.", left2: "محاولتان متبقيتان.", left1: "محاولة واحدة متبقية.",
+        locked: "محاولات غير ناجحة كثيرة. يمكنك المحاولة مرة أخرى بعد 15 دقيقة.", expired: "استغرق ذلك وقتًا طويلًا. أدخل رمزًا جديدًا من تطبيقك.", alreadyOff: "التحقق بخطوتين غير مفعّل أصلًا.",
+        unreach: "تعذّر الوصول إلى AccreditMe. تحقّق من اتصالك ثم أعد المحاولة.",
+        t2: (n) => ["إعادة ضبط التحقق بخطوتين للحساب ", n, "؟"], body2: "يؤدي ذلك إلى إيقاف التحقق بخطوتين لهذا الحساب وتسجيل الخروج من كل الأجهزة. بعد ذلك يتم تسجيل الدخول بكلمة المرور وإعادة الإعداد من جديد. يصل بريد إلكتروني يفيد بإعادة الضبط.",
+        success: "تمت إعادة ضبط التحقق بخطوتين.", owner: "لا يمكن إعادة ضبط التحقق بخطوتين لمالك الحساب من هنا. يمكن لدعم AccreditMe المساعدة.", alreadyOff2: "التحقق بخطوتين غير مفعّل لهذا الحساب أصلًا.",
+        actingAs: "لا يمكن تنفيذ ذلك أثناء الدخول نيابة عن مستخدم آخر.", others: "لوحات السجل الأخرى، دون تغيير"
+      }
+    };
+    const AF = " font-family: 'IBM Plex Sans Arabic', sans-serif;";
+
+    const KIT = (ar) => {
+      const t = TX[ar ? "ar" : "en"];
+      const P = (o) => Object.assign({ s: false, b: false, r: false, spin: false, spinStyle: "", dir: "auto", text: "", style: "", parts: [] }, o);
+      const S = (text, style, dir) => P({ s: true, text, style, dir: dir || "auto" });
+      const R = (parts, style) => P({ r: true, parts, style });
+      const I = (parts, style) => ({ parts, style: style || "" });
+      const B = (items, style, m) => ({ items, style: style || "", m: m || "" });
+      // type scale: English | Arabic (+1px, taller lines)
+      const ty = (en, arr, wt, c, x) => { const z = ar ? arr : en; return "display: block; font-size: " + z[0] + "px; line-height: " + z[1] + "px; font-weight: " + (wt || 400) + "; color: " + (c || "#2D3748") + "; text-wrap: pretty;" + (x ? " " + x : ""); };
+      const body = (c, x) => ty([14, 21], [15, 24], 400, c, x);
+      const label = () => ty([12, 18], [13, 20], 500, "#4A5568", "margin-block-end: 4px;");
+      const msgS = (err) => ty([11.5, 17], [12.5, 20], err ? 500 : 400, err ? "#B42318" : "#4A5568");
+      const BOX = { rest: "background: #fff; border: 1px solid #8A94A6;", focus: "background: #fff; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);", err: "background: #fff; border: 1px solid #B42318;", errFocus: "background: #fff; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);", ro: "background: #F4F7FA; border: 1px solid #CBD5E0;" };
+      const eye = S("", "flex: none; width: 15px; height: 9px; border: 1.5px solid #4A5568; border-radius: 50%; background: radial-gradient(circle, #4A5568 0 2.2px, transparent 2.8px);");
+      const caret = S("", "flex: none; width: 1px; height: 18px; background: #2D3748;");
+      // field: { label, value, kind: pw|code, st, msg: [lines], err }
+      const field = (o) => {
+        const st = o.st || "rest", isErr = st === "err" || st === "errFocus";
+        const vp = [];
+        if (o.value) vp.push(S(o.value, "flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; font-size: " + (o.kind === "code" ? 15 : 14) + "px; line-height: 20px; color: " + (st === "ro" ? "#4A5568" : "#1A202C") + "; unicode-bidi: isolate;" + (o.kind === "code" ? " letter-spacing: 0.28em; font-variant-numeric: tabular-nums;" : " letter-spacing: 1px;") + (ar ? " text-align: right;" : ""), "ltr"));
+        else { if (st === "focus" || st === "errFocus") vp.push(caret); vp.push(S("", "flex: 1 1 auto;")); }
+        if (o.kind === "pw") vp.push(eye);
+        const lines = (o.msg || []).map((m, i) => S(m, msgS(isErr) + (i ? "" : "")));
+        return I([S(o.label, label()), R(vp, "display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; " + BOX[st]),
+          R(lines.length ? lines : [S("", msgS(false))], "display: block; margin-block-start: 4px; min-height: " + (ar ? 20 : 17) + "px;")], "display: flex; flex-direction: column;");
+      };
+      const TONES = { danger: "background: #FEF3F2; border: 1px solid #FECDCA; color: #B42318;", info: "background: #F2F7FB; border: 1px solid #C5DAEA; color: #1F5480;" };
+      const banner = (text, tone) => I([S(text, ty([13, 19], [14, 22], 500, "inherit"))], "padding: 8px 10px; border-radius: 6px; " + TONES[tone]);
+      const btnBase = "font-family: inherit; display: inline-flex; align-items: center; gap: 6px; font-size: " + (ar ? 14 : 13) + "px; line-height: 20px; border-radius: 6px; padding: 6px 12px; white-space: nowrap; cursor: pointer;";
+      const FOCUS = " box-shadow: 0 0 0 3px rgba(46,111,163,0.35); border-color: #2E6FA3;";
+      const btn = (text, kind, o) => { o = o || {}; const K = {
+          text: "color: #2E6FA3; background: transparent; border: 1px solid transparent; font-weight: 500;",
+          textOff: "color: #8A94A6; background: transparent; border: 1px solid transparent; font-weight: 500; cursor: not-allowed;",
+          danger: "color: #fff; background: #B42318; border: 1px solid #912018; font-weight: 600;",
+          secondary: "color: #2D3748; background: #fff; border: 1px solid #5A6779; font-weight: 500;" }[kind];
+        return P({ b: true, text, spin: !!o.spin, spinStyle: "flex: none; width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;", style: btnBase + " " + K + (o.focus ? FOCUS : "") + (o.spin ? " cursor: progress;" : "") }); };
+      // dialog: { title: string | [pre, name, post], items, buttons, m }
+      const dialog = (o) => {
+        const title = Array.isArray(o.title)
+          ? I([S(o.title[0], "display: inline;"), S(o.title[1], "display: inline; unicode-bidi: isolate;", "ltr"), S(o.title[2], "display: inline;")], ty([16, 24], [17, 27], 600))
+          : I([S(o.title, ty([16, 24], [17, 27], 600))]);
+        return [B([title], "padding: 12px 20px; border-block-end: 1px solid #E2E8F0; background: #fff;"),
+          B(o.items, "display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; background: #fff;", o.m),
+          B([I(o.buttons, "display: flex; justify-content: flex-end; gap: 8px;")], "padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;")];
+      };
+      // record column: header, the other panels, then the Two-step panel
+      const panelTitle = ty([11, 16], [12.5, 20], 600, "#4A5568", ar ? "" : "letter-spacing: 0.07em; text-transform: uppercase;");
+      const record = (o) => {
+        const bl = [B([I([S(o.name, ty([18, 26], [18, 26], 600), "ltr"), S(o.sub, ty([12.5, 18], [13, 20], 400, "#5A6779"))])], "padding: 2px 2px 0;"),
+          B([I([S(t.others, ty([12, 18], [12.5, 20], 400, "#5A6779"))], "")], "margin-block-start: 12px; padding: 18px 12px; text-align: center; border: 1px dashed #CBD5E0; border-radius: 8px; background: repeating-linear-gradient(135deg, #FCFDFE 0 6px, #F4F7FA 6px 12px);")];
+        if (o.panel) {
+          const act = o.panel.action ? [btn(o.panel.action, "text", { focus: o.panel.focus })] : [];
+          if (act.length) act[0].style = act[0].style.replace("color: #2E6FA3;", "color: " + (o.panel.red ? "#B42318" : "#2E6FA3") + ";").replace("padding: 6px 12px;", "padding: 2px 6px; margin: -2px -6px;");
+          bl.push(B([I([S(t.heading, panelTitle)].concat(act), "display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-block-end: 1px solid #EDF1F5;"),
+            I([S(o.panel.text, ty([13, 19], [14, 22]))], "padding: 12px;")], "margin-block-start: 12px; background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;"));
+        }
+        if (o.toast) bl.push(B([I([S("✓", "flex: none; color: #75E0A7; font-weight: 700;"), S(o.toast, ty([13, 19], [14, 22], 500, "#fff"))], "display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 8px; background: #1E2A38; box-shadow: 0 8px 20px rgba(16,24,40,0.2);")], "margin-block-start: 18px;"));
+        return bl;
+      };
+      return { t, S, I, B, ty, body, field, banner, btn, dialog, record };
+    };
+
+    // ── Screen 1 · Turn off, own record ──
+    const PW = "••••••••••", CODE = "482913";
+    const s1 = (ar, st, m) => {
+      const K = KIT(ar), t = K.t;
+      const F = {
+        empty:   [["", "rest"], ["", "rest", [t.hint]]],
+        missing: [["", "errFocus", [t.pwReq], 1], ["", "err", [t.codeBad], 1]],
+        bad:     [[PW, "rest"], ["48291", "errFocus", [t.codeBad], 1]],
+        sending: [[PW, "ro"], [CODE, "ro", [t.hint]]],
+        pwWrong: [["", "errFocus", [t.pwWrong], 1], [CODE, "rest", [t.hint]]],
+        left2:   [[PW, "rest"], ["", "errFocus", [t.codeWrong, t.left2], 1]],
+        left1:   [[PW, "rest"], ["", "errFocus", [t.codeWrong, t.left1], 1]],
+        expired: [[PW, "rest"], ["", "errFocus", [t.expired], 1]],
+        locked:  [[PW, "rest"], [CODE, "rest", [t.hint]]],
+        already: [[PW, "rest"], [CODE, "rest", [t.hint]]],
+        unreach: [[PW, "rest"], [CODE, "rest", [t.hint]]]
+      }[st];
+      const fld = (f, lab, kind) => K.field({ label: lab, value: f[0], kind, st: f[1], msg: f[2] || [] });
+      const items = [K.I([K.S(t.intro, K.body())]), fld(F[0], t.pw, "pw"), fld(F[1], t.code, "code")]
+        .concat(st === "locked" ? [K.banner(t.locked, "danger")] : st === "already" ? [K.banner(t.alreadyOff, "info")] : st === "unreach" ? [K.banner(t.unreach, "danger")] : []);
+      const buttons = st === "sending" ? [K.btn(t.cancel, "textOff"), K.btn(t.turnOff, "danger", { spin: 1 })] : [K.btn(t.cancel, "text", { focus: st === "empty" }), K.btn(t.turnOff, "danger")];
+      return K.dialog({ title: t.t1, items, buttons, m });
+    };
+    // ── Screen 2 · Reset, another person's record ──
+    const s2 = (ar, st, name, m) => {
+      const K = KIT(ar), t = K.t;
+      const items = [K.I([K.S(t.body2, K.body())])]
+        .concat(st === "owner" ? [K.banner(t.owner, "danger")] : st === "already" ? [K.banner(t.alreadyOff2, "info")] : st === "acting" ? [K.banner(t.actingAs, "danger")] : st === "unreach" ? [K.banner(t.unreach, "danger")] : []);
+      const buttons = st === "owner" ? [K.btn(t.close, "secondary", { focus: 1 })] : st === "sending" ? [K.btn(t.cancel, "text"), K.btn(t.reset, "danger", { spin: 1 })] : [K.btn(t.cancel, "text", { focus: st === "confirm" }), K.btn(t.reset, "danger")];
+      return K.dialog({ title: t.t2(name), items, buttons, m });
+    };
+    const rec = (ar, o) => { const K = KIT(ar); return K.record(o); };
+    const SUB = (ar) => ar ? "lina.haddad@alnakheel.example.test · مسؤولة جودة" : "lina.haddad@alnakheel.example.test · Quality officer";
+
+    // ── frames ──
+    const DLG = "width: 100%; box-sizing: border-box; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;";
+    const D = (cap, ar, blocks, note) => ({ cap, note: note || null, dir: ar ? "rtl" : "ltr", lang: ar ? "ar" : "en", blocks, outer: "flex: 0 0 420px; width: 420px; min-width: 0;", shell: "", frame: DLG + (ar ? AF : "") });
+    const PH = (cap, ar, blocks, note) => ({ cap, note: note || null, dir: ar ? "rtl" : "ltr", lang: ar ? "ar" : "en", blocks, outer: "flex: 0 0 375px; width: 375px; min-width: 0;",
+      shell: "box-sizing: border-box; width: 375px; min-height: 700px; display: flex; align-items: center; padding: 40px 16px; border-radius: 16px; border: 1px solid #CBD5E0; background: linear-gradient(rgba(16,24,40,0.5), rgba(16,24,40,0.5)), #F4F7FA;", frame: DLG + (ar ? AF : "") });
+    const RC = (cap, ar, blocks, note) => ({ cap, note: note || null, dir: ar ? "rtl" : "ltr", lang: ar ? "ar" : "en", blocks, outer: "flex: 0 0 384px; width: 384px; min-width: 0;", shell: "",
+      frame: "width: 100%; box-sizing: border-box; padding: 16px; background: #F4F7FA; border: 1px solid #CBD5E0; border-radius: 8px;" + (ar ? AF : "") });
+    const pairD = (cap, fn, note, noteAr) => [D(cap + " · English", false, fn(false), note), D(cap + " · العربية", true, fn(true), noteAr)];
+
+    const ownOff = (ar) => rec(ar, { name: LINA, sub: SUB(ar), panel: { text: TX[ar ? "ar" : "en"].offOwn, action: TX[ar ? "ar" : "en"].setUp } });
+    const ownOn = (ar) => rec(ar, { name: LINA, sub: SUB(ar), panel: { text: TX[ar ? "ar" : "en"].on, action: TX[ar ? "ar" : "en"].turnOff, red: 1 } });
+    const admOn = (ar) => rec(ar, { name: LINA, sub: SUB(ar), panel: { text: TX[ar ? "ar" : "en"].on, action: TX[ar ? "ar" : "en"].reset, red: 1 } });
+    const admOff = (ar, toast) => rec(ar, { name: LINA, sub: SUB(ar), panel: { text: TX[ar ? "ar" : "en"].off }, toast: toast ? TX[ar ? "ar" : "en"].success : null });
+    const noPanel = (ar, name, sub) => rec(ar, { name, sub });
+
+    const sections = [
+      { id: "s0", n: "1", title: "The panel today · as built", sub: "Your own user record. A heading row with its text action at the end, and a one-line body. The rest of the record page is a placeholder.",
+        groups: [{ title: "Off, and on", sub: null, panels: [
+          RC("Off · English", false, ownOff(false), "Set up in blue."), RC("Off · العربية", true, ownOff(true), "The Arabic for the Off line and “Set up” isn't in the brief; drawn here as drafts (5)."),
+          RC("On · English", false, ownOn(false), "Turn off in red (danger) text."), RC("On · العربية", true, ownOn(true))
+        ] }],
+        notes: [
+          { k: "Panel look.", v: "The record-panel heading of the Compact List Panel: 11px uppercase title (Arabic 12.5px, no capitals), text action at the end, a rule under the heading, 12px body padding." },
+          { k: "Column width 352.", v: "As the record page's panels. The page header and other panels aren't redrawn." }
+        ] },
+      { id: "s1", n: "2", title: "Screen 1 · Turn off two-step sign-in, on your own record", sub: "Confirm width 420. The existing Password field, then a new Code field: 6 digits, numeric keyboard, one-time-code autofill. Nothing here says it signs you out of other sessions, because it doesn't.",
+        groups: [
+          { title: "Empty", sub: "Cancel has the focus, as the destructive-confirm rule says (Q2).", panels: pairD("Empty", (ar) => s1(ar, "empty", "1-empty-" + (ar ? "ar" : "en")), "Code: inputmode=numeric, autocomplete=one-time-code, maxlength 6, Latin digits in both languages.") },
+          { title: "Missing, and malformed · after pressing Turn off", sub: "An error under each field that needs it; focus on the first.", panels: pairD("Both missing", (ar) => s1(ar, "missing", "1-missing-" + (ar ? "ar" : "en"))).concat([D("Code malformed (5 digits) · English", false, s1(false, "bad", "1-bad-en"), "Focus on Code, the only field in error.")]) },
+          { title: "Sending", sub: "Spinner on Turn off, both fields read-only, Cancel disabled.", panels: pairD("Sending", (ar) => s1(ar, "sending", "1-sending-" + (ar ? "ar" : "en"))) },
+          { title: "Wrong password", sub: "Error under Password. The code stays filled in. Drawn with the password cleared and focused (Q3).", panels: pairD("Wrong password", (ar) => s1(ar, "pwWrong", "1-pw-" + (ar ? "ar" : "en"))) },
+          { title: "Wrong code, attempts left", sub: "The error under Code, with the attempts left on the next line. The code is cleared and focused; the password stays.", panels: [D("2 attempts left · English", false, s1(false, "left2", "1-left2-en")), D("2 attempts left · العربية", true, s1(true, "left2", "1-left2-ar")), D("1 attempt left · English", false, s1(false, "left1", "1-left1-en")), D("1 attempt left · العربية", true, s1(true, "left1", "1-left1-ar"))] },
+          { title: "Code expired · in the copy, not in the state list", sub: "Drawn because its copy is in the brief: most likely after a wrong password, when the kept code has gone stale (Q4).", panels: pairD("Code expired", (ar) => s1(ar, "expired", "1-expired-" + (ar ? "ar" : "en"))) },
+          { title: "Locked", sub: "A message above the buttons, with when it lifts.", panels: pairD("Locked", (ar) => s1(ar, "locked", "1-locked-" + (ar ? "ar" : "en")), "“in 15 minutes” fills {{when}} (Q6).") },
+          { title: "Already off", sub: "Changed in another tab or by an administrator. Closing refreshes the panel to Off. Buttons left as they are (Q7).", panels: pairD("Already off", (ar) => s1(ar, "already", "1-already-" + (ar ? "ar" : "en"))) },
+          { title: "Server unreachable", sub: "Both fields keep what was typed; pressing Turn off again retries.", panels: pairD("Unreachable", (ar) => s1(ar, "unreach", "1-unreach-" + (ar ? "ar" : "en"))) },
+          { title: "Done", sub: "The dialog closes; the panel reads Off with Set up. The email isn't drawn. No success message is in the brief for this screen (Q8).", panels: [RC("Done · English", false, ownOff(false)), RC("Done · العربية", true, ownOff(true))] },
+          { title: "Phone 375 · with an error", sub: null, panels: [PH("Both missing · English", false, s1(false, "missing", "1-phone-en")), PH("Wrong code, 2 left · العربية", true, s1(true, "left2", "1-phone-ar"))] }
+        ],
+        notes: [
+          { k: "One field rhythm.", v: "Label above, 36px field, and a one-line message slot under each, so an error replaces the hint and nothing below jumps unless a message runs to two lines." },
+          { k: "Attempts on their own line.", v: "“That code didn't work…” then “2 attempts left.” under it, so the count is read last and isn't lost mid-sentence." },
+          { k: "Messages about no field.", v: "Locked, already off and unreachable sit above the buttons: red for the first and last, blue for already off, which is news, not a failure." },
+          { k: "Never disabled.", v: "Turn off can always be pressed, except while sending, when the spinner shows and a second press does nothing." }
+        ] },
+      { id: "s2", n: "3", title: "Screen 2 · Reset someone's two-step sign-in", sub: "An administrator, on another person's record. Nora Al-Otaibi (tenant administrator) views Lina Haddad's record.",
+        groups: [
+          { title: "The panel, on and off", sub: "On: Reset in red text. Off: “Off.” and no action.", panels: [RC("On · English", false, admOn(false)), RC("On · العربية", true, admOn(true)), RC("Off · English", false, admOff(false)), RC("Off · العربية", true, admOff(true))] },
+          { title: "Panel not shown", sub: "No panel at all, never “Off”. Nothing on the users list either.", panels: [
+            RC("Viewer without the permission · English", false, noPanel(false, LINA, SUB(false)), "Samir Aziz, a quality officer, views Lina Haddad's record."), RC("Viewer without the permission · العربية", true, noPanel(true, LINA, SUB(true))),
+            RC("Account owner's record, seen by an administrator · English", false, noPanel(false, "Omar Khalil", "omar.khalil@alnakheel.example.test · Account owner"), "Only AccreditMe support resets the owner's two-step sign-in."), RC("Account owner's record · العربية", true, noPanel(true, "Omar Khalil", "omar.khalil@alnakheel.example.test · مالك الحساب"))
+          ] },
+          { title: "Confirm · after Reset", sub: "Destructive confirm 420: title, one paragraph, Cancel (focused) and Reset filled red. No fields, no typing the name.", panels: pairD("Confirm", (ar) => s2(ar, "confirm", LINA, "2-confirm-" + (ar ? "ar" : "en")), null, "The name is a left-to-right isolate after «للحساب».").concat(pairD("Confirm · long name", (ar) => s2(ar, "confirm", LONG, "2-long-" + (ar ? "ar" : "en")), "The title wraps to two lines; the header grows, not the body.")) },
+          { title: "Sending, and done", sub: "Spinner on Reset. Then the confirm closes, the panel reads “Off.” with no action, and the product's usual short success message shows.", panels: pairD("Sending", (ar) => s2(ar, "sending", LINA, "2-sending-" + (ar ? "ar" : "en")), "Cancel stays as the brief has it (Q10).").concat([RC("Done · English", false, admOff(false, 1), "The dark message is a stand-in for the product's usual success message, whose look isn't drawn in this project."), RC("Done · العربية", true, admOff(true, 1))]) },
+          { title: "Refused", sub: "A message in the confirm. Account owner: Reset is no longer offered, only Close. Already off: closing refreshes the panel to “Off.”.", panels: pairD("Account owner", (ar) => s2(ar, "owner", LINA, "2-owner-" + (ar ? "ar" : "en")), "The paragraph above still describes the reset (Q9).").concat(pairD("Already off", (ar) => s2(ar, "already", LINA, "2-already-" + (ar ? "ar" : "en")))) },
+          { title: "Signed in as someone else, and unreachable", sub: "The first happens in development only for now: one small drawing. Unreachable: pressing Reset again retries.", panels: [D("Signed in as someone else · English", false, s2(false, "acting", LINA, "2-acting-en"))].concat(pairD("Unreachable", (ar) => s2(ar, "unreach", LINA, "2-unreach-" + (ar ? "ar" : "en")))) },
+          { title: "Phone 375 · the confirm", sub: "Long name, both languages.", panels: [PH("Confirm · long name · English", false, s2(false, "confirm", LONG, "2-phone-en")), PH("Confirm · long name · العربية", true, s2(true, "confirm", LONG, "2-phone-ar"))] }
+        ],
+        notes: [
+          { k: "Same panel, other words.", v: "Reset sits where Turn off does, in the same red text, so administrators recognise it; your own record never shows Reset." },
+          { k: "Not found.", v: "If the person was removed meanwhile, the record page's existing not-found state shows. Nothing new is drawn." },
+          { k: "Arabic about the person.", v: "Every line names «الحساب», so no verb takes a gender; the name is isolated left to right inside the sentence." },
+          { k: "Title carries the name.", v: "The body says “this person”, so a long name wraps only in the header, where it reads as the question." }
+        ] }
+    ];
+
+    return {
+      sections,
+      measNote: "Body content height inside the 16px padding, measured in Chromium with IBM Plex Sans Arabic and an Arial-metric Latin face; header and footer excluded. The constants agree: Turn off empty = intro 42 + 12 + field 79 + 12 + field 79 = 224 (Arabic 48 + 12 + 84 + 12 + 84 = 240). The tallest body is 292, so every state fits, with 128px to spare.",
+      meas: [{"d": "Turn off", "s": "Empty", "en": "224 of 420", "ar": "240 of 420", "ph": "—", "ok": "Yes"}, {"d": "Turn off", "s": "Both missing", "en": "224 of 420", "ar": "240 of 420", "ph": "EN 245", "ok": "Yes"}, {"d": "Turn off", "s": "Code malformed", "en": "224 of 420", "ar": "not drawn", "ph": "—", "ok": "Yes"}, {"d": "Turn off", "s": "Sending", "en": "224 of 420", "ar": "240 of 420", "ph": "—", "ok": "Yes"}, {"d": "Turn off", "s": "Wrong password", "en": "224 of 420", "ar": "240 of 420", "ph": "—", "ok": "Yes"}, {"d": "Turn off", "s": "Wrong code · 2 attempts left", "en": "241 of 420", "ar": "260 of 420", "ph": "AR 260", "ok": "Yes"}, {"d": "Turn off", "s": "Wrong code · 1 attempt left", "en": "241 of 420", "ar": "260 of 420", "ph": "—", "ok": "Yes"}, {"d": "Turn off", "s": "Code expired", "en": "224 of 420", "ar": "240 of 420", "ph": "—", "ok": "Yes"}, {"d": "Turn off", "s": "Locked", "en": "292 of 420", "ar": "292 of 420", "ph": "—", "ok": "Yes"}, {"d": "Turn off", "s": "Already off", "en": "273 of 420", "ar": "292 of 420", "ph": "—", "ok": "Yes"}, {"d": "Turn off", "s": "Unreachable", "en": "292 of 420", "ar": "292 of 420", "ph": "—", "ok": "Yes"}, {"d": "Reset", "s": "Confirm · Lina Haddad", "en": "84 of 420", "ar": "72 of 420", "ph": "—", "ok": "Yes"}, {"d": "Reset", "s": "Confirm · long name", "en": "84 of 420", "ar": "72 of 420", "ph": "EN 105 · AR 96", "ok": "Yes"}, {"d": "Reset", "s": "Sending", "en": "84 of 420", "ar": "72 of 420", "ph": "—", "ok": "Yes"}, {"d": "Reset", "s": "Refused · account owner", "en": "152 of 420", "ar": "146 of 420", "ph": "—", "ok": "Yes"}, {"d": "Reset", "s": "Refused · already off", "en": "133 of 420", "ar": "124 of 420", "ph": "—", "ok": "Yes"}, {"d": "Reset", "s": "Signed in as someone else", "en": "133 of 420", "ar": "not drawn", "ph": "—", "ok": "Yes"}, {"d": "Reset", "s": "Unreachable", "en": "152 of 420", "ar": "124 of 420", "ph": "—", "ok": "Yes"}],
+      questions: [
+        { n: "Q1", q: "A form inside Confirm 420?", why: "The design system's Confirm 420 is “one question, two buttons, no fields”; dialogs with fields are Form 560. Turn off already has a field at 420, and the brief keeps it there.", rec: "Keep 420: it fits with room to spare (4). Amend the design system so a destructive confirm may hold up to two fields." },
+        { n: "Q2", q: "Where is the focus when Turn off opens?", why: "The destructive-confirm rule puts it on Cancel, so it's drawn there. But the person opened the dialog to type a password.", rec: "Focus Password on open. Keep Cancel-first for confirms without fields, such as Reset." },
+        { n: "Q3", q: "Is the password cleared after a wrong password?", why: "The brief keeps the code; it doesn't say what happens to the password. Drawn cleared and focused.", rec: "Clear it and focus it, as Sign in does." },
+        { n: "Q4", q: "Code expired isn't in the state list.", why: "Its copy is in the brief. A kept code is likely to be stale after a wrong password, so this is a common case.", rec: "Add it as state 5b: the error under Code, code cleared and focused, password kept. Say whether it counts as an attempt (recommend: no)." },
+        { n: "Q5", q: "Attempts left after a wrong password?", why: "Wrong codes show attempts left; wrong passwords don't, yet both lead to Locked.", rec: "One shared counter, shown under whichever field was wrong, from 2 left." },
+        { n: "Q6", q: "How is {{when}} written?", why: "Drawn as “in 15 minutes” / «بعد 15 دقيقة». The Arabic is a draft.", rec: "Relative under an hour, rounded up to the minute; a clock time (“at 14:35”) beyond that. Turn off stays pressable and shows the same message." },
+        { n: "Q7", q: "Buttons when it's already off?", why: "Screen 1 and Screen 2 both leave Cancel and Turn off / Reset under “already off”. There's nothing left to turn off.", rec: "Replace them with Close, as the account-owner refusal does." },
+        { n: "Q8", q: "No success message after Turn off?", why: "Screen 2 ends with the product's short success message; Screen 1 only closes.", rec: "Show one for consistency, e.g. “Two-step sign-in is off.” (needs copy)." },
+        { n: "Q9", q: "Account owner refused: keep the paragraph?", why: "The paragraph still says what a reset does, above a message saying it can't be done.", rec: "Replace the paragraph with the message, and keep only Close." },
+        { n: "Q10", q: "Is Cancel disabled while resetting?", why: "Screen 1 disables Cancel while sending; Screen 2 says only “a spinner on Reset”. Escape and the backdrop aren't mentioned in either.", rec: "Same as Screen 1 in both: Cancel disabled, Escape and backdrop ignored while sending." },
+        { n: "Q11", q: "«إعادة ضبط» here, «إعادة التعيين» on Reset password.", why: "ACC-188 uses «إعادة تعيين» for a password reset; this brief uses «إعادة ضبط».", rec: "Keep «إعادة ضبط» for two-step sign-in (nothing new is chosen), and note the difference in the glossary so it isn't “fixed” later." },
+        { n: "Q12", q: "Hide Reset while signed in as someone else?", why: "Today it's offered, then refused.", rec: "Hide the action when acting as someone else; keep the refusal as the fallback." },
+        { n: "Q13", q: "Phone width 375 or 390?", why: "Other drawings in this project use 390. Drawn at 375 as asked.", rec: "Both fit; settle one width for the project." }
+      ],
+      copy: [
+        { k: "Filled in", c: "#1F5480", w: "Locked · {{when}}", en: "…You can try again in 15 minutes.", ar: "…يمكنك المحاولة مرة أخرى بعد 15 دقيقة. («بعد 15 دقيقة» is a draft)" },
+        { k: "Drafted", c: "#B42318", w: "Panel, Off (own)", en: "Off. Signing in needs only your password. (given in English only)", ar: "غير مفعّل. يكفي إدخال كلمة المرور لتسجيل الدخول." },
+        { k: "Drafted", c: "#B42318", w: "Panel action", en: "Set up (given in English only)", ar: "إعداد" },
+        { k: "Placeholder", c: "#5A6779", w: "Record page", en: "Other record panels, unchanged", ar: "لوحات السجل الأخرى، دون تغيير" },
+        { k: "Unchanged", c: "#067647", w: "Everything else", en: "All other copy is the brief's, word for word. Nothing had to change to fit: the longest body is well under the cap, and the long-name title wraps cleanly in both languages.", ar: "" }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

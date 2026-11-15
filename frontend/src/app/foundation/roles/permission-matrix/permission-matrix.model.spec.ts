@@ -69,9 +69,15 @@ describe('buildMatrix (ACC-272)', () => {
       ['committees:view_all_tasks', 'committees:view_unit_tasks', 'committees:create_tasks', 'committees:manage_tasks'],
     ]);
     expect(c.keys).toEqual(c.groups.flatMap((g) => g.keys));
+    // ACC-164 — users:reset_mfa took Users to seven: it is split too, Reset
+    // beside Deactivate and Reactivate.
     const users = tenant().find((m) => m.module === 'users')!;
-    expect(users.keys.length).toBe(6);
-    expect(users.groups.map((g) => g.id)).toEqual([null]);
+    expect(users.keys.length).toBe(7);
+    expect(users.groups.map((g) => g.id)).toEqual(['people', 'access']);
+    expect(users.groups[1]!.keys).toEqual(['users:deactivate', 'users:reactivate', 'users:reset_mfa']);
+    const roles = tenant().find((m) => m.module === 'roles')!;
+    expect(roles.keys.length).toBeLessThanOrEqual(6);
+    expect(roles.groups.map((g) => g.id)).toEqual([null]);
   });
 
   it('keeps catalogue order outside groups', () => {

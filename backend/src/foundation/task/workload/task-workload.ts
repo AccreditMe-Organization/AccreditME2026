@@ -104,9 +104,5 @@ export function isPastThreshold(chosenOpen: number, othersOpen: readonly number[
   return chosenOpen >= THRESHOLD.ratio * least && chosenOpen - least >= THRESHOLD.minDifference;
 }
 
-/** Q6 — out of office NOW: both dates set and now inside them (ACC-173's reading). */
-export function isOutOfOffice(user: { outOfOfficeFrom: Date | null; outOfOfficeTo: Date | null }, now: Date): boolean {
-  if (!user.outOfOfficeFrom || !user.outOfOfficeTo) return false;
-  const t = now.getTime();
-  return user.outOfOfficeFrom.getTime() <= t && t <= user.outOfOfficeTo.getTime();
-}
+/** Q6 — out of office NOW. ACC-302: the one copy is out-of-office-cover.ts, re-exported here for its callers. */
+export { isOutOfOffice } from '../../../common/services/out-of-office-cover';

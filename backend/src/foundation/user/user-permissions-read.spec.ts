@@ -26,6 +26,7 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
 import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
+import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 
 const TENANT_ID = 'org-a';
 const CALLER_ID = 'user-caller';
@@ -51,6 +52,8 @@ describe("GET /users/:userId/permissions follows the user's own visibility (ACC-
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
+        // ACC-164 — the reset service the controller now takes; unused here.
+        { provide: UserMfaResetService, useValue: {} },
         UserService,
         StagePoolService,
         { provide: PrismaService, useValue: { user: { findFirst: findUser } } },

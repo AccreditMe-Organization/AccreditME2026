@@ -1364,9 +1364,10 @@ read off the Response, and only `INVALID_EMAIL_OR_PASSWORD` counts as a failed
 attempt: another refusal, or a thrown error such as a database outage, is a 500
 and records nothing, so an outage cannot lock people out. **`setupMfa()`**
 re-checks the password the same way and now reads the Response too: a wrong
-password is "Invalid password" as before, a `twoFactorRedirect` is **409 "MFA is
+password is 400 `INVALID_CREDENTIALS`, recorded against the lock (ACC-164, §1.17), a `twoFactorRedirect` is **409 "MFA is
 already enabled"**, and any other refusal is a 500 with nothing enabled.
 
+**FIXED (ACC-164, §1.17) — what follows was true until then.**
 **`disableMfa()` CANNOT SUCCEED FOR ANY USER — known, unchanged, tracked
 separately.** It re-checks the password with a sign-in and needs the session
 that sign-in creates. But for an account with MFA on — the only accounts that
@@ -1729,6 +1730,106 @@ its body would be copied into the audit trail.
   "Back to sign in" under it; Used offers Sign in, then "Forgot password?";
   Replaced offers "Back to sign in".
 - **On success**, Sign in shows the notice above its title, once.
+
+### 1.17 Turning two-step sign-in off, and the administrator reset (ACC-164)
+
+Plan, Ahmad's four rules, lane B's floor and the as-built notes:
+`backend/Plans/step-164-mfa-off.md` (§0b, §12). The design:
+`frontend/design-reference/AccreditMe Two-step Sign-in.dc.html`.
+
+**Turning it off yourself: `POST /auth/mfa/disable { password, code }`**
+(TenantGuard; `code` is six digits). `AuthService.disableMfa()` reads every
+Better Auth answer as a returned Response:
+
+| # | Step | Outcome |
+|---|---|---|
+| 0 | The sign-in lock (`LoginAttemptService`) | locked: a `locked` attempt is recorded, `ACCOUNT_LOCKED` + `lockedUntil` |
+| 1 | `signInEmail` proves the password | `INVALID_EMAIL_OR_PASSWORD`: an `invalid_password` attempt is recorded (it counts towards the lock), `INVALID_CREDENTIALS` |
+| 2 | No `twoFactorRedirect` | it is not on: the stray session is signed out, `MFA_NOT_ENABLED` |
+| 3 | `verifyTOTP` answers the challenge step 1 issued | `INVALID_CODE`: `MFA_INVALID` + `attemptsRemaining`; `ACCOUNT_TEMPORARILY_LOCKED`: `ACCOUNT_LOCKED` + the two-step lock's end. Any other code is a fault. The challenge is cleared after every refusal |
+| 4 | `disableTwoFactor` in the session step 3 made | a refusal is a fault (the password was proved in step 1); that session is signed out either way |
+| 5 | Audit `UPDATE` / `User` `{ event: 'mfa_disabled' }`, then the `mfa_disabled` security notice | — |
+
+- **Every refusal is 400** (`MfaChangeRefusalException`, `mfa-change-refusal.ts`),
+  with the sign-in codes and details. A 401 on a signed-in route is renewed and
+  retried by the app's interceptor, which would submit a wrong password twice.
+  `setupMfa()` got the same fix: the lock check first, a wrong password recorded,
+  and 400 `INVALID_CREDENTIALS`.
+- **Two locks, not one counter.** Wrong passwords count towards the sign-in lock;
+  wrong codes towards Better Auth's per-person two-step lock (ten, fifteen
+  minutes). `attemptsRemaining` is the codes left before that lock
+  (`attemptsBeforeLock()`): every press has a fresh challenge, so the
+  per-challenge five never binds here.
+- **No "code expired" answer.** A stale authenticator code fails the TOTP check
+  and is `INVALID_CODE`. A missing or spent challenge cannot follow from what the
+  person typed, so it is a fault.
+- **Other sessions are not ended** (Ahmad, rule 3).
+
+**The administrator reset: `POST /users/:id/mfa/reset`** (`users:reset_mfa`,
+204). `UserMfaResetService.resetMfa()`, every check before any write:
+
+| Order | Check | Refusal |
+|---|---|---|
+| 1 | `findFirst({ id, organizationId })` | 404 `User not found`, the body an invented id gets |
+| 2 | yourself | 409 `MFA_RESET_SELF` |
+| 3 | impersonating | 409 `MFA_RESET_IMPERSONATING` |
+| 4 | the account owner (`ownedOrganizations`) | 409 `ACCOUNT_OWNER_PROTECTED` |
+| 5 | the floor: the person holds the active root role and the actor does not (`holdsActiveRootRole()`, one indexed read each, only when needed) | 409 `MFA_RESET_HIGHER_ACCOUNT` |
+| 6 | no sign-in yet, or already off | 409 `MFA_NOT_ENABLED` |
+
+Then ONE transaction: the person's row `FOR UPDATE`, `assertNotAccountOwner()`,
+the flag re-read under the lock (a second administrator's press is
+`MFA_NOT_ENABLED` and writes nothing), `resetTwoFactorInTx()`,
+`endEverySessionInTx()`. After the commit: the audit row (`UPDATE` / `User`,
+actor the administrator, `{ event: 'mfa_reset' }`), then the `mfa_reset`
+security notice. An INACTIVE person can be reset, for when they return.
+
+**`resetTwoFactorInTx()` (`foundation/auth/two-factor-reset.ts`)** makes exactly
+the writes Better Auth's `disableTwoFactor` makes, inside our transaction:
+`AuthUser.twoFactorEnabled = false`, the `AuthTwoFactor` row deleted, and the
+person's open `2fa-*` challenges and their counters deleted. **The row must
+go:** `enableTwoFactor` gives a new secret `verified = the old row was
+verified`, and `verifyTOTP` turns the flag on only for an unverified secret, so a
+leftover row makes the next set-up say "on" while sign-in never asks for a code.
+`better-auth.contract.spec.ts` pins each of these facts;
+`two-factor-writes.scan.spec.ts` fails any write of two-step state outside this
+file.
+
+**Who sees the status (Ahmad, rule 4).** `GET /users/:id` answers
+`twoStep: { enabled, mayReset } | null`, from `twoFactorEnabled` read in the
+record's own query and `UserMfaResetService.twoStepFor()`:
+- `null` (no panel at all, never "Off") for a viewer without `users:reset_mfa`,
+  on your own record (which reads `/auth/mfa/status`), on the account owner's,
+  and below the floor — the same rule the route refuses with, in one file,
+  `mfa-reset-rule.ts`;
+- `mayReset` is `enabled` and not impersonating.
+The users list carries nothing. Nothing is on the per-request path.
+
+**The permission.** `users:reset_mfa` ("Reset another person's two-step
+sign-in"), checked from day one, grantable to any role, seeded to Organization
+Administrator only (Platform Administrator holds the whole catalogue by
+construction). It sits in Users' "Account access" group with Deactivate and
+Reactivate; the seventh key split Users into "People and profiles" and "Account
+access". Existing organisations get it from
+`npm run backfill:acc164-reset-mfa-permission` (grant-only, the Permission row
+upserted, one audit row per organisation, the platform organisation skipped):
+dry run, `-- --execute` after the deploy, then a dry run reporting 0.
+
+**Screens.**
+- **Turn off** (your own record) is a 420 confirm with Password and "Code from
+  your authenticator app". A wrong password is said under Password, which is
+  cleared and focused; a wrong code under Code, cleared and focused, with "1
+  attempt left." / "2 attempts left." on its own line. Locked, unreachable and
+  "already off" are a message above the buttons; "already off" leaves only Close.
+  While sending, Cancel is disabled and Escape is ignored. Done: "Two-step
+  sign-in is off."
+- **Reset** (someone else's record) is the Two-step panel's red action, opening
+  a destructive confirm that names the person (a left-to-right isolate). The
+  owner refusal replaces the paragraph; owner, already off and impersonating
+  leave only Close. Done: "Two-step sign-in was reset.", and the panel reads
+  "Off.".
+- Every refusal is said from its code (`two-step-refusal.ts`), never the English
+  message. The tallest body measured 337 px against the 420 cap.
 
 ---
 
@@ -4733,25 +4834,62 @@ step for every other tenant in the same cycle. Same failure shape as
 ACC-48, one scope narrower. Not attempted by ACC-49 (whose scope was
 explicitly the step level) and not currently tracked by its own ticket.
 
-### 3.5 Out-of-Office Routing — A Real Limitation
+### 3.5 Out-of-office routing for new tasks (ACC-302)
 
-**`TaskService.create()` does not apply out-of-office substitution at
-all.** Confirmed by reading the full method: `filterActiveUsers()`
-filters strictly on `User.status === 'ACTIVE'` (excludes
-suspended/invited users) and never references `outOfOfficeFrom`,
-`outOfOfficeTo`, or `actingUserId`. Out-of-office routing (Absence
-Management Pattern 1) is implemented exactly once in the codebase —
-`WorkflowService.applyOutOfOfficeRouting()` (Section 2.5.1) — which
-runs **before** `WorkflowService.executeCreateTask()` calls
-`TaskService.create()`, substituting acting users into the assignee
-list upstream. **Net effect**: a task created via the workflow engine's
-`CREATE_TASK` action gets correct out-of-office substitution. A task
-created directly through `POST /tasks` (any user holding `tasks:create`,
-manually) does **not** — if it's assigned to a user currently
-out-of-office, no substitution happens, and no coverage-gap
-notification fires either (that notification path,
-`notifyTenantAdminsOfCoverageGap()`, also lives only inside
-`WorkflowService`, not `TaskService`).
+**Rewritten (ACC-302, 14 Nov).** This section described
+`WorkflowService.applyOutOfOfficeRouting()` running before CREATE_TASK, and
+manual tasks getting no routing. Both are gone: ACC-190 retired CREATE_TASK, and
+the engine's old routing went with it. What is true now:
+
+- **One rule, one file: `common/services/out-of-office-cover.ts`.**
+  - `isOutOfOffice()` is the window test: both dates set, now inside them,
+    inclusive. It is the one copy, used by `StagePoolService`,
+    `TaskAuthorityService` (ACC-173) and the workload hint (ACC-199).
+  - `activeCoverOf()` is the cover test: away, `actingUserId` set, and that user
+    ACTIVE in the same organisation.
+  - `coversOf()` / `routeToCovers()` are the TASK rule. One read for any number
+    of people, scoped by organisation.
+- **The task rule (Ahmad, 13–14 Nov).** A NEW task for an ACTIVE person who is
+  away with an active cover goes to the cover.
+  - It applies only to a placement's direct people: a chosen person (unit →
+    position → person, or a committee's chosen member) and a one-holder
+    position's holder.
+  - **One hop:** a cover who is away too means the task stays with the person.
+  - **Never:**
+    - pools (a position or seat with several people), which still leave covers
+      out (6 Oct);
+    - the named-people path or `prepareRecordTask()`;
+    - a task already held. Nothing moves when someone goes away or returns
+      (ACC-132).
+- **Who calls it, batched:**
+  - `TaskAssignmentService.resolvePlacement()`, so New task and Reassign agree;
+  - `StageTaskDefinitionService.prepareEntryTasks()`, ONE read for every
+    definition of a stage entry.
+- **What is recorded:**
+  - the cover's `TaskAssignee` row carries `delegationReason =
+    OUT_OF_OFFICE_COVERAGE` and `delegationContextId` = the away person;
+  - the CREATE (or DELEGATE) audit row's `metadata.outOfOfficeCover` lists
+    `[{ forUserId, coverUserId }]`, by id;
+  - the cover's notice says "(covering for {name})", and the away person is told
+    nothing;
+  - "covering for" on screen follows ACC-101's qualifier rule, unchanged
+    (`DelegationLabelService`).
+- **The creator is told before Create task.** The picker's person rows
+  (`GET /tasks/assignees`, `GET /tasks/assignees/committee`) carry
+  `cover: { userId, name } | null`: who a new task for that person goes to now.
+  - It is filled for every caller the picker serves, in one read for the list.
+  - It never carries dates or a reason.
+- **"✦ Suggest someone"** is never offered or answered for a covered person:
+  their row's `canSuggest` is false, and `POST /tasks/assignment/workload-hint`
+  refuses them with `WORKLOAD_NO_SUGGESTION` before any call or charge.
+- **Stage pools are unchanged** (ACC-271, Q7): they still include an away
+  member's cover, with no one-hop check.
+- **Specs:**
+  - `out-of-office-cover.spec.ts`;
+  - `workload-cover.spec.ts`;
+  - `task-cover-routing.db-spec.ts` (real Postgres). Five mutations turn it red:
+    the one-hop check, the ACTIVE check, the stage path's call,
+    `resolvePlacement()`'s call, and the picker's `cover`.
 
 ### 3.6 Permission Model
 
@@ -6836,6 +6974,22 @@ health detector.
 - **An organisation unticks (or ticks) a seat through its override row**
   (§6.2, `PATCH /lookups/values/:id/attributes`); its own seats carry
   `required` like any attribute. A hidden seat is not required.
+- **On screen (#300):** the Lookups values page for `committee_member_role`
+  (`lookup-value-list.component.ts`).
+  - **Each SHARED seat** has a "Required seat" switch for `lookups:manage`
+    holders, named "Required seat: {seat}". Everyone else sees a read-only
+    line. It shows only while the category's schema declares `required` as a
+    boolean.
+  - **What it means is said once**, as one line above the list.
+  - **An organisation's own seat** has no switch; its value form sets it.
+  - **A press** sends `true` or `false` (never `null`: "the default" is not
+    offered), then reads the list again. One save runs at a time.
+  - **The switch shows the pressed value until the list is read again**, then
+    the stored one. It is `readonly`, so PrimeNG does not flip it; the click
+    handler sends the change.
+  - **A refusal is said from its code** under the row, in `--am-danger-ink`:
+    `LOOKUP_ATTRIBUTE_INVALID`, a 404, or our own sentence. Never the server's
+    English.
 - **ONE reader: `foundation/committees/committee-seat-rules.ts`.**
   `requiredSeats()` is one raw query that answers exactly what `getValues()`
   shows, filtered by `required` (a db-spec pins the two together);
@@ -6880,8 +7034,16 @@ health detector.
 - **Proved against a real Postgres:** two removals of two Chairmen at once,
   exactly one lands (ten rounds); Approve and removing the only Chairman at
   once, never both, never a deadlock (ten rounds).
-- **The transfer wizard** removes seats through the same endpoint (A5); what
-  it must say is lane A's (`step-286-lane-a.md` §3).
+- **The transfer wizard** removes seats through the same endpoint (A5). Since
+  #300 it says the refusal from its code: `failureText()` reads
+  `committeeSeatRefusal()` before the 404 branch, naming the seat in the
+  reader's language.
+  - The row stays in the failed list while the other removes complete, and Try
+    again sends the failed rows only.
+  - A `committees:view` holder gets a link to `/committees/:id` on that row,
+    where another holder is appointed.
+  - Nothing is said before Submit: the wizard's seat list does not say whether
+    a seat is required or its last holder, and the client does not guess.
 - **Screens:** Remove member and Change role say
   `committee.refusal.requiredSeatLastHolder` ("Appoint another {{seat}}
   first.") from the code (`committeeSeatRefusal()`).
@@ -12852,8 +13014,8 @@ the log.
   secret, but **MFA is not active yet** — `verified` stays `false` on
   `AuthTwoFactor` and `AuthUser.twoFactorEnabled` stays `false` until
   `verifySetupMfa()` succeeds with a real code from the user's
-  authenticator app. `disableMfa()` also re-verifies password before
-  turning it off.
+  authenticator app. `disableMfa()` takes the password AND a current
+  code, and an administrator can reset another person's (ACC-164, §1.17).
 
 Full frontend-consumption detail for the Auth surface (`/auth/me`,
 `/accept-invitation`, `/forgot-password`, `/reset-password`, the four
@@ -12891,6 +13053,9 @@ users:transfer   — UserController: getTransferContext,
                    transferUser (all four — ACC-46, Section 12.9)
 users:reactivate — UserController: reactivate (ACC-83; the mirror of
                    users:deactivate, a separate key)
+users:reset_mfa  — UserController: resetMfa (ACC-164); and
+                   UserMfaResetService.twoStepFor() fills GET /users/:id's
+                   twoStep only for a holder (§1.17)
 ```
 
 **A user's roles and permissions are read on the user's routes, gated as roles
@@ -13169,7 +13334,7 @@ enforces:
 | Reactivate | `users:reactivate`, an inactive user |
 | Revoke invitation | `users:invite`, an invited user; afterwards back to `/users`, since the record is deleted |
 | Manage roles | `roles:manage`, on the Roles panel; the existing dialog, hosted as the list hosts it |
-| Two-step sign-in | own record only — the endpoints act on the caller |
+| Two-step sign-in | own record: Set up / Turn off (the endpoints act on the caller). Someone else's: the panel only when `twoStep` is sent, Reset when `mayReset` (ACC-164, §1.17) |
 
 **The status actions are written once**, in `UserStatusActionsService`
 (`statusActionFor()` decides which applies; the three confirms are the
