@@ -533,14 +533,6 @@ describe('User record dialogs (ACC-120 slice 5)', () => {
       expect(host.visible()).toBe(true);
     });
 
-    it('Turn off sends the same request the page did, and shows the refusal', () => {
-      auth.disableMfa.and.returnValue(throwError(() => ({ error: { message: 'Invalid password' }, status: 401 })));
-      open('off');
-      type('#two-step-off-password', 'typed-in-test');
-      click('[data-two-step-off-confirm]');
-      expect(auth.disableMfa).toHaveBeenCalledOnceWith('typed-in-test');
-      expect(document.body.textContent).toContain('Invalid password');
-      expect(host.visible()).toBe(true);
-    });
+    // ACC-164 — Turn off's request and refusals: two-step-dialogs.spec.ts.
   });
 });

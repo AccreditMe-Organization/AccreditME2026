@@ -30,6 +30,7 @@ import { EditProfileDialogComponent } from './edit-profile-dialog.component';
 import { CoverOption, OutOfOfficeDialogComponent } from './out-of-office-dialog.component';
 import { TwoStepOffDialogComponent } from './two-step-off-dialog.component';
 import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
+import { TwoStepResetDialogComponent } from './two-step-reset-dialog.component';
 import { USER_PANEL_GRID } from './user-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
@@ -70,7 +71,11 @@ interface Fact {
  *   Reactivate          users:reactivate, an inactive user
  *   Revoke invitation   users:invite, an invited user — then back to /users
  *   Manage roles        roles:manage, on the Roles panel
- *   Two-step sign-in    own record only (the endpoints act on the caller)
+ *   Two-step sign-in    own record: Set up / Turn off (the endpoints act on the
+ *                       caller). Someone else's: shown only when the server's
+ *                       `twoStep` says so (users:reset_mfa, not the owner, the
+ *                       Organization Administrator floor — ACC-164), with Reset
+ *                       while it is on and you are not signed in as someone else.
  *
  * The status actions are the Users list's own, through
  * UserStatusActionsService, so the two screens cannot disagree.
@@ -106,6 +111,7 @@ interface Fact {
     OutOfOfficeDialogComponent,
     TwoStepSetupDialogComponent,
     TwoStepOffDialogComponent,
+    TwoStepResetDialogComponent,
   ],
   template: `
     @if (loadError()) {
@@ -345,6 +351,28 @@ interface Fact {
               </p>
             </app-record-panel>
           }
+
+          <!-- ACC-164 — someone else's two-step sign-in, only when the server
+               says this viewer may reset it (rule 4). Never "Off" for a viewer
+               it is not shown to: no panel at all. -->
+          @if (!isOwn() && u.twoStep; as ts) {
+            <app-record-panel data-panel="twoStepOther" [heading]="'userRecord.twoStep.heading' | translate" [bodyHeight]="120">
+              @if (ts.mayReset) {
+                <button
+                  panelActions
+                  type="button"
+                  class="text-[12.5px] text-[var(--am-danger-ink)] hover:underline"
+                  (click)="twoStepResetOpen.set(true)"
+                  data-action="twoStepReset"
+                >
+                  {{ 'userRecord.twoStep.reset' | translate }}
+                </button>
+              }
+              <p class="m-0 px-4 py-3 text-[13px]" data-two-step-status>
+                {{ (ts.enabled ? 'userRecord.twoStep.on' : 'userRecord.twoStep.offOther') | translate }}
+              </p>
+            </app-record-panel>
+          }
         </div>
       </div>
 
@@ -375,8 +403,19 @@ interface Fact {
       <app-two-step-off-dialog
         [visible]="twoStepOffOpen()"
         (visibleChange)="twoStepOffOpen.set($event)"
-        (disabled)="twoStepHandle()?.retry()"
+        (disabled)="onTwoStepOff()"
+        (stale)="twoStepHandle()?.retry()"
       />
+      @if (!isOwn() && u.twoStep) {
+        <app-two-step-reset-dialog
+          [visible]="twoStepResetOpen()"
+          (visibleChange)="twoStepResetOpen.set($event)"
+          [userId]="u.id"
+          [userName]="u.name"
+          (done)="onTwoStepReset()"
+          (stale)="loadUser()"
+        />
+      }
 
       <!-- Transfer — the wizard both hosts share, on the shell (TemplateRef, so
            every opening starts at step one). -->
@@ -477,6 +516,7 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly outOfOfficeOpen = signal(false);
   readonly twoStepSetupOpen = signal(false);
   readonly twoStepOffOpen = signal(false);
+  readonly twoStepResetOpen = signal(false);
   readonly transferOpen = signal(false);
   readonly transferDirty = signal(false);
   readonly rolesOpen = signal(false);
@@ -709,7 +749,20 @@ export class UserRecordComponent implements OnInit, OnDestroy {
     this.twoStepHandle()?.destroy();
   }
 
-  private loadUser(): void {
+  /** ACC-164 — the product's short success line, then the status read again. */
+  onTwoStepOff(): void {
+    this.actionError.set(null);
+    this.actionMessage.set(this.translate.instant('userRecord.twoStep.offDone'));
+    this.twoStepHandle()?.retry();
+  }
+
+  onTwoStepReset(): void {
+    this.actionError.set(null);
+    this.actionMessage.set(this.translate.instant('userRecord.twoStep.resetDone'));
+    this.loadUser();
+  }
+
+  loadUser(): void {
     this.userService.getById(this.userId).subscribe({
       next: (u) => {
         this.user.set(u);
