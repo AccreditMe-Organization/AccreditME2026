@@ -6836,6 +6836,22 @@ health detector.
 - **An organisation unticks (or ticks) a seat through its override row**
   (§6.2, `PATCH /lookups/values/:id/attributes`); its own seats carry
   `required` like any attribute. A hidden seat is not required.
+- **On screen (#300):** the Lookups values page for `committee_member_role`
+  (`lookup-value-list.component.ts`).
+  - **Each SHARED seat** has a "Required seat" switch for `lookups:manage`
+    holders, named "Required seat: {seat}". Everyone else sees a read-only
+    line. It shows only while the category's schema declares `required` as a
+    boolean.
+  - **What it means is said once**, as one line above the list.
+  - **An organisation's own seat** has no switch; its value form sets it.
+  - **A press** sends `true` or `false` (never `null`: "the default" is not
+    offered), then reads the list again. One save runs at a time.
+  - **The switch shows the pressed value until the list is read again**, then
+    the stored one. It is `readonly`, so PrimeNG does not flip it; the click
+    handler sends the change.
+  - **A refusal is said from its code** under the row, in `--am-danger-ink`:
+    `LOOKUP_ATTRIBUTE_INVALID`, a 404, or our own sentence. Never the server's
+    English.
 - **ONE reader: `foundation/committees/committee-seat-rules.ts`.**
   `requiredSeats()` is one raw query that answers exactly what `getValues()`
   shows, filtered by `required` (a db-spec pins the two together);
@@ -6880,8 +6896,16 @@ health detector.
 - **Proved against a real Postgres:** two removals of two Chairmen at once,
   exactly one lands (ten rounds); Approve and removing the only Chairman at
   once, never both, never a deadlock (ten rounds).
-- **The transfer wizard** removes seats through the same endpoint (A5); what
-  it must say is lane A's (`step-286-lane-a.md` §3).
+- **The transfer wizard** removes seats through the same endpoint (A5). Since
+  #300 it says the refusal from its code: `failureText()` reads
+  `committeeSeatRefusal()` before the 404 branch, naming the seat in the
+  reader's language.
+  - The row stays in the failed list while the other removes complete, and Try
+    again sends the failed rows only.
+  - A `committees:view` holder gets a link to `/committees/:id` on that row,
+    where another holder is appointed.
+  - Nothing is said before Submit: the wizard's seat list does not say whether
+    a seat is required or its last holder, and the client does not guess.
 - **Screens:** Remove member and Change role say
   `committee.refusal.requiredSeatLastHolder` ("Appoint another {{seat}}
   first.") from the code (`committeeSeatRefusal()`).
