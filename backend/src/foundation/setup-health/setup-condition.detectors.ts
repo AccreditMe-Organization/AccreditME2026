@@ -86,8 +86,13 @@ export type SetupConditionDetector = (
 //
 // ACC-271 — STAGE_ON_STARTING_ASSIGNMENT was deferred the same way from PR 1 to
 // PR 3, which adds its detector (and Keep this assignment) and removes it here.
+//
+// ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT is deferred the same way: PR 1 adds
+// the value (and the frontend learns it) with nothing writing it; PR 2 adds the
+// detector, reports it and removes it here.
 export const DEFERRED_SETUP_CONDITION_TYPES = [
   'POSITION_WITHOUT_ROLE',
+  'COMMITTEE_MISSING_REQUIRED_SEAT',
 ] as const satisfies readonly SetupConditionType[];
 
 export type ActiveSetupConditionType = Exclude<

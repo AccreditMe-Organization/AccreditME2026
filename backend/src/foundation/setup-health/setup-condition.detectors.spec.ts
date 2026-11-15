@@ -78,8 +78,11 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   //
   // ACC-271 — STAGE_ON_STARTING_ASSIGNMENT was on the list from PR 1 until PR 3
   // added its detector, the same split ACTING_HEAD_OPEN_ENDED made.
-  it('defers POSITION_WITHOUT_ROLE only, and gives no deferred type a detector', () => {
-    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
+  //
+  // ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT is on the list in PR 1, and PR 2
+  // takes it off when it adds the detector.
+  it('defers POSITION_WITHOUT_ROLE and COMMITTEE_MISSING_REQUIRED_SEAT only, and gives no deferred type a detector', () => {
+    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE', 'COMMITTEE_MISSING_REQUIRED_SEAT']);
     for (const type of DEFERRED_SETUP_CONDITION_TYPES) {
       expect(Object.keys(detectors.byType)).not.toContain(type);
     }
