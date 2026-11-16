@@ -300,11 +300,6 @@ enum SetupConditionType {
   // deploys (CLAUDE.md's enum rule): PR 1 adds the value and teaches every
   // reader; PR 2's detector is the first writer.
   COMMITTEE_MISSING_REQUIRED_SEAT
-  // ACC-283 — a committee change request under review that nobody can decide
-  // (the chain of authority finds no one: only while the root unit is already
-  // headless). Two deploys: PR 1 adds the value and the screens learn it, with
-  // nothing writing it; PR 3's detector is the first writer.
-  CHANGE_REQUEST_WITHOUT_DECIDER
 }
 
 // ACC-271 — who works a stage, one kind per entry; entries join with "or".

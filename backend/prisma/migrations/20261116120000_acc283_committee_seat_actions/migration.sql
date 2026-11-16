@@ -1,6 +1,3 @@
--- AlterEnum
-ALTER TYPE "SetupConditionType" ADD VALUE 'CHANGE_REQUEST_WITHOUT_DECIDER';
-
 -- CreateTable
 CREATE TABLE "CommitteeSeatAction" (
     "id" TEXT NOT NULL,

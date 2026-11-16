@@ -81,17 +81,6 @@ export function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         queryParams: {},
         permissions: ['committees:view', 'committees:add_member'],
       };
-    case 'CHANGE_REQUEST_WITHOUT_DECIDER':
-      // ACC-283 — the root unit's Headship, where a head or an acting head is
-      // appointed: once someone heads it, the chain has someone to decide.
-      // The same route and permissions as ORG_UNIT_WITHOUT_HEAD's Fix.
-      return condition.subject.rootUnitId
-        ? {
-            link: ['/organization'],
-            queryParams: { head: condition.subject.rootUnitId },
-            permissions: ['org:view', 'org:manage'],
-          }
-        : null;
     case 'STORAGE_ALMOST_FULL':
       // ACC-260 PR D — the recycle bin, where deleted files that still count
       // against the limit are purged. Its route and API need tenant:manage_config.
@@ -274,11 +263,6 @@ export class SetupConditionRows {
             (s.seats ?? [])
               .map((seat) => this.language.bilingual(seat.labelEn, seat.labelAr))
               .join(this.translate.instant('common.listSeparator')) || '—',
-        });
-      case 'CHANGE_REQUEST_WITHOUT_DECIDER':
-        // ACC-283 — the committee is the row's title; the request by its number.
-        return t('changeRequestWithoutDecider', {
-          number: s.requestNumber === undefined ? '—' : this.format.number(s.requestNumber),
         });
     }
   }
