@@ -112,7 +112,7 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
     // workflowInstanceId and sourceStageId being null or set, on a record id
     // no committee has (so no other count here sees them).
     const template = await prisma.workflowTemplate.create({ data: { organizationId: org, nameEn: 'Combo', objectType: 'COMMITTEE' } });
-    const stage = await prisma.workflowStage.create({ data: { workflowTemplateId: template.id, nameEn: 'Step', order: 1 } as never });
+    const stage = await prisma.workflowStage.create({ data: { workflowTemplateId: template.id, nameEn: 'Step', order: 1, whoMode: 'ANY_ONE' } });
     const instance = await prisma.workflowInstance.create({
       data: { organizationId: org, workflowTemplateId: template.id, objectType: 'COMMITTEE', objectId: `combo-${record}` } as never,
     });
