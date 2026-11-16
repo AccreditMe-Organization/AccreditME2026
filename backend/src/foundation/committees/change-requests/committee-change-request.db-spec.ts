@@ -106,6 +106,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
     const slug = `acc239-${randomUUID().slice(0, 8)}`;
     const org = (await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } })).id;
     await applyWorkflowSeed(prisma, org, [CR_SEED]);
+    // ACC-283 PR 2 — every bootstrapped organisation has one; the finish task's SLA reads it.
+    await calendar.getOrCreate(org);
 
     // The committee lifecycle, keyed as the seed keys it, with the seed's stage
     // rules — its flags and record actions (ACC-255 PR 2: what a change request
@@ -139,10 +141,19 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       (await prisma.user.create({ data: { organizationId: org, email: `${slug}-${name}@example.test`, name, status: 'ACTIVE' } })).id;
     const ids = { requester: await user('Requester'), approver: await user('Approver'), approver2: await user('Approver Two'), editor2: await user('Editor Two'), reader: await user('Reader') };
 
-    // committees:approve through a real role, so Submit's notice finds its holders.
+    // committees:approve through a real role. ACC-283 PR 2: it decides nothing any
+    // more; the requester keeps it to prove that.
     const role = await prisma.role.create({ data: { organizationId: org, nameEn: 'Approvers', key: `APPROVERS_${slug}` } });
     await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: await permission('committees', 'approve') } });
     for (const u of [ids.approver, ids.approver2, ids.requester]) await prisma.userRole.create({ data: { userId: u, roleId: role.id } });
+    // ACC-283 PR 2 — the CHAIN decides: both approvers hold the root unit's head
+    // position (a successor pending, say), and the committees are owned by the
+    // root, so the root step names them both. The requester heads nothing.
+    const headPosition = await prisma.orgPosition.create({ data: { organizationId: org, nameEn: 'Director', grade: 10, isUnitHeadPosition: true } });
+    await prisma.user.updateMany({
+      where: { id: { in: [ids.approver, ids.approver2] }, organizationId: org },
+      data: { positionId: headPosition.id, primaryOrgUnitId: unit },
+    });
 
     const committee = async (nameEn: string) => {
       const c = await prisma.committee.create({
@@ -224,23 +235,40 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect((await requests.getOne(r.id, w.org, w.approver)).status).toBe('under_review');
     });
 
-    it('deciding needs committees:approve', async () => {
+    // ACC-283 PR 2 — the chain decides, never committees:approve.
+    it('deciding needs a place in the chain: a reader is told who decides; committees:approve alone decides nothing', async () => {
       const w = await world();
       const r = await submitted(w);
-      expect(await outcome(requests.approve(r.id, w.org, w.editor2))).toBe('CHANGE_REQUEST_NOT_ALLOWED');
-      expect(await outcome(requests.reject(r.id, { reason: 'n' }, w.org, w.reader))).toBe('CHANGE_REQUEST_NOT_ALLOWED');
+      expect(await outcome(requests.approve(r.id, w.org, w.editor2))).toBe('CHANGE_REQUEST_NOT_DECIDER');
+      expect(await body(requests.reject(r.id, { reason: 'n' }, w.org, w.reader))).toEqual([
+        403,
+        expect.objectContaining({
+          code: 'CHANGE_REQUEST_NOT_DECIDER',
+          awaitingDecisionBy: { kind: 'UNIT_HEAD', unit: { id: w.unit, nameEn: 'Root', nameAr: null } },
+        }),
+      ]);
+      // A holder of committees:approve outside the chain: refused like anyone else.
+      const holder = await prisma.user.create({ data: { organizationId: w.org, email: `${w.slug}-holder@example.test`, name: 'Holder', status: 'ACTIVE' } });
+      expect(await outcome(requests.approve(r.id, w.org, { userId: holder.id, permissions: [VIEW, APPROVE] }))).toBe('CHANGE_REQUEST_NOT_DECIDER');
+      // Someone who may not even read it: the 404 a missing request gets.
+      expect(await outcome(requests.approve(r.id, w.org, { userId: holder.id, permissions: [APPROVE] }))).toBe('Change request not found');
+      // A unit head without any committee key decides.
+      expect(await outcome(requests.approve(r.id, w.org, { userId: w.approver.userId, permissions: [] }))).toBe('OK');
     });
 
-    it('withdraw: an approver withdraws a draft or a returned request, never one under review; the requester any open one', async () => {
+    // ACC-283 Q8 — nobody but the requester withdraws, at any open stage.
+    it('withdraw: only the requester, at any open stage; a decider is refused even for a returned request', async () => {
       const w = await world();
       const r = await submitted(w);
       expect(await outcome(requests.withdraw(r.id, w.org, w.approver))).toBe('CHANGE_REQUEST_NOT_REQUESTER');
       await requests.returnForChanges(r.id, { note: 'Say which members' }, w.org, w.approver);
-      expect((await requests.getOne(r.id, w.org, w.approver)).actions.withdraw).toBe(true);
-      expect(await outcome(requests.withdraw(r.id, w.org, w.approver2))).toBe('OK');
+      expect((await requests.getOne(r.id, w.org, w.approver)).actions.withdraw).toBe(false);
+      expect(await outcome(requests.withdraw(r.id, w.org, w.approver2))).toBe('CHANGE_REQUEST_NOT_REQUESTER');
+      expect((await requests.getOne(r.id, w.org, w.requester)).actions.withdraw).toBe(true);
+      expect(await outcome(requests.withdraw(r.id, w.org, w.requester))).toBe('OK');
       const after = await requests.getOne(r.id, w.org, w.requester);
       expect(after.status).toBe('withdrawn');
-      expect(after.withdrawnById).toBe(w.approver2.userId);
+      expect(after.withdrawnById).toBe(w.requester.userId);
 
       const w2 = await world();
       const own = await submitted(w2);
@@ -392,7 +420,8 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       const c = await prisma.committee.findFirstOrThrow({ where: { id: w.committee } });
       expect(c).toMatchObject({ quorumCount: 4, nameEn: 'Quality Council' });
       expect((await requests.getOne(r.id, w.org, w.approver)).status).toBe('under_review');
-      expect(await prisma.task.count({ where: { organizationId: w.org, sourceId: w.committee } })).toBe(0);
+      // No terms task (the requester's finish task, completed at Submit, is not one).
+      expect(await prisma.task.count({ where: { organizationId: w.org, sourceId: w.committee, title: 'Revise the terms of reference' } })).toBe(0);
       expect(await prisma.auditLog.count({ where: { objectType: 'Committee', objectId: w.committee } })).toBe(0);
     });
 
@@ -833,7 +862,15 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect((await requests.list(w.committee, { sort: 'status', dir: 'asc' }, w.org, w.reader)).items.map((i) => i.status)).toEqual(['draft', 'rejected']);
       expect((await requests.list(w.committee, { q: '#2' }, w.org, w.reader)).items.map((i) => i.id)).toEqual([second.id]);
       expect((await requests.openSummary(w.committee, w.org, w.reader)).request?.id).toBe(second.id);
-      expect((await requests.getOne(second.id, w.org, w.reader)).actions).toEqual({ edit: false, submit: false, withdraw: false, approve: false, return: false, reject: false });
+      expect((await requests.getOne(second.id, w.org, w.reader)).actions).toEqual({
+        edit: false,
+        submit: false,
+        withdraw: false,
+        approve: false,
+        return: false,
+        reject: false,
+        approveNow: false,
+      });
     });
 
     it('awaiting decision lists requests under review that the viewer did not raise', async () => {
@@ -1075,6 +1112,147 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect(read.labels[a.other]).toEqual({ en: 'Patient Safety Committee', ar: null });
       for (const foreign of [bType, b.unit, b.committee]) expect(read.labels[foreign]).toBeUndefined();
       expect(Object.keys(read.labels).sort()).toEqual([aType, a.other].sort());
+    });
+  });
+
+  // ── ACC-283 PR 2: the chain of authority, Approve now, the finish task ──────
+  //
+  // In this world both approvers hold the root unit's head position and the
+  // committees are owned by the root, so the chain's root step names them both.
+
+  describe('ACC-283 PR 2 — the chain decides', () => {
+    const FINISH = 'Finish or withdraw the change request';
+    const finishTasks = (w: World) =>
+      prisma.task.findMany({ where: { organizationId: w.org, sourceId: w.committee, title: FINISH }, orderBy: { createdAt: 'asc' } });
+    const noHead = (w: World, ...userIds: string[]) =>
+      prisma.user.updateMany({ where: { id: { in: userIds }, organizationId: w.org }, data: { positionId: null } });
+
+    it('the finish task: made on create for the requester, completed on Submit, made again on Return, cancelled on Withdraw', async () => {
+      const w = await world();
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 5 }, reason: 'r' }, w.org, w.requester);
+      let tasks = await finishTasks(w);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]).toMatchObject({ titleAr: 'إكمال طلب التغيير أو سحبه', sourceType: 'COMMITTEE', status: 'PENDING', createdById: w.requester.userId });
+      expect(draft.finishTaskId).toBe(tasks[0]!.id);
+      expect(await prisma.taskAssignee.findMany({ where: { taskId: tasks[0]!.id }, select: { userId: true } })).toEqual([{ userId: w.requester.userId }]);
+      // The requester made it themselves: no "assigned to you" notice.
+      expect(notices.filter((n) => n.userId === w.requester.userId && n.titleEn === 'New task assigned')).toEqual([]);
+
+      await requests.submit(draft.id, w.org, w.requester);
+      expect((await finishTasks(w))[0]).toMatchObject({ status: 'COMPLETED', completedById: w.requester.userId });
+
+      await requests.returnForChanges(draft.id, { note: 'Which members?' }, w.org, w.approver);
+      tasks = await finishTasks(w);
+      expect(tasks.map((t) => t.status)).toEqual(['COMPLETED', 'PENDING']);
+      expect((await requests.getOne(draft.id, w.org, w.requester)).finishTaskId).toBe(tasks[1]!.id);
+
+      await requests.withdraw(draft.id, w.org, w.requester);
+      expect((await finishTasks(w)).map((t) => t.status)).toEqual(['COMPLETED', 'CANCELLED']);
+    });
+
+    it('Submit tells the deciders; each decision records its authority, the step that decided', async () => {
+      const w = await world();
+      const r = await submitted(w);
+      expect(notices.filter((n) => n.titleEn.includes('to review')).map((n) => n.userId).sort()).toEqual([w.approver.userId, w.approver2.userId].sort());
+      const read = await requests.getOne(r.id, w.org, w.reader);
+      expect(read.awaitingDecisionBy).toEqual({ kind: 'UNIT_HEAD', unit: { id: w.unit, nameEn: 'Root', nameAr: null } });
+      await requests.approve(r.id, w.org, w.approver);
+      const row = await prisma.auditLog.findFirstOrThrow({ where: { objectId: r.id, action: 'APPROVE' } });
+      expect((row.metadata as { authority: unknown }).authority).toEqual({ kind: 'UNIT_HEAD', unitId: w.unit, isRoot: true });
+    });
+
+    it('a re-route: once a head leaves the position, they decide nothing; the other still does', async () => {
+      const w = await world();
+      const r = await submitted(w);
+      await noHead(w, w.approver2.userId);
+      expect((await requests.getOne(r.id, w.org, w.approver2)).actions.approve).toBe(false);
+      expect(await outcome(requests.approve(r.id, w.org, w.approver2))).toBe('CHANGE_REQUEST_NOT_DECIDER');
+      expect(await outcome(requests.approve(r.id, w.org, w.approver))).toBe('OK');
+    });
+
+    it('a decider with no committee key reads the request by id and finds it awaiting them; a stranger does neither', async () => {
+      const w = await world();
+      const r = await submitted(w);
+      const bare = { userId: w.approver.userId, permissions: [] as string[] };
+      expect(await outcome(requests.getOne(r.id, w.org, bare))).toBe('OK');
+      expect((await requests.awaitingDecision(w.org, bare)).map((x) => x.id)).toEqual([r.id]);
+      const stranger = await prisma.user.create({ data: { organizationId: w.org, email: `${w.slug}-x@example.test`, name: 'X', status: 'ACTIVE' } });
+      expect(await outcome(requests.getOne(r.id, w.org, { userId: stranger.id, permissions: [] }))).toBe('Required permission: committees:view');
+      expect(await requests.awaitingDecision(w.org, { userId: stranger.id, permissions: [APPROVE] })).toEqual([]);
+    });
+
+    it('a root that is already headless: Submit is refused with CHANGE_REQUEST_NO_DECIDER, and the request stays a draft', async () => {
+      const w = await world();
+      await noHead(w, w.approver.userId, w.approver2.userId);
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 5 }, reason: 'r' }, w.org, w.requester);
+      expect((await requests.getOne(draft.id, w.org, w.requester)).actions).toMatchObject({ submit: false, approveNow: false });
+      expect(await body(requests.submit(draft.id, w.org, w.requester))).toEqual([409, expect.objectContaining({ code: 'CHANGE_REQUEST_NO_DECIDER' })]);
+      expect(await body(requests.submit(draft.id, w.org, w.requester))).not.toEqual([409, expect.objectContaining({ approveNow: true })]);
+      expect((await requests.getOne(draft.id, w.org, w.requester)).status).toBe('draft');
+    });
+
+    describe('Approve now (Q4)', () => {
+      const asRootHead = (w: World) => ({ userId: w.approver.userId, permissions: [VIEW, EDIT] });
+
+      it('the ONLY root head: no Send for decision, only Approve now; Submit says so; Approve now applies it as their own', async () => {
+        const w = await world();
+        await noHead(w, w.approver2.userId);
+        const me = asRootHead(w);
+        const draft = await requests.create(w.committee, { changes: { quorumCount: 5 }, reason: 'r' }, w.org, me);
+        expect(draft.actions).toMatchObject({ submit: false, approveNow: true });
+        expect(await body(requests.submit(draft.id, w.org, me))).toEqual([409, expect.objectContaining({ code: 'CHANGE_REQUEST_NO_DECIDER', approveNow: true })]);
+
+        notices.length = 0;
+        const done = await requests.approveNow(draft.id, w.org, me);
+        expect(done.status).toBe('approved');
+        expect((await prisma.committee.findFirstOrThrow({ where: { id: w.committee } })).quorumCount).toBe(5);
+        const row = await prisma.auditLog.findFirstOrThrow({ where: { objectId: draft.id, action: 'APPROVE' } });
+        expect((row.metadata as { authority: unknown }).authority).toEqual({ kind: 'ROOT_HEAD_OWN' });
+        expect((await finishTasks(w))[0]!.status).toBe('COMPLETED');
+        expect(await prisma.task.count({ where: { organizationId: w.org, sourceId: w.committee, title: 'Revise the terms of reference' } })).toBe(1);
+        expect(notices.filter((n) => n.titleEn.startsWith('Change request'))).toEqual([]);
+      });
+
+      it('with a second root head: both moves offered; once sent for decision, Approve now is not offered again', async () => {
+        const w = await world();
+        const me = asRootHead(w);
+        const draft = await requests.create(w.committee, { changes: { quorumCount: 6 }, reason: 'r' }, w.org, me);
+        expect(draft.actions).toMatchObject({ submit: true, approveNow: true });
+        await requests.submit(draft.id, w.org, me);
+        expect(notices.filter((n) => n.titleEn.includes('to review')).map((n) => n.userId)).toEqual([w.approver2.userId]);
+        expect((await requests.getOne(draft.id, w.org, me)).actions.approveNow).toBe(false);
+        expect(await outcome(requests.approveNow(draft.id, w.org, me))).toBe('CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED');
+        expect(await outcome(requests.approve(draft.id, w.org, w.approver2))).toBe('OK');
+      });
+
+      it('nobody else gets it: a requester who does not head the root, and a root head on someone else\'s request', async () => {
+        const w = await world();
+        const draft = await requests.create(w.committee, { changes: { quorumCount: 5 }, reason: 'r' }, w.org, w.requester);
+        expect(draft.actions.approveNow).toBe(false);
+        expect(await outcome(requests.approveNow(draft.id, w.org, w.requester))).toBe('CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED');
+        expect(await outcome(requests.approveNow(draft.id, w.org, asRootHead(w)))).toBe('CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED');
+        expect((await requests.getOne(draft.id, w.org, w.requester)).status).toBe('draft');
+      });
+
+      it('a reference that would fail is refused while still a draft: nothing is submitted', async () => {
+        const w = await world();
+        await noHead(w, w.approver2.userId);
+        const me = asRootHead(w);
+        const draft = await requests.create(w.committee, { changes: { reportingToCommitteeId: w.other }, reason: 'r' }, w.org, me);
+        await prisma.committee.update({ where: { id: w.other }, data: { isActive: false } });
+        expect(await outcome(requests.approveNow(draft.id, w.org, me))).not.toBe('OK');
+        expect((await requests.getOne(draft.id, w.org, me)).status).toBe('draft');
+      });
+    });
+
+    itEnforcesTenantIsolation("the chain of authority — another organisation's root head neither decides nor reads a request here", async () => {
+      const w = await world();
+      const other = await world();
+      const r = await submitted(w);
+      expect(await outcome(requests.approve(r.id, w.org, { userId: other.approver.userId, permissions: [] }))).toBe('Change request not found');
+      expect(await outcome(requests.getOne(r.id, w.org, { userId: other.approver.userId, permissions: [] }))).toBe('Required permission: committees:view');
+      expect(await outcome(requests.approve(r.id, other.org, other.approver))).toBe('Change request not found');
+      expect(await requests.awaitingDecision(other.org, other.approver)).toEqual([]);
     });
   });
 
