@@ -1,8 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { TenantGuard } from '../../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../../common/guards/permission.guard';
-import { Permissions } from '../../../common/decorators/permissions.decorator';
-import { COMMITTEES_PERMISSIONS } from '../../../common/constants/permissions';
 import { CurrentTenant } from '../../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../../common/decorators/current-user-permissions.decorator';
@@ -28,8 +26,11 @@ import {
 //
 // ACC-281 (Ahmad, 7 Nov) — reading, raising, editing, submitting and withdrawing
 // carry no route permission: the service admits committees:view OR an active
-// member of the request's committee. DECIDING (approve, return, reject) and the
-// awaiting-decision list keep committees:view here, exactly as before.
+// member of the request's committee.
+//
+// ACC-283 PR 2 — DECIDING (approve, return, reject) and the awaiting-decision
+// list carry no route permission either: the chain of authority decides who, in
+// the service (change-request-chain.ts). Approve now is the root head's own.
 
 /** A committee's requests: its list, its open one, the preview, and raising one. */
 @Controller('committees/:committeeId/change-requests')
@@ -89,7 +90,6 @@ export class CommitteeChangeRequestsController {
 
   // Before ':id', so the path is not read as an id.
   @Get('awaiting-decision')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   awaitingDecision(
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
@@ -140,7 +140,6 @@ export class CommitteeChangeRequestsController {
   }
 
   @Post(':id/approve')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   approve(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
@@ -150,8 +149,18 @@ export class CommitteeChangeRequestsController {
     return this.requests.approve(id, tenantId, { userId, permissions });
   }
 
+  // ACC-283 PR 2 (Q4) — the root unit's head applies their own request at once.
+  @Post(':id/approve-now')
+  approveNow(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IChangeRequest> {
+    return this.requests.approveNow(id, tenantId, { userId, permissions });
+  }
+
   @Post(':id/return')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   returnForChanges(
     @Param('id') id: string,
     @Body() dto: ReturnChangeRequestDto,
@@ -163,7 +172,6 @@ export class CommitteeChangeRequestsController {
   }
 
   @Post(':id/reject')
-  @Permissions(COMMITTEES_PERMISSIONS.VIEW)
   reject(
     @Param('id') id: string,
     @Body() dto: RejectChangeRequestDto,

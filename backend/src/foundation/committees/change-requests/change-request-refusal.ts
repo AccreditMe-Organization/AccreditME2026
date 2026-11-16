@@ -59,6 +59,19 @@ export const CHANGE_REQUEST_REFUSALS = {
     status: HttpStatus.CONFLICT,
     message: 'This change request was changed by someone else since it was opened. Nothing was saved.',
   },
+  // ACC-283 PR 2 — the chain of authority decides (change-request-chain.ts).
+  CHANGE_REQUEST_NOT_DECIDER: {
+    status: HttpStatus.FORBIDDEN,
+    message: 'You are not the one who decides this change request now.',
+  },
+  CHANGE_REQUEST_NO_DECIDER: {
+    status: HttpStatus.CONFLICT,
+    message: 'Nobody can decide this change request: the organisation has no one in its chain of authority.',
+  },
+  CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED: {
+    status: HttpStatus.FORBIDDEN,
+    message: 'Only the head of the organisation can approve their own change request now.',
+  },
 } as const;
 
 export type ChangeRequestRefusalCode = keyof typeof CHANGE_REQUEST_REFUSALS;

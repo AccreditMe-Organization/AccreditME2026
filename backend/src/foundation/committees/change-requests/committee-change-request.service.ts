@@ -5,7 +5,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogService } from '../../../common/services/audit-log.service';
 import { COMMITTEES_PERMISSIONS } from '../../../common/constants/permissions';
 import { NotificationService } from '../../notification/notification.service';
-import { TaskService } from '../../task/task.service';
+import { RecordTaskClosure, TaskService } from '../../task/task.service';
 import { EngineTx, WorkflowService } from '../../workflow/workflow.service';
 import { StageRulesService } from '../../workflow/stage-rules.service';
 import { STAGE_FLAG } from '../../workflow/record-registry';
@@ -15,6 +15,8 @@ import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-
 import { committeeTypeValues } from '../committee-type-values';
 import { ChangeRequestRefusal } from './change-request-refusal';
 import { assertMaySeeCommittee, assertMayWriteCommittee, mayReadCommittee } from '../../../common/services/committee-membership';
+import { seatValues } from '../committee-seat-rules';
+import { ChainResult, ChainStep, mayDecideAnyChangeRequest, resolveDecisionChains } from './change-request-chain';
 import {
   ACTION_TARGET_STAGE,
   ChangeRequestAction,
@@ -39,9 +41,15 @@ import {
 
 /**
  * ACC-239 — a change to an APPROVED committee goes through a request: the
- * requester proposes, someone else with committees:approve decides, and an
- * approval applies every value at once. Plan:
- * backend/Plans/step-238-committee-changes.md (§10, §12).
+ * requester proposes, someone else decides, and an approval applies every value
+ * at once. Plan: backend/Plans/step-238-committee-changes.md (§10, §12).
+ *
+ * ACC-283 PR 2 — WHO DECIDES IS THE CHAIN OF AUTHORITY (change-request-chain.ts),
+ * resolved live on every read and decision, never stored, never a role:
+ * committees:approve is not read here any more. The root unit's head may instead
+ * Approve now their own request (Q4). A draft or returned request gives its
+ * requester a "Finish or withdraw" task (Q8), completed on Submit and cancelled
+ * on Withdraw, its row locked LAST. Plan: backend/Plans/step-283-change-request-chain.md.
  *
  * THE REQUEST'S STATE IS ITS STAGE KEY. There is no status column: the request
  * has a workflow instance on the fixed six-stage template (PROTECTED_TEMPLATES),
@@ -88,12 +96,30 @@ type CommitteeRow = Record<ChangeField, ChangeValue> & { id: string; organizatio
 
 export interface ChangeRequestActions {
   edit: boolean;
+  /** "Send for decision": false when the chain has nobody to send it to (ACC-283 §4.3). */
   submit: boolean;
   withdraw: boolean;
   approve: boolean;
   return: boolean;
   reject: boolean;
+  /** ACC-283 PR 2 (Q4) — the root unit's head may approve their own request at once. */
+  approveNow: boolean;
 }
+
+/** ACC-283 PR 2 — who decides a request under review: the step, never a person (Q15). */
+export type AwaitingDecisionBy =
+  | {
+      kind: 'REPORTS_TO_SEAT';
+      committee: { id: string; nameEn: string; nameAr: string | null };
+      seats: { id: string; labelEn: string; labelAr: string | null }[];
+    }
+  | { kind: 'UNIT_HEAD'; unit: { id: string; nameEn: string; nameAr: string | null } };
+
+/** ACC-283 PR 2 — the decision's authority, on its audit row (ids only). */
+type DecisionAuthority =
+  | { kind: 'REPORTS_TO_SEAT'; committeeId: string; seatIds: string[] }
+  | { kind: 'UNIT_HEAD'; unitId: string; isRoot: boolean }
+  | { kind: 'ROOT_HEAD_OWN' };
 
 /** ACC-240 — a person named on a request, read within its organisation. */
 export interface ChangeRequestPerson {
@@ -139,6 +165,10 @@ export interface IChangeRequest {
   actions: ChangeRequestActions;
   /** ACC-240 — names for the ids in `changes` and `fromValues`. */
   labels: ChangeRequestLabels;
+  /** ACC-283 PR 2 — under review only: who decides it now, by step. Null otherwise. */
+  awaitingDecisionBy: AwaitingDecisionBy | null;
+  /** ACC-283 PR 2 (Q8) — the requester's "Finish or withdraw" task, while one exists. */
+  finishTaskId: string | null;
 }
 
 /** ACC-240 — the committee's open request, for its banner, and whether this viewer may raise one now. */
@@ -194,6 +224,12 @@ const REQUEST_INCLUDE = {
   committee: { select: { nameEn: true, nameAr: true } },
 } as const;
 
+/** A request as loadRequest() reads it: the row, its newest instance, and its stage key. */
+type LoadedRequest = { row: RequestRow; instanceId: string; stageKey: string | null };
+
+/** ACC-283 PR 2 — the requester's task while a request is a draft or returned (Q8; lane A's Arabic). */
+const FINISH_TASK = { title: 'Finish or withdraw the change request', titleAr: 'إكمال طلب التغيير أو سحبه' } as const;
+
 @Injectable()
 export class CommitteeChangeRequestService {
   private readonly logger = new Logger(CommitteeChangeRequestService.name);
@@ -218,11 +254,13 @@ export class CommitteeChangeRequestService {
     const committee = await this.loadCommittee(committeeId, organizationId);
     const changes = normaliseChanges(dto.changes, committee);
 
-    // Every read the engine can do first (the template, the first stage).
+    // Every read the engine can do first (the template, the first stage), and
+    // (ACC-283 Q8) the requester's "Finish or withdraw" task.
     const requestId = randomUUID();
     const preparedStart = await this.workflow.prepareInstanceStart(OBJECT_TYPE, requestId, organizationId);
+    const preparedFinish = await this.prepareFinishTask(committeeId, viewer.userId, organizationId);
 
-    const { request, started } = await this.prisma.$transaction(async (tx) => {
+    const { request, started, finishTask } = await this.prisma.$transaction(async (tx) => {
       // The committee's stage, under its instance's share lock: a transition
       // into Dissolution Pending in flight finishes first, or waits for this.
       const stage = await this.committeeStage(tx, committeeId, organizationId);
@@ -245,6 +283,7 @@ export class CommitteeChangeRequestService {
       await assertCommitteeReferences(tx, referenceChange(committeeId, organizationId, changes), this.logger);
 
       const number = existing.reduce((max, r) => Math.max(max, r.number), 0) + 1;
+      const finishTask = await this.tasks.insertPrepared(tx, preparedFinish, organizationId, viewer.userId);
       const request = await tx.committeeChangeRequest.create({
         data: {
           id: requestId,
@@ -254,10 +293,11 @@ export class CommitteeChangeRequestService {
           requestedById: viewer.userId,
           reason: dto.reason.trim(),
           changes: changes as Prisma.InputJsonValue,
+          finishTaskId: finishTask.id,
         },
       });
       const started = await this.workflow.insertInstanceStartInTx(tx, preparedStart, requestId, organizationId, viewer.userId);
-      return { request, started };
+      return { request, started, finishTask };
     });
 
     // The draft is the requester's own: no "assigned to you" notice.
@@ -270,6 +310,8 @@ export class CommitteeChangeRequestService {
       tenantId: organizationId,
       after: request as unknown as Record<string, unknown>,
     });
+    // The task's audit row; no "assigned to you" notice: the requester made it themselves.
+    await this.tasks.announceCreated(finishTask, { ...preparedFinish, eligibleAssigneeIds: [] }, organizationId, viewer.userId);
 
     if (dto.submit) return this.submit(request.id, organizationId, viewer);
     return this.getOne(request.id, organizationId, viewer);
@@ -330,7 +372,44 @@ export class CommitteeChangeRequestService {
     assertRequester(loaded.row, viewer);
     assertRequestStageAllows(loaded.stageKey, 'submit');
 
+    // ACC-283 PR 2 — "Send for decision" needs someone to send it to. Nobody but the
+    // requester (the root head's own request, §4.3): only Approve now is offered.
+    // Nobody at all (a root that is already headless, Q7): refused and logged.
+    const chain = await this.chainOf(loaded.row, organizationId);
+    if (chain.step.kind === 'NONE') {
+      if (chain.requesterHeadsRoot) throw new ChangeRequestRefusal('CHANGE_REQUEST_NO_DECIDER', { approveNow: true });
+      this.logger.error(
+        `Submit refused, no decider: changeRequestId=${id} committeeId=${loaded.row.committeeId} organizationId=${organizationId}`,
+      );
+      throw new ChangeRequestRefusal('CHANGE_REQUEST_NO_DECIDER');
+    }
+
+    await this.performSubmit(loaded, organizationId, viewer);
+
+    // Q1, ACC-283 — the deciders of the step that decides are told, never the requester.
+    const committee = loaded.row.committee;
+    for (const userId of chain.deciderIds.filter((u) => u !== loaded.row.requestedById)) {
+      await this.notify(userId, organizationId, loaded.row.committeeId, {
+        titleEn: `Change request #${loaded.row.number} to review`,
+        titleAr: `طلب التغيير رقم ${loaded.row.number} بانتظار المراجعة`,
+        bodyEn: `${loaded.row.requestedBy.name} asked to change ${committee.nameEn}.`,
+        bodyAr: `طلب ${loaded.row.requestedBy.name} تغيير ${committee.nameAr ?? committee.nameEn}.`,
+      });
+    }
+    return this.getOne(id, organizationId, viewer);
+  }
+
+  /**
+   * The Submit move: the "from" values stored, the requester's finish task
+   * completed, in the engine's transaction. LOCK ORDER: the request's instance
+   * (the engine's), the committee's instance FOR SHARE (its stage), the committee
+   * row FOR SHARE, the request row, then the finish task's row LAST (ACC-283).
+   * Submit and Approve now both run it.
+   */
+  private async performSubmit(loaded: LoadedRequest, organizationId: string, viewer: ChangeRequestViewer): Promise<void> {
+    const id = loaded.row.id;
     let fromValues: ChangeValues = {};
+    let closure: RecordTaskClosure | null = null;
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.submit, organizationId, viewer.userId, {
       inTx: async (tx) => {
         // Re-read under the instance's lock: the stage the move starts from.
@@ -359,6 +438,8 @@ export class CommitteeChangeRequestService {
             submittedAt: new Date(),
           },
         });
+        // ACC-283 Q8 — the requester's finish task is done: its row last.
+        if (request.finishTaskId) closure = await this.tasks.closeRecordTaskInTx(tx, request.finishTaskId, organizationId, viewer.userId, 'COMPLETED');
       },
     });
 
@@ -370,41 +451,32 @@ export class CommitteeChangeRequestService {
       tenantId: organizationId,
       metadata: { from: loaded.stageKey, fromValues },
     });
-
-    // Q1 — every committees:approve holder but the requester is told.
-    const committee = loaded.row.committee;
-    const approvers = await this.permissionHolders(organizationId, COMMITTEES_PERMISSIONS.APPROVE);
-    for (const userId of approvers.filter((u) => u !== loaded.row.requestedById)) {
-      await this.notify(userId, organizationId, loaded.row.committeeId, {
-        titleEn: `Change request #${loaded.row.number} to review`,
-        titleAr: `طلب التغيير رقم ${loaded.row.number} بانتظار المراجعة`,
-        bodyEn: `${loaded.row.requestedBy.name} asked to change ${committee.nameEn}.`,
-        bodyAr: `طلب ${loaded.row.requestedBy.name} تغيير ${committee.nameAr ?? committee.nameEn}.`,
-      });
-    }
-    return this.getOne(id, organizationId, viewer);
+    if (closure) await this.tasks.auditRecordTaskClosure(closure, organizationId, viewer.userId, 'CHANGE_REQUEST_SUBMITTED');
   }
 
   async withdraw(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
     const loaded = await this.loadRequest(id, organizationId);
     await this.assertMayWriteRequest(loaded.row, organizationId, viewer); // ACC-281
+    // ACC-283 Q8 — only the requester withdraws, at any open stage. Nobody else
+    // withdraws another person's draft (it had been a committees:approve holder's).
     const own = loaded.row.requestedById === viewer.userId;
     const allowed = (stage: string | null): boolean => {
       assertRequestStageAllows(stage, 'withdraw');
-      // The requester withdraws at any open stage; an approver only where the
-      // stage says someone else may (a draft left behind).
-      return own || (hasPermission(viewer, COMMITTEES_PERMISSIONS.APPROVE) && requestStagePolicy(stage).othersMayWithdraw);
+      return own;
     };
     if (!allowed(loaded.stageKey)) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_REQUESTER');
     assertCommitteeStageAllows(await this.committeeStage(this.prisma, loaded.row.committeeId, organizationId, 'none'), 'withdraw');
 
+    let closure: RecordTaskClosure | null = null;
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.withdraw, organizationId, viewer.userId, {
       inTx: async (tx) => {
         if (!allowed(await instanceStageKey(tx, loaded.instanceId))) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_REQUESTER');
-        await tx.committeeChangeRequest.update({
+        const request = await tx.committeeChangeRequest.update({
           where: { id },
           data: { withdrawnById: viewer.userId, withdrawnAt: new Date() },
         });
+        // ACC-283 Q8 — the finish task goes with the request: its row last.
+        if (request.finishTaskId) closure = await this.tasks.closeRecordTaskInTx(tx, request.finishTaskId, organizationId, viewer.userId, 'CANCELLED');
       },
     });
 
@@ -416,20 +488,73 @@ export class CommitteeChangeRequestService {
       tenantId: organizationId,
       metadata: { decision: 'WITHDRAWN', from: loaded.stageKey },
     });
-    // Q1 — withdrawing your own request tells nobody; someone else's tells you.
-    if (!own) {
-      await this.notify(loaded.row.requestedById, organizationId, loaded.row.committeeId, {
-        titleEn: `Change request #${loaded.row.number} withdrawn`,
-        titleAr: `سُحب طلب التغيير رقم ${loaded.row.number}`,
-        bodyEn: `Your change request for ${loaded.row.committee.nameEn} was withdrawn.`,
-        bodyAr: `سُحب طلب التغيير الذي قدّمته على ${loaded.row.committee.nameAr ?? loaded.row.committee.nameEn}.`,
-      });
-    }
+    if (closure) await this.tasks.auditRecordTaskClosure(closure, organizationId, viewer.userId, 'CHANGE_REQUEST_WITHDRAWN');
+    // Withdrawing your own request tells nobody (only the requester withdraws now).
     return this.getOne(id, organizationId, viewer);
   }
 
   async approve(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    const loaded = await this.loadDecision(id, organizationId, viewer, 'approve');
+    const { loaded, chain } = await this.loadDecision(id, organizationId, viewer, 'approve');
+    await this.performApprove(loaded, organizationId, viewer, authorityOf(chain.step), { notifyRequester: true });
+    return this.getOne(id, organizationId, viewer);
+  }
+
+  /**
+   * ACC-283 PR 2 (Q4) — the root unit's head applies their OWN request at once, as
+   * their own final decision. Only the requester, only while they head the root
+   * (a head holder or the acting cover in force), never anyone else.
+   *
+   * A draft or returned request: the reference checks run first, READ ONLY, so a
+   * request that would fail is refused while it is still a draft; then Submit's
+   * transaction and Approve's, back to back, each in its own lock order. If the
+   * approve fails after the submit committed (a rare race), the request is under
+   * review: with nobody else in the chain, Approve now stays offered to retry;
+   * with deciders, they decide it. Once sent for decision to someone else, Approve
+   * now is not offered again.
+   */
+  async approveNow(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
+    requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
+    const loaded = await this.loadRequest(id, organizationId);
+    await this.assertMayWriteRequest(loaded.row, organizationId, viewer); // ACC-281
+    if (loaded.row.requestedById !== viewer.userId) throw new ChangeRequestRefusal('CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED');
+    const chain = await this.chainOf(loaded.row, organizationId);
+    if (!chain.requesterHeadsRoot) throw new ChangeRequestRefusal('CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED');
+
+    const underReview = awaitsDecision(loaded.stageKey);
+    if (underReview) {
+      // Only the retry: nobody but the requester is left to decide it.
+      if (chain.step.kind !== 'NONE') throw new ChangeRequestRefusal('CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED');
+    } else {
+      assertRequestStageAllows(loaded.stageKey, 'submit');
+      // The checks Submit and Approve make, first and read only, so a failing
+      // request is refused while it is still a draft.
+      const committee = await this.loadCommittee(loaded.row.committeeId, organizationId);
+      const changes = dropUnchanged(loaded.row.changes as ChangeValues, committee);
+      if (Object.keys(changes).length === 0) throw new ChangeRequestRefusal('CHANGE_REQUEST_NO_CHANGES');
+      await this.prisma.$transaction((tx) => assertCommitteeReferences(tx, referenceChange(committee.id, organizationId, changes), this.logger));
+      await this.performSubmit(loaded, organizationId, viewer);
+    }
+    const reloaded = await this.loadRequest(id, organizationId);
+    await this.performApprove(reloaded, organizationId, viewer, { kind: 'ROOT_HEAD_OWN' }, { notifyRequester: false });
+    return this.getOne(id, organizationId, viewer);
+  }
+
+  /**
+   * The Approve move. LOCK ORDER (ACC-239, unchanged): the request's instance (the
+   * engine's), the committee's instance, the hierarchy lock (only when a parent or
+   * Reports to changes), the committee row, the request row. The decider was
+   * resolved before (the chain takes no lock); `authority` names the step on the
+   * audit row.
+   */
+  private async performApprove(
+    loaded: LoadedRequest,
+    organizationId: string,
+    viewer: ChangeRequestViewer,
+    // Null only if no step decided, which a decider never is (they come from a step).
+    authority: DecisionAuthority | null,
+    options: { notifyRequester: boolean },
+  ): Promise<void> {
+    const id = loaded.row.id;
     const changes = loaded.row.changes as ChangeValues;
     const touchesHierarchy = 'parentCommitteeId' in changes || 'reportingToCommitteeId' in changes;
 
@@ -514,31 +639,37 @@ export class CommitteeChangeRequestService {
         objectId: id,
         actorId: viewer.userId,
         tenantId: organizationId,
-        metadata: { termsTaskId: createdTask.id },
+        metadata: { termsTaskId: createdTask.id, authority },
       });
       await this.tasks.announceCreated(createdTask, preparedTask, organizationId, viewer.userId);
     }
-    await this.notify(loaded.row.requestedById, organizationId, loaded.row.committeeId, {
-      titleEn: `Change request #${loaded.row.number} approved`,
-      titleAr: `اعتُمد طلب التغيير رقم ${loaded.row.number}`,
-      bodyEn: `Your changes to ${loaded.row.committee.nameEn} were applied.`,
-      bodyAr: `طُبّقت التغييرات التي طلبتها على ${loaded.row.committee.nameAr ?? loaded.row.committee.nameEn}.`,
-    });
-    return this.getOne(id, organizationId, viewer);
+    // Approve now is the requester's own decision: nobody to tell.
+    if (options.notifyRequester) {
+      await this.notify(loaded.row.requestedById, organizationId, loaded.row.committeeId, {
+        titleEn: `Change request #${loaded.row.number} approved`,
+        titleAr: `اعتُمد طلب التغيير رقم ${loaded.row.number}`,
+        bodyEn: `Your changes to ${loaded.row.committee.nameEn} were applied.`,
+        bodyAr: `طُبّقت التغييرات التي طلبتها على ${loaded.row.committee.nameAr ?? loaded.row.committee.nameEn}.`,
+      });
+    }
   }
 
   async returnForChanges(id: string, dto: ReturnChangeRequestDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    const loaded = await this.loadDecision(id, organizationId, viewer, 'return');
+    const { loaded, chain } = await this.loadDecision(id, organizationId, viewer, 'return');
     const note = dto.note.trim();
+    // ACC-283 Q8 — a returned request is a draft again: a new finish task for its requester.
+    const preparedFinish = await this.prepareFinishTask(loaded.row.committeeId, loaded.row.requestedById, organizationId);
+    let finishTask: Awaited<ReturnType<TaskService['insertPrepared']>> | null = null;
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.return, organizationId, viewer.userId, {
       comment: note,
       inTx: async (tx) => {
         assertRequestStageAllows(await instanceStageKey(tx, loaded.instanceId), 'return');
         // The committee's stage decides whether a decision may still be made.
         assertCommitteeStageAllows(await this.committeeStage(tx, loaded.row.committeeId, organizationId), 'return');
+        finishTask = await this.tasks.insertPrepared(tx, preparedFinish, organizationId, loaded.row.requestedById);
         await tx.committeeChangeRequest.update({
           where: { id },
-          data: { returnNote: note, decidedById: viewer.userId, decidedAt: new Date() },
+          data: { returnNote: note, decidedById: viewer.userId, decidedAt: new Date(), finishTaskId: finishTask.id },
         });
       },
     });
@@ -548,8 +679,9 @@ export class CommitteeChangeRequestService {
       objectId: id,
       actorId: viewer.userId,
       tenantId: organizationId,
-      metadata: { decision: 'RETURNED', note },
+      metadata: { decision: 'RETURNED', note, authority: authorityOf(chain.step) },
     });
+    if (finishTask) await this.tasks.announceCreated(finishTask, preparedFinish, organizationId, viewer.userId);
     await this.notify(loaded.row.requestedById, organizationId, loaded.row.committeeId, {
       titleEn: `Change request #${loaded.row.number} returned`,
       titleAr: `أُعيد طلب التغيير رقم ${loaded.row.number}`,
@@ -560,7 +692,7 @@ export class CommitteeChangeRequestService {
   }
 
   async reject(id: string, dto: RejectChangeRequestDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    const loaded = await this.loadDecision(id, organizationId, viewer, 'reject');
+    const { loaded, chain } = await this.loadDecision(id, organizationId, viewer, 'reject');
     const reason = dto.reason.trim();
     await this.workflow.triggerSystemTransition(loaded.instanceId, ACTION_TARGET_STAGE.reject, organizationId, viewer.userId, {
       comment: reason,
@@ -578,7 +710,7 @@ export class CommitteeChangeRequestService {
       objectId: id,
       actorId: viewer.userId,
       tenantId: organizationId,
-      metadata: { reason },
+      metadata: { reason, authority: authorityOf(chain.step) },
     });
     await this.notify(loaded.row.requestedById, organizationId, loaded.row.committeeId, {
       titleEn: `Change request #${loaded.row.number} rejected`,
@@ -595,18 +727,19 @@ export class CommitteeChangeRequestService {
     const row = await this.prisma.committeeChangeRequest.findFirst({ where: { id, organizationId }, include: REQUEST_INCLUDE });
     // ACC-281 — committees:view as today; anyone else only for a request on a
     // committee they are an active member of, or (ACC-283 PR 2a) oversee as a head
-    // or cover of its unit or above. Anyone else gets today's 403 whether the
-    // request exists or not, so the answer reveals nothing.
-    if (!hasPermission(viewer, COMMITTEES_PERMISSIONS.VIEW) && !(row && (await mayReadCommittee(this.prisma, row.committeeId, organizationId, asCommitteeViewer(viewer))))) {
-      throw new ForbiddenException(`Required permission: ${COMMITTEES_PERMISSIONS.VIEW}`);
+    // or cover of its unit or above, or (PR 2) decide now. Anyone else gets today's
+    // 403 whether the request exists or not, so the answer reveals nothing.
+    if (!hasPermission(viewer, COMMITTEES_PERMISSIONS.VIEW)) {
+      const admitted =
+        !!row &&
+        ((await mayReadCommittee(this.prisma, row.committeeId, organizationId, asCommitteeViewer(viewer))) ||
+          (await this.isCurrentDecider(row, organizationId, viewer)));
+      if (!admitted) throw new ForbiddenException(`Required permission: ${COMMITTEES_PERMISSIONS.VIEW}`);
     }
     if (!row) throw new NotFoundException('Change request not found');
-    const [stages, committeeStage, extras] = await Promise.all([
-      requestStageKeys(this.prisma, [row.id], organizationId),
-      this.committeeStage(this.prisma, row.committeeId, organizationId, 'none'),
-      this.loadExtras([row], organizationId),
-    ]);
-    return toDto(row, stages.get(row.id)?.key ?? null, committeeStage, viewer, extras);
+    const committeeStage = await this.committeeStage(this.prisma, row.committeeId, organizationId, 'none');
+    const [dto] = await this.toDtos([row], organizationId, viewer, () => committeeStage);
+    return dto!;
   }
 
   /** The committee's requests — its panel and See all — searched, sorted and paged here (they are few). */
@@ -617,12 +750,8 @@ export class CommitteeChangeRequestService {
       where: { committeeId, organizationId },
       include: REQUEST_INCLUDE,
     });
-    const [stages, committeeStage, extras] = await Promise.all([
-      requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId),
-      this.committeeStage(this.prisma, committeeId, organizationId, 'none'),
-      this.loadExtras(rows, organizationId),
-    ]);
-    const all = rows.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStage, viewer, extras));
+    const committeeStage = await this.committeeStage(this.prisma, committeeId, organizationId, 'none');
+    const all = await this.toDtos(rows, organizationId, viewer, () => committeeStage);
 
     const needle = (query.q ?? '').trim().replace(/^#/, '').toLocaleLowerCase();
     const matching = needle
@@ -662,17 +791,28 @@ export class CommitteeChangeRequestService {
     const open = rows.find((r) => isOpen(states.get(r.id))) ?? null;
     const canRaise = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS) && committeeAllowsRaise(committeeStage) && !open;
     if (!open) return { request: null, canRaise };
-    const extras = await this.loadExtras([open], organizationId);
-    return { request: toDto(open, states.get(open.id)?.key ?? null, committeeStage, viewer, extras), canRaise };
+    const [dto] = await this.toDtos([open], organizationId, viewer, () => committeeStage);
+    return { request: dto!, canRaise };
   }
 
-  /** Every request under review that the viewer may decide: not their own. */
-  async awaitingDecision(organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest[]> {
-    requirePermission(viewer, COMMITTEES_PERMISSIONS.APPROVE);
+  /**
+   * Every request under review that the viewer decides now (ACC-283 PR 2: by the
+   * chain, never committees:view or committees:approve; the route has no gate).
+   *
+   * CHEAP FIRST, three reads at once: the unit the viewer heads, the units they
+   * cover, and whether they hold a seat that decides reporting changes. Nobody who
+   * holds none of those can be in any chain: an empty list, three queries. Anyone
+   * else: the requests under review (SQL, capped), then ONE chain resolution for
+   * all of them, kept where the viewer is a decider.
+   */
+  async awaitingDecision(organizationId: string, viewer: ChangeRequestViewer, now: Date = new Date()): Promise<IChangeRequest[]> {
+    // Prompt 85 — ONE indexed query: someone who heads, covers and holds no deciding
+    // seat has nothing waiting, so nothing else is read.
+    if (!(await mayDecideAnyChangeRequest(this.prisma, organizationId, viewer.userId, now))) return [];
+
     // ACC-281 — filtered IN THE QUERY: the ids of the requests whose NEWEST
     // instance stands in a stage awaiting a decision (the policy's own keys),
-    // oldest submitted first, capped. Before this, every request ever submitted
-    // was read and filtered here. Every table is scoped by organisation.
+    // oldest submitted first, capped. Every table is scoped by organisation.
     const ids = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT r.id
       FROM "CommitteeChangeRequest" r
@@ -693,6 +833,9 @@ export class CommitteeChangeRequestService {
         AND s.key = ANY(${[...AWAITING_DECISION_KEYS]}::text[])
       ORDER BY r."submittedAt" ASC, r.id ASC
       LIMIT ${AWAITING_DECISION_CAP}`;
+    if (ids.length === AWAITING_DECISION_CAP) {
+      this.logger.warn(`Awaiting decision reached its cap of ${AWAITING_DECISION_CAP}: organizationId=${organizationId}`);
+    }
     if (ids.length === 0) return [];
     const order = new Map(ids.map((r, i) => [r.id, i]));
     const rows = (
@@ -701,13 +844,19 @@ export class CommitteeChangeRequestService {
         include: REQUEST_INCLUDE,
       })
     ).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
-    const stages = await requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId);
-    // A second guard that changes nothing while the query is right (a spec holds the two equal).
-    const waiting = rows.filter((r) => awaitsDecision(stages.get(r.id)?.key));
+    const chains = await resolveDecisionChains(
+      this.prisma,
+      organizationId,
+      rows.map((r) => ({ id: r.id, committeeId: r.committeeId, requesterId: r.requestedById })),
+      now,
+    );
+    const mine = rows.filter((r) => chains.get(r.id)?.deciderIds.includes(viewer.userId));
+    if (mine.length === 0) return [];
     // ACC-255 PR 2 — every committee's stage in one batch (three queries), not one read each.
-    const committeeStages = await this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [...new Set(waiting.map((r) => r.committeeId))]);
-    const extras = await this.loadExtras(waiting, organizationId);
-    return waiting.map((r) => toDto(r, stages.get(r.id)?.key ?? null, committeeStages.get(r.committeeId) ?? NO_STAGE, viewer, extras));
+    const committeeStages = await this.stageRules.stageRulesFor(organizationId, 'COMMITTEE', [...new Set(mine.map((r) => r.committeeId))]);
+    const dtos = await this.toDtos(mine, organizationId, viewer, (id) => committeeStages.get(id) ?? NO_STAGE, chains);
+    // A second guard that changes nothing while the query is right (a spec holds the two equal).
+    return dtos.filter((d) => awaitsDecision(d.status));
   }
 
   /** What approving these changes would do — for Request a change, before anything is saved. */
@@ -861,7 +1010,7 @@ export class CommitteeChangeRequestService {
     return flagged[0]!.key;
   }
 
-  private async loadRequest(id: string, organizationId: string): Promise<{ row: RequestRow; instanceId: string; stageKey: string | null }> {
+  private async loadRequest(id: string, organizationId: string): Promise<LoadedRequest> {
     const row = await this.prisma.committeeChangeRequest.findFirst({ where: { id, organizationId }, include: REQUEST_INCLUDE });
     if (!row) throw new NotFoundException('Change request not found');
     const instance = await this.prisma.workflowInstance.findFirst({
@@ -874,32 +1023,157 @@ export class CommitteeChangeRequestService {
     return { row, instanceId: instance.id, stageKey: stages.get(id)?.key ?? null };
   }
 
-  /** Approve, Return, Reject: committees:approve, never the requester, and what both stages allow (the policy). */
+  /**
+   * Approve, Return, Reject (ACC-283 PR 2): a CURRENT DECIDER of the request, by
+   * the chain, resolved before the transaction (it takes no lock), and what both
+   * stages allow. Anyone else, in this order: the requester gets
+   * CHANGE_REQUEST_OWN_DECISION; someone who may read the request gets
+   * CHANGE_REQUEST_NOT_DECIDER, naming the step that decides; anyone else the 404
+   * a missing request gets.
+   */
   private async loadDecision(
     id: string,
     organizationId: string,
     viewer: ChangeRequestViewer,
     action: Extract<ChangeRequestAction, 'approve' | 'return' | 'reject'>,
-  ): Promise<{ row: RequestRow; instanceId: string; stageKey: string | null }> {
-    requirePermission(viewer, COMMITTEES_PERMISSIONS.APPROVE);
+  ): Promise<{ loaded: LoadedRequest; chain: ChainResult }> {
     const loaded = await this.loadRequest(id, organizationId);
-    if (loaded.row.requestedById === viewer.userId) throw new ChangeRequestRefusal('CHANGE_REQUEST_OWN_DECISION');
+    const chain = await this.chainOf(loaded.row, organizationId);
+    if (!chain.deciderIds.includes(viewer.userId)) {
+      if (loaded.row.requestedById === viewer.userId) throw new ChangeRequestRefusal('CHANGE_REQUEST_OWN_DECISION');
+      const mayRead =
+        hasPermission(viewer, COMMITTEES_PERMISSIONS.VIEW) ||
+        (await mayReadCommittee(this.prisma, loaded.row.committeeId, organizationId, asCommitteeViewer(viewer)));
+      if (!mayRead) throw new NotFoundException('Change request not found');
+      const by = awaitsDecision(loaded.stageKey) ? (await this.nameSteps([chain], organizationId))(chain.step) : null;
+      throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_DECIDER', { awaitingDecisionBy: by });
+    }
     assertRequestStageAllows(loaded.stageKey, action);
     assertCommitteeStageAllows(await this.committeeStage(this.prisma, loaded.row.committeeId, organizationId, 'none'), action);
-    return loaded;
+    return { loaded, chain };
   }
 
-  /** Active users holding `permission` through an active role, in this organisation. */
-  private async permissionHolders(organizationId: string, permission: string): Promise<string[]> {
-    const [module, action] = permission.split(':');
-    const rows = await this.prisma.userRole.findMany({
-      where: {
-        user: { organizationId, status: 'ACTIVE' },
-        role: { organizationId, isActive: true, rolePermissions: { some: { permission: { module, action } } } },
-      },
-      select: { userId: true },
+  /** ACC-283 PR 2 — one request's chain (resolveDecisionChains for one). */
+  private async chainOf(row: { id: string; committeeId: string; requestedById: string }, organizationId: string): Promise<ChainResult> {
+    const chains = await resolveDecisionChains(this.prisma, organizationId, [
+      { id: row.id, committeeId: row.committeeId, requesterId: row.requestedById },
+    ]);
+    return chains.get(row.id)!;
+  }
+
+  /** ACC-283 PR 2 — is the viewer a current decider of this request (under review, in its chain)? */
+  private async isCurrentDecider(row: RequestRow, organizationId: string, viewer: ChangeRequestViewer): Promise<boolean> {
+    const stages = await requestStageKeys(this.prisma, [row.id], organizationId);
+    if (!awaitsDecision(stages.get(row.id)?.key)) return false;
+    return (await this.chainOf(row, organizationId)).deciderIds.includes(viewer.userId);
+  }
+
+  /**
+   * ACC-283 PR 2 — the responses for these rows, from ONE batch: their stages and
+   * names, and ONE chain resolution for the rows that need it (under review: who
+   * decides; the viewer's own draft or returned request: Send for decision and
+   * Approve now). `known` passes chains the caller already resolved.
+   */
+  private async toDtos(
+    rows: RequestRow[],
+    organizationId: string,
+    viewer: ChangeRequestViewer,
+    committeeStageOf: (committeeId: string) => CommitteeStageRules,
+    known?: Map<string, ChainResult>,
+  ): Promise<IChangeRequest[]> {
+    if (rows.length === 0) return [];
+    const [stages, extras] = await Promise.all([
+      requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId),
+      this.loadExtras(rows, organizationId),
+    ]);
+    const needsChain = rows.filter((r) => {
+      const state = stages.get(r.id);
+      return isOpen(state) && (awaitsDecision(state?.key) || r.requestedById === viewer.userId);
     });
-    return [...new Set(rows.map((r) => r.userId))];
+    const missing = needsChain.filter((r) => !known?.has(r.id));
+    const resolved = missing.length
+      ? await resolveDecisionChains(
+          this.prisma,
+          organizationId,
+          missing.map((r) => ({ id: r.id, committeeId: r.committeeId, requesterId: r.requestedById })),
+        )
+      : new Map<string, ChainResult>();
+    const chainFor = (id: string) => known?.get(id) ?? resolved.get(id);
+    const underReview = needsChain.filter((r) => awaitsDecision(stages.get(r.id)?.key));
+    const named = await this.nameSteps(
+      underReview.map((r) => chainFor(r.id)).filter((c): c is ChainResult => !!c),
+      organizationId,
+    );
+    return rows.map((r) => {
+      const status = stages.get(r.id)?.key ?? null;
+      const chain = chainFor(r.id);
+      const by = chain && awaitsDecision(status) ? named(chain.step) : null;
+      return toDto(r, status, committeeStageOf(r.committeeId), viewer, extras, chain, by);
+    });
+  }
+
+  /**
+   * ACC-283 PR 2 — names the deciding steps for `awaitingDecisionBy`: the Reports-to
+   * committees, their seats and the units, each read once (three queries at most),
+   * scoped by organisation. Never a person.
+   */
+  private async nameSteps(chains: ChainResult[], organizationId: string): Promise<(step: ChainStep) => AwaitingDecisionBy | null> {
+    const committeeIds = new Set<string>();
+    const unitIds = new Set<string>();
+    let seatsNeeded = false;
+    for (const { step } of chains) {
+      if (step.kind === 'REPORTS_TO_SEAT') {
+        committeeIds.add(step.committeeId);
+        seatsNeeded = true;
+      }
+      if (step.kind === 'UNIT_HEAD') unitIds.add(step.unitId);
+    }
+    const [committees, units, seats] = await Promise.all([
+      committeeIds.size
+        ? this.prisma.committee.findMany({ where: { id: { in: [...committeeIds] }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
+        : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
+      unitIds.size
+        ? this.prisma.orgUnit.findMany({ where: { id: { in: [...unitIds] }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
+        : Promise.resolve([] as { id: string; nameEn: string; nameAr: string | null }[]),
+      seatsNeeded ? seatValues(this.prisma, organizationId) : Promise.resolve([]),
+    ]);
+    const committeeById = new Map(committees.map((c) => [c.id, c]));
+    const unitById = new Map(units.map((u) => [u.id, u]));
+    const seatById = new Map(seats.map((v) => [v.id, v]));
+    return (step) => {
+      if (step.kind === 'REPORTS_TO_SEAT') {
+        const committee = committeeById.get(step.committeeId);
+        if (!committee) return null;
+        return {
+          kind: 'REPORTS_TO_SEAT',
+          committee,
+          seats: step.seatIds.flatMap((id) => {
+            const seat = seatById.get(id);
+            return seat ? [{ id, labelEn: seat.labelEn, labelAr: seat.labelAr }] : [];
+          }),
+        };
+      }
+      if (step.kind === 'UNIT_HEAD') {
+        const unit = unitById.get(step.unitId);
+        return unit ? { kind: 'UNIT_HEAD', unit } : null;
+      }
+      return null;
+    };
+  }
+
+  /** ACC-283 PR 2 (Q8) — the requester's "Finish or withdraw" task, prepared before a transaction. */
+  private prepareFinishTask(committeeId: string, requesterId: string, organizationId: string) {
+    return this.tasks.prepareRecordTask(
+      {
+        ...FINISH_TASK,
+        description: 'Finish this change request and send it for decision, or withdraw it.',
+        priority: 'MEDIUM',
+        sourceType: 'COMMITTEE',
+        sourceId: committeeId,
+        assigneeUserIds: [requesterId],
+      },
+      organizationId,
+    );
   }
 
   private async notify(
@@ -919,6 +1193,13 @@ export class CommitteeChangeRequestService {
 }
 
 // ── Pure rules ────────────────────────────────────────────────────────────────
+
+/** ACC-283 PR 2 — the step that decided, for the decision's audit row (ids only). */
+function authorityOf(step: ChainStep): DecisionAuthority | null {
+  if (step.kind === 'REPORTS_TO_SEAT') return { kind: 'REPORTS_TO_SEAT', committeeId: step.committeeId, seatIds: step.seatIds };
+  if (step.kind === 'UNIT_HEAD') return { kind: 'UNIT_HEAD', unitId: step.unitId, isRoot: step.isRoot };
+  return null;
+}
 
 function hasPermission(viewer: ChangeRequestViewer, permission: string): boolean {
   return viewer.permissions.includes(permission);
@@ -1031,13 +1312,17 @@ function toDto(
   committeeStage: CommitteeStageRules,
   viewer: ChangeRequestViewer,
   extras: DtoExtras,
+  chain: ChainResult | undefined,
+  awaitingDecisionBy: AwaitingDecisionBy | null,
 ): IChangeRequest {
   const own = row.requestedById === viewer.userId;
-  const approver = hasPermission(viewer, COMMITTEES_PERMISSIONS.APPROVE);
   const editor = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
   // What both stages allow (the policy); who is asking decides the rest.
   const stage = (action: ChangeRequestAction) => stagesAllow(status, committeeStage, action);
-  const deciding = approver && !own;
+  // ACC-283 PR 2 — the chain decides, never a role.
+  const deciding = !!chain && chain.deciderIds.includes(viewer.userId);
+  const nobodyElse = !!chain && chain.step.kind === 'NONE';
+  const rootHeadOwn = own && editor && !!chain?.requesterHeadsRoot;
   return {
     id: row.id,
     committeeId: row.committeeId,
@@ -1064,13 +1349,20 @@ function toDto(
     updatedAt: row.updatedAt,
     actions: {
       edit: own && editor && stage('edit'),
-      submit: own && editor && stage('submit'),
-      withdraw: stage('withdraw') && (own || (approver && requestStagePolicy(status).othersMayWithdraw)),
+      // "Send for decision" — not when nobody else is in the chain (§4.3).
+      submit: own && editor && stage('submit') && !nobodyElse,
+      // Q8 — only the requester withdraws.
+      withdraw: own && stage('withdraw'),
       approve: deciding && stage('approve'),
       return: deciding && stage('return'),
       reject: deciding && stage('reject'),
+      // Q4 — the root head's own request: from a draft or returned one, or to
+      // retry under review when nobody else is in the chain.
+      approveNow: rootHeadOwn && (awaitsDecision(status) ? nobodyElse && stage('approve') : stage('submit')),
     },
     labels: labelsFor(row, extras.labels),
+    awaitingDecisionBy,
+    finishTaskId: row.finishTaskId,
   };
 }
 
