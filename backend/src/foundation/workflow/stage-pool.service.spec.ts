@@ -293,7 +293,9 @@ describe('StagePoolService (ACC-271)', () => {
 
   // ACC-271 PR 6a — fail closed: a stage with no `who` is read as converted
   // with an EMPTY pool, whatever entries it holds, so nobody may act on it, the
-  // sweep flags it and it awaits nobody (stage-without-who.db-spec: real Postgres).
+  // sweep flags it and it awaits nobody. ACC-278 PR B made whoMode NOT NULL, so
+  // the database no longer allows such a stage; this branch goes in the follow-up
+  // after ACC-202 part 2 (Ahmad, 14 Nov, Q5).
   it('a stage with no `who` has nobody, and no vote committee, whatever entries it holds', async () => {
     const data = empty();
     data.entries.push(entry('s1', 1, 'SPECIFIC_USER', { userId: 'u1' }), entry('s1', 2, 'COMMITTEE', { committeeId: 'cX' }));
