@@ -27,7 +27,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { CommitteeViewer, committeeOversightUnitIds, mayReadCommittee } from '../../common/services/committee-membership';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
-import { putCommitteeInEditableStage } from '../../common/testing/committee-in-stage';
+import { COMMITTEE_ACTIONS } from '../workflow/record-registry';
 import { LookupService } from '../lookup/lookup.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
@@ -114,9 +114,32 @@ describe('Heads see the committees of their units, read only, against a real dat
     await cover(ids.coverSoon, a, new Date(now + DAY));
     await cover(ids.coverEnded, a, new Date(now - 10 * DAY), { endedAt: new Date(now - DAY) });
 
+    // A live stage that allows every direct change, as Formation does. Made here, and
+    // stating its whoMode, so the spec does not depend on the shared helper's stage
+    // when ACC-278 makes whoMode required.
+    const template = await prisma.workflowTemplate.create({
+      data: { organizationId: org, nameEn: 'Committee (spec)', objectType: 'COMMITTEE', isDefault: true, isActive: true },
+    });
+    const stage = await prisma.workflowStage.create({
+      data: {
+        workflowTemplateId: template.id,
+        nameEn: 'Formation (spec)',
+        order: 10,
+        isInitial: true,
+        whoMode: 'ANY_ONE',
+        flags: ['IN_FORCE'],
+        recordActions: {
+          create: [COMMITTEE_ACTIONS.EDIT_DETAILS, COMMITTEE_ACTIONS.ADD_MEMBER, COMMITTEE_ACTIONS.REMOVE_MEMBER, COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE].map(
+            (actionKey) => ({ organizationId: org, actionKey }),
+          ),
+        },
+      },
+    });
     const make = async (nameEn: string, orgUnitId: string, extra: { parentCommitteeId?: string; reportingToCommitteeId?: string; isActive?: boolean } = {}) => {
       const id = (await prisma.committee.create({ data: { organizationId: org, nameEn, typeValueId: 'type', orgUnitId, ...extra } })).id;
-      await putCommitteeInEditableStage(prisma, org, id);
+      await prisma.workflowInstance.create({
+        data: { organizationId: org, workflowTemplateId: template.id, objectType: 'COMMITTEE', objectId: id, status: 'IN_PROGRESS', currentStageId: stage.id },
+      });
       return id;
     };
     const cRoot = await make('Board', root);
