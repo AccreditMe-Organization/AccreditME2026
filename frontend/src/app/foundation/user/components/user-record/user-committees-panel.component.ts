@@ -63,19 +63,19 @@ export interface CommitteeRow {
             [attr.data-committee-row]="row.current ? 'current' : 'past'"
           >
             <a
-              class="text-[13px] font-medium text-[var(--am-blue-primary)] hover:underline [overflow-wrap:anywhere]"
+              class="text-[13px] font-medium text-[var(--am-primary-600)] hover:underline [overflow-wrap:anywhere]"
               [routerLink]="['/committees', row.id]"
               data-committee-link
               >{{ row.name }}</a
             >
-            <span class="text-[11.5px] text-[var(--am-text-secondary)] [overflow-wrap:anywhere]" data-committee-detail>{{
+            <span class="text-[11.5px] text-[var(--am-ink-500)] [overflow-wrap:anywhere]" data-committee-detail>{{
               row.detail
             }}</span>
           </li>
         }
       </ul>
       @if (overCap(); as line) {
-        <p class="m-0 px-4 py-2 text-[11.5px] text-[var(--am-text-secondary)]" data-committees-over-cap>{{ line }}</p>
+        <p class="m-0 px-4 py-2 text-[11.5px] text-[var(--am-ink-500)]" data-committees-over-cap>{{ line }}</p>
       }
     </app-record-panel>
   `,

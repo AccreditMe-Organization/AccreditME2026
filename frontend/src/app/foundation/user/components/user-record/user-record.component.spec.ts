@@ -514,6 +514,18 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     expect(panel.querySelector('[data-committee-link]')!.textContent!.trim()).toBe('Quality Committee');
   });
 
+  // ── Test 17 (CC-276) ────────────────────────────────────────────────────
+  // The retired #718096 (4.02:1 on white) stays out of THIS template: meta text
+  // is ink-500. Read from the compiled definition's static attributes, which
+  // hold this page's own class strings and none of the shared record-panel
+  // frame's (retired separately). The ink-500 guard runs first.
+  it('17 · its template uses no retired --am-text-secondary', () => {
+    const def = (UserRecordComponent as unknown as { ɵcmp: { consts: unknown } }).ɵcmp;
+    const template = JSON.stringify(typeof def.consts === 'function' ? (def.consts as () => unknown)() : def.consts);
+    expect(template).withContext('the template classes were read').toContain('--am-ink-500');
+    expect(template).not.toContain('--am-text-secondary');
+  });
+
   // ── Test 15 ─────────────────────────────────────────────────────────────
   it('15 · Arabic: the facts and headings are translated, names in Arabic, the email isolated LTR', () => {
     const ctx = render({ viewer: ME, recordId: ME, permissions: ['roles:view'], arabic: true });

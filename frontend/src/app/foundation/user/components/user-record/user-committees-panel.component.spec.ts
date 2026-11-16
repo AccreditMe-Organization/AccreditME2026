@@ -170,9 +170,21 @@ describe('UserCommitteesPanelComponent (ACC-216)', () => {
     });
   });
 
-  it('Arabic empty: «ليس عضوًا في أي لجنة»', () => {
+  it('Arabic empty: «لا عضوية في أي لجنة»', () => {
     const { el, answer } = render(true);
     answer({ total: 0, rows: [] });
-    expect(el.querySelector('[data-panel="committees"]')!.textContent).toContain('ليس عضوًا في أي لجنة');
+    expect(el.querySelector('[data-panel="committees"]')!.textContent).toContain('لا عضوية في أي لجنة');
+  });
+
+  // CC-276 — the retired #718096 (4.02:1 on white) stays out of THIS template:
+  // meta text is ink-500. Read from the compiled definition's static attributes,
+  // which hold this component's own class strings and none of the shared
+  // record-panel frame's (that frame is retired separately). The ink-500 guard
+  // runs first, so an empty read cannot pass.
+  it('its template uses no retired --am-text-secondary', () => {
+    const def = (UserCommitteesPanelComponent as unknown as { ɵcmp: { consts: unknown } }).ɵcmp;
+    const template = JSON.stringify(typeof def.consts === 'function' ? (def.consts as () => unknown)() : def.consts);
+    expect(template).withContext('the template classes were read').toContain('--am-ink-500');
+    expect(template).not.toContain('--am-text-secondary');
   });
 });
