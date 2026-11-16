@@ -31,7 +31,7 @@ import { COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
 // own cross-tenant CommitteeMember query; the replacement runs no query at
 // all.
 
-type HandlerName = 'createCommittee' | 'updateCommittee' | 'addMember' | 'changeMemberRole' | 'removeMember';
+type HandlerName = 'createCommittee' | 'updateCommittee' | 'addMember' | 'changeMemberRole' | 'removeMember' | 'replaceSeatActions';
 
 const CASES: Array<[HandlerName, string]> = [
   ['createCommittee', COMMITTEES_PERMISSIONS.CREATE],
@@ -39,6 +39,8 @@ const CASES: Array<[HandlerName, string]> = [
   ['addMember', COMMITTEES_PERMISSIONS.ADD_MEMBER],
   ['changeMemberRole', COMMITTEES_PERMISSIONS.CHANGE_MEMBER_ROLE],
   ['removeMember', COMMITTEES_PERMISSIONS.REMOVE_MEMBER],
+  // ACC-283 — seat actions are part of the terms of reference: the edit's own key.
+  ['replaceSeatActions', COMMITTEES_PERMISSIONS.EDIT_DETAILS],
 ];
 
 function buildContext(handlerName: HandlerName, userPermissions: string[]): ExecutionContext {
@@ -64,7 +66,7 @@ describe('CommitteesController — the committee reads decide in the service (AC
       switchToHttp: () => ({ getRequest: () => ({ userPermissions }) }),
     }) as unknown as ExecutionContext;
 
-  it.each(['listCommittees', 'getCommitteeById', 'listMembers', 'membersPage', 'subCommittees', 'listMembershipEvents'])(
+  it.each(['listCommittees', 'getCommitteeById', 'listMembers', 'membersPage', 'subCommittees', 'listMembershipEvents', 'getSeatActions'])(
     '%s passes the guard for a caller without committees:view',
     (name) => {
       expect(guard.canActivate(ctx(name, ['tasks:view']))).toBe(true);
@@ -91,7 +93,7 @@ describe('CommitteesController permission wiring (ACC-28 correction — Retrospe
     expect(guard.canActivate(ctx)).toBe(true);
   });
 
-  it('a role holding the full committees:* bundle (as role.seed.ts grants PLATFORM_ADMIN/TENANT_ADMIN/QUALITY_MANAGER) performs all 5 actions', () => {
+  it('a role holding the full committees:* bundle (as role.seed.ts grants PLATFORM_ADMIN/TENANT_ADMIN/QUALITY_MANAGER) performs all 6 actions', () => {
     // Simulates the real seeded shape: literal RolePermission rows for
     // every committees:* string via role.seed.ts's
     // Object.values(COMMITTEES_PERMISSIONS) spread — not the old design's
