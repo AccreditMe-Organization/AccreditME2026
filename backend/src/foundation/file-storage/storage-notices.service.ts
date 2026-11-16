@@ -67,7 +67,7 @@ export class StorageNoticesService {
           titleEn: 'File storage almost full',
           titleAr: 'مساحة تخزين الملفات توشك على الامتلاء',
           bodyEn: `Your organization has used ${percent}% of its file storage (${used} GB of ${limit} GB). Deleted files count until they are purged from the recycle bin.`,
-          bodyAr: `استخدمت مؤسستك ${percent}٪ من مساحة تخزين الملفات (${used} من ${limit} غيغابايت). تُحتسب الملفات المحذوفة إلى أن تُحذف نهائيًا من سلة المحذوفات.`,
+          bodyAr: `استخدمت منشأتك ${percent}٪ من مساحة تخزين الملفات (${used} من ${limit} غيغابايت). تُحتسب الملفات المحذوفة إلى أن تُحذف نهائيًا من سلة المحذوفات.`,
           objectType: 'Organization',
           objectId: organizationId,
         },

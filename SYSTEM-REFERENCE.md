@@ -9760,9 +9760,19 @@ A wording convention, kept by review: **no scan checks it.**
     Microsoft Entra's own label for Enterprise applications, quoted so the
     admin can find it.
 
-  **Not covered:** the backend's own Arabic (notification bodies, the
-  seeded root role «مسؤول المؤسسة») still says «مؤسسة». A role's Arabic name
-  is tenant data, so a renamed seed does not reach existing organisations.
+  **The backend followed (16 Nov):**
+  - the three notification bodies that said «مؤسستك» (AI credits used up,
+    storage almost full, users with incomplete profiles) say «منشأتك»;
+  - the root role is seeded as «مسؤول المنشأة».
+  The six «منظمة» strings left in `ar.json` moved too.
+
+  **Still not covered:**
+  - **Existing organisations keep «مسؤول المؤسسة».** A role's Arabic name
+    is tenant data, so a renamed seed reaches new organisations only.
+    Renaming theirs would be a data change.
+  - **Two committee member form keys** (`committee.memberForm.personHint`,
+    `committee.memberForm.noPeople`) still say «المنظمة», left to the
+    committee screens' owners.
 - **No masculine verb or pronoun has a specific person as its subject or
   referent**, because the platform stores no gender. That person may be
   `{{name}}`, `{{person}}`, `{{incoming}}`, `{{current}}`, or the user a

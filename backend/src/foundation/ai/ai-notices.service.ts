@@ -46,7 +46,7 @@ export class AiNoticesService {
             titleEn: 'AI credits used up',
             titleAr: 'نفدت أرصدة الذكاء الاصطناعي',
             bodyEn: `Your organization has used all its AI credits for this period. They renew on ${dateEn}.`,
-            bodyAr: `استخدمت مؤسستك جميع أرصدة الذكاء الاصطناعي لهذه الفترة، وتتجدد في ${dateAr}.`,
+            bodyAr: `استخدمت منشأتك جميع أرصدة الذكاء الاصطناعي لهذه الفترة، وتتجدد في ${dateAr}.`,
             objectType: 'Organization',
             objectId: organizationId,
           },
