@@ -5110,7 +5110,7 @@ nothing decides by them yet.** Full mechanism: SYSTEM-REFERENCE.md
 - **DEFAULTS ARE BOOLEAN ATTRIBUTES ON THE SEAT LOOKUP**, named in both
   languages, merged key by key with an organisation's override, and COPIED into
   a committee when it is created. A changed default never reaches an existing
-  committee. The seeded defaults are plan Q10's recommendation, pending Ahmad.
+  committee. The seeded defaults are plan Q10's, confirmed by Ahmad (16 Nov).
 - **EDITED ONLY WHERE THE STAGE ALLOWS `edit_details`** (Formation), through
   `PUT /committees/:id/seat-actions`, in the engine's lock order, with the stale
   check and one audit row; after that, through an approved change request (PR 5).

@@ -7126,7 +7126,7 @@ named in both languages (`labelEn`, `labelAr`, ACC-310's shape; and `label`,
 which the value form reads today).
 - The SYSTEM values carry them, rewritten by `seedSystemData()` on every deploy:
   Chairman all five; Secretary the four member actions; every other seat none
-  (plan Q10's recommendation, pending Ahmad).
+  (plan Q10, confirmed by Ahmad, 16 Nov).
 - An organisation changes a default through its override row
   (`PATCH /lookups/values/:id/attributes`, `lookups:manage`), merged key by key.
 
@@ -8297,6 +8297,13 @@ org_unit_type`. **`org_unit_type` is not mentioned in CLAUDE.md's own
 for completeness. **Exactly one category is `isExtensible: false`**:
 `incident_severity` — every other seeded category allows tenant-added
 values.
+
+**ACC-310: an attribute's name lives in its schema, in both languages:**
+`properties.<key>.labelEn` and `labelAr`. The value form shows it through
+`LanguageService.bilingual()`. `lookup.seed.spec.ts` fails a seeded attribute
+without both. `seedSystemData()` rewrites the shared schemas on every deploy, so
+no backfill is needed. `required` keeps its old `label` until the form stops
+reading it, and the backend reads only `type` (`schemaProperties()`).
 
 ### 6.2 The Override Pattern — `getValues()`'s Exact Merge Algorithm
 

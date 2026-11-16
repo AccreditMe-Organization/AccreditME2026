@@ -43,17 +43,20 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
     // default on these shared rows (seedSystemData() rewrites them on every
     // deploy, so every organisation inherits the default with no backfill); an
     // organisation unticks one through its override row (overrideAttributes()).
+    // ACC-310 — every attribute carries its name in both languages (labelEn,
+    // labelAr), shown through bilingual(). `label` stays until the value form
+    // stops reading it.
     //
     // ACC-283 — the seat's DEFAULT actions (SEAT_ACTIONS, seat-actions.ts), one
     // boolean each, named in both languages (ACC-310's labelEn/labelAr; `label`
     // too, which the value form reads today). Copied into a committee when it is
     // created; changing a default never reaches an existing committee. The
     // values below are plan Q10's recommendation (Chairman all five, Secretary
-    // the four member actions), pending Ahmad's answer.
+    // the four member actions), confirmed by Ahmad (16 Nov).
     attributeSchema: {
       type: 'object',
       properties: {
-        required: { type: 'boolean', label: 'Required seat' },
+        required: { type: 'boolean', label: 'Required seat', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
         seatAddsMember:              { type: 'boolean', label: 'Add members',                                     labelEn: 'Add members',                                     labelAr: 'إضافة أعضاء' },
         seatRemovesMember:           { type: 'boolean', label: 'Remove members',                                  labelEn: 'Remove members',                                  labelAr: 'إزالة أعضاء' },
         seatChangesSeat:             { type: 'boolean', label: "Change a member's seat",                          labelEn: "Change a member's seat",                          labelAr: 'تغيير مقعد عضو' },
@@ -81,11 +84,11 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
     attributeSchema: {
       type: 'object',
       properties: {
-        requiresFlowchart:         { type: 'boolean' },
-        defaultReviewCycleMonths:  { type: 'number' },
-        numberingPrefix:           { type: 'string' },
-        requiresCommitteeApproval: { type: 'boolean' },
-        defaultRetentionYears:     { type: 'number' },
+        requiresFlowchart:         { type: 'boolean', labelEn: 'Requires a flowchart',           labelAr: 'يتطلب مخططًا انسيابيًا' },
+        defaultReviewCycleMonths:  { type: 'number',  labelEn: 'Default review cycle (months)',  labelAr: 'دورة المراجعة الافتراضية (بالأشهر)' },
+        numberingPrefix:           { type: 'string',  labelEn: 'Numbering prefix',               labelAr: 'بادئة الترقيم' },
+        requiresCommitteeApproval: { type: 'boolean', labelEn: 'Requires committee approval',    labelAr: 'يتطلب اعتماد لجنة' },
+        defaultRetentionYears:     { type: 'number',  labelEn: 'Default retention (years)',      labelAr: 'مدة الحفظ الافتراضية (بالسنوات)' },
       },
     },
     sortOrder: 30,
