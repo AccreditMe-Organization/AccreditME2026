@@ -233,8 +233,32 @@ export async function mayReadCommittee(
   viewer: CommitteeViewer,
   now: Date = new Date(),
 ): Promise<boolean> {
-  if (await maySeeCommittee(client, committeeId, organizationId, viewer)) return true;
-  return overseesCommittee(client, committeeId, organizationId, viewer.id, now);
+  return (await committeeAccess(client, committeeId, organizationId, viewer, now)).read;
+}
+
+/** What one viewer may do with one committee: read it, and pass the write precondition. */
+export interface CommitteeAccess {
+  read: boolean;
+  /** assertMayWriteCommittee()'s precondition: committees:view or an active member. */
+  write: boolean;
+}
+
+/**
+ * ACC-283 — READ and WRITE from one pass, so the committee read can say whether
+ * the viewer may write (`mayWrite`, for the screens) at no extra cost. `write` is
+ * maySeeCommittee(), the very function assertMayWriteCommittee() asks, so the
+ * flag and the write cannot drift. A holder pays no query, a member one, anyone
+ * else the membership query and then the oversight reads (only for `read`).
+ */
+export async function committeeAccess(
+  client: ReadClient,
+  committeeId: string,
+  organizationId: string,
+  viewer: CommitteeViewer,
+  now: Date = new Date(),
+): Promise<CommitteeAccess> {
+  if (await maySeeCommittee(client, committeeId, organizationId, viewer)) return { read: true, write: true };
+  return { read: await overseesCommittee(client, committeeId, organizationId, viewer.id, now), write: false };
 }
 
 /**
@@ -266,8 +290,9 @@ export async function assertMaySeeCommittee(
   organizationId: string,
   viewer: CommitteeViewer,
   now: Date = new Date(),
-): Promise<void> {
-  if (await mayReadCommittee(client, committeeId, organizationId, viewer, now)) return;
+): Promise<CommitteeAccess> {
+  const access = await committeeAccess(client, committeeId, organizationId, viewer, now);
+  if (access.read) return access;
   throw new ForbiddenException(`Required permission: ${COMMITTEES_PERMISSIONS.VIEW}`);
 }
 
