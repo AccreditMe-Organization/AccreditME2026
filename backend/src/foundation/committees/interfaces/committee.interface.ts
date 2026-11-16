@@ -2,6 +2,19 @@ import type { ILookupValue } from '../../lookup/interfaces/lookup-value.interfac
 import type { IOrgUnit } from '../../organization/interfaces/org-unit.interface';
 
 /**
+ * ACC-283 — what each seat allows on this committee: every seat the
+ * organisation uses, in seat order, with its actions in list order.
+ * `updatedAt` is the committee's, sent back as `expectedUpdatedAt` on a save.
+ */
+export interface ICommitteeSeatActions {
+  committeeId: string;
+  updatedAt: Date;
+  /** The fixed list, in the order a screen shows it. */
+  actionKeys: string[];
+  seats: { id: string; key: string; labelEn: string; labelAr: string | null; actions: string[] }[];
+}
+
+/**
  * ACC-255 — what the committee's CURRENT STAGE allows to be done to it, and
  * what that stage means, from the workflow engine's own answer
  * (StageRulesService), never from a stage key. The stage only narrows: a

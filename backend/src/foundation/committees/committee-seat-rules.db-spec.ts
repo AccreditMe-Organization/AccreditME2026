@@ -97,7 +97,8 @@ describe('Required committee seats against a real database (ACC-286)', () => {
       ['secretary', 'Secretary', 'أمين السر'],
     ]);
     const chairman = (await lookups.getValues('committee_member_role', o.id)).find((v) => v.key === 'chairman')!;
-    expect(chairman.attributes).toEqual({ required: true });
+    // ACC-283 — the shared row also carries the seat's default actions; this test is about `required`.
+    expect(chairman.attributes).toEqual(expect.objectContaining({ required: true }));
     expect(chairman.labelEn).toBe('President');
   });
 

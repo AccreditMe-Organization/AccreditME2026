@@ -74,7 +74,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
       >
         <div class="flex items-center gap-2 min-w-0">
           <h3
-            class="text-[11px] font-semibold uppercase tracking-wider text-[var(--am-text-secondary)] truncate"
+            class="text-[11px] font-semibold uppercase tracking-wider text-[var(--am-ink-500)] truncate"
           >
             {{ heading() }}
           </h3>
@@ -84,7 +84,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
             <span
               dir="ltr"
               style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
-              class="text-[11.5px] font-semibold px-1.5 py-px rounded text-[var(--am-text-secondary)] bg-[var(--am-surface)]"
+              class="text-[11.5px] font-semibold px-1.5 py-px rounded text-[var(--am-ink-500)] bg-[var(--am-surface)]"
             >
               {{ shownCount() }}
             </span>
@@ -131,7 +131,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
               <div class="flex flex-col items-start gap-2 p-4" role="alert" data-panel-error>
                 <p-message severity="error" [text]="(error() ?? 'recordPanel.errorLoad') | translate" />
                 @if (o.errorId) {
-                  <span dir="ltr" class="text-xs text-[var(--am-text-secondary)] [unicode-bidi:isolate]">
+                  <span dir="ltr" class="text-xs text-[var(--am-ink-500)] [unicode-bidi:isolate]">
                     {{ 'recordPanel.errorId' | translate: { id: o.errorId } }}
                   </span>
                 }
@@ -175,7 +175,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
         ></span>
         <span class="text-[13px] font-medium mt-0.5">{{ emptyTitle() }}</span>
         @if (emptyMessage()) {
-          <span class="text-xs text-[var(--am-text-secondary)] max-w-[30ch]">
+          <span class="text-xs text-[var(--am-ink-500)] max-w-[30ch]">
             {{ emptyMessage() }}
           </span>
         }

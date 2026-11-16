@@ -5102,6 +5102,33 @@ Ahmad's answers (14 Nov, A1–A8):
 - **Nothing on the per-request path.** One additive migration
   (`acc286_setup_committee_missing_seat`), run in the pre-deploy step.
 
+## Key Architecture Decisions (ACC-283)
+
+Committee governance: seats decide what members may do, and the chain of
+authority decides change requests. **PR 1 is built: seat actions are STORED;
+nothing decides by them yet.** Full mechanism: SYSTEM-REFERENCE.md
+§3.21.5. Plan, lane B's review (16 Nov) and the open questions:
+`backend/Plans/step-283-change-request-chain.md`. Briefly:
+
+- **SEAT ACTIONS ARE A FIXED LIST, STORED PER COMMITTEE** (`seat-actions.ts`,
+  `CommitteeSeatAction`, text keys). A row means the seat allows the action on
+  that committee; no row allows nothing. `seatActionsFor()` is the one reader.
+- **DEFAULTS ARE BOOLEAN ATTRIBUTES ON THE SEAT LOOKUP**, named in both
+  languages, merged key by key with an organisation's override, and COPIED into
+  a committee when it is created. A changed default never reaches an existing
+  committee. The seeded defaults are plan Q10's, confirmed by Ahmad (16 Nov).
+- **EDITED ONLY WHERE THE STAGE ALLOWS `edit_details`** (Formation), through
+  `PUT /committees/:id/seat-actions`, in the engine's lock order, with the stale
+  check and one audit row; after that, through an approved change request (PR 5).
+- **NO SETUP HEALTH CONDITION FOR "NOBODY CAN DECIDE"** (Ahmad, 16 Nov, Q7):
+  ACC-288 keeps the root unit headed, so the chain always ends with a decider.
+  If it ever finds nobody (a legacy headless root), PR 2 refuses Submit with
+  409 `CHANGE_REQUEST_NO_DECIDER` and logs it.
+- **The backfill (`backfill:acc283-seat-actions`) runs AFTER the deploy**, dry
+  run first; it fills only committees with no rows and refuses customers.
+- **One additive migration** (`acc283_committee_seat_actions`), run in the
+  pre-deploy step. Nothing on the per-request path.
+
 ## Key Architecture Decisions (ACC-164)
 
 Turning two-step sign-in off, and the administrator reset. Full mechanism:

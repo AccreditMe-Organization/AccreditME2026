@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -12,6 +12,7 @@ import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
 import { ChangeCommitteeMemberRoleDto } from './dto/change-committee-member-role.dto';
 import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
+import { ReplaceSeatActionsDto } from './dto/replace-seat-actions.dto';
 import {
   ICommittee,
   ICommitteeDetail,
@@ -22,6 +23,7 @@ import {
   ICommitteeMembershipEventRow,
   ICommitteeMemberships,
   ICommitteePage,
+  ICommitteeSeatActions,
   IMyCommittees,
   ISubCommitteeRow,
 } from './interfaces/committee.interface';
@@ -127,6 +129,33 @@ export class CommitteesController {
     @CurrentUserPermissions() permissions: string[],
   ): Promise<ICommittee> {
     return this.committeesService.updateCommittee(id, dto, tenantId, userId, permissions);
+  }
+
+  // ACC-283 — what each seat allows on this committee. No route permission:
+  // committees:view OR an active member of the committee (ACC-281), decided in
+  // the service; anyone else gets today's 403.
+  @Get(':id/seat-actions')
+  getSeatActions(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ICommitteeSeatActions> {
+    return this.committeesService.getSeatActions(id, tenantId, { id: userId, permissions });
+  }
+
+  // ACC-283 — the whole map, where the stage allows a direct edit (Formation).
+  // committees:edit_details here; committees:view or membership in the service.
+  @Put(':id/seat-actions')
+  @Permissions(COMMITTEES_PERMISSIONS.EDIT_DETAILS)
+  replaceSeatActions(
+    @Param('id') id: string,
+    @Body() dto: ReplaceSeatActionsDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ICommitteeSeatActions> {
+    return this.committeesService.replaceSeatActions(id, dto, tenantId, userId, permissions);
   }
 
   // ACC-281 — no route permission: committees:view OR an active member of the

@@ -60,6 +60,50 @@ export async function requiredSeats(client: SeatClient, organizationId: string):
     ORDER BY "sortOrder", key`;
 }
 
+export interface SeatValue extends RequiredSeat {
+  /** The attributes as the organisation sees them: the shared row's, with its override's over them key by key. */
+  attributes: Record<string, unknown>;
+}
+
+/**
+ * ACC-283 — every seat the organisation sees, with its attributes MERGED as
+ * `requiredSeats()` merges them (and as LookupService.getValues() shows them):
+ * the shared row's attributes with the organisation's override row over them
+ * key by key, a hidden seat left out, the organisation's own seats as they are.
+ * The seat defaults (seat-actions.ts) read it. db-spec pins it to getValues().
+ */
+export async function seatValues(client: SeatClient, organizationId: string): Promise<SeatValue[]> {
+  return client.$queryRaw<SeatValue[]>`
+    WITH cat AS (
+      SELECT id FROM "LookupCategory" WHERE key = 'committee_member_role' AND "organizationId" IS NULL
+    ),
+    shared AS (
+      SELECT v.* FROM "LookupValue" v
+      WHERE v."categoryId" IN (SELECT id FROM cat) AND v."organizationId" IS NULL AND v."isActive"
+    ),
+    own AS (
+      SELECT v.* FROM "LookupValue" v
+      WHERE v."categoryId" IN (SELECT id FROM cat) AND v."organizationId" = ${organizationId} AND v."isActive"
+    )
+    SELECT id, key, "labelEn", "labelAr", attributes FROM (
+      SELECT s.id, s.key,
+             COALESCE(o."labelOverrideEn", s."labelEn") AS "labelEn",
+             COALESCE(o."labelOverrideAr", s."labelAr") AS "labelAr",
+             s."sortOrder",
+             (CASE WHEN jsonb_typeof(s.attributes) = 'object' THEN s.attributes ELSE '{}'::jsonb END)
+               || (CASE WHEN jsonb_typeof(o.attributes) = 'object' THEN o.attributes ELSE '{}'::jsonb END) AS attributes
+      FROM shared s
+      LEFT JOIN own o ON o.key = s.key
+      WHERE NOT COALESCE(o."isHidden", false)
+      UNION ALL
+      SELECT o.id, o.key, o."labelEn", o."labelAr", o."sortOrder",
+             CASE WHEN jsonb_typeof(o.attributes) = 'object' THEN o.attributes ELSE '{}'::jsonb END AS attributes
+      FROM own o
+      WHERE NOT EXISTS (SELECT 1 FROM shared s WHERE s.key = o.key)
+    ) seats
+    ORDER BY "sortOrder", key`;
+}
+
 export interface SeatHolder {
   memberId: string;
   userId: string;

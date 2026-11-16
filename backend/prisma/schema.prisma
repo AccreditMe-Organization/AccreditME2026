@@ -482,6 +482,7 @@ model Organization {
   setupConditions          SetupCondition[]
   setupConditionRuns       SetupConditionRun[]
   committees               Committee[]
+  committeeSeatActions     CommitteeSeatAction[] // ACC-283
   meetings                 Meeting[]
   auditLogs                AuditLog[]
   aiInteractionLogs        AiInteractionLog[]
@@ -1989,6 +1990,7 @@ model Committee {
   meetings             Meeting[]
   poolTasks            Task[]                     @relation("TaskAssignedCommittee") // ACC-167
   changeRequests       CommitteeChangeRequest[] // ACC-239
+  seatActions          CommitteeSeatAction[] // ACC-283
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionCommittee") // ACC-190
 
@@ -2024,6 +2026,29 @@ model CommitteeMember {
   @@index([organizationId])
   @@index([committeeId])
   @@index([userId])
+}
+
+// ACC-283 — what each seat allows ON THIS COMMITTEE. A row means the seat
+// (a committee_member_role value) allows the action; a seat with no row allows
+// nothing. The actions are a fixed list in foundation/committees/seat-actions.ts,
+// stored as text like WorkflowStageRecordAction.actionKey, so a new action
+// (Meetings: schedule a meeting, record minutes) needs no enum migration.
+// Copied from the organisation's seat defaults when a committee is created, and
+// edited only where the committee's stage allows edit_details (Formation).
+model CommitteeSeatAction {
+  id             String   @id @default(cuid())
+  organizationId String
+  committeeId    String
+  roleValueId    String
+  actionKey      String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  committee    Committee    @relation(fields: [committeeId], references: [id])
+
+  @@unique([committeeId, roleValueId, actionKey])
+  @@index([organizationId])
+  @@index([committeeId, actionKey])
 }
 
 model CommitteeMembershipEvent {

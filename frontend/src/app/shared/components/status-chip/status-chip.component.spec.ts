@@ -148,6 +148,6 @@ describe('StatusChipComponent (ACC-78)', () => {
   // StatusBadgeComponent established.
   it('falls back to secondary text for an unmapped value', () => {
     const f = render('user', 'SOME_NEW_STATUS');
-    expect(f.componentInstance.ink()).toContain('var(--am-text-secondary)');
+    expect(f.componentInstance.ink()).toContain('var(--am-ink-500)');
   });
 });

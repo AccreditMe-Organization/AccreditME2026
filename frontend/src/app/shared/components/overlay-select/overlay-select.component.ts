@@ -296,8 +296,8 @@ function flattenHierarchy(
 
       .am-overlay-select-trigger:focus,
       .am-overlay-select-trigger-open {
-        border-color: var(--am-blue-primary);
-        box-shadow: 0 0 0 1px var(--am-blue-primary);
+        border-color: var(--am-primary-600);
+        box-shadow: 0 0 0 1px var(--am-primary-600);
       }
 
       .am-overlay-select-trigger-disabled {
@@ -313,12 +313,12 @@ function flattenHierarchy(
       }
 
       .am-overlay-select-placeholder {
-        color: var(--am-text-secondary);
+        color: var(--am-ink-500);
       }
 
       .am-overlay-select-clear-icon {
         font-size: 0.75rem;
-        color: var(--am-text-secondary);
+        color: var(--am-ink-500);
       }
 
       .am-overlay-select-clear-icon:hover {
@@ -327,7 +327,7 @@ function flattenHierarchy(
 
       .am-overlay-select-chevron {
         font-size: 0.75rem;
-        color: var(--am-text-secondary);
+        color: var(--am-ink-500);
       }
 
       .am-overlay-select-panel {
@@ -361,7 +361,7 @@ function flattenHierarchy(
         font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 0.03em;
-        color: var(--am-text-secondary);
+        color: var(--am-ink-500);
       }
 
       .am-overlay-select-option.am-overlay-select-group-header:hover {
@@ -383,7 +383,7 @@ function flattenHierarchy(
          attribute rather than a separately-recomputed class, so the
          highlight can never drift out of sync with CDK's own state. */
       .am-overlay-select-option[aria-selected='true'] {
-        background: var(--am-blue-primary);
+        background: var(--am-primary-600);
         color: #ffffff;
       }
 
@@ -397,7 +397,7 @@ function flattenHierarchy(
       }
 
       .am-overlay-select-option-empty {
-        color: var(--am-text-secondary);
+        color: var(--am-ink-500);
         cursor: default;
       }
 

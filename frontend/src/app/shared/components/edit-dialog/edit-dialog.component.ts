@@ -145,7 +145,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
               aria-hidden="true"
               class="pointer-events-none absolute inset-x-0 bottom-0 flex h-8 items-end justify-center bg-gradient-to-t from-[var(--am-card)] to-transparent"
             >
-              <i class="pi pi-chevron-down mb-1 text-xs text-[var(--am-text-secondary)]"></i>
+              <i class="pi pi-chevron-down mb-1 text-xs text-[var(--am-ink-500)]"></i>
             </div>
           }
         </div>
