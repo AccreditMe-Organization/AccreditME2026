@@ -75,7 +75,7 @@ const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr
  * order, then the stage rules. `addStage` and `removeStage` record all of
  * them; `updateStage` records the ones that changed (`stageAuditDiff`).
  * ACC-271 PR 6b — who works the stage is recorded beside them (`whoMode`,
- * `whoEntries`); the old people columns never are.
+ * `whoEntries`). ACC-278 PR B dropped the old people columns.
  */
 const STAGE_AUDIT_FIELDS = ['nameEn', 'nameAr', 'description', 'order', 'slaWorkingHours', 'isInitial', 'isFinal', 'escalationConfig'] as const;
 
@@ -756,8 +756,8 @@ export class WorkflowTemplateService {
         slaWorkingHours: dto.slaWorkingHours ?? null,
         isInitial: dto.isInitial ?? false,
         isFinal: dto.isFinal ?? false,
-        // ACC-271 PR 6b — no old people column is written: they keep their
-        // database defaults, nothing reads them, and 6c drops them.
+        // ACC-271 PR 6b — who works it is `who` alone; ACC-278 PR B dropped the
+        // old people columns.
         escalationConfig: this.toJson(dto.escalationConfig),
         flags,
         // ACC-271 PR 5-be — how the new stage's people decide; setting it converts the stage.
@@ -1149,8 +1149,8 @@ export class WorkflowTemplateService {
     this.assertNoRetiredValidator(dto.validatorConfig);
     // ACC-271 PR 6b — whoever works the from-stage presses the move: it names no
     // role, person or permission, and is never the app's (only seeds write
-    // those, plan §4.4). Its mover is always PERSON; the old people columns
-    // keep their database defaults (6c drops them).
+    // those, plan §4.4). Its mover is always PERSON. ACC-278 PR B dropped the
+    // old trigger columns.
     const transition = await this.prisma.workflowTransition.create({
       data: {
         fromStageId: dto.fromStageId,

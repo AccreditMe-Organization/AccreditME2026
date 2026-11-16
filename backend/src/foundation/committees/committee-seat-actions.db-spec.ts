@@ -90,6 +90,7 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
         workflowTemplateId: instance.workflowTemplateId,
         nameEn: 'Active (spec)',
         order: 30,
+        whoMode: 'ANY_ONE',
         flags: ['IN_FORCE'],
         recordActions: { create: [{ organizationId: o.id, actionKey: COMMITTEE_ACTIONS.REQUEST_CHANGE }] },
       },

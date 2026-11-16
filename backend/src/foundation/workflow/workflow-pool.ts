@@ -3,9 +3,10 @@ import type { Prisma, TransitionMover } from '../../../generated/prisma/client';
 /**
  * ACC-271 — who moves the record along a transition: PERSON (whoever works the
  * from-stage) or APP (the module's own code). PR 6b — the stored `mover` only,
- * never the old trigger column. Null (none exist: the seed, the editor and
- * the backfill all write one) is neither: a person is refused
- * MOVE_HAS_NO_MOVER, and the app never finds it.
+ * never the old trigger column. Null is neither: a person is refused
+ * MOVE_HAS_NO_MOVER, and the app never finds it. ACC-278 PR B made `mover`
+ * NOT NULL, so no stored move is null; the branch goes in the follow-up after
+ * ACC-202 part 2 (Ahmad, 14 Nov, Q5).
  */
 export function transitionMover(transition: { mover?: TransitionMover | null }): TransitionMover | null {
   return transition.mover ?? null;

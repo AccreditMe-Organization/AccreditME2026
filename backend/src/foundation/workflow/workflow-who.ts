@@ -25,7 +25,7 @@ export async function writeStartingAssignments(
   createdById: string | null,
 ): Promise<{ stageIds: string[] }> {
   const stages = await db.workflowStage.findMany({
-    where: { whoMode: { not: null }, workflowTemplate: { organizationId }, assignees: { none: {} } },
+    where: { workflowTemplate: { organizationId }, assignees: { none: {} } },
     select: { id: true },
     orderBy: { id: 'asc' },
   });
