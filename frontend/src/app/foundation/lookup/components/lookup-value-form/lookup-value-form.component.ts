@@ -24,6 +24,21 @@ import {
   UpdateLookupValueDto,
 } from '../../services/lookup.service';
 import { lookupRefusalKey } from '../../lookup-refusal';
+import { LanguageService } from '../../../../core/services/language.service';
+
+/**
+ * ACC-310 — one attribute of the category's schema, as the form shows it. The
+ * names are kept as the schema states them and resolved at DISPLAY time
+ * (attributeName()), never fixed at load, so a language switch reaches them.
+ */
+export interface AttributeField {
+  key: string;
+  type: string;
+  labelEn: string | null;
+  labelAr: string | null;
+  /** The single-language name schemas carried before ACC-310. */
+  label: string | null;
+}
 
 @Component({
   selector: 'app-lookup-value-form',
@@ -102,9 +117,16 @@ import { lookupRefusalKey } from '../../lookup-refusal';
       }
 
       @if (step() === 2) {
-        <div [formGroup]="attributeGroup" class="flex flex-col">
+        <!-- CC-283 — ONE vertical gap between every attribute, the form's own
+             row token. An am-field used to reserve a 17px message slot (plus
+             2px) under its input while a checkbox row reserved nothing, so an
+             input sat 19px above the next field and a checkbox 0px. These
+             controls carry no validators and so can never show a message:
+             each declares message="none" (am-field's clause), and the gap is
+             the container's alone. -->
+        <div [formGroup]="attributeGroup" class="flex flex-col gap-[var(--am-form-row-gap)]" data-attribute-fields>
           @for (field of attributeFields(); track field.key) {
-            <div class="flex flex-col gap-1">
+            <div class="flex flex-col gap-1" [attr.data-attribute-field]="field.key">
               @if (field.type === 'boolean') {
                 <div class="flex items-center gap-3">
                   <p-checkbox
@@ -113,21 +135,24 @@ import { lookupRefusalKey } from '../../lookup-refusal';
                     [inputId]="'attr_' + field.key"
                   />
                   <label [for]="'attr_' + field.key" class="font-medium text-sm cursor-pointer">
-                    {{ field.label }}
+                    {{ attributeName(field) }}
                   </label>
                 </div>
               } @else if (field.type === 'number') {
-                <!-- The attribute schema's own label, which is tenant data and
-                     so is NOT translated — same rule as a workflow transition's
-                     label (CLAUDE.md, ACC-22). -->
+                <!-- ACC-310 — the attribute's name comes from the schema itself,
+                     which now states it in both languages (labelEn / labelAr).
+                     It is data, not a translation key, so it is shown through
+                     attributeName() (LanguageService.bilingual at call time),
+                     never through | translate. -->
                 <!-- ACC-120 — [control] IS PASSED. It was not, and the
                      consequence was silent: am-field's showError bails on a
                      missing control, so these fields could not report an
                      error even though the control exists and is validated. -->
                 <am-field
-                  [label]="field.label"
+                  [label]="attributeName(field)"
                   [inputId]="'attr_' + field.key"
                   [control]="attributeGroup.get(field.key)"
+                  message="none"
                 >
                   <input
                     [id]="'attr_' + field.key"
@@ -139,9 +164,10 @@ import { lookupRefusalKey } from '../../lookup-refusal';
                 </am-field>
               } @else {
                 <am-field
-                  [label]="field.label"
+                  [label]="attributeName(field)"
                   [inputId]="'attr_' + field.key"
                   [control]="attributeGroup.get(field.key)"
+                  message="none"
                 >
                   <input
                     [id]="'attr_' + field.key"
@@ -172,6 +198,7 @@ export class LookupValueFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly translate = inject(TranslateService);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+  private readonly language = inject(LanguageService);
 
   /**
    * ACC-120 slice 6 — STEPPED, and only when the category gives it something to
@@ -221,7 +248,7 @@ export class LookupValueFormComponent implements OnInit {
   /** A translation KEY (ACC-309): a known code's sentence, else 'The value could not be saved.'. Never the server's text. */
   readonly saveError = signal<string | null>(null);
   readonly categoryLoading = signal(false);
-  readonly attributeFields = signal<Array<{ key: string; type: string; label: string }>>([]);
+  readonly attributeFields = signal<AttributeField[]>([]);
 
   readonly hasAttributes = computed(() => this.attributeFields().length > 0);
 
@@ -350,16 +377,34 @@ export class LookupValueFormComponent implements OnInit {
     });
   }
 
+  /**
+   * ACC-310 — an attribute's name in the reader's language, read at CALL time
+   * (ACC-160): never a ternary, never fixed at load. The English name is labelEn,
+   * else the old single `label`, else the key; an empty Arabic name falls back to
+   * the English one, never blank.
+   */
+  attributeName(field: AttributeField): string {
+    const en = nonEmpty(field.labelEn) ?? nonEmpty(field.label) ?? field.key;
+    return this.language.bilingual(en, field.labelAr);
+  }
+
   private buildAttributeGroup(schema: Record<string, unknown> | null): void {
     const props =
-      (schema as { properties?: Record<string, { type?: string; label?: string }> } | null)
-        ?.properties ?? {};
+      (
+        schema as {
+          properties?: Record<string, { type?: string; label?: string; labelEn?: string; labelAr?: string }>;
+        } | null
+      )?.properties ?? {};
 
-    const fields = Object.entries(props).map(([key, def]) => ({
-      key,
-      type:  def.type  ?? 'string',
-      label: def.label ?? key,
-    }));
+    const fields = Object.entries(props).map(
+      ([key, def]): AttributeField => ({
+        key,
+        type: def.type ?? 'string',
+        labelEn: def.labelEn ?? null,
+        labelAr: def.labelAr ?? null,
+        label: def.label ?? null,
+      }),
+    );
     this.attributeFields.set(fields);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- values determined at runtime
@@ -375,4 +420,9 @@ export class LookupValueFormComponent implements OnInit {
       this.attributeGroup.patchValue(this.value.attributes as Record<string, unknown>);
     }
   }
+}
+
+/** A name, or null when it is missing or only whitespace. */
+function nonEmpty(value: string | null): string | null {
+  return value !== null && value.trim() !== '' ? value : null;
 }

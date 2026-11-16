@@ -75,9 +75,16 @@ export class CommitteesController {
   // entitlement (ACC-101's self-scoped rule, like GET /tasks/my-tasks). PermissionGuard
   // still runs and passes with no metadata; TenantGuard still authenticates. Declared
   // ABOVE ':id' so 'mine' is not read as an id.
+  //
+  // ACC-283 PR 2a — the caller's permissions too, only so `mayBrowseCommittees` can
+  // say yes to a committees:view holder without a query. Still no @Permissions.
   @Get('mine')
-  getMine(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IMyCommittees> {
-    return this.home.mine(tenantId, userId);
+  getMine(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IMyCommittees> {
+    return this.home.mine(tenantId, userId, permissions);
   }
 
   // ACC-295 — one person's committee memberships, for lane A's Transfer wizard.

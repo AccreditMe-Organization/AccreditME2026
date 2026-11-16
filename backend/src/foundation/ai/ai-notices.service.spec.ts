@@ -25,7 +25,7 @@ describe('AiNoticesService.creditsUsedUp (ACC-194, D10)', () => {
       titleEn: 'AI credits used up',
       titleAr: 'نفدت أرصدة الذكاء الاصطناعي',
       bodyEn: 'Your organization has used all its AI credits for this period. They renew on 21 Oct 2026.',
-      bodyAr: expect.stringContaining('استخدمت مؤسستك جميع أرصدة الذكاء الاصطناعي لهذه الفترة، وتتجدد في 21 '),
+      bodyAr: expect.stringContaining('استخدمت منشأتك جميع أرصدة الذكاء الاصطناعي لهذه الفترة، وتتجدد في 21 '),
       objectType: 'Organization',
       objectId: ORG,
     });

@@ -101,6 +101,8 @@ const mockPrisma = {
     count: jest.fn(),
   },
   committeeMember: { findMany: jest.fn(), count: jest.fn() },
+  // ACC-283 PR 2a — a non-member's record names ask the headship clause: no cover here.
+  orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
   orgUnit: { findFirst: jest.fn(), findMany: jest.fn() },
   orgPosition: { findFirst: jest.fn() },
   committee: { findFirst: jest.fn(), findMany: jest.fn() },

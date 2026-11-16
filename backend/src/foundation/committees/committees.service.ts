@@ -39,7 +39,8 @@ import {
   CommitteeViewer,
   assertMaySeeCommittee,
   assertMayWriteCommittee,
-  memberCommitteeIds,
+  committeeOversightUnitIds,
+  readableCommitteeIds,
   seesEveryCommittee,
 } from '../../common/services/committee-membership';
 
@@ -90,10 +91,20 @@ export class CommitteesService {
   // ACC-281 — committees:view sees every committee (oversight); anyone else sees
   // only the ACTIVE committees they are an ACTIVE member of, by one more
   // condition on the same query. A non-member gets an empty list.
-  async listCommittees(organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeListItem[]> {
-    const own: Prisma.CommitteeWhereInput = seesEveryCommittee(viewer.permissions)
-      ? {}
-      : { isActive: true, members: { some: { userId: viewer.id, organizationId, isActive: true } } };
+  //
+  // ACC-283 PR 2a — and the ACTIVE committees owned by a unit the viewer heads or
+  // covers, or any unit below it: one more alternative in the same condition, after
+  // the headship reads (two at once, then the walk only when they lead something).
+  async listCommittees(organizationId: string, viewer: CommitteeViewer, now: Date = new Date()): Promise<ICommitteeListItem[]> {
+    let own: Prisma.CommitteeWhereInput = {};
+    if (!seesEveryCommittee(viewer.permissions)) {
+      const units = await committeeOversightUnitIds(this.prisma, organizationId, viewer.id, now);
+      const member: Prisma.CommitteeWhereInput = { members: { some: { userId: viewer.id, organizationId, isActive: true } } };
+      own = {
+        isActive: true,
+        ...(units.size > 0 ? { OR: [member, { orgUnitId: { in: [...units] } }] } : member),
+      };
+    }
     const committees = await this.prisma.committee.findMany({
       where: { organizationId, ...own },
       orderBy: { nameEn: 'asc' },
@@ -835,8 +846,9 @@ export class CommitteesService {
 
   /**
    * ACC-281 — other committees this record names (parent, Reports to), each with
-   * whether the viewer may open it: committees:view, or an active member of it.
-   * One read for the names and, only without committees:view, one for membership.
+   * whether the viewer may open it: committees:view, an active member of it, or
+   * (ACC-283 PR 2a) its overseer. One read for the names and, only without
+   * committees:view, readableCommitteeIds() once.
    */
   private async relatedCommittees(
     organizationId: string,
@@ -845,11 +857,10 @@ export class CommitteesService {
   ): Promise<Map<string, ICommitteeRef>> {
     const wanted = [...new Set(ids.filter((x): x is string => !!x))];
     if (wanted.length === 0) return new Map();
-    const oversight = seesEveryCommittee(viewer.permissions);
-    const [rows, mine] = await Promise.all([
+    const [rows, readable] = await Promise.all([
       this.prisma.committee.findMany({ where: { id: { in: wanted }, organizationId }, select: { id: true, nameEn: true, nameAr: true } }),
-      oversight ? Promise.resolve(new Set<string>()) : memberCommitteeIds(this.prisma, viewer.id, organizationId, wanted),
+      readableCommitteeIds(this.prisma, organizationId, viewer, wanted),
     ]);
-    return new Map(rows.map((r) => [r.id, { ...r, mayOpen: oversight || mine.has(r.id) }]));
+    return new Map(rows.map((r) => [r.id, { ...r, mayOpen: readable.has(r.id) }]));
   }
 }

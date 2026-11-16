@@ -246,6 +246,13 @@ export interface IMyCommittees {
   total: number;
   /** At most five, by seat then longest-served. */
   rows: IMyCommitteeRow[];
+  /**
+   * ACC-283 PR 2a — may this person open the committees list: committees:view, an
+   * active membership on an active committee, or headship/cover in force of a unit
+   * owning an active committee (there or below). The rail item and the /committees
+   * guard key on it.
+   */
+  mayBrowseCommittees: boolean;
 }
 
 // ACC-295 — one person's committee memberships, for the Transfer wizard

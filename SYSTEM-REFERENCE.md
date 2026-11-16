@@ -6790,6 +6790,90 @@ kept.
 The committee services' write methods take the caller's permissions as a trailing argument
 (`updateCommittee`, `addMember`, `changeMemberRole`, `removeMember`).
 
+#### Heads see the committees of their units, read only (ACC-283 PR 2a)
+
+Ahmad, 16 Nov (ACC-283 Q6). Plan: `backend/Plans/step-283-change-request-chain.md` §4.6.
+
+**The rule:** a unit's head holders and its acting cover in force may READ every
+ACTIVE committee owned by that unit or any unit below it. A READ now admits
+`committees:view`, OR an active member, OR such a head or cover. **Every WRITE is
+unchanged** (`committees:view` or membership, the table above).
+
+**One place, `committee-membership.ts`, headship only through `unit-headship.ts`:**
+
+| Function | What it does |
+| -- | -- |
+| `committeeOversightUnitIds(client, org, viewerId, now)` | the unit the viewer heads (`findUnitHeadedBy`) and the units they cover at `now` (`findUnitsCoveredBy`), at once; then every unit below them (`findUnitSubtreeIds`), only when they lead something |
+| `overseesCommittee()` / `overseesRequestCommittee()` | the active committee (or the request's) has its owning unit in that set |
+| `mayReadCommittee(…, now?)` | holder, then member, then overseer: what `assertMaySeeCommittee` asks |
+| `readableCommitteeIds(…, among, now?)` | the batch: all for a holder; members first; one oversight read for the rest |
+| `maySeeCommittee()` | unchanged, member only: what `assertMayWriteCommittee` asks |
+
+**Where it applies (reads):**
+- `assertMaySeeCommittee`, so the committee page, members, members page,
+  sub-committees, Membership history, seat actions, and a committee's change
+  requests (list, open, preview);
+- a change request by id (`getOne`);
+- `GET /committees`: for a non-holder, `isActive` AND (member OR `orgUnitId` in
+  the set), one condition on the same `findMany`;
+- the `mayOpen` flags (parent, Reports to, sub-committee rows) and the task-row
+  record names, through `readableCommitteeIds()`, once per response;
+- the parent rule, **only where a read opts in**:
+  `ObjectVisibilityService.assertCanView(…, viewerId, { oversight: true })`, via
+  each rule's `overseer` clause. The callers that opt in are:
+  - `InstanceAccess.assertMayReadRecord` and `assertMayReadInstance`;
+  - the record's task list;
+  - the task page's record name (`recordVisible`).
+
+**`GET /committees/mine` says whether the person may browse committees at all:
+`mayBrowseCommittees`** (additive). It is true for:
+- a `committees:view` holder (no query);
+- an active member of an active committee (`total > 0`, already read);
+- a head or cover in force of a unit that owns an active committee there or
+  below. `overseesAnyCommittee()` asks this only when the first two are false:
+  the two headship reads, then the walk and one existence check only when they
+  lead something.
+
+**The screens key on it:** the rail's Committees item and the `/committees`
+route guard read this field, never a rule of their own (lane A).
+
+**Where it does NOT apply:** every committee and change-request write; the
+parent rule without the option, which is task create, the AI task draft, the
+workload hint, and `InstanceAccess.assertMayAct` (a press or a vote). A caller
+that forgets the option fails closed. Task visibility (`taskVisibleSql`) is
+unchanged.
+
+**Cost, per reader:**
+
+| Reader | Queries |
+| -- | -- |
+| `committees:view` holder | none added |
+| member | 1, as before |
+| non-member who leads nothing | 3: membership, then the two headship reads at once |
+| overseer | 5: those three, the sub-unit walk, and the committee read |
+
+Lists pay the headship reads once. Nothing on the per-request path.
+
+**Refusals are unchanged:** a read refused is still the existence-neutral 403
+"Required permission: committees:view"; a write, the 404 a missing committee
+gets.
+
+**Specs:**
+- `committee-membership.spec.ts`: the costs per reader, a write never asking
+  headship, and isolation.
+- `committee-oversight.db-spec.ts` (24 tests, real Postgres):
+  - a head, a cover in force, a cover not started and one ended;
+  - a sibling's head, and a child's head (not the parent's committees);
+  - a former head, and the platform organisation;
+  - every read, and writes still refused;
+  - isolation, with another organisation's units, heads and covers planted
+    (including a cover filed under another organisation pointing at this
+    one's unit).
+- `instance-access.spec.ts`: a press checks the record without the option.
+
+Mutation-checked: dropping the sub-unit walk, the cover clause, or the
+organisation on the cover read each turns a spec red.
+
 #### Awaiting reads
 
 - **`GET /workflows/awaiting-me?skip=&take=`** (`AwaitingMeQueryDto`):
@@ -8352,6 +8436,11 @@ values.
 without both. `seedSystemData()` rewrites the shared schemas on every deploy, so
 no backfill is needed. `required` keeps its old `label` until the form stops
 reading it, and the backend reads only `type` (`schemaProperties()`).
+**The form now reads `labelEn` / `labelAr`** (ACC-310's form PR):
+`LookupValueFormComponent.attributeName()` resolves the name at display time,
+`labelEn`, else the old `label`, else the key, with an empty Arabic name falling
+back to English. Nothing in the frontend needs `label` any more, so `required`'s
+old `label` can go (and so can the one on ACC-283's seat attributes, §3.21.5).
 
 ### 6.2 The Override Pattern — `getValues()`'s Exact Merge Algorithm
 
@@ -9808,9 +9897,19 @@ A wording convention, kept by review: **no scan checks it.**
     Microsoft Entra's own label for Enterprise applications, quoted so the
     admin can find it.
 
-  **Not covered:** the backend's own Arabic (notification bodies, the
-  seeded root role «مسؤول المؤسسة») still says «مؤسسة». A role's Arabic name
-  is tenant data, so a renamed seed does not reach existing organisations.
+  **The backend followed (16 Nov):**
+  - the three notification bodies that said «مؤسستك» (AI credits used up,
+    storage almost full, users with incomplete profiles) say «منشأتك»;
+  - the root role is seeded as «مسؤول المنشأة».
+  The six «منظمة» strings left in `ar.json` moved too.
+
+  **Still not covered:**
+  - **Existing organisations keep «مسؤول المؤسسة».** A role's Arabic name
+    is tenant data, so a renamed seed reaches new organisations only.
+    Renaming theirs would be a data change.
+  - **Two committee member form keys** (`committee.memberForm.personHint`,
+    `committee.memberForm.noPeople`) still say «المنظمة», left to the
+    committee screens' owners.
 - **No masculine verb or pronoun has a specific person as its subject or
   referent**, because the platform stores no gender. That person may be
   `{{name}}`, `{{person}}`, `{{incoming}}`, `{{current}}`, or the user a

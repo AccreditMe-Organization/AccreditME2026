@@ -14,7 +14,7 @@ import { lockWorkflowInstance } from '../../task/stage-deadline';
 import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-reference-checks';
 import { committeeTypeValues } from '../committee-type-values';
 import { ChangeRequestRefusal } from './change-request-refusal';
-import { assertMaySeeCommittee, assertMayWriteCommittee, maySeeCommittee } from '../../../common/services/committee-membership';
+import { assertMaySeeCommittee, assertMayWriteCommittee, mayReadCommittee } from '../../../common/services/committee-membership';
 import {
   ACTION_TARGET_STAGE,
   ChangeRequestAction,
@@ -594,9 +594,10 @@ export class CommitteeChangeRequestService {
   async getOne(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
     const row = await this.prisma.committeeChangeRequest.findFirst({ where: { id, organizationId }, include: REQUEST_INCLUDE });
     // ACC-281 — committees:view as today; anyone else only for a request on a
-    // committee they are an active member of. A non-member gets today's 403
-    // whether the request exists or not, so the answer reveals nothing.
-    if (!hasPermission(viewer, COMMITTEES_PERMISSIONS.VIEW) && !(row && (await maySeeCommittee(this.prisma, row.committeeId, organizationId, asCommitteeViewer(viewer))))) {
+    // committee they are an active member of, or (ACC-283 PR 2a) oversee as a head
+    // or cover of its unit or above. Anyone else gets today's 403 whether the
+    // request exists or not, so the answer reveals nothing.
+    if (!hasPermission(viewer, COMMITTEES_PERMISSIONS.VIEW) && !(row && (await mayReadCommittee(this.prisma, row.committeeId, organizationId, asCommitteeViewer(viewer))))) {
       throw new ForbiddenException(`Required permission: ${COMMITTEES_PERMISSIONS.VIEW}`);
     }
     if (!row) throw new NotFoundException('Change request not found');
