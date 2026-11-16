@@ -401,6 +401,9 @@ force of its owning unit or an ancestor of it.
     requestedById)` index.
   - A request R already sent for decision is not withdrawn: it is under review,
     and its deciders still decide it.
+  - **Known limit (accepted by lane A, 16 Nov):** a change request R creates
+    between `prepare()` and the deactivation's commit is not withdrawn. The
+    window is milliseconds, and R's sessions end right after the commit.
 - **Nobody else withdraws another person's draft.** `othersMayWithdraw` is
   removed from `REQUEST_STAGE_POLICY`, and `CHANGE_REQUEST_NOT_REQUESTER`
   keeps its old meaning.

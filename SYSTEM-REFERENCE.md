@@ -6301,6 +6301,9 @@ reads any more; the key stays in the catalogue until PR 4 retires it.
   - Lock order: the root-head lock, the user row, then per request its
     instance, its row and its task. Requests under review are left to their
     deciders.
+  - **Known limit (accepted by lane A, 16 Nov):** a change request the leaver
+    creates between `prepare()` and the commit is not withdrawn. The window is
+    milliseconds, and their sessions end right after the commit.
 - **Reads:**
   - every response's `actions` gains `approveNow`, and `awaitingDecisionBy`
     names the deciding step (a committee and its seats, or a unit), never a
