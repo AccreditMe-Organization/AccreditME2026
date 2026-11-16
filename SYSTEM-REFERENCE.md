@@ -6199,6 +6199,86 @@ change request (§3.18; its screens are ACC-240).
 
 ### 3.18 Committee change requests (ACC-239)
 
+**ACC-283 PR 2 — THE CHAIN OF AUTHORITY DECIDES, NEVER A ROLE.** Plan:
+`backend/Plans/step-283-change-request-chain.md` (§3, §4, §16). This replaces
+every rule below that names `committees:approve`, which no change request
+reads any more; the key stays in the catalogue until PR 4 retires it.
+
+- **Who decides** (`change-requests/change-request-chain.ts`):
+  - the Reports-to committee's holders of a seat whose actions include
+    `decide_reporting_changes`, if that committee is in force (active, stage
+    flagged `IN_FORCE`);
+  - otherwise the owning unit's head holders and acting cover in force, then
+    each parent unit up to the root.
+
+  The requester and (below the root only) the requesting committee's active
+  members are skipped, and so is a vacant step. The first step with someone
+  left decides; any one of them.
+- **Resolved live, never stored.** `resolveDecisionChains(client, org,
+  requests)` loads the facts in at most **9 queries for any number of
+  requests**, in four rounds:
+  1. the committees;
+  2. their members, the Reports-to committees in force, their deciding seats,
+     and the units with their ancestors;
+  3. the seat holders, the heads, the covers;
+  4. the covers' users.
+
+  The walk (`walkChain`) is pure.
+- **Deciding** (approve, return, reject): a current decider, checked before the
+  transaction (the chain takes no lock). Anyone else gets:
+  - the requester: `CHANGE_REQUEST_OWN_DECISION`;
+  - someone who may read the request: 403 `CHANGE_REQUEST_NOT_DECIDER`, with
+    `awaitingDecisionBy`;
+  - anyone else: the 404 "Change request not found".
+
+  The audit row records `authority`: the step, by ids.
+- **Submit ("Send for decision")** tells the deciders. When the chain finds
+  nobody it is 409 `CHANGE_REQUEST_NO_DECIDER`:
+  - with `approveNow: true` when the requester heads the root and nobody else
+    is left;
+  - with a log line when the root is already headless (Q7; no Setup health).
+- **Approve now (Q4)**, `POST /committee-change-requests/:id/approve-now`: the
+  root unit's head (holder or cover in force) applies their own request.
+  - The reference checks run first, read only; then Submit's transaction, then
+    Approve's. Authority `{ kind: 'ROOT_HEAD_OWN' }`.
+  - Nobody else gets it (403 `CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED`).
+  - Once the request is sent to other deciders, Approve now is not offered
+    again.
+- **The finish task (Q8):** a draft or returned request gives its requester
+  "Finish or withdraw the change request" / «إكمال طلب التغيير أو سحبه»
+  (COMMITTEE, MEDIUM, linked by `finishTaskId`). It is completed on Submit and
+  on Approve now, cancelled on Withdraw, and made again on Return.
+  `TaskService.closeRecordTaskInTx()` locks its row LAST: request instance,
+  request row, task row.
+- **Withdraw:** only the requester (Q8). `othersMayWithdraw` is gone from the
+  policy.
+- **Reads:**
+  - every response's `actions` gains `approveNow`, and `awaitingDecisionBy`
+    names the deciding step (a committee and its seats, or a unit), never a
+    person;
+  - one chain resolution per response, only for the rows under review and the
+    viewer's own drafts;
+  - `GET /committee-change-requests/:id` also admits a current decider;
+  - `GET .../awaiting-decision` has no route gate. It answers `[]` after ONE
+    indexed query (`mayDecideAnyChangeRequest()`: head holder, cover in force,
+    or a deciding seat on an active membership of an active committee) for
+    someone who decides nothing; otherwise the capped SQL candidates and one
+    chain resolution. That query restates `unit-headship.ts`'s two rules in SQL;
+    `change-request-chain.spec.ts` pins the rules and the db-spec checks the two
+    agree person by person.
+- **No route permission** on approve, return, reject, approve-now or
+  awaiting-decision: the chain decides.
+- **Specs:**
+  - `change-request-chain.spec.ts` (the walk);
+  - `change-request-chain.db-spec.ts` (the loader, 9 queries for 1 and for
+    20, isolation);
+  - `committee-change-request.db-spec.ts` (decisions, Approve now, the finish
+    task, re-routing, reads, isolation).
+
+  Mutation-checked: the requester skip, the member skip and its root
+  exception, the vacant-step skip, the in-force check, the organisation scope
+  and Approve now's root-head check.
+
 **ACC-281:** a member of the committee reads its change requests and may raise, edit,
 submit and withdraw one with each action's own permission, without `committees:view`.
 Approve, return, reject and awaiting decision are unchanged. Awaiting decision is filtered in
@@ -6811,6 +6891,9 @@ unchanged** (`committees:view` or membership, the table above).
 
 **The screens key on it:** the rail's Committees item and the `/committees`
 route guard read this field, never a rule of their own (lane A).
+
+**ACC-283 PR 2:** a current decider of a change request (by the chain of
+authority, §3.18) may also read that request by id, even with no other way in.
 
 **Where it does NOT apply:** every committee and change-request write; the
 parent rule without the option, which is task create, the AI task draft, the

@@ -45,6 +45,9 @@ const REFUSAL_CODES = new Set([
   'CHANGE_REQUEST_COMMITTEE_DISSOLVING',
   'CHANGE_REQUEST_COMMITTEE_CHANGED',
   'CHANGE_REQUEST_CHANGED',
+  // ACC-283 PR 2 — the chain of authority decides (decide, submit).
+  'CHANGE_REQUEST_NOT_DECIDER',
+  'CHANGE_REQUEST_NO_DECIDER',
 ]);
 
 /** A refusal said in words, and what it offers. */

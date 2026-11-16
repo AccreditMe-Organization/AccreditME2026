@@ -55,8 +55,16 @@ describe('change-request policy (ACC-239)', () => {
     expect(requestStagePolicy('a-stage-nobody-knows')).toBe(requestStagePolicy(null));
   });
 
-  it('only a draft or a returned request may be withdrawn by someone other than its requester', () => {
-    expect([...CHANGE_REQUEST_STAGE_KEYS, null].filter((k) => requestStagePolicy(k).othersMayWithdraw)).toEqual(['draft', 'returned']);
+  // ACC-283 Q8 — nobody but the requester withdraws now: the policy no longer says
+  // who may (that was othersMayWithdraw); it only says which stages allow it.
+  it('withdrawing is allowed at every open stage, and nowhere else', () => {
+    expect([...CHANGE_REQUEST_STAGE_KEYS, null].filter((k) => requestStagePolicy(k).actions.has('withdraw'))).toEqual([
+      'draft',
+      'under_review',
+      'returned',
+      null,
+    ]);
+    expect(Object.keys(requestStagePolicy('draft'))).not.toContain('othersMayWithdraw');
   });
 
   it("the committee stages, from the seed's stored rules: where a request may be raised, and what an open one may still do", () => {

@@ -150,6 +150,14 @@ export interface StageExitCancellation {
   cancelledRequests: CancelledRequest[];
 }
 
+/** ACC-283 PR 2 — what closeRecordTaskInTx() closed, for its audit after commit. */
+export interface RecordTaskClosure {
+  before: TaskWithAssigneeRows;
+  after: TaskWithAssigneeRows;
+  outcome: 'COMPLETED' | 'CANCELLED';
+  cancelledRequests: CancelledRequest[];
+}
+
 // ACC-174 — the creator's status on a list row, so canManage can apply the
 // "creator no longer ACTIVE" half of the rule without a query per row.
 const CREATOR_STATUS_INCLUDE = { createdBy: { select: { status: true } } } as const;
@@ -570,6 +578,52 @@ export class TaskService {
     if (prepared.pooled) {
       await this.notifyPool(task.id, organizationId, { event: 'created', excludeUserId: actorId });
     }
+  }
+
+  /**
+   * ACC-283 PR 2 — closes ONE record task inside the caller's transaction: the
+   * change request's "Finish or withdraw" task, completed by `actorId` on Submit
+   * (or Approve now), cancelled on Withdraw. Its row is locked LAST: the caller
+   * already holds the request's instance and row (instance, then task: ACC-190).
+   * A task already closed (completed by hand, say) is left as it is: null.
+   * The audit rows are written after commit (auditRecordTaskClosure()).
+   */
+  async closeRecordTaskInTx(
+    tx: TaskTx,
+    taskId: string,
+    organizationId: string,
+    actorId: string,
+    outcome: 'COMPLETED' | 'CANCELLED',
+  ): Promise<RecordTaskClosure | null> {
+    await this.lockTaskRow(tx, taskId, organizationId);
+    const before = await tx.task.findFirst({ where: { id: taskId, organizationId }, include: { assignees: true } });
+    if (!before || (CLOSED_STATUSES as readonly string[]).includes(before.status)) return null;
+    const now = new Date();
+    const after = await tx.task.update({
+      where: { id: taskId },
+      data:
+        outcome === 'COMPLETED'
+          ? { status: 'COMPLETED', completedAt: now, completedById: actorId, ...HOLD_CLEARED }
+          : { status: 'CANCELLED', ...HOLD_CLEARED },
+      include: { assignees: true },
+    });
+    const cancelledRequests = await cancelOpenRequests(tx, organizationId, [taskId], outcome === 'COMPLETED' ? 'task_completed' : 'task_cancelled');
+    return { before, after, outcome, cancelledRequests };
+  }
+
+  /** ACC-283 PR 2 — the audit rows for closeRecordTaskInTx(), after the transaction commits. */
+  async auditRecordTaskClosure(closure: RecordTaskClosure, organizationId: string, actorId: string, reason: string): Promise<void> {
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: closure.after.id,
+      actorId,
+      tenantId: organizationId,
+      before: closure.before as unknown as Record<string, unknown>,
+      after: closure.after as unknown as Record<string, unknown>,
+      metadata: { reason, ...(closure.outcome === 'COMPLETED' ? { completedBy: actorId } : { cancelledBy: actorId }) },
+    });
+    await auditCancelledRequests(this.auditLog, closure.cancelledRequests, organizationId, actorId);
   }
 
   // "My Tasks" — every task where the calling user has an active
