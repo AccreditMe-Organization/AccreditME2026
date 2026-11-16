@@ -4804,7 +4804,9 @@ SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes
   committees of their unit and every unit below**, one clause beside the member
   clause (`committee-membership.ts`, headship through `unit-headship.ts`). Writes
   are unchanged; the parent rule applies it only to a read that passes
-  `{ oversight: true }`. SYSTEM-REFERENCE.md §3.21.
+  `{ oversight: true }`. `GET /committees/mine` answers `mayBrowseCommittees`
+  (view, member or overseer), which the rail and the `/committees` guard key on.
+  SYSTEM-REFERENCE.md §3.21.
 
 ## Key Architecture Decisions (ACC-282)
 

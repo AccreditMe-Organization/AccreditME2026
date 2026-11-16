@@ -6800,6 +6800,18 @@ unchanged** (`committees:view` or membership, the table above).
   - the record's task list;
   - the task page's record name (`recordVisible`).
 
+**`GET /committees/mine` says whether the person may browse committees at all:
+`mayBrowseCommittees`** (additive). It is true for:
+- a `committees:view` holder (no query);
+- an active member of an active committee (`total > 0`, already read);
+- a head or cover in force of a unit that owns an active committee there or
+  below. `overseesAnyCommittee()` asks this only when the first two are false:
+  the two headship reads, then the walk and one existence check only when they
+  lead something.
+
+**The screens key on it:** the rail's Committees item and the `/committees`
+route guard read this field, never a rule of their own (lane A).
+
 **Where it does NOT apply:** every committee and change-request write; the
 parent rule without the option, which is task create, the AI task draft, the
 workload hint, and `InstanceAccess.assertMayAct` (a press or a vote). A caller
