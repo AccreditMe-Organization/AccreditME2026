@@ -31,7 +31,8 @@ own.
   Organization Administrator never decides.
 - Either the seat or the role grants an action; the seat never takes away.
 - The root head's own request is approved at once, after a Reports-to
-  committee's deciding seat where one exists.
+  committee's deciding seat where one exists. *(Refined 16 Nov, Q4: the root
+  head chooses Send for decision or Approve now, §4.3.)*
 - Requests already open when this ships are re-routed to the chain.
 - `committees:approve` is retired, the ACC-244 way.
 - Meeting seat actions are the Meetings ticket's.
@@ -153,18 +154,27 @@ members are not skipped there.
 type ChainStep =
   | { kind: 'REPORTS_TO_SEAT'; committeeId: string; seatIds: string[] }
   | { kind: 'UNIT_HEAD'; unitId: string; isRoot: boolean }
-  | { kind: 'SELF_FINAL' }   // R heads the root, and no step before it had anyone
-  | { kind: 'NONE' };        // nobody at all: only a root that is already headless
+  | { kind: 'NONE' };        // nobody but R (see below), or a root that is already headless
 
-interface ChainResult { step: ChainStep; deciderIds: string[] }
+interface ChainResult {
+  step: ChainStep;
+  deciderIds: string[];
+  /** R is a head holder of the root unit, or its acting cover in force (Q4, §4.3). */
+  requesterHeadsRoot: boolean;
+}
 ```
 
-- **SELF_FINAL** is when the root step's only people were R. R is the final
-  authority: the request is approved at once (§4.3).
-- **NONE** can happen only when the root is already headless, a legacy state
-  ACC-288 lets stand ("logs and passes"). Submit is then refused with 409
-  `CHANGE_REQUEST_NO_DECIDER`, and a log line is written (Ahmad, 16 Nov, Q7,
-  §16). No Setup health condition.
+- **No automatic SELF_FINAL any more** (Ahmad, 16 Nov, Q4). When R heads the
+  root, R CHOOSES: "Send for decision" or "Approve now" (§4.3). The chain itself
+  only reports who else could decide.
+- **NONE has two causes**, told apart by `requesterHeadsRoot`:
+  - **R heads the root and nobody else is left** (no Reports-to seat holder,
+    no head below, R the only root head): Send for decision is not offered,
+    only Approve now (§4.3). A Submit sent anyway is refused with
+    `CHANGE_REQUEST_NO_DECIDER` carrying `approveNow: true`, with no log line.
+  - **The root is already headless** (a legacy state ACC-288 lets stand):
+    Submit is refused with 409 `CHANGE_REQUEST_NO_DECIDER`, and a log line is
+    written (Q7, §16). No Setup health condition.
 
 ### 3.3 Resolved live, in batches, never stored
 
@@ -196,7 +206,9 @@ input is empty; independent ones run in `Promise.all`:
 | 9 | the covers' users' status | organisation |
 
 **At most 9 queries**, never one per request, step or unit. A spec pins the
-count for 1 request and for 20.
+count for 1 request and for 20. `requesterHeadsRoot` costs nothing more: the
+root is the last unit of every walk, so reads 7 and 8 already hold its heads and
+cover.
 
 ---
 
@@ -206,9 +218,12 @@ count for 1 request and for 20.
 
 | Request stage | Action | Who |
 | -- | -- | -- |
-| draft, returned | edit, submit | R, still holding `committees:edit_details` (unchanged) |
-| draft, returned | withdraw | R; **or a current decider of that request** (was: a `committees:approve` holder; Q8) |
+| draft, returned | edit | R, still holding `committees:edit_details` (unchanged) |
+| draft, returned | submit ("Send for decision") | R, still holding `committees:edit_details`, when the chain has someone (§3.2) |
+| draft, returned | **approve now** | **R only, when R heads the root** (head holder or acting cover in force), holding `committees:edit_details` (Q4, §4.3) |
+| draft, returned | withdraw | **R only** (Q8: nobody else withdraws another person's draft; was: a `committees:approve` holder) |
 | under_review | approve, return, reject | **a current decider** (was: a `committees:approve` holder who is not R) |
+| under_review | approve now | R, only to retry a failed Approve now (§4.3) |
 | under_review | withdraw | R only (unchanged) |
 | closed | nothing | unchanged |
 
@@ -220,8 +235,9 @@ work.
 
 - **A vacant step** is skipped and the decision moves up (§3.1). Nothing is
   refused for it.
-- **The requester** is never a decider, except at SELF_FINAL. If R presses
-  approve, return or reject they get `CHANGE_REQUEST_OWN_DECISION`, as today.
+- **The requester** is never a decider. If R presses approve, return or reject
+  they get `CHANGE_REQUEST_OWN_DECISION`, as today. The root head's own final
+  decision is a separate action, Approve now (§4.3).
 - **A member of C** is skipped below the root. If they press, they get
   `CHANGE_REQUEST_NOT_DECIDER`, naming the step that decides.
 - **NONE** (no decider at all): Submit is refused, 409
@@ -229,25 +245,56 @@ work.
   draft, so R can withdraw it or submit again once the root is headed (§16,
   Q7).
 
-### 4.3 SELF_FINAL: the root head's own request
+### 4.3 The root head's own request: Send for decision, or Approve now (Ahmad, 16 Nov, Q4)
 
-- **When:** at Submit, after the submit transaction commits, the chain is
-  resolved. If it is SELF_FINAL, the service runs the ordinary approve path
-  for R at once, in its own transaction, with the same lock order and the
-  same drift and reference checks (Q14).
-- **What is recorded:** the request record keeps its old and new values; the
-  APPROVE audit row names R, with `authority: { kind: 'SELF_FINAL' }`; the
-  "Revise the terms of reference" task is created for R, as for any approval.
-- **If that approve fails** (a reference check, say), the request stays under
-  review with R as its only decider. R sees Approve, Return and Reject, and
-  may try again. Nobody else can decide it, because nobody else is in the
-  chain.
+**Who:** R is a head holder of the root unit, or its acting cover in force,
+read through `unit-headship.ts` (`ChainResult.requesterHeadsRoot`). Nobody
+else is ever offered Approve now.
+
+**Two moves on a draft or returned request:**
+
+- **"Send for decision"** is the ordinary Submit. The chain runs as written,
+  with R skipped as the requester: a Reports-to seat holder, then the owning
+  unit's head and upwards, then a second root head or the root's cover if
+  there is one.
+- **"Approve now"** applies the request at once as R's own final decision:
+  `POST /committee-change-requests/:id/approve-now`.
+  - It is Submit's transaction (storing `fromValues`), then Approve's
+    transaction, back to back, each in its own lock order (§7) with the same
+    drift and reference checks.
+  - The reference checks also run once before the first transaction, read
+    only, so a request that would fail is refused while it is still a draft.
+  - The APPROVE audit row has `authority: { kind: 'ROOT_HEAD_OWN' }`. The
+    "Revise the terms of reference" task is created for R, as for any
+    approval. Nobody is notified: it is R's own decision.
+
+**THE EDGE CASE: nobody but R.** When the chain, with R skipped, finds nobody
+(no Reports-to seat holder, no head below the root, R the root's only head
+and no cover), there is no step above the root. Send for decision is NOT
+offered, only Approve now:
+
+- the response's `actions.submit` is false and `actions.approveNow` true;
+- a Submit sent anyway is 409 `CHANGE_REQUEST_NO_DECIDER` with `approveNow:
+  true` (no log line: this is not the headless root).
+
+**If Approve now's approve transaction fails** after its submit transaction
+has committed (rare: the checks ran first), the request is under review.
+- If the chain has deciders, they decide it as usual.
+- If it has nobody but R, R keeps Approve now on the under-review request and
+  may retry, or withdraw it.
+
+Once R has chosen Send for decision and someone else is in the chain, Approve
+now is not offered again for that request.
+
+**Actions flags:** every response's `actions` gains `approveNow`, true exactly
+when the viewer is R, R heads the root, and the stages allow it (the same
+stage rules as `submit`). `submit` is false in the edge case above.
 
 ### 4.4 The decision's audit row
 
 Approve, Return and Reject add `authority` to their audit metadata: the step
-(`REPORTS_TO_SEAT` with committee and seat ids, `UNIT_HEAD` with the unit id
-and `isRoot`, or `SELF_FINAL`). Ids only.
+(`REPORTS_TO_SEAT` with committee and seat ids, or `UNIT_HEAD` with the unit
+id and `isRoot`). Approve now writes `{ kind: 'ROOT_HEAD_OWN' }`. Ids only.
 
 ### 4.5 Reads and notices
 
@@ -258,8 +305,8 @@ and `isRoot`, or `SELF_FINAL`). Ids only.
 - **The response says who decides, by step, never by person:**
   `awaitingDecisionBy: { kind: 'REPORTS_TO_SEAT', committee: { id, nameEn,
   nameAr }, seats: [{ id, labelEn, labelAr }] } | { kind: 'UNIT_HEAD', unit:
-  { id, nameEn, nameAr } } | { kind: 'SELF_FINAL' }`, only under review (a
-  request whose chain is NONE never reaches review, §16). A screen says "Awaiting the Chairman of the Medical Executive
+  { id, nameEn, nameAr } }`, only under review. A request whose chain is NONE
+  never reaches review, except through a failed Approve now (§4.3). A screen says "Awaiting the Chairman of the Medical Executive
   Committee" or "Awaiting the head of Cardiology" (Q15).
 - **`GET /committee-change-requests/awaiting-decision`** loses its route gate
   and is answered for everyone:
@@ -274,9 +321,95 @@ and `isRoot`, or `SELF_FINAL`). Ids only.
 - **Reading a request as its decider:** `GET /committee-change-requests/:id`
   also admits a current decider of that request, through one function,
   `isCurrentDecider()`. Anyone else who may not read it gets today's 403
-  (existence-neutral). Whether a decider also opens the committee page is Q6.
-- **Submit tells the deciders** of the step that decides (not R). SELF_FINAL
+  (existence-neutral).
+- **Opening the committee (Q6, PR 2a, §4.6):** every unit-step decider heads
+  the owning unit or a unit above it, so the headship clause already lets them
+  open the committee, read only. A Reports-to seat holder who heads none of
+  those units gets the request only, through `isCurrentDecider()`.
+- **Submit tells the deciders** of the step that decides (not R). Approve now
   tells nobody. Decisions still tell R. A re-route sends no notice (Q9).
+
+### 4.6 Heads see the committees of their units (Ahmad, 16 Nov, Q6; PR 2a)
+
+**The rule:** a unit's head holders and its acting cover in force see, READ
+ONLY, every committee owned by that unit or any unit below it. It is one new
+clause in the committee parent rule, beside ACC-281's member clause:
+`committees:view`, OR an active member of the committee, OR a head or cover in
+force of its owning unit or an ancestor of it.
+
+- **Read only.** It covers the page, members, sub-committees, Membership
+  history, change requests (list, open, preview, by id) and, through
+  `InstanceAccess`, the workflow reads. Every write keeps ACC-281's rule
+  (`committees:view` or membership), unchanged.
+- **One place, `unit-headship.ts` only:** the units the viewer heads
+  (`findUnitHeadedBy`) and covers (`findUnitsCoveredBy`, `now` explicit), then
+  `findUnitSubtreeIds()` over them. A new function, `committeeOversightUnitIds(
+  client, organizationId, viewerId, now)`, beside the membership functions in
+  `common/services/committee-membership.ts`, returns that set. Never a second
+  copy.
+- **Order and cost:**
+  - for a `committees:view` holder: no query, as today;
+  - for anyone else, membership is asked first (one indexed query);
+  - only a non-member costs the headship reads: two in `Promise.all`, then the
+    subtree walk only if they lead anything, then the committee's owning unit
+    (read with the committee where the read already loads it).
+  - A stranger now costs 3 queries where they cost 1.
+  - Nothing on the per-request path.
+- **Lists:**
+  - `GET /committees` for a non-holder adds one condition to the same
+    `findMany`: active member OR `orgUnitId` in the set (active committees
+    only, as for members);
+  - the `mayOpen` flags (parent, Reports to, sub-committee rows) and task-row
+    record names use the same set, read once per response.
+- **Refusals are unchanged:** today's 403 "Required permission:
+  committees:view" for a read, existence-neutral.
+- **Task visibility is unchanged** (`taskVisibleSql`): ACC-244's unit scope
+  already governs which tasks a head sees.
+- **Specs** (§12): a head, a cover in force, a cover not yet started and one
+  ended, a head of a sibling unit, a head of a CHILD unit (does not see its
+  parent's committees), a former head, the platform organisation, writes
+  still refused, and isolation (another organisation's units, heads and covers
+  planted).
+- **Mutations:** drop the subtree walk (own unit only); drop the cover clause;
+  drop the organisation from the headship read.
+
+### 4.7 Unfinished drafts (Ahmad, 16 Nov, Q8; PR 2, the departure part PR 2b)
+
+- **A task for the requester:** when a request is created (a draft), and again
+  when it is returned, R gets a task:
+  - **title** "Finish or withdraw the change request", Arabic «إكمال طلب
+    التغيير أو سحبه» (a singular, gender-neutral noun phrase; lane A checks it);
+  - **description** in English, naming the request number and the committee;
+  - `sourceType` COMMITTEE, the committee; assignee R; creator R; priority
+    MEDIUM, so the normal priority SLA and escalation apply
+    (`prepareRecordTask()` / `insertPrepared()`, as the terms task does).
+- **It is linked to the request** by a new nullable column,
+  `CommitteeChangeRequest.finishTaskId`, like `termsTaskId`. That is an
+  additive migration in PR 2 (§8).
+- **It completes on Submit and on Approve now**, inside the submit
+  transaction, completed by R. **It is cancelled on Withdraw**, inside the
+  withdraw transaction (an engine-style cancel, reason null). A Return creates
+  a new one.
+- **The departure (PR 2b):** when R is deactivated, R's open draft or returned
+  request is withdrawn automatically INSIDE `UserService.deactivate()`'s
+  transaction, its task cancelled, audited `{ decision: 'WITHDRAWN', cause:
+  'departure' }`.
+  - **This needs an engine entry point that runs a system move inside a
+    caller's transaction.** `triggerSystemTransition()` always opens its own,
+    so today it cannot run inside the deactivation.
+  - The leaver's requests are found through the existing `(organizationId,
+    requestedById)` index.
+  - A request R already sent for decision is not withdrawn: it is under review,
+    and its deciders still decide it.
+- **Nobody else withdraws another person's draft.** `othersMayWithdraw` is
+  removed from `REQUEST_STAGE_POLICY`, and `CHANGE_REQUEST_NOT_REQUESTER`
+  keeps its old meaning.
+- **Known edge:** R may complete the task by hand without submitting. Nothing
+  breaks, and no new task is made until the next Return. Refusing a manual
+  Complete on this task would need a task kind that does not exist; not
+  proposed.
+
+
 
 ---
 
@@ -298,16 +431,17 @@ that was already headless) is refused at Submit with
 | Code | Status | When | Details |
 | -- | -- | -- | -- |
 | `CHANGE_REQUEST_NOT_DECIDER` | 403 | approve, return or reject by someone who may read the request but is not a current decider | `awaitingDecisionBy` (the step, as in §4.5) |
-| `CHANGE_REQUEST_NO_DECIDER` | 409 | Submit, when the chain finds nobody (a legacy headless root); a log line is written (§16, Q7) | none |
+| `CHANGE_REQUEST_NO_DECIDER` | 409 | Submit, when the chain finds nobody: a legacy headless root (a log line is written, Q7), or R heads the root and nobody else is left (§4.3, no log line) | `approveNow: true` in the second case |
+| `CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED` | 403 | Approve now by anyone who is not R heading the root, or on a request R already sent to other deciders (§4.3) | none |
 | `SEAT_ACTION_UNKNOWN` | 400 | a seat-action map names an action not in `SEAT_ACTIONS` | `actionKey` |
 | `SEAT_ACTION_SEAT_UNKNOWN` | 400 | it names a seat that is not an active `committee_member_role` value of this organisation (another organisation's included) | `roleValueId` |
 
 **Kept, with a new meaning:**
 
-- `CHANGE_REQUEST_OWN_DECISION` (409): R pressing approve, return or reject,
-  except at SELF_FINAL.
-- `CHANGE_REQUEST_NOT_REQUESTER` (403): withdraw by someone who is neither R
-  nor (for a draft or returned request) a current decider.
+- `CHANGE_REQUEST_OWN_DECISION` (409): R pressing approve, return or reject
+  (Approve now is its own action).
+- `CHANGE_REQUEST_NOT_REQUESTER` (403): **its old meaning (Q8)**, withdraw by
+  anyone but R.
 - `CHANGE_REQUEST_NOT_ALLOWED` (403): still the refusal for a missing
   `committees:edit_details` on create, edit and submit. It is no longer sent
   with `permission: committees:approve`.
@@ -335,9 +469,26 @@ changes), the committee row, the request row. When PR 5 lets a request change
 seat actions, those rows are written after the committee row lock and before
 the request row.
 
-**SELF_FINAL** is two transactions in sequence, each in its own order: Submit's
-(the request's instance, the committee read FOR SHARE, the request row), then
-Approve's.
+**Approve now** (Q4) is two transactions in sequence, each in its own order:
+Submit's (the request's instance, the committee read FOR SHARE, the request
+row, then the finish task's row), then Approve's (unchanged).
+
+**The finish task (Q8)** is always locked LAST, after the request row:
+- Submit and Withdraw: the request's instance, the request row, then the task
+  row (`lockTaskRow()`). That is the engine's "instance, then task" order
+  (ACC-190).
+
+**The departure withdrawal (Q8, PR 2b)** joins the deactivation's existing
+order:
+- the root-head advisory lock (ACC-288, already first);
+- the user writes;
+- then, per open draft, in id order: its instance FOR UPDATE, its request row,
+  its finish task's row.
+- **It must run BEFORE the deactivation's own task-row writes** (reassigning
+  the leaver's tasks). A task row locked before a request instance would invert
+  "instance, then task".
+- No request path takes the root-head lock or a user row, so the new order
+  cannot deadlock against Submit, Withdraw or Approve.
 
 **Editing seat actions in Formation:** the committee's instance FOR SHARE,
 then the committee row FOR UPDATE (with the `expectedUpdatedAt` check), then
@@ -350,8 +501,11 @@ which has no prior lock.
 **The backfill:** per committee, the committee row FOR UPDATE, then insert
 only if none exist; one transaction per organisation with `BACKFILL_TX`.
 
-**Never:** the root-head advisory lock (ACC-288). The chain only reads
-headship and never changes it.
+**Never in the chain:** the root-head advisory lock (ACC-288). The chain only
+reads headship and never changes it. (The departure withdrawal runs under that
+lock only because the deactivation already holds it.)
+
+**The headship read clause (Q6)** takes no lock: it is a read.
 
 ---
 
@@ -364,9 +518,13 @@ headship and never changes it.
 Safe against the deployed code: nothing it runs reads the new table. (It also
 carried a Setup health enum value until §16 removed it.)
 
+**PR 2 adds one additive migration** (Q8): the nullable column
+`CommitteeChangeRequest.finishTaskId`. It is safe against the deployed code,
+because nothing deployed reads it.
+
 **No other migration:**
 
-- nothing stores the chain (§3.3);
+- nothing stores the chain (§3.3) or the headship clause (§4.6);
 - seat actions in a change request are a key in the existing `changes` and
   `fromValues` JSON (PR 5);
 - retiring `committees:approve` is a data backfill, not a schema change.
@@ -378,15 +536,17 @@ carried a Setup health enum value until §16 removed it.)
 | PR | What | Migration | After the deploy |
 | -- | -- | -- | -- |
 | **1** backend | Seat actions: the registry, the table, the lookup defaults (attribute schema plus the SYSTEM values), copy on create, `GET`/`PUT /committees/:id/seat-actions` (Formation only), `seatActionsFor()`. Nothing decides by seat actions yet. | yes | `backfill:acc283-seat-actions` (dry run, execute, dry run 0) |
-| **2** backend | The chain: `change-request-chain.ts`, decide/withdraw/awaiting/actions/notices/read admission on it, `awaitingDecisionBy`, `CHANGE_REQUEST_NOT_DECIDER`, the route gates dropped. `committees:approve` is no longer read (still in the catalogue). Open requests re-route on their next read. | no | none; deploy after PR 1's backfill has run, so deciding seats exist |
+| **2a** backend | Heads see the committees of their units (Q6, §4.6): `committeeOversightUnitIds()`, the clause in the parent rule and the committee reads; writes unchanged. Isolation tests and the three mutations. | no | none |
+| **2** backend | The chain: `change-request-chain.ts`, decide/withdraw/awaiting/actions/notices/read admission on it, `awaitingDecisionBy`, `CHANGE_REQUEST_NOT_DECIDER`, the route gates dropped. Approve now (Q4, §4.3): the endpoint, `actions.approveNow`, `CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED`. The finish task (Q8, §4.7) and only-R-withdraws. `committees:approve` is no longer read (still in the catalogue). Open requests re-route on their next read. | yes: `finishTaskId` | none; deploy after PR 1's backfill has run, so deciding seats exist |
+| **2b** backend | The departure withdrawal (Q8, §4.7): the engine's in-transaction system move, and one guarded call in `UserService.deactivate()` (lane A's file), before its task-row writes. | no | none |
 | **3** backend | **Dropped** (§16, Q7): there is no Setup health condition. Numbers are kept so the later PRs keep their names. | — | — |
 | **4** backend | Retire `committees:approve`: out of `COMMITTEES_PERMISSIONS` and the seed; `backfill:acc283-retire-committees-approve` (dry run first, refuses customers, after PR 2 deploys); a spec failing if any non-spec source names it (`retired-task-keys.spec.ts`'s shape); the sentence table. Terms Review's seed assignment for new organisations (§10). | no | the backfill |
 | **5** backend | Seat actions as a change-request field (the whole map is one field, Q12): preview, drift check, apply on approval, labels. | no | none |
 | **6** backend | Section 1 enforcement: on their committee, a member may add, remove, change a seat and request a change where their seat allows it OR their role does (Ahmad, 10 Nov, item 1), replacing ACC-281's interim write rule (Q1). | no | none |
-| screens | One per backend PR, by lane: the seat-actions editor in Formation and its lookup defaults; Awaiting for everyone, "Awaiting …" on the request, the new codes in both languages; the request dialog's seat-actions field. | — | — |
+| screens | One per backend PR, by lane: the seat-actions editor in Formation and its lookup defaults; Awaiting for everyone, "Awaiting …" on the request, the new codes in both languages; "Send for decision" and "Approve now" for a root head; heads opening their units' committees (the list and the page read only); the request dialog's seat-actions field. | — | — |
 
-PRs 2, 3 and 4 can each ship on their own once PR 1 has. Screens follow their
-backend PR.
+Order: PR 1, then 2a, then 2, then 2b; 4, 5 and 6 after 2. 2a ships on its own
+once PR 1 has. Screens follow their backend PR.
 
 ---
 
@@ -429,23 +589,41 @@ kind: 'ORG_UNIT_HEAD' }] }` with no unit, which means the committee's own unit
 - **`change-request-chain.spec.ts`** (pure walk): Reports-to seat decides;
   seat vacant → owning unit; owning unit vacant → parent; a cover decides; a
   member of C skipped below the root and not at the root; R skipped
-  everywhere; R alone at the root → SELF_FINAL; R and a second root head →
-  the second decides; root headless → NONE; P not in force → skipped; an
-  inactive unit skipped.
+  everywhere; R alone at the root → NONE with `requesterHeadsRoot`; R and a
+  second root head → the second decides; root headless → NONE without it; P
+  not in force → skipped; an inactive unit skipped; R heads the root and a
+  Reports-to seat holder exists → that seat decides.
 - **`change-request-chain.db-spec.ts`** (real Postgres): the same against real
   rows; the query count for 1 and 20 requests; tenant isolation (another
   organisation's committee, seat holder, unit and head planted, none resolved).
 - **`committee-change-request.db-spec.ts`**: decide as a Reports-to seat
   holder, a unit head, a cover, a member of C (refused), R (refused);
-  SELF_FINAL approves at Submit and writes the task; awaiting-decision for a
-  decider, a non-decider (three queries), the cap, isolation; a re-route after
-  a head change; withdraw of a draft by a decider.
+  awaiting-decision for a decider, a non-decider (three queries), the cap,
+  isolation; a re-route after a head change.
+  - **Approve now (Q4):**
+    - the root head applies their request with authority `ROOT_HEAD_OWN` and
+      the terms task;
+    - anyone else, and R once someone else decides, is refused;
+    - the edge case: `submit` false, Submit refused with `approveNow: true`;
+    - a failed approve leaves it under review with Approve now to retry.
+  - **The finish task (Q8):** made on create and on Return, completed on
+    Submit and Approve now, cancelled on Withdraw; a withdraw by anyone but R
+    is `CHANGE_REQUEST_NOT_REQUESTER`.
+- **`committee-oversight.db-spec.ts`** (PR 2a): §4.6's cases and isolation.
+- **`user-departure-change-request.db-spec.ts`** (PR 2b):
+  - deactivating R withdraws R's draft and cancels its task in the same
+    transaction, with the `departure` audit;
+  - a refused deactivation (the root role or the root head) leaves the draft
+    as it was;
+  - a request already under review is untouched.
 - **`committee-seat-actions.db-spec.ts`**: copy on create with an override;
   Formation edit, refusals, stale save; the backfill's idempotence.
 - **Mutations**, each turning a spec red: drop the requester skip; drop the
   member skip; apply the member skip at the root; stop the walk before the
   root; let the chain read `committees:approve`; resolve per request in a
-  loop (the query-count pin); drop the organisation from the ancestor query.
+  loop (the query-count pin); drop the organisation from the ancestor query;
+  offer Approve now to a head who is not the requester; complete the finish
+  task outside the submit transaction; plus PR 2a's three (§4.6).
 
 ---
 
@@ -453,9 +631,12 @@ kind: 'ORG_UNIT_HEAD' }] }` with no unit, which means the committee's own unit
 
 - Nothing on the per-request path (TenantGuard, PermissionGuard, ModuleGuard,
   the throttler, interceptors, middleware, `verifySessionIdentity()`).
-- The chain is resolved only inside the change-request reads and writes and
-  the hourly detector, at most 9 queries for any number of requests; never in
-  a row loop.
+- The chain is resolved only inside the change-request reads and writes, at
+  most 9 queries for any number of requests; never in a row loop.
+- The headship clause (Q6) costs a non-member, non-holder up to 3 more queries
+  per committee read; a `committees:view` holder or a member pays nothing more.
+- The departure withdrawal (Q8) adds one indexed query to a deactivation, and
+  a little work per open draft (at most one per committee).
 - Awaiting decision costs three queries for someone who decides nothing.
 - Hard caps: 200 candidates under review; the ancestor walk's depth guard.
 
@@ -480,13 +661,10 @@ inactive):
   (ACC-286's rule).
 - Alternative: still let its deciding seat decide.
 
-**Q4. The root head raises a request on a committee owned by a unit below
-them:**
-- **Recommend:** the chain as written. The owning unit's head decides, even
-  though the requester is senior. Authority follows the committee's place in
-  the structure.
-- Alternative: skip every head below the requester, so the request goes
-  straight to SELF_FINAL.
+**Q4. The root head's own request: CLOSED (Ahmad, 16 Nov, §16).** The root
+head chooses "Send for decision" (the chain as written) or "Approve now" (their
+own final decision, `ROOT_HEAD_OWN`). When nobody else is in the chain, only
+Approve now is offered. §4.3.
 
 **Q5. Out of office:**
 - **Recommend:** heads and acting covers in force only. No out-of-office
@@ -494,22 +672,22 @@ them:**
 - Alternative: replace an away decider with their acting user, like the stage
   pool.
 
-**Q6. What a decider may open:**
-- **Recommend:** the request (`GET /committee-change-requests/:id`), the
-  awaiting list (which carries the full diff and labels), and the committee
-  page read-only, while the request awaits them. The submit notice opens the
-  committee, where the banner is.
-- Alternative: the request only, with the notice opening Awaiting my action.
+**Q6. What a decider may open: CLOSED, wider (Ahmad, 16 Nov, §16).** A
+unit's heads and covers in force see every committee owned by their unit or
+below, read only (PR 2a, §4.6). A Reports-to seat holder who is not such a head
+gets the request only, through `isCurrentDecider()`.
 
 **Q7. Submit when the chain is NONE:** **CLOSED (Ahmad, 16 Nov, §16).** Not a
 valid case: ACC-288 keeps the root headed. In PR 2, Submit is refused with 409
 `CHANGE_REQUEST_NO_DECIDER` and a log line is written. No Setup health.
 - (Recommended was: accept; it waits, and Setup health shows it.)
 
-**Q8. Withdrawing someone else's draft or returned request** (was: a
-`committees:approve` holder):
-- **Recommend:** a current decider of that request.
-- Alternative: the requester only.
+**Q8. Unfinished drafts: CLOSED (Ahmad, 16 Nov, §16).** Nobody else withdraws
+another person's draft. Instead:
+- the requester gets a "Finish or withdraw the change request" task;
+- a departing requester's draft is withdrawn inside the deactivation.
+
+§4.7.
 
 **Q9. A notice when a request is re-routed** (new head, new seat holder):
 - **Recommend:** none. The awaiting list is live.
@@ -536,7 +714,8 @@ valid case: ACC-288 keeps the root headed. In PR 2, Submit is refused with 409
   owning unit leaves the stage unassigned, shown on Setup health.
 - Alternative: keep the starting assignment.
 
-**Q14. SELF_FINAL timing:**
+**Q14. SELF_FINAL timing:** *(now Approve now's timing, §4.3; the
+recommendation stands: Submit's transaction, then Approve's.)*
 - **Recommend:** a second transaction right after Submit, the ordinary approve
   path. If it fails, the request waits with R as its only decider.
 - Alternative: one transaction for both moves. The engine's
@@ -620,8 +799,9 @@ committees only; existing ones keep their copy, by design.
 - **Q10:** as recommended. The seeded defaults stand: Chairman all five,
   Secretary the four member actions, every other seat none.
 - **Q4** (the root head's request): Ahmad wants an option. The final wording
-  comes in a later prompt; it does not touch PR 1.
-- **Q6 and Q8:** still being discussed; they do not touch PR 1.
+  comes in a later prompt; it does not touch PR 1. *(Answered below.)*
+- **Q6 and Q8:** still being discussed; they do not touch PR 1. *(Answered
+  below.)*
 - **Q7 ("nobody can decide"): CLOSED. Not a valid case.** ACC-288 keeps the
   root unit headed, so the chain always ends with a decider.
   - There is **no Setup health condition and no deferred type** for it.
@@ -632,3 +812,42 @@ committees only; existing ones keep their copy, by design.
     Submit is refused with **409 `CHANGE_REQUEST_NO_DECIDER`**, and a log line
     is written (ids only).
   - PR 3 (the detector) is dropped; the PR numbers are kept.
+
+### 16.1 The remaining answers (16 Nov, through lane B's Prompt 68)
+
+- **Q4, the root head's own request** (§4.3). When the requester is the root
+  unit's head (a head holder, or the acting cover in force), there are two
+  moves:
+  - **"Send for decision":** the ordinary chain.
+  - **"Approve now":** applied at once as their own final decision, in the
+    same approve transaction, locks, drift and reference checks, with audit
+    authority `{ kind: 'ROOT_HEAD_OWN' }`.
+  - Nobody else gets Approve now, and the actions flags say whether the viewer
+    may.
+  - **The edge case:** when the chain, with the root head skipped as the
+    requester, finds nobody, there is no step above the root, so Send for
+    decision is not offered, only Approve now.
+- **Q6, wider** (§4.6, **PR 2a**, before the chain). A unit's heads and acting
+  covers in force see, read only, every committee owned by their unit or any
+  unit below it. It is:
+  - one clause in the committee parent rule, beside ACC-281's member clause,
+    through `unit-headship.ts` only;
+  - batched, organisation-scoped, and on nothing in the per-request path;
+  - read only: writes are unchanged.
+
+  It replaces "a decider may open the committee while it awaits them". A
+  Reports-to seat holder who is not such a head gets the request only,
+  through `isCurrentDecider()`.
+- **Q8, unfinished drafts** (§4.7):
+  - **The task:** a draft or returned request gives its requester a task,
+    "Finish or withdraw the change request" / «إكمال طلب التغيير أو سحبه»
+    (sourceType COMMITTEE, the committee; normal priority SLA and
+    escalation). It completes on Submit and is cancelled on Withdraw.
+    Carried by **PR 2**.
+  - **The departure:** a deactivated requester's open draft or returned
+    request is withdrawn inside the deactivation, audited with cause
+    `departure`. Carried by **PR 2b**, because it needs an engine entry
+    point for a system move inside a caller's transaction and touches lane
+    A's `user.service.ts`.
+  - **Nobody else** may withdraw another person's draft;
+    `CHANGE_REQUEST_NOT_REQUESTER` keeps its old meaning.
