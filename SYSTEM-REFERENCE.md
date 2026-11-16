@@ -8338,6 +8338,27 @@ callers" finding in Sections 1–9 was re-checked with the same
 multiline-aware pattern after this was found; none of the others
 changed.
 
+**What the Lookups screens say when a call is refused (ACC-309).**
+- **Never the server's `message`.** Hide, Unhide, Delete, Override label and
+  the Add/Edit value form all go through `lookupRefusalKey(err, actionKey)`
+  (`foundation/lookup/lookup-refusal.ts`). It reads the code with the shared
+  `refusalCode()`. A known code gets its own sentence
+  (`LOOKUP_ATTRIBUTE_INVALID`, `RATE_LIMITED`); anything else gets the
+  action's own sentence ("The value could not be hidden."). Before this, a
+  refused Hide said "Internal server error" in an Arabic session.
+- **The screens store the KEY** and translate it at render, so a language
+  switch reaches an error already shown.
+- **Most lookup refusals carry no code.** Not found, a system value that
+  cannot be edited or deleted, and a key already in use are plain exceptions
+  with English text, so each gets the action's sentence. In particular, a
+  duplicate key on Add says "The value could not be saved." A coded refusal
+  added to these routes needs its line in `lookup-refusal.ts`.
+- **Every error line uses `--am-danger-ink`**: the values page's own, the
+  override dialog's, the value form's and the categories page's.
+  `lookup-error-lines.spec.ts` checks the RENDERED colour against the token.
+  The categories page's `error` is never set today (the page has no
+  mutations).
+
 **Two real, precise gaps remain**: the `PlatformGuard`-gated
 SYSTEM-category mutation endpoints (`updateCategory`/`deactivateCategory`,
 the ACC-17 fix's whole subject) have **no UI anywhere, not even in the
@@ -10710,6 +10731,24 @@ array-backed list to the same contract, so there is one code path.
   parent does not constrain height, `flex-1` grows to content and no
   scrollbar appears, so the same markup is correct in panel mode
   without a variant branch.
+- **The scroll region reserves NO scrollbar gutter (ACC-309).**
+  - **Where the gutter came from.** `scrollbar-gutter: stable` was ACC-120's
+    first attempt at keeping the headings over their data while the header
+    sat outside the scroller. It was superseded the same day by moving the
+    header inside, and left behind.
+  - **What it broke.** With the gutter EMPTY (a list too short to scroll
+    down, or scrollbars that take no space), Chromium shifts the sideways
+    scroll range by a gutter's width:
+    - right-to-left, the first 15px could not be reached: `scrollLeft` −15
+      on load and again after `scrollLeft = 0`. On Lookups in Arabic at 390,
+      the first label sat 3px past the edge;
+    - left-to-right, the last 15px of a wide list could not be reached.
+  - **The cost of removing it.** A desktop list's width moves by the
+    scrollbar's width when it starts or stops scrolling down. Header and rows
+    move together, so they stay aligned.
+  - **Pinned by** `data-list.rtl-start.layout.spec.ts`: both directions, 358
+    and 988, short and long. It fails in both directions with the gutter back.
+  - **Do not reintroduce a gutter on this element.**
 - **A manually ordered list gives no column a `sortBy`.** Workflow
   Stages never will: its order IS its data and every row carries reorder
   buttons, so re-sorting would leave those buttons pointing at positions

@@ -456,7 +456,8 @@
     },
     "refusal": {
       "attributeInvalid": "This setting can't be saved for this value.",
-      "valueGone": "This value no longer exists."
+      "valueGone": "This value no longer exists.",
+      "rateLimited": "Too many changes at once. Wait a moment, then try again."
     },
     "errorRequiredSeat": "The Required seat setting could not be saved."
   },
