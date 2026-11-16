@@ -25,7 +25,12 @@ import { LookupValueFormComponent } from './lookup-value-form.component';
 // density, the step strip in the header. Measured for the two seeded schemas
 // with attributes, in English and Arabic:
 //   - document_type: five attributes (two checkboxes, two numbers, a string);
-//   - committee_member_role: one, `required`.
+//   - committee_member_role: six checkboxes, `required` and the five seat
+//     actions (#307, CC-283).
+// And CC-283's gap: every attribute is separated from the next by the SAME
+// vertical gap, the form's row token (--am-form-row-gap), whatever the pair:
+// checkbox→input, input→input, input→checkbox, checkbox→checkbox. The body
+// heights are pinned within 2px of what was measured.
 //
 // NON-VACUITY FIRST (ACC-120): a body that measured 0 would pass "<= 420", so
 // each case first proves step 2 is on screen with every attribute's name.
@@ -40,10 +45,31 @@ const SCHEMAS = {
     requiresCommitteeApproval: { type: 'boolean', labelEn: 'Requires committee approval', labelAr: 'يتطلب اعتماد لجنة' },
     defaultRetentionYears: { type: 'number', labelEn: 'Default retention (years)', labelAr: 'مدة الحفظ الافتراضية (بالسنوات)' },
   },
+  // The seed's six booleans since #307 (lookup.seed.ts), each still carrying
+  // its old `label` beside labelEn / labelAr.
   committee_member_role: {
     required: { type: 'boolean', label: 'Required seat', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
+    seatAddsMember: { type: 'boolean', label: 'Add members', labelEn: 'Add members', labelAr: 'إضافة أعضاء' },
+    seatRemovesMember: { type: 'boolean', label: 'Remove members', labelEn: 'Remove members', labelAr: 'إزالة أعضاء' },
+    seatChangesSeat: { type: 'boolean', label: "Change a member's seat", labelEn: "Change a member's seat", labelAr: 'تغيير مقعد عضو' },
+    seatRequestsChange: { type: 'boolean', label: 'Request a change', labelEn: 'Request a change', labelAr: 'طلب تغيير' },
+    seatDecidesReportingChanges: {
+      type: 'boolean',
+      label: 'Decide changes of committees that report to it',
+      labelEn: 'Decide changes of committees that report to it',
+      labelAr: 'البتّ في تغييرات اللجان التابعة لها',
+    },
   },
 } as const;
+
+// The body heights measured with the gap fix (CC-283), pinned within 2px so a
+// layout change that moves them is seen.
+const PINNED: Record<string, number> = {
+  'document_type en': 256,
+  'document_type ar': 262,
+  'committee_member_role en': 180,
+  'committee_member_role ar': 180,
+};
 type CategoryKey = keyof typeof SCHEMAS;
 
 @Component({
@@ -143,11 +169,28 @@ describe('LookupValueForm — the attribute step fits the 420px body (ACC-310)',
           expect(label!.textContent!.trim()).toBe(language === 'ar' ? def.labelAr : def.labelEn);
         }
         const height = body().scrollHeight;
-        // One checkbox row (committee_member_role) is about 20px tall.
-        expect(body().getBoundingClientRect().height).withContext('the body is laid out').toBeGreaterThan(10);
+        expect(body().getBoundingClientRect().height).withContext('the body is laid out').toBeGreaterThan(100);
 
-        measured.push(`${category} ${language}: ${height}px`);
+        // The gap between each attribute and the next, by kind of pair.
+        const token = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--am-form-row-gap'));
+        expect(token).withContext('--am-form-row-gap resolved').toBeGreaterThan(0);
+        const blocks = Array.from(document.querySelectorAll<HTMLElement>('[data-attribute-field]'));
+        expect(blocks.length).toBe(keys.length);
+        const kind = (b: HTMLElement) => (b.querySelector('p-checkbox') ? 'checkbox' : 'input');
+        const gaps: string[] = [];
+        for (let i = 1; i < blocks.length; i++) {
+          const gap = blocks[i]!.getBoundingClientRect().top - blocks[i - 1]!.getBoundingClientRect().bottom;
+          const pair = `${kind(blocks[i - 1]!)}→${kind(blocks[i]!)}`;
+          gaps.push(`${pair} ${Math.round(gap * 10) / 10}`);
+          expect(Math.abs(gap - token)).withContext(`${pair} gap ${gap}px, token ${token}px`).toBeLessThan(0.5);
+        }
+
+        measured.push(`${category} ${language}: ${height}px; gaps ${gaps.join(', ')}`);
         expect(height).withContext(`${category} ${language}: body ${height}px`).toBeLessThanOrEqual(CAP);
+        const pinned = PINNED[`${category} ${language}`];
+        if (pinned !== undefined) {
+          expect(Math.abs(height - pinned)).withContext(`${category} ${language}: ${height}px, pinned ${pinned}px`).toBeLessThanOrEqual(2);
+        }
       });
     }
   }
