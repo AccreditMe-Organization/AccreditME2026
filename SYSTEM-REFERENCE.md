@@ -10053,6 +10053,23 @@ browser silently drops it. The rule caught three in Manage roles
 in overlay-select, and, on its first merge with `dev`, the All tasks
 filter chip's `--am-primary-200`.
 
+**The shared components no longer use the retired secondary ink (ACC-311).**
+- **The token.** `--am-text-secondary` is #718096: 4.02:1 on white and 3.73:1
+  on the surface, below AA for small text. The design reference retired it
+  (ACC-111) for `--am-ink-500` (#5A6779).
+- **What moved.** Every use under `src/app/shared` and `src/app/layout` moved
+  to `--am-ink-500`, and `--am-blue-primary` to `--am-primary-600`, the same
+  value: 41 uses in 14 files. These include the record panel's heading, count
+  chip and empty-state line, the list's notes and pager line, the page
+  header's eyebrow and purpose line, and the breadcrumb.
+- **The fallbacks.** The status badge and status chip fall back to
+  `--am-ink-500` too. The badge draws white text on that fallback, which
+  improves from 4.02:1 to about 5.8:1.
+- **Enforced by `check:retired-ink`**, with a selftest: the old token under
+  either folder fails CI, naming the file and line.
+- **Screens under `foundation/` and `platform/` still carry the old token.**
+  They move screen by screen; the scan covers what every screen inherits.
+
 ### 10.2 `StatusBadgeComponent` — Generic by Variant, Not by Fixed Enum
 
 `frontend/src/app/shared/components/status-badge/status-badge.component.ts`.
@@ -10061,13 +10078,13 @@ and an arbitrary `value: string`, rather than one component per
 vocabulary. Two computed bindings, both derived the same way:
 
 ```ts
-colorVar   = `var(--am-${variant}-${value.toLowerCase()}, var(--am-text-secondary))`
+colorVar   = `var(--am-${variant}-${value.toLowerCase()}, var(--am-ink-500))`
 labelKey   = `${variant}.${value.toLowerCase()}`   // rendered via | translate
 ```
 
 Two deliberate safety properties, both stated directly in the code
 comment: (1) **CSS's own `var()` fallback** handles an unmapped/typo'd
-`value` — resolves to `--am-text-secondary` instead of an invisible or
+`value` — resolves to `--am-ink-500` (ACC-311; was `--am-text-secondary`) instead of an invisible or
 broken badge, no JS-side existence check needed, the cascade handles
 it. (2) An explicit warning to future callers: *"confirm en.json/ar.json
 actually have a matching `{variant}.{value}` key — ngx-translate falls

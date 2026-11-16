@@ -56,7 +56,7 @@ const TIERS: Record<StatusChipVariant, { plain: string[]; attention: string[] }>
       <!-- No chip at all. Not a chip styled to look like text — an actual
            bare span, so it costs no border, no padding and no visual weight
            in a dense table. -->
-      <span class="text-[var(--am-text-secondary)]">{{ labelKey() | translate }}</span>
+      <span class="text-[var(--am-ink-500)]">{{ labelKey() | translate }}</span>
     } @else {
       <span
         class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs whitespace-nowrap"
@@ -90,11 +90,11 @@ export class StatusChipComponent {
   readonly isAttention = computed(() => this.tier().attention.includes(this.normalized()));
 
   // Same var()-with-fallback safety StatusBadgeComponent established: an
-  // unmapped value resolves to --am-text-secondary rather than rendering an
+  // unmapped value resolves to --am-ink-500 rather than rendering an
   // invisible chip. The cascade handles it; no existence check needed.
   private readonly colorVar = computed(
     () =>
-      `var(--am-${this.variant()}-${this.value().toLowerCase()}, var(--am-text-secondary))`,
+      `var(--am-${this.variant()}-${this.value().toLowerCase()}, var(--am-ink-500))`,
   );
 
   readonly ink = computed(() => this.colorVar());
