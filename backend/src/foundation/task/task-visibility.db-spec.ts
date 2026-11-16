@@ -245,7 +245,11 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
         for (const c of ['ROOT', 'DEPT', 'WARD', 'SIB']) {
           const answer = await listed(v, { sourceType: 'COMMITTEE', sourceId: committee[c] });
           const wanted = expected.filter((k) => onCommittee[k] === c).sort();
-          if (!v.permissions.includes(SEE)) {
+          // ACC-283 PR 2a — a head (or cover) READS the committees of their unit and the
+          // units below without committees:view: the panel opens, and which tasks it
+          // lists is unchanged (rule 1 still admits none of them here).
+          const overseen = v.id === user['deptHead'] && (c === 'DEPT' || c === 'WARD');
+          if (!v.permissions.includes(SEE) && !overseen) {
             // The record comes first: without its view permission, a 403 before any task.
             expect(answer).toBe('FORBIDDEN');
           } else {
