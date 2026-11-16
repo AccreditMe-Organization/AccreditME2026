@@ -171,6 +171,27 @@ export async function overseesRequestCommittee(
 }
 
 /**
+ * ACC-283 PR 2a — does `viewerId` oversee ANY active committee: a head or cover in
+ * force of a unit that owns one, at that unit or below? For GET /committees/mine's
+ * `mayBrowseCommittees`. The two headship reads, then (only when they lead
+ * something) the sub-unit walk and one existence check.
+ */
+export async function overseesAnyCommittee(
+  client: OversightClient & Pick<PrismaService, 'committee'>,
+  organizationId: string,
+  viewerId: string,
+  now: Date,
+): Promise<boolean> {
+  const units = await committeeOversightUnitIds(client, organizationId, viewerId, now);
+  if (units.size === 0) return false;
+  const row = await client.committee.findFirst({
+    where: { organizationId, isActive: true, orgUnitId: { in: [...units] } },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
  * ACC-283 PR 2a — which of `among` this viewer may READ: all of them for
  * committees:view; otherwise those they are an active member of, then, for the
  * rest, those they oversee as a head or cover. One query of each kind, never one
