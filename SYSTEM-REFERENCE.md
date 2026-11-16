@@ -4834,25 +4834,76 @@ step for every other tenant in the same cycle. Same failure shape as
 ACC-48, one scope narrower. Not attempted by ACC-49 (whose scope was
 explicitly the step level) and not currently tracked by its own ticket.
 
-### 3.5 Out-of-Office Routing — A Real Limitation
+### 3.5 Out-of-office routing for new tasks (ACC-302)
 
-**`TaskService.create()` does not apply out-of-office substitution at
-all.** Confirmed by reading the full method: `filterActiveUsers()`
-filters strictly on `User.status === 'ACTIVE'` (excludes
-suspended/invited users) and never references `outOfOfficeFrom`,
-`outOfOfficeTo`, or `actingUserId`. Out-of-office routing (Absence
-Management Pattern 1) is implemented exactly once in the codebase —
-`WorkflowService.applyOutOfOfficeRouting()` (Section 2.5.1) — which
-runs **before** `WorkflowService.executeCreateTask()` calls
-`TaskService.create()`, substituting acting users into the assignee
-list upstream. **Net effect**: a task created via the workflow engine's
-`CREATE_TASK` action gets correct out-of-office substitution. A task
-created directly through `POST /tasks` (any user holding `tasks:create`,
-manually) does **not** — if it's assigned to a user currently
-out-of-office, no substitution happens, and no coverage-gap
-notification fires either (that notification path,
-`notifyTenantAdminsOfCoverageGap()`, also lives only inside
-`WorkflowService`, not `TaskService`).
+**Rewritten (ACC-302, 14 Nov).** This section described
+`WorkflowService.applyOutOfOfficeRouting()` running before CREATE_TASK, and
+manual tasks getting no routing. Both are gone: ACC-190 retired CREATE_TASK, and
+the engine's old routing went with it. What is true now:
+
+- **One rule, one file: `common/services/out-of-office-cover.ts`.**
+  - `isOutOfOffice()` is the window test: both dates set, now inside them,
+    inclusive. It is the one copy, used by `StagePoolService`,
+    `TaskAuthorityService` (ACC-173) and the workload hint (ACC-199).
+  - `activeCoverOf()` is the cover test: away, `actingUserId` set, and that user
+    ACTIVE in the same organisation.
+  - `coversOf()` / `routeToCovers()` are the TASK rule. One read for any number
+    of people, scoped by organisation.
+- **The task rule (Ahmad, 13–14 Nov).** A NEW task for an ACTIVE person who is
+  away with an active cover goes to the cover.
+  - It applies only to a placement's direct people: a chosen person (unit →
+    position → person, or a committee's chosen member) and a one-holder
+    position's holder.
+  - **One hop:** a cover who is away too means the task stays with the person.
+  - **Never:**
+    - pools (a position or seat with several people), which still leave covers
+      out (6 Oct);
+    - the named-people path or `prepareRecordTask()`;
+    - a task already held. Nothing moves when someone goes away or returns
+      (ACC-132).
+- **Who calls it, batched:**
+  - `TaskAssignmentService.resolvePlacement()`, so New task and Reassign agree;
+  - `StageTaskDefinitionService.prepareEntryTasks()`, ONE read for every
+    definition of a stage entry.
+- **What is recorded:**
+  - the cover's `TaskAssignee` row carries `delegationReason =
+    OUT_OF_OFFICE_COVERAGE` and `delegationContextId` = the away person;
+  - the CREATE (or DELEGATE) audit row's `metadata.outOfOfficeCover` lists
+    `[{ forUserId, coverUserId }]`, by id;
+  - the cover's notice says "(covering for {name})", and the away person is told
+    nothing;
+  - "covering for" on screen follows ACC-101's qualifier rule, unchanged
+    (`DelegationLabelService`).
+- **The creator is told before Create task.** The picker's person rows
+  (`GET /tasks/assignees`, `GET /tasks/assignees/committee`) carry
+  `cover: { userId, name } | null`: who a new task for that person goes to now.
+  - It is filled for every caller the picker serves, in one read for the list.
+  - It never carries dates or a reason.
+- **On screen (PR 2, 16 Nov), from `cover` only; no screen reads a date:**
+  - a covered person's row in the Person list adds "Out of office · goes to
+    {cover}";
+  - when that person is chosen, or a one-holder position's holder is covered,
+    New task's and Reassign's outcome line reads "{name} is out of office. This
+    task will go to {cover}." A stage task definition shows the row but keeps
+    its own outcome, because its tasks are placed at each entry;
+  - the workload hint is hidden for a covered person, and an answer kept for
+    them is not shown;
+  - the task page's assignee line adds "covering for {name}" from the row's
+    `delegation`, only when the server sent the name;
+  - measured against the 420px cap in both languages
+    (`task-cover.layout.spec.ts`): New task 317 / 328, Reassign at its tallest
+    345 / 359.
+- **"✦ Suggest someone"** is never offered or answered for a covered person:
+  their row's `canSuggest` is false, and `POST /tasks/assignment/workload-hint`
+  refuses them with `WORKLOAD_NO_SUGGESTION` before any call or charge.
+- **Stage pools are unchanged** (ACC-271, Q7): they still include an away
+  member's cover, with no one-hop check.
+- **Specs:**
+  - `out-of-office-cover.spec.ts`;
+  - `workload-cover.spec.ts`;
+  - `task-cover-routing.db-spec.ts` (real Postgres). Five mutations turn it red:
+    the one-hop check, the ACTIVE check, the stage path's call,
+    `resolvePlacement()`'s call, and the picker's `cover`.
 
 ### 3.6 Permission Model
 
@@ -7013,11 +7064,30 @@ health detector.
 
 **Rule 4 — only a committee in force can be pointed at:** §3.15.
 
-**Setup health:** `COMMITTEE_MISSING_REQUIRED_SEAT`, deferred in PR 1 (§13.2).
-The frontend already reads it (type, order, Fix, wording), so PR 2 only writes
-it.
+**Setup health: `COMMITTEE_MISSING_REQUIRED_SEAT`** (§13.2). PR 1 added the
+value deferred, with every reader. PR 2 (`committeesMissingRequiredSeat()` in
+`setup-condition.detectors.ts`) writes it:
+- **Which committees:** rules 3 and 4's test — active, and the newest COMMITTEE
+  instance's current stage flagged `IN_FORCE`. Suspended counts (Ahmad, 15 Nov,
+  Q-A).
+- **One row per committee** with an empty required seat. It is `AT_RISK`, and
+  its `subject` names the committee and its empty seats in seat order, with
+  the organisation's own labels. The row names the committee for any
+  `setup:view` holder (Q-C).
+- **Age:** "first detected" (`openedAt` null, `AGE_BASIS` `FIRST_DETECTED`,
+  Q-B), because nothing records when a seat emptied.
+- **Cost:** at most three queries per organisation per hourly run: the
+  committees in force, `requiredSeats()`, and `seatHoldersFor()` (the batched
+  holder reader; `seatHolders()` is a one-committee call of it).
+- **It clears itself** on the next run once the seat is filled.
+- **The rollback was proved before PR 2.** PR 1's code (`9ccdd94`), reading a
+  database holding PR 2's rows, answered the page, the badge, Home's slice and
+  the tree's unit conditions with the rows left out, and its reconciler left
+  them byte-identical. A mutation of the type filter turned the check red.
 
 **Specs:** `committee-seat-rules.db-spec.ts`, `committee-going-live.db-spec.ts`,
+`committee-seat-detector.db-spec.ts` (PR 2: a Suspended committee, an
+organisation's own setting, open and clear, tenant isolation),
 `committee-reference-checks.db-spec.ts` (extended), `transition-preconditions.spec.ts`,
 and the unit and screen specs beside each change. Engine db-specs that move a
 committee into Active use `common/testing/committee-going-live.ts`
@@ -13430,7 +13500,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
-| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | — | **deferred in PR 1**: the value, its migration and every reader ship first, and it is in `DEFERRED_SETUP_CONDITION_TYPES`, so nothing writes it. PR 2 adds the detector (a committee in force with an empty required seat) and reports it. Fix: `/committees/:id` (`committees:view` + `committees:add_member`). §3.21.4 |
+| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`). One row per committee in force (active, stage flagged `IN_FORCE`; Suspended counts) with an empty required seat, naming the seats. PR 1 added the value deferred; PR 2 detects and reports it. §3.21.4 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a

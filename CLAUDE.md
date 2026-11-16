@@ -5083,6 +5083,13 @@ Ahmad's answers (14 Nov, A1–A8):
   PR 1 adds `COMMITTEE_MISSING_REQUIRED_SEAT` (`AT_RISK`, A7) and every reader,
   and defers it, so nothing writes it. PR 2 adds the detector, after a rollback
   check like ACC-202's.
+  - **PR 2 is built.** One row per committee in force (rules 3 and 4's test:
+    active, stage flagged `IN_FORCE`, so Suspended counts) with an empty
+    required seat, aged "first detected", naming the committee for any
+    `setup:view` holder (Ahmad, 15 Nov). It costs three queries per
+    organisation per hourly run, through `seatHoldersFor()`.
+  - **The rollback check passed first:** PR 1's code left PR 2's rows out of
+    every read and its reconciler left them untouched.
 - **TEST FIXTURES:** engine db-specs that move a committee into Active use
   `common/testing/committee-going-live.ts`. `putCommitteeInEditableStage()`'s
   stage is flagged `IN_FORCE`.
@@ -5146,6 +5153,39 @@ Briefly:
   organisation skipped): dry run, `-- --execute` AFTER the deploy, then a dry
   run reporting 0.
 - **No migration.**
+
+## Key Architecture Decisions (ACC-302)
+
+A new task for someone out of office goes to their cover. Full mechanism:
+SYSTEM-REFERENCE.md §3.5. Plan and Ahmad's answers (13–14 Nov):
+`backend/Plans/step-302-task-cover-routing.md`. Briefly:
+
+- **ONE RULE, `common/services/out-of-office-cover.ts`.**
+  - `isOutOfOffice()` is the one copy of the window test (both dates, now
+    inside, inclusive). The pool, the task authority rule and the workload hint
+    each had their own copy.
+  - `coversOf()` / `routeToCovers()` are the task rule.
+  - **Never write a second copy.**
+- **A NEW task for a chosen person, or a one-holder position's holder, who is
+  away with an ACTIVE cover goes to the cover. One hop only:** a cover who is
+  away too leaves the task with the person.
+  - **Never** a pool, the named-people path, `prepareRecordTask()`, or a task
+    already held.
+  - Batched: `resolvePlacement()` (New task and Reassign agree) and ONE read
+    per stage entry.
+- **Recorded:**
+  - the cover's row: `OUT_OF_OFFICE_COVERAGE` and whom it covers;
+  - the audit row's `outOfOfficeCover` (ids);
+  - the cover's notice names whom they cover;
+  - the away person gets nothing.
+- **The picker's person rows carry `cover: { userId, name } | null`** for every
+  caller it serves: no dates, no reason. "✦ Suggest someone" is never offered or
+  answered for a covered person (`canSuggest` false; the endpoint refuses
+  `WORKLOAD_NO_SUGGESTION`).
+- **Stage pools are unchanged** (they keep an away member's cover, with no
+  one-hop check). "Covering for" keeps ACC-101's rule.
+- **No migration.** The screens are PR 2.
+
 
 ## Open / Deferred Items
 
@@ -5312,6 +5352,7 @@ Briefly:
   `status: 'ACTIVE'` only — SYSTEM-REFERENCE §3.5), and
   `validateEscalationTarget()` runs only when an `escalationUserId` is
   supplied, which this form does not send.
+  Superseded in part (ACC-302): a new task for a chosen person or a one-holder position's holder who is out of office now goes to their cover (SYSTEM-REFERENCE §3.5).
 - **No business object in this product has a human-readable reference
   code.** Found while building ACC-76's Committee record page against
   a design that shows one (`QMC-014`) beside the committee's name.

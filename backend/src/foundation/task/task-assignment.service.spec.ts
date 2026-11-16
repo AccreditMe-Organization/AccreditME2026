@@ -240,7 +240,8 @@ describe('TaskAssignmentService (ACC-167)', () => {
 
       expect(holders).toEqual([
         // ACC-199 — `workload` is filled in by TaskWorkloadService, never here.
-        { id: 'u1', name: 'Huda', positionNameEn: 'Quality Officer', positionNameAr: 'مسؤول الجودة', workload: null },
+        // ACC-302 — `cover`: who a new task for them goes to (none here).
+        { id: 'u1', name: 'Huda', positionNameEn: 'Quality Officer', positionNameAr: 'مسؤول الجودة', workload: null, cover: null },
       ]);
       expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
         where: { organizationId: ORG_A, positionId: 'pos-qo', primaryOrgUnitId: 'unit-1', status: 'ACTIVE' },
@@ -256,7 +257,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
 
       const members = await service.listCommitteeMembers(assigner, ORG_A, 'committee-1', 'role-sec');
 
-      expect(members).toEqual([{ id: 'u2', name: 'Omar', positionNameEn: null, positionNameAr: null, workload: null }]);
+      expect(members).toEqual([{ id: 'u2', name: 'Omar', positionNameEn: null, positionNameAr: null, workload: null, cover: null }]);
       const { select } = mockPrisma.committeeMember.findMany.mock.calls[0][0] as { select: unknown };
       expect(select).toEqual({
         user: { select: { id: true, name: true, position: { select: { nameEn: true, nameAr: true } } } },
