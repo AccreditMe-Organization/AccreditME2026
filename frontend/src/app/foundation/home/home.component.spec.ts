@@ -7,6 +7,7 @@ import { HomeComponent } from './home.component';
 import { By } from '@angular/platform-browser';
 import { TaskNewDialogComponent } from '../tasks/components/task-new-dialog/task-new-dialog.component';
 import { MyWorkCountsService } from './my-work-counts.service';
+import { REQUEST } from '../committees/change-requests/change-request.testing';
 import { HomeSpecCalls, HomeSpecOptions, awaitingMe, awaitingRow, homeProviders, recordList, taskRow } from './home.testing';
 import en from '../../../assets/i18n/en.json';
 import ar from '../../../assets/i18n/ar.json';
@@ -157,6 +158,13 @@ describe('HomeComponent (ACC-279)', () => {
       });
       expect(q('home-tile-awaiting-value')!.textContent!.trim()).toBe('2');
       expect(q('home-tile-awaiting-meta')!.textContent!.trim()).toBe('oldest 3 days');
+    });
+
+    // ACC-283 PR 2 — a unit head decides a change request without committees:approve.
+    it('Awaiting me counts a change request returned for a head without committees:approve', () => {
+      build({ permissions: [], awaiting: awaitingMe([]), changes: [REQUEST()] });
+      expect(calls.changes).toBe(1);
+      expect(q('home-tile-awaiting-value')!.textContent!.trim()).toBe('1');
     });
 
     it('Awaiting me fails as a whole when either half fails: a partial count is a wrong count', () => {
