@@ -27,7 +27,11 @@ export type SetupConditionType =
   | 'STAGE_ON_STARTING_ASSIGNMENT'
   // ACC-286 — a committee in force with a required seat nobody fills. Learned in
   // PR 1, before anything writes it; the backend reports it from PR 2.
-  | 'COMMITTEE_MISSING_REQUIRED_SEAT';
+  | 'COMMITTEE_MISSING_REQUIRED_SEAT'
+  // ACC-283 — a committee change request under review that nobody can decide
+  // (only while the root unit has no head and no acting head). Learned in PR 1,
+  // before anything writes it; the backend reports it from PR 3.
+  | 'CHANGE_REQUEST_WITHOUT_DECIDER';
 
 export type SetupConditionSeverity = 'BLOCKS_WORK' | 'AT_RISK';
 
@@ -66,6 +70,10 @@ export interface SetupConditionSubject {
   adminName?: string | null;
   // ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT: the empty required seats, in seat order.
   seats?: { id: string; labelEn: string; labelAr: string | null }[];
+  // ACC-283 — CHANGE_REQUEST_WITHOUT_DECIDER: the request's number (the
+  // committee is nameEn / nameAr) and the root unit whose headship fixes it.
+  requestNumber?: number;
+  rootUnitId?: string;
 }
 
 export interface SetupConditionDto {

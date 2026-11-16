@@ -43,17 +43,29 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
     // default on these shared rows (seedSystemData() rewrites them on every
     // deploy, so every organisation inherits the default with no backfill); an
     // organisation unticks one through its override row (overrideAttributes()).
+    //
+    // ACC-283 — the seat's DEFAULT actions (SEAT_ACTIONS, seat-actions.ts), one
+    // boolean each, named in both languages (ACC-310's labelEn/labelAr; `label`
+    // too, which the value form reads today). Copied into a committee when it is
+    // created; changing a default never reaches an existing committee. The
+    // values below are plan Q10's recommendation (Chairman all five, Secretary
+    // the four member actions), pending Ahmad's answer.
     attributeSchema: {
       type: 'object',
       properties: {
         required: { type: 'boolean', label: 'Required seat' },
+        seatAddsMember:              { type: 'boolean', label: 'Add members',                                     labelEn: 'Add members',                                     labelAr: 'إضافة أعضاء' },
+        seatRemovesMember:           { type: 'boolean', label: 'Remove members',                                  labelEn: 'Remove members',                                  labelAr: 'إزالة أعضاء' },
+        seatChangesSeat:             { type: 'boolean', label: "Change a member's seat",                          labelEn: "Change a member's seat",                          labelAr: 'تغيير مقعد عضو' },
+        seatRequestsChange:          { type: 'boolean', label: 'Request a change',                                labelEn: 'Request a change',                                labelAr: 'طلب تغيير' },
+        seatDecidesReportingChanges: { type: 'boolean', label: 'Decide changes of committees that report to it', labelEn: 'Decide changes of committees that report to it', labelAr: 'البتّ في تغييرات اللجان التابعة لها' },
       },
     },
     sortOrder: 20,
     values: [
-      { key: 'chairman',      labelEn: 'Chairman',      labelAr: 'رئيس اللجنة', sortOrder: 10, attributes: { required: true } },
+      { key: 'chairman',      labelEn: 'Chairman',      labelAr: 'رئيس اللجنة', sortOrder: 10, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true, seatDecidesReportingChanges: true } },
       { key: 'vice_chairman', labelEn: 'Vice Chairman', labelAr: 'نائب الرئيس', sortOrder: 20 },
-      { key: 'secretary',     labelEn: 'Secretary',     labelAr: 'أمين السر',   sortOrder: 30, attributes: { required: true } },
+      { key: 'secretary',     labelEn: 'Secretary',     labelAr: 'أمين السر',   sortOrder: 30, attributes: { required: true, seatAddsMember: true, seatRemovesMember: true, seatChangesSeat: true, seatRequestsChange: true } },
       { key: 'member',        labelEn: 'Member',        labelAr: 'عضو',         sortOrder: 40 },
       { key: 'observer',      labelEn: 'Observer',      labelAr: 'مراقب',       sortOrder: 50 },
       { key: 'advisor',       labelEn: 'Advisor',       labelAr: 'مستشار',      sortOrder: 60 },

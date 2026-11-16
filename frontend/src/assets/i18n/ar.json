@@ -2477,6 +2477,7 @@
     },
     "types": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "لجنة ينقصها مقعد مطلوب",
+      "CHANGE_REQUEST_WITHOUT_DECIDER": "طلب تغيير لا يوجد من يبتّ فيه",
       "ORG_UNIT_WITHOUT_HEAD": "وحدة تنظيمية بلا رئيس",
       "ORG_UNIT_WITHOUT_TYPE": "وحدة تنظيمية بلا نوع",
       "STAGE_WITHOUT_ASSIGNEE": "مرحلة سير عمل بلا مسؤول",
@@ -2492,6 +2493,7 @@
     },
     "consequence": {
       "committeeMissingSeat": "مقاعد مطلوبة لا يشغلها أحد: {{seats}}.",
+      "changeRequestWithoutDecider": "طلب التغيير رقم {{number}} قيد المراجعة ولا يوجد من يبتّ فيه: الوحدة العليا في المنظمة بلا رئيس ولا قائم بالأعمال.",
       "unitCovered": "بلا رئيس. ما يُحال إلى رئيسها يُصعَّد مؤقتًا إلى وحدة أعلى أو إلى رئيس بالإنابة.",
       "unitUncovered": "بلا رئيس، ولا يغطيها أحد عبر التصعيد. الموافقات والتصعيدات المحالة إلى رئيسها لا جهة لها.",
       "unitUntyped": "لم يُحدَّد نوع للوحدة، فلا يمكن تجميعها أو تصفيتها حسب النوع في الهيكل أو المخطط التنظيمي.",
@@ -2522,6 +2524,7 @@
     },
     "fix": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "تعيين أعضاء",
+      "CHANGE_REQUEST_WITHOUT_DECIDER": "تعيين رئيس",
       "ORG_UNIT_WITHOUT_HEAD": "تعيين رئيس",
       "ORG_UNIT_WITHOUT_TYPE": "تحديد النوع",
       "STAGE_WITHOUT_ASSIGNEE": "مراجعة المرحلة",
@@ -2534,6 +2537,7 @@
     },
     "fixNeeds": {
       "COMMITTEE_MISSING_REQUIRED_SEAT": "إصلاح هذا يتطلب صلاحية إضافة أعضاء إلى اللجان.",
+      "CHANGE_REQUEST_WITHOUT_DECIDER": "إصلاح هذا يتطلب صلاحية إدارة الهيكل التنظيمي.",
       "ORG_UNIT_WITHOUT_HEAD": "إصلاح هذا يتطلب صلاحية إدارة الهيكل التنظيمي.",
       "ORG_UNIT_WITHOUT_TYPE": "يتطلّب إصلاح هذا صلاحية إدارة الهيكل التنظيمي.",
       "STAGE_WITHOUT_ASSIGNEE": "إصلاح هذا يتطلب صلاحية إدارة سير العمل.",

@@ -6,7 +6,16 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { StageRules, StageRulesService } from '../workflow/stage-rules.service';
 import { COMMITTEE_ACTIONS, STAGE_FLAG } from '../workflow/record-registry';
-import { CommitteeSeatRefusal, requiredSeats, seatHolders } from './committee-seat-rules';
+import { CommitteeSeatRefusal, requiredSeats, seatHolders, seatValues } from './committee-seat-rules';
+import {
+  SEAT_ACTION_KEYS,
+  SeatActionRefusal,
+  copyDefaultSeatActions,
+  normaliseSeatActions,
+  seatActionMap,
+  seatActionsFor,
+} from './seat-actions';
+import { ReplaceSeatActionsDto } from './dto/replace-seat-actions.dto';
 import { CreateCommitteeDto } from './dto/create-committee.dto';
 import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
@@ -19,6 +28,7 @@ import {
   ICommitteeListItem,
   ICommitteeMember,
   ICommitteeMembershipEvent,
+  ICommitteeSeatActions,
   ICommitteeStageRules,
 } from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
@@ -185,7 +195,7 @@ export class CommitteesService {
       );
       const orgUnitId = dto.orgUnitId || (await this.resolveRootOrgUnitId(tx, organizationId));
 
-      return tx.committee.create({
+      const created = await tx.committee.create({
         data: {
           organizationId,
           nameEn: dto.nameEn,
@@ -202,24 +212,31 @@ export class CommitteesService {
           reportingToCommitteeId: dto.reportingToCommitteeId ?? null,
         },
       });
+      // ACC-283 — the organisation's seat defaults, copied in the same
+      // transaction, so a committee never exists without its seat actions.
+      // Changing a default later never reaches this committee.
+      const seatActions = await copyDefaultSeatActions(tx, organizationId, created.id);
+      return { ...created, seatActions };
     });
 
+    const { seatActions, ...created } = committee;
     await this.auditLog.log({
       action: 'CREATE',
       objectType: 'Committee',
-      objectId: committee.id,
+      objectId: created.id,
       actorId,
       tenantId: organizationId,
-      after: committee,
+      after: created,
+      metadata: { seatActions: seatActionMap(seatActions) },
     });
 
     // Ties the new Committee record to a live WorkflowInstance of the
     // already-shipped COMMITTEE workflow (ACC-9) — the 6-stage
     // FORMATION -> ... -> DISSOLVED lifecycle shell this ticket's plan
     // confirmed already exists and doesn't need reseeding.
-    await this.workflowService.startInstance('COMMITTEE', committee.id, organizationId, actorId);
+    await this.workflowService.startInstance('COMMITTEE', created.id, organizationId, actorId);
 
-    return committee;
+    return created;
   }
 
   async updateCommittee(
@@ -319,6 +336,131 @@ export class CommitteesService {
     });
 
     return committee;
+  }
+
+  // ── Seat actions (ACC-283) ───────────────────────────────────────────────────
+
+  /**
+   * What each seat allows on this committee. Readable by whoever may see the
+   * committee (committees:view, or an active member of it: ACC-281).
+   */
+  async getSeatActions(committeeId: string, organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeSeatActions> {
+    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, viewer);
+    const committee = await this.prisma.committee.findFirst({
+      where: { id: committeeId, organizationId },
+      select: { id: true, updatedAt: true },
+    });
+    if (!committee) throw new NotFoundException('Committee not found');
+    return this.seatActionsView(this.prisma, committee, organizationId);
+  }
+
+  /**
+   * Replaces the whole map. Part of the committee's terms of reference, so it is
+   * edited only where the stage allows a direct edit (seeded: Formation); after
+   * that, through an approved change request (ACC-283 PR 5).
+   *
+   * Access first (committees:edit_details at the route; committees:view or
+   * membership here, else the identical 404), then ONE transaction in the
+   * engine's order: the stage (FOR SHARE of the instance), the committee row
+   * FOR UPDATE, the stale check, the seats, the write. A save that changes
+   * nothing writes nothing and leaves no audit row. Rows of a seat the
+   * organisation no longer uses are left as they are.
+   */
+  async replaceSeatActions(
+    committeeId: string,
+    dto: ReplaceSeatActionsDto,
+    organizationId: string,
+    actorId: string,
+    viewerPermissions: readonly string[],
+  ): Promise<ICommitteeSeatActions> {
+    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, { id: actorId, permissions: viewerPermissions });
+    const wanted = normaliseSeatActions(dto.seats);
+
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      await this.assertCommitteeExists(tx, committeeId, organizationId);
+      await this.assertStage(tx, committeeId, COMMITTEE_ACTIONS.EDIT_DETAILS, organizationId);
+      await this.lockCommitteeRow(tx, committeeId, organizationId);
+
+      const before = await tx.committee.findFirst({ where: { id: committeeId, organizationId }, select: { id: true, updatedAt: true } });
+      if (!before) throw new NotFoundException('Committee not found');
+      if (new Date(dto.expectedUpdatedAt).getTime() !== before.updatedAt.getTime()) throw new CommitteeChangedException();
+
+      const seats = await seatValues(tx, organizationId);
+      const used = new Set(seats.map((s) => s.id));
+      for (const roleValueId of wanted.keys()) {
+        if (!used.has(roleValueId)) throw new SeatActionRefusal('SEAT_ACTION_SEAT_UNKNOWN', { roleValueId });
+      }
+
+      const stored = (await tx.committeeSeatAction.findMany({
+        where: { organizationId, committeeId },
+        select: { id: true, roleValueId: true, actionKey: true },
+      })).filter((r) => used.has(r.roleValueId));
+      const pair = (roleValueId: string, actionKey: string) => `${roleValueId} ${actionKey}`;
+      const want = new Set([...wanted].flatMap(([seat, actions]) => [...actions].map((a) => pair(seat, a))));
+      const have = new Set(stored.map((r) => pair(r.roleValueId, r.actionKey)));
+      const remove = stored.filter((r) => !want.has(pair(r.roleValueId, r.actionKey)));
+      const add = [...wanted].flatMap(([roleValueId, actions]) =>
+        [...actions].filter((actionKey) => !have.has(pair(roleValueId, actionKey))).map((actionKey) => ({ roleValueId, actionKey })),
+      );
+      if (remove.length === 0 && add.length === 0) return { committee: before, seats, changed: null };
+
+      if (remove.length > 0) {
+        await tx.committeeSeatAction.deleteMany({ where: { organizationId, committeeId, id: { in: remove.map((r) => r.id) } } });
+      }
+      if (add.length > 0) {
+        await tx.committeeSeatAction.createMany({ data: add.map((r) => ({ organizationId, committeeId, ...r })) });
+      }
+      // Seat actions are part of the terms of reference: the save is stale
+      // against the details and the other way round.
+      const committee = await tx.committee.update({
+        where: { id: committeeId },
+        data: { updatedAt: new Date() },
+        select: { id: true, updatedAt: true },
+      });
+      const after = await seatActionsFor(tx, organizationId, [committeeId]);
+      return {
+        committee,
+        seats,
+        changed: {
+          before: seatActionMap(stored),
+          after: seatActionMap(after.filter((r) => used.has(r.roleValueId))),
+        },
+      };
+    });
+
+    if (outcome.changed) {
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: 'Committee',
+        objectId: committeeId,
+        actorId,
+        tenantId: organizationId,
+        before: { seatActions: outcome.changed.before },
+        after: { seatActions: outcome.changed.after },
+        metadata: { change: 'seat_actions' },
+      });
+    }
+    return this.seatActionsView(this.prisma, outcome.committee, organizationId, outcome.seats);
+  }
+
+  /** The response: every seat the organisation uses, in seat order, with its stored actions. */
+  private async seatActionsView(
+    client: Pick<PrismaService, '$queryRaw' | 'committeeSeatAction'>,
+    committee: { id: string; updatedAt: Date },
+    organizationId: string,
+    knownSeats?: Awaited<ReturnType<typeof seatValues>>,
+  ): Promise<ICommitteeSeatActions> {
+    const [seats, rows] = await Promise.all([
+      knownSeats ?? seatValues(client, organizationId),
+      seatActionsFor(client, organizationId, [committee.id]),
+    ]);
+    const map = seatActionMap(rows);
+    return {
+      committeeId: committee.id,
+      updatedAt: committee.updatedAt,
+      actionKeys: [...SEAT_ACTION_KEYS],
+      seats: seats.map((s) => ({ id: s.id, key: s.key, labelEn: s.labelEn, labelAr: s.labelAr, actions: map[s.id] ?? [] })),
+    };
   }
 
   // ── Membership Management (NOT workflow transitions — module-designs.md) ────

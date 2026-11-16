@@ -92,8 +92,13 @@ export type SetupConditionDetector = (
 // ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT was deferred the same way: PR 1
 // added the value (and the frontend learned it) with nothing writing it; PR 2
 // adds its detector and removes it here.
+//
+// ACC-283 — CHANGE_REQUEST_WITHOUT_DECIDER is deferred the same way: PR 1 adds
+// the value (and the frontend learns it) with nothing writing it; PR 3 adds the
+// detector, reports it, gives it an age basis and removes it here.
 export const DEFERRED_SETUP_CONDITION_TYPES = [
   'POSITION_WITHOUT_ROLE',
+  'CHANGE_REQUEST_WITHOUT_DECIDER',
 ] as const satisfies readonly SetupConditionType[];
 
 export type ActiveSetupConditionType = Exclude<
