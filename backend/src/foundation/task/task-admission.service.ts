@@ -124,7 +124,8 @@ export class TaskAdmissionService {
 
   private async canSeeRecord(type: string, id: string, organizationId: string, viewer: TaskViewer): Promise<boolean> {
     try {
-      await this.objectVisibility.assertCanView(type, id, organizationId, viewer.permissions, viewer.id);
+      // ACC-283 PR 2a — naming the record is a read: an overseeing head may open it.
+      await this.objectVisibility.assertCanView(type, id, organizationId, viewer.permissions, viewer.id, { oversight: true });
       return true;
     } catch {
       return false;

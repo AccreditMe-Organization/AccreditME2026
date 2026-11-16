@@ -4,7 +4,7 @@ import { LookupService } from '../lookup/lookup.service';
 import { CommitteeMembersPageQueryDto, SubCommitteesQueryDto } from './dto/committee-list-query.dto';
 import { ICommitteeMemberRow, ICommitteeMembershipEventRow, ICommitteePage, ISubCommitteeRow } from './interfaces/committee.interface';
 import { committeeStagesAndCounts } from './committee-stage-counts';
-import { CommitteeViewer, assertMaySeeCommittee, memberCommitteeIds, seesEveryCommittee } from '../../common/services/committee-membership';
+import { CommitteeViewer, assertMaySeeCommittee, readableCommitteeIds } from '../../common/services/committee-membership';
 
 const COMMITTEE_MEMBER_ROLE_CATEGORY = 'committee_member_role';
 const PAGE = 50;
@@ -101,11 +101,11 @@ export class CommitteeListsService {
     });
     const childIds = children.map((c) => c.id);
     // ACC-281 — a child is named (it is part of this committee's terms) and opens
-    // only for a viewer who may see it: one membership read for all of them.
-    const oversight = seesEveryCommittee(viewer.permissions);
-    const [facts, mine] = await Promise.all([
+    // only for a viewer who may read it: readableCommitteeIds() once for all of
+    // them (membership, then ACC-283 PR 2a's headship clause).
+    const [facts, readable] = await Promise.all([
       committeeStagesAndCounts(this.prisma, organizationId, childIds),
-      oversight ? Promise.resolve(new Set<string>()) : memberCommitteeIds(this.prisma, viewer.id, organizationId, childIds),
+      readableCommitteeIds(this.prisma, organizationId, viewer, childIds),
     ]);
     const rows: ISubCommitteeRow[] = children.map((c) => {
       const fact = facts.get(c.id);
@@ -116,7 +116,7 @@ export class CommitteeListsService {
         stageNameEn: fact?.stageNameEn ?? null,
         stageNameAr: fact?.stageNameAr ?? null,
         memberCount: fact?.memberCount ?? 0,
-        mayOpen: oversight || mine.has(c.id),
+        mayOpen: readable.has(c.id),
       };
     });
 

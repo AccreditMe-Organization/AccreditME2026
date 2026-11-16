@@ -1,6 +1,6 @@
 import { Prisma } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { memberCommitteeIds } from '../../common/services/committee-membership';
+import { readableCommitteeIds } from '../../common/services/committee-membership';
 import { seesRecordType } from './task-record-types';
 
 /**
@@ -21,7 +21,8 @@ export interface ITaskRecordRef {
   nameAr: string | null;
 }
 
-type NamesClient = Pick<PrismaService, 'committee' | 'meeting' | 'committeeMember'>;
+// ACC-283 PR 2a — user, orgUnitHeadAssignment and $queryRaw for the headship clause (readableCommitteeIds).
+type NamesClient = Pick<PrismaService, 'committee' | 'meeting' | 'committeeMember' | 'user' | 'orgUnitHeadAssignment' | '$queryRaw'>;
 
 const key = (type: string, id: string) => `${type}:${id}`;
 
@@ -41,11 +42,12 @@ export async function recordNamesOf(
   const ids = (type: string) => (seesRecordType(permissions, type) ? all(type) : []);
   // ACC-281 — a viewer without committees:view may still open the committees they
   // are an ACTIVE member of, so those are named too (ACC-228: named only for a
-  // viewer who may open the record). One membership read for the whole batch.
+  // viewer who may open the record). ACC-283 PR 2a — and those they oversee as a
+  // head or cover. readableCommitteeIds() once for the whole batch.
   const committeeIds =
     seesRecordType(permissions, 'COMMITTEE') || !viewerId
       ? ids('COMMITTEE')
-      : [...(await memberCommitteeIds(prisma, viewerId, organizationId, all('COMMITTEE')))];
+      : [...(await readableCommitteeIds(prisma, organizationId, { id: viewerId, permissions }, all('COMMITTEE')))];
   const meetingIds = ids('MEETING');
   const [committees, meetings] = await Promise.all([
     committeeIds.length

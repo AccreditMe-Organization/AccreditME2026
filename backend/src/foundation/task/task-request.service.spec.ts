@@ -84,6 +84,8 @@ const mockPrisma = {
   committee: { findMany: jest.fn() },
   // ACC-281 — a viewer without committees:view is a member of nothing here.
   committeeMember: { findMany: jest.fn().mockResolvedValue([]) },
+  // ACC-283 PR 2a — nor a head or cover of anything (the headship clause).
+  orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
   meeting: { findMany: jest.fn() },
   $queryRaw: jest.fn(),
   $transaction: jest.fn(),
