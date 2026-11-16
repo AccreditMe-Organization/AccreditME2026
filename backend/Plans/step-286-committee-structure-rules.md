@@ -618,3 +618,215 @@ On the screens, three more, each red in its Karma spec:
 
 The screens' specs (Remove member, Change role, the move buttons) read the real
 translation files in both languages.
+
+
+---
+
+## 11. PR 2 plan: the Setup health detector (15 Nov)
+
+Branch `feature/ACC-286-seat-detector`, from `dev` at `9ccdd94` (PR 1, live
+since 03:48Z). PR 1 shipped the enum value (migration 65), deferred, and every
+reader. PR 2 is the first writer of `COMMITTEE_MISSING_REQUIRED_SEAT`.
+
+### 11.1 Step 1: the rollback check, before any PR 2 code
+
+**What it must prove.** Once PR 2 is live, rows of the new type exist. If PR 2
+is rolled back, or during the deploy overlap, PR 1's code (today's `dev`,
+`9ccdd94`) reads a database that holds them. It must still:
+- answer the Setup health page, the rail badge (`getSummary`) and Home's admin
+  slice (`getHomeSlice`), with the new rows left out and nothing else changed;
+- answer the organisation tree's unit conditions (`org-structure.service.ts`,
+  filtered by `UNIT_CONDITION_TYPES`);
+- run the hourly reconciler for that organisation without touching the new
+  rows (a deferred type is never reconciled) and without failing.
+
+**Why it should pass, as read in PR 1's code.**
+- The client knows the value: PR 1 added it, so a row of it never throws
+  (ACC-202's failure was a value the client did NOT know).
+- Every read of `SetupCondition` is filtered by type:
+  - `setup-health.service.ts`, all six reads, by `SETUP_CONDITION_TYPES`;
+  - `org-structure.service.ts`, by `UNIT_CONDITION_TYPES`;
+  - the reconciler, by the type it is reconciling.
+- `byType` has no entry for the new type, so the reconciler never touches it.
+
+The check proves this with real rows rather than trusting the reading.
+
+**How (ACC-202's method):**
+1. `git archive 9ccdd94 backend` into `scratchpad/devcheck286/`. Point its
+   `node_modules` at the working tree's (a junction), and run `prisma generate`
+   there.
+2. Write a scratch db-spec inside that copy, against `accreditme_wf` only. It:
+   - creates a test organisation with one unit and one condition of an
+     existing type;
+   - inserts two `COMMITTEE_MISSING_REQUIRED_SEAT` rows directly, one open and
+     one cleared, as PR 2 would write them;
+   - calls PR 1's `SetupHealthService.getPage` / `getSummary` /
+     `getHomeSlice`, the org-structure read, and
+     `SetupConditionReconciler.reconcile()` for that organisation.
+3. Assert:
+   - every call resolves;
+   - the new rows appear in no response;
+   - the counts equal the existing type's alone;
+   - after the reconciler run, the new rows are byte-identical (same
+     `openedAt`, `clearedAt`, `subject`, `lastSeenAt`).
+4. Mutation: put the new type into PR 1's `SETUP_CONDITION_TYPES` in the copy.
+   The page's assertion must go red. That proves the check reads the filter, not
+   an empty table.
+5. The copy is deleted afterwards. Nothing is committed from it.
+
+**If it fails,** stop and report before writing PR 2. Rolling back would then be
+unsafe, and the fix (or a third deploy) is your call.
+
+### 11.2 What PR 2 builds
+
+**The detector, `committeesMissingRequiredSeat(organizationId)`, in
+`setup-condition.detectors.ts`:**
+- **Which committees:** active (`Committee.isActive`), whose newest COMMITTEE
+  instance's current stage is flagged `IN_FORCE`. This is the same "in force"
+  that rules 3 and 4 use. Suspended counts (it is `IN_FORCE` on the seed).
+  Dissolving does not, unless a tenant flags one stage both ways.
+- **Which seats:** `requiredSeats()`, read once per organisation.
+- **Who fills them:** a new batched reader in `committee-seat-rules.ts`,
+  `seatHoldersFor(client, organizationId, committeeIds, seatIds)`. It returns
+  the holders of every listed committee in one query, with the same rule
+  (active membership, ACTIVE user). `seatHolders()` becomes a one-committee
+  call of it, so there is still one reader.
+- **The result:** one condition per committee with at least one empty required
+  seat:
+  - `objectId`: the committee's id;
+  - `severity`: `AT_RISK` (A7);
+  - `openedAt`: `null`, so the age reads "first detected" (Q-B);
+  - `subject`: `{ nameEn, nameAr, seats: [{ id, labelEn, labelAr }] }`, the
+    seats in seat order, with the organisation's own labels.
+- **Queries:** three per organisation per hourly run, whatever the number of
+  committees: required seats, the committees in force, and their holders.
+  Nothing per row, nothing on the per-request path.
+
+**Wiring:**
+- Remove the type from `DEFERRED_SETUP_CONDITION_TYPES`; add it to `byType`.
+- Add it to `SETUP_CONDITION_TYPES`, after `TASK_WITHOUT_OWNER` (PR 1's
+  frontend order).
+- Add `AGE_BASIS`: `FIRST_DETECTED`. The compiler now requires it.
+
+**Frontend:** nothing new to build. PR 1 taught it the type, the order, the Fix
+(`/committees/:id`, `committees:view` + `committees:add_member`) and the
+wording, which lane A reviewed (`step-286-lane-a.md` §2). PR 2 adds the specs
+that PR 1 left out for that row (§11.4).
+
+**No migration. No backfill.** The first hourly run after the deploy opens the
+rows. On today's data that is one row, at al-nakheel: a committee in force with
+no Chairman and no Secretary. al-manara has no committee in force.
+
+**The condition clears itself** on the next run after the seat is filled
+(ACC-82: one writer, a derived condition, no dismiss).
+
+### 11.3 Deploy and live check
+
+- **After the merge:** health reports the new commit, and `setup-health` runs
+  hourly on Railway's worker. Locally the reconciler is invoked in-process,
+  never enqueued (shared Redis).
+- **Read-only count after the first run** (slugs and counts only): 1 open
+  `COMMITTEE_MISSING_REQUIRED_SEAT` row at al-nakheel, 0 at al-manara.
+- **Live check on al-nakheel, read-only:** Setup health shows the row, with its
+  Fix to the committee, in English and Arabic. Home's Needs fixing counts it.
+  Nothing is changed.
+
+### 11.4 Specs and mutations
+
+| Spec | Proves | Mutation that must turn it red |
+|---|---|---|
+| `setup-condition.detectors.spec.ts` | one row per committee in force with an empty seat; seats in order; inactive, not-yet-in-force and dissolving-only committees excluded; every query scoped by organisation (an isolation-named test); the deferred list is `POSITION_WITHOUT_ROLE` only | count a not-in-force committee; drop the organisation filter |
+| `committee-seat-detector.db-spec.ts` (new, real Postgres) | opens for a missing Chairman; an INVITED Chairman still reads as empty; an organisation that unticked the seat gets no row; fills, and clears on the next run; another organisation's committee never appears | count INVITED users; drop the override merge |
+| `committee-seat-rules.db-spec.ts` (extended) | `seatHoldersFor()` equals `seatHolders()` per committee | — |
+| `setup-health.service.spec.ts` | the type is reported, with `FIRST_DETECTED` | — |
+| frontend `setup-condition-rows` spec (new) | the row in both languages: the committee's name, the seats joined by the language's separator, the Fix with both permissions, `fixNeeds` without them | map the seats to "—" |
+
+### 11.5 Questions for Ahmad (recommendation first)
+
+**Q-A. Which committees count as "in force" for the condition.**
+- **Recommendation:** rules 3 and 4's test: `isActive` and the current stage
+  flagged `IN_FORCE`.
+  - Suspended is included.
+  - On the seed, Dissolution Pending is not.
+- **Alternative:** leave Suspended out. A suspended committee does no work, but
+  it can be reactivated without the going-live check (both stages are in
+  force), so its empty seat would go unseen.
+
+**Q-B. The age.**
+- **Recommendation:** "first detected" (`openedAt` null). Nothing records when
+  a seat emptied by a stored timestamp on the committee.
+- **Alternative:** the newest LEFT or ROLE_CHANGED event for that seat. It is
+  derivable but costs a fourth query, and a seat that was never filled has no
+  such event.
+
+**Q-C. Naming the committee to a `setup:view` holder without
+`committees:view`.**
+- **Recommendation:** name it, as the other types name units, stages and tasks.
+  The Fix already needs `committees:view`, and today only Organization
+  Administrator holds `setup:view`, and it holds both.
+
+### 11.5.1 Answers (Ahmad, 15 Nov, Prompt 50)
+
+- **Q-A:** Suspended counts as in force for this condition: the same test as
+  rules 3 and 4 (`isActive` and the stage flagged `IN_FORCE`).
+- **Q-B:** the row's age is "first detected" (`openedAt` null, `AGE_BASIS`
+  `FIRST_DETECTED`).
+- **Q-C:** the row names the committee for any `setup:view` holder, like the
+  other condition types.
+- The db-spec covers tenant isolation and a Suspended committee. Mutation
+  checks cover the in-force test and the required-seat filter.
+
+### 11.6 As built (PR 2, 15 Nov)
+
+**Rollback check (§11.1): passed, before any PR 2 code.**
+- **Setup:** a scratch copy of `9ccdd94` (PR 1, live), its own Prisma client,
+  `accreditme_wf`, with two rows of the new type (one open, one cleared) and one
+  condition of an existing type.
+- **Results:** in PR 1's code, all 5 checks passed:
+  - the page, badge and Home slice answered with the new rows left out;
+  - the tree's unit conditions answered;
+  - the reconciler ran, succeeded and left the new rows byte-identical.
+- **Mutation:** adding the type to the copy's `SETUP_CONDITION_TYPES` turned the
+  page, badge and Home checks red (3 of 5). So the check was reading the
+  filter. The copy was deleted, with its `node_modules` junction removed first.
+
+**Built:**
+- `seatHoldersFor()` in `committee-seat-rules.ts`; `seatHolders()` is now a
+  one-committee call of it.
+- `committeesMissingRequiredSeat()` and its `byType` entry.
+- The type off the deferred list, reported after `TASK_WITHOUT_OWNER`, with
+  `AGE_BASIS` `FIRST_DETECTED`.
+- No migration, no backfill, no frontend code.
+
+**Specs:**
+- `setup-condition.committee-seat.spec.ts` (unit: rows, seat order, query
+  count, the flag read, an isolation-named test);
+- `committee-seat-detector.db-spec.ts` (real Postgres: committees in force
+  including Suspended, those not in force, ACTIVE users only, an organisation's
+  own setting, open then clear, tenant isolation);
+- `committee-seat-rules.db-spec.ts` (`seatHoldersFor()` equals `seatHolders()`);
+- the frontend `setup-condition-rows.committee-seat.spec.ts` (both languages,
+  the Fix, the permission line);
+- the pinned type lists updated in four existing specs.
+
+**Mutations (8, all red, every file restored):**
+
+| Mutation | Spec that went red |
+|---|---|
+| the IN_FORCE flag test dropped | `committee-seat-detector.db-spec` |
+| the committee-active test dropped | `committee-seat-detector.db-spec` |
+| a stage key read instead of the flag | `committee-seat-detector.db-spec` (Suspended) |
+| every seat treated as required | `committee-seat-detector.db-spec` |
+| the organisation's override ignored | `committee-seat-detector.db-spec` |
+| INVITED users counted as holders | `committee-seat-detector.db-spec` |
+| a seat filled on another committee counted here | `setup-condition.committee-seat.spec` |
+| the seats replaced by "—" on the row | frontend `setup-condition-rows.committee-seat.spec` |
+
+### 11.7 Order of work
+
+1. The rollback check (§11.1). Stop on failure.
+2. `seatHoldersFor()`, then the detector, the wiring and `AGE_BASIS`.
+3. The specs and mutations (§11.4).
+4. Docs: SYSTEM-REFERENCE §13.2 (the row becomes reported) and §3.21.4; the
+   ACC-286 entry in CLAUDE.md; this plan, as built.
+5. The full gate, then stop before pushing, for /ready-to-pr.
