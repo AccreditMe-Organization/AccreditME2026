@@ -28,6 +28,15 @@ export interface UserCommitteesViewer {
  *
  * Each refusal is a 403 naming the missing permission. It is checked before the
  * user is read, so it is the same for a real colleague and an invented id.
+ *
+ * YOUR OWN record still needs committees:view, and that is DELIBERATE (CC-276),
+ * not a gap in the self-scoped exemption (ACC-101):
+ *   - this read also lists PAST committees, which the person may no longer be
+ *     able to open (ACC-281 admits only an active member of an active committee);
+ *   - their CURRENT committees are already theirs to read, self-scoped, on
+ *     GET /committees/mine (ACC-279 / ACC-281);
+ *   - without the key the record page leaves the panel absent and never sends
+ *     the request, so nobody meets this 403 on screen.
  */
 export function assertMayReadUserCommittees(viewer: UserCommitteesViewer, userId: string): void {
   if (!viewer.permissions.includes(COMMITTEES_PERMISSIONS.VIEW)) {
