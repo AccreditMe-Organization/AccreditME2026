@@ -6742,6 +6742,78 @@ kept.
 The committee services' write methods take the caller's permissions as a trailing argument
 (`updateCommittee`, `addMember`, `changeMemberRole`, `removeMember`).
 
+#### Heads see the committees of their units, read only (ACC-283 PR 2a)
+
+Ahmad, 16 Nov (ACC-283 Q6). Plan: `backend/Plans/step-283-change-request-chain.md` §4.6.
+
+**The rule:** a unit's head holders and its acting cover in force may READ every
+ACTIVE committee owned by that unit or any unit below it. A READ now admits
+`committees:view`, OR an active member, OR such a head or cover. **Every WRITE is
+unchanged** (`committees:view` or membership, the table above).
+
+**One place, `committee-membership.ts`, headship only through `unit-headship.ts`:**
+
+| Function | What it does |
+| -- | -- |
+| `committeeOversightUnitIds(client, org, viewerId, now)` | the unit the viewer heads (`findUnitHeadedBy`) and the units they cover at `now` (`findUnitsCoveredBy`), at once; then every unit below them (`findUnitSubtreeIds`), only when they lead something |
+| `overseesCommittee()` / `overseesRequestCommittee()` | the active committee (or the request's) has its owning unit in that set |
+| `mayReadCommittee(…, now?)` | holder, then member, then overseer: what `assertMaySeeCommittee` asks |
+| `readableCommitteeIds(…, among, now?)` | the batch: all for a holder; members first; one oversight read for the rest |
+| `maySeeCommittee()` | unchanged, member only: what `assertMayWriteCommittee` asks |
+
+**Where it applies (reads):**
+- `assertMaySeeCommittee`, so the committee page, members, members page,
+  sub-committees, Membership history, seat actions, and a committee's change
+  requests (list, open, preview);
+- a change request by id (`getOne`);
+- `GET /committees`: for a non-holder, `isActive` AND (member OR `orgUnitId` in
+  the set), one condition on the same `findMany`;
+- the `mayOpen` flags (parent, Reports to, sub-committee rows) and the task-row
+  record names, through `readableCommitteeIds()`, once per response;
+- the parent rule, **only where a read opts in**:
+  `ObjectVisibilityService.assertCanView(…, viewerId, { oversight: true })`, via
+  each rule's `overseer` clause. The callers that opt in are:
+  - `InstanceAccess.assertMayReadRecord` and `assertMayReadInstance`;
+  - the record's task list;
+  - the task page's record name (`recordVisible`).
+
+**Where it does NOT apply:** every committee and change-request write; the
+parent rule without the option, which is task create, the AI task draft, the
+workload hint, and `InstanceAccess.assertMayAct` (a press or a vote). A caller
+that forgets the option fails closed. Task visibility (`taskVisibleSql`) is
+unchanged.
+
+**Cost, per reader:**
+
+| Reader | Queries |
+| -- | -- |
+| `committees:view` holder | none added |
+| member | 1, as before |
+| non-member who leads nothing | 3: membership, then the two headship reads at once |
+| overseer | 5: those three, the sub-unit walk, and the committee read |
+
+Lists pay the headship reads once. Nothing on the per-request path.
+
+**Refusals are unchanged:** a read refused is still the existence-neutral 403
+"Required permission: committees:view"; a write, the 404 a missing committee
+gets.
+
+**Specs:**
+- `committee-membership.spec.ts`: the costs per reader, a write never asking
+  headship, and isolation.
+- `committee-oversight.db-spec.ts` (24 tests, real Postgres):
+  - a head, a cover in force, a cover not started and one ended;
+  - a sibling's head, and a child's head (not the parent's committees);
+  - a former head, and the platform organisation;
+  - every read, and writes still refused;
+  - isolation, with another organisation's units, heads and covers planted
+    (including a cover filed under another organisation pointing at this
+    one's unit).
+- `instance-access.spec.ts`: a press checks the record without the option.
+
+Mutation-checked: dropping the sub-unit walk, the cover clause, or the
+organisation on the cover read each turns a spec red.
+
 #### Awaiting reads
 
 - **`GET /workflows/awaiting-me?skip=&take=`** (`AwaitingMeQueryDto`):

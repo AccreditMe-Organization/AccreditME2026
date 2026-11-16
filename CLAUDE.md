@@ -4794,6 +4794,11 @@ SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes
   buttons. ACC-282.
   Superseded (ACC-282): the workflow reads follow the record, and moves are pool-only (below).
 - **No migration.** Nothing on the per-request path.
+- **ACC-283 PR 2a: a unit's heads and acting covers in force READ the active
+  committees of their unit and every unit below**, one clause beside the member
+  clause (`committee-membership.ts`, headship through `unit-headship.ts`). Writes
+  are unchanged; the parent rule applies it only to a read that passes
+  `{ oversight: true }`. SYSTEM-REFERENCE.md §3.21.
 
 ## Key Architecture Decisions (ACC-282)
 
