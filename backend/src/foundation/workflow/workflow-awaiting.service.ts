@@ -90,7 +90,7 @@ export class WorkflowAwaitingService {
       where: {
         exitedAt: null,
         workflowInstance: { organizationId, status: 'IN_PROGRESS', OR: records },
-        stage: { whoMode: { not: null }, isFinal: false, workflowTemplate: { organizationId } },
+        stage: { isFinal: false, workflowTemplate: { organizationId } },
       },
       select: {
         id: true,
