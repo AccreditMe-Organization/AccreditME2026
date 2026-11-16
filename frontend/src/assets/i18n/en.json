@@ -456,7 +456,8 @@
     },
     "refusal": {
       "attributeInvalid": "This setting can't be saved for this value.",
-      "valueGone": "This value no longer exists."
+      "valueGone": "This value no longer exists.",
+      "rateLimited": "Too many changes at once. Wait a moment, then try again."
     },
     "errorRequiredSeat": "The Required seat setting could not be saved."
   },
@@ -1867,7 +1868,9 @@
       "unavailable": "You cannot choose who this task goes to.",
       "memberRole": "Member role",
       "member": "Member (optional)",
-      "outcomeStraight": "Goes straight to {{name}} ({{role}})."
+      "outcomeStraight": "Goes straight to {{name}} ({{role}}).",
+      "outcomeCovered": "{{name}} is out of office. This task will go to {{cover}}.",
+      "coverRow": "Out of office · goes to {{cover}}"
     },
     "request": {
       "backToDetails": "Back to the request",
@@ -3821,6 +3824,7 @@
     "onHoldUntil": "On hold until {{date}}",
     "waitingFor": "Waiting for {{pool}}",
     "pickedUpOn": "picked up from the pool {{date}}",
+    "coveringFor": "covering for {{name}}",
     "byHand": "{{date}}, by hand",
     "byWorkflow": "by the workflow",
     "byWorkflowStage": "by the workflow, when the record entered {{stage}}",

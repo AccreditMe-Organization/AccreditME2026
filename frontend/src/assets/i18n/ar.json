@@ -456,7 +456,8 @@
     },
     "refusal": {
       "attributeInvalid": "تعذّر حفظ هذا الإعداد لهذه القيمة.",
-      "valueGone": "لم تعد هذه القيمة موجودة."
+      "valueGone": "لم تعد هذه القيمة موجودة.",
+      "rateLimited": "تغييرات كثيرة دفعة واحدة. يمكن المحاولة مرة أخرى بعد لحظة."
     },
     "errorRequiredSeat": "تعذّر حفظ إعداد «مقعد مطلوب»."
   },
@@ -1867,7 +1868,9 @@
       "unavailable": "لا يمكنك اختيار من تُسند إليه هذه المهمة.",
       "memberRole": "دور العضو",
       "member": "العضو (اختياري)",
-      "outcomeStraight": "تُسند مباشرة إلى {{name}} ({{role}})."
+      "outcomeStraight": "تُسند مباشرة إلى {{name}} ({{role}}).",
+      "outcomeCovered": "{{name}} خارج المكتب. ستُسنَد هذه المهمة إلى {{cover}}.",
+      "coverRow": "خارج المكتب · تُسند إلى {{cover}}"
     },
     "request": {
       "backToDetails": "العودة إلى الطلب",
@@ -4429,6 +4432,7 @@
     "onHoldUntil": "معلّقة حتى {{date}}",
     "waitingFor": "بانتظار {{pool}}",
     "pickedUpOn": "استُلمت من المجموعة {{date}}",
+    "coveringFor": "بالنيابة عن {{name}}",
     "byHand": "{{date}}، يدويًا",
     "byWorkflow": "بواسطة سير العمل",
     "byWorkflowStage": "بواسطة سير العمل، عند دخول السجل مرحلة {{stage}}",

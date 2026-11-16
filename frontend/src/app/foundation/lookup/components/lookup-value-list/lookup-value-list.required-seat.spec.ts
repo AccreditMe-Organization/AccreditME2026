@@ -260,9 +260,7 @@ describe('LookupValueListComponent — Required seat (ACC-286)', () => {
       await settle();
       await press('member');
       expect(text(errorOf('member'))).toBe(en.lookup.refusal.attributeInvalid);
-      // The field errors' danger token, never a literal colour (red-500 is ~3.8:1 on white).
-      expect(errorOf('member')!.className).toContain('text-[var(--am-danger-ink)]');
-      expect(errorOf('member')!.className).not.toMatch(/text-red-/);
+      // Its colour (the danger token) is pinned with every other Lookups error line in lookup-error-lines.spec.ts.
       expect(text(el())).not.toContain('is invalid');
       expect(errorOf('chairman')).withContext('only under its own row').toBeNull();
     });

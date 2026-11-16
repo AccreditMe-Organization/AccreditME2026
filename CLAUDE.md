@@ -5083,6 +5083,13 @@ Ahmad's answers (14 Nov, A1–A8):
   PR 1 adds `COMMITTEE_MISSING_REQUIRED_SEAT` (`AT_RISK`, A7) and every reader,
   and defers it, so nothing writes it. PR 2 adds the detector, after a rollback
   check like ACC-202's.
+  - **PR 2 is built.** One row per committee in force (rules 3 and 4's test:
+    active, stage flagged `IN_FORCE`, so Suspended counts) with an empty
+    required seat, aged "first detected", naming the committee for any
+    `setup:view` holder (Ahmad, 15 Nov). It costs three queries per
+    organisation per hourly run, through `seatHoldersFor()`.
+  - **The rollback check passed first:** PR 1's code left PR 2's rows out of
+    every read and its reconciler left them untouched.
 - **TEST FIXTURES:** engine db-specs that move a committee into Active use
   `common/testing/committee-going-live.ts`. `putCommitteeInEditableStage()`'s
   stage is flagged `IN_FORCE`.

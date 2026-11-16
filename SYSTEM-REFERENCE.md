@@ -4879,6 +4879,20 @@ the engine's old routing went with it. What is true now:
   `cover: { userId, name } | null`: who a new task for that person goes to now.
   - It is filled for every caller the picker serves, in one read for the list.
   - It never carries dates or a reason.
+- **On screen (PR 2, 16 Nov), from `cover` only; no screen reads a date:**
+  - a covered person's row in the Person list adds "Out of office · goes to
+    {cover}";
+  - when that person is chosen, or a one-holder position's holder is covered,
+    New task's and Reassign's outcome line reads "{name} is out of office. This
+    task will go to {cover}." A stage task definition shows the row but keeps
+    its own outcome, because its tasks are placed at each entry;
+  - the workload hint is hidden for a covered person, and an answer kept for
+    them is not shown;
+  - the task page's assignee line adds "covering for {name}" from the row's
+    `delegation`, only when the server sent the name;
+  - measured against the 420px cap in both languages
+    (`task-cover.layout.spec.ts`): New task 317 / 328, Reassign at its tallest
+    345 / 359.
 - **"✦ Suggest someone"** is never offered or answered for a covered person:
   their row's `canSuggest` is false, and `POST /tasks/assignment/workload-hint`
   refuses them with `WORKLOAD_NO_SUGGESTION` before any call or charge.
@@ -7050,11 +7064,30 @@ health detector.
 
 **Rule 4 — only a committee in force can be pointed at:** §3.15.
 
-**Setup health:** `COMMITTEE_MISSING_REQUIRED_SEAT`, deferred in PR 1 (§13.2).
-The frontend already reads it (type, order, Fix, wording), so PR 2 only writes
-it.
+**Setup health: `COMMITTEE_MISSING_REQUIRED_SEAT`** (§13.2). PR 1 added the
+value deferred, with every reader. PR 2 (`committeesMissingRequiredSeat()` in
+`setup-condition.detectors.ts`) writes it:
+- **Which committees:** rules 3 and 4's test — active, and the newest COMMITTEE
+  instance's current stage flagged `IN_FORCE`. Suspended counts (Ahmad, 15 Nov,
+  Q-A).
+- **One row per committee** with an empty required seat. It is `AT_RISK`, and
+  its `subject` names the committee and its empty seats in seat order, with
+  the organisation's own labels. The row names the committee for any
+  `setup:view` holder (Q-C).
+- **Age:** "first detected" (`openedAt` null, `AGE_BASIS` `FIRST_DETECTED`,
+  Q-B), because nothing records when a seat emptied.
+- **Cost:** at most three queries per organisation per hourly run: the
+  committees in force, `requiredSeats()`, and `seatHoldersFor()` (the batched
+  holder reader; `seatHolders()` is a one-committee call of it).
+- **It clears itself** on the next run once the seat is filled.
+- **The rollback was proved before PR 2.** PR 1's code (`9ccdd94`), reading a
+  database holding PR 2's rows, answered the page, the badge, Home's slice and
+  the tree's unit conditions with the rows left out, and its reconciler left
+  them byte-identical. A mutation of the type filter turned the check red.
 
 **Specs:** `committee-seat-rules.db-spec.ts`, `committee-going-live.db-spec.ts`,
+`committee-seat-detector.db-spec.ts` (PR 2: a Suspended committee, an
+organisation's own setting, open and clear, tenant isolation),
 `committee-reference-checks.db-spec.ts` (extended), `transition-preconditions.spec.ts`,
 and the unit and screen specs beside each change. Engine db-specs that move a
 committee into Active use `common/testing/committee-going-live.ts`
@@ -8304,6 +8337,27 @@ hide and relabel are both wired, not just hide. Every other "zero
 callers" finding in Sections 1–9 was re-checked with the same
 multiline-aware pattern after this was found; none of the others
 changed.
+
+**What the Lookups screens say when a call is refused (ACC-309).**
+- **Never the server's `message`.** Hide, Unhide, Delete, Override label and
+  the Add/Edit value form all go through `lookupRefusalKey(err, actionKey)`
+  (`foundation/lookup/lookup-refusal.ts`). It reads the code with the shared
+  `refusalCode()`. A known code gets its own sentence
+  (`LOOKUP_ATTRIBUTE_INVALID`, `RATE_LIMITED`); anything else gets the
+  action's own sentence ("The value could not be hidden."). Before this, a
+  refused Hide said "Internal server error" in an Arabic session.
+- **The screens store the KEY** and translate it at render, so a language
+  switch reaches an error already shown.
+- **Most lookup refusals carry no code.** Not found, a system value that
+  cannot be edited or deleted, and a key already in use are plain exceptions
+  with English text, so each gets the action's sentence. In particular, a
+  duplicate key on Add says "The value could not be saved." A coded refusal
+  added to these routes needs its line in `lookup-refusal.ts`.
+- **Every error line uses `--am-danger-ink`**: the values page's own, the
+  override dialog's, the value form's and the categories page's.
+  `lookup-error-lines.spec.ts` checks the RENDERED colour against the token.
+  The categories page's `error` is never set today (the page has no
+  mutations).
 
 **Two real, precise gaps remain**: the `PlatformGuard`-gated
 SYSTEM-category mutation endpoints (`updateCategory`/`deactivateCategory`,
@@ -10677,6 +10731,24 @@ array-backed list to the same contract, so there is one code path.
   parent does not constrain height, `flex-1` grows to content and no
   scrollbar appears, so the same markup is correct in panel mode
   without a variant branch.
+- **The scroll region reserves NO scrollbar gutter (ACC-309).**
+  - **Where the gutter came from.** `scrollbar-gutter: stable` was ACC-120's
+    first attempt at keeping the headings over their data while the header
+    sat outside the scroller. It was superseded the same day by moving the
+    header inside, and left behind.
+  - **What it broke.** With the gutter EMPTY (a list too short to scroll
+    down, or scrollbars that take no space), Chromium shifts the sideways
+    scroll range by a gutter's width:
+    - right-to-left, the first 15px could not be reached: `scrollLeft` −15
+      on load and again after `scrollLeft = 0`. On Lookups in Arabic at 390,
+      the first label sat 3px past the edge;
+    - left-to-right, the last 15px of a wide list could not be reached.
+  - **The cost of removing it.** A desktop list's width moves by the
+    scrollbar's width when it starts or stops scrolling down. Header and rows
+    move together, so they stay aligned.
+  - **Pinned by** `data-list.rtl-start.layout.spec.ts`: both directions, 358
+    and 988, short and long. It fails in both directions with the gutter back.
+  - **Do not reintroduce a gutter on this element.**
 - **A manually ordered list gives no column a `sortBy`.** Workflow
   Stages never will: its order IS its data and every row carries reorder
   buttons, so re-sorting would leave those buttons pointing at positions
@@ -13441,7 +13513,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
-| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | — | **deferred in PR 1**: the value, its migration and every reader ship first, and it is in `DEFERRED_SETUP_CONDITION_TYPES`, so nothing writes it. PR 2 adds the detector (a committee in force with an empty required seat) and reports it. Fix: `/committees/:id` (`committees:view` + `committees:add_member`). §3.21.4 |
+| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`). One row per committee in force (active, stage flagged `IN_FORCE`; Suspended counts) with an empty required seat, naming the seats. PR 1 added the value deferred; PR 2 detects and reports it. §3.21.4 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a

@@ -286,7 +286,21 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
         </div>
       }
 
-      <div class="flex-1 min-h-0 overflow-y-auto" style="scrollbar-gutter: stable">
+      <!-- NO scrollbar-gutter (ACC-309). It was ACC-120's first attempt at
+           keeping the headings over their data while the header sat OUTSIDE
+           this box, superseded the same day by moving the header in (below);
+           header and rows now share one content box, so a reserved gutter keeps
+           nothing in step. And in right-to-left it hid the start of every row:
+           with the gutter EMPTY (a list too short to scroll down, or any
+           overlay-scrollbar browser that still reserves it), Chromium anchors
+           the sideways scroll origin a gutter's width past the start edge and
+           will not scroll back to 0. Measured on Lookups in Arabic at 390:
+           scrollLeft -15 on load, -15 again after scrollLeft = 0, and the first
+           label 3px past the edge. Without it a desktop list's width moves by
+           the scrollbar's width when it starts or stops scrolling down; header
+           and rows move together, so they stay aligned.
+           data-list.rtl-start.layout.spec.ts pins the start edge. -->
+      <div class="flex-1 min-h-0 overflow-y-auto">
       <!-- ── header row ──────────────────────────────────────────────────── -->
       <!-- INSIDE the scroll container, and STICKY. Page mode only, and only
            once there is something to head: headers above an empty state label

@@ -35,7 +35,7 @@ import { FieldComponent } from '../../../../shared/components/field/field.compon
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { StepStripComponent } from '../../../../shared/components/step-strip/step-strip.component';
 import { LanguageService } from '../../../../core/services/language.service';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { lookupRefusalKey } from '../../lookup-refusal';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -119,7 +119,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
       }
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-[var(--am-danger-ink)]" role="alert" data-lookup-error>{{ error()! | translate }}</p>
       }
 
       <!-- ACC-286 — what "Required seat" means, said ONCE for the list rather
@@ -385,7 +385,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
             />
           </am-field>
           @if (overrideError()) {
-            <p class="text-sm text-red-500">{{ overrideError() }}</p>
+            <p class="text-sm text-[var(--am-danger-ink)]" role="alert" data-override-error>{{ overrideError()! | translate }}</p>
           }
         </form>
       </ng-template>
@@ -445,6 +445,7 @@ export class LookupValueListComponent implements OnInit {
   readonly category = signal<LookupCategoryDto | null>(null);
   /** null means NOT LOADED — distinct from loaded-and-empty. */
   readonly values = signal<readonly LookupValueDto[] | null>(null);
+  /** A translation KEY (ACC-309), translated at render so a language switch reaches it. Never the server's text. */
   readonly error = signal<string | null>(null);
 
   readonly showFormDialog = signal(false);
@@ -458,6 +459,7 @@ export class LookupValueListComponent implements OnInit {
   readonly showOverrideDialog = signal(false);
   readonly overridingValue = signal<LookupValueDto | null>(null);
   readonly overrideSaving = signal(false);
+  /** A translation KEY (ACC-309), like `error`. */
   readonly overrideError = signal<string | null>(null);
   /**
    * Reactive, and Save is NO LONGER DISABLED on an empty field. A disabled
@@ -683,7 +685,7 @@ export class LookupValueListComponent implements OnInit {
     this.lookupService.hideSystemValue(val.id).subscribe({
       next: () => this.loadValues(),
       error: (err: unknown) =>
-        this.error.set(extractErrorMessage(err, this.translate.instant('lookup.errorHide'))),
+        this.error.set(lookupRefusalKey(err, 'lookup.errorHide')),
     });
   }
 
@@ -691,7 +693,7 @@ export class LookupValueListComponent implements OnInit {
     this.lookupService.unhideSystemValue(val.id).subscribe({
       next: () => this.loadValues(),
       error: (err: unknown) =>
-        this.error.set(extractErrorMessage(err, this.translate.instant('lookup.errorUnhide'))),
+        this.error.set(lookupRefusalKey(err, 'lookup.errorUnhide')),
     });
   }
 
@@ -713,7 +715,7 @@ export class LookupValueListComponent implements OnInit {
         this.lookupService.removeValue(val.id).subscribe({
           next: () => this.loadValues(),
           error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, this.translate.instant('lookup.errorDelete'))),
+            this.error.set(lookupRefusalKey(err, 'lookup.errorDelete')),
         });
       },
     });
@@ -739,9 +741,7 @@ export class LookupValueListComponent implements OnInit {
           this.loadValues();
         },
         error: (err: unknown) => {
-          this.overrideError.set(
-            extractErrorMessage(err, this.translate.instant('lookup.errorOverride')),
-          );
+          this.overrideError.set(lookupRefusalKey(err, 'lookup.errorOverride'));
           this.overrideSaving.set(false);
         },
       });
@@ -750,7 +750,7 @@ export class LookupValueListComponent implements OnInit {
   private loadCategory(): void {
     this.lookupService.getCategoryByKey(this.categoryKey).subscribe({
       next: (cat) => this.category.set(cat),
-      error: () => this.error.set(this.translate.instant('lookup.errorLoad')),
+      error: () => this.error.set('lookup.errorLoad'),
     });
   }
 

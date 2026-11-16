@@ -25,7 +25,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { LookupService } from '../lookup/lookup.service';
-import { activeMemberCount, requiredSeats, seatHolders } from './committee-seat-rules';
+import { activeMemberCount, requiredSeats, seatHolders, seatHoldersFor } from './committee-seat-rules';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -202,6 +202,32 @@ describe('Required committee seats against a real database (ACC-286)', () => {
       const theirs = await org();
       expect(await seatHolders(prisma, theirs.id, c.id, [seat['secretary']!])).toEqual([]);
       expect(await activeMemberCount(prisma, theirs.id, c.id)).toBe(0);
+    });
+
+    it('seatHoldersFor() reads many committees in one query, and equals seatHolders() for each (ACC-286 PR 2)', async () => {
+      const o = await org();
+      const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R2-${o.id}` } });
+      const make = async (holders: [string, 'ACTIVE' | 'INVITED'][]) => {
+        const c = await prisma.committee.create({
+          data: { organizationId: o.id, nameEn: 'C', typeValueId: 't', orgUnitId: unit.id, quorumCount: 1, meetingFrequency: 'MONTHLY' },
+        });
+        for (const [key, status] of holders) {
+          const u = await prisma.user.create({ data: { organizationId: o.id, email: `${randomUUID()}@example.test`, name: key, status } });
+          await prisma.committeeMember.create({ data: { organizationId: o.id, committeeId: c.id, userId: u.id, roleValueId: seat[key]! } });
+        }
+        return c.id;
+      };
+      const a = await make([['chairman', 'ACTIVE'], ['secretary', 'INVITED']]);
+      const b = await make([['secretary', 'ACTIVE'], ['member', 'ACTIVE']]);
+      const ids = [seat['chairman']!, seat['secretary']!];
+
+      const all = await seatHoldersFor(prisma, o.id, [a, b], ids);
+      for (const c of [a, b]) {
+        const one = await seatHolders(prisma, o.id, c, ids);
+        expect(all.filter((h) => h.committeeId === c).map((h) => h.memberId).sort()).toEqual(one.map((h) => h.memberId).sort());
+      }
+      expect(all.map((h) => [h.committeeId, h.roleValueId]).sort()).toEqual([[a, seat['chairman']], [b, seat['secretary']]].sort());
+      expect(await seatHoldersFor(prisma, o.id, [], ids)).toEqual([]);
     });
   });
 });
