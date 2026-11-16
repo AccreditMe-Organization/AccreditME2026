@@ -56,7 +56,7 @@ import { AmDatePipe } from '../../../core/formatting';
           <span class="text-sm" role="group" [attr.aria-labelledby]="labelId()">
             <span aria-hidden="true" dir="ltr">●●●●●●●●</span>
             <span aria-hidden="true"> · </span>
-            <span class="text-[var(--am-text-secondary)]" data-secret-set-on>
+            <span class="text-[var(--am-ink-500)]" data-secret-set-on>
               @if (setAt(); as at) {
                 {{ 'secretField.setOn' | translate: { date: (at | amDate) } }}
               } @else {
@@ -73,7 +73,7 @@ import { AmDatePipe } from '../../../core/formatting';
             (onClick)="replace()"
           />
         </div>
-        <p class="text-xs text-[var(--am-text-secondary)]">{{ 'secretField.neverShownAgain' | translate }}</p>
+        <p class="text-xs text-[var(--am-ink-500)]">{{ 'secretField.neverShownAgain' | translate }}</p>
       </div>
     } @else {
       <am-field

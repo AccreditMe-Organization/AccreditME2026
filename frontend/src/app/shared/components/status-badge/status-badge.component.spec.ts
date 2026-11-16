@@ -45,11 +45,11 @@ describe('StatusBadgeComponent', () => {
     fixture.nativeElement.remove();
   });
 
-  it('falls back to --am-text-secondary when the resolved token is unset', () => {
+  it('falls back to --am-ink-500 when the resolved token is unset', () => {
     const fixture = create('status', 'not-a-real-status');
     document.body.appendChild(fixture.nativeElement);
     const span: HTMLElement = fixture.nativeElement.querySelector('span');
-    expect(getComputedStyle(span).backgroundColor).toBe('rgb(113, 128, 150)'); // --am-text-secondary: #718096
+    expect(getComputedStyle(span).backgroundColor).toBe('rgb(90, 103, 121)'); // --am-ink-500: #5A6779
     fixture.nativeElement.remove();
   });
 
