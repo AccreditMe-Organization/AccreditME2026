@@ -36,6 +36,7 @@ import { NotificationService } from '../notification/notification.service';
 import { recordNamesOf } from '../task/task-record-names';
 import { CommitteesService } from './committees.service';
 import { CommitteeListsService } from './committee-lists.service';
+import { CommitteeHomeService } from './committee-home.service';
 import { CommitteeChangeRequestService } from './change-requests/committee-change-request.service';
 
 const url = process.env['DATABASE_URL'];
@@ -58,6 +59,7 @@ describe('Heads see the committees of their units, read only, against a real dat
   const lookups = { getValues: async () => [{ id: 'seat-member', labelEn: 'Member', labelAr: null }] } as unknown as LookupService;
   const lists = new CommitteeListsService(prisma, lookups);
   const visibility = new ObjectVisibilityService(prisma);
+  const home = new CommitteeHomeService(prisma, lookups);
   // The reads touch only Prisma and the stage rules; the write-side services are never reached.
   const requests = new CommitteeChangeRequestService(
     prisma,
@@ -279,6 +281,46 @@ describe('Heads see the committees of their units, read only, against a real dat
         w.v.headA.id,
       );
       expect([...named.values()].map((r) => r.nameEn)).toEqual(['Hand Hygiene']);
+    });
+  });
+
+  describe('GET /committees/mine — mayBrowseCommittees, what the rail and the /committees guard key on', () => {
+    const may = async (w: World, v: CommitteeViewer) => (await home.mine(w.org, v.id, v.permissions)).mayBrowseCommittees;
+
+    it('true for committees:view, an active member, a head and a cover in force', async () => {
+      const w = await world();
+      await prisma.committeeMember.create({ data: { organizationId: w.org, committeeId: w.c.b, userId: w.v.stranger.id, roleValueId: 'seat-member' } });
+      expect(await may(w, { id: w.v.former.id, permissions: ['committees:view'] })).toBe(true);
+      expect(await may(w, w.v.stranger)).toBe(true);
+      expect(await may(w, w.v.headA)).toBe(true);
+      expect(await may(w, w.v.headA1)).toBe(true);
+      expect(await may(w, w.v.coverA1)).toBe(true);
+    });
+
+    it('false for a stranger, a former head, a cover not started and a cover ended', async () => {
+      const w = await world();
+      for (const who of ['stranger', 'former', 'coverSoon', 'coverEnded'] as const) expect(await may(w, w.v[who])).toBe(false);
+    });
+
+    it("false for a head whose units own only an inactive committee; a membership row that ended doesn't count", async () => {
+      const w = await world();
+      await prisma.committee.updateMany({ where: { organizationId: w.org, id: { in: [w.c.b] } }, data: { isActive: false } });
+      expect(await may(w, w.v.headB)).toBe(false);
+      await prisma.committeeMember.create({
+        data: { organizationId: w.org, committeeId: w.c.a, userId: w.v.former.id, roleValueId: 'seat-member', isActive: false, leftAt: new Date() },
+      });
+      expect(await may(w, w.v.former)).toBe(false);
+    });
+
+    itEnforcesTenantIsolation("mayBrowseCommittees — another organisation's head, units and committees grant nothing here", async () => {
+      const w = await world();
+      const other = await world();
+      expect(await home.mine(w.org, other.v.headA.id, [])).toEqual(expect.objectContaining({ total: 0, mayBrowseCommittees: false }));
+      // A cover filed under the other organisation, pointing at this organisation's unit B.
+      await prisma.orgUnitHeadAssignment.create({
+        data: { organizationId: other.org, orgUnitId: w.units.b, userId: w.v.stranger.id, kind: 'ACTING', reason: 'ABSENCE', validFrom: new Date(Date.now() - DAY), createdById: w.v.stranger.id },
+      });
+      expect(await may(w, w.v.stranger)).toBe(false);
     });
   });
 
