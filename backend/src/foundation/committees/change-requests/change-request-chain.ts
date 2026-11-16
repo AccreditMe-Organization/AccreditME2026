@@ -255,3 +255,58 @@ async function unitsAndAncestors(client: Pick<PrismaService, '$queryRaw'>, organ
 function unique(ids: string[]): string[] {
   return [...new Set(ids)].sort();
 }
+
+/**
+ * ACC-283 PR 2 (Prompt 85) — may this person decide ANY change request, at the
+ * cheapest: ONE indexed query, three EXISTS arms, every value bound and every
+ * table scoped by organisation. False means nothing can be waiting for them, so
+ * GET /committee-change-requests/awaiting-decision answers [] with no further
+ * query. True is only a pre-check: the chain still decides which requests.
+ *
+ *   1. a head holder with a unit — unit-headship.ts's headHolderWhere(): an ACTIVE
+ *      user whose position confers headship and is itself active;
+ *   2. an acting cover in force — runningActingCoverWhere(now): ACTING, not ended,
+ *      started, and not lapsed on its own date;
+ *   3. a seat whose actions include decide_reporting_changes, held through an
+ *      active membership of an active committee.
+ *
+ * Arms 1 and 2 restate unit-headship.ts's two rules in SQL, because Prisma cannot
+ * put a seat's member and its seat action in one query. change-request-chain
+ * .spec.ts pins both rules' Prisma shape, and the db-spec checks this query
+ * against findUnitHeadedBy / findUnitsCoveredBy person by person, so a change on
+ * either side fails a spec.
+ */
+export async function mayDecideAnyChangeRequest(
+  client: Pick<PrismaService, '$queryRaw'>,
+  organizationId: string,
+  userId: string,
+  now: Date,
+): Promise<boolean> {
+  const [row] = await client.$queryRaw<{ decides: boolean }[]>`
+    SELECT
+      EXISTS (
+        SELECT 1
+        FROM "User" u
+        JOIN "OrgPosition" p ON p.id = u."positionId" AND p."organizationId" = ${organizationId}
+        WHERE u.id = ${userId} AND u."organizationId" = ${organizationId}
+          AND u.status::text = ${'ACTIVE'} AND u."primaryOrgUnitId" IS NOT NULL
+          AND p."isUnitHeadPosition" AND p."isActive"
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM "OrgUnitHeadAssignment" a
+        WHERE a."userId" = ${userId} AND a."organizationId" = ${organizationId}
+          AND a.kind::text = ${'ACTING'} AND a."endedAt" IS NULL
+          AND a."validFrom" <= ${now} AND (a."validTo" IS NULL OR a."validTo" > ${now})
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM "CommitteeMember" cm
+        JOIN "Committee" c ON c.id = cm."committeeId" AND c."organizationId" = ${organizationId} AND c."isActive"
+        JOIN "CommitteeSeatAction" sa
+          ON sa."committeeId" = cm."committeeId" AND sa."roleValueId" = cm."roleValueId"
+         AND sa."organizationId" = ${organizationId} AND sa."actionKey" = ${SEAT_ACTIONS.DECIDE_REPORTING_CHANGES}
+        WHERE cm."userId" = ${userId} AND cm."organizationId" = ${organizationId} AND cm."isActive"
+      ) AS decides`;
+  return row?.decides === true;
+}

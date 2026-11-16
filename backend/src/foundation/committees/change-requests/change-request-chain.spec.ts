@@ -1,4 +1,5 @@
 import { ChainFacts, ChainRequest, walkChain } from './change-request-chain';
+import { headHolderWhere, runningActingCoverWhere } from '../../organization/unit-headship';
 
 // ACC-283 PR 2 — the chain's walk, one rule per test, over hand-made facts. The
 // loader is proved on real rows in change-request-chain.db-spec.ts.
@@ -116,5 +117,25 @@ describe('the chain of authority — the walk (ACC-283 PR 2)', () => {
     const f = facts({ heads: {} });
     f.units.set('ROOT', { parentId: 'WARD', isActive: true });
     expect(walkChain(request(), f)).toEqual({ step: { kind: 'NONE' }, deciderIds: [], requesterHeadsRoot: false });
+  });
+});
+
+// Prompt 85 — mayDecideAnyChangeRequest() restates these two rules in raw SQL
+// (Prisma cannot put a seat's member and its seat action in one query). If
+// either rule changes here, change its SQL arm in change-request-chain.ts too,
+// then update this pin. The db-spec checks the two agree, person by person.
+describe("the one-query decider check mirrors unit-headship.ts's rules", () => {
+  it('pins headHolderWhere() — the SQL head arm restates it', () => {
+    expect(headHolderWhere()).toEqual({ status: 'ACTIVE', position: { isUnitHeadPosition: true, isActive: true } });
+  });
+
+  it('pins runningActingCoverWhere(now) — the SQL cover arm restates it', () => {
+    const now = new Date('2026-11-16T09:00:00Z');
+    expect(runningActingCoverWhere(now)).toEqual({
+      kind: 'ACTING',
+      endedAt: null,
+      validFrom: { lte: now },
+      OR: [{ validTo: null }, { validTo: { gt: now } }],
+    });
   });
 });

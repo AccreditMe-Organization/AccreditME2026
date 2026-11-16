@@ -6259,9 +6259,13 @@ reads any more; the key stays in the catalogue until PR 4 retires it.
   - one chain resolution per response, only for the rows under review and the
     viewer's own drafts;
   - `GET /committee-change-requests/:id` also admits a current decider;
-  - `GET .../awaiting-decision` has no route gate. It answers `[]` after
-    THREE queries for someone who heads, covers and holds no deciding seat;
-    otherwise the capped SQL candidates and one chain resolution.
+  - `GET .../awaiting-decision` has no route gate. It answers `[]` after ONE
+    indexed query (`mayDecideAnyChangeRequest()`: head holder, cover in force,
+    or a deciding seat on an active membership of an active committee) for
+    someone who decides nothing; otherwise the capped SQL candidates and one
+    chain resolution. That query restates `unit-headship.ts`'s two rules in SQL;
+    `change-request-chain.spec.ts` pins the rules and the db-spec checks the two
+    agree person by person.
 - **No route permission** on approve, return, reject, approve-now or
   awaiting-decision: the chain decides.
 - **Specs:**

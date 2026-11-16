@@ -15,10 +15,8 @@ import { assertCommitteeReferences, lockCommitteeHierarchy } from '../committee-
 import { committeeTypeValues } from '../committee-type-values';
 import { ChangeRequestRefusal } from './change-request-refusal';
 import { assertMaySeeCommittee, assertMayWriteCommittee, mayReadCommittee } from '../../../common/services/committee-membership';
-import { findUnitHeadedBy, findUnitsCoveredBy } from '../../organization/unit-headship';
 import { seatValues } from '../committee-seat-rules';
-import { SEAT_ACTIONS } from '../seat-actions';
-import { ChainResult, ChainStep, resolveDecisionChains } from './change-request-chain';
+import { ChainResult, ChainStep, mayDecideAnyChangeRequest, resolveDecisionChains } from './change-request-chain';
 import {
   ACTION_TARGET_STAGE,
   ChangeRequestAction,
@@ -808,19 +806,9 @@ export class CommitteeChangeRequestService {
    * all of them, kept where the viewer is a decider.
    */
   async awaitingDecision(organizationId: string, viewer: ChangeRequestViewer, now: Date = new Date()): Promise<IChangeRequest[]> {
-    const [headed, covered, seat] = await Promise.all([
-      findUnitHeadedBy(this.prisma, organizationId, viewer.userId),
-      findUnitsCoveredBy(this.prisma, organizationId, viewer.userId, now),
-      this.prisma.$queryRaw<{ one: number }[]>`
-        SELECT 1 AS one
-        FROM "CommitteeMember" cm
-        JOIN "CommitteeSeatAction" sa
-          ON sa."committeeId" = cm."committeeId" AND sa."roleValueId" = cm."roleValueId"
-         AND sa."organizationId" = ${organizationId} AND sa."actionKey" = ${SEAT_ACTIONS.DECIDE_REPORTING_CHANGES}
-        WHERE cm."organizationId" = ${organizationId} AND cm."userId" = ${viewer.userId} AND cm."isActive"
-        LIMIT 1`,
-    ]);
-    if (!headed && covered.length === 0 && seat.length === 0) return [];
+    // Prompt 85 — ONE indexed query: someone who heads, covers and holds no deciding
+    // seat has nothing waiting, so nothing else is read.
+    if (!(await mayDecideAnyChangeRequest(this.prisma, organizationId, viewer.userId, now))) return [];
 
     // ACC-281 — filtered IN THE QUERY: the ids of the requests whose NEWEST
     // instance stands in a stage awaiting a decision (the policy's own keys),

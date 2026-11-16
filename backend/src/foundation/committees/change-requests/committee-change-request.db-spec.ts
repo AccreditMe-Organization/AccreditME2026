@@ -41,6 +41,9 @@ import { runBackfill } from '../../../../prisma/backfill-acc239-change-request-w
 import { ChangeRequestViewer, CommitteeChangeRequestService } from './committee-change-request.service';
 import { StageRulesService } from '../../workflow/stage-rules.service';
 import { StagePoolService } from '../../workflow/stage-pool.service';
+import { mayDecideAnyChangeRequest } from './change-request-chain';
+import { findUnitHeadedBy, findUnitsCoveredBy } from '../../organization/unit-headship';
+import { SEAT_ACTIONS } from '../seat-actions';
 
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
@@ -1294,6 +1297,131 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       const run = await runBackfill(prisma, { execute: true, organizationIds: [org] });
       expect(run.refusedCustomers).toHaveLength(1);
       expect(await prisma.workflowTemplate.count({ where: { organizationId: org } })).toBe(0);
+    });
+  });
+  // ── Prompt 85: awaiting-decision costs a non-decider ONE query ──────────────
+  describe('awaiting decision — one query for someone who decides nothing (Prompt 85)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+
+    /** The service over a Prisma that counts every query it is asked for. */
+    const countedRequests = () => {
+      const log: string[] = [];
+      const counting = new Proxy(prisma, {
+        get(t, k) {
+          const v = (t as unknown as Record<string | symbol, unknown>)[k];
+          if (k === '$queryRaw') return (...a: unknown[]) => (log.push('$queryRaw'), (v as (...x: unknown[]) => unknown).apply(t, a));
+          if (typeof k === 'string' && !k.startsWith('$') && v && typeof v === 'object') {
+            return new Proxy(v as object, {
+              get(d, m) {
+                const f = (d as Record<string | symbol, unknown>)[m];
+                return typeof f === 'function' ? (...a: unknown[]) => (log.push(`${k}.${String(m)}`), (f as (...x: unknown[]) => unknown).apply(d, a)) : f;
+              },
+            });
+          }
+          return v;
+        },
+      }) as unknown as PrismaService;
+      return { svc: new CommitteeChangeRequestService(counting, workflow, tasks, audit, notifications, new StageRulesService(counting)), log };
+    };
+
+    const person = async (w: World, name: string, data: Record<string, unknown> = {}) =>
+      (await prisma.user.create({ data: { organizationId: w.org, email: `${w.slug}-${name}@example.test`, name, status: 'ACTIVE', ...data } })).id;
+    const viewerOf = (userId: string): ChangeRequestViewer => ({ userId, permissions: [VIEW] });
+    const cover = (w: World, userId: string, data: Record<string, unknown> = {}) =>
+      prisma.orgUnitHeadAssignment.create({
+        data: { organizationId: w.org, orgUnitId: w.unit, userId, kind: 'ACTING', reason: 'ABSENCE', validFrom: new Date(Date.now() - DAY), createdById: w.approver.userId, ...data },
+      });
+
+    it('someone who heads, covers and holds no deciding seat costs exactly ONE query, and gets []', async () => {
+      const w = await world();
+      await submitted(w);
+      const { svc, log } = countedRequests();
+      expect(await svc.awaitingDecision(w.org, w.reader)).toEqual([]);
+      expect(log).toEqual(['$queryRaw']);
+    });
+
+    it('a decider as a HEAD holder still gets the list', async () => {
+      const w = await world();
+      const waiting = await submitted(w);
+      const { svc } = countedRequests();
+      expect((await svc.awaitingDecision(w.org, w.approver)).map((r) => r.id)).toEqual([waiting.id]);
+    });
+
+    it('a decider as the acting COVER in force still gets the list', async () => {
+      const w = await world();
+      const waiting = await submitted(w);
+      const actingId = await person(w, 'Acting');
+      await cover(w, actingId);
+      const { svc } = countedRequests();
+      expect((await svc.awaitingDecision(w.org, viewerOf(actingId))).map((r) => r.id)).toEqual([waiting.id]);
+    });
+
+    it('a decider through a deciding SEAT on the Reports-to committee still gets the list', async () => {
+      const w = await world();
+      // The committee reports to the other one, which is in force; its deciding seat decides.
+      await prisma.committee.update({ where: { id: w.committee }, data: { reportingToCommitteeId: w.other } });
+      const holder = await person(w, 'Seat Holder');
+      await prisma.committeeSeatAction.create({ data: { organizationId: w.org, committeeId: w.other, roleValueId: 'seat-decide', actionKey: SEAT_ACTIONS.DECIDE_REPORTING_CHANGES } });
+      await prisma.committeeMember.create({ data: { organizationId: w.org, committeeId: w.other, userId: holder, roleValueId: 'seat-decide' } });
+      const waiting = await submitted(w);
+      const { svc } = countedRequests();
+      expect((await svc.awaitingDecision(w.org, viewerOf(holder))).map((r) => r.id)).toEqual([waiting.id]);
+      // The root heads are not this request's deciders any more.
+      expect(await svc.awaitingDecision(w.org, w.approver)).toEqual([]);
+    });
+
+    it("the one query agrees with unit-headship.ts's rules, person by person", async () => {
+      const w = await world();
+      const head = await prisma.orgPosition.findFirstOrThrow({ where: { organizationId: w.org, isUnitHeadPosition: true } });
+      const closedHead = await prisma.orgPosition.create({ data: { organizationId: w.org, nameEn: 'Old Director', grade: 10, isUnitHeadPosition: true, isActive: false } });
+      const plain = await prisma.orgPosition.create({ data: { organizationId: w.org, nameEn: 'Officer', grade: 5 } });
+      const now = new Date();
+      const cases: Record<string, string> = {
+        'head holder': await person(w, 'h1', { positionId: head.id, primaryOrgUnitId: w.unit }),
+        'head position, no unit': await person(w, 'h2', { positionId: head.id }),
+        'head holder, inactive': await person(w, 'h3', { positionId: head.id, primaryOrgUnitId: w.unit, status: 'INACTIVE' }),
+        'head position inactive': await person(w, 'h4', { positionId: closedHead.id, primaryOrgUnitId: w.unit }),
+        'not a head position': await person(w, 'h5', { positionId: plain.id, primaryOrgUnitId: w.unit }),
+        'cover, open-ended': await person(w, 'c1'),
+        'cover, ends later': await person(w, 'c2'),
+        'cover, ended': await person(w, 'c3'),
+        'cover, not started': await person(w, 'c4'),
+        'cover, lapsed': await person(w, 'c5'),
+        'substantive, not a cover': await person(w, 'c6'),
+      };
+      await cover(w, cases['cover, open-ended']!);
+      await cover(w, cases['cover, ends later']!, { validTo: new Date(now.getTime() + DAY) });
+      await cover(w, cases['cover, ended']!, { endedAt: new Date(now.getTime() - 1000) });
+      await cover(w, cases['cover, not started']!, { validFrom: new Date(now.getTime() + DAY) });
+      await cover(w, cases['cover, lapsed']!, { validTo: new Date(now.getTime() - 1000) });
+      await cover(w, cases['substantive, not a cover']!, { kind: 'SUBSTANTIVE' });
+
+      const seen: Record<string, [boolean, boolean]> = {};
+      for (const [name, id] of Object.entries(cases)) {
+        const rules = (await findUnitHeadedBy(prisma, w.org, id)) !== null || (await findUnitsCoveredBy(prisma, w.org, id, now)).length > 0;
+        seen[name] = [await mayDecideAnyChangeRequest(prisma, w.org, id, now), rules];
+      }
+      for (const [name, [sql, rules]] of Object.entries(seen)) expect([name, sql]).toEqual([name, rules]);
+      // Non-vacuous: both answers occur.
+      expect(seen['head holder']).toEqual([true, true]);
+      expect(seen['cover, ends later']).toEqual([true, true]);
+      expect(seen['cover, lapsed']).toEqual([false, false]);
+    });
+
+    itEnforcesTenantIsolation("the one query never counts another organisation's cover, membership or seat", async () => {
+      const w = await world();
+      const other = await world();
+      const id = await person(w, 'Plain');
+      // Rows filed under the other organisation, naming THIS person.
+      await prisma.orgUnitHeadAssignment.create({
+        data: { organizationId: other.org, orgUnitId: other.unit, userId: id, kind: 'ACTING', reason: 'ABSENCE', validFrom: new Date(Date.now() - DAY), createdById: other.approver.userId },
+      });
+      await prisma.committeeSeatAction.create({ data: { organizationId: other.org, committeeId: other.other, roleValueId: 'seat-x', actionKey: SEAT_ACTIONS.DECIDE_REPORTING_CHANGES } });
+      await prisma.committeeMember.create({ data: { organizationId: other.org, committeeId: other.other, userId: id, roleValueId: 'seat-x' } });
+      expect(await mayDecideAnyChangeRequest(prisma, w.org, id, new Date())).toBe(false);
+      // Control: THIS organisation's own cover does count.
+      await cover(w, id);
+      expect(await mayDecideAnyChangeRequest(prisma, w.org, id, new Date())).toBe(true);
     });
   });
 });

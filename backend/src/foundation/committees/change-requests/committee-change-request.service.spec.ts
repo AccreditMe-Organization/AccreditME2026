@@ -64,18 +64,17 @@ describe('CommitteeChangeRequestService — organisation scoping (ACC-239)', () 
 
   it('should NOT return records belonging to a different tenant — awaiting decision reads only the organisation', async () => {
     const { prisma, service } = setup();
-    // ACC-283 PR 2 — a viewer who heads a unit gets past the cheap check.
-    prisma.user.findFirst.mockResolvedValue({ primaryOrgUnitId: 'unit-a' });
+    // ACC-283 PR 2 (Prompt 85) — a viewer who may decide something gets past the one-query check.
+    prisma.$queryRaw.mockResolvedValueOnce([{ decides: true }]);
     await service.awaitingDecision(ORG_A, viewer);
-    // The cheap check: the head and cover reads and the deciding-seat query, all in the organisation.
-    expect((prisma.user.findFirst.mock.calls[0] as unknown as [{ where: { organizationId: string } }])[0].where.organizationId).toBe(ORG_A);
-    expect((prisma.orgUnitHeadAssignment.findMany.mock.calls[0] as unknown as [{ where: { organizationId: string } }])[0].where.organizationId).toBe(
-      ORG_A,
-    );
-    const [seatStrings, ...seatValues] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
-    expect(seatStrings.join('?')).toContain('"CommitteeSeatAction"');
-    expect(seatValues.filter((v) => v === ORG_A)).toHaveLength(2);
-    expect(seatValues).not.toContain(ORG_B);
+    // The check: ONE query, its three arms (head, cover, seat) each in the organisation.
+    const [checkStrings, ...checkValues] = prisma.$queryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    const check = checkStrings.join('?');
+    for (const table of ['"User"', '"OrgPosition"', '"OrgUnitHeadAssignment"', '"Committee"', '"CommitteeMember"', '"CommitteeSeatAction"']) expect(check).toContain(table);
+    expect(check.match(/"organizationId" = ?/g)).toHaveLength(6);
+    expect(checkValues.filter((v) => v === ORG_A)).toHaveLength(6);
+    expect(checkValues.filter((v) => v === 'user-1')).toHaveLength(3);
+    expect(checkValues).not.toContain(ORG_B);
     // ACC-281 — then the candidates, filtered in ONE query: every table is scoped by
     // the organisation, the viewer's own requests are out, and it is capped.
     const [strings, ...values] = prisma.$queryRaw.mock.calls[1] as [TemplateStringsArray, ...unknown[]];
@@ -90,12 +89,13 @@ describe('CommitteeChangeRequestService — organisation scoping (ACC-239)', () 
 });
 
 describe('CommitteeChangeRequestService — awaiting decision, the cheap check (ACC-283 PR 2)', () => {
-  it('someone who heads nothing, covers nothing and holds no deciding seat: an empty list after three queries, no request read', async () => {
+  it('someone who heads nothing, covers nothing and holds no deciding seat: an empty list after ONE query, no request read', async () => {
     const { prisma, service } = setup();
+    prisma.$queryRaw.mockResolvedValueOnce([{ decides: false }]);
     expect(await service.awaitingDecision(ORG_A, viewer)).toEqual([]);
-    expect(prisma.user.findFirst).toHaveBeenCalledTimes(1);
-    expect(prisma.orgUnitHeadAssignment.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+    expect(prisma.orgUnitHeadAssignment.findMany).not.toHaveBeenCalled();
     expect(prisma.committeeChangeRequest.findMany).not.toHaveBeenCalled();
   });
 });
