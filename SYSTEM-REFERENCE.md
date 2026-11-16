@@ -8411,6 +8411,11 @@ values.
 without both. `seedSystemData()` rewrites the shared schemas on every deploy, so
 no backfill is needed. `required` keeps its old `label` until the form stops
 reading it, and the backend reads only `type` (`schemaProperties()`).
+**The form now reads `labelEn` / `labelAr`** (ACC-310's form PR):
+`LookupValueFormComponent.attributeName()` resolves the name at display time,
+`labelEn`, else the old `label`, else the key, with an empty Arabic name falling
+back to English. Nothing in the frontend needs `label` any more, so `required`'s
+old `label` can go (and so can the one on ACC-283's seat attributes, §3.21.5).
 
 ### 6.2 The Override Pattern — `getValues()`'s Exact Merge Algorithm
 
