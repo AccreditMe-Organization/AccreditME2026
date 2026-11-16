@@ -57,14 +57,14 @@ export interface BreadcrumbItem {
   template: `
     @if (items().length > 0) {
       <nav
-        class="flex items-center gap-[7px] px-2 min-w-0 text-[12.5px] text-[var(--am-text-secondary)]"
+        class="flex items-center gap-[7px] px-2 min-w-0 text-[12.5px] text-[var(--am-ink-500)]"
         [attr.aria-label]="'shell.breadcrumb' | translate"
       >
         @for (item of items(); track $index; let last = $last) {
           @if (item.url) {
             <a
               [routerLink]="item.url"
-              class="whitespace-nowrap overflow-hidden text-ellipsis hover:text-[var(--am-blue-primary)]"
+              class="whitespace-nowrap overflow-hidden text-ellipsis hover:text-[var(--am-primary-600)]"
               >{{ item.text ?? (item.labelKey! | translate) }}</a
             >
           } @else {

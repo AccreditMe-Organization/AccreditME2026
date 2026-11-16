@@ -36,11 +36,11 @@ export class StatusBadgeComponent {
   readonly value = input.required<string>();
 
   // CSS's own var() fallback — if --am-{variant}-{value} was never defined
-  // (an unmapped/typo'd value), the browser resolves --am-text-secondary
+  // (an unmapped/typo'd value), the browser resolves --am-ink-500
   // instead of rendering an invisible/transparent badge. No JS-side
   // "does this variable exist" check needed; the cascade handles it.
   readonly colorVar = computed(
-    () => `var(--am-${this.variant()}-${this.value().toLowerCase()}, var(--am-text-secondary))`,
+    () => `var(--am-${this.variant()}-${this.value().toLowerCase()}, var(--am-ink-500))`,
   );
   readonly labelKey = computed(() => `${this.variant()}.${this.value().toLowerCase()}`);
 }
