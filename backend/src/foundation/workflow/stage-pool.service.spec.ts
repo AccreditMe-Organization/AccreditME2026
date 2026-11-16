@@ -47,15 +47,13 @@ interface Data {
     enteredAt: Date;
     actorId: string | null;
     exitedAt: Date | null;
-    whoMode: string | null;
+    whoMode: string;
     objectType: string;
     objectId: string;
   }[];
   covers: { id: string; organizationId: string; orgUnitId: string; userId: string; validFrom: Date; validTo: Date | null; endedAt: Date | null }[];
   members: { organizationId: string; committeeId: string; userId: string; roleValueId: string; isActive: boolean }[];
   committees: { id: string; organizationId: string; orgUnitId: string }[];
-  // ACC-271 PR 6a — stages whose `whoMode` is null (the fake's stage table).
-  stagesWithoutWho?: string[];
 }
 
 const inOrEq = (filter: string | { in: string[] } | undefined, value: string | null | undefined): boolean =>
@@ -66,11 +64,10 @@ function fakePrisma(data: Data) {
   return {
     workflowStageAssignee: {
       findMany: jest.fn(
-        async ({ where }: { where: { organizationId: string; stageId: { in: string[] }; kind?: Kind; stage?: { whoMode: { not: null } } } }) =>
+        async ({ where }: { where: { organizationId: string; stageId: { in: string[] }; kind?: Kind } }) =>
         data.entries
           .filter((e) => e.organizationId === where.organizationId && where.stageId.in.includes(e.stageId))
           .filter((e) => (where.kind ? e.kind === where.kind : true))
-          .filter((e) => (where.stage ? !(data.stagesWithoutWho ?? []).includes(e.stageId) : true))
           .sort((a, b) => a.stageId.localeCompare(b.stageId) || a.order - b.order)
           .map((e) => ({ userId: null, positionId: null, orgUnitId: null, committeeId: null, committeeRoleValueId: null, ...e })),
         ),
@@ -90,13 +87,11 @@ function fakePrisma(data: Data) {
             workflowInstanceId?: { in: string[] };
             workflowInstance: { organizationId: string };
             exitedAt?: null;
-            stage?: { whoMode: { not: null } };
           };
         }) => {
           let rows = data.instanceStages.filter((s) => s.organizationId === where.workflowInstance.organizationId);
           if (where.workflowInstanceId) rows = rows.filter((s) => where.workflowInstanceId!.in.includes(s.workflowInstanceId));
           if ('exitedAt' in where) rows = rows.filter((s) => s.exitedAt === null);
-          if (where.stage) rows = rows.filter((s) => s.whoMode !== null);
           return [...rows]
             .sort((a, b) => a.enteredAt.getTime() - b.enteredAt.getTime())
             .map((s) => ({
@@ -244,7 +239,7 @@ describe('StagePoolService (ACC-271)', () => {
       data.users.push(active('starter'), active('later'));
       data.instanceStages.push(
         { id: 'e2', workflowInstanceId: 'i1', organizationId: ORG, stageId: 's1', enteredAt: new Date(NOW.getTime() - DAY), actorId: 'later', exitedAt: null, whoMode: 'ANY_ONE', objectType: 'COMMITTEE', objectId: 'c1' },
-        { id: 'e1', workflowInstanceId: 'i1', organizationId: ORG, stageId: 's0', enteredAt: new Date(NOW.getTime() - 2 * DAY), actorId: 'starter', exitedAt: NOW, whoMode: null, objectType: 'COMMITTEE', objectId: 'c1' },
+        { id: 'e1', workflowInstanceId: 'i1', organizationId: ORG, stageId: 's0', enteredAt: new Date(NOW.getTime() - 2 * DAY), actorId: 'starter', exitedAt: NOW, whoMode: 'ANY_ONE', objectType: 'COMMITTEE', objectId: 'c1' },
       );
       expect((await one(data)).members).toEqual(['starter']);
     });
@@ -291,20 +286,16 @@ describe('StagePoolService (ACC-271)', () => {
     expect(pool).toMatchObject({ members: [], direct: [], voteCommitteeId: null });
   });
 
-  // ACC-271 PR 6a — fail closed: a stage with no `who` is read as converted
-  // with an EMPTY pool, whatever entries it holds, so nobody may act on it, the
-  // sweep flags it and it awaits nobody. ACC-278 PR B made whoMode NOT NULL, so
-  // the database no longer allows such a stage; this branch goes in the follow-up
-  // after ACC-202 part 2 (Ahmad, 14 Nov, Q5).
-  it('a stage with no `who` has nobody, and no vote committee, whatever entries it holds', async () => {
+  // ACC-278 PR B — whoMode is NOT NULL, so no read filters on it any more, and
+  // the "stage with no `who`" case (ACC-271 PR 6a) is gone with its subject.
+  it('asks for a stage’s entries without a whoMode filter (every stage has one)', async () => {
     const data = empty();
-    data.entries.push(entry('s1', 1, 'SPECIFIC_USER', { userId: 'u1' }), entry('s1', 2, 'COMMITTEE', { committeeId: 'cX' }));
+    data.entries.push(entry('s1', 1, 'SPECIFIC_USER', { userId: 'u1' }));
     data.users.push(active('u1'));
-    data.stagesWithoutWho = ['s1'];
-
-    expect(await one(data)).toMatchObject({ members: [], direct: [], voteCommitteeId: null });
-    const { pools } = service(data);
-    expect(await pools.voteCommitteeId(ORG, 's1', { objectType: 'COMMITTEE', objectId: 'c1' })).toBeNull();
+    const { pools, prisma } = service(data);
+    await pools.resolveMany(ORG, [{ key: 'k', stageId: 's1', instance: { id: 'i1', objectType: 'COMMITTEE', objectId: 'c1' } }]);
+    const [[query]] = prisma.workflowStageAssignee.findMany.mock.calls as unknown as [[{ where: object }]];
+    expect(query.where).not.toHaveProperty('stage');
   });
 
   describe('ACTIVE only', () => {
@@ -418,7 +409,7 @@ describe('StagePoolService (ACC-271)', () => {
   });
 
   describe('openEntriesWithMember', () => {
-    it("lists the open entries of converted stages whose pool holds the person, directly or standing in", async () => {
+    it("lists the open entries whose pool holds the person, directly or standing in", async () => {
       const data = empty();
       const base = { organizationId: ORG, enteredAt: NOW, actorId: 'x', objectType: 'COMMITTEE', objectId: 'c1' };
       data.instanceStages.push(
@@ -426,7 +417,6 @@ describe('StagePoolService (ACC-271)', () => {
         { ...base, id: 'open-standing-in', workflowInstanceId: 'i2', stageId: 's-cover', exitedAt: null, whoMode: 'ALL' },
         { ...base, id: 'open-not', workflowInstanceId: 'i3', stageId: 's-not', exitedAt: null, whoMode: 'ALL' },
         { ...base, id: 'closed', workflowInstanceId: 'i4', stageId: 's-in', exitedAt: NOW, whoMode: 'ALL' },
-        { ...base, id: 'unconverted', workflowInstanceId: 'i5', stageId: 's-in', exitedAt: null, whoMode: null },
       );
       data.entries.push(
         entry('s-in', 1, 'SPECIFIC_USER', { userId: 'leaver' }),
