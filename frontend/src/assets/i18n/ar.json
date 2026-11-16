@@ -110,7 +110,7 @@
     "recycleBin": "سلة المحذوفات"
   },
   "organization": {
-    "title": "هيكل المنظمة",
+    "title": "هيكل المنشأة",
     "addUnit": "إضافة وحدة",
     "addChildUnit": "إضافة وحدة فرعية",
     "editUnit": "تعديل الوحدة",
@@ -130,7 +130,7 @@
     "typeRetired": "متقاعد",
     "noUnits": "لم يتم تحديد وحدات تنظيمية بعد.",
     "confirmDeactivate": "هل تريد إلغاء تفعيل هذه الوحدة؟ يجب إلغاء تفعيل الوحدات الفرعية النشطة أولاً.",
-    "codeInUse": "هذا الرمز مستخدم بالفعل في منظمتك.",
+    "codeInUse": "هذا الرمز مستخدم بالفعل في منشأتك.",
     "unitInactive": "هذه الوحدة غير نشطة",
     "addSubUnit": "إضافة وحدة فرعية",
     "addSubUnitTo": "إضافة وحدة فرعية إلى {{parent}}",
@@ -224,7 +224,7 @@
       "noReactivation": "لا يمكن إعادة تفعيل الوحدات المعطّلة من AccreditMe.",
       "topUnit": "لا يوجد — هذه هي الوحدة العليا",
       "nameHidden": "الاسم مخفي",
-      "outsideOrganization": "شخص من خارج هذه المنظمة",
+      "outsideOrganization": "شخص من خارج هذه المنشأة",
       "hiddenPersonWithPosition": "{{position}} (الاسم مخفي)",
       "incoming": "قادم",
       "actingUntil": "حتى {{date}}",
@@ -391,7 +391,7 @@
     "actingHeadClearHeader": "إنهاء تغطية الرئيس بالنيابة في {{unit}}؟"
   },
   "lookup": {
-    "actionHide": "إخفاء من هذه المنظمة",
+    "actionHide": "إخفاء من هذه المنشأة",
     "actionOverrideLabel": "تجاوز التسمية",
     "actionUnhide": "استعادة الظهور",
     "addValue": "إضافة قيمة",
@@ -487,7 +487,7 @@
     "suggestHolidays": "اقتراح العطل بالذكاء الاصطناعي",
     "aiSuggesting": "يقوم الذكاء الاصطناعي بإنشاء الاقتراحات...",
     "aiSuggestionsTitle": "العطل المقترحة بالذكاء الاصطناعي",
-    "aiSuggestionsHint": "راجع كل اقتراح. اقبل ما ينطبق على منظمتك.",
+    "aiSuggestionsHint": "راجع كل اقتراح. اقبل ما ينطبق على منشأتك.",
     "purpose": "تُحسب مواعيد استحقاق المهام ومراحل سير العمل بوقت العمل وفق هذا التقويم.",
     "holidayNameHint": "يظهر في التقويم وفي التقارير.",
     "holidayDateHint": "اكتب التاريخ، أو اختره من التقويم.",
@@ -4401,7 +4401,7 @@
     },
     "editProfileDialog": {
       "nameRequired": "أدخل الاسم.",
-      "placement": "الموقع في المنظمة",
+      "placement": "الموقع في المنشأة",
       "stepProfile": "الملف الشخصي",
       "useTransfer": "لنقل هذا الشخص إلى وحدة أو مسمى وظيفي آخر، استخدم «نقل».",
       "useTransferRefused": "لا يمكن تغيير وحدة هذا الشخص أو مسماه الوظيفي إلا من خلال «نقل». لم يُحفظ أي شيء."

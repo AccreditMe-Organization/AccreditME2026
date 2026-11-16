@@ -70,7 +70,7 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
   {
     key: 'TENANT_ADMIN',
     nameEn: 'Organization Administrator',
-    nameAr: 'مسؤول المؤسسة',
+    nameAr: 'مسؤول المنشأة',
     description:
       'Full administrative access within the organization (excludes platform-level actions).',
     permissions: ALL.filter((p) => !p.startsWith('platform:')),

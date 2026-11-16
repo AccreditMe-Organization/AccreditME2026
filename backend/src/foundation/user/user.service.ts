@@ -1094,7 +1094,7 @@ export class UserService {
           titleEn: `${incompleteUsers.length} active user(s) missing position or org unit`,
           titleAr: `${incompleteUsers.length} مستخدم نشط ينقصه المسمى الوظيفي أو الوحدة التنظيمية`,
           bodyEn: `${incompleteUsers.length} active user(s) in your organization have no assigned position and/or org unit. Update each user's profile to complete their record.`,
-          bodyAr: `يوجد ${incompleteUsers.length} مستخدم نشط في مؤسستك بلا مسمى وظيفي و/أو وحدة تنظيمية. حدّث ملف كل مستخدم لإكمال بياناته.`,
+          bodyAr: `يوجد ${incompleteUsers.length} مستخدم نشط في منشأتك بلا مسمى وظيفي و/أو وحدة تنظيمية. حدّث ملف كل مستخدم لإكمال بياناته.`,
         },
         organizationId,
       );
