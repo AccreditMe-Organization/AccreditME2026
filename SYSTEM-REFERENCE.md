@@ -6277,6 +6277,30 @@ reads any more; the key stays in the catalogue until PR 4 retires it.
   request row, task row.
 - **Withdraw:** only the requester (Q8). `othersMayWithdraw` is gone from the
   policy.
+- **A departure withdraws the leaver's unfinished requests (PR 2b).**
+  `UserService.deactivate()` calls `ChangeRequestDepartureService`
+  (`change-requests/departure/`):
+  - `prepare()` before the transaction: ONE indexed query, on
+    `(organizationId, requestedById)`. It finds the requests whose newest
+    instance stands in a stage that is open, allows withdraw and is not
+    awaiting a decision (draft and returned, derived from the policy). No rows
+    means nothing else runs.
+  - `withdrawInTx()` inside the deactivation's transaction, last. Per request,
+    in id order: the instance lock, the request row (`withdrawnById` is the
+    person deactivating), then the finish task cancelled, its row last.
+  - `finish()` after commit. It is never fatal: a failure is logged with ids
+    only.
+  - The engine's `prepareSystemTransition()` / `systemTransitionInTx()` /
+    `finishSystemTransition()` split one move so it can run in a caller's
+    transaction. `performTransition()` uses the same body. A request that moved
+    between prepare and lock is skipped (`ifMoved: 'skip'`).
+  - The User audit row's `withdrawnChangeRequests` is what the transaction
+    applied. Each request gets its own audit row, `{ decision: 'WITHDRAWN',
+    cause: 'departure', leaverId, from }`.
+  - **Nothing is sent**, to the leaver or anyone (a spec proves it).
+  - Lock order: the root-head lock, the user row, then per request its
+    instance, its row and its task. Requests under review are left to their
+    deciders.
 - **Reads:**
   - every response's `actions` gains `approveNow`, and `awaitingDecisionBy`
     names the deciding step (a committee and its seats, or a unit), never a

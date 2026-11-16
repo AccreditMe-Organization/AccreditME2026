@@ -5142,6 +5142,11 @@ requests.** Full mechanism: SYSTEM-REFERENCE.md §3.18 (the chain) and §3.21
 - **The root head may Approve now their own request** (`ROOT_HEAD_OWN`). A
   draft or returned request gives its requester a "Finish or withdraw" task,
   locked last. Only the requester withdraws.
+- **A deactivation withdraws the leaver's draft and returned requests**, inside
+  its own transaction, last (PR 2b, `ChangeRequestDepartureService`). It costs
+  ONE indexed read when there are none, and sends nothing. The engine's
+  `systemTransitionInTx()` is the way to run a module's move inside a caller's
+  transaction; never write a second copy of the move.
 - **The backfill (`backfill:acc283-seat-actions`) runs AFTER the deploy**, dry
   run first; it fills only committees with no rows and refuses customers.
 - **Two additive migrations** (`acc283_committee_seat_actions`, PR 1;
