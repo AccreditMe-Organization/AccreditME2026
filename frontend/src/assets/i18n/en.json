@@ -1683,6 +1683,8 @@
         "CHANGE_REQUEST_COMMITTEE_DISSOLVING": "This committee is being dissolved, or has been, so its change request can only be rejected or withdrawn.",
         "CHANGE_REQUEST_COMMITTEE_CHANGED": "The committee has changed since this request was submitted, so it can't be applied. Return it to the requester. Nothing was changed.",
         "CHANGE_REQUEST_CHANGED": "Change request {{n}} was changed by someone else since you opened it. Nothing was saved.",
+        "CHANGE_REQUEST_NOT_DECIDER": "Someone else decides this change request now.",
+        "CHANGE_REQUEST_NO_DECIDER": "No one can decide this change request now.",
         "unreachable": "Nothing was changed: the server couldn't be reached.",
         "failed": "Something went wrong, so nothing was changed."
       }
