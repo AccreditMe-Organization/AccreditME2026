@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../constants/permissions';
-import { isActiveMember, isActiveMemberOfRequestCommittee } from './committee-membership';
+import { isActiveMember, isActiveMemberOfRequestCommittee, overseesCommittee, overseesRequestCommittee } from './committee-membership';
 
 /**
  * ACC-244 — the permission that lets a caller see records of each type: the
@@ -70,6 +70,10 @@ export class ObjectVisibilityService {
       // ACC-281 — an active member of this active committee may see it without
       // committees:view (Ahmad, 7 Nov). Asked only when the permission is missing.
       member: (id, organizationId, viewerId) => isActiveMember(this.prisma, id, viewerId, organizationId),
+      // ACC-283 PR 2a — a head or cover in force of its owning unit, or of a unit
+      // above it, may READ it. Asked only for a read that opts in, after the
+      // member clause said no.
+      overseer: (id, organizationId, viewerId, now) => overseesCommittee(this.prisma, id, organizationId, viewerId, now),
     },
     // ACC-239 — a change request is part of its committee's record: seeing it
     // takes what seeing the committee takes. ACC-282 (Ahmad, 8 Nov): so an active
@@ -83,6 +87,8 @@ export class ObjectVisibilityService {
           select: { id: true },
         }),
       member: (id, organizationId, viewerId) => isActiveMemberOfRequestCommittee(this.prisma, id, viewerId, organizationId),
+      // ACC-283 PR 2a — the overseer of the request's committee may READ it.
+      overseer: (id, organizationId, viewerId, now) => overseesRequestCommittee(this.prisma, id, organizationId, viewerId, now),
     },
     MEETING: {
       permission: RECORD_VIEW_PERMISSION['MEETING']!,
@@ -119,6 +125,11 @@ export class ObjectVisibilityService {
     organizationId: string,
     viewerPermissions: readonly string[],
     viewerId?: string,
+    // ACC-283 PR 2a — a READ passes { oversight: true }, so a unit's head or cover
+    // may open the committees of their units. Writes (task create, the AI draft,
+    // the workload hint, a press or a vote) never pass it: they keep ACC-281's
+    // rule, and a caller that forgets fails closed.
+    options: ViewOptions = {},
   ): Promise<void> {
     const rule = this.rules[objectType];
 
@@ -137,6 +148,14 @@ export class ObjectVisibilityService {
       // membership query answers the same for an invented id, so it stays
       // existence-neutral. No viewerId means today's rule exactly (fail closed).
       if (rule.member && viewerId && (await rule.member(objectId, organizationId, viewerId))) return;
+      if (
+        options.oversight &&
+        rule.overseer &&
+        viewerId &&
+        (await rule.overseer(objectId, organizationId, viewerId, options.now ?? new Date()))
+      ) {
+        return;
+      }
       throw new ForbiddenException(`Required permission: ${rule.permission}`);
     }
 
@@ -173,9 +192,10 @@ export class ObjectVisibilityService {
     viewerPermissions: readonly string[],
     notFoundMessage: string,
     viewerId?: string,
+    options: ViewOptions = {},
   ): Promise<void> {
     try {
-      await this.assertCanView(objectType, objectId, organizationId, viewerPermissions, viewerId);
+      await this.assertCanView(objectType, objectId, organizationId, viewerPermissions, viewerId, options);
     } catch (error) {
       // Only the two refusals this service raises are translated. Anything else
       // — a dropped connection, a Prisma fault — must surface as itself rather
@@ -215,4 +235,12 @@ interface ParentRule {
   exists(id: string, organizationId: string): Promise<{ id: string } | null>;
   /** ACC-281 — who else may see a record of this type: true admits the viewer. */
   member?(id: string, organizationId: string, viewerId: string): Promise<boolean>;
+  /** ACC-283 PR 2a — who may READ it as its overseer (a head or cover of its unit or above). Reads only. */
+  overseer?(id: string, organizationId: string, viewerId: string, now: Date): Promise<boolean>;
+}
+
+/** ACC-283 PR 2a — how assertCanView reads. `oversight` is for reads only; `now` pins the clock in a spec. */
+export interface ViewOptions {
+  oversight?: boolean;
+  now?: Date;
 }

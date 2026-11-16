@@ -28,8 +28,17 @@ const membership = (id: string, roleValueId: string, joined: number): Membership
   committee: { id, nameEn: `Committee ${id}`, nameAr: null, isActive: true },
 });
 
-function setup(memberships: MembershipRow[], total = memberships.length) {
+function setup(
+  memberships: MembershipRow[],
+  total = memberships.length,
+  lead: { headOf?: string | null; subtree?: string[]; owns?: boolean } = {},
+) {
   const prisma = {
+    // ACC-283 PR 2a — the headship reads behind mayBrowseCommittees.
+    user: { findFirst: jest.fn().mockResolvedValue(lead.headOf ? { primaryOrgUnitId: lead.headOf } : null) },
+    orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
+    $queryRaw: jest.fn().mockResolvedValue((lead.subtree ?? []).map((id) => ({ id }))),
+    committee: { findFirst: jest.fn().mockResolvedValue(lead.owns ? { id: 'c-owned' } : null) },
     committeeMember: {
       findMany: jest.fn().mockResolvedValue(memberships),
       count: jest.fn().mockResolvedValue(total),
@@ -133,7 +142,7 @@ describe('CommitteeHomeService.mine (ACC-279)', () => {
   it('no membership: no stage query at all', async () => {
     const { prisma, service } = setup([], 0);
 
-    expect(await service.mine(ORG, ME)).toEqual({ total: 0, rows: [] });
+    expect(await service.mine(ORG, ME)).toEqual({ total: 0, rows: [], mayBrowseCommittees: false });
     expect(prisma.workflowInstance.findMany).not.toHaveBeenCalled();
   });
 
@@ -146,5 +155,54 @@ describe('CommitteeHomeService.mine (ACC-279)', () => {
     expect(seven.queries()).toBe(one.queries());
     // The stage facts are read only for the five shown.
     expect(seven.prisma.workflowInstance.findMany.mock.calls[0][0].where.objectId.in).toHaveLength(MY_COMMITTEES_ROWS);
+  });
+});
+
+describe('CommitteeHomeService.mine — mayBrowseCommittees (ACC-283 PR 2a)', () => {
+  const NOW = new Date('2026-11-16T09:00:00.000Z');
+  const headship = (prisma: ReturnType<typeof setup>['prisma']) =>
+    prisma.user.findFirst.mock.calls.length +
+    prisma.orgUnitHeadAssignment.findMany.mock.calls.length +
+    prisma.$queryRaw.mock.calls.length +
+    prisma.committee.findFirst.mock.calls.length;
+
+  it('committees:view: true, with no headship query', async () => {
+    const { prisma, service } = setup([], 0);
+    expect((await service.mine(ORG, ME, ['committees:view'], NOW)).mayBrowseCommittees).toBe(true);
+    expect(headship(prisma)).toBe(0);
+  });
+
+  it('an active membership: true, with no headship query', async () => {
+    const { prisma, service } = setup([membership('c-1', 'member', 1)]);
+    expect((await service.mine(ORG, ME, [], NOW)).mayBrowseCommittees).toBe(true);
+    expect(headship(prisma)).toBe(0);
+  });
+
+  it('a head of a unit owning an active committee: true, after the two headship reads, the walk and one existence check', async () => {
+    const { prisma, service } = setup([], 0, { headOf: 'unit-a', subtree: ['unit-a', 'unit-a1'], owns: true });
+    expect((await service.mine(ORG, ME, [], NOW)).mayBrowseCommittees).toBe(true);
+    expect(headship(prisma)).toBe(4);
+    expect(prisma.committee.findFirst.mock.calls[0][0].where).toEqual({ organizationId: ORG, isActive: true, orgUnitId: { in: ['unit-a', 'unit-a1'] } });
+  });
+
+  it('a head of a unit owning no active committee: false', async () => {
+    const { service } = setup([], 0, { headOf: 'unit-a', subtree: ['unit-a'], owns: false });
+    expect((await service.mine(ORG, ME, [], NOW)).mayBrowseCommittees).toBe(false);
+  });
+
+  it('a stranger: false, after the two headship reads only', async () => {
+    const { prisma, service } = setup([], 0);
+    expect((await service.mine(ORG, ME, [], NOW)).mayBrowseCommittees).toBe(false);
+    expect(headship(prisma)).toBe(2);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  itEnforcesTenantIsolation('mayBrowseCommittees — every headship read and the existence check name the organisation', async () => {
+    const { prisma, service } = setup([], 0, { headOf: 'unit-a', subtree: ['unit-a'], owns: true });
+    await service.mine('org-b', ME, [], NOW);
+    expect(prisma.user.findFirst.mock.calls[0][0].where.organizationId).toBe('org-b');
+    expect(prisma.orgUnitHeadAssignment.findMany.mock.calls[0][0].where.organizationId).toBe('org-b');
+    expect(prisma.$queryRaw.mock.calls[0]).toContain('org-b');
+    expect(prisma.committee.findFirst.mock.calls[0][0].where.organizationId).toBe('org-b');
   });
 });

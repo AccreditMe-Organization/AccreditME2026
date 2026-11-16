@@ -182,7 +182,8 @@ export class TaskRecordListService {
     if (dto.sourceType && dto.sourceId) {
       if (dto.view) throw new BadRequestException('A view is for the organisation-wide list, not one record');
       // ACC-101 clause a: the request names the parent, so it is checked first.
-      await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id);
+      // ACC-283 PR 2a — a read: an overseeing head opens the panel; which tasks they see is unchanged (taskVisibleSql).
+      await this.objectVisibility.assertCanView(dto.sourceType, dto.sourceId, organizationId, viewer.permissions, viewer.id, { oversight: true });
       const ctx = await this.visibility.contextFor(viewer, organizationId);
       const seesAll = await this.visibility.seesWholeRecord(ctx, dto.sourceType, dto.sourceId);
       return {

@@ -64,7 +64,8 @@ describe('Committee routes — /committees/mine is not swallowed by :id (ACC-279
 
   it('GET /committees/mine answers from the caller\'s own memberships, with no permission', async () => {
     await request(app.getHttpServer()).get('/committees/mine').expect(200, { total: 0, rows: [] });
-    expect(home.mine).toHaveBeenCalledWith('org-a', 'user-1');
+    // ACC-283 PR 2a — with the caller's permissions (none here), for mayBrowseCommittees.
+    expect(home.mine).toHaveBeenCalledWith('org-a', 'user-1', []);
     expect(service.getCommitteeDetail).not.toHaveBeenCalled();
   });
 

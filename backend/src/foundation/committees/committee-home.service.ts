@@ -4,6 +4,7 @@ import { LookupService } from '../lookup/lookup.service';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import { committeeStagesAndCounts } from './committee-stage-counts';
 import { seatOrderedMemberships } from './committee-memberships';
+import { overseesAnyCommittee, seesEveryCommittee } from '../../common/services/committee-membership';
 import { ICommitteeHomeCounts, IMyCommitteeRow, IMyCommittees } from './interfaces/committee.interface';
 
 /** Home shows at most this many of a person's committees; `total` counts past it. */
@@ -41,7 +42,19 @@ export class CommitteeHomeService {
    * (seatOrderedMemberships(), shared with ACC-295's read); then the stage facts of the
    * five shown (3). That is 8, however many memberships there are.
    */
-  async mine(organizationId: string, userId: string): Promise<IMyCommittees> {
+  //
+  // ACC-283 PR 2a — `mayBrowseCommittees`: may this person open the committees list
+  // at all? committees:view (no query), OR an active membership on an active
+  // committee (`total`, already read), OR a head or cover in force of a unit that
+  // owns an active committee there or below (overseesAnyCommittee(), asked only when
+  // the first two are false). The rail and the /committees guard key on it, so no
+  // screen re-derives the rule.
+  async mine(
+    organizationId: string,
+    userId: string,
+    permissions: readonly string[] = [],
+    now: Date = new Date(),
+  ): Promise<IMyCommittees> {
     const { memberships, total, seatById } = await seatOrderedMemberships(
       this.prisma,
       this.lookups,
@@ -49,7 +62,9 @@ export class CommitteeHomeService {
       userId,
       MY_COMMITTEES_READ_CAP,
     );
-    if (memberships.length === 0) return { total, rows: [] };
+    const mayBrowseCommittees =
+      seesEveryCommittee(permissions) || total > 0 || (await overseesAnyCommittee(this.prisma, organizationId, userId, now));
+    if (memberships.length === 0) return { total, rows: [], mayBrowseCommittees };
     const shown = memberships.slice(0, MY_COMMITTEES_ROWS);
 
     const facts = await committeeStagesAndCounts(
@@ -71,7 +86,7 @@ export class CommitteeHomeService {
         isDissolving: fact?.isDissolving ?? false,
       };
     });
-    return { total, rows };
+    return { total, rows, mayBrowseCommittees };
   }
 
   /**

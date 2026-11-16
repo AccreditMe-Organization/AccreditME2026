@@ -107,7 +107,9 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
       },
       workflowTransition: { findMany: jest.fn().mockResolvedValue([]) },
       // The actor name the history discloses — asserted absent on refusal.
-      user: { findMany: jest.fn().mockResolvedValue([{ id: 'user-actor', name: 'Dr. Hessa Al-Dosari' }]) },
+      user: { findMany: jest.fn().mockResolvedValue([{ id: 'user-actor', name: 'Dr. Hessa Al-Dosari' }]), findFirst: jest.fn().mockResolvedValue(null) },
+      // ACC-283 PR 2a — the reads ask the headship clause: this caller heads and covers nothing.
+      orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
       orgUnit: { findMany: jest.fn().mockResolvedValue([]) },
       committee: {
         findFirst: jest.fn().mockResolvedValue({ id: COMMITTEE_ID, organizationId: TENANT_ID }),

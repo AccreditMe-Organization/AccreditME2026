@@ -148,9 +148,10 @@ describe('CommitteesController', () => {
 
   // ACC-279 — the caller's own committees: self-scoped, so no route permission.
   it('getMine delegates with the tenant and the CALLER, and carries no @Permissions', async () => {
-    const result = await controller.getMine(TENANT_ID, 'user-1');
+    const result = await controller.getMine(TENANT_ID, 'user-1', ['committees:view']);
 
-    expect(home.mine).toHaveBeenCalledWith(TENANT_ID, 'user-1');
+    // ACC-283 PR 2a — the caller's permissions travel too, for mayBrowseCommittees.
+    expect(home.mine).toHaveBeenCalledWith(TENANT_ID, 'user-1', ['committees:view']);
     expect(result).toEqual({ total: 0, rows: [] });
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype.getMine)).toBeUndefined();
   });
