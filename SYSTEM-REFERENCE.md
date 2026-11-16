@@ -8212,6 +8212,13 @@ for completeness. **Exactly one category is `isExtensible: false`**:
 `incident_severity` — every other seeded category allows tenant-added
 values.
 
+**ACC-310: an attribute's name lives in its schema, in both languages:**
+`properties.<key>.labelEn` and `labelAr`. The value form shows it through
+`LanguageService.bilingual()`. `lookup.seed.spec.ts` fails a seeded attribute
+without both. `seedSystemData()` rewrites the shared schemas on every deploy, so
+no backfill is needed. `required` keeps its old `label` until the form stops
+reading it, and the backend reads only `type` (`schemaProperties()`).
+
 ### 6.2 The Override Pattern — `getValues()`'s Exact Merge Algorithm
 
 This is the mechanism CLAUDE.md's "Layer 2 — Tenant lookups... Tenant
