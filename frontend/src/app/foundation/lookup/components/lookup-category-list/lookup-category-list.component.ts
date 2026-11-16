@@ -59,7 +59,7 @@ import { ListRowDirective } from '../../../../shared/components/data-list/list-r
       />
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-[var(--am-danger-ink)]" role="alert" data-category-error>{{ error() }}</p>
       }
 
       <app-data-list

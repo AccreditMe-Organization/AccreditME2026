@@ -8268,6 +8268,27 @@ callers" finding in Sections 1–9 was re-checked with the same
 multiline-aware pattern after this was found; none of the others
 changed.
 
+**What the Lookups screens say when a call is refused (ACC-309).**
+- **Never the server's `message`.** Hide, Unhide, Delete, Override label and
+  the Add/Edit value form all go through `lookupRefusalKey(err, actionKey)`
+  (`foundation/lookup/lookup-refusal.ts`). It reads the code with the shared
+  `refusalCode()`. A known code gets its own sentence
+  (`LOOKUP_ATTRIBUTE_INVALID`, `RATE_LIMITED`); anything else gets the
+  action's own sentence ("The value could not be hidden."). Before this, a
+  refused Hide said "Internal server error" in an Arabic session.
+- **The screens store the KEY** and translate it at render, so a language
+  switch reaches an error already shown.
+- **Most lookup refusals carry no code.** Not found, a system value that
+  cannot be edited or deleted, and a key already in use are plain exceptions
+  with English text, so each gets the action's sentence. In particular, a
+  duplicate key on Add says "The value could not be saved." A coded refusal
+  added to these routes needs its line in `lookup-refusal.ts`.
+- **Every error line uses `--am-danger-ink`**: the values page's own, the
+  override dialog's, the value form's and the categories page's.
+  `lookup-error-lines.spec.ts` checks the RENDERED colour against the token.
+  The categories page's `error` is never set today (the page has no
+  mutations).
+
 **Two real, precise gaps remain**: the `PlatformGuard`-gated
 SYSTEM-category mutation endpoints (`updateCategory`/`deactivateCategory`,
 the ACC-17 fix's whole subject) have **no UI anywhere, not even in the

@@ -97,9 +97,6 @@ describe('LookupValueListComponent — Required seat (ACC-286)', () => {
               attributeCalls.push({ id, attributes });
               return opts.answer ? opts.answer() : of(undefined);
             },
-            // ACC-309 — the page's own error and the override dialog's.
-            hideSystemValue: () => throwError(() => new HttpErrorResponse({ status: 500 })),
-            overrideLabel: () => throwError(() => new HttpErrorResponse({ status: 500 })),
           },
         },
         { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => held.includes(p) } },
@@ -263,9 +260,7 @@ describe('LookupValueListComponent — Required seat (ACC-286)', () => {
       await settle();
       await press('member');
       expect(text(errorOf('member'))).toBe(en.lookup.refusal.attributeInvalid);
-      // The field errors' danger token, never a literal colour (red-500 is ~3.8:1 on white).
-      expect(errorOf('member')!.className).toContain('text-[var(--am-danger-ink)]');
-      expect(errorOf('member')!.className).not.toMatch(/text-red-/);
+      // Its colour (the danger token) is pinned with every other Lookups error line in lookup-error-lines.spec.ts.
       expect(text(el())).not.toContain('is invalid');
       expect(errorOf('chairman')).withContext('only under its own row').toBeNull();
     });
@@ -298,50 +293,6 @@ describe('LookupValueListComponent — Required seat (ACC-286)', () => {
       await press('member');
       expect(text(errorOf('member'))).toBe(en.lookup.errorRequiredSeat);
       expect(text(el())).not.toContain('Database unavailable');
-    });
-  });
-
-  // ACC-309 — every error line on this page uses the field errors' danger token,
-  // never a literal colour (red-500 is ~3.8:1 on white, below AA for small text).
-  describe('error lines are readable', () => {
-    const DANGER = 'text-[var(--am-danger-ink)]';
-    const expectDanger = (node: Element | null, what: string) => {
-      expect(node).withContext(`${what} is on screen`).not.toBeNull();
-      expect(node!.className).withContext(what).toContain(DANGER);
-      expect(node!.className).withContext(what).not.toMatch(/text-red-/);
-    };
-
-    it("the page's own error (a refused hide)", async () => {
-      render([MANAGE]);
-      await settle();
-      fixture.componentInstance.onHide(CHAIRMAN);
-      await settle();
-      const line = el().querySelector('[data-lookup-error]');
-      expectDanger(line, "the page's error");
-      expect(text(line)).toBe(en.lookup.errorHide);
-    });
-
-    it("the override dialog's error (a refused label)", async () => {
-      render([MANAGE]);
-      await settle();
-      fixture.componentInstance.openOverride(CHAIRMAN);
-      await settle();
-      fixture.componentInstance.onSaveOverride();
-      await settle();
-      const line = document.querySelector('[data-override-error]');
-      expectDanger(line, "the override dialog's error");
-      expect(text(line)).toBe(en.lookup.errorOverride);
-      document.querySelectorAll('.p-dialog-mask, .p-dialog').forEach((n) => n.remove());
-    });
-
-    it('no line on this page carries a text-red-* class', async () => {
-      render([MANAGE], { answer: () => throwError(() => new HttpErrorResponse({ status: 500 })) });
-      await settle();
-      await press('member');
-      fixture.componentInstance.onHide(CHAIRMAN);
-      await settle();
-      expect(el().querySelectorAll('[data-lookup-error], [data-required-seat-error]').length).withContext('non-vacuity: both errors on screen').toBe(2);
-      expect(el().querySelectorAll('[class*="text-red-"]').length).toBe(0);
     });
   });
 });
