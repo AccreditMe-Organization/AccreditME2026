@@ -148,8 +148,17 @@ the 4 backfills and their spec account for 38, gone in PR A):
 **Leave them in PR B.** Removing them is optional tidying, and the first touches the file ACC-202
 part 2 edits (§6). See Q5.
 
-**The migration's `SET NOT NULL` checks every row.** If a null appeared before it runs, it fails, and
-the deploy stops with nothing dropped. The tables are 120 and 150 rows, so the lock is momentary.
+**The migration's `SET NOT NULL` checks every row.** If a null appeared before it runs, it fails and
+the deploy stops. The tables are 120 and 150 rows, so the lock is momentary.
+
+**Corrected 16 Nov (PR B build): it does NOT stop "with nothing dropped".** Measured on a local test
+database full of old db-spec rows with null `whoMode`: Prisma does not wrap the migration in one
+transaction, so the two `DROP CONSTRAINT` statements before the failing `ALTER TABLE` committed
+(both foreign keys gone), the `ALTER TABLE` rolled back on its own (every column still there), and
+the migration was recorded failed. Dropping those two foreign keys is harmless (nothing reads the
+columns), but a failed migration blocks every later deploy until it is resolved by hand
+(`prisma migrate resolve`). On the shared database this needs a null to appear between the 16 Nov
+count (0 of 120 and 0 of 150) and the deploy; nothing writes one (above).
 
 ## 4. The enum values nothing uses
 
