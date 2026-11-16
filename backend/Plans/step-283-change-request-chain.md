@@ -162,8 +162,9 @@ interface ChainResult { step: ChainStep; deciderIds: string[] }
 - **SELF_FINAL** is when the root step's only people were R. R is the final
   authority: the request is approved at once (§4.3).
 - **NONE** can happen only when the root is already headless, a legacy state
-  ACC-288 lets stand ("logs and passes"). The request waits, and Setup health
-  says so (§5).
+  ACC-288 lets stand ("logs and passes"). Submit is then refused with 409
+  `CHANGE_REQUEST_NO_DECIDER`, and a log line is written (Ahmad, 16 Nov, Q7,
+  §16). No Setup health condition.
 
 ### 3.3 Resolved live, in batches, never stored
 
@@ -223,10 +224,10 @@ work.
   approve, return or reject they get `CHANGE_REQUEST_OWN_DECISION`, as today.
 - **A member of C** is skipped below the root. If they press, they get
   `CHANGE_REQUEST_NOT_DECIDER`, naming the step that decides.
-- **NONE** (no decider at all): Submit still succeeds and the request waits
-  under review (Q7). Nobody can approve it until a head exists. Setup health
-  shows it (§5). Reject and withdraw stay possible: R withdraws, and once a
-  decider exists, they decide.
+- **NONE** (no decider at all): Submit is refused, 409
+  `CHANGE_REQUEST_NO_DECIDER`, and logged (ids only). The request stays a
+  draft, so R can withdraw it or submit again once the root is headed (§16,
+  Q7).
 
 ### 4.3 SELF_FINAL: the root head's own request
 
@@ -257,8 +258,8 @@ and `isRoot`, or `SELF_FINAL`). Ids only.
 - **The response says who decides, by step, never by person:**
   `awaitingDecisionBy: { kind: 'REPORTS_TO_SEAT', committee: { id, nameEn,
   nameAr }, seats: [{ id, labelEn, labelAr }] } | { kind: 'UNIT_HEAD', unit:
-  { id, nameEn, nameAr } } | { kind: 'SELF_FINAL' } | { kind: 'NONE' }`, only
-  under review. A screen says "Awaiting the Chairman of the Medical Executive
+  { id, nameEn, nameAr } } | { kind: 'SELF_FINAL' }`, only under review (a
+  request whose chain is NONE never reaches review, §16). A screen says "Awaiting the Chairman of the Medical Executive
   Committee" or "Awaiting the head of Cardiology" (Q15).
 - **`GET /committee-change-requests/awaiting-decision`** loses its route gate
   and is answered for everyone:
@@ -275,37 +276,18 @@ and `isRoot`, or `SELF_FINAL`). Ids only.
   `isCurrentDecider()`. Anyone else who may not read it gets today's 403
   (existence-neutral). Whether a decider also opens the committee page is Q6.
 - **Submit tells the deciders** of the step that decides (not R). SELF_FINAL
-  tells nobody; NONE tells nobody (Setup health holds it). Decisions still tell
-  R. A re-route sends no notice (Q9).
+  tells nobody. Decisions still tell R. A re-route sends no notice (Q9).
 
 ---
 
-## 5. Setup health: a request that waits
+## 5. Setup health: none (removed, Ahmad, 16 Nov, Q7)
 
-**Type `CHANGE_REQUEST_WITHOUT_DECIDER`**, `BLOCKING`.
-
-- **Open while** a request is under review and its chain is NONE. That
-  happens only when the root is already headless.
-- **One row per request.** `objectId` is the request id. The subject names the
-  committee (`nameEn`, `nameAr`) and the request number; the committee's name
-  is shown to any `setup:view` holder, like ACC-286's.
-- **Age:** "waiting since", `openedAt` = the request's `submittedAt`.
-- **The Fix** opens the root unit's Headship panel, with the permissions that
-  panel's save needs (the same pair as `ORG_UNIT_WITHOUT_HEAD`'s Fix). Without
-  them, the permission line says what is needed.
-- **Cost:** per organisation per hourly run, one query for the requests under
-  review, then one `resolveDecisionChains()` call (at most 9 queries). None if
-  there is no request under review.
-- **Two deploys** (CLAUDE.md's enum rule, ACC-286's shape):
-  - **PR 1** adds the enum value, every reader (the type list, `AGE_BASIS`,
-    the row wording in both languages, the Fix target) and lists it in
-    `DEFERRED_SETUP_CONDITION_TYPES`, so nothing writes it;
-  - **PR 3** adds the detector, after a rollback check proving PR 1's code
-    ignores rows of the new type.
-
-**Not a condition:** a request that has simply waited a long time. A decider
-exists and the awaiting list shows it to them; ageing is a deadline matter,
-not a setup gap (ACC-82).
+This section planned a Setup health condition, `CHANGE_REQUEST_WITHOUT_DECIDER`,
+for a request under review that nobody could decide. **Ahmad ruled it out**:
+ACC-288 keeps the root unit headed, so the chain always ends with a decider.
+PR 1 no longer adds the enum value or any reader. The one case left (a root
+that was already headless) is refused at Submit with
+`CHANGE_REQUEST_NO_DECIDER` (§6, §16).
 
 ---
 
@@ -316,6 +298,7 @@ not a setup gap (ACC-82).
 | Code | Status | When | Details |
 | -- | -- | -- | -- |
 | `CHANGE_REQUEST_NOT_DECIDER` | 403 | approve, return or reject by someone who may read the request but is not a current decider | `awaitingDecisionBy` (the step, as in §4.5) |
+| `CHANGE_REQUEST_NO_DECIDER` | 409 | Submit, when the chain finds nobody (a legacy headless root); a log line is written (§16, Q7) | none |
 | `SEAT_ACTION_UNKNOWN` | 400 | a seat-action map names an action not in `SEAT_ACTIONS` | `actionKey` |
 | `SEAT_ACTION_SEAT_UNKNOWN` | 400 | it names a seat that is not an active `committee_member_role` value of this organisation (another organisation's included) | `roleValueId` |
 
@@ -376,11 +359,10 @@ headship and never changes it.
 
 **Yes, one, additive, in PR 1** (`acc283_committee_seat_actions`):
 
-- the table `CommitteeSeatAction` (§2);
-- the `SetupConditionType` value `CHANGE_REQUEST_WITHOUT_DECIDER`, deferred.
+- the table `CommitteeSeatAction` (§2).
 
-Both are safe against the deployed code: nothing it runs reads the new table,
-and no row can hold the new value until PR 3 writes it.
+Safe against the deployed code: nothing it runs reads the new table. (It also
+carried a Setup health enum value until §16 removed it.)
 
 **No other migration:**
 
@@ -395,13 +377,13 @@ and no row can hold the new value until PR 3 writes it.
 
 | PR | What | Migration | After the deploy |
 | -- | -- | -- | -- |
-| **1** backend | Seat actions: the registry, the table, the lookup defaults (attribute schema plus the SYSTEM values), copy on create, `GET`/`PUT /committees/:id/seat-actions` (Formation only), `seatActionsFor()`; the Setup health enum value, deferred, with every reader. Nothing decides by seat actions yet. | yes | `backfill:acc283-seat-actions` (dry run, execute, dry run 0) |
+| **1** backend | Seat actions: the registry, the table, the lookup defaults (attribute schema plus the SYSTEM values), copy on create, `GET`/`PUT /committees/:id/seat-actions` (Formation only), `seatActionsFor()`. Nothing decides by seat actions yet. | yes | `backfill:acc283-seat-actions` (dry run, execute, dry run 0) |
 | **2** backend | The chain: `change-request-chain.ts`, decide/withdraw/awaiting/actions/notices/read admission on it, `awaitingDecisionBy`, `CHANGE_REQUEST_NOT_DECIDER`, the route gates dropped. `committees:approve` is no longer read (still in the catalogue). Open requests re-route on their next read. | no | none; deploy after PR 1's backfill has run, so deciding seats exist |
-| **3** backend | The Setup health detector, after the rollback check. | no | the next hourly run |
+| **3** backend | **Dropped** (§16, Q7): there is no Setup health condition. Numbers are kept so the later PRs keep their names. | — | — |
 | **4** backend | Retire `committees:approve`: out of `COMMITTEES_PERMISSIONS` and the seed; `backfill:acc283-retire-committees-approve` (dry run first, refuses customers, after PR 2 deploys); a spec failing if any non-spec source names it (`retired-task-keys.spec.ts`'s shape); the sentence table. Terms Review's seed assignment for new organisations (§10). | no | the backfill |
 | **5** backend | Seat actions as a change-request field (the whole map is one field, Q12): preview, drift check, apply on approval, labels. | no | none |
 | **6** backend | Section 1 enforcement: on their committee, a member may add, remove, change a seat and request a change where their seat allows it OR their role does (Ahmad, 10 Nov, item 1), replacing ACC-281's interim write rule (Q1). | no | none |
-| screens | One per backend PR, by lane: the seat-actions editor in Formation and its lookup defaults; Awaiting for everyone, "Awaiting …" on the request, the new codes in both languages; the Setup health row; the request dialog's seat-actions field. | — | — |
+| screens | One per backend PR, by lane: the seat-actions editor in Formation and its lookup defaults; Awaiting for everyone, "Awaiting …" on the request, the new codes in both languages; the request dialog's seat-actions field. | — | — |
 
 PRs 2, 3 and 4 can each ship on their own once PR 1 has. Screens follow their
 backend PR.
@@ -519,9 +501,10 @@ them:**
   committee, where the banner is.
 - Alternative: the request only, with the notice opening Awaiting my action.
 
-**Q7. Submit when the chain is NONE:**
-- **Recommend:** accept; it waits, and Setup health shows it.
-- Alternative: refuse Submit with a new code.
+**Q7. Submit when the chain is NONE:** **CLOSED (Ahmad, 16 Nov, §16).** Not a
+valid case: ACC-288 keeps the root headed. In PR 2, Submit is refused with 409
+`CHANGE_REQUEST_NO_DECIDER` and a log line is written. No Setup health.
+- (Recommended was: accept; it waits, and Setup health shows it.)
 
 **Q8. Withdrawing someone else's draft or returned request** (was: a
 `committees:approve` holder):
@@ -597,8 +580,9 @@ committees only; existing ones keep their copy, by design.
 - **b. The migration's timestamp** is later than `20261115000000`. Coder 1's
   ACC-278 PR B has its own migration; whichever merges second must carry the
   later timestamp. A folder nothing has applied may be renamed.
-- **c. `CHANGE_REQUEST_WITHOUT_DECIDER`** is in
-  `DEFERRED_SETUP_CONDITION_TYPES`, and a spec proves nothing writes it.
+- **c. ~~`CHANGE_REQUEST_WITHOUT_DECIDER`** is in
+  `DEFERRED_SETUP_CONDITION_TYPES`, and a spec proves nothing writes it.~~
+  Removed from PR 1 by §16 (Q7).
 - **d. The backfill:** a dry run by default; refuses a customer organisation;
   `BACKFILL_TX`; writes only for committees with no rows. Run only against
   the local test database, never the shared one.
@@ -621,15 +605,30 @@ committees only; existing ones keep their copy, by design.
 
 **Corrections to this plan, found while building PR 1:**
 
-- **The severity is `BLOCKS_WORK`.** §5 said `BLOCKING`, which is not a
-  severity value.
-- **PR 1's backend half is only the enum value and the deferred list.** The
-  reported type list (`SETUP_CONDITION_TYPES`) and `AGE_BASIS` are typed by
-  the ACTIVE types, so a deferred type cannot be in them; they move to PR 3,
-  with the detector. ACC-286 split it the same way. The frontend learns the
-  type in PR 1 (type, order, wording, Fix).
-- **The Fix target** is `/organization?head=<root unit id>`, so the
-  condition's subject carries `rootUnitId`.
+- *(Three corrections about the Setup health condition, its severity, its
+  reported type list and its Fix, are moot: §16 removed the condition.)*
 - **A seat-action save touches the committee's `updatedAt`.** Seat actions are
   part of the terms of reference, so a save of either is stale against the
   other.
+
+---
+
+## 16. Ahmad's answers (16 Nov)
+
+- **Q1:** as recommended. Section 1 (seats granting members their committee
+  actions) is PR 6.
+- **Q10:** as recommended. The seeded defaults stand: Chairman all five,
+  Secretary the four member actions, every other seat none.
+- **Q4** (the root head's request): Ahmad wants an option. The final wording
+  comes in a later prompt; it does not touch PR 1.
+- **Q6 and Q8:** still being discussed; they do not touch PR 1.
+- **Q7 ("nobody can decide"): CLOSED. Not a valid case.** ACC-288 keeps the
+  root unit headed, so the chain always ends with a decider.
+  - There is **no Setup health condition and no deferred type** for it.
+    `CHANGE_REQUEST_WITHOUT_DECIDER` is removed from PR 1 entirely: the enum
+    value (the migration creates only `CommitteeSeatAction`), the deferred
+    list entry, the screens' wording, Fix and subject fields, and their specs.
+  - **In PR 2,** if the chain ever finds nobody (a legacy headless root),
+    Submit is refused with **409 `CHANGE_REQUEST_NO_DECIDER`**, and a log line
+    is written (ids only).
+  - PR 3 (the detector) is dropped; the PR numbers are kept.

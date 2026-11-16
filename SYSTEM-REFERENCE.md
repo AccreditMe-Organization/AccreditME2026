@@ -7170,24 +7170,22 @@ the transaction, and writes one audit row per committee. A committee whose map
 was cleared to nothing has no rows either, so it would be filled; the backfill
 runs once, right after the deploy, before any screen can clear one.
 
-**Setup health: `CHANGE_REQUEST_WITHOUT_DECIDER`** (§13.2) is added to the enum
-and DEFERRED: nothing writes it until PR 3's detector
-(`setup-condition.change-request-deferred.spec.ts` proves it). The screens
-learn it now: the committee's name, the request's number, and a Fix to the
-root unit's Headship.
+**No Setup health condition for "nobody can decide"** (Ahmad, 16 Nov, Q7).
+ACC-288 keeps the root unit headed, so the chain of authority always ends with
+a decider. If it ever finds nobody (a root that was already headless), PR 2
+refuses Submit with 409 `CHANGE_REQUEST_NO_DECIDER` and logs it.
 
 **Specs:** `seat-actions.spec.ts`; `committee-seat-actions.db-spec.ts` (19, real
 Postgres: the merge against `getValues()`, the copy, the read, the save's rules,
-isolation, the backfill); `committees.permissions.spec.ts` (the two routes);
-`setup-condition.change-request-deferred.spec.ts`; frontend
-`setup-condition-rows.change-request.spec.ts`. Mutation-checked: the
+isolation, the backfill); `committees.permissions.spec.ts` (the two routes).
+Mutation-checked: the
 organisation scope in `seatActionsFor()`, the stage check, and the override
 merge in the defaults each turn a spec red.
 
 **Per-request path:** nothing added.
 
 **One additive migration:** `20261116120000_acc283_committee_seat_actions` (the
-table, and the enum value).
+table).
 
 ## 4. Notification System
 
@@ -13602,7 +13600,6 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
 | `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`). One row per committee in force (active, stage flagged `IN_FORCE`; Suspended counts) with an empty required seat, naming the seats. PR 1 added the value deferred; PR 2 detects and reports it. §3.21.4 |
-| `CHANGE_REQUEST_WITHOUT_DECIDER` (ACC-283) | `CommitteeChangeRequest.id` | `BLOCKS_WORK` | the request's `submittedAt` | `/organization?head=<root unit id>` (`org:view` + `org:manage`). A request under review that the chain of authority finds no one to decide (only while the root unit has no head and no acting head). **Deferred:** PR 1 added the value and the screens' wording; PR 3 detects and reports it. §3.21.5 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a

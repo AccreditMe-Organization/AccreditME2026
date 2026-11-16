@@ -5099,8 +5099,8 @@ Ahmad's answers (14 Nov, A1–A8):
 ## Key Architecture Decisions (ACC-283)
 
 Committee governance: seats decide what members may do, and the chain of
-authority decides change requests. **PR 1 of 6 is built: seat actions are
-STORED; nothing decides by them yet.** Full mechanism: SYSTEM-REFERENCE.md
+authority decides change requests. **PR 1 is built: seat actions are STORED;
+nothing decides by them yet.** Full mechanism: SYSTEM-REFERENCE.md
 §3.21.5. Plan, lane B's review (16 Nov) and the open questions:
 `backend/Plans/step-283-change-request-chain.md`. Briefly:
 
@@ -5114,8 +5114,10 @@ STORED; nothing decides by them yet.** Full mechanism: SYSTEM-REFERENCE.md
 - **EDITED ONLY WHERE THE STAGE ALLOWS `edit_details`** (Formation), through
   `PUT /committees/:id/seat-actions`, in the engine's lock order, with the stale
   check and one audit row; after that, through an approved change request (PR 5).
-- **`CHANGE_REQUEST_WITHOUT_DECIDER` SHIPS DEFERRED** (the enum rule); PR 3's
-  detector is its first writer.
+- **NO SETUP HEALTH CONDITION FOR "NOBODY CAN DECIDE"** (Ahmad, 16 Nov, Q7):
+  ACC-288 keeps the root unit headed, so the chain always ends with a decider.
+  If it ever finds nobody (a legacy headless root), PR 2 refuses Submit with
+  409 `CHANGE_REQUEST_NO_DECIDER` and logs it.
 - **The backfill (`backfill:acc283-seat-actions`) runs AFTER the deploy**, dry
   run first; it fills only committees with no rows and refuses customers.
 - **One additive migration** (`acc283_committee_seat_actions`), run in the
