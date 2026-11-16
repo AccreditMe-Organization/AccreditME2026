@@ -1867,7 +1867,9 @@
       "unavailable": "You cannot choose who this task goes to.",
       "memberRole": "Member role",
       "member": "Member (optional)",
-      "outcomeStraight": "Goes straight to {{name}} ({{role}})."
+      "outcomeStraight": "Goes straight to {{name}} ({{role}}).",
+      "outcomeCovered": "{{name}} is out of office. This task will go to {{cover}}.",
+      "coverRow": "Out of office · goes to {{cover}}"
     },
     "request": {
       "backToDetails": "Back to the request",
@@ -3813,6 +3815,7 @@
     "onHoldUntil": "On hold until {{date}}",
     "waitingFor": "Waiting for {{pool}}",
     "pickedUpOn": "picked up from the pool {{date}}",
+    "coveringFor": "covering for {{name}}",
     "byHand": "{{date}}, by hand",
     "byWorkflow": "by the workflow",
     "byWorkflowStage": "by the workflow, when the record entered {{stage}}",
