@@ -335,4 +335,8 @@ under a brief lock.
 - [x] PR A built (14 Nov): `@ignore` (migrate diff empty, mutation-checked), backfills and
   helpers deleted, docs; the 10 calls passed with the columns dropped (dev's client: 3 of 10)
 - [x] PR A merged and live (`b26b27d`, 14 Nov)
-- [ ] PR B (a day after PR A is live, after #290; 64 or 65 against ACC-188, §6)
+- [x] PR B built (16 Nov), migration `20261116130000_acc278_drop_old_who_columns` (after Coder
+  2's `20261116120000_acc283_committee_seat_actions`): columns, foreign keys and enum types
+  dropped, `whoMode` / `mover` NOT NULL. Drift since 14 Nov: none (no code reads a column;
+  0 nulls of 120 / 150). Migrate diff empty; applies at dev's head on 55432; PR A's client 10 /
+  10 against the dropped schema (the client before PR A: 3 / 10)
