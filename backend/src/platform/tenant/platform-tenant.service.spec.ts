@@ -21,6 +21,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { TenantService } from '../../foundation/tenant/tenant.service';
 import { UserService } from '../../foundation/user/user.service';
 import { RoleService } from '../../foundation/roles/role.service';
+import { useFixedClock } from '../../common/testing/fixed-clock';
 
 const PLATFORM_ORG_ID = 'platform-org';
 const TENANT_ID = 'tenant-a';
@@ -497,7 +498,7 @@ describe('PlatformTenantService', () => {
     it('throws NotFoundException when the target user is not an active member of the tenant', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(null);
       await expect(
-        service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, fakeRes()),
+        service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, undefined, fakeRes()),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -505,7 +506,7 @@ describe('PlatformTenantService', () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', tokenVersion: 1 });
       mockPrisma.userRole.findFirst.mockResolvedValue(null);
       await expect(
-        service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, fakeRes()),
+        service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, undefined, fakeRes()),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -514,7 +515,7 @@ describe('PlatformTenantService', () => {
       mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1' });
       const res = fakeRes();
 
-      await service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, res);
+      await service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, undefined, res);
 
       // ACC-186 — Secure whatever NODE_ENV says ('test' here, never 'production').
       expect(res.cookie).toHaveBeenCalledWith(
@@ -565,6 +566,66 @@ describe('PlatformTenantService', () => {
           tenantId: PLATFORM_ORG_ID, actorId: ACTOR_ID, action: 'IMPERSONATE_END',
         }),
       );
+    });
+  });
+
+  // ACC-126 — impersonation follows the platform admin's own session: the
+  // token carries their start, so its expiry is capped by their 12 hours, and
+  // ending impersonation restores the same start. Neither resets the limit.
+  describe('the 12-hour session limit (ACC-126)', () => {
+    const START = new Date('2026-11-13T06:00:00.000Z');
+    const claimsOf = (res: { cookie: jest.Mock }) => {
+      const token = res.cookie.mock.calls[0][1] as string;
+      return JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as {
+        sst: number;
+        exp: number;
+        impersonatedBy?: string;
+      };
+    };
+    const maxAgeOf = (res: { cookie: jest.Mock }) => (res.cookie.mock.calls[0][2] as { maxAge: number }).maxAge;
+    afterEach(() => jest.useRealTimers());
+
+    it("start carries the admin's start, and the token ends at it plus 12 hours", async () => {
+      useFixedClock(new Date(START.getTime() + (12 * 60 - 5) * 60 * 1000));
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', tokenVersion: 1 });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1' });
+      const res = fakeRes();
+
+      await service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, START, res);
+
+      const claims = claimsOf(res);
+      expect(claims.impersonatedBy).toBe(ACTOR_ID);
+      expect(claims.sst).toBe(START.getTime() / 1000);
+      expect(claims.exp).toBe(START.getTime() / 1000 + 12 * 3600);
+      expect(maxAgeOf(res)).toBe(5 * 60 * 1000);
+    });
+
+    it("end restores the same start on the admin's own token", async () => {
+      useFixedClock(new Date(START.getTime() + 3 * 3600 * 1000));
+      mockPrisma.user.findFirst.mockResolvedValue({ id: ACTOR_ID, organizationId: PLATFORM_ORG_ID, tokenVersion: 2 });
+      const req = { impersonatedBy: ACTOR_ID, userId: 'user-1', tenantId: TENANT_ID, sessionStartedAt: START } as any;
+      const res = fakeRes();
+
+      await service.endImpersonation(req, res);
+
+      const claims = claimsOf(res);
+      expect(claims.impersonatedBy).toBeUndefined();
+      expect(claims.sst).toBe(START.getTime() / 1000);
+    });
+
+    it('a token minted before ACC-126 (no start) falls back to the time of the request', async () => {
+      const now = new Date(START.getTime() + 3600 * 1000);
+      useFixedClock(now);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', tokenVersion: 1 });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1' });
+      const res = fakeRes();
+
+      await service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, undefined, res);
+
+      expect(claimsOf(res).sst).toBe(now.getTime() / 1000);
+      // Still only the 15-minute access token: the refresh that follows renews
+      // the admin's own row, which is capped.
+      expect(claimsOf(res).exp).toBe(now.getTime() / 1000 + 15 * 60);
     });
   });
 });

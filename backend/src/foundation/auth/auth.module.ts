@@ -6,6 +6,9 @@ import { WorkingCalendarModule } from '../working-calendar/working-calendar.modu
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { LoginAttemptService } from './login-attempt.service';
+import { PasswordResetModule } from './password-reset/password-reset.module';
+import { QueueModule } from '../../common/queue/queue.module';
+import { SecurityNoticeService } from '../notification/security-notice';
 
 // No TenantGuard/PermissionGuard at module level — every endpoint on
 // AuthController is deliberately pre-authentication or self-service by
@@ -16,9 +19,18 @@ import { LoginAttemptService } from './login-attempt.service';
 // so this is a plain import, no forwardRef needed. WorkingCalendarModule
 // (ACC-94, GET /auth/me's time zone) is the same: it does not import AuthModule.
 @Module({
-  imports: [PrismaModule, forwardRef(() => TenantModule), UserModule, WorkingCalendarModule],
+  // PasswordResetModule (ACC-188) imports only Prisma and the queues.
+  imports: [
+    PrismaModule,
+    forwardRef(() => TenantModule),
+    UserModule,
+    WorkingCalendarModule,
+    PasswordResetModule,
+    // ACC-164 — the email-delivery queue the security notice is sent through.
+    QueueModule,
+  ],
   controllers: [AuthController],
-  providers: [AuthService, LoginAttemptService],
+  providers: [AuthService, LoginAttemptService, SecurityNoticeService],
   exports: [AuthService],
 })
 export class AuthModule {}

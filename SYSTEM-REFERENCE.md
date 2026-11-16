@@ -58,7 +58,7 @@ audit's starting point, not be mistaken for having already done it.
 
 ## Table of Contents
 
-1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal and the idle rule, ACC-122; 1.15 = the account owner, ACC-221; 1.2 corrected — a revocation applies on the next request)
+1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal, the idle rule (ACC-122) and the 12-hour limit (ACC-126); 1.15 = the account owner, ACC-221; 1.2 corrected — a revocation applies on the next request)
 2. Workflow Engine — ✅ complete
 3. Task System — ✅ complete
 4. Notification System — ✅ complete
@@ -1179,6 +1179,84 @@ and is clamped to the 15-minute default — a stray variable on a deployed
 environment must not be able to hand out day-long access tokens. A test-only
 affordance that can make production less safe is not test-only.
 
+#### The 12-hour limit (ACC-126)
+
+**Every session ends 12 hours after sign-in, however active the person is**
+(Ahmad, 13 Nov 2026). The rule is the same for everyone, with nothing set per
+organisation. The 30-minute idle rule above is separate and unchanged. Plan and as-built
+notes: `backend/Plans/step-126-session-max-length.md`.
+
+**The rule lives in one file, `foundation/auth/session-limit.ts`**
+(`SESSION_MAX_LENGTH_SECONDS` = 12 h). There is deliberately no override:
+a variable that could lengthen it on a deployed environment is the trap
+`AUTH_ACCESS_TOKEN_TTL_SECONDS` was clamped to avoid.
+
+**The session's start is kept in two places, and both are copied, never
+renewed:**
+- `RefreshToken.sessionStartedAt` (nullable, migration
+  `acc126_refresh_token_session_started_at`). Every row a rotation writes copies
+  the presented row's start unchanged.
+- The access token's signed claim `sst` (epoch seconds).
+
+**Where the start comes from:**
+- **Sign-in** sets it in `completeLogin()`, after every check and after the MFA
+  code when there is one.
+- **A rotation** carries `old.sessionStartedAt ?? old.createdAt`, never the new
+  row's `createdAt`.
+- **The only place a row is created is `issueRefreshToken()`.** Its start is a
+  required `Date`, and a scan spec fails any second create site.
+
+**Three places enforce it:**
+- **The access token** expires at `min(now + 15 min, start + 12 h)`, and its
+  cookie lives exactly as long. `verifyJwt()` already refuses an expired `exp` in
+  memory, so nobody works past the limit until the next renewal, and **no query
+  is added on the per-request path**. TenantGuard only copies the verified `sst`
+  onto the request, for `/auth/me` and impersonation.
+- **A refresh-token row** expires at `min(now + 7 days, start + 12 h)`.
+- **`refresh()` refuses past start + 12 h with `SESSION_TIME_LIMIT`** (§1.12).
+  The check comes first: before the row's own expiry (which would otherwise
+  answer first with no reason), the user query and the ACC-204 address check. The
+  token is revoked and both cookies are cleared.
+
+**A session open at the deploy has no start on its row.**
+- Its row's own `createdAt` stands in. That is its last rotation, a lower bound,
+  so nobody is signed out early.
+- Such a session is measured from its last rotation, not its real sign-in, so it
+  can run up to 12 hours past the deploy (accepted).
+- The later contract step deletes the leftover null rows, never backfills them
+  (plan §c).
+
+**Impersonation creates no row.** Its token carries the platform admin's own
+`sst`, so its expiry is capped by their 12 hours, and ending impersonation
+restores the same start. Neither resets the limit.
+
+**On screen: a warning 10 minutes before, then the sign-out.**
+- **The deadline:** `GET /auth/me`, `POST /auth/login` and `POST /auth/mfa/verify`
+  return `sessionEndsAt`. `SessionLimitState` (`core/services/session-limit-state.ts`,
+  no dependencies, so no injection cycle) holds it.
+- **The clock:** `SessionLimitService` keeps it once a second, outside Angular's
+  zone so the zone can still become stable.
+- **The warning:** `SessionLimitWarningComponent` is deferred in the shell like the
+  idle warning. It is an `alertdialog` on the dialog shell: "Your session ends
+  soon" / «تنتهي الجلسة قريبًا», with the time of the sign-out in the
+  organisation's zone (`FormatService.timeOfDay()`).
+  - Its actions are "Continue working" (Escape does the same: it dismisses the
+    warning and does not move the deadline) and "Sign out now".
+  - **There is no "Stay signed in"**: nothing can extend the session.
+- **At the deadline:** `IdleService.signOut('limit')`, the idle rule's own path. It
+  calls `POST /auth/logout`, broadcasts the reason to the other tabs, and goes to
+  `/login?reason=limit`.
+
+**A server refusal reaches the sign-in page too.** This covers a tab asleep
+through the warning.
+- `authInterceptor` reads the renewal's own refusal and adds `reason=limit` for
+  `SESSION_TIME_LIMIT`.
+- `restoreSession()`, which never navigates (ACC-24), has the renewal service note
+  the refusal in `SessionLimitState`, and the sign-in page reads that note.
+- The page says: "You were signed out because a session ends 12 hours after
+  sign-in. Sign in again to continue." / «تم تسجيل الخروج لأن الجلسة تنتهي بعد
+  12 ساعة من تسجيل الدخول. يُرجى تسجيل الدخول من جديد للمتابعة.»
+
 ### 1.12 Sign-in outcomes — the codes, and what each must not reveal (ACC-120 slice 9b)
 
 **Every sign-in refusal carries a stable `code`** in the body, inside the error
@@ -1199,6 +1277,7 @@ logs.
 | `MFA_EXPIRED` | 401 | the challenge cookie is missing, tampered with or past its 10 minutes; or its five attempts are spent | — | — |
 | `ORGANIZATION_UNAVAILABLE` | 401 | the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING — at sign-in (after a correct password, before MFA), on session refresh, and on every authenticated request (ACC-168) | — | anything to someone without the password: at sign-in it is checked after the password, and a wrong password stays `INVALID_CREDENTIALS`. A 401, so the frontend's existing 401 handling signs the person out. |
 | `SESSION_OTHER_ORGANIZATION` | 401 | NOT a sign-in outcome (ACC-204): a COOKIE session used at another organisation's address, or with no usable `Origin` — on every authenticated request (TenantGuard) and on session refresh, where it is refused before the rotation and revokes nothing | — | which organisation the session belongs to: the message names neither. The app reads it as "not signed in at this address" (§15.16). |
+| `SESSION_TIME_LIMIT` | 401 | NOT a sign-in outcome (ACC-126): on session refresh, 12 hours or more after the session's sign-in, however active the person is. Checked first, before the row's own expiry, the user query and the address check; the presented token is revoked and both cookies are cleared | — | — (it says only that the session's time is up). The app reads it as "signed out at the 12-hour limit" (`reason=limit`, §1.11). |
 
 **What Sign in shows for each (ACC-120 slice 9d).** One sentence per code, in
 the one message slot above the button (`foundation/auth/components/login/
@@ -1226,15 +1305,11 @@ verified or counted (`assertTwoFactorNotLocked()`, two-factor
 `totp/index.mjs:137`), so a code tried while locked does not move
 `twoFactor.lockedUntil`.
 
-**Forgot password sends nothing** (slice 9d, then CC-64). Reset is not served:
-the email Better Auth would queue carried a link to its own handler, which this
-API never mounts, and there is no reset screen. So the page says reset by email
-isn't available and points at the administrator, and since ACC-186/148 the
-endpoint `POST /auth/forgot-password` does nothing either: same route, rate
-limits and neutral 200, no `requestPasswordReset`, no `AuthVerification` row, no
-notification. `sendResetPassword` stays in the Better Auth config, unreachable,
-for the self-service reset ticket — which must build its link with
-`buildTenantUrl()`, not send Better Auth's `data.url`.
+**Forgot password works again, by email (ACC-188).** From slice 9d / CC-64 until
+ACC-188 it sent nothing, because Better Auth's email carried a link to a handler
+this API never mounts. Now the form is back, the link is a tenant link, and
+`sendResetPassword` is gone from the Better Auth config, so Better Auth can never
+send its own `data.url`. The whole flow: §1.16.
 
 **The MFA challenge cookie is `__Secure-better-auth.two_factor`** since
 ACC-186 (`advanced.useSecureCookies: true`); `two-factor-challenge.ts` reads both
@@ -1289,9 +1364,10 @@ read off the Response, and only `INVALID_EMAIL_OR_PASSWORD` counts as a failed
 attempt: another refusal, or a thrown error such as a database outage, is a 500
 and records nothing, so an outage cannot lock people out. **`setupMfa()`**
 re-checks the password the same way and now reads the Response too: a wrong
-password is "Invalid password" as before, a `twoFactorRedirect` is **409 "MFA is
+password is 400 `INVALID_CREDENTIALS`, recorded against the lock (ACC-164, §1.17), a `twoFactorRedirect` is **409 "MFA is
 already enabled"**, and any other refusal is a 500 with nothing enabled.
 
+**FIXED (ACC-164, §1.17) — what follows was true until then.**
 **`disableMfa()` CANNOT SUCCEED FOR ANY USER — known, unchanged, tracked
 separately.** It re-checks the password with a sign-in and needs the session
 that sign-in creates. But for an account with MFA on — the only accounts that
@@ -1569,6 +1645,192 @@ deactivate, suspend or offboard. Only a platform admin moves the ownership.
   Administrator. The platform tenant page names the owner and transfers it to
   another active Organization Administrator after a confirm.
 
+### 1.16 Password reset by email (ACC-188)
+
+Plan, decisions and as-built notes: `backend/Plans/step-188-password-reset.md`.
+Code: `backend/src/foundation/auth/password-reset/`, `session-revocation.ts`,
+`foundation/notification/security-notice.ts` and `transactional-email.service.ts`.
+
+**The routes** (public; refusals are never 401, because the app's interceptor
+renews and retries a 401):
+
+| Route | Limit | Answers |
+|---|---|---|
+| `POST /auth/forgot-password` `{ organizationSlug, email }` | 20 / hour per address, 3 / hour per organisation + email | 200, no body, for every address |
+| `POST /auth/reset-password/lookup` `{ token }` (untyped body, shape-checked) | 30 / min per address | 200 `{ state: 'open', expiresAt }`, or 400 `RESET_LINK_INVALID` / `_EXPIRED` / `_USED` / `_REPLACED` |
+| `POST /auth/reset-password` `{ token, password }` | 20 / hour per address | 200; the four link codes; `PASSWORD_TOO_SHORT` / `_TOO_LONG` / `_COMPROMISED` (400), `PASSWORD_CHECK_UNAVAILABLE` (503) |
+
+**Forgot password.** `PasswordResetService.request()` makes one `queue.add` on
+`password-reset` (`{ organizationSlug, email }`, one attempt,
+`removeOnComplete`) and nothing else. Neither the answer nor its work tells an
+account apart. A failed add is logged by the error's kind and still answers 200.
+
+**The worker** (`PasswordResetProcessor`, behind `workersEnabled()`) runs
+`issue()`:
+1. An open organisation by slug, and a user in it by email (case-insensitive)
+   who is ACTIVE with an `authUserId`; otherwise nothing.
+2. One transaction:
+   - the User row `FOR UPDATE`;
+   - delete this person's links that ended or expired more than 30 days ago;
+   - end every open link `REPLACED`;
+   - create the `PasswordResetLink` (`tokenHash` = SHA-256 hex, 1 hour);
+   - write Better Auth's reset row (`password-reset-verification.ts`: identifier
+     `reset-password:<token>`, stored as base64url SHA-256 by the
+     `storeIdentifier` override; value: the AuthUser id).
+3. The link `buildTenantUrl(slug, '/reset-password?token=…')`, emailed directly
+   in the person's language (person, else organisation) through
+   `TransactionalEmailService`. A failed send voids the link and throws an error
+   that names no token.
+4. Audit `UPDATE` / `User`, `{ event: 'password_reset_requested' }`.
+
+**Lookup and reset.** The link is found by `tokenHash` alone (the 256-bit token
+IS the key, as with invitations). The request's `Origin` must be the link's
+organisation's address (`isAtOwnAddress`), else `RESET_LINK_INVALID`. In order:
+- **USED, then REPLACED**, each its own code;
+- **VOID**, an inactive person or a closed organisation are `RESET_LINK_INVALID`;
+- **a passed `expiresAt`** is `RESET_LINK_EXPIRED`.
+
+`reset()` then:
+1. Checks the length (8–128).
+2. Runs `PasswordBreachCheckService` (the k-anonymity request), BEFORE anything is
+   spent, because Better Auth's `resetPassword` consumes the token and only then
+   hashes (where its breach check runs).
+3. Calls `auth.api.resetPassword({ asResponse: true })` and reads the Response:
+   - `INVALID_TOKEN` is `USED` (another request won), or `EXPIRED`;
+   - a breach found only now voids the link and answers `RESET_LINK_INVALID`.
+4. One transaction:
+   - the User row `FOR UPDATE`;
+   - the link `USED`;
+   - `endEverySessionInTx()`: `tokenVersion + 1`, live refresh rows revoked, and
+     Better Auth sessions deleted;
+   - a `LoginAttempt` `{ success: true, failureReason: 'password_reset' }`. This
+     ends the wrong-password lock. The MFA code lock (`AuthTwoFactor`) is not
+     touched.
+5. After the commit: audit `{ event: 'password_reset' }`, and the
+   `password_changed` security notice.
+
+It never signs anyone in, so the next sign-in asks for the code when MFA is on.
+
+**Security notices** are emails only: an `email-delivery` job named
+`security-notice` with `{ organizationId, userId, notice }`, rendered by
+`NotificationEmailProcessor` from `SECURITY_NOTICES`. Never a Notification row,
+because a row would sit in the bell, readable by whoever holds the session, and
+its body would be copied into the audit trail.
+
+**The new-IP sign-in email** now says "reset your password now:" with
+`buildTenantUrl(slug, '/forgot-password')`.
+
+**Screens.**
+- **Forgot password** is the form again. The confirmation is neutral and names
+  the address as typed (a left-to-right isolate).
+- **Reset password** (`/reset-password`) reads the token once and removes it
+  from the address bar. It shows a skeleton after 200 ms, and a line plus Retry
+  after 8 s.
+- **A dead link has no form.** Expired and Invalid offer "Send a new link" with
+  "Back to sign in" under it; Used offers Sign in, then "Forgot password?";
+  Replaced offers "Back to sign in".
+- **On success**, Sign in shows the notice above its title, once.
+
+### 1.17 Turning two-step sign-in off, and the administrator reset (ACC-164)
+
+Plan, Ahmad's four rules, lane B's floor and the as-built notes:
+`backend/Plans/step-164-mfa-off.md` (§0b, §12). The design:
+`frontend/design-reference/AccreditMe Two-step Sign-in.dc.html`.
+
+**Turning it off yourself: `POST /auth/mfa/disable { password, code }`**
+(TenantGuard; `code` is six digits). `AuthService.disableMfa()` reads every
+Better Auth answer as a returned Response:
+
+| # | Step | Outcome |
+|---|---|---|
+| 0 | The sign-in lock (`LoginAttemptService`) | locked: a `locked` attempt is recorded, `ACCOUNT_LOCKED` + `lockedUntil` |
+| 1 | `signInEmail` proves the password | `INVALID_EMAIL_OR_PASSWORD`: an `invalid_password` attempt is recorded (it counts towards the lock), `INVALID_CREDENTIALS` |
+| 2 | No `twoFactorRedirect` | it is not on: the stray session is signed out, `MFA_NOT_ENABLED` |
+| 3 | `verifyTOTP` answers the challenge step 1 issued | `INVALID_CODE`: `MFA_INVALID` + `attemptsRemaining`; `ACCOUNT_TEMPORARILY_LOCKED`: `ACCOUNT_LOCKED` + the two-step lock's end. Any other code is a fault. The challenge is cleared after every refusal |
+| 4 | `disableTwoFactor` in the session step 3 made | a refusal is a fault (the password was proved in step 1); that session is signed out either way |
+| 5 | Audit `UPDATE` / `User` `{ event: 'mfa_disabled' }`, then the `mfa_disabled` security notice | — |
+
+- **Every refusal is 400** (`MfaChangeRefusalException`, `mfa-change-refusal.ts`),
+  with the sign-in codes and details. A 401 on a signed-in route is renewed and
+  retried by the app's interceptor, which would submit a wrong password twice.
+  `setupMfa()` got the same fix: the lock check first, a wrong password recorded,
+  and 400 `INVALID_CREDENTIALS`.
+- **Two locks, not one counter.** Wrong passwords count towards the sign-in lock;
+  wrong codes towards Better Auth's per-person two-step lock (ten, fifteen
+  minutes). `attemptsRemaining` is the codes left before that lock
+  (`attemptsBeforeLock()`): every press has a fresh challenge, so the
+  per-challenge five never binds here.
+- **No "code expired" answer.** A stale authenticator code fails the TOTP check
+  and is `INVALID_CODE`. A missing or spent challenge cannot follow from what the
+  person typed, so it is a fault.
+- **Other sessions are not ended** (Ahmad, rule 3).
+
+**The administrator reset: `POST /users/:id/mfa/reset`** (`users:reset_mfa`,
+204). `UserMfaResetService.resetMfa()`, every check before any write:
+
+| Order | Check | Refusal |
+|---|---|---|
+| 1 | `findFirst({ id, organizationId })` | 404 `User not found`, the body an invented id gets |
+| 2 | yourself | 409 `MFA_RESET_SELF` |
+| 3 | impersonating | 409 `MFA_RESET_IMPERSONATING` |
+| 4 | the account owner (`ownedOrganizations`) | 409 `ACCOUNT_OWNER_PROTECTED` |
+| 5 | the floor: the person holds the active root role and the actor does not (`holdsActiveRootRole()`, one indexed read each, only when needed) | 409 `MFA_RESET_HIGHER_ACCOUNT` |
+| 6 | no sign-in yet, or already off | 409 `MFA_NOT_ENABLED` |
+
+Then ONE transaction: the person's row `FOR UPDATE`, `assertNotAccountOwner()`,
+the flag re-read under the lock (a second administrator's press is
+`MFA_NOT_ENABLED` and writes nothing), `resetTwoFactorInTx()`,
+`endEverySessionInTx()`. After the commit: the audit row (`UPDATE` / `User`,
+actor the administrator, `{ event: 'mfa_reset' }`), then the `mfa_reset`
+security notice. An INACTIVE person can be reset, for when they return.
+
+**`resetTwoFactorInTx()` (`foundation/auth/two-factor-reset.ts`)** makes exactly
+the writes Better Auth's `disableTwoFactor` makes, inside our transaction:
+`AuthUser.twoFactorEnabled = false`, the `AuthTwoFactor` row deleted, and the
+person's open `2fa-*` challenges and their counters deleted. **The row must
+go:** `enableTwoFactor` gives a new secret `verified = the old row was
+verified`, and `verifyTOTP` turns the flag on only for an unverified secret, so a
+leftover row makes the next set-up say "on" while sign-in never asks for a code.
+`better-auth.contract.spec.ts` pins each of these facts;
+`two-factor-writes.scan.spec.ts` fails any write of two-step state outside this
+file.
+
+**Who sees the status (Ahmad, rule 4).** `GET /users/:id` answers
+`twoStep: { enabled, mayReset } | null`, from `twoFactorEnabled` read in the
+record's own query and `UserMfaResetService.twoStepFor()`:
+- `null` (no panel at all, never "Off") for a viewer without `users:reset_mfa`,
+  on your own record (which reads `/auth/mfa/status`), on the account owner's,
+  and below the floor — the same rule the route refuses with, in one file,
+  `mfa-reset-rule.ts`;
+- `mayReset` is `enabled` and not impersonating.
+The users list carries nothing. Nothing is on the per-request path.
+
+**The permission.** `users:reset_mfa` ("Reset another person's two-step
+sign-in"), checked from day one, grantable to any role, seeded to Organization
+Administrator only (Platform Administrator holds the whole catalogue by
+construction). It sits in Users' "Account access" group with Deactivate and
+Reactivate; the seventh key split Users into "People and profiles" and "Account
+access". Existing organisations get it from
+`npm run backfill:acc164-reset-mfa-permission` (grant-only, the Permission row
+upserted, one audit row per organisation, the platform organisation skipped):
+dry run, `-- --execute` after the deploy, then a dry run reporting 0.
+
+**Screens.**
+- **Turn off** (your own record) is a 420 confirm with Password and "Code from
+  your authenticator app". A wrong password is said under Password, which is
+  cleared and focused; a wrong code under Code, cleared and focused, with "1
+  attempt left." / "2 attempts left." on its own line. Locked, unreachable and
+  "already off" are a message above the buttons; "already off" leaves only Close.
+  While sending, Cancel is disabled and Escape is ignored. Done: "Two-step
+  sign-in is off."
+- **Reset** (someone else's record) is the Two-step panel's red action, opening
+  a destructive confirm that names the person (a left-to-right isolate). The
+  owner refusal replaces the paragraph; owner, already off and impersonating
+  leave only Close. Done: "Two-step sign-in was reset.", and the panel reads
+  "Off.".
+- Every refusal is said from its code (`two-step-refusal.ts`), never the English
+  message. The tallest body measured 337 px against the 420 cap.
+
 ---
 
 ## 2. Workflow Engine
@@ -1743,7 +2005,8 @@ WorkflowActionType          CREATE_TASK, SEND_NOTIFICATION, GENERATE_PDF, LOCK_D
                             LOG_AUDIT, WEBHOOK
 WorkflowApprovalDecision    PENDING, APPROVED, APPROVED_WITH_COMMENTS, RETURNED, ABSTAINED
 WorkflowInstanceStageOutcome PENDING, APPROVED, REJECTED, SKIPPED,
-                            RETURNED, EXITED (ACC-202; read since PR 1, written from PR 2 — §2.20)
+                            RETURNED, EXITED (ACC-202, §2.20: RETURN and EXIT write these
+                            since PR 2; REJECTED is what older ones wrote)
 ```
 
 **Code comment worth preserving verbatim** (`workflow.service.ts`, the "NOTE on SEQUENTIAL/COMMITTEE" comment):
@@ -3695,8 +3958,8 @@ The rule is `workflow-vote.ts`; the engine reads it in `triggerTransition()`.
   - **A vote cast before ACC-284** names no move, and counts for the stage's
     ADVANCE moves, as it did.
 - **The outcome stored on the entry:** ADVANCE → APPROVED; RETURN and EXIT → REJECTED.
-  To be superseded (ACC-202 PR 2): RETURN → RETURNED, EXIT → EXITED, on every path. PR 1
-  adds the values and the reader only (§2.20).
+  Superseded (ACC-202 PR 2): RETURN → RETURNED and EXIT → EXITED, on every path,
+  from `stageExitOutcome(kind)` (§2.20.3).
 - **The gate (ACC-190 J):** for an ADVANCE, only the DECIDING vote is checked against
   open mandatory tasks, before it is recorded.
 - **`submitApproval()`** (no frontend caller) finds its move by kind:
@@ -3797,7 +4060,7 @@ One PR; ACC-202's writer is a second PR after it (below).
 - **Becoming the default needs a starting stage (Q2):** `setDefault`, and
   `updateTemplate` with `isDefault: true`, call `assertHasStartingStage()`
   (strict: an empty template is refused too). "Creating a template as default
-  leaves two defaults" is a separate ticket.
+  leaves two defaults" is a separate ticket. Done in ACC-303, §2.20.5.
 - **The seed is pinned, not checked at run time:** `workflow.seed.spec.ts`
   requires one starting stage, not final, in every seeded workflow. A protected
   template cannot reach any of the three states (`isInitial` and `isFinal` are
@@ -3832,7 +4095,11 @@ it does to a delete:
 
 - **Each check runs inside the delete's transaction, after `FOR UPDATE` on the
   row:**
-  - `removeStage`: the template lock, then the stage row;
+  - `removeStage`: the template lock, then the stage row; then RECORDS, then
+    transitions (ACC-202 PR 2). A stage records have entered always has
+    transitions too, and "remove its transitions first" sent the admin to
+    transitions that had run and could not be removed either (live check,
+    14 Nov). `STAGE_IN_USE` is the final answer, so it is said first;
   - `removeTransition`: the transition and its actions;
   - `removeTransitionAction`: the action.
 - **Why the lock first:** a reference being written at that moment holds a
@@ -3862,20 +4129,27 @@ it does to a delete:
   'WorkflowInstanceStageOutcome'". A deploy that adds a value AND writes it
   would 500 every record's stage history on a rollback, and briefly during the
   deploy overlap. CLAUDE.md's Prisma rules now say so.
-- **PR 1 (this one):**
+- **PR 1 (#289, `9b49be0`):**
   - the additive migration `acc202_stage_outcome_returned_exited`;
   - `arrivedBy` on stage history (§2.14) and its chip;
-  - nothing writes the new values. `stage-outcome-writes.scan.spec.ts` fails
-    on a literal, an enum member, PR 2's `stageExitOutcome`, or a writer type
-    that admits either value. `stage-history-arrived-by.db-spec.ts` presses each
-    kind on ANY_ONE and ALL and requires an outcome the old client knows.
-- **PR 2 (after PR 1 is live):**
-  - `stageExitOutcome(kind)` in `performTransition()`; the outcome argument is
-    removed from every caller (the person path, the vote path, `submitApproval`,
-    and the change request's `triggerSystemTransition` calls: withdraw and
-    reject become EXITED, return RETURNED);
-  - the scan spec is deleted;
-  - the rollback check is repeated with PR 1's client.
+  - nothing wrote the new values (a scan spec pinned it until PR 2).
+- **PR 2 (written):**
+  - `performTransition()` derives the outcome from `stageExitOutcome(kind)`
+    (`STAGE_EXIT_OUTCOME` in `workflow-vote.ts`) and takes no outcome argument,
+    so the person path, the vote path, `submitApproval()` and the app's own moves
+    cannot disagree with the move. `triggerSystemTransition()` lost its
+    `outcome` option.
+  - **Change requests:** withdraw and reject record EXITED, return RETURNED,
+    submit and approve APPROVED.
+  - `cancelInstance()` is not a move and still records SKIPPED.
+  - The scan spec is deleted. `stage-history-arrived-by.db-spec.ts` presses each
+    kind on ANY_ONE and ALL and requires its kind's outcome and the matching
+    `arrivedBy`.
+  - **The rollback was proved before merge:** #289's own code and generated
+    client, against a database holding PR 2's rows (64 instances, 82 visits with
+    a new outcome), read stage history, both instance reads, the committee
+    detail and list, and the change request read and list, all without
+    failing.
 - **Readers:** none switches on the outcome. It is typed `string` end to end,
   and no screen read it before `arrivedBy`.
 - **On the shared database, 13 Nov:**
@@ -3902,6 +4176,42 @@ it does to a delete:
   - `workflow-stage-checks.screens.spec.ts` (every screen, both languages);
   - `workflow-refusal.spec.ts`;
   - the transition panel's spec.
+
+#### 2.20.5 One default template per record type (ACC-303)
+
+- **Exactly one ACTIVE default per (organisation, record type)**, the one
+  `startInstance()` reads. Ahmad's answers, 14 Nov.
+- **`workflow-default.ts` holds the rule:**
+  - `lockTypeDefaults()` takes a per-(organisation, record type) advisory lock;
+  - `makeDefaultInTx()` sets the default and clears the old one, by
+    organisation and type only.
+- **Every path that changes a type's default goes through the service's
+  `inDefaultTx()`.** It takes, in order: the type locks (sorted), the template
+  row lock, then a fresh read. A type change committed in between makes it run
+  again under the new type.
+- **What each path does:**
+  - **create with `isDefault: true`:** 409 `DEFAULT_NEEDS_STAGES`, with nothing
+    written. A new template has no starting stage.
+  - **`setDefault` and update-to-default:** clear the old default. They are
+    refused for a deactivated template (`DEFAULT_TEMPLATE_INACTIVE`), as well as
+    by ACC-57's starting-stage check.
+  - **Changing the default's type:** `DEFAULT_TEMPLATE_TYPE_CHANGE`.
+  - **`isDefault: false` on the default, or deactivating it:**
+    `DEFAULT_TEMPLATE_REQUIRED`. Set as default on another template moves it.
+- **Unchanged:** the protected template's refusals (ACC-239). The seed creates
+  a default only where none exists.
+- **The list offers** Set as default and Deactivate on an active row that is not
+  the default, and only Open on the default.
+- **The four codes are in `PLAIN_REFUSAL_KEYS`**, in both languages.
+- **Shared database, 14 Nov:** 18 (organisation, type) pairs, each with exactly
+  one active default.
+- **Specs:** `workflow-default.db-spec.ts` (real Postgres).
+  - Concurrent promotions end with one default, and both specs go red without
+    the lock.
+  - Each refusal writes nothing.
+  - Another organisation and another type are untouched.
+- **No migration.** A partial unique index on `(organizationId, objectType)
+  WHERE isDefault` was not added.
 
 ## 3. Task System
 
@@ -4192,11 +4502,45 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 - **`reassignAllForUser()`** — the bulk version, called from exactly one
   place: `UserService.deactivate()` (`user.service.ts`, the
   departure flow) — confirmed via grep, no other caller exists. For
-  every task the departing user is still an active assignee on: if a
+  every OPEN task the departing user is still an active assignee on: if a
   valid `toUserId` (their `actingUserId`, resolved and re-validated by
   the caller) is given, reassigns to them; otherwise, if no other active
   assignee remains on that task, flags it `UNASSIGNED`. Every change
   audit-logged individually with `metadata: { event: 'departure_reassignment' }`.
+
+  **ACC-165 — three rules, each in `reassign()`'s shape (ACC-163):**
+  - **OPEN TASKS ONLY (decided, Ahmad).** A `COMPLETED` or `CANCELLED` task
+    keeps its rows exactly as they are: no `removedAt` on the leaver, no row
+    for the acting user, no `DELEGATE` audit row, no notice.
+    - **Why:** a completer's own row stays active by design, and the engine's
+      stage cancel leaves assignees attached on purpose. Before, departure
+      "reassigned" those closed tasks too, with an audit row each.
+    - **Where it's decided:** filtered in the query (`status` not closed), and
+      decided again **under the row lock**, because a task can close between
+      the query and the lock.
+    - **On the shared database on 14 Nov:** 1 departure audit row in total,
+      0 of them on a task closed then or now. 0 active rows of inactive users
+      on closed tasks. Nothing depended on the old behaviour.
+  - **ONE ROW PER PERSON PER TASK.** `TaskAssignee` is unique on
+    `(taskId, userId)` with no exemption for removed rows. The old
+    unconditional create therefore failed, and the whole deactivation with it,
+    whenever the acting user was already on the task:
+    - **held it before:** their removed row is **reactivated**: `removedAt`
+      cleared, `assignedAt`/`assignedById` set, the delegation stamp and
+      `pickedAt` cleared, as `reassign()` does;
+    - **is an active co-assignee:** their row is **left as it is**.
+  - **EACH TASK IS ONE TRANSACTION, under `lockTaskRow()`.** The leaver's
+    row, the acting user's row, the status and the request cancels commit
+    together, so no task is ever half-reassigned. Audit rows and notifications
+    are written after each task commits, never under the lock.
+    - **The boundary is the task, not the departure.**
+      `UserService.deactivate()` commits the status flip and its invariants in
+      its own transaction and keeps side effects outside it on purpose: a
+      refused deactivation must not move anyone's work. And one transaction
+      across every task would hold every task's lock at once.
+    - **A failure stops at a whole task.** The tasks before it are done and
+      the rest untouched. Running it again picks up exactly those, because a
+      finished task no longer has the leaver's active row.
   **ACC-167 — the pool branch, checked first:** for an OPEN task with a pool
   target — whether the departing user picked it up or was chosen directly —
   their row is stamped `removedAt` and no row is created for the acting user.
@@ -4208,8 +4552,8 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   - **others are still on it** → it stays with them:
     `{ event: 'departure_left_with_others' }`, not counted, nobody told.
 
-  A CLOSED pool task is left to the old path (returning it would reopen it)
-  — that path is ACC-165's to change.
+  A CLOSED pool task is never returned to its pool (that would reopen it).
+  Since ACC-165 it is not touched at all: departure handles open tasks only.
 - **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
   idempotent ACC-52) — the recovery half of the unassigned-task
   lifecycle, called from exactly one place:
@@ -4251,9 +4595,8 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
     **latent bug in `reassign()` itself** (reachable manually too:
     reassign A → B → A) — not fixed by ACC-51, not inherited by it, and
     **fixed in ACC-163**, which made `reassign()` reuse the row in place.
-    `reassignAllForUser()` still creates a row for its `toUserId` without
-    checking for a removed one, so a departure reassignment to someone who
-    held the task before can hit the same constraint; not yet ticketed.
+    `reassignAllForUser()` had the same defect, and ACC-165 fixed it the
+    same way.
 - **`hasUnassignedStageTasks()`** (ACC-52) — a `count > 0` existence
   check for orphaned `UNASSIGNED` tasks on a given
   `(workflowInstanceId, sourceStageId)` pair, tenant-scoped like every
@@ -4491,25 +4834,76 @@ step for every other tenant in the same cycle. Same failure shape as
 ACC-48, one scope narrower. Not attempted by ACC-49 (whose scope was
 explicitly the step level) and not currently tracked by its own ticket.
 
-### 3.5 Out-of-Office Routing — A Real Limitation
+### 3.5 Out-of-office routing for new tasks (ACC-302)
 
-**`TaskService.create()` does not apply out-of-office substitution at
-all.** Confirmed by reading the full method: `filterActiveUsers()`
-filters strictly on `User.status === 'ACTIVE'` (excludes
-suspended/invited users) and never references `outOfOfficeFrom`,
-`outOfOfficeTo`, or `actingUserId`. Out-of-office routing (Absence
-Management Pattern 1) is implemented exactly once in the codebase —
-`WorkflowService.applyOutOfOfficeRouting()` (Section 2.5.1) — which
-runs **before** `WorkflowService.executeCreateTask()` calls
-`TaskService.create()`, substituting acting users into the assignee
-list upstream. **Net effect**: a task created via the workflow engine's
-`CREATE_TASK` action gets correct out-of-office substitution. A task
-created directly through `POST /tasks` (any user holding `tasks:create`,
-manually) does **not** — if it's assigned to a user currently
-out-of-office, no substitution happens, and no coverage-gap
-notification fires either (that notification path,
-`notifyTenantAdminsOfCoverageGap()`, also lives only inside
-`WorkflowService`, not `TaskService`).
+**Rewritten (ACC-302, 14 Nov).** This section described
+`WorkflowService.applyOutOfOfficeRouting()` running before CREATE_TASK, and
+manual tasks getting no routing. Both are gone: ACC-190 retired CREATE_TASK, and
+the engine's old routing went with it. What is true now:
+
+- **One rule, one file: `common/services/out-of-office-cover.ts`.**
+  - `isOutOfOffice()` is the window test: both dates set, now inside them,
+    inclusive. It is the one copy, used by `StagePoolService`,
+    `TaskAuthorityService` (ACC-173) and the workload hint (ACC-199).
+  - `activeCoverOf()` is the cover test: away, `actingUserId` set, and that user
+    ACTIVE in the same organisation.
+  - `coversOf()` / `routeToCovers()` are the TASK rule. One read for any number
+    of people, scoped by organisation.
+- **The task rule (Ahmad, 13–14 Nov).** A NEW task for an ACTIVE person who is
+  away with an active cover goes to the cover.
+  - It applies only to a placement's direct people: a chosen person (unit →
+    position → person, or a committee's chosen member) and a one-holder
+    position's holder.
+  - **One hop:** a cover who is away too means the task stays with the person.
+  - **Never:**
+    - pools (a position or seat with several people), which still leave covers
+      out (6 Oct);
+    - the named-people path or `prepareRecordTask()`;
+    - a task already held. Nothing moves when someone goes away or returns
+      (ACC-132).
+- **Who calls it, batched:**
+  - `TaskAssignmentService.resolvePlacement()`, so New task and Reassign agree;
+  - `StageTaskDefinitionService.prepareEntryTasks()`, ONE read for every
+    definition of a stage entry.
+- **What is recorded:**
+  - the cover's `TaskAssignee` row carries `delegationReason =
+    OUT_OF_OFFICE_COVERAGE` and `delegationContextId` = the away person;
+  - the CREATE (or DELEGATE) audit row's `metadata.outOfOfficeCover` lists
+    `[{ forUserId, coverUserId }]`, by id;
+  - the cover's notice says "(covering for {name})", and the away person is told
+    nothing;
+  - "covering for" on screen follows ACC-101's qualifier rule, unchanged
+    (`DelegationLabelService`).
+- **The creator is told before Create task.** The picker's person rows
+  (`GET /tasks/assignees`, `GET /tasks/assignees/committee`) carry
+  `cover: { userId, name } | null`: who a new task for that person goes to now.
+  - It is filled for every caller the picker serves, in one read for the list.
+  - It never carries dates or a reason.
+- **On screen (PR 2, 16 Nov), from `cover` only; no screen reads a date:**
+  - a covered person's row in the Person list adds "Out of office · goes to
+    {cover}";
+  - when that person is chosen, or a one-holder position's holder is covered,
+    New task's and Reassign's outcome line reads "{name} is out of office. This
+    task will go to {cover}." A stage task definition shows the row but keeps
+    its own outcome, because its tasks are placed at each entry;
+  - the workload hint is hidden for a covered person, and an answer kept for
+    them is not shown;
+  - the task page's assignee line adds "covering for {name}" from the row's
+    `delegation`, only when the server sent the name;
+  - measured against the 420px cap in both languages
+    (`task-cover.layout.spec.ts`): New task 317 / 328, Reassign at its tallest
+    345 / 359.
+- **"✦ Suggest someone"** is never offered or answered for a covered person:
+  their row's `canSuggest` is false, and `POST /tasks/assignment/workload-hint`
+  refuses them with `WORKLOAD_NO_SUGGESTION` before any call or charge.
+- **Stage pools are unchanged** (ACC-271, Q7): they still include an away
+  member's cover, with no one-hop check.
+- **Specs:**
+  - `out-of-office-cover.spec.ts`;
+  - `workload-cover.spec.ts`;
+  - `task-cover-routing.db-spec.ts` (real Postgres). Five mutations turn it red:
+    the one-hop check, the ACTIVE check, the stage path's call,
+    `resolvePlacement()`'s call, and the picker's `cover`.
 
 ### 3.6 Permission Model
 
@@ -5530,6 +5924,7 @@ the committee tree wrong. The rules and their codes live in ONE file,
 | Not itself | own parent / reports to itself | `COMMITTEE_OWN_PARENT`, `COMMITTEE_REPORTS_TO_ITSELF` |
 | No loops | under one of its own sub-committees / reporting to a committee that reports to it | `COMMITTEE_PARENT_LOOP`, `COMMITTEE_REPORTS_TO_LOOP` |
 | Not dissolving | a parent or reports-to whose current stage is flagged `DISSOLVING` (ACC-255 PR 2; seeded on Dissolution Pending and Dissolved) | `COMMITTEE_PARENT_DISSOLVING`, `COMMITTEE_REPORTS_TO_DISSOLVING` |
+| In force (ACC-286) | a parent or reports-to that is not in force: its stage is not flagged `IN_FORCE`, or the committee is inactive. Checked after "not dissolving", whose sentence is more specific. §3.21.4 | `COMMITTEE_PARENT_NOT_LIVE`, `COMMITTEE_REPORTS_TO_NOT_LIVE` |
 | Owning unit | sent empty (`''`, or `null` on update) / missing, inactive or another organisation's | `COMMITTEE_UNIT_REQUIRED`, `COMMITTEE_UNIT_NOT_FOUND` |
 | Exists here | missing, or another organisation's | `COMMITTEE_PARENT_NOT_FOUND`, `COMMITTEE_REPORTS_TO_NOT_FOUND` |
 
@@ -5547,6 +5942,9 @@ from it. These were 404s with English labels before ACC-233.
   `FOR SHARE OF wi`, joined to its current stage's `flags` (§2.18): flagged
   `DISSOLVING` is dissolving, whatever the stage is named or keyed (ACC-255
   PR 2; it was the KEY before). No instance or no stage is not dissolving.
+  **ACC-286:** the same one query also reads `Committee.isActive`
+  (`targetStageFacts()`), and the target is IN FORCE when its stage is flagged
+  `IN_FORCE` and it is active. No instance or no stage is not in force.
 - **Only a value that CHANGES is checked** on update. The dialog sends every
   field, and a committee whose parent has since begun dissolving, or whose unit
   was since deactivated, must stay editable for its name.
@@ -5575,9 +5973,10 @@ transaction:
 `foundation/committees/committee-references.ts`):
 - **The pickers leave out what the server would refuse:** the committee itself,
   every committee whose `isDissolving` is true (computed on the server from the
-  key, so the frontend keeps no list of keys), and, when editing, every
-  committee whose chain leads back to this one. The saved value always stays in
-  its list.
+  key, so the frontend keeps no list of keys), every committee not in force
+  (ACC-286: `committeeListStatus()` of its `stageRules.flags` and `isActive`),
+  and, when editing, every committee whose chain leads back to this one. The
+  saved value always stays in its list.
 - **A refusal is said from its code under its field**
   (`committee.refusal.*`, both languages), never from the English `message`.
   The dialog stays open and keeps what was typed. A refusal with no field gets
@@ -6571,6 +6970,136 @@ the seat. The transfer never waits for this, and nothing here removes a seat.
   isolation), `committee-transfer-notice.db-spec.ts` (real rows), the hook tests
   in `user.service.spec.ts`, and the worker registration spec. Mutation-checked.
 - **No migration.**
+
+### 3.21.4 Required seats, going live, and live references (ACC-286)
+
+Plan, Ahmad's answers (14 Nov, A1–A8) and the as-built notes:
+`backend/Plans/step-286-committee-structure-rules.md` (§9, §10). Lane A's part:
+`backend/Plans/step-286-lane-a.md`. PR 1 ships the rules; PR 2 ships the Setup
+health detector.
+
+**A required seat** is a `committee_member_role` value whose attributes say
+`required: true`.
+- **The default lives on the shared SYSTEM rows** (Ahmad, A1): Chairman and
+  Secretary. `seedSystemData()` writes them on EVERY deploy
+  (`.railway/railway.ts` `preDeploy` → `scripts/pre-deploy.sh` →
+  `seed-system-lookups.cli.ts`), so every organisation has the default and no
+  backfill exists.
+- **An organisation unticks (or ticks) a seat through its override row**
+  (§6.2, `PATCH /lookups/values/:id/attributes`); its own seats carry
+  `required` like any attribute. A hidden seat is not required.
+- **On screen (#300):** the Lookups values page for `committee_member_role`
+  (`lookup-value-list.component.ts`).
+  - **Each SHARED seat** has a "Required seat" switch for `lookups:manage`
+    holders, named "Required seat: {seat}". Everyone else sees a read-only
+    line. It shows only while the category's schema declares `required` as a
+    boolean.
+  - **What it means is said once**, as one line above the list.
+  - **An organisation's own seat** has no switch; its value form sets it.
+  - **A press** sends `true` or `false` (never `null`: "the default" is not
+    offered), then reads the list again. One save runs at a time.
+  - **The switch shows the pressed value until the list is read again**, then
+    the stored one. It is `readonly`, so PrimeNG does not flip it; the click
+    handler sends the change.
+  - **A refusal is said from its code** under the row, in `--am-danger-ink`:
+    `LOOKUP_ATTRIBUTE_INVALID`, a 404, or our own sentence. Never the server's
+    English.
+- **ONE reader: `foundation/committees/committee-seat-rules.ts`.**
+  `requiredSeats()` is one raw query that answers exactly what `getValues()`
+  shows, filtered by `required` (a db-spec pins the two together);
+  `seatHolders()` and `activeMemberCount()` count members. Every rule below
+  reads them. Never a second copy.
+- **Who counts** (A3): an active membership of a user whose status is `ACTIVE`.
+  An invited, inactive or suspended user fills no seat and is no member for
+  the quorum. Deactivation ends no membership (ACC-306), so a departed
+  Chairman's seat is EMPTY for every rule while the row stays.
+
+**Rule 2 — going live** (`TRANSITION_PRECONDITIONS.COMMITTEE`, A2).
+- **When:** a move of any kind INTO a stage flagged `IN_FORCE` FROM a stage
+  that is not (`goesLive()`), read from the flags, never a key. On the seed:
+  Terms Review → Active. Active ↔ Suspended is not going live (both in force),
+  so a committee already in force can still be suspended.
+- **Checks, in order:** fewer active members than the quorum → 409
+  `COMMITTEE_MEMBERS_BELOW_QUORUM` `{ quorum, members }`; any required seat
+  empty → 409 `COMMITTEE_REQUIRED_SEATS_EMPTY` `{ seats: [{ id, labelEn,
+  labelAr }] }`, in seat order. Nothing moves.
+- **Leaving Formation** keeps ACC-238's `COMMITTEE_QUORUM_NOT_SET` only; on the
+  seed it leads to Terms Review, which is not in force.
+- **It runs early and again inside the stage-change transaction** (the
+  authoritative one), where the committee row is read `FOR SHARE`. The engine
+  passes both stages' flags; an early caller reads the destination's flags,
+  and only for a record type with a precondition (`hasTransitionPrecondition()`).
+- **On the record page** (`workflow-transition-actions`): the numbers through
+  the plural object `workflow.membersBelowQuorum`, the seats by their names in
+  the reader's language joined by `common.listSeparator`; plain sentences if
+  the body cannot be read. Never the server's English.
+
+**Rule 3 — keeping a required seat filled** (`removeMember`,
+`changeMemberRole`).
+- After `assertStage()` (the instance `FOR SHARE`, which now returns the
+  stage's rules), each takes the **committee row `FOR UPDATE`**, then reads the
+  member. Instance, then committee row: the engine's order and
+  `updateCommittee()`'s.
+- **Only while the stage is flagged `IN_FORCE`:** if the member fills a
+  required seat (an ACTIVE user) and nobody else does, 409
+  `COMMITTEE_REQUIRED_SEAT_LAST_HOLDER` `{ seat: { id, labelEn, labelAr } }`,
+  nothing written. A change of role within the same seat is not checked. A
+  member whose user is not ACTIVE fills nothing, so removing them is allowed.
+- **Proved against a real Postgres:** two removals of two Chairmen at once,
+  exactly one lands (ten rounds); Approve and removing the only Chairman at
+  once, never both, never a deadlock (ten rounds).
+- **The transfer wizard** removes seats through the same endpoint (A5). Since
+  #300 it says the refusal from its code: `failureText()` reads
+  `committeeSeatRefusal()` before the 404 branch, naming the seat in the
+  reader's language.
+  - The row stays in the failed list while the other removes complete, and Try
+    again sends the failed rows only.
+  - A `committees:view` holder gets a link to `/committees/:id` on that row,
+    where another holder is appointed.
+  - Nothing is said before Submit: the wizard's seat list does not say whether
+    a seat is required or its last holder, and the client does not guess.
+- **Screens:** Remove member and Change role say
+  `committee.refusal.requiredSeatLastHolder` ("Appoint another {{seat}}
+  first.") from the code (`committeeSeatRefusal()`).
+
+**Rule 4 — only a committee in force can be pointed at:** §3.15.
+
+**Setup health: `COMMITTEE_MISSING_REQUIRED_SEAT`** (§13.2). PR 1 added the
+value deferred, with every reader. PR 2 (`committeesMissingRequiredSeat()` in
+`setup-condition.detectors.ts`) writes it:
+- **Which committees:** rules 3 and 4's test — active, and the newest COMMITTEE
+  instance's current stage flagged `IN_FORCE`. Suspended counts (Ahmad, 15 Nov,
+  Q-A).
+- **One row per committee** with an empty required seat. It is `AT_RISK`, and
+  its `subject` names the committee and its empty seats in seat order, with
+  the organisation's own labels. The row names the committee for any
+  `setup:view` holder (Q-C).
+- **Age:** "first detected" (`openedAt` null, `AGE_BASIS` `FIRST_DETECTED`,
+  Q-B), because nothing records when a seat emptied.
+- **Cost:** at most three queries per organisation per hourly run: the
+  committees in force, `requiredSeats()`, and `seatHoldersFor()` (the batched
+  holder reader; `seatHolders()` is a one-committee call of it).
+- **It clears itself** on the next run once the seat is filled.
+- **The rollback was proved before PR 2.** PR 1's code (`9ccdd94`), reading a
+  database holding PR 2's rows, answered the page, the badge, Home's slice and
+  the tree's unit conditions with the rows left out, and its reconciler left
+  them byte-identical. A mutation of the type filter turned the check red.
+
+**Specs:** `committee-seat-rules.db-spec.ts`, `committee-going-live.db-spec.ts`,
+`committee-seat-detector.db-spec.ts` (PR 2: a Suspended committee, an
+organisation's own setting, open and clear, tenant isolation),
+`committee-reference-checks.db-spec.ts` (extended), `transition-preconditions.spec.ts`,
+and the unit and screen specs beside each change. Engine db-specs that move a
+committee into Active use `common/testing/committee-going-live.ts`
+(`untickRequiredSeats()`, `seatMembersForQuorum()`), and
+`putCommitteeInEditableStage()`'s stage is flagged `IN_FORCE`.
+Mutation-checked (plan §10).
+
+**Per-request path:** nothing added. Each check runs only on the write that
+needs it.
+
+**One additive migration:** `20261115000000_acc286_setup_committee_missing_seat`
+(the enum value).
 
 ## 4. Notification System
 
@@ -7703,6 +8232,19 @@ time (`lookup.service.ts`, `getValues()`):
    original if the override field itself is null), everything else
    about the SYSTEM value unchanged. If no TENANT row matches → the
    SYSTEM value passes through as-is.
+   **ACC-286 — and the override's `attributes` merge over the SYSTEM
+   value's KEY BY KEY** (`mergeAttributes()`), never replacing the whole
+   object: a label-only override (a renamed committee seat) keeps every
+   shared default. The organisation sets its own values on a SYSTEM value
+   with `PATCH /lookups/values/:id/attributes` (`overrideAttributes()`,
+   `lookups:manage`): only keys the category's `attributeSchema` declares,
+   each of its declared type (boolean, number, else string), else 400
+   `LOOKUP_ATTRIBUTE_INVALID` naming the key, nothing written; `null`
+   removes the organisation's own value for that key; keys not sent keep
+   what the override has; audited (UPDATE on LookupValue, before and
+   after). It upserts the same override row as hide and the label. This is
+   the first place the backend checks attributes against the schema; a
+   tenant's own values (create, update) are still not checked.
 4. Any TENANT row **not** matched to a SYSTEM value by key is a
    genuinely tenant-added value — included as-is.
 5. Result re-sorted by `sortOrder`.
@@ -7715,7 +8257,9 @@ same category — not by any separate type field:
 (b) `labelOverrideEn`/`labelOverrideAr` set, `isHidden: false` → relabels
 a SYSTEM value,
 (c) `key` matches no SYSTEM value → a genuinely new tenant-defined value.
-`hideSystemValue()`/`unhideSystemValue()`/`overrideLabel()` all
+**ACC-286:** an (a)/(b) row may also carry `attributes`, the organisation's
+own values for that SYSTEM value's attributes (above).
+`hideSystemValue()`/`unhideSystemValue()`/`overrideLabel()`/`overrideAttributes()` all
 `upsert()` against the same `@@unique([categoryId, key, organizationId])`
 constraint precisely to create/reuse the same underlying row for
 purposes (a)/(b) rather than risk two conflicting TENANT rows for one
@@ -7793,6 +8337,27 @@ hide and relabel are both wired, not just hide. Every other "zero
 callers" finding in Sections 1–9 was re-checked with the same
 multiline-aware pattern after this was found; none of the others
 changed.
+
+**What the Lookups screens say when a call is refused (ACC-309).**
+- **Never the server's `message`.** Hide, Unhide, Delete, Override label and
+  the Add/Edit value form all go through `lookupRefusalKey(err, actionKey)`
+  (`foundation/lookup/lookup-refusal.ts`). It reads the code with the shared
+  `refusalCode()`. A known code gets its own sentence
+  (`LOOKUP_ATTRIBUTE_INVALID`, `RATE_LIMITED`); anything else gets the
+  action's own sentence ("The value could not be hidden."). Before this, a
+  refused Hide said "Internal server error" in an Arabic session.
+- **The screens store the KEY** and translate it at render, so a language
+  switch reaches an error already shown.
+- **Most lookup refusals carry no code.** Not found, a system value that
+  cannot be edited or deleted, and a key already in use are plain exceptions
+  with English text, so each gets the action's sentence. In particular, a
+  duplicate key on Add says "The value could not be saved." A coded refusal
+  added to these routes needs its line in `lookup-refusal.ts`.
+- **Every error line uses `--am-danger-ink`**: the values page's own, the
+  override dialog's, the value form's and the categories page's.
+  `lookup-error-lines.spec.ts` checks the RENDERED colour against the token.
+  The categories page's `error` is never set today (the page has no
+  mutations).
 
 **Two real, precise gaps remain**: the `PlatformGuard`-gated
 SYSTEM-category mutation endpoints (`updateCategory`/`deactivateCategory`,
@@ -8883,6 +9448,47 @@ patched file by file at least five times before.
   files in bundle order, which differs between Windows and the Linux runner,
   so CI's seed may not replay locally. Narrow the run with `--include` to the
   suspect pair and search seeds instead.
+
+#### 9.1.2 In specs — layout is measured in the real font (ACC-305)
+
+**Until IBM Plex Sans Arabic arrives, text is laid out in the fallback.**
+- The fallback is `system-ui` (`--am-font-family`): Segoe UI on Windows, and a
+  wider face on the Linux CI runner.
+- So a spec that measured before the font loaded passed on Windows and failed
+  on CI, depending on whether it happened to run before the font arrived
+  (set-acting-head's overflow, 494 vs 488).
+
+**The rule:** every `describe` that reads layout (`getBoundingClientRect`,
+`offsetWidth/Height`, `scrollWidth/Height`, `clientWidth/Height`) calls
+`useLayoutFonts({ rtl })` (`frontend/src/testing/layout-fonts.ts`) at its top,
+like `preserveDocumentLanguage()`. It registers a `beforeAll` that:
+- loads every weight `fonts.css` declares (400/500/600/700) by name, Latin and,
+  with `rtl`, Arabic (a separate file by `unicode-range`), with
+  `document.fonts.load()`;
+- waits for `document.fonts.ready`;
+- **checks** each weight, failing with `measured in a fallback font: <weight>`.
+  A too-early measurement therefore fails on any machine, not only where the
+  fallback is wider.
+
+**Three details that matter:**
+- **A `beforeAll`, not a wait inside one test.** Jasmine shuffles the tests in
+  a file. The font set belongs to the page, so once loaded it stays loaded.
+- **`fonts.ready` alone is not enough.** It resolves whenever nothing is
+  loading, which is also true before any text has asked for a weight. Proved
+  under a font hold: without the `load()` calls it fails.
+- **It carries its own 20-second timeout.** A browser fetches at most six files
+  at once, so a slow font server delivers the eight Plex files in two waves,
+  which outlasts Jasmine's 5-second default.
+
+**The guard:** `npm run check:layout-spec-fonts` fails a spec that reads layout
+in code (comments stripped) without calling `useLayoutFonts(`. It keys off the
+file's own content, so it has no list and no allowlist.
+
+**Reproducing it** needs no CI log. Run the file alone (`--include`) with a
+scratch copy of the Karma config whose `beforeMiddleware` holds every
+`.woff2`/`.woff`/`.ttf` response for 3 seconds. Run alone, the file measures
+while `document.fonts.status` is still `loading`, as it did when CI ran it
+first.
 
 ### 9.2 Resolution Chain — Backend and Frontend, Precisely
 
@@ -10125,6 +10731,24 @@ array-backed list to the same contract, so there is one code path.
   parent does not constrain height, `flex-1` grows to content and no
   scrollbar appears, so the same markup is correct in panel mode
   without a variant branch.
+- **The scroll region reserves NO scrollbar gutter (ACC-309).**
+  - **Where the gutter came from.** `scrollbar-gutter: stable` was ACC-120's
+    first attempt at keeping the headings over their data while the header
+    sat outside the scroller. It was superseded the same day by moving the
+    header inside, and left behind.
+  - **What it broke.** With the gutter EMPTY (a list too short to scroll
+    down, or scrollbars that take no space), Chromium shifts the sideways
+    scroll range by a gutter's width:
+    - right-to-left, the first 15px could not be reached: `scrollLeft` −15
+      on load and again after `scrollLeft = 0`. On Lookups in Arabic at 390,
+      the first label sat 3px past the edge;
+    - left-to-right, the last 15px of a wide list could not be reached.
+  - **The cost of removing it.** A desktop list's width moves by the
+    scrollbar's width when it starts or stops scrolling down. Header and rows
+    move together, so they stay aligned.
+  - **Pinned by** `data-list.rtl-start.layout.spec.ts`: both directions, 358
+    and 988, short and long. It fails in both directions with the gutter back.
+  - **Do not reintroduce a gutter on this element.**
 - **A manually ordered list gives no column a `sortBy`.** Workflow
   Stages never will: its order IS its data and every row carries reorder
   buttons, so re-sorting would leave those buttons pointing at positions
@@ -12443,8 +13067,8 @@ the log.
   secret, but **MFA is not active yet** — `verified` stays `false` on
   `AuthTwoFactor` and `AuthUser.twoFactorEnabled` stays `false` until
   `verifySetupMfa()` succeeds with a real code from the user's
-  authenticator app. `disableMfa()` also re-verifies password before
-  turning it off.
+  authenticator app. `disableMfa()` takes the password AND a current
+  code, and an administrator can reset another person's (ACC-164, §1.17).
 
 Full frontend-consumption detail for the Auth surface (`/auth/me`,
 `/accept-invitation`, `/forgot-password`, `/reset-password`, the four
@@ -12482,6 +13106,9 @@ users:transfer   — UserController: getTransferContext,
                    transferUser (all four — ACC-46, Section 12.9)
 users:reactivate — UserController: reactivate (ACC-83; the mirror of
                    users:deactivate, a separate key)
+users:reset_mfa  — UserController: resetMfa (ACC-164); and
+                   UserMfaResetService.twoStepFor() fills GET /users/:id's
+                   twoStep only for a holder (§1.17)
 ```
 
 **A user's roles and permissions are read on the user's routes, gated as roles
@@ -12760,7 +13387,7 @@ enforces:
 | Reactivate | `users:reactivate`, an inactive user |
 | Revoke invitation | `users:invite`, an invited user; afterwards back to `/users`, since the record is deleted |
 | Manage roles | `roles:manage`, on the Roles panel; the existing dialog, hosted as the list hosts it |
-| Two-step sign-in | own record only — the endpoints act on the caller |
+| Two-step sign-in | own record: Set up / Turn off (the endpoints act on the caller). Someone else's: the panel only when `twoStep` is sent, Reset when `mayReset` (ACC-164, §1.17) |
 
 **The status actions are written once**, in `UserStatusActionsService`
 (`statusActionFor()` decides which applies; the three confirms are the
@@ -12777,10 +13404,23 @@ There is no "granted by" (UserRole has none). Every row is shown rather
 than Template 2's 3–6 with a hand-off: a person holds a handful, and there
 is no per-user roles list to hand off to.
 
-**Four panels are left OUT, not empty**: Committees, Tasks, Sessions and
-Access history have no per-user endpoint. ACC-216 adds the reads
-(CommitteeMember; AuditLog objectType `User` and UserTransferEvent;
-RefreshToken; tasks after a visibility decision). A spec pins their absence.
+**Three panels are left OUT, not empty**: Tasks, Sessions and Access history
+have no per-user endpoint. ACC-216 adds the reads one at a time (AuditLog
+objectType `User` and UserTransferEvent; RefreshToken; tasks after a
+visibility decision). A spec pins their absence. Committees was the fourth;
+ACC-216 part 1 built it (below).
+
+**The Committees panel and `GET /users/:userId/committees` (ACC-216 part 1).**
+`UserCommitteesService` (`foundation/user/committees/`, its own controller
+under the `users` prefix):
+- **The gate**, checked before any read, with no query (§1.9 clause a): `committees:view` in every case, then `users:view` unless you are reading yourself. Each refusal is a 403 naming the missing key, the same for a real colleague and an invented id. Another organisation's user is the identical 404 an invented id gets ("User not found"). The route carries no `@Permissions()`, as `GET /users/:id` carries none.
+- **Your own record still needs `committees:view`. Deliberate (CC-276):** the read also lists PAST committees the person may no longer open, and their current ones are already theirs on `GET /committees/mine` (§3.21, self-scoped). Without the key the page leaves the panel absent and never asks, so nobody meets the 403.
+- **What is listed:** every CommitteeMember row of the person in the organisation, former ones and those of an inactive committee included. One row per committee: a rejoined member reuses the row (ACC-32), so its dates are the latest period.
+- **`current`** is ACC-281's one rule through `memberCommitteeIds()` (`common/services/committee-membership.ts`): an active member of an active committee, both in the organisation. Never re-derived.
+- **Order:** current first by seat (the tenant's seat order), then longest-served; then past, newest left first, a never-ended membership of an inactive committee first among them.
+- **Seats** are named through `getValues('committee_member_role')`: a relabelled seat keeps the SYSTEM value's id and layer with the tenant's label. A seat getValues() omits is read from its own value row, in one extra query only then.
+- **Cap and cost:** at most 200 rows (`USER_COMMITTEES_CAP`), read current-first so the cap drops the oldest past ones; `total` counts past it, and the panel then shows `record.showing` ("Showing 200 of 230"). 7 queries whatever the count (+1 for an omitted seat), every one scoped by organisation on the membership AND its committee. Nothing on the per-request path.
+- **The panel** (`UserCommitteesPanelComponent`) renders only for a `committees:view` holder. A refused read leaves it absent with its host hidden. Each row links the committee and gives the seat and "Since {date}" or "{date} – {date}"; the empty state is "Not on any committee" / «لا عضوية في أي لجنة». Every row is shown, as on Roles.
 
 **Dialogs** (all on the shell, `[dirty]`, field wrapper with `[control]`,
 no floating PrimeNG panel — a date is picked in the DATE VIEW, where the
@@ -12873,6 +13513,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
+| `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`). One row per committee in force (active, stage flagged `IN_FORCE`; Suspended counts) with an empty required seat, naming the seats. PR 1 added the value deferred; PR 2 detects and reports it. §3.21.4 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a

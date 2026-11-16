@@ -30,6 +30,8 @@ import { EditProfileDialogComponent } from './edit-profile-dialog.component';
 import { CoverOption, OutOfOfficeDialogComponent } from './out-of-office-dialog.component';
 import { TwoStepOffDialogComponent } from './two-step-off-dialog.component';
 import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
+import { TwoStepResetDialogComponent } from './two-step-reset-dialog.component';
+import { UserCommitteesPanelComponent } from './user-committees-panel.component';
 import { USER_PANEL_GRID } from './user-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
@@ -70,16 +72,23 @@ interface Fact {
  *   Reactivate          users:reactivate, an inactive user
  *   Revoke invitation   users:invite, an invited user — then back to /users
  *   Manage roles        roles:manage, on the Roles panel
- *   Two-step sign-in    own record only (the endpoints act on the caller)
+ *   Two-step sign-in    own record: Set up / Turn off (the endpoints act on the
+ *                       caller). Someone else's: shown only when the server's
+ *                       `twoStep` says so (users:reset_mfa, not the owner, the
+ *                       Organization Administrator floor — ACC-164), with Reset
+ *                       while it is on and you are not signed in as someone else.
  *
  * The status actions are the Users list's own, through
  * UserStatusActionsService, so the two screens cannot disagree.
  *
  * ## Panels left OUT, not empty (CC-88, D1)
  *
- * Committees, Tasks, Sessions and Access history have no per-user endpoint,
- * so they are absent — not a placeholder, not a disabled panel. ACC-216 adds
- * the reads. A spec pins their absence.
+ * Tasks, Sessions and Access history have no per-user endpoint, so they are
+ * absent — not a placeholder, not a disabled panel. ACC-216 adds the reads, one
+ * at a time. A spec pins their absence.
+ *
+ * Committees (ACC-216 part 1) is its own component with its own request, shown
+ * only to a viewer holding committees:view: absent otherwise, never empty.
  *
  * ## Each panel owns its request (ACC-104)
  *
@@ -106,6 +115,8 @@ interface Fact {
     OutOfOfficeDialogComponent,
     TwoStepSetupDialogComponent,
     TwoStepOffDialogComponent,
+    TwoStepResetDialogComponent,
+    UserCommitteesPanelComponent,
   ],
   template: `
     @if (loadError()) {
@@ -133,7 +144,7 @@ interface Fact {
             <div class="flex items-center gap-3 min-w-[280px] flex-1">
               <span
                 aria-hidden="true"
-                class="flex items-center justify-center shrink-0 w-11 h-11 rounded-full text-[15px] font-semibold bg-[var(--am-surface)] border border-[var(--am-border)] text-[var(--am-text-secondary)]"
+                class="flex items-center justify-center shrink-0 w-11 h-11 rounded-full text-[15px] font-semibold bg-[var(--am-surface)] border border-[var(--am-border)] text-[var(--am-ink-500)]"
                 data-user-avatar
                 >{{ initials() }}</span
               >
@@ -143,7 +154,7 @@ interface Fact {
                   <!-- ACC-221 — the organisation's account owner. -->
                   @if (u.isAccountOwner) {
                     <span
-                      class="text-[10.5px] font-semibold px-1.5 py-px rounded text-[var(--am-blue-primary)] bg-[color-mix(in_srgb,var(--am-blue-primary)_12%,transparent)]"
+                      class="text-[10.5px] font-semibold px-1.5 py-px rounded text-[var(--am-primary-600)] bg-[color-mix(in_srgb,var(--am-primary-600)_12%,transparent)]"
                       data-user-account-owner
                     >
                       {{ 'userRecord.accountOwner' | translate }}
@@ -153,7 +164,7 @@ interface Fact {
                 <div class="flex flex-wrap items-center gap-2 mt-1">
                   <span
                     dir="ltr"
-                    class="text-[13px] text-[var(--am-text-secondary)] [unicode-bidi:isolate]"
+                    class="text-[13px] text-[var(--am-ink-500)] [unicode-bidi:isolate]"
                     data-user-email
                     >{{ u.email }}</span
                   >
@@ -237,7 +248,7 @@ interface Fact {
                 [class.border-e]="!last"
                 [attr.data-fact]="fact.key"
               >
-                <dt class="text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)] mb-1">
+                <dt class="text-[11px] font-semibold uppercase tracking-wide text-[var(--am-ink-500)] mb-1">
                   {{ fact.labelKey | translate }}
                 </dt>
                 <dd class="m-0 text-[13px]">{{ fact.value }}</dd>
@@ -268,7 +279,7 @@ interface Fact {
               @if (canSeePermissions()) {
                 <a
                   panelActions
-                  class="text-[12.5px] font-semibold text-[var(--am-blue-primary)] hover:underline"
+                  class="text-[12.5px] font-semibold text-[var(--am-primary-600)] hover:underline"
                   [routerLink]="['/roles/user-permissions', user()?.id]"
                   data-action="seePermissions"
                 >
@@ -279,7 +290,7 @@ interface Fact {
                 <button
                   panelActions
                   type="button"
-                  class="text-[12.5px] text-[var(--am-blue-primary)] hover:underline"
+                  class="text-[12.5px] text-[var(--am-primary-600)] hover:underline"
                   (click)="openManageRoles()"
                   data-action="manageRoles"
                 >
@@ -290,11 +301,11 @@ interface Fact {
                 @for (row of roleRows(); track row.id) {
                   <li class="flex gap-2 px-4 py-2 border-b border-[var(--am-row-rule)]" [attr.data-role-row]="row.derived ? 'derived' : 'direct'">
                     @if (row.derived) {
-                      <span aria-hidden="true" class="pt-[1px] text-[var(--am-text-secondary)]">⊡</span>
+                      <span aria-hidden="true" class="pt-[1px] text-[var(--am-ink-500)]">⊡</span>
                     }
                     <div class="flex flex-col min-w-0">
                       <span class="text-[13px] font-medium">{{ row.name }}</span>
-                      <span class="text-[11.5px] text-[var(--am-text-secondary)]" data-role-detail>{{ row.detail }}</span>
+                      <span class="text-[11.5px] text-[var(--am-ink-500)]" data-role-detail>{{ row.detail }}</span>
                     </div>
                   </li>
                 }
@@ -302,11 +313,16 @@ interface Fact {
               <!-- ACC-221 — why Deactivate, Revoke invitation and removing
                    Organization Administrator are not offered for this person. -->
               @if (user()?.isAccountOwner) {
-                <p class="m-0 px-4 py-2 text-[11.5px] text-[var(--am-text-secondary)]" data-user-account-owner-line>
+                <p class="m-0 px-4 py-2 text-[11.5px] text-[var(--am-ink-500)]" data-user-account-owner-line>
                   {{ 'userRecord.accountOwnerLine' | translate }}
                 </p>
               }
             </app-record-panel>
+          }
+
+          <!-- ACC-216 — absent without committees:view; a refused read hides it too. -->
+          @if (canViewCommittees()) {
+            <app-user-committees-panel [userId]="userId" />
           }
 
           @if (isOwn() && twoStepHandle()) {
@@ -322,7 +338,7 @@ interface Fact {
                 <button
                   panelActions
                   type="button"
-                  class="text-[12.5px] text-[var(--am-blue-primary)] hover:underline"
+                  class="text-[12.5px] text-[var(--am-primary-600)] hover:underline"
                   (click)="twoStepSetupOpen.set(true)"
                   data-action="twoStepSetUp"
                 >
@@ -342,6 +358,28 @@ interface Fact {
               }
               <p class="m-0 px-4 py-3 text-[13px]" data-two-step-status>
                 {{ (twoStepEnabled() ? 'userRecord.twoStep.on' : 'userRecord.twoStep.off') | translate }}
+              </p>
+            </app-record-panel>
+          }
+
+          <!-- ACC-164 — someone else's two-step sign-in, only when the server
+               says this viewer may reset it (rule 4). Never "Off" for a viewer
+               it is not shown to: no panel at all. -->
+          @if (!isOwn() && u.twoStep; as ts) {
+            <app-record-panel data-panel="twoStepOther" [heading]="'userRecord.twoStep.heading' | translate" [bodyHeight]="120">
+              @if (ts.mayReset) {
+                <button
+                  panelActions
+                  type="button"
+                  class="text-[12.5px] text-[var(--am-danger-ink)] hover:underline"
+                  (click)="twoStepResetOpen.set(true)"
+                  data-action="twoStepReset"
+                >
+                  {{ 'userRecord.twoStep.reset' | translate }}
+                </button>
+              }
+              <p class="m-0 px-4 py-3 text-[13px]" data-two-step-status>
+                {{ (ts.enabled ? 'userRecord.twoStep.on' : 'userRecord.twoStep.offOther') | translate }}
               </p>
             </app-record-panel>
           }
@@ -375,8 +413,19 @@ interface Fact {
       <app-two-step-off-dialog
         [visible]="twoStepOffOpen()"
         (visibleChange)="twoStepOffOpen.set($event)"
-        (disabled)="twoStepHandle()?.retry()"
+        (disabled)="onTwoStepOff()"
+        (stale)="twoStepHandle()?.retry()"
       />
+      @if (!isOwn() && u.twoStep) {
+        <app-two-step-reset-dialog
+          [visible]="twoStepResetOpen()"
+          (visibleChange)="twoStepResetOpen.set($event)"
+          [userId]="u.id"
+          [userName]="u.name"
+          (done)="onTwoStepReset()"
+          (stale)="loadUser()"
+        />
+      }
 
       <!-- Transfer — the wizard both hosts share, on the shell (TemplateRef, so
            every opening starts at step one). -->
@@ -412,7 +461,7 @@ interface Fact {
       </ng-template>
       <ng-template #manageRolesFooterTpl>
         <div class="flex items-center justify-between gap-3">
-          <span class="min-w-0 truncate text-[11.5px] text-[var(--am-text-secondary)]">
+          <span class="min-w-0 truncate text-[11.5px] text-[var(--am-ink-500)]">
             {{ rolesRef()?.changeSummary() }}
           </span>
           <div class="flex shrink-0 gap-2">
@@ -477,6 +526,7 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly outOfOfficeOpen = signal(false);
   readonly twoStepSetupOpen = signal(false);
   readonly twoStepOffOpen = signal(false);
+  readonly twoStepResetOpen = signal(false);
   readonly transferOpen = signal(false);
   readonly transferDirty = signal(false);
   readonly rolesOpen = signal(false);
@@ -511,6 +561,8 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly canReactivate = computed(() => this.statusAction() === 'reactivate');
   readonly canRevokeInvitation = computed(() => this.statusAction() === 'revokeInvitation');
   readonly canViewRoles = computed(() => this.can('roles:view'));
+  /** ACC-216 — GET /users/:id/committees needs committees:view in every case. */
+  readonly canViewCommittees = computed(() => this.can('committees:view'));
   readonly canManageRoles = computed(() => this.can('roles:manage'));
   readonly canSeePermissions = computed(() => USER_PERMISSIONS_LOOKUP.every((p) => this.can(p)));
   /** The two-step endpoints act on the CALLER, so only on your own record. */
@@ -709,7 +761,20 @@ export class UserRecordComponent implements OnInit, OnDestroy {
     this.twoStepHandle()?.destroy();
   }
 
-  private loadUser(): void {
+  /** ACC-164 — the product's short success line, then the status read again. */
+  onTwoStepOff(): void {
+    this.actionError.set(null);
+    this.actionMessage.set(this.translate.instant('userRecord.twoStep.offDone'));
+    this.twoStepHandle()?.retry();
+  }
+
+  onTwoStepReset(): void {
+    this.actionError.set(null);
+    this.actionMessage.set(this.translate.instant('userRecord.twoStep.resetDone'));
+    this.loadUser();
+  }
+
+  loadUser(): void {
     this.userService.getById(this.userId).subscribe({
       next: (u) => {
         this.user.set(u);

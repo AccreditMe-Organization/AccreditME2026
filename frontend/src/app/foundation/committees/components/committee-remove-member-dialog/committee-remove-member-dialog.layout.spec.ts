@@ -14,6 +14,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { CommitteeService } from '../../services/committee.service';
 import { CommitteeRemoveMemberDialogComponent, REMOVE_REASON_MAX } from './committee-remove-member-dialog.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-298 — the Remove member dialog against the 420px body cap (ACC-111),
 // MEASURED in both languages, in the real theme and font, at 1280 (the form
@@ -56,6 +57,7 @@ class Host {
 }
 
 describe('Remove member dialog — layout, measured (ACC-298)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
   let fixture: ComponentFixture<Host>;
@@ -95,7 +97,6 @@ describe('Remove member dialog — layout, measured (ACC-298)', () => {
 
   async function settle(): Promise<void> {
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
   }
 
@@ -125,7 +126,6 @@ describe('Remove member dialog — layout, measured (ACC-298)', () => {
 
   /** A body: laid out, the right width, under the cap with the room, and scrolling nowhere. */
   function check(label: string, language: string, width: number, allowTextareaScroll = false): number {
-    expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
     const b = body();
     expect(b).withContext('.am-dialog__body not found — did the shell change?').not.toBeNull();
     const height = b.scrollHeight;

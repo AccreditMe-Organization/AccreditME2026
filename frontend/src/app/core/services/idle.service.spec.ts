@@ -462,6 +462,44 @@ describe('IdleService (ACC-122)', () => {
     expect(args.queryParams.reason).toBeUndefined();
     discardPeriodicTasks();
   }));
+
+  // ACC-126 — the 12-hour limit signs out through this same path, with its own
+  // reason: the sign-in page says why, and every tab says the same.
+  it("signs out for the session's 12-hour limit with reason=limit, and tells the other tabs", fakeAsync(() => {
+    setup();
+    service.start();
+    const posted: unknown[] = [];
+    spyOn(service['channel'] as BroadcastChannel, 'postMessage').and.callFake((m: unknown) => {
+      posted.push(m);
+    });
+
+    void service.signOut('limit');
+    tick();
+
+    expect(authService.logout).toHaveBeenCalled();
+    expect(posted).toContain(jasmine.objectContaining({ type: 'signed-out', reason: 'limit' }));
+    expect(router.navigate).toHaveBeenCalledWith(
+      ['/login'],
+      jasmine.objectContaining({
+        queryParams: jasmine.objectContaining({ returnUrl: '/committees/abc', reason: 'limit' }),
+      }),
+    );
+    discardPeriodicTasks();
+  }));
+
+  it("a tab receiving a 12-hour-limit broadcast adopts reason=limit", fakeAsync(() => {
+    setup();
+    service.start();
+
+    service['channel']?.onmessage?.(
+      new MessageEvent('message', { data: { type: 'signed-out', reason: 'limit' } }),
+    );
+    tick();
+
+    const args = router.navigate.calls.mostRecent().args[1] as { queryParams: { reason?: string } };
+    expect(args.queryParams.reason).toBe('limit');
+    discardPeriodicTasks();
+  }));
 });
 
 // ACC-127 — a SIBLING describe, deliberately, and this is the actual fix.

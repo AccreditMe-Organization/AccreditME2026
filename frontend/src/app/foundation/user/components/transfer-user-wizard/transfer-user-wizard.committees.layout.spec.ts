@@ -6,7 +6,8 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import { of } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Observable, of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { AccreditMePreset } from '../../../../core/theme/accreditme-preset';
@@ -22,6 +23,7 @@ import { CommitteeService } from '../../../committees/services/committee.service
 import { TransferCommitteesDto, TransferCommitteesService } from '../../services/transfer-committees.service';
 import { TransferUserWizardComponent } from './transfer-user-wizard.component';
 import { PERSON, UNITS, fakeUserService, seat, walkToAfterManager } from './transfer-wizard.testing';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-296 — the Committees step against the dialog body's 420px cap (ACC-111),
 // in the real shell (EditDialogComponent at 640px, as both hosts open it) with
@@ -69,6 +71,7 @@ class HostComponent {
 }
 
 describe('TransferUserWizard — the Committees step fits the 420px body (ACC-296)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<HostComponent>;
   const measured: string[] = [];
@@ -81,7 +84,14 @@ describe('TransferUserWizard — the Committees step fits the 420px body (ACC-29
     }
   }
 
-  async function render(language: 'en' | 'ar', committees: TransferCommitteesDto, permissions: string[]): Promise<void> {
+  async function render(
+    language: 'en' | 'ar',
+    committees: TransferCommitteesDto,
+    permissions: string[],
+    committeeService: { removeMember: (committeeId: string, memberId: string) => Observable<void> } = {
+      removeMember: () => of(undefined),
+    },
+  ): Promise<void> {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [HostComponent],
@@ -97,7 +107,7 @@ describe('TransferUserWizard — the Committees step fits the 420px body (ACC-29
         { provide: OrgUnitHeadService, useValue: {} },
         { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => permissions.includes(p) } },
         { provide: TransferCommitteesService, useValue: { forUser: () => of(committees) } },
-        { provide: CommitteeService, useValue: { removeMember: () => of(undefined) } },
+        { provide: CommitteeService, useValue: committeeService },
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -161,6 +171,44 @@ describe('TransferUserWizard — the Committees step fits the 420px body (ACC-29
           expect(height + ROOM).withContext(`${language} ${width} ${count} rows: body ${height}px`).toBeLessThanOrEqual(CAP);
         });
       }
+    }
+  }
+
+  // ACC-286 — after Submit, one seat refused as the last holder of a required
+  // seat (the sentence AND the committee link shown), the other four removed.
+  // The terminal state replaces the stepper, so the body is measured whole.
+  for (const language of ['en', 'ar'] as const) {
+    for (const width of WIDTHS) {
+      it(`${language} · ${width} · one required seat refused, four removed: the body stays ${ROOM}px under the cap`, async () => {
+        const refusal = new HttpErrorResponse({
+          status: 409,
+          error: {
+            code: 'COMMITTEE_REQUIRED_SEAT_LAST_HOLDER',
+            seat: { id: 'seat-chair', labelEn: 'Chairman of the Committee', labelAr: 'رئيس اللجنة' },
+          },
+        });
+        const rows = Array.from({ length: 5 }, (_, i) =>
+          seat(i + 1, { nameEn: `Infection Prevention and Control Committee ${i + 1}`, nameAr: `لجنة مكافحة العدوى ${i + 1}` }),
+        );
+        await render(language, { total: 5, rows }, ['committees:remove_member', 'committees:view'], {
+          removeMember: (_c: string, memberId: string) => (memberId === 'm-1' ? throwError(() => refusal) : of(undefined)),
+        });
+        const wizard = fixture.debugElement.query(By.directive(TransferUserWizardComponent)).componentInstance as TransferUserWizardComponent;
+        for (const r of rows) wizard.setSeatChoice(r.memberId, 'remove');
+        wizard.submit();
+        await atWidth(width);
+
+        // Non-vacuity: the refused row, its sentence and its link are on screen.
+        const failed = document.querySelector('[data-failed-seat="m-1"]');
+        expect(failed).withContext('the refused row').not.toBeNull();
+        expect(document.querySelector('[data-failed-seat-link="m-1"]')).withContext('the committee link').not.toBeNull();
+        expect(document.querySelectorAll('[data-failed-seat]').length).withContext('only the refused row failed').toBe(1);
+        expect(body().getBoundingClientRect().height).withContext('the body is laid out').toBeGreaterThan(FLOOR / 2);
+
+        const height = body().scrollHeight;
+        measured.push(`${language} ${width} refused seat after Submit: body ${height}px`);
+        expect(height + ROOM).withContext(`${language} ${width} refused seat: body ${height}px`).toBeLessThanOrEqual(CAP);
+      });
     }
   }
 

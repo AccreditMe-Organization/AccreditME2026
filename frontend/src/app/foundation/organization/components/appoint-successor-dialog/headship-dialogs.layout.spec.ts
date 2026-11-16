@@ -15,6 +15,7 @@ import { IOrgPositionDto } from '../../../org-position/services/org-position.ser
 import { IOrgUnitHeadStatus } from '../../services/org-unit-head.service';
 import { AppointHeadDialogComponent } from '../appoint-head-dialog/appoint-head-dialog.component';
 import { AppointSuccessorDialogComponent } from './appoint-successor-dialog.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-133 — both headship dialogs against the 420px body cap (ACC-111),
 // measured in the real dialog shell with the real theme, the actions in the
@@ -69,6 +70,7 @@ const STATUS: IOrgUnitHeadStatus = {
 type Mode = 'plain' | 'chosen' | 'errors' | 'two-positions';
 
 describe('Headship dialogs against the 420px body cap (ACC-133)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
   let fixture: ComponentFixture<AppointHeadDialogComponent | AppointSuccessorDialogComponent>;

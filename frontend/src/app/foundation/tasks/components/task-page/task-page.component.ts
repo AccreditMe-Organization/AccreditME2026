@@ -690,6 +690,13 @@ export class TaskPageComponent implements OnDestroy {
     if (v.assignees.length === 1) {
       const a = v.assignees[0]!;
       const parts = [this.placement(a)].filter((p) => p);
+      // ACC-302 — "covering for {name}" when the task reached them as an away
+      // person's cover. The server resolves the name under ACC-101's rule (the
+      // cover always; anyone else with users:view); absent, nothing is drawn.
+      const covering = a.delegation?.reason === 'OUT_OF_OFFICE_COVERAGE' ? a.delegation : null;
+      if (covering?.contextLabelEn) {
+        parts.push(this.translate.instant('taskPage.coveringFor', { name: this.language.bilingual(covering.contextLabelEn, covering.contextLabelAr) }));
+      }
       if (a.pickedAt) parts.push(this.translate.instant('taskPage.pickedUpOn', { date: this.format.date(a.pickedAt) }));
       return parts.join(' · ') || null;
     }

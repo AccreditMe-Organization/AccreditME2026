@@ -17,6 +17,8 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { LoginAttemptService } from './login-attempt.service';
 import { UserService } from '../user/user.service';
+import { PasswordResetService } from './password-reset/password-reset.service';
+import { SecurityNoticeService } from '../notification/security-notice';
 
 // Explicit factory — a bare jest.mock(path) auto-mock still requires Jest to
 // load the real module first to infer its shape, which pulls in
@@ -120,6 +122,8 @@ describe('AuthService', () => {
     notifyTenantAdminsOfInviteAcceptanceConflict: jest.Mock;
     refreshHeadVacancyAfterActivation: jest.Mock;
   };
+  let mockPasswordReset: { request: jest.Mock; lookup: jest.Mock; reset: jest.Mock };
+  let mockSecurityNotice: { enqueue: jest.Mock };
 
   beforeEach(() => {
     process.env['JWT_SECRET'] = 'test-jwt-secret';
@@ -157,6 +161,12 @@ describe('AuthService', () => {
       notifyTenantAdminsOfInviteAcceptanceConflict: jest.fn().mockResolvedValue(undefined),
       refreshHeadVacancyAfterActivation: jest.fn().mockResolvedValue(undefined),
     };
+    mockSecurityNotice = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    mockPasswordReset = {
+      request: jest.fn().mockResolvedValue(undefined),
+      lookup: jest.fn(),
+      reset: jest.fn().mockResolvedValue(undefined),
+    };
 
     service = new AuthService(
       mockPrisma as unknown as PrismaService,
@@ -164,6 +174,8 @@ describe('AuthService', () => {
       mockNotification as unknown as NotificationService,
       mockLoginAttemptService as unknown as LoginAttemptService,
       mockUserService as unknown as UserService,
+      mockPasswordReset as unknown as PasswordResetService,
+      mockSecurityNotice as unknown as SecurityNoticeService,
     );
   });
 
@@ -196,6 +208,7 @@ describe('AuthService', () => {
         success: true,
         user: { id: 'user-1', email: 'a@example.com', name: 'A User' },
         language: 'en',
+        sessionEndsAt: expect.any(String),
       });
       expect(res.cookie).toHaveBeenCalledWith('access_token', expect.any(String), expect.any(Object));
       expect(res.cookie).toHaveBeenCalledWith('refresh_token', expect.any(String), expect.any(Object));
@@ -365,6 +378,13 @@ describe('AuthService', () => {
         expect.objectContaining({ userId: 'user-1', channel: 'EMAIL' }),
         ORG_A,
       );
+      // ACC-188 — "reset your password" points at the real Forgot password page
+      // on the person's own address, in both languages.
+      const [sent] = mockNotification.create.mock.calls[0] as [{ bodyEn: string; bodyAr: string }];
+      expect(sent.bodyEn).toContain(
+        "If this wasn't you, reset your password now: https://acme.accreditme.app/forgot-password",
+      );
+      expect(sent.bodyAr).toContain('فأعد تعيين كلمة المرور الآن: https://acme.accreditme.app/forgot-password');
     });
 
     it('does NOT send a new-IP email notification when isNewIp returns false', async () => {
@@ -430,6 +450,7 @@ describe('AuthService', () => {
         id: 'rt-1',
         userId: 'user-1',
         revokedAt: null,
+        createdAt: new Date(),
         tokenVersion: 2,
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
@@ -462,6 +483,7 @@ describe('AuthService', () => {
         id: 'rt-1',
         userId: 'user-1',
         revokedAt: new Date(),
+        createdAt: new Date(),
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
 
@@ -474,6 +496,7 @@ describe('AuthService', () => {
         id: 'rt-1',
         userId: 'user-1',
         revokedAt: null,
+        createdAt: new Date(),
         expiresAt: new Date(Date.now() - 1000),
       });
 
@@ -711,6 +734,7 @@ describe('AuthService', () => {
       organizationId: ORG_A,
       tokenVersion: 1,
       revokedAt: null,
+      createdAt: new Date(),
       expiresAt: new Date(Date.now() + 86_400_000),
     });
     beforeEach(() => {
@@ -790,6 +814,7 @@ describe('AuthService', () => {
         organizationId: ORG_A,
         tokenVersion: 1,
         revokedAt: null,
+        createdAt: new Date(),
         expiresAt: new Date(Date.now() + 86_400_000),
       });
       mockPrisma.user.findFirst.mockResolvedValue({
@@ -1209,51 +1234,43 @@ describe('AuthService', () => {
     });
   });
 
-  // CC-64 — password reset is not served, so nothing is requested: no token,
-  // no AuthVerification row, no notification, no email. The answer is the
-  // same for a real and an unknown address.
+  // ACC-188 — Forgot password hands the request to PasswordResetService, which
+  // ONLY enqueues it; nothing is read here, and Better Auth's
+  // requestPasswordReset is never called (its sendResetPassword is gone).
   describe('forgotPassword', () => {
-    it('requests nothing and sends nothing, for a real account', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({
-        id: ORG_A,
-        slug: 'acme',
-      });
-      mockPrisma.user.findFirst.mockResolvedValue({
-        id: 'user-1',
-        organizationId: ORG_A,
-        status: 'ACTIVE',
-      });
-
+    it("hands the request over, and never calls Better Auth's requestPasswordReset (forgot-password.neutral.spec proves nothing is read)", async () => {
       await expect(
-        service.forgotPassword({
-          organizationSlug: 'acme',
-          email: 'a@example.com',
-        }),
+        service.forgotPassword({ organizationSlug: 'acme', email: 'a@example.com' }),
       ).resolves.toBeUndefined();
-      expect(mockAuthApi.requestPasswordReset).not.toHaveBeenCalled();
-      expect(mockNotification.create).not.toHaveBeenCalled();
-    });
-
-    it('answers an unknown organisation and address exactly the same way', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.forgotPassword({
-          organizationSlug: 'nope',
-          email: 'nobody@example.com',
-        }),
-      ).resolves.toBeUndefined();
+      expect(mockPasswordReset.request).toHaveBeenCalledWith({
+        organizationSlug: 'acme',
+        email: 'a@example.com',
+      });
       expect(mockAuthApi.requestPasswordReset).not.toHaveBeenCalled();
       expect(mockNotification.create).not.toHaveBeenCalled();
     });
   });
 
   describe('resetPassword', () => {
-    it('delegates to Better Auth resetPassword', async () => {
-      await service.resetPassword({ token: 'tok', password: 'newpassword123' });
-
+    it("passes Better Auth's resetPassword as a returned Response (asResponse)", async () => {
+      await service.resetPassword(
+        { token: 'tok', password: 'newpassword123' },
+        'https://acme.accreditme.app',
+        '203.0.113.9',
+      );
+      const [input, origin, ip, call] = mockPasswordReset.reset.mock.calls[0] as [
+        unknown,
+        string,
+        string,
+        (token: string, password: string) => Promise<Response>,
+      ];
+      expect(input).toEqual({ token: 'tok', password: 'newpassword123' });
+      expect(origin).toBe('https://acme.accreditme.app');
+      expect(ip).toBe('203.0.113.9');
+      await call('tok', 'newpassword123');
       expect(mockAuthApi.resetPassword).toHaveBeenCalledWith({
-        body: { newPassword: 'newpassword123', token: 'tok' },
+        body: { token: 'tok', newPassword: 'newpassword123' },
+        asResponse: true,
       });
     });
   });
@@ -1290,14 +1307,32 @@ describe('AuthService', () => {
 
     // ACC-120 slice 9b — Better Auth's REAL refusal shape: a returned 401
     // Response, never a rejected promise. The message is unchanged.
-    it('throws UnauthorizedException("Invalid password") for a wrong password', async () => {
+    // ACC-164 — a 400 with the sign-in code, never a 401: the app's interceptor
+    // renews and RETRIES a 401 on a signed-in route, which would submit the wrong
+    // password twice. It is recorded against the sign-in lock like a sign-in.
+    it('refuses a wrong password with 400 INVALID_CREDENTIALS and records it against the lock', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
       mockAuthApi.signInEmail.mockResolvedValue(INVALID_EMAIL_OR_PASSWORD);
 
-      const refusal = service.setupMfa('user-1', ORG_A, { password: 'wrong' });
-      await expect(refusal).rejects.toThrow(UnauthorizedException);
-      await expect(refusal).rejects.toThrow('Invalid password');
+      const refusal = service.setupMfa('user-1', ORG_A, { password: 'wrong' }, { ipAddress: '203.0.113.9' });
+      await expect(refusal).rejects.toMatchObject({ status: 400, code: 'INVALID_CREDENTIALS' });
+      await expect(refusal).rejects.not.toThrow(UnauthorizedException);
       expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
+      expect(mockLoginAttemptService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: ORG_A, success: false, failureReason: 'invalid_password', ipAddress: '203.0.113.9' }),
+      );
+    });
+
+    it('is refused while the sign-in lock is on, before the password is checked', async () => {
+      (mockPrisma as { user: { findFirst: jest.Mock } }).user.findFirst.mockResolvedValue(appUserFixture);
+      mockLoginAttemptService.isLocked.mockResolvedValue(true);
+      mockLoginAttemptService.lockedUntil.mockResolvedValue(new Date('2026-11-14T10:15:00Z'));
+
+      await expect(service.setupMfa('user-1', ORG_A, { password: 'pw' })).rejects.toMatchObject({
+        status: 400,
+        code: 'ACCOUNT_LOCKED',
+      });
+      expect(mockAuthApi.signInEmail).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException("MFA is already enabled") when Better Auth answers with a challenge', async () => {
@@ -1403,47 +1438,8 @@ describe('AuthService', () => {
     });
   });
 
-  describe('disableMfa', () => {
-    it('re-authenticates and calls Better Auth disableTwoFactor, then logs the event', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
-      mockAuthApi.signInEmail.mockResolvedValue(
-        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess456; Path=/']),
-      );
-      mockAuthApi.disableTwoFactor.mockResolvedValue({ status: true });
-
-      await service.disableMfa('user-1', ORG_A, { password: 'pw' });
-
-      expect(mockAuthApi.disableTwoFactor).toHaveBeenCalledWith({
-        body: { password: 'pw' },
-        headers: new Headers({ cookie: 'authSession.token=sess456' }),
-      });
-      expect(mockAuditLog.log).toHaveBeenCalledWith(
-        expect.objectContaining({ metadata: { event: 'mfa_disabled' } }),
-      );
-    });
-
-    it('throws UnauthorizedException when the password is wrong', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
-      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
-
-      await expect(service.disableMfa('user-1', ORG_A, { password: 'wrong' })).rejects.toThrow(
-        UnauthorizedException,
-      );
-      expect(mockAuthApi.disableTwoFactor).not.toHaveBeenCalled();
-    });
-
-    it('throws BadRequestException when Better Auth rejects disableTwoFactor', async () => {
-      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
-      mockAuthApi.signInEmail.mockResolvedValue(
-        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess456; Path=/']),
-      );
-      mockAuthApi.disableTwoFactor.mockRejectedValue(new Error('boom'));
-
-      await expect(service.disableMfa('user-1', ORG_A, { password: 'pw' })).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-  });
+  // ACC-164 — disableMfa() is covered in mfa-disable.spec.ts, where every Better
+  // Auth answer is modelled as the Response it really returns.
 
   describe('getMfaStatus', () => {
     it('returns enabled: true when the linked AuthUser has twoFactorEnabled set', async () => {
@@ -1520,6 +1516,7 @@ describe('AuthService', () => {
       id: 'rt-1',
       userId: 'user-1',
       revokedAt: null,
+      createdAt: new Date(),
       tokenVersion: 2,
       expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       ...over,

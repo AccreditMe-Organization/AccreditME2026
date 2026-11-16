@@ -39,11 +39,21 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
     labelEn: 'Committee Member Role',
     labelAr: 'دور عضو اللجنة',
     isExtensible: true,
+    // ACC-286 — a seat can be required. Chairman and Secretary are required by
+    // default on these shared rows (seedSystemData() rewrites them on every
+    // deploy, so every organisation inherits the default with no backfill); an
+    // organisation unticks one through its override row (overrideAttributes()).
+    attributeSchema: {
+      type: 'object',
+      properties: {
+        required: { type: 'boolean', label: 'Required seat' },
+      },
+    },
     sortOrder: 20,
     values: [
-      { key: 'chairman',      labelEn: 'Chairman',      labelAr: 'رئيس اللجنة', sortOrder: 10 },
+      { key: 'chairman',      labelEn: 'Chairman',      labelAr: 'رئيس اللجنة', sortOrder: 10, attributes: { required: true } },
       { key: 'vice_chairman', labelEn: 'Vice Chairman', labelAr: 'نائب الرئيس', sortOrder: 20 },
-      { key: 'secretary',     labelEn: 'Secretary',     labelAr: 'أمين السر',   sortOrder: 30 },
+      { key: 'secretary',     labelEn: 'Secretary',     labelAr: 'أمين السر',   sortOrder: 30, attributes: { required: true } },
       { key: 'member',        labelEn: 'Member',        labelAr: 'عضو',         sortOrder: 40 },
       { key: 'observer',      labelEn: 'Observer',      labelAr: 'مراقب',       sortOrder: 50 },
       { key: 'advisor',       labelEn: 'Advisor',       labelAr: 'مستشار',      sortOrder: 60 },

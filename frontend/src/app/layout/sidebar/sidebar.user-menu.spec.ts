@@ -13,12 +13,14 @@ import { SetupHealthService } from '../../foundation/setup-health/services/setup
 import { LayerStackService } from '../../shared/overlay/layer-stack.service';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { SidebarComponent } from './sidebar.component';
+import { useLayoutFonts } from '../../../testing/layout-fonts';
 
 // ACC-235 — the rail's user menu is a CDK menu attached to the page body, as
 // am-row-menu is: ABOVE its button, aligned to its start, in either language.
 // The p-menu popup it replaced rendered inside the rail, and on a 390px phone
 // covered its own button (English) or ran 78px off the screen (Arabic).
 describe('SidebarComponent — the user menu (ACC-235)', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<SidebarComponent>;
   let logout: jasmine.Spy;
 

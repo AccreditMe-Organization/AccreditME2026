@@ -33,6 +33,10 @@ import { logWorkerRegistration } from './workers.config';
     // ACC-297 — the delayed notice to a committee's officers after a transfer.
     // Each job sets its own delay, id and single attempt (CommitteeTransferNoticeService).
     BullModule.registerQueue({ name: 'committee-transfer-notice' }),
+    // ACC-188 — issues a reset link: finds the account, makes the link, emails
+    // it. One attempt per job (set when it is added): a retry would issue a
+    // second link and end the first.
+    BullModule.registerQueue({ name: 'password-reset' }),
     BullModule.registerQueue({
       name: 'email-delivery',
       defaultJobOptions: {

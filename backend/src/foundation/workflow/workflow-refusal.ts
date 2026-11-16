@@ -22,6 +22,9 @@ export type WorkflowRefusalCode =
   | 'VALIDATOR_RETIRED'
   // ACC-238 — a transition precondition (transition-preconditions.ts).
   | 'COMMITTEE_QUORUM_NOT_SET'
+  // ACC-286 — a committee goes live only with its quorum of members and every required seat filled.
+  | 'COMMITTEE_MEMBERS_BELOW_QUORUM'
+  | 'COMMITTEE_REQUIRED_SEATS_EMPTY'
   // ACC-239 — an edit to a template whose shape code relies on (PROTECTED_TEMPLATES).
   | 'WORKFLOW_TEMPLATE_PROTECTED'
   // ACC-255 — stage rules: what a stage allows (StageRulesService) and what a stage save may name.
@@ -57,7 +60,12 @@ export type WorkflowRefusalCode =
   | 'STAGE_HAS_TRANSITIONS'
   | 'STAGE_IN_USE'
   | 'TRANSITION_ACTION_IN_USE'
-  | 'TRANSITION_IN_USE';
+  | 'TRANSITION_IN_USE'
+  // ACC-303 — exactly one default template per record type (workflow-default.ts).
+  | 'DEFAULT_NEEDS_STAGES'
+  | 'DEFAULT_TEMPLATE_TYPE_CHANGE'
+  | 'DEFAULT_TEMPLATE_REQUIRED'
+  | 'DEFAULT_TEMPLATE_INACTIVE';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -76,6 +84,8 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   ACTION_TYPE_RETIRED: HttpStatus.BAD_REQUEST,
   VALIDATOR_RETIRED: HttpStatus.BAD_REQUEST,
   COMMITTEE_QUORUM_NOT_SET: HttpStatus.CONFLICT,
+  COMMITTEE_MEMBERS_BELOW_QUORUM: HttpStatus.CONFLICT,
+  COMMITTEE_REQUIRED_SEATS_EMPTY: HttpStatus.CONFLICT,
   WORKFLOW_TEMPLATE_PROTECTED: HttpStatus.CONFLICT,
   STAGE_ACTION_NOT_ALLOWED: HttpStatus.CONFLICT,
   STAGE_ACTION_UNKNOWN: HttpStatus.BAD_REQUEST,
@@ -104,6 +114,10 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_IN_USE: HttpStatus.CONFLICT,
   TRANSITION_ACTION_IN_USE: HttpStatus.CONFLICT,
   TRANSITION_IN_USE: HttpStatus.CONFLICT,
+  DEFAULT_NEEDS_STAGES: HttpStatus.CONFLICT,
+  DEFAULT_TEMPLATE_TYPE_CHANGE: HttpStatus.CONFLICT,
+  DEFAULT_TEMPLATE_REQUIRED: HttpStatus.CONFLICT,
+  DEFAULT_TEMPLATE_INACTIVE: HttpStatus.CONFLICT,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -123,6 +137,8 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   ACTION_TYPE_RETIRED: 'Create task is no longer an action. Add tasks to the destination stage instead',
   VALIDATOR_RETIRED: "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves",
   COMMITTEE_QUORUM_NOT_SET: 'Set a quorum of at least 1 before submitting this committee for approval',
+  COMMITTEE_MEMBERS_BELOW_QUORUM: 'Add members first: this committee has fewer members than its quorum',
+  COMMITTEE_REQUIRED_SEATS_EMPTY: 'Fill the required seats first',
   WORKFLOW_TEMPLATE_PROTECTED:
     'The committee change request workflow is fixed: its stages can be renamed and given deadlines, and nothing else changed',
   STAGE_ACTION_NOT_ALLOWED: "This can't be done while the record is at its current stage",
@@ -151,6 +167,10 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   STAGE_IN_USE: "Records have entered this stage, so it can't be removed. You can rename it",
   TRANSITION_ACTION_IN_USE: "This action has run, so it can't be removed. You can turn it off",
   TRANSITION_IN_USE: "This transition has been used, so it can't be removed. You can rename it",
+  DEFAULT_NEEDS_STAGES: 'Add a starting stage, then set this template as the default.',
+  DEFAULT_TEMPLATE_TYPE_CHANGE: "The default workflow's record type can't be changed. Make another template the default first.",
+  DEFAULT_TEMPLATE_REQUIRED: 'This is the default workflow for its record type. Make another template the default first.',
+  DEFAULT_TEMPLATE_INACTIVE: "A deactivated workflow can't be the default.",
 };
 
 export class WorkflowRefusalException extends HttpException {

@@ -58,6 +58,10 @@ export interface JwtPayload {
   // ACC-13 — present only on a platform admin's impersonation session (see
   // PlatformTenantService.startImpersonation()). Absent on every normal login.
   impersonatedBy?: string;
+  // ACC-126 — when the session signed in, in epoch seconds. Signed, so it
+  // cannot be moved; `exp` is already capped at sst + 12h when minted. Absent
+  // only on a token minted before ACC-126 (at most 15 minutes after deploy).
+  sst?: number;
 }
 
 interface AuthenticatedRequest extends Request {
@@ -65,6 +69,7 @@ interface AuthenticatedRequest extends Request {
   userId: string;
   userPermissions?: string[];
   impersonatedBy?: string;
+  sessionStartedAt?: Date;
   // .cookies comes from @types/cookie-parser's Express.Request augmentation
   // (cookie-parser is mounted in main.ts) — no redeclaration needed here.
 }
@@ -143,6 +148,8 @@ export interface SessionIdentity {
   organizationSlug: string;
   /** ACC-204 — a cookie (a browser tab) or a Bearer header (an API client). */
   tokenSource: 'cookie' | 'bearer';
+  /** ACC-126 — the session's sign-in, from the token's `sst` claim. No query. */
+  sessionStartedAt?: Date;
 }
 
 export type SessionIdentityResult =
@@ -241,6 +248,10 @@ export async function verifySessionIdentity(
       organizationStatus: user.organization.status,
       organizationSlug: user.organization.slug,
       tokenSource: credential.source,
+      // ACC-126 — read from the verified token, not the database.
+      ...(typeof payload.sst === 'number'
+        ? { sessionStartedAt: new Date(payload.sst * 1000) }
+        : {}),
     },
   };
 }
@@ -318,6 +329,11 @@ export class TenantGuard implements CanActivate {
     // ACC-13 — passthrough only, no behavior change to this guard otherwise.
     if (identity.impersonatedBy) {
       request.impersonatedBy = identity.impersonatedBy;
+    }
+    // ACC-126 — passthrough of a claim already verified above; no query.
+    // /auth/me reports the session's end from it, and impersonation carries it.
+    if (identity.sessionStartedAt) {
+      request.sessionStartedAt = identity.sessionStartedAt;
     }
     return true;
   }

@@ -18,6 +18,7 @@ import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.s
 import { OrgUnitDto, OrgUnitService } from '../../services/org-unit.service';
 import { OrgUnitTreeComponent } from '../org-unit-tree/org-unit-tree.component';
 import { SHELL_PHONE_BELOW_PX } from '../../../../layout/app-shell/app-shell.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-120 slice 11 — the Add / Edit unit dialog against the 420px body cap
 // (ACC-111), measured in the REAL host: the tree page opens the real dialog
@@ -104,6 +105,7 @@ const MODES: readonly Mode[] = ['add', 'add-sub', 'edit', 'edit-moved', 'add-err
 const PHONE_QUERY = `(max-width: ${SHELL_PHONE_BELOW_PX - 0.02}px)`;
 
 describe('OrgUnitForm — the unit dialog against the 420px body cap (ACC-120 slice 11)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
 
   let fixture: ComponentFixture<OrgUnitTreeComponent>;

@@ -118,6 +118,37 @@ describe('TenantGuard', () => {
     expect(request.impersonatedBy).toBeUndefined();
   });
 
+  // ACC-126 — the session's start rides on the token, so the guard passes it
+  // on with NO query added: the same single user query as before.
+  it('attaches sessionStartedAt from the sst claim, with the same one query', async () => {
+    const sst = Math.floor(Date.now() / 1000) - 3600;
+    const token = signJwt({
+      sub: 'user-a',
+      organizationId: 'org-a',
+      tokenVersion: 3,
+      sst,
+      exp: Math.floor(Date.now() / 1000) + 600,
+    });
+    const ctx = buildContext({ cookies: { access_token: token } });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+
+    const request = ctx.switchToHttp().getRequest() as unknown as { sessionStartedAt?: Date };
+    expect(request.sessionStartedAt).toEqual(new Date(sst * 1000));
+    expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(1);
+    expect(mockPermissionResolver.getUserPermissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets no sessionStartedAt for a token minted before ACC-126 (no sst claim)', async () => {
+    const ctx = buildContext({ cookies: { access_token: validToken } });
+
+    await guard.canActivate(ctx);
+
+    const request = ctx.switchToHttp().getRequest() as unknown as { sessionStartedAt?: Date };
+    expect(request.sessionStartedAt).toBeUndefined();
+    expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(1);
+  });
+
   it('falls back to the Authorization header when no cookie is present', async () => {
     const ctx = buildContext({ authHeader: `Bearer ${validToken}` });
     await expect(guard.canActivate(ctx)).resolves.toBe(true);

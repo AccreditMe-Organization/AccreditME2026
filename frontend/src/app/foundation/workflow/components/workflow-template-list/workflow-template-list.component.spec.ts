@@ -190,10 +190,18 @@ describe('WorkflowTemplateListComponent (ACC-120 slice 7)', () => {
       expect(menuItems(root, 'c-task')).toEqual(['Open', 'Set as default', 'Deactivate']);
     });
 
-    it('leaves Set as default off the default row', () => {
+    // ACC-303 — the server refuses switching the default off; Set as default
+    // on another row is how it moves.
+    it('offers only Open on the default row', () => {
       const root = render();
       answer(TEMPLATES);
-      expect(menuItems(root, 'c-default')).toEqual(['Open', 'Deactivate']);
+      expect(menuItems(root, 'c-default')).toEqual(['Open']);
+    });
+
+    it('offers only Open on a deactivated row: it cannot become the default', () => {
+      const root = render();
+      answer([...TEMPLATES, t('c-off', 'Old committee lifecycle', 'COMMITTEE', false, { isActive: false })]);
+      expect(menuItems(root, 'c-off')).toEqual(['Open']);
     });
 
     it('offers only Open on the protected change request workflow', () => {

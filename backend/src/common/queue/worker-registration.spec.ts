@@ -87,6 +87,12 @@ const PROCESSORS = [
     modulePath: '../../foundation/committees/transfer-notice/committee-transfer-notice.module',
     exportName: 'CommitteeTransferNoticeModule',
   },
+  // ACC-188 — issues a reset link (finds the account, makes the link, emails it).
+  {
+    processor: 'PasswordResetProcessor',
+    modulePath: '../../foundation/auth/password-reset/password-reset.module',
+    exportName: 'PasswordResetModule',
+  },
 ];
 
 describe('ACC-92 — queue processors register only when RUN_WORKERS=true', () => {
@@ -119,6 +125,12 @@ describe('ACC-92 — queue processors register only when RUN_WORKERS=true', () =
       'SetupConditionReconciler',
     ],
     ['../../foundation/notification/notification.module', 'NotificationModule', 'NotificationService'],
+    // Forgot password ENQUEUES from the request, and reset runs in the request.
+    [
+      '../../foundation/auth/password-reset/password-reset.module',
+      'PasswordResetModule',
+      'PasswordResetService',
+    ],
   ])('%s still provides %s with workers disabled', (modulePath, exportName, service) => {
     expect(names(providersOf(modulePath, exportName, undefined))).toContain(service);
   });

@@ -16,6 +16,7 @@ import { AccreditMePreset } from '../../../core/theme/accreditme-preset';
 import { preserveDocumentLanguage } from '../../../../testing/document-language';
 import { RecycleBinComponent } from './recycle-bin.component';
 import { BIN_18, BIN_NOW, binItem } from './recycle-bin-fixtures';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-260, PR D — the Recycle bin laid out: EN and AR at 988, 358 and 328px of
 // content (the page specs' widths), nothing sideways at any depth, the header
@@ -49,6 +50,7 @@ const DIALOG_HEIGHTS: Record<'en' | 'ar', Record<'restoreOne' | 'restoreMany' | 
 };
 
 describe('RecycleBinComponent layout (ACC-260, PR D)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<FrameComponent>;
   const measured: string[] = [];

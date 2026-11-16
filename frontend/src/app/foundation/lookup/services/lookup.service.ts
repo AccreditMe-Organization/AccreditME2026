@@ -127,4 +127,14 @@ export class LookupService {
   overrideLabel(id: string, dto: OverrideLabelDto): Observable<void> {
     return this.http.post<void>(`${this.base}/values/${id}/override-label`, dto);
   }
+
+  /**
+   * ACC-286 — the organisation's own attribute values on a SHARED value (e.g.
+   * a required committee seat unticked). 204; stored on the override row, the
+   * label untouched. `null` would restore the shared default; no screen sends
+   * it today.
+   */
+  overrideAttributes(id: string, attributes: Record<string, boolean | null>): Observable<void> {
+    return this.http.patch<void>(`${this.base}/values/${id}/attributes`, { attributes });
+  }
 }

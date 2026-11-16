@@ -13,6 +13,7 @@ import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { HomeComponent } from './home.component';
 import { HomeAdminSummaryDto } from './home-summary.service';
 import { awaitingMe, awaitingRow, committeeRow, homeProviders, recordList, taskRow } from './home.testing';
+import { useLayoutFonts } from '../../../testing/layout-fonts';
 
 // ACC-279 — Home MEASURED in the real theme, font and translations (plan §3.2).
 //
@@ -74,6 +75,7 @@ class PageHost {
 }
 
 describe('HomeComponent — measured layout (ACC-279)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<PageHost>;
 
@@ -113,7 +115,6 @@ describe('HomeComponent — measured layout (ACC-279)', () => {
     fixture = TestBed.createComponent(PageHost);
     fixture.componentRef.setInput('width', width);
     fixture.detectChanges();
-    await document.fonts.ready;
     for (let i = 0; i < 3; i++) {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       fixture.detectChanges();

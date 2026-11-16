@@ -31,6 +31,7 @@ describe('AuthController', () => {
     acceptInvitation: jest.Mock;
     forgotPassword: jest.Mock;
     resetPassword: jest.Mock;
+    lookupResetLink: jest.Mock;
     setupMfa: jest.Mock;
     verifySetupMfa: jest.Mock;
     disableMfa: jest.Mock;
@@ -54,6 +55,7 @@ describe('AuthController', () => {
       acceptInvitation: jest.fn().mockResolvedValue(undefined),
       forgotPassword: jest.fn().mockResolvedValue(undefined),
       resetPassword: jest.fn().mockResolvedValue(undefined),
+      lookupResetLink: jest.fn().mockResolvedValue({ state: 'open', expiresAt: '2026-11-14T13:00:00.000Z' }),
       setupMfa: jest.fn().mockResolvedValue({ qrCodeDataUrl: 'data:image/png;base64,x', secret: 'SECRET', backupCodes: ['a1b2'] }),
       verifySetupMfa: jest.fn().mockResolvedValue(undefined),
       disableMfa: jest.fn().mockResolvedValue(undefined),
@@ -102,7 +104,7 @@ describe('AuthController', () => {
   });
 
   it('getMe returns the current user via UserService.getById, with impersonatedBy: null on a normal session', async () => {
-    const result = await controller.getMe('user-1', 'org-1', undefined);
+    const result = await controller.getMe('user-1', 'org-1', undefined, undefined);
     expect(userService.getById).toHaveBeenCalledWith('user-1', 'org-1');
     expect(service.getPublicUserById).not.toHaveBeenCalled();
     expect(service.resolveLanguage).toHaveBeenCalledWith(null, 'org-1');
@@ -114,7 +116,15 @@ describe('AuthController', () => {
       timeZone: 'Asia/Riyadh',
       hijriDisplay: false,
       impersonatedBy: null,
+      sessionEndsAt: null,
     });
+  });
+
+  // ACC-126 — when the session's 12 hours end, from the token's own claim.
+  it('getMe reports sessionEndsAt as the sign-in plus 12 hours', async () => {
+    const start = new Date('2026-11-13T06:00:00.000Z');
+    const result = await controller.getMe('user-1', 'org-1', undefined, start);
+    expect(result.sessionEndsAt).toBe('2026-11-13T18:00:00.000Z');
   });
 
   // ACC-94 (D2) — the display context. The zone comes from the working calendar
@@ -124,7 +134,7 @@ describe('AuthController', () => {
     workingCalendarService.getEffectiveTimeZone.mockResolvedValue('Asia/Dubai');
     userService.getHijriDisplay.mockResolvedValue(true);
 
-    const result = await controller.getMe('user-1', 'org-1', undefined);
+    const result = await controller.getMe('user-1', 'org-1', undefined, undefined);
 
     expect(workingCalendarService.getEffectiveTimeZone).toHaveBeenCalledWith('org-1');
     expect(userService.getHijriDisplay).toHaveBeenCalledWith('user-1', 'org-1');
@@ -139,7 +149,7 @@ describe('AuthController', () => {
       name: 'Platform Admin',
     });
 
-    const result = await controller.getMe('user-1', 'org-1', 'platform-admin-1');
+    const result = await controller.getMe('user-1', 'org-1', 'platform-admin-1', undefined);
 
     expect(service.getPublicUserById).toHaveBeenCalledWith('platform-admin-1');
     expect(result.impersonatedBy).toEqual({
@@ -198,16 +208,25 @@ describe('AuthController', () => {
     expect(service.forgotPassword).toHaveBeenCalledWith(dto);
   });
 
-  it('resetPassword delegates to AuthService.resetPassword', async () => {
+  it('resetPassword passes the body, the Origin and the address to AuthService.resetPassword', async () => {
     const dto = { token: 'tok', password: 'newpassword123' };
-    await controller.resetPassword(dto);
-    expect(service.resetPassword).toHaveBeenCalledWith(dto);
+    const req = { headers: { origin: 'https://acme.accreditme.app' }, ip: '203.0.113.9' };
+    await controller.resetPassword(dto, req as never);
+    expect(service.resetPassword).toHaveBeenCalledWith(dto, 'https://acme.accreditme.app', '203.0.113.9');
+  });
+
+  it('lookupResetLink passes the untyped body and the Origin to AuthService.lookupResetLink', async () => {
+    const body = { token: 'tok' };
+    const req = { headers: { origin: 'https://acme.accreditme.app' } };
+    await controller.lookupResetLink(body, req as never);
+    expect(service.lookupResetLink).toHaveBeenCalledWith(body, 'https://acme.accreditme.app');
   });
 
   it('setupMfa delegates to AuthService.setupMfa', async () => {
     const dto = { password: 'pw' };
-    const result = await controller.setupMfa(dto, 'user-1', 'org-1');
-    expect(service.setupMfa).toHaveBeenCalledWith('user-1', 'org-1', dto);
+    const req = { ip: '203.0.113.9', headers: { 'user-agent': 'UA' } };
+    const result = await controller.setupMfa(dto, 'user-1', 'org-1', req as never);
+    expect(service.setupMfa).toHaveBeenCalledWith('user-1', 'org-1', dto, { ipAddress: '203.0.113.9', userAgent: 'UA' });
     expect(result).toEqual({ qrCodeDataUrl: 'data:image/png;base64,x', secret: 'SECRET', backupCodes: ['a1b2'] });
   });
 
@@ -218,9 +237,10 @@ describe('AuthController', () => {
   });
 
   it('disableMfa delegates to AuthService.disableMfa', async () => {
-    const dto = { password: 'pw' };
-    await controller.disableMfa(dto, 'user-1', 'org-1');
-    expect(service.disableMfa).toHaveBeenCalledWith('user-1', 'org-1', dto);
+    const dto = { password: 'pw', code: '123456' };
+    const req = { ip: '203.0.113.9', headers: { 'user-agent': 'UA' } };
+    await controller.disableMfa(dto, 'user-1', 'org-1', req as never);
+    expect(service.disableMfa).toHaveBeenCalledWith('user-1', 'org-1', dto, { ipAddress: '203.0.113.9', userAgent: 'UA' });
   });
 
   it('getMfaStatus delegates to AuthService.getMfaStatus', async () => {

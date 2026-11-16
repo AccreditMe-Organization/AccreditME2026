@@ -5,6 +5,7 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 
 jest.mock('better-auth/api', () => ({ isAPIError: () => false }));
 
@@ -40,6 +41,8 @@ describe('UserController HTTP contract (ACC-78)', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
+        // ACC-164 — the reset service the controller now takes; unused here.
+        { provide: UserMfaResetService, useValue: {} },
         {
           provide: UserService,
           useValue: {

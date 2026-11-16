@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -14,6 +15,7 @@ import { UpdateLookupCategoryDto } from './dto/update-lookup-category.dto';
 import { CreateLookupValueDto } from './dto/create-lookup-value.dto';
 import { UpdateLookupValueDto } from './dto/update-lookup-value.dto';
 import { OverrideLabelDto } from './dto/override-label.dto';
+import { OverrideAttributesDto } from './dto/override-attributes.dto';
 
 export interface SuggestedValue {
   key: string;
@@ -245,6 +247,10 @@ export class LookupService {
             labelAr:         override.labelOverrideAr ?? sv.labelAr,
             labelOverrideEn: override.labelOverrideEn,
             labelOverrideAr: override.labelOverrideAr,
+            // ACC-286 — the organisation's own attribute values over the shared
+            // ones, KEY BY KEY: a label-only override (a renamed seat) keeps
+            // every shared default, such as Chairman being required.
+            attributes:      mergeAttributes(sv.attributes, override.attributes),
           }),
         );
         tenantByKey.delete(sv.key);
@@ -533,6 +539,92 @@ export class LookupService {
     });
   }
 
+  /**
+   * ACC-286 — an organisation's own values for a SYSTEM value's attributes,
+   * stored on its override row (the row that already carries hide and label
+   * overrides) and read over the shared ones key by key (getValues()).
+   *
+   * Only keys the category's attributeSchema declares are accepted, each of its
+   * declared type (boolean, number or string); anything else is 400
+   * LOOKUP_ATTRIBUTE_INVALID naming the key, and nothing is written. null
+   * removes the organisation's own value for that key, so the shared default
+   * applies again. Keys not sent keep what the override already has.
+   */
+  async overrideAttributes(
+    valueId: string,
+    organizationId: string,
+    dto: OverrideAttributesDto,
+    actorId: string,
+  ): Promise<void> {
+    const systemValue = await this.prisma.lookupValue.findFirst({
+      where: { id: valueId, organizationId: null, layer: 'SYSTEM' },
+      include: { category: { select: { attributeSchema: true } } },
+    });
+
+    if (!systemValue) {
+      throw new NotFoundException(`System lookup value '${valueId}' not found`);
+    }
+
+    const declared = schemaProperties(systemValue.category.attributeSchema);
+    for (const [key, value] of Object.entries(dto.attributes)) {
+      const type = declared.get(key);
+      if (!type || (value !== null && typeof value !== type)) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: `Lookup attribute '${key}' is not declared for this category, or has the wrong type`,
+          error: 'Bad Request',
+          code: 'LOOKUP_ATTRIBUTE_INVALID',
+          key,
+        });
+      }
+    }
+
+    const existing = await this.prisma.lookupValue.findFirst({
+      where: { categoryId: systemValue.categoryId, key: systemValue.key, organizationId },
+      select: { attributes: true },
+    });
+    const before = asRecord(existing?.attributes) ?? {};
+    const after: Record<string, unknown> = { ...before };
+    for (const [key, value] of Object.entries(dto.attributes)) {
+      if (value === null) delete after[key];
+      else after[key] = value;
+    }
+    const stored = Object.keys(after).length > 0 ? (after as Prisma.InputJsonValue) : Prisma.DbNull;
+
+    await this.prisma.lookupValue.upsert({
+      where: {
+        categoryId_key_organizationId: {
+          categoryId:     systemValue.categoryId,
+          key:            systemValue.key,
+          organizationId,
+        },
+      },
+      create: {
+        categoryId:      systemValue.categoryId,
+        organizationId,
+        key:             systemValue.key,
+        labelEn:         systemValue.labelEn,
+        labelAr:         systemValue.labelAr,
+        layer:           'TENANT',
+        isActive:        true,
+        isHidden:        false,
+        sortOrder:       systemValue.sortOrder,
+        attributes:      stored,
+      },
+      update: { attributes: stored },
+    });
+
+    await this.auditLog.log({
+      tenantId:   organizationId,
+      actorId,
+      action:     'UPDATE',
+      objectType: 'LookupValue',
+      objectId:   valueId,
+      before:     { attributes: before },
+      after:      { attributes: after },
+    });
+  }
+
   async suggestValues(
     categoryKey: string,
     organizationId: string,
@@ -621,4 +713,31 @@ export class LookupService {
       updatedAt:       v.updatedAt,
     };
   }
+}
+
+/** A stored JSON value as a plain object, or null. */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * ACC-286 — a SYSTEM value's attributes with the organisation's override over
+ * them, key by key (never the whole object replaced). Null when neither has any.
+ */
+export function mergeAttributes(shared: unknown, own: unknown): Prisma.JsonValue {
+  const base = asRecord(shared);
+  const mine = asRecord(own);
+  if (!base && !mine) return (shared ?? null) as Prisma.JsonValue;
+  return { ...(base ?? {}), ...(mine ?? {}) } as Prisma.JsonValue;
+}
+
+/** The property name → primitive type an attributeSchema declares ('boolean' | 'number' | 'string'). */
+function schemaProperties(schema: unknown): Map<string, string> {
+  const properties = asRecord(asRecord(schema)?.['properties']) ?? {};
+  const out = new Map<string, string>();
+  for (const [key, def] of Object.entries(properties)) {
+    const type = asRecord(def)?.['type'];
+    out.set(key, type === 'boolean' || type === 'number' ? type : 'string');
+  }
+  return out;
 }

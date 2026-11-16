@@ -291,4 +291,38 @@ describe('authInterceptor (ACC-24, ACC-122)', () => {
       .expectOne(`${environment.apiUrl}/users`)
       .flush({}, { status: 403, statusText: 'Forbidden' });
   });
+
+  // ── ACC-126: the session's 12-hour limit ──────────────────────────────────
+
+  it("says why when the renewal is refused for the session's 12-hour limit: reason=limit", (done) => {
+    http.get(`${environment.apiUrl}/users`).subscribe({
+      error: () => {
+        expect(authService.clearSession).toHaveBeenCalled();
+        expect(router.navigate).toHaveBeenCalledWith(
+          ['/login'],
+          jasmine.objectContaining({ queryParams: { returnUrl: '/committees/abc', reason: 'limit' } }),
+        );
+        done();
+      },
+    });
+
+    httpMock.expectOne(`${environment.apiUrl}/users`).flush({}, unauthorized);
+    httpMock
+      .expectOne(REFRESH_URL)
+      .flush({ statusCode: 401, code: 'SESSION_TIME_LIMIT', message: 'x', error: 'Unauthorized' }, unauthorized);
+  });
+
+  it('gives no reason for any other refused renewal', (done) => {
+    http.get(`${environment.apiUrl}/users`).subscribe({
+      error: () => {
+        expectSignedOut();
+        done();
+      },
+    });
+
+    httpMock.expectOne(`${environment.apiUrl}/users`).flush({}, unauthorized);
+    httpMock
+      .expectOne(REFRESH_URL)
+      .flush({ statusCode: 401, code: 'ORGANIZATION_UNAVAILABLE', message: 'x', error: 'Unauthorized' }, unauthorized);
+  });
 });

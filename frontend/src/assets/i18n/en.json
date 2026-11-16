@@ -446,7 +446,20 @@
     "valueColumnStatus": "Status",
     "valuesEyebrow": "Lookup values",
     "valuesSearchPlaceholder": "Search values by label or key",
-    "deleteHeader": "Delete the value “{{name}}”?"
+    "deleteHeader": "Delete the value “{{name}}”?",
+    "attribute": {
+      "required": "Required seat",
+      "requiredFor": "Required seat: {{name}}",
+      "requiredOn": "Required seat",
+      "requiredOff": "Not a required seat",
+      "requiredHint": "A committee can't go live until its required seats are filled, and the last holder of a required seat can't leave while the committee is in force."
+    },
+    "refusal": {
+      "attributeInvalid": "This setting can't be saved for this value.",
+      "valueGone": "This value no longer exists.",
+      "rateLimited": "Too many changes at once. Wait a moment, then try again."
+    },
+    "errorRequiredSeat": "The Required seat setting could not be saved."
   },
   "workingCalendar": {
     "title": "Working Calendar",
@@ -638,6 +651,7 @@
         "users:transfer": "Move someone to a new unit or position",
         "users:deactivate": "Deactivate a user",
         "users:reactivate": "Reactivate a deactivated user",
+        "users:reset_mfa": "Reset another person's two-step sign-in",
         "roles:view": "See roles and what they allow",
         "roles:manage": "Create, change and assign roles",
         "lookups:view": "See lookup lists and their values",
@@ -689,6 +703,10 @@
           "records": "Committee records",
           "members": "Members",
           "tasks": "Tasks on committees"
+        },
+        "users": {
+          "people": "People and profiles",
+          "access": "Account access"
         }
       }
     },
@@ -1095,6 +1113,9 @@
       "openedFrom": "Opened from “{{transition}}”"
     },
     "refusal": {
+      "requiredSeatsEmpty": "Fill the required seats first: {{seats}}.",
+      "requiredSeatsEmptyPlain": "Fill the committee's required seats first.",
+      "membersBelowQuorum": "Add members first: this committee has fewer members than its quorum.",
       "actionTypeRetired": "Create task is no longer an action. Add tasks to the destination stage instead.",
       "validatorRetired": "\"All previous stage tasks complete\" is no longer a validator: a stage's required tasks always hold its forward moves.",
       "stageActionNotAllowed": "This can't be done while the record is at its current stage.",
@@ -1111,6 +1132,10 @@
       "stageHasNoOne": "Nobody works this stage yet, so the record can't move from it. Ask an administrator to choose who works it.",
       "notInStagePool": "Only whoever works this stage can do this.",
       "moveHasNoMover": "Nobody is set to make this move, so the record can't move this way. Ask an administrator.",
+      "defaultNeedsStages": "Add a starting stage, then set this template as the default.",
+      "defaultTypeChange": "The default workflow's record type can't be changed. Make another template the default first.",
+      "defaultRequired": "This is the default workflow for its record type. Make another template the default first.",
+      "defaultInactive": "A deactivated workflow can't be the default.",
       "protected": {
         "CREATE_TEMPLATE": "There is already a committee change request workflow, and there can be only one. Rename its stages or set their deadlines instead.",
         "REPLACE_DEFAULT": "The committee change request workflow cannot be replaced by another workflow.",
@@ -1146,7 +1171,6 @@
     },
     "confirmRemoveStageHeader": "Remove the stage “{{name}}”?",
     "confirmDeactivateTemplateHeader": "Deactivate the template “{{name}}”?",
-    "confirmDeactivateDefaultTemplate": "Records already on it carry on. It's the default, so new records of its type can't start until another template is made the default.",
     "confirmRemoveTransitionHeader": "Remove the transition “{{name}}”?",
     "who": {
       "title": "Who works this stage",
@@ -1370,6 +1394,9 @@
       "stage": "Stage"
     },
     "refusal": {
+      "parentNotLive": "Choose a parent committee that is in force.",
+      "reportsToNotLive": "Choose a committee that is in force to report to.",
+      "requiredSeatLastHolder": "Appoint another {{seat}} first.",
       "ownParent": "A committee can't be its own parent committee.",
       "parentLoop": "A committee can't sit under one of its own sub-committees.",
       "parentDissolving": "A committee that is being dissolved, or has been, can't be a parent committee.",
@@ -1841,7 +1868,9 @@
       "unavailable": "You cannot choose who this task goes to.",
       "memberRole": "Member role",
       "member": "Member (optional)",
-      "outcomeStraight": "Goes straight to {{name}} ({{role}})."
+      "outcomeStraight": "Goes straight to {{name}} ({{role}}).",
+      "outcomeCovered": "{{name}} is out of office. This task will go to {{cover}}.",
+      "coverRow": "Out of office · goes to {{cover}}"
     },
     "request": {
       "backToDetails": "Back to the request",
@@ -1971,6 +2000,37 @@
     "reassignRejectedBy": "Rejected by {{name}}"
   },
   "auth": {
+    "forgot": {
+      "intro": "Enter the email address you sign in with. If it has an account here, we'll send a link to choose a new password.",
+      "submit": "Send reset link",
+      "sentTitle": "Check your email",
+      "sentBody": "If {{email}} has an account at this organisation, a link to reset the password is on its way. The link works once, for 1 hour. If nothing arrives in a few minutes, check your spam folder.",
+      "sentNote": "Asking again sends a new link, and the earlier one stops working."
+    },
+    "reset": {
+      "title": "Choose a new password",
+      "intro": "Your new password replaces the old one, and signs you out everywhere.",
+      "newPassword": "New password",
+      "confirm": "Confirm new password",
+      "confirmRequired": "Enter the new password again.",
+      "mismatch": "The two passwords don't match.",
+      "checkUnavailable": "We couldn't check your password just now. Try again; your link still works.",
+      "submit": "Set new password",
+      "successNotice": "Your password is changed. Sign in with your new password.",
+      "expiredTitle": "This link has expired",
+      "expiredBody": "Reset links work for 1 hour. Ask for a new one.",
+      "usedTitle": "This link has already been used",
+      "usedBody": "Your password was set with this link. Sign in with it, or ask for a new link if you've forgotten it again.",
+      "replacedTitle": "A newer link was sent",
+      "replacedBody": "You asked for another reset link, so this one no longer works. Use the link in the latest email.",
+      "invalidTitle": "This link can't be used",
+      "invalidBody": "It may be incomplete, or for a different organisation's address. Ask for a new link.",
+      "sendNewLink": "Send a new link"
+    },
+    "recovery": {
+      "unreachable": "We couldn't reach AccreditMe. Check your connection and try again.",
+      "rateLimited": "Too many attempts. Wait a few minutes, then try again."
+    },
     "login": "Sign in",
     "logout": "Sign out",
     "openOrganisationAddress": "Open your organisation's address to sign in, for example yourorg.accreditme.app.",
@@ -2000,7 +2060,6 @@
       "acceptedNotice": "Your password is set. Sign in to continue."
     },
     "forgotPasswordTitle": "Forgot password",
-    "forgotPasswordUnavailable": "Password reset by email isn't available yet. Ask your organisation's administrator for help signing in.",
     "signIn": {
       "backToSignIn": "Back to sign in",
       "emailRequired": "Enter your email.",
@@ -2097,6 +2156,7 @@
         "listLabel": "Committee seats",
         "removing": "Removing committee seats…",
         "notMember": "Not a member any more.",
+        "openCommittee": "Open the committee",
         "removeFailed": "The seat couldn't be removed.",
         "reasonMoved": "Transferred from {{from}} to {{to}}.",
         "reasonSameUnit": "Moved to a new position in {{unit}}."
@@ -2416,6 +2476,7 @@
       "AT_RISK": "At risk"
     },
     "types": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Committee missing a required seat",
       "ORG_UNIT_WITHOUT_HEAD": "Org unit without a head",
       "ORG_UNIT_WITHOUT_TYPE": "Org unit without a type",
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
@@ -2430,6 +2491,7 @@
       "template": "Workflow: {{name}}"
     },
     "consequence": {
+      "committeeMissingSeat": "Required seats with no one in them: {{seats}}.",
       "unitCovered": "No head. Work routed to its head escalates to a parent unit or an acting head in the meantime.",
       "unitUncovered": "No head, and no one covers it by escalation. Approvals and escalations routed to its head have nowhere to go.",
       "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
@@ -2459,6 +2521,7 @@
       "detected": "First detected {{relative}}"
     },
     "fix": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Appoint members",
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
       "ORG_UNIT_WITHOUT_TYPE": "Set type",
       "STAGE_WITHOUT_ASSIGNEE": "Review stage",
@@ -2470,6 +2533,7 @@
       "STAGE_ON_STARTING_ASSIGNMENT": "Review stage"
     },
     "fixNeeds": {
+      "COMMITTEE_MISSING_REQUIRED_SEAT": "Fixing this needs permission to add committee members.",
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
       "ORG_UNIT_WITHOUT_TYPE": "Fixing this needs permission to manage the organization structure.",
       "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
@@ -2996,6 +3060,10 @@
       "mfaAttemptsLeft": {
         "one": "1 attempt left for this sign-in.",
         "other": "{{count}} attempts left for this sign-in."
+      },
+      "twoStepAttemptsLeft": {
+        "one": "1 attempt left.",
+        "other": "{{count}} attempts left."
       }
     },
     "files": {
@@ -3039,6 +3107,10 @@
       }
     },
     "workflow": {
+      "membersBelowQuorum": {
+        "one": "Add members first: the quorum needs {{count}} member, and this committee has {{members}}.",
+        "other": "Add members first: the quorum needs {{count}} members, and this committee has {{members}}."
+      },
       "editorChanges": {
         "one": "{{count}} change",
         "other": "{{count}} changes"
@@ -3398,7 +3470,13 @@
       "signOutNow": "Sign out now"
     },
     "signedOutIdle": "You were signed out because there was no activity for a while.",
-    "signedInElsewhere": "You're signed in to another organisation in this browser. Signing in here will sign you out there."
+    "signedInElsewhere": "You're signed in to another organisation in this browser. Signing in here will sign you out there.",
+    "limit": {
+      "title": "Your session ends soon",
+      "body": "For security, a session lasts 12 hours. You'll be signed out at {{time}}. Save your work, then sign in again.",
+      "continueWorking": "Continue working"
+    },
+    "signedOutLimit": "You were signed out because a session ends 12 hours after sign-in. Sign in again to continue."
   },
   "manageRoles": {
     "comesWithPosition": "Comes with their head position, {{position}}. It ends when that headship ends, so change it in Headship, not here.",
@@ -3668,6 +3746,14 @@
       "fromPosition": "Comes with the head position {{position}}",
       "fromPositionUnnamed": "Comes with a head position"
     },
+    "committees": {
+      "heading": "Committees",
+      "empty": "Not on any committee",
+      "loadError": "Committees couldn't be loaded.",
+      "since": "Since {{date}}",
+      "range": "{{from}} – {{to}}",
+      "inactiveCommittee": "Committee inactive"
+    },
     "twoStep": {
       "heading": "Two-step sign-in",
       "on": "On. A code from an authenticator app is asked for at every sign-in.",
@@ -3682,7 +3768,28 @@
       "passwordRequired": "Enter your password.",
       "codeInvalid": "Enter the 6-digit code.",
       "continue": "Continue",
-      "offTitle": "Turn off two-step sign-in"
+      "offTitle": "Turn off two-step sign-in",
+      "offOther": "Off.",
+      "intro": "Enter your password and a code from your authenticator app. Signing in will then need only your password.",
+      "code": "Code from your authenticator app",
+      "codeHint": "The 6-digit code showing in your app now.",
+      "passwordWrong": "That password isn't right.",
+      "locked": "Too many unsuccessful attempts. You can try again {{when}}.",
+      "lockedNoTime": "Too many unsuccessful attempts. Try again later.",
+      "alreadyOff": "Two-step sign-in is already off.",
+      "unreachable": "We couldn't reach AccreditMe. Check your connection and try again.",
+      "offDone": "Two-step sign-in is off.",
+      "reset": "Reset",
+      "resetTitle": "Reset two-step sign-in for {{name}}?",
+      "resetBody": "This turns two-step sign-in off for this person and signs them out everywhere. They then sign in with their password and set it up again. They're emailed that it was reset.",
+      "resetDone": "Two-step sign-in was reset.",
+      "resetOwner": "The account owner's two-step sign-in can't be reset here. AccreditMe support can help.",
+      "resetAlreadyOff": "Two-step sign-in is already off for this person.",
+      "resetActingAs": "This can't be done while signed in as someone else.",
+      "resetHigher": "Only an Organization Administrator can reset an Organization Administrator's two-step sign-in.",
+      "resetSelf": "You can't reset your own two-step sign-in here. Turn it off with your password and a code.",
+      "resetFailed": "Two-step sign-in wasn't reset. Try again.",
+      "offFailed": "Two-step sign-in wasn't turned off. Try again."
     },
     "editProfileDialog": {
       "nameRequired": "Enter a name.",
@@ -3717,6 +3824,7 @@
     "onHoldUntil": "On hold until {{date}}",
     "waitingFor": "Waiting for {{pool}}",
     "pickedUpOn": "picked up from the pool {{date}}",
+    "coveringFor": "covering for {{name}}",
     "byHand": "{{date}}, by hand",
     "byWorkflow": "by the workflow",
     "byWorkflowStage": "by the workflow, when the record entered {{stage}}",

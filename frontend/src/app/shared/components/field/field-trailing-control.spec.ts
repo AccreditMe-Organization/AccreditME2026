@@ -8,6 +8,7 @@ import {
 } from '@ngx-translate/core';
 import { FieldComponent } from './field.component';
 import { PasswordInputComponent } from '../password-input/password-input.component';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 @Component({
   standalone: true,
@@ -32,6 +33,7 @@ class HostComponent {
 // ACC-120 slice 9e — the error glyph must not sit on the show/hide button.
 // Found in the browser: the eye ended at x 773 and the "!" started at 772.8.
 describe('am-field with a trailing control (ACC-120 slice 9e)', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<HostComponent>;
 
   function render(dir: 'ltr' | 'rtl'): void {

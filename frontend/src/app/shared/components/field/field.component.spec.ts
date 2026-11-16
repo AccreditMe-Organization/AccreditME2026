@@ -7,6 +7,7 @@ import {
   TranslateNoOpLoader,
 } from '@ngx-translate/core';
 import { FieldComponent } from './field.component';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 @Component({
   standalone: true,
@@ -34,6 +35,7 @@ class HostComponent {
 }
 
 describe('FieldComponent', () => {
+  useLayoutFonts();
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
 

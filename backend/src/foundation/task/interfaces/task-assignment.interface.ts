@@ -36,6 +36,20 @@ export interface IAssignableHolder {
    * picker still answers, only the counts are withheld.
    */
   workload: IHolderWorkload | null;
+  /**
+   * ACC-302 — who a NEW task for this person goes to now, because they are out
+   * of office with an active cover (one hop: never a cover who is away too).
+   * Null when it goes to them. Only the cover's id and name: the away person's
+   * dates and reason are never sent (Ahmad, 14 Nov). Optional in the type only
+   * so internal builders can omit it: every picker row the API returns has it
+   * (TaskAssignmentService.withCovers()).
+   */
+  cover?: IHolderCover | null;
+}
+
+export interface IHolderCover {
+  userId: string;
+  name: string;
 }
 
 export interface IHolderWorkload {

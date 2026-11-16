@@ -5,6 +5,7 @@ import { AiAssistComponent, AiAssistState } from './ai-assist.component';
 import type { AiRefusal } from '../../../core/ai/ai-refusal';
 import en from '../../../../assets/i18n/en.json';
 import ar from '../../../../assets/i18n/ar.json';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 @Component({
   standalone: true,
@@ -56,6 +57,7 @@ class HostComponent {
 }
 
 describe('AiAssistComponent (ACC-198)', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
   const el = () => fixture.nativeElement as HTMLElement;
@@ -207,6 +209,7 @@ describe('AiAssistComponent (ACC-198)', () => {
     expect(el().querySelector('.result-body')).toBeNull();
   });
 describe('collapsible and clamped (ACC-193, Q5) — opt-in', () => {
+  useLayoutFonts({ rtl: true });
     it('off by default: no fold control, no clamp, the whole result shown (the briefing is unchanged)', () => {
       host.state.set('result');
       render();
@@ -335,6 +338,7 @@ class SplitHostComponent {
 }
 
 describe('the split — hideResult, labelRow, actionsExtra (ACC-197) — opt-in', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<SplitHostComponent>;
   let host: SplitHostComponent;
   const el = () => fixture.nativeElement as HTMLElement;

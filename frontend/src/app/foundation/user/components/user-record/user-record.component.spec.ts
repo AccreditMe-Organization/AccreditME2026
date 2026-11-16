@@ -367,6 +367,67 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     expect(panel.querySelector('[data-action="twoStepSetUp"]')).not.toBeNull();
   });
 
+  // ACC-164 — someone else's two-step sign-in, drawn only from the server's
+  // `twoStep` (rule 4: only to people allowed to reset it).
+  describe("someone else's two-step sign-in (ACC-164)", () => {
+    const RESETTER = [...ADMIN, 'users:reset_mfa'];
+    const panelOf = (el: HTMLElement) => el.querySelector('[data-panel="twoStepOther"]');
+
+    it('is drawn, with Reset, when the server says it is on and may be reset', () => {
+      const ctx = render({ permissions: RESETTER });
+      flushUser(ctx, record({ twoStep: { enabled: true, mayReset: true } }));
+      const panel = panelOf(ctx.el)!;
+      expect(panel.textContent).toContain('On. A code from an authenticator app is asked for at every sign-in.');
+      expect(panel.querySelector('[data-action="twoStepReset"]')?.textContent?.trim()).toBe('Reset');
+      expect(ctx.el.querySelector('[data-panel="twoStep"]')).toBeNull();
+    });
+
+    it('reads "Off." with no action when it is off', () => {
+      const ctx = render({ permissions: RESETTER });
+      flushUser(ctx, record({ twoStep: { enabled: false, mayReset: false } }));
+      const panel = panelOf(ctx.el)!;
+      expect(panel.querySelector('[data-two-step-status]')?.textContent?.trim()).toBe('Off.');
+      expect(panel.querySelector('[data-action]')).toBeNull();
+    });
+
+    it('hides Reset while signed in as someone else (mayReset false), keeping the status', () => {
+      const ctx = render({ permissions: RESETTER });
+      flushUser(ctx, record({ twoStep: { enabled: true, mayReset: false } }));
+      const panel = panelOf(ctx.el)!;
+      expect(panel.textContent).toContain('On.');
+      expect(panel.querySelector('[data-action="twoStepReset"]')).toBeNull();
+    });
+
+    it('draws no panel at all — never "Off" — when the server sends none', () => {
+      for (const twoStep of [null, undefined]) {
+        const ctx = render({ permissions: RESETTER });
+        flushUser(ctx, record({ twoStep }));
+        expect(panelOf(ctx.el)).toBeNull();
+      }
+    });
+
+    it('Reset opens the confirm naming the person', () => {
+      const ctx = render({ permissions: RESETTER });
+      flushUser(ctx, record({ twoStep: { enabled: true, mayReset: true } }));
+      (ctx.el.querySelector('[data-action="twoStepReset"]') as HTMLButtonElement).click();
+      ctx.fixture.detectChanges();
+      ctx.fixture.detectChanges();
+      expect(document.querySelector('.p-dialog')?.textContent).toContain(
+        'Reset two-step sign-in for ⁨Dr. Yasser Al-Amri⁩?',
+      );
+      ctx.fixture.destroy();
+    });
+
+    it('Arabic: «إعادة ضبط» and «غير مفعّل.»', () => {
+      const on = render({ permissions: RESETTER, arabic: true });
+      flushUser(on, record({ twoStep: { enabled: true, mayReset: true } }));
+      expect(on.el.querySelector('[data-action="twoStepReset"]')?.textContent?.trim()).toBe('إعادة ضبط');
+      const off = render({ permissions: RESETTER, arabic: true });
+      flushUser(off, record({ twoStep: { enabled: false, mayReset: false } }));
+      expect(panelOf(off.el)?.querySelector('[data-two-step-status]')?.textContent?.trim()).toBe('غير مفعّل.');
+    });
+  });
+
   it('9 · the status request is never made on someone else\'s record', () => {
     TestBed.resetTestingModule();
     const getMfaStatus = jasmine.createSpy('getMfaStatus').and.returnValue(of({ enabled: false }));
@@ -408,7 +469,9 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
   }
 
   // ── Test 14 (D1) ────────────────────────────────────────────────────────
-  it('14 · Committees, Tasks, Sessions and Access history are absent — not empty, not disabled', () => {
+  // ACC-216: Committees is absent here because ADMIN holds no committees:view
+  // (test 16 covers it with the key); the other three have no read yet.
+  it('14 · without committees:view, Committees, Tasks, Sessions and Access history are absent — not empty, not disabled', () => {
     const ctx = render({ viewer: ME, recordId: ME, permissions: ADMIN });
     flushUser(ctx, record({ id: ME }));
     ctx.http.expectOne((r) => r.url.endsWith(`/users/${ME}/roles`)).flush([]);
@@ -420,6 +483,47 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     for (const absent of ['Committees', 'Sessions', 'Access history', 'Tasks']) {
       expect(text).not.toContain(absent);
     }
+  });
+
+  // ── Test 16 (ACC-216) ───────────────────────────────────────────────────
+  it('16 · ACC-216 · the Committees panel: present with committees:view, absent and never requested without it', () => {
+    const without = render({ viewer: ME, recordId: OTHER, permissions: ['users:view'] });
+    flushUser(without, record());
+    expect(without.el.querySelector('app-user-committees-panel')).toBeNull();
+    expect(without.el.querySelector('[data-panel="committees"]')).toBeNull();
+    expect(urls(without.http).filter((u) => u.includes('/committees'))).toEqual([]);
+
+    const withKey = render({ viewer: ME, recordId: OTHER, permissions: ['users:view', 'committees:view'] });
+    flushUser(withKey, record());
+    const req = withKey.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/committees`) && r.method === 'GET');
+    req.flush({
+      total: 1,
+      rows: [
+        {
+          committee: { id: 'c1', nameEn: 'Quality Committee', nameAr: 'لجنة الجودة' },
+          seat: { id: 's1', labelEn: 'Member', labelAr: 'عضو', layer: 'SYSTEM' },
+          joinedAt: '2026-03-01T00:00:00.000Z',
+          leftAt: null,
+          current: true,
+        },
+      ],
+    });
+    withKey.fixture.detectChanges();
+    const panel = withKey.el.querySelector('[data-panel="committees"]')!;
+    expect(panel).not.toBeNull();
+    expect(panel.querySelector('[data-committee-link]')!.textContent!.trim()).toBe('Quality Committee');
+  });
+
+  // ── Test 17 (CC-276) ────────────────────────────────────────────────────
+  // The retired #718096 (4.02:1 on white) stays out of THIS template: meta text
+  // is ink-500. Read from the compiled definition's static attributes, which
+  // hold this page's own class strings and none of the shared record-panel
+  // frame's (retired separately). The ink-500 guard runs first.
+  it('17 · its template uses no retired --am-text-secondary', () => {
+    const def = (UserRecordComponent as unknown as { ɵcmp: { consts: unknown } }).ɵcmp;
+    const template = JSON.stringify(typeof def.consts === 'function' ? (def.consts as () => unknown)() : def.consts);
+    expect(template).withContext('the template classes were read').toContain('--am-ink-500');
+    expect(template).not.toContain('--am-text-secondary');
   });
 
   // ── Test 15 ─────────────────────────────────────────────────────────────

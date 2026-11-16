@@ -55,6 +55,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   it('covers every condition type with a detector, except the deferred ones', () => {
     expect(Object.keys(detectors.byType).sort()).toEqual([
       'ACTING_HEAD_OPEN_ENDED',
+      'COMMITTEE_MISSING_REQUIRED_SEAT',
       'ORG_UNIT_WITHOUT_HEAD',
       'ORG_UNIT_WITHOUT_TYPE',
       'STAGE_ON_STARTING_ASSIGNMENT',
@@ -78,6 +79,9 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   //
   // ACC-271 — STAGE_ON_STARTING_ASSIGNMENT was on the list from PR 1 until PR 3
   // added its detector, the same split ACTING_HEAD_OPEN_ENDED made.
+  //
+  // ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT was on the list in PR 1; PR 2
+  // took it off when it added the detector.
   it('defers POSITION_WITHOUT_ROLE only, and gives no deferred type a detector', () => {
     expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
     for (const type of DEFERRED_SETUP_CONDITION_TYPES) {

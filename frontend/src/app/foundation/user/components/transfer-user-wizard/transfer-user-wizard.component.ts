@@ -1,6 +1,7 @@
 import { Component, DestroyRef, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { catchError, concatMap, from, map, of, toArray } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -21,7 +22,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { FormatService } from '../../../../core/formatting';
 import { CommitteeService } from '../../../committees/services/committee.service';
-import { committeeStageRefusal } from '../../../committees/committee-stage-refusal';
+import { committeeSeatRefusal, committeeStageRefusal } from '../../../committees/committee-stage-refusal';
 import {
   TransferCommitteeSeatDto,
   TransferCommitteesDto,
@@ -84,6 +85,7 @@ import { transferSeatReason } from './transfer-seat-reason';
     MessageModule,
     StepperModule,
     OverlaySelectComponent,
+    RouterLink,
   ],
   template: `
     <form [formGroup]="form" class="flex flex-col gap-4">
@@ -113,6 +115,16 @@ import { transferSeatReason } from './transfer-seat-reason';
                 @for (failure of removal.failed; track failure.row.memberId) {
                   <li [attr.data-failed-seat]="failure.row.memberId">
                     <span class="font-medium">{{ committeeName(failure.row) }}</span>: {{ failureText(failure.error) }}
+                    <!-- ACC-286 — a required seat stays filled until someone
+                         else holds it, which is done on the committee's page. -->
+                    @if (isSeatRefusal(failure.error) && canOpenCommittees()) {
+                      <a
+                        class="ms-1 text-[var(--am-primary-600)] underline"
+                        [routerLink]="['/committees', failure.row.committeeId]"
+                        [attr.data-failed-seat-link]="failure.row.memberId"
+                        >{{ 'user.transfer.committees.openCommittee' | translate }}</a
+                      >
+                    }
                   </li>
                 }
               </ul>
@@ -632,6 +644,13 @@ export class TransferUserWizardComponent implements OnInit {
   /** Removing a seat stays with this permission; the transfer permission never grants it. */
   readonly canRemoveSeats = computed(() => this.access.hasPermission('committees:remove_member'));
 
+  /** ACC-286 — the committee link on a refused seat's row: only for someone who may open it. */
+  readonly canOpenCommittees = computed(() => this.access.hasPermission('committees:view'));
+
+  isSeatRefusal(error: unknown): boolean {
+    return committeeSeatRefusal(error) !== null;
+  }
+
   readonly seatOptions = [
     { value: 'keep', labelKey: 'user.transfer.committees.keep' },
     { value: 'remove', labelKey: 'user.transfer.committees.remove' },
@@ -822,8 +841,19 @@ export class TransferUserWizardComponent implements OnInit {
       : (this.translate.instant('committee.refusal.membersNotAllowedNoStage') as string);
   }
 
-  /** One failed remove, said for the admin: the stage refusal, no longer a member, or the server's error. */
+  /**
+   * One failed remove, said for the admin: the required seat (ACC-286), the
+   * stage refusal, no longer a member, or the server's error.
+   */
   failureText(error: unknown): string {
+    // ACC-286 — the last holder of a required seat on a committee in force.
+    // Said from the code, naming the seat; checked before the 404 branch.
+    const seat = committeeSeatRefusal(error);
+    if (seat) {
+      return this.translate.instant('committee.refusal.requiredSeatLastHolder', {
+        seat: this.language.bilingual(seat.seatEn, seat.seatAr),
+      }) as string;
+    }
     const stage = committeeStageRefusal(error);
     if (stage) {
       const name =

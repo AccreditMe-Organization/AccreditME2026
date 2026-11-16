@@ -52,8 +52,8 @@ const makeMember = (overrides: Partial<typeof BASE_MEMBER> = {}) => ({ ...BASE_M
 const mockPrisma = {
   // ACC-233 — create and update run their reference checks and the write in one
   // transaction; the fake hands the callback this same mock. $queryRaw answers
-  // the hierarchy lock, the loop walks and the stage read (none reaching, no
-  // instance) unless a test says otherwise.
+  // the hierarchy lock, the loop walks and the stage read (none reaching; the
+  // target in force, ACC-286) unless a test says otherwise.
   $transaction: jest.fn(),
   $queryRaw: jest.fn(),
   committee: {
@@ -113,7 +113,11 @@ describe('CommitteesService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.$transaction.mockImplementation((fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma));
-    mockPrisma.$queryRaw.mockResolvedValue([]);
+    // ACC-286 — a referenced committee is in force unless a test says otherwise
+    // (only a committee in force can be a parent or be reported to).
+    mockPrisma.$queryRaw.mockImplementation((strings: TemplateStringsArray) =>
+      Promise.resolve(strings.join('?').includes('"WorkflowInstance"') ? [{ flags: ['IN_FORCE'], isActive: true }] : []),
+    );
     // Defaults matching this file's usual "happy path" org — tests
     // exercising cross-tenant rejection override these per-case.
     mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
@@ -126,7 +130,8 @@ describe('CommitteesService', () => {
     mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-committee-type' });
     mockPrisma.lookupValue.findMany.mockResolvedValue([]);
     mockStageRules.stageRulesFor.mockResolvedValue(new Map());
-    mockStageRules.assertStageAllows.mockResolvedValue(undefined);
+    // ACC-286 — the rules it read: a stage that is not in force unless a test says otherwise.
+    mockStageRules.assertStageAllows.mockResolvedValue({ stageId: 'stage-f', stageNameEn: 'Formation', stageNameAr: null, flags: [], actions: {} });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -1376,6 +1381,87 @@ describe('CommitteesService', () => {
       const message = (stageCall()[5] as { message: (n: string | null) => string }).message;
       expect(message('Dissolved')).toBe("Members can't be changed while the committee is Dissolved.");
       expect(message(null)).toBe("Members can't be changed: the committee has no current stage.");
+    });
+
+    // ACC-286 — rule 3: a member write that would empty a required seat of a
+    // committee in force. The seat reads are answered here by SQL shape; the
+    // real reads, and the races, are in committee-going-live.db-spec.ts.
+    describe('a required seat of a committee in force (ACC-286)', () => {
+      const CHAIRMAN = { id: 'seat-chairman', key: 'chairman', labelEn: 'Chairman', labelAr: 'رئيس اللجنة' };
+      const inForce = () =>
+        mockStageRules.assertStageAllows.mockResolvedValue({ stageId: 'stage-a', stageNameEn: 'Active', stageNameAr: null, flags: ['IN_FORCE'], actions: {} });
+      const seats = (holders: string[]) =>
+        mockPrisma.$queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+          const sql = strings.join('?');
+          if (sql.includes('"LookupCategory"')) return Promise.resolve([CHAIRMAN]);
+          if (sql.includes('"CommitteeMember"')) return Promise.resolve(holders.map((memberId) => ({ memberId, userId: `u-${memberId}`, roleValueId: CHAIRMAN.id })));
+          return Promise.resolve([]);
+        });
+      const seatWrites: [string, () => Promise<unknown>][] = [
+        ['removeMember', () => service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, ['committees:view'])],
+        ['changeMemberRole', () => service.changeMemberRole('committee-1', 'member-1', { roleValueId: 'member' } as never, ORG_A, ACTOR, ['committees:view'])],
+      ];
+
+      beforeEach(() => {
+        mockPrisma.committeeMember.findFirst.mockResolvedValue(makeMember({ id: 'member-1', roleValueId: CHAIRMAN.id }));
+        mockPrisma.committeeMember.update.mockResolvedValue(makeMember());
+      });
+
+      it.each(seatWrites)('%s of the last holder: 409 naming the seat, nothing written or audited', async (_name, call) => {
+        inForce();
+        seats(['member-1']);
+
+        await expect(call()).rejects.toMatchObject({
+          status: 409,
+          response: { code: 'COMMITTEE_REQUIRED_SEAT_LAST_HOLDER', seat: { id: CHAIRMAN.id, labelEn: 'Chairman', labelAr: 'رئيس اللجنة' } },
+        });
+        expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
+        expect(mockPrisma.committeeMembershipEvent.create).not.toHaveBeenCalled();
+        expect(mockAuditLog.log).not.toHaveBeenCalled();
+      });
+
+      it.each(seatWrites)('%s with another ACTIVE holder still seated is allowed', async (_name, call) => {
+        inForce();
+        seats(['member-1', 'member-2']);
+        await expect(call()).resolves.not.toThrow();
+        expect(mockPrisma.committeeMember.update).toHaveBeenCalled();
+      });
+
+      it.each(seatWrites)('%s of a holder who fills nothing (not an ACTIVE user) is allowed', async (_name, call) => {
+        inForce();
+        seats([]);
+        await expect(call()).resolves.not.toThrow();
+      });
+
+      it.each(seatWrites)('%s outside a stage flagged IN_FORCE reads no seat at all', async (_name, call) => {
+        seats(['member-1']);
+        await call();
+        const sql = mockPrisma.$queryRaw.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join('?'));
+        expect(sql.some((q) => q.includes('"LookupCategory"'))).toBe(false);
+        expect(mockPrisma.committeeMember.update).toHaveBeenCalled();
+      });
+
+      it.each(seatWrites)('%s locks the committee row FOR UPDATE after the stage and before reading the member', async (_name, call) => {
+        inForce();
+        seats(['member-1', 'member-2']);
+        await call();
+        const lockIndex = mockPrisma.$queryRaw.mock.calls.findIndex(([strings]) =>
+          (strings as TemplateStringsArray).join('?').includes('FROM "Committee" WHERE id = ? AND "organizationId" = ? FOR UPDATE'),
+        );
+        expect(lockIndex).toBeGreaterThanOrEqual(0);
+        expect(mockPrisma.$queryRaw.mock.calls[lockIndex]!.slice(1)).toEqual(['committee-1', ORG_A]);
+        const lockOrder = mockPrisma.$queryRaw.mock.invocationCallOrder[lockIndex]!;
+        expect(stageOrder()).toBeLessThan(lockOrder);
+        expect(lockOrder).toBeLessThan(mockPrisma.committeeMember.findFirst.mock.invocationCallOrder[0]!);
+      });
+
+      it('a role change within the same seat is not a seat change: nothing is read about seats', async () => {
+        inForce();
+        seats(['member-1']);
+        await service.changeMemberRole('committee-1', 'member-1', { roleValueId: CHAIRMAN.id } as never, ORG_A, ACTOR, ['committees:view']);
+        const sql = mockPrisma.$queryRaw.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join('?'));
+        expect(sql.some((q) => q.includes('"LookupCategory"'))).toBe(false);
+      });
     });
 
     it.each(memberWrites)('%s refused by the stage (%s): 409, and nothing written or audited', async (_name, action, call) => {

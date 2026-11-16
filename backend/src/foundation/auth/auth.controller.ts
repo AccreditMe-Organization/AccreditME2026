@@ -4,6 +4,8 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { ImpersonatedBy } from '../../common/decorators/impersonated-by.decorator';
+import { SessionStartedAt } from '../../common/decorators/session-started-at.decorator';
+import { sessionEndsAt } from './session-limit';
 import { UserService } from '../user/user.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { AuthService } from './auth.service';
@@ -18,6 +20,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
+import { attemptSource } from './attempt-source';
 
 // Every endpoint here is deliberately pre-authentication or self-service —
 // no @UseGuards(TenantGuard, PermissionGuard) at class level, unlike every
@@ -46,6 +49,7 @@ export class AuthController {
     @CurrentUser() userId: string,
     @CurrentTenant() organizationId: string,
     @ImpersonatedBy() impersonatedByUserId: string | undefined,
+    @SessionStartedAt() sessionStartedAt: Date | undefined,
   ) {
     const user = await this.userService.getById(userId, organizationId);
     const impersonatedBy = impersonatedByUserId
@@ -60,7 +64,18 @@ export class AuthController {
       this.workingCalendarService.getEffectiveTimeZone(organizationId),
       this.userService.getHijriDisplay(userId, organizationId),
     ]);
-    return { id: user.id, email: user.email, name: user.name, language, timeZone, hijriDisplay, impersonatedBy };
+    // ACC-126 — when this session's 12 hours end, from the token's own claim
+    // (no query); null only for a token minted before ACC-126.
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      language,
+      timeZone,
+      hijriDisplay,
+      impersonatedBy,
+      sessionEndsAt: sessionStartedAt ? sessionEndsAt(sessionStartedAt).toISOString() : null,
+    };
   }
 
   // ACC-129 — the public auth routes each have their own limit, counted per
@@ -144,11 +159,22 @@ export class AuthController {
     return this.authService.forgotPassword(dto);
   }
 
+  // ACC-188 — the reset page's first read: is this link still usable? POST, so
+  // the token travels in the body and never lands in a URL or an access log.
+  // The body is deliberately untyped: a malformed one gets the same
+  // RESET_LINK_INVALID as an unknown token (PasswordResetService.lookup()).
+  @Post('reset-password/lookup')
+  @perAddress(RATE_LIMITS.resetPasswordLookup)
+  @HttpCode(HttpStatus.OK)
+  lookupResetLink(@Body() body: unknown, @Req() req: Request) {
+    return this.authService.lookupResetLink(body, req.headers['origin']);
+  }
+
   @Post('reset-password')
   @perAddress(RATE_LIMITS.resetPassword)
   @HttpCode(HttpStatus.OK)
-  resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto);
+  resetPassword(@Body() dto: ResetPasswordDto, @Req() req: Request) {
+    return this.authService.resetPassword(dto, req.headers['origin'], req.ip);
   }
 
   // MFA enrollment (Step 9 follow-up) — distinct from the pre-auth
@@ -162,8 +188,9 @@ export class AuthController {
     @Body() dto: SetupMfaDto,
     @CurrentUser() userId: string,
     @CurrentTenant() organizationId: string,
+    @Req() req: Request,
   ) {
-    return this.authService.setupMfa(userId, organizationId, dto);
+    return this.authService.setupMfa(userId, organizationId, dto, attemptSource(req));
   }
 
   @Post('mfa/setup/verify')
@@ -184,8 +211,9 @@ export class AuthController {
     @Body() dto: DisableMfaDto,
     @CurrentUser() userId: string,
     @CurrentTenant() organizationId: string,
+    @Req() req: Request,
   ) {
-    return this.authService.disableMfa(userId, organizationId, dto);
+    return this.authService.disableMfa(userId, organizationId, dto, attemptSource(req));
   }
 
   @Get('mfa/status')

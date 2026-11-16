@@ -11,7 +11,10 @@
  *      moment from closing a loop between them — without it, each reads a tree
  *      that does not yet contain the other's edit, both pass, and both commit;
  *   3. "dissolving" is read from the stage's DISSOLVING flag (ACC-255 PR 2),
- *      whatever the stage is called or keyed.
+ *      whatever the stage is called or keyed;
+ *   4. (ACC-286) only a committee IN FORCE — its stage flagged IN_FORCE and the
+ *      committee active — can be a parent or be reported to, checked only when
+ *      the value changes.
  *
  * Same guards as the other db-specs: it FAILS, never skips, without a
  * database, and refuses any database that is not on this machine.
@@ -173,10 +176,11 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
       );
     });
 
+    // Both stages are in force (ACC-286), so only "dissolving" is under test.
     it('a stage NAMED "Dissolved" without the flag is not dissolving — the name is never read', async () => {
       const o = await org();
       const target = await o.make('Target');
-      await inStage(o, target, { nameEn: 'Dissolved', key: null, order: 60, flags: [] });
+      await inStage(o, target, { nameEn: 'Dissolved', key: null, order: 60, flags: ['IN_FORCE'] });
       const self = await o.make('Self');
 
       expect(await update(o, self, { parentCommitteeId: target })).toBe('OK');
@@ -185,10 +189,70 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
     it('a stage KEYED dissolved without the flag is not dissolving — the key is never read', async () => {
       const o = await org();
       const target = await o.make('Target');
-      await inStage(o, target, { nameEn: 'Closed', key: 'dissolved', order: 60, flags: [] });
+      await inStage(o, target, { nameEn: 'Closed', key: 'dissolved', order: 60, flags: ['IN_FORCE'] });
       const self = await o.make('Self');
 
       expect(await update(o, self, { parentCommitteeId: target })).toBe('OK');
+    });
+  });
+
+  describe('only a committee in force can be pointed at (ACC-286)', () => {
+    async function notInForce(o: Org, committeeId: string, key: string | null = null) {
+      const template = await prisma.workflowTemplate.create({
+        data: { organizationId: o.organizationId, nameEn: `Lifecycle ${committeeId}`, objectType: 'COMMITTEE' },
+      });
+      const s = await prisma.workflowStage.create({
+        data: { workflowTemplateId: template.id, nameEn: 'Terms Review', order: 20, key, flags: [] },
+      });
+      await prisma.workflowInstance.create({
+        data: { organizationId: o.organizationId, workflowTemplateId: template.id, objectType: 'COMMITTEE', objectId: committeeId, currentStageId: s.id },
+      });
+    }
+
+    it('a parent or Reports to whose stage is not flagged IN_FORCE is refused with its own code, on update and create', async () => {
+      const o = await org();
+      const target = await o.make('Not approved yet');
+      await notInForce(o, target);
+      const self = await o.make('Self');
+
+      expect(await update(o, self, { parentCommitteeId: target })).toBe('COMMITTEE_PARENT_NOT_LIVE');
+      expect(await update(o, self, { reportingToCommitteeId: target })).toBe('COMMITTEE_REPORTS_TO_NOT_LIVE');
+      expect(await code(committees.createCommittee({ nameEn: 'New', typeValueId: 't', parentCommitteeId: target } as never, o.organizationId, o.actorId))).toBe(
+        'COMMITTEE_PARENT_NOT_LIVE',
+      );
+      const row = await prisma.committee.findFirstOrThrow({ where: { id: self }, select: { parentCommitteeId: true, reportingToCommitteeId: true } });
+      expect(row).toEqual({ parentCommitteeId: null, reportingToCommitteeId: null });
+    });
+
+    it('a stage KEYED active without the flag is not in force — the key is never read', async () => {
+      const o = await org();
+      const target = await o.make('Target');
+      await notInForce(o, target, 'active');
+      const self = await o.make('Self');
+
+      expect(await update(o, self, { parentCommitteeId: target })).toBe('COMMITTEE_PARENT_NOT_LIVE');
+    });
+
+    it('an inactive committee is not in force, whatever its stage', async () => {
+      const o = await org();
+      const target = await o.make('Switched off');
+      await prisma.committee.update({ where: { id: target }, data: { isActive: false } });
+      const self = await o.make('Self');
+
+      expect(await update(o, self, { reportingToCommitteeId: target })).toBe('COMMITTEE_REPORTS_TO_NOT_LIVE');
+      expect(await update(o, self, { parentCommitteeId: target })).toBe('COMMITTEE_PARENT_NOT_LIVE');
+    });
+
+    it('a link that is already saved is not re-checked: a rename passes, and clearing it passes', async () => {
+      const o = await org();
+      const target = await o.make('Target');
+      const self = await o.make('Self', { reportingToCommitteeId: target, parentCommitteeId: target });
+      await notInForce(o, target);
+
+      expect(await update(o, self, { nameEn: 'Renamed', reportingToCommitteeId: target, parentCommitteeId: target })).toBe('OK');
+      expect(await update(o, self, { reportingToCommitteeId: null, parentCommitteeId: null })).toBe('OK');
+      const row = await prisma.committee.findFirstOrThrow({ where: { id: self }, select: { parentCommitteeId: true, reportingToCommitteeId: true, nameEn: true } });
+      expect(row).toEqual({ parentCommitteeId: null, reportingToCommitteeId: null, nameEn: 'Renamed' });
     });
   });
 

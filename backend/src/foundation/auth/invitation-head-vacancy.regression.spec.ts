@@ -5,6 +5,8 @@ import { NotificationService } from '../notification/notification.service';
 import { LoginAttemptService } from './login-attempt.service';
 import { UserService } from '../user/user.service';
 import { OrganizationService } from '../organization/organization.service';
+import { PasswordResetService } from './password-reset/password-reset.service';
+import type { SecurityNoticeService } from '../notification/security-notice';
 
 jest.mock('better-auth/api', () => ({ isAPIError: () => false }));
 const mockAuthApi = { signUpEmail: jest.fn() };
@@ -214,6 +216,8 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
       { create: jest.fn() } as unknown as NotificationService,
       {} as LoginAttemptService,
       userService,
+      {} as unknown as PasswordResetService,
+      {} as unknown as SecurityNoticeService,
     );
   });
 

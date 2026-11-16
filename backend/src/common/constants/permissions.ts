@@ -38,6 +38,13 @@ export const USERS_PERMISSIONS = {
   // trigger a promotion — deliberately gated separately from ordinary
   // profile edits.
   TRANSFER:   'users:transfer',
+  // ACC-164 — clearing another person's two-step sign-in. A security act, not
+  // a profile edit, so it is its own key (ACC-44). Grantable to any role
+  // (Ahmad, 14 Nov), seeded to Organization Administrator only; a holder who
+  // lacks Organization Administrator can't reset someone who has it
+  // (MFA_RESET_HIGHER_ACCOUNT). Checked from day one, so it is not on
+  // PERMISSIONS_NOT_YET_CHECKED.
+  RESET_MFA:  'users:reset_mfa',
 } as const;
 
 export const ROLES_PERMISSIONS = {

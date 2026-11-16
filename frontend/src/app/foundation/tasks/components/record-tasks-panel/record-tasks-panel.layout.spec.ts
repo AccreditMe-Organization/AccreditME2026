@@ -19,6 +19,7 @@ import { ITaskRecordRowDto } from '../../services/task.service';
 import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
 import { RecordTasksPanelComponent } from './record-tasks-panel.component';
 import { NO_ACTIONS, listPage, rows } from './record-tasks.fixtures';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-229 — the record Tasks panel and the All tasks list MEASURED, in both
 // languages, in the real theme, font and translations (plan §2.5):
@@ -76,6 +77,7 @@ class ListHost {
 }
 
 describe('Record tasks panel and All tasks — layout, measured (ACC-229)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   const measured: string[] = [];
   let http: HttpTestingController;
@@ -108,7 +110,6 @@ describe('Record tasks panel and All tasks — layout, measured (ACC-229)', () =
 
   async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
     await fixture.whenStable();
-    await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
   }
 
@@ -147,8 +148,7 @@ describe('Record tasks panel and All tasks — layout, measured (ACC-229)', () =
           const el = fixture.nativeElement as HTMLElement;
           const body = el.querySelector<HTMLElement>('[data-testid="record-tasks-body"]')!;
           const head = el.querySelector<HTMLElement>('[data-testid="record-tasks-head"]')!;
-          // Non-vacuity: laid out, in the real font, with the rows it was given.
-          expect(document.fonts.check('13px "IBM Plex Sans Arabic"')).withContext('measured in a fallback font').toBe(true);
+          // Non-vacuity: laid out, with the rows it was given (the real font: useLayoutFonts).
           expect(head.getBoundingClientRect().height).withContext('the panel is not laid out').toBeGreaterThan(0);
           expect(el.querySelectorAll('[data-task-row]').length).withContext('rows rendered').toBe(Math.min(count, 5));
 

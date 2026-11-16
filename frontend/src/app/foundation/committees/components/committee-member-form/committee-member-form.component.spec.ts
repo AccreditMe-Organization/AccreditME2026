@@ -17,6 +17,7 @@ import { CommitteeMemberDto } from '../../services/committee.service';
 import { CommitteeMemberFormComponent, addMemberRefusal } from './committee-member-form.component';
 import { HttpErrorResponse } from '@angular/common/http';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-120 slice 4 — Add member: the person picker as its own layer, the joined
 // date, the field wrapper, and refusals said from their status. Hosted the way
@@ -77,6 +78,7 @@ class HostComponent {
 }
 
 describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => {
+  useLayoutFonts({ rtl: true });
   // The Dissolved-stage refusal is also said in Arabic, which turns <html> right to left.
   preserveDocumentLanguage();
 
@@ -464,6 +466,36 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
     flush();
   }));
 
+  // ACC-286 — moving the last holder of a required seat out of it, on a
+  // committee in force: said from its code, naming the seat.
+  for (const [lang, sentence] of [
+    ['en', 'Appoint another Secretary first.'],
+    ['ar', 'يلزم تعيين عضو في مقعد «أمين السر» أولاً.'],
+  ] as const) {
+    it(`Change role of the last holder of a required seat names the seat (${lang}), never the server text`, fakeAsync(() => {
+      setup(member('u-huda'));
+      TestBed.inject(TranslateService).use(lang);
+      findForm().form.controls.roleValueId.setValue('role-member');
+      fixture.detectChanges();
+      document.querySelector<HTMLButtonElement>('app-committee-member-form button[type="submit"]')!.click();
+      fixture.detectChanges();
+      http.expectOne(`${API}/committees/c-1/members/m-u-huda`).flush(
+        {
+          code: 'COMMITTEE_REQUIRED_SEAT_LAST_HOLDER',
+          seat: { id: 'seat-sec', labelEn: 'Secretary', labelAr: 'أمين السر' },
+          message: 'server words',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      fixture.detectChanges();
+      expect(q('[data-testid="member-seat-refusal"]')!.textContent!.trim()).toBe(sentence);
+      expect(q('[data-testid="member-stage-refusal"]')).toBeNull();
+      expect(q('[data-testid="member-save-error"]')).toBeNull();
+      expect(document.body.textContent).not.toContain('server words');
+      flush();
+    }));
+  }
+
   it('Change role is untouched: no person, no joined date, no field wrapper', () => {
     setup(member('u-huda'));
     expect(q('[data-testid="member-add-form"]')).toBeNull();
@@ -476,6 +508,7 @@ describe('CommitteeMemberFormComponent — Add member (ACC-120 slice 4)', () => 
 
 // A pure function: no form, no HTTP.
 describe('addMemberRefusal (ACC-120 slice 4)', () => {
+  useLayoutFonts({ rtl: true });
   it('maps each status to its own sentence', () => {
     const err = (status: number) => new HttpErrorResponse({ status });
     expect(addMemberRefusal(err(409))).toBe('committee.memberForm.errorAlreadyMember');

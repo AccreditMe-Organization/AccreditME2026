@@ -134,10 +134,11 @@ describe('PlatformTenantController', () => {
     expect(guards).toEqual([TenantGuard, PlatformGuard]);
   });
 
-  it('startImpersonation delegates with tenantId, targetUserId, actorId, platformOrgId, res', async () => {
+  it('startImpersonation delegates with tenantId, targetUserId, actorId, platformOrgId, the session start, res', async () => {
     const res = {} as any;
-    await controller.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, res);
-    expect(service.startImpersonation).toHaveBeenCalledWith(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, res);
+    const start = new Date('2026-11-13T08:00:00.000Z');
+    await controller.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, start, res);
+    expect(service.startImpersonation).toHaveBeenCalledWith(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, start, res);
   });
 
   it('endImpersonation delegates with req and res', async () => {

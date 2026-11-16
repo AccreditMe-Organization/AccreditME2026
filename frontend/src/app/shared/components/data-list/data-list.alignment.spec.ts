@@ -5,6 +5,7 @@ import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } 
 import { DataListColumn, DataListComponent } from './data-list.component';
 import { clientSideSource } from './data-list.source';
 import { preserveDocumentLanguage } from '../../../../testing/document-language';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 /**
  * ACC-120 — column headings must sit over their own data.
@@ -115,6 +116,7 @@ class HostComponent {
 }
 
 describe('DataListComponent — header/row column alignment (ACC-120)', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<HostComponent>;
 
   // ACC-184 — LEFT TO RIGHT IS THE PREMISE OF EVERY OFFSET BELOW, so it is set

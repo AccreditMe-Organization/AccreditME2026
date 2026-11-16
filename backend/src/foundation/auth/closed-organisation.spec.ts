@@ -20,6 +20,8 @@ import type { UserService } from '../user/user.service';
 import type { TenantService } from '../tenant/tenant.service';
 import type { RoleService } from '../roles/role.service';
 import type { PermissionResolver } from '../../common/services/permission-resolver.interface';
+import { PasswordResetService } from './password-reset/password-reset.service';
+import type { SecurityNoticeService } from '../notification/security-notice';
 
 jest.mock('better-auth/api', () => ({ isAPIError: () => false }));
 const mockAuthApi = { signInEmail: jest.fn(), verifyTOTP: jest.fn() };
@@ -337,6 +339,8 @@ describe('closed organisations (ACC-168)', () => {
       { create: jest.fn() } as unknown as NotificationService,
       new LoginAttemptService(prisma),
       {} as unknown as UserService,
+      {} as unknown as PasswordResetService,
+      {} as unknown as SecurityNoticeService,
     );
     const permissions = {
       getUserPermissions: jest.fn().mockResolvedValue(['users:view']),
@@ -407,7 +411,7 @@ describe('closed organisations (ACC-168)', () => {
   }
 
   const tokenFor = (userId: string, organizationId: string, tokenVersion = 1) =>
-    signAccessToken({ sub: userId, organizationId, tokenVersion }, JWT_SECRET);
+    signAccessToken({ sub: userId, organizationId, tokenVersion }, JWT_SECRET, new Date()).token;
   // ACC-204 — every request comes from its own organisation's address (an
   // impersonation token from the platform's), so these specs keep asking about
   // closed organisations, not about addresses.
@@ -516,6 +520,7 @@ describe('closed organisations (ACC-168)', () => {
             'u-hessa',
             'u-admin',
             PLATFORM,
+            undefined,
             r as never,
           ),
         );
@@ -666,6 +671,7 @@ describe('closed organisations (ACC-168)', () => {
         'u-hessa',
         'u-admin',
         PLATFORM,
+        undefined,
         res() as never,
       ),
     );

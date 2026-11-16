@@ -21,7 +21,9 @@ import { LanguageToggleComponent } from '../language-toggle/language-toggle.comp
 import { ImpersonationBannerComponent } from '../impersonation-banner/impersonation-banner.component';
 import { NotificationBellComponent } from '../../foundation/notification/components/notification-bell/notification-bell.component';
 import { IdleWarningComponent } from '../../core/components/idle-warning/idle-warning.component';
+import { SessionLimitWarningComponent } from '../../core/components/session-limit-warning/session-limit-warning.component';
 import { AppShellComponent, SHELL_PHONE_BELOW_PX } from './app-shell.component';
+import { useLayoutFonts } from '../../../testing/layout-fonts';
 
 // ACC-232 — the phone shell. Below SHELL_PHONE_BELOW_PX the rail never sits
 // beside <main>: it starts closed and opens over the page with a scrim, the
@@ -39,6 +41,8 @@ class BellStub {}
 class LanguageToggleStub {}
 @Component({ selector: 'app-impersonation-banner', standalone: true, template: '' })
 class BannerStub {}
+@Component({ selector: 'app-session-limit-warning', standalone: true, template: '' })
+class SessionLimitWarningStub {}
 @Component({ selector: 'app-idle-warning', standalone: true, template: '' })
 class IdleWarningStub {}
 @Component({ standalone: true, template: '<p>page</p>' })
@@ -64,6 +68,7 @@ class FakeMedia {
 }
 
 describe('AppShellComponent — the phone shell (ACC-232)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<AppShellComponent>;
   let media: FakeMedia;
@@ -114,8 +119,8 @@ describe('AppShellComponent — the phone shell (ACC-232)', () => {
       add: { imports: [BreadcrumbStub, BellStub, LanguageToggleStub] },
     });
     TestBed.overrideComponent(AppShellComponent, {
-      remove: { imports: [ImpersonationBannerComponent, IdleWarningComponent] },
-      add: { imports: [BannerStub, IdleWarningStub] },
+      remove: { imports: [ImpersonationBannerComponent, IdleWarningComponent, SessionLimitWarningComponent] },
+      add: { imports: [BannerStub, IdleWarningStub, SessionLimitWarningStub] },
     });
     loadTranslationsForTest({ en, ar });
     const language = opts.language ?? 'en';

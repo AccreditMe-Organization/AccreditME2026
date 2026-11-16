@@ -27,6 +27,7 @@
     "check:workflow-enum-display": "node scripts/check-workflow-enum-display.mjs",
     "check:theme-components": "node scripts/check-theme-components.mjs",
     "check:theme-components:selftest": "node scripts/check-theme-components.selftest.mjs",
+    "check:layout-spec-fonts": "node scripts/check-layout-spec-fonts.mjs",
     "verify:built-index": "node scripts/verify-built-index.mjs"
   },
   "engines": {

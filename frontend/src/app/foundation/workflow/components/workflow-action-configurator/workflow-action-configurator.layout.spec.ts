@@ -13,6 +13,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { WorkflowActionConfiguratorComponent } from './workflow-action-configurator.component';
 import { WorkflowTransitionActionDto } from '../../services/workflow-template.service';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-255 PR 4b (plan §17.6) — the dialogs that stay dialogs are measured, and
 // held to AT MOST 400px of body: at least 20px under the 420px cap, which is
@@ -69,6 +70,7 @@ function webhook(count: number): WorkflowTransitionActionDto {
 }
 
 describe('Action configurator dialog — at least 20px under the 420px cap (ACC-255 PR 4b, ACC-120 slice 7)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<WorkflowActionConfiguratorComponent>;
   const measured: string[] = [];

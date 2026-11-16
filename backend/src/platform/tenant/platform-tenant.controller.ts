@@ -17,6 +17,7 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PlatformGuard } from '../../common/guards/platform.guard';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { SessionStartedAt } from '../../common/decorators/session-started-at.decorator';
 import { PlatformTenantService } from './platform-tenant.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantModulesDto } from './dto/update-tenant-modules.dto';
@@ -128,6 +129,7 @@ export class PlatformTenantController {
     @Param('userId') targetUserId: string,
     @CurrentUser() platformAdminUserId: string,
     @CurrentTenant() platformOrgId: string,
+    @SessionStartedAt() sessionStartedAt: Date | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
     return this.platformTenantService.startImpersonation(
@@ -135,6 +137,7 @@ export class PlatformTenantController {
       targetUserId,
       platformAdminUserId,
       platformOrgId,
+      sessionStartedAt,
       res,
     );
   }

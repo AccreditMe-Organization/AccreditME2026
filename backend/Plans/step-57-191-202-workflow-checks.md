@@ -613,3 +613,46 @@ CLAUDE.md's Prisma rules gained the two-deploy rule for enum values.
 The stage editor is a page panel, and the start/end refusals and the moved
 note are lines inside it, as `STAGE_TASK_ON_FINAL_STAGE`'s already was. No
 dialog's content changed, so no dialog layout spec was added.
+
+### 8.6 PR 2 as built (Prompt 34, 14 Nov)
+
+Branch `fix/ACC-202-stage-outcome-writer`, from `dev` at `9b49be0` (#289).
+
+**ACC-202, the writer:** stash `7f63d6d` applied by its SHA, with no conflicts
+against the squashed base.
+- **`performTransition()`** takes no outcome argument and writes
+  `stageExitOutcome(transition.kind)`. Every caller's argument is gone, and so
+  is `triggerSystemTransition()`'s `outcome` option, with the change request
+  service's four uses of it.
+- **The specs:**
+  - `vote-on-advance.db-spec.ts` pins RETURNED and EXITED, plus a new
+    "Any one of them" block;
+  - `committee-change-request.db-spec.ts` pins each app move's outcome;
+  - `workflow-vote.spec.ts` pins the table;
+  - `stage-history-arrived-by.db-spec.ts`'s second case now requires each
+    kind's outcome and the matching `arrivedBy`;
+  - `stage-outcome-writes.scan.spec.ts` is deleted.
+
+**ACC-191, the order:** `removeStage()` checks records BEFORE transitions.
+- **Why:** the 14 Nov live check showed a stage records had entered got "remove
+  its transitions first" (`STAGE_HAS_TRANSITIONS`). Those transitions had run,
+  so they could not be removed either.
+- **New case** in `workflow-delete-in-use.db-spec.ts`: a stage with both
+  records and transitions gets `STAGE_IN_USE` with its count.
+
+**Mutation checks (5, all red):**
+- the order swapped back;
+- every move left APPROVED;
+- the vote path back to REJECTED;
+- the app path left APPROVED;
+- EXIT mapped to REJECTED.
+
+**Rollback proof:**
+- **What ran:** #289's backend (`9b49be0`, unpacked into a scratch folder with
+  its own generated client), against `accreditme_wf` holding this branch's
+  RETURNED and EXITED rows.
+- **What it read:** 64 instances, 82 visits with a new outcome. Each went
+  through stage history, `getInstanceById`, `getInstancesByObject`, the
+  committee detail and list (30 committees), and the change request read and
+  list (34 requests).
+- **Result:** nothing failed.

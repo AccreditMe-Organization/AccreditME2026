@@ -40,6 +40,12 @@ export const RATE_LIMITS = {
   forgotPasswordPerEmail: { limit: 3, ttl: HOUR },
   resetPassword: { limit: 20, ttl: HOUR },
   /**
+   * ACC-188 — the reset page's first read, per address. Mirrors
+   * invitationLookup: a page load, possibly a few retries. The token is 256
+   * random bits, so this is not what stops guessing; it caps the load.
+   */
+  resetPasswordLookup: { limit: 30, ttl: MINUTE },
+  /**
    * ACC-197 — POST /tasks/draft, per signed-in USER. The first AI call an
    * ordinary user can repeat freely: at the default 600 a minute one account
    * could spend 1,200 credits a minute. A person never reaches ten drafts a

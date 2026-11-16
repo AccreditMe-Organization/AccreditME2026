@@ -36,6 +36,8 @@ export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
   'STAGE_WITHOUT_ASSIGNEE',
   'STAGE_ON_STARTING_ASSIGNMENT',
   'TASK_WITHOUT_OWNER',
+  // ACC-286 PR 2 — reported once its detector exists; after Task, as the page orders it.
+  'COMMITTEE_MISSING_REQUIRED_SEAT',
   'ACTING_HEAD_OPEN_ENDED',
   'STORAGE_ALMOST_FULL',
   'STORAGE_ACCESS_WITHDRAWN',
@@ -67,6 +69,8 @@ const AGE_BASIS: Record<ActiveSetupConditionType, SetupConditionAgeBasis> = {
   STORAGE_SECRET_EXPIRING: 'FIRST_DETECTED',
   // OBJECT: the starting entry's own createdAt (ACC-271 PR 3).
   STAGE_ON_STARTING_ASSIGNMENT: 'OBJECT',
+  // FIRST_DETECTED (ACC-286, Q-B): nothing records when a seat emptied.
+  COMMITTEE_MISSING_REQUIRED_SEAT: 'FIRST_DETECTED',
 };
 
 const SEVERITY_RANK: Record<SetupConditionSeverity, number> = {

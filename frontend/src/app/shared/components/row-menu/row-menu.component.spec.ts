@@ -4,6 +4,7 @@ import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { LanguageService } from '../../../core/services/language.service';
 import { preserveDocumentLanguage } from '../../../../testing/document-language';
 import { RowMenuComponent, RowMenuItem } from './row-menu.component';
+import { useLayoutFonts } from '../../../../testing/layout-fonts';
 
 // ACC-235 — the two things am-row-menu's reposition strategy needed, both
 // measured on /roles and /users:
@@ -29,6 +30,7 @@ class HostComponent {
 }
 
 describe('am-row-menu — follows its row, and aligns in either direction (ACC-235)', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<HostComponent>;
 
   preserveDocumentLanguage();
@@ -127,6 +129,7 @@ class LabelledHostComponent {
 }
 
 describe('am-row-menu — group headings and the opened event (ACC-120 slice 11)', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<LabelledHostComponent>;
 
   beforeEach(() => {

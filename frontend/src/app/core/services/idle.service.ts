@@ -73,7 +73,13 @@ const ANNOUNCE_AT_SECONDS: readonly number[] = [120, 60, 30, 10, 9, 8, 7, 6, 5, 
 const STORAGE_KEY = 'am.session.lastActivity';
 const CHANNEL_NAME = 'am-session';
 
-type SignOutReason = 'idle' | 'user';
+// ACC-126 — 'limit': the session reached its 12 hours (SessionLimitService).
+type SignOutReason = 'idle' | 'user' | 'limit';
+
+/** The sign-in page's `reason` for a sign-out, or none when the person chose it. */
+function reasonParam(reason: SignOutReason): 'idle' | 'limit' | undefined {
+  return reason === 'user' ? undefined : reason;
+}
 
 type ChannelMessage =
   | { type: 'activity'; at: number }
@@ -199,7 +205,7 @@ export class IdleService {
     } finally {
       this.authService.clearSession();
       void this.router.navigate(['/login'], {
-        queryParams: { returnUrl, reason: reason === 'idle' ? 'idle' : undefined },
+        queryParams: { returnUrl, reason: reasonParam(reason) },
       });
     }
   }
@@ -260,7 +266,7 @@ export class IdleService {
           void this.router.navigate(['/login'], {
             queryParams: {
               returnUrl: this.router.url,
-              reason: message.reason === 'idle' ? 'idle' : undefined,
+              reason: reasonParam(message.reason),
             },
           });
         }

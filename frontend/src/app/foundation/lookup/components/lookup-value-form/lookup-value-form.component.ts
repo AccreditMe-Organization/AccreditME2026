@@ -23,7 +23,7 @@ import {
   CreateLookupValueDto,
   UpdateLookupValueDto,
 } from '../../services/lookup.service';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { lookupRefusalKey } from '../../lookup-refusal';
 
 @Component({
   selector: 'app-lookup-value-form',
@@ -157,7 +157,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       }
 
       @if (saveError()) {
-        <p class="text-red-500 text-sm">{{ saveError() }}</p>
+        <p class="text-sm text-[var(--am-danger-ink)]" role="alert" data-value-form-error>{{ saveError()! | translate }}</p>
       }
     </form>
   `,
@@ -218,6 +218,7 @@ export class LookupValueFormComponent implements OnInit {
   readonly dirtyChange = output<boolean>();
 
   readonly saving = signal(false);
+  /** A translation KEY (ACC-309): a known code's sentence, else 'The value could not be saved.'. Never the server's text. */
   readonly saveError = signal<string | null>(null);
   readonly categoryLoading = signal(false);
   readonly attributeFields = signal<Array<{ key: string; type: string; label: string }>>([]);
@@ -332,7 +333,7 @@ export class LookupValueFormComponent implements OnInit {
         this.saved.emit();
       },
       error: (err: unknown) => {
-        this.saveError.set(extractErrorMessage(err, this.translate.instant('lookup.errorSaveValue')));
+        this.saveError.set(lookupRefusalKey(err, 'lookup.errorSaveValue'));
         this.saving.set(false);
       },
     });

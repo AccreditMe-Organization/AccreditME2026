@@ -19,6 +19,7 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 import { OrgStructureNodeDto, OrgUnitService } from '../../services/org-unit.service';
 import { OrgUnitBlockersDialogComponent } from '../org-unit-blockers-dialog/org-unit-blockers-dialog.component';
 import { OrgUnitTreeComponent, TREE_NARROW_BELOW_PX } from './org-unit-tree.component';
+import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 
 // ACC-120 slice 11 (PR C) — the tree's layout, measured with the real theme
 // and both languages, at the CONTENT widths the shell leaves at 1280, 390 and
@@ -88,6 +89,7 @@ class FrameComponent {
 }
 
 describe('OrgUnitTree — layout (ACC-120 slice 11, PR C)', () => {
+  useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<FrameComponent>;
   const measured: string[] = [];

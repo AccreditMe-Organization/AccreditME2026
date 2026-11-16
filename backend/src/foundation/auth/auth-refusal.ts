@@ -22,7 +22,8 @@ export type AuthRefusalCode =
   | 'MFA_INVALID'
   | 'MFA_EXPIRED'
   | 'ORGANIZATION_UNAVAILABLE'
-  | 'SESSION_OTHER_ORGANIZATION';
+  | 'SESSION_OTHER_ORGANIZATION'
+  | 'SESSION_TIME_LIMIT';
 
 /**
  * ONE message per code, and the only place a refusal's wording is written.
@@ -53,6 +54,11 @@ export const AUTH_REFUSAL_MESSAGES: Readonly<Record<AuthRefusalCode, string>> =
     // address". It names neither organisation.
     SESSION_OTHER_ORGANIZATION:
       "This session belongs to another organization's address",
+    // ACC-126 — refresh() refuses a session 12 hours after its sign-in, however
+    // active the person is. Not a sign-in outcome: the frontend reads it as
+    // "signed out because the session's time is up" (reason=limit).
+    SESSION_TIME_LIMIT:
+      'This session has reached its 12-hour limit. Sign in again.',
   };
 
 export interface AuthRefusalBody {
@@ -75,7 +81,8 @@ export class AuthRefusalException extends UnauthorizedException {
       | 'ACCOUNT_INACTIVE'
       | 'MFA_EXPIRED'
       | 'ORGANIZATION_UNAVAILABLE'
-      | 'SESSION_OTHER_ORGANIZATION',
+      | 'SESSION_OTHER_ORGANIZATION'
+      | 'SESSION_TIME_LIMIT',
   );
   constructor(code: 'ACCOUNT_LOCKED', details: { lockedUntil: Date });
   constructor(code: 'MFA_INVALID', details: { attemptsRemaining: number });

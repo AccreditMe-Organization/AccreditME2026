@@ -9,13 +9,16 @@ import {
   viewChild,
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { HttpErrorResponse } from '@angular/common/http';
 import { of, switchMap, tap } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { InputTextModule } from 'primeng/inputtext';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { refusalCode } from '../../../../core/http/refusal';
 import { LookupService, LookupCategoryDto, LookupValueDto } from '../../services/lookup.service';
 import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
@@ -32,7 +35,7 @@ import { FieldComponent } from '../../../../shared/components/field/field.compon
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { StepStripComponent } from '../../../../shared/components/step-strip/step-strip.component';
 import { LanguageService } from '../../../../core/services/language.service';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { lookupRefusalKey } from '../../lookup-refusal';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
@@ -71,11 +74,13 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
     SortHeaderComponent,
     PageHeaderComponent,
     ReactiveFormsModule,
+    FormsModule,
     TranslatePipe,
     ButtonModule,
     TagModule,
     TooltipModule,
     InputTextModule,
+    ToggleSwitchModule,
     LookupValueFormComponent,
     EditDialogComponent,
     DataListComponent,
@@ -114,7 +119,15 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
       }
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-[var(--am-danger-ink)]" role="alert" data-lookup-error>{{ error()! | translate }}</p>
+      }
+
+      <!-- ACC-286 — what "Required seat" means, said ONCE for the list rather
+           than under every shared seat. Only on the committee seats. -->
+      @if (categoryHasRequiredSeat()) {
+        <p class="m-0 text-sm text-[var(--am-text-secondary)]" data-required-seat-hint>
+          {{ 'lookup.attribute.requiredHint' | translate }}
+        </p>
       }
 
       <app-data-list
@@ -153,12 +166,49 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
             style="grid-template-columns: var(--am-list-cols)"
           >
             @if (visible('label')) {
-              <span class="truncate text-[13px]" [class.italic]="val.labelOverrideEn">
-                {{ effectiveLabel(val) }}
-                @if (val.labelOverrideEn) {
-                  <sup class="ms-0.5" [pTooltip]="'lookup.overriddenTooltip' | translate">*</sup>
+              <div class="flex min-w-0 flex-col gap-1">
+                <span class="truncate text-[13px]" [class.italic]="val.labelOverrideEn">
+                  {{ effectiveLabel(val) }}
+                  @if (val.labelOverrideEn) {
+                    <sup class="ms-0.5" [pTooltip]="'lookup.overriddenTooltip' | translate">*</sup>
+                  }
+                </span>
+                <!-- ACC-286 — "Required seat", on a SHARED seat only. An
+                     organisation's own seat sets it in its value form. -->
+                @if (showsRequiredSeat(val)) {
+                  @if (canManage()) {
+                    <!-- readonly stops the switch flipping ITSELF (it writes
+                         nothing to the markup: no aria-readonly). The press is
+                         ours: it sends the change, and the switch shows only
+                         what isRequiredSeat() says, the pending value then the
+                         stored one, however soon the answer comes. A click on
+                         the label or Space on the switch reaches the same
+                         handler. -->
+                    <div class="flex items-center gap-2" [attr.data-required-seat]="val.id">
+                      <p-toggleswitch
+                        [ngModel]="isRequiredSeat(val)"
+                        [readonly]="true"
+                        (click)="onRequiredSeatChange(val, !isRequiredSeat(val))"
+                        [inputId]="'required-seat-' + val.id"
+                        [ariaLabel]="'lookup.attribute.requiredFor' | translate: { name: effectiveLabel(val) }"
+                        [disabled]="requiredSeatSaving() === val.id"
+                      />
+                      <label [for]="'required-seat-' + val.id" class="text-xs">
+                        {{ 'lookup.attribute.required' | translate }}
+                      </label>
+                    </div>
+                  } @else {
+                    <span class="text-xs" [attr.data-required-seat-readonly]="val.id">
+                      {{ (isRequiredSeat(val) ? 'lookup.attribute.requiredOn' : 'lookup.attribute.requiredOff') | translate }}
+                    </span>
+                  }
+                  @if (requiredSeatError()?.id === val.id) {
+                    <p class="m-0 text-xs text-[var(--am-danger-ink)]" role="alert" [attr.data-required-seat-error]="val.id">
+                      {{ requiredSeatError()!.key | translate }}
+                    </p>
+                  }
                 }
-              </span>
+              </div>
             }
             @if (visible('key')) {
               <span class="truncate font-mono text-[12px]" dir="ltr">{{ val.key }}</span>
@@ -335,7 +385,7 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
             />
           </am-field>
           @if (overrideError()) {
-            <p class="text-sm text-red-500">{{ overrideError() }}</p>
+            <p class="text-sm text-[var(--am-danger-ink)]" role="alert" data-override-error>{{ overrideError()! | translate }}</p>
           }
         </form>
       </ng-template>
@@ -395,6 +445,7 @@ export class LookupValueListComponent implements OnInit {
   readonly category = signal<LookupCategoryDto | null>(null);
   /** null means NOT LOADED — distinct from loaded-and-empty. */
   readonly values = signal<readonly LookupValueDto[] | null>(null);
+  /** A translation KEY (ACC-309), translated at render so a language switch reaches it. Never the server's text. */
   readonly error = signal<string | null>(null);
 
   readonly showFormDialog = signal(false);
@@ -408,6 +459,7 @@ export class LookupValueListComponent implements OnInit {
   readonly showOverrideDialog = signal(false);
   readonly overridingValue = signal<LookupValueDto | null>(null);
   readonly overrideSaving = signal(false);
+  /** A translation KEY (ACC-309), like `error`. */
   readonly overrideError = signal<string | null>(null);
   /**
    * Reactive, and Save is NO LONGER DISABLED on an empty field. A disabled
@@ -461,6 +513,73 @@ export class LookupValueListComponent implements OnInit {
     ];
   });
 
+  // ── ACC-286 — "Required seat" on a committee seat ────────────────────────
+  /** The category whose shared values carry the toggle. */
+  private static readonly SEAT_CATEGORY = 'committee_member_role';
+
+  /** The seat being saved: its toggle is disabled until the list is read again. */
+  readonly requiredSeatSaving = signal<string | null>(null);
+  /** The last refused toggle, said under its row from the code. */
+  readonly requiredSeatError = signal<{ id: string; key: string } | null>(null);
+
+  /** The category declares the attribute (from the server's own schema). The hint line reads it too. */
+  readonly categoryHasRequiredSeat = computed(() => {
+    const cat = this.category();
+    if (cat?.key !== LookupValueListComponent.SEAT_CATEGORY) return false;
+    const properties = (cat.attributeSchema as { properties?: Record<string, { type?: unknown }> } | null)?.properties;
+    return properties?.['required']?.type === 'boolean';
+  });
+
+  /** A SHARED seat only: an organisation's own seat sets it in its value form. */
+  showsRequiredSeat(val: LookupValueDto): boolean {
+    return this.categoryHasRequiredSeat() && val.layer === 'SYSTEM';
+  }
+
+  /**
+   * What the switch shows. The value pressed, until the next read of the list
+   * lands; the stored value after that. The switch flips itself on a press, so
+   * without the pending value a refused save, read back unchanged, would leave
+   * [ngModel] where it was and the switch showing the press, not the truth.
+   */
+  private readonly requiredSeatPending = signal<{ id: string; value: boolean } | null>(null);
+
+  isRequiredSeat(val: LookupValueDto): boolean {
+    const pending = this.requiredSeatPending();
+    if (pending?.id === val.id) return pending.value;
+    return val.attributes?.['required'] === true;
+  }
+
+  /**
+   * Sends the organisation's own value (true or false, never null: "the
+   * default" is not offered), then reads the list again. A refusal is said
+   * from its code under the row, and the list is read again then too, so the
+   * switch shows what is stored rather than what was pressed.
+   */
+  onRequiredSeatChange(val: LookupValueDto, required: boolean): void {
+    // A disabled switch still receives the click: one save at a time.
+    if (this.requiredSeatSaving() !== null) return;
+    this.requiredSeatPending.set({ id: val.id, value: required });
+    this.requiredSeatSaving.set(val.id);
+    this.requiredSeatError.set(null);
+    this.lookupService.overrideAttributes(val.id, { required }).subscribe({
+      next: () => {
+        this.requiredSeatSaving.set(null);
+        this.loadValues();
+      },
+      error: (err: unknown) => {
+        this.requiredSeatSaving.set(null);
+        this.requiredSeatError.set({ id: val.id, key: this.requiredSeatRefusalKey(err) });
+        this.loadValues();
+      },
+    });
+  }
+
+  private requiredSeatRefusalKey(err: unknown): string {
+    if (refusalCode(err) === 'LOOKUP_ATTRIBUTE_INVALID') return 'lookup.refusal.attributeInvalid';
+    if (err instanceof HttpErrorResponse && err.status === 404) return 'lookup.refusal.valueGone';
+    return 'lookup.errorRequiredSeat';
+  }
+
   readonly trackById = (value: LookupValueDto): string => value.id;
 
   private readonly slice: DataListSource<LookupValueDto> = clientSideSource(() => this.values() ?? [], {
@@ -496,7 +615,13 @@ export class LookupValueListComponent implements OnInit {
     const cached = this.values();
     const items$ = cached
       ? of(cached)
-      : this.lookupService.getValues(this.categoryKey).pipe(tap((rows) => this.values.set(rows)));
+      : this.lookupService.getValues(this.categoryKey).pipe(
+          tap((rows) => {
+            this.values.set(rows);
+            // ACC-286 — the stored value answers from here on.
+            this.requiredSeatPending.set(null);
+          }),
+        );
     return items$.pipe(switchMap(() => this.slice(query)));
   };
 
@@ -560,7 +685,7 @@ export class LookupValueListComponent implements OnInit {
     this.lookupService.hideSystemValue(val.id).subscribe({
       next: () => this.loadValues(),
       error: (err: unknown) =>
-        this.error.set(extractErrorMessage(err, this.translate.instant('lookup.errorHide'))),
+        this.error.set(lookupRefusalKey(err, 'lookup.errorHide')),
     });
   }
 
@@ -568,7 +693,7 @@ export class LookupValueListComponent implements OnInit {
     this.lookupService.unhideSystemValue(val.id).subscribe({
       next: () => this.loadValues(),
       error: (err: unknown) =>
-        this.error.set(extractErrorMessage(err, this.translate.instant('lookup.errorUnhide'))),
+        this.error.set(lookupRefusalKey(err, 'lookup.errorUnhide')),
     });
   }
 
@@ -590,7 +715,7 @@ export class LookupValueListComponent implements OnInit {
         this.lookupService.removeValue(val.id).subscribe({
           next: () => this.loadValues(),
           error: (err: unknown) =>
-            this.error.set(extractErrorMessage(err, this.translate.instant('lookup.errorDelete'))),
+            this.error.set(lookupRefusalKey(err, 'lookup.errorDelete')),
         });
       },
     });
@@ -616,9 +741,7 @@ export class LookupValueListComponent implements OnInit {
           this.loadValues();
         },
         error: (err: unknown) => {
-          this.overrideError.set(
-            extractErrorMessage(err, this.translate.instant('lookup.errorOverride')),
-          );
+          this.overrideError.set(lookupRefusalKey(err, 'lookup.errorOverride'));
           this.overrideSaving.set(false);
         },
       });
@@ -627,7 +750,7 @@ export class LookupValueListComponent implements OnInit {
   private loadCategory(): void {
     this.lookupService.getCategoryByKey(this.categoryKey).subscribe({
       next: (cat) => this.category.set(cat),
-      error: () => this.error.set(this.translate.instant('lookup.errorLoad')),
+      error: () => this.error.set('lookup.errorLoad'),
     });
   }
 

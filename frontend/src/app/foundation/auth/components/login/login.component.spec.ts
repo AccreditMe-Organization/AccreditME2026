@@ -19,9 +19,11 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LANDING_ROUTE, PLATFORM_LANDING } from '../../../../core/navigation/landing-route';
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
+import { PASSWORD_RESET_NOTICE } from '../reset-password/reset-password.component';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
 import { LoginComponent } from './login.component';
 import { SESSION_OTHER_ORGANIZATION, SessionAddressState } from '../../../../core/tenant/session-address-state';
+import { SESSION_TIME_LIMIT, SessionLimitState } from '../../../../core/services/session-limit-state';
 
 /** The auth layout's language plumbing and the formatting layer, held still. */
 const LAYOUT_PROVIDERS = [
@@ -124,6 +126,91 @@ describe('LoginComponent — after accepting an invitation (ACC-120 slice 9e)', 
     location.replaceState('/login', '', { notice: 'somethingElse', navigationId: 1 });
     expect(load().textContent).not.toContain(NOTICE_TEXT);
     expect(location.getState()).toEqual({ notice: 'somethingElse', navigationId: 1 });
+  });
+});
+
+// ACC-188 — arriving from Reset password says the password is changed, ONCE:
+// gone on a refresh, and gone after the next sign-in attempt, so it never sits
+// beside a wrong-password message. Focus is on Email.
+describe('LoginComponent — after resetting a password (ACC-188)', () => {
+  const NOTICE_TEXT = 'auth.reset.successNotice';
+  let location: SpyLocation;
+  let login: jasmine.Spy;
+
+  beforeEach(() => {
+    location = new SpyLocation();
+    login = jasmine.createSpy('login').and.returnValue(
+      throwError(() => new HttpErrorResponse({ status: 401, error: { code: 'INVALID_CREDENTIALS' } })),
+    );
+  });
+
+  function load(): { el: HTMLElement; detect: () => void } {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [LoginComponent],
+      providers: [
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        { provide: Location, useValue: location },
+        {
+          provide: Router,
+          useValue: {
+            currentNavigation: () => {
+              const state = location.getState() as Record<string, unknown> | null;
+              return state ? { extras: { state } } : null;
+            },
+            navigate: jasmine.createSpy('navigate'),
+            navigateByUrl: jasmine.createSpy('navigateByUrl'),
+            createUrlTree: () => ({}),
+            serializeUrl: () => '',
+            events: { subscribe: () => ({ unsubscribe: () => {} }) },
+          },
+        },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+        { provide: AuthService, useValue: { isAuthenticated: () => false, login } },
+        { provide: NavigationAccessService, useValue: {} },
+        { provide: TenantHostService, useValue: { slug: 'al-nakheel' } },
+        ...LAYOUT_PROVIDERS,
+      ],
+    });
+    const fixture = TestBed.createComponent(LoginComponent);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+    return { el: fixture.nativeElement, detect: () => fixture.detectChanges() };
+  }
+
+  const arrive = (): void =>
+    location.replaceState('/login', '', { notice: PASSWORD_RESET_NOTICE, navigationId: 7, ɵrouterPageId: 6 });
+
+  afterEach(() => document.querySelectorAll('app-login').forEach((n) => n.remove()));
+
+  it('shows the notice as a status on arrival, with focus on Email', async () => {
+    arrive();
+    const { el } = load();
+    const notice = el.querySelector('[data-testid="password-reset-notice"]')!;
+    expect(notice.textContent).toContain(NOTICE_TEXT);
+    expect(notice.getAttribute('role')).toBe('status');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(document.activeElement?.id).toBe('email');
+  });
+
+  it('is gone on a reload, and the router keeps its own keys', () => {
+    arrive();
+    expect(load().el.textContent).toContain(NOTICE_TEXT);
+    expect(location.getState()).toEqual({ navigationId: 7, ɵrouterPageId: 6 });
+    expect(load().el.textContent).not.toContain(NOTICE_TEXT);
+  });
+
+  it('is gone after the next sign-in attempt, so it never sits beside a refusal', () => {
+    arrive();
+    const { el, detect } = load();
+    el.querySelector('form')!.dispatchEvent(new Event('submit'));
+    detect();
+    expect(el.textContent).not.toContain(NOTICE_TEXT);
+  });
+
+  it('never prefills the email', () => {
+    arrive();
+    expect(load().el.querySelector<HTMLInputElement>('#email')!.value).toBe('');
   });
 });
 
@@ -457,5 +544,76 @@ describe('LoginComponent — a session at another organisation’s address (ACC-
     );
     expect(arText).toMatch(/[\u0600-\u06FF]/);
     expect(arText).not.toBe(enText);
+  });
+});
+
+// ACC-126 — the session ended at its 12-hour limit: the sign-in page says so,
+// whether it was told by the URL (the warning's own sign-out, or a refused
+// renewal in the interceptor) or by a refusal met where nothing navigates
+// (restoreSession(), noted in SessionLimitState).
+describe('LoginComponent — signed out at the 12-hour limit (ACC-126)', () => {
+  const NOTE_KEY = 'session.signedOutLimit';
+
+  function load(opts: { reason?: string; noted?: boolean }): HTMLElement {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [LoginComponent],
+      providers: [
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        {
+          provide: Router,
+          useValue: {
+            currentNavigation: () => null,
+            navigate: jasmine.createSpy('navigate'),
+            navigateByUrl: jasmine.createSpy('navigateByUrl'),
+            createUrlTree: () => ({}),
+            serializeUrl: () => '',
+            events: { subscribe: () => ({ unsubscribe: () => {} }) },
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { queryParamMap: convertToParamMap(opts.reason ? { reason: opts.reason } : {}) },
+          },
+        },
+        { provide: AuthService, useValue: { isAuthenticated: () => false } },
+        { provide: NavigationAccessService, useValue: {} },
+        { provide: TenantHostService, useValue: { slug: 'al-nakheel' } },
+        ...LAYOUT_PROVIDERS,
+      ],
+    });
+    if (opts.noted) {
+      TestBed.inject(SessionLimitState).note(
+        new HttpErrorResponse({ status: 401, statusText: 'Unauthorized', error: { code: SESSION_TIME_LIMIT } }),
+      );
+    }
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.detectChanges();
+    return fixture.nativeElement;
+  }
+
+  it('says why on reason=limit', () => {
+    expect(load({ reason: 'limit' }).textContent).toContain(NOTE_KEY);
+  });
+
+  it('says why when a refusal was noted where nothing navigated', () => {
+    expect(load({ noted: true }).textContent).toContain(NOTE_KEY);
+  });
+
+  it('says nothing of the kind on a plain visit, or for the idle sign-out', () => {
+    expect(load({}).textContent).not.toContain(NOTE_KEY);
+    const idle = load({ reason: 'idle' }).textContent ?? '';
+    expect(idle).not.toContain(NOTE_KEY);
+    expect(idle).toContain('session.signedOutIdle');
+  });
+
+  it('has the exact wording in both languages', () => {
+    expect(en.session.signedOutLimit).toBe(
+      'You were signed out because a session ends 12 hours after sign-in. Sign in again to continue.',
+    );
+    expect(ar.session.signedOutLimit).toBe(
+      'تم تسجيل الخروج لأن الجلسة تنتهي بعد 12 ساعة من تسجيل الدخول. يُرجى تسجيل الدخول من جديد للمتابعة.',
+    );
   });
 });

@@ -8,6 +8,7 @@ import { LanguageService } from './language.service';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import { RowMenuComponent, RowMenuItem } from '../../shared/components/row-menu/row-menu.component';
 import { OverlaySelectComponent } from '../../shared/components/overlay-select/overlay-select.component';
+import { useLayoutFonts } from '../../../testing/layout-fonts';
 
 /**
  * ACC-237 — CDK overlays follow a language switch WITHOUT a reload.
@@ -49,6 +50,7 @@ class HostComponent {
 }
 
 describe('CDK overlays follow a language switch without a reload (ACC-237)', () => {
+  useLayoutFonts({ rtl: true });
   let fixture: ComponentFixture<HostComponent>;
 
   preserveDocumentLanguage();

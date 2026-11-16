@@ -5,6 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { findEmptyPoolTasks } from '../task/task-pool';
 // ACC-185 — a plain function too: reads the encrypted storage config.
 import { readStorageConfig } from '../file-storage/storage-config';
+import { STAGE_FLAG } from '../workflow/record-registry';
+import { requiredSeats, seatHoldersFor } from '../committees/committee-seat-rules';
 // Type-only: the generated client is replaced by a stub under Jest
 // (package.json moduleNameMapper), so its enum OBJECTS do not exist at test
 // runtime. String literals typed by the enum — the same convention as
@@ -86,6 +88,10 @@ export type SetupConditionDetector = (
 //
 // ACC-271 — STAGE_ON_STARTING_ASSIGNMENT was deferred the same way from PR 1 to
 // PR 3, which adds its detector (and Keep this assignment) and removes it here.
+//
+// ACC-286 — COMMITTEE_MISSING_REQUIRED_SEAT was deferred the same way: PR 1
+// added the value (and the frontend learned it) with nothing writing it; PR 2
+// adds its detector and removes it here.
 export const DEFERRED_SETUP_CONDITION_TYPES = [
   'POSITION_WITHOUT_ROLE',
 ] as const satisfies readonly SetupConditionType[];
@@ -122,7 +128,65 @@ export class SetupConditionDetectors {
       this.storageSecretExpiring(organizationId, now),
     STAGE_ON_STARTING_ASSIGNMENT: (organizationId) =>
       this.stagesOnStartingAssignment(organizationId),
+    COMMITTEE_MISSING_REQUIRED_SEAT: (organizationId) =>
+      this.committeesMissingRequiredSeat(organizationId),
   };
+
+  /**
+   * ACC-286 PR 2 — a committee IN FORCE with a required seat nobody fills.
+   * "In force" is rules 3 and 4's test (Ahmad, 15 Nov, Q-A): the committee is
+   * active and its newest COMMITTEE instance's current stage is flagged
+   * IN_FORCE — read from the flag, never a stage key, so Suspended counts.
+   * Required seats and who fills them come from committee-seat-rules.ts, the
+   * one reader: the organisation's own seat settings over the shared ones, and
+   * only an active membership of an ACTIVE user fills a seat.
+   *
+   * One condition per committee, AT_RISK (A7), naming its empty seats in seat
+   * order. No timestamp records when a seat emptied, so the age is "first
+   * detected" (openedAt null, Q-B). At most three queries per organisation,
+   * whatever the number of committees.
+   */
+  async committeesMissingRequiredSeat(organizationId: string): Promise<DetectedCondition[]> {
+    const committees = await this.prisma.$queryRaw<{ id: string; nameEn: string; nameAr: string | null }[]>`
+      WITH newest AS (
+        SELECT DISTINCT ON (wi."objectId") wi."objectId" AS "committeeId", wi."currentStageId"
+          FROM "WorkflowInstance" wi
+         WHERE wi."organizationId" = ${organizationId} AND wi."objectType" = 'COMMITTEE'
+         ORDER BY wi."objectId", wi."createdAt" DESC
+      )
+      SELECT c.id, c."nameEn", c."nameAr"
+        FROM "Committee" c
+        JOIN newest n ON n."committeeId" = c.id
+        JOIN "WorkflowStage" s ON s.id = n."currentStageId"
+       WHERE c."organizationId" = ${organizationId}
+         AND c."isActive"
+         AND ${STAGE_FLAG.IN_FORCE} = ANY(s.flags)
+       ORDER BY c."nameEn", c.id`;
+    if (committees.length === 0) return [];
+
+    const seats = await requiredSeats(this.prisma, organizationId);
+    if (seats.length === 0) return [];
+
+    const holders = await seatHoldersFor(this.prisma, organizationId, committees.map((c) => c.id), seats.map((s) => s.id));
+    const filled = new Set(holders.map((h) => `${h.committeeId}:${h.roleValueId}`));
+
+    return committees.flatMap((committee) => {
+      const empty = seats.filter((seat) => !filled.has(`${committee.id}:${seat.id}`));
+      if (empty.length === 0) return [];
+      return [
+        {
+          objectId: committee.id,
+          severity: 'AT_RISK' as const,
+          openedAt: null,
+          subject: {
+            nameEn: committee.nameEn,
+            nameAr: committee.nameAr,
+            seats: empty.map((s) => ({ id: s.id, labelEn: s.labelEn, labelAr: s.labelAr })),
+          },
+        },
+      ];
+    });
+  }
 
   /**
    * ACC-271 PR 3 (plan §9) — a stage still worked by its seeded starting
