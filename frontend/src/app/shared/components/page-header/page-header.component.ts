@@ -47,7 +47,7 @@ import { registerPageName } from '../../../core/services/document-title.service'
       <div class="min-w-0">
         @if (eyebrow()) {
           <div
-            class="mb-[3px] text-[11px] font-bold tracking-[0.08em] uppercase text-[var(--am-text-secondary)]"
+            class="mb-[3px] text-[11px] font-bold tracking-[0.08em] uppercase text-[var(--am-ink-500)]"
           >
             {{ eyebrow() }}
           </div>
@@ -65,7 +65,7 @@ import { registerPageName } from '../../../core/services/document-title.service'
         </div>
         @if (purpose()) {
           <p
-            class="mt-[3px] mb-0 max-w-[92ch] text-[12.5px] text-pretty text-[var(--am-text-secondary)]"
+            class="mt-[3px] mb-0 max-w-[92ch] text-[12.5px] text-pretty text-[var(--am-ink-500)]"
           >
             {{ purpose() }}
           </p>

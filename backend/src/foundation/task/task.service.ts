@@ -232,7 +232,7 @@ export class TaskService {
   // and every task before this ticket), or to a TARGET: a position in a unit
   // or a committee role, chosen through `assignTo`, which lands it with named
   // people or in a pool (TaskAssignmentService.resolvePlacement()). The engine
-  // passes its own resolved placement for a POSITION_FIXED or committee-role
+  // passes its own resolved placement for a position-in-unit or committee-role
   // stage, because a stage's committee need not be the task's source.
   //
   // ACC-174 — the SLA limit. slaStartAt is now; the limit is the priority SLA

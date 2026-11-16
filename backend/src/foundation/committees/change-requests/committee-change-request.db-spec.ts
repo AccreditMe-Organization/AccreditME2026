@@ -126,6 +126,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
             order: (i + 1) * 10,
             isInitial: i === 0,
             isFinal: key === 'dissolved',
+            whoMode: seeded.who.mode,
             flags: [...(seeded.flags ?? [])],
             recordActions: { create: (seeded.actions ?? []).map((actionKey) => ({ organizationId: org, actionKey })) },
           },
@@ -869,7 +870,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
         await voteStage(w, 'terms_review', null); // the record's own committee
         await voteStage(w, 'formation', w.other); // always the other committee
         // A stage worked by this committee that is NOT a vote (Any one of them): not counted.
-        // ACC-278 — this was an old approvalMode COMMITTEE decoy; that column left the client.
+        // ACC-278 — this was an old approvalMode COMMITTEE decoy; PR B dropped that column.
         await prisma.workflowStage.update({ where: { id: w.stageOf['dissolution_pending'] }, data: { whoMode: 'ANY_ONE' } });
         await prisma.workflowStageAssignee.create({ data: { organizationId: w.org, stageId: w.stageOf['dissolution_pending']!, order: 1, kind: 'COMMITTEE', committeeId: null } });
 

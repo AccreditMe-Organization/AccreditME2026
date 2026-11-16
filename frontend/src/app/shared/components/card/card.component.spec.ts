@@ -35,7 +35,7 @@ describe('CardComponent', () => {
     fixture.componentInstance.linkable = true;
     fixture.detectChanges();
     const div: HTMLElement = fixture.nativeElement.querySelector('div');
-    expect(div.className).toContain('hover:border-[var(--am-blue-primary)]');
+    expect(div.className).toContain('hover:border-[var(--am-primary-600)]');
     expect(div.className).toContain('cursor-pointer');
   });
 });

@@ -152,7 +152,8 @@ const mockPrisma = {
     findFirst: jest.fn(),
     findMany: jest.fn().mockResolvedValue([]),
   },
-  // ACC-54 — POSITION_FIXED's two write-time tenant validators.
+  // ACC-54 — the position and unit write-time tenant validators (a who entry's
+  // POSITION_IN_UNIT since ACC-271).
   orgPosition: {
     findFirst: jest.fn(),
     findMany: jest.fn().mockResolvedValue([]),

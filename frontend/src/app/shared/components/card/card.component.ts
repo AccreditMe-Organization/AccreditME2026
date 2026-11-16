@@ -19,6 +19,6 @@ export class CardComponent {
 
   readonly containerClasses = computed(() => {
     const base = 'p-4 rounded-md bg-[var(--am-card)] border border-[var(--am-border)] transition-colors';
-    return this.linkable() ? `${base} hover:border-[var(--am-blue-primary)] cursor-pointer` : base;
+    return this.linkable() ? `${base} hover:border-[var(--am-primary-600)] cursor-pointer` : base;
   });
 }

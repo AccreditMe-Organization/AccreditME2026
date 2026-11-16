@@ -1846,6 +1846,11 @@ Workflow Engine). Every field/enum below cited against
 > `EXIT`); a new `WorkflowStageTaskDefinition` table hangs off `WorkflowStage`;
 > `Task` gains `workflowInstanceStageId`, `stageTaskDefinitionId`, `isMandatory`
 > and `titleAr`. Shapes and rules: §2.15. The listing below predates them.
+>
+> **ACC-278 PR B:** the stage's `approvalMode`, `parallelThreshold`,
+> `committeeId`, `assignee*` columns and the transition's `requiredPermission`,
+> `triggerCondition`, `triggerUserId` and `triggerRoleId` below are DROPPED,
+> with their enum types; `whoMode` and `mover` are NOT NULL. §2.19, "6c".
 
 ```prisma
 model WorkflowTemplate {
@@ -3332,6 +3337,7 @@ Superseded (ACC-274): PR 2 (#231) and PR 4 (#233) have merged. The seed converts
 Superseded (ACC-271 PR 6a): **the old branch is gone.** The engine reads only the stage's pool; a stage whose `whoMode` is null has an EMPTY pool (fail closed), and a new stage must say `who` (`WHO_REQUIRED`). §2.4–§2.8 and §2.13 are history: they describe code that no longer exists. See "PR 6a" below.
 Superseded (ACC-271 PR 6b): **the old who fields are gone from the API and the seed.** The columns stay in the schema until 6c. See "PR 6b" below.
 Updated (ACC-278 PR A): **the old columns are out of the generated client** (`@ignore`) and still in the database; PR B drops them. See "6c" below.
+Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enum types are dropped, and `whoMode` and `mover` are NOT NULL.** A stage whose `whoMode` is null can no longer exist. See "6c" below.
 
 - **The transition window (plan §4.6).** A stage with `WorkflowStage.whoMode`
   set is CONVERTED: its `WorkflowStageAssignee` entries say who works it, and
@@ -3805,7 +3811,8 @@ Updated (ACC-278 PR A): **the old columns are out of the generated client** (`@i
     The seed still writes the old columns; PR 6b removes them, the old DTO
     fields, and `transitionMover()`'s null fallback.
   - **Specs:** `stage-without-who.db-spec.ts` (real Postgres: each case shown
-    working with a `who` first), the fail-closed cases of
+    working with a `who` first; deleted in ACC-278 PR B, whose NOT NULL makes
+    its subject impossible), the fail-closed cases of
     `workflow.service.spec.ts`, `stage-pool.service.spec.ts` and
     `sla-monitor.processor.spec.ts`, the open-vote cases of
     `committee-change-request.db-spec.ts`, `WHO_REQUIRED` in
@@ -3890,18 +3897,34 @@ Updated (ACC-278 PR A): **the old columns are out of the generated client** (`@i
     made 10 real calls (stage and transition reads without a `select`, creates
     and updates returning the row, the template read with stages and
     transitions), all OK; dev's client before PR A, 3 of 10 (7 P2022).
-  - **PR B (not built):** one migration drops the 13 columns, their two foreign
-    keys and the four old enum types (`WorkflowApprovalMode`,
-    `WorkflowParallelThreshold`, `WorkflowAssigneeStrategy`,
-    `WorkflowTriggerCondition`, each used by one old column only), and makes
-    `whoMode` and `mover` NOT NULL. At least a day after PR A is live (Ahmad).
-    **Once PR B ships, never roll Railway back past PR A.**
+  - **PR B, migration `20261116130000_acc278_drop_old_who_columns`:**
+    - drops the 13 columns, their two foreign keys and the four old enum types
+      (`WorkflowApprovalMode`, `WorkflowParallelThreshold`,
+      `WorkflowAssigneeStrategy`, `WorkflowTriggerCondition`, each used by
+      one old column only), and the relations and back-relations with them;
+    - makes `whoMode` and `mover` NOT NULL (0 nulls of 120 stages and 150
+      transitions on the shared database, 16 Nov). The database refuses a
+      stage without a mode or a move without a mover (23502);
+    - code: the five `whoMode: { not: null }` filters are gone
+      (`stage-pool.service.ts` ×3, `workflow-awaiting.service.ts`,
+      `writeStartingAssignments()`), and every spec fixture stage states a
+      `whoMode`.
+    - **Never roll Railway back past PR A (`b26b27d`).** Against the dropped
+      schema, PR A's client made the 10 probe calls, all OK; the client before
+      PR A, 3 of 10 (7 P2022).
   - **Kept, decided (Ahmad, 14 Nov):** `TransitionMover.AUTOMATIC` (reserved),
     `dto/old-who-fields.dto.spec.ts`. The branches NOT NULL makes unreachable
     (`MOVE_HAS_NO_MOVER` and others) go in a follow-up after ACC-202 part 2.
-  - **Specs:** `old-who-columns.client.spec.ts` (out of the client, still in
-    the schema; mutation-checked: one `@ignore` removed turns it red, naming
-    the field).
+  - **Specs:**
+    - `old-who-columns.client.spec.ts`: out of the client and, since PR B, out
+      of the schema, with the relations and enum types; `whoMode` and `mover`
+      required. Mutation-checked: one old column declared again turns it
+      red, naming it.
+    - `old-who-columns.db-spec.ts` (real Postgres): the columns and types
+      are gone, and NULL in either column is refused, both on update and on
+      insert.
+    - The `whoMode` / `mover` null cases left `starting-assignments.db-spec.ts`,
+      and `stage-without-who.db-spec.ts` is deleted.
 - **Specs:** `stage-pool.service.spec.ts`, the "converted stages (ACC-271)"
   block of `workflow.service.spec.ts`, `sla-monitor.processor.spec.ts`,
   `user.service.spec.ts` (deactivate), `stage-pool.db-spec.ts` (real
@@ -9986,6 +10009,23 @@ browser silently drops it. The rule caught three in Manage roles
 in overlay-select, and, on its first merge with `dev`, the All tasks
 filter chip's `--am-primary-200`.
 
+**The shared components no longer use the retired secondary ink (ACC-311).**
+- **The token.** `--am-text-secondary` is #718096: 4.02:1 on white and 3.73:1
+  on the surface, below AA for small text. The design reference retired it
+  (ACC-111) for `--am-ink-500` (#5A6779).
+- **What moved.** Every use under `src/app/shared` and `src/app/layout` moved
+  to `--am-ink-500`, and `--am-blue-primary` to `--am-primary-600`, the same
+  value: 41 uses in 14 files. These include the record panel's heading, count
+  chip and empty-state line, the list's notes and pager line, the page
+  header's eyebrow and purpose line, and the breadcrumb.
+- **The fallbacks.** The status badge and status chip fall back to
+  `--am-ink-500` too. The badge draws white text on that fallback, which
+  improves from 4.02:1 to about 5.8:1.
+- **Enforced by `check:retired-ink`**, with a selftest: the old token under
+  either folder fails CI, naming the file and line.
+- **Screens under `foundation/` and `platform/` still carry the old token.**
+  They move screen by screen; the scan covers what every screen inherits.
+
 ### 10.2 `StatusBadgeComponent` — Generic by Variant, Not by Fixed Enum
 
 `frontend/src/app/shared/components/status-badge/status-badge.component.ts`.
@@ -9994,13 +10034,13 @@ and an arbitrary `value: string`, rather than one component per
 vocabulary. Two computed bindings, both derived the same way:
 
 ```ts
-colorVar   = `var(--am-${variant}-${value.toLowerCase()}, var(--am-text-secondary))`
+colorVar   = `var(--am-${variant}-${value.toLowerCase()}, var(--am-ink-500))`
 labelKey   = `${variant}.${value.toLowerCase()}`   // rendered via | translate
 ```
 
 Two deliberate safety properties, both stated directly in the code
 comment: (1) **CSS's own `var()` fallback** handles an unmapped/typo'd
-`value` — resolves to `--am-text-secondary` instead of an invisible or
+`value` — resolves to `--am-ink-500` (ACC-311; was `--am-text-secondary`) instead of an invisible or
 broken badge, no JS-side existence check needed, the cascade handles
 it. (2) An explicit warning to future callers: *"confirm en.json/ar.json
 actually have a matching `{variant}.{value}` key — ngx-translate falls

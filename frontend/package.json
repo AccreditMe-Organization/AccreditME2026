@@ -28,6 +28,8 @@
     "check:theme-components": "node scripts/check-theme-components.mjs",
     "check:theme-components:selftest": "node scripts/check-theme-components.selftest.mjs",
     "check:layout-spec-fonts": "node scripts/check-layout-spec-fonts.mjs",
+    "check:retired-ink": "node scripts/check-retired-ink.mjs",
+    "check:retired-ink:selftest": "node scripts/check-retired-ink.selftest.mjs",
     "verify:built-index": "node scripts/verify-built-index.mjs"
   },
   "engines": {

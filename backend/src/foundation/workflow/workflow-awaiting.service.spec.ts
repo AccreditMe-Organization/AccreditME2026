@@ -102,7 +102,7 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
     ]);
   });
 
-  it('asks the database only for open entries on running instances, converted non-final stages, in the organisation, of types the viewer sees', async () => {
+  it('asks the database only for open entries on running instances, non-final stages, in the organisation, of types the viewer sees', async () => {
     const { service, prisma } = setup([]);
 
     await service.awaitingMe(ORG, VIEWER, VIEW);
@@ -112,7 +112,7 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
         where: {
           exitedAt: null,
           workflowInstance: { organizationId: ORG, status: 'IN_PROGRESS', OR: [{ objectType: { in: ['COMMITTEE', 'COMMITTEE_CHANGE_REQUEST'] } }] },
-          stage: { whoMode: { not: null }, isFinal: false, workflowTemplate: { organizationId: ORG } },
+          stage: { isFinal: false, workflowTemplate: { organizationId: ORG } },
         },
         orderBy: [{ enteredAt: 'asc' }, { id: 'asc' }],
         // ACC-281 — the hard cap on what is read.
@@ -169,14 +169,13 @@ describe('WorkflowAwaitingService (ACC-271)', () => {
     expect((await service.awaitingMe(ORG, VIEWER, VIEW)).total).toBe(1);
   });
 
-  // ACC-271 PR 6b — a stage with no `who` is left out twice: by the query, and
-  // by its pool, which StagePoolService answers empty (fail closed, PR 6a).
-  it('not a stage with no `who`, nor an open entry that is not the instance\'s current stage', async () => {
-    const { service, prisma } = setup([entry({ id: 'no-who', whoMode: null }), entry({ current: false })], { 'no-who': pool([]) });
+  // ACC-278 PR B — whoMode is NOT NULL, so the query no longer filters on it
+  // (the "stage with no `who`" half of this case, ACC-271 PR 6b, went with it).
+  it('not an open entry that is not the instance\'s current stage; no whoMode filter', async () => {
+    const { service, prisma } = setup([entry({ current: false })]);
     expect((await service.awaitingMe(ORG, VIEWER, VIEW)).total).toBe(0);
-    expect(prisma.workflowInstanceStage.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ stage: expect.objectContaining({ whoMode: { not: null } }) }) }),
-    );
+    const [[query]] = prisma.workflowInstanceStage.findMany.mock.calls as unknown as [[{ where: { stage: object } }]];
+    expect(query.where.stage).not.toHaveProperty('whoMode');
   });
 
   it('not a stage the viewer is not in the pool of, nor one whose pool is empty', async () => {

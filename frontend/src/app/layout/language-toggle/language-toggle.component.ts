@@ -67,7 +67,7 @@ import { InterfaceLanguage } from '../../core/services/sign-in-language.service'
   styles: [
     `
       .am-lang-option {
-        color: var(--am-text-secondary);
+        color: var(--am-ink-500);
         background: var(--am-card);
         cursor: pointer;
       }
@@ -77,10 +77,10 @@ import { InterfaceLanguage } from '../../core/services/sign-in-language.service'
       .am-lang-option--active,
       .am-lang-option--active:hover {
         color: var(--am-card);
-        background: var(--am-blue-primary);
+        background: var(--am-primary-600);
       }
       .am-lang-option:focus-visible {
-        outline: 2px solid var(--am-blue-primary);
+        outline: 2px solid var(--am-primary-600);
         outline-offset: -2px;
       }
       .am-lang-option:disabled {

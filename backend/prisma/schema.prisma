@@ -79,42 +79,6 @@ enum WorkflowObjectType {
   COMMITTEE_CHANGE_REQUEST // ACC-239 — a change to an approved committee's details
 }
 
-enum WorkflowApprovalMode {
-  SINGLE
-  SEQUENTIAL
-  PARALLEL
-  COMMITTEE
-}
-
-enum WorkflowParallelThreshold {
-  ALL
-  MAJORITY
-  ANY
-}
-
-enum WorkflowAssigneeStrategy {
-  SPECIFIC_USER
-  ROLE
-  ORG_UNIT_HEAD
-  SELF
-  COMMITTEE
-  ROUND_ROBIN
-  // ACC-54 — resolves to whoever holds a specific OrgPosition in a
-  // specific, explicitly-configured OrgUnit. Named FIXED to pair with a
-  // future POSITION_RELATIVE (same position, unit derived at trigger time
-  // from the triggering object's own orgUnitId) — deferred until a
-  // workflow-driven object actually carries an orgUnitId to derive from.
-  POSITION_FIXED
-}
-
-enum WorkflowTriggerCondition {
-  SPECIFIC_USER
-  ROLE_BASED
-  ANY_AUTHENTICATED
-  SYSTEM_AUTOMATIC
-  ASSIGNEE_POOL
-}
-
 enum WorkflowActionType {
   CREATE_TASK
   SEND_NOTIFICATION
@@ -1005,9 +969,6 @@ model OrgUnit {
   children                        OrgUnit[]               @relation("OrgUnitHierarchy")
   users                           User[]
   actingUsers                     User[]                  @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
-  // ACC-54 — back-relation for WorkflowStage.assigneeOrgUnitId (POSITION_FIXED).
-  // ACC-278 — @ignore with the column it reads; PR B drops both.
-  assigneeForWorkflowStages       WorkflowStage[]         @relation("WorkflowStageAssigneeOrgUnit") @ignore
   pendingHead                     User?                   @relation("OrgUnitPendingHead", fields: [pendingHeadUserId], references: [id])
   actingHead                      User?                   @relation("OrgUnitActingHead", fields: [actingHeadUserId], references: [id])
   headEvents                      OrgUnitHeadEvent[]
@@ -1245,9 +1206,6 @@ model OrgPosition {
   users           User[]
   headEvents      OrgUnitHeadEvent[] // back-relation for OrgUnitHeadEvent.positionId (ACC-40 Section 2.3)
   headAssignments OrgUnitHeadAssignment[] // ACC-120 slice 2
-  // ACC-54 — back-relation for WorkflowStage.assigneePositionId (POSITION_FIXED).
-  // ACC-278 — @ignore with the column it reads; PR B drops both.
-  workflowStages  WorkflowStage[]         @ignore
   poolTasks       Task[]                  @relation("TaskAssignedPosition") // ACC-167
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionPosition") // ACC-190
@@ -1300,22 +1258,6 @@ model WorkflowStage {
   // organisations. Unique within one workflow; Postgres lets the nulls repeat.
   key String?
 
-  // ACC-278 PR A — the old "who" columns. Nothing has read them since ACC-271
-  // PR 6b: who works a stage is `whoMode` and `assignees`. @ignore removes them
-  // from the generated client, so no query names them, while the columns stay
-  // in the database (no migration). PR B drops them, with their two foreign
-  // keys and their enum types. The three NOT NULL ones keep their database
-  // defaults, which fill them on insert until then.
-  approvalMode                 WorkflowApprovalMode       @default(SINGLE) @ignore
-  parallelThreshold            WorkflowParallelThreshold? @ignore
-  committeeId                  String?                    @ignore
-  assigneeStrategy             WorkflowAssigneeStrategy   @default(ROLE) @ignore
-  assigneeUserId               String?                    @ignore
-  assigneeRoleId               String?                    @ignore
-  assigneeCommitteeRoleValueId String?                    @ignore
-  assigneePositionId           String?                    @ignore
-  assigneeOrgUnitId            String?                    @ignore
-
   escalationConfig Json?
 
   // ACC-255 — what this stage MEANS, from STAGE_FLAGS (record-registry.ts):
@@ -1326,16 +1268,14 @@ model WorkflowStage {
   flags String[] @default([])
 
   // ACC-271 — how the stage's people decide, set with the stage's `assignees`.
-  // NULL (none on the shared database since the PR 2 backfill) is an empty pool
-  // (PR 6a). ACC-278 PR B makes it NOT NULL.
-  whoMode StageWhoMode?
+  // NOT NULL since ACC-278 PR B, which dropped the old who columns (approvalMode,
+  // assigneeStrategy and the rest) that this and `assignees` replaced.
+  whoMode StageWhoMode
 
   workflowTemplate WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
   transitionsFrom  WorkflowTransition[]    @relation("TransitionFrom")
   transitionsTo    WorkflowTransition[]    @relation("TransitionTo")
   instanceStages   WorkflowInstanceStage[]
-  assigneePosition OrgPosition?            @relation(fields: [assigneePositionId], references: [id]) @ignore // ACC-278
-  assigneeOrgUnit  OrgUnit?                @relation("WorkflowStageAssigneeOrgUnit", fields: [assigneeOrgUnitId], references: [id]) @ignore // ACC-278
 
   taskDefinitions WorkflowStageTaskDefinition[] // ACC-190
   recordActions   WorkflowStageRecordAction[] // ACC-255 — the record actions this stage allows
@@ -1395,24 +1335,18 @@ model WorkflowStageAssignee {
 }
 
 model WorkflowTransition {
-  id                 String                   @id @default(cuid())
-  fromStageId        String
-  toStageId          String
-  labelEn            String
-  labelAr            String?
-  // ACC-278 PR A — the old "who" columns, out of the client (see WorkflowStage);
-  // PR B drops them. triggerCondition keeps its database default on insert.
-  requiredPermission String?                  @ignore
-  triggerCondition   WorkflowTriggerCondition @default(ROLE_BASED) @ignore
-  triggerUserId      String?                  @ignore
-  triggerRoleId      String?                  @ignore
-  validatorConfig    Json?
-  isApprovalPath     Boolean                  @default(false)
-  kind               WorkflowTransitionKind   @default(ADVANCE) // ACC-190
+  id              String                 @id @default(cuid())
+  fromStageId     String
+  toStageId       String
+  labelEn         String
+  labelAr         String?
+  validatorConfig Json?
+  isApprovalPath  Boolean                @default(false)
+  kind            WorkflowTransitionKind @default(ADVANCE) // ACC-190
   // ACC-271 — who moves the record along it (transitionMover() in
-  // workflow-pool.ts). Every move has one since the PR 2 backfill; ACC-278 PR B
-  // makes it NOT NULL.
-  mover              TransitionMover?
+  // workflow-pool.ts). NOT NULL since ACC-278 PR B, which dropped the old
+  // trigger columns (triggerCondition, requiredPermission and the rest).
+  mover           TransitionMover
 
   fromStage WorkflowStage              @relation("TransitionFrom", fields: [fromStageId], references: [id])
   toStage   WorkflowStage              @relation("TransitionTo", fields: [toStageId], references: [id])

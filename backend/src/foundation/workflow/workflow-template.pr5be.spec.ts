@@ -200,9 +200,6 @@ describe('WorkflowTemplateService — the backend for the stage screens (ACC-271
 
       const data = prisma.workflowStage.create.mock.calls[0][0].data;
       expect(data.whoMode).toBe('ANY_ONE');
-      // No old people value is written: the columns keep their defaults.
-      expect(data).not.toHaveProperty('approvalMode');
-      expect(data).not.toHaveProperty('assigneeStrategy');
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(prisma.workflowStageAssignee.createMany).toHaveBeenCalledWith({
         data: [
@@ -284,12 +281,10 @@ describe('WorkflowTemplateService — the backend for the stage screens (ACC-271
       return ctx;
     }
 
-    it('a new move names no people: the old columns keep their defaults and the mover is PERSON', async () => {
+    it('a new move names no people, and the mover is PERSON', async () => {
       const { prisma, service } = from('ANY_ONE');
       await add(service, {});
       const data = prisma.workflowTransition.create.mock.calls[0][0].data;
-      expect(data).not.toHaveProperty('triggerCondition');
-      expect(data).not.toHaveProperty('requiredPermission');
       expect(data.mover).toBe('PERSON');
     });
 

@@ -149,7 +149,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
         >
           <div class="relative flex items-center flex-1 min-w-0">
             <i
-              class="pi pi-search absolute text-xs text-[var(--am-text-secondary)] pointer-events-none"
+              class="pi pi-search absolute text-xs text-[var(--am-ink-500)] pointer-events-none"
               style="inset-inline-start: 8px"
             ></i>
             <input
@@ -235,12 +235,12 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
               class="rounded-full border px-2.5 py-0.5 text-[11.5px] whitespace-nowrap"
               [class.font-semibold]="activeScope() === scope.key"
               [style.border-color]="
-                activeScope() === scope.key ? 'var(--am-blue-primary)' : 'var(--am-border)'
+                activeScope() === scope.key ? 'var(--am-primary-600)' : 'var(--am-border)'
               "
               [style.color]="
                 activeScope() === scope.key
-                  ? 'var(--am-blue-primary)'
-                  : 'var(--am-text-secondary)'
+                  ? 'var(--am-primary-600)'
+                  : 'var(--am-ink-500)'
               "
               (click)="onScope(scope.key)"
             >
@@ -326,7 +326,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
            outside. -->
       @if (isPage() && headerTemplate() && rows().length > 0) {
         <div
-          class="sticky top-0 z-[1] grid items-center gap-3 px-3 py-2 border-b-2 border-[var(--am-border)] bg-[var(--am-surface)] text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)]"
+          class="sticky top-0 z-[1] grid items-center gap-3 px-3 py-2 border-b-2 border-[var(--am-border)] bg-[var(--am-surface)] text-[11px] font-semibold uppercase tracking-wide text-[var(--am-ink-500)]"
           style="grid-template-columns: var(--am-list-cols)"
           role="row"
         >
@@ -377,7 +377,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
              to clear a search they did not make is worse than saying nothing. -->
         <div class="flex flex-col items-center justify-center text-center gap-1 px-6 py-8">
           <span class="text-[13px] font-semibold">{{ noResultsTitle() || ('list.noResults' | translate) }}</span>
-          <span class="text-xs text-[var(--am-text-secondary)]">
+          <span class="text-xs text-[var(--am-ink-500)]">
             {{ noResultsMessage() || ('list.noResultsBody' | translate) }}
           </span>
           <p-button
@@ -398,7 +398,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
           ></span>
           <span class="text-[13px] font-semibold">{{ emptyTitle() }}</span>
           @if (emptyMessage()) {
-            <span class="text-xs text-[var(--am-text-secondary)] max-w-[34ch]">
+            <span class="text-xs text-[var(--am-ink-500)] max-w-[34ch]">
               {{ emptyMessage() }}
             </span>
           }
@@ -455,7 +455,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
              does not exist. A footer claiming it would be a promise the
              product does not keep. -->
         <div
-          class="px-3 py-1.5 text-[11px] text-[var(--am-text-secondary)] border-t border-[var(--am-border)]"
+          class="px-3 py-1.5 text-[11px] text-[var(--am-ink-500)] border-t border-[var(--am-border)]"
         >
           {{ 'list.preferencesNote' | translate }}
         </div>
@@ -470,7 +470,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
           <span
             dir="ltr"
             style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
-            class="text-[11.5px] text-[var(--am-text-secondary)]"
+            class="text-[11.5px] text-[var(--am-ink-500)]"
           >
             {{ panelRangeLabel() }}
           </span>
