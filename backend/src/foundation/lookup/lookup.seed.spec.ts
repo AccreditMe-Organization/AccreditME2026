@@ -15,8 +15,13 @@ interface AttributeDef {
 
 function attributes(): { category: string; key: string; def: AttributeDef }[] {
   return SYSTEM_LOOKUP_SEED.flatMap((category) => {
-    const properties = (category.attributeSchema?.['properties'] ?? {}) as Record<string, AttributeDef>;
-    return Object.entries(properties).map(([key, def]) => ({ category: category.key, key, def }));
+    const properties = (category.attributeSchema?.['properties'] ??
+      {}) as Record<string, AttributeDef>;
+    return Object.entries(properties).map(([key, def]) => ({
+      category: category.key,
+      key,
+      def,
+    }));
   });
 }
 
@@ -25,7 +30,10 @@ describe('SYSTEM_LOOKUP_SEED attribute names (ACC-310)', () => {
     // Today: committee_member_role.required and document_type's five.
     expect(attributes().length).toBeGreaterThanOrEqual(6);
     expect(attributes().map((a) => `${a.category}.${a.key}`)).toEqual(
-      expect.arrayContaining(['committee_member_role.required', 'document_type.numberingPrefix']),
+      expect.arrayContaining([
+        'committee_member_role.required',
+        'document_type.numberingPrefix',
+      ]),
     );
   });
 
@@ -41,8 +49,20 @@ describe('SYSTEM_LOOKUP_SEED attribute names (ACC-310)', () => {
   );
 
   it('keeps the old `label` on Required seat until the form stops reading it', () => {
-    const roles = SYSTEM_LOOKUP_SEED.find((c) => c.key === 'committee_member_role');
-    const required = (roles?.attributeSchema?.['properties'] as Record<string, Record<string, unknown>>)['required'];
-    expect(required).toEqual({ type: 'boolean', label: 'Required seat', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' });
+    const roles = SYSTEM_LOOKUP_SEED.find(
+      (c) => c.key === 'committee_member_role',
+    );
+    const required = (
+      roles?.attributeSchema?.['properties'] as Record<
+        string,
+        Record<string, unknown>
+      >
+    )['required'];
+    expect(required).toEqual({
+      type: 'boolean',
+      label: 'Required seat',
+      labelEn: 'Required seat',
+      labelAr: 'مقعد مطلوب',
+    });
   });
 });
