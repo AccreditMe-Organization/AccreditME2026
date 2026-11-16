@@ -6888,6 +6888,13 @@ unchanged** (`committees:view` or membership, the table above).
 | `mayReadCommittee(…, now?)` | holder, then member, then overseer: what `assertMaySeeCommittee` asks |
 | `readableCommitteeIds(…, among, now?)` | the batch: all for a holder; members first; one oversight read for the rest |
 | `maySeeCommittee()` | unchanged, member only: what `assertMayWriteCommittee` asks |
+| `committeeAccess(…, now?)` | `{ read, write }` in one pass; `write` is `maySeeCommittee()`. What `assertMaySeeCommittee` returns |
+
+**`GET /committees/:id` says `mayWrite`, for the screens:** true exactly when
+`assertMayWriteCommittee` would pass (`committees:view` or an active member).
+A head who only oversees reads `false`, so the page shows no write button that
+answers 404. Each action's own permission and the stage rules still apply on
+top. It's read from the same pass as the read, with no query added.
 
 **Where it applies (reads):**
 - `assertMaySeeCommittee`, so the committee page, members, members page,
