@@ -7101,6 +7101,94 @@ needs it.
 **One additive migration:** `20261115000000_acc286_setup_committee_missing_seat`
 (the enum value).
 
+### 3.21.5 What each seat allows on its committee (ACC-283, PR 1)
+
+Plan, lane B's review and Ahmad's decisions:
+`backend/Plans/step-283-change-request-chain.md` (§2, §15). PR 1 STORES seat
+actions; **nothing decides by them yet**. The chain of authority (PR 2) reads
+`decide_reporting_changes`; seat-granted member actions come later in the
+ticket.
+
+**The fixed list** (`foundation/committees/seat-actions.ts`, `SEAT_ACTIONS`):
+`add_member`, `remove_member`, `change_member_seat`, `request_change`,
+`decide_reporting_changes`. Stored as text (`CommitteeSeatAction.actionKey`),
+like a stage's record actions, so the Meetings ticket's two actions need no
+enum migration.
+
+**Per committee: `CommitteeSeatAction`** (`organizationId`, `committeeId`,
+`roleValueId`, `actionKey`; unique on the three ids and key). A row means the
+seat allows the action on that committee; a seat with no row allows nothing.
+
+**Defaults per organisation: one boolean attribute per action** on the
+`committee_member_role` lookup (`seatAddsMember`, `seatRemovesMember`,
+`seatChangesSeat`, `seatRequestsChange`, `seatDecidesReportingChanges`), each
+named in both languages (`labelEn`, `labelAr`, ACC-310's shape; and `label`,
+which the value form reads today).
+- The SYSTEM values carry them, rewritten by `seedSystemData()` on every deploy:
+  Chairman all five; Secretary the four member actions; every other seat none
+  (plan Q10's recommendation, pending Ahmad).
+- An organisation changes a default through its override row
+  (`PATCH /lookups/values/:id/attributes`, `lookups:manage`), merged key by key.
+
+**Copied into a committee when it is created**, inside `createCommittee()`'s
+transaction (`copyDefaultSeatActions()`), from `seatValues()`: the seats the
+organisation sees, with the override merged exactly as `getValues()` merges it
+(a db-spec pins the two). The CREATE audit row names the rows copied.
+**Changing a default never reaches an existing committee.**
+
+**The one reader is `seatActionsFor(client, organizationId, committeeIds,
+actionKey?)`**: one query, scoped by organisation. Never a second copy.
+
+**`GET /committees/:id/seat-actions`**: no route permission; `committees:view`
+or an active member of THAT committee (ACC-281), else today's 403. Answers
+`{ committeeId, updatedAt, actionKeys, seats: [{ id, key, labelEn, labelAr,
+actions }] }`, every seat the organisation uses, in seat order.
+
+**`PUT /committees/:id/seat-actions`** `{ expectedUpdatedAt, seats: [{
+roleValueId, actions }] }`, the whole map:
+- `committees:edit_details` at the route; `committees:view` or membership in
+  the service, else the identical 404 a missing committee gets;
+- one transaction in the engine's order: the stage must allow `edit_details`
+  (FOR SHARE of the instance; seeded, Formation only), else 409
+  `STAGE_ACTION_NOT_ALLOWED`; then the committee row FOR UPDATE; then the stale
+  check, 409 `COMMITTEE_CHANGED`;
+- an action not on the list is 400 `SEAT_ACTION_UNKNOWN`; a seat the
+  organisation does not use (another organisation's included) is 400
+  `SEAT_ACTION_SEAT_UNKNOWN`;
+- a change writes the difference, touches the committee's `updatedAt` (seat
+  actions are part of the terms of reference, so a details save and a
+  seat-action save are stale against each other) and writes ONE audit row
+  (`before`/`after` `{ seatActions }`, metadata `change: seat_actions`); a save
+  that changes nothing writes nothing;
+- rows of a seat the organisation no longer uses (hidden) are left as they are.
+
+**Existing committees: `npm run backfill:acc283-seat-actions`**, after the
+deploy (dry run, `-- --execute`, dry run 0). It writes the defaults only for a
+committee with NO rows, through `copyDefaultSeatActions()`, refuses a customer
+organisation, takes `BACKFILL_TX`, locks the committees and plans again inside
+the transaction, and writes one audit row per committee. A committee whose map
+was cleared to nothing has no rows either, so it would be filled; the backfill
+runs once, right after the deploy, before any screen can clear one.
+
+**Setup health: `CHANGE_REQUEST_WITHOUT_DECIDER`** (§13.2) is added to the enum
+and DEFERRED: nothing writes it until PR 3's detector
+(`setup-condition.change-request-deferred.spec.ts` proves it). The screens
+learn it now: the committee's name, the request's number, and a Fix to the
+root unit's Headship.
+
+**Specs:** `seat-actions.spec.ts`; `committee-seat-actions.db-spec.ts` (19, real
+Postgres: the merge against `getValues()`, the copy, the read, the save's rules,
+isolation, the backfill); `committees.permissions.spec.ts` (the two routes);
+`setup-condition.change-request-deferred.spec.ts`; frontend
+`setup-condition-rows.change-request.spec.ts`. Mutation-checked: the
+organisation scope in `seatActionsFor()`, the stage check, and the override
+merge in the defaults each turn a spec red.
+
+**Per-request path:** nothing added.
+
+**One additive migration:** `20261116120000_acc283_committee_seat_actions` (the
+table, and the enum value).
+
 ## 4. Notification System
 
 `backend/src/foundation/notification/notification.service.ts` +
@@ -13514,6 +13602,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
 | `COMMITTEE_MISSING_REQUIRED_SEAT` (ACC-286) | `Committee.id` | `AT_RISK` | first detection | `/committees/:id` (`committees:view` + `committees:add_member`). One row per committee in force (active, stage flagged `IN_FORCE`; Suspended counts) with an empty required seat, naming the seats. PR 1 added the value deferred; PR 2 detects and reports it. §3.21.4 |
+| `CHANGE_REQUEST_WITHOUT_DECIDER` (ACC-283) | `CommitteeChangeRequest.id` | `BLOCKS_WORK` | the request's `submittedAt` | `/organization?head=<root unit id>` (`org:view` + `org:manage`). A request under review that the chain of authority finds no one to decide (only while the root unit has no head and no acting head). **Deferred:** PR 1 added the value and the screens' wording; PR 3 detects and reports it. §3.21.5 |
 
 The Fix link's parameter is read once by the destination and removed from
 the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a
