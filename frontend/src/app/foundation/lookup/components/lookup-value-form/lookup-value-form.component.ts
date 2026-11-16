@@ -117,9 +117,16 @@ export interface AttributeField {
       }
 
       @if (step() === 2) {
-        <div [formGroup]="attributeGroup" class="flex flex-col">
+        <!-- CC-283 — ONE vertical gap between every attribute, the form's own
+             row token. An am-field used to reserve a 17px message slot (plus
+             2px) under its input while a checkbox row reserved nothing, so an
+             input sat 19px above the next field and a checkbox 0px. These
+             controls carry no validators and so can never show a message:
+             each declares message="none" (am-field's clause), and the gap is
+             the container's alone. -->
+        <div [formGroup]="attributeGroup" class="flex flex-col gap-[var(--am-form-row-gap)]" data-attribute-fields>
           @for (field of attributeFields(); track field.key) {
-            <div class="flex flex-col gap-1">
+            <div class="flex flex-col gap-1" [attr.data-attribute-field]="field.key">
               @if (field.type === 'boolean') {
                 <div class="flex items-center gap-3">
                   <p-checkbox
@@ -145,6 +152,7 @@ export interface AttributeField {
                   [label]="attributeName(field)"
                   [inputId]="'attr_' + field.key"
                   [control]="attributeGroup.get(field.key)"
+                  message="none"
                 >
                   <input
                     [id]="'attr_' + field.key"
@@ -159,6 +167,7 @@ export interface AttributeField {
                   [label]="attributeName(field)"
                   [inputId]="'attr_' + field.key"
                   [control]="attributeGroup.get(field.key)"
+                  message="none"
                 >
                   <input
                     [id]="'attr_' + field.key"
