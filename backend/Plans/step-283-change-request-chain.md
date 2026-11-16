@@ -564,3 +564,72 @@ them:**
 - **Recommend:** by step (the committee and seat, or the unit), never by
   person, so no `users:view` question arises.
 - Alternative: also name the people.
+
+---
+
+## 15. Review (lane B, 16 Nov)
+
+**Approved for PR 1** (Prompt 65, lane B).
+
+**Decided by lane B, as recommended:** Q2, Q3, Q5, Q9, Q11, Q12, Q13, Q14 and
+Q15.
+
+**With Ahmad (business):** Q1, Q4, Q6, Q7, Q8 and Q10. PR 1 depends only on
+Q10, and only for seed values: PR 1 ships Q10's recommendation (Chairman, all
+five; Secretary, the four member actions; every other seat, none). If Ahmad
+decides otherwise, the SYSTEM values change in a later PR. That reaches new
+committees only; existing ones keep their copy, by design.
+
+**PR 1 additions:**
+
+- **a. Attribute names:** each new attribute on the `committee_member_role`
+  schema carries `labelEn` and `labelAr` (ACC-310's shape, #305). The
+  wording, with the Arabic awaiting lane A's check:
+
+  | Attribute | English | Arabic |
+  | -- | -- | -- |
+  | `seatAddsMember` | Add members | إضافة أعضاء |
+  | `seatRemovesMember` | Remove members | إزالة أعضاء |
+  | `seatChangesSeat` | Change a member's seat | تغيير مقعد عضو |
+  | `seatRequestsChange` | Request a change | طلب تغيير |
+  | `seatDecidesReportingChanges` | Decide changes of committees that report to it | البتّ في تغييرات اللجان التابعة لها |
+
+- **b. The migration's timestamp** is later than `20261115000000`. Coder 1's
+  ACC-278 PR B has its own migration; whichever merges second must carry the
+  later timestamp. A folder nothing has applied may be renamed.
+- **c. `CHANGE_REQUEST_WITHOUT_DECIDER`** is in
+  `DEFERRED_SETUP_CONDITION_TYPES`, and a spec proves nothing writes it.
+- **d. The backfill:** a dry run by default; refuses a customer organisation;
+  `BACKFILL_TX`; writes only for committees with no rows. Run only against
+  the local test database, never the shared one.
+- **e. `PUT /committees/:id/seat-actions`:**
+  - `committees:edit_details` at the route, plus ACC-281's rule
+    (`committees:view` or membership of that committee);
+  - the stage rule (`edit_details`) with the instance lock first;
+  - `expectedUpdatedAt`;
+  - one audit row;
+  - isolation tests named to the tenant-isolation filter's exact pattern.
+
+**Proofs required:**
+
+- `prisma migrate diff` empty;
+- the specs from §12 that apply to PR 1;
+- three mutations, each turning a spec red:
+  - drop the organisation scope in `seatActionsFor()`;
+  - drop the stage check;
+  - copy the defaults without the override merge.
+
+**Corrections to this plan, found while building PR 1:**
+
+- **The severity is `BLOCKS_WORK`.** §5 said `BLOCKING`, which is not a
+  severity value.
+- **PR 1's backend half is only the enum value and the deferred list.** The
+  reported type list (`SETUP_CONDITION_TYPES`) and `AGE_BASIS` are typed by
+  the ACTIVE types, so a deferred type cannot be in them; they move to PR 3,
+  with the detector. ACC-286 split it the same way. The frontend learns the
+  type in PR 1 (type, order, wording, Fix).
+- **The Fix target** is `/organization?head=<root unit id>`, so the
+  condition's subject carries `rootUnitId`.
+- **A seat-action save touches the committee's `updatedAt`.** Seat actions are
+  part of the terms of reference, so a save of either is stale against the
+  other.
