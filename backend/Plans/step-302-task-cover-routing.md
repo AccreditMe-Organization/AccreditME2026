@@ -289,5 +289,6 @@ merge waits for lane A's #293.
 - [x] PR 1 (backend) built (14 Nov): the shared rule, both paths, Reassign, the picker's `cover`, the
   suggest-someone refusal, stamps, audit and notice; five mutations checked. Handoff for lane A:
   `step-302-handoff-lane-a.md`
-- [ ] PR 2 (screens)
+- [x] PR 2 (screens) built (16 Nov): the row line, the outcome line, the hint hidden, the task
+  page's qualifier; measured against 420px in both languages
 - [ ] Live proof

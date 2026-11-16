@@ -4879,6 +4879,20 @@ the engine's old routing went with it. What is true now:
   `cover: { userId, name } | null`: who a new task for that person goes to now.
   - It is filled for every caller the picker serves, in one read for the list.
   - It never carries dates or a reason.
+- **On screen (PR 2, 16 Nov), from `cover` only; no screen reads a date:**
+  - a covered person's row in the Person list adds "Out of office · goes to
+    {cover}";
+  - when that person is chosen, or a one-holder position's holder is covered,
+    New task's and Reassign's outcome line reads "{name} is out of office. This
+    task will go to {cover}." A stage task definition shows the row but keeps
+    its own outcome, because its tasks are placed at each entry;
+  - the workload hint is hidden for a covered person, and an answer kept for
+    them is not shown;
+  - the task page's assignee line adds "covering for {name}" from the row's
+    `delegation`, only when the server sent the name;
+  - measured against the 420px cap in both languages
+    (`task-cover.layout.spec.ts`): New task 317 / 328, Reassign at its tallest
+    345 / 359.
 - **"✦ Suggest someone"** is never offered or answered for a covered person:
   their row's `canSuggest` is false, and `POST /tasks/assignment/workload-hint`
   refuses them with `WORKLOAD_NO_SUGGESTION` before any call or charge.
