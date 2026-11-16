@@ -2103,6 +2103,7 @@ model CommitteeChangeRequest {
   decidedAt       DateTime?
   appliedAt       DateTime?
   termsTaskId     String? // the "Revise the terms of reference" task approval created
+  finishTaskId    String? // ACC-283 PR 2 — the requester's "Finish or withdraw the change request" task, while a draft or returned
   withdrawnById   String?
   withdrawnAt     DateTime?
   createdAt       DateTime  @default(now())
