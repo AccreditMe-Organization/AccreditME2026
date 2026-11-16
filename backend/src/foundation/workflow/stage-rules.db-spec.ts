@@ -156,7 +156,7 @@ describe('Stage rules against a real database (ACC-255)', () => {
       // A stage the organisation added: no key, gets the member actions only.
       const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
       const added = await prisma.workflowStage.create({
-        data: { workflowTemplateId: template.id, nameEn: 'Board review', order: 25 },
+        data: { workflowTemplateId: template.id, nameEn: 'Board review', order: 25, whoMode: 'ANY_ONE' },
       });
       // A stage the organisation configured first: left exactly as it is.
       const suspended = await stageId(o.id, 'COMMITTEE', 'suspended');
@@ -217,7 +217,7 @@ describe('Stage rules against a real database (ACC-255)', () => {
       const o = await org();
       const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
       const stage = await prisma.workflowStage.create({
-        data: { workflowTemplateId: template.id, nameEn: 'Temporary', order: 99 },
+        data: { workflowTemplateId: template.id, nameEn: 'Temporary', order: 99, whoMode: 'ANY_ONE' },
       });
       await prisma.workflowStageRecordAction.create({ data: { organizationId: o.id, stageId: stage.id, actionKey: 'add_member' } });
       await expect(

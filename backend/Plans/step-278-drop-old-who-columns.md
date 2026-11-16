@@ -15,7 +15,7 @@ planned from `origin/dev` at `b62c3a4`, fast-forwarded to `9b49be0` (#289 merged
    - drops the 13 columns (their 2 foreign keys go with them) and the 4 old enum types;
    - makes `whoMode` and `mover` NOT NULL.
 
-   It is migration **64**, after #289 (62) and #290 (63).
+   It is migration **64 or 65**, after #290 (63): see §6.
 
 Every claim below was measured on 14 Nov:
 - **Code and fixtures:** dev at `b62c3a4`.
@@ -148,8 +148,17 @@ the 4 backfills and their spec account for 38, gone in PR A):
 **Leave them in PR B.** Removing them is optional tidying, and the first touches the file ACC-202
 part 2 edits (§6). See Q5.
 
-**The migration's `SET NOT NULL` checks every row.** If a null appeared before it runs, it fails, and
-the deploy stops with nothing dropped. The tables are 120 and 150 rows, so the lock is momentary.
+**The migration's `SET NOT NULL` checks every row.** If a null appeared before it runs, it fails and
+the deploy stops. The tables are 120 and 150 rows, so the lock is momentary.
+
+**Corrected 16 Nov (PR B build): it does NOT stop "with nothing dropped".** Measured on a local test
+database full of old db-spec rows with null `whoMode`: Prisma does not wrap the migration in one
+transaction, so the two `DROP CONSTRAINT` statements before the failing `ALTER TABLE` committed
+(both foreign keys gone), the `ALTER TABLE` rolled back on its own (every column still there), and
+the migration was recorded failed. Dropping those two foreign keys is harmless (nothing reads the
+columns), but a failed migration blocks every later deploy until it is resolved by hand
+(`prisma migrate resolve`). On the shared database this needs a null to appear between the 16 Nov
+count (0 of 120 and 0 of 150) and the deploy; nothing writes one (above).
 
 ## 4. The enum values nothing uses
 
@@ -228,7 +237,12 @@ under a brief lock.
 1. #289 (ACC-202 PR 1, migration 62).
 2. Lane A's #290 (ACC-126, migration 63).
 3. **PR A** (no migration). It can merge before or after them, since it adds none.
-4. **PR B**, migration 64, after both and after PR A has been live for a release.
+4. **PR B**, at least a day after PR A is live (`b26b27d`, 14 Nov), and after #290 (migration 63).
+   - **Its number is 64 or 65**, whichever of PR B and lane A's ACC-188 (password reset link,
+     migration 64) merges first. PR B does not depend on ACC-188.
+   - **Whichever merges second must have a migration timestamp later than everything already on
+     `dev`.** If PR B is second, regenerate its migration folder name (a fresh `migrate dev`, never a
+     hand-edited file) so it sorts last; Prisma applies migrations in folder-name order.
 
 **Overlaps:**
 - **#289:** touches `schema.prisma` (the `WorkflowInstanceStageOutcome` enum, another block),
@@ -304,7 +318,7 @@ under a brief lock.
 - **Docs:** SYSTEM-REFERENCE (the stage-who section and its "6c" notes) and CLAUDE.md's ACC-271
   entry.
 
-### PR B: the database drops them (migration 64)
+### PR B: the database drops them (migration 64 or 65, §6)
 
 - **`schema.prisma`:**
   - remove the 13 columns, 2 relations, 2 back-relations and 4 enums;
@@ -329,5 +343,9 @@ under a brief lock.
 - [x] Ahmad's answers to §7 (14 Nov, §7.1)
 - [x] PR A built (14 Nov): `@ignore` (migrate diff empty, mutation-checked), backfills and
   helpers deleted, docs; the 10 calls passed with the columns dropped (dev's client: 3 of 10)
-- [ ] PR A live for a release
-- [ ] PR B (after #289 and #290)
+- [x] PR A merged and live (`b26b27d`, 14 Nov)
+- [x] PR B built (16 Nov), migration `20261116130000_acc278_drop_old_who_columns` (after Coder
+  2's `20261116120000_acc283_committee_seat_actions`): columns, foreign keys and enum types
+  dropped, `whoMode` / `mover` NOT NULL. Drift since 14 Nov: none (no code reads a column;
+  0 nulls of 120 / 150). Migrate diff empty; applies at dev's head on 55432; PR A's client 10 /
+  10 against the dropped schema (the client before PR A: 3 / 10)

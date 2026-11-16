@@ -119,7 +119,7 @@ export class StagePoolService {
 
     const stageIds = [...new Set(requests.map((r) => r.stageId))];
     const entries = await client.workflowStageAssignee.findMany({
-      where: { organizationId, stageId: { in: stageIds }, stage: { whoMode: { not: null } } },
+      where: { organizationId, stageId: { in: stageIds } },
       orderBy: [{ stageId: 'asc' }, { order: 'asc' }],
     });
     const entriesByStage = new Map<string, WorkflowStageAssignee[]>();
@@ -334,7 +334,7 @@ export class StagePoolService {
     if (requests.length === 0) return answers;
     const stageIds = [...new Set(requests.map((r) => r.stageId))];
     const entries = await client.workflowStageAssignee.findMany({
-      where: { organizationId, stageId: { in: stageIds }, kind: 'COMMITTEE', stage: { whoMode: { not: null } } },
+      where: { organizationId, stageId: { in: stageIds }, kind: 'COMMITTEE' },
       orderBy: [{ stageId: 'asc' }, { order: 'asc' }],
       select: { stageId: true, committeeId: true },
     });
@@ -377,7 +377,7 @@ export class StagePoolService {
    */
   async openEntriesWithMember(organizationId: string, userId: string, client: PoolClient = this.prisma): Promise<string[]> {
     const open = await client.workflowInstanceStage.findMany({
-      where: { exitedAt: null, workflowInstance: { organizationId }, stage: { whoMode: { not: null } } },
+      where: { exitedAt: null, workflowInstance: { organizationId } },
       select: { id: true, stageId: true, workflowInstance: { select: { id: true, objectType: true, objectId: true } } },
     });
     if (open.length === 0) return [];

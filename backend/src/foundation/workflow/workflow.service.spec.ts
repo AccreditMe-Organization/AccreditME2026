@@ -2240,8 +2240,9 @@ describe('WorkflowService', () => {
 
       // ACC-271 PR 6a — the old branch is gone. A stage with no `who` asks its
       // pool like any other, and StagePoolService answers it EMPTY (fail closed;
-      // stage-pool.service.spec and stage-without-who.db-spec prove that half):
-      // refused, even for a caller holding the move's old permission.
+      // stage-pool.service.spec proves that half): refused, even for a caller
+      // holding the move's old permission. ACC-278 PR B made whoMode NOT NULL, so
+      // this is unreachable; it goes in the follow-up after ACC-202 part 2 (Q5).
       it('a stage with no `who`: no old check runs, and its empty pool refuses STAGE_HAS_NO_ONE, whatever the caller holds', async () => {
         arrange({ ...POOL_STAGE, whoMode: null });
         mockStagePool.resolve.mockResolvedValue(poolOf([]));

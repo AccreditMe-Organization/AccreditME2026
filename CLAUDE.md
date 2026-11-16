@@ -4521,7 +4521,7 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
   - **Left for PR 6b:** the DTOs' old fields, the template read's old fields,
     and `transitionMover()`'s fallback. Done; see the next bullet.
 - **PR 6b — THE OLD WHO FIELDS ARE GONE FROM THE API AND THE SEED** (no
-  migration: the columns stay until 6c). Full list: SYSTEM-REFERENCE.md §2.19,
+  migration; ACC-278 dropped the columns). Full list: SYSTEM-REFERENCE.md §2.19,
   "PR 6b".
   - **API in:** the stage and transition DTOs carry no old who field; one sent
     is 400 "property X should not exist" (the global whitelist).
@@ -4534,13 +4534,9 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
     A new move is always PERSON. A move with no mover (none exist) is 409
     `MOVE_HAS_NO_MOVER` for a person and never the app's.
     `isConvertedStage()` is deleted.
-  - **Seed:** names no role, permission or trigger; the old NOT NULL columns
-    keep their database defaults.
+  - **Seed:** names no role, permission or trigger.
   - **`committees:manage` is not in use** (Ahmad, 6 Nov): seeded moves were
     its only check. It is a seed-time umbrella only (see ACC-28 above).
-  - **Kept until 6c:** the columns, `whoFromLegacy` / `moverForTrigger` /
-    `decidesTogether` (the executed backfills import them), and those
-    backfills. Superseded (ACC-278 PR A): see the next bullet.
 - **6c (ACC-278) — THE OLD WHO COLUMNS LEAVE IN TWO DEPLOYS.** Plan and Ahmad's
   answers (14 Nov): `backend/Plans/step-278-drop-old-who-columns.md`.
   - **PR A, done (no migration):** the 13 old columns, their two relations and
@@ -4548,10 +4544,20 @@ Superseded (ACC-274): this section now describes PRs 1, 2 and 4 as merged (#230,
     the database. The four executed backfills, their specs and scripts, and
     `whoFromLegacy` / `moverForTrigger` / `decidesTogether` are deleted;
     `writeStartingAssignments` stays.
-  - **PR B, next:** one migration drops the columns, their foreign keys and
-    four enum types, and makes `whoMode` and `mover` NOT NULL — at least a day
-    after PR A is live. **Once PR B ships, never roll Railway back past PR A**:
-    older code's client names the dropped columns (P2022 on every stage read).
+  - **PR B (migration `20261116130000_acc278_drop_old_who_columns`):** drops
+    the 13 columns, their two foreign keys and the four enum types
+    (`WorkflowApprovalMode`, `WorkflowParallelThreshold`,
+    `WorkflowAssigneeStrategy`, `WorkflowTriggerCondition`), and makes
+    `whoMode` and `mover` NOT NULL. The database itself refuses a stage
+    without a mode or a move without a mover (`old-who-columns.db-spec.ts`).
+  - **NEVER ROLL RAILWAY BACK PAST PR A (`b26b27d`).** PR A's client makes all
+    10 probe calls against the dropped schema; the client before it fails 7 of
+    10 with P2022 (`WorkflowStage.approvalMode`).
+  - **Left for a follow-up after ACC-202 part 2** (Ahmad, 14 Nov, Q5): the
+    branches for a null mode or mover, now unreachable —
+    `MOVE_HAS_NO_MOVER` in `workflow.service.ts`, `workflow-pool.ts`'s
+    `?? null`, and `whoMode === null` in `workflow-template.service.ts`.
+    `TransitionMover.AUTOMATIC` stays reserved (Q1).
 
 ## Key Architecture Decisions (ACC-260)
 

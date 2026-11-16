@@ -23,8 +23,8 @@ import type { PrismaService } from '../../prisma/prisma.service';
  * ## The holder rule (decision 3), and who it leaves out
  *
  * A position pool is the users with positionId = P AND primaryOrgUnitId = U
- * AND status ACTIVE — exactly the engine's POSITION_FIXED query (SYSTEM-
- * REFERENCE §2.5). It deliberately does NOT include an out-of-office holder's
+ * AND status ACTIVE — the same rule as a stage's POSITION_IN_UNIT who entry
+ * (StagePoolService; SYSTEM-REFERENCE §2.19). It deliberately does NOT include an out-of-office holder's
  * acting user, a unit's acting head, or a user acting in the unit through
  * User.actingOrgUnitId. A committee pool is the active members holding the
  * role, whose user is ACTIVE.

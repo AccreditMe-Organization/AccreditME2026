@@ -79,13 +79,15 @@ describe("A new organisation's workflows start on its first admin, against a rea
     const scope = { workflowTemplate: { organizationId: o.id } };
 
     expect(await prisma.workflowStage.count({ where: scope })).toBe(60);
-    expect(await prisma.workflowStage.count({ where: { ...scope, whoMode: null } })).toBe(0);
+    // ACC-278 PR B: whoMode is NOT NULL, so the two modes the seed uses account for all 60.
+    expect(await prisma.workflowStage.count({ where: { ...scope, whoMode: 'ANY_ONE' } })).toBe(56);
     expect(await prisma.workflowStage.count({ where: { ...scope, whoMode: 'ALL' } })).toBe(4);
     expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, kind: 'CREATOR' } })).toBe(12);
     expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, kind: { not: 'CREATOR' } } })).toBe(0);
     expect(await prisma.workflowTransition.count({ where: { fromStage: scope, mover: 'APP' } })).toBe(8);
     expect(await prisma.workflowTransition.count({ where: { fromStage: scope, mover: 'PERSON' } })).toBe(67);
-    expect(await prisma.workflowTransition.count({ where: { fromStage: scope, mover: null } })).toBe(0);
+    // ACC-278 PR B: mover is NOT NULL; APP and PERSON account for all 75.
+    expect(await prisma.workflowTransition.count({ where: { fromStage: scope } })).toBe(75);
   });
 
   it('starts every other stage on the invited admin, once; and the admin is in no pool until they accept', async () => {
