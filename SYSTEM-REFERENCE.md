@@ -8212,6 +8212,13 @@ for completeness. **Exactly one category is `isExtensible: false`**:
 `incident_severity` — every other seeded category allows tenant-added
 values.
 
+**ACC-310: an attribute's name lives in its schema, in both languages:**
+`properties.<key>.labelEn` and `labelAr`. The value form shows it through
+`LanguageService.bilingual()`. `lookup.seed.spec.ts` fails a seeded attribute
+without both. `seedSystemData()` rewrites the shared schemas on every deploy, so
+no backfill is needed. `required` keeps its old `label` until the form stops
+reading it, and the backend reads only `type` (`schemaProperties()`).
+
 ### 6.2 The Override Pattern — `getValues()`'s Exact Merge Algorithm
 
 This is the mechanism CLAUDE.md's "Layer 2 — Tenant lookups... Tenant
@@ -13421,10 +13428,23 @@ There is no "granted by" (UserRole has none). Every row is shown rather
 than Template 2's 3–6 with a hand-off: a person holds a handful, and there
 is no per-user roles list to hand off to.
 
-**Four panels are left OUT, not empty**: Committees, Tasks, Sessions and
-Access history have no per-user endpoint. ACC-216 adds the reads
-(CommitteeMember; AuditLog objectType `User` and UserTransferEvent;
-RefreshToken; tasks after a visibility decision). A spec pins their absence.
+**Three panels are left OUT, not empty**: Tasks, Sessions and Access history
+have no per-user endpoint. ACC-216 adds the reads one at a time (AuditLog
+objectType `User` and UserTransferEvent; RefreshToken; tasks after a
+visibility decision). A spec pins their absence. Committees was the fourth;
+ACC-216 part 1 built it (below).
+
+**The Committees panel and `GET /users/:userId/committees` (ACC-216 part 1).**
+`UserCommitteesService` (`foundation/user/committees/`, its own controller
+under the `users` prefix):
+- **The gate**, checked before any read, with no query (§1.9 clause a): `committees:view` in every case, then `users:view` unless you are reading yourself. Each refusal is a 403 naming the missing key, the same for a real colleague and an invented id. Another organisation's user is the identical 404 an invented id gets ("User not found"). The route carries no `@Permissions()`, as `GET /users/:id` carries none.
+- **Your own record still needs `committees:view`. Deliberate (CC-276):** the read also lists PAST committees the person may no longer open, and their current ones are already theirs on `GET /committees/mine` (§3.21, self-scoped). Without the key the page leaves the panel absent and never asks, so nobody meets the 403.
+- **What is listed:** every CommitteeMember row of the person in the organisation, former ones and those of an inactive committee included. One row per committee: a rejoined member reuses the row (ACC-32), so its dates are the latest period.
+- **`current`** is ACC-281's one rule through `memberCommitteeIds()` (`common/services/committee-membership.ts`): an active member of an active committee, both in the organisation. Never re-derived.
+- **Order:** current first by seat (the tenant's seat order), then longest-served; then past, newest left first, a never-ended membership of an inactive committee first among them.
+- **Seats** are named through `getValues('committee_member_role')`: a relabelled seat keeps the SYSTEM value's id and layer with the tenant's label. A seat getValues() omits is read from its own value row, in one extra query only then.
+- **Cap and cost:** at most 200 rows (`USER_COMMITTEES_CAP`), read current-first so the cap drops the oldest past ones; `total` counts past it, and the panel then shows `record.showing` ("Showing 200 of 230"). 7 queries whatever the count (+1 for an omitted seat), every one scoped by organisation on the membership AND its committee. Nothing on the per-request path.
+- **The panel** (`UserCommitteesPanelComponent`) renders only for a `committees:view` holder. A refused read leaves it absent with its host hidden. Each row links the committee and gives the seat and "Since {date}" or "{date} – {date}"; the empty state is "Not on any committee" / «لا عضوية في أي لجنة». Every row is shown, as on Roles.
 
 **Dialogs** (all on the shell, `[dirty]`, field wrapper with `[control]`,
 no floating PrimeNG panel — a date is picked in the DATE VIEW, where the

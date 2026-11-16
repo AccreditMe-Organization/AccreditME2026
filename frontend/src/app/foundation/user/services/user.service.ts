@@ -10,6 +10,22 @@ export interface IBilingualNameDto {
   nameAr: string | null;
 }
 
+/** ACC-216 — one membership on GET /users/:id/committees (backend IUserCommitteeMembership). */
+export interface IUserCommitteeDto {
+  committee: { id: string; nameEn: string; nameAr: string | null };
+  /** The seat as this organisation names it; labels null only when unreadable. */
+  seat: { id: string; labelEn: string | null; labelAr: string | null; layer: 'SYSTEM' | 'TENANT' | null };
+  joinedAt: string;
+  leftAt: string | null;
+  /** An active member of an active committee (ACC-281's rule, decided by the server). */
+  current: boolean;
+}
+
+export interface IUserCommitteesDto {
+  total: number;
+  rows: IUserCommitteeDto[];
+}
+
 // ACC-79 — names for the ids on a user record. Returned by GET /users/:id
 // only, so a read-only profile can label its fields without the
 // permission-gated position, org-unit and user lists.
@@ -184,6 +200,14 @@ export class UserService {
 
   getById(id: string): Observable<IUserDto> {
     return this.http.get<IUserDto>(`${this.base}/${id}`);
+  }
+
+  /**
+   * ACC-216 — the committees a person sits on, and sat on: committees:view, plus
+   * users:view unless it is your own. At most 200 rows; `total` counts past them.
+   */
+  getCommittees(id: string): Observable<IUserCommitteesDto> {
+    return this.http.get<IUserCommitteesDto>(`${this.base}/${id}/committees`);
   }
 
   invite(dto: InviteUserDto): Observable<IUserDto> {
