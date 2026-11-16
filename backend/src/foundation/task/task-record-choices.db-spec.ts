@@ -74,7 +74,7 @@ describe('New task picks its record: the choices, the create types and the close
     // Stages are told apart by their flags and isFinal alone: one name, no key.
     const template = (await prisma.workflowTemplate.create({ data: { organizationId: A, nameEn: 'Committee', objectType: 'COMMITTEE' } })).id;
     const stage = async (order: number, flags: string[], isFinal: boolean) =>
-      (await prisma.workflowStage.create({ data: { workflowTemplateId: template, nameEn: 'Stage', order, flags, isFinal } })).id;
+      (await prisma.workflowStage.create({ data: { workflowTemplateId: template, nameEn: 'Stage', order, flags, isFinal, whoMode: 'ANY_ONE' } })).id;
     const formation = await stage(1, [], false);
     const pending = await stage(2, [STAGE_FLAG.DISSOLVING], false);
     const dissolved = await stage(3, [STAGE_FLAG.DISSOLVING], true);

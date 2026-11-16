@@ -37,6 +37,7 @@ async function editableStage(prisma: PrismaService, organizationId: string): Pro
       nameEn: 'Formation (spec)',
       order: 10,
       isInitial: true,
+      whoMode: 'ANY_ONE',
       flags: ['IN_FORCE'],
       recordActions: { create: EVERY_DIRECT_CHANGE.map((actionKey) => ({ organizationId, actionKey })) },
     },

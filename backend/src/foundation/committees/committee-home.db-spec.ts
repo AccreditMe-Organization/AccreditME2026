@@ -49,7 +49,7 @@ describe('Home committee counts against a real database (ACC-279)', () => {
       data: { organizationId: o.id, nameEn: 'Committee (spec)', objectType: 'COMMITTEE', isDefault: true, isActive: true },
     });
     const stage = async (nameEn: string, order: number, flags: string[]) =>
-      (await prisma.workflowStage.create({ data: { workflowTemplateId: template.id, nameEn, order, flags } })).id;
+      (await prisma.workflowStage.create({ data: { workflowTemplateId: template.id, nameEn, order, flags, whoMode: 'ANY_ONE' } })).id;
     const stages = {
       formation: await stage('Formation (spec)', 10, []),
       inForce: await stage('Active (spec)', 20, ['IN_FORCE']),

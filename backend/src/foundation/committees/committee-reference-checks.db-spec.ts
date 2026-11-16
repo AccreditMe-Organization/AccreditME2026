@@ -157,7 +157,7 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
         data: { organizationId: o.organizationId, nameEn: `Lifecycle ${committeeId}`, objectType: 'COMMITTEE' },
       });
       const s = await prisma.workflowStage.create({
-        data: { workflowTemplateId: template.id, nameEn: stage.nameEn, order: stage.order, key: stage.key, flags: stage.flags },
+        data: { workflowTemplateId: template.id, nameEn: stage.nameEn, order: stage.order, key: stage.key, flags: stage.flags, whoMode: 'ANY_ONE' },
       });
       await prisma.workflowInstance.create({
         data: { organizationId: o.organizationId, workflowTemplateId: template.id, objectType: 'COMMITTEE', objectId: committeeId, currentStageId: s.id },
@@ -202,7 +202,7 @@ describe('Committee reference checks against a real database (ACC-233)', () => {
         data: { organizationId: o.organizationId, nameEn: `Lifecycle ${committeeId}`, objectType: 'COMMITTEE' },
       });
       const s = await prisma.workflowStage.create({
-        data: { workflowTemplateId: template.id, nameEn: 'Terms Review', order: 20, key, flags: [] },
+        data: { workflowTemplateId: template.id, nameEn: 'Terms Review', order: 20, key, flags: [], whoMode: 'ANY_ONE' },
       });
       await prisma.workflowInstance.create({
         data: { organizationId: o.organizationId, workflowTemplateId: template.id, objectType: 'COMMITTEE', objectId: committeeId, currentStageId: s.id },
