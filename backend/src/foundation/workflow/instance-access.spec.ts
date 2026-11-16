@@ -39,8 +39,9 @@ describe('InstanceAccess (ACC-282)', () => {
     const { access, visibility, pools } = setup();
     await access.assertMayReadInstance(INSTANCE, ORG, { id: 'u-1', permissions: [] });
     await access.assertMayReadRecord('COMMITTEE', 'c-1', ORG, { id: 'u-1', permissions: ['workflows:view'] });
-    expect(visibility.assertCanViewOrNotFound).toHaveBeenCalledWith('COMMITTEE', 'c-1', ORG, [], INSTANCE_NOT_FOUND, 'u-1');
-    expect(visibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'c-1', ORG, ['workflows:view'], 'u-1');
+    // ACC-283 PR 2a — both READS ask the headship clause too.
+    expect(visibility.assertCanViewOrNotFound).toHaveBeenCalledWith('COMMITTEE', 'c-1', ORG, [], INSTANCE_NOT_FOUND, 'u-1', { oversight: true });
+    expect(visibility.assertCanView).toHaveBeenCalledWith('COMMITTEE', 'c-1', ORG, ['workflows:view'], 'u-1', { oversight: true });
     expect(pools.resolve).not.toHaveBeenCalled();
   });
 
@@ -49,6 +50,13 @@ describe('InstanceAccess (ACC-282)', () => {
     const got = await access.assertMayAct(INSTANCE, STAGE, ORG, { id: 'u-pool', permissions: [] });
     expect(got.members).toEqual(['u-pool']);
     expect(pools.resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('acting checks the record WITHOUT the headship clause: overseeing a committee is read only (ACC-283 PR 2a)', async () => {
+    const { access, visibility } = setup({ members: ['u-pool'] });
+    await access.assertMayAct(INSTANCE, STAGE, ORG, { id: 'u-pool', permissions: [] });
+    expect(visibility.assertCanViewOrNotFound).toHaveBeenCalledWith('COMMITTEE', 'c-1', ORG, [], INSTANCE_NOT_FOUND, 'u-pool');
+    expect(visibility.assertCanViewOrNotFound.mock.calls[0]).toHaveLength(6);
   });
 
   it('acting: someone who may not open the record gets the 404 BEFORE any pool is read — even if the pool names them', async () => {

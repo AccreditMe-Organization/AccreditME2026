@@ -57,7 +57,8 @@ export class InstanceAccess {
 
   /** A read that names the record (ACC-101 clause a): checked before anything is read; 403 as today. */
   assertMayReadRecord(objectType: string, objectId: string, organizationId: string, viewer: InstanceViewer): Promise<void> {
-    return this.objectVisibility.assertCanView(objectType, objectId, organizationId, viewer.permissions, viewer.id);
+    // ACC-283 PR 2a — a read: a head or cover of the committee's unit (or above) may read its workflow.
+    return this.objectVisibility.assertCanView(objectType, objectId, organizationId, viewer.permissions, viewer.id, { oversight: true });
   }
 
   /** A read that found the instance first (clause b): the identical 404 for a record the viewer may not open. */
@@ -69,6 +70,7 @@ export class InstanceAccess {
       viewer.permissions,
       INSTANCE_NOT_FOUND,
       viewer.id,
+      { oversight: true }, // ACC-283 PR 2a — a read; pressing and voting (assertMayAct) never pass it
     );
   }
 
@@ -94,7 +96,16 @@ export class InstanceAccess {
     organizationId: string,
     viewer: InstanceViewer,
   ): Promise<StagePool> {
-    await this.assertMayReadInstance(instance, organizationId, viewer);
+    // ACC-283 PR 2a — the record check WITHOUT the headship clause: overseeing a
+    // committee is read only, so a press or a vote keeps ACC-281/282's rule.
+    await this.objectVisibility.assertCanViewOrNotFound(
+      instance.objectType,
+      instance.objectId,
+      organizationId,
+      viewer.permissions,
+      INSTANCE_NOT_FOUND,
+      viewer.id,
+    );
     const pool = await this.poolOf(organizationId, stage.id, instance);
     const stageNames = { stageNameEn: stage.nameEn, stageNameAr: stage.nameAr };
     if (pool.members.length === 0) throw new WorkflowRefusalException('STAGE_HAS_NO_ONE', stageNames);
