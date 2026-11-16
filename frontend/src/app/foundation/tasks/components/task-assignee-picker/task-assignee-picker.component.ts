@@ -81,6 +81,8 @@ interface TargetOption {
   /** ACC-199 — a person's open tasks on the record ("12 open"), and overdue ("3 overdue"). */
   open?: string;
   overdue?: string;
+  /** ACC-302 — "Out of office · goes to {cover}", from the server's `cover`. */
+  cover?: string;
 }
 
 /** ACC-199 — a press that failed: said, not kept, so it can be tried again. */
@@ -156,6 +158,18 @@ interface WorkloadFailure {
  * the dialog: pressing again for the same person shows it with no call. Assign
  * … instead sets Person and tells the host (`hintFollowed`), which sends the
  * claim on save; Keep … returns the plain outcome.
+ *
+ * ## Out of office (ACC-302)
+ *
+ * The server says, per person, who a NEW task for them goes to now (`cover`:
+ * the cover's id and name, or null). The screen keeps no copy of the rule — it
+ * never reads a date. A person row with a cover says so on its own line, and
+ * when the person chosen (or a one-holder position's holder) has one, the
+ * outcome line names both: "{name} is out of office. This task will go to
+ * {cover}." "✦ Suggest someone" is never offered for that person, and an
+ * answer kept for them is not shown: the task will not reach them (the server
+ * refuses the press too). A stage task definition shows the rows but keeps its
+ * own outcome: its tasks are placed at each entry, not now.
  */
 @Component({
   selector: 'app-task-assignee-picker',
@@ -256,6 +270,9 @@ interface WorkloadFailure {
           @if (option.meta) {
             <span class="text-meta text-[var(--am-ink-500)]">{{ option.meta }}</span>
           }
+          @if (option.cover) {
+            <span class="text-meta am-picker__cover" data-testid="picker-cover">{{ option.cover }}</span>
+          }
         </span>
         @if (option.open) {
           <span class="am-picker__counts">
@@ -339,6 +356,10 @@ interface WorkloadFailure {
       .am-picker__overdue {
         color: var(--am-warning-ink);
         font-weight: 600;
+      }
+      /* ACC-302 — a person out of office: where a new task for them goes. */
+      .am-picker__cover {
+        color: var(--am-ink-700);
       }
       /* In a row (New task) the line sits under the row, as the outcome did. In
          Reassign it takes the place of the Person field's own message slot,
@@ -451,6 +472,9 @@ export class TaskAssigneePickerComponent implements OnInit {
   readonly workloadState = computed<WorkloadHintState | null>(() => {
     const key = this.chosenKey();
     if (!key || !this.record()) return null;
+    // ACC-302 — the task will not reach a covered person: no offer, and no
+    // answer kept for them is shown, whatever state it was left in.
+    if (this.people().find((p) => p.id === this.userId())?.cover) return null;
     if (this.workingKey() === key) return 'working';
     if (this.shownKey() === key) return this.answers().get(key)?.kind === 'hint' ? 'shown' : 'refusal';
     if (this.failure()?.key === key) return 'refusal';
@@ -559,6 +583,7 @@ export class TaskAssigneePickerComponent implements OnInit {
       label: h.name,
       meta: h.positionNameEn ? this.language.bilingual(h.positionNameEn, h.positionNameAr) : '',
       ...this.workloadCounts(h.workload),
+      ...(h.cover ? { cover: this.translate.instant('task.assign.coverRow', { cover: h.cover.name }) } : {}),
     })),
   );
 
@@ -583,6 +608,7 @@ export class TaskAssigneePickerComponent implements OnInit {
     if (chosen) {
       const person = this.people().find((p) => p.id === chosen);
       if (!person) return '';
+      if (person.cover && this.purpose() === 'task') return this.coveredOutcome(person);
       if (split) return this.straightTo(person.name);
       return this.translate.instant(
         this.purpose() === 'stage-task' ? 'workflow.stageTaskForm.outcomePerson' : 'task.assign.outcomePerson',
@@ -607,6 +633,7 @@ export class TaskAssigneePickerComponent implements OnInit {
     if (position.isSingleAssignee) {
       if (this.peopleLoading()) return '';
       const holder = this.people()[0];
+      if (holder?.cover) return this.coveredOutcome(holder);
       if (holder && split) return this.straightTo(holder.name);
       return holder
         ? this.translate.instant('task.assign.outcomePerson', { name: holder.name })
@@ -614,6 +641,11 @@ export class TaskAssigneePickerComponent implements OnInit {
     }
     return split && position.holderCount > 0 ? this.offeredTo(position.holderCount) : this.poolOutcome(position.holderCount);
   });
+
+  /** ACC-302 — "{name} is out of office. This task will go to {cover}." — the server's cover, said. */
+  private coveredOutcome(person: AssignableHolderDto): string {
+    return this.translate.instant('task.assign.outcomeCovered', { name: person.name, cover: person.cover!.name });
+  }
 
   /** The chosen seat's name: the member role or the position. */
   private seatName(): string {
@@ -712,9 +744,10 @@ export class TaskAssigneePickerComponent implements OnInit {
   }
 
   /** ACC-199 — the chosen person is past the server's threshold. */
-  private readonly chosenCanSuggest = computed(
-    () => !!this.record() && !!this.people().find((p) => p.id === this.userId())?.workload?.canSuggest,
-  );
+  private readonly chosenCanSuggest = computed(() => {
+    const person = this.people().find((p) => p.id === this.userId());
+    return !!this.record() && !person?.cover && !!person?.workload?.canSuggest;
+  });
   private availabilityAsked = false;
 
   constructor() {

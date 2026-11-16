@@ -540,6 +540,18 @@ export interface AssignableHolderDto {
    * cannot see that record's task list.
    */
   workload?: HolderWorkloadDto | null;
+  /**
+   * ACC-302 — who a NEW task for this person goes to now, because they are out
+   * of office with an active cover (the server's rule, one hop). Null when it
+   * goes to them. Only the cover's id and name: no dates, no reason. The screen
+   * renders it and decides nothing from it.
+   */
+  cover?: HolderCoverDto | null;
+}
+
+export interface HolderCoverDto {
+  userId: string;
+  name: string;
 }
 
 export interface HolderWorkloadDto {
