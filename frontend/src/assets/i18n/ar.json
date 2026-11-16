@@ -4354,6 +4354,14 @@
       "fromPosition": "مرتبط بمنصب الرئاسة {{position}}",
       "fromPositionUnnamed": "مرتبط بمنصب رئاسة"
     },
+    "committees": {
+      "heading": "اللجان",
+      "empty": "لا عضوية في أي لجنة",
+      "loadError": "تعذّر تحميل اللجان.",
+      "since": "منذ {{date}}",
+      "range": "{{from}} – {{to}}",
+      "inactiveCommittee": "لجنة غير نشطة"
+    },
     "twoStep": {
       "heading": "التحقق بخطوتين",
       "on": "مفعّل. يُطلب رمز من تطبيق المصادقة عند كل تسجيل دخول.",
