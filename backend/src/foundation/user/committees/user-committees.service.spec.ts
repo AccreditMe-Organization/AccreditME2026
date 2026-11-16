@@ -234,6 +234,33 @@ describe('UserCommitteesService (ACC-216)', () => {
     expect(result.rows[0]!.seat).toEqual({ id: 'seat-retired', labelEn: 'Rapporteur', labelAr: 'مقرر', layer: 'TENANT' });
   });
 
+  // The fallback seat read is the third new query; it gets its own isolation test
+  // under the CI gate phrase. The mock APPLIES the where clause, so a fallback
+  // that dropped its organisation scope would name the seat from another
+  // organisation's value row.
+  it('should NOT return records belonging to a different tenant — the fallback seat read', async () => {
+    const { service, lookupFindMany } = makeService([
+      row({ id: 'm1', committee: committee('c1'), roleValueId: 'seat-foreign' }),
+      row({ id: 'm2', committee: committee('c2'), roleValueId: 'seat-own' }),
+    ]);
+    const VALUES = [
+      { id: 'seat-foreign', labelEn: 'Other organisation seat', labelAr: 'مقعد منظمة أخرى', organizationId: OTHER_ORG },
+      { id: 'seat-own', labelEn: 'Rapporteur', labelAr: 'مقرر', organizationId: ORG },
+    ];
+    lookupFindMany.mockImplementation(
+      ({ where }: { where: { id: { in: string[] }; OR?: { organizationId: string | null }[] } }) =>
+        Promise.resolve(
+          VALUES.filter(
+            (v) => where.id.in.includes(v.id) && (!where.OR || where.OR.some((o) => o.organizationId === v.organizationId)),
+          ),
+        ),
+    );
+    const result = await service.forUser(ORG, { id: ME, permissions: ADMIN }, COLLEAGUE);
+    const seatOf = (committeeId: string) => result.rows.find((r) => r.committee.id === committeeId)!.seat;
+    expect(seatOf('c1')).toEqual({ id: 'seat-foreign', labelEn: null, labelAr: null, layer: null });
+    expect(seatOf('c2')).toEqual({ id: 'seat-own', labelEn: 'Rapporteur', labelAr: 'مقرر', layer: 'TENANT' });
+  });
+
   it('no extra seat query when every seat is known', async () => {
     const { service, lookupFindMany } = makeService([row({ id: 'm1', committee: committee('c1') })]);
     await service.forUser(ORG, { id: ME, permissions: ADMIN }, COLLEAGUE);
