@@ -5112,9 +5112,10 @@ Ahmad's answers (14 Nov, A1–A8):
 ## Key Architecture Decisions (ACC-283)
 
 Committee governance: seats decide what members may do, and the chain of
-authority decides change requests. **PR 1 is built: seat actions are STORED;
-nothing decides by them yet.** Full mechanism: SYSTEM-REFERENCE.md
-§3.21.5. Plan, lane B's review (16 Nov) and the open questions:
+authority decides change requests. **PRs 1, 2a and 2 are built: seat actions
+are stored; heads read their units' committees; the chain decides change
+requests.** Full mechanism: SYSTEM-REFERENCE.md §3.18 (the chain) and §3.21
+(§3.21.5 seat actions). Plan, lane B's review (16 Nov) and the open questions:
 `backend/Plans/step-283-change-request-chain.md`. Briefly:
 
 - **SEAT ACTIONS ARE A FIXED LIST, STORED PER COMMITTEE** (`seat-actions.ts`,
@@ -5131,10 +5132,19 @@ nothing decides by them yet.** Full mechanism: SYSTEM-REFERENCE.md
   ACC-288 keeps the root unit headed, so the chain always ends with a decider.
   If it ever finds nobody (a legacy headless root), PR 2 refuses Submit with
   409 `CHANGE_REQUEST_NO_DECIDER` and logs it.
+- **THE CHAIN OF AUTHORITY DECIDES A CHANGE REQUEST, NEVER `committees:approve`**
+  (`change-request-chain.ts`): a Reports-to committee's deciding seat, else the
+  owning unit's head or cover in force and upwards to the root. The requester,
+  members below the root, and vacant steps are skipped. Resolved live, at most 9
+  queries for any number of requests, never stored.
+- **The root head may Approve now their own request** (`ROOT_HEAD_OWN`). A
+  draft or returned request gives its requester a "Finish or withdraw" task,
+  locked last. Only the requester withdraws.
 - **The backfill (`backfill:acc283-seat-actions`) runs AFTER the deploy**, dry
   run first; it fills only committees with no rows and refuses customers.
-- **One additive migration** (`acc283_committee_seat_actions`), run in the
-  pre-deploy step. Nothing on the per-request path.
+- **Two additive migrations** (`acc283_committee_seat_actions`, PR 1;
+  `acc283_change_request_finish_task`, PR 2), run in the pre-deploy step.
+  Nothing on the per-request path.
 
 ## Key Architecture Decisions (ACC-164)
 
