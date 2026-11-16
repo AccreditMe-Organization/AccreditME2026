@@ -3,13 +3,22 @@
 **Ticket:** [ACC-175](https://linear.app/accreditme/issue/ACC-175), "calculateDeadline skips the
 rest of a working day for a start before opening time".
 
-**Status:** plan only, 16 Nov. Branch `feature/ACC-175-deadline-before-opening`, from `origin/dev`
+**Status:** built 16 Nov (decisions below). Branch `feature/ACC-175-deadline-before-opening`, from `origin/dev`
 at `995f12a`. Code read on that commit. Shared-database facts are read-only counts, run from
 `D:\Accredit-me-2\backend`.
 
 ---
 
-## Ahmad's decisions (recommendation first)
+## Decisions
+
+**Decided 16 Nov (lane B, per the ticket's recommendation); Ahmad told as an FYI:**
+- **(a)** the fix as written;
+- **(b)** forward-only: nothing stored is rewritten;
+- **(c)** keep the zero-hours normalisation, with the before-opening change that follows
+  from (a);
+- **(d)** no frontend change.
+
+The recommendations, as proposed:
 
 1. **(b) Stored deadlines: forward-only. Nothing already stored is rewritten.**
    - **What stays:** every stored `dueAt`, `slaLimitAt`, `slaDueAt` (stage) and `poolEscalateAt`
@@ -185,5 +194,12 @@ organisations (the platform organisation has none and gets the default).
 ## 7. Progress
 
 - [x] Plan: callers, measurements, specs, decisions (16 Nov)
-- [ ] Ahmad's answers to the decisions at the top
-- [ ] Build
+- [x] Decisions recorded (16 Nov, lane B per the ticket's recommendation; Ahmad told as an FYI)
+- [x] Build (16 Nov): the `nextWorkingStart()` branch and every spec in §3, in
+  `working-calendar.before-opening.spec.ts`. Mutations, each red then restored:
+  1. old rule back: 8 red;
+  2. opening ignored: 8 red;
+  3. no working-day check: 3 red (weekend before opening, holiday, inverse);
+  4. UTC instead of the zone: 16 red.
+- [ ] Out of scope, for their own tickets (§5): holidays in a zone west of UTC; daylight-saving
+  zones
