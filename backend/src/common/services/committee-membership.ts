@@ -233,7 +233,14 @@ export async function mayReadCommittee(
   viewer: CommitteeViewer,
   now: Date = new Date(),
 ): Promise<boolean> {
-  return (await committeeAccess(client, committeeId, organizationId, viewer, now)).read;
+  const access = await committeeAccess(
+    client,
+    committeeId,
+    organizationId,
+    viewer,
+    now,
+  );
+  return access.read;
 }
 
 /** What one viewer may do with one committee: read it, and pass the write precondition. */
@@ -257,8 +264,17 @@ export async function committeeAccess(
   viewer: CommitteeViewer,
   now: Date = new Date(),
 ): Promise<CommitteeAccess> {
-  if (await maySeeCommittee(client, committeeId, organizationId, viewer)) return { read: true, write: true };
-  return { read: await overseesCommittee(client, committeeId, organizationId, viewer.id, now), write: false };
+  if (await maySeeCommittee(client, committeeId, organizationId, viewer)) {
+    return { read: true, write: true };
+  }
+  const read = await overseesCommittee(
+    client,
+    committeeId,
+    organizationId,
+    viewer.id,
+    now,
+  );
+  return { read, write: false };
 }
 
 /**
@@ -291,7 +307,13 @@ export async function assertMaySeeCommittee(
   viewer: CommitteeViewer,
   now: Date = new Date(),
 ): Promise<CommitteeAccess> {
-  const access = await committeeAccess(client, committeeId, organizationId, viewer, now);
+  const access = await committeeAccess(
+    client,
+    committeeId,
+    organizationId,
+    viewer,
+    now,
+  );
   if (access.read) return access;
   throw new ForbiddenException(`Required permission: ${COMMITTEES_PERMISSIONS.VIEW}`);
 }

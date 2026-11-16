@@ -150,7 +150,12 @@ export class CommitteesService {
   async getCommitteeDetail(id: string, organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeDetail> {
     // ACC-281 — committees:view or an active member; anyone else today's 403.
     // ACC-283 — the same pass says whether they may write: no extra query.
-    const access = await assertMaySeeCommittee(this.prisma, id, organizationId, viewer);
+    const access = await assertMaySeeCommittee(
+      this.prisma,
+      id,
+      organizationId,
+      viewer,
+    );
     const committee = await this.getCommitteeById(id, organizationId);
     const [facts, types, rules, orgUnit, related] = await Promise.all([
       committeeStagesAndCounts(this.prisma, organizationId, [committee.id]),
