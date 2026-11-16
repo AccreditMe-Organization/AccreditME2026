@@ -4654,6 +4654,31 @@ the ONE reading of `Organization.settings.taskSla`, shared with
 `TaskService.computeSlaDueAt()` is gone. The history below is kept for what it
 records about the settings key.
 
+**ACC-175 — where the clock starts.** `calculateDeadline(start, hours)` first
+moves `start` to the next working moment, in the calendar's zone
+(`nextWorkingStart()`):
+- **inside working hours** on a working day: `start` itself;
+- **before opening** on a working day: **that day's opening.** The whole day
+  is still ahead; before ACC-175 this jumped to the next working day;
+- **at or after closing, or on a day off** (weekend, holiday): the next
+  working day's opening.
+
+Then it spends the hours. So a task created Monday 07:30 with a 2-hour SLA is
+due Monday 10:00, and `calculateDeadline()` stays the exact inverse of
+`workingHoursBetween()`.
+- **Zero hours** returns that working moment itself. Only `poolClock()` can
+  pass 0 (`managerEscalationAfterHours` is `@Min(0)`); `TaskSlaService.shift()`
+  skips 0, and a stage with 0 hours has no deadline.
+- **Stored deadlines are left as they are (forward-only):** only dates computed
+  after the change use the rule.
+- **The screen already agreed:** the frontend's `DueDateService.resumeAfter()`
+  treats a before-opening time the same way.
+- **Specs:** `working-calendar.before-opening.spec.ts`, with four mutations.
+  Plan: `backend/Plans/step-175-deadline-before-opening.md`.
+- **Known, not built:** a holiday in a zone west of UTC lands a day early
+  (`fromJSDate(h.date).setZone(zone)`), and `plus({ hours })` ignores daylight
+  saving. Every tenant is UTC+3 today.
+
 Before ACC-174: `TaskService.computeSlaDueAt(priority, organizationId)`
 called `TenantService.getTaskSla(organizationId)`
 for the tenant's real, per-`TaskPriority` tiered settings, then
@@ -5377,12 +5402,12 @@ on the task's row; deciding happens in My tasks only.
 - **The stage SLA is not shifted.** `WorkflowInstanceStage.slaDueAt` keeps
   running while a task in that stage is on hold; only the task's own dates
   move.
-- `calculateDeadline()` treats a start outside working hours — and BEFORE
-  opening time on a working day — as the next opening, and the hold's shift of
-  the due date, limit and extension goes through it — ACC-175, whose fix
-  changes every SLA due date and needs its own plan. The SLA start is not
-  shifted (it becomes `onHoldUntil`), so it is not affected. A zero shift is
-  skipped, so the zero-hours normalisation cannot move a date.
+- `calculateDeadline()` treats a start outside working hours as the next
+  opening, and the hold's shift of the due date, limit and extension goes
+  through it. **Fixed in ACC-175 for a start BEFORE opening on a working day:**
+  it now counts from that day's opening (3.3). The SLA start is not shifted
+  (it becomes `onHoldUntil`), so it is not affected. A zero shift is skipped,
+  so the zero-hours normalisation cannot move a date.
 - The creator's own edit and cancel are ACC-174 (3.11).
 
 ### 3.11 The SLA limit, and edit, cancel and reopen by the creator (ACC-174)

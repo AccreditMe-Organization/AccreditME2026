@@ -1026,7 +1026,9 @@ User departure triggers bulk-reassignment flow:
 - Luxon handles all timezone conversions
 - Tenant configures: working days, working hours, timezone, holidays
 - GCC default: Sunday-Thursday, 08:00-16:00, UTC+3
-- Task assigned outside working hours: SLA starts next working day
+- Task assigned outside working hours: SLA starts at the next opening — the
+  same day's when it is before opening on a working day (ACC-175), else the
+  next working day's. Stored deadlines are not recomputed (forward-only).
 - Escalation triggers only fire during working hours
 
 ### Prisma Rules
