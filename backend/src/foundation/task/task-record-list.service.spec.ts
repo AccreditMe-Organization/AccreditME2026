@@ -496,7 +496,7 @@ describe('TaskRecordListService', () => {
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
-    // ACC-86's one definition of "on a task" (task-pool.ts isCurrentActiveAssigneeSql):
+    // ACC-86's one definition of "on a task" (task-pool.ts currentActiveAssigneeOfSql):
     // a current row AND the person is ACTIVE.
     it('every statement is the rule AND the person ON the task (a current row, and ACTIVE), before LIMIT', async () => {
       const { service, prisma } = setup();

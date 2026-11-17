@@ -118,21 +118,31 @@ export const STALE_CURRENT_ASSIGNEE = {
   user: { status: { not: 'ACTIVE' } },
 } as const satisfies Prisma.TaskAssigneeWhereInput;
 
-/** SQL: the task aliased `t` has someone on it (CURRENT_ACTIVE_ASSIGNEE). The user is joined by its primary key. */
-export const HAS_CURRENT_ACTIVE_ASSIGNEE_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "TaskAssignee" xa
-  JOIN "User" xu ON xu.id = xa."userId" AND xu."organizationId" = t."organizationId"
-  WHERE xa."taskId" = t.id AND xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE')`;
-
 /**
- * SQL: ONE given user is on the task aliased `t` (CURRENT_ACTIVE_ASSIGNEE, for that
- * person): a current row of theirs, and they are ACTIVE. ACC-216's person scope reads
- * it, so a person who is no longer ACTIVE has no tasks there: their leftover current
- * rows put them on nothing.
+ * ACC-216 — ONE given user is on a task: CURRENT_ACTIVE_ASSIGNEE for that person (a
+ * current row of theirs, and they are ACTIVE), built on it rather than a second
+ * literal. Someone no longer ACTIVE is on nothing: their leftover rows don't count.
  */
-export function isCurrentActiveAssigneeSql(userId: string): Prisma.Sql {
-  return Prisma.sql`EXISTS (SELECT 1 FROM "TaskAssignee" xa
-  JOIN "User" xu ON xu.id = xa."userId" AND xu."organizationId" = t."organizationId"
-  WHERE xa."taskId" = t.id AND xa."userId" = ${userId} AND xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE')`;
+export function currentActiveAssigneeOf(userId: string) {
+  return { ...CURRENT_ACTIVE_ASSIGNEE, userId } as const satisfies Prisma.TaskAssigneeWhereInput;
+}
+
+// The SQL forms are built from these two fragments, so they cannot drift apart:
+// the row joined to its user (by primary key, in the task's organisation), and
+// CURRENT_ACTIVE_ASSIGNEE's condition on it. task-pool.current-active.db-spec.ts
+// pins each SQL form to its Prisma form on a real Postgres.
+const ASSIGNEE_ROW_SQL = Prisma.sql`SELECT 1 FROM "TaskAssignee" xa
+  JOIN "User" xu ON xu.id = xa."userId" AND xu."organizationId" = t."organizationId"`;
+const CURRENT_ACTIVE_ROW_SQL = Prisma.sql`xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE'`;
+
+/** SQL: the task aliased `t` has someone on it (CURRENT_ACTIVE_ASSIGNEE). */
+export const HAS_CURRENT_ACTIVE_ASSIGNEE_SQL = Prisma.sql`EXISTS (${ASSIGNEE_ROW_SQL}
+  WHERE xa."taskId" = t.id AND ${CURRENT_ACTIVE_ROW_SQL})`;
+
+/** SQL: ONE given user is on the task aliased `t` (currentActiveAssigneeOf()'s twin). ACC-216's person scope reads it. */
+export function currentActiveAssigneeOfSql(userId: string): Prisma.Sql {
+  return Prisma.sql`EXISTS (${ASSIGNEE_ROW_SQL}
+  WHERE xa."taskId" = t.id AND xa."userId" = ${userId} AND ${CURRENT_ACTIVE_ROW_SQL})`;
 }
 
 const IS_POOL_TASK_SQL = Prisma.sql`(t."assignedPositionId" IS NOT NULL OR t."assignedCommitteeId" IS NOT NULL)`;

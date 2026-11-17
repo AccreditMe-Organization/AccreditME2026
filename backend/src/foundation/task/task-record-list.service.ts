@@ -6,7 +6,7 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { Prisma } from '../../../generated/prisma/client';
 import { TaskService, TaskViewer } from './task.service';
-import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, isCurrentActiveAssigneeSql, poolTargetOf, toPoolView } from './task-pool';
+import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, currentActiveAssigneeOfSql, poolTargetOf, toPoolView } from './task-pool';
 import { holdsCreateKey, holdsTaskKey, taskKeysOf, TASK_RECORD_TYPES } from './task-record-types';
 import { TaskVisibilityService } from './task-visibility.service';
 import {
@@ -252,7 +252,7 @@ export class TaskRecordListService {
   /**
    * ACC-216 (plan step-216 §5, Option A, decided 17 Nov) — A PERSON'S TASKS:
    * the tasks `dto.person` is ON, by ACC-86's one definition (task-pool.ts,
-   * isCurrentActiveAssigneeSql(): a current row, picked pool rows included, AND
+   * currentActiveAssigneeOfSql(): a current row, picked pool rows included, AND
    * the person is ACTIVE, so someone deactivated has none), AND the viewer's own
    * rule, taskVisibleSql(), in the WHERE
    * before LIMIT. One condition beside today's rule and no new visibility code,
@@ -277,7 +277,7 @@ export class TaskRecordListService {
     if (!found) throw new NotFoundException('User not found');
     const ctx = await this.visibility.contextFor(viewer, organizationId);
     return {
-      sql: Prisma.sql`AND ${isCurrentActiveAssigneeSql(person)} AND ${taskVisibleSql(ctx)}`,
+      sql: Prisma.sql`AND ${currentActiveAssigneeOfSql(person)} AND ${taskVisibleSql(ctx)}`,
       // Every task the viewer may see that the person is on: the count says so.
       kind: 'all',
       view: 'person',
