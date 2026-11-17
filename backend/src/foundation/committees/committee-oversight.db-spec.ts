@@ -338,6 +338,29 @@ describe('Heads see the committees of their units, read only, against a real dat
       );
     });
 
+    // ACC-283 — the committee read says whether the viewer may write, so the page
+    // shows no write button that answers 404. The flag and the write agree.
+    it('the read says mayWrite false to a head who only oversees, and their write is the 404', async () => {
+      const w = await world();
+      const v = w.v.headA;
+      expect((await committees.getCommitteeDetail(w.c.a1, w.org, v)).mayWrite).toBe(false);
+      expect(await outcome(committees.updateCommittee(w.c.a1, { nameEn: 'Renamed' } as never, w.org, v.id, v.permissions))).toBe('Committee not found');
+    });
+
+    it('a member reads mayWrite true, and their write passes the precondition', async () => {
+      const w = await world();
+      const v = w.v.stranger;
+      await prisma.committeeMember.create({ data: { organizationId: w.org, committeeId: w.c.a1, userId: v.id, roleValueId: 'seat-member' } });
+      expect((await committees.getCommitteeDetail(w.c.a1, w.org, v)).mayWrite).toBe(true);
+      expect(await outcome(committees.updateCommittee(w.c.a1, { nameEn: 'Renamed by a member' } as never, w.org, v.id, v.permissions))).toBe('OK');
+    });
+
+    it('a committees:view holder reads mayWrite true without being a member', async () => {
+      const w = await world();
+      const holder = { id: w.v.stranger.id, permissions: [...w.v.stranger.permissions, 'committees:view'] };
+      expect((await committees.getCommitteeDetail(w.c.b, w.org, holder)).mayWrite).toBe(true);
+    });
+
     it('the parent rule WITHOUT the oversight option (task create, a press, a vote) still refuses a head', async () => {
       const w = await world();
       expect(await outcome(visibility.assertCanView('COMMITTEE', w.c.a1, w.org, [], w.v.headA.id))).toBe(READ_REFUSED);
