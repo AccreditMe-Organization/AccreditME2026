@@ -136,6 +136,11 @@ export interface ICommitteeDetail extends ICommittee {
   // ACC-281 — the current stage's name, so the page reads no committee list for it.
   currentStageNameEn: string | null;
   currentStageNameAr: string | null;
+  // ACC-283 — whether this viewer passes the WRITE precondition
+  // (assertMayWriteCommittee: committees:view or an active member). A head who
+  // only oversees the committee reads it with false. Each action's own permission
+  // and the stage rules still apply on top; the screens combine them.
+  mayWrite: boolean;
 }
 
 /** ACC-265 — the committee's owning unit, as the record page names it. */
