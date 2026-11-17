@@ -4769,6 +4769,43 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
   with `TASK_SLA_EXCEEDS_STAGE_DEADLINES`, nothing written, when the default
   limits break a stage deadline. Both write nothing when nothing changes. The
   history names them `kind: 'notices'` and `'reset'`.
+- **Warn before due (ACC-313 PR 4).**
+  - **Saved with escalation:** each priority's `warnBeforeDue` rides, optional,
+    on `PATCH /tenant/task-sla/escalation`. A body without it keeps the stored
+    warning. It is written to `settings.taskSlaNotices` only, under the same
+    lock, and the audit row gains `warnBeforeDue` beside that priority's hours.
+  - **The rule (Q2):** a warning that is not Off must be shorter than its
+    priority's limit (`warningFitsLimit()`, `task-sla-settings.ts`). "1 working
+    day" is the calendar's working day (`readWorkingHoursPerDay()`,
+    `working-calendar/working-time.ts`, read without creating a row). It is
+    refused from both sides, nothing written:
+    - a warning at or past its saved limit: 400 `TASK_SLA_WARNING_NOT_BEFORE_DUE`;
+    - a limit at or under its saved warning: 400
+      `TASK_SLA_LIMIT_NOT_AFTER_WARNING`. The old whole-policy PATCH is held to
+      it too.
+
+    Both carry `{ priority, warning, limitHours }`.
+  - **`GET …/policy`** also answers `workingHoursPerDay`.
+  - **The sweep:** `TaskDueWarningService.sweep()`, the SLA monitor's own
+    isolated step `sweepDueWarnings`, after the hold sweep, so only where the
+    workers run (ACC-92). One read finds the organisations with any warning on.
+    Then, per organisation, only in working hours, it takes one calendar load
+    and one candidate query: `PENDING`/`IN_PROGRESS`, `dueWarnedAt` null, due
+    inside its priority's window, held by someone or waiting in a pool.
+    - **The claim:** `UPDATE "Task" SET "dueWarnedAt" = now … AND
+      "dueWarnedAt" IS NULL RETURNING id`, so two workers remind once.
+    - **The notice:** one `createInAppMany` ("Task due soon"), sent after the
+      claim. It goes to the active assignees; to a waiting pool's members,
+      resolved by `resolvePoolMembersBatch()` (the pool rule, batched); never
+      to acting users.
+    - A failed notice is logged, not retried. A warning a calendar change made
+      too long is treated as Off.
+  - **`DUE_WARNING_CLEARED`** (`task-request-lifecycle.ts`) re-arms it: an edit
+    that changes the due date or priority, an approved extension or hold, a
+    reopen, and a reassign while the due time is ahead. Never a pick, a release
+    or a resume.
+  - Proved against a real Postgres by `task-due-warning.db-spec.ts`: two
+    workers, ten rounds, one notice each.
 - **The switch governs one notice:** `TaskService.notifyAssigneesOfEdit()`'s
   due-date clause. With it off, a due-date edit is not announced, and a
   priority change is announced without the date. The setting is read only on
@@ -4878,7 +4915,11 @@ while held. Holds are ended by their own step, `sweepDueHolds()` (3.10).
 
 For each overdue task: stamps `slaBreachedAt` if it is still null, then reads
 the tenant's real `ITaskSlaTier` for the task's own `priority`
-(Section 3.3) and computes `hoursSinceDue`. Two-tier, strictly
+(Section 3.3) and computes `hoursSinceDue`. **ACC-313 (Q1): `hoursSinceDue`
+is WORKING hours** — `hoursBetweenWith(calendar, dueAt, now)` on the
+organisation's calendar, loaded once per organisation per pass — like the
+limits, so a task overdue across a weekend is escalated later than the clock
+would say. Nothing already fired is undone. Two-tier, strictly
 sequential, if/else-if — **no fall-through**:
 
 - `!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours`
