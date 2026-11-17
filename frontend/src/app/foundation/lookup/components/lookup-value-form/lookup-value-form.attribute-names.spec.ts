@@ -23,7 +23,7 @@ import { LookupValueFormComponent } from './lookup-value-form.component';
 // Each name is read from the <label for="attr_<key>"> the field renders: the
 // checkbox's own label for a boolean, am-field's for a number or a string.
 
-type Props = Record<string, { type: string; label?: string; labelEn?: string; labelAr?: string }>;
+type Props = Record<string, { type: string; labelEn?: string; labelAr?: string }>;
 
 // document_type's five attributes, as lane B's seed (#305) states them.
 const DOCUMENT_TYPE: Props = {
@@ -89,16 +89,16 @@ describe('LookupValueFormComponent — attribute names in both languages (ACC-31
     expect(getCategoryByKey).toHaveBeenCalledTimes(1);
   });
 
-  it('a schema with only the old `label` shows it, in both languages', () => {
-    const { nameOf, switchTo } = render({ required: { type: 'boolean', label: 'Required seat' } });
-    expect(nameOf('required')).toBe('Required seat');
+  it('a schema with no labelEn shows the key, in both languages (the old `label` is not read)', () => {
+    const { nameOf, switchTo } = render({ required: { type: 'boolean', label: 'Old seat name' } as Props[string] });
+    expect(nameOf('required')).toBe('required');
     switchTo('ar');
-    expect(nameOf('required')).toBe('Required seat');
+    expect(nameOf('required')).toBe('required');
   });
 
-  it('labelEn wins over the old `label` when a schema carries both', () => {
+  it('labelEn and labelAr name the attribute', () => {
     const { nameOf, switchTo } = render({
-      required: { type: 'boolean', label: 'Old seat name', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
+      required: { type: 'boolean', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
     });
     expect(nameOf('required')).toBe('Required seat');
     switchTo('ar');
