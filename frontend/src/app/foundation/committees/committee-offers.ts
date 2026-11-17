@@ -20,6 +20,14 @@ import type { CommitteeStageRulesDto } from './services/committee.service';
  *                     dissolved committee offers none (Ahmad, Q-A), and one
  *                     being dissolved still offers them.
  *
+ * ACC-283 — and EVERY offer above also needs the server's `mayWrite` (GET
+ * /committees/:id): committees:view, or an active member of THIS committee
+ * (assertMayWriteCommittee). A unit head who only oversees the committee reads
+ * it false, so they are offered nothing, whatever their permissions: the server
+ * would refuse each write with the 404 a missing committee gets. The locked
+ * line goes too, because it explains a missing Edit to someone who could edit.
+ * Callers pass the flag; this is the one place the rule lives.
+ *
  * Request a change is not decided here: it follows the server's own canRaise.
  * The header's transition buttons stay as the live workflow renders them.
  */
@@ -52,7 +60,15 @@ export const NO_STAGE_RULES: CommitteeStageRulesDto = {
   flags: [],
 };
 
-export function committeeOffers(rules: CommitteeStageRulesDto | null | undefined, can: CommitteePermissions): CommitteeOffers {
+/** What a viewer who may not write is offered: nothing. */
+const NO_OFFERS: CommitteeOffers = { edit: false, lockedLine: false, addMember: false, removeMember: false, changeMemberRole: false };
+
+export function committeeOffers(
+  rules: CommitteeStageRulesDto | null | undefined,
+  can: CommitteePermissions,
+  mayWrite: boolean,
+): CommitteeOffers {
+  if (!mayWrite) return { ...NO_OFFERS };
   const stage = rules ?? NO_STAGE_RULES;
   const allows = stage.actions;
   const meaning = (flag: string): boolean => stage.flags.includes(flag);

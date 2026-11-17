@@ -6,11 +6,14 @@ import {
   SEAT_ACTION_DEFAULT_ATTRIBUTE,
   SEAT_ACTION_KEYS,
   SeatActionRefusal,
+  canonicalSeatActions,
   copyDefaultSeatActions,
   defaultActionsOf,
   isSeatAction,
   normaliseSeatActions,
   seatActionMap,
+  sameSeatActions,
+  seatActionWanted,
   seatActionsFor,
 } from './seat-actions';
 
@@ -192,5 +195,47 @@ describe('Seat actions (ACC-283)', () => {
       expect(await copyDefaultSeatActions(tx, ORG_A, 'c-1')).toEqual([]);
       expect(createMany).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ACC-283 PR 5 — a change request's seat-action map: canonical, checked, compared.
+describe('Seat actions in a change request (ACC-283 PR 5)', () => {
+  const used = new Set(['seat-a', 'seat-b']);
+
+  it('makes a proposed map canonical: seats sorted, actions in the list order, an empty seat left out, a seat named twice merged', () => {
+    expect(
+      canonicalSeatActions(
+        [
+          { roleValueId: 'seat-b', actions: ['decide_reporting_changes', 'add_member'] },
+          { roleValueId: 'seat-a', actions: [] },
+          { roleValueId: 'seat-b', actions: ['request_change'] },
+        ],
+        used,
+      ),
+    ).toEqual({ 'seat-b': ['add_member', 'request_change', 'decide_reporting_changes'] });
+  });
+
+  it('refuses an action off the list and a seat the organisation does not use', () => {
+    const code = (fn: () => unknown) => {
+      try {
+        fn();
+        return 'OK';
+      } catch (e) {
+        return (e as { code?: string }).code;
+      }
+    };
+    expect(code(() => canonicalSeatActions([{ roleValueId: 'seat-a', actions: ['fly'] }], used))).toBe('SEAT_ACTION_UNKNOWN');
+    expect(code(() => canonicalSeatActions([{ roleValueId: 'seat-z', actions: ['add_member'] }], used))).toBe('SEAT_ACTION_SEAT_UNKNOWN');
+  });
+
+  it('compares canonical maps as values, and an absent map as empty', () => {
+    expect(sameSeatActions({ a: ['add_member'] }, { a: ['add_member'] })).toBe(true);
+    expect(sameSeatActions({ a: ['add_member'] }, { a: ['remove_member'] })).toBe(false);
+    expect(sameSeatActions({}, undefined)).toBe(true);
+    expect(sameSeatActions({ a: ['add_member'] }, null)).toBe(false);
+  });
+
+  it('turns a canonical map into what the writer takes', () => {
+    expect(seatActionWanted({ a: ['add_member', 'request_change'] })).toEqual(new Map([['a', new Set(['add_member', 'request_change'])]]));
   });
 });

@@ -664,7 +664,6 @@
         "committees:add_member": "Add members to a committee",
         "committees:remove_member": "Remove members from a committee",
         "committees:change_member_role": "Change a member’s role on a committee",
-        "committees:approve": "Approve terms, changes and dissolutions",
         "committees:view_all_tasks": "See every task on committees",
         "committees:create_tasks": "Create tasks on committees",
         "committees:manage_tasks": "Reassign committee tasks and decide their requests",

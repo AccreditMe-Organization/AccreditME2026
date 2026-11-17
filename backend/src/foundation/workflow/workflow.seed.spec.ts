@@ -16,7 +16,8 @@ const PINNED: Record<string, string[]> = {
   AUDIT: ['planning:ANY_ONE:START', 'announced:ANY_ONE:START', 'fieldwork:ANY_ONE:START', 'findings_draft:ANY_ONE:START', 'auditee_response:ANY_ONE:START', 'report_review:ANY_ONE:START', 'report_approved:ANY_ONE:START', 'corrective_action:ANY_ONE:START', 'verification:ANY_ONE:START', 'closed:ANY_ONE:START'],
   CORRECTIVE_ACTION: ['detection:ANY_ONE:START', 'investigation:ANY_ONE:START', 'root_cause_approved:ANY_ONE:START', 'action_planning:ANY_ONE:START', 'plan_approved:ANY_ONE:START', 'implementation:ANY_ONE:START', 'implementation_verified:ANY_ONE:START', 'effectiveness_check:ANY_ONE:START', 'effectiveness_approved:ANY_ONE:START', 'closed:ANY_ONE:START'],
   MEETING: ['planned:ANY_ONE:CREATOR', 'agenda_ready:ANY_ONE:CREATOR', 'minutes_draft:ANY_ONE:CREATOR', 'minutes_review:ALL:START', 'minutes_approved:ANY_ONE:START', 'cancelled:ANY_ONE:START'],
-  COMMITTEE: ['formation:ANY_ONE:START', 'terms_review:ANY_ONE:START', 'active:ANY_ONE:START', 'suspended:ANY_ONE:START', 'dissolution_pending:ANY_ONE:START', 'dissolved:ANY_ONE:START'],
+  // ACC-283 PR 4 (plan §10) — Terms Review: the committee's own unit head, no unit named.
+  COMMITTEE: ['formation:ANY_ONE:START', 'terms_review:ANY_ONE:ORG_UNIT_HEAD', 'active:ANY_ONE:START', 'suspended:ANY_ONE:START', 'dissolution_pending:ANY_ONE:START', 'dissolved:ANY_ONE:START'],
   COMMITTEE_CHANGE_REQUEST: ['draft:ANY_ONE:CREATOR', 'under_review:ANY_ONE:CREATOR', 'returned:ANY_ONE:CREATOR', 'approved:ANY_ONE:CREATOR', 'rejected:ANY_ONE:CREATOR', 'withdrawn:ANY_ONE:CREATOR'],
 };
 
@@ -28,6 +29,14 @@ describe('the workflow seed: who works each stage (ACC-271 PR 2)', () => {
     const actual = Object.fromEntries(SYSTEM_WORKFLOW_SEED.map((w) => [w.objectType, w.stages.map((s) => `${s.key}:${pin(s.who)}`)]));
     expect(actual).toEqual(PINNED);
     expect(Object.values(actual).flat()).toHaveLength(60);
+  });
+
+  it('seeds Terms Review on the committee’s own unit head, with no unit named (ACC-283 PR 4)', () => {
+    const committee = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'COMMITTEE')!;
+    const terms = committee.stages.find((s) => s.key === 'terms_review')!;
+    expect(terms.who).toEqual({ mode: 'ANY_ONE', entries: [{ kind: 'ORG_UNIT_HEAD' }] });
+    // No unit: the record's own (RECORD_ROUTES), so no starting assignment is written for it.
+    expect('startingAssignment' in terms.who).toBe(false);
   });
 
   it('keeps a protected template on its creator: every committee change request stage is CREATOR', () => {

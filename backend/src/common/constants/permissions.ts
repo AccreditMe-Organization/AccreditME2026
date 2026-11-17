@@ -73,7 +73,10 @@ export const WORKFLOWS_PERMISSIONS = {
 export const COMMITTEES_PERMISSIONS = {
   VIEW:               'committees:view',
   MANAGE:             'committees:manage',
-  APPROVE:            'committees:approve',
+  // ACC-283 PR 4 — committees:approve is RETIRED: since PR 2 the chain of
+  // authority decides change requests (change-request-chain.ts), and nothing
+  // reads the key. retired-committee-approve.spec.ts fails on any source that
+  // names it; backfill:acc283-retire-committees-approve takes it off roles.
   // ACC-28 correction — replaces the Chairman-specific authority check
   // (assertCommitteeAuthority(), removed) with per-action permissions, same
   // model as every other module. A Chairman is often a figurehead who

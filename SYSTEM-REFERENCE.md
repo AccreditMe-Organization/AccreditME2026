@@ -3216,7 +3216,9 @@ No screen reads a stage key, name or order to decide anything, and none keeps
 a copy of a server rule.
 
 - **The committee page** (`foundation/committees/committee-offers.ts`,
-  `committeeOffers(stageRules, permissions)`): Edit where the stage allows
+  `committeeOffers(stageRules, permissions, mayWrite)`): with the server's
+  `mayWrite` false (a head who only oversees, ACC-283), nothing below is
+  offered, whatever the stage or the permissions. Otherwise: Edit where the stage allows
   `edit_details` and the person holds `committees:edit_details`; the
   "Locked while the terms are under review" line to the same people where the
   stage allows no edit and is neither `IN_FORCE` nor `DISSOLVING` (Terms
@@ -6220,7 +6222,6 @@ change request (§3.18; its screens are ACC-240).
   - `committees:edit_details`: "Edit a committee's details and request changes" (ACC-255 PR 4b,
     Ahmad's Q3: since stage rules, the stage decides where editing is allowed, so
     the sentence no longer names Formation).
-  - `committees:approve`: "Approve terms, changes and dissolutions".
 - **The quorum input is `[fluid]="true"` (ACC-243).** Without it PrimeNG's
   number input kept its default width, 345px in a 251px column, and ran 94px
   under Meeting Frequency. The pair's columns were already `minmax(0, 1fr)`.
@@ -6262,7 +6263,24 @@ change request (§3.18; its screens are ACC-240).
 **ACC-283 PR 2 — THE CHAIN OF AUTHORITY DECIDES, NEVER A ROLE.** Plan:
 `backend/Plans/step-283-change-request-chain.md` (§3, §4, §16). This replaces
 every rule below that names `committees:approve`, which no change request
-reads any more; the key stays in the catalogue until PR 4 retires it.
+reads any more. **PR 4 retired the key** (below).
+
+**ACC-283 PR 4 — `committees:approve` IS RETIRED.** It is out of
+`COMMITTEES_PERMISSIONS`, the seed, the permission groups and the sentence table,
+and nothing in either package reads it: `retired-committee-approve.spec.ts`
+fails on any non-spec source that names it in quotes or as
+`COMMITTEES_PERMISSIONS.APPROVE`. (Home and the Awaiting page already stopped
+reading it in #315: they ask for change requests to decide while the Committees
+module is open, and the chain answers who.) `backfill:acc283-retire-committees-approve` takes it off
+existing roles, after PR 4 deploys:
+- dry run by default, `-- --execute` to write;
+- refuses customer organisations;
+- one audit row per role changed;
+- counts and slugs only;
+- then the catalogue row, once nothing references it.
+
+New organisations seed Terms Review on the committee's own unit head
+(`ORG_UNIT_HEAD`, no unit; plan §10). Existing ones keep what they set.
 
 - **Who decides** (`change-requests/change-request-chain.ts`):
   - the Reports-to committee's holders of a seat whose actions include
@@ -6339,6 +6357,36 @@ reads any more; the key stays in the catalogue until PR 4 retires it.
   - **Known limit (accepted by lane A, 16 Nov):** a change request the leaver
     creates between `prepare()` and the commit is not withdrawn. The window is
     milliseconds, and their sessions end right after the commit.
+- **A request may change the committee's seat actions (PR 5, Q12): the WHOLE
+  map is one field**, `seatActions`, in `changes` and `fromValues` (no
+  migration).
+  - **Shape:** seat id → its actions, canonical (`seatActionMap()`: seats
+    sorted, actions in the list's order, a seat allowing nothing left out).
+  - **Sent as** `PUT /committees/:id/seat-actions` takes it, an array of
+    `{ roleValueId, actions }`. A seat left out allows nothing; left out or
+    null means not changing.
+  - **Checked** by `canonicalSeatActions()`: `SEAT_ACTION_UNKNOWN`, and
+    `SEAT_ACTION_SEAT_UNKNOWN` for a seat the organisation does not use
+    (another organisation's included). A map equal to the stored one is no
+    change.
+  - **Preview:** `changedFields` names `seatActions`, and the impact
+    `SEAT_ACTIONS` carries the maps before and after. `labels` names each seat,
+    through ACC-246's resolver (`committeeTypeValues(…, 'committee_member_role')`,
+    overrides and inactive values included).
+  - **Submit** stores the map as it stands, read under the committee row's
+    share lock.
+  - **Approve: drift is one field.** The stored map differs from Submit's, or a
+    proposed seat is no longer used: 409 `CHANGE_REQUEST_COMMITTEE_CHANGED`
+    with `fields: ['seatActions']`, and nothing is applied.
+  - **Approve: the write** is the ONE writer, `writeSeatActions()`, which the
+    Formation edit also uses. It moves the committee's `updatedAt` and goes on
+    the Committee audit row, before and after.
+  - **Lock order (§7):** the seat-action rows are written after the committee
+    row lock and BEFORE the request row's, so an approval reads the request
+    first (safe, under its instance lock) and locks its row after the writes.
+  - **Cost:** seat actions are read only when a request names them (two
+    queries); a request changing only the committee's own fields reads none (a
+    spec holds it).
 - **Reads:**
   - every response's `actions` gains `approveNow`, and `awaitingDecisionBy`
     names the deciding step (a committee and its seats, or a unit), never a
@@ -6925,9 +6973,9 @@ kept.
 | `PATCH /committees/:id/members/:memberId` | `committees:change_member_role` | yes |
 | `DELETE /committees/:id/members/:memberId` | `committees:remove_member` | yes |
 | Create, edit, submit a change request | `committees:edit_details` (service) | yes |
-| Withdraw a change request | the requester, or `committees:approve` where the stage allows | yes |
-| **Approve, return, reject** | **`committees:view` (route) and `committees:approve` (service)** | **NO**, exactly as before; never the requester |
-| `GET /committee-change-requests/awaiting-decision` | `committees:view` (route) | no |
+| Withdraw a change request | the requester only (ACC-283 PR 2) | yes |
+| **Approve, return, reject** | **the chain of authority (ACC-283 PR 2, §3.18); no key** | **NO**; never the requester |
+| `GET /committee-change-requests/awaiting-decision` | none: #312 removed the `committees:view` route gate; the chain decides (ACC-283 PR 2) | no |
 
 The committee services' write methods take the caller's permissions as a trailing argument
 (`updateCommittee`, `addMember`, `changeMemberRole`, `removeMember`).
@@ -6956,7 +7004,9 @@ unchanged** (`committees:view` or membership, the table above).
 `assertMayWriteCommittee` would pass (`committees:view` or an active member).
 A head who only oversees reads `false`, so the page shows no write button that
 answers 404. Each action's own permission and the stage rules still apply on
-top. It's read from the same pass as the read, with no query added.
+top. It's read from the same pass as the read, with no query added. The page
+reads it through `committeeOffers()`, its third argument: false offers no Edit,
+locked line, Add member, Change role or Remove.
 
 **Where it applies (reads):**
 - `assertMaySeeCommittee`, so the committee page, members, members page,
@@ -7059,9 +7109,12 @@ organisation on the cover read each turns a spec red.
 - **The committees list** names each row's type from the row (`typeValue`), and asks the type
   lookup only with `lookups:view`. For a member, a parent name may read "—": the list holds
   only their own committees.
-- **`MyWorkCountsService.isCommitteeMember`** (§10.24): lane A's rail and route guard read it
-  to show and admit Committees to a member. Until lane A ships that, the guard still refuses
-  `/committees` without `committees:view`, and Home's My committees links only for holders.
+- **`MyWorkCountsService.mayBrowseCommittees`** (§10.24): lane A's rail and route guard read
+  it to show and admit Committees without `committees:view`. It is the server's
+  `mayBrowseCommittees` on `GET /committees/mine` (ACC-283 PR 2a, below), never My
+  committees' `total`: a head on no committee has a total of 0 and may still browse. It was
+  `isCommitteeMember` (total above 0) until ACC-283. Home's My committees links only for
+  holders.
 
 #### The performance rule
 
@@ -11486,26 +11539,30 @@ Its one use is the read-only Organisation item (7.13), hidden from
 `admin:access` holders. It hides the link only; the route's permission still
 comes from `requiredPermission`.
 
-**`orWhen: 'committeeMember'` (ACC-281):** a second way to meet an item's
-`requiredPermission`. Its one use is Committees: an active member of a
-committee sees it and opens it without `committees:view`, and the server
-answers their own committees.
-- **The answer** is `MyWorkCountsService.isCommitteeMember` (My committees ready
-  with a total above 0). The shell already loads it after sign-in, so this adds
-  no query, timer or `init()`.
+**`orWhen: 'mayBrowseCommittees'` (ACC-281, ACC-283 PR 2a):** a second way to
+meet an item's `requiredPermission`. Its one use is Committees: whoever the
+server says may browse committees (an active member of an active committee, or
+a head or cover in force of a unit owning one, §3.21) sees it and opens it
+without `committees:view`, and the server answers what they may read.
+- **The answer** is `MyWorkCountsService.mayBrowseCommittees`: My committees
+  ready with the server's `mayBrowseCommittees` true. Never its `total`, which
+  is a count, not access. The shell already loads it after sign-in, so this
+  adds no query, timer or `init()`. (ACC-281 named it `committeeMember` and
+  read `total > 0`; ACC-283 moved it to the flag.)
 - **One `NavAccess` for all readers:** `injectNavAccess()` (`nav-access.ts`)
   composes it from explicit delegates. `NavigationAccessService` does not
   inject the counts, because the counts inject it. The rail, the breadcrumb
   and the tab title all use this composed `NavAccess`, so they agree.
-- **The rail** shows the item only once membership is KNOWN to be true: not
+- **The rail** shows the item only once the answer is KNOWN to be true: not
   while it loads, and not after a failure.
 - **`permissionGuard`**, when the route's permissions are not held, looks up
   the route's tenant nav item (`tenantNavItemForRoute`):
-  - with `orWhen` it admits a known member;
-  - it also admits while membership is loading or failed, and lets the server
+  - with `orWhen` it admits when the flag is known true;
+  - it also admits while the answer is loading or failed, and lets the server
     decide (ACC-70's rule). This covers a hard reload straight onto
     `/committees/:id`, which runs before the shell starts the counts;
-  - it sends a known non-member to the landing route;
+  - it sends a known false (which includes the module being closed) to the
+    landing route;
   - it never admits a platform admin, whose counts never load.
   - Every committees child route inherits this through the walk-up.
 - **`ROUTE_PERMISSIONS` is unchanged** (`committees` → `committees:view`). Its
@@ -12744,13 +12801,16 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
   - `myOverdue`: the same query with `overdue=true&take=1`.
   - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests awaiting
     a decision, asked of everyone while the committees module is open
-    (`committeesOpen()`), because the server decides who may decide (ACC-283
-    PR 2). Either half failing fails the whole read.
+    (`committeesOpen()`, #315), because the server decides who may decide
+    (ACC-283 PR 2). Either half failing fails the whole read.
   - `myCommittees`: `GET /committees/mine`, only while the module is open.
-- **`isCommitteeMember`** (ACC-281): true once `myCommittees` has loaded with a total
-  above 0; false while loading, after a failure, or with none. Lane A's rail and route
-  guard read it to show and admit Committees to a member without `committees:view`
-  (§3.21). It adds no query.
+- **`mayBrowseCommittees`** (ACC-281, ACC-283 PR 2a): true once `myCommittees` has
+  loaded with the server's `mayBrowseCommittees` true; false while loading, after a
+  failure, and with the module closed (whose default answer is `{ total: 0, rows: [],
+  mayBrowseCommittees: false }`). Lane A's rail and route guard read it to show and admit
+  Committees without `committees:view` (§3.21). It adds no query. Home's tile and panel
+  still count `total`: a count, not access. (Named `isCommitteeMember`, on `total > 0`,
+  until ACC-283.)
 - **A platform admin:** `init()` asks nothing (ACC-281).
 - **When it loads:**
   - once after sign-in (the shell, after `loadAccess()`);
@@ -12844,8 +12904,8 @@ work, after Tasks, with no permission, because both reads are self-scoped.
   - `GET /committee-change-requests/awaiting-decision` returns every change
     request the person may decide, capped at 200 by the server. It is asked
     of everyone while the committees module is open, by Home's own rule
-    (`MyWorkCountsService.committeesOpen()`), because the server decides who
-    may decide (ACC-283 PR 2), and only on the first load. Both reads run in
+    (`MyWorkCountsService.committeesOpen()`, #315), because the server decides
+    who may decide (ACC-283 PR 2), and only on the first load. Both reads run in
     parallel.
 - **Rows** are Home's panel rows, built by the pure functions in
   `awaiting-rows.ts` (`stageRow`, `changeRow`, `waitingText`), so Home can use

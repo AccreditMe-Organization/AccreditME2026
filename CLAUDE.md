@@ -1123,7 +1123,7 @@ lookups:view                lookups:manage
 workflows:view              workflows:manage
 setup:view
 notifications:view *        notifications:manage *
-committees:view              committees:manage *        committees:approve
+committees:view              committees:manage *
 committees:create            committees:edit_details    committees:add_member
 committees:remove_member     committees:change_member_role
 committees:view_all_tasks    committees:view_unit_tasks
@@ -4795,9 +4795,9 @@ SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes
   with no parameters the response is unchanged. Candidates are capped at 1,000.
 - **`GET /committee-change-requests/awaiting-decision` is filtered in SQL**, the stage keys
   derived from `awaitsDecision()`, capped at 200.
-- **`MyWorkCountsService.isCommitteeMember`** is lane A's signal for the rail and the route
-  guard. Until lane A ships that change, the guard still refuses `/committees` without
-  `committees:view`. A platform admin's `init()` asks nothing.
+- **The rail and the route guard key on `MyWorkCountsService.mayBrowseCommittees`**, the
+  server's flag on `GET /committees/mine` (ACC-283 PR 2a). Home's My committees tile still
+  counts `total`. A platform admin's `init()` asks nothing.
 - **The stage routes keep `workflows:view`**: a member without it has no timeline or move
   buttons. ACC-282.
   Superseded (ACC-282): the workflow reads follow the record, and moves are pool-only (below).
@@ -5134,6 +5134,12 @@ requests.** Full mechanism: SYSTEM-REFERENCE.md §3.18 (the chain) and §3.21
   ACC-288 keeps the root unit headed, so the chain always ends with a decider.
   If it ever finds nobody (a legacy headless root), PR 2 refuses Submit with
   409 `CHANGE_REQUEST_NO_DECIDER` and logs it.
+- **`committees:approve` IS RETIRED (PR 4).** It is out of the catalogue, the seed
+  and the screens, and `retired-committee-approve.spec.ts` fails on any source
+  that names it. `backfill:acc283-retire-committees-approve` takes it off roles
+  AFTER the deploy: dry run, `-- --execute`, then a dry run reporting 0. It
+  refuses customers. New organisations seed Terms Review on the committee's
+  own unit head (`ORG_UNIT_HEAD`, no unit).
 - **THE CHAIN OF AUTHORITY DECIDES A CHANGE REQUEST, NEVER `committees:approve`**
   (`change-request-chain.ts`): a Reports-to committee's deciding seat, else the
   owning unit's head or cover in force and upwards to the root. The requester,

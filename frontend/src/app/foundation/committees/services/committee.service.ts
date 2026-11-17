@@ -106,6 +106,13 @@ export interface CommitteeDetailDto extends CommitteeDto {
   /** ACC-281 — the current stage's name, so the page reads no committee list for it. */
   currentStageNameEn: string | null;
   currentStageNameAr: string | null;
+  /**
+   * ACC-283 — whether this viewer passes the server's write precondition
+   * (`committees:view`, or an active member). A head who only oversees the
+   * committee reads it false. Each action still needs its own permission and
+   * the stage's rules: committeeOffers() combines all three.
+   */
+  mayWrite: boolean;
 }
 
 /** ACC-281 — another committee a record names, and whether this viewer may open it. */
@@ -255,6 +262,13 @@ export interface MyCommitteeRowDto {
 export interface MyCommitteesDto {
   total: number;
   rows: MyCommitteeRowDto[];
+  /**
+   * ACC-283 PR 2a — whether this person may open the committees list at all:
+   * a committees:view holder, an active member of an active committee, or a
+   * head or cover in force of a unit owning an active committee, there or below.
+   * The rail and the route guard key on it, never on `total` (a count).
+   */
+  mayBrowseCommittees: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
