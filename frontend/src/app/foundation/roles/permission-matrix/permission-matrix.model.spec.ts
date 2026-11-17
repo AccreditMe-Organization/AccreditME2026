@@ -72,9 +72,10 @@ describe('buildMatrix (ACC-272)', () => {
     // ACC-164 — users:reset_mfa took Users to seven: it is split too, Reset
     // beside Deactivate and Reactivate.
     const users = tenant().find((m) => m.module === 'users')!;
-    expect(users.keys.length).toBe(7);
+    // ACC-216 — users:manage_sessions joins them: eight.
+    expect(users.keys.length).toBe(8);
     expect(users.groups.map((g) => g.id)).toEqual(['people', 'access']);
-    expect(users.groups[1]!.keys).toEqual(['users:deactivate', 'users:reactivate', 'users:reset_mfa']);
+    expect(users.groups[1]!.keys).toEqual(['users:deactivate', 'users:reactivate', 'users:reset_mfa', 'users:manage_sessions']);
     const roles = tenant().find((m) => m.module === 'roles')!;
     expect(roles.keys.length).toBeLessThanOrEqual(6);
     expect(roles.groups.map((g) => g.id)).toEqual([null]);

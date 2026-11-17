@@ -27,9 +27,10 @@ export const PERMISSION_GROUPS: Readonly<Record<string, readonly PermissionGroup
   // ACC-164 — users:reset_mfa took Users to seven shown keys, over the
   // threshold. Reset sits with Deactivate and Reactivate, as lane B asked:
   // the three that decide whether someone can get into their account.
+  // ACC-216 — users:manage_sessions joins them: it signs someone out everywhere.
   users: [
     { id: 'people', keys: ['users:view', 'users:invite', 'users:manage', 'users:transfer'] },
-    { id: 'access', keys: ['users:deactivate', 'users:reactivate', 'users:reset_mfa'] },
+    { id: 'access', keys: ['users:deactivate', 'users:reactivate', 'users:reset_mfa', 'users:manage_sessions'] },
   ],
   committees: [
     {

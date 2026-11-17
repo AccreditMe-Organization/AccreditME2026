@@ -652,6 +652,7 @@
         "users:deactivate": "Deactivate a user",
         "users:reactivate": "Reactivate a deactivated user",
         "users:reset_mfa": "Reset another person's two-step sign-in",
+        "users:manage_sessions": "See another person's sign-ins and sign them out everywhere",
         "roles:view": "See roles and what they allow",
         "roles:manage": "Create, change and assign roles",
         "lookups:view": "See lookup lists and their values",

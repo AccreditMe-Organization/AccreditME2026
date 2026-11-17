@@ -45,6 +45,13 @@ export const USERS_PERMISSIONS = {
   // (MFA_RESET_HIGHER_ACCOUNT). Checked from day one, so it is not on
   // PERMISSIONS_NOT_YET_CHECKED.
   RESET_MFA:  'users:reset_mfa',
+  // ACC-216 — another person's sign-ins: seeing them (with users:view) and
+  // "Sign out everywhere". A security act on someone else's account access, so
+  // its own key (ACC-44), beside RESET_MFA. Grantable to any role, seeded to
+  // Organization Administrator only (TENANT_ADMIN's set is every key but
+  // platform:*); the account-action rule's floor applies. Checked from day one,
+  // so it is not on PERMISSIONS_NOT_YET_CHECKED.
+  MANAGE_SESSIONS: 'users:manage_sessions',
 } as const;
 
 export const ROLES_PERMISSIONS = {
