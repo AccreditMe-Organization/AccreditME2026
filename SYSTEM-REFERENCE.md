@@ -6306,6 +6306,36 @@ reads any more; the key stays in the catalogue until PR 4 retires it.
   - **Known limit (accepted by lane A, 16 Nov):** a change request the leaver
     creates between `prepare()` and the commit is not withdrawn. The window is
     milliseconds, and their sessions end right after the commit.
+- **A request may change the committee's seat actions (PR 5, Q12): the WHOLE
+  map is one field**, `seatActions`, in `changes` and `fromValues` (no
+  migration).
+  - **Shape:** seat id → its actions, canonical (`seatActionMap()`: seats
+    sorted, actions in the list's order, a seat allowing nothing left out).
+  - **Sent as** `PUT /committees/:id/seat-actions` takes it, an array of
+    `{ roleValueId, actions }`. A seat left out allows nothing; left out or
+    null means not changing.
+  - **Checked** by `canonicalSeatActions()`: `SEAT_ACTION_UNKNOWN`, and
+    `SEAT_ACTION_SEAT_UNKNOWN` for a seat the organisation does not use
+    (another organisation's included). A map equal to the stored one is no
+    change.
+  - **Preview:** `changedFields` names `seatActions`, and the impact
+    `SEAT_ACTIONS` carries the maps before and after. `labels` names each seat,
+    through ACC-246's resolver (`committeeTypeValues(…, 'committee_member_role')`,
+    overrides and inactive values included).
+  - **Submit** stores the map as it stands, read under the committee row's
+    share lock.
+  - **Approve: drift is one field.** The stored map differs from Submit's, or a
+    proposed seat is no longer used: 409 `CHANGE_REQUEST_COMMITTEE_CHANGED`
+    with `fields: ['seatActions']`, and nothing is applied.
+  - **Approve: the write** is the ONE writer, `writeSeatActions()`, which the
+    Formation edit also uses. It moves the committee's `updatedAt` and goes on
+    the Committee audit row, before and after.
+  - **Lock order (§7):** the seat-action rows are written after the committee
+    row lock and BEFORE the request row's, so an approval reads the request
+    first (safe, under its instance lock) and locks its row after the writes.
+  - **Cost:** seat actions are read only when a request names them (two
+    queries); a request changing only the committee's own fields reads none (a
+    spec holds it).
 - **Reads:**
   - every response's `actions` gains `approveNow`, and `awaitingDecisionBy`
     names the deciding step (a committee and its seats, or a unit), never a

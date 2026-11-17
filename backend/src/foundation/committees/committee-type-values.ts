@@ -35,24 +35,28 @@ export async function committeeTypeValues(
   prisma: Pick<PrismaService, 'lookupCategory' | 'lookupValue'>,
   organizationId: string,
   typeValueIds: string[],
+  // ACC-283 PR 5 — the same resolution for another committee lookup (the seats,
+  // `committee_member_role`): the shared values and this organisation's own,
+  // with its label overrides, inactive values included.
+  category: string = CATEGORY,
 ): Promise<Map<string, CommitteeTypeValue>> {
   const result = new Map<string, CommitteeTypeValue>();
   const ids = [...new Set(typeValueIds.filter(Boolean))];
   if (ids.length === 0) return result;
 
-  const category = await prisma.lookupCategory.findFirst({ where: { key: CATEGORY, organizationId: null }, select: { id: true } });
-  if (!category) return result;
+  const found = await prisma.lookupCategory.findFirst({ where: { key: category, organizationId: null }, select: { id: true } });
+  if (!found) return result;
 
   const rows = await prisma.lookupValue.findMany({
-    where: { id: { in: ids }, categoryId: category.id, OR: [{ organizationId: null }, { organizationId }] },
+    where: { id: { in: ids }, categoryId: found.id, OR: [{ organizationId: null }, { organizationId }] },
   });
   // The tenant's own rows for the same keys: overrides of the system values.
   const keys = [...new Set(rows.map((r) => r.key))];
   const tenantRows = await prisma.lookupValue.findMany({
-    where: { categoryId: category.id, organizationId, key: { in: keys } },
+    where: { categoryId: found.id, organizationId, key: { in: keys } },
   });
   const systemKeys = new Set(
-    (await prisma.lookupValue.findMany({ where: { categoryId: category.id, organizationId: null, key: { in: keys } }, select: { key: true } })).map(
+    (await prisma.lookupValue.findMany({ where: { categoryId: found.id, organizationId: null, key: { in: keys } }, select: { key: true } })).map(
       (r) => r.key,
     ),
   );
