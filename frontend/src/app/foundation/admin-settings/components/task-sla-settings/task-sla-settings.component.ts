@@ -326,6 +326,7 @@ type Load = 'loading' | 'error' | 'ready';
                       optionValue="value"
                       optionDisabled="unavailable"
                       optionDisabledReason="reason"
+                      [itemTemplate]="warnItem"
                       [ariaLabel]="cellLabel(p, 'warn')"
                     />
                   </am-field>
@@ -391,6 +392,17 @@ type Load = 'loading' | 'error' | 'ready';
       <!-- ── Reset, last and danger-bordered (PR 3) ─────────────────────── -->
       <am-task-sla-reset [ready]="load() === 'ready'" (reset)="onReset($event)" />
     </div>
+
+    <!-- A greyed warning option says why, beside it (Q2): token utilities, no
+         component styles. The reason is also in the option's accessible name. -->
+    <ng-template #warnItem let-option>
+      <span class="flex flex-col" [attr.data-warn-option]="option.value">
+        <span>{{ option.label }}</span>
+        @if (option.unavailable) {
+          <span class="text-micro text-ink-500">{{ option.reason }}</span>
+        }
+      </span>
+    </ng-template>
 
     <!-- The change history: a list, so the list shell (ACC-229), 20 at a time. -->
     <ng-template #historyBody>

@@ -296,6 +296,9 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
       // Non-vacuity: six options, three of them greyed (Critical's limit is 4).
       expect(options.length).toBe(6);
       expect(options.filter((o) => o.getAttribute('aria-disabled') === 'true').length).toBe(3);
+      // A greyed option says why, beside its label.
+      expect(options[3]!.textContent).toContain(lang === 'en' ? 'Not shorter than the limit of 4 working hours' : 'ليس أقصر من الحد البالغ 4 ساعات عمل');
+      expect(options[1]!.textContent).not.toContain(lang === 'en' ? 'Not shorter' : 'ليس أقصر');
       const panel = options[0]!.closest<HTMLElement>('.cdk-overlay-pane')!;
       expect(box(panel).width).toBeGreaterThanOrEqual(box(trigger).width - 1);
       for (const o of options) expect(o.scrollWidth).withContext(o.textContent ?? '').toBeLessThanOrEqual(o.clientWidth + 1);
