@@ -4795,9 +4795,9 @@ SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes
   with no parameters the response is unchanged. Candidates are capped at 1,000.
 - **`GET /committee-change-requests/awaiting-decision` is filtered in SQL**, the stage keys
   derived from `awaitsDecision()`, capped at 200.
-- **`MyWorkCountsService.isCommitteeMember`** is lane A's signal for the rail and the route
-  guard. Until lane A ships that change, the guard still refuses `/committees` without
-  `committees:view`. A platform admin's `init()` asks nothing.
+- **The rail and the route guard key on `MyWorkCountsService.mayBrowseCommittees`**, the
+  server's flag on `GET /committees/mine` (ACC-283 PR 2a). Home's My committees tile still
+  counts `total`. A platform admin's `init()` asks nothing.
 - **The stage routes keep `workflows:view`**: a member without it has no timeline or move
   buttons. ACC-282.
   Superseded (ACC-282): the workflow reads follow the record, and moves are pool-only (below).

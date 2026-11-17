@@ -75,21 +75,24 @@ export const permissionGuard: CanActivateFn = (route) => {
   if (required.every((permission) => navigationAccessService.hasPermission(permission)))
     return true;
 
-  // ACC-281 — the route's nav item may be met another way: a member of an
-  // active committee opens Committees without committees:view (the server
-  // answers their own committees). Every child (/committees/:id, its change
-  // requests) arrives here through the walk-up above, on the 'committees' key.
-  //   - Known member (My committees ready, total > 0): admit.
+  // ACC-281, ACC-283 PR 2a — the route's nav item may be met another way:
+  // whoever the server says may browse committees (a member of an active
+  // committee, or a head or cover in force of a unit owning one) opens
+  // Committees without committees:view; the server answers what they may read.
+  // Every child (/committees/:id, its change requests) arrives here through the
+  // walk-up above, on the 'committees' key.
+  //   - Known yes (My committees ready, mayBrowseCommittees true): admit. Not
+  //     `total`: a head on no committee has a total of 0 and may still browse.
   //   - Unknown (loading, or failed): admit and let the server decide. This is
   //     ACC-70's rule again, and it is the hard reload straight onto
   //     /committees/:id, which runs before the shell has started the counts.
-  //   - Known non-member (ready, total 0, which includes the module being closed):
+  //   - Known no (ready, flag false, which includes the module being closed):
   //     the landing route, as before.
   // Never a platform admin: their counts never load, so "loading" must not
   // admit them.
-  if (tenantNavItemForRoute(routeKey)?.orWhen === 'committeeMember' && !navigationAccessService.isPlatformAdmin()) {
+  if (tenantNavItemForRoute(routeKey)?.orWhen === 'mayBrowseCommittees' && !navigationAccessService.isPlatformAdmin()) {
     const committees = myWork.myCommittees();
-    if (committees.state !== 'ready' || committees.value.total > 0) return true;
+    if (committees.state !== 'ready' || committees.value.mayBrowseCommittees) return true;
   }
 
   return router.parseUrl(LANDING_ROUTE);
