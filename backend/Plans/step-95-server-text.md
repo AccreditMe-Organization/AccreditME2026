@@ -35,10 +35,10 @@ Nothing else changes. Bilingual texts that are already right are not touched, an
 | # | File:line | Today's EN | New EN | Proposed AR |
 |---|---|---|---|---|
 | 1 | `task.service.ts:570` (create) title | New task assigned | — | مهمة جديدة مُسندة إليك |
-| | body | You have been assigned: "{t}"{covering} | — | أُسندت إليك المهمة "{t}"{covering} |
+| | body | You have been assigned: "{t}"{covering} | — | أُسندت إليك المهمة «{t}»{covering} |
 | 2 | `task.service.ts:2140` (engine attaches assignees) title / body | as #1 | — | as #1 (no covering) |
 | 3 | `task.service.ts:1604` (reassign) title | Task reassigned to you | — | أُعيد إسناد مهمة إليك |
-| | body | "{t}" has been reassigned to you{covering}. Reason: {reason} | — | أُعيد إسناد المهمة "{t}" إليك{covering}. السبب: {reason} |
+| | body | "{t}" has been reassigned to you{covering}. Reason: {reason} | — | أُعيد إسناد المهمة «{t}» إليك{covering}. السبب: {reason} |
 | — | `coveringSuffix()` `task.service.ts:2603` | " (covering for {who})" | — | « (نيابةً عن {who})» |
 | 4 | `task.service.ts:1876` (departure, to the acting user) title | Tasks reassigned to you | one: **Task reassigned to you**; other: Tasks reassigned to you | the plural forms below |
 | | body | {n} task(s) have been reassigned to you following a colleague's departure. | one: **1 task has been reassigned to you because a colleague left.** other: **{n} tasks have been reassigned to you because a colleague left.** | the plural forms below |
@@ -49,8 +49,8 @@ Nothing else changes. Bilingual texts that are already right are not touched, an
 | | summary `:1894` | {n} task(s) reassigned, {m} task(s) flagged as UNASSIGNED and need manual reassignment. / {n} task(s) reassigned. | **{n} tasks reassigned.** plus, when m > 0: **{m} tasks are unassigned and need someone assigned by hand.** (each counted) | the plural forms below |
 | 7 | `sla-monitor.processor.ts:396` title | Acting-unit assignment ended | — | انتهى التكليف المؤقت بوحدة أخرى |
 | | body | Your acting assignment to another org unit has ended. | — | انتهى تكليفك المؤقت في وحدة تنظيمية أخرى. |
-| 8 | `sla-monitor.processor.ts:832` title | Task SLA breach escalation | — | تصعيد مهمة تجاوزت مهلتها (Q-1) |
-| | body | A task has breached its SLA and has been escalated to you. | **"{t}" is past its SLA and has been escalated to you.** (names the task, no extra read: `task` is in scope) | تجاوزت المهمة "{t}" مهلتها، وصُعِّدت إليك. |
+| 8 | `sla-monitor.processor.ts:832` title | Task SLA breach escalation | — | تصعيد مهمة تجاوزت مهلتها (Q-1: «مهلة», decided) |
+| | body | A task has breached its SLA and has been escalated to you. | **"{t}" is past its SLA and has been escalated to you.** (names the task, no extra read: `task` is in scope) | تجاوزت المهمة «{t}» مهلتها، وصُعِّدت إليك. |
 | 9 | `sla-monitor.processor.ts:880` title | SLA breach escalation | — | تصعيد لتجاوز المهلة |
 | | body | A workflow stage has breached its SLA and requires attention (escalation rule {i}). | **The "{stage}" stage is past its SLA and needs attention.** (Q-2: one read of the stage's names) | تجاوزت مرحلة «{stage}» مهلتها وتحتاج إلى متابعة. |
 | 10 | `workflow.service.ts:1539` (a transition's people) title | {transition.labelEn} | — | `labelAr ?? labelEn` |
@@ -64,7 +64,7 @@ Nothing else changes. Bilingual texts that are already right are not touched, an
 |---|---|---|
 | #4 title | Task reassigned to you / Tasks reassigned to you | **zero:** لم يُعَد إسناد أي مهمة إليك<br>**one:** أُعيد إسناد مهمة إليك<br>**two:** أُعيد إسناد مهمتين إليك<br>**few:** أُعيد إسناد {n} مهام إليك<br>**many / other:** أُعيد إسناد {n} مهمة إليك |
 | #4 body | as in the table above | the title's forms + «بعد مغادرة أحد أعضاء المنشأة.» |
-| #5 title | 1 active user is missing… / {n} active users are missing… | **zero:** لا يوجد مستخدم نشط ينقصه المسمى الوظيفي أو الوحدة التنظيمية<br>**one:** مستخدم نشط واحد ينقصه…<br>**two:** مستخدمان نشطان ينقصهما…<br>**few:** {n} مستخدمين نشطين ينقصهم…<br>**many:** {n} مستخدمًا نشطًا ينقصهم…<br>**other:** {n} مستخدم نشط ينقصهم… |
+| #5 title | 1 active user is missing… / {n} active users are missing… | **zero:** لا يوجد مستخدم نشط بلا مسمى وظيفي أو وحدة تنظيمية<br>**one:** مستخدم نشط واحد بلا مسمى وظيفي أو وحدة تنظيمية<br>**two:** مستخدمان نشطان بلا مسمى وظيفي أو وحدة تنظيمية<br>**few:** {n} مستخدمين نشطين بلا مسمى وظيفي أو وحدة تنظيمية<br>**many:** {n} مستخدمًا نشطًا بلا مسمى وظيفي أو وحدة تنظيمية<br>**other:** {n} مستخدم نشط بلا مسمى وظيفي أو وحدة تنظيمية (no verb in any form) |
 | #6 summary | 1 task reassigned / {n} tasks reassigned; 1 task is unassigned and needs someone assigned by hand / {m} tasks are unassigned and need… | «أُعيد إسناد {مهمة واحدة / مهمتين / {n} مهام / {n} مهمة}.» and «{مهمة واحدة / مهمتان / {m} مهام / {m} مهمة} بلا مسؤول وتحتاج إلى إسناد يدوي.» (zero is never sent: each clause is omitted at 0) |
 
 ## 3. The plural helper
@@ -150,3 +150,15 @@ The lines here are dev `1e47283`'s; lane A's hunks are mapped to them by content
 2. **Should the stage escalation (#9) name the stage?** It costs one indexed read per escalation. — ★ **Yes**
 3. **Should the workflow "moved" notice (#10) name the record** (e.g. the committee's name)? It needs a per-type name lookup. — ★ **Later** (not PR 1)
 4. **Arabic text uses the task's Arabic title when it has one** (`titleAr ?? title`), as the closed-task notices do? — ★ **Yes**
+
+---
+
+## 8. Decisions (lane B, Prompt 122, 17 Nov)
+
+- **Q-1: Yes.** «مهلة» for SLA in the escalation texts.
+- **Q-2: Yes.** The stage escalation names the stage (one read).
+- **Q-3: Later.** The workflow "moved" notice does not name the record in PR 1.
+- **Q-4: Yes.** The Arabic text uses `titleAr ?? title`.
+- **Arabic quotes:** every name inside Arabic text uses «…» (task titles, stage names, people), never "…".
+- **#5:** every Arabic form has no verb: «… بلا مسمى وظيفي أو وحدة تنظيمية».
+- **Build order:** after lane A's #334 merges. The build waits for lane B's build prompt.
