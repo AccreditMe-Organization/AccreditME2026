@@ -17,6 +17,7 @@ import { ChangeRequestRefusal } from './change-request-refusal';
 import { assertMaySeeCommittee, assertMayWriteCommittee, mayReadCommittee } from '../../../common/services/committee-membership';
 import { seatValues } from '../committee-seat-rules';
 import { canonicalSeatActions, currentSeatActionMap, sameSeatActions, seatActionWanted, writeSeatActions } from '../seat-actions';
+import { assertMemberAction, memberActionsFor } from '../member-actions';
 import { ChainResult, ChainStep, mayDecideAnyChangeRequest, resolveDecisionChains } from './change-request-chain';
 import {
   ACTION_TARGET_STAGE,
@@ -292,10 +293,11 @@ export class CommitteeChangeRequestService {
   // ── Writes ──────────────────────────────────────────────────────────────────
 
   async create(committeeId: string, dto: CreateChangeRequestDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
-    // ACC-281 — and committees:view OR an active member of THIS committee; anyone
-    // else gets the identical 404 a missing committee gets.
-    await assertMayWriteCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer));
+    // ACC-283 PR 6 — the one rule (member-actions.ts): Edit details on a committee
+    // they may write to, OR their seat here allows request_change. Refused as
+    // before: CHANGE_REQUEST_NOT_ALLOWED naming the key, or for a key holder who
+    // may not write here, the 404 a missing committee gets.
+    await assertMemberAction(this.prisma, organizationId, committeeId, asCommitteeViewer(viewer), 'request_change', { notAllowed: requestNotAllowed });
     const committee = await this.loadCommittee(committeeId, organizationId);
     const seats = namesSeatActions(dto.changes) ? await seatsNow(this.prisma, committeeId, organizationId) : undefined;
     const changes = normaliseChanges(dto.changes, committee, {}, seats);
@@ -364,9 +366,8 @@ export class CommitteeChangeRequestService {
   }
 
   async update(id: string, dto: UpdateChangeRequestDto, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
     const loaded = await this.loadRequest(id, organizationId);
-    await this.assertMayWriteRequest(loaded.row, organizationId, viewer); // ACC-281
+    await this.assertMayRequestChange(loaded.row, organizationId, viewer); // ACC-283 PR 6
     assertRequester(loaded.row, viewer);
 
     const { before, after } = await this.prisma.$transaction(async (tx) => {
@@ -413,9 +414,8 @@ export class CommitteeChangeRequestService {
   }
 
   async submit(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
     const loaded = await this.loadRequest(id, organizationId);
-    await this.assertMayWriteRequest(loaded.row, organizationId, viewer); // ACC-281
+    await this.assertMayRequestChange(loaded.row, organizationId, viewer); // ACC-283 PR 6
     assertRequester(loaded.row, viewer);
     assertRequestStageAllows(loaded.stageKey, 'submit');
 
@@ -563,9 +563,8 @@ export class CommitteeChangeRequestService {
    * now is not offered again.
    */
   async approveNow(id: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IChangeRequest> {
-    requirePermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
     const loaded = await this.loadRequest(id, organizationId);
-    await this.assertMayWriteRequest(loaded.row, organizationId, viewer); // ACC-281
+    await this.assertMayRequestChange(loaded.row, organizationId, viewer); // ACC-283 PR 6
     if (loaded.row.requestedById !== viewer.userId) throw new ChangeRequestRefusal('CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED');
     const chain = await this.chainOf(loaded.row, organizationId);
     if (!chain.requesterHeadsRoot) throw new ChangeRequestRefusal('CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED');
@@ -858,19 +857,23 @@ export class CommitteeChangeRequestService {
    * Create re-checks all three under the committee's row lock; this is a read.
    */
   async openSummary(committeeId: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IOpenChangeRequest> {
-    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
+    const access = await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
     await this.loadCommittee(committeeId, organizationId);
     const rows = await this.prisma.committeeChangeRequest.findMany({
       where: { committeeId, organizationId },
       include: REQUEST_INCLUDE,
       orderBy: { number: 'desc' },
     });
-    const [states, committeeStage] = await Promise.all([
+    const [states, committeeStage, may] = await Promise.all([
       requestStageKeys(this.prisma, rows.map((r) => r.id), organizationId),
       this.committeeStage(this.prisma, committeeId, organizationId, 'none'),
+      // ACC-283 PR 6 — memberActions.request_change, by the one rule, from the seat
+      // the read check just read. It contains the write precondition, so an
+      // overseeing head (no seat) is false.
+      memberActionsFor(this.prisma, organizationId, committeeId, asCommitteeViewer(viewer), { actions: ['request_change'], seat: access.seat }),
     ]);
     const open = rows.find((r) => isOpen(states.get(r.id))) ?? null;
-    const canRaise = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS) && committeeAllowsRaise(committeeStage) && !open;
+    const canRaise = may.request_change && committeeAllowsRaise(committeeStage) && !open;
     if (!open) return { request: null, canRaise };
     const [dto] = await this.toDtos([open], organizationId, viewer, () => committeeStage);
     return { request: dto!, canRaise };
@@ -1051,10 +1054,26 @@ export class CommitteeChangeRequestService {
   }
 
   /**
-   * ACC-281 — a write on a request by id (edit, submit, withdraw): committees:view,
-   * or an active member of the request's committee. Anyone else gets the identical
-   * 404 a missing request gets. Deciding (approve, return, reject) never calls this:
-   * it keeps committees:view at its route and committees:approve here.
+   * ACC-283 PR 6 — editing, submitting or approving-now one's request: the one rule
+   * for request_change (member-actions.ts) on the request's committee. Read after
+   * the request, so anyone who is neither a member nor a committees:view holder
+   * gets "Change request not found", key or not: the answer never says whether
+   * the id exists. A member or holder whom neither the role nor the seat allows
+   * gets CHANGE_REQUEST_NOT_ALLOWED naming the key, as before.
+   */
+  private async assertMayRequestChange(row: { committeeId: string }, organizationId: string, viewer: ChangeRequestViewer): Promise<void> {
+    await assertMemberAction(this.prisma, organizationId, row.committeeId, asCommitteeViewer(viewer), 'request_change', {
+      notAllowed: requestNotAllowed,
+      notFoundMessage: 'Change request not found',
+      afterRecordRead: true,
+    });
+  }
+
+  /**
+   * ACC-281 — withdrawing a request by id: committees:view, or an active member of
+   * the request's committee. Anyone else gets the identical 404 a missing request
+   * gets. Not a seat action (only the requester withdraws, Q8), so ACC-283 PR 6 left
+   * it as it was. Deciding never calls this: the chain decides (ACC-283 PR 2).
    */
   private async assertMayWriteRequest(row: { committeeId: string }, organizationId: string, viewer: ChangeRequestViewer): Promise<void> {
     await assertMayWriteCommittee(this.prisma, row.committeeId, organizationId, asCommitteeViewer(viewer), 'Change request not found');
@@ -1196,11 +1215,27 @@ export class CommitteeChangeRequestService {
       underReview.map((r) => chainFor(r.id)).filter((c): c is ChainResult => !!c),
       organizationId,
     );
+    // ACC-283 PR 6 — request_change by the one rule, once per committee among the
+    // viewer's OWN requests (only those can offer edit, submit or approve now):
+    // one list on one committee asks once, the awaiting list never.
+    const ownCommittees = [...new Set(rows.filter((r) => r.requestedById === viewer.userId).map((r) => r.committeeId))];
+    const mayRequest = new Map(
+      await Promise.all(
+        ownCommittees.map(
+          async (committeeId) =>
+            [
+              committeeId,
+              (await memberActionsFor(this.prisma, organizationId, committeeId, asCommitteeViewer(viewer), { actions: ['request_change'] }))
+                .request_change,
+            ] as const,
+        ),
+      ),
+    );
     return rows.map((r) => {
       const status = stages.get(r.id)?.key ?? null;
       const chain = chainFor(r.id);
       const by = chain && awaitsDecision(status) ? named(chain.step) : null;
-      return toDto(r, status, committeeStageOf(r.committeeId), viewer, extras, chain, by);
+      return toDto(r, status, committeeStageOf(r.committeeId), viewer, extras, chain, by, mayRequest.get(r.committeeId) ?? false);
     });
   }
 
@@ -1302,8 +1337,9 @@ function asCommitteeViewer(viewer: ChangeRequestViewer): { id: string; permissio
   return { id: viewer.userId, permissions: viewer.permissions };
 }
 
-function requirePermission(viewer: ChangeRequestViewer, permission: string): void {
-  if (!hasPermission(viewer, permission)) throw new ChangeRequestRefusal('CHANGE_REQUEST_NOT_ALLOWED', { permission });
+/** ACC-283 PR 6 — today's refusal for a request write the rule does not allow, naming the key. */
+function requestNotAllowed(permission: string): ChangeRequestRefusal {
+  return new ChangeRequestRefusal('CHANGE_REQUEST_NOT_ALLOWED', { permission });
 }
 
 function assertRequester(row: { requestedById: string }, viewer: ChangeRequestViewer): void {
@@ -1423,9 +1459,11 @@ function toDto(
   extras: DtoExtras,
   chain: ChainResult | undefined,
   awaitingDecisionBy: AwaitingDecisionBy | null,
+  /** ACC-283 PR 6 — request_change by the one rule (member-actions.ts), for the viewer's own request. */
+  mayRequestChange: boolean,
 ): IChangeRequest {
   const own = row.requestedById === viewer.userId;
-  const editor = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS);
+  const editor = mayRequestChange;
   // What both stages allow (the policy); who is asking decides the rest.
   const stage = (action: ChangeRequestAction) => stagesAllow(status, committeeStage, action);
   // ACC-283 PR 2 — the chain decides, never a role.
