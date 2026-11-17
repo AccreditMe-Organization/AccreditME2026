@@ -3513,6 +3513,43 @@ describe('UserService', () => {
         expect(mockPrisma.authSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'auth-1' } });
       });
 
+      // CC-302 (lane B's condition 1–3) — #317's change-request withdrawal and the
+      // session ending share ONE transaction, under DEACTIVATION_TX; nothing is
+      // sent inside it. committee-change-request.db-spec.ts proves the commit and
+      // the rollback together on Postgres.
+      it("shares ONE transaction with #317's change-request withdrawal, under DEACTIVATION_TX, and sends nothing inside it", async () => {
+        const events: string[] = [];
+        let inTx = false;
+        mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown, options?: unknown) => {
+          events.push(`open ${JSON.stringify(options)}`);
+          inTx = true;
+          const out = await cb(mockPrisma);
+          inTx = false;
+          events.push('commit');
+          return out;
+        });
+        mockPrisma.refreshToken.updateMany.mockImplementation(async () => (events.push(`revoke in-tx=${inTx}`), { count: 1 }));
+        mockDeparture.withdrawInTx.mockImplementation(async () => {
+          events.push(`withdraw in-tx=${inTx}`);
+        });
+        mockDeparture.finish.mockImplementation(async () => {
+          events.push(`finish in-tx=${inTx}`);
+        });
+        mockNotification.create.mockImplementation(async () => (events.push(`notify in-tx=${inTx}`), {}));
+
+        await service.deactivate('user-1', ORG_A, 'admin-1');
+
+        expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+        expect(events.slice(0, 4)).toEqual([
+          'open {"maxWait":10000,"timeout":20000}',
+          'revoke in-tx=true',
+          'withdraw in-tx=true',
+          'commit',
+        ]);
+        expect(events.slice(4).every((e) => e.endsWith('in-tx=false'))).toBe(true);
+        expect(events).toContain('finish in-tx=false');
+      });
+
       it('a refusal inside the transaction rolls the ending back with the flip: nothing ends after it', async () => {
         // The root-role invariant refuses AFTER the sessions were ended in the
         // transaction; the real database rolls both back. Here: the refusal
