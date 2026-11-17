@@ -13,6 +13,8 @@ import { TenantService } from '../tenant/tenant.service';
 import { WorkflowService } from './workflow.service';
 import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
+import { TaskDueWarningService } from '../task/task-due-warning.service';
+import type { LoadedCalendar } from '../working-calendar/working-time';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
 
 /**
@@ -97,6 +99,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // owns the working-time shift. Same forwardRef edge as taskService.
     @Inject(forwardRef(() => TaskRequestService))
     private readonly taskRequests: TaskRequestService,
+    // ACC-313 — the due-soon reminder lives with the tasks; this sweep runs it.
+    @Inject(forwardRef(() => TaskDueWarningService))
+    private readonly dueWarnings: TaskDueWarningService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -146,6 +151,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     await this.runIsolatedStep('sweepOverdueTasks', failedSteps, () => this.sweepOverdueTasks(now));
     await this.runIsolatedStep('sweepUnpickedPoolTasks', failedSteps, () => this.sweepUnpickedPoolTasks(now));
     await this.runIsolatedStep('sweepDueHolds', failedSteps, () => this.sweepDueHolds(now));
+    // ACC-313 — after the holds, so a task resumed this pass can be reminded in it.
+    await this.runIsolatedStep('sweepDueWarnings', failedSteps, () => this.dueWarnings.sweep(now));
     await this.runIsolatedStep('sweepUnassignedStages', failedSteps, () => this.sweepUnassignedStages());
     await this.runIsolatedStep('sweepExpiredActingOrgUnitAssignments', failedSteps, () =>
       this.sweepExpiredActingOrgUnitAssignments(now),
@@ -637,6 +644,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       include: { assignees: { where: { removedAt: null } } },
     });
 
+    // ACC-313 (Q1) — hours overdue are WORKING hours, like the limits, on each
+    // organisation's calendar, loaded once per organisation per pass.
+    const calendars = new Map<string, LoadedCalendar>();
     for (const task of overdueTasks) {
       if (!task.slaBreachedAt) {
         await this.prisma.task.update({
@@ -647,10 +657,16 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
 
       const slaConfig = await this.tenantService.getTaskSla(task.organizationId);
       const tier = slaConfig[task.priority];
-      const hoursSinceDue = DateTime.fromJSDate(now).diff(
+      let calendar = calendars.get(task.organizationId);
+      if (!calendar) {
+        calendar = await this.workingCalendar.loadCalendar(task.organizationId);
+        calendars.set(task.organizationId, calendar);
+      }
+      const hoursSinceDue = this.workingCalendar.hoursBetweenWith(
+        calendar,
         DateTime.fromJSDate(task.dueAt!),
-        'hours',
-      ).hours;
+        DateTime.fromJSDate(now),
+      );
 
       if (!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours) {
         if (await this.isWithinWorkingHours(task.organizationId)) {
