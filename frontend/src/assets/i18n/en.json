@@ -2385,7 +2385,8 @@
         "fieldLabel": "{{priority}} · {{field}}",
         "was": "was",
         "now": "now",
-        "kindReset": "Reset to the defaults"
+        "kindReset": "Reset to defaults",
+        "nameNotRecorded": "Name not recorded"
       },
       "fields": {
         "dueAfterHours": "Due after",
@@ -2415,17 +2416,23 @@
         "title": "Notifications",
         "help": "These take effect as soon as they are switched, with no Save.",
         "dueChange": "Notify assignees when a due date changes",
-        "dueChangeHelp": "In the app. Takes effect at once, for every task. A change of priority is still announced.",
+        "dueChangeHelp": "In the app, for every task. A change of priority is still announced.",
         "failed": "This couldn't be changed. The setting is as it was."
       },
       "reset": {
-        "title": "Reset policy",
+        "title": "Reset to defaults",
         "help": "Returns every value on this page to the defaults a new organisation gets. Tasks created afterwards use them; open tasks keep the limits they were created with.",
         "recorded": "Recorded in the change history with your name and the previous values.",
-        "open": "Reset policy…",
-        "confirmHeader": "Reset task SLA policy?",
-        "confirmBody": "Every value on this page goes back to the defaults a new organisation gets: the time limits, their escalation hours, every reminder off, and due-date notices on. Tasks created after this use them; open tasks keep the limits they were created with. Recorded in the change history with your name and the previous values.",
-        "confirmAccept": "Reset policy",
+        "open": "Reset to defaults…",
+        "confirmHeader": "Reset to defaults?",
+        "confirmBody": "Every value on this page goes back to the defaults a new organisation gets. Tasks created after this use them; open tasks keep the limits they were created with.",
+        "confirmAccept": "Reset to defaults",
+        "confirmDetails": {
+          "limits": "Time limits: back to the defaults",
+          "escalation": "Escalation hours: back to the defaults",
+          "reminders": "Reminders before due: all off",
+          "notices": "Due-date change notices: on"
+        },
         "conflictLead": "Nothing was reset. The default limits would pass the deadline of:",
         "conflictWayOut": "Raise those stage deadlines first, then reset again.",
         "failed": "The policy couldn't be reset. Nothing changed.",
@@ -3518,9 +3525,9 @@
       }
     },
     "taskSla": {
-      "hours": {
-        "one": "{{count}} hour",
-        "other": "{{count}} hours"
+      "clockHours": {
+        "one": "{{count}} clock hour",
+        "other": "{{count}} clock hours"
       },
       "problems": {
         "one": "{{count}} problem",
