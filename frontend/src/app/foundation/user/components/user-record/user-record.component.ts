@@ -32,6 +32,7 @@ import { TwoStepOffDialogComponent } from './two-step-off-dialog.component';
 import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
 import { TwoStepResetDialogComponent } from './two-step-reset-dialog.component';
 import { UserCommitteesPanelComponent } from './user-committees-panel.component';
+import { UserAccessHistoryPanelComponent } from './user-access-history-panel.component';
 import { USER_PANEL_GRID } from './user-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
@@ -83,12 +84,16 @@ interface Fact {
  *
  * ## Panels left OUT, not empty (CC-88, D1)
  *
- * Tasks, Sessions and Access history have no per-user endpoint, so they are
- * absent — not a placeholder, not a disabled panel. ACC-216 adds the reads, one
- * at a time. A spec pins their absence.
+ * Tasks and Sessions have no per-user endpoint, so they are absent — not a
+ * placeholder, not a disabled panel. ACC-216 adds the reads, one at a time. A
+ * spec pins their absence.
  *
  * Committees (ACC-216 part 1) is its own component with its own request, shown
  * only to a viewer holding committees:view: absent otherwise, never empty.
+ *
+ * Access history (ACC-216 part 2) is its own component too, on am-capped-panel,
+ * shown to the person themself or a viewer holding users:view (the endpoint's
+ * rule): absent otherwise, never empty.
  *
  * ## Each panel owns its request (ACC-104)
  *
@@ -117,6 +122,7 @@ interface Fact {
     TwoStepOffDialogComponent,
     TwoStepResetDialogComponent,
     UserCommitteesPanelComponent,
+    UserAccessHistoryPanelComponent,
   ],
   template: `
     @if (loadError()) {
@@ -323,6 +329,11 @@ interface Fact {
           <!-- ACC-216 — absent without committees:view; a refused read hides it too. -->
           @if (canViewCommittees()) {
             <app-user-committees-panel [userId]="userId" />
+          }
+
+          <!-- ACC-216 part 2 — yourself, or users:view; absent otherwise. -->
+          @if (canViewAccessHistory()) {
+            <app-user-access-history-panel [userId]="userId" [personName]="user()?.name ?? ''" />
           }
 
           @if (isOwn() && twoStepHandle()) {
@@ -563,6 +574,8 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly canViewRoles = computed(() => this.can('roles:view'));
   /** ACC-216 — GET /users/:id/committees needs committees:view in every case. */
   readonly canViewCommittees = computed(() => this.can('committees:view'));
+  /** ACC-216 part 2 — GET /users/:id/access-history: yourself, or users:view. */
+  readonly canViewAccessHistory = computed(() => this.isOwn() || this.can('users:view'));
   readonly canManageRoles = computed(() => this.can('roles:manage'));
   readonly canSeePermissions = computed(() => USER_PERMISSIONS_LOOKUP.every((p) => this.can(p)));
   /** The two-step endpoints act on the CALLER, so only on your own record. */
