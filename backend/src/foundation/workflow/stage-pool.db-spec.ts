@@ -35,6 +35,7 @@ import { TaskAssignmentService } from '../task/task-assignment.service';
 import { TaskSlaService } from '../task/task-sla.service';
 import { TaskClosedNoticeService } from '../task/task-closed-notice.service';
 import { UserService } from '../user/user.service';
+import { ChangeRequestDepartureService } from '../committees/change-requests/departure/change-request-departure.service';
 import type { AuthProvider } from '../../providers/auth/auth.provider';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { WorkflowService } from './workflow.service';
@@ -78,6 +79,7 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
   const queue = { add: async () => undefined } as never;
   const pools = new StagePoolService(prisma);
   const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, pools);
+  const departure = new ChangeRequestDepartureService(prisma, workflow, tasks, audit);
   const users = new UserService(
     prisma,
     audit,
@@ -91,6 +93,8 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     pools,
     // ACC-297 — no transfer here, so the committee notice is never scheduled.
     { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
+    // ACC-283 PR 2b — the real departure withdrawal: nobody here has a change request.
+    departure,
   );
 
   interface Org {
@@ -201,6 +205,34 @@ describe('Who works a converted stage, against a real database (ACC-271 PR 1)', 
     await workflow.triggerTransition(c.instanceId, { transitionId: approve.id }, o.id, cover, ['committees:view']);
     const moved = await prisma.workflowInstanceStage.findFirstOrThrow({ where: { workflowInstanceId: c.instanceId, actorId: cover } });
     expect(moved).toMatchObject({ delegationReason: 'ACTING_HEAD', delegationContextId: o.unitId });
+  });
+
+  // ACC-283 PR 2b (Prompt 86) — a leaver with no unfinished change request costs the
+  // deactivation exactly ONE added read (the departure's indexed query), and nothing more:
+  // no move is prepared, applied or finished, and no task is closed.
+  it('deactivating someone with no change request adds exactly one indexed read, and nothing more', async () => {
+    const o = await org();
+    const actor = await o.person('Actor');
+    const leaves = await o.person('Leaves');
+    const raw = jest.spyOn(prisma, '$queryRaw');
+    const moves = [
+      jest.spyOn(workflow, 'prepareSystemTransition'),
+      jest.spyOn(workflow, 'systemTransitionInTx'),
+      jest.spyOn(workflow, 'finishSystemTransition'),
+      jest.spyOn(tasks, 'closeRecordTaskInTx'),
+    ];
+    const prepare = jest.spyOn(departure, 'prepare');
+    try {
+      await users.deactivate(leaves, o.id, actor);
+      const departureReads = raw.mock.calls.filter((c) => (c[0] as unknown as TemplateStringsArray).join('?').includes('"CommitteeChangeRequest"'));
+      expect(departureReads).toHaveLength(1);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect((await prepare.mock.results[0]!.value) as { withdrawals: unknown[]; applied: unknown[] }).toMatchObject({ withdrawals: [], applied: [] });
+      for (const m of moves) expect(m).not.toHaveBeenCalled();
+      expect((await prisma.user.findFirstOrThrow({ where: { id: leaves } })).status).toBe('INACTIVE');
+    } finally {
+      for (const m of [raw, prepare, ...moves]) m.mockRestore();
+    }
   });
 
   it('a deactivated pool member is recorded as having left, and "All of them" then decides without them', async () => {

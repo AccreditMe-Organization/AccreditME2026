@@ -6277,6 +6277,33 @@ reads any more; the key stays in the catalogue until PR 4 retires it.
   request row, task row.
 - **Withdraw:** only the requester (Q8). `othersMayWithdraw` is gone from the
   policy.
+- **A departure withdraws the leaver's unfinished requests (PR 2b).**
+  `UserService.deactivate()` calls `ChangeRequestDepartureService`
+  (`change-requests/departure/`):
+  - `prepare()` before the transaction: ONE indexed query, on
+    `(organizationId, requestedById)`. It finds the requests whose newest
+    instance stands in a stage that is open, allows withdraw and is not
+    awaiting a decision (draft and returned, derived from the policy). No rows
+    means nothing else runs.
+  - `withdrawInTx()` inside the deactivation's transaction, last. Per request,
+    in id order: the instance lock, the request row (`withdrawnById` is the
+    person deactivating), then the finish task cancelled, its row last.
+  - `finish()` after commit. It is never fatal: a failure is logged with ids
+    only.
+  - The engine's `prepareSystemTransition()` / `systemTransitionInTx()` /
+    `finishSystemTransition()` split one move so it can run in a caller's
+    transaction. `performTransition()` uses the same body. A request that moved
+    between prepare and lock is skipped (`ifMoved: 'skip'`).
+  - The User audit row's `withdrawnChangeRequests` is what the transaction
+    applied. Each request gets its own audit row, `{ decision: 'WITHDRAWN',
+    cause: 'departure', leaverId, from }`.
+  - **Nothing is sent**, to the leaver or anyone (a spec proves it).
+  - Lock order: the root-head lock, the user row, then per request its
+    instance, its row and its task. Requests under review are left to their
+    deciders.
+  - **Known limit (accepted by lane A, 16 Nov):** a change request the leaver
+    creates between `prepare()` and the commit is not withdrawn. The window is
+    milliseconds, and their sessions end right after the commit.
 - **Reads:**
   - every response's `actions` gains `approveNow`, and `awaitingDecisionBy`
     names the deciding step (a committee and its seats, or a unit), never a
@@ -12680,8 +12707,10 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     (rows and `matching`). This is the same rule as `/tasks` My tasks.
     `GET /tasks/my-tasks`, which is unbounded, is no longer read by Home.
   - `myOverdue`: the same query with `overdue=true&take=1`.
-  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests for
-    `committees:approve` holders. Either half failing fails the whole read.
+  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests awaiting
+    a decision, asked of everyone while the committees module is open
+    (`committeesOpen()`), because the server decides who may decide (ACC-283
+    PR 2). Either half failing fails the whole read.
   - `myCommittees`: `GET /committees/mine`, only while the module is open.
 - **`isCommitteeMember`** (ACC-281): true once `myCommittees` has loaded with a total
   above 0; false while loading, after a failure, or with none. Lane A's rail and route
@@ -12779,8 +12808,10 @@ work, after Tasks, with no permission, because both reads are self-scoped.
     page; with none it sends Home's request unchanged.
   - `GET /committee-change-requests/awaiting-decision` returns every change
     request the person may decide, capped at 200 by the server. It is asked
-    only of `committees:approve` holders, as Home does, and only on the first
-    load. Both reads run in parallel.
+    of everyone while the committees module is open, by Home's own rule
+    (`MyWorkCountsService.committeesOpen()`), because the server decides who
+    may decide (ACC-283 PR 2), and only on the first load. Both reads run in
+    parallel.
 - **Rows** are Home's panel rows, built by the pure functions in
   `awaiting-rows.ts` (`stageRow`, `changeRow`, `waitingText`), so Home can use
   them too.

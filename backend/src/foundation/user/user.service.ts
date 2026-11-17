@@ -20,6 +20,7 @@ import { USERS_PERMISSIONS } from '../../common/constants/permissions';
 import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
 import { TaskService } from '../task/task.service';
+import { ChangeRequestDepartureService } from '../committees/change-requests/departure/change-request-departure.service';
 import { OrganizationService } from '../organization/organization.service';
 // ACC-46 Section 2.4 — a genuine two-way provider cycle: OrgUnitHeadService
 // already @Inject(forwardRef(() => UserService)) (declareHandover()'s
@@ -161,6 +162,11 @@ export function toSafeUser(user: IUser): IUser {
   };
 }
 
+// ACC-283 PR 2b — Prisma's default interactive timeout is 5 s; a deactivation now
+// withdraws the leaver's unfinished change requests, and each is a stage change,
+// so it takes the stage change's own budget (STAGE_CHANGE_TX).
+const DEACTIVATION_TX = { maxWait: 10_000, timeout: 20_000 } as const;
+
 @Injectable()
 export class UserService {
   private readonly logger = new Logger(UserService.name);
@@ -184,6 +190,8 @@ export class UserService {
     private readonly stagePool: StagePoolService,
     // ACC-297 — tells the person's committees after a transfer (lane B).
     private readonly committeeTransferNotice: CommitteeTransferNoticeService,
+    // ACC-283 PR 2b — the leaver's unfinished change requests (lane B).
+    private readonly changeRequestDeparture: ChangeRequestDepartureService,
   ) {}
 
   // ACC-78 — counts per status for the list's filter chips.
@@ -1519,6 +1527,11 @@ export class UserService {
     // contains them). Batched: one query per assignee kind for all of them.
     const leftPoolEntryIds = await this.stagePool.openEntriesWithMember(organizationId, id);
 
+    // ACC-283 PR 2b — the leaver's open DRAFT or RETURNED change requests, read
+    // while they are still ACTIVE: ONE indexed query, and nothing else when there
+    // are none. A request already sent for decision is left alone.
+    const departure = await this.changeRequestDeparture.prepare(organizationId, id, actorId);
+
     // ACC-120 — the flip and the invariant commit or roll back together. The
     // side effects below stay OUTSIDE the transaction, matching this file's own
     // convention (2.6.h): a refused deactivation must not have invalidated the
@@ -1535,7 +1548,22 @@ export class UserService {
       // ACC-288 — the root's last head can't be deactivated without a successor or a cover.
       await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
       await this.stagePool.recordPoolMemberLeftInTx(tx, organizationId, leftPoolEntryIds, id, 'DEACTIVATED');
-    });
+      // ACC-283 PR 2b — withdrawn with the flip, after every lock above and
+      // before any task row is written (instance, then task: ACC-190).
+      await this.changeRequestDeparture.withdrawInTx(tx, departure);
+    }, DEACTIVATION_TX);
+    // What the transaction actually withdrew (a request that moved meanwhile is not counted).
+    const withdrawnChangeRequests = departure.applied.length;
+
+    // ACC-283 PR 2b — after commit, never fatal: a deactivation that committed
+    // never answers with an error. Sends no notice (nobody waits on a draft).
+    try {
+      await this.changeRequestDeparture.finish(departure);
+    } catch (err) {
+      this.logger.error(
+        `Change request departure follow-up failed: organizationId=${organizationId} userId=${id} (${(err as Error).name})`,
+      );
+    }
 
     await this.authProvider.invalidateUserSessions(id);
 
@@ -1583,7 +1611,7 @@ export class UserService {
       objectType: 'User',
       objectId: id,
       before: existing as unknown as Record<string, unknown>,
-      metadata: { event: 'deactivated', reassignedCount, unassignedCount },
+      metadata: { event: 'deactivated', reassignedCount, unassignedCount, withdrawnChangeRequests },
     });
 
     return { reassignedCount, unassignedCount };

@@ -42,6 +42,7 @@ import { ChangeRequestViewer, CommitteeChangeRequestService } from './committee-
 import { StageRulesService } from '../../workflow/stage-rules.service';
 import { StagePoolService } from '../../workflow/stage-pool.service';
 import { mayDecideAnyChangeRequest } from './change-request-chain';
+import { ChangeRequestDepartureService, PreparedDeparture } from './departure/change-request-departure.service';
 import { findUnitHeadedBy, findUnitsCoveredBy } from '../../organization/unit-headship';
 import { SEAT_ACTIONS } from '../seat-actions';
 
@@ -67,12 +68,17 @@ describe('Committee change requests against a real database (ACC-239)', () => {
   const visibility = new ObjectVisibilityService(prisma);
   const calendar = new WorkingCalendarService(prisma, audit);
   const notices: { userId: string; titleEn: string; organizationId: string }[] = [];
+  const inApp: unknown[] = [];
   const notifications = {
     create: async (dto: { userId: string; titleEn: string }, organizationId: string) => {
       notices.push({ userId: dto.userId, titleEn: dto.titleEn, organizationId });
       return { id: randomUUID() };
     },
-    createInAppMany: async () => 0,
+    // ACC-283 PR 2b — in-app notices recorded too, so "nothing is sent" can be proved.
+    createInAppMany: async (...args: unknown[]) => {
+      inApp.push(args);
+      return 0;
+    },
   } as unknown as NotificationService;
   const tenant = { getTaskSla: async () => null } as unknown as TenantService;
   const authority = new TaskAuthorityService(prisma);
@@ -85,6 +91,7 @@ describe('Committee change requests against a real database (ACC-239)', () => {
   const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, new StagePoolService(prisma));
   const templates = new WorkflowTemplateService(prisma, audit, stageTasks);
   const requests = new CommitteeChangeRequestService(prisma, workflow, tasks, audit, notifications, new StageRulesService(prisma));
+  const departure = new ChangeRequestDepartureService(prisma, workflow, tasks, audit);
 
   interface World {
     org: string;
@@ -1422,6 +1429,116 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       // Control: THIS organisation's own cover does count.
       await cover(w, id);
       expect(await mayDecideAnyChangeRequest(prisma, w.org, id, new Date())).toBe(true);
+    });
+  });
+  // ── ACC-283 PR 2b: a leaver's unfinished requests are withdrawn ─────────────
+  describe('the departure withdrawal (ACC-283 PR 2b)', () => {
+    const DEACTIVATION_TX = { maxWait: 10_000, timeout: 20_000 };
+
+    /** What UserService.deactivate() does around the withdrawal: prepare, the flip and the withdrawal in one transaction, then finish. */
+    async function deactivate(w: World, leaverId: string, actorId: string, between?: () => Promise<unknown>): Promise<PreparedDeparture> {
+      const prepared = await departure.prepare(w.org, leaverId, actorId);
+      await between?.();
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({ where: { id: leaverId }, data: { status: 'INACTIVE' } });
+        await departure.withdrawInTx(tx, prepared);
+      }, DEACTIVATION_TX);
+      await departure.finish(prepared);
+      return prepared;
+    }
+
+    const stageKey = async (w: World, requestId: string) => {
+      const i = await prisma.workflowInstance.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST', objectId: requestId }, orderBy: { createdAt: 'desc' } });
+      return (await prisma.workflowStage.findFirstOrThrow({ where: { id: i.currentStageId! } })).key;
+    };
+
+    it("withdraws the leaver's draft and returned requests inside the transaction, cancels their finish tasks, audits them, and sends NOTHING", async () => {
+      const w = await world();
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'draft' }, w.org, w.requester);
+      const sent = await requests.create(w.other, { changes: { quorumCount: 5 }, reason: 'sent' } as never, w.org, w.requester);
+      await requests.submit(sent.id, w.org, w.requester);
+      await requests.returnForChanges(sent.id, { note: 'more detail' }, w.org, w.approver);
+      expect(await stageKey(w, draft.id)).toBe('draft');
+      expect(await stageKey(w, sent.id)).toBe('returned');
+      notices.length = 0;
+      inApp.length = 0;
+
+      const prepared = await deactivate(w, w.requester.userId, w.approver.userId);
+
+      expect(prepared.applied.map((a) => a.withdrawal.requestId).sort()).toEqual([draft.id, sent.id].sort());
+      for (const id of [draft.id, sent.id]) {
+        expect(await stageKey(w, id)).toBe('withdrawn');
+        const row = await prisma.committeeChangeRequest.findFirstOrThrow({ where: { id, organizationId: w.org } });
+        // The person deactivating withdrew it: the leaver did not.
+        expect(row).toMatchObject({ withdrawnById: w.approver.userId });
+        expect(row.withdrawnAt).not.toBeNull();
+        const task = await prisma.task.findFirstOrThrow({ where: { id: row.finishTaskId!, organizationId: w.org } });
+        expect(task.status).toBe('CANCELLED');
+        const audit = await prisma.auditLog.findFirstOrThrow({ where: { organizationId: w.org, objectType: 'CommitteeChangeRequest', objectId: id, actorId: w.approver.userId } , orderBy: { createdAt: 'desc' } });
+        expect(audit.metadata).toMatchObject({ decision: 'WITHDRAWN', cause: 'departure', leaverId: w.requester.userId });
+      }
+      // Nothing sent, to the leaver or anyone: no notice, no in-app batch (stage-exit
+      // or task-closed notices), and no pool told about the Withdrawn stage.
+      expect(notices).toEqual([]);
+      expect(inApp).toEqual([]);
+    });
+
+    it('leaves a request already sent for decision to its deciders', async () => {
+      const w = await world();
+      const waiting = await submitted(w);
+      const prepared = await deactivate(w, w.requester.userId, w.approver.userId);
+      expect(prepared.withdrawals).toEqual([]);
+      expect(await stageKey(w, waiting.id)).toBe('under_review');
+    });
+
+    it('a request that moved between prepare and lock is skipped, and the deactivation still commits', async () => {
+      const w = await world();
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'draft' }, w.org, w.requester);
+      // The leaver presses Send a moment after the departure read their draft.
+      const prepared = await deactivate(w, w.requester.userId, w.approver.userId, () => requests.submit(draft.id, w.org, w.requester));
+      expect(prepared.withdrawals).toHaveLength(1);
+      expect(prepared.applied).toEqual([]);
+      expect(await stageKey(w, draft.id)).toBe('under_review');
+      expect((await prisma.user.findFirstOrThrow({ where: { id: w.requester.userId } })).status).toBe('INACTIVE');
+    });
+
+    it('a leaver with no unfinished request costs exactly ONE query, and the withdrawal and the follow-up none', async () => {
+      const w = await world();
+      const log: string[] = [];
+      const counting = new Proxy(prisma, {
+        get(t, k) {
+          const v = (t as unknown as Record<string | symbol, unknown>)[k];
+          if (typeof v === 'function') return (...a: unknown[]) => (log.push(String(k)), (v as (...x: unknown[]) => unknown).apply(t, a));
+          if (typeof k === 'string' && !k.startsWith('$') && v && typeof v === 'object') {
+            return new Proxy(v as object, {
+              get(d, m) {
+                const f = (d as Record<string | symbol, unknown>)[m];
+                return typeof f === 'function' ? (...a: unknown[]) => (log.push(`${k}.${String(m)}`), (f as (...x: unknown[]) => unknown).apply(d, a)) : f;
+              },
+            });
+          }
+          return v;
+        },
+      }) as unknown as PrismaService;
+      const counted = new ChangeRequestDepartureService(counting, workflow, tasks, audit);
+      const prepared = await counted.prepare(w.org, w.reader.userId, w.approver.userId);
+      expect(log).toEqual(['$queryRaw']);
+      await counted.withdrawInTx(counting as never, prepared);
+      await counted.finish(prepared);
+      expect(log).toEqual(['$queryRaw']);
+      expect(prepared).toMatchObject({ withdrawals: [], applied: [] });
+    });
+
+    itEnforcesTenantIsolation("the departure's read never finds another organisation's requests", async () => {
+      const w = await world();
+      const other = await world();
+      await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'here' }, w.org, w.requester);
+      await requests.create(other.committee, { changes: { quorumCount: 4 }, reason: 'there' }, other.org, other.requester);
+      // This organisation's leaver, asked about the other organisation, and the reverse.
+      expect((await departure.prepare(other.org, w.requester.userId, other.approver.userId)).withdrawals).toEqual([]);
+      expect((await departure.prepare(w.org, other.requester.userId, w.approver.userId)).withdrawals).toEqual([]);
+      // Control: their own draft is found.
+      expect((await departure.prepare(w.org, w.requester.userId, w.approver.userId)).withdrawals).toHaveLength(1);
     });
   });
 });
