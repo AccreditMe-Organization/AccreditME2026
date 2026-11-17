@@ -4702,10 +4702,44 @@ constant (`:37`) when the key is absent — covers an absent key
 functionally forever, but `TenantService.bootstrap()` also writes
 `DEFAULT_TASK_SLA_SETTINGS` for real at tenant-creation time (`:333`),
 so the settings page always has a genuine saved row to display, not
-just a runtime fallback. `updateTaskSla(id, dto, actorId)`
-(`:272`) does a non-clobbering merge write
-(`{ ...existingSettings, taskSla: dto }`) and audit-logs
-`{ event: 'task_sla_updated' }`.
+just a runtime fallback.
+
+**Every write is `TaskSlaPolicyService`'s since ACC-313**
+(`tenant/task-sla-policy.service.ts`). Corrected 2026-11-17: this paragraph
+used to call `TenantService.updateTaskSla()`'s write a "non-clobbering
+merge". It was not: it read the whole settings JSON, spread it and wrote it
+back with no lock, so a stale copy could overwrite a concurrent writer's key
+(ACC-215), and its audit row held only `{ event: 'task_sla_updated' }`.
+- **Locked and key-atomic.** One transaction: `SELECT settings FROM
+  "Organization" WHERE id = … FOR UPDATE`, the section's fields merged into
+  the stored tiers (each priority on top of the defaults), then
+  `jsonb_set(…, '{taskSla}', …)` — only that key is written. Two section saves
+  at once cannot lose each other's fields, and this code never writes back a
+  stale copy of the rest of the settings. The other settings writers still
+  spread the whole JSON and can overwrite `taskSla`: that remains ACC-215's.
+- **Section routes**, all `tenant:manage_config`:
+  `PATCH /tenant/task-sla/limits` (each `dueAfterHours`; the ACC-190
+  stage-deadline rule runs first, outside the lock) and
+  `PATCH /tenant/task-sla/escalation` (manager and head hours; no stage check,
+  they move no due date). Each answers the saved tiers and refuses a missing
+  priority or the other section's fields (400). The old whole-policy
+  `PATCH /tenant/task-sla` stays, through the same service
+  (`replaceAll()`), until the new screen ships.
+- **Audit, after the commit:** `objectType 'TaskSlaPolicy'`, `objectId` the
+  organisation, `before`/`after` the section's fields for all four
+  priorities, `metadata.event` `task_sla_limits_updated` /
+  `task_sla_escalation_updated` / `task_sla_updated`. A save that changes
+  nothing writes nothing and logs nothing.
+- **History:** `GET /tenant/task-sla/history?skip=&take=`
+  (`tenant:manage_config`, `take` 1–50, default 20) answers
+  `{ rows, total }`, newest first: the `TaskSlaPolicy` rows, plus the
+  Organization rows tagged `task_sla_updated` from before ACC-313, which
+  carry no values (`kind: 'legacy'`, `before`/`after` null). Both are scoped
+  by `organizationId` and name the organisation as the object, in one
+  `where`.
+- Proved against a real Postgres by `task-sla-policy.db-spec.ts` (ten rounds
+  of concurrent section saves, the other keys surviving). Plan:
+  `backend/Plans/step-313-task-sla-settings.md`.
 
 Shape — `ITaskSlaSettings` (`tenant/interfaces/tenant.interface.ts`):
 one `ITaskSlaTier` (`{ dueAfterHours, managerEscalationAfterHours,
@@ -4714,7 +4748,8 @@ headEscalationAfterHours }`) per `TaskPriority`
 section's own computation above; the other two fields feed Section
 3.4.1's escalation-tier thresholds.
 
-Exposed via `GET`/`PATCH /tenant/task-sla`
+Exposed via `GET`/`PATCH /tenant/task-sla` (and, since ACC-313, the
+section routes and the history above)
 (`tenant.controller.ts`, `TENANT_PERMISSIONS.MANAGE_CONFIG`),
 mirroring `email-provider`/`ai-settings`'s own established shape
 exactly — confirmed the same pattern, not a new one. Frontend:
@@ -6470,7 +6505,10 @@ ACC-255 PR 2, §2.18.1).
     `assertCommitteeAllowsRaise()` (which asks `committeeAllowsRaise()`)
     again under the committee's row lock, so the two cannot disagree. The
     "Request a change" button follows `canRaise`; no screen keeps its own copy
-    of the stage rule.
+    of the stage rule. **An overseeing head** (PR 2a: reads, never writes, Q6)
+    gets `canRaise: false`, and `create()` still answers them the 404 a missing
+    committee gets. Before ACC-283's fix they were offered the button and then
+    refused (`overseer-writes.db-spec.ts`).
   - **`decidedBy` and `withdrawnBy`**: `{ id, name } | null` beside
     `decidedById` and `withdrawnById` on every `IChangeRequest`. `decidedBy`
     is whoever last returned, approved or rejected it. Both are read by id AND
@@ -6652,7 +6690,9 @@ a record, `scope` is `'all'` when the viewer sees the whole record (View all,
 or unit scope over it), else `'own'`.
 
 `GET /tasks/record-panel` gains **`canCreate`**: Create tasks on the record's
-type (the record is visible — it is being shown).
+type, AND (ACC-283) `POST /tasks`' own record check. The panel admits an
+overseeing head (a read, with `{ oversight: true }`); `POST /tasks` does not
+(oversight is read-only, Q6), so the panel must not offer what create refuses.
 
 **ACC-280 — `POST /tasks` ALWAYS needs the type's Create tasks key, then the
 record check.** One rule in `task-record-types.ts`: `holdsCreateKey()`, and
@@ -6666,12 +6706,23 @@ say the same thing:
 | member with the key, no `committees:view` | allowed (create: created; draft: on to the AI's own checks) | `true` |
 | non-member with the key, no `committees:view` | 403 "Required permission: committees:view" | the panel is refused the same way |
 | `committees:view`, no key | 403 naming the key | `false` |
+| `committees:view` with the key | allowed | `true` (no membership query) |
+| overseeing head with the key (not a member, no `committees:view`) | 403 "Required permission: committees:view" | `false` (the panel itself opens: a read) |
 
 Before this, both checked the key only for a `committees:view` holder. That was safe
 while the record check refused everyone else, but since ACC-281 it admits members, so
 a member without the key could create a task, or draft one and spend credits. **Both
 are closed**, pinned in `create-task-key.db-spec.ts` (the draft cases make no AI
 call and touch no credits).
+
+**ACC-283 — the record half is `ObjectVisibilityService.canViewForWrite()`.** It
+answers what `assertCanView()` with no oversight decides (the check `POST /tasks`
+runs), as a yes or no, from the same private `admitsWithoutPermission()`: never a
+copy. It reads no existence (the panel has already read the record), so a
+`committees:view` holder pays no query and anyone else the member clause's one; a
+type with no rule is `false`. The panel asks it only with the key. Pinned in
+`overseer-writes.db-spec.ts` (an overseeing head: `canCreate` false and create
+refused; a member and a holder: true) and the service's unit spec.
 
 **ACC-280 — New task picks its record (`task-record-choices.ts`).** Three readers
 of one registry entry, `TASK_RECORD_TYPES[type].choices` (`task-record-types.ts`):

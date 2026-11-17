@@ -852,9 +852,15 @@ export class CommitteeChangeRequestService {
   /**
    * The committee's open request, for its banner — or null — and `canRaise`:
    * whether `create()` would accept a request from this viewer now. It is the
-   * create call's own three checks, read from the same functions (the
-   * permission, `committeeAllowsRaise()`, `isOpen()`), never a second copy.
-   * Create re-checks all three under the committee's row lock; this is a read.
+   * create call's own checks, read from the same functions (the one rule's
+   * `request_change`, `committeeAllowsRaise()`, `isOpen()`), never a second copy.
+   * Create re-checks the last two under the committee's row lock; this is a read.
+   *
+   * ACC-283 — #325 added the write precondition so an overseeing head, who READS
+   * the committee but may not raise a request (Q6), is not offered one. PR 6
+   * folds it into the rule (member-actions.ts): the role's Edit details on a
+   * committee they may write to, OR their seat allows request_change. From the
+   * seat the read check just read: no extra query for the membership.
    */
   async openSummary(committeeId: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IOpenChangeRequest> {
     const access = await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
