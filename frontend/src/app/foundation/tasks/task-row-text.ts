@@ -112,6 +112,27 @@ export class TaskRowText {
     return [this.who(row), this.translate.instant(this.statusKey(row)), this.fact(row)].filter((p) => !!p).join(' · ');
   }
 
+  /**
+   * ACC-216 — line 2 on a PERSON's Tasks panel: "{record} · {status} · {fact}".
+   * The person is the one on every row, so the record takes the "who" place.
+   */
+  personTail(row: ITaskRecordRowDto): string {
+    return [this.recordLabel(row), this.translate.instant(this.statusKey(row)), this.fact(row)].filter((p) => !!p).join(' · ');
+  }
+
+  /**
+   * The task's record as the server named it: its name only when the server sent one
+   * (the viewer may open the record), else the record type's word; null with no record.
+   */
+  recordLabel(row: ITaskRecordRowDto): string | null {
+    const record = row.record;
+    if (!record) return null;
+    if (record.nameEn) return this.language.bilingual(record.nameEn, record.nameAr);
+    const key = `taskList.recordType.${record.type}`;
+    const word = this.translate.instant(key);
+    return word === key ? this.translate.instant('taskList.recordType.OTHER') : word;
+  }
+
   requirementKey(row: ITaskRecordRowDto): string | null {
     return row.requirement === 'REQUIRED' ? 'taskList.tag.required' : row.requirement === 'OPTIONAL' ? 'taskList.tag.optional' : null;
   }

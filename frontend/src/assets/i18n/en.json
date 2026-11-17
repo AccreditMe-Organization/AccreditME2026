@@ -2594,6 +2594,12 @@
     "footMatchOf": "{{matching}} of {{total}} match",
     "footShowing": "Showing {{shown}} of {{total}}"
   },
+  "personTasks": {
+    "title": "Tasks",
+    "error": "Couldn't load these tasks.",
+    "empty": "No tasks.",
+    "popupTitle": "All tasks · {{name}}"
+  },
   "recordTasks": {
     "title": "Tasks",
     "ownTitle": "Your tasks on this committee",

@@ -549,6 +549,11 @@ export class TaskListViewComponent {
   /** A record's tasks; both absent means the organisation's (View all tasks, ACC-244). */
   readonly sourceType = input<string | null>(null);
   readonly sourceId = input<string | null>(null);
+  /**
+   * ACC-216 — a PERSON's tasks (the person's record page): the tasks they are on
+   * that the viewer may see. Like a record, never sent with a view.
+   */
+  readonly person = input<string | null>(null);
   /** A task to open at (a deep link): the list loads to it and highlights it. */
   readonly around = input<string | null>(null);
   readonly variant = input<'popup' | 'page'>('popup');
@@ -618,6 +623,7 @@ export class TaskListViewComponent {
     return {
       sourceType: this.sourceType() ?? undefined,
       sourceId: this.sourceId() ?? undefined,
+      person: this.person() ?? undefined,
       q: this.q() || undefined,
       status: this.statusesSent(),
       overdue: this.overdue() || undefined,
@@ -626,8 +632,8 @@ export class TaskListViewComponent {
       required: this.required() ?? undefined,
       due: this.due() ?? undefined,
       mine: this.mine() || undefined,
-      // Only organisation-wide: the server refuses a view sent with a record.
-      view: this.sourceType() ? undefined : (this.view() ?? undefined),
+      // Only organisation-wide: the server refuses a view sent with a record or a person.
+      view: this.scoped() ? undefined : (this.view() ?? undefined),
       recordType: this.recordTypeSel() ?? undefined,
       unit: this.unitSel() ?? undefined,
       sort,
@@ -635,9 +641,12 @@ export class TaskListViewComponent {
     };
   });
 
+  /** A record's or a person's tasks: not an organisation-wide view, so no view is sent or read. */
+  private readonly scoped = computed(() => !!this.sourceType() || !!this.person());
+
   /** ACC-120 slice 3 — the viewer's own views: My tasks and Created by me (never a record). */
   readonly ownView = computed<OwnView | null>(() => {
-    const view = this.sourceType() ? null : this.view();
+    const view = this.scoped() ? null : this.view();
     return view === 'mine' || view === 'created' ? view : null;
   });
 
@@ -748,9 +757,9 @@ export class TaskListViewComponent {
     ];
   });
   /** Record type: on the organisation-wide views that span types (All, Unit). */
-  readonly showRecordTypeFilter = computed(() => !this.sourceType() && (this.view() === 'all' || this.view() === 'unit'));
+  readonly showRecordTypeFilter = computed(() => !this.scoped() && (this.view() === 'all' || this.view() === 'unit'));
   /** Unit: the unit view, for a viewer whose scope holds more than one top-level unit (plan §6). */
-  readonly showUnitFilter = computed(() => !this.sourceType() && this.view() === 'unit' && this.unitFilter());
+  readonly showUnitFilter = computed(() => !this.scoped() && this.view() === 'unit' && this.unitFilter());
   readonly recordTypeOptions = computed(() => {
     this.translate.currentLang();
     return (this.facets()?.recordTypes ?? []).map((t) => ({ value: t, label: this.recordTypeName(t) }));
@@ -761,7 +770,7 @@ export class TaskListViewComponent {
   });
   /** Why a view has no rows when nothing filters it: the view's own sentence. */
   readonly emptyKeys = computed<{ title: string; body: string } | null>(() => {
-    const view = this.sourceType() ? null : this.view();
+    const view = this.scoped() ? null : this.view();
     return view ? { title: `taskList.emptyView.${view}.title`, body: `taskList.emptyView.${view}.body` } : null;
   });
 

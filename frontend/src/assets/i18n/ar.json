@@ -2594,6 +2594,12 @@
     "footMatchOf": "{{matching}} من {{total}} مطابقة",
     "footShowing": "يظهر {{shown}} من {{total}}"
   },
+  "personTasks": {
+    "title": "المهام",
+    "error": "تعذّر تحميل هذه المهام.",
+    "empty": "لا توجد مهام.",
+    "popupTitle": "كل المهام · {{name}}"
+  },
   "recordTasks": {
     "title": "المهام",
     "ownTitle": "مهامك في هذه اللجنة",
