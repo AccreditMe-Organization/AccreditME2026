@@ -122,6 +122,8 @@ export class SetupConditionDetectors {
       this.openEndedActingHeads(organizationId),
     STORAGE_ALMOST_FULL: (organizationId) =>
       this.storageAlmostFull(organizationId),
+    STORAGE_NOT_CONFIRMED: (organizationId) =>
+      this.storageNotConfirmed(organizationId),
     STORAGE_ACCESS_WITHDRAWN: (organizationId) =>
       this.storageAccessWithdrawn(organizationId),
     STORAGE_SECRET_EXPIRING: (organizationId, now) =>
@@ -506,6 +508,23 @@ export class SetupConditionDetectors {
         },
       },
     ];
+  }
+
+  /**
+   * ACC-261 — the organisation has not confirmed where its files go
+   * (`Organization.storageConfirmedAt` is null), so every upload is refused
+   * with STORAGE_NOT_CONFIRMED until a tenant admin confirms (ACC-177). One row
+   * per organisation (objectId is the organisation); it clears on the first pass
+   * after Confirm. BLOCKS_WORK: nobody can add a file. The platform organisation
+   * is exempt structurally: the reconciler iterates tenants only.
+   */
+  async storageNotConfirmed(organizationId: string): Promise<DetectedCondition[]> {
+    const org = await this.prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: { storageConfirmedAt: true },
+    });
+    if (!org || org.storageConfirmedAt) return [];
+    return [{ objectId: organizationId, severity: 'BLOCKS_WORK' as const, openedAt: null, subject: {} }];
   }
 
   /**

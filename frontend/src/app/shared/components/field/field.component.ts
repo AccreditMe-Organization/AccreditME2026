@@ -76,7 +76,7 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
       [class.am-field--trailing]="!!trailing()"
       [style.--am-field-trailing-size]="trailing()"
     >
-      <label class="am-field__label" [attr.for]="controlId()">
+      <label class="am-field__label" [class.sr-only]="labelVisuallyHidden()" [attr.for]="controlId()">
         {{ label() }}
         @if (required()) {
           <span class="am-field__required" aria-hidden="true">*</span>
@@ -378,6 +378,14 @@ export class FieldComponent {
    * counter: without one the field has nothing else on its message line.
    */
   readonly hintVisuallyHidden = input(false);
+
+  /**
+   * ACC-313 — the label is read but not drawn: for a field in a matrix whose
+   * column header already says it on screen. The label stays the control's
+   * accessible name (the <label for>), so a screen reader still hears, for
+   * example, "High · Manager told after". Opt-in; the caller draws the header.
+   */
+  readonly labelVisuallyHidden = input(false);
 
   /** Renders the value as text, with no control and no box. */
   readonly readonly = input(false);
