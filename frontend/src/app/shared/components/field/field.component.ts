@@ -77,10 +77,12 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
       [style.--am-field-trailing-size]="trailing()"
     >
       <!-- The asterisk is held to the label's last word: no whitespace between
-           them, and a word joiner (U+2060) before it, so a narrow column wraps
-           the words and never leaves the asterisk on a line alone (ACC-313). -->
+           them, so there is no line-break opportunity before it (a letter or a
+           closing bracket, then "*": UAX #14 allows no break) and a narrow
+           column never leaves it on a line alone (ACC-313). The trailing
+           space it always had stays, after the asterisk, where it breaks nothing. -->
       <label class="am-field__label" [class.sr-only]="labelVisuallyHidden()" [attr.for]="controlId()">
-        {{ label() }}@if (required()) {<span class="am-field__required" aria-hidden="true">&#8288;*</span>}
+        {{ label() }}@if (required()) {<span class="am-field__required" aria-hidden="true">*</span>}{{ ' ' }}
       </label>
 
       @if (readonly()) {
