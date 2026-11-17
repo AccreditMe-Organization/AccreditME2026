@@ -70,7 +70,7 @@ describe('ObjectVisibilityService (ACC-101)', () => {
           isActive: true,
           committee: { organizationId: ORG_A, isActive: true },
         },
-        select: { id: true },
+        select: { roleValueId: true }, // ACC-283 PR 6: the seat, from the same one query
       });
     });
 
