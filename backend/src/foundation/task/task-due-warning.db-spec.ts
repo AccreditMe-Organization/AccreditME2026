@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '../../../generated/prisma/client';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
@@ -48,7 +49,7 @@ describe('The due-soon reminder against a real database (ACC-313)', () => {
       taskSla: DEFAULT_TASK_SLA_SETTINGS,
       taskSlaNotices: { ...DEFAULT_TASK_SLA_NOTICES, warnBeforeDue: { ...DEFAULT_TASK_SLA_NOTICES.warnBeforeDue, HIGH: warned ? 'H2' : 'OFF' } },
     };
-    const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA', settings } });
+    const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA', settings: settings as unknown as Prisma.InputJsonValue } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Quality', code: `Q-${randomUUID().slice(0, 6)}` } });
     const officer = await prisma.orgPosition.create({ data: { organizationId: o.id, nameEn: 'Quality Officer', grade: 2 } });
     let n = 0;
