@@ -13881,8 +13881,8 @@ is no per-user roles list to hand off to.
 have no per-user endpoint. ACC-216 adds the reads one at a time (AuditLog
 objectType `User` and UserTransferEvent; RefreshToken; tasks after a
 visibility decision). A spec pins their absence. Committees was the fourth;
-ACC-216 part 1 built it (below). Sessions' read and its endings exist since the
-Sessions backend PR (below); its panel is still absent until the panel PR.
+ACC-216 part 1 built it (below). Sessions has its read and endings (the Sessions
+backend PR) and its panel, "Signed-in devices" (the panel PR), both below.
 
 **The Committees panel and `GET /users/:userId/committees` (ACC-216 part 1).**
 `UserCommitteesService` (`foundation/user/committees/`, its own controller
@@ -13935,6 +13935,21 @@ Nov): `backend/Plans/step-216-sessions-and-tasks.md`. The panel is a later PR.
   `npm run backfill:acc216-manage-sessions-permission` (grant-only, `RolePermission`
   written directly, one audit row per tenant, refuses customers, skips the platform
   organisation; dry run by default).
+- **The panel** (`UserSessionsPanelComponent`, "Signed-in devices" / «أجهزة الدخول»)
+  on `am-capped-panel`, for the design thread to check (Ahmad, Q11). The record page
+  decides its mode (`sessionsMode`): `own` for yourself, `admin` for a `users:view` +
+  `users:manage_sessions` holder, and nothing (no panel, no request) for anyone
+  else; a 403 or 404 also hides it. Five rows (device, "This device" on yours, last
+  active through `FormatService.relative()`, and the address when the server sent
+  one), See all in `am-list-dialog` compact. Its own outcome (skeleton, error with
+  Retry, "Not signed in on any device"). **Own:** "Sign out" on each other device
+  and "Sign out other devices" (offered only when one exists), each confirmed
+  through `AmConfirmService.ask()` saying up to 15 minutes; nothing on this device.
+  **Admin:** one "Sign out everywhere" (only when they are signed in somewhere),
+  confirmed naming the person, at once, emailed. Every refusal is said from its code
+  (`sessions-refusal.ts`), in both languages. A layout spec at 988 and 358 in both
+  languages pins the header whole (the title never cut by its action) and one row
+  height.
 
 **Dialogs** (all on the shell, `[dirty]`, field wrapper with `[control]`,
 no floating PrimeNG panel — a date is picked in the DATE VIEW, where the
