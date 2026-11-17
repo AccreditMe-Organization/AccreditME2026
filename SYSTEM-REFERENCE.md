@@ -6493,9 +6493,12 @@ ACC-255 PR 2, §2.18.1).
   of these was added to an existing response; no route, permission or refusal
   changed.
   - **`GET /committees/:id/change-requests/open` answers
-    `{ request, canRaise }`.** `canRaise` is the create call's own three
+    `{ request, canRaise }`.** `canRaise` is the create call's own four
     checks, from the same functions, answered without creating:
-    `committees:edit_details`; `committeeAllowsRaise()`, i.e. the committee
+    `committees:edit_details`; the write precondition (ACC-283: `access.write`,
+    from the same `committeeAccess()` pass the read check makes, i.e.
+    `maySeeCommittee()`, which `create()` asks through
+    `assertMayWriteCommittee()`; no extra query); `committeeAllowsRaise()`, i.e. the committee
     stage's stored `request_change` action (seeded on Active and Suspended,
     ACC-255 PR 2); and no
     open request, by `isOpen()` (drafts count, and a request with no instance
@@ -6503,7 +6506,10 @@ ACC-255 PR 2, §2.18.1).
     `assertCommitteeAllowsRaise()` (which asks `committeeAllowsRaise()`)
     again under the committee's row lock, so the two cannot disagree. The
     "Request a change" button follows `canRaise`; no screen keeps its own copy
-    of the stage rule.
+    of the stage rule. **An overseeing head** (PR 2a: reads, never writes, Q6)
+    gets `canRaise: false`, and `create()` still answers them the 404 a missing
+    committee gets. Before ACC-283's fix they were offered the button and then
+    refused (`overseer-writes.db-spec.ts`).
   - **`decidedBy` and `withdrawnBy`**: `{ id, name } | null` beside
     `decidedById` and `withdrawnById` on every `IChangeRequest`. `decidedBy`
     is whoever last returned, approved or rejected it. Both are read by id AND
@@ -6685,7 +6691,9 @@ a record, `scope` is `'all'` when the viewer sees the whole record (View all,
 or unit scope over it), else `'own'`.
 
 `GET /tasks/record-panel` gains **`canCreate`**: Create tasks on the record's
-type (the record is visible — it is being shown).
+type, AND (ACC-283) `POST /tasks`' own record check. The panel admits an
+overseeing head (a read, with `{ oversight: true }`); `POST /tasks` does not
+(oversight is read-only, Q6), so the panel must not offer what create refuses.
 
 **ACC-280 — `POST /tasks` ALWAYS needs the type's Create tasks key, then the
 record check.** One rule in `task-record-types.ts`: `holdsCreateKey()`, and
@@ -6699,12 +6707,23 @@ say the same thing:
 | member with the key, no `committees:view` | allowed (create: created; draft: on to the AI's own checks) | `true` |
 | non-member with the key, no `committees:view` | 403 "Required permission: committees:view" | the panel is refused the same way |
 | `committees:view`, no key | 403 naming the key | `false` |
+| `committees:view` with the key | allowed | `true` (no membership query) |
+| overseeing head with the key (not a member, no `committees:view`) | 403 "Required permission: committees:view" | `false` (the panel itself opens: a read) |
 
 Before this, both checked the key only for a `committees:view` holder. That was safe
 while the record check refused everyone else, but since ACC-281 it admits members, so
 a member without the key could create a task, or draft one and spend credits. **Both
 are closed**, pinned in `create-task-key.db-spec.ts` (the draft cases make no AI
 call and touch no credits).
+
+**ACC-283 — the record half is `ObjectVisibilityService.canViewForWrite()`.** It
+answers what `assertCanView()` with no oversight decides (the check `POST /tasks`
+runs), as a yes or no, from the same private `admitsWithoutPermission()`: never a
+copy. It reads no existence (the panel has already read the record), so a
+`committees:view` holder pays no query and anyone else the member clause's one; a
+type with no rule is `false`. The panel asks it only with the key. Pinned in
+`overseer-writes.db-spec.ts` (an overseeing head: `canCreate` false and create
+refused; a member and a holder: true) and the service's unit spec.
 
 **ACC-280 — New task picks its record (`task-record-choices.ts`).** Three readers
 of one registry entry, `TASK_RECORD_TYPES[type].choices` (`task-record-types.ts`):

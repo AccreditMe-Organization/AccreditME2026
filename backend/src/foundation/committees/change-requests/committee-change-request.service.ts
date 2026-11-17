@@ -853,12 +853,19 @@ export class CommitteeChangeRequestService {
   /**
    * The committee's open request, for its banner — or null — and `canRaise`:
    * whether `create()` would accept a request from this viewer now. It is the
-   * create call's own three checks, read from the same functions (the
-   * permission, `committeeAllowsRaise()`, `isOpen()`), never a second copy.
-   * Create re-checks all three under the committee's row lock; this is a read.
+   * create call's own four checks, read from the same functions (the
+   * permission, the write precondition, `committeeAllowsRaise()`, `isOpen()`),
+   * never a second copy. Create re-checks them under the committee's row lock;
+   * this is a read.
+   *
+   * ACC-283 — the write precondition is `access.write`, from the same
+   * `committeeAccess()` pass the read check makes (maySeeCommittee(), which
+   * assertMayWriteCommittee() asks in create): an overseeing head READS the
+   * committee but may not raise a request (Q6), so they are not offered one.
+   * No extra query.
    */
   async openSummary(committeeId: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IOpenChangeRequest> {
-    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
+    const access = await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
     await this.loadCommittee(committeeId, organizationId);
     const rows = await this.prisma.committeeChangeRequest.findMany({
       where: { committeeId, organizationId },
@@ -870,7 +877,7 @@ export class CommitteeChangeRequestService {
       this.committeeStage(this.prisma, committeeId, organizationId, 'none'),
     ]);
     const open = rows.find((r) => isOpen(states.get(r.id))) ?? null;
-    const canRaise = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS) && committeeAllowsRaise(committeeStage) && !open;
+    const canRaise = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS) && access.write && committeeAllowsRaise(committeeStage) && !open;
     if (!open) return { request: null, canRaise };
     const [dto] = await this.toDtos([open], organizationId, viewer, () => committeeStage);
     return { request: dto!, canRaise };
