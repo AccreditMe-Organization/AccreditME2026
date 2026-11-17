@@ -4,10 +4,9 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { Subscription, forkJoin, of } from 'rxjs';
 import { FormatService } from '../../core/formatting';
 import { LanguageService } from '../../core/services/language.service';
-import { NavigationAccessService } from '../../core/services/navigation-access.service';
-import { isNavModuleOpen } from '../../core/navigation/nav-items';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
 import { ChangeRequestDto, ChangeRequestService } from '../committees/change-requests/change-request.service';
+import { MyWorkCountsService } from '../home/my-work-counts.service';
 import { WorkflowAwaitingRowDto, WorkflowService } from '../workflow/services/workflow.service';
 import { AwaitingRow, AwaitingWords, changeRow, mergeAwaiting, stageRow } from './awaiting-rows';
 
@@ -22,9 +21,10 @@ export const AWAITING_PAGE = 50;
  * - GET /workflows/awaiting-me?skip=&take=50 — records at the person's stage,
  *   paged by the server (Load more asks the next 50).
  * - GET /committee-change-requests/awaiting-decision — every change request
- *   this person may decide (the server caps it at 200; ACC-283: the chain of
- *   authority decides who), asked while the Committees module is open, as Home
- *   does, and only on the first load.
+ *   this person may decide (the server caps it at 200), only on the first load.
+ *   Asked of everyone while the committees module is open, by the same rule as
+ *   Home (MyWorkCountsService.committeesOpen()), because the server decides who
+ *   may decide (ACC-283 PR 2).
  *
  * They merge into one list by awaiting-rows.ts's rule, so Load more only
  * appends. Either read failing on the first load fails the page, with Retry
@@ -126,7 +126,7 @@ export const AWAITING_PAGE = 50;
 export class AwaitingPageComponent {
   private readonly workflows = inject(WorkflowService);
   private readonly changeRequests = inject(ChangeRequestService);
-  private readonly access = inject(NavigationAccessService);
+  private readonly myWork = inject(MyWorkCountsService);
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
   private readonly format = inject(FormatService);
@@ -178,7 +178,7 @@ export class AwaitingPageComponent {
     this.moreRequest?.unsubscribe();
     this.state.set('loading');
     this.more.set('idle');
-    const changes$ = isNavModuleOpen('committees', this.access) ? this.changeRequests.awaitingDecision() : of<ChangeRequestDto[]>([]);
+    const changes$ = this.myWork.committeesOpen() ? this.changeRequests.awaitingDecision() : of<ChangeRequestDto[]>([]);
     this.request = forkJoin({ stages: this.workflows.getAwaitingMe({ skip: 0, take: AWAITING_PAGE }), changes: changes$ }).subscribe({
       next: ({ stages, changes }) => {
         this.stageRows.set(stages.rows);

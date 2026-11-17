@@ -292,8 +292,10 @@ export class AppShellComponent implements OnInit {
 
   ngOnInit(): void {
     // ACC-279 — the person's work counts load once after sign-in, once their
-    // access is known (the committees module decides two of the reads). Home and
-    // the rail both read them; nothing polls.
+    // access is known (whether the committees module is open decides two of the
+    // reads; the change requests are asked of everyone while it is, because the
+    // server decides who may decide, ACC-283 PR 2). Home and the rail both read
+    // them; nothing polls.
     this.navigationAccessService.loadAccess().subscribe(() => this.myWork.init());
     // ACC-122 — the idle clock runs for the life of the signed-in shell.
     // start() is idempotent, and IdleService stops itself on destroy.

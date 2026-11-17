@@ -7,6 +7,7 @@ import { HomeComponent } from './home.component';
 import { By } from '@angular/platform-browser';
 import { TaskNewDialogComponent } from '../tasks/components/task-new-dialog/task-new-dialog.component';
 import { MyWorkCountsService } from './my-work-counts.service';
+import { REQUEST } from '../committees/change-requests/change-request.testing';
 import { HomeSpecCalls, HomeSpecOptions, awaitingMe, awaitingRow, homeProviders, recordList, taskRow } from './home.testing';
 import en from '../../../assets/i18n/en.json';
 import ar from '../../../assets/i18n/ar.json';
@@ -151,6 +152,7 @@ describe('HomeComponent (ACC-279)', () => {
 
     it('Awaiting me counts stage records and change requests, with the oldest age', () => {
       build({
+        permissions: ['committees:approve'],
         awaiting: awaitingMe([awaitingRow({ since: '2026-11-03T06:00:00.000Z' })], 2),
         changes: [],
       });
@@ -158,8 +160,15 @@ describe('HomeComponent (ACC-279)', () => {
       expect(q('home-tile-awaiting-meta')!.textContent!.trim()).toBe('oldest 3 days');
     });
 
+    // ACC-283 PR 2 — a unit head decides a change request without committees:approve.
+    it('Awaiting me counts a change request returned for a head without committees:approve', () => {
+      build({ permissions: [], awaiting: awaitingMe([]), changes: [REQUEST()] });
+      expect(calls.changes).toBe(1);
+      expect(q('home-tile-awaiting-value')!.textContent!.trim()).toBe('1');
+    });
+
     it('Awaiting me fails as a whole when either half fails: a partial count is a wrong count', () => {
-      build({ awaiting: awaitingMe([awaitingRow()]), changes: 'fail' });
+      build({ permissions: ['committees:approve'], awaiting: awaitingMe([awaitingRow()]), changes: 'fail' });
       expect(q('home-tile-awaiting-failed')).not.toBeNull();
       expect(q('home-tile-awaiting-value')).toBeNull();
     });
@@ -182,7 +191,7 @@ describe('HomeComponent (ACC-279)', () => {
 
   describe('the admin block', () => {
     it('is absent, and its read never sent, without any of its permissions', () => {
-      build({ permissions: ['tenant:manage_config'] });
+      build({ permissions: ['committees:approve', 'tenant:manage_config'] });
       expect(q('home-admin')).toBeNull();
       expect(calls.summary).toBe(0);
     });

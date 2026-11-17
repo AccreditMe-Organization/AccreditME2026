@@ -6232,9 +6232,9 @@ reads any more. **PR 4 retired the key** (below).
 `COMMITTEES_PERMISSIONS`, the seed, the permission groups and the sentence table,
 and nothing in either package reads it: `retired-committee-approve.spec.ts`
 fails on any non-spec source that names it in quotes or as
-`COMMITTEES_PERMISSIONS.APPROVE`. Home and the Awaiting page ask for change requests
-to decide while the Committees module is open, whatever the person's keys; the
-chain answers who. `backfill:acc283-retire-committees-approve` takes it off
+`COMMITTEES_PERMISSIONS.APPROVE`. (Home and the Awaiting page already stopped
+reading it in #315: they ask for change requests to decide while the Committees
+module is open, and the chain answers who.) `backfill:acc283-retire-committees-approve` takes it off
 existing roles, after PR 4 deploys:
 - dry run by default, `-- --execute` to write;
 - refuses customer organisations;
@@ -12723,9 +12723,10 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     (rows and `matching`). This is the same rule as `/tasks` My tasks.
     `GET /tasks/my-tasks`, which is unbounded, is no longer read by Home.
   - `myOverdue`: the same query with `overdue=true&take=1`.
-  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests to
-    decide while the Committees module is open (ACC-283 PR 4: the chain decides
-    who, no key). Either half failing fails the whole read.
+  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests awaiting
+    a decision, asked of everyone while the committees module is open
+    (`committeesOpen()`, #315), because the server decides who may decide
+    (ACC-283 PR 2). Either half failing fails the whole read.
   - `myCommittees`: `GET /committees/mine`, only while the module is open.
 - **`isCommitteeMember`** (ACC-281): true once `myCommittees` has loaded with a total
   above 0; false while loading, after a failure, or with none. Lane A's rail and route
@@ -12823,8 +12824,10 @@ work, after Tasks, with no permission, because both reads are self-scoped.
     page; with none it sends Home's request unchanged.
   - `GET /committee-change-requests/awaiting-decision` returns every change
     request the person may decide, capped at 200 by the server. It is asked
-    while the Committees module is open (ACC-283 PR 4: the chain decides who,
-    no key), as Home does, and only on the first load. Both reads run in parallel.
+    of everyone while the committees module is open, by Home's own rule
+    (`MyWorkCountsService.committeesOpen()`, #315), because the server decides
+    who may decide (ACC-283 PR 2), and only on the first load. Both reads run in
+    parallel.
 - **Rows** are Home's panel rows, built by the pure functions in
   `awaiting-rows.ts` (`stageRow`, `changeRow`, `waitingText`), so Home can use
   them too.

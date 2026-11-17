@@ -10,6 +10,7 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../core/format
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
 import type { WorkflowAwaitingRowDto } from '../workflow/services/workflow.service';
+import { MyWorkCountsService } from '../home/my-work-counts.service';
 import { AwaitingPageComponent } from './awaiting-page.component';
 
 // ACC-120 — the Awaiting my action page: every record and change request
@@ -46,13 +47,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
   let fixture: ComponentFixture<AwaitingPageComponent>;
   let http: HttpTestingController;
 
-  /**
-   * ACC-283 PR 4 — the change requests are asked of everyone while Committees is
-   * open (the chain of authority decides who, on the server; no key does). By
-   * default they are answered at once with none; `ownChanges` leaves the request
-   * for the test to answer.
-   */
-  function setup(opts: { ownChanges?: boolean; language?: 'en' | 'ar' } = {}): HTMLElement {
+  function setup(opts: { approve?: boolean; committeesClosed?: boolean; language?: 'en' | 'ar' } = {}): HTMLElement {
     TestBed.configureTestingModule({
       imports: [AwaitingPageComponent],
       providers: [
@@ -61,19 +56,29 @@ describe('AwaitingPageComponent (ACC-120)', () => {
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en' }),
         provideFormatTesting(),
-        { provide: NavigationAccessService, useValue: { hasPermission: () => false, isModuleEnabled: () => true } },
+        {
+          provide: NavigationAccessService,
+          useValue: {
+            hasPermission: (p: string) => !!opts.approve && p === 'committees:approve',
+            isModuleEnabled: () => true,
+            isPlatformAdmin: () => false,
+          },
+        },
       ],
     });
     loadTranslationsForTest({ en, ar });
     TestBed.inject(TranslateService).use(opts.language ?? 'en');
     http = TestBed.inject(HttpTestingController);
+    // ACC-283 PR 2 — the page asks MyWorkCountsService's module rule, as Home does.
+    if (opts.committeesClosed) spyOn(TestBed.inject(MyWorkCountsService), 'committeesOpen').and.returnValue(false);
     fixture = TestBed.createComponent(AwaitingPageComponent);
     fixture.detectChanges();
-    if (!opts.ownChanges) http.match(CHANGES_URL).forEach((r) => r.flush([]));
     return fixture.nativeElement as HTMLElement;
   }
 
   const stageReq = () => http.expectOne((r) => r.url === STAGES_URL);
+  /** Answers the change requests with none: asked of everyone while the module is open. */
+  const noChanges = () => http.expectOne(CHANGES_URL).flush([]);
   /** Answers a stage page from `all`, by the request's own skip and take. */
   const answerStages = (all: WorkflowAwaitingRowDto[]) => {
     const req = stageReq();
@@ -92,18 +97,38 @@ describe('AwaitingPageComponent (ACC-120)', () => {
 
   afterEach(() => http.verify());
 
-  it('the first load asks for the first 50 stage rows exactly, and the change requests whatever the person’s keys', () => {
-    setup({ ownChanges: true });
+  // ACC-283 PR 2 — a unit head, an acting cover or a deciding seat decides
+  // without committees:approve, so the change requests are asked of everyone.
+  it('the first load asks for the first 50 stage rows exactly, and the change requests of someone without committees:approve', () => {
+    setup();
     const req = stageReq();
     expect(req.request.params.get('skip')).toBe('0');
     expect(req.request.params.get('take')).toBe('50');
     expect(req.request.params.keys().sort()).toEqual(['skip', 'take']);
-    http.expectOne(CHANGES_URL).flush([]);
+    const changes = http.expectOne(CHANGES_URL);
     req.flush({ total: 0, rows: [], oldestSince: null });
+    changes.flush([]);
   });
 
-  it('it asks for the change requests too, in parallel (the chain decides who; no key does)', () => {
-    setup({ ownChanges: true });
+  it('a change request returned for a head without committees:approve is listed', () => {
+    const el = setup();
+    stageReq().flush({ total: 0, rows: [], oldestSince: null });
+    http.expectOne(CHANGES_URL).flush([change('cr-head', 1)]);
+    fixture.detectChanges();
+    expect(shownIds(el)).toEqual(['cr-head']);
+    expect(text(el.querySelector('[data-testid="awaiting-count"]'))).toBe('1');
+  });
+
+  it('with the Committees module closed it never asks for the change requests', () => {
+    const el = setup({ approve: true, committeesClosed: true });
+    http.expectNone(CHANGES_URL);
+    stageReq().flush({ total: 0, rows: [], oldestSince: null });
+    fixture.detectChanges();
+    expect(text(el.querySelector('[data-testid="awaiting-empty"]'))).toBe('Nothing is waiting for you.');
+  });
+
+  it('with committees:approve it asks for the change requests too, in parallel', () => {
+    setup({ approve: true });
     const stages = stageReq();
     const changes = http.expectOne(CHANGES_URL);
     stages.flush({ total: 0, rows: [], oldestSince: null });
@@ -114,10 +139,11 @@ describe('AwaitingPageComponent (ACC-120)', () => {
     const el = setup();
     expect(el.querySelector('[data-testid="awaiting-skeleton"]')).not.toBeNull();
     stageReq().flush({ total: 0, rows: [], oldestSince: null });
+    noChanges();
   });
 
   it('nothing waiting: "Nothing is waiting for you."', () => {
-    const el = setup({ ownChanges: true });
+    const el = setup({ approve: true });
     stageReq().flush({ total: 0, rows: [], oldestSince: null });
     http.expectOne(CHANGES_URL).flush([]);
     fixture.detectChanges();
@@ -129,7 +155,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
     const all = Array.from({ length: 120 }, (_, i) => stage(i + 1));
     // Older than everything, between rows 70 and 71, and newer than everything.
     const changes = [change('cr-old', 0), change('cr-mid', 70.5), change('cr-new', 200)];
-    const el = setup({ ownChanges: true });
+    const el = setup({ approve: true });
     expect(answerStages(all)).toEqual({ skip: 0, take: 50 });
     http.expectOne(CHANGES_URL).flush(changes);
     fixture.detectChanges();
@@ -157,7 +183,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
 
   it('Load more never re-reads the change requests', () => {
     const all = Array.from({ length: 60 }, (_, i) => stage(i + 1));
-    const el = setup({ ownChanges: true });
+    const el = setup({ approve: true });
     answerStages(all);
     http.expectOne(CHANGES_URL).flush([change('cr-1', 100)]);
     fixture.detectChanges();
@@ -169,7 +195,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
   });
 
   it('either read failing fails the page; Retry re-runs both', () => {
-    const el = setup({ ownChanges: true });
+    const el = setup({ approve: true });
     stageReq().flush({ total: 0, rows: [], oldestSince: null });
     http.expectOne(CHANGES_URL).flush({}, { status: 500, statusText: 'Server Error' });
     fixture.detectChanges();
@@ -186,6 +212,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
 
   it('the stage read failing fails the page too', () => {
     const el = setup();
+    noChanges();
     stageReq().flush({}, { status: 500, statusText: 'Server Error' });
     fixture.detectChanges();
     expect(el.querySelector('[data-testid="awaiting-error"]')).not.toBeNull();
@@ -195,6 +222,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
     const all = Array.from({ length: 60 }, (_, i) => stage(i + 1));
     const el = setup();
     answerStages(all);
+    noChanges();
     fixture.detectChanges();
     pressMore(el);
     const failed = stageReq();
@@ -214,6 +242,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
   it('a row: the record linked, "type · stage n/N", and how long it has waited', () => {
     const el = setup();
     answerStages([stage(1)]);
+    noChanges();
     fixture.detectChanges();
     const li = el.querySelector('[data-awaiting-id="is-001"]')!;
     expect(li.querySelector('a')?.getAttribute('href')).toBe('/committees/c-1');
@@ -224,6 +253,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
   it('in Arabic: the title, the row and the empty line', () => {
     const el = setup({ language: 'ar' });
     answerStages([stage(1)]);
+    noChanges();
     fixture.detectChanges();
     expect(text(el.querySelector('h1'))).toBe('بانتظار إجرائي');
     expect(text(el.querySelector('[data-awaiting-id="is-001"]'))).toContain('لجنة 1');
