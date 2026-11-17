@@ -48,11 +48,11 @@ describe('An open task with no current ACTIVE assignee is ownerless, on a real d
   const audit = new AuditLogService(prisma);
   const visibility = new ObjectVisibilityService(prisma);
   const calendar = new WorkingCalendarService(prisma, audit);
-  const notifications = { create: async () => ({ id: randomUUID() }), createInAppMany: async () => 0 } as unknown as NotificationService;
+  const notifications = { create: () => Promise.resolve({ id: randomUUID() }), createInAppMany: () => Promise.resolve(0) } as unknown as NotificationService;
   // The real defaults: a task going back to its pool restarts its pool clock from them.
   const tenant = { getTaskSla: () => Promise.resolve(DEFAULT_TASK_SLA_SETTINGS) } as unknown as TenantService;
   const authority = new TaskAuthorityService(prisma);
-  const lookups = { getValues: async () => [] } as unknown as LookupService;
+  const lookups = { getValues: () => Promise.resolve([]) } as unknown as LookupService;
   const tasks = new TaskService(
     prisma,
     audit,
@@ -224,7 +224,7 @@ describe('An open task with no current ACTIVE assignee is ownerless, on a real d
       const t = await o.task('pool', { pool: true, status: 'IN_PROGRESS', on: [{ userId: picker, pickedAt: new Date() }, { userId: gone }] });
       await leaveWithoutReassigning(gone);
 
-      await tasks.release(t, { reason: 'Not mine after all' } as never, picker, o.id);
+      await tasks.release(t, { reason: 'Not mine after all' }, picker, o.id);
 
       expect((await prisma.task.findUniqueOrThrow({ where: { id: t } })).status).toBe('PENDING');
     });

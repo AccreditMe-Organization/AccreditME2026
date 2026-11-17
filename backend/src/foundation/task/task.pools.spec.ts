@@ -116,14 +116,16 @@ const mockPrisma = {
 // ACC-86 — the writers ask "is anyone else on it?" (CURRENT_ACTIVE_ASSIGNEE) as a count
 // under the task lock. Answered from the task this test last read: a row is current
 // when removedAt is null, and its user is ACTIVE unless the row says otherwise.
-mockPrisma.taskAssignee.count.mockImplementation(async (args: { where: { userId?: { not?: string } } }) => {
+mockPrisma.taskAssignee.count.mockImplementation((args: { where: { userId?: { not?: string } } }) => {
   const reads = mockPrisma.task.findFirst.mock.results;
-  const last = (reads.length ? await reads[reads.length - 1]!.value : null) as {
-    assignees?: { userId: string; removedAt: Date | null; user?: { status: string } }[];
-  } | null;
-  return (last?.assignees ?? []).filter(
-    (r) => r.removedAt === null && (r.user?.status ?? 'ACTIVE') === 'ACTIVE' && r.userId !== args.where.userId?.not,
-  ).length;
+  type Read = { assignees?: { userId: string; removedAt: Date | null; user?: { status: string } }[] } | null;
+  return Promise.resolve((reads.length ? reads[reads.length - 1]!.value : null) as Read | Promise<Read>).then((
+    last,
+  ) =>
+    (last?.assignees ?? []).filter(
+      (r) => r.removedAt === null && (r.user?.status ?? 'ACTIVE') === 'ACTIVE' && r.userId !== args.where.userId?.not,
+    ).length,
+  );
 });
 // ACC-86 (Q-1) — ending stale rows answers how many it ended; none unless a test says so.
 mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
@@ -861,7 +863,7 @@ describe('TaskService — pools (ACC-167)', () => {
         poolTask({ status: 'IN_PROGRESS', assignees: [row(HOLDER_A, { pickedAt: new Date() }), row('gone', INACTIVE)] }),
       );
 
-      await service.release('task-1', { reason: 'Not mine after all' } as never, HOLDER_A, ORG_A);
+      await service.release('task-1', { reason: 'Not mine after all' }, HOLDER_A, ORG_A);
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'task-1' }, data: expect.objectContaining({ status: 'PENDING' }) }),
