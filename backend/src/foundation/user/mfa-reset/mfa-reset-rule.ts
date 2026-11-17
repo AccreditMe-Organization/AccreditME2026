@@ -12,7 +12,7 @@ import {
  *
  * ONE rule, read by BOTH the reset route (which refuses) and the user record
  * read (which hides the panel and the action), so the screen never offers a
- * reset the server would refuse (lane B, 14 Nov). Never write a second copy.
+ * reset the server would refuse (agreed at review, 14 Nov). Never write a second copy.
  *
  * ACC-216 — the checks are now the shared account-action rule
  * (`../account-action-rule.ts`), used by "Sign out everywhere" too; this file
@@ -26,7 +26,7 @@ import {
  *                                  AccreditMe support resets the owner)
  *   4. the floor                 → MFA_RESET_HIGHER_ACCOUNT: a holder without
  *                                  Organization Administrator can't reset
- *                                  someone who has it (lane B, 14 Nov)
+ *                                  someone who has it (agreed at review, 14 Nov)
  *
  * "Has Organization Administrator" is `holdsActiveRootRole()`: a role row on
  * the tenant's root role while that role is ACTIVE — an inactive role grants

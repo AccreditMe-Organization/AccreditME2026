@@ -25,7 +25,7 @@ export interface PermissionGroupDef {
 
 export const PERMISSION_GROUPS: Readonly<Record<string, readonly PermissionGroupDef[]>> = {
   // ACC-164 — users:reset_mfa took Users to seven shown keys, over the
-  // threshold. Reset sits with Deactivate and Reactivate, as lane B asked:
+  // threshold. Reset sits with Deactivate and Reactivate, as agreed at review:
   // the three that decide whether someone can get into their account.
   // ACC-216 — users:manage_sessions joins them: it signs someone out everywhere.
   users: [
