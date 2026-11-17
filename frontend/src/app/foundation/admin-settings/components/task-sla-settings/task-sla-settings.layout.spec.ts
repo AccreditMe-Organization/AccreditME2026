@@ -20,11 +20,16 @@ import { ITaskSlaChange } from '../../../tenant/services/tenant.service';
 import { TaskSlaSettingsComponent } from './task-sla-settings.component';
 
 // ACC-313 PR 2 — the page with the real theme, in both languages:
-//   - at the content width a 1280 window gives (988) and at a phone's (358):
-//     both sections laid out, the matrix one row per priority at 988 and one
-//     block per priority at 358, and nothing wider than the frame;
+//   - at the content width a 1280 window gives (988), a 1440 window's (1148)
+//     and a phone's (358): every section laid out, the matrix one row per
+//     priority at 988 and 1148 and one block per priority at 358, and nothing
+//     wider than the frame;
 //   - the leave confirm under the 420px cap, with room;
 //   - the change history in its list dialog, nothing running sideways.
+// ACC-313 3-fe — the "warn before due" column at all three widths, its select
+// showing its longest label whole ("1 working day" / «يوم عمل واحد») and its
+// open list on the page; the Notifications and Reset sections; the Reset
+// confirm under the 420px cap, with room.
 //
 // NON-VACUITY FIRST (ACC-120): each case proves the thing it measures rendered,
 // with width and height, before "nothing is wider" may mean anything.
@@ -48,6 +53,13 @@ const SLA = {
   CRITICAL: { dueAfterHours: 4, managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
 };
 
+const POLICY = {
+  tiers: SLA,
+  // LOW holds the longest option label in both languages.
+  notices: { warnBeforeDue: { LOW: 'WORKING_DAY', MEDIUM: 'H8', HIGH: 'H2', CRITICAL: 'OFF' }, notifyOnDueChange: true },
+  workingHoursPerDay: 8,
+};
+
 const HISTORY: ITaskSlaChange[] = [
   {
     id: 'c-2',
@@ -59,6 +71,15 @@ const HISTORY: ITaskSlaChange[] = [
   },
   { id: 'c-1', changedAt: '2026-11-10T09:00:00.000Z', actorName: 'Huda Al-Harbi', kind: 'limits', before: { HIGH: { dueAfterHours: 24 } }, after: { HIGH: { dueAfterHours: 16 } } },
   { id: 'c-0', changedAt: '2026-11-01T09:00:00.000Z', actorName: null, kind: 'legacy', before: null, after: null },
+  { id: 'n-1', changedAt: '2026-10-30T09:00:00.000Z', actorName: 'Huda Al-Harbi', kind: 'notices', before: { notifyOnDueChange: true }, after: { notifyOnDueChange: false } },
+  {
+    id: 'r-1',
+    changedAt: '2026-10-29T09:00:00.000Z',
+    actorName: 'Huda Al-Harbi',
+    kind: 'reset',
+    before: { tiers: { ...SLA, HIGH: { ...SLA.HIGH, dueAfterHours: 24 } }, notices: { warnBeforeDue: { LOW: 'WORKING_DAY', MEDIUM: 'OFF', HIGH: 'OFF', CRITICAL: 'OFF' }, notifyOnDueChange: false } },
+    after: { tiers: SLA, notices: { warnBeforeDue: { LOW: 'OFF', MEDIUM: 'OFF', HIGH: 'OFF', CRITICAL: 'OFF' }, notifyOnDueChange: true } },
+  },
 ];
 
 describe('TaskSlaSettings — layout (ACC-313 PR 2)', () => {
@@ -123,7 +144,7 @@ describe('TaskSlaSettings — layout (ACC-313 PR 2)', () => {
     document.body.appendChild(fixture.nativeElement);
     fixture.detectChanges();
     const http = TestBed.inject(HttpTestingController);
-    http.expectOne(`${environment.apiUrl}/tenant/task-sla`).flush(SLA);
+    http.expectOne(`${environment.apiUrl}/tenant/task-sla/policy`).flush(POLICY);
     http.expectOne((r) => r.url === `${environment.apiUrl}/tenant/task-sla/history`).flush({ rows: HISTORY, total: HISTORY.length });
     await settle();
     return fixture.nativeElement.querySelector('[data-testid="frame"]') as HTMLElement;
@@ -134,22 +155,38 @@ describe('TaskSlaSettings — layout (ACC-313 PR 2)', () => {
 
   afterEach(() => {
     fixture?.nativeElement.remove();
-    document.querySelectorAll('.p-dialog-mask, .p-dialog, .p-confirmdialog').forEach((n) => n.remove());
+    document.querySelectorAll('.p-dialog-mask, .p-dialog, .p-confirmdialog, .cdk-overlay-container').forEach((n) => n.remove());
   });
-  afterAll(() => console.log(`ACC-313 PR 2 Task SLA layout\n${measured.join('\n')}`));
+  afterAll(() => console.log(`ACC-313 Task SLA layout\n${measured.join('\n')}`));
 
   for (const lang of ['en', 'ar'] as const) {
-    for (const width of [988, 358]) {
-      it(`${lang}, ${width}: both sections laid out, the matrix ${width < 560 ? 'stacked' : 'one row per priority'}, nothing wider than the frame`, async () => {
+    for (const width of [988, 1148, 358]) {
+      it(`${lang}, ${width}: every section laid out, the matrix ${width < 560 ? 'stacked' : 'one row per priority'}, nothing wider than the frame`, async () => {
         const frame = await render(lang, width);
         const limits = frame.querySelector('[data-sla-section="limits"]')!;
+        const notices = frame.querySelector('[data-sla-section="notices"]')!;
         const escalation = frame.querySelector('[data-sla-section="escalation"]')!;
+        const reset = frame.querySelector('[data-sla-section="reset"]')!;
         const rows = Array.from(frame.querySelectorAll<HTMLElement>('[data-sla-row]'));
-        // Non-vacuity: both sections and all four rows rendered, with size.
+        // Non-vacuity: every section and all four rows rendered, with size, and
+        // each row holds a warning select whose trigger shows a label.
         expect(box(limits).width).withContext('limits').toBeGreaterThan(200);
+        expect(box(notices).height).withContext('notices').toBeGreaterThan(40);
         expect(box(escalation).height).withContext('escalation').toBeGreaterThan(100);
+        expect(box(reset).height).withContext('reset').toBeGreaterThan(40);
         expect(rows.length).toBe(4);
         expect(frame.querySelectorAll('[data-sla-limit] input').length).toBe(4);
+        const triggers = rows.map((r) => r.querySelector<HTMLElement>('[data-sla-warn] .am-overlay-select-trigger')!);
+        expect(triggers.every((t) => !!t && box(t).width > 60)).withContext('a warning select per row').toBeTrue();
+        // The longest label, whole: LOW holds "1 working day" / «يوم عمل واحد».
+        const low = triggers[0]!;
+        expect(low.textContent).toContain(lang === 'en' ? '1 working day' : 'يوم عمل واحد');
+        const lowLabel = low.querySelector<HTMLElement>('.am-overlay-select-label') ?? low;
+        expect(lowLabel.scrollWidth).withContext('the longest label is not cut').toBeLessThanOrEqual(lowLabel.clientWidth + 1);
+        // The section order is the plan's.
+        expect([limits, notices, escalation, reset].map((n) => Math.round(box(n).top))).toEqual(
+          [limits, notices, escalation, reset].map((n) => Math.round(box(n).top)).sort((a, b) => a - b),
+        );
 
         const stacked = page().stacked();
         expect(stacked).withContext('stacked').toBe(width < 560);
@@ -161,15 +198,19 @@ describe('TaskSlaSettings — layout (ACC-313 PR 2)', () => {
             expect(tops).withContext(`${row.dataset['slaRow']} stacked`).toEqual([...tops].sort((a, b) => a - b));
             expect(new Set(tops).size).withContext(`${row.dataset['slaRow']} stacked`).toBe(cells.length);
           } else {
-            // One row: every field input starts on the same line.
+            // One row: every field input, and the warning select, starts on the same line.
             const inputs = Array.from(row.querySelectorAll('input')).map((i) => Math.round(box(i).top));
             expect(new Set(inputs).size).withContext(`${row.dataset['slaRow']} one line`).toBe(1);
+            const trigger = row.querySelector<HTMLElement>('[data-sla-warn] .am-overlay-select-trigger')!;
+            expect(Math.abs(Math.round(box(trigger).top) - inputs[0]!)).withContext(`${row.dataset['slaRow']} warning on the line`).toBeLessThanOrEqual(2);
           }
         }
         if (!stacked) {
           // The page holds its 760 column; the head row names the columns.
           expect(box(limits).width).toBeLessThanOrEqual(760);
           expect(frame.querySelector('.am-sla__row--head')).not.toBeNull();
+          // The warning column holds about 200px (the plan's width at 1280).
+          expect(box(triggers[0]!.closest('[data-sla-warn]')!).width).withContext('warning column').toBeGreaterThanOrEqual(190);
         } else {
           // Each stacked cell shows its own label.
           const label = rows[0]!.querySelector('label.am-field__label')!;
@@ -185,7 +226,7 @@ describe('TaskSlaSettings — layout (ACC-313 PR 2)', () => {
         });
         expect(over.map((e) => e.getAttribute('data-testid') ?? e.id ?? e.className ?? e.tagName)).withContext('elements past the frame').toEqual([]);
         measured.push(
-          `  ${lang} ${width}: limits ${Math.round(box(limits).height)}, escalation ${Math.round(box(escalation).height)}, page ${Math.round(frame.scrollHeight)}; matrix ${stacked ? 'stacked' : 'rows'}; sideways ${frame.scrollWidth - frame.clientWidth}`,
+          `  ${lang} ${width}: limits ${Math.round(box(limits).height)}, notices ${Math.round(box(notices).height)}, escalation ${Math.round(box(escalation).height)}, reset ${Math.round(box(reset).height)}, page ${Math.round(frame.scrollHeight)}; matrix ${stacked ? 'stacked' : 'rows'}; warning column ${Math.round(box(triggers[0]!).width)}; sideways ${frame.scrollWidth - frame.clientWidth}`,
         );
       }, 20_000);
     }
@@ -202,7 +243,7 @@ describe('TaskSlaSettings — layout (ACC-313 PR 2)', () => {
       await still(frame);
       const body = frame.querySelector<HTMLElement>('.p-dialog-content')!;
       // Non-vacuity: the message is there and names both sections.
-      const sections = lang === 'en' ? ['Time limits', 'Escalation per priority'] : ['حدود الوقت', 'التصعيد حسب الأولوية'];
+      const sections = lang === 'en' ? ['Time limits', 'Reminders and escalation per priority'] : ['حدود الوقت', 'التذكير والتصعيد حسب الأولوية'];
       for (const s of sections) expect(body.textContent).toContain(s);
       const height = body.scrollHeight;
       expect(height).toBeGreaterThan(20);
@@ -219,12 +260,48 @@ describe('TaskSlaSettings — layout (ACC-313 PR 2)', () => {
       await still(dialog);
       const list = document.querySelector<HTMLElement>('[data-testid="sla-history"]')!;
       const entries = list.querySelectorAll('[data-change-kind]');
-      // Non-vacuity: three saves, the escalation one with its four moved values.
-      expect(entries.length).toBe(3);
+      // Non-vacuity: five saves, the escalation one with its four moved values,
+      // the switch and a reset among them.
+      expect(entries.length).toBe(5);
+      expect(list.querySelector('[data-change-kind="notices"]')).not.toBeNull();
+      expect(list.querySelector('[data-change-kind="reset"] li')).not.toBeNull();
       expect(entries[0]!.querySelectorAll('li').length).toBe(4);
       expect(box(list).width).toBeGreaterThan(300);
       expect(list.scrollWidth).withContext('history sideways').toBeLessThanOrEqual(list.clientWidth);
       measured.push(`  ${lang} history: dialog ${Math.round(box(dialog).width)}×${Math.round(box(dialog).height)}, list ${list.scrollHeight}`);
+    }, 20_000);
+
+    it(`${lang}: the Reset confirm, its longest body, fits the ${CAP}px cap with room`, async () => {
+      const frame = await render(lang, 988);
+      (frame.querySelector('[data-testid="sla-reset-open"] button') as HTMLButtonElement).click();
+      await until('the confirm', () => !!document.querySelector('.p-confirmdialog .p-dialog-footer button, .p-confirmdialog button'));
+      const dialog = document.querySelector<HTMLElement>('.p-confirmdialog')!;
+      await still(dialog);
+      const body = dialog.querySelector<HTMLElement>('.p-dialog-content')!;
+      // Non-vacuity: the body says what goes back and what stays.
+      expect(body.textContent).toContain(lang === 'en' ? 'open tasks keep the limits they were created with' : 'وتحتفظ المهام المفتوحة بالحدود التي أُنشئت بها');
+      const height = body.scrollHeight;
+      expect(height).toBeGreaterThan(40);
+      expect(box(dialog).width).toBeLessThanOrEqual(CAP + 1);
+      expect(CAP - height).withContext(`body ${height}px`).toBeGreaterThanOrEqual(ROOM);
+      measured.push(`  ${lang} reset confirm: body ${height}px, width ${Math.round(box(dialog).width)}`);
+    }, 20_000);
+
+    it(`${lang}: the warning list opens on the page, its six options whole`, async () => {
+      const frame = await render(lang, 988);
+      const trigger = frame.querySelector<HTMLElement>('[data-sla-warn="CRITICAL"] .am-overlay-select-trigger')!;
+      trigger.click();
+      await until('the list', () => document.querySelectorAll('.cdk-overlay-container [role="option"]').length === 6);
+      const options = Array.from(document.querySelectorAll<HTMLElement>('.cdk-overlay-container [role="option"]'));
+      // Non-vacuity: six options, three of them greyed (Critical's limit is 4).
+      expect(options.length).toBe(6);
+      expect(options.filter((o) => o.getAttribute('aria-disabled') === 'true').length).toBe(3);
+      const panel = options[0]!.closest<HTMLElement>('.cdk-overlay-pane')!;
+      expect(box(panel).width).toBeGreaterThanOrEqual(box(trigger).width - 1);
+      for (const o of options) expect(o.scrollWidth).withContext(o.textContent ?? '').toBeLessThanOrEqual(o.clientWidth + 1);
+      expect(box(panel).right).toBeLessThanOrEqual(window.innerWidth + 1);
+      expect(box(panel).left).toBeGreaterThanOrEqual(-1);
+      measured.push(`  ${lang} warning list: panel ${Math.round(box(panel).width)}×${Math.round(box(panel).height)}`);
     }, 20_000);
   }
 });
