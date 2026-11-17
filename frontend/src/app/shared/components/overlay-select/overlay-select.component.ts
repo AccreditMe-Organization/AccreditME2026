@@ -304,12 +304,14 @@ function flattenHierarchy(
         box-shadow: 0 0 0 1px var(--am-primary-600);
       }
 
-      .am-overlay-select-trigger-invalid,
-      .am-overlay-select-trigger-invalid:hover {
+      /* Invalid wins over hover, focus and open: a refused field is usually the
+         one that just took focus, and the focus ring alone hid the error. */
+      .am-overlay-select-trigger.am-overlay-select-trigger-invalid {
         border-color: var(--am-danger-ink);
       }
 
-      .am-overlay-select-trigger-invalid:focus {
+      .am-overlay-select-trigger.am-overlay-select-trigger-invalid:focus,
+      .am-overlay-select-trigger.am-overlay-select-trigger-invalid.am-overlay-select-trigger-open {
         box-shadow: 0 0 0 3px color-mix(in srgb, var(--am-danger-ink) 12%, transparent);
       }
 
