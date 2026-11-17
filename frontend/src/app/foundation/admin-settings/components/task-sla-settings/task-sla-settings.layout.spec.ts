@@ -61,6 +61,16 @@ const POLICY = {
 };
 
 const HISTORY: ITaskSlaChange[] = [
+  // CC-325 — a save under the new rule (it carries the warnings): working hours.
+  {
+    id: 'c-3',
+    changedAt: '2026-11-17T09:00:00.000Z',
+    actorName: 'Huda Al-Harbi',
+    kind: 'escalation',
+    before: { HIGH: { managerEscalationAfterHours: 6, headEscalationAfterHours: 12, warnBeforeDue: 'OFF' } },
+    after: { HIGH: { managerEscalationAfterHours: 5, headEscalationAfterHours: 12, warnBeforeDue: 'H2' } },
+  },
+  // Saved before escalation counted working hours: clock hours.
   {
     id: 'c-2',
     changedAt: '2026-11-16T09:00:00.000Z',
@@ -223,11 +233,48 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
             const lines = new Set(Array.from(figure.getClientRects()).map((r) => Math.round(r.top)));
             expect(lines.size).withContext(`${figure.textContent} on one line`).toBe(1);
           }
+          // CC-324 4 — the chip and the Limit text sit centred on the CONTROL,
+          // not on the control plus its message slot. Non-vacuity first: real
+          // heights, and a slot that makes the row taller than the control.
+          for (const row of rows) {
+            const p = row.dataset['slaRow'];
+            const chip = row.querySelector<HTMLElement>('.am-sla__priority')!;
+            const figure = row.querySelector<HTMLElement>('[data-testid="sla-matrix-limit"]')!;
+            const trigger = row.querySelector<HTMLElement>('[data-sla-warn] .am-overlay-select-trigger')!;
+            for (const [what, el] of [['chip', chip], ['limit', figure], ['select', trigger]] as const) {
+              expect(box(el).height).withContext(`${p} ${what} height`).toBeGreaterThan(8);
+            }
+            expect(box(row).height).withContext(`${p} row taller than its control`).toBeGreaterThan(box(trigger).height + 8);
+            const centre = (el: Element) => box(el).top + box(el).height / 2;
+            expect(Math.abs(centre(chip) - centre(trigger))).withContext(`${p} chip centred on the select`).toBeLessThanOrEqual(1);
+            expect(Math.abs(centre(figure) - centre(trigger))).withContext(`${p} limit centred on the select`).toBeLessThanOrEqual(1);
+          }
         } else {
           // Each stacked cell shows its own label.
           const label = rows[0]!.querySelector('label.am-field__label')!;
           expect(label.classList).not.toContain('sr-only');
           expect(box(label).height).toBeGreaterThan(8);
+          // CC-324 10a — the required asterisk never wraps alone: it sits on the
+          // line of the label's last word. Non-vacuity first: required labels
+          // exist, and at least one of them runs to two lines here.
+          const required = Array.from(frame.querySelectorAll<HTMLElement>('[data-sla-section="escalation"] label.am-field__label')).filter((l) =>
+            l.querySelector('.am-field__required'),
+          );
+          expect(required.length).withContext('required labels').toBeGreaterThanOrEqual(8);
+          let wrapped = 0;
+          for (const l of required) {
+            const text = Array.from(l.childNodes).filter((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim()).pop()!;
+            const range = document.createRange();
+            range.selectNodeContents(text);
+            const lineTops = Array.from(range.getClientRects()).map((r) => Math.round(r.top));
+            if (new Set(lineTops).size > 1) wrapped++;
+            const lastLine = Math.max(...lineTops);
+            const star = Math.round(box(l.querySelector('.am-field__required')!).top);
+            expect(Math.abs(star - lastLine)).withContext(`"${l.textContent?.trim()}": the asterisk on the last word's line`).toBeLessThanOrEqual(2);
+          }
+          // The defect was seen in English ("Critical · Head told after…" at
+          // 390); the Arabic labels fit one line here, so only English must wrap.
+          if (lang === 'en') expect(wrapped).withContext('a required label that wraps').toBeGreaterThan(0);
         }
 
         expect(frame.scrollWidth).withContext('frame').toBeLessThanOrEqual(frame.clientWidth);
@@ -240,6 +287,33 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
         measured.push(
           `  ${lang} ${width}: limits ${Math.round(box(limits).height)}, notices ${Math.round(box(notices).height)}, escalation ${Math.round(box(escalation).height)}, reset ${Math.round(box(reset).height)}, page ${Math.round(frame.scrollHeight)}; matrix ${stacked ? 'stacked' : 'rows'}; warning column ${Math.round(box(triggers[0]!).width)}; limit ${stacked ? '-' : Math.round(box(rows[0]!.querySelector('[data-testid="sla-matrix-limit"]')!).width)}; sideways ${frame.scrollWidth - frame.clientWidth}`,
         );
+      }, 20_000);
+    }
+
+    // CC-324 1 — a Time limits refusal sits under the row of four fields: the
+    // fields keep one row. Non-vacuity first: four fields with distinct left offsets.
+    for (const width of [988, 1148]) {
+      it(`${lang}, ${width}: with a limit refused, the four limit fields stay on one row, the message under them`, async () => {
+        const frame = await render(lang, width);
+        const http = TestBed.inject(HttpTestingController);
+        page().limitsForm.controls.HIGH.setValue(2);
+        await settle();
+        (frame.querySelector('[data-testid="sla-limits-save"] button') as HTMLButtonElement).click();
+        http
+          .expectOne(`${environment.apiUrl}/tenant/task-sla/limits`)
+          .flush({ statusCode: 400, code: 'TASK_SLA_LIMIT_NOT_AFTER_WARNING', message: 'English for a log', priority: 'HIGH', warning: 'H2', limitHours: 2 }, { status: 400, statusText: 'Bad Request' });
+        await settle();
+        const fields = Array.from(frame.querySelectorAll<HTMLElement>('[data-sla-section="limits"] [data-sla-limit]'));
+        const refusal = frame.querySelector<HTMLElement>('[data-sla-limit-warning="HIGH"]');
+        const scope = frame.querySelector<HTMLElement>('[data-sla-section="limits"] .am-sla__scope')!;
+        expect(fields.length).toBe(4);
+        expect(new Set(fields.map((f) => Math.round(box(f).left))).size).withContext('four distinct left offsets').toBe(4);
+        expect(refusal).withContext('the refusal shows').not.toBeNull();
+        expect(new Set(fields.map((f) => Math.round(box(f).top))).size).withContext('one top offset').toBe(1);
+        const fieldsBottom = Math.max(...fields.map((f) => box(f).bottom));
+        expect(box(refusal!).top).withContext('the message under the row').toBeGreaterThanOrEqual(fieldsBottom - 1);
+        expect(box(scope).top).withContext('above "Applies to…"').toBeGreaterThanOrEqual(box(refusal!).bottom - 1);
+        measured.push(`  ${lang} ${width} limit refused: fields top ${Math.round(box(fields[0]!).top)}, message ${Math.round(box(refusal!).height)}px under them`);
       }, 20_000);
     }
 
@@ -272,15 +346,26 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
       await still(dialog);
       const list = document.querySelector<HTMLElement>('[data-testid="sla-history"]')!;
       const entries = list.querySelectorAll('[data-change-kind]');
-      // Non-vacuity: five saves, the escalation one with its four moved values,
-      // the switch and a reset among them.
-      expect(entries.length).toBe(5);
+      // Non-vacuity: six saves, the old escalation one with its four moved
+      // values, the switch and a reset among them.
+      expect(entries.length).toBe(6);
       expect(list.querySelector('[data-change-kind="notices"]')).not.toBeNull();
       expect(list.querySelector('[data-change-kind="reset"] li')).not.toBeNull();
-      expect(entries[0]!.querySelectorAll('li').length).toBe(4);
+      expect(entries[1]!.querySelectorAll('li').length).toBe(4);
+      // CC-325 — the new row in working hours, the old one in clock hours.
+      expect(entries[0]!.textContent).toContain(lang === 'en' ? '5 working hours' : '5 ساعات عمل');
+      expect(entries[1]!.textContent).toContain(lang === 'en' ? '40 clock hours' : '40 ساعة فعلية');
+      // The list scrolls INSIDE the dialog's body, so every save is reachable.
+      // (It did not: the history's host was no flex column, so it grew past the
+      // dialog and was clipped.) The body is a list dialog's, exempt from the
+      // 420 form cap by ACC-229; it is measured, not capped.
+      const body = dialog.querySelector<HTMLElement>('.am-list-dialog__body')!;
+      expect(box(body).height).withContext('the dialog body').toBeGreaterThan(100);
+      expect(list.clientHeight).withContext('the list within the body').toBeLessThanOrEqual(box(body).height + 1);
+      expect(getComputedStyle(list).overflowY).toBe('auto');
       expect(box(list).width).toBeGreaterThan(300);
       expect(list.scrollWidth).withContext('history sideways').toBeLessThanOrEqual(list.clientWidth);
-      measured.push(`  ${lang} history: dialog ${Math.round(box(dialog).width)}×${Math.round(box(dialog).height)}, list ${list.scrollHeight}`);
+      measured.push(`  ${lang} history: dialog ${Math.round(box(dialog).width)}×${Math.round(box(dialog).height)}, body ${Math.round(box(dialog.querySelector('.am-list-dialog__body')!).height)}, list ${list.clientHeight} of ${list.scrollHeight}`);
     }, 20_000);
 
     it(`${lang}: the Reset confirm, its longest body, fits the ${CAP}px cap with room`, async () => {
@@ -292,6 +377,8 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
       const body = dialog.querySelector<HTMLElement>('.p-dialog-content')!;
       // Non-vacuity: the body says what goes back and what stays.
       expect(body.textContent).toContain(lang === 'en' ? 'open tasks keep the limits they were created with' : 'وتحتفظ المهام المفتوحة بالحدود التي أُنشئت بها');
+      // CC-324 8 — and its four effects as detail lines.
+      expect(body.textContent).toContain(lang === 'en' ? 'Due-date change notices: on' : 'إشعارات تغيّر موعد الاستحقاق: مُفعّلة');
       const height = body.scrollHeight;
       expect(height).toBeGreaterThan(40);
       expect(box(dialog).width).toBeLessThanOrEqual(CAP + 1);
@@ -316,6 +403,12 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
       // The list keeps its 200px though the column is 180 (panelMinWidth).
       expect(box(panel).width).withContext('panel width').toBeGreaterThanOrEqual(199);
       for (const o of options) expect(o.scrollWidth).withContext(o.textContent ?? '').toBeLessThanOrEqual(o.clientWidth + 1);
+      // CC-324 10d — every option shows whole: the list does not scroll, and no
+      // option runs past its edge.
+      const list = options[0]!.closest<HTMLElement>('.am-overlay-select-panel')!;
+      expect(box(list).height).withContext('the list').toBeGreaterThan(100);
+      expect(list.scrollHeight).withContext('the list scrolls').toBeLessThanOrEqual(list.clientHeight + 1);
+      for (const o of options) expect(box(o).bottom).withContext(`${o.textContent} inside the list`).toBeLessThanOrEqual(box(list).bottom + 1);
       expect(box(panel).right).toBeLessThanOrEqual(window.innerWidth + 1);
       expect(box(panel).left).toBeGreaterThanOrEqual(-1);
       measured.push(`  ${lang} warning list: panel ${Math.round(box(panel).width)}×${Math.round(box(panel).height)}`);

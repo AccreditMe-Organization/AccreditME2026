@@ -275,6 +275,44 @@ describe('CalendarConfigComponent (ACC-120 slice 1)', () => {
       expect(hidden).toEqual(['workingCalendar.wasValue', 'workingCalendar.nowValue']);
     });
 
+    // CC-324 5 — as on the Task SLA history: the old value muted with no
+    // strikethrough, the new one in the medium weight.
+    it('draws the old value muted with no strikethrough, the new one in the medium weight', async () => {
+      const { fixture, http } = setup(['org:view', 'org:manage']);
+      await settle(fixture, http, {
+        history: [
+          {
+            id: 'a1',
+            changedAt: '2026-09-20T10:00:00.000Z',
+            actorName: 'Nora Al-Otaibi',
+            before: { ...CALENDAR, workingHoursEnd: '16:00' },
+            after: { ...CALENDAR, workingHoursEnd: '17:00' },
+          },
+        ],
+      });
+      fixture.componentInstance.historyOpen.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const from = document.querySelector<HTMLElement>('.am-history__from');
+      const to = document.querySelector<HTMLElement>('.am-history__to');
+      expect(from).withContext('an old value').not.toBeNull();
+      expect(to).withContext('a new value').not.toBeNull();
+      const probe = (token: string) => {
+        const p = document.createElement('span');
+        p.style.color = `var(${token})`;
+        document.body.appendChild(p);
+        const color = getComputedStyle(p).color;
+        p.remove();
+        return color;
+      };
+      expect(probe('--am-ink-500')).not.toBe(probe('--am-ink-900'));
+      expect(getComputedStyle(from!).textDecorationLine).toBe('none');
+      expect(getComputedStyle(from!).color).toBe(probe('--am-ink-500'));
+      expect(getComputedStyle(to!).fontWeight).toBe('500');
+    });
+
     // THE ARROW MUST FOLLOW THE READING DIRECTION. U+2192 is not bidi-mirrored
     // by the renderer, so in Arabic the values ordered correctly — old on the
     // right, new on the left — while the glyph kept pointing left-to-right and

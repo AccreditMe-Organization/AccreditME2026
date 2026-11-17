@@ -417,7 +417,7 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
     it('says it in Arabic', () => {
       setup({ language: 'ar' });
       expect(text('[data-sla-section="notices"]')).toContain('إشعار المكلَّفين عند تغيّر موعد الاستحقاق');
-      expect(state()).toBe('مُفعَّل');
+      expect(state()).toBe('مُفعّل');
     });
   });
 
@@ -429,9 +429,17 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
       press('sla-reset-open');
       expect(asked.length).toBe(1);
       expect(asked[0]!.tone).toBe('destructive');
-      expect(asked[0]!.header).toBe('Reset task SLA policy?');
+      expect(asked[0]!.header).toBe('Reset to defaults?');
       expect(asked[0]!.message).toContain('open tasks keep the limits they were created with');
-      expect(asked[0]!.acceptLabel).toBe('Reset policy');
+      expect(asked[0]!.acceptLabel).toBe('Reset to defaults');
+      // CC-324 — the four effects as detail lines, and still no numbers.
+      expect(asked[0]!.details).toEqual([
+        'Time limits: back to the defaults',
+        'Escalation hours: back to the defaults',
+        'Reminders before due: all off',
+        'Due-date change notices: on',
+      ]);
+      expect(asked[0]!.details!.join(' ') + asked[0]!.message).not.toMatch(/[0-9]/);
       http.expectNone(`${base}/reset`);
       asked[0]!.reject?.();
       http.expectNone(`${base}/reset`);
@@ -559,6 +567,39 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
       expect(c.escalationError()).toBeNull();
     });
 
+    // CC-324 2a — the refused select is marked, and tied to its message.
+    it('a refused warning marks its select: the error border, aria-invalid, and aria-describedby naming the message', () => {
+      const c = setup();
+      c.escalationForm.controls.HIGH.controls.warnBeforeDue.setValue('H8');
+      fixture.detectChanges();
+      press('sla-escalation-save');
+      refuseWarning(http.expectOne(`${base}/escalation`), 'TASK_SLA_WARNING_NOT_BEFORE_DUE', { priority: 'HIGH', warning: 'H8', limitHours: 8 });
+      const trigger = el().querySelector<HTMLElement>('[data-sla-warn="HIGH"] .am-overlay-select-trigger');
+      expect(trigger).withContext('the HIGH warning select').not.toBeNull();
+      expect(trigger!.getAttribute('aria-invalid')).toBe('true');
+      expect(trigger!.classList).toContain('am-overlay-select-trigger-invalid');
+      expect(trigger!.getAttribute('aria-describedby')).toBe('sla-warn-refusal-HIGH');
+      expect(el().querySelector('#sla-warn-refusal-HIGH')?.textContent).toContain('High: the warning, 8 working hours');
+      // Only the refused priority is marked.
+      for (const p of ['LOW', 'MEDIUM', 'CRITICAL']) {
+        const other = el().querySelector(`[data-sla-warn="${p}"] .am-overlay-select-trigger`)!;
+        expect(other.getAttribute('aria-invalid')).withContext(p).toBeNull();
+        expect(other.getAttribute('aria-describedby')).withContext(p).toBeNull();
+      }
+    });
+
+    // CC-324 2b — a refused field keeps the value that was refused.
+    it('a refused warning keeps the value that was refused, on the select and in the form', () => {
+      const c = setup();
+      c.escalationForm.controls.HIGH.controls.warnBeforeDue.setValue('H8');
+      fixture.detectChanges();
+      press('sla-escalation-save');
+      refuseWarning(http.expectOne(`${base}/escalation`), 'TASK_SLA_WARNING_NOT_BEFORE_DUE', { priority: 'HIGH', warning: 'H8', limitHours: 8 });
+      expect(c.escalationForm.controls.HIGH.controls.warnBeforeDue.value).toBe('H8');
+      expect(text('[data-sla-warn="HIGH"] .am-overlay-select-trigger')).toContain('8 working hours');
+      expect(c.escalationDirty()).toBeTrue();
+    });
+
     // 3-fe mutation: the limit refusal's placement.
     it('the server’s TASK_SLA_LIMIT_NOT_AFTER_WARNING is said from its code under that priority’s limit', () => {
       const c = setup();
@@ -646,6 +687,53 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
     });
   });
 
+  // CC-324 6, 7, 9 — the words, read from the translation files themselves.
+  describe('the words (CC-324)', () => {
+    // The page renders too, so the file's afterEach has its HTTP controller.
+    beforeEach(() => setup());
+    const t =(file: unknown, path: string): string => {
+      const value = path.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], file);
+      if (typeof value !== 'string') throw new Error(`no translation for ${path}`);
+      return value;
+    };
+
+    it('Off is «متوقف» in the switch and the warning option, and On is written as the product writes it', () => {
+      expect(t(ar, 'common.off')).toBe('متوقف');
+      expect(t(ar, 'adminSettings.taskSlaPage.warn.off')).toBe('متوقف');
+      expect(t(ar, 'common.on')).toBe(t(ar, 'workflow.actionsDialog.on'));
+      // No other spelling anywhere in the page's own keys.
+      const page = JSON.stringify((ar as Record<string, Record<string, unknown>>)['adminSettings']!['taskSlaPage']);
+      expect(page).not.toContain('إيقاف');
+      expect(page).not.toContain('مُفعَّل');
+    });
+
+    it('the reset has one name: section, button, confirm and history', () => {
+      const R = 'adminSettings.taskSlaPage.reset';
+      expect([t(en, `${R}.title`), t(en, `${R}.open`), t(en, `${R}.confirmHeader`), t(en, `${R}.confirmAccept`), t(en, 'adminSettings.taskSlaPage.history.kindReset')]).toEqual([
+        'Reset to defaults',
+        'Reset to defaults…',
+        'Reset to defaults?',
+        'Reset to defaults',
+        'Reset to defaults',
+      ]);
+      const name = 'إعادة الضبط إلى القيم الافتراضية';
+      expect([t(ar, `${R}.title`), t(ar, `${R}.open`), t(ar, `${R}.confirmHeader`), t(ar, `${R}.confirmAccept`), t(ar, 'adminSettings.taskSlaPage.history.kindReset')]).toEqual([
+        name,
+        `${name}…`,
+        `${name}؟`,
+        name,
+        name,
+      ]);
+      // A two-sentence message.
+      for (const file of [en, ar]) expect(t(file, `${R}.confirmBody`).split(/[.؟]\s/).length).toBe(2);
+    });
+
+    it('the switch hint says where and for whom; the section line already says when', () => {
+      expect(t(en, 'adminSettings.taskSlaPage.notices.dueChangeHelp')).toBe('In the app, for every task. A change of priority is still announced.');
+      expect(t(ar, 'adminSettings.taskSlaPage.notices.dueChangeHelp')).toBe('داخل التطبيق، لكل المهام. يبقى تغيير الأولوية مُعلَنًا.');
+    });
+  });
+
   describe('the change history', () => {
     const open = () => {
       press('sla-history-open');
@@ -684,7 +772,8 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
       fixture.detectChanges();
       expect(document.querySelectorAll('[data-change-kind]').length).toBe(21);
       expect(document.querySelector('[data-testid="sla-history-more"]')).toBeNull();
-      expect(document.querySelector('[data-change-kind="escalation"]')!.textContent).toContain('40 hours');
+      // Saved without warnings: before escalation counted working hours (CC-325).
+      expect(document.querySelector('[data-change-kind="escalation"]')!.textContent).toContain('40 clock hours');
     });
 
     it('names the switch and a reset, and a warning by its option', () => {
@@ -697,7 +786,7 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
       });
       open();
       const entry = (kind: string) => (document.querySelector(`[data-change-kind="${kind}"]`)!.textContent ?? '').replace(/\s+/g, ' ');
-      expect(entry('reset')).toContain('Reset to the defaults');
+      expect(entry('reset')).toContain('Reset to defaults');
       expect(entry('reset')).toContain('High · Due after');
       expect(entry('reset')).toContain('was12 working hours');
       expect(entry('reset')).toContain('High · Warn before due');
@@ -707,6 +796,76 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
       expect(entry('notices')).toContain('nowOff');
       expect(entry('escalation')).toContain('wasOff');
       expect(entry('escalation')).toContain('now2 working hours');
+    });
+
+    // CC-325 — each row in the unit it was saved in: clock hours before
+    // escalation counted working hours, working hours after (a save that
+    // carries warnBeforeDue). Counted strings, both languages.
+    const OLD_ROW = change({
+      id: 'old',
+      kind: 'escalation',
+      before: { HIGH: { managerEscalationAfterHours: 8, headEscalationAfterHours: 16 } },
+      after: { HIGH: { managerEscalationAfterHours: 6, headEscalationAfterHours: 16 } },
+    });
+    const NEW_ROW = change({
+      id: 'new',
+      kind: 'escalation',
+      before: { HIGH: { managerEscalationAfterHours: 8, headEscalationAfterHours: 16, warnBeforeDue: 'OFF' } },
+      after: { HIGH: { managerEscalationAfterHours: 6, headEscalationAfterHours: 16, warnBeforeDue: 'OFF' } },
+    });
+    for (const [language, clock, working] of [
+      ['en', ['was8 clock hours', 'now6 clock hours'], ['was8 working hours', 'now6 working hours']],
+      ['ar', ['كانت8 ساعات فعلية', 'أصبحت6 ساعات فعلية'], ['كانت8 ساعات عمل', 'أصبحت6 ساعات عمل']],
+    ] as const) {
+      it(`${language}: an old row reads clock hours and a new row working hours, side by side`, () => {
+        setup({ language, history: [NEW_ROW, OLD_ROW] });
+        open();
+        const entries = Array.from(document.querySelectorAll('[data-change-kind="escalation"]')).map((e) => (e.textContent ?? '').replace(/\s+/g, ' '));
+        expect(entries.length).toBe(2);
+        for (const w of working) expect(entries[0]).toContain(w);
+        for (const w of clock) expect(entries[1]).toContain(w);
+        expect(entries[0]).not.toContain(language === 'en' ? 'clock' : 'فعلية');
+        expect(entries[1]).not.toContain(language === 'en' ? 'working' : 'عمل');
+      });
+    }
+
+    // CC-324 10b / 10c — date · name · section, and a missing name said as one.
+    it('names each save as date · name · section, and a missing name as "Name not recorded"', () => {
+      setup({ history: [change({ actorName: null })] });
+      open();
+      const meta = (document.querySelector('[data-sla-change-meta]')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      expect(meta).toBe('16 Nov 2026, 12:00 · Name not recorded · Time limits');
+    });
+
+    it('in Arabic, a missing name is «الاسم غير مسجّل»', () => {
+      setup({ language: 'ar', history: [change({ actorName: null })] });
+      open();
+      const meta = (document.querySelector('[data-sla-change-meta]')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      expect(meta).toContain(' · الاسم غير مسجّل · ');
+    });
+
+    // CC-324 5 — old value muted, no strikethrough; new value in the medium weight.
+    it('draws the old value muted with no strikethrough, the new one in the medium weight', () => {
+      setup();
+      open();
+      const from = document.querySelector<HTMLElement>('.am-slah__from');
+      const to = document.querySelector<HTMLElement>('.am-slah__to');
+      expect(from).withContext('an old value').not.toBeNull();
+      expect(to).withContext('a new value').not.toBeNull();
+      const probe = (token: string) => {
+        const p = document.createElement('span');
+        p.style.color = `var(${token})`;
+        document.body.appendChild(p);
+        const color = getComputedStyle(p).color;
+        p.remove();
+        return color;
+      };
+      // Non-vacuity: the two tokens resolve to different colours here.
+      expect(probe('--am-ink-500')).not.toBe(probe('--am-ink-900'));
+      expect(getComputedStyle(from!).textDecorationLine).toBe('none');
+      expect(getComputedStyle(from!).color).toBe(probe('--am-ink-500'));
+      expect(getComputedStyle(to!).fontWeight).toBe('500');
+      expect(getComputedStyle(to!).textDecorationLine).toBe('none');
     });
   });
 });
