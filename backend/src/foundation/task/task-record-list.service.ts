@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { USERS_PERMISSIONS } from '../../common/constants/permissions';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
@@ -38,7 +39,7 @@ const RANK = Prisma.raw(
 interface Scope {
   sql: Prisma.Sql;
   kind: 'all' | 'own';
-  view: 'record' | 'all' | 'unit' | 'unassigned' | 'mine' | 'created';
+  view: 'record' | 'all' | 'unit' | 'unassigned' | 'mine' | 'created' | 'person';
   /** Organisation-wide: rows say which record they belong to. */
   orgWide: boolean;
   ctx: TaskVisibilityContext;
@@ -82,6 +83,15 @@ export class TaskRecordListService {
   ) {}
 
   async panel(dto: RecordPanelQueryDto, organizationId: string, viewer: TaskViewer): Promise<ITaskRecordPanel> {
+    // ACC-216 — a person's Tasks panel: the first five of the person scope
+    // (scope() below). A person is not a record, so nothing is created there:
+    // no New task (plan Q10), whatever the viewer holds.
+    if (dto.person) {
+      if (dto.sourceType || dto.sourceId) throw new BadRequestException('Name a record or a person, not both');
+      const list = await this.run({ person: dto.person, take: 5 }, organizationId, viewer, false);
+      return { total: list.total, scope: list.scope, rows: list.items, canCreate: false };
+    }
+    if (!dto.sourceType || !dto.sourceId) throw new BadRequestException('Name both the record type and the record, or a person');
     const list = await this.run({ sourceType: dto.sourceType, sourceId: dto.sourceId, take: 5 }, organizationId, viewer, false);
     // ACC-244 — New task on the record's own panel: Create tasks on its type
     // (the record is visible: run() refused it otherwise). ACC-280: the same rule
@@ -182,6 +192,7 @@ export class TaskRecordListService {
   // ── Who sees which tasks ──────────────────────────────────────────────
 
   private async scope(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer): Promise<Scope> {
+    if (dto.person) return this.personScope(dto, organizationId, viewer);
     if (!!dto.sourceType !== !!dto.sourceId) {
       throw new BadRequestException('Name both the record type and the record, or neither');
     }
@@ -233,6 +244,41 @@ export class TaskRecordListService {
       sql: Prisma.sql`AND ${viewSql} AND ${taskVisibleSql(ctx)}`,
       kind: 'all',
       view,
+      orgWide: true,
+      ctx,
+    };
+  }
+
+  /**
+   * ACC-216 (plan step-216 §5, Option A, decided 17 Nov) — A PERSON'S TASKS:
+   * the tasks `dto.person` is an ACTIVE assignee on (removedAt null, picked pool
+   * rows included), AND the viewer's own rule, taskVisibleSql(), in the WHERE
+   * before LIMIT. One condition beside today's rule and no new visibility code,
+   * so NOBODY GAINS ACCESS: every row is a task the viewer's task page already
+   * admits (TaskAdmissionService asks the same rule of one row).
+   *
+   * The gate runs before any read (ACC-101 clause a: the request names the
+   * parent, a person): yourself, or users:view, else a 403 naming it — the same
+   * for a real colleague and an invented id. Then the person is read with
+   * { id, organizationId }: an invented id and another organisation's person
+   * get the identical 404. Never with a record or a view (400).
+   */
+  private async personScope(dto: RecordListQueryDto, organizationId: string, viewer: TaskViewer): Promise<Scope> {
+    const person = dto.person!;
+    if (dto.sourceType || dto.sourceId || dto.view) {
+      throw new BadRequestException('A person is not combined with a record or a view');
+    }
+    if (person !== viewer.id && !viewer.permissions.includes(USERS_PERMISSIONS.VIEW)) {
+      throw new ForbiddenException(`Required permission: ${USERS_PERMISSIONS.VIEW}`);
+    }
+    const found = await this.prisma.user.findFirst({ where: { id: person, organizationId }, select: { id: true } });
+    if (!found) throw new NotFoundException('User not found');
+    const ctx = await this.visibility.contextFor(viewer, organizationId);
+    return {
+      sql: Prisma.sql`AND ${activeAssignee(person)} AND ${taskVisibleSql(ctx)}`,
+      // Every task the viewer may see that the person is on: the count says so.
+      kind: 'all',
+      view: 'person',
       orgWide: true,
       ctx,
     };
