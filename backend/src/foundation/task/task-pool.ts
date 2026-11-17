@@ -119,7 +119,8 @@ export const STALE_CURRENT_ASSIGNEE = {
 } as const satisfies Prisma.TaskAssigneeWhereInput;
 
 /** SQL: the task aliased `t` has someone on it (CURRENT_ACTIVE_ASSIGNEE). The user is joined by its primary key. */
-export const HAS_CURRENT_ACTIVE_ASSIGNEE_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "TaskAssignee" xa JOIN "User" xu ON xu.id = xa."userId"
+export const HAS_CURRENT_ACTIVE_ASSIGNEE_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "TaskAssignee" xa
+  JOIN "User" xu ON xu.id = xa."userId" AND xu."organizationId" = t."organizationId"
   WHERE xa."taskId" = t.id AND xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE')`;
 
 const IS_POOL_TASK_SQL = Prisma.sql`(t."assignedPositionId" IS NOT NULL OR t."assignedCommitteeId" IS NOT NULL)`;
