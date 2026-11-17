@@ -169,7 +169,8 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TaskService,
+        TaskService,
+
 
         { provide: TaskClosedNoticeService, useValue: { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) } },
         TaskSlaService,
@@ -437,6 +438,38 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
         /^"Collect the audit sample" was updated: it is now due .+, and its priority is now Low\.$/,
       );
       expect(told()[0]!.bodyAr).toContain('أصبحت أولويتها منخفضة');
+    });
+
+    // ACC-313 — the organisation's due-date switch (Q7).
+    describe('with due-date notices switched off', () => {
+      beforeEach(() => {
+        mockPrisma.organization.findFirst.mockResolvedValue({ settings: { taskSlaNotices: { notifyOnDueChange: false } } });
+      });
+
+      it('a due-date edit is not announced', async () => {
+        await service.update('task-1', { dueDate: plusHours(START, 30).toISOString() }, creator, ORG_A);
+
+        expect(updateData()['dueAt']).toEqual(plusHours(START, 30));
+        expect(mockNotifications.create).not.toHaveBeenCalled();
+        expect(mockPrisma.organization.findFirst).toHaveBeenCalledWith({ where: { id: ORG_A }, select: { settings: true } });
+      });
+
+      it('a priority change is still announced, without the date', async () => {
+        await service.update('task-1', { priority: 'LOW' }, creator, ORG_A);
+
+        expect(updateData()['dueAt']).toEqual(plusHours(START, 80));
+        expect(told()).toHaveLength(1);
+        expect(told()[0]!.bodyEn).toBe('"Collect the audit sample" was updated: its priority is now Low.');
+        expect(told()[0]!.bodyAr).toBe('تم تحديث المهمة "Collect the audit sample": أصبحت أولويتها منخفضة.');
+      });
+    });
+
+    it('with the switch on (stored, not only by default) the date is announced as before', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue({ settings: { taskSlaNotices: { notifyOnDueChange: true } } });
+
+      await service.update('task-1', { priority: 'LOW' }, creator, ORG_A);
+
+      expect(told()[0]!.bodyEn).toMatch(/^"Collect the audit sample" was updated: it is now due .+, and its priority is now Low\.$/);
     });
 
     it('a priority change never drops the limit below an approved extension', async () => {
