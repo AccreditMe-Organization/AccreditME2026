@@ -218,7 +218,7 @@ describe('An open task with no current ACTIVE assignee is ownerless, on a real d
       expect((await prisma.task.findUniqueOrThrow({ where: { id: t } })).status).toBe('REJECTED');
     });
 
-    it('releasing a pool task beside an INACTIVE holder returns it to its pool', async () => {
+    it('releasing a pool task beside an INACTIVE holder returns it to its pool, ends the stale row and records it', async () => {
       const o = await org();
       const [picker, gone] = [await o.person('picker', { positionId: o.position, primaryOrgUnitId: o.unit }), await o.person('gone')];
       const t = await o.task('pool', { pool: true, status: 'IN_PROGRESS', on: [{ userId: picker, pickedAt: new Date() }, { userId: gone }] });
@@ -227,6 +227,9 @@ describe('An open task with no current ACTIVE assignee is ownerless, on a real d
       await tasks.release(t, { reason: 'Not mine after all' }, picker, o.id);
 
       expect((await prisma.task.findUniqueOrThrow({ where: { id: t } })).status).toBe('PENDING');
+      expect(await current(t)).toBe(0);
+      const row = await prisma.auditLog.findFirstOrThrow({ where: { organizationId: o.id, objectId: t, action: 'UPDATE' }, orderBy: { createdAt: 'desc' } });
+      expect(row.metadata).toMatchObject({ event: 'released', returnedToPool: true, endedInactiveRows: 1 });
     });
 
     it('two departures of a task’s two assignees at once: UNASSIGNED exactly once, ten times over', async () => {

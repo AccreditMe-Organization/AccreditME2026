@@ -1453,7 +1453,7 @@ describe('TaskService', () => {
   // nobody on the task (CURRENT_ACTIVE_ASSIGNEE).
   describe('ACC-86 — an INACTIVE co-assignee is nobody', () => {
     const INACTIVE_ROW = { id: 'ta-gone', taskId: 'task-1', userId: 'gone', removedAt: null, user: { status: 'INACTIVE' } };
-    const STALE_WHERE = { taskId: 'task-1', removedAt: null, user: { status: { not: 'ACTIVE' } } };
+    const STALE_WHERE = { taskId: 'task-1', task: { organizationId: ORG_A }, removedAt: null, user: { status: { not: 'ACTIVE' } } };
     afterEach(() => {
       mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
       mockPrisma.task.findFirst.mockReset();
@@ -1471,7 +1471,7 @@ describe('TaskService', () => {
       await service.reject('task-1', { reason: 'Not ours' }, USER_A, ORG_A);
 
       expect(mockPrisma.taskAssignee.count).toHaveBeenCalledWith({
-        where: { taskId: 'task-1', userId: { not: USER_A }, removedAt: null, user: { status: 'ACTIVE' } },
+        where: { taskId: 'task-1', task: { organizationId: ORG_A }, userId: { not: USER_A }, removedAt: null, user: { status: 'ACTIVE' } },
       });
       expect(mockPrisma.task.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }));
     });

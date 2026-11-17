@@ -819,7 +819,7 @@ describe('TaskService — pools (ACC-167)', () => {
   // nobody on the task (CURRENT_ACTIVE_ASSIGNEE); the writers end it (Q-1).
   describe('ACC-86 — an INACTIVE holder is nobody', () => {
     const INACTIVE = { user: { status: 'INACTIVE' } };
-    const STALE_WHERE = { taskId: 'task-1', removedAt: null, user: { status: { not: 'ACTIVE' } } };
+    const STALE_WHERE = { taskId: 'task-1', task: { organizationId: ORG_A }, removedAt: null, user: { status: { not: 'ACTIVE' } } };
     /** Ending stale rows ends `n`; every other updateMany ends none. */
     const staleEnds = (n: number) =>
       mockPrisma.taskAssignee.updateMany.mockImplementation((args: { where: { user?: unknown } }) =>
@@ -833,7 +833,9 @@ describe('TaskService — pools (ACC-167)', () => {
 
       await service.pick('task-1', HOLDER_A, ORG_A);
 
-      expect(mockPrisma.taskAssignee.count).toHaveBeenCalledWith({ where: { taskId: 'task-1', removedAt: null, user: { status: 'ACTIVE' } } });
+      expect(mockPrisma.taskAssignee.count).toHaveBeenCalledWith({
+        where: { taskId: 'task-1', task: { organizationId: ORG_A }, removedAt: null, user: { status: 'ACTIVE' } },
+      });
       expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith({ where: STALE_WHERE, data: { removedAt: expect.any(Date) } });
       expect(mockPrisma.taskAssignee.create).toHaveBeenCalledWith({
         data: { taskId: 'task-1', userId: HOLDER_A, assignedById: HOLDER_A, pickedAt: expect.any(Date) },
@@ -858,15 +860,20 @@ describe('TaskService — pools (ACC-167)', () => {
       );
     });
 
-    it('release with an INACTIVE co-holder returns the task to its pool', async () => {
+    it('release with an INACTIVE co-holder returns the task to its pool, ends that row and records it', async () => {
       mockPrisma.task.findFirst.mockResolvedValue(
         poolTask({ status: 'IN_PROGRESS', assignees: [row(HOLDER_A, { pickedAt: new Date() }), row('gone', INACTIVE)] }),
       );
+      staleEnds(1);
 
       await service.release('task-1', { reason: 'Not mine after all' }, HOLDER_A, ORG_A);
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'task-1' }, data: expect.objectContaining({ status: 'PENDING' }) }),
+      );
+      expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith({ where: STALE_WHERE, data: { removedAt: expect.any(Date) } });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ event: 'released', returnedToPool: true, endedInactiveRows: 1 }) }),
       );
     });
   });
