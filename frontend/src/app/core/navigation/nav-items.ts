@@ -89,14 +89,17 @@ export interface NavItem {
   // - awaiting (ACC-120): what waits on the person's decision, from the same
   //   service's awaiting read (stages total + change requests). Read only.
   badge?: 'setupHealth' | 'myTasks' | 'awaiting';
-  // ACC-281 — a second way to meet requiredPermission. With 'committeeMember'
-  // the item also shows, and its route also opens, for someone who sits on at
-  // least one active committee, without the permission. The answer comes from
-  // MyWorkCountsService.isCommitteeMember (injectNavAccess(), nav-access.ts);
-  // the rail shows the item only once membership is KNOWN, and permissionGuard
-  // admits while it is still unknown and lets the server decide. Never for a
-  // platform admin. ROUTE_PERMISSIONS is not widened by it.
-  orWhen?: 'committeeMember';
+  // ACC-281, ACC-283 PR 2a — a second way to meet requiredPermission. With
+  // 'mayBrowseCommittees' the item also shows, and its route also opens, for
+  // someone the server says may browse committees without the permission: a
+  // member of an active committee, or a head or cover in force of a unit owning
+  // one. The answer is the server's flag on GET /committees/mine, read through
+  // MyWorkCountsService.mayBrowseCommittees (injectNavAccess(), nav-access.ts);
+  // never a rule of the screen's own, and never My committees' count. The rail
+  // shows the item only once the answer is KNOWN, and permissionGuard admits
+  // while it is still unknown and lets the server decide. Never for a platform
+  // admin. ROUTE_PERMISSIONS is not widened by it.
+  orWhen?: 'mayBrowseCommittees';
   // Present ONLY on an entitlement-driven functional module. The item renders
   // only when NavigationAccessService.isModuleEnabled(moduleKey) — true for
   // FULL and READ_ONLY alike, because a read-only module is fully present and
@@ -208,9 +211,10 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         icon: 'pi pi-flag',
         route: '/committees',
         requiredPermission: 'committees:view',
-        // ACC-281 — a member of an active committee sees and opens it without
-        // committees:view: the server answers their own committees.
-        orWhen: 'committeeMember',
+        // ACC-281, ACC-283 PR 2a — whoever the server says may browse
+        // committees (a member, or a head or cover of an owning unit) sees and
+        // opens it without committees:view; the server answers what they may read.
+        orWhen: 'mayBrowseCommittees',
       },
       // ACC-120 slice 11, PR F (D1, option B1) — the Organisation pages,
       // read-only, for an org:view holder who does not administer (OS §6). An
@@ -457,17 +461,17 @@ export interface NavAccess {
   hasPermission(permission: string): boolean;
   isModuleEnabled(moduleKey: string): boolean;
   isPlatformAdmin(): boolean;
-  // ACC-281 — true only once membership is KNOWN: false while loading and after
-  // a failure. Optional, so an access without it (NavigationAccessService
-  // alone) never meets an orWhen.
-  isCommitteeMember?(): boolean;
+  // ACC-281, ACC-283 PR 2a — the server's mayBrowseCommittees, true only once
+  // it is KNOWN: false while loading and after a failure. Optional, so an
+  // access without it (NavigationAccessService alone) never meets an orWhen.
+  mayBrowseCommittees?(): boolean;
 }
 
 export function isNavItemVisible(item: NavItem, access: NavAccess): boolean {
   const permitted =
     !item.requiredPermission ||
     access.hasPermission(item.requiredPermission) ||
-    (item.orWhen === 'committeeMember' && access.isCommitteeMember?.() === true);
+    (item.orWhen === 'mayBrowseCommittees' && access.mayBrowseCommittees?.() === true);
   const entitled = !item.moduleKey || access.isModuleEnabled(item.moduleKey);
   const notExcluded = !item.hiddenWithPermission || !access.hasPermission(item.hiddenWithPermission);
   return permitted && entitled && notExcluded;

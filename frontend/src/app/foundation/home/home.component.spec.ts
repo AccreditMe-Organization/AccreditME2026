@@ -174,12 +174,12 @@ describe('HomeComponent (ACC-279)', () => {
     });
 
     it('My committees shows the total from GET /committees/mine', () => {
-      build({ committees: { total: 3, rows: [] } });
+      build({ committees: { mayBrowseCommittees: true, total: 3, rows: [] } });
       expect(q('home-tile-committees-value')!.textContent!.trim()).toBe('3');
     });
 
     it('with the Committees module closed, neither the tile nor the panel is drawn, nor read', () => {
-      configure({ committees: { total: 3, rows: [] } }, 'en', MORNING_RIYADH);
+      configure({ committees: { mayBrowseCommittees: true, total: 3, rows: [] } }, 'en', MORNING_RIYADH);
       spyOn(TestBed.inject(MyWorkCountsService), 'committeesOpen').and.returnValue(false);
       fixture = TestBed.createComponent(HomeComponent);
       fixture.detectChanges();

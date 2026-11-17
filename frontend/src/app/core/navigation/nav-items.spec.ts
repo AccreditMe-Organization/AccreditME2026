@@ -242,17 +242,18 @@ describe('nav-items (ACC-79)', () => {
       expect(committees?.moduleKey).toBeUndefined();
     });
 
-    // ACC-281 — the permission is met by holding it OR by sitting on an active
-    // committee (orWhen: 'committeeMember'), and only once membership is known.
-    describe('or a committee member (ACC-281)', () => {
+    // ACC-281, ACC-283 PR 2a — the permission is met by holding it OR by the
+    // server's mayBrowseCommittees (orWhen: 'mayBrowseCommittees'), and only
+    // once that answer is known.
+    describe('or whoever may browse committees (ACC-281, ACC-283)', () => {
       const item = TENANT_NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === 'committees')!;
       const withMembership = (permissions: string[], member: boolean): NavAccess => ({
         ...access({ permissions }),
-        isCommitteeMember: () => member,
+        mayBrowseCommittees: () => member,
       });
 
-      it('carries orWhen: committeeMember, and keeps committees:view', () => {
-        expect(item.orWhen).toBe('committeeMember');
+      it('carries orWhen: mayBrowseCommittees, and keeps committees:view', () => {
+        expect(item.orWhen).toBe('mayBrowseCommittees');
         expect(item.requiredPermission).toBe('committees:view');
       });
 

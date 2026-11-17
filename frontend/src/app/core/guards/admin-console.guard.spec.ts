@@ -26,7 +26,7 @@ describe('adminConsoleGuard (ACC-292)', () => {
             isPlatformAdmin: () => opts.platformAdmin ?? false,
           },
         },
-        { provide: MyWorkCountsService, useValue: { isCommitteeMember: () => false } },
+        { provide: MyWorkCountsService, useValue: { mayBrowseCommittees: () => false } },
       ],
     });
     router = TestBed.inject(Router);

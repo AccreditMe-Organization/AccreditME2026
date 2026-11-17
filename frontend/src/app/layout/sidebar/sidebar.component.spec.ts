@@ -357,9 +357,10 @@ describe('SidebarComponent (ACC-79)', () => {
         myOverdue: signal({ state: 'loading' }),
         awaiting: signal({ state: 'loading' }),
         myCommittees,
-        isCommitteeMember: computed(() => {
+        // As the real service computes it: the server's flag, once known.
+        mayBrowseCommittees: computed(() => {
           const c = myCommittees();
-          return c.state === 'ready' && c.value.total > 0;
+          return c.state === 'ready' && c.value.mayBrowseCommittees;
         }),
         init: record('init'),
         reload: record('reload'),
@@ -378,7 +379,10 @@ describe('SidebarComponent (ACC-79)', () => {
       myCommittees.set(answer);
       fixture.detectChanges();
     };
-    const member = (total: number): Loadable<MyCommitteesDto> => ({ state: 'ready', value: { total, rows: [] } as unknown as MyCommitteesDto });
+    const member = (total: number, mayBrowseCommittees = total > 0): Loadable<MyCommitteesDto> => ({
+      state: 'ready',
+      value: { total, rows: [], mayBrowseCommittees } as unknown as MyCommitteesDto,
+    });
 
     afterEach(() => {
       http.verify();
@@ -404,6 +408,27 @@ describe('SidebarComponent (ACC-79)', () => {
     it('not a member (ready, 0) and no committees:view: no item', () => {
       const el = renderMember();
       settle(member(0));
+      expect(committeesLink(el)).toBeNull();
+    });
+
+    // ACC-283 PR 2a — the rail follows the server's flag, never the count.
+    it('a head on no committee (total 0, mayBrowseCommittees true) sees Committees', () => {
+      const el = renderMember();
+      settle(member(0, true));
+      expect(committeesLinkText(el)).toBe('nav.committees');
+    });
+
+    it('a count the server refuses (total 2, mayBrowseCommittees false): no item', () => {
+      const el = renderMember();
+      settle(member(2, false));
+      expect(committeesLink(el)).toBeNull();
+    });
+
+    // The Committees module closed: the counts service answers its default,
+    // { total: 0, rows: [], mayBrowseCommittees: false }, and asks nothing.
+    it('the closed module shows no link', () => {
+      const el = renderMember();
+      settle({ state: 'ready', value: { total: 0, rows: [], mayBrowseCommittees: false } });
       expect(committeesLink(el)).toBeNull();
     });
 
@@ -441,7 +466,7 @@ describe('SidebarComponent (ACC-79)', () => {
         myTasks: signal({ state: 'loading' }),
         myOverdue: signal({ state: 'loading' }),
         awaiting,
-        isCommitteeMember: signal(false),
+        mayBrowseCommittees: signal(false),
         init: record('init'),
         reload: record('reload'),
         refreshOnEntry: record('refreshOnEntry'),
@@ -563,8 +588,8 @@ describe('SidebarComponent (ACC-79)', () => {
         myTasks,
         myOverdue,
         awaiting: signal({ state: 'loading' }),
-        // ACC-281 — the rail reads membership too; not a member here.
-        isCommitteeMember: signal(false),
+        // ACC-281, ACC-283 — the rail reads mayBrowseCommittees too; false here.
+        mayBrowseCommittees: signal(false),
         init: record('init'),
         reload: record('reload'),
         refreshOnEntry: record('refreshOnEntry'),

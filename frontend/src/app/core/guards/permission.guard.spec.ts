@@ -21,11 +21,20 @@ import { signal } from '@angular/core';
 import { Loadable, MyWorkCountsService } from '../../foundation/home/my-work-counts.service';
 import { MyCommitteesDto } from '../../foundation/committees/services/committee.service';
 
-// ACC-281 — My committees as the guard reads it. A KNOWN non-member (ready, 0)
-// unless a spec says otherwise, so every denial below still denies.
+// ACC-281, ACC-283 PR 2a — My committees as the guard reads it. A KNOWN "may
+// not browse" (ready, flag false) unless a spec says otherwise, so every denial
+// below still denies. The guard reads the server's flag, never the total.
 type Committees = Loadable<MyCommitteesDto>;
-const NOT_A_MEMBER: Committees = { state: 'ready', value: { total: 0, rows: [] } as MyCommitteesDto };
-const A_MEMBER: Committees = { state: 'ready', value: { total: 1, rows: [] } as unknown as MyCommitteesDto };
+const browse = (total: number, mayBrowseCommittees: boolean): Committees => ({
+  state: 'ready',
+  value: { total, rows: [], mayBrowseCommittees } as unknown as MyCommitteesDto,
+});
+const NOT_A_MEMBER: Committees = browse(0, false);
+const A_MEMBER: Committees = browse(1, true);
+// A unit head or cover in force who sits on no committee (ACC-283 PR 2a).
+const A_HEAD: Committees = browse(0, true);
+// A count the server says does not open the list: the flag decides, not total.
+const COUNTED_BUT_REFUSED: Committees = browse(2, false);
 const fakeMyWork = (committees: Committees) => ({ myCommittees: signal(committees).asReadonly() });
 
 // ACC-70 — the deny path is the reason this guard exists, so it is tested
@@ -143,9 +152,10 @@ describe('permissionGuard', () => {
     expect(run('committees', ':id')).toEqual(router.parseUrl(LANDING_ROUTE));
   });
 
-  // ACC-281 — Committees is also open to a member of an active committee, by
-  // the item's orWhen: 'committeeMember'. ROUTE_PERMISSIONS is unchanged.
-  describe('a committee member without committees:view (ACC-281)', () => {
+  // ACC-281, ACC-283 PR 2a — Committees is also open to whoever the server says
+  // may browse committees (a member, or a head or cover of an owning unit), by
+  // the item's orWhen: 'mayBrowseCommittees'. ROUTE_PERMISSIONS is unchanged.
+  describe('may browse committees without committees:view (ACC-281, ACC-283)', () => {
     const landing = () => router.parseUrl(LANDING_ROUTE);
     const LOADING: Committees = { state: 'loading' };
     const FAILED: Committees = { state: 'failed' };
@@ -158,6 +168,20 @@ describe('permissionGuard', () => {
     it('a known member is admitted', () => {
       setup({ permissions: [], committees: A_MEMBER });
       expect(run('committees')).toBe(true);
+    });
+
+    // ACC-283 PR 2a — the reason the guard reads the flag: a head on no
+    // committee has a total of 0.
+    it('a head on no committee (total 0, mayBrowseCommittees true) is admitted, page and children', () => {
+      setup({ permissions: [], committees: A_HEAD });
+      expect(run('committees')).toBe(true);
+      expect(run('committees', ':id')).toBe(true);
+    });
+
+    it('a count the server refuses (total 2, mayBrowseCommittees false) is sent to the landing route', () => {
+      setup({ permissions: [], committees: COUNTED_BUT_REFUSED });
+      expect(run('committees')).toEqual(landing());
+      expect(run('committees', ':id')).toEqual(landing());
     });
 
     // The hard reload straight onto /committees/:id: the shell has not started

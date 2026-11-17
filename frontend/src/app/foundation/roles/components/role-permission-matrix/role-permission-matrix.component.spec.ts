@@ -20,8 +20,9 @@ import { preserveDocumentLanguage } from '../../../../../testing/document-langua
 // The catalogue is every in-use key (the sentence table is exactly that list),
 // plus platform:admin (hidden in a tenant) and documents:view, not in use,
 // which the role HOLDS: it must travel back on save untouched. The held set is
-// the design's Quality Editor: Committees 7 of 11 (records 3 of 4, members
-// 2 of 3, tasks 2 of 4).
+// the design's Quality Editor, less committees:edit_details (ACC-283 PR 4 retired
+// committees:edit_details, the records key it did not hold; edit_details now plays
+// that part): Committees 6 of 10 (records 2 of 3, members 2 of 3, tasks 2 of 4).
 
 const SENTENCES = (en as { roles: { matrix: { sentence: Record<string, string> } } }).roles.matrix.sentence;
 const perm = (key: string, inUse = true): PermissionDto => {
@@ -38,7 +39,6 @@ const HELD = [
   'workflows:view',
   'committees:view',
   'committees:create',
-  'committees:edit_details',
   'committees:add_member',
   'committees:change_member_role',
   'committees:view_all_tasks',
@@ -173,7 +173,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     ]);
     expect(text(q('[data-pm-head]', mod('committees')))).toContain('Committees');
     expect(text(q('[data-pm-head]', mod('committees')))).toContain('Who may see, run and sign off committees');
-    expect(text(row('committees:approve'))).toBe('Approve terms, changes and dissolutions');
+    expect(text(row('committees:edit_details'))).toBe("Edit a committee's details and request changes");
     expect(host().textContent).not.toContain('committees:');
     expect(q('[role="grid"]')).toBeNull();
     expect(q('[role="columnheader"]')).toBeNull();
@@ -186,10 +186,10 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     expect(q('[data-pm-module="platform"]')).not.toBeNull();
   });
 
-  it('Committees: three labelled groups with their counts, and the module "7 of 11"', () => {
+  it('Committees: three labelled groups with their counts, and the module "6 of 10"', () => {
     render();
-    expect(groupLines('committees')).toEqual(['Committee records · 3 of 4', 'Members · 2 of 3', 'Tasks on committees · 2 of 4']);
-    expect(counts('committees')[0]).toBe('7 of 11');
+    expect(groupLines('committees')).toEqual(['Committee records · 2 of 3', 'Members · 2 of 3', 'Tasks on committees · 2 of 4']);
+    expect(counts('committees')[0]).toBe('6 of 10');
     // ACC-164 — users:reset_mfa took Users to seven: two labelled groups.
     expect(groupLines('users')).toEqual(['People and profiles · 1 of 4', 'Account access · 0 of 3']);
     expect(counts('users')[0]).toBe('1 of 7');
@@ -253,16 +253,16 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
 
   it('a row is a plain checkbox named by its sentence; ticking it grants only that row and marks it', () => {
     render();
-    const manage = box('committees:approve');
-    expect(manage.getAttribute('aria-label')).toBe('Approve terms, changes and dissolutions');
+    const manage = box('committees:edit_details');
+    expect(manage.getAttribute('aria-label')).toBe("Edit a committee's details and request changes");
     expect(manage.tabIndex).toBe(0);
     click(manage);
     expect(component.changeCount()).toBe(1);
-    expect(component.changes().added.map((p) => p.key)).toEqual(['committees:approve']);
-    expect(row('committees:approve')!.getAttribute('data-pm-mark')).toBe('granted');
-    expect(row('committees:approve')!.classList).toContain('pm-row--granted');
-    expect(text(q('[data-pm-tag]', row('committees:approve')!))).toBe('＋ Granted · not saved');
-    expect(counts('committees')[0]).toBe('8 of 11');
+    expect(component.changes().added.map((p) => p.key)).toEqual(['committees:edit_details']);
+    expect(row('committees:edit_details')!.getAttribute('data-pm-mark')).toBe('granted');
+    expect(row('committees:edit_details')!.classList).toContain('pm-row--granted');
+    expect(text(q('[data-pm-tag]', row('committees:edit_details')!))).toBe('＋ Granted · not saved');
+    expect(counts('committees')[0]).toBe('7 of 10');
     expect(text(q('[data-pm-unsaved]'))).toBe('1 change unsaved');
     expect(text(q('[data-pm-review]'))).toBe('Review 1 change…');
   });
@@ -282,14 +282,14 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     const b = moduleBox('committees');
     expect(b.getAttribute('role')).toBe('checkbox');
     expect(b.getAttribute('aria-checked')).toBe('mixed');
-    expect(b.getAttribute('aria-label')).toBe('All Committees permissions, 7 of 11 granted');
+    expect(b.getAttribute('aria-label')).toBe('All Committees permissions, 6 of 10 granted');
     click(b);
     expect(moduleBox('committees').getAttribute('aria-checked')).toBe('true');
-    expect(counts('committees')[0]).toBe('11 of 11');
+    expect(counts('committees')[0]).toBe('10 of 10');
     expect(component.changeCount()).toBe(4);
     click(moduleBox('committees'));
     expect(moduleBox('committees').getAttribute('aria-checked')).toBe('false');
-    expect(counts('committees')[0]).toBe('0 of 11');
+    expect(counts('committees')[0]).toBe('0 of 10');
     // Nothing outside Committees moved.
     expect(component.selected().has('users:view')).toBeTrue();
   });
@@ -307,7 +307,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
 
   it('Discard puts every row back, with no confirm', () => {
     render();
-    click(box('committees:approve'));
+    click(box('committees:edit_details'));
     click(q('[data-pm-unsaved] ~ p-button button'));
     expect(component.changeCount()).toBe(0);
     expect(confirm).not.toHaveBeenCalled();
@@ -326,11 +326,11 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
 
   // ── Find and Show granted only ─────────────────────────────────────────────
 
-  it('Find filters by sentence: only matching rows and modules, "n of 11 match"', () => {
+  it('Find filters by sentence: only matching rows and modules, "n of 10 match"', () => {
     render();
     find('member');
     expect(all('[data-pm-module]').map((m) => m.getAttribute('data-pm-module'))).toEqual(['committees']);
-    expect(counts('committees')[0]).toBe('4 of 11 match');
+    expect(counts('committees')[0]).toBe('4 of 10 match');
     expect(all('[data-pm-row]').map((r) => r.getAttribute('data-pm-row'))).toEqual([
       'committees:view',
       'committees:add_member',
@@ -338,7 +338,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
       'committees:change_member_role',
     ]);
     // The group counts stay the group's whole count.
-    expect(counts('committees').slice(1)).toEqual(['3 of 4', '2 of 3']);
+    expect(counts('committees').slice(1)).toEqual(['2 of 3', '2 of 3']);
     // The filter shows; it never changes what is saved.
     expect(component.changeCount()).toBe(0);
   });
@@ -351,7 +351,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     const shown = all('[data-pm-row]', mod('committees')).map((r) => r.getAttribute('data-pm-row'));
     expect(shown).toContain('committees:change_member_role');
     expect(shown).not.toContain('committees:remove_member');
-    expect(shown.length).toBe(7);
+    expect(shown.length).toBe(6);
   });
 
   it('under a filter a box acts only on the visible rows, and says so in its tooltip', () => {
@@ -360,10 +360,10 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     const b = moduleBox('committees');
     expect(b.getAttribute('aria-description')).toBe('Acts only on the 4 rows shown by the current filter.');
     // Its state and its spoken count are the whole module's.
-    expect(b.getAttribute('aria-label')).toBe('All Committees permissions, 7 of 11 granted');
+    expect(b.getAttribute('aria-label')).toBe('All Committees permissions, 6 of 10 granted');
     click(b);
     expect(component.changes().added.map((p) => p.key)).toEqual(['committees:remove_member']);
-    expect(component.selected().has('committees:approve')).toBeFalse();
+    expect(component.selected().has('committees:edit_details')).toBeFalse();
     // No filter, no tooltip.
     find('');
     expect(moduleBox('committees').getAttribute('aria-description')).toBeNull();
@@ -433,7 +433,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
       const held = q('[data-pm-glyph]', row('committees:view')!)!;
       expect(text(held)).toBe('✓');
       expect(held.getAttribute('aria-label')).toBe('Held');
-      const notHeld = q('[data-pm-glyph]', row('committees:approve')!)!;
+      const notHeld = q('[data-pm-glyph]', row('committees:edit_details')!)!;
       expect(text(notHeld)).toBe('·');
       expect(notHeld.getAttribute('aria-label')).toBe('Not held');
       expect(legend()).toEqual(['✓Held', '·Not held']);
@@ -480,7 +480,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
   it('with changes, the phone bar carries the count and "Review n changes…"; with none, it is absent', () => {
     render();
     expect(q('[data-pm-phone-bar]')).toBeNull();
-    click(box('committees:approve'));
+    click(box('committees:edit_details'));
     click(box('committees:view'));
     click(box('lookups:view'));
     const bar = q('[data-pm-phone-bar]')!;
@@ -492,14 +492,14 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
 
   // ── Arabic ─────────────────────────────────────────────────────────────────
 
-  it('Arabic: the counts read right to left with isolated digits, «7 من 11»; the groups and the box in Arabic', () => {
+  it('Arabic: the counts read right to left with isolated digits, «6 من 10»; the groups and the box in Arabic', () => {
     render({ lang: 'ar' });
-    expect(all('[data-pm-count]', mod('committees'))[0]!.textContent!.trim()).toBe('⁦7⁩ من ⁦11⁩');
-    expect(groupLines('committees')).toEqual(['سجلات اللجان · 3 من 4', 'الأعضاء · 2 من 3', 'المهام على اللجان · 2 من 4']);
-    expect(plain(moduleBox('committees').getAttribute('aria-label'))).toBe('كل صلاحيات اللجان، 7 من 11 ممنوحة');
+    expect(all('[data-pm-count]', mod('committees'))[0]!.textContent!.trim()).toBe('⁦6⁩ من ⁦10⁩');
+    expect(groupLines('committees')).toEqual(['سجلات اللجان · 2 من 3', 'الأعضاء · 2 من 3', 'المهام على اللجان · 2 من 4']);
+    expect(plain(moduleBox('committees').getAttribute('aria-label'))).toBe('كل صلاحيات اللجان، 6 من 10 ممنوحة');
     expect(q('[data-pm-find]')!.getAttribute('placeholder')).toBe('ابحث عن صلاحية');
     find('أعضاء');
-    expect(plain(all('[data-pm-count]', mod('committees'))[0]!.textContent).trim()).toBe('2 من 11 مطابقة');
+    expect(plain(all('[data-pm-count]', mod('committees'))[0]!.textContent).trim()).toBe('2 من 10 مطابقة');
     expect(plain(moduleBox('committees').getAttribute('aria-description'))).toBe('يؤثر فقط في الصفين الظاهرين بالتصفية الحالية.');
     find('فاتورة');
     expect(text(q('[data-pm-no-match]'))).toBe('لا توجد صلاحيات مطابقة. امسح البحث.');
@@ -507,8 +507,8 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
 
   it('Arabic: a change is tagged in Arabic, and the root role tag too', () => {
     render({ lang: 'ar' });
-    click(box('committees:approve'));
-    expect(text(q('[data-pm-tag]', row('committees:approve')!))).toBe('＋ ممنوحة · غير محفوظة');
+    click(box('committees:edit_details'));
+    expect(text(q('[data-pm-tag]', row('committees:edit_details')!))).toBe('＋ ممنوحة · غير محفوظة');
     expect(text(q('[data-pm-admin]') ?? row('admin:access'))).toContain('كل صفحة إدارية تحتاج أيضًا إلى صلاحيتها الخاصة.');
     render({ lang: 'ar', roleKey: 'TENANT_ADMIN' });
     expect(text(q('[data-pm-tag]', row('workflows:manage')!))).toBe('لمسؤول المنشأة فقط');
@@ -517,7 +517,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
   // ── Saving (unchanged from the grid: D4, D, G) ─────────────────────────────
 
   function grantManageAndOpen(): void {
-    click(box('committees:approve'));
+    click(box('committees:edit_details'));
     click(q('[data-pm-review] button'));
   }
 
@@ -526,16 +526,16 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     grantManageAndOpen();
     expect(dialogText()).toContain("Applies to 14 users as soon as it's saved.");
     expect(dialogText()).toContain('3 of them hold this role through a head position.');
-    expect(dialogText()).toContain('Committees · Approve terms, changes and dissolutions');
+    expect(dialogText()).toContain("Committees · Edit a committee's details and request changes");
   });
 
   it('three changes: Review lists the granted and the revoked, in the list order', () => {
     render();
-    click(box('committees:approve'));
+    click(box('committees:edit_details'));
     click(box('committees:change_member_role'));
     click(box('lookups:view'));
     click(q('[data-pm-review] button'));
-    expect(dialogText()).toContain('Committees · Approve terms, changes and dissolutions');
+    expect(dialogText()).toContain("Committees · Edit a committee's details and request changes");
     expect(dialogText()).toContain('Lookups · See lookup lists and their values');
     expect(dialogText()).toContain("Committees · Change a member’s role on a committee");
     expect(component.changes().removed.map((p) => p.key)).toEqual(['lookups:view', 'committees:change_member_role']);
@@ -548,7 +548,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     expect(assign).toHaveBeenCalledTimes(1);
     const [id, keys, expected] = assign.calls.mostRecent().args as [string, string[], string[]];
     expect(id).toBe('r1');
-    expect([...keys].sort()).toEqual([...HELD, 'committees:approve'].sort());
+    expect([...keys].sort()).toEqual([...HELD, 'committees:edit_details'].sort());
     expect([...expected].sort()).toEqual([...HELD].sort());
   });
 
@@ -613,7 +613,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     fixture.detectChanges();
     expect(component.changeCount()).toBe(0);
     expect(component.confirmOpen()).toBeFalse();
-    expect(row('committees:approve')!.getAttribute('data-pm-mark')).toBe('on');
+    expect(row('committees:edit_details')!.getAttribute('data-pm-mark')).toBe('on');
     expect(text(q('[data-pm-saved]'))).toContain('Saved · 1 change');
   });
 
@@ -627,7 +627,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
 
   it('asks before leaving with unsaved changes, and stays if told to', async () => {
     render();
-    click(box('committees:approve'));
+    click(box('committees:edit_details'));
     const answer = component.canLeave() as Promise<boolean>;
     expect(confirm).toHaveBeenCalledTimes(1);
     const options = confirm.calls.mostRecent().args[0] as { header: string; acceptLabel: string; rejectLabel: string; reject: () => void };
@@ -643,7 +643,7 @@ describe('RolePermissionMatrixComponent (ACC-272, the grouped list)', () => {
     const clean = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
     component.onBeforeUnload(clean);
     expect(clean.defaultPrevented).toBeFalse();
-    click(box('committees:approve'));
+    click(box('committees:edit_details'));
     const dirty = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
     component.onBeforeUnload(dirty);
     expect(dirty.defaultPrevented).toBeTrue();

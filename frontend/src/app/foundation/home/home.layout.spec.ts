@@ -91,6 +91,7 @@ describe('HomeComponent — measured layout (ACC-279)', () => {
       myOverdue: 2,
       awaiting: awaitingMe([awaitingRow(), awaitingRow({ instanceStageId: 'e-2', record: { type: 'COMMITTEE', id: 'c-2', nameEn: LONG_NAME_EN, nameAr: LONG_NAME_AR } })]),
       committees: {
+        mayBrowseCommittees: true,
         total: 3,
         rows: [
           committeeRow(),
