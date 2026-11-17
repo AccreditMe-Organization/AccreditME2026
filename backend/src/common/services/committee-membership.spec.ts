@@ -61,7 +61,7 @@ describe('committee membership (ACC-281)', () => {
     expect(await isActiveMember(typed, 'c-1', 'u-1', ORG)).toBe(true);
     expect(prisma.committeeMember.findFirst).toHaveBeenCalledWith({
       where: { committeeId: 'c-1', userId: 'u-1', organizationId: ORG, isActive: true, committee: { organizationId: ORG, isActive: true } },
-      select: { id: true },
+      select: { roleValueId: true }, // ACC-283 PR 6: the seat, from the same one query
     });
   });
 
@@ -159,7 +159,7 @@ describe('heads see the committees of their units, read only (ACC-283 PR 2a)', (
     expect(prisma.user.findFirst).not.toHaveBeenCalled();
     expect(prisma.orgUnitHeadAssignment.findMany).not.toHaveBeenCalled();
     // The read admits them, and says they may not write.
-    await expect(assertMaySeeCommittee(typed, 'c-1', ORG, viewer, NOW)).resolves.toEqual({ read: true, write: false });
+    await expect(assertMaySeeCommittee(typed, 'c-1', ORG, viewer, NOW)).resolves.toEqual({ read: true, write: false, seat: null });
   });
 
   // ACC-283 — the committee read's `mayWrite`, from the same pass as the read.
@@ -174,11 +174,11 @@ describe('heads see the committees of their units, read only (ACC-283 PR 2a)', (
 
     // The overseer: the one membership read the rule already makes, then the oversight reads.
     const head = client([], { headOf: 'unit-a', subtree: ['unit-a'], owned: ['c-1'] });
-    expect(await committeeAccess(head.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: true, write: false });
+    expect(await committeeAccess(head.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: true, write: false, seat: null });
     expect(reads(head.prisma)).toBe(5);
 
     const stranger = client();
-    expect(await committeeAccess(stranger.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: false, write: false });
+    expect(await committeeAccess(stranger.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: false, write: false, seat: null });
     expect(reads(stranger.prisma)).toBe(3);
   });
 
