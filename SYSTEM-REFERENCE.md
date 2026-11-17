@@ -4591,6 +4591,14 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   - **others are still on it** → it stays with them:
     `{ event: 'departure_left_with_others' }`, not counted, nobody told.
 
+  **ACC-86 — "else on it" counts only ACTIVE users** (`CURRENT_ACTIVE_ASSIGNEE`,
+  one indexed count under the task's lock), here and in reject, release and pick.
+  A row left current by someone already INACTIVE (a co-assignee who left first,
+  or a departure that stopped partway) puts nobody on the task. When a departure
+  sends a task back to its pool or makes it `UNASSIGNED`, it also ENDS those
+  stale rows in the same transaction (Q-1, `STALE_CURRENT_ASSIGNEE`), and its
+  audit row carries `endedInactiveRows` when there were any.
+
   A CLOSED pool task is never returned to its pool (that would reopen it).
   Since ACC-165 it is not touched at all: departure handles open tasks only.
 - **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
@@ -5249,6 +5257,13 @@ non-member never learns whether a task exists or was picked. Only then the
 409s: closed, rejected, already picked (*"This task has already been picked
 up"*). A previous row for the same person is reused (A → B → A). Status
 becomes `PENDING`; audited `{ event: 'picked' }`.
+
+**ACC-86 — picked up means someone ACTIVE is on it.** A task whose only current
+rows belong to users no longer ACTIVE is waiting in its pool
+(`waitingInPoolWhere()` and `WAITING_IN_POOL_SQL` ask `CURRENT_ACTIVE_ASSIGNEE`):
+Available lists it, the unpicked-pool escalation sweeps it, and Pick takes it,
+ENDING those stale rows in the same transaction (`endedInactiveRows` on the
+audit row). The one definition lives in `task-pool.ts`; never a third copy.
 
 **Release** (`POST /tasks/:id/release { reason }`, required, max 1000): only
 an active assignee whose row has `pickedAt`; someone chosen directly gets a
@@ -14107,15 +14122,22 @@ reload does not reopen the dialog.
   of its assignee or a transition's trigger, so the row tells the admin to
   check both, and the transitions table names each ROLE_BASED transition's
   trigger role.
-- **Task without owner** is `Task.status = 'UNASSIGNED'`. Known gap: an
-  open task whose only remaining assignee is inactive is not UNASSIGNED
-  and is not detected (ACC-86; zero such tasks on dev at build time).
-  **ACC-167 extends it, under the same type, title and wording:** an open
-  pool task (`PENDING`/`OVERDUE`, a pool target) with no active assignee AND
-  nobody currently in its pool (`findEmptyPoolTasks()` — distinct holder and
-  member lookups, not one query per task). A pool with members is healthy
-  even while nobody has picked the task up yet; that is the escalation's
-  business (3.9), not a condition.
+- **Task without owner** (ACC-86) is `OWNERLESS_SQL` (`task-pool.ts`), the very
+  definition the Unassigned view and Manage tasks' reach read, run once per
+  tenant, scoped by organisation, resolved live on every pass (ACC-82: no
+  status is trusted). "Nobody is on it" means no current row held by an ACTIVE
+  user (`CURRENT_ACTIVE_ASSIGNEE`). A task is ownerless when it is:
+  - `UNASSIGNED`, as always;
+  - `PENDING` or `OVERDUE` with nobody on it, unless it waits in a pool that
+    has an ACTIVE member (ACC-167: a staffed pool is healthy while nobody has
+    picked the task up yet; that is the escalation's business, 3.9);
+  - `IN_PROGRESS` or `ON_HOLD` with nobody on it, pool or not (Q-2: nobody can
+    resume a held task, and a pick cannot take these statuses).
+
+  `REJECTED` is not: it is its creator's to reassign. Before ACC-86 it matched
+  `UNASSIGNED` plus `findEmptyPoolTasks()` (now deleted), so a task whose only
+  remaining assignee was INACTIVE was never seen. There were zero such tasks
+  on the shared database when it shipped (17 Nov).
 
 **Deferred — `POSITION_WITHOUT_ROLE`.** Built, then deferred before
 shipping. It flagged ACTIVE positions with no `roleId` that someone ACTIVE
