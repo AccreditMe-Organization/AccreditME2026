@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, Min, ValidateNested } from 'class-validator';
+import { IsDefined, IsInt, Min, ValidateNested } from 'class-validator';
 
 // ACC-46 Section 2.7.d — one tier per TaskPriority, all four required on
 // every PATCH (no partial-tier update — a tenant admin edits the full
@@ -19,18 +19,22 @@ export class TaskSlaTierDto {
 }
 
 export class UpdateTaskSlaDto {
+  @IsDefined()
   @ValidateNested()
   @Type(() => TaskSlaTierDto)
   LOW!: TaskSlaTierDto;
 
+  @IsDefined()
   @ValidateNested()
   @Type(() => TaskSlaTierDto)
   MEDIUM!: TaskSlaTierDto;
 
+  @IsDefined()
   @ValidateNested()
   @Type(() => TaskSlaTierDto)
   HIGH!: TaskSlaTierDto;
 
+  @IsDefined()
   @ValidateNested()
   @Type(() => TaskSlaTierDto)
   CRITICAL!: TaskSlaTierDto;

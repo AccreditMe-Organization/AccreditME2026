@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { TenantController } from './tenant.controller';
 import { TenantService } from './tenant.service';
+import { TaskSlaPolicyService } from './task-sla-policy.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 
@@ -31,7 +32,8 @@ describe('PATCH /tenant — timezone (ACC-97)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [TenantController],
-      providers: [{ provide: TenantService, useValue: service }],
+      // ACC-313 — the controller's task SLA routes need it; these specs never call them.
+      providers: [{ provide: TenantService, useValue: service }, { provide: TaskSlaPolicyService, useValue: {} }],
     })
       // The guards are not under test. This one sets what the real TenantGuard
       // would, so the controller receives a real tenant and actor.

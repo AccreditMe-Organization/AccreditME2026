@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TenantController } from './tenant.controller';
 import { TenantService } from './tenant.service';
+import { TaskSlaPolicyService } from './task-sla-policy.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
@@ -48,8 +49,9 @@ describe('TenantController', () => {
     disconnectEmailConfig: jest.Mock;
     updateAiOverageSetting: jest.Mock;
     getTaskSla: jest.Mock;
-    updateTaskSla: jest.Mock;
   };
+  // ACC-313 — every task SLA write and the history go through the policy service.
+  let taskSlaPolicy: { replaceAll: jest.Mock; saveLimits: jest.Mock; saveEscalation: jest.Mock; history: jest.Mock };
 
   beforeEach(async () => {
     service = {
@@ -69,12 +71,20 @@ describe('TenantController', () => {
       disconnectEmailConfig: jest.fn().mockResolvedValue(undefined),
       updateAiOverageSetting: jest.fn().mockResolvedValue(undefined),
       getTaskSla: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
-      updateTaskSla: jest.fn().mockResolvedValue(undefined),
+    };
+    taskSlaPolicy = {
+      replaceAll: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
+      saveLimits: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
+      saveEscalation: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
+      history: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TenantController],
-      providers: [{ provide: TenantService, useValue: service }],
+      providers: [
+        { provide: TenantService, useValue: service },
+        { provide: TaskSlaPolicyService, useValue: taskSlaPolicy },
+      ],
     })
       .overrideGuard(TenantGuard)
       .useValue({ canActivate: () => true })
@@ -171,13 +181,41 @@ describe('TenantController', () => {
   });
 
   describe('updateTaskSla', () => {
-    it('calls updateTaskSla with tenantId, dto, and userId', async () => {
+    it('saves the whole policy through TaskSlaPolicyService.replaceAll with tenantId, dto, and userId', async () => {
       await controller.updateTaskSla(MOCK_TASK_SLA, MOCK_TENANT_ID, MOCK_USER_ID);
-      expect(service.updateTaskSla).toHaveBeenCalledWith(
+      expect(taskSlaPolicy.replaceAll).toHaveBeenCalledWith(
         MOCK_TENANT_ID,
         MOCK_TASK_SLA,
         MOCK_USER_ID,
       );
+    });
+  });
+
+  // ACC-313 — the page saves by section, and reads its history.
+  describe('task SLA sections and history', () => {
+    const limits = { LOW: { dueAfterHours: 80 }, MEDIUM: { dueAfterHours: 40 }, HIGH: { dueAfterHours: 16 }, CRITICAL: { dueAfterHours: 4 } };
+    const escalation = {
+      LOW: { managerEscalationAfterHours: 48, headEscalationAfterHours: 96 },
+      MEDIUM: { managerEscalationAfterHours: 24, headEscalationAfterHours: 48 },
+      HIGH: { managerEscalationAfterHours: 8, headEscalationAfterHours: 16 },
+      CRITICAL: { managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
+    };
+
+    it('PATCH task-sla/limits saves the limits and answers the saved tiers', async () => {
+      const result = await controller.updateTaskSlaLimits(limits, MOCK_TENANT_ID, MOCK_USER_ID);
+      expect(taskSlaPolicy.saveLimits).toHaveBeenCalledWith(MOCK_TENANT_ID, limits, MOCK_USER_ID);
+      expect(result).toEqual(MOCK_TASK_SLA);
+    });
+
+    it('PATCH task-sla/escalation saves the escalation hours and answers the saved tiers', async () => {
+      const result = await controller.updateTaskSlaEscalation(escalation, MOCK_TENANT_ID, MOCK_USER_ID);
+      expect(taskSlaPolicy.saveEscalation).toHaveBeenCalledWith(MOCK_TENANT_ID, escalation, MOCK_USER_ID);
+      expect(result).toEqual(MOCK_TASK_SLA);
+    });
+
+    it('GET task-sla/history passes the page it was asked for', async () => {
+      await controller.getTaskSlaHistory({ skip: 20, take: 20 }, MOCK_TENANT_ID);
+      expect(taskSlaPolicy.history).toHaveBeenCalledWith(MOCK_TENANT_ID, 20, 20);
     });
   });
 });
@@ -202,5 +240,13 @@ describe('TenantController authorization split (ACC-79)', () => {
 
   it('keeps GET /tenant gated on tenant:view — it carries configuration and credits', () => {
     expect(permissionsOn('getCurrent')).toEqual([TENANT_PERMISSIONS.VIEW]);
+  });
+
+  // ACC-313 — the task SLA page's reads and writes all take the key that may
+  // change the policy: the history names colleagues and the values they replaced.
+  it('gates every task SLA route on tenant:manage_config', () => {
+    for (const handler of ['getTaskSla', 'updateTaskSla', 'updateTaskSlaLimits', 'updateTaskSlaEscalation', 'getTaskSlaHistory'] as const) {
+      expect(permissionsOn(handler)).toEqual([TENANT_PERMISSIONS.MANAGE_CONFIG]);
+    }
   });
 });
