@@ -72,7 +72,7 @@ const PENDING_REQUEST = { id: 'req-1', taskId: 'task-1' };
 const mockPrisma = {
   organization: { findFirst: jest.fn() },
   task: { findFirst: jest.fn(), findFirstOrThrow: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
-  taskAssignee: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
+  taskAssignee: { count: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
   taskEvidence: { count: jest.fn(), create: jest.fn() },
   taskRequest: { findMany: jest.fn(), updateMany: jest.fn() },
   user: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
@@ -81,6 +81,21 @@ const mockPrisma = {
   $queryRaw: jest.fn(),
   $transaction: jest.fn(),
 };
+
+// ACC-86 — the writers ask "is anyone else on it?" (CURRENT_ACTIVE_ASSIGNEE) as a count
+// under the task lock. Answered from the task this test last read: a row is current
+// when removedAt is null, and its user is ACTIVE unless the row says otherwise.
+mockPrisma.taskAssignee.count.mockImplementation(async (args: { where: { userId?: { not?: string } } }) => {
+  const reads = mockPrisma.task.findFirst.mock.results;
+  const last = (reads.length ? await reads[reads.length - 1]!.value : null) as {
+    assignees?: { userId: string; removedAt: Date | null; user?: { status: string } }[];
+  } | null;
+  return (last?.assignees ?? []).filter(
+    (r) => r.removedAt === null && (r.user?.status ?? 'ACTIVE') === 'ACTIVE' && r.userId !== args.where.userId?.not,
+  ).length;
+});
+// ACC-86 (Q-1) — ending stale rows answers how many it ended; none unless a test says so.
+mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
 const mockAudit = { log: jest.fn() };
 const mockNotifications = { create: jest.fn() };
 const mockCalendar = { calculateDeadline: jest.fn() };
