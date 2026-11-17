@@ -664,7 +664,6 @@
         "committees:add_member": "إضافة أعضاء إلى اللجنة",
         "committees:remove_member": "إزالة أعضاء من اللجنة",
         "committees:change_member_role": "تغيير دور العضو في اللجنة",
-        "committees:approve": "اعتماد اللائحة والتغييرات وحلّ اللجان",
         "committees:view_all_tasks": "عرض جميع مهام اللجان",
         "committees:create_tasks": "إنشاء مهام على اللجان",
         "committees:manage_tasks": "إعادة إسناد مهام اللجان والبتّ في طلباتها",

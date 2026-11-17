@@ -232,13 +232,15 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       },
     });
 
-    it("queries open, unassigned stages of the tenant's instances only", async () => {
+    // ACC-312 — and never a final stage's entry: nothing waits on it.
+    it("queries open, unassigned, non-final stages of the tenant's instances only", async () => {
       await detectors.stagesWithoutAssignee(ORG_A);
       expect(
         prisma.workflowInstanceStage.findMany.mock.calls[0][0].where,
       ).toEqual({
         exitedAt: null,
         isUnassigned: true,
+        stage: { isFinal: false },
         workflowInstance: { organizationId: ORG_A },
       });
     });

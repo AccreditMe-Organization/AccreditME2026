@@ -43,7 +43,7 @@ describe('WorkflowTemplateController — who may write stage rules (ACC-255)', (
 
   it('the person under test really does hold every committee key', () => {
     expect(EVERY_COMMITTEE_KEY).toEqual(
-      expect.arrayContaining(['committees:manage', 'committees:approve', 'committees:edit_details', 'committees:manage_tasks', 'workflows:view']),
+      expect.arrayContaining(['committees:manage', 'committees:edit_details', 'committees:manage_tasks', 'workflows:view']),
     );
     expect(EVERY_COMMITTEE_KEY).not.toContain(WORKFLOWS_PERMISSIONS.MANAGE);
   });

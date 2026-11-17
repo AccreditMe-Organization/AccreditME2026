@@ -5,6 +5,7 @@ import { App } from 'supertest/types';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { TenantController } from './tenant.controller';
 import { TenantService } from './tenant.service';
+import { TaskSlaPolicyService } from './task-sla-policy.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // ACC-181 — the email settings routes over real HTTP, behind the real
@@ -23,7 +24,8 @@ describe('Email settings routes (ACC-181)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [TenantController],
-      providers: [{ provide: TenantService, useValue: service }],
+      // ACC-313 — the controller's task SLA routes need it; these specs never call them.
+      providers: [{ provide: TenantService, useValue: service }, { provide: TaskSlaPolicyService, useValue: {} }],
     })
       .overrideGuard(TenantGuard)
       .useValue({

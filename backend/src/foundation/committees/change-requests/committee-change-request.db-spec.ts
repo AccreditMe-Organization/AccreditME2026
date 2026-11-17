@@ -1541,4 +1541,187 @@ describe('Committee change requests against a real database (ACC-239)', () => {
       expect((await departure.prepare(w.org, w.requester.userId, w.approver.userId)).withdrawals).toHaveLength(1);
     });
   });
+  // ── ACC-283 PR 5: seat actions as ONE change-request field (Q12) ────────────
+  describe('seat actions in a change request (ACC-283 PR 5)', () => {
+    const realLookups = new LookupService(prisma, audit);
+    let seat: Record<string, string> = {};
+
+    beforeAll(async () => {
+      await realLookups.seedSystemData();
+      const values = await prisma.lookupValue.findMany({
+        where: { organizationId: null, category: { key: 'committee_member_role', organizationId: null } },
+        select: { id: true, key: true },
+      });
+      seat = Object.fromEntries(values.map((v) => [v.key, v.id]));
+    });
+
+    const stageKeyOf = async (w: World, requestId: string) => {
+      const i = await prisma.workflowInstance.findFirstOrThrow({
+        where: { organizationId: w.org, objectType: 'COMMITTEE_CHANGE_REQUEST', objectId: requestId },
+        orderBy: { createdAt: 'desc' },
+      });
+      return (await prisma.workflowStage.findFirstOrThrow({ where: { id: i.currentStageId! } })).key;
+    };
+
+    const stored = async (w: World, committeeId: string) =>
+      (await prisma.committeeSeatAction.findMany({ where: { organizationId: w.org, committeeId }, orderBy: [{ roleValueId: 'asc' }, { actionKey: 'asc' }] })).map(
+        (r) => `${r.roleValueId}:${r.actionKey}`,
+      );
+
+    it('previews the whole map as one field, in canonical order, with the seats named', async () => {
+      const w = await world();
+      const preview = await requests.preview(
+        w.committee,
+        { seatActions: [{ roleValueId: seat['member']!, actions: ['decide_reporting_changes', 'add_member'] }] },
+        w.org,
+        w.requester,
+      );
+      expect(preview.changedFields).toEqual(['seatActions']);
+      expect(preview.impacts).toEqual([
+        { code: 'SEAT_ACTIONS', from: {}, to: { [seat['member']!]: ['add_member', 'decide_reporting_changes'] } },
+        { code: 'TERMS_TASK' },
+      ]);
+      expect(preview.labels[seat['member']!]).toEqual({ en: 'Member', ar: 'عضو' });
+    });
+
+    it('refuses an action off the list, a seat the organisation does not use, and a map equal to the stored one', async () => {
+      const w = await world();
+      const make = (seatActions: { roleValueId: string; actions: string[] }[]) =>
+        outcome(requests.create(w.committee, { changes: { seatActions }, reason: 'seats' }, w.org, w.requester));
+      expect(await make([{ roleValueId: seat['member']!, actions: ['fly'] }])).toBe('SEAT_ACTION_UNKNOWN');
+      expect(await make([{ roleValueId: 'no-such-seat', actions: ['add_member'] }])).toBe('SEAT_ACTION_SEAT_UNKNOWN');
+      // Nothing stored and nothing proposed: no change.
+      expect(await make([{ roleValueId: seat['member']!, actions: [] }])).toBe('CHANGE_REQUEST_NO_CHANGES');
+    });
+
+    it('stores the map at Submit as it stands, then applies it on approval by the one writer, with the audit naming both', async () => {
+      const w = await world();
+      await prisma.committeeSeatAction.create({ data: { organizationId: w.org, committeeId: w.committee, roleValueId: seat['secretary']!, actionKey: 'add_member' } });
+      const before = await prisma.committee.findFirstOrThrow({ where: { id: w.committee, organizationId: w.org } });
+
+      const request = await requests.create(
+        w.committee,
+        {
+          changes: {
+            quorumCount: 5,
+            seatActions: [
+              { roleValueId: seat['member']!, actions: ['request_change'] },
+              { roleValueId: seat['secretary']!, actions: [] },
+            ],
+          },
+          reason: 'seats and quorum',
+          submit: true,
+        },
+        w.org,
+        w.requester,
+      );
+      expect(request.changes).toEqual({ quorumCount: 5, seatActions: { [seat['member']!]: ['request_change'] } });
+      expect(request.fromValues).toEqual({ quorumCount: 3, seatActions: { [seat['secretary']!]: ['add_member'] } });
+      expect(request.labels[seat['member']!]?.en).toBe('Member');
+      expect(request.labels[seat['secretary']!]?.en).toBe('Secretary');
+
+      await requests.approve(request.id, w.org, w.approver);
+
+      expect(await stored(w, w.committee)).toEqual([`${seat['member']!}:request_change`]);
+      const after = await prisma.committee.findFirstOrThrow({ where: { id: w.committee, organizationId: w.org } });
+      expect(after.quorumCount).toBe(5);
+      expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+      const row = await prisma.auditLog.findFirstOrThrow({
+        where: { organizationId: w.org, objectType: 'Committee', objectId: w.committee, action: 'UPDATE' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(row.before).toEqual({ quorumCount: 3, seatActions: { [seat['secretary']!]: ['add_member'] } });
+      expect(row.after).toEqual({ quorumCount: 5, seatActions: { [seat['member']!]: ['request_change'] } });
+    });
+
+    it('a seat-actions-only change also makes a stale Formation save stale (updatedAt moves)', async () => {
+      const w = await world();
+      const before = await prisma.committee.findFirstOrThrow({ where: { id: w.committee, organizationId: w.org } });
+      const request = await requests.create(
+        w.committee,
+        { changes: { seatActions: [{ roleValueId: seat['member']!, actions: ['add_member'] }] }, reason: 'seats', submit: true },
+        w.org,
+        w.requester,
+      );
+      await requests.approve(request.id, w.org, w.approver);
+      expect(await stored(w, w.committee)).toEqual([`${seat['member']!}:add_member`]);
+      const after = await prisma.committee.findFirstOrThrow({ where: { id: w.committee, organizationId: w.org } });
+      expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+      expect(after.quorumCount).toBe(before.quorumCount);
+    });
+
+    it('an edit of a draft can add the seat actions', async () => {
+      const w = await world();
+      const draft = await requests.create(w.committee, { changes: { quorumCount: 4 }, reason: 'draft' }, w.org, w.requester);
+      const edited = await requests.update(
+        draft.id,
+        { changes: { quorumCount: 4, seatActions: [{ roleValueId: seat['chairman']!, actions: ['decide_reporting_changes'] }] } },
+        w.org,
+        w.requester,
+      );
+      expect(edited.changes).toEqual({ quorumCount: 4, seatActions: { [seat['chairman']!]: ['decide_reporting_changes'] } });
+    });
+
+    it('DRIFT: seat actions changed since Submit refuse the whole approval, and nothing is applied', async () => {
+      const w = await world();
+      const request = await requests.create(
+        w.committee,
+        { changes: { quorumCount: 5, seatActions: [{ roleValueId: seat['member']!, actions: ['add_member'] }] }, reason: 'seats', submit: true },
+        w.org,
+        w.requester,
+      );
+      // Someone changes the stored map after Submit (as a Formation edit would).
+      await prisma.committeeSeatAction.create({ data: { organizationId: w.org, committeeId: w.committee, roleValueId: seat['secretary']!, actionKey: 'remove_member' } });
+
+      expect(await body(requests.approve(request.id, w.org, w.approver))).toEqual([
+        409,
+        expect.objectContaining({ code: 'CHANGE_REQUEST_COMMITTEE_CHANGED', fields: ['seatActions'] }),
+      ]);
+      expect(await stored(w, w.committee)).toEqual([`${seat['secretary']!}:remove_member`]);
+      expect((await prisma.committee.findFirstOrThrow({ where: { id: w.committee, organizationId: w.org } })).quorumCount).toBe(3);
+      expect(await stageKeyOf(w, request.id)).toBe('under_review');
+    });
+
+    it('DRIFT: a proposed seat the organisation no longer uses refuses the approval, so nothing is written for it', async () => {
+      const w = await world();
+      const own = await realLookups.addValue('committee_member_role', w.org, { key: `observer-${w.slug}`, labelEn: 'Observer', sortOrder: 90 } as never, w.requester.userId);
+      const request = await requests.create(
+        w.committee,
+        { changes: { seatActions: [{ roleValueId: own.id, actions: ['request_change'] }] }, reason: 'observer', submit: true },
+        w.org,
+        w.requester,
+      );
+      await prisma.lookupValue.update({ where: { id: own.id }, data: { isActive: false } });
+      expect(await outcome(requests.approve(request.id, w.org, w.approver))).toBe('CHANGE_REQUEST_COMMITTEE_CHANGED');
+      expect(await stored(w, w.committee)).toEqual([]);
+    });
+
+    it('a request that changes only the committee\'s own fields reads no seat actions', async () => {
+      const w = await world();
+      const reads = jest.spyOn(prisma.committeeSeatAction, 'findMany');
+      try {
+        const request = await requests.create(w.committee, { changes: { quorumCount: 5 }, reason: 'quorum', submit: true }, w.org, w.requester);
+        await requests.approve(request.id, w.org, w.approver);
+        expect(reads).not.toHaveBeenCalled();
+        // Non-vacuous: the same spy sees a request that does name seat actions.
+        await requests.preview(w.committee, { seatActions: [{ roleValueId: seat['member']!, actions: ['add_member'] }] }, w.org, w.requester);
+        expect(reads).toHaveBeenCalled();
+      } finally {
+        reads.mockRestore();
+      }
+    });
+
+    itEnforcesTenantIsolation("a change request never takes another organisation's seat, nor counts its seat-action rows", async () => {
+      const w = await world();
+      const other = await world();
+      const theirs = await realLookups.addValue('committee_member_role', other.org, { key: `theirs-${other.slug}`, labelEn: 'Theirs', sortOrder: 90 } as never, other.requester.userId);
+      expect(
+        await outcome(requests.create(w.committee, { changes: { seatActions: [{ roleValueId: theirs.id, actions: ['add_member'] }] }, reason: 'x' }, w.org, w.requester)),
+      ).toBe('SEAT_ACTION_SEAT_UNKNOWN');
+      // A row filed under the other organisation against THIS committee is not part of its map.
+      await prisma.committeeSeatAction.create({ data: { organizationId: other.org, committeeId: w.committee, roleValueId: seat['member']!, actionKey: 'add_member' } });
+      const preview = await requests.preview(w.committee, { seatActions: [{ roleValueId: seat['member']!, actions: ['add_member'] }] }, w.org, w.requester);
+      expect(preview.impacts[0]).toEqual({ code: 'SEAT_ACTIONS', from: {}, to: { [seat['member']!]: ['add_member'] } });
+    });
+  });
 });

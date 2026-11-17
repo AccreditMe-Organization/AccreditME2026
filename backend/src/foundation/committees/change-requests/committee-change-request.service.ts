@@ -16,6 +16,7 @@ import { committeeTypeValues } from '../committee-type-values';
 import { ChangeRequestRefusal } from './change-request-refusal';
 import { assertMaySeeCommittee, assertMayWriteCommittee, mayReadCommittee } from '../../../common/services/committee-membership';
 import { seatValues } from '../committee-seat-rules';
+import { canonicalSeatActions, currentSeatActionMap, sameSeatActions, seatActionWanted, writeSeatActions } from '../seat-actions';
 import { ChainResult, ChainStep, mayDecideAnyChangeRequest, resolveDecisionChains } from './change-request-chain';
 import {
   ACTION_TARGET_STAGE,
@@ -80,7 +81,17 @@ export const CHANGE_FIELDS = [
 ] as const;
 export type ChangeField = (typeof CHANGE_FIELDS)[number];
 export type ChangeValue = string | number | null;
-export type ChangeValues = Partial<Record<ChangeField, ChangeValue>>;
+/**
+ * ACC-283 PR 5 (Q12) — the committee's WHOLE seat-action map is one request
+ * field: seat id → its actions, canonical (seatActionMap()'s shape), stored in
+ * `changes` and `fromValues` beside the committee's own fields. It is previewed,
+ * drift-checked and applied as one.
+ */
+export const SEAT_ACTIONS_FIELD = 'seatActions' as const;
+export type SeatActionMap = Record<string, string[]>;
+/** Every field a request may change: the committee's own, and its seat actions. */
+export type RequestField = ChangeField | typeof SEAT_ACTIONS_FIELD;
+export type ChangeValues = Partial<Record<ChangeField, ChangeValue>> & { seatActions?: SeatActionMap };
 
 /** Fields that can never be empty on an approved committee: a null for one of them is "not changing". */
 const REQUIRED_FIELDS: ReadonlySet<ChangeField> = new Set<ChangeField>(['nameEn', 'typeValueId', 'quorumCount', 'meetingFrequency']);
@@ -93,6 +104,38 @@ const PAGE = 50;
 const STAGE_ORDER = new Map<string, number>(CHANGE_REQUEST_STAGE_KEYS.map((k, i) => [k, i]));
 
 type CommitteeRow = Record<ChangeField, ChangeValue> & { id: string; organizationId: string; updatedAt: Date };
+
+/** ACC-283 PR 5 — the committee's seat actions now, and the seats the organisation uses. */
+interface SeatsNow {
+  current: SeatActionMap;
+  usedSeatIds: ReadonlySet<string>;
+}
+
+/**
+ * Read ONLY when a request names seat actions (two queries), so a request that
+ * changes only the committee's own fields costs what it did before.
+ */
+async function seatsNow(
+  client: Pick<PrismaService, '$queryRaw' | 'committeeSeatAction'>,
+  committeeId: string,
+  organizationId: string,
+): Promise<SeatsNow> {
+  const usedSeatIds = new Set((await seatValues(client, organizationId)).map((seat) => seat.id));
+  return { current: await currentSeatActionMap(client, organizationId, committeeId, usedSeatIds), usedSeatIds };
+}
+
+/** Does this proposal (a DTO or stored values) name the seat actions? */
+function namesSeatActions(values: unknown): boolean {
+  return !!values && typeof values === 'object' && (values as Record<string, unknown>)[SEAT_ACTIONS_FIELD] != null;
+}
+
+/** The committee's own fields a set of values names (never the seat actions). */
+function scalarFields(values: ChangeValues): ChangeField[] {
+  return (Object.keys(values) as ChangeField[]).filter((field) => CHANGE_FIELDS.includes(field));
+}
+
+type LabelIds = Record<'typeValueId' | 'orgUnitId' | 'committeeId' | 'seatValueId', string[]>;
+const noLabelIds = (): LabelIds => ({ typeValueId: [], orgUnitId: [], committeeId: [], seatValueId: [] });
 
 export interface ChangeRequestActions {
   edit: boolean;
@@ -197,10 +240,12 @@ export type ChangeImpact =
   | { code: 'OWNING_UNIT'; from: ChangeValue; to: ChangeValue }
   | { code: 'PARENT'; from: ChangeValue; to: ChangeValue }
   | { code: 'REPORTS_TO'; from: ChangeValue; to: ChangeValue }
+  // ACC-283 PR 5 — the whole map, before and after; `labels` names its seats.
+  | { code: 'SEAT_ACTIONS'; from: SeatActionMap; to: SeatActionMap }
   | { code: 'TERMS_TASK' };
 
 export interface IChangeRequestPreview {
-  changedFields: ChangeField[];
+  changedFields: RequestField[];
   impacts: ChangeImpact[];
   /** ACC-240 — names for the ids in `impacts` (the from and to of a unit or a committee). */
   labels: ChangeRequestLabels;
@@ -252,7 +297,8 @@ export class CommitteeChangeRequestService {
     // else gets the identical 404 a missing committee gets.
     await assertMayWriteCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer));
     const committee = await this.loadCommittee(committeeId, organizationId);
-    const changes = normaliseChanges(dto.changes, committee);
+    const seats = namesSeatActions(dto.changes) ? await seatsNow(this.prisma, committeeId, organizationId) : undefined;
+    const changes = normaliseChanges(dto.changes, committee, {}, seats);
 
     // Every read the engine can do first (the template, the first stage), and
     // (ACC-283 Q8) the requester's "Finish or withdraw" task.
@@ -340,7 +386,8 @@ export class CommitteeChangeRequestService {
       let changes: ChangeValues | undefined;
       if (dto.changes !== undefined) {
         const committee = await tx.committee.findFirstOrThrow({ where: { id: before.committeeId, organizationId } });
-        changes = normaliseChanges(dto.changes, committee as unknown as CommitteeRow);
+        const seats = namesSeatActions(dto.changes) ? await seatsNow(tx, before.committeeId, organizationId) : undefined;
+        changes = normaliseChanges(dto.changes, committee as unknown as CommitteeRow, {}, seats);
         await assertCommitteeReferences(tx, referenceChange(before.committeeId, organizationId, changes), this.logger);
       }
       const after = await tx.committeeChangeRequest.update({
@@ -425,9 +472,12 @@ export class CommitteeChangeRequestService {
 
         // The values as they stand NOW, for every field the request changes.
         // A value that has since come to equal the proposal is not a change.
-        const changes = dropUnchanged(request.changes as ChangeValues, committee);
+        // ACC-283 PR 5 — the seat actions, read under the committee row's share
+        // lock: every write of them holds that row FOR UPDATE.
+        const seats = namesSeatActions(request.changes) ? await seatsNow(tx, committee.id, organizationId) : undefined;
+        const changes = dropUnchanged(request.changes as ChangeValues, committee, seats);
         if (Object.keys(changes).length === 0) throw new ChangeRequestRefusal('CHANGE_REQUEST_NO_CHANGES');
-        fromValues = pick(committee, Object.keys(changes) as ChangeField[]);
+        fromValues = { ...pick(committee, scalarFields(changes)), ...(changes.seatActions && seats && { seatActions: seats.current }) };
         await assertCommitteeReferences(tx, referenceChange(committee.id, organizationId, changes), this.logger);
 
         await tx.committeeChangeRequest.update({
@@ -529,7 +579,8 @@ export class CommitteeChangeRequestService {
       // The checks Submit and Approve make, first and read only, so a failing
       // request is refused while it is still a draft.
       const committee = await this.loadCommittee(loaded.row.committeeId, organizationId);
-      const changes = dropUnchanged(loaded.row.changes as ChangeValues, committee);
+      const seats = namesSeatActions(loaded.row.changes) ? await seatsNow(this.prisma, committee.id, organizationId) : undefined;
+      const changes = dropUnchanged(loaded.row.changes as ChangeValues, committee, seats);
       if (Object.keys(changes).length === 0) throw new ChangeRequestRefusal('CHANGE_REQUEST_NO_CHANGES');
       await this.prisma.$transaction((tx) => assertCommitteeReferences(tx, referenceChange(committee.id, organizationId, changes), this.logger));
       await this.performSubmit(loaded, organizationId, viewer);
@@ -573,7 +624,12 @@ export class CommitteeChangeRequestService {
     );
 
     // Filled inside the transaction, read after it commits.
-    const out: { before?: CommitteeRow; after?: CommitteeRow; task?: Awaited<ReturnType<TaskService['insertPrepared']>> } = {};
+    const out: {
+      before?: CommitteeRow;
+      after?: CommitteeRow;
+      task?: Awaited<ReturnType<TaskService['insertPrepared']>>;
+      seatChange?: { before: SeatActionMap; after: SeatActionMap } | null;
+    } = {};
 
     // ACC-255 §4.3 — the target is the one stage of this request's template
     // flagged APPLIES_APPROVED_CHANGE, never a fixed key.
@@ -592,35 +648,60 @@ export class CommitteeChangeRequestService {
           where: { id: loaded.row.committeeId, organizationId },
         })) as unknown as CommitteeRow;
 
-        await tx.$queryRaw`SELECT id FROM "CommitteeChangeRequest" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
+        // The request's values. Its row is locked LATER (ACC-283 §7: seat-action
+        // rows are written after the committee row and before the request row).
+        // Reading it first is safe: every write of a request holds its instance's
+        // lock, which the engine took first here.
         const request = await tx.committeeChangeRequest.findFirstOrThrow({ where: { id, organizationId } });
         const proposed = request.changes as ChangeValues;
         const fromValues = (request.fromValues ?? {}) as ChangeValues;
+        // ACC-283 PR 5 — the seat actions now, under the committee row's lock.
+        const seats = namesSeatActions(proposed) ? await seatsNow(tx, before.id, organizationId) : undefined;
 
         // Q11 — DRIFT. Any value that differs from what the requester saw at
         // Submit refuses the whole approval: nothing is applied, and the
         // approver is told to return it.
-        const drifted = (Object.keys(proposed) as ChangeField[]).filter((f) => !sameValue(before[f], fromValues[f]));
+        const drifted: RequestField[] = scalarFields(proposed).filter((f) => !sameValue(before[f], fromValues[f]));
+        // ACC-283 PR 5 (Q12) — the seat-action map drifts as ONE field: what is
+        // stored now against what the requester saw at Submit. A proposed seat
+        // the organisation no longer uses is drift too, so nothing is ever
+        // written for it.
+        if (
+          proposed.seatActions &&
+          seats &&
+          (!sameSeatActions(seats.current, fromValues.seatActions) || Object.keys(proposed.seatActions).some((seat) => !seats.usedSeatIds.has(seat)))
+        ) {
+          drifted.push(SEAT_ACTIONS_FIELD);
+        }
         if (drifted.length > 0) throw new ChangeRequestRefusal('CHANGE_REQUEST_COMMITTEE_CHANGED', { fields: drifted });
 
         await assertCommitteeReferences(tx, referenceChange(before.id, organizationId, proposed), this.logger);
 
+        // ACC-283 PR 5 — the seat actions, by the one writer the Formation edit uses.
+        const seatChange =
+          proposed.seatActions && seats
+            ? await writeSeatActions(tx, organizationId, before.id, seatActionWanted(proposed.seatActions), seats.usedSeatIds)
+            : null;
+        const columns = Object.fromEntries(scalarFields(proposed).map((f) => [f, proposed[f] ?? null]));
         const after = (await tx.committee.update({
           where: { id: before.id },
-          data: proposed as Prisma.CommitteeUncheckedUpdateInput,
+          // Seat actions are part of the terms of reference: a change to them alone
+          // still makes a stale Formation save of the committee stale.
+          data: { ...columns, ...(seatChange && { updatedAt: new Date() }) } as Prisma.CommitteeUncheckedUpdateInput,
         })) as unknown as CommitteeRow;
 
+        await tx.$queryRaw`SELECT id FROM "CommitteeChangeRequest" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
         const task = await this.tasks.insertPrepared(tx, preparedTask, organizationId, viewer.userId);
         const now = new Date();
         await tx.committeeChangeRequest.update({
           where: { id },
           data: { decidedById: viewer.userId, decidedAt: now, appliedAt: now, termsTaskId: task.id },
         });
-        Object.assign(out, { before, after, task });
+        Object.assign(out, { before, after, task, seatChange });
       },
     });
 
-    const { before: done, after: appliedRow, task: createdTask } = out;
+    const { before: done, after: appliedRow, task: createdTask, seatChange } = out;
     if (done && appliedRow && createdTask) {
       // One audit row for the committee's change, naming the request.
       await this.auditLog.log({
@@ -629,8 +710,8 @@ export class CommitteeChangeRequestService {
         objectId: loaded.row.committeeId,
         actorId: viewer.userId,
         tenantId: organizationId,
-        before: pick(done, Object.keys(changes) as ChangeField[]) as Record<string, unknown>,
-        after: pick(appliedRow, Object.keys(changes) as ChangeField[]) as Record<string, unknown>,
+        before: { ...pick(done, scalarFields(changes)), ...(seatChange && { seatActions: seatChange.before }) } as Record<string, unknown>,
+        after: { ...pick(appliedRow, scalarFields(changes)), ...(seatChange && { seatActions: seatChange.after }) } as Record<string, unknown>,
         metadata: { changeRequestId: id, changeRequestNumber: loaded.row.number },
       });
       await this.auditLog.log({
@@ -772,12 +853,19 @@ export class CommitteeChangeRequestService {
   /**
    * The committee's open request, for its banner — or null — and `canRaise`:
    * whether `create()` would accept a request from this viewer now. It is the
-   * create call's own three checks, read from the same functions (the
-   * permission, `committeeAllowsRaise()`, `isOpen()`), never a second copy.
-   * Create re-checks all three under the committee's row lock; this is a read.
+   * create call's own four checks, read from the same functions (the
+   * permission, the write precondition, `committeeAllowsRaise()`, `isOpen()`),
+   * never a second copy. Create re-checks them under the committee's row lock;
+   * this is a read.
+   *
+   * ACC-283 — the write precondition is `access.write`, from the same
+   * `committeeAccess()` pass the read check makes (maySeeCommittee(), which
+   * assertMayWriteCommittee() asks in create): an overseeing head READS the
+   * committee but may not raise a request (Q6), so they are not offered one.
+   * No extra query.
    */
   async openSummary(committeeId: string, organizationId: string, viewer: ChangeRequestViewer): Promise<IOpenChangeRequest> {
-    await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
+    const access = await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
     await this.loadCommittee(committeeId, organizationId);
     const rows = await this.prisma.committeeChangeRequest.findMany({
       where: { committeeId, organizationId },
@@ -789,7 +877,7 @@ export class CommitteeChangeRequestService {
       this.committeeStage(this.prisma, committeeId, organizationId, 'none'),
     ]);
     const open = rows.find((r) => isOpen(states.get(r.id))) ?? null;
-    const canRaise = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS) && committeeAllowsRaise(committeeStage) && !open;
+    const canRaise = hasPermission(viewer, COMMITTEES_PERMISSIONS.EDIT_DETAILS) && access.write && committeeAllowsRaise(committeeStage) && !open;
     if (!open) return { request: null, canRaise };
     const [dto] = await this.toDtos([open], organizationId, viewer, () => committeeStage);
     return { request: dto!, canRaise };
@@ -868,8 +956,9 @@ export class CommitteeChangeRequestService {
   ): Promise<IChangeRequestPreview> {
     await assertMaySeeCommittee(this.prisma, committeeId, organizationId, asCommitteeViewer(viewer)); // ACC-281
     const committee = await this.loadCommittee(committeeId, organizationId);
-    const changes = normaliseChanges(values, committee, { allowEmpty: true });
-    const fields = Object.keys(changes) as ChangeField[];
+    const seats = namesSeatActions(values) ? await seatsNow(this.prisma, committeeId, organizationId) : undefined;
+    const changes = normaliseChanges(values, committee, { allowEmpty: true }, seats);
+    const fields = Object.keys(changes) as RequestField[];
     if (fields.length > 0) {
       await this.prisma.$transaction((tx) =>
         assertCommitteeReferences(tx, referenceChange(committeeId, organizationId, changes), this.logger),
@@ -893,9 +982,14 @@ export class CommitteeChangeRequestService {
     if ('orgUnitId' in changes) impacts.push({ code: 'OWNING_UNIT', ...span('orgUnitId') });
     if ('parentCommitteeId' in changes) impacts.push({ code: 'PARENT', ...span('parentCommitteeId') });
     if ('reportingToCommitteeId' in changes) impacts.push({ code: 'REPORTS_TO', ...span('reportingToCommitteeId') });
+    if (changes.seatActions && seats) impacts.push({ code: 'SEAT_ACTIONS', from: seats.current, to: changes.seatActions });
     if (fields.length > 0) impacts.push({ code: 'TERMS_TASK' });
-    const ids: Record<'typeValueId' | 'orgUnitId' | 'committeeId', string[]> = { typeValueId: [], orgUnitId: [], committeeId: [] };
+    const ids = noLabelIds();
     for (const impact of impacts) {
+      if (impact.code === 'SEAT_ACTIONS') {
+        ids.seatValueId.push(...Object.keys(impact.from), ...Object.keys(impact.to));
+        continue;
+      }
       const bucket = impact.code === 'OWNING_UNIT' ? ids.orgUnitId : impact.code === 'PARENT' || impact.code === 'REPORTS_TO' ? ids.committeeId : null;
       if (bucket && 'from' in impact) for (const v of [impact.from, impact.to]) if (typeof v === 'string') bucket.push(v);
     }
@@ -912,11 +1006,16 @@ export class CommitteeChangeRequestService {
    */
   private async loadExtras(rows: RequestRow[], organizationId: string): Promise<DtoExtras> {
     const personIds = [...new Set(rows.flatMap((r) => [r.decidedById, r.withdrawnById]).filter((id): id is string => !!id))];
-    const ids: Record<'typeValueId' | 'orgUnitId' | 'committeeId', string[]> = { typeValueId: [], orgUnitId: [], committeeId: [] };
+    const ids = noLabelIds();
     for (const row of rows) {
       for (const values of [row.changes, row.fromValues] as unknown[]) {
         if (!values || typeof values !== 'object') continue;
         for (const [field, value] of Object.entries(values as Record<string, unknown>)) {
+          // ACC-283 PR 5 — the seat-action map's keys are seats.
+          if (field === SEAT_ACTIONS_FIELD && value && typeof value === 'object') {
+            ids.seatValueId.push(...Object.keys(value));
+            continue;
+          }
           const bucket = LABELLED_FIELDS[field as ChangeField];
           if (bucket && typeof value === 'string') ids[bucket].push(value);
         }
@@ -937,12 +1036,9 @@ export class CommitteeChangeRequestService {
    * included. Types go through ACC-246's resolver, which reads the shared
    * system values and this organisation's own rows, with its label overrides.
    */
-  private async resolveLabels(
-    ids: Record<'typeValueId' | 'orgUnitId' | 'committeeId', string[]>,
-    organizationId: string,
-  ): Promise<ChangeRequestLabels> {
+  private async resolveLabels(ids: LabelIds, organizationId: string): Promise<ChangeRequestLabels> {
     const unique = (list: string[]) => [...new Set(list)];
-    const [types, units, committees] = await Promise.all([
+    const [types, units, committees, seats] = await Promise.all([
       committeeTypeValues(this.prisma, organizationId, unique(ids.typeValueId)),
       ids.orgUnitId.length
         ? this.prisma.orgUnit.findMany({ where: { id: { in: unique(ids.orgUnitId) }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
@@ -950,9 +1046,12 @@ export class CommitteeChangeRequestService {
       ids.committeeId.length
         ? this.prisma.committee.findMany({ where: { id: { in: unique(ids.committeeId) }, organizationId }, select: { id: true, nameEn: true, nameAr: true } })
         : Promise.resolve([]),
+      // ACC-283 PR 5 — the seats a seat-action map names, by the same resolver.
+      committeeTypeValues(this.prisma, organizationId, unique(ids.seatValueId), 'committee_member_role'),
     ]);
     const labels: ChangeRequestLabels = {};
     for (const t of types.values()) labels[t.id] = { en: t.labelEn, ar: t.labelAr };
+    for (const seat of seats.values()) labels[seat.id] = { en: seat.labelEn, ar: seat.labelAr };
     for (const u of units) labels[u.id] = { en: u.nameEn, ar: u.nameAr };
     for (const c of committees) labels[c.id] = { en: c.nameEn, ar: c.nameAr };
     return labels;
@@ -1228,6 +1327,8 @@ export function normaliseChanges(
   values: CommitteeChangeValuesDto | undefined,
   committee: CommitteeRow,
   options: { allowEmpty?: boolean } = {},
+  // ACC-283 PR 5 — the committee's seat actions now: required when `values` names them.
+  seats?: SeatsNow,
 ): ChangeValues {
   const source = (values ?? {}) as Partial<Record<ChangeField, ChangeValue | undefined>>;
   const out: ChangeValues = {};
@@ -1240,6 +1341,13 @@ export function normaliseChanges(
     if (sameValue(committee[field], value)) continue;
     out[field] = value;
   }
+  // ACC-283 PR 5 (Q12) — the whole seat-action map, checked and canonical; equal
+  // to what is stored now, it is not a change. Null is "not changing".
+  if (values?.seatActions != null) {
+    if (!seats) throw new Error("normaliseChanges: seat actions need the committee's seats");
+    const map = canonicalSeatActions(values.seatActions, seats.usedSeatIds);
+    if (!sameSeatActions(map, seats.current)) out.seatActions = map;
+  }
   if ('quorumCount' in out && (typeof out.quorumCount !== 'number' || out.quorumCount < 1)) {
     throw new ChangeRequestRefusal('CHANGE_REQUEST_QUORUM_MIN');
   }
@@ -1247,11 +1355,15 @@ export function normaliseChanges(
   return out;
 }
 
-function dropUnchanged(changes: ChangeValues, committee: CommitteeRow): ChangeValues {
+function dropUnchanged(changes: ChangeValues, committee: CommitteeRow, seats?: SeatsNow): ChangeValues {
   const out: ChangeValues = {};
-  for (const field of Object.keys(changes) as ChangeField[]) {
-    if (!CHANGE_FIELDS.includes(field)) continue;
+  for (const field of scalarFields(changes)) {
     if (!sameValue(committee[field], changes[field])) out[field] = changes[field] ?? null;
+  }
+  // ACC-283 PR 5 — the seat-action map, as one value.
+  if (changes.seatActions) {
+    if (!seats) throw new Error("dropUnchanged: seat actions need the committee's seats");
+    if (!sameSeatActions(changes.seatActions, seats.current)) out.seatActions = changes.seatActions;
   }
   return out;
 }
@@ -1300,6 +1412,10 @@ function labelsFor(row: RequestRow, all: ChangeRequestLabels): ChangeRequestLabe
   for (const values of [row.changes, row.fromValues] as unknown[]) {
     if (!values || typeof values !== 'object') continue;
     for (const [field, value] of Object.entries(values as Record<string, unknown>)) {
+      if (field === SEAT_ACTIONS_FIELD && value && typeof value === 'object') {
+        for (const seat of Object.keys(value)) if (all[seat]) out[seat] = all[seat]!;
+        continue;
+      }
       if (LABELLED_FIELDS[field as ChangeField] && typeof value === 'string' && all[value]) out[value] = all[value]!;
     }
   }

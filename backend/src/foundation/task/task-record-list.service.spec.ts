@@ -68,7 +68,15 @@ function statement(call: unknown[]): Prisma.Sql {
 }
 
 function setup(
-  opts: { ids?: string[]; rows?: ReturnType<typeof task>[]; refuse?: Error; headOf?: string | null; statusRows?: { status: string; n: bigint }[] } = {},
+  opts: {
+    ids?: string[];
+    rows?: ReturnType<typeof task>[];
+    refuse?: Error;
+    headOf?: string | null;
+    statusRows?: { status: string; n: bigint }[];
+    /** ACC-283 — what POST /tasks' record check answers (canViewForWrite); true by default. */
+    writeAdmits?: boolean;
+  } = {},
 ) {
   const ids = opts.ids ?? ['t2', 't1'];
   const prisma = {
@@ -100,6 +108,7 @@ function setup(
   };
   const objectVisibility = {
     assertCanView: opts.refuse ? jest.fn().mockRejectedValue(opts.refuse) : jest.fn().mockResolvedValue(undefined),
+    canViewForWrite: jest.fn().mockResolvedValue(opts.writeAdmits ?? true),
   };
   const tasks = { mayManage: jest.fn().mockResolvedValue(false) };
   const authority = { creatorsCoveredBy: jest.fn().mockResolvedValue([]) };
@@ -180,6 +189,20 @@ describe('TaskRecordListService', () => {
       expect(panel.canCreate).toBe(false);
       const creator = await service.panel({ ...RECORD }, 'org-a', { id: 'u1', permissions: ['committees:view', 'committees:create_tasks'] });
       expect(creator.canCreate).toBe(true);
+    });
+
+    // ACC-283 — New task also needs POST /tasks' record check (no oversight), asked
+    // only with the key: an overseeing head who holds the key reads the panel but
+    // is not offered a create the server refuses.
+    it("canCreate also needs POST /tasks' record check, asked only with the key", async () => {
+      const keyless = setup();
+      await keyless.service.panel({ ...RECORD }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
+      expect(keyless.objectVisibility.canViewForWrite).not.toHaveBeenCalled();
+
+      const overseer = setup({ writeAdmits: false });
+      const refused = await overseer.service.panel({ ...RECORD }, 'org-a', { id: 'u1', permissions: ['committees:create_tasks'] });
+      expect(refused.canCreate).toBe(false);
+      expect(overseer.objectVisibility.canViewForWrite).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-a', ['committees:create_tasks'], 'u1');
     });
   });
 

@@ -143,19 +143,7 @@ export class ObjectVisibilityService {
     }
 
     if (!viewerPermissions.includes(rule.permission)) {
-      // ACC-281 — a member of THIS record is admitted (one indexed query, only
-      // here, only without the permission). A non-member gets today's 403: the
-      // membership query answers the same for an invented id, so it stays
-      // existence-neutral. No viewerId means today's rule exactly (fail closed).
-      if (rule.member && viewerId && (await rule.member(objectId, organizationId, viewerId))) return;
-      if (
-        options.oversight &&
-        rule.overseer &&
-        viewerId &&
-        (await rule.overseer(objectId, organizationId, viewerId, options.now ?? new Date()))
-      ) {
-        return;
-      }
+      if (await this.admitsWithoutPermission(rule, objectId, organizationId, viewerId, options)) return;
       throw new ForbiddenException(`Required permission: ${rule.permission}`);
     }
 
@@ -166,6 +154,57 @@ export class ObjectVisibilityService {
     if (!parent) {
       throw new NotFoundException(`${objectType} not found`);
     }
+  }
+
+  /**
+   * ACC-283 — the record check a WRITE runs, as a yes or no, for a screen that
+   * offers the write: assertCanView() with no oversight, which is what POST /tasks
+   * runs, from the same admitsWithoutPermission() and never a copy. An overseeing
+   * head reads the record (a read passes { oversight: true }) but is not offered
+   * a write the server would refuse (Q6).
+   *
+   * It does NOT read whether the record exists: the caller has already read it
+   * (a record panel is refused for a missing record first). So the view
+   * permission's holder costs no query, and anyone else the member clause's one.
+   * A type with no rule is false (fail closed).
+   */
+  async canViewForWrite(
+    objectType: string,
+    objectId: string,
+    organizationId: string,
+    viewerPermissions: readonly string[],
+    viewerId: string,
+  ): Promise<boolean> {
+    const rule = this.rules[objectType];
+    if (!rule) return false;
+    if (viewerPermissions.includes(rule.permission)) return true;
+    return this.admitsWithoutPermission(rule, objectId, organizationId, viewerId, {});
+  }
+
+  /**
+   * Who is admitted WITHOUT the view permission: the one copy of the clauses
+   * below, read by assertCanView() and canViewForWrite().
+   *
+   * ACC-281 — a member of THIS record is admitted (one indexed query, only here,
+   * only without the permission). A non-member gets today's 403: the membership
+   * query answers the same for an invented id, so it stays existence-neutral. No
+   * viewerId means today's rule exactly (fail closed). ACC-283 PR 2a — a READ that
+   * passes { oversight: true } also admits the record's overseer.
+   */
+  private async admitsWithoutPermission(
+    rule: ParentRule,
+    objectId: string,
+    organizationId: string,
+    viewerId: string | undefined,
+    options: ViewOptions,
+  ): Promise<boolean> {
+    if (!viewerId) return false;
+    if (rule.member && (await rule.member(objectId, organizationId, viewerId))) return true;
+    return !!(
+      options.oversight &&
+      rule.overseer &&
+      (await rule.overseer(objectId, organizationId, viewerId, options.now ?? new Date()))
+    );
   }
 
   // ACC-101 — the same rule for the OTHER shape of endpoint, where the parent
