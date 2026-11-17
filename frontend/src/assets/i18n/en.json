@@ -3756,6 +3756,52 @@
       "range": "{{from}} – {{to}}",
       "inactiveCommittee": "Committee inactive"
     },
+    "sessions": {
+      "heading": "Signed-in devices",
+      "loading": "Loading signed-in devices",
+      "loadError": "Signed-in devices couldn't be loaded.",
+      "empty": "Not signed in on any device",
+      "popupTitle": "Signed-in devices: {{name}}",
+      "close": "Close",
+      "thisDevice": "This device",
+      "device": "{{browser}} on {{os}}",
+      "unknownBrowser": "Unknown browser",
+      "unknownOs": "unknown system",
+      "lastActive": "Last active {{when}}",
+      "signedIn": "Signed in {{when}}",
+      "signOut": "Sign out",
+      "signOutLabel": "Sign out {{device}}",
+      "signOutOthers": "Sign out other devices",
+      "signOutEverywhere": "Sign out everywhere",
+      "confirm": {
+        "one": {
+          "header": "Sign out {{device}}?",
+          "message": "{{device}} will be signed out. It can take up to 15 minutes to stop working."
+        },
+        "others": {
+          "header": "Sign out your other devices?",
+          "message": "Every device except this one will be signed out. It can take up to 15 minutes for them to stop working."
+        },
+        "all": {
+          "header": "Sign {{name}} out everywhere?",
+          "message": "{{name}} will be signed out of every device at once, and will get an email saying so."
+        }
+      },
+      "done": {
+        "one": "Signed out. It can take up to 15 minutes to stop working.",
+        "others": "Your other devices are being signed out. It can take up to 15 minutes.",
+        "all": "{{name}} was signed out everywhere."
+      },
+      "refusal": {
+        "SESSION_IS_CURRENT": "This is the device you're using. Use Sign out in the menu to end it.",
+        "CURRENT_SESSION_UNKNOWN": "This device's sign-in couldn't be identified. Sign out and sign in again, then try again.",
+        "SESSIONS_END_SELF": "To sign yourself out of other devices, use your own record.",
+        "SESSIONS_IMPERSONATING": "This can't be done while signed in as someone else.",
+        "SESSIONS_END_HIGHER_ACCOUNT": "Only an Organization Administrator can sign an Organization Administrator out everywhere.",
+        "ACCOUNT_OWNER_PROTECTED": "The account owner can't be signed out here. AccreditMe support can help.",
+        "generic": "This couldn't be done. Try again."
+      }
+    },
     "twoStep": {
       "heading": "Two-step sign-in",
       "on": "On. A code from an authenticator app is asked for at every sign-in.",
