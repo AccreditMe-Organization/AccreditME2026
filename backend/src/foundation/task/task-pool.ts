@@ -135,6 +135,54 @@ export async function resolvePoolMemberIds(
   return members.map((m) => m.userId);
 }
 
+/** A pool's key in resolvePoolMembersBatch()'s answer. */
+export function poolKey(target: PoolTarget): string {
+  return target.kind === 'POSITION'
+    ? `P:${target.orgUnitId}:${target.positionId}`
+    : `C:${target.committeeId}:${target.roleValueId}`;
+}
+
+/**
+ * ACC-313 — the members of many pools at once, by resolvePoolMemberIds()'s
+ * rule (position holders in the unit, or members holding the committee seat;
+ * ACTIVE only), in at most one query per pool kind. A pool nobody is in maps
+ * to an empty list.
+ */
+export async function resolvePoolMembersBatch(
+  client: PoolClient,
+  targets: readonly PoolTarget[],
+  organizationId: string,
+): Promise<Map<string, string[]>> {
+  const members = new Map<string, string[]>(targets.map((t) => [poolKey(t), []]));
+  const add = (key: string, userId: string) => {
+    const list = members.get(key);
+    if (list && !list.includes(userId)) list.push(userId);
+  };
+  const positions = targets.flatMap((t) =>
+    t.kind === 'POSITION' ? [{ primaryOrgUnitId: t.orgUnitId, positionId: t.positionId }] : [],
+  );
+  const seats = targets.flatMap((t) =>
+    t.kind === 'COMMITTEE_ROLE' ? [{ committeeId: t.committeeId, roleValueId: t.roleValueId }] : [],
+  );
+  const [holders, seated] = await Promise.all([
+    positions.length > 0
+      ? client.user.findMany({
+          where: { organizationId, status: 'ACTIVE', OR: positions },
+          select: { id: true, positionId: true, primaryOrgUnitId: true },
+        })
+      : Promise.resolve([]),
+    seats.length > 0
+      ? client.committeeMember.findMany({
+          where: { organizationId, isActive: true, user: { status: 'ACTIVE' }, OR: seats },
+          select: { userId: true, committeeId: true, roleValueId: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  for (const h of holders) add(`P:${h.primaryOrgUnitId}:${h.positionId}`, h.id);
+  for (const m of seated) add(`C:${m.committeeId}:${m.roleValueId}`, m.userId);
+  return members;
+}
+
 export async function isPoolMember(
   client: PoolClient,
   userId: string,
