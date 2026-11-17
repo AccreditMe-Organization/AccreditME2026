@@ -48,7 +48,9 @@ export interface SeedTransition {
  * is never seeded: it needs a committee, and a seed names none.
  */
 export type SeedWho =
-  | { mode: 'ANY_ONE' | 'ALL'; entries: readonly { kind: 'CREATOR' }[] }
+  // ACC-283 PR 4 — ORG_UNIT_HEAD with no unit is the record's own unit
+  // (RECORD_ROUTES): Terms Review is decided by the committee's unit head.
+  | { mode: 'ANY_ONE' | 'ALL'; entries: readonly ({ kind: 'CREATOR' } | { kind: 'ORG_UNIT_HEAD' })[] }
   | { mode: 'ANY_ONE' | 'ALL'; startingAssignment: true };
 
 export interface SeedStage {
@@ -262,7 +264,11 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     nameAr: 'إدارة اللجان',
     stages: [
       { key: 'formation', nameEn: 'Formation', nameAr: 'التأسيس', order: 10, isInitial: true, isFinal: false, actions: [COMMITTEE_ACTIONS.EDIT_DETAILS, ...MEMBERS], who: { mode: 'ANY_ONE', startingAssignment: true } },
-      { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 40, actions: [...MEMBERS], who: { mode: 'ANY_ONE', startingAssignment: true } },
+      // ACC-283 PR 4 (plan §10, Ahmad's proposal, 10 Nov): for NEW organisations,
+      // the head of the committee's own unit reviews its terms, instead of the
+      // starting assignment. Existing organisations keep what they set; no
+      // backfill. A vacant head means an empty pool, flagged unassigned.
+      { key: 'terms_review', nameEn: 'Terms Review', nameAr: 'مراجعة النظام الداخلي', order: 20, isInitial: false, isFinal: false, slaWorkingHours: 40, actions: [...MEMBERS], who: { mode: 'ANY_ONE', entries: [{ kind: 'ORG_UNIT_HEAD' }] } },
       { key: 'active', nameEn: 'Active', nameAr: 'نشطة', order: 30, isInitial: false, isFinal: false, actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
       { key: 'suspended', nameEn: 'Suspended', nameAr: 'موقوفة', order: 40, isInitial: false, isFinal: false, actions: [...MEMBERS, COMMITTEE_ACTIONS.REQUEST_CHANGE], flags: [STAGE_FLAG.IN_FORCE], who: { mode: 'ANY_ONE', startingAssignment: true } },
       { key: 'dissolution_pending', nameEn: 'Dissolution Pending', nameAr: 'قيد الحل', order: 50, isInitial: false, isFinal: false, slaWorkingHours: 40, actions: [...MEMBERS], flags: [STAGE_FLAG.DISSOLVING], who: { mode: 'ANY_ONE', startingAssignment: true } },
@@ -290,8 +296,8 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
   // (PROTECTED_TEMPLATES): tenants may rename the stages and set their
   // deadlines. No SEND_NOTIFICATION action: the module tells the people
   // concerned itself, in both languages. Every stage is worked by its creator
-  // (the requester); the approvers are the holders of committees:approve, a
-  // rule the module checks, not a stage assignee.
+  // (the requester); who decides is the chain of authority (ACC-283,
+  // change-request-chain.ts), a rule the module checks, not a stage assignee.
   {
     objectType: 'COMMITTEE_CHANGE_REQUEST',
     nameEn: 'Committee Change Request',
