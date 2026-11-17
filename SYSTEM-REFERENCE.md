@@ -2632,6 +2632,20 @@ addition makes this materially more likely: a single vacant Chairman
 seat is a normal, plausible real-world event, not a rare
 misconfiguration).
 
+**ACC-312 — A FINAL STAGE IS NEVER FLAGGED.** A record at its final stage
+waits on nobody, but its entry keeps `exitedAt` null for good, so once its pool
+emptied it was flagged and listed (a withdrawn, approved or rejected change
+request whose requester left was the first case). Now:
+- `checkAndFlagUnassignedStage()` returns at once for a final stage;
+- the 15-minute sweep reads `SWEEP_OPEN_ENTRIES_WHERE` (`sla-monitor.processor.ts`):
+  open entries at a non-final stage only, so no pool is resolved for a final
+  one (no queries) and no task is recovered on it;
+- Setup health's `STAGE_WITHOUT_ASSIGNEE` detector leaves final stages out, so
+  an entry flagged before the fix is not listed. The shared database had none
+  on 17 Nov (read-only count), so nothing needed clearing.
+- Specs: `final-stage-unassigned.db-spec.ts` (each place, against a
+  non-final counterpart) and the processor's and detector's unit specs.
+
 - **`resolveUnassignedBlockingTransitions(stage, instance,
   organizationId)`** (public on `WorkflowService`) — for every outgoing
   `WorkflowTransition` from `stage` where `triggerCondition ===
@@ -14024,7 +14038,8 @@ reload does not reopen the dialog.
   nothing was blocked. Severity moves with coverage on the same row; the
   row's `openedAt` does not change.
 - **Stage without assignee** is detected per workflow *instance*
-  (`WorkflowInstanceStage.isUnassigned`, `exitedAt: null`, §2.13) but
+  (`WorkflowInstanceStage.isUnassigned`, `exitedAt: null`, at a stage that
+  is not final since ACC-312, §2.13) but
   shown per *template stage*, because the fix is made once on the stage:
   one row per `WorkflowStage`, carrying the affected-instance count. The
   condition does **not** record whether the stage is unreachable because
