@@ -345,6 +345,10 @@ export class SetupConditionDetectors {
       where: {
         exitedAt: null,
         isUnassigned: true,
+        // ACC-312 — a final stage holds nothing up. An entry flagged before the
+        // engine stopped flagging them is not listed, so Setup health is right
+        // the moment this deploys, whether or not the old flags are cleared.
+        stage: { isFinal: false },
         workflowInstance: { organizationId },
       },
       select: {
