@@ -183,9 +183,10 @@ describe('Home panels (ACC-279)', () => {
       expect(one('home-awaiting-count')!.textContent!.trim()).toBe('2');
     });
 
-    it('change requests are asked only of committees:approve holders', () => {
+    // ACC-283 PR 2 — the server decides who may decide; the key no longer gates the read.
+    it('change requests are asked of everyone, with or without committees:approve', () => {
       build({ permissions: [] });
-      expect(calls.changes).toBe(0);
+      expect(calls.changes).toBe(1);
       build({ permissions: ['committees:approve'] });
       expect(calls.changes).toBe(1);
     });

@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { MyWorkEvents } from '../../core/my-work/my-work-events';
+import { REQUEST } from '../committees/change-requests/change-request.testing';
 import { MyWorkCountsService } from './my-work-counts.service';
 import { HomeSpecCalls, HomeSpecOptions, homeProviders, recordList } from './home.testing';
 
@@ -74,21 +75,34 @@ describe('MyWorkCountsService (ACC-279)', () => {
     expect(service.myTasks().state).toBe('ready');
   });
 
-  it('change requests are asked only of committees:approve holders', () => {
+  // ACC-283 PR 2 — a unit head, an acting cover or a deciding seat decides
+  // without committees:approve, so the server, not the key, says who decides.
+  it('change requests are asked of everyone while the Committees module is open, holder of committees:approve or not', () => {
     build({ permissions: [] });
     service.init();
-    expect(calls.changes).toBe(0);
+    expect(calls.changes).toBe(1);
     build({ permissions: ['committees:approve'] });
     service.init();
     expect(calls.changes).toBe(1);
   });
 
-  it('My committees is not asked while the Committees module is closed', () => {
-    build();
+  it('a change request returned for a head without committees:approve counts in awaiting', () => {
+    const request = REQUEST();
+    build({ permissions: [], changes: [request] });
+    service.init();
+    const awaiting = service.awaiting();
+    expect(awaiting.state).toBe('ready');
+    expect(awaiting.state === 'ready' ? awaiting.value.changes : []).toEqual([request]);
+  });
+
+  it('neither My committees nor the change requests are asked while the Committees module is closed', () => {
+    build({ permissions: ['committees:approve'] });
     spyOn(service, 'committeesOpen').and.returnValue(false);
     service.init();
     expect(calls.committees).toBe(0);
+    expect(calls.changes).toBe(0);
     expect(service.myCommittees()).toEqual({ state: 'ready', value: { total: 0, rows: [], mayBrowseCommittees: false } });
+    expect(service.awaiting()).toEqual({ state: 'ready', value: { stages: jasmine.anything() as never, changes: [] } });
     // ACC-283 — and so a closed module gives the rail and the guard a known "no".
     expect(service.mayBrowseCommittees()).toBeFalse();
   });

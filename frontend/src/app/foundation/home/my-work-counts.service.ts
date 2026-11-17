@@ -18,7 +18,10 @@ export function panelState(state: Loadable<unknown>['state']): 'loading' | 'erro
 
 export interface AwaitingAnswer {
   stages: WorkflowAwaitingMeDto;
-  /** Committee change requests to decide; asked only of committees:approve holders. */
+  /**
+   * Committee change requests to decide. Asked of everyone while the committees
+   * module is open, because the server decides who may decide (ACC-283 PR 2).
+   */
   changes: ChangeRequestDto[];
 }
 
@@ -42,8 +45,10 @@ const COALESCE_MS = 2000;
  *
  *   myTasks       GET /tasks/record-list?view=mine&status=PENDING,IN_PROGRESS,ON_HOLD&sort=due&take=5
  *   myOverdue     the same with &overdue=true&take=1 (its `matching`)
- *   awaiting      GET /workflows/awaiting-me, and for committees:approve holders
- *                 GET /committee-change-requests/awaiting-decision
+ *   awaiting      GET /workflows/awaiting-me, and, while the Committees module
+ *                 is open, GET /committee-change-requests/awaiting-decision,
+ *                 asked of everyone: the server decides who may decide
+ *                 (ACC-283 PR 2)
  *   myCommittees  GET /committees/mine, while the Committees module is open
  *
  * It loads ONCE after sign-in (the shell calls init() when access has loaded),
@@ -94,7 +99,11 @@ export class MyWorkCountsService {
     inject(DestroyRef).onDestroy(() => events.unsubscribe());
   }
 
-  /** Whether My committees applies to this organisation: the rail's own module rule. */
+  /**
+   * Whether the committees module applies to this organisation: the rail's own
+   * module rule. My committees and the change requests awaiting a decision both
+   * ask it, and so does the Awaiting page.
+   */
   committeesOpen(): boolean {
     return isNavModuleOpen('committees', this.access);
   }
@@ -133,9 +142,7 @@ export class MyWorkCountsService {
   }
 
   loadAwaiting(): void {
-    const changes$: Observable<ChangeRequestDto[]> = this.access.hasPermission('committees:approve')
-      ? this.changeRequests.awaitingDecision()
-      : of([]);
+    const changes$: Observable<ChangeRequestDto[]> = this.committeesOpen() ? this.changeRequests.awaitingDecision() : of([]);
     this.run('awaiting', this.awaiting, forkJoin({ stages: this.workflows.getAwaitingMe(), changes: changes$ }));
   }
 
