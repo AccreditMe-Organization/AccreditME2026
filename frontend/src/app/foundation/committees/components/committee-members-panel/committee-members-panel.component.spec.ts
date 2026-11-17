@@ -231,12 +231,16 @@ describe('Committee Members and Sub-committees panels (ACC-230)', () => {
           .expectOne((r) => r.url === `${API}/members/page` && r.params.get('take') === '50')
           .flush(page([1, 2, 3, 4, 5, 6, 7].map((i) => memberRow(i)), 7));
         fixture.detectChanges();
+        // Scoped to the dialog's own test id, never to <am-list-dialog>: the dialog is
+        // appendTo="body", and PrimeNG moves its content there when its enter motion
+        // starts, on the real clock (ACC-248). The test id travels with the content,
+        // so the rows are found before and after the move, with no wait.
         const inPopup = (name: string) =>
-          !!document.querySelector(`am-list-dialog [data-testid="row-menu-trigger"][aria-label="Actions for ${name}"]`);
+          !!document.querySelector(`[data-testid="list-dialog"] [data-testid="row-menu-trigger"][aria-label="Actions for ${name}"]`);
         expect(inPopup('Member 3')).withContext('non-vacuity: the list drew its rows').toBeTrue();
         // The popup's own row: Remove only.
         const popupItems = (name: string): string[] => {
-          const trigger = document.querySelector<HTMLButtonElement>(`am-list-dialog [data-testid="row-menu-trigger"][aria-label="Actions for ${name}"]`)!;
+          const trigger = document.querySelector<HTMLButtonElement>(`[data-testid="list-dialog"] [data-testid="row-menu-trigger"][aria-label="Actions for ${name}"]`)!;
           trigger.click();
           fixture.detectChanges();
           const items = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="row-menu"] [data-action]')).map((i) => i.getAttribute('data-action')!);
