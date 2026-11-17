@@ -118,6 +118,84 @@ export function seatActionMap(rows: readonly Pick<SeatActionRow, 'roleValueId' |
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
 
+/**
+ * ACC-283 PR 5 — THE ONE WRITER of a committee's seat actions, shared by the
+ * Formation edit (PUT /committees/:id/seat-actions) and an approved change
+ * request. It brings the stored rows of the seats the organisation uses to
+ * exactly `wanted` (rows of a seat it no longer uses are left alone), and
+ * returns the maps before and after, or null when nothing changed. The CALLER
+ * holds the committee row FOR UPDATE and bumps its `updatedAt`.
+ */
+export async function writeSeatActions(
+  tx: Pick<PrismaService, 'committeeSeatAction'>,
+  organizationId: string,
+  committeeId: string,
+  wanted: ReadonlyMap<string, ReadonlySet<string>>,
+  usedSeatIds: ReadonlySet<string>,
+): Promise<{ before: Record<string, string[]>; after: Record<string, string[]> } | null> {
+  const stored = (
+    await tx.committeeSeatAction.findMany({
+      where: { organizationId, committeeId },
+      select: { id: true, roleValueId: true, actionKey: true },
+    })
+  ).filter((r) => usedSeatIds.has(r.roleValueId));
+  const pair = (roleValueId: string, actionKey: string) => `${roleValueId} ${actionKey}`;
+  const want = new Set([...wanted].flatMap(([seat, actions]) => [...actions].map((a) => pair(seat, a))));
+  const have = new Set(stored.map((r) => pair(r.roleValueId, r.actionKey)));
+  const remove = stored.filter((r) => !want.has(pair(r.roleValueId, r.actionKey)));
+  const add = [...wanted].flatMap(([roleValueId, actions]) =>
+    [...actions].filter((actionKey) => !have.has(pair(roleValueId, actionKey))).map((actionKey) => ({ roleValueId, actionKey })),
+  );
+  if (remove.length === 0 && add.length === 0) return null;
+
+  if (remove.length > 0) {
+    await tx.committeeSeatAction.deleteMany({ where: { organizationId, committeeId, id: { in: remove.map((r) => r.id) } } });
+  }
+  if (add.length > 0) {
+    await tx.committeeSeatAction.createMany({ data: add.map((r) => ({ organizationId, committeeId, ...r })) });
+  }
+  const after = await seatActionsFor(tx, organizationId, [committeeId]);
+  return { before: seatActionMap(stored), after: seatActionMap(after.filter((r) => usedSeatIds.has(r.roleValueId))) };
+}
+
+/** ACC-283 PR 5 — a committee's seat actions as a map, only the seats the organisation uses (the request's "now"). */
+export async function currentSeatActionMap(
+  client: SeatActionReader,
+  organizationId: string,
+  committeeId: string,
+  usedSeatIds: ReadonlySet<string>,
+): Promise<Record<string, string[]>> {
+  const rows = await seatActionsFor(client, organizationId, [committeeId]);
+  return seatActionMap(rows.filter((r) => usedSeatIds.has(r.roleValueId)));
+}
+
+/**
+ * ACC-283 PR 5 (Q12) — a proposed whole map, checked and made canonical: every
+ * action on the list (SEAT_ACTION_UNKNOWN), every seat one the organisation uses
+ * (SEAT_ACTION_SEAT_UNKNOWN), a seat allowing nothing left out. The same shape
+ * seatActionMap() gives the stored rows, so the two compare as plain values.
+ */
+export function canonicalSeatActions(
+  seats: readonly { roleValueId: string; actions: readonly string[] }[],
+  usedSeatIds: ReadonlySet<string>,
+): Record<string, string[]> {
+  const wanted = normaliseSeatActions(seats);
+  for (const roleValueId of wanted.keys()) {
+    if (!usedSeatIds.has(roleValueId)) throw new SeatActionRefusal('SEAT_ACTION_SEAT_UNKNOWN', { roleValueId });
+  }
+  return seatActionMap([...wanted].flatMap(([roleValueId, actions]) => [...actions].map((actionKey) => ({ roleValueId, actionKey }))));
+}
+
+/** Two canonical maps (or none) hold the same seat actions. */
+export function sameSeatActions(a: Record<string, string[]> | null | undefined, b: Record<string, string[]> | null | undefined): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+}
+
+/** A canonical map as the writer takes it. */
+export function seatActionWanted(map: Record<string, string[]>): Map<string, Set<string>> {
+  return new Map(Object.entries(map).map(([seat, actions]) => [seat, new Set(actions)]));
+}
+
 // ── Refusals ─────────────────────────────────────────────────────────────────
 // The reference refusals' shape ({ statusCode, message, error, code }) plus
 // what is wrong, so a screen says each from its code.
