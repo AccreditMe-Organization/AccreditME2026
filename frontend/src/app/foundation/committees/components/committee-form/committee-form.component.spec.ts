@@ -110,7 +110,7 @@ describe('CommitteeFormComponent', () => {
   }
 
   const edit = (over: Partial<CommitteeListItemDto> = {}) =>
-    render({ ...committee('self', { parentCommitteeId: 'keeps', updatedAt: LOADED, ...over }), orgUnit: null, parent: null, reportsTo: null, mayWrite: true });
+    render({ ...committee('self', { parentCommitteeId: 'keeps', updatedAt: LOADED, ...over }), orgUnit: null, parent: null, reportsTo: null, mayWrite: true, memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true } });
   const q = (selector: string) => document.querySelector<HTMLElement>(selector);
   const slot = (field: string) => q(`[data-cf-field="${field}"] .am-field__message`)?.textContent?.trim() ?? '';
 

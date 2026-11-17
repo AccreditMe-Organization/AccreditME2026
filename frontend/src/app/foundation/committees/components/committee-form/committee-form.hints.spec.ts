@@ -40,7 +40,7 @@ const DETAIL: CommitteeDetailDto = {
   stageRules: FORMATION_RULES,
   isDissolving: false,
   typeValue: null,
-  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true,
+  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true, memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true },
 };
 
 // ACC-286 — in force, so the pickers may offer it.
