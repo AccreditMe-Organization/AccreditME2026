@@ -2326,11 +2326,7 @@
     "errorLoad": "Failed to load settings.",
     "errorSave": "Failed to save changes.",
     "provider": "Provider",
-    "taskSla": "Task SLA & Escalation",
-    "taskSlaNote": "Configure how long a task stays open before it's due, and how long it stays overdue before escalating — first to the assignee's manager, then to their unit head.",
-    "dueAfterHours": "Due After (hours)",
-    "managerEscalationAfterHours": "Manager Escalation (hours after due)",
-    "headEscalationAfterHours": "Head Escalation (hours after manager)",
+    "taskSla": "Task SLA & escalation",
     "orgNameEn": "Name (English)",
     "orgNameEnRequired": "An English name is required.",
     "orgNameAr": "Name (Arabic)",
@@ -2343,6 +2339,61 @@
       "lead": "{{priority}} would become {{due}}, which passes the deadline of:",
       "stage": "{{template}} · {{stage}} ({{deadline}})",
       "wayOut": "Raise those deadlines first, or keep {{priority}} at {{max}} or less."
+    },
+    "taskSlaPage": {
+      "purpose": "How long work may sit, and who hears about it when it does not move",
+      "lastChangedBy": "Last changed by {{who}} on",
+      "neverChanged": "Nothing on this page has been changed yet.",
+      "changeHistory": "Change history",
+      "historyFailed": "The change history couldn't be loaded.",
+      "loadFailed": "The task SLA policy couldn't be loaded.",
+      "saveFailed": "This couldn't be saved. The values entered are still here.",
+      "limits": {
+        "title": "Time limits",
+        "help": "Counted in working hours from the Working calendar, not clock hours.",
+        "low": "Low priority",
+        "medium": "Medium priority",
+        "high": "High priority",
+        "critical": "Critical priority",
+        "unit": "working hours",
+        "unitDefault": "working hours · the default on new tasks",
+        "scope": "Applies to tasks created after saving — open tasks keep the limit they were created under.",
+        "save": "Save time limits",
+        "required": "Enter the working hours.",
+        "min": "At least 1 working hour."
+      },
+      "escalation": {
+        "title": "Escalation per priority",
+        "help": "Who hears about an overdue task, and when. Time limits already differ by priority; escalation must too.",
+        "chain": "An overdue task goes first to the assignee's manager, then to the unit head.",
+        "limit": "Limit",
+        "manager": "Manager told after (hours overdue)",
+        "head": "Head told after (hours after the manager)",
+        "managerCell": "{{priority}} · Manager told after (hours overdue)",
+        "headCell": "{{priority}} · Head told after (hours after the manager)",
+        "save": "Save escalation",
+        "required": "Enter the hours.",
+        "min": "0 or more hours."
+      },
+      "history": {
+        "kindAll": "Whole policy",
+        "legacy": "Saved; the values were not recorded for this change.",
+        "noFieldsChanged": "No value changed in this entry.",
+        "fieldLabel": "{{priority}} · {{field}}",
+        "was": "was",
+        "now": "now"
+      },
+      "fields": {
+        "dueAfterHours": "Due after",
+        "managerEscalationAfterHours": "Manager told after",
+        "headEscalationAfterHours": "Head told after"
+      },
+      "leave": {
+        "header": "Leave without saving?",
+        "message": "Unsaved changes in {{sections}} will be lost.",
+        "accept": "Leave",
+        "reject": "Stay"
+      }
     }
   },
   "home": {
@@ -3422,6 +3473,16 @@
       "atRisk": {
         "one": "{{count}} at risk",
         "other": "{{count}} at risk"
+      }
+    },
+    "taskSla": {
+      "hours": {
+        "one": "{{count}} hour",
+        "other": "{{count}} hours"
+      },
+      "problems": {
+        "one": "{{count}} problem",
+        "other": "{{count}} problems"
       }
     }
   },

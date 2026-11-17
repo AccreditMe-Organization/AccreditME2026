@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { leaveGuard } from '../roles/permission-matrix/leave-guard';
 import { permissionGuard } from '../../core/guards/permission.guard';
 
 // ACC-79 — the Admin Settings hub is gone; each of these four screens is its
@@ -56,6 +57,8 @@ export const ADMIN_SETTINGS_ROUTES: Routes = [
   {
     path: 'task-sla',
     canActivate: [permissionGuard],
+    // ACC-313 — two sections save separately; leaving with either unsaved asks once, naming them.
+    canDeactivate: [leaveGuard],
     loadComponent: () =>
       import('./components/task-sla-settings/task-sla-settings.component').then(
         (m) => m.TaskSlaSettingsComponent,
