@@ -95,13 +95,72 @@ export function poolTargetOf(task: PoolTargetColumns): PoolTarget | null {
  */
 export const PICKABLE_STATUSES = ['PENDING', 'OVERDUE', 'UNASSIGNED'] as const;
 
-/** The where-clause for "has a pool target and nobody has picked it up", in one tenant. */
+// ACC-86 — WHO IS ON A TASK: a current row (removedAt null) held by an ACTIVE
+// user. A row left current by someone who has since become INACTIVE (a
+// departure that stopped partway, or a co-assignee who left first) puts nobody
+// on the task. This is the ONE definition, in Prisma and in SQL; every reader of
+// "nobody is on it" (waiting in a pool, ownerless, the Setup health condition)
+// and every writer's "is anyone else still on it?" uses it. Never a third copy.
+
+/** A TaskAssignee row that puts someone on the task: current, and held by an ACTIVE user. */
+export const CURRENT_ACTIVE_ASSIGNEE = {
+  removedAt: null,
+  user: { status: 'ACTIVE' },
+} as const satisfies Prisma.TaskAssigneeWhereInput;
+
+/**
+ * Its complement among CURRENT rows: still current, but held by a user who is no longer
+ * ACTIVE. Such a row puts nobody on the task; the writers end it when the task goes back
+ * to its pool, to nobody, or to a new picker (ACC-86, Q-1).
+ */
+export const STALE_CURRENT_ASSIGNEE = {
+  removedAt: null,
+  user: { status: { not: 'ACTIVE' } },
+} as const satisfies Prisma.TaskAssigneeWhereInput;
+
+/** SQL: the task aliased `t` has someone on it (CURRENT_ACTIVE_ASSIGNEE). The user is joined by its primary key. */
+export const HAS_CURRENT_ACTIVE_ASSIGNEE_SQL = Prisma.sql`EXISTS (SELECT 1 FROM "TaskAssignee" xa JOIN "User" xu ON xu.id = xa."userId"
+  WHERE xa."taskId" = t.id AND xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE')`;
+
+const IS_POOL_TASK_SQL = Prisma.sql`(t."assignedPositionId" IS NOT NULL OR t."assignedCommitteeId" IS NOT NULL)`;
+
+/** SQL: the pool of the task aliased `t` has an ACTIVE member right now (resolvePoolMemberIds()' rule). */
+export const POOL_HAS_ACTIVE_MEMBER_SQL = Prisma.sql`(CASE WHEN t."assignedPositionId" IS NOT NULL
+  THEN EXISTS (SELECT 1 FROM "User" pu WHERE pu."organizationId" = t."organizationId" AND pu.status::text = 'ACTIVE'
+                AND pu."positionId" = t."assignedPositionId" AND pu."primaryOrgUnitId" = t."assignedOrgUnitId")
+  ELSE EXISTS (SELECT 1 FROM "CommitteeMember" cm JOIN "User" cu ON cu.id = cm."userId"
+                WHERE cm."organizationId" = t."organizationId" AND cm."isActive" AND cu.status::text = 'ACTIVE'
+                  AND cm."committeeId" = t."assignedCommitteeId" AND cm."roleValueId" = t."assignedCommitteeRoleValueId")
+  END)`;
+
+/** SQL: has a pool and nobody on it, in a status a pick can take (waitingInPoolWhere(), in SQL). */
+export const WAITING_IN_POOL_SQL = Prisma.sql`(t.status::text IN ('PENDING','OVERDUE','UNASSIGNED')
+  AND ${IS_POOL_TASK_SQL} AND NOT ${HAS_CURRENT_ACTIVE_ASSIGNEE_SQL})`;
+
+/**
+ * ACC-86 — OWNERLESS: an open task nobody can act on, resolved live (ACC-82's
+ * rule; no status is kept true by writers). The Unassigned view, Manage tasks'
+ * reach (ACC-244) and Setup health's TASK_WITHOUT_OWNER all read this:
+ *   - UNASSIGNED, as always;
+ *   - PENDING or OVERDUE with nobody on it, unless it waits in a pool that has an
+ *     ACTIVE member (then the pool owns it, and its members can pick it);
+ *   - IN_PROGRESS or ON_HOLD with nobody on it (Q-2: a held task nobody can
+ *     resume), pool or not: a pick cannot take a task in these statuses.
+ * REJECTED is not here: it is its creator's to reassign, and a departed creator
+ * is Manage tasks' own clause.
+ */
+export const OWNERLESS_SQL = Prisma.sql`(t.status::text = 'UNASSIGNED'
+  OR (t.status::text IN ('PENDING','OVERDUE') AND NOT ${HAS_CURRENT_ACTIVE_ASSIGNEE_SQL}
+      AND NOT (${IS_POOL_TASK_SQL} AND ${POOL_HAS_ACTIVE_MEMBER_SQL}))
+  OR (t.status::text IN ('IN_PROGRESS','ON_HOLD') AND NOT ${HAS_CURRENT_ACTIVE_ASSIGNEE_SQL}))`;
+
+/** The where-clause for "has a pool target and nobody is on it", in one tenant. */
 export function waitingInPoolWhere(organizationId: string): Prisma.TaskWhereInput {
   return {
     organizationId,
     status: { in: [...PICKABLE_STATUSES] },
     OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
-    assignees: { none: { removedAt: null } },
+    assignees: { none: CURRENT_ACTIVE_ASSIGNEE },
   };
 }
 
@@ -211,80 +270,8 @@ export async function poolTargetsOfUser(
   return pools;
 }
 
-export interface EmptyPoolTask {
-  id: string;
-  title: string;
-  sourceType: string;
-  sourceId: string;
-  dueAt: Date | null;
-}
-
-/**
- * Open tasks waiting in a pool that nobody is in right now — nobody can pick
- * them up. A Setup health condition (TASK_WITHOUT_OWNER) and a row on the
- * Unassigned tasks screen, beside UNASSIGNED tasks: both are work with no
- * actionable owner.
- *
- * Three queries per tenant however many tasks: the waiting tasks, then one
- * grouped count per pool kind.
- */
-export async function findEmptyPoolTasks(
-  client: PoolClient,
-  organizationId: string,
-): Promise<EmptyPoolTask[]> {
-  const waiting = await client.task.findMany({
-    where: { ...waitingInPoolWhere(organizationId), status: { in: ['PENDING', 'OVERDUE'] } },
-    select: {
-      id: true,
-      title: true,
-      sourceType: true,
-      sourceId: true,
-      dueAt: true,
-      assignedOrgUnitId: true,
-      assignedPositionId: true,
-      assignedCommitteeId: true,
-      assignedCommitteeRoleValueId: true,
-    },
-  });
-  if (waiting.length === 0) return [];
-
-  const positionPairs = waiting.flatMap((t) =>
-    t.assignedOrgUnitId && t.assignedPositionId
-      ? [{ primaryOrgUnitId: t.assignedOrgUnitId, positionId: t.assignedPositionId }]
-      : [],
-  );
-  const committeePairs = waiting.flatMap((t) =>
-    t.assignedCommitteeId && t.assignedCommitteeRoleValueId
-      ? [{ committeeId: t.assignedCommitteeId, roleValueId: t.assignedCommitteeRoleValueId }]
-      : [],
-  );
-
-  const staffed = new Set<string>();
-  if (positionPairs.length > 0) {
-    const holders = await client.user.findMany({
-      where: { organizationId, status: 'ACTIVE', OR: positionPairs },
-      select: { positionId: true, primaryOrgUnitId: true },
-      distinct: ['positionId', 'primaryOrgUnitId'],
-    });
-    for (const h of holders) staffed.add(`P:${h.primaryOrgUnitId}:${h.positionId}`);
-  }
-  if (committeePairs.length > 0) {
-    const members = await client.committeeMember.findMany({
-      where: { organizationId, isActive: true, user: { status: 'ACTIVE' }, OR: committeePairs },
-      select: { committeeId: true, roleValueId: true },
-      distinct: ['committeeId', 'roleValueId'],
-    });
-    for (const m of members) staffed.add(`C:${m.committeeId}:${m.roleValueId}`);
-  }
-
-  return waiting
-    .filter((t) =>
-      t.assignedPositionId
-        ? !staffed.has(`P:${t.assignedOrgUnitId}:${t.assignedPositionId}`)
-        : !staffed.has(`C:${t.assignedCommitteeId}:${t.assignedCommitteeRoleValueId}`),
-    )
-    .map(({ id, title, sourceType, sourceId, dueAt }) => ({ id, title, sourceType, sourceId, dueAt }));
-}
+// ACC-86 — findEmptyPoolTasks() is gone: TASK_WITHOUT_OWNER now reads OWNERLESS_SQL
+// (above), the same definition as the Unassigned view, so the two cannot disagree.
 
 /** The relations a list row needs to SAY what pool a task is in. */
 export const POOL_LABEL_INCLUDE = {
