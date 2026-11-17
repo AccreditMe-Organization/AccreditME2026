@@ -579,6 +579,18 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
       expect(trigger!.getAttribute('aria-invalid')).toBe('true');
       expect(trigger!.classList).toContain('am-overlay-select-trigger-invalid');
       expect(trigger!.getAttribute('aria-describedby')).toBe('sla-warn-refusal-HIGH');
+      // The error border shows even while the select has focus, where the refusal
+      // puts it. The trigger's colour transition is held off so the colour read
+      // is the one it ends on, not the start of a 150ms fade.
+      trigger!.style.transition = 'none';
+      trigger!.focus();
+      const danger = document.createElement('span');
+      danger.style.color = 'var(--am-danger-ink)';
+      document.body.appendChild(danger);
+      const dangerColour = getComputedStyle(danger).color;
+      danger.remove();
+      expect(document.activeElement).toBe(trigger);
+      expect(getComputedStyle(trigger!).borderTopColor).toBe(dangerColour);
       expect(el().querySelector('#sla-warn-refusal-HIGH')?.textContent).toContain('High: the warning, 8 working hours');
       // Only the refused priority is marked.
       for (const p of ['LOW', 'MEDIUM', 'CRITICAL']) {
