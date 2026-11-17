@@ -3513,7 +3513,7 @@ describe('UserService', () => {
         expect(mockPrisma.authSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'auth-1' } });
       });
 
-      // CC-302 (lane B's condition 1–3) — #317's change-request withdrawal and the
+      // Agreed at review (CC-302, conditions 1–3) — #317's change-request withdrawal and the
       // session ending share ONE transaction, under DEACTIVATION_TX; nothing is
       // sent inside it. committee-change-request.db-spec.ts proves the commit and
       // the rollback together on Postgres.
