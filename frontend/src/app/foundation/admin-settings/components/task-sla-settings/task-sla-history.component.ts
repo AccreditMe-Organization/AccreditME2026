@@ -50,7 +50,7 @@ const KIND_KEYS: Record<ITaskSlaChange['kind'], string> = {
         @for (change of rows(); track change.id) {
           <li class="am-slah__entry" [attr.data-change-kind]="change.kind">
             <div class="am-slah__meta">
-              <span dir="ltr">{{ change.changedAt | amDateTime }}</span>
+              <span data-sla-changed-at>{{ change.changedAt | amDateTime }}</span>
               <span>{{ change.actorName || notRecorded() }}</span>
               <span>{{ kindKeys[change.kind] | translate }}</span>
             </div>

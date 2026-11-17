@@ -127,7 +127,7 @@ type Load = 'loading' | 'error' | 'ready';
             @if (lastChange(); as change) {
               <span>
                 {{ 'adminSettings.taskSlaPage.lastChangedBy' | translate: { who: change.actorName || notRecorded() } }}
-                <span dir="ltr">{{ change.changedAt | amDateTime }}</span>
+                <span data-sla-changed-at>{{ change.changedAt | amDateTime }}</span>
               </span>
               <p-button
                 [label]="'adminSettings.taskSlaPage.changeHistory' | translate"
@@ -328,6 +328,7 @@ type Load = 'loading' | 'error' | 'ready';
                       optionDisabledReason="reason"
                       [itemTemplate]="warnItem"
                       [ariaLabel]="cellLabel(p, 'warn')"
+                      [panelMinWidth]="200"
                     />
                   </am-field>
                   <am-field
@@ -436,7 +437,7 @@ type Load = 'loading' | 'error' | 'ready';
       .am-sla__refusal ul{margin:0;padding-inline-start:var(--am-space-16)}
       .am-sla__refusal a{color:var(--am-primary-700)}
       .am-sla__matrix{display:flex;flex-direction:column;gap:var(--am-space-8);min-inline-size:0}
-      .am-sla__row{display:grid;grid-template-columns:106px 80px 200px minmax(0,1fr) minmax(0,1fr);gap:var(--am-space-12);align-items:start}
+      .am-sla__row{display:grid;grid-template-columns:86px 120px 180px minmax(0,1fr) minmax(0,1fr);gap:var(--am-space-12);align-items:start}
       .am-sla__row--head{font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);font-weight:500;color:var(--am-ink-500);padding-block-end:var(--am-space-4);border-block-end:1px solid var(--am-border)}
       .am-sla__priority{align-self:center;justify-self:start;font-size:var(--am-type-meta-size);font-weight:600;color:var(--am-neutral-chip-ink);background:var(--am-neutral-chip-bg);border:1px solid var(--am-neutral-chip-border);border-radius:var(--am-radius-pill);padding:0 var(--am-space-8)}
       .am-sla__limit{align-self:center;font-size:var(--am-type-body-size);color:var(--am-ink-900);min-inline-size:0}
