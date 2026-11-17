@@ -107,6 +107,11 @@ const mockWorkflowService = { startInstance: jest.fn() };
 // the refusal of a write the committee's stage does not allow.
 const mockStageRules = { stageRulesFor: jest.fn(), assertStageAllows: jest.fn() };
 
+// ACC-283 PR 6 — the writers in this file: committees:view and the three member keys.
+// The routes used to check each key before the service; now the service does
+// (member-actions.ts), so a writer here holds them. Seat grants: member-actions.spec.ts.
+const HOLDER = ['committees:view', 'committees:add_member', 'committees:remove_member', 'committees:change_member_role'];
+
 describe('CommitteesService', () => {
   let service: CommitteesService;
 
@@ -752,7 +757,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
 
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.committee.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { nameEn: 'Renamed' } }),
@@ -763,7 +768,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_B, ACTOR, ['committees:view']),
+        service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_B, ACTOR, HOLDER),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -772,7 +777,7 @@ describe('CommitteesService', () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updateCommittee('committee-1', { orgUnitId: 'foreign-unit' } as never, ORG_A, ACTOR, ['committees:view']),
+        service.updateCommittee('committee-1', { orgUnitId: 'foreign-unit' } as never, ORG_A, ACTOR, HOLDER),
       ).rejects.toMatchObject({ code: 'COMMITTEE_UNIT_NOT_FOUND' });
 
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
@@ -796,7 +801,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ parentCommitteeId: 'committee-2' }));
 
-      await service.updateCommittee('committee-1', { parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
       expect(lockCalls()).toHaveLength(1);
@@ -813,7 +818,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
 
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, HOLDER);
 
       expect(lockCalls()).toHaveLength(0);
     });
@@ -828,7 +833,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ updatedAt: LOADED }));
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
 
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, HOLDER);
 
       expect(rowLockCalls()).toHaveLength(1);
       expect(rowLockCalls()[0]!.slice(1)).toEqual(['committee-1', ORG_A]);
@@ -840,7 +845,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ updatedAt: LOADED }));
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
 
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.committee.update).toHaveBeenCalledWith(expect.objectContaining({ data: { nameEn: 'Renamed' } }));
     });
@@ -849,7 +854,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ updatedAt: new Date('2026-10-18T09:05:00.000Z') }));
 
       await expect(
-        service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_A, ACTOR, ['committees:view']),
+        service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_A, ACTOR, HOLDER),
       ).rejects.toMatchObject({ code: 'COMMITTEE_CHANGED', status: 409 });
 
       expect(mockPrisma.committee.update).not.toHaveBeenCalled();
@@ -860,7 +865,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ updatedAt: new Date('2026-10-18T09:05:00.000Z') }));
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
 
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.committee.update).toHaveBeenCalled();
     });
@@ -869,7 +874,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_B, ACTOR, ['committees:view']),
+        service.updateCommittee('committee-1', { nameEn: 'Renamed', expectedUpdatedAt: LOADED.toISOString() } as never, ORG_B, ACTOR, HOLDER),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -881,7 +886,7 @@ describe('CommitteesService', () => {
         Promise.resolve(strings.join('?').includes('"WorkflowInstance"') ? [{ stageId: 's', key: 'dissolved', flags: ['DISSOLVING'] }] : []),
       );
 
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed', parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed', parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.committee.update).toHaveBeenCalled();
     });
@@ -893,7 +898,7 @@ describe('CommitteesService', () => {
       );
 
       await expect(
-        service.updateCommittee('committee-1', { parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR, ['committees:view']),
+        service.updateCommittee('committee-1', { parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR, HOLDER),
       ).rejects.toMatchObject({ code: 'COMMITTEE_PARENT_DISSOLVING' });
 
       expect(mockPrisma.committee.update).not.toHaveBeenCalled();
@@ -904,7 +909,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee({ parentCommitteeId: 'committee-2' }));
       mockPrisma.committee.update.mockResolvedValue(makeCommittee());
 
-      await service.updateCommittee('committee-1', { parentCommitteeId: null } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { parentCommitteeId: null } as never, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.committee.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { parentCommitteeId: null } }),
@@ -916,7 +921,7 @@ describe('CommitteesService', () => {
         mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
 
         await expect(
-          service.updateCommittee('committee-1', { orgUnitId: sent } as never, ORG_A, ACTOR, ['committees:view']),
+          service.updateCommittee('committee-1', { orgUnitId: sent } as never, ORG_A, ACTOR, HOLDER),
         ).rejects.toMatchObject({ code: 'COMMITTEE_UNIT_REQUIRED', status: 400 });
 
         expect(mockPrisma.committee.update).not.toHaveBeenCalled();
@@ -930,7 +935,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValueOnce(makeCommittee());
       mockPrisma.committee.update.mockResolvedValue(makeCommittee());
 
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.orgUnit.findMany).not.toHaveBeenCalled();
       expect(mockPrisma.committee.update).toHaveBeenCalledWith(
@@ -989,7 +994,7 @@ describe('CommitteesService', () => {
         'committee-1',
         { userId: 'user-1', roleValueId: 'chairman' } as never,
         ORG_A,
-        ACTOR, ['committees:view'],
+        ACTOR, HOLDER,
       );
 
       expect(mockPrisma.committeeMember.create).toHaveBeenCalledWith(
@@ -1013,7 +1018,7 @@ describe('CommitteesService', () => {
         'committee-1',
         { userId: 'user-1', roleValueId: 'chairman', effectiveDate: '2026-09-01T00:00:00.000Z' } as never,
         ORG_A,
-        ACTOR, ['committees:view'],
+        ACTOR, HOLDER,
       );
 
       const joined = new Date('2026-09-01T00:00:00.000Z');
@@ -1034,7 +1039,7 @@ describe('CommitteesService', () => {
           'committee-1',
           { userId: 'foreign-user', roleValueId: 'chairman' } as never,
           ORG_A,
-          ACTOR, ['committees:view'],
+          ACTOR, HOLDER,
         ),
       ).rejects.toThrow(NotFoundException);
 
@@ -1053,7 +1058,7 @@ describe('CommitteesService', () => {
           'committee-1',
           { userId: 'user-1', roleValueId: 'chairman' } as never,
           ORG_A,
-          ACTOR, ['committees:view'],
+          ACTOR, HOLDER,
         ),
       ).rejects.toThrow(ConflictException);
       expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
@@ -1067,7 +1072,7 @@ describe('CommitteesService', () => {
           'committee-1',
           { userId: 'user-1', roleValueId: 'chairman' } as never,
           ORG_B,
-          ACTOR, ['committees:view'],
+          ACTOR, HOLDER,
         ),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
@@ -1089,7 +1094,7 @@ describe('CommitteesService', () => {
           'committee-1',
           { userId: 'user-1', roleValueId: 'secretary', effectiveDate: '2026-08-15' } as never,
           ORG_A,
-          ACTOR, ['committees:view'],
+          ACTOR, HOLDER,
         );
 
         expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
@@ -1115,7 +1120,7 @@ describe('CommitteesService', () => {
           'committee-1',
           { userId: 'user-1', roleValueId: 'chairman' } as never,
           ORG_A,
-          ACTOR, ['committees:view'],
+          ACTOR, HOLDER,
         );
 
         expect(mockAuditLog.log).toHaveBeenCalledWith(
@@ -1160,7 +1165,7 @@ describe('CommitteesService', () => {
           'committee-1',
           { userId: 'user-1', roleValueId: 'chairman', effectiveDate: '2026-08-15' } as never,
           ORG_A,
-          ACTOR, ['committees:view'],
+          ACTOR, HOLDER,
         );
 
         const history = await service.listMembershipEvents('committee-1', ORG_A, { id: 'viewer-1', permissions: ['committees:view'] });
@@ -1187,7 +1192,7 @@ describe('CommitteesService', () => {
             'committee-1',
             { userId: 'user-1', roleValueId: 'chairman' } as never,
             ORG_B,
-            ACTOR, ['committees:view'],
+            ACTOR, HOLDER,
           ),
         ).rejects.toThrow(NotFoundException);
 
@@ -1211,7 +1216,7 @@ describe('CommitteesService', () => {
         'member-1',
         { roleValueId: 'secretary' } as never,
         ORG_A,
-        ACTOR, ['committees:view'],
+        ACTOR, HOLDER,
       );
 
       expect(mockPrisma.committeeMember.update).toHaveBeenCalledWith(
@@ -1232,7 +1237,7 @@ describe('CommitteesService', () => {
           'member-1',
           { roleValueId: 'secretary' } as never,
           ORG_A,
-          ACTOR, ['committees:view'],
+          ACTOR, HOLDER,
         ),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
@@ -1247,7 +1252,7 @@ describe('CommitteesService', () => {
           'member-1',
           { roleValueId: 'secretary' } as never,
           ORG_B,
-          ACTOR, ['committees:view'],
+          ACTOR, HOLDER,
         ),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
@@ -1262,7 +1267,7 @@ describe('CommitteesService', () => {
         makeMember({ leftAt: new Date(), isActive: false }),
       );
 
-      await service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, ['committees:view']);
+      await service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.committeeMember.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ isActive: false }) }),
@@ -1285,7 +1290,7 @@ describe('CommitteesService', () => {
         { reason: '  Moved to another unit  ' },
         ORG_A,
         ACTOR,
-        ['committees:view'],
+        HOLDER,
       );
 
       expect(mockPrisma.committeeMembershipEvent.create).toHaveBeenCalledTimes(1);
@@ -1299,7 +1304,7 @@ describe('CommitteesService', () => {
       mockPrisma.committeeMember.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, ['committees:view']),
+        service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, HOLDER),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
@@ -1308,7 +1313,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_B, ACTOR, ['committees:view']),
+        service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_B, ACTOR, HOLDER),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
@@ -1325,7 +1330,7 @@ describe('CommitteesService', () => {
     it("updateCommittee asks for edit_details, FOR SHARE of the instance, BEFORE the hierarchy and row locks", async () => {
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ parentCommitteeId: 'committee-2' }));
 
-      await service.updateCommittee('committee-1', { parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR, ['committees:view']);
+      await service.updateCommittee('committee-1', { parentCommitteeId: 'committee-2' } as never, ORG_A, ACTOR, HOLDER);
 
       expect(stageCall().slice(0, 4)).toEqual(['COMMITTEE', 'committee-1', 'edit_details', ORG_A]);
       expect(stageCall()[5]).toMatchObject({ lock: 'share' });
@@ -1336,7 +1341,7 @@ describe('CommitteesService', () => {
     it('updateCommittee refused by the stage: 409 STAGE_ACTION_NOT_ALLOWED naming it, nothing locked, written or audited', async () => {
       mockStageRules.assertStageAllows.mockRejectedValue(refusal('edit_details', 'Active'));
 
-      await expect(service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, ['committees:view'])).rejects.toMatchObject({
+      await expect(service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, HOLDER)).rejects.toMatchObject({
         status: 409,
         code: 'STAGE_ACTION_NOT_ALLOWED',
       });
@@ -1348,13 +1353,13 @@ describe('CommitteesService', () => {
     it("a committee that doesn't exist is still 404, and its stage is never asked", async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(null);
 
-      await expect(service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_B, ACTOR, ['committees:view'])).rejects.toThrow(NotFoundException);
+      await expect(service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_B, ACTOR, HOLDER)).rejects.toThrow(NotFoundException);
       expect(mockStageRules.assertStageAllows).not.toHaveBeenCalled();
     });
 
     it('the refusal names the stage in the committee\'s words', () => {
       mockPrisma.committee.update.mockResolvedValue(makeCommittee());
-      return service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, ['committees:view']).then(() => {
+      return service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, HOLDER).then(() => {
         const message = (stageCall()[5] as { message: (n: string | null) => string }).message;
         expect(message('Active')).toBe("This can't be done while the committee is in Active.");
         expect(message(null)).toBe("This can't be done: the committee has no current stage.");
@@ -1362,9 +1367,9 @@ describe('CommitteesService', () => {
     });
 
     const memberWrites: [string, string, () => Promise<unknown>][] = [
-      ['addMember', 'add_member', () => service.addMember('committee-1', { userId: 'user-1', roleValueId: 'member' } as never, ORG_A, ACTOR, ['committees:view'])],
-      ['changeMemberRole', 'change_member_role', () => service.changeMemberRole('committee-1', 'member-1', { roleValueId: 'secretary' } as never, ORG_A, ACTOR, ['committees:view'])],
-      ['removeMember', 'remove_member', () => service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, ['committees:view'])],
+      ['addMember', 'add_member', () => service.addMember('committee-1', { userId: 'user-1', roleValueId: 'member' } as never, ORG_A, ACTOR, HOLDER)],
+      ['changeMemberRole', 'change_member_role', () => service.changeMemberRole('committee-1', 'member-1', { roleValueId: 'secretary' } as never, ORG_A, ACTOR, HOLDER)],
+      ['removeMember', 'remove_member', () => service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, HOLDER)],
     ];
 
     it.each(memberWrites)('%s asks for its own action (%s), FOR SHARE, inside the transaction, before reading the member', async (_name, action, call) => {
@@ -1398,8 +1403,8 @@ describe('CommitteesService', () => {
           return Promise.resolve([]);
         });
       const seatWrites: [string, () => Promise<unknown>][] = [
-        ['removeMember', () => service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, ['committees:view'])],
-        ['changeMemberRole', () => service.changeMemberRole('committee-1', 'member-1', { roleValueId: 'member' } as never, ORG_A, ACTOR, ['committees:view'])],
+        ['removeMember', () => service.removeMember('committee-1', 'member-1', { reason: 'Left the unit' }, ORG_A, ACTOR, HOLDER)],
+        ['changeMemberRole', () => service.changeMemberRole('committee-1', 'member-1', { roleValueId: 'member' } as never, ORG_A, ACTOR, HOLDER)],
       ];
 
       beforeEach(() => {
@@ -1458,7 +1463,7 @@ describe('CommitteesService', () => {
       it('a role change within the same seat is not a seat change: nothing is read about seats', async () => {
         inForce();
         seats(['member-1']);
-        await service.changeMemberRole('committee-1', 'member-1', { roleValueId: CHAIRMAN.id } as never, ORG_A, ACTOR, ['committees:view']);
+        await service.changeMemberRole('committee-1', 'member-1', { roleValueId: CHAIRMAN.id } as never, ORG_A, ACTOR, HOLDER);
         const sql = mockPrisma.$queryRaw.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join('?'));
         expect(sql.some((q) => q.includes('"LookupCategory"'))).toBe(false);
       });
