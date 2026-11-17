@@ -44,6 +44,7 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
   let prisma: {
     $transaction: jest.Mock;
     workflowStageTaskDefinition: { findMany: jest.Mock };
+    workingCalendar: { findUnique: jest.Mock };
     auditLog: { findMany: jest.Mock; count: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
@@ -64,6 +65,8 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
     prisma = {
       $transaction: jest.fn((cb: (t: typeof tx) => unknown) => cb(tx)),
       workflowStageTaskDefinition: { findMany: jest.fn().mockResolvedValue([]) },
+      // ACC-313 PR 4 — no calendar row: the default working day, 8 hours.
+      workingCalendar: { findUnique: jest.fn().mockResolvedValue(null) },
       auditLog: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
     };
     auditLog = { log: jest.fn().mockResolvedValue(undefined) };

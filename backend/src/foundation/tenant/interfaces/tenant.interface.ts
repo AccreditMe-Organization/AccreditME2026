@@ -82,7 +82,8 @@ export type IEmailConfig = IMaskedEmailConfig;
 // tenant-configurable grace periods per priority, both allowed to be 0
 // (immediate): managerEscalationAfterHours counts from Task.dueAt,
 // headEscalationAfterHours is an ADDITIONAL grace period counted from when
-// the Manager tier fires, not from dueAt again.
+// the Manager tier fires, not from dueAt again. ACC-313 (Q1): both are
+// WORKING hours, on the organisation's calendar, like dueAfterHours.
 export interface ITaskSlaTier {
   dueAfterHours: number;
   managerEscalationAfterHours: number;
@@ -114,6 +115,8 @@ export interface ITaskSlaNotices {
 export interface ITaskSlaPolicy {
   tiers: ITaskSlaSettings;
   notices: ITaskSlaNotices;
+  /** ACC-313 PR 4 — the calendar's working day in hours: what "1 working day" means. */
+  workingHoursPerDay: number;
 }
 
 /**

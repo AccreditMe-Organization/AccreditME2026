@@ -124,8 +124,17 @@ describe('Task SLA section routes (ACC-313)', () => {
     expect(policy.saveLimits).not.toHaveBeenCalled();
   });
 
+  it('an escalation save may carry each priority’s warning before due (ACC-313 PR 4)', async () => {
+    const body = { ...escalation, HIGH: { ...tier, warnBeforeDue: 'H2' }, LOW: { ...tier, warnBeforeDue: 'WORKING_DAY' } };
+    const res = await http().patch('/tenant/task-sla/escalation').send(body);
+    expect(res.status).toBe(200);
+    expect(policy.saveEscalation).toHaveBeenCalledWith('org-a', body, 'admin-1');
+  });
+
   it.each([
     ['a negative hour', { ...escalation, LOW: { ...tier, headEscalationAfterHours: -1 } }],
+    ['a warning that is not one of the options', { ...escalation, LOW: { ...tier, warnBeforeDue: 'H3' } }],
+    ['a warning given in hours', { ...escalation, LOW: { ...tier, warnBeforeDue: 2 } }],
     ['a limit, which is the other section’s', { ...escalation, LOW: { ...tier, dueAfterHours: 10 } }],
   ])('an escalation save with %s is refused, and nothing is saved', async (_case, body) => {
     const res = await http().patch('/tenant/task-sla/escalation').send(body);

@@ -35,6 +35,7 @@ describe('TaskSlaPolicyService — the notices switch and Reset (ACC-313)', () =
     $transaction: jest.Mock;
     organization: { findFirst: jest.Mock };
     workflowStageTaskDefinition: { findMany: jest.Mock };
+    workingCalendar: { findUnique: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
 
@@ -51,6 +52,8 @@ describe('TaskSlaPolicyService — the notices switch and Reset (ACC-313)', () =
       $transaction: jest.fn((cb: (t: typeof tx) => unknown) => cb(tx)),
       organization: { findFirst: jest.fn() },
       workflowStageTaskDefinition: { findMany: jest.fn().mockResolvedValue([]) },
+      // ACC-313 PR 4 — no calendar row: the default working day, 8 hours.
+      workingCalendar: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     auditLog = { log: jest.fn().mockResolvedValue(undefined) };
     service = new TaskSlaPolicyService(prisma as unknown as PrismaService, auditLog as unknown as AuditLogService);
@@ -60,7 +63,7 @@ describe('TaskSlaPolicyService — the notices switch and Reset (ACC-313)', () =
     it('answers the tiers and the notices', async () => {
       prisma.organization.findFirst.mockResolvedValue({ settings: { taskSla: CUSTOM_SLA, taskSlaNotices: NOTICES_OFF } });
 
-      await expect(service.policy('org-a')).resolves.toEqual({ tiers: CUSTOM_SLA, notices: NOTICES_OFF });
+      await expect(service.policy('org-a')).resolves.toEqual({ tiers: CUSTOM_SLA, notices: NOTICES_OFF, workingHoursPerDay: 8 });
     });
 
     it('an organisation that never saved notices reads the defaults: every reminder Off, the switch on', async () => {
@@ -172,7 +175,7 @@ describe('TaskSlaPolicyService — the notices switch and Reset (ACC-313)', () =
       expect(JSON.parse(write.values[0] as string)).toEqual(DEFAULT_TASK_SLA_SETTINGS);
       expect(JSON.parse(write.values[1] as string)).toEqual(DEFAULT_TASK_SLA_NOTICES);
       expect(write.values[2]).toBe('org-a');
-      expect(answer).toEqual({ tiers: DEFAULT_TASK_SLA_SETTINGS, notices: DEFAULT_TASK_SLA_NOTICES });
+      expect(answer).toEqual({ tiers: DEFAULT_TASK_SLA_SETTINGS, notices: DEFAULT_TASK_SLA_NOTICES, workingHoursPerDay: 8 });
     });
 
     it('records one audit row, task_sla_reset: the whole policy before, the defaults after', async () => {
