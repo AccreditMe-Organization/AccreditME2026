@@ -179,4 +179,6 @@ All decided under the task's row lock (ACC-163), so the statuses read are the lo
 - **A pool task IN_PROGRESS or ON_HOLD with nobody on it is ownerless even when its pool is staffed.** A pick cannot take those statuses (`PICKABLE_STATUSES`), so its pool cannot own it. §5.2's draft would have left it waiting forever.
 - **`findEmptyPoolTasks()` is deleted.** Setup health runs `OWNERLESS_SQL` itself, the same definition as the Unassigned view, so the two cannot disagree.
 
+**One effect beyond the departure cases:** an open, non-pool task with no row at all is ownerless too, so Manage tasks and the Unassigned view reach it. No product path creates a PENDING task with nobody on it (create makes it UNASSIGNED), but `task-visibility.db-spec.ts` had three such fixtures (`workflowMade`, `awayManual`, `awayWorkflow`); its Manage tasks row and Unassigned view now include them, which is the rule working.
+
 **Query counts** (the All tasks and Unassigned reads, measured before and after on the local test database with every Prisma call counted): All tasks 15 → 15, Unassigned 15 → 15. The new conditions are a join inside the SQL those reads already run, never another query. Nothing is on the guards or the per-request path.
