@@ -165,3 +165,18 @@ All decided under the task's row lock (ACC-163), so the statuses read are the lo
 
 **Q-3. Should the screens say *why* a task is ownerless** ("its assignee has left" versus "nobody was assigned")?
 - **Recommend:** not in this ticket. The Unassigned view lists it, and the reason can come with the screens later.
+
+---
+
+## 10. Decisions (lane B, Prompt 111, 17 Nov) and as built
+
+- **Q-1: yes.** A departure that returns a task to its pool, or makes it UNASSIGNED, also ends the other INACTIVE users' stale rows, in the same transaction, with `endedInactiveRows` in its audit metadata.
+- **Q-2: yes.** ON_HOLD with no ACTIVE assignee is ownerless.
+- **Q-3: no** screen change in this ticket.
+
+**As built, three refinements of §5, each for a stated reason:**
+- **The writers ask with one indexed count under the lock** (`anyoneElseOn()`: `taskAssignee.count` with `CURRENT_ACTIVE_ASSIGNEE`), instead of adding the user's status to the locked read. `lockOpenForActiveAssignee()` feeds the `before` snapshot of every complete, start, reject and release audit row; widening its select would have changed those rows' shape. The cost is one indexed query on write paths only.
+- **A pool task IN_PROGRESS or ON_HOLD with nobody on it is ownerless even when its pool is staffed.** A pick cannot take those statuses (`PICKABLE_STATUSES`), so its pool cannot own it. §5.2's draft would have left it waiting forever.
+- **`findEmptyPoolTasks()` is deleted.** Setup health runs `OWNERLESS_SQL` itself, the same definition as the Unassigned view, so the two cannot disagree.
+
+**Query counts** (the All tasks and Unassigned reads, measured before and after on the local test database with every Prisma call counted): All tasks 15 → 15, Unassigned 15 → 15. The new conditions are a join inside the SQL those reads already run, never another query. Nothing is on the guards or the per-request path.
