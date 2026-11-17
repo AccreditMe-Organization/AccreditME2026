@@ -102,8 +102,13 @@ describe("A committee's structure rules against a real database (ACC-286)", () =
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
     await applyWorkflowSeed(prisma, o.id, [COMMITTEE_SEED]);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
-    const actor = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}-a@example.test`, name: 'Committee editor', status: 'ACTIVE' } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R-${slug}` } });
+    // ACC-283 PR 4 — Terms Review is seeded on the committee's own unit head
+    // (plan section 10), so the actor who presses out of it heads that unit.
+    const head = await prisma.orgPosition.create({ data: { organizationId: o.id, nameEn: 'Head', grade: 10, isUnitHeadPosition: true } });
+    const actor = await prisma.user.create({
+      data: { organizationId: o.id, email: `${slug}-a@example.test`, name: 'Committee editor', status: 'ACTIVE', primaryOrgUnitId: unit.id, positionId: head.id },
+    });
     // ACC-271 — as a new organisation's first admin: the seeded stages start on them.
     await writeStartingAssignments(prisma, o.id, actor.id, actor.id);
     const stageId = async (key: string) => (await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key } })).id;
