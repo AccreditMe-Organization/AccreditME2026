@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "SetupConditionType" ADD VALUE 'STORAGE_NOT_CONFIRMED';
+
