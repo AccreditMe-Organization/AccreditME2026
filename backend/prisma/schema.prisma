@@ -1545,6 +1545,8 @@ model Task {
   // anywhere" redesign (2.7.b/2.7.c) extends to the schema itself.
   managerEscalatedAt           DateTime?
   headEscalatedAt              DateTime?
+  // ACC-313: stamped once the due-soon reminder is sent; cleared when the due date, priority or holder changes.
+  dueWarnedAt                  DateTime?
   // ACC-167 — the POOL a task is assigned to, when it is assigned to a
   // position in a unit, or to a committee member role, rather than to named
   // people. Exactly one pair is set, or neither. Who is IN the pool is resolved
