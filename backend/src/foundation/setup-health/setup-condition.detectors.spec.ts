@@ -62,6 +62,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       'STAGE_WITHOUT_ASSIGNEE',
       'STORAGE_ACCESS_WITHDRAWN',
       'STORAGE_ALMOST_FULL',
+      'STORAGE_NOT_CONFIRMED',
       'STORAGE_SECRET_EXPIRING',
       'TASK_WITHOUT_OWNER',
     ]);
@@ -586,5 +587,37 @@ describe('SetupConditionDetectors — storageAlmostFull (ACC-177)', () => {
     await detectors.storageAlmostFull(ORG_B);
     expect(prisma.organization.findFirst).toHaveBeenCalledWith({ where: { id: ORG_B }, select: { maxStorageGb: true } });
     expect(prisma.storedFile.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }));
+  });
+});
+
+// ACC-261 — "File storage not confirmed": open while the organisation's
+// storageConfirmedAt is null (every upload refused), cleared by Confirm.
+describe('SetupConditionDetectors — storageNotConfirmed (ACC-261)', () => {
+  const prisma = { organization: { findFirst: jest.fn() } };
+  const detectors = new SetupConditionDetectors(prisma as unknown as PrismaService);
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('opens one BLOCKS_WORK condition, on the organisation, while storage is unconfirmed', async () => {
+    prisma.organization.findFirst.mockResolvedValue({ storageConfirmedAt: null });
+    expect(await detectors.storageNotConfirmed(ORG_A)).toEqual([
+      { objectId: ORG_A, severity: 'BLOCKS_WORK', openedAt: null, subject: {} },
+    ]);
+  });
+
+  it('opens nothing once storage is confirmed, so the condition clears on the next pass', async () => {
+    prisma.organization.findFirst.mockResolvedValue({ storageConfirmedAt: new Date('2026-11-17T09:00:00Z') });
+    expect(await detectors.storageNotConfirmed(ORG_A)).toEqual([]);
+  });
+
+  it('opens nothing for an organisation that does not exist', async () => {
+    prisma.organization.findFirst.mockResolvedValue(null);
+    expect(await detectors.storageNotConfirmed(ORG_A)).toEqual([]);
+  });
+
+  itEnforcesTenantIsolation('storageNotConfirmed reads only the organisation it is asked about', async () => {
+    prisma.organization.findFirst.mockResolvedValue({ storageConfirmedAt: null });
+    expect((await detectors.storageNotConfirmed(ORG_B))[0]!.objectId).toBe(ORG_B);
+    expect(prisma.organization.findFirst).toHaveBeenCalledWith({ where: { id: ORG_B }, select: { storageConfirmedAt: true } });
   });
 });
