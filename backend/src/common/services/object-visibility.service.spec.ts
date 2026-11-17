@@ -164,6 +164,33 @@ describe('ObjectVisibilityService (ACC-101)', () => {
     expect(mockPrisma.meeting.findFirst).toHaveBeenCalled();
   });
 
+  // ACC-283 — the record check a WRITE runs (POST /tasks), as a yes or no for the
+  // screen that offers it. The oversight reads are not in this mock: consulting
+  // them would throw, so a false answer below also proves they were never asked.
+  describe('canViewForWrite (ACC-283)', () => {
+    it('a committees:view holder: true, with no query at all', async () => {
+      expect(await service.canViewForWrite('COMMITTEE', COMMITTEE_ID, ORG_A, ['committees:view'], 'user-1')).toBe(true);
+      expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('an active member: true, by the one membership query', async () => {
+      mockPrisma.committeeMember.findFirst.mockResolvedValueOnce({ id: 'cm-1' });
+      expect(await service.canViewForWrite('COMMITTEE', COMMITTEE_ID, ORG_A, [], 'user-1')).toBe(true);
+      expect(mockPrisma.committeeMember.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('anyone else, an overseeing head included: false, and oversight is never asked', async () => {
+      expect(await service.canViewForWrite('COMMITTEE', COMMITTEE_ID, ORG_A, ['committees:create_tasks'], 'head-1')).toBe(false);
+      expect(mockPrisma.committeeMember.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('a type with no rule: false (fail closed), with no query', async () => {
+      expect(await service.canViewForWrite('INCIDENT', 'incident-1', ORG_A, ['incidents:view'], 'user-1')).toBe(false);
+      expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
   // The read-first shape. Both refusal causes must collapse to one answer, or
   // the status pair rebuilds the existence oracle the check exists to close.
   describe('assertCanViewOrNotFound', () => {

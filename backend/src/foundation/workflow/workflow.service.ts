@@ -1711,6 +1711,11 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<void> {
+    // ACC-312 — a record at its FINAL stage waits on nobody (its entry keeps
+    // exitedAt null for good), so it is never flagged unassigned and no pool
+    // is resolved for it. Withdrawn, approved and rejected change requests are
+    // the first such stages whose pool empties (the requester leaves).
+    if (stage.isFinal) return;
     // ACC-271 — a stage is unassigned when its pool is empty (plan §4.5), as a
     // stage with no `who` always is (PR 6a removed the two old detectors).
     const pool = await this.stagePool.resolve(organizationId, stage.id, instance);
