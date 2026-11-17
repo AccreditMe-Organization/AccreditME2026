@@ -255,6 +255,34 @@ call, with a db-spec.
 - **Frontend:** the panel's states, the actions per viewer, Arabic, and test 14's absence pin
   updated.
 
+### 2.7 The new key, `users:manage_sessions` (lane B's conditions, CC-302)
+
+Agreed between the lanes on 17 Nov: **lane A adds the key itself, in the Sessions backend PR
+(PR 1), and lane B reviews it.** Nobody adds it before that PR.
+
+**In that same PR:**
+- **The catalogue:** the key in `USERS_PERMISSIONS` (`permissions.ts`), beside `users:reset_mfa`.
+- **Its sentences:** English and Arabic, and its entry in `permission-groups.ts` (Users' "Account
+  access" group, with Deactivate, Reactivate and Reset two-step sign-in), so
+  `check:permission-sentences` passes. That check requires a sentence for every in-use key and
+  none for a key not in use.
+- **The seed:** on Organization Administrator ONLY. `role.seed.spec.ts`'s pinned sets are updated
+  to say so; no other role's set changes.
+- **The CLAUDE.md permission list:** the key added, 74 to 75 keys. Lane B's count is 74 today,
+  after #322 retired `committees:approve`. The list's header sentence still reads "75 keys since
+  ACC-164", which predates #322, so it is corrected in the same PR.
+
+**The grant-only backfill**, `npm run backfill:acc216-manage-sessions-permission`:
+- **It writes `RolePermission` directly**, because the root role's permission set is frozen
+  through `assignPermissions()` (it refuses Organization Administrator, ACC-120), so the API path
+  would refuse it. It adds the one key to each organisation's Organization Administrator role
+  that lacks it, and touches nothing else.
+- **One audit row per tenant** (ACC-101's rule for a backfill that changes tenant data).
+- **It refuses customers** (ACC-101: a backfill may grant only while no customer tenant exists,
+  and this one is still checked rather than assumed). The platform organisation is skipped.
+- **Order, after PR 1 deploys and only on Ahmad's go:** dry run, then `-- --execute`, then a dry
+  run reporting 0.
+
 ---
 
 ## 3. Tasks: what the code does today
@@ -409,16 +437,17 @@ filters, rows, per-row actions (`taskActionsFor()`), the facets and the batching
 
 | PR | Content | Backend slot | Depends on |
 |---|---|---|---|
-| 1 | Sessions read + self end routes + `users:manage_sessions` in the catalogue, seed, sentence and grantability (or by lane B, as agreed); the generalised reset rule; `SESSIONS_ENDED` in the access-history classifier | yes | #323 merged (the classifier) |
+| 1 | Sessions read + self end routes + `users:manage_sessions` (added by lane A, reviewed by lane B; catalogue, sentences, group, seed and pinned sets, CLAUDE.md list: §2.7); the generalised reset rule; `SESSIONS_ENDED` in the access-history classifier | yes | #323 merged (the classifier) |
 | 2 | Sessions panel | no | PR 1 deployed |
-| 3 | Deactivation uses `endEverySessionInTx()` (Q6) | yes | none |
+| 3 | Deactivation uses `endEverySessionInTx()` (Q6): #326, in #317's transaction | yes | none |
 | 4 | Tasks person scope on `record-list` + db-spec | yes | none |
 | 5 | Tasks panel | no | PR 4 deployed |
 
 - **No migration in any PR** (the optional index in §2.1 is not planned).
 - **A new key** follows ACC-164: `npm run backfill:acc216-manage-sessions-permission`, grant-only,
-  one audit row per organisation, the platform organisation skipped. Dry run, `-- --execute`
-  after the deploy, then a dry run reporting 0. It needs Ahmad's "go".
+  writing `RolePermission` directly, one audit row per organisation, refusing customers, the
+  platform organisation skipped (§2.7). Dry run, `-- --execute` after the deploy, then a dry run
+  reporting 0. It needs Ahmad's "go".
 
 ---
 
