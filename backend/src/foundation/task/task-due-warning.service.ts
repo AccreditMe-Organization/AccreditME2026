@@ -12,7 +12,7 @@ import {
   warnHours,
   warningFitsLimit,
 } from '../tenant/task-sla-settings';
-import { PoolTarget, poolKey, poolTargetOf, resolvePoolMembersBatch } from './task-pool';
+import { CURRENT_ACTIVE_ASSIGNEE, PoolTarget, poolKey, poolTargetOf, resolvePoolMembersBatch } from './task-pool';
 import { peopleDateIn } from './task-sla.service';
 
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
@@ -31,7 +31,8 @@ interface WarningCandidate {
   assignedPositionId: string | null;
   assignedCommitteeId: string | null;
   assignedCommitteeRoleValueId: string | null;
-  assignees: { userId: string; user: { status: string } }[];
+  /** Only the rows that put someone on the task (CURRENT_ACTIVE_ASSIGNEE). */
+  assignees: { userId: string }[];
 }
 
 /**
@@ -50,10 +51,13 @@ interface WarningCandidate {
  * The stamp is cleared where the due time stops being the one reminded about
  * (DUE_WARNING_CLEARED, plan §3.3).
  *
- * WHO IS TOLD. A task someone holds: its active assignees, never their acting
- * users (ACC-271 PR 4's rule). A task still waiting in its pool: the pool's
- * members, by the pool's own rule, resolved in one batch. Whoever picks it up
- * afterwards gets no second reminder (Q5).
+ * WHO IS TOLD. "Someone is on it" is ACC-86's one definition,
+ * CURRENT_ACTIVE_ASSIGNEE (a current row held by an ACTIVE user). A task
+ * someone is on: those people, never their acting users (ACC-271 PR 4's rule).
+ * A task with a pool and nobody on it (a current row held by someone no longer
+ * ACTIVE counts as nobody): the pool's members, by the pool's own rule,
+ * resolved in one batch. Whoever picks it up afterwards gets no second reminder
+ * (Q5). A task with no pool and nobody on it is not picked and not claimed.
  */
 @Injectable()
 export class TaskDueWarningService {
@@ -127,10 +131,13 @@ export class TaskDueWarningService {
         status: { in: DUE_WARNING_STATUSES },
         AND: [
           { OR: windows },
-          // Held by someone, or waiting in a pool: someone to tell.
+          // Held by someone (ACC-86's one definition: a current row held by an
+          // ACTIVE user), or waiting in a pool: someone to tell. A task with no
+          // pool and nobody ACTIVE on it is not picked, so it is not claimed and
+          // a later holder can still be reminded.
           {
             OR: [
-              { assignees: { some: { removedAt: null } } },
+              { assignees: { some: CURRENT_ACTIVE_ASSIGNEE } },
               { assignedPositionId: { not: null } },
               { assignedCommitteeId: { not: null } },
             ],
@@ -145,7 +152,7 @@ export class TaskDueWarningService {
         assignedPositionId: true,
         assignedCommitteeId: true,
         assignedCommitteeRoleValueId: true,
-        assignees: { where: { removedAt: null }, select: { userId: true, user: { select: { status: true } } } },
+        assignees: { where: CURRENT_ACTIVE_ASSIGNEE, select: { userId: true } },
       },
     });
     if (candidates.length === 0) return;
@@ -185,7 +192,7 @@ export class TaskDueWarningService {
       const pool = waiting.get(task.id);
       const recipients = pool
         ? (pools.get(poolKey(pool)) ?? [])
-        : task.assignees.filter((a) => a.user.status === 'ACTIVE').map((a) => a.userId);
+        : task.assignees.map((a) => a.userId);
       const due = peopleDateIn(task.dueAt as Date, zone);
       return [...new Set(recipients)].map((userId) => ({
         userId,

@@ -6,6 +6,7 @@ import { GCC_DEFAULT_CALENDAR, LoadedCalendar } from '../working-calendar/workin
 import { DEFAULT_TASK_SLA_SETTINGS } from '../tenant/task-sla-settings';
 import { useFixedClock } from '../../common/testing/fixed-clock';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { CURRENT_ACTIVE_ASSIGNEE } from './task-pool';
 
 // ACC-313 PR 4 — the due-soon reminder sweep: once per due time, in working
 // hours, to whoever holds the task or, while it waits, to its pool. The claim's
@@ -28,7 +29,7 @@ const held = (id: string, userIds: string[], over: Record<string, unknown> = {})
   title: 'Collect the audit sample',
   dueAt: new Date('2026-11-17T08:00:00.000Z'), // 11:00 Riyadh
   ...NO_POOL,
-  assignees: userIds.map((userId) => ({ userId, user: { status: 'ACTIVE' } })),
+  assignees: userIds.map((userId) => ({ userId })),
   ...over,
 });
 
@@ -112,10 +113,22 @@ describe('TaskDueWarningService (ACC-313)', () => {
       { priority: 'HIGH', dueAt: { gt: NOW, lte: new Date('2026-11-17T09:00:00.000Z') } },
     ]);
     expect(someone!.OR).toEqual([
-      { assignees: { some: { removedAt: null } } },
+      { assignees: { some: { removedAt: null, user: { status: 'ACTIVE' } } } },
       { assignedPositionId: { not: null } },
       { assignedCommitteeId: { not: null } },
     ]);
+  });
+
+  it('reads "someone is on it" from ACC-86’s one definition, in the where and in the select, never a copy', async () => {
+    organisations([{ id: 'org-a', warn: { ...OFF, HIGH: 'H2' } }]);
+
+    await service.sweep(NOW);
+
+    const [, someone] = taskWhere()['AND'] as { OR: { assignees?: { some: unknown } }[] }[];
+    expect(someone!.OR[0]!.assignees!.some).toBe(CURRENT_ACTIVE_ASSIGNEE);
+    const select = (prisma.task.findMany.mock.calls[0][0] as { select: { assignees: { where: unknown; select: unknown } } }).select;
+    expect(select.assignees.where).toBe(CURRENT_ACTIVE_ASSIGNEE);
+    expect(select.assignees.select).toEqual({ userId: true });
   });
 
   it('a warning a calendar change made too long for its limit is treated as Off', async () => {
@@ -127,16 +140,10 @@ describe('TaskDueWarningService (ACC-313)', () => {
     expect(prisma.task.findMany).not.toHaveBeenCalled();
   });
 
-  it('claims each task with one conditional write, then tells its active assignees, once, in both languages', async () => {
+  it('claims each task with one conditional write, then tells the people on it, once, in both languages', async () => {
     organisations([{ id: 'org-a', warn: { ...OFF, HIGH: 'H2' } }], ['task-1']);
-    prisma.task.findMany.mockResolvedValue([
-      held('task-1', ['u-1', 'u-2'], {
-        assignees: [
-          { userId: 'u-1', user: { status: 'ACTIVE' } },
-          { userId: 'u-2', user: { status: 'DEACTIVATED' } },
-        ],
-      }),
-    ]);
+    // The select returns only the rows that put someone on the task.
+    prisma.task.findMany.mockResolvedValue([held('task-1', ['u-1'])]);
 
     await service.sweep(NOW);
 

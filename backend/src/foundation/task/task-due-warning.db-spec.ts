@@ -141,6 +141,39 @@ describe('The due-soon reminder against a real database (ACC-313)', () => {
     expect((await reminders(t.id)).map((r) => r.userId).sort()).toEqual([o.bea, o.dana].sort());
   });
 
+  // ACC-86 — "someone is on it" is a current row held by an ACTIVE user
+  // (CURRENT_ACTIVE_ASSIGNEE). A current row left by someone no longer ACTIVE
+  // puts nobody on the task.
+  it('a pool task whose only current row is held by someone no longer ACTIVE is waiting: its pool is reminded, not the leaver', async () => {
+    const o = await org();
+    const t = await task(o, IN_ONE_HOUR, null);
+    await prisma.taskAssignee.create({ data: { taskId: t.id, userId: o.holder, assignedById: o.creator } });
+    await prisma.user.update({ where: { id: o.holder }, data: { status: 'INACTIVE' } });
+
+    await worker().sweep(NOW);
+
+    expect((await reminders(t.id)).map((r) => r.userId).sort()).toEqual([o.bea, o.dana].sort());
+    expect(await stampOf(t.id)).toEqual(NOW);
+  });
+
+  it('a task with no pool and nobody ACTIVE on it is not claimed, so a later holder is still reminded', async () => {
+    const o = await org();
+    const t = await task(o, IN_ONE_HOUR, o.holder);
+    await prisma.user.update({ where: { id: o.holder }, data: { status: 'INACTIVE' } });
+
+    await worker().sweep(NOW);
+
+    expect(await reminders(t.id)).toEqual([]);
+    expect(await stampOf(t.id)).toBeNull();
+
+    // Someone ACTIVE is put on it: the next pass reminds them.
+    await prisma.taskAssignee.create({ data: { taskId: t.id, userId: o.bea, assignedById: o.creator } });
+    await worker().sweep(NOW);
+
+    expect(await reminders(t.id)).toEqual([{ userId: o.bea }]);
+    expect(await stampOf(t.id)).toEqual(NOW);
+  });
+
   it('should NOT return records belonging to a different tenant — the due-soon sweep stamps and reminds only its own organisation’s tasks', async () => {
     const a = await org();
     const b = await org(false);
