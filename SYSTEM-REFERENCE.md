@@ -12707,8 +12707,10 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     (rows and `matching`). This is the same rule as `/tasks` My tasks.
     `GET /tasks/my-tasks`, which is unbounded, is no longer read by Home.
   - `myOverdue`: the same query with `overdue=true&take=1`.
-  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests for
-    `committees:approve` holders. Either half failing fails the whole read.
+  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests awaiting
+    a decision, asked of everyone while the committees module is open
+    (`committeesOpen()`), because the server decides who may decide (ACC-283
+    PR 2). Either half failing fails the whole read.
   - `myCommittees`: `GET /committees/mine`, only while the module is open.
 - **`isCommitteeMember`** (ACC-281): true once `myCommittees` has loaded with a total
   above 0; false while loading, after a failure, or with none. Lane A's rail and route
@@ -12806,8 +12808,10 @@ work, after Tasks, with no permission, because both reads are self-scoped.
     page; with none it sends Home's request unchanged.
   - `GET /committee-change-requests/awaiting-decision` returns every change
     request the person may decide, capped at 200 by the server. It is asked
-    only of `committees:approve` holders, as Home does, and only on the first
-    load. Both reads run in parallel.
+    of everyone while the committees module is open, by Home's own rule
+    (`MyWorkCountsService.committeesOpen()`), because the server decides who
+    may decide (ACC-283 PR 2), and only on the first load. Both reads run in
+    parallel.
 - **Rows** are Home's panel rows, built by the pure functions in
   `awaiting-rows.ts` (`stageRow`, `changeRow`, `waitingText`), so Home can use
   them too.
