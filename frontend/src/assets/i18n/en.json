@@ -2483,6 +2483,7 @@
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
       "TASK_WITHOUT_OWNER": "Task with no actionable owner",
       "STORAGE_ALMOST_FULL": "File storage almost full",
+      "STORAGE_NOT_CONFIRMED": "File storage not confirmed",
       "STORAGE_ACCESS_WITHDRAWN": "SharePoint storage can't be reached",
       "STORAGE_SECRET_EXPIRING": "SharePoint client secret expires soon",
       "ACTING_HEAD_OPEN_ENDED": "Acting head with no end date",
@@ -2498,6 +2499,7 @@
       "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
       "task": "No one is assigned, so it is in no one’s task list.",
       "storage": "{{percent}}% of {{limit}} is used. Uploads stop at the limit; deleted files count until they are purged from the recycle bin.",
+      "storageNotConfirmed": "Uploads are blocked: nobody in the organization can add files until a location is confirmed.",
       "sharePointWithdrawn": {
         "SECRET_INVALID": "The client secret is invalid or has expired. Uploads and downloads of files stored in SharePoint are paused.",
         "CONSENT_REVOKED": "The app's permission was removed in your Microsoft tenant, or the app was disabled or deleted. Uploads and downloads of files stored in SharePoint are paused.",
@@ -2512,6 +2514,7 @@
     "hint": {
       "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it.",
       "STORAGE_ALMOST_FULL": "Purge deleted files from the recycle bin, or ask AccreditMe for more storage.",
+      "STORAGE_NOT_CONFIRMED": "Choose where files go and confirm it on File storage. AccreditMe cloud needs no test; another location is confirmed after a passing connection test.",
       "STORAGE_ACCESS_WITHDRAWN": "Ask your Microsoft administrator to restore the app's access, or enter a new client secret under Replace secret. Files stored there are safe.",
       "STORAGE_SECRET_EXPIRING": "Ask your Microsoft administrator for a new client secret and enter it under Replace secret before then."
     },
@@ -2531,6 +2534,7 @@
       "STORAGE_ACCESS_WITHDRAWN": "Open file storage",
       "STORAGE_SECRET_EXPIRING": "Open file storage",
       "STORAGE_ALMOST_FULL": "Open recycle bin",
+      "STORAGE_NOT_CONFIRMED": "Set up file storage",
       "STAGE_ON_STARTING_ASSIGNMENT": "Review stage"
     },
     "fixNeeds": {
@@ -2543,6 +2547,7 @@
       "STORAGE_ACCESS_WITHDRAWN": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STORAGE_SECRET_EXPIRING": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STORAGE_ALMOST_FULL": "Fixing this needs permission to set up email, storage, deadlines and AI.",
+      "STORAGE_NOT_CONFIRMED": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STAGE_ON_STARTING_ASSIGNMENT": "Fixing this needs permission to manage workflows."
     },
     "freshness": {
