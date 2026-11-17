@@ -76,11 +76,11 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
       [class.am-field--trailing]="!!trailing()"
       [style.--am-field-trailing-size]="trailing()"
     >
+      <!-- The asterisk is held to the label's last word: no whitespace between
+           them, and a word joiner (U+2060) before it, so a narrow column wraps
+           the words and never leaves the asterisk on a line alone (ACC-313). -->
       <label class="am-field__label" [class.sr-only]="labelVisuallyHidden()" [attr.for]="controlId()">
-        {{ label() }}
-        @if (required()) {
-          <span class="am-field__required" aria-hidden="true">*</span>
-        }
+        {{ label() }}@if (required()) {<span class="am-field__required" aria-hidden="true">&#8288;*</span>}
       </label>
 
       @if (readonly()) {
@@ -269,9 +269,9 @@ import { FIELD_TRAILING_CONTROL } from './trailing-control';
       /* Reserved at all times — an appearing message must never move the form. */
       .am-field__message {
         margin: 0;
-        min-height: 17px;
+        min-height: var(--am-field-message-line);
         font-size: 11.5px;
-        line-height: 17px;
+        line-height: var(--am-field-message-line);
         color: var(--am-ink-500);
         text-wrap: pretty;
       }

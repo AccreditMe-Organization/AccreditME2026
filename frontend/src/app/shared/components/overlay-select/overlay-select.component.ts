@@ -114,6 +114,9 @@ function flattenHierarchy(
       [attr.aria-haspopup]="ariaLabel() ? 'listbox' : null"
       [attr.aria-expanded]="ariaLabel() ? isOpen() : null"
       [attr.aria-label]="ariaLabel() ? (selectedLabel() ? ariaLabel() + ': ' + selectedLabel() : ariaLabel()) : null"
+      [class.am-overlay-select-trigger-invalid]="invalid()"
+      [attr.aria-invalid]="invalid() ? 'true' : null"
+      [attr.aria-describedby]="ariaDescribedBy()"
       (click)="toggle()"
       (keydown.enter)="toggle()"
       (keydown.space)="toggle(); $event.preventDefault()"
@@ -172,6 +175,7 @@ function flattenHierarchy(
         cdkListbox
         class="am-overlay-select-panel"
         [style.width.px]="panelWidth()"
+        [style.max-height]="panelMaxHeight()"
         [cdkListboxMultiple]="multiple()"
         [cdkListboxValue]="listboxValue()"
         (cdkListboxValueChange)="onListboxChange($event)"
@@ -298,6 +302,15 @@ function flattenHierarchy(
       .am-overlay-select-trigger-open {
         border-color: var(--am-primary-600);
         box-shadow: 0 0 0 1px var(--am-primary-600);
+      }
+
+      .am-overlay-select-trigger-invalid,
+      .am-overlay-select-trigger-invalid:hover {
+        border-color: var(--am-danger-ink);
+      }
+
+      .am-overlay-select-trigger-invalid:focus {
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--am-danger-ink) 12%, transparent);
       }
 
       .am-overlay-select-trigger-disabled {
@@ -553,6 +566,23 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
    * translated. Unset — the field's own label names it, as always.
    */
   readonly ariaLabel = input<string | null>(null);
+
+  /**
+   * ACC-313 — opt-in: marks the trigger invalid (the error border and
+   * aria-invalid) where the caller knows it is, such as a value the server
+   * refused. am-field cannot mark it: it marks an input, and this trigger is
+   * not one. Unset — never marked, as always.
+   */
+  readonly invalid = input(false);
+
+  /** ACC-313 — opt-in: the id of the message that explains this field's error. */
+  readonly ariaDescribedBy = input<string | null>(null);
+
+  /**
+   * ACC-313 — opt-in: the open list's maximum height, so a short list can show
+   * every option rather than end on a cut one. Null — 15rem, as always.
+   */
+  readonly panelMaxHeight = input<string | null>(null);
 
   readonly flattenedOptions = computed<FlattenedOption[]>(() => {
     const childrenField = this.optionGroupChildren();
