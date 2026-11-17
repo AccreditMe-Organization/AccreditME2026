@@ -1360,9 +1360,9 @@ describe('RoleService', () => {
     // checks it since a workflow move names no permission. A role that holds it
     // (QUALITY_MANAGER is seeded with it) keeps it through every save; only a
     // NEW grant is refused.
+    // ACC-283 PR 4: committees:approve is retired, so no longer in the set.
     const COMMITTEE_FULL_SET = [
       'committees:add_member',
-      'committees:approve',
       'committees:change_member_role',
       'committees:create',
       'committees:edit_details',
