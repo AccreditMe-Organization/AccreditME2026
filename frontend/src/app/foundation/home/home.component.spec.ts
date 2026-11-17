@@ -151,7 +151,6 @@ describe('HomeComponent (ACC-279)', () => {
 
     it('Awaiting me counts stage records and change requests, with the oldest age', () => {
       build({
-        permissions: ['committees:approve'],
         awaiting: awaitingMe([awaitingRow({ since: '2026-11-03T06:00:00.000Z' })], 2),
         changes: [],
       });
@@ -160,7 +159,7 @@ describe('HomeComponent (ACC-279)', () => {
     });
 
     it('Awaiting me fails as a whole when either half fails: a partial count is a wrong count', () => {
-      build({ permissions: ['committees:approve'], awaiting: awaitingMe([awaitingRow()]), changes: 'fail' });
+      build({ awaiting: awaitingMe([awaitingRow()]), changes: 'fail' });
       expect(q('home-tile-awaiting-failed')).not.toBeNull();
       expect(q('home-tile-awaiting-value')).toBeNull();
     });
@@ -183,7 +182,7 @@ describe('HomeComponent (ACC-279)', () => {
 
   describe('the admin block', () => {
     it('is absent, and its read never sent, without any of its permissions', () => {
-      build({ permissions: ['committees:approve', 'tenant:manage_config'] });
+      build({ permissions: ['tenant:manage_config'] });
       expect(q('home-admin')).toBeNull();
       expect(calls.summary).toBe(0);
     });

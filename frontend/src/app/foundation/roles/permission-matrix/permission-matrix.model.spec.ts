@@ -64,7 +64,7 @@ describe('buildMatrix (ACC-272)', () => {
     const c = committees();
     expect(c.groups.map((g) => g.id)).toEqual(['records', 'members', 'tasks']);
     expect(c.groups.map((g) => g.keys)).toEqual([
-      ['committees:view', 'committees:create', 'committees:edit_details', 'committees:approve'],
+      ['committees:view', 'committees:create', 'committees:edit_details'],
       ['committees:add_member', 'committees:remove_member', 'committees:change_member_role'],
       ['committees:view_all_tasks', 'committees:view_unit_tasks', 'committees:create_tasks', 'committees:manage_tasks'],
     ]);
@@ -107,7 +107,7 @@ describe('tri-state and counts', () => {
     expect(triState(records.keys, all)).toBe('all');
     expect(triState(c.keys, all)).toBe('some');
     expect(triState(c.keys, new Set())).toBe('none');
-    expect(heldCount(c.keys, all)).toBe(4);
+    expect(heldCount(c.keys, all)).toBe(3);
     expect(heldCount(c.keys, new Set(['committees:view', 'users:view']))).toBe(1);
   });
 
@@ -117,7 +117,7 @@ describe('tri-state and counts', () => {
     expect([...toggleKeys(keys, new Set())].sort()).toEqual(keys.sort());
     expect([...toggleKeys(keys, new Set(keys))]).toEqual([]);
     // Nothing else moves: no row implies another.
-    expect([...toggleKeys(['committees:approve'], new Set(['users:view']))].sort()).toEqual(['committees:approve', 'users:view']);
+    expect([...toggleKeys(['committees:edit_details'], new Set(['users:view']))].sort()).toEqual(['committees:edit_details', 'users:view']);
     // An empty set of visible keys does nothing.
     expect([...toggleKeys([], new Set(['users:view']))]).toEqual(['users:view']);
   });
@@ -125,8 +125,8 @@ describe('tri-state and counts', () => {
 
 describe('the filter (shows, never saves)', () => {
   const loaded = new Set(['committees:view', 'committees:change_member_role']);
-  // Edited: approve granted, change_member_role revoked.
-  const selected = new Set(['committees:view', 'committees:approve']);
+  // Edited: edit_details granted, change_member_role revoked.
+  const selected = new Set(['committees:view', 'committees:edit_details']);
 
   it('is off by default; a query or Show granted only turns it on', () => {
     expect(filterActive(NO_FILTER)).toBeFalse();
@@ -155,7 +155,7 @@ describe('the filter (shows, never saves)', () => {
     const f = { query: '', grantedOnly: true };
     expect(visibleKeys(committees().permissions, sentenceOf, f, selected, loaded)).toEqual([
       'committees:view',
-      'committees:approve',
+      'committees:edit_details',
       'committees:change_member_role',
     ]);
   });
@@ -176,18 +176,18 @@ describe('the filter (shows, never saves)', () => {
 
 describe('marks and the change list', () => {
   const loaded = new Set(['committees:view', 'lookups:view', 'committees:change_member_role']);
-  const selected = new Set(['committees:view', 'committees:approve']);
+  const selected = new Set(['committees:view', 'committees:edit_details']);
 
   it('marks held, not held, newly granted and newly revoked against the LOADED set', () => {
     expect(markOf('committees:view', selected, loaded)).toBe('on');
     expect(markOf('users:view', selected, loaded)).toBe('off');
-    expect(markOf('committees:approve', selected, loaded)).toBe('granted');
+    expect(markOf('committees:edit_details', selected, loaded)).toBe('granted');
     expect(markOf('lookups:view', selected, loaded)).toBe('revoked');
   });
 
   it('lists the changes for the save confirmation in the list order, never a hidden key', () => {
     const changes = changesOf(tenant(), new Set([...selected, 'documents:view']), loaded);
-    expect(changes.added.map((p) => p.key)).toEqual(['committees:approve']);
+    expect(changes.added.map((p) => p.key)).toEqual(['committees:edit_details']);
     // Lookups comes before Committees in the product order.
     expect(changes.removed.map((p) => p.key)).toEqual(['lookups:view', 'committees:change_member_role']);
   });

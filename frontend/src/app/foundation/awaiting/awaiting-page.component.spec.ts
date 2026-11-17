@@ -46,7 +46,13 @@ describe('AwaitingPageComponent (ACC-120)', () => {
   let fixture: ComponentFixture<AwaitingPageComponent>;
   let http: HttpTestingController;
 
-  function setup(opts: { approve?: boolean; language?: 'en' | 'ar' } = {}): HTMLElement {
+  /**
+   * ACC-283 PR 4 — the change requests are asked of everyone while Committees is
+   * open (the chain of authority decides who, on the server; no key does). By
+   * default they are answered at once with none; `ownChanges` leaves the request
+   * for the test to answer.
+   */
+  function setup(opts: { ownChanges?: boolean; language?: 'en' | 'ar' } = {}): HTMLElement {
     TestBed.configureTestingModule({
       imports: [AwaitingPageComponent],
       providers: [
@@ -55,7 +61,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en' }),
         provideFormatTesting(),
-        { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => !!opts.approve && p === 'committees:approve' } },
+        { provide: NavigationAccessService, useValue: { hasPermission: () => false, isModuleEnabled: () => true } },
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -63,6 +69,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(AwaitingPageComponent);
     fixture.detectChanges();
+    if (!opts.ownChanges) http.match(CHANGES_URL).forEach((r) => r.flush([]));
     return fixture.nativeElement as HTMLElement;
   }
 
@@ -85,18 +92,18 @@ describe('AwaitingPageComponent (ACC-120)', () => {
 
   afterEach(() => http.verify());
 
-  it('the first load asks for the first 50 stage rows exactly, and no change requests without committees:approve', () => {
-    setup();
+  it('the first load asks for the first 50 stage rows exactly, and the change requests whatever the person’s keys', () => {
+    setup({ ownChanges: true });
     const req = stageReq();
     expect(req.request.params.get('skip')).toBe('0');
     expect(req.request.params.get('take')).toBe('50');
     expect(req.request.params.keys().sort()).toEqual(['skip', 'take']);
-    http.expectNone(CHANGES_URL);
+    http.expectOne(CHANGES_URL).flush([]);
     req.flush({ total: 0, rows: [], oldestSince: null });
   });
 
-  it('with committees:approve it asks for the change requests too, in parallel', () => {
-    setup({ approve: true });
+  it('it asks for the change requests too, in parallel (the chain decides who; no key does)', () => {
+    setup({ ownChanges: true });
     const stages = stageReq();
     const changes = http.expectOne(CHANGES_URL);
     stages.flush({ total: 0, rows: [], oldestSince: null });
@@ -110,7 +117,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
   });
 
   it('nothing waiting: "Nothing is waiting for you."', () => {
-    const el = setup({ approve: true });
+    const el = setup({ ownChanges: true });
     stageReq().flush({ total: 0, rows: [], oldestSince: null });
     http.expectOne(CHANGES_URL).flush([]);
     fixture.detectChanges();
@@ -122,7 +129,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
     const all = Array.from({ length: 120 }, (_, i) => stage(i + 1));
     // Older than everything, between rows 70 and 71, and newer than everything.
     const changes = [change('cr-old', 0), change('cr-mid', 70.5), change('cr-new', 200)];
-    const el = setup({ approve: true });
+    const el = setup({ ownChanges: true });
     expect(answerStages(all)).toEqual({ skip: 0, take: 50 });
     http.expectOne(CHANGES_URL).flush(changes);
     fixture.detectChanges();
@@ -150,7 +157,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
 
   it('Load more never re-reads the change requests', () => {
     const all = Array.from({ length: 60 }, (_, i) => stage(i + 1));
-    const el = setup({ approve: true });
+    const el = setup({ ownChanges: true });
     answerStages(all);
     http.expectOne(CHANGES_URL).flush([change('cr-1', 100)]);
     fixture.detectChanges();
@@ -162,7 +169,7 @@ describe('AwaitingPageComponent (ACC-120)', () => {
   });
 
   it('either read failing fails the page; Retry re-runs both', () => {
-    const el = setup({ approve: true });
+    const el = setup({ ownChanges: true });
     stageReq().flush({ total: 0, rows: [], oldestSince: null });
     http.expectOne(CHANGES_URL).flush({}, { status: 500, statusText: 'Server Error' });
     fixture.detectChanges();

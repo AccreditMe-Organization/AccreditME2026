@@ -74,13 +74,17 @@ describe('MyWorkCountsService (ACC-279)', () => {
     expect(service.myTasks().state).toBe('ready');
   });
 
-  it('change requests are asked only of committees:approve holders', () => {
+  // ACC-283 PR 4 — the chain of authority decides who may decide, on the server;
+  // no key does. So change requests are asked while Committees is open, and not
+  // while it is closed.
+  it('change requests are asked while Committees is open, whatever the keys, and not while it is closed', () => {
     build({ permissions: [] });
     service.init();
-    expect(calls.changes).toBe(0);
-    build({ permissions: ['committees:approve'] });
-    service.init();
     expect(calls.changes).toBe(1);
+    build({ permissions: [] });
+    spyOn(service, 'committeesOpen').and.returnValue(false);
+    service.init();
+    expect(calls.changes).toBe(0);
   });
 
   it('My committees is not asked while the Committees module is closed', () => {

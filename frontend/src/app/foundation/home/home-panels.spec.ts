@@ -168,7 +168,6 @@ describe('Home panels (ACC-279)', () => {
   describe('Awaiting my action', () => {
     it('merges stage records and change requests, oldest first, with how long each has waited', () => {
       build({
-        permissions: ['committees:approve'],
         awaiting: awaitingMe([awaitingRow({ since: '2026-11-03T06:00:00.000Z' })]),
         changes: [REQUEST({ submittedAt: '2026-11-01T06:00:00.000Z' })],
       });
@@ -182,10 +181,10 @@ describe('Home panels (ACC-279)', () => {
       expect(one('home-awaiting-count')!.textContent!.trim()).toBe('2');
     });
 
-    it('change requests are asked only of committees:approve holders', () => {
+    // ACC-283 PR 4 — committees:approve is retired: the chain of authority decides
+    // who may decide, on the server, so the request is asked of everyone.
+    it('change requests are asked of everyone while Committees is open, whatever their keys', () => {
       build({ permissions: [] });
-      expect(calls.changes).toBe(0);
-      build({ permissions: ['committees:approve'] });
       expect(calls.changes).toBe(1);
     });
 
