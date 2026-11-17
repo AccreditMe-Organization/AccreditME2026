@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, input, signal } from '@angular/core';
-import { HttpErrorResponse } from '@angular/common/http';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { Observable, Subscription } from 'rxjs';
+import { Observable, Subscription, map } from 'rxjs';
 import { FormatService } from '../../../../core/formatting';
+import { RequestOutcomeHandle, createRequestOutcome } from '../../../../core/request-outcome/request-outcome';
 import {
   CappedPanelComponent,
   CappedPanelState,
@@ -10,7 +10,7 @@ import {
 } from '../../../../shared/components/capped-panel/capped-panel.component';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { ListDialogComponent } from '../../../../shared/components/list-dialog/list-dialog.component';
-import { ISessionsEndedDto, IUserSessionDto, UserService } from '../../services/user.service';
+import { ISessionsEndedDto, IUserSessionDto, IUserSessionsDto, UserService } from '../../services/user.service';
 import { sessionsRefusalKey } from './sessions-refusal';
 
 /**
@@ -38,8 +38,9 @@ interface SessionRow {
  * users:manage_sessions — the endpoint's own rule). A refused read (403 or 404)
  * still leaves it ABSENT, its host hidden, never an empty panel.
  *
- * Its own request outcome on am-capped-panel: five rows, a skeleton while
- * loading, its own error with Retry, "Not signed in on any device" when empty,
+ * Its own request outcome (core/request-outcome, as the Two-step panel's) on
+ * am-capped-panel: five rows, a skeleton while loading, the record panel's own
+ * error state (the message, the error id, Retry), "No signed-in devices." when empty,
  * and See all in am-list-dialog (compact) past five (the server sends at most
  * 20, so there is no Load more).
  *
@@ -71,6 +72,7 @@ interface SessionRow {
         [loadingText]="'userRecord.sessions.loading' | translate"
         [errorText]="'userRecord.sessions.loadError' | translate"
         [emptyText]="'userRecord.sessions.empty' | translate"
+        [outcome]="outcome()"
         testIdPrefix="sessions"
         (retry)="load()"
         (seeAll)="popupOpen.set(true)"
@@ -174,18 +176,28 @@ export class UserSessionsPanelComponent implements OnInit, OnDestroy {
   private readonly amConfirm = inject(AmConfirmService);
   protected readonly format = inject(FormatService);
 
-  readonly state = signal<CappedPanelState>('loading');
-  /** A refused read: the panel is absent, not empty. */
-  readonly denied = signal(false);
-  readonly total = signal(0);
-  private readonly entries = signal<IUserSessionDto[]>([]);
+  /** The read, as the shared request outcome; set in ngOnInit, once the user id is known. */
+  private readonly handle = signal<RequestOutcomeHandle<IUserSessionsDto> | null>(null);
+  readonly outcome = computed(() => this.handle()?.outcome() ?? null);
+  readonly state = computed<CappedPanelState>(() => {
+    const o = this.outcome();
+    if (o?.status === 'rows' || o?.status === 'empty') return 'ready';
+    return o?.status === 'error' ? 'error' : 'loading';
+  });
+  /** A refused read (403 or 404): the panel is absent, not empty. */
+  readonly denied = computed(() => this.outcome()?.status === 'denied');
+  private readonly page = computed(() => {
+    const o = this.outcome();
+    return o?.status === 'rows' ? o.data[0]! : null;
+  });
+  readonly total = computed(() => this.page()?.total ?? 0);
+  private readonly entries = computed<readonly IUserSessionDto[]>(() => this.page()?.rows ?? []);
   readonly popupOpen = signal(false);
   /** The last action's outcome, said under the panel. */
   readonly done = signal<string | null>(null);
   readonly refusal = signal<string | null>(null);
   private readonly busy = signal(false);
 
-  private read: Subscription | null = null;
   private action: Subscription | null = null;
 
   private readonly allMapped = computed<SessionRow[]>(() => {
@@ -203,28 +215,22 @@ export class UserSessionsPanelComponent implements OnInit, OnDestroy {
   readonly offersEndAll = computed(() => this.mode() === 'admin' && this.state() === 'ready' && this.total() > 0);
 
   ngOnInit(): void {
-    this.load();
+    // One page in, one item out: the outcome's rows are [the page].
+    this.handle.set(
+      createRequestOutcome(() => this.userService.getSessions(this.userId()).pipe(map((page) => [page])), {
+        describeEmpty: () => ({ reason: '', filtered: false }),
+      }),
+    );
   }
 
   ngOnDestroy(): void {
-    this.read?.unsubscribe();
+    this.handle()?.destroy();
     this.action?.unsubscribe();
   }
 
+  /** Asks again: Retry, and the fresh list after an action. */
   load(): void {
-    this.read?.unsubscribe();
-    this.state.set('loading');
-    this.read = this.userService.getSessions(this.userId()).subscribe({
-      next: (page) => {
-        this.entries.set(page.rows);
-        this.total.set(page.total);
-        this.state.set('ready');
-      },
-      error: (err: unknown) => {
-        if (err instanceof HttpErrorResponse && (err.status === 403 || err.status === 404)) this.denied.set(true);
-        else this.state.set('error');
-      },
-    });
+    this.handle()?.retry();
   }
 
   secondLine(row: SessionRow): string {

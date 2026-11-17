@@ -3760,7 +3760,7 @@
       "heading": "Signed-in devices",
       "loading": "Loading signed-in devices",
       "loadError": "Signed-in devices couldn't be loaded.",
-      "empty": "Not signed in on any device",
+      "empty": "No signed-in devices.",
       "popupTitle": "Signed-in devices: {{name}}",
       "close": "Close",
       "thisDevice": "This device",

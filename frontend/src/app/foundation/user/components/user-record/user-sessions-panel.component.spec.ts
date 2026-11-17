@@ -132,18 +132,27 @@ describe('UserSessionsPanelComponent (ACC-216 Sessions)', () => {
       expect(document.querySelectorAll('[data-testid="sessions-popup"] [data-session-row]').length).toBe(7);
     });
 
-    it('empty: "Not signed in on any device", and no action offered', () => {
+    it('empty: "No signed-in devices.", and no action offered', () => {
       setup('admin');
       answer(readReq(), page([], 0));
-      expect(q('sessions-empty')!.textContent).toContain('Not signed in on any device');
+      expect(q('sessions-empty')!.textContent!.trim()).toBe('No signed-in devices.');
       expect(q('sessions-end-all')).toBeNull();
     });
 
-    it('failed: its own message and Retry, which asks again', () => {
+    // Design review of #331: the record panel's own error state, not a text link.
+    it("failed: the record panel's error state (message, error id, the small outlined Retry), which asks again", () => {
       setup('own');
-      answer(readReq(), 'fail');
-      expect(q('sessions-error')!.textContent).toContain("Signed-in devices couldn't be loaded.");
-      q('sessions-error')!.querySelector('button')!.click();
+      readReq().flush({ statusCode: 500, errorId: 'err-7f3a' }, { status: 500, statusText: 'Server Error' });
+      fixture.detectChanges();
+      const error = q('sessions-error')!;
+      expect(error.querySelector('p-message')!.textContent).toContain("Signed-in devices couldn't be loaded.");
+      expect(q('sessions-error-id')!.textContent).toContain('err-7f3a');
+      const retry = error.querySelector<HTMLButtonElement>('p-button button')!;
+      expect(retry.textContent!.trim()).toBe('Retry');
+      expect(retry.className).toContain('p-button-outlined');
+      expect(retry.className).toContain('p-button-sm');
+      expect(error.textContent).not.toContain('Try again');
+      retry.click();
       fixture.detectChanges();
       answer(readReq(), page(THREE));
       expect(q('sessions-error')).toBeNull();
@@ -283,6 +292,23 @@ describe('UserSessionsPanelComponent (ACC-216 Sessions)', () => {
       expect(asked[0]!.message).toContain('15 دقيقة');
       const tree = sessionsKeys('ar')['refusal'] as Record<string, string>;
       for (const code of [...SESSIONS_REFUSAL_CODES, 'generic']) expect(tree[code]).toMatch(/[؀-ۿ]/);
+    });
+
+    it('failed and empty in Arabic: «إعادة المحاولة» and «لا توجد أجهزة دخول.»', () => {
+      setup('own', true);
+      answer(readReq(), 'fail');
+      expect(q('sessions-error')!.querySelector('p-button button')!.textContent!.trim()).toBe('إعادة المحاولة');
+      setup('admin', true);
+      answer(readReq(), page([], 0));
+      expect(q('sessions-empty')!.textContent!.trim()).toBe('لا توجد أجهزة دخول.');
+    });
+
+    // Design review of #331: the administrator's confirm says the email arrives.
+    it("the administrator's confirm in Arabic: at once, and an email arrives saying so", () => {
+      setup('admin', true);
+      answer(readReq(), page(THREE));
+      q('sessions-end-all')!.click();
+      expect(asked[0]!.message).toBe('سيتم تسجيل خروج Huda Al-Qahtani من كل الأجهزة فورًا، ويصل بريد إلكتروني يفيد بذلك.');
     });
 
     it('Arabic uses «منشأة» for the organisation and no gendered address', () => {

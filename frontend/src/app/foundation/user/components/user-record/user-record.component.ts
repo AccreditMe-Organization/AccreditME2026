@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -33,7 +33,7 @@ import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
 import { TwoStepResetDialogComponent } from './two-step-reset-dialog.component';
 import { UserCommitteesPanelComponent } from './user-committees-panel.component';
 import { UserSessionsPanelComponent } from './user-sessions-panel.component';
-import { USER_PANEL_GRID } from './user-panel-grid';
+import { observeTwoStepRow, twoStepBodyPx, USER_PANEL_GRID } from './user-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
 /** One row of the Roles panel. */
@@ -271,7 +271,7 @@ interface Fact {
           <p-message severity="error" [text]="message | translate" data-user-action-error />
         }
 
-        <div class="grid gap-3" [style.grid-template-columns]="panelGrid" data-user-panels>
+        <div #panelsGrid class="grid gap-3" [style.grid-template-columns]="panelGrid" data-user-panels>
           @if (canViewRoles() && rolesHandle()) {
             <app-record-panel
               data-panel="roles"
@@ -344,7 +344,7 @@ interface Fact {
               [outcome]="twoStepOutcome()"
               (retry)="twoStepHandle()?.retry()"
               [error]="'userRecord.twoStep.loadError'"
-              [bodyHeight]="120"
+              [bodyHeight]="twoStepBodyHeight()"
             >
               @if (canManageTwoStep() && twoStepEnabled() === false) {
                 <button
@@ -378,7 +378,11 @@ interface Fact {
                says this viewer may reset it (rule 4). Never "Off" for a viewer
                it is not shown to: no panel at all. -->
           @if (!isOwn() && u.twoStep; as ts) {
-            <app-record-panel data-panel="twoStepOther" [heading]="'userRecord.twoStep.heading' | translate" [bodyHeight]="120">
+            <app-record-panel
+              data-panel="twoStepOther"
+              [heading]="'userRecord.twoStep.heading' | translate"
+              [bodyHeight]="twoStepBodyHeight()"
+            >
               @if (ts.mayReset) {
                 <button
                   panelActions
@@ -509,6 +513,21 @@ interface Fact {
 export class UserRecordComponent implements OnInit, OnDestroy {
   /** ACC-232 — never wider than the page; see user-panel-grid.ts. */
   protected readonly panelGrid = USER_PANEL_GRID;
+
+  /**
+   * ACC-216 (design review of #331) — the record-panel rule, equal heights in a
+   * row: while the Two-step card shares a row with the Signed-in devices card, its
+   * body is the capped panel's fixed body height. Alone (one column on a phone,
+   * or no devices card) it keeps its own 120. Measured from the grid as laid out,
+   * so any mix of panels and any width is right; re-measured when the grid resizes.
+   */
+  private readonly panelsGrid = viewChild<ElementRef<HTMLElement>>('panelsGrid');
+  readonly twoStepBesideSessions = signal(false);
+  readonly twoStepBodyHeight = computed(() => twoStepBodyPx(this.twoStepBesideSessions(), this.languageService.isRtl()));
+  private readonly observePanels = effect((onCleanup) => {
+    const grid = this.panelsGrid()?.nativeElement;
+    if (grid) onCleanup(observeTwoStepRow(grid, (beside) => this.twoStepBesideSessions.set(beside)));
+  });
 
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);

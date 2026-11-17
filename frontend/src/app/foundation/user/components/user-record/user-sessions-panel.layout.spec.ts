@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, signal, viewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -14,7 +14,9 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { useLayoutFonts } from '../../../../../testing/layout-fonts';
 import { IUserSessionsDto, UserService } from '../../services/user.service';
-import { USER_PANEL_GRID } from './user-panel-grid';
+import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
+import { CAPPED_PANEL_BODY_PX } from '../../../../shared/components/capped-panel/capped-panel.component';
+import { TWO_STEP_BODY_PX, USER_PANEL_GRID, observeTwoStepRow, twoStepBodyPx } from './user-panel-grid';
 import { SessionsPanelMode, UserSessionsPanelComponent } from './user-sessions-panel.component';
 
 // ACC-216 Sessions, PR 2 — the "Signed-in devices" panel in the record page's own
@@ -78,6 +80,36 @@ class HostComponent {
   readonly width = input<number>(988);
   readonly mode = input<SessionsPanelMode>('own');
   protected readonly grid = USER_PANEL_GRID;
+}
+
+/**
+ * Design review of #331 — your own record's row: the devices card and the
+ * Two-step card, wired with the page's own observeTwoStepRow() and
+ * twoStepBodyPx() (user-panel-grid.ts), as user-record.component.ts wires them.
+ */
+@Component({
+  standalone: true,
+  imports: [UserSessionsPanelComponent, RecordPanelComponent],
+  template: `
+    <div #panels class="grid gap-3" [style.width.px]="width()" [style.grid-template-columns]="grid" data-user-panels>
+      <app-user-sessions-panel userId="user-1" mode="own" personName="Huda Al-Qahtani" />
+      <app-record-panel data-panel="twoStep" heading="Two-step sign-in" [bodyHeight]="bodyHeight()">
+        <p class="m-0 px-4 py-3 text-[13px]">On.</p>
+      </app-record-panel>
+    </div>
+  `,
+})
+class PairHostComponent {
+  readonly width = input<number>(988);
+  protected readonly grid = USER_PANEL_GRID;
+  private readonly language = inject(LanguageService);
+  private readonly panels = viewChild<ElementRef<HTMLElement>>('panels');
+  readonly beside = signal(false);
+  readonly bodyHeight = computed(() => twoStepBodyPx(this.beside(), this.language.isRtl()));
+  private readonly observe = effect((onCleanup) => {
+    const grid = this.panels()?.nativeElement;
+    if (grid) onCleanup(observeTwoStepRow(grid, (beside) => this.beside.set(beside)));
+  });
 }
 
 describe('UserSessionsPanel — layout in the record page grid (ACC-216 Sessions)', () => {
@@ -193,6 +225,85 @@ describe('UserSessionsPanel — layout in the record page grid (ACC-216 Sessions
           );
         });
       }
+    }
+  }
+});
+
+// Design review of #331, change 1 — the record-panel rule, equal heights in a row:
+// beside the devices card (two columns at 988) the Two-step body is the capped
+// body's height, in both languages; alone (one column at 358) it keeps its 120.
+describe('UserSessionsPanel — the Two-step card beside it (design review of #331)', () => {
+  useLayoutFonts({ rtl: true });
+  preserveDocumentLanguage();
+  let fixture: ComponentFixture<PairHostComponent>;
+  const measured: string[] = [];
+
+  async function render(language: 'en' | 'ar', width: number): Promise<HTMLElement> {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PairHostComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
+        { provide: UserService, useValue: { getSessions: () => of(DATA) } },
+        { provide: AmConfirmService, useValue: { ask: () => undefined } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(language);
+    TestBed.inject(LanguageService).use(language);
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+    fixture = TestBed.createComponent(PairHostComponent);
+    fixture.componentRef.setInput('width', width);
+    document.body.appendChild(fixture.nativeElement);
+    // The row is measured by a ResizeObserver, whose answer re-renders the page.
+    for (let i = 0; i < 5; i++) {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  afterEach(() => {
+    fixture?.destroy();
+    (fixture?.nativeElement as HTMLElement | undefined)?.remove();
+  });
+
+  afterAll(() => console.log(`ACC-216 Sessions beside Two-step:\n  ${measured.join('\n  ')}`));
+
+  for (const language of ['en', 'ar'] as const) {
+    for (const width of WIDTHS) {
+      it(`${language} · ${width}px: ${width === 988 ? 'one row, both bodies equal' : 'alone, Two-step keeps its own 120'}`, async () => {
+        const el = await render(language, width);
+        const sessions = el.querySelector<HTMLElement>('[data-testid="sessions-body"]')!;
+        const twoStep = el.querySelector<HTMLElement>('[data-panel="twoStep"] [data-panel-body]')!;
+        // Non-vacuity: both bodies rendered, the capped one at its own fixed height.
+        expect(sessions).withContext('the devices body rendered').not.toBeNull();
+        expect(twoStep).withContext('the Two-step body rendered').not.toBeNull();
+        const capped = language === 'ar' ? CAPPED_PANEL_BODY_PX.rtl : CAPPED_PANEL_BODY_PX.ltr;
+        const s = sessions.getBoundingClientRect();
+        const t = twoStep.getBoundingClientRect();
+        expect(Math.round(s.height)).withContext('the capped body at its fixed height (the constant matches the CSS)').toBe(capped);
+        expect(t.height).withContext('the Two-step body has height').toBeGreaterThan(40);
+        const top = (e: Element) => e.closest('[data-panel]')!.getBoundingClientRect().top;
+        const sharesRow = Math.abs(top(sessions) - top(twoStep)) < 1;
+        if (width === 988) {
+          expect(sharesRow).withContext('two columns at 988: one row').toBeTrue();
+          expect(Math.round(t.height))
+            .withContext(`bodies in one row differ: devices ${Math.round(s.height)}, Two-step ${Math.round(t.height)}`)
+            .toBe(Math.round(s.height));
+        } else {
+          expect(sharesRow).withContext('one column at 358: rows of their own').toBeFalse();
+          expect(Math.round(t.height)).withContext('alone, Two-step keeps its own height').toBe(TWO_STEP_BODY_PX);
+        }
+        const sh = el.querySelector<HTMLElement>('[data-testid="sessions-head"]')!.getBoundingClientRect().height;
+        const th = el.querySelector<HTMLElement>('[data-panel="twoStep"] header')!.getBoundingClientRect().height;
+        measured.push(`${language} ${width}: devices body ${Math.round(s.height)}, Two-step body ${Math.round(t.height)}; headers ${Math.round(sh)} / ${Math.round(th)}`);
+      });
     }
   }
 });
