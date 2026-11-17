@@ -1,6 +1,8 @@
 import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -13,6 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { CreateCommitteeDto } from '../../dto/create-committee.dto';
+import { SeatActionsEntryDto } from '../../dto/replace-seat-actions.dto';
 
 // ACC-239 — the change request's DTOs.
 
@@ -22,7 +25,21 @@ import { CreateCommitteeDto } from '../../dto/create-committee.dto';
  * Document module to pick from yet). A field left out is not changing; a
  * field sent as null is cleared (the Arabic name, purpose, parent, reports to).
  */
-export class CommitteeChangeValuesDto extends PartialType(OmitType(CreateCommitteeDto, ['termsOfReferenceDocumentId'] as const)) {}
+export class CommitteeChangeValuesDto extends PartialType(OmitType(CreateCommitteeDto, ['termsOfReferenceDocumentId'] as const)) {
+  /**
+   * ACC-283 PR 5 (Q12) — the committee's WHOLE seat-action map, as
+   * PUT /committees/:id/seat-actions takes it: one field, previewed, drift-checked
+   * and applied as one. Left out (or null): not changing. A seat left out allows
+   * nothing. Each action must be on the list and each seat one the organisation
+   * uses (SEAT_ACTION_UNKNOWN, SEAT_ACTION_SEAT_UNKNOWN).
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => SeatActionsEntryDto)
+  seatActions?: SeatActionsEntryDto[] | null;
+}
 
 export class CreateChangeRequestDto {
   @ValidateNested()
