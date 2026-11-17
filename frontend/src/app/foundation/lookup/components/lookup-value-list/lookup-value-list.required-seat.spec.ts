@@ -32,7 +32,7 @@ const seatCategory = (over: Partial<LookupCategoryDto> = {}): LookupCategoryDto 
     isSystem: true,
     isExtensible: true,
     isActive: true,
-    attributeSchema: { type: 'object', properties: { required: { type: 'boolean', label: 'Required seat' } } },
+    attributeSchema: { type: 'object', properties: { required: { type: 'boolean', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' } } },
     ...over,
   }) as LookupCategoryDto;
 

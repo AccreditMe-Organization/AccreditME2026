@@ -220,7 +220,8 @@ export class CommitteesController {
   }
 
   @Post(':id/members')
-  @Permissions(COMMITTEES_PERMISSIONS.ADD_MEMBER)
+  // ACC-283 PR 6 — no route gate: a member's SEAT may allow this without the key, so
+  // the service decides by the one rule (member-actions.ts), with today's refusals.
   addMember(
     @Param('id') committeeId: string,
     @Body() dto: AddCommitteeMemberDto,
@@ -232,7 +233,8 @@ export class CommitteesController {
   }
 
   @Patch(':id/members/:memberId')
-  @Permissions(COMMITTEES_PERMISSIONS.CHANGE_MEMBER_ROLE)
+  // ACC-283 PR 6 — no route gate: a member's SEAT may allow this without the key, so
+  // the service decides by the one rule (member-actions.ts), with today's refusals.
   changeMemberRole(
     @Param('id') committeeId: string,
     @Param('memberId') memberId: string,
@@ -245,7 +247,8 @@ export class CommitteesController {
   }
 
   @Delete(':id/members/:memberId')
-  @Permissions(COMMITTEES_PERMISSIONS.REMOVE_MEMBER)
+  // ACC-283 PR 6 — no route gate: a member's SEAT may allow this without the key, so
+  // the service decides by the one rule (member-actions.ts), with today's refusals.
   removeMember(
     @Param('id') committeeId: string,
     @Param('memberId') memberId: string,

@@ -4786,6 +4786,7 @@ SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes
   non-member without `committees:view` gets the 404 a missing committee gets. **Deciding
   (approve, return, reject) is NOT opened to members**: `committees:view` and
   `committees:approve`, never the requester. This is the interim rule until ACC-283.
+  Superseded (ACC-283 PR 6): for add, remove, change a seat and request a change, a member's SEAT also grants (`member-actions.ts`, the one rule; the three member routes lost their gates); deciding is the chain's (PR 2). SYSTEM-REFERENCE.md §3.21.
 - **Membership does not widen task visibility** (`taskVisibleSql` is unchanged); it names a
   member's own committee on their task rows.
 - **The committee read names what the page used to read every committee for**: `parent`
