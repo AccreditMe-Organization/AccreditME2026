@@ -20,9 +20,25 @@
 // writes nothing and exits 1 (ACC-101: configuring a customer organisation is a
 // customer-notified change, not a script). The dry run still reports it.
 //
-// THE PLATFORM ORGANISATION IS SKIPPED. Nobody holds Organization Administrator
-// there: its people hold Platform Administrator, whose set is the whole
-// catalogue by construction.
+// THE PLATFORM ORGANISATION IS SKIPPED — including its PLATFORM_ADMIN role, as
+// ACC-164 did for users:reset_mfa (lane B asked, CC-307). ACC-164's backfill
+// skips the platform organisation outright (its header and its recorded dry run
+// on the shared database, 15 Nov: "the platform organisation skipped (1)"), so
+// the platform organisation's PLATFORM_ADMIN row holds neither key there, and
+// this backfill leaves it the same, deliberately:
+//   - nobody holds Organization Administrator in the platform organisation, and
+//     its people hold Platform Administrator, whose seeded set is the whole
+//     catalogue by construction (a NEW deployment's platform organisation gets
+//     the key from the seed; the frozen row on the shared database predates it);
+//   - Platform Administrator works through PlatformGuard (isPlatformOrg AND
+//     platform:admin), never through users:* keys: the platform screens list
+//     tenants, not the platform organisation's own people;
+//   - the sessions routes act only on the caller's own organisation's people, and
+//     a platform administrator ends their OWN sign-ins through /auth/sessions,
+//     which needs no key.
+// Granting it there would be the first users:* key written to that role by a
+// script, with no screen that reads it. If a platform screen ever needs it,
+// both keys are granted together, with their own decision.
 //
 // THE AUDIT TRAIL (CLAUDE.md, ACC-101): ONE AuditLog row per organisation, its
 // one grant: CREATE / RolePermission, objectId the new row, the role and key in
