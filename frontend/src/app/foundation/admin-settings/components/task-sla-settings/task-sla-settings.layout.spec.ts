@@ -82,7 +82,7 @@ const HISTORY: ITaskSlaChange[] = [
   },
 ];
 
-describe('TaskSlaSettings — layout (ACC-313 PR 2)', () => {
+describe('TaskSlaSettings — layout (ACC-313)', () => {
   useLayoutFonts({ rtl: true });
   preserveDocumentLanguage();
   let fixture: ComponentFixture<FrameComponent>;

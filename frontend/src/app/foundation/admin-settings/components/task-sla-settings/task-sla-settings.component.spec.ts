@@ -62,7 +62,7 @@ const change = (over: Partial<ITaskSlaChange> = {}): ITaskSlaChange => ({
   ...over,
 });
 
-describe('TaskSlaSettingsComponent (ACC-313 PR 2)', () => {
+describe('TaskSlaSettingsComponent (ACC-313)', () => {
   preserveDocumentLanguage();
 
   let fixture: ComponentFixture<TaskSlaSettingsComponent>;
