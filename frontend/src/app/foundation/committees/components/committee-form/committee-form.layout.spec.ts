@@ -86,6 +86,7 @@ const EDITING: CommitteeDetailDto = {
   orgUnit: null,
   parent: null,
   reportsTo: null,
+  mayWrite: true,
 };
 const LIST = [
   EDITING,
