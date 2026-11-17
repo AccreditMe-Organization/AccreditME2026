@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { MyWorkEvents } from '../../core/my-work/my-work-events';
+import { REQUEST } from '../committees/change-requests/change-request.testing';
 import { MyWorkCountsService } from './my-work-counts.service';
 import { HomeSpecCalls, HomeSpecOptions, homeProviders, recordList } from './home.testing';
 
@@ -74,21 +75,36 @@ describe('MyWorkCountsService (ACC-279)', () => {
     expect(service.myTasks().state).toBe('ready');
   });
 
-  it('change requests are asked only of committees:approve holders', () => {
+  // ACC-283 PR 2 — a unit head, an acting cover or a deciding seat decides
+  // without committees:approve, so the server, not the key, says who decides.
+  it('change requests are asked of everyone while the Committees module is open, holder of committees:approve or not', () => {
     build({ permissions: [] });
     service.init();
-    expect(calls.changes).toBe(0);
+    expect(calls.changes).toBe(1);
     build({ permissions: ['committees:approve'] });
     service.init();
     expect(calls.changes).toBe(1);
   });
 
-  it('My committees is not asked while the Committees module is closed', () => {
-    build();
+  it('a change request returned for a head without committees:approve counts in awaiting', () => {
+    const request = REQUEST();
+    build({ permissions: [], changes: [request] });
+    service.init();
+    const awaiting = service.awaiting();
+    expect(awaiting.state).toBe('ready');
+    expect(awaiting.state === 'ready' ? awaiting.value.changes : []).toEqual([request]);
+  });
+
+  it('neither My committees nor the change requests are asked while the Committees module is closed', () => {
+    build({ permissions: ['committees:approve'] });
     spyOn(service, 'committeesOpen').and.returnValue(false);
     service.init();
     expect(calls.committees).toBe(0);
-    expect(service.myCommittees()).toEqual({ state: 'ready', value: { total: 0, rows: [] } });
+    expect(calls.changes).toBe(0);
+    expect(service.myCommittees()).toEqual({ state: 'ready', value: { total: 0, rows: [], mayBrowseCommittees: false } });
+    expect(service.awaiting()).toEqual({ state: 'ready', value: { stages: jasmine.anything() as never, changes: [] } });
+    // ACC-283 — and so a closed module gives the rail and the guard a known "no".
+    expect(service.mayBrowseCommittees()).toBeFalse();
   });
 
   // ACC-281 — the fix Ahmad asked for: a platform admin has no tenant work.
@@ -101,23 +117,34 @@ describe('MyWorkCountsService (ACC-279)', () => {
     expect(service.myTasks()).toEqual({ state: 'loading' });
   });
 
-  // ACC-281 — lane A's rail and guard read this; it costs no query of its own.
-  it('isCommitteeMember is true only once My committees loaded with at least one', () => {
-    build({ committees: { total: 0, rows: [] } });
-    expect(service.isCommitteeMember()).withContext('before init: loading').toBeFalse();
+  // ACC-281, ACC-283 PR 2a — lane A's rail and guard read this; it costs no
+  // query of its own. It is the server's flag, never My committees' count.
+  it('mayBrowseCommittees is the server\'s flag, true only once My committees loaded with it', () => {
+    build({ committees: { total: 0, rows: [], mayBrowseCommittees: false } });
+    expect(service.mayBrowseCommittees()).withContext('before init: loading').toBeFalse();
     service.init();
     expect(service.myCommittees().state).withContext('non-vacuity: it loaded').toBe('ready');
-    expect(service.isCommitteeMember()).withContext('total 0').toBeFalse();
+    expect(service.mayBrowseCommittees()).withContext('flag false').toBeFalse();
     expect(calls.committees).toBe(1);
 
     build({ committees: 'fail' });
     service.init();
-    expect(service.isCommitteeMember()).withContext('failed').toBeFalse();
+    expect(service.mayBrowseCommittees()).withContext('failed').toBeFalse();
 
-    build({ committees: { total: 2, rows: [] } });
+    build({ committees: { total: 2, rows: [], mayBrowseCommittees: true } });
     service.init();
-    expect(service.isCommitteeMember()).toBeTrue();
+    expect(service.mayBrowseCommittees()).toBeTrue();
     expect(calls.committees).toBe(1);
+  });
+
+  it('a head on no committee (total 0, flag true) may browse; a count with the flag false may not', () => {
+    build({ committees: { total: 0, rows: [], mayBrowseCommittees: true } });
+    service.init();
+    expect(service.mayBrowseCommittees()).withContext('head: total 0, flag true').toBeTrue();
+
+    build({ committees: { total: 2, rows: [], mayBrowseCommittees: false } });
+    service.init();
+    expect(service.mayBrowseCommittees()).withContext('total 2, flag false').toBeFalse();
   });
 
   it('clear() at sign-out forgets everything, and the next init() loads again', () => {

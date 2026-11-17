@@ -150,7 +150,7 @@ export function homeProviders(opts: HomeSpecOptions = {}): { providers: (Provide
       useValue: {
         getMine: () => {
           calls.committees++;
-          return answer(opts.committees ?? { total: 0, rows: [] });
+          return answer(opts.committees ?? { total: 0, rows: [], mayBrowseCommittees: false });
         },
       },
     },

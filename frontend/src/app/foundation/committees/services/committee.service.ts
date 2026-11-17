@@ -255,6 +255,13 @@ export interface MyCommitteeRowDto {
 export interface MyCommitteesDto {
   total: number;
   rows: MyCommitteeRowDto[];
+  /**
+   * ACC-283 PR 2a — whether this person may open the committees list at all:
+   * a committees:view holder, an active member of an active committee, or a
+   * head or cover in force of a unit owning an active committee, there or below.
+   * The rail and the route guard key on it, never on `total` (a count).
+   */
+  mayBrowseCommittees: boolean;
 }
 
 @Injectable({ providedIn: 'root' })

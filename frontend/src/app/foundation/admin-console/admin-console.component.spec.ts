@@ -51,7 +51,7 @@ describe('AdminConsoleComponent (ACC-292)', () => {
             isPlatformAdmin: () => false,
           },
         },
-        { provide: MyWorkCountsService, useValue: { isCommitteeMember: () => false } },
+        { provide: MyWorkCountsService, useValue: { mayBrowseCommittees: () => false } },
         // The rail's summary, shared: the console never requests one.
         { provide: SetupHealthService, useValue: { summary: summary.asReadonly() } },
       ],

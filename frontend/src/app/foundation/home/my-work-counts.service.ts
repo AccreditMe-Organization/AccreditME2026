@@ -18,7 +18,10 @@ export function panelState(state: Loadable<unknown>['state']): 'loading' | 'erro
 
 export interface AwaitingAnswer {
   stages: WorkflowAwaitingMeDto;
-  /** Committee change requests to decide; asked only of committees:approve holders. */
+  /**
+   * Committee change requests to decide. Asked of everyone while the committees
+   * module is open, because the server decides who may decide (ACC-283 PR 2).
+   */
   changes: ChangeRequestDto[];
 }
 
@@ -42,8 +45,10 @@ const COALESCE_MS = 2000;
  *
  *   myTasks       GET /tasks/record-list?view=mine&status=PENDING,IN_PROGRESS,ON_HOLD&sort=due&take=5
  *   myOverdue     the same with &overdue=true&take=1 (its `matching`)
- *   awaiting      GET /workflows/awaiting-me, and for committees:approve holders
- *                 GET /committee-change-requests/awaiting-decision
+ *   awaiting      GET /workflows/awaiting-me, and, while the Committees module
+ *                 is open, GET /committee-change-requests/awaiting-decision,
+ *                 asked of everyone: the server decides who may decide
+ *                 (ACC-283 PR 2)
  *   myCommittees  GET /committees/mine, while the Committees module is open
  *
  * It loads ONCE after sign-in (the shell calls init() when access has loaded),
@@ -68,14 +73,17 @@ export class MyWorkCountsService {
   readonly myCommittees = signal<Loadable<MyCommitteesDto>>({ state: 'loading' });
 
   /**
-   * ACC-281 — whether this person sits on at least one active committee: My
-   * committees has loaded with a total above 0. False while loading, after a
-   * failure, or with none. Lane A's rail and route guard read it to show and admit
-   * Committees to a member without committees:view; it costs no query of its own.
+   * ACC-281, ACC-283 PR 2a — whether this person may open Committees, as the
+   * server says in My committees' `mayBrowseCommittees`: a committees:view
+   * holder, a member of an active committee, or a head or cover in force of a
+   * unit owning one. False while loading, after a failure, and with the module
+   * closed. The rail and the route guard read it to show and admit Committees
+   * without committees:view; it costs no query of its own. It is never `total`:
+   * a head who sits on no committee has a total of 0 and may still browse.
    */
-  readonly isCommitteeMember = computed(() => {
+  readonly mayBrowseCommittees = computed(() => {
     const c = this.myCommittees();
-    return c.state === 'ready' && c.value.total > 0;
+    return c.state === 'ready' && c.value.mayBrowseCommittees;
   });
 
   private started = false;
@@ -91,7 +99,11 @@ export class MyWorkCountsService {
     inject(DestroyRef).onDestroy(() => events.unsubscribe());
   }
 
-  /** Whether My committees applies to this organisation: the rail's own module rule. */
+  /**
+   * Whether the committees module applies to this organisation: the rail's own
+   * module rule. My committees and the change requests awaiting a decision both
+   * ask it, and so does the Awaiting page.
+   */
   committeesOpen(): boolean {
     return isNavModuleOpen('committees', this.access);
   }
@@ -130,16 +142,14 @@ export class MyWorkCountsService {
   }
 
   loadAwaiting(): void {
-    const changes$: Observable<ChangeRequestDto[]> = this.access.hasPermission('committees:approve')
-      ? this.changeRequests.awaitingDecision()
-      : of([]);
+    const changes$: Observable<ChangeRequestDto[]> = this.committeesOpen() ? this.changeRequests.awaitingDecision() : of([]);
     this.run('awaiting', this.awaiting, forkJoin({ stages: this.workflows.getAwaitingMe(), changes: changes$ }));
   }
 
   loadMyCommittees(): void {
     if (!this.committeesOpen()) {
       this.inFlight.get('myCommittees')?.unsubscribe();
-      this.myCommittees.set({ state: 'ready', value: { total: 0, rows: [] } });
+      this.myCommittees.set({ state: 'ready', value: { total: 0, rows: [], mayBrowseCommittees: false } });
       return;
     }
     this.run('myCommittees', this.myCommittees, this.committees.getMine());
