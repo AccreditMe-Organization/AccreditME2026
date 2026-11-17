@@ -124,7 +124,6 @@ import { workflowLabelKey } from '../../workflow-labels';
           @for (visit of orderedHistory(); track visit.id) {
             <div class="grid grid-cols-[76px_1fr_auto] gap-2.5 items-baseline py-1.5">
               <span
-                dir="ltr"
                 style="unicode-bidi: isolate"
                 class="text-[11.5px] text-start text-[var(--am-text-secondary)]"
               >
