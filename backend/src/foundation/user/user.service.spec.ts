@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
+import { LastActiveAdministratorException } from '../roles/role-permission-refusal';
 import { TaskService } from '../task/task.service';
 import { OrganizationService } from '../organization/organization.service';
 import { AuthProvider } from '../../providers/auth/auth.provider';
@@ -108,6 +109,10 @@ describe('UserService', () => {
       // tx.user.update()/tx.userTransferEvent.create() inside it route to
       // the same mocks tests already assert against.
       userTransferEvent: { create: jest.fn() },
+      // ACC-216 (CC-301) — deactivate() ends every sign-in inside its
+      // transaction through endEverySessionInTx().
+      refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      authSession: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       // ACC-83 — reactivate() returns tasks nobody took, and revokeInvitation()
       // deletes the invitation notification before the row it points at.
       taskAssignee: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
@@ -3139,7 +3144,8 @@ describe('UserService', () => {
         where: { id: 'user-1' },
         data: { status: 'INACTIVE' },
       });
-      expect(mockAuthProvider.invalidateUserSessions).toHaveBeenCalledWith('user-1');
+      // ACC-216 (CC-301) — the sessions end through endEverySessionInTx().
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalled();
       expect(mockAuditLog.log).toHaveBeenCalled();
       expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0 });
     });
@@ -3243,7 +3249,8 @@ describe('UserService', () => {
         await expect(service.deactivate('user-1', ORG_A, 'admin-1')).resolves.toEqual({ reassignedCount: 0, unassignedCount: 0 });
 
         expect(mockTaskService.reassignAllForUser).toHaveBeenCalled();
-        expect(mockAuthProvider.invalidateUserSessions).toHaveBeenCalledWith('user-1');
+        // ACC-216 — the sign-ins ended with the flip, before the follow-up failed.
+        expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalled();
         const logged = error.mock.calls.map((c) => String(c[0])).find((m) => m.includes('departure'));
         expect(logged).toContain(`organizationId=${ORG_A}`);
         expect(logged).toContain('userId=user-1');
@@ -3442,7 +3449,9 @@ describe('UserService', () => {
       );
     });
 
-    it('increments tokenVersion (via invalidateUserSessions) before the bulk reassignment runs', async () => {
+    // ACC-216 (CC-301) — the bump now happens inside the flip's transaction,
+    // through endEverySessionInTx(), and still before the bulk reassignment.
+    it('increments tokenVersion (via endEverySessionInTx, in the transaction) before the bulk reassignment runs', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
         organizationId: ORG_A,
@@ -3453,8 +3462,15 @@ describe('UserService', () => {
       mockPrisma.user.update.mockResolvedValue({});
 
       const callOrder: string[] = [];
-      mockAuthProvider.invalidateUserSessions.mockImplementation(async () => {
-        callOrder.push('invalidateUserSessions');
+      mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        callOrder.push('tx');
+        const out = await cb(mockPrisma);
+        callOrder.push('commit');
+        return out;
+      });
+      mockPrisma.user.updateMany.mockImplementation(async (args: { data: unknown }) => {
+        callOrder.push(`tokenVersion ${JSON.stringify(args.data)}`);
+        return { count: 1 };
       });
       mockTaskService.reassignAllForUser.mockImplementation(async () => {
         callOrder.push('reassignAllForUser');
@@ -3463,7 +3479,77 @@ describe('UserService', () => {
 
       await service.deactivate('user-1', ORG_A, 'admin-1');
 
-      expect(callOrder).toEqual(['invalidateUserSessions', 'reassignAllForUser']);
+      expect(callOrder).toEqual(['tx', 'tokenVersion {"tokenVersion":{"increment":1}}', 'commit', 'reassignAllForUser']);
+      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+    });
+
+    describe('every sign-in ends with the flip (ACC-216, CC-301)', () => {
+      beforeEach(() => {
+        mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A, status: 'ACTIVE', authUserId: 'auth-1' });
+        mockPrisma.user.update.mockResolvedValue({});
+      });
+
+      it('ends every live refresh row, bumps tokenVersion and deletes Better Auth sessions inside the transaction, after the flip', async () => {
+        const order: string[] = [];
+        let inTx = false;
+        mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+          inTx = true;
+          const out = await cb(mockPrisma);
+          inTx = false;
+          return out;
+        });
+        mockPrisma.user.update.mockImplementation(async () => (order.push(`flip in-tx=${inTx}`), {}));
+        mockPrisma.user.updateMany.mockImplementation(async () => (order.push(`tokenVersion in-tx=${inTx}`), { count: 1 }));
+        mockPrisma.refreshToken.updateMany.mockImplementation(async () => (order.push(`revoke in-tx=${inTx}`), { count: 2 }));
+        mockPrisma.authSession.deleteMany.mockImplementation(async () => (order.push(`auth sessions in-tx=${inTx}`), { count: 1 }));
+
+        await service.deactivate('user-1', ORG_A, 'admin-1');
+
+        expect(order).toEqual(['flip in-tx=true', 'tokenVersion in-tx=true', 'revoke in-tx=true', 'auth sessions in-tx=true']);
+        expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+          where: { userId: 'user-1', organizationId: ORG_A, revokedAt: null },
+          data: { revokedAt: expect.any(Date) },
+        });
+        expect(mockPrisma.authSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'auth-1' } });
+      });
+
+      it('a refusal inside the transaction rolls the ending back with the flip: nothing ends after it', async () => {
+        // The root-role invariant refuses AFTER the sessions were ended in the
+        // transaction; the real database rolls both back. Here: the refusal
+        // propagates and nothing session-related runs after the transaction.
+        mockPrisma.userRole.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+        mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin', key: 'TENANT_ADMIN', organizationId: ORG_A, isActive: true });
+        mockPrisma.organization.findFirst.mockResolvedValue({ id: ORG_A });
+        const order: string[] = [];
+        mockPrisma.refreshToken.updateMany.mockImplementation(async () => (order.push('revoke'), { count: 2 }));
+        mockPrisma.userRole.count.mockReset();
+        mockPrisma.userRole.count.mockImplementationOnce(async () => (order.push('baseline'), 1));
+        mockPrisma.userRole.count.mockImplementationOnce(async () => (order.push('after'), 0));
+        const refused = await service.deactivate('user-1', ORG_A, 'admin-1').catch((e: unknown) => e);
+        // The last-administrator refusal, raised AFTER the ending inside the same
+        // transaction: so the real transaction rolls the ending back
+        // (deactivation-ends-sessions.db-spec.ts proves it on Postgres).
+        expect(refused).toBeInstanceOf(LastActiveAdministratorException);
+        expect(order).toEqual(['baseline', 'revoke', 'after']);
+        expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+        expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
+        // The ending ran only inside the refused transaction, never outside it.
+        expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      });
+
+      it('should NOT return records belonging to a different tenant: deactivation ends sessions in this organisation only', async () => {
+        await service.deactivate('user-1', ORG_A, 'admin-1');
+        // Every session write names the organisation with the person, so
+        // another tenant's rows (even under the same user id) never match.
+        expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ userId: 'user-1', organizationId: ORG_A }) }),
+        );
+        expect(mockPrisma.user.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: 'user-1', organizationId: ORG_A } }),
+        );
+        // The Better Auth id is read from THIS organisation's row.
+        expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({ where: { id: 'user-1', organizationId: ORG_A }, select: { authUserId: true } });
+      });
     });
   });
 
