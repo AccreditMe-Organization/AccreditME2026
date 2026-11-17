@@ -37,7 +37,7 @@ import { NotificationService } from '../notification/notification.service';
 import { CommitteesService } from './committees.service';
 import { CommitteeChangeRequestService } from './change-requests/committee-change-request.service';
 import { CreateChangeRequestDto, UpdateChangeRequestDto } from './change-requests/dto/change-request.dto';
-import { MEMBER_ACTION_KEYS, MemberAction, MEMBER_ACTIONS, assertMemberAction, memberActionsFor } from './member-actions';
+import { MEMBER_ACTION_KEYS, MEMBER_ACTIONS, assertMemberAction, memberActionsFor } from './member-actions';
 import { SEAT_ACTIONS } from './seat-actions';
 
 const url = process.env['DATABASE_URL'];
@@ -57,7 +57,7 @@ const PAST = 'PAST THE RULE';
 describe('Seats grant members their committee actions, on a real database (ACC-283 PR 6)', () => {
   const prisma = new PrismaService();
   const stageRules = new StageRulesService(prisma);
-  const workflow = { startInstance: async () => undefined } as unknown as WorkflowService;
+  const workflow = { startInstance: () => Promise.resolve(undefined) } as unknown as WorkflowService;
   const committees = new CommitteesService(prisma, new AuditLogService(prisma), workflow, stageRules);
   const requests = new CommitteeChangeRequestService(
     prisma,
@@ -197,40 +197,40 @@ describe('Seats grant members their committee actions, on a real database (ACC-2
 
   describe('the member writes, through the real service', () => {
     it('a Secretary with no committees key adds, changes a seat and removes, as their seat allows', async () => {
-      const added = await committees.addMember(c, { userId: newcomer, roleValueId: SEAT.member } as never, org, v.secretary.id, v.secretary.permissions);
-      expect(await outcome(committees.changeMemberRole(c, added.id, { roleValueId: SEAT.observer } as never, org, v.secretary.id, v.secretary.permissions))).toBe('OK');
-      expect(await outcome(committees.removeMember(c, added.id, { reason: 'Moved on' } as never, org, v.secretary.id, v.secretary.permissions))).toBe('OK');
+      const added = await committees.addMember(c, { userId: newcomer, roleValueId: SEAT.member }, org, v.secretary.id, v.secretary.permissions);
+      expect(await outcome(committees.changeMemberRole(c, added.id, { roleValueId: SEAT.observer }, org, v.secretary.id, v.secretary.permissions))).toBe('OK');
+      expect(await outcome(committees.removeMember(c, added.id, { reason: 'Moved on' }, org, v.secretary.id, v.secretary.permissions))).toBe('OK');
     });
 
     it("a Member whose seat allows nothing and who holds no key: today's 403 naming each key", async () => {
-      expect(await outcome(committees.addMember(c, { userId: newcomer, roleValueId: SEAT.member } as never, org, v.member.id, []))).toBe(
+      expect(await outcome(committees.addMember(c, { userId: newcomer, roleValueId: SEAT.member }, org, v.member.id, []))).toBe(
         '403 Required permission: committees:add_member',
       );
-      expect(await outcome(committees.changeMemberRole(c, row.keyed, { roleValueId: SEAT.observer } as never, org, v.member.id, []))).toBe(
+      expect(await outcome(committees.changeMemberRole(c, row.keyed, { roleValueId: SEAT.observer }, org, v.member.id, []))).toBe(
         '403 Required permission: committees:change_member_role',
       );
-      expect(await outcome(committees.removeMember(c, row.keyed, { reason: 'Moved on' } as never, org, v.member.id, []))).toBe('403 Required permission: committees:remove_member');
+      expect(await outcome(committees.removeMember(c, row.keyed, { reason: 'Moved on' }, org, v.member.id, []))).toBe('403 Required permission: committees:remove_member');
     });
 
     it('a member holding the keys whose seat allows nothing still may: the seat never takes away', async () => {
-      expect(await outcome(committees.changeMemberRole(c, row.member, { roleValueId: SEAT.member } as never, org, v.keyed.id, v.keyed.permissions))).toBe('OK');
+      expect(await outcome(committees.changeMemberRole(c, row.member, { roleValueId: SEAT.member }, org, v.keyed.id, v.keyed.permissions))).toBe('OK');
     });
 
     it("an overseeing head with every key, not a member: the committee's 404, every time", async () => {
-      expect(await outcome(committees.addMember(c, { userId: newcomer, roleValueId: SEAT.member } as never, org, v.head.id, v.head.permissions))).toBe(
+      expect(await outcome(committees.addMember(c, { userId: newcomer, roleValueId: SEAT.member }, org, v.head.id, v.head.permissions))).toBe(
         '404 Committee not found',
       );
-      expect(await outcome(committees.removeMember(c, row.member, { reason: 'Moved on' } as never, org, v.head.id, v.head.permissions))).toBe('404 Committee not found');
+      expect(await outcome(committees.removeMember(c, row.member, { reason: 'Moved on' }, org, v.head.id, v.head.permissions))).toBe('404 Committee not found');
     });
 
     it('a Secretary in a stage that allows nothing: STAGE_ACTION_NOT_ALLOWED, after the rule admitted them', async () => {
-      expect(await outcome(committees.addMember(f, { userId: newcomer, roleValueId: SEAT.member } as never, org, v.secretary.id, []))).toBe(
+      expect(await outcome(committees.addMember(f, { userId: newcomer, roleValueId: SEAT.member }, org, v.secretary.id, []))).toBe(
         'STAGE_ACTION_NOT_ALLOWED',
       );
     });
 
     it("Q-A — a seat never changes the actor's OWN seat (removing oneself: member-actions.spec.ts)", async () => {
-      expect(await outcome(committees.changeMemberRole(c, row.secretary, { roleValueId: SEAT.chairman } as never, org, v.secretary.id, []))).toBe(
+      expect(await outcome(committees.changeMemberRole(c, row.secretary, { roleValueId: SEAT.chairman }, org, v.secretary.id, []))).toBe(
         '403 Required permission: committees:change_member_role',
       );
       expect((await prisma.committeeMember.findUniqueOrThrow({ where: { id: row.secretary } })).roleValueId).toBe(SEAT.secretary);
@@ -299,7 +299,7 @@ describe('Seats grant members their committee actions, on a real database (ACC-2
         (detail) => detail.memberActions,
         () => null,
       );
-      for (const action of MEMBER_ACTION_KEYS as readonly MemberAction[]) {
+      for (const action of MEMBER_ACTION_KEYS) {
         const write = await outcome(assertMemberAction(prisma, org, c, viewer, action));
         expect({ who, action, read: read?.[action] ?? false }).toEqual({ who, action, read: write === 'OK' });
       }
@@ -314,7 +314,7 @@ describe('Seats grant members their committee actions, on a real database (ACC-2
     await prisma.committeeMember.create({ data: { organizationId: orgB, committeeId: c, userId: v.stranger.id, roleValueId: SEAT.secretary, isActive: true } });
     expect((await memberActionsFor(prisma, org, c, v.member)).add_member).toBe(false);
     expect(Object.values(await memberActionsFor(prisma, org, c, v.stranger))).toEqual([false, false, false, false]);
-    expect(await outcome(committees.addMember(c, { userId: newcomer, roleValueId: SEAT.member } as never, org, v.stranger.id, []))).toBe(
+    expect(await outcome(committees.addMember(c, { userId: newcomer, roleValueId: SEAT.member }, org, v.stranger.id, []))).toBe(
       '403 Required permission: committees:add_member',
     );
   });

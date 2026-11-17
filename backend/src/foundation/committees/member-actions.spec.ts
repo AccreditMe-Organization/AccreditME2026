@@ -100,7 +100,10 @@ describe('assertMemberAction — the refusals (ACC-283 PR 6, §17.5)', () => {
   const run = (c: ReturnType<typeof client>, permissions: string[], action: Parameters<typeof assertMemberAction>[4], extra = {}) =>
     assertMemberAction(c.typed, ORG, COMMITTEE, { id: 'actor', permissions }, action, extra).then(
       () => 'OK',
-      (e: unknown) => (e instanceof ForbiddenException || e instanceof NotFoundException ? `${e.getStatus()} ${e.message}` : Promise.reject(e)),
+      (e: unknown) => {
+        if (e instanceof ForbiddenException || e instanceof NotFoundException) return `${e.getStatus()} ${e.message}`;
+        throw e;
+      },
     );
 
   it('allowed by the role or by the seat', async () => {
