@@ -200,35 +200,40 @@ type Load = 'loading' | 'error' | 'ready';
                     [invalid]="conflictsFor(p).length > 0"
                   />
                 </am-field>
-                <!-- ACC-208 — the stage-deadline rule's third side, under the
-                     priority it is about, said from the refusal's code and
-                     numbers, never the server's English. -->
-                @if (conflictsFor(p); as conflicts) {
-                  @if (conflicts.length) {
-                    <div class="am-sla__refusal" role="alert" [attr.data-sla-conflicts]="p">
-                      <span>{{ conflictLead(p, conflicts) }}</span>
-                      <ul>
-                        @for (conflict of conflicts; track conflict.stageId) {
-                          <li>
-                            <a [routerLink]="['/workflows', conflict.workflowTemplateId, 'stages']" [queryParams]="{ stage: conflict.stageId }">{{ conflictStage(conflict) }}</a>
-                          </li>
-                        }
-                      </ul>
-                      <span>{{ conflictWayOut(p, conflicts) }}</span>
-                    </div>
-                  }
-                }
-                <!-- ACC-313 — a limit at or under this priority's warning. -->
-                @if (limitWarningRefusal(); as refusal) {
-                  @if (refusal.priority === p) {
-                    <div class="am-sla__refusal" role="alert" [attr.data-sla-limit-warning]="p">
-                      <span>{{ warningRefusalLead(refusal) }}</span>
-                      <span>{{ 'adminSettings.taskSlaPage.warnRefusal.limitWayOut' | translate }}</span>
-                    </div>
-                  }
-                }
               }
             </div>
+            <!-- The refusals sit UNDER the row of four fields, never inside its
+                 grid: a full-width message between two fields pushed the next
+                 priority onto a row of its own (CC-324). Each names its priority. -->
+            @for (p of priorities; track p) {
+              <!-- ACC-208 — the stage-deadline rule's third side, about one
+                   priority, said from the refusal's code and numbers, never
+                   the server's English. -->
+              @if (conflictsFor(p); as conflicts) {
+                @if (conflicts.length) {
+                  <div class="am-sla__refusal" role="alert" [attr.data-sla-conflicts]="p">
+                    <span>{{ conflictLead(p, conflicts) }}</span>
+                    <ul>
+                      @for (conflict of conflicts; track conflict.stageId) {
+                        <li>
+                          <a [routerLink]="['/workflows', conflict.workflowTemplateId, 'stages']" [queryParams]="{ stage: conflict.stageId }">{{ conflictStage(conflict) }}</a>
+                        </li>
+                      }
+                    </ul>
+                    <span>{{ conflictWayOut(p, conflicts) }}</span>
+                  </div>
+                }
+              }
+              <!-- ACC-313 — a limit at or under this priority's warning. -->
+              @if (limitWarningRefusal(); as refusal) {
+                @if (refusal.priority === p) {
+                  <div class="am-sla__refusal" role="alert" [attr.data-sla-limit-warning]="p">
+                    <span>{{ warningRefusalLead(refusal) }}</span>
+                    <span>{{ 'adminSettings.taskSlaPage.warnRefusal.limitWayOut' | translate }}</span>
+                  </div>
+                }
+              }
+            }
             <p class="am-sla__scope">{{ 'adminSettings.taskSlaPage.limits.scope' | translate }}</p>
             @if (limitsSaved()) {
               <p class="am-sla__status" role="status" data-testid="sla-limits-saved">{{ 'adminSettings.savedSuccess' | translate }}</p>
@@ -303,8 +308,11 @@ type Load = 'loading' | 'error' | 'ready';
               }
               @for (p of priorities; track p) {
                 <div class="am-sla__row" [formGroupName]="p" [attr.data-sla-row]="p">
-                  <span class="am-sla__priority" [attr.data-priority]="p">{{ priorityKeys[p] | translate }}</span>
-                  <span class="am-sla__limit">
+                  <!-- The chip and the Limit sit centred on the CONTROL, not on the
+                       control plus its message slot (CC-324): their cells stretch
+                       to the row and leave out the slot at the bottom. -->
+                  <span class="am-sla__cell self-stretch flex items-center"><span class="am-sla__priority" [attr.data-priority]="p">{{ priorityKeys[p] | translate }}</span></span>
+                  <span class="am-sla__limit am-sla__cell self-stretch flex items-center">
                     @if (stacked()) {
                       <span class="am-sla__limit-label">{{ 'adminSettings.taskSlaPage.escalation.limit' | translate }}</span>
                     }
@@ -329,6 +337,9 @@ type Load = 'loading' | 'error' | 'ready';
                       [itemTemplate]="warnItem"
                       [ariaLabel]="cellLabel(p, 'warn')"
                       [panelMinWidth]="200"
+                      [panelMaxHeight]="WARN_LIST_MAX_HEIGHT"
+                      [invalid]="warnMarked(p)"
+                      [ariaDescribedBy]="warnRefusedHere(p) ? 'sla-warn-refusal-' + p : null"
                     />
                   </am-field>
                   <am-field
@@ -355,7 +366,7 @@ type Load = 'loading' | 'error' | 'ready';
                 <!-- ACC-313 — a warning at or past this priority's limit, said from the code. -->
                 @if (warningRefusal(); as refusal) {
                   @if (refusal.priority === p) {
-                    <div class="am-sla__refusal" role="alert" [attr.data-sla-warn-refusal]="p">
+                    <div class="am-sla__refusal" role="alert" [id]="'sla-warn-refusal-' + p" [attr.data-sla-warn-refusal]="p">
                       <span>{{ warningRefusalLead(refusal) }}</span>
                       <span>{{ 'adminSettings.taskSlaPage.warnRefusal.warnWayOut' | translate }}</span>
                     </div>
@@ -433,16 +444,18 @@ type Load = 'loading' | 'error' | 'ready';
       .am-sla__chip--unsaved{color:var(--am-warning-ink);background:var(--am-warning-bg);border-color:var(--am-warning-border)}
       .am-sla__chip--problem{color:var(--am-danger-ink);background:var(--am-danger-bg);border-color:var(--am-danger-border)}
       .am-sla__limits{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--am-space-12);align-items:start}
-      .am-sla__refusal{grid-column:1/-1;display:flex;flex-direction:column;gap:var(--am-space-4);font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);font-weight:500;color:var(--am-danger-ink)}
+      .am-sla__refusal{display:flex;flex-direction:column;gap:var(--am-space-4);font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);font-weight:500;color:var(--am-danger-ink)}
       .am-sla__refusal ul{margin:0;padding-inline-start:var(--am-space-16)}
       .am-sla__refusal a{color:var(--am-primary-700)}
       .am-sla__matrix{display:flex;flex-direction:column;gap:var(--am-space-8);min-inline-size:0}
       .am-sla__row{display:grid;grid-template-columns:86px 120px 180px minmax(0,1fr) minmax(0,1fr);gap:var(--am-space-12);align-items:start}
       .am-sla__row--head{font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);font-weight:500;color:var(--am-ink-500);padding-block-end:var(--am-space-4);border-block-end:1px solid var(--am-border)}
-      .am-sla__priority{align-self:center;justify-self:start;font-size:var(--am-type-meta-size);font-weight:600;color:var(--am-neutral-chip-ink);background:var(--am-neutral-chip-bg);border:1px solid var(--am-neutral-chip-border);border-radius:var(--am-radius-pill);padding:0 var(--am-space-8)}
-      .am-sla__limit{align-self:center;font-size:var(--am-type-body-size);color:var(--am-ink-900);min-inline-size:0}
+      .am-sla__priority{font-size:var(--am-type-meta-size);font-weight:600;color:var(--am-neutral-chip-ink);background:var(--am-neutral-chip-bg);border:1px solid var(--am-neutral-chip-border);border-radius:var(--am-radius-pill);padding:0 var(--am-space-8)}
+      .am-sla__limit{font-size:var(--am-type-body-size);color:var(--am-ink-900);min-inline-size:0}
       .am-sla__matrix--stacked .am-sla__row{grid-template-columns:minmax(0,1fr);padding-block:var(--am-space-12);border-block-start:1px solid var(--am-border)}
-      .am-sla__matrix--stacked .am-sla__limit{display:flex;flex-direction:column}
+      .am-sla__cell{padding-block-end:calc(var(--am-space-4) + var(--am-field-message-line))}
+      .am-sla__matrix--stacked .am-sla__cell{padding:0}
+      .am-sla__matrix--stacked .am-sla__limit{flex-direction:column;align-items:flex-start}
       .am-sla__limit-label{font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);font-weight:500;color:var(--am-ink-500)}
       .am-sla__actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--am-space-12);padding-block-start:var(--am-space-8);border-block-start:1px solid var(--am-border)}
       .am-sla__error{margin:0;margin-inline-end:auto;font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);font-weight:500;color:var(--am-danger-ink)}
@@ -461,6 +474,8 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
   private readonly amConfirm = inject(AmConfirmService);
 
   readonly priorities = TASK_SLA_PRIORITIES;
+  /** The warning list shows all six options rather than ending on a cut one (CC-324). */
+  readonly WARN_LIST_MAX_HEIGHT = '24rem';
   readonly priorityKeys = PRIORITY_KEYS;
   readonly limitLabelKeys = LIMIT_LABEL_KEYS;
   readonly limitErrors = {
@@ -935,6 +950,21 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
           ? 'adminSettings.taskSlaPage.escalation.managerCell'
           : 'adminSettings.taskSlaPage.escalation.headCell';
     return this.translate.instant(key, { priority: this.translate.instant(PRIORITY_KEYS[p]) });
+  }
+
+  /** The server refused this priority's warning; its message says so under the row. */
+  warnRefusedHere(p: TaskSlaPriority): boolean {
+    return this.warningRefusal()?.priority === p;
+  }
+
+  /**
+   * The warning select is marked invalid (error border, aria-invalid) when the
+   * server refused it, or when a Save found it not shorter than its limit.
+   * am-field cannot mark it: it marks an input, and the select's trigger is not one.
+   */
+  warnMarked(p: TaskSlaPriority): boolean {
+    this.escalationTick();
+    return this.warnRefusedHere(p) || (this.escalationTried() && this.escalationForm.controls[p].controls.warnBeforeDue.invalid);
   }
 
   warnLabel(value: TaskSlaWarnBeforeDue): string {

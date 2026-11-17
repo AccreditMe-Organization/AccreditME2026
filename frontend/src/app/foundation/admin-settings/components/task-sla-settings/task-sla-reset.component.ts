@@ -8,6 +8,14 @@ import { AmConfirmService } from '../../../../shared/components/confirm/am-confi
 import { StageDeadlineConflict, taskSlaStageConflicts } from '../../../workflow/workflow-refusal';
 import { ITaskSlaPolicy, TenantService } from '../../../tenant/services/tenant.service';
 
+/** The confirm's detail lines, literal so the translation-keys spec sees each one. */
+const RESET_DETAIL_KEYS = [
+  'adminSettings.taskSlaPage.reset.confirmDetails.limits',
+  'adminSettings.taskSlaPage.reset.confirmDetails.escalation',
+  'adminSettings.taskSlaPage.reset.confirmDetails.reminders',
+  'adminSettings.taskSlaPage.reset.confirmDetails.notices',
+] as const;
+
 /**
  * ACC-313 PR 3 — the Task SLA page's Reset section, last and danger-bordered,
  * on POST /tenant/task-sla/reset (plan §5).
@@ -104,6 +112,9 @@ export class TaskSlaResetComponent {
       tone: 'destructive',
       header: this.translate.instant('adminSettings.taskSlaPage.reset.confirmHeader'),
       message: this.translate.instant('adminSettings.taskSlaPage.reset.confirmBody'),
+      // The four effects, one line each (CC-324); still no numbers: no route
+      // gives the defaults before a reset.
+      details: RESET_DETAIL_KEYS.map((key) => this.translate.instant(key)),
       acceptLabel: this.translate.instant('adminSettings.taskSlaPage.reset.confirmAccept'),
       rejectLabel: this.translate.instant('common.cancel'),
       opener: (event?.target as HTMLElement | null) ?? null,

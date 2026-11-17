@@ -679,7 +679,9 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
 
       .am-history__from {
         color: var(--am-ink-500);
-        text-decoration: line-through;
+        /* No strikethrough (CC-324): <del> strikes by default, and the muted
+           colour, the arrow and the word "was" already say it is the old value. */
+        text-decoration: none;
       }
 
       .am-history__to {
