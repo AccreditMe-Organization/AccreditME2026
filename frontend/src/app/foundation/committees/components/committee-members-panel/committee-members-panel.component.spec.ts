@@ -15,6 +15,7 @@ import { CommitteeMemberRowDto, SubCommitteeRowDto } from '../../services/commit
 import { CommitteeMembersPanelComponent } from './committee-members-panel.component';
 import { CommitteeSubCommitteesPanelComponent } from '../committee-sub-committees-panel/committee-sub-committees-panel.component';
 import { SimpleListComponent } from '../../../../shared/components/simple-list/simple-list.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-230 — the Members and Sub-committees panels (Record Tasks Panel §3) and
 // the plain list behind their "See all". Heights: committee-panels.layout.spec.
@@ -49,6 +50,7 @@ const page = <T>(items: T[], total = items.length, matching = total) => ({ items
       committeeName="Infection Control"
       [canAddMember]="canAdd()"
       [canChangeRole]="canChange()"
+      [canChangeOwnSeat]="canChangeOwn()"
       [canRemove]="canRemove()"
       (addRequested)="added = added + 1"
       (changeRoleRequested)="changed = $event"
@@ -60,6 +62,7 @@ const page = <T>(items: T[], total = items.length, matching = total) => ({ items
 class HostComponent {
   readonly canAdd = signal(true);
   readonly canChange = signal(true);
+  readonly canChangeOwn = signal(false);
   readonly canRemove = signal(true);
   added = 0;
   changed: CommitteeMemberRowDto | null = null;
@@ -151,6 +154,99 @@ describe('Committee Members and Sub-committees panels (ACC-230)', () => {
       expect(items.map((i) => i.getAttribute('data-action'))).toEqual(['changeRole']);
       items[0]!.click();
       expect(fixture.componentInstance.changed?.id).toBe('m1');
+    });
+
+    // ACC-283 PR 6 — a seat never changes its holder's own seat: on the viewer's
+    // OWN row Change seat follows canChangeOwnSeat (the role's key), and Remove
+    // is as on any row.
+    describe("the viewer's own row", () => {
+      preserveDocumentLanguage();
+      /** The ⋯ items of the row whose menu is named for `name`, read from the open menu. */
+      function itemsFor(name: string): string[] {
+        const trigger = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-testid="row-menu-trigger"]')).find(
+          (t) => t.getAttribute('aria-label') === `Actions for ${name}`,
+        );
+        if (!trigger) return [];
+        trigger.click();
+        fixture.detectChanges();
+        const items = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="row-menu"] [data-action]')).map((i) => i.getAttribute('data-action')!);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        fixture.detectChanges();
+        return items;
+      }
+
+      it('on the seat alone: your own row offers Remove, never Change seat; every other row offers both', () => {
+        setup([], 'u2');
+        answer(membersReq(), page([memberRow(1), memberRow(2, { name: 'Huda Al-Qahtani', roleLabelEn: 'Secretary' })]));
+        answer(subsReq(), page([]));
+        expect(itemsFor('Member 1')).withContext('another member').toEqual(['changeRole', 'remove']);
+        expect(itemsFor('Huda Al-Qahtani')).withContext('your own row').toEqual(['remove']);
+      });
+
+      it('with the role (canChangeOwnSeat): your own row offers Change seat too', () => {
+        setup([], 'u2');
+        fixture.componentInstance.canChangeOwn.set(true);
+        answer(membersReq(), page([memberRow(1), memberRow(2, { name: 'Huda Al-Qahtani' })]));
+        answer(subsReq(), page([]));
+        expect(itemsFor('Huda Al-Qahtani')).toEqual(['changeRole', 'remove']);
+      });
+
+      it('without Remove either, your own row has no ⋯ at all (absent, not disabled)', () => {
+        setup([], 'u2');
+        fixture.componentInstance.canRemove.set(false);
+        answer(membersReq(), page([memberRow(1), memberRow(2)]));
+        answer(subsReq(), page([]));
+        expect(memberRows()[0]!.querySelector('[data-testid="row-menu-trigger"]')).withContext('another member').not.toBeNull();
+        expect(memberRows()[1]!.querySelector('[data-testid="row-menu-trigger"]')).withContext('your own row').toBeNull();
+      });
+
+      it('in Arabic: your own row offers «إزالة من اللجنة…» only; another row offers «تغيير الدور…» too', () => {
+        setup([], 'u2');
+        TestBed.inject(TranslateService).use('ar');
+        answer(membersReq(), page([memberRow(1, { name: 'سارة القحطاني' }), memberRow(2, { name: 'هدى القحطاني' })]));
+        answer(subsReq(), page([]));
+        const labels = (row: HTMLElement): string[] => {
+          const trigger = row.querySelector<HTMLButtonElement>('[data-testid="row-menu-trigger"]')!;
+          trigger.click();
+          fixture.detectChanges();
+          const items = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="row-menu"] [data-action]')).map((i) => i.textContent!.trim());
+          trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          fixture.detectChanges();
+          return items;
+        };
+        expect(memberRows()[0]!.querySelector('[data-testid="row-menu-trigger"]')!.getAttribute('aria-label')).toBe('إجراءات سارة القحطاني');
+        expect(labels(memberRows()[0]!)).withContext('another member').toEqual(['تغيير الدور…', 'إزالة من اللجنة…']);
+        expect(labels(memberRows()[1]!)).withContext('your own row').toEqual(['إزالة من اللجنة…']);
+      });
+
+      it('See all: the same rule in the full list', () => {
+        setup([], 'u3');
+        answer(membersReq(), page([1, 2, 3, 4, 5].map((i) => memberRow(i)), 7));
+        answer(subsReq(), page([]));
+        q('committee-members-see-all')!.click();
+        fixture.detectChanges();
+        desktop();
+        http
+          .expectOne((r) => r.url === `${API}/members/page` && r.params.get('take') === '50')
+          .flush(page([1, 2, 3, 4, 5, 6, 7].map((i) => memberRow(i)), 7));
+        fixture.detectChanges();
+        const inPopup = (name: string) =>
+          !!document.querySelector(`am-list-dialog [data-testid="row-menu-trigger"][aria-label="Actions for ${name}"]`);
+        expect(inPopup('Member 3')).withContext('non-vacuity: the list drew its rows').toBeTrue();
+        // The popup's own row: Remove only.
+        const popupItems = (name: string): string[] => {
+          const trigger = document.querySelector<HTMLButtonElement>(`am-list-dialog [data-testid="row-menu-trigger"][aria-label="Actions for ${name}"]`)!;
+          trigger.click();
+          fixture.detectChanges();
+          const items = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="row-menu"] [data-action]')).map((i) => i.getAttribute('data-action')!);
+          trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          fixture.detectChanges();
+          return items;
+        };
+        expect(popupItems('Member 7')).withContext('another member, in See all').toEqual(['changeRole', 'remove']);
+        expect(popupItems('Member 3')).withContext('your own row, in See all').toEqual(['remove']);
+      });
     });
 
     it('with neither permission there is no ⋯ at all', () => {
