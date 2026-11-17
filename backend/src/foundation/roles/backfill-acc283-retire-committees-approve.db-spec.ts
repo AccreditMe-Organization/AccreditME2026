@@ -108,7 +108,7 @@ describe('backfill:acc283-retire-committees-approve, on a real database (ACC-283
     expect(again[0]!.revocations).toEqual([]);
   });
 
-  it('leaves another organisation alone', async () => {
+  it('should NOT return records belonging to a different tenant — the retire backfill — another organisation is left alone', async () => {
     const o = await org();
     const other = await org();
     await runBackfill(prisma, { execute: true, organizationIds: [o.id], isFixture: fixture });
