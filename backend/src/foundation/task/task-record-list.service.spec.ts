@@ -496,22 +496,25 @@ describe('TaskRecordListService', () => {
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
-    it('every statement is the rule AND the person as an ACTIVE assignee, before LIMIT', async () => {
+    // ACC-86's one definition of "on a task" (task-pool.ts isCurrentActiveAssigneeSql):
+    // a current row AND the person is ACTIVE.
+    it('every statement is the rule AND the person ON the task (a current row, and ACTIVE), before LIMIT', async () => {
       const { service, prisma } = setup();
       const result = await service.list({ person: PERSON, take: 50 }, 'org-a', { id: 'u1', permissions: ['users:view', ...COMMITTEE_ONLY] });
       expect(result.view).toBe('person');
       const statements = personStatements(prisma);
       expect(statements.length).toBeGreaterThan(0);
       for (const s of statements) {
-        expect(s.text).toContain('fa."userId" = $');
-        expect(s.text).toContain('fa."removedAt" IS NULL');
+        expect(s.text).toContain('xa."userId" = $');
+        expect(s.text).toContain('xa."removedAt" IS NULL');
+        expect(s.text).toContain(`xu.status::text = 'ACTIVE'`);
         expect(s.values).toContain(PERSON);
         // The viewer's own rule (its relationship clause on the VIEWER).
         expect(s.text).toContain('t."createdById" = ANY(');
         expect(s.values).toContain('u1');
         // The person condition is in the WHERE, never after the page.
         const limit = s.text.indexOf('LIMIT');
-        if (limit >= 0) expect(s.text.indexOf('fa."removedAt" IS NULL')).toBeLessThan(limit);
+        if (limit >= 0) expect(s.text.indexOf(`xu.status::text = 'ACTIVE'`)).toBeLessThan(limit);
       }
     });
 
@@ -533,7 +536,8 @@ describe('TaskRecordListService', () => {
       expect(panel.canCreate).toBe(false);
       const first = personStatements(prisma)[0]!;
       expect(first.values).toContain(5);
-      expect(first.text).toContain('fa."removedAt" IS NULL');
+      expect(first.text).toContain('xa."removedAt" IS NULL');
+      expect(first.text).toContain(`xu.status::text = 'ACTIVE'`);
     });
 
     it('take is capped at 50 by the DTO (plan §6)', async () => {

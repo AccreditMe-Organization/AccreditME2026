@@ -43,7 +43,9 @@ describe("A person's tasks: the viewer's own rule, filtered to the person (ACC-2
 
   let org = '';
   let otherOrg = '';
-  const people = { person: '', viewAll: '', head: '', related: '', member: '' };
+  const people = { person: '', viewAll: '', head: '', related: '', member: '', gone: '' };
+  /** ACC-86 — a task a deactivated person still holds a current row on. */
+  let leftover = '';
   /** Every task the person is ON (an active assignee), in this organisation. */
   const onTasks: string[] = [];
 
@@ -71,6 +73,8 @@ describe("A person's tasks: the viewer's own rule, filtered to the person (ACC-2
     people.head = await user('head', { positionId: headPosition.id, primaryOrgUnitId: medicine.id });
     people.related = await user('related');
     people.member = await user('member', { positionId: nurse.id, primaryOrgUnitId: ward.id });
+    // Deactivated, with a row left current (a departure that stopped partway).
+    people.gone = await user('gone', { status: 'INACTIVE' });
 
     const task = async (sourceId: string, data: Record<string, unknown>, assignees: Array<{ userId: string; removedAt?: Date; pickedAt?: Date }>, o = org) => {
       const t = await prisma.task.create({
@@ -91,6 +95,8 @@ describe("A person's tasks: the viewer's own rule, filtered to the person (ACC-2
       ]),
     ); // a pool task the person picked
     onTasks.push(await task(surgeryCommittee, { status: 'COMPLETED', completedAt: new Date() }, [{ userId: people.person }])); // closed, still theirs
+
+    leftover = await task(surgeryCommittee, {}, [{ userId: people.gone }]);
 
     // NOT on these: removed from one, never on the other, and another
     // organisation's task carrying the person's id.
@@ -162,6 +168,20 @@ describe("A person's tasks: the viewer's own rule, filtered to the person (ACC-2
       for (const row of panel.rows) expect(expected).toContain(row.id);
     });
   }
+
+  // ACC-86 — "on a task" is a current row AND an ACTIVE person (task-pool.ts). Someone
+  // deactivated is on nothing, so their record lists no task, even to View all.
+  it('a deactivated person with a leftover current row: no tasks, even for View all', async () => {
+    const row = await prisma.taskAssignee.findFirst({ where: { taskId: leftover, userId: people.gone, removedAt: null } });
+    expect(row).not.toBeNull(); // non-vacuity: the leftover current row exists
+    const v = { id: people.viewAll, permissions: ['users:view', 'committees:view', 'committees:view_all_tasks'] };
+    // Non-vacuity: View all may open the task itself, so an empty list is the person rule.
+    expect(await admission.load(leftover, org, v, 'spec')).not.toBeNull();
+    const page = await list.list({ person: people.gone, take: 50 }, org, v);
+    expect(page.items).toEqual([]);
+    expect(page.total).toBe(0);
+    expect((await list.panel({ person: people.gone }, org, v)).total).toBe(0);
+  });
 
   it('should NOT return records belonging to a different tenant: another organisation\'s task carrying the person\'s id is never listed', async () => {
     const page = await list.list({ person: people.person, take: 50 }, org, { id: people.person, permissions: [] });
