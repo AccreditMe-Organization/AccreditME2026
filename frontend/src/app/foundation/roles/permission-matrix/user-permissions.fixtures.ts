@@ -7,8 +7,8 @@ import type { IUserDto } from '../../user/services/user.service';
  *
  * Noura Al-Mutairi: 16 permissions through 3 active roles. Quality Editor's
  * 14, plus "See tasks on committees your unit or its sub-units own" from Unit
- * Head and "Approve terms, changes and dissolutions" from Patient Safety
- * Reviewer; Committees 9 of 11. Committee Secretary is held but inactive.
+ * Head and "Reassign committee tasks and decide their requests" from Patient
+ * Safety Reviewer; Committees 9 of 10. Committee Secretary is held but inactive.
  */
 
 export const QE_KEYS = [
@@ -100,7 +100,7 @@ export function nouraGrants(): UserPermissionGrantDto[] {
       unitId: 'unit-ps',
       headPosition: { nameEn: 'Patient Safety Lead', nameAr: 'رئيس سلامة المرضى' },
       headUnit: { nameEn: 'Patient Safety Unit', nameAr: 'وحدة سلامة المرضى' },
-      permissions: ['committees:view', 'committees:approve', 'committees:view_unit_tasks'],
+      permissions: ['committees:view', 'committees:manage_tasks', 'committees:view_unit_tasks'],
     }),
   ];
 }
