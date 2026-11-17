@@ -177,15 +177,19 @@ describe('CommitteesController', () => {
     },
   );
 
-  // ACC-281 — every write keeps EXACTLY its own key at the route (Ahmad, 7 Nov).
+  // ACC-281 — every write that is not a seat action keeps EXACTLY its own key at
+  // the route (Ahmad, 7 Nov).
   it.each([
     ['createCommittee', ['committees:create']],
     ['updateCommittee', ['committees:edit_details']],
-    ['addMember', ['committees:add_member']],
-    ['changeMemberRole', ['committees:change_member_role']],
-    ['removeMember', ['committees:remove_member']],
   ] as const)('%s keeps its own route permission, %j', (handler, keys) => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype[handler])).toEqual(keys);
+  });
+
+  // ACC-283 PR 6 — the member writes carry none: a seat may allow them without the
+  // key, so the service decides (member-actions.ts).
+  it.each(['addMember', 'changeMemberRole', 'removeMember'] as const)('%s carries no route permission (ACC-283 PR 6)', (handler) => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteesController.prototype[handler])).toBeUndefined();
   });
 
   it('createCommittee delegates to the service with tenant and actor', async () => {

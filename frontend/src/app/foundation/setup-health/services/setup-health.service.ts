@@ -15,6 +15,8 @@ export type SetupConditionType =
   | 'TASK_WITHOUT_OWNER'
   // ACC-177 — AccreditMe-cloud storage at 90% or more of the organisation's limit.
   | 'STORAGE_ALMOST_FULL'
+  // ACC-261 — the organisation has not confirmed where its files go: uploads refused.
+  | 'STORAGE_NOT_CONFIRMED'
   // ACC-185 — the organisation's SharePoint can no longer be reached.
   | 'STORAGE_ACCESS_WITHDRAWN'
   // ACC-185 — the SharePoint client secret expires within 30 days.

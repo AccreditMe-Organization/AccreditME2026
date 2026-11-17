@@ -2325,11 +2325,7 @@
     "errorLoad": "Failed to load settings.",
     "errorSave": "Failed to save changes.",
     "provider": "Provider",
-    "taskSla": "Task SLA & Escalation",
-    "taskSlaNote": "Configure how long a task stays open before it's due, and how long it stays overdue before escalating — first to the assignee's manager, then to their unit head.",
-    "dueAfterHours": "Due After (hours)",
-    "managerEscalationAfterHours": "Manager Escalation (hours after due)",
-    "headEscalationAfterHours": "Head Escalation (hours after manager)",
+    "taskSla": "Task SLA & escalation",
     "orgNameEn": "Name (English)",
     "orgNameEnRequired": "An English name is required.",
     "orgNameAr": "Name (Arabic)",
@@ -2342,6 +2338,61 @@
       "lead": "{{priority}} would become {{due}}, which passes the deadline of:",
       "stage": "{{template}} · {{stage}} ({{deadline}})",
       "wayOut": "Raise those deadlines first, or keep {{priority}} at {{max}} or less."
+    },
+    "taskSlaPage": {
+      "purpose": "How long work may sit, and who hears about it when it does not move",
+      "lastChangedBy": "Last changed by {{who}} on",
+      "neverChanged": "Nothing on this page has been changed yet.",
+      "changeHistory": "Change history",
+      "historyFailed": "The change history couldn't be loaded.",
+      "loadFailed": "The task SLA policy couldn't be loaded.",
+      "saveFailed": "This couldn't be saved. The values entered are still here.",
+      "limits": {
+        "title": "Time limits",
+        "help": "Counted in working hours from the Working calendar, not clock hours.",
+        "low": "Low priority",
+        "medium": "Medium priority",
+        "high": "High priority",
+        "critical": "Critical priority",
+        "unit": "working hours",
+        "unitDefault": "working hours · the default on new tasks",
+        "scope": "Applies to tasks created after saving — open tasks keep the limit they were created under.",
+        "save": "Save time limits",
+        "required": "Enter the working hours.",
+        "min": "At least 1 working hour."
+      },
+      "escalation": {
+        "title": "Escalation per priority",
+        "help": "Who hears about an overdue task, and when. Time limits already differ by priority; escalation must too.",
+        "chain": "An overdue task goes first to the assignee's manager, then to the unit head.",
+        "limit": "Limit",
+        "manager": "Manager told after (hours overdue)",
+        "head": "Head told after (hours after the manager)",
+        "managerCell": "{{priority}} · Manager told after (hours overdue)",
+        "headCell": "{{priority}} · Head told after (hours after the manager)",
+        "save": "Save escalation",
+        "required": "Enter the hours.",
+        "min": "0 or more hours."
+      },
+      "history": {
+        "kindAll": "Whole policy",
+        "legacy": "Saved; the values were not recorded for this change.",
+        "noFieldsChanged": "No value changed in this entry.",
+        "fieldLabel": "{{priority}} · {{field}}",
+        "was": "was",
+        "now": "now"
+      },
+      "fields": {
+        "dueAfterHours": "Due after",
+        "managerEscalationAfterHours": "Manager told after",
+        "headEscalationAfterHours": "Head told after"
+      },
+      "leave": {
+        "header": "Leave without saving?",
+        "message": "Unsaved changes in {{sections}} will be lost.",
+        "accept": "Leave",
+        "reject": "Stay"
+      }
     }
   },
   "home": {
@@ -2483,6 +2534,7 @@
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
       "TASK_WITHOUT_OWNER": "Task with no actionable owner",
       "STORAGE_ALMOST_FULL": "File storage almost full",
+      "STORAGE_NOT_CONFIRMED": "File storage not confirmed",
       "STORAGE_ACCESS_WITHDRAWN": "SharePoint storage can't be reached",
       "STORAGE_SECRET_EXPIRING": "SharePoint client secret expires soon",
       "ACTING_HEAD_OPEN_ENDED": "Acting head with no end date",
@@ -2498,6 +2550,7 @@
       "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
       "task": "No one is assigned, so it is in no one’s task list.",
       "storage": "{{percent}}% of {{limit}} is used. Uploads stop at the limit; deleted files count until they are purged from the recycle bin.",
+      "storageNotConfirmed": "Uploads are blocked: nobody in the organization can add files until a location is confirmed.",
       "sharePointWithdrawn": {
         "SECRET_INVALID": "The client secret is invalid or has expired. Uploads and downloads of files stored in SharePoint are paused.",
         "CONSENT_REVOKED": "The app's permission was removed in your Microsoft tenant, or the app was disabled or deleted. Uploads and downloads of files stored in SharePoint are paused.",
@@ -2512,6 +2565,7 @@
     "hint": {
       "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it.",
       "STORAGE_ALMOST_FULL": "Purge deleted files from the recycle bin, or ask AccreditMe for more storage.",
+      "STORAGE_NOT_CONFIRMED": "Choose where files go and confirm it on File storage. AccreditMe cloud needs no test; another location is confirmed after a passing connection test.",
       "STORAGE_ACCESS_WITHDRAWN": "Ask your Microsoft administrator to restore the app's access, or enter a new client secret under Replace secret. Files stored there are safe.",
       "STORAGE_SECRET_EXPIRING": "Ask your Microsoft administrator for a new client secret and enter it under Replace secret before then."
     },
@@ -2531,6 +2585,7 @@
       "STORAGE_ACCESS_WITHDRAWN": "Open file storage",
       "STORAGE_SECRET_EXPIRING": "Open file storage",
       "STORAGE_ALMOST_FULL": "Open recycle bin",
+      "STORAGE_NOT_CONFIRMED": "Set up file storage",
       "STAGE_ON_STARTING_ASSIGNMENT": "Review stage"
     },
     "fixNeeds": {
@@ -2543,6 +2598,7 @@
       "STORAGE_ACCESS_WITHDRAWN": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STORAGE_SECRET_EXPIRING": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STORAGE_ALMOST_FULL": "Fixing this needs permission to set up email, storage, deadlines and AI.",
+      "STORAGE_NOT_CONFIRMED": "Fixing this needs permission to set up email, storage, deadlines and AI.",
       "STAGE_ON_STARTING_ASSIGNMENT": "Fixing this needs permission to manage workflows."
     },
     "freshness": {
@@ -3421,6 +3477,16 @@
       "atRisk": {
         "one": "{{count}} at risk",
         "other": "{{count}} at risk"
+      }
+    },
+    "taskSla": {
+      "hours": {
+        "one": "{{count}} hour",
+        "other": "{{count}} hours"
+      },
+      "problems": {
+        "one": "{{count}} problem",
+        "other": "{{count}} problems"
       }
     }
   },

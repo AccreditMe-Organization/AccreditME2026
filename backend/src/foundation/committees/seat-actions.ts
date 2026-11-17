@@ -17,9 +17,9 @@ import { SeatValue, seatValues } from './committee-seat-rules';
 // changing a default never reaches an existing committee.
 //
 // This file is the ONE reader of the stored rows (seatActionsFor) and the ONE
-// place defaults are worked out. Nothing decides by them yet: the chain of
-// authority (PR 2) reads decide_reporting_changes, and seat-granted member
-// actions come later in the ticket.
+// place defaults are worked out. The chain of authority (PR 2) reads
+// decide_reporting_changes; the other four are a member's actions, granted
+// through member-actions.ts (PR 6).
 
 export const SEAT_ACTIONS = {
   ADD_MEMBER: 'add_member',

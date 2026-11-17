@@ -1482,7 +1482,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
             poolEscalatedAt: null,
             status: { in: ['PENDING', 'OVERDUE', 'UNASSIGNED'] },
             OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
-            assignees: { none: { removedAt: null } },
+            assignees: { none: { removedAt: null, user: { status: 'ACTIVE' } } }, // ACC-86: nobody ACTIVE on it
           },
         }),
       );

@@ -17,6 +17,7 @@ import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import * as PermissionConstants from '../../common/constants/permissions';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 import { CommitteesController } from '../committees/committees.controller';
+import { MEMBER_ACTIONS, MEMBER_ACTION_KEYS } from '../committees/member-actions';
 
 // ACC-255 — the registries. Every label the server sends as a key must exist in
 // BOTH translation files (the frontend renders them; the server sends keys
@@ -104,29 +105,38 @@ describe('record registries (ACC-255)', () => {
       }
     });
 
-    it("the committee's direct changes pair with their endpoint's own @Permissions", () => {
+    it("Edit details pairs with its endpoint's own @Permissions", () => {
       const byKey = Object.fromEntries(recordActionsFor('COMMITTEE').map((a) => [a.key, a.permissionKey]));
-      expect([
-        [COMMITTEE_ACTIONS.EDIT_DETAILS, routeKeys('updateCommittee')],
-        [COMMITTEE_ACTIONS.ADD_MEMBER, routeKeys('addMember')],
-        [COMMITTEE_ACTIONS.REMOVE_MEMBER, routeKeys('removeMember')],
-        [COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, routeKeys('changeMemberRole')],
-      ]).toEqual([
-        [COMMITTEE_ACTIONS.EDIT_DETAILS, [byKey[COMMITTEE_ACTIONS.EDIT_DETAILS]]],
-        [COMMITTEE_ACTIONS.ADD_MEMBER, [byKey[COMMITTEE_ACTIONS.ADD_MEMBER]]],
-        [COMMITTEE_ACTIONS.REMOVE_MEMBER, [byKey[COMMITTEE_ACTIONS.REMOVE_MEMBER]]],
-        [COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, [byKey[COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE]]],
-      ]);
+      expect(routeKeys('updateCommittee')).toEqual([byKey[COMMITTEE_ACTIONS.EDIT_DETAILS]]);
     });
 
-    it('requesting a change pairs with the permission the change request service checks on create', () => {
-      // The create route is gated on committees:view and the service checks the
-      // real permission itself, so read the service's own first check.
-      const source = readFileSync(join(__dirname, '..', 'committees', 'change-requests', 'committee-change-request.service.ts'), 'utf8');
-      const create = /async create\([^)]*\)[^{]*\{\s*requirePermission\(viewer, COMMITTEES_PERMISSIONS\.(\w+)\)/.exec(source);
-      expect(create).not.toBeNull();
-      const checked = (PermissionConstants.COMMITTEES_PERMISSIONS as Record<string, string>)[create![1]!];
-      expect(recordActionsFor('COMMITTEE').find((a) => a.key === COMMITTEE_ACTIONS.REQUEST_CHANGE)!.permissionKey).toBe(checked);
+    // ACC-283 PR 6 — the four member actions carry no route gate: a seat may allow
+    // them without the key, and the service decides by member-actions.ts. So each
+    // registry action pairs with the permission that rule's map names for it.
+    it("each member action pairs with the permission the one rule (MEMBER_ACTIONS) checks", () => {
+      const byKey = Object.fromEntries(recordActionsFor('COMMITTEE').map((a) => [a.key, a.permissionKey]));
+      for (const action of MEMBER_ACTION_KEYS) {
+        const { stage, permission } = MEMBER_ACTIONS[action];
+        expect({ action, stage, registry: byKey[stage] }).toEqual({ action, stage, registry: permission });
+      }
+      expect(MEMBER_ACTION_KEYS.map((a) => MEMBER_ACTIONS[a].stage).sort()).toEqual(
+        [COMMITTEE_ACTIONS.ADD_MEMBER, COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, COMMITTEE_ACTIONS.REMOVE_MEMBER, COMMITTEE_ACTIONS.REQUEST_CHANGE].sort(),
+      );
+    });
+
+    it('the member writes and create ask that rule, for their own action', () => {
+      const read = (...path: string[]) => readFileSync(join(__dirname, '..', 'committees', ...path), 'utf8');
+      const committees = read('committees.service.ts');
+      for (const [method, action] of [
+        ['addMember', 'add_member'],
+        ['changeMemberRole', 'change_member_seat'],
+        ['removeMember', 'remove_member'],
+      ] as const) {
+        const body = new RegExp(`async ${method}\\([\\s\\S]*?assertMemberAction\\([^;]*'${action}'`).exec(committees);
+        expect({ method, asks: body !== null }).toEqual({ method, asks: true });
+      }
+      const requests = read('change-requests', 'committee-change-request.service.ts');
+      expect(/async create\([^)]*\)[^{]*\{[\s\S]*?assertMemberAction\([^;]*'request_change'/.test(requests)).toBe(true);
     });
   });
 
