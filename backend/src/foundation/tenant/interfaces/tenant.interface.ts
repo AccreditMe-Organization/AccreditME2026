@@ -97,11 +97,32 @@ export interface ITaskSlaSettings {
 }
 
 /**
- * ACC-313 — one saved change to the task SLA policy, from the audit trail.
- * `kind` names the section saved; `legacy` is a save made before ACC-313,
- * whose audit row recorded no values, so `before` and `after` are null.
+ * ACC-313 — stored at Organization.settings.taskSlaNotices, a sibling of
+ * taskSla so the six readers of the SLA numbers never learn about notices.
+ * `warnBeforeDue` is how long before the due time a reminder goes, per
+ * priority (nothing reads it yet); `notifyOnDueChange` says whether an edit
+ * that moves a due date tells the assignees.
  */
-export type TaskSlaChangeKind = 'limits' | 'escalation' | 'all' | 'legacy';
+export type TaskSlaWarnBeforeDue = 'OFF' | 'H1' | 'H2' | 'H4' | 'H8' | 'WORKING_DAY';
+
+export interface ITaskSlaNotices {
+  warnBeforeDue: Record<keyof ITaskSlaSettings, TaskSlaWarnBeforeDue>;
+  notifyOnDueChange: boolean;
+}
+
+/** GET /tenant/task-sla/policy, and what Reset answers. */
+export interface ITaskSlaPolicy {
+  tiers: ITaskSlaSettings;
+  notices: ITaskSlaNotices;
+}
+
+/**
+ * ACC-313 — one saved change to the task SLA policy, from the audit trail.
+ * `kind` names what was saved: a section, the notices switch, or a reset to
+ * the defaults; `legacy` is a save made before ACC-313, whose audit row
+ * recorded no values, so `before` and `after` are null.
+ */
+export type TaskSlaChangeKind = 'limits' | 'escalation' | 'all' | 'notices' | 'reset' | 'legacy';
 
 export interface ITaskSlaChange {
   id: string;
