@@ -401,6 +401,9 @@ force of its owning unit or an ancestor of it.
     requestedById)` index.
   - A request R already sent for decision is not withdrawn: it is under review,
     and its deciders still decide it.
+  - **Known limit (accepted by lane A, 16 Nov):** a change request R creates
+    between `prepare()` and the deactivation's commit is not withdrawn. The
+    window is milliseconds, and R's sessions end right after the commit.
 - **Nobody else withdraws another person's draft.** `othersMayWithdraw` is
   removed from `REQUEST_STAGE_POLICY`, and `CHANGE_REQUEST_NOT_REQUESTER`
   keeps its old meaning.
@@ -409,7 +412,255 @@ force of its owning unit or an ancestor of it.
   Complete on this task would need a task kind that does not exist; not
   proposed.
 
+#### PR 2b, the proposed diff (for lane A's review, 16 Nov; NOT built)
 
+Lane A's three conditions, and where each is met:
+- **Inside the same transaction** as `assertNotAccountOwner` and the
+  tenant-administrator invariant: the withdrawal is one call inside
+  `deactivate()`'s existing `$transaction`.
+- **After the root-head lock and before the leaver's task reassignment:** it is
+  the last call in the transaction, after `captureRootHeadBaseline` (the lock)
+  and the invariants. `reassignAllForUser()` runs after commit, so it comes later
+  in any case.
+- **Nothing is notified inside the transaction:** the in-transaction part writes
+  rows only. Audit rows and the engine's after-commit work run after commit.
+
+**1. `backend/src/foundation/user/user.service.ts` (lane A's file): three
+calls, an injection and one metadata field.**
+
+```diff
+@@ constructor(
++    // ACC-283 PR 2b — the leaver's unfinished change requests (plan §4.7).
++    private readonly changeRequestDeparture: ChangeRequestDepartureService,
+   ) {}
+
+@@ async deactivate(
+     const leftPoolEntryIds = await this.stagePool.openEntriesWithMember(organizationId, id);
+ 
++    // ACC-283 PR 2b — the leaver's open DRAFT or RETURNED change requests, read
++    // while they are still ACTIVE: ONE indexed query, and nothing else when
++    // there are none. A request already sent for decision is left alone.
++    const departure = await this.changeRequestDeparture.prepare(organizationId, id, actorId);
++
+     await this.prisma.$transaction(async (tx) => {
+       // ACC-288 — the root-head lock first, then whether the root is headed.
+       const rootHeaded = await captureRootHeadBaseline(organizationId, tx);
+       // ACC-221 — the account owner is never deactivated inside the tenant.
+       await assertNotAccountOwner(tx, organizationId, id);
+       const baseline = await captureAdministratorBaseline(organizationId, tx);
+       await tx.user.update({ where: { id }, data: { status: 'INACTIVE' } });
+       await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
+       // ACC-288 — the root's last head can't be deactivated without a successor or a cover.
+       await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
+       await this.stagePool.recordPoolMemberLeftInTx(tx, organizationId, leftPoolEntryIds, id, 'DEACTIVATED');
++      // ACC-283 PR 2b — withdrawn with the flip, after every lock above and
++      // before any task row is written (instance, then task: ACC-190).
++      await this.changeRequestDeparture.withdrawInTx(tx, departure);
+-    });
++    }, DEACTIVATION_TX);
+ 
+     await this.authProvider.invalidateUserSessions(id);
++    // After commit: the audit rows (no notice: nobody waits on a draft).
++    const withdrawnChangeRequests = await this.changeRequestDeparture.finish(departure);
+ 
+@@
+-      metadata: { event: 'deactivated', reassignedCount, unassignedCount },
++      metadata: { event: 'deactivated', reassignedCount, unassignedCount, withdrawnChangeRequests },
+```
+
+with, at the top of the file:
+
+```ts
+import { ChangeRequestDepartureService } from '../committees/change-requests/departure/change-request-departure.service';
+
+// ACC-283 PR 2b — Prisma's default interactive timeout is 5 s; the stage
+// change's own budget (STAGE_CHANGE_TX), since a withdrawal is one.
+const DEACTIVATION_TX = { maxWait: 10_000, timeout: 20_000 } as const;
+```
+
+and `ChangeRequestDepartureModule` added to `UserModule`'s imports. Three
+choices here are lane A's to accept or drop:
+- `DEACTIVATION_TX`;
+- the `withdrawnChangeRequests` count in the User audit metadata;
+- where `finish()` sits after commit. Anywhere after commit works; it is
+  placed before the session and task work so the audit rows sit next to the
+  move.
+
+**2. The engine: a system move inside a caller's transaction.**
+`triggerSystemTransition()` stays, unchanged in behaviour. Its body is split
+into three methods, and it, `performTransition()` and the new entry point all
+run the SAME transaction body, so there is no second copy of the move.
+
+```ts
+/** Every read a move needs, made before any transaction (performTransition()'s reads). */
+export interface PreparedSystemMove {
+  instance: PrismaWorkflowInstance;
+  currentInstanceStage: PrismaWorkflowInstanceStage; // the open entry being left
+  transition: PrismaWorkflowTransition;             // mover APP only
+  fromStage: PrismaWorkflowStage;
+  toStage: PrismaWorkflowStage;
+  enteredAt: Date;
+  slaDueAt: Date | null;
+  delegationStamp: { delegationReason: 'ACTING_HEAD' | 'OUT_OF_OFFICE_COVERAGE'; delegationContextId: string } | null;
+  entryTasks: PreparedStageEntryTasks;
+  exitScope: { workflowInstanceId: string; stageId: string; workflowInstanceStageId: string };
+  quorumCount: number | null;
+  organizationId: string;
+  actorId: string;
+  comment?: string;
+}
+
+/** What the transaction wrote, for the after-commit half. */
+export interface AppliedSystemMove {
+  prepared: PreparedSystemMove;
+  newInstanceStage: PrismaWorkflowInstanceStage;
+  updatedInstance: PrismaWorkflowInstance;
+  cancellation: StageExitCancellation;
+  createdTasks: { task: ITask; prepared: PreparedTask }[];
+}
+
+// WorkflowService, public:
+
+/** triggerSystemTransition()'s reads, plus performTransition()'s. No lock, no write. */
+async prepareSystemTransition(
+  instanceId: string,
+  toStageKey: string,
+  organizationId: string,
+  actorId: string,
+  options?: { comment?: string },
+): Promise<PreparedSystemMove>;
+
+/**
+ * The move, inside the CALLER's transaction. The instance's row lock is taken
+ * FIRST in this call (lockWorkflowInstance). After that come: the "still open"
+ * check, the gate (ADVANCE only), the preconditions, `inTx`, the exit, the
+ * stage-exit task cancel, the new entry with its tasks, and the instance update.
+ * It writes no notice and no audit row.
+ *
+ * `ifMoved: 'skip'` returns null, writing nothing, when the entry was closed
+ * between prepare and lock. The default, 'refuse', keeps today's 409.
+ */
+async systemTransitionInTx(
+  tx: EngineTx,
+  prepared: PreparedSystemMove,
+  options?: { inTx?: (tx: EngineTx) => Promise<void>; ifMoved?: 'refuse' | 'skip' },
+): Promise<AppliedSystemMove | null>;
+
+/**
+ * After the caller's commit, today's after-commit half: the stage-exit audit and
+ * notices, the entry tasks' announcements, the unassigned check, the
+ * transition's actions and the WorkflowInstance audit row.
+ */
+async finishSystemTransition(applied: AppliedSystemMove): Promise<IWorkflowInstance>;
+```
+
+`triggerSystemTransition()` becomes `prepare`, then
+`$transaction(tx => systemTransitionInTx(tx, p, { inTx }), STAGE_CHANGE_TX)`,
+then `finish`. `performTransition()` (a person's move or a vote) calls the
+same private transaction body and the same finish.
+
+**3. A small module, so there is no cycle:
+`committees/change-requests/departure/`.**
+- `ChangeRequestDepartureModule` imports `PrismaModule`, `WorkflowModule` and
+  `forwardRef(() => TaskModule)`, plus `AuditLogService` (as ACC-297's module
+  provides its own).
+- It exports one service. It neither imports `UserModule` nor is imported by
+  anything `UserModule` pulls in, so `UserModule` imports it with no
+  `forwardRef` (ACC-297's shape).
+
+```ts
+interface DepartureWithdrawal { requestId: string; committeeId: string; fromStageKey: 'draft' | 'returned'; move: PreparedSystemMove }
+export interface PreparedDeparture { organizationId: string; leaverId: string; actorId: string; withdrawals: DepartureWithdrawal[] }
+
+prepare(organizationId, leaverId, actorId): Promise<PreparedDeparture>
+withdrawInTx(tx, prepared): Promise<void>        // stores what it closed on `prepared` for finish()
+finish(prepared): Promise<number>               // after commit; returns how many were withdrawn
+```
+
+- **`prepare`** runs one `$queryRaw`, every value bound:
+  ```sql
+  SELECT r.id, r."committeeId", s.key
+    FROM "CommitteeChangeRequest" r
+    JOIN LATERAL (SELECT i.id, i."currentStageId", i.status FROM "WorkflowInstance" i
+                   WHERE i."objectType" = 'COMMITTEE_CHANGE_REQUEST' AND i."objectId" = r.id
+                     AND i."organizationId" = r."organizationId"
+                   ORDER BY i."createdAt" DESC LIMIT 1) i ON true
+    JOIN "WorkflowStage" s ON s.id = i."currentStageId"
+   WHERE r."organizationId" = $org AND r."requestedById" = $leaver
+     AND i.status <> 'CANCELLED' AND s.key IN ($withdrawableUnsent)
+   ORDER BY r.id
+  ```
+  - The driving index is `(organizationId, requestedById)`, and the lateral
+    join uses `(objectType, objectId)`.
+  - `$withdrawableUnsent` is derived from `REQUEST_STAGE_POLICY`: the open
+    stages that allow `withdraw` and are not `awaitsDecision`. Today that is
+    draft and returned. A stage with no key is skipped, since it cannot be told
+    apart from one under review.
+  - **No rows means no other query**: `withdrawals: []`, and `withdrawInTx` and
+    `finish` return at once.
+  - For each row, `prepareSystemTransition(instanceId, 'withdrawn', org,
+    actorId, { comment: undefined })`.
+- **`withdrawInTx`**, per withdrawal in id order:
+  - `systemTransitionInTx(tx, move, { ifMoved: 'skip', inTx })` takes the
+    instance lock. A request that moved meanwhile (the leaver pressed Send a
+    moment before) is skipped, so the deactivation is never refused for it.
+  - In `inTx`: the request row
+    `update { withdrawnAt: now, withdrawnById: actorId }`. Then, if
+    `finishTaskId`, `TaskService.closeRecordTaskInTx(tx, finishTaskId, org,
+    actorId, 'CANCELLED')`, which locks the task row last.
+  - The committee's stage rules are not read: `committeeAllowsRequestMove()`
+    always allows `withdraw`, so the read would be dead.
+- **`finish`**, after commit, per withdrawal applied:
+  - `finishSystemTransition(applied)`;
+  - the CommitteeChangeRequest audit row (below);
+  - `auditRecordTaskClosure(closure, org, actorId,
+    'CHANGE_REQUEST_WITHDRAWN_ON_DEPARTURE')`.
+
+**Lock order inside the deactivation**, in full:
+1. The root-head advisory lock (ACC-288).
+2. The account-owner read, the administrator baseline, the user row (the flip).
+3. The invariant reads and the pool-left inserts.
+4. Then, per withdrawal in request-id order: its instance FOR UPDATE, its
+   request row, its finish-task row.
+
+No request path takes the root-head lock or a user row, so this cannot
+deadlock against Submit, Withdraw or Approve. Those paths take the request's
+instance first, then the committee's instance FOR SHARE (Submit only), the
+request row, and the task row. The new path takes no committee lock, so there
+is no committee-before-request inversion either.
+
+**The audit row** (one per withdrawn request, after commit):
+`{ action: 'UPDATE', objectType: 'CommitteeChangeRequest', objectId, actorId:
+<the deactivating admin>, metadata: { decision: 'WITHDRAWN', cause: 'departure',
+leaverId, from: 'draft' | 'returned' } }`.
+- `withdrawnById` is the deactivating actor, not the leaver: the leaver did
+  not withdraw it, and the record must not say so.
+- The engine also writes its WorkflowInstance audit row (stage before and
+  after), and the task closure writes its own, with reason
+  `CHANGE_REQUEST_WITHDRAWN_ON_DEPARTURE`.
+
+**Notices after commit: none.**
+- The leaver is INACTIVE.
+- A draft was never sent, so nobody awaits it. A returned request's deciders
+  have already let it go.
+- The withdraw move's only action is LOG_AUDIT.
+- The finish-task closure sends no notice (as on a person's Withdraw).
+- The departure notice to the tenant admins (`notifyTenantAdminsOfDeparture`)
+  is unchanged. Adding "and n change requests were withdrawn" to it is lane A's
+  call; it is not proposed.
+
+**A pre-existing edge, found while writing this (not caused by PR 2b):** a
+FINAL stage's entry keeps `exitedAt` null. Once its pool empties, the entry is
+flagged `isUnassigned`, by `checkAndFlagUnassignedStage()` at entry or by the
+15-minute sweep. Setup health's `stagesWithoutAssignee` then lists it.
+- Change requests' Withdrawn, Approved and Rejected stages are worked by
+  `CREATOR`. So once any requester leaves, their closed requests can show up as
+  "stage without an assignee".
+- PR 2b makes it immediate for the withdrawn request, because the leaver is
+  already INACTIVE when the entry is made. Today it appears at the next sweep.
+- Read from the code, not measured.
+- Proposed separately (a small engine fix, both places): a final stage is never
+  flagged unassigned, and the sweep resolves no pool for one.
 
 ---
 
@@ -537,8 +788,8 @@ because nothing deployed reads it.
 | -- | -- | -- | -- |
 | **1** backend | Seat actions: the registry, the table, the lookup defaults (attribute schema plus the SYSTEM values), copy on create, `GET`/`PUT /committees/:id/seat-actions` (Formation only), `seatActionsFor()`. Nothing decides by seat actions yet. | yes | `backfill:acc283-seat-actions` (dry run, execute, dry run 0) |
 | **2a** backend | **[x] Built** (branch `feature/ACC-283-pr2a-head-oversight`). Heads see the committees of their units (Q6, §4.6): `committeeOversightUnitIds()`, the clause in the parent rule (opt-in `{ oversight: true }`, reads only) and the committee reads; writes unchanged. Isolation tests and the three mutations. | no | none |
-| **2** backend | The chain: `change-request-chain.ts`, decide/withdraw/awaiting/actions/notices/read admission on it, `awaitingDecisionBy`, `CHANGE_REQUEST_NOT_DECIDER`, the route gates dropped. Approve now (Q4, §4.3): the endpoint, `actions.approveNow`, `CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED`. The finish task (Q8, §4.7) and only-R-withdraws. `committees:approve` is no longer read (still in the catalogue). Open requests re-route on their next read. | yes: `finishTaskId` | none; deploy after PR 1's backfill has run, so deciding seats exist |
-| **2b** backend | The departure withdrawal (Q8, §4.7): the engine's in-transaction system move, and one guarded call in `UserService.deactivate()` (lane A's file), before its task-row writes. | no | none |
+| **2** backend | **[x] Built** (branch `feature/ACC-283-pr2-chain`). The chain: `change-request-chain.ts`, decide/withdraw/awaiting/actions/notices/read admission on it, `awaitingDecisionBy`, `CHANGE_REQUEST_NOT_DECIDER`, the route gates dropped. Approve now (Q4, §4.3): the endpoint, `actions.approveNow`, `CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED`. The finish task (Q8, §4.7) and only-R-withdraws. `committees:approve` is no longer read (still in the catalogue). Open requests re-route on their next read. | yes: `finishTaskId` | none; deploy after PR 1's backfill has run, so deciding seats exist |
+| **2b** backend | **[x] Built** (branch `feature/ACC-283-pr2b-departure`, lane A's conditions, Prompt 86). The departure withdrawal (Q8, §4.7): the engine's in-transaction system move, and one guarded call in `UserService.deactivate()` (lane A's file), before its task-row writes. As built, one change from the proposal: the departure module's WorkflowModule and TaskModule edges, and UserModule's edge to it, are `forwardRef()`, because WorkflowModule reaches UserModule through TenantModule. No constructor needs one. | no | none |
 | **3** backend | **Dropped** (§16, Q7): there is no Setup health condition. Numbers are kept so the later PRs keep their names. | — | — |
 | **4** backend | Retire `committees:approve`: out of `COMMITTEES_PERMISSIONS` and the seed; `backfill:acc283-retire-committees-approve` (dry run first, refuses customers, after PR 2 deploys); a spec failing if any non-spec source names it (`retired-task-keys.spec.ts`'s shape); the sentence table. Terms Review's seed assignment for new organisations (§10). | no | the backfill |
 | **5** backend | Seat actions as a change-request field (the whole map is one field, Q12): preview, drift check, apply on approval, labels. | no | none |

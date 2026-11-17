@@ -37,6 +37,7 @@ import { TaskAssignmentService } from '../task/task-assignment.service';
 import { TaskSlaService } from '../task/task-sla.service';
 import { TaskClosedNoticeService } from '../task/task-closed-notice.service';
 import { UserService } from '../user/user.service';
+import { ChangeRequestDepartureService } from '../committees/change-requests/departure/change-request-departure.service';
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import type { AuthProvider } from '../../providers/auth/auth.provider';
@@ -93,6 +94,8 @@ describe("Leaving an \"All of them\" stage's pool mid-stage, against a real data
     pools,
     // ACC-297 — no transfer here, so the committee notice is never scheduled.
     { schedule: () => Promise.resolve() } as unknown as CommitteeTransferNoticeService,
+    // ACC-283 PR 2b — the real departure withdrawal: nobody here has a change request.
+    new ChangeRequestDepartureService(prisma, workflow, tasks, audit),
   );
 
   interface Org {

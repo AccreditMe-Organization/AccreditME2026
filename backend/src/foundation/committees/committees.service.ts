@@ -149,7 +149,13 @@ export class CommitteesService {
   // Internal callers keep getCommitteeById(), which costs one query.
   async getCommitteeDetail(id: string, organizationId: string, viewer: CommitteeViewer): Promise<ICommitteeDetail> {
     // ACC-281 — committees:view or an active member; anyone else today's 403.
-    await assertMaySeeCommittee(this.prisma, id, organizationId, viewer);
+    // ACC-283 — the same pass says whether they may write: no extra query.
+    const access = await assertMaySeeCommittee(
+      this.prisma,
+      id,
+      organizationId,
+      viewer,
+    );
     const committee = await this.getCommitteeById(id, organizationId);
     const [facts, types, rules, orgUnit, related] = await Promise.all([
       committeeStagesAndCounts(this.prisma, organizationId, [committee.id]),
@@ -178,6 +184,7 @@ export class CommitteesService {
       orgUnit,
       // ACC-255 — the same answer PR 2's writes will assert.
       stageRules: committeeStageRules(rules.get(committee.id)),
+      mayWrite: access.write,
     };
   }
 

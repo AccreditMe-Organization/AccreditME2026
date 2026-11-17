@@ -9,8 +9,7 @@ import { ChangeRequestRefusal, ChangeRequestRefusalCode } from './change-request
  * Two inputs:
  *
  *   REQUEST_STAGE_POLICY    the request's own stage, by its key: whether it is
- *                           open, what it allows, and whether someone other than
- *                           the requester may withdraw it. Keyed on purpose: the
+ *                           open and what it allows. Keyed on purpose: the
  *                           change request template is protected and its six
  *                           stages are fixed (ACC-255 D7).
  *   the committee's stage   ACC-255 PR 2: the engine's answer for the committee's
@@ -18,9 +17,9 @@ import { ChangeRequestRefusal, ChangeRequestRefusalCode } from './change-request
  *                           allows and its flags, configured per tenant. No
  *                           committee stage key is read here any more.
  *
- * An action is allowed when BOTH allow it. WHO may take it (the requester, a
- * `committees:approve` holder, never the requester deciding their own) is not a
- * stage rule and stays in the service.
+ * An action is allowed when BOTH allow it. WHO may take it (the requester; a
+ * current decider by the chain of authority, ACC-283, never the requester
+ * deciding their own) is not a stage rule and stays in the service.
  */
 
 export const CHANGE_REQUEST_ACTIONS = ['edit', 'submit', 'withdraw', 'approve', 'return', 'reject'] as const;
@@ -33,17 +32,15 @@ export interface RequestStagePolicy {
   open: boolean;
   /** What a request in this stage allows. */
   actions: ReadonlySet<ChangeRequestAction>;
-  /** A `committees:approve` holder other than the requester may withdraw it — a draft left behind. */
-  othersMayWithdraw: boolean;
 }
 
-const CLOSED: RequestStagePolicy = { open: false, actions: allow(), othersMayWithdraw: false };
+const CLOSED: RequestStagePolicy = { open: false, actions: allow() };
 
 export const REQUEST_STAGE_POLICY: Readonly<Record<ChangeRequestStageKey, RequestStagePolicy>> = {
-  draft: { open: true, actions: allow('edit', 'submit', 'withdraw'), othersMayWithdraw: true },
+  draft: { open: true, actions: allow('edit', 'submit', 'withdraw') },
   // Returned behaves like Draft (Ahmad, 18 Oct).
-  returned: { open: true, actions: allow('edit', 'submit', 'withdraw'), othersMayWithdraw: true },
-  under_review: { open: true, actions: allow('approve', 'return', 'reject', 'withdraw'), othersMayWithdraw: false },
+  returned: { open: true, actions: allow('edit', 'submit', 'withdraw') },
+  under_review: { open: true, actions: allow('approve', 'return', 'reject', 'withdraw') },
   approved: CLOSED,
   rejected: CLOSED,
   withdrawn: CLOSED,
@@ -54,7 +51,7 @@ export const REQUEST_STAGE_POLICY: Readonly<Record<ChangeRequestStageKey, Reques
  * open request per committee is never bypassed by an unrecognised stage, and
  * only its requester may withdraw it.
  */
-export const UNKEYED_REQUEST_STAGE: RequestStagePolicy = { open: true, actions: allow('withdraw'), othersMayWithdraw: false };
+export const UNKEYED_REQUEST_STAGE: RequestStagePolicy = { open: true, actions: allow('withdraw') };
 
 export function requestStagePolicy(key: string | null | undefined): RequestStagePolicy {
   return (key && REQUEST_STAGE_POLICY[key as ChangeRequestStageKey]) || UNKEYED_REQUEST_STAGE;

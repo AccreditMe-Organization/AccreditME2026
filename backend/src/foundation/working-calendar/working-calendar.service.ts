@@ -276,7 +276,11 @@ export class WorkingCalendarService {
   // Returns the DateTime that is `workingHours` working hours after `start`.
   // O(days) algorithm: accounts for remaining hours in the current working day first,
   // then advances day-by-day, dropping to minute precision only on the final partial day.
-  // workingHours = 0 is valid: returns the next working period start (normalizes the input).
+  // workingHours = 0 is valid: returns the next working moment (normalizes the input) —
+  // `start` itself inside working hours, today's opening before it on a working day
+  // (ACC-175), else the next working day's opening.
+  // A start before opening on a working day counts that day's full working hours
+  // (ACC-175), so this stays the inverse of workingHoursBetween().
   async calculateDeadline(
     start: DateTime,
     workingHours: number,
@@ -381,8 +385,11 @@ export class WorkingCalendarService {
     const todayStart = dt.startOf('day').set({ hour: startHour, minute: startMin }) as DateTime;
     const todayEnd = dt.startOf('day').set({ hour: endHour, minute: endMin }) as DateTime;
 
-    if (this.isWorkingDay(dt, calendar, holidays) && dt >= todayStart && dt < todayEnd) {
-      return dt;
+    if (this.isWorkingDay(dt, calendar, holidays)) {
+      // ACC-175 — before opening, the whole working day is still ahead: the
+      // clock starts at today's opening, not the next working day's.
+      if (dt < todayStart) return todayStart;
+      if (dt < todayEnd) return dt;
     }
 
     let candidate = dt.plus({ days: 1 }).startOf('day') as DateTime;

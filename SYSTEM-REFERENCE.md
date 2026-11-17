@@ -4654,6 +4654,31 @@ the ONE reading of `Organization.settings.taskSla`, shared with
 `TaskService.computeSlaDueAt()` is gone. The history below is kept for what it
 records about the settings key.
 
+**ACC-175 — where the clock starts.** `calculateDeadline(start, hours)` first
+moves `start` to the next working moment, in the calendar's zone
+(`nextWorkingStart()`):
+- **inside working hours** on a working day: `start` itself;
+- **before opening** on a working day: **that day's opening.** The whole day
+  is still ahead; before ACC-175 this jumped to the next working day;
+- **at or after closing, or on a day off** (weekend, holiday): the next
+  working day's opening.
+
+Then it spends the hours. So a task created Monday 07:30 with a 2-hour SLA is
+due Monday 10:00, and `calculateDeadline()` stays the exact inverse of
+`workingHoursBetween()`.
+- **Zero hours** returns that working moment itself. Only `poolClock()` can
+  pass 0 (`managerEscalationAfterHours` is `@Min(0)`); `TaskSlaService.shift()`
+  skips 0, and a stage with 0 hours has no deadline.
+- **Stored deadlines are left as they are (forward-only):** only dates computed
+  after the change use the rule.
+- **The screen already agreed:** the frontend's `DueDateService.resumeAfter()`
+  treats a before-opening time the same way.
+- **Specs:** `working-calendar.before-opening.spec.ts`, with four mutations.
+  Plan: `backend/Plans/step-175-deadline-before-opening.md`.
+- **Known, not built:** a holiday in a zone west of UTC lands a day early
+  (`fromJSDate(h.date).setZone(zone)`), and `plus({ hours })` ignores daylight
+  saving. Every tenant is UTC+3 today.
+
 Before ACC-174: `TaskService.computeSlaDueAt(priority, organizationId)`
 called `TenantService.getTaskSla(organizationId)`
 for the tenant's real, per-`TaskPriority` tiered settings, then
@@ -5377,12 +5402,12 @@ on the task's row; deciding happens in My tasks only.
 - **The stage SLA is not shifted.** `WorkflowInstanceStage.slaDueAt` keeps
   running while a task in that stage is on hold; only the task's own dates
   move.
-- `calculateDeadline()` treats a start outside working hours — and BEFORE
-  opening time on a working day — as the next opening, and the hold's shift of
-  the due date, limit and extension goes through it — ACC-175, whose fix
-  changes every SLA due date and needs its own plan. The SLA start is not
-  shifted (it becomes `onHoldUntil`), so it is not affected. A zero shift is
-  skipped, so the zero-hours normalisation cannot move a date.
+- `calculateDeadline()` treats a start outside working hours as the next
+  opening, and the hold's shift of the due date, limit and extension goes
+  through it. **Fixed in ACC-175 for a start BEFORE opening on a working day:**
+  it now counts from that day's opening (3.3). The SLA start is not shifted
+  (it becomes `onHoldUntil`), so it is not affected. A zero shift is skipped,
+  so the zero-hours normalisation cannot move a date.
 - The creator's own edit and cancel are ACC-174 (3.11).
 
 ### 3.11 The SLA limit, and edit, cancel and reopen by the creator (ACC-174)
@@ -6199,6 +6224,113 @@ change request (§3.18; its screens are ACC-240).
 
 ### 3.18 Committee change requests (ACC-239)
 
+**ACC-283 PR 2 — THE CHAIN OF AUTHORITY DECIDES, NEVER A ROLE.** Plan:
+`backend/Plans/step-283-change-request-chain.md` (§3, §4, §16). This replaces
+every rule below that names `committees:approve`, which no change request
+reads any more; the key stays in the catalogue until PR 4 retires it.
+
+- **Who decides** (`change-requests/change-request-chain.ts`):
+  - the Reports-to committee's holders of a seat whose actions include
+    `decide_reporting_changes`, if that committee is in force (active, stage
+    flagged `IN_FORCE`);
+  - otherwise the owning unit's head holders and acting cover in force, then
+    each parent unit up to the root.
+
+  The requester and (below the root only) the requesting committee's active
+  members are skipped, and so is a vacant step. The first step with someone
+  left decides; any one of them.
+- **Resolved live, never stored.** `resolveDecisionChains(client, org,
+  requests)` loads the facts in at most **9 queries for any number of
+  requests**, in four rounds:
+  1. the committees;
+  2. their members, the Reports-to committees in force, their deciding seats,
+     and the units with their ancestors;
+  3. the seat holders, the heads, the covers;
+  4. the covers' users.
+
+  The walk (`walkChain`) is pure.
+- **Deciding** (approve, return, reject): a current decider, checked before the
+  transaction (the chain takes no lock). Anyone else gets:
+  - the requester: `CHANGE_REQUEST_OWN_DECISION`;
+  - someone who may read the request: 403 `CHANGE_REQUEST_NOT_DECIDER`, with
+    `awaitingDecisionBy`;
+  - anyone else: the 404 "Change request not found".
+
+  The audit row records `authority`: the step, by ids.
+- **Submit ("Send for decision")** tells the deciders. When the chain finds
+  nobody it is 409 `CHANGE_REQUEST_NO_DECIDER`:
+  - with `approveNow: true` when the requester heads the root and nobody else
+    is left;
+  - with a log line when the root is already headless (Q7; no Setup health).
+- **Approve now (Q4)**, `POST /committee-change-requests/:id/approve-now`: the
+  root unit's head (holder or cover in force) applies their own request.
+  - The reference checks run first, read only; then Submit's transaction, then
+    Approve's. Authority `{ kind: 'ROOT_HEAD_OWN' }`.
+  - Nobody else gets it (403 `CHANGE_REQUEST_APPROVE_NOW_NOT_ALLOWED`).
+  - Once the request is sent to other deciders, Approve now is not offered
+    again.
+- **The finish task (Q8):** a draft or returned request gives its requester
+  "Finish or withdraw the change request" / «إكمال طلب التغيير أو سحبه»
+  (COMMITTEE, MEDIUM, linked by `finishTaskId`). It is completed on Submit and
+  on Approve now, cancelled on Withdraw, and made again on Return.
+  `TaskService.closeRecordTaskInTx()` locks its row LAST: request instance,
+  request row, task row.
+- **Withdraw:** only the requester (Q8). `othersMayWithdraw` is gone from the
+  policy.
+- **A departure withdraws the leaver's unfinished requests (PR 2b).**
+  `UserService.deactivate()` calls `ChangeRequestDepartureService`
+  (`change-requests/departure/`):
+  - `prepare()` before the transaction: ONE indexed query, on
+    `(organizationId, requestedById)`. It finds the requests whose newest
+    instance stands in a stage that is open, allows withdraw and is not
+    awaiting a decision (draft and returned, derived from the policy). No rows
+    means nothing else runs.
+  - `withdrawInTx()` inside the deactivation's transaction, last. Per request,
+    in id order: the instance lock, the request row (`withdrawnById` is the
+    person deactivating), then the finish task cancelled, its row last.
+  - `finish()` after commit. It is never fatal: a failure is logged with ids
+    only.
+  - The engine's `prepareSystemTransition()` / `systemTransitionInTx()` /
+    `finishSystemTransition()` split one move so it can run in a caller's
+    transaction. `performTransition()` uses the same body. A request that moved
+    between prepare and lock is skipped (`ifMoved: 'skip'`).
+  - The User audit row's `withdrawnChangeRequests` is what the transaction
+    applied. Each request gets its own audit row, `{ decision: 'WITHDRAWN',
+    cause: 'departure', leaverId, from }`.
+  - **Nothing is sent**, to the leaver or anyone (a spec proves it).
+  - Lock order: the root-head lock, the user row, then per request its
+    instance, its row and its task. Requests under review are left to their
+    deciders.
+  - **Known limit (accepted by lane A, 16 Nov):** a change request the leaver
+    creates between `prepare()` and the commit is not withdrawn. The window is
+    milliseconds, and their sessions end right after the commit.
+- **Reads:**
+  - every response's `actions` gains `approveNow`, and `awaitingDecisionBy`
+    names the deciding step (a committee and its seats, or a unit), never a
+    person;
+  - one chain resolution per response, only for the rows under review and the
+    viewer's own drafts;
+  - `GET /committee-change-requests/:id` also admits a current decider;
+  - `GET .../awaiting-decision` has no route gate. It answers `[]` after ONE
+    indexed query (`mayDecideAnyChangeRequest()`: head holder, cover in force,
+    or a deciding seat on an active membership of an active committee) for
+    someone who decides nothing; otherwise the capped SQL candidates and one
+    chain resolution. That query restates `unit-headship.ts`'s two rules in SQL;
+    `change-request-chain.spec.ts` pins the rules and the db-spec checks the two
+    agree person by person.
+- **No route permission** on approve, return, reject, approve-now or
+  awaiting-decision: the chain decides.
+- **Specs:**
+  - `change-request-chain.spec.ts` (the walk);
+  - `change-request-chain.db-spec.ts` (the loader, 9 queries for 1 and for
+    20, isolation);
+  - `committee-change-request.db-spec.ts` (decisions, Approve now, the finish
+    task, re-routing, reads, isolation).
+
+  Mutation-checked: the requester skip, the member skip and its root
+  exception, the vacant-step skip, the in-force check, the organisation scope
+  and Approve now's root-head check.
+
 **ACC-281:** a member of the committee reads its change requests and may raise, edit,
 submit and withdraw one with each action's own permission, without `committees:view`.
 Approve, return, reject and awaiting decision are unchanged. Awaiting decision is filtered in
@@ -6783,6 +6915,13 @@ unchanged** (`committees:view` or membership, the table above).
 | `mayReadCommittee(…, now?)` | holder, then member, then overseer: what `assertMaySeeCommittee` asks |
 | `readableCommitteeIds(…, among, now?)` | the batch: all for a holder; members first; one oversight read for the rest |
 | `maySeeCommittee()` | unchanged, member only: what `assertMayWriteCommittee` asks |
+| `committeeAccess(…, now?)` | `{ read, write }` in one pass; `write` is `maySeeCommittee()`. What `assertMaySeeCommittee` returns |
+
+**`GET /committees/:id` says `mayWrite`, for the screens:** true exactly when
+`assertMayWriteCommittee` would pass (`committees:view` or an active member).
+A head who only oversees reads `false`, so the page shows no write button that
+answers 404. Each action's own permission and the stage rules still apply on
+top. It's read from the same pass as the read, with no query added.
 
 **Where it applies (reads):**
 - `assertMaySeeCommittee`, so the committee page, members, members page,
@@ -6811,6 +6950,9 @@ unchanged** (`committees:view` or membership, the table above).
 
 **The screens key on it:** the rail's Committees item and the `/committees`
 route guard read this field, never a rule of their own (lane A).
+
+**ACC-283 PR 2:** a current decider of a change request (by the chain of
+authority, §3.18) may also read that request by id, even with no other way in.
 
 **Where it does NOT apply:** every committee and change-request write; the
 parent rule without the option, which is task create, the AI task draft, the

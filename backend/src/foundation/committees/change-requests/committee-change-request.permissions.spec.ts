@@ -1,20 +1,18 @@
 import { Reflector } from '@nestjs/core';
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext } from '@nestjs/common';
 import { PermissionGuard } from '../../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../../common/decorators/permissions.decorator';
 import { CommitteeChangeRequestsByCommitteeController, CommitteeChangeRequestsController } from './committee-change-request.controller';
 
 // ACC-281 (Ahmad, 7 Nov) — the REAL PermissionGuard against the REAL route metadata.
 //
-// DECIDING a change request is NOT opened to members: approve, return, reject and
-// the awaiting-decision list keep committees:view at the route, exactly as before.
-// So a member who holds committees:approve but not committees:view is refused
-// here, before the service is reached: the interim rule until ACC-283 gives the
-// chain of authority the decision.
-//
-// Reading, raising, editing, submitting and withdrawing carry no route permission:
-// the service admits committees:view OR an active member of the request's
-// committee (committee-change-request.db-spec.ts proves it on real rows).
+// ACC-283 PR 2 — NO change request route carries a route permission any more.
+// Reading, raising, editing, submitting and withdrawing: the service admits
+// committees:view OR an active member (or, for reads, the committee's overseer).
+// DECIDING (approve, return, reject), Approve now and the awaiting-decision list:
+// the chain of authority decides who, in the service (committee-change-request.db-spec.ts
+// and change-request-chain.db-spec.ts prove it on real rows). committees:approve
+// decides nothing here.
 
 type Ctl = typeof CommitteeChangeRequestsController | typeof CommitteeChangeRequestsByCommitteeController;
 
@@ -31,14 +29,12 @@ describe('Change request routes: who the guard admits (ACC-281)', () => {
   const guard = new PermissionGuard(new Reflector());
   const MEMBER_WITH_APPROVE = ['committees:approve', 'committees:edit_details'];
 
-  it.each(['approve', 'returnForChanges', 'reject', 'awaitingDecision'])(
-    '%s: a member holding committees:approve but not committees:view is refused; with committees:view the guard admits',
+  it.each(['approve', 'returnForChanges', 'reject', 'approveNow', 'awaitingDecision'])(
+    '%s: no route permission; the guard admits anyone, holder of committees:approve or not (the chain decides)',
     (handler) => {
-      expect(() => guard.canActivate(context(CommitteeChangeRequestsController, handler, MEMBER_WITH_APPROVE))).toThrow(
-        new ForbiddenException('Required permission: committees:view'),
-      );
-      expect(guard.canActivate(context(CommitteeChangeRequestsController, handler, ['committees:view', 'committees:approve']))).toBe(true);
-      expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteeChangeRequestsController.prototype[handler as 'approve'])).toEqual(['committees:view']);
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, CommitteeChangeRequestsController.prototype[handler as 'approve'])).toBeUndefined();
+      expect(guard.canActivate(context(CommitteeChangeRequestsController, handler, MEMBER_WITH_APPROVE))).toBe(true);
+      expect(guard.canActivate(context(CommitteeChangeRequestsController, handler, []))).toBe(true);
     },
   );
 

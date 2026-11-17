@@ -63,6 +63,39 @@ export interface StartedInstance {
   createdTasks: { task: ITask; prepared: PreparedTask }[];
 }
 
+/**
+ * ACC-283 PR 2b — a move's reads, done before any transaction: everything
+ * performTransition() used to read first. prepareSystemTransition() makes one for
+ * a module's own move; systemTransitionInTx() applies it inside the CALLER's
+ * transaction; finishSystemTransition() does the after-commit half.
+ */
+export interface PreparedSystemMove {
+  instance: PrismaWorkflowInstance;
+  /** The open entry being left. */
+  currentInstanceStage: PrismaWorkflowInstanceStage;
+  transition: PrismaWorkflowTransition;
+  fromStage: PrismaWorkflowStage;
+  toStage: PrismaWorkflowStage;
+  enteredAt: Date;
+  slaDueAt: Date | null;
+  delegationStamp: { delegationReason: 'ACTING_HEAD' | 'OUT_OF_OFFICE_COVERAGE'; delegationContextId: string } | null;
+  entryTasks: PreparedStageEntryTasks;
+  exitScope: { workflowInstanceId: string; stageId: string; workflowInstanceStageId: string };
+  quorumCount: number | null;
+  organizationId: string;
+  actorId: string;
+  comment: string | undefined;
+}
+
+/** ACC-283 PR 2b — what the move's transaction wrote, for the after-commit half. */
+export interface AppliedSystemMove {
+  prepared: PreparedSystemMove;
+  newInstanceStage: PrismaWorkflowInstanceStage;
+  updatedInstance: PrismaWorkflowInstance;
+  cancellation: StageExitCancellation;
+  createdTasks: { task: ITask; prepared: PreparedTask }[];
+}
+
 // ACC-190 — a stage change is ONE transaction: the gate, the old entry's exit,
 // its open tasks cancelled, the new entry and its tasks, the instance moved.
 // Every read that can happen first does (StageTaskDefinitionService.
@@ -900,6 +933,23 @@ export class WorkflowService {
     // ACC-202 — no outcome option: the stage is left with the move's kind's outcome.
     options: { comment?: string; inTx?: (tx: EngineTx) => Promise<void> } = {},
   ): Promise<IWorkflowInstance> {
+    const prepared = await this.prepareSystemTransition(instanceId, toStageKey, organizationId, actorId, { comment: options.comment });
+    const applied = await this.prisma.$transaction((tx) => this.applyMove(tx, prepared, { inTx: options.inTx }, 'refuse'), STAGE_CHANGE_TX);
+    return this.finishMove(applied!);
+  }
+
+  /**
+   * ACC-283 PR 2b — triggerSystemTransition()'s reads, and performTransition()'s:
+   * the app's move (mover APP) from the record's current stage to the stage keyed
+   * `toStageKey`. No lock and no write. Apply it with systemTransitionInTx().
+   */
+  async prepareSystemTransition(
+    instanceId: string,
+    toStageKey: string,
+    organizationId: string,
+    actorId: string,
+    options: { comment?: string } = {},
+  ): Promise<PreparedSystemMove> {
     const instance = await this.prisma.workflowInstance.findFirst({ where: { id: instanceId, organizationId } });
     if (!instance) throw new NotFoundException('Workflow instance not found');
     if (!instance.currentStageId) throw new ConflictException('Workflow instance has no current stage');
@@ -928,9 +978,30 @@ export class WorkflowService {
     });
     if (!currentInstanceStage) throw new ConflictException('No active stage entry found for this instance');
 
-    return this.performTransition(instance, currentInstanceStage, transition, organizationId, actorId, options.comment, fromStage, {
-      inTx: options.inTx,
-    });
+    return this.prepareMove(instance, currentInstanceStage, transition, organizationId, actorId, options.comment, fromStage);
+  }
+
+  /**
+   * ACC-283 PR 2b — a prepared move, applied inside the CALLER's transaction: the
+   * instance's row lock FIRST, then the "still open" check, the gate (ADVANCE
+   * only), the preconditions, `inTx`, the exit, the entry's open tasks cancelled,
+   * the new entry and its tasks, the instance moved. Writes no notice and no audit
+   * row: call finishSystemTransition() after the caller commits.
+   *
+   * `ifMoved: 'skip'` returns null, having written nothing, when the entry was
+   * closed between prepare and lock (the default, 'refuse', is today's 409).
+   */
+  async systemTransitionInTx(
+    tx: EngineTx,
+    prepared: PreparedSystemMove,
+    options: { inTx?: (tx: EngineTx) => Promise<void>; ifMoved?: 'refuse' | 'skip' } = {},
+  ): Promise<AppliedSystemMove | null> {
+    return this.applyMove(tx, prepared, { inTx: options.inTx }, options.ifMoved ?? 'refuse');
+  }
+
+  /** ACC-283 PR 2b — the after-commit half of systemTransitionInTx(): audits, notices, actions. */
+  async finishSystemTransition(applied: AppliedSystemMove): Promise<IWorkflowInstance> {
+    return this.finishMove(applied);
   }
 
   // `assumedVote` counts a vote not yet recorded, replacing any earlier one by
@@ -1015,15 +1086,32 @@ export class WorkflowService {
     // ACC-271 — `pool`: the from-stage's pool, when the caller resolved it.
     hook: { inTx?: (tx: EngineTx) => Promise<void>; pool?: StagePool } = {},
   ): Promise<IWorkflowInstance> {
+    const prepared = await this.prepareMove(instance, currentInstanceStage, transition, organizationId, actorId, comment, fromStage, hook.pool);
+    // ACC-190 — the stage change itself, all or nothing, under the instance's row lock.
+    const applied = await this.prisma.$transaction((tx) => this.applyMove(tx, prepared, { inTx: hook.inTx }, 'refuse'), STAGE_CHANGE_TX);
+    return this.finishMove(applied!);
+  }
+
+  // ACC-190 — every read first: the new entry's clock, who is acting for whom,
+  // and the tasks the destination stage creates (a snapshot of its definitions,
+  // placed and timed from `enteredAt`). ACC-283 PR 2b — split out so a module can
+  // apply the move inside its own transaction (systemTransitionInTx()).
+  private async prepareMove(
+    instance: PrismaWorkflowInstance,
+    currentInstanceStage: PrismaWorkflowInstanceStage,
+    transition: PrismaWorkflowTransition,
+    organizationId: string,
+    actorId: string,
+    comment: string | undefined,
+    fromStage: PrismaWorkflowStage,
+    pool?: StagePool,
+  ): Promise<PreparedSystemMove> {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) throw new NotFoundException('Target stage not found');
 
-    // ACC-190 — every read first: the new entry's clock, who is acting for
-    // whom, and the tasks the destination stage creates (a snapshot of its
-    // definitions, placed and timed from `enteredAt`).
     const enteredAt = new Date();
     const slaDueAt = await this.computeSlaDueAt(toStage, organizationId, enteredAt);
-    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId, hook.pool);
+    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId, pool);
     const entryTasks = await this.stageTaskDefinitions.prepareEntryTasks(
       toStage,
       instance,
@@ -1038,78 +1126,109 @@ export class WorkflowService {
     };
     // ACC-239 — the quorum a committee-approval stage's vote will count against.
     const quorumCount = await this.quorumSnapshot(toStage, organizationId, instance);
+    return {
+      instance,
+      currentInstanceStage,
+      transition,
+      fromStage,
+      toStage,
+      enteredAt,
+      slaDueAt,
+      delegationStamp,
+      entryTasks,
+      exitScope,
+      quorumCount,
+      organizationId,
+      actorId,
+      comment,
+    };
+  }
 
-    // ACC-190 — the stage change itself, all or nothing, under the instance's
-    // row lock (the engine's first). Two people pressing at once can no longer
-    // both pass the "open entry" read and close the same row twice.
-    const { newInstanceStage, updatedInstance, cancellation, createdTasks } = await this.prisma.$transaction(async (tx) => {
-      await lockWorkflowInstance(tx, instance.id, organizationId);
-      const stillOpen = await tx.workflowInstanceStage.findFirst({
-        where: { id: currentInstanceStage.id, workflowInstanceId: instance.id, exitedAt: null },
-        select: { id: true },
-      });
-      if (!stillOpen) throw new ConflictException('This record has already moved on. Reload it and try again');
+  // ACC-190 — the stage change, inside a transaction, under the instance's row lock
+  // (the engine's first). Two people pressing at once can no longer both pass the
+  // "open entry" read and close the same row twice. ACC-283 PR 2b — the one body
+  // every move runs, in its own transaction or a caller's.
+  private async applyMove(
+    tx: EngineTx,
+    p: PreparedSystemMove,
+    hook: { inTx?: (tx: EngineTx) => Promise<void> },
+    ifMoved: 'refuse' | 'skip',
+  ): Promise<AppliedSystemMove | null> {
+    const { instance, currentInstanceStage, transition, fromStage, toStage, enteredAt, organizationId, actorId, comment } = p;
+    await lockWorkflowInstance(tx, instance.id, organizationId);
+    const stillOpen = await tx.workflowInstanceStage.findFirst({
+      where: { id: currentInstanceStage.id, workflowInstanceId: instance.id, exitedAt: null },
+      select: { id: true },
+    });
+    if (!stillOpen) {
+      // ACC-283 PR 2b — a caller that can live without the move (a departure) skips it.
+      if (ifMoved === 'skip') return null;
+      throw new ConflictException('This record has already moved on. Reload it and try again');
+    }
 
-      // The gate, authoritative: under the lock, nothing can reopen a task
-      // between this check and the move.
-      if (transition.kind === 'ADVANCE') {
-        await this.assertMandatoryTasksDone(tx, currentInstanceStage.id, organizationId);
+    // The gate, authoritative: under the lock, nothing can reopen a task
+    // between this check and the move.
+    if (transition.kind === 'ADVANCE') {
+      await this.assertMandatoryTasksDone(tx, currentInstanceStage.id, organizationId);
+    }
+    // ACC-238 — the record's own preconditions, authoritative: the record is
+    // read FOR SHARE inside this transaction, so an edit cannot slip between
+    // the check and the move.
+    await this.assertPreconditions(tx, instance, fromStage, transition, organizationId, toStage);
+
+    // ACC-239 — the module's own write, under this same lock and transaction.
+    if (hook.inTx) {
+      // ACC-271 — the move the app runs (mover APP; PR 6b: nothing else).
+      if (transitionMover(transition) !== 'APP') {
+        throw new Error('Only a move the app runs (mover APP) takes a write of its own');
       }
-      // ACC-238 — the record's own preconditions, authoritative: the record is
-      // read FOR SHARE inside this transaction, so an edit cannot slip between
-      // the check and the move.
-      await this.assertPreconditions(tx, instance, fromStage, transition, organizationId, toStage);
+      await hook.inTx(tx);
+    }
 
-      // ACC-239 — the module's own write, under this same lock and transaction.
-      if (hook.inTx) {
-        // ACC-271 — the move the app runs (mover APP; PR 6b: nothing else).
-        if (transitionMover(transition) !== 'APP') {
-          throw new Error('Only a move the app runs (mover APP) takes a write of its own');
-        }
-        await hook.inTx(tx);
-      }
+    // ACC-202 — left with the outcome of the move's kind, whoever made it.
+    await tx.workflowInstanceStage.update({
+      where: { id: currentInstanceStage.id },
+      data: { exitedAt: enteredAt, outcome: stageExitOutcome(transition.kind), ...(comment !== undefined && { comment }) },
+    });
 
-      // ACC-202 — left with the outcome of the move's kind, whoever made it.
-      await tx.workflowInstanceStage.update({
-        where: { id: currentInstanceStage.id },
-        data: { exitedAt: enteredAt, outcome: stageExitOutcome(transition.kind), ...(comment !== undefined && { comment }) },
-      });
+    // ACC-68, ACC-190 — the entry just left takes its open tasks with it.
+    // After an ADVANCE the gate has closed every mandatory one, so these are
+    // optional (cancelled silently, Ahmad 9 Oct G); a RETURN or EXIT takes
+    // the whole entry's open work. Before the new entry's tasks are created,
+    // so a self-transition cancels the old ones and then creates fresh ones.
+    const cancellation = await this.taskService.cancelStageExitTasksInTx(tx, p.exitScope, organizationId);
 
-      // ACC-68, ACC-190 — the entry just left takes its open tasks with it.
-      // After an ADVANCE the gate has closed every mandatory one, so these are
-      // optional (cancelled silently, Ahmad 9 Oct G); a RETURN or EXIT takes
-      // the whole entry's open work. Before the new entry's tasks are created,
-      // so a self-transition cancels the old ones and then creates fresh ones.
-      const cancellation = await this.taskService.cancelStageExitTasksInTx(tx, exitScope, organizationId);
+    const newInstanceStage = await tx.workflowInstanceStage.create({
+      data: {
+        workflowInstanceId: instance.id,
+        stageId: toStage.id,
+        enteredAt,
+        slaDueAt: p.slaDueAt,
+        actorId,
+        delegationReason: p.delegationStamp?.delegationReason ?? null,
+        delegationContextId: p.delegationStamp?.delegationContextId ?? null,
+        quorumCount: p.quorumCount,
+      },
+    });
 
-      const newInstanceStage = await tx.workflowInstanceStage.create({
-        data: {
-          workflowInstanceId: instance.id,
-          stageId: toStage.id,
-          enteredAt,
-          slaDueAt,
-          actorId,
-          delegationReason: delegationStamp?.delegationReason ?? null,
-          delegationContextId: delegationStamp?.delegationContextId ?? null,
-          quorumCount,
-        },
-      });
+    // The person who moved the record in is every new task's creator.
+    const createdTasks = await this.insertEntryTasks(tx, p.entryTasks, instance.id, newInstanceStage.id, organizationId, actorId);
 
-      // The person who moved the record in is every new task's creator.
-      const createdTasks = await this.insertEntryTasks(tx, entryTasks, instance.id, newInstanceStage.id, organizationId, actorId);
+    const updatedInstance = await tx.workflowInstance.update({
+      where: { id: instance.id },
+      data: {
+        currentStageId: toStage.id,
+        status: toStage.isFinal ? 'COMPLETED' : 'IN_PROGRESS',
+      },
+    });
+    return { prepared: p, newInstanceStage, updatedInstance, cancellation, createdTasks };
+  }
 
-      const updatedInstance = await tx.workflowInstance.update({
-        where: { id: instance.id },
-        data: {
-          currentStageId: toStage.id,
-          status: toStage.isFinal ? 'COMPLETED' : 'IN_PROGRESS',
-        },
-      });
-      return { newInstanceStage, updatedInstance, cancellation, createdTasks };
-    }, STAGE_CHANGE_TX);
-
-    // ── After commit: audit rows, notices, actions. ──
-    await this.taskService.auditStageExitCancellation(cancellation, exitScope, organizationId, actorId);
+  // ── After commit: audit rows, notices, actions. ──
+  private async finishMove(applied: AppliedSystemMove): Promise<IWorkflowInstance> {
+    const { prepared: p, newInstanceStage, updatedInstance, cancellation, createdTasks } = applied;
+    const { instance, transition, toStage, organizationId, actorId } = p;
+    await this.taskService.auditStageExitCancellation(cancellation, p.exitScope, organizationId, actorId);
     // ACC-271 PR 4 — whoever was still on a task this move closed is told, now
     // that it has committed (a move that rolled back never gets here).
     await this.taskService.noticeStageExitClosures(cancellation, organizationId, actorId, {
@@ -1138,7 +1257,7 @@ export class WorkflowService {
 
     // ACC-34's actor-facing warnings now come from the entry's tasks: one line
     // per task created with nobody to act on it, or into an empty pool.
-    return this.mapInstance(updatedInstance, entryTasks.warnings);
+    return this.mapInstance(updatedInstance, p.entryTasks.warnings);
   }
 
   // ── Internal: stage entry tasks (ACC-190) ───────────────────────────────────

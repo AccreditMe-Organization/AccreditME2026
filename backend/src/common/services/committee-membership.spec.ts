@@ -4,6 +4,7 @@ import { itEnforcesTenantIsolation } from '../testing/tenant-isolation';
 import {
   assertMaySeeCommittee,
   assertMayWriteCommittee,
+  committeeAccess,
   committeeOversightUnitIds,
   isActiveMember,
   mayReadCommittee,
@@ -157,7 +158,45 @@ describe('heads see the committees of their units, read only (ACC-283 PR 2a)', (
     await expect(assertMayWriteCommittee(typed, 'c-1', ORG, viewer)).rejects.toEqual(new NotFoundException('Committee not found'));
     expect(prisma.user.findFirst).not.toHaveBeenCalled();
     expect(prisma.orgUnitHeadAssignment.findMany).not.toHaveBeenCalled();
-    await expect(assertMaySeeCommittee(typed, 'c-1', ORG, viewer, NOW)).resolves.toBeUndefined();
+    // The read admits them, and says they may not write.
+    await expect(assertMaySeeCommittee(typed, 'c-1', ORG, viewer, NOW)).resolves.toEqual({ read: true, write: false });
+  });
+
+  // ACC-283 — the committee read's `mayWrite`, from the same pass as the read.
+  it('access: a holder reads and writes with no query, a member with one, an overseer reads only', async () => {
+    const holder = client();
+    expect(await committeeAccess(holder.typed, 'c-1', ORG, { id: 'u-1', permissions: ['committees:view'] }, NOW)).toEqual({ read: true, write: true });
+    expect(reads(holder.prisma)).toBe(0);
+
+    const member = client([{ committeeId: 'c-1' }]);
+    expect(await committeeAccess(member.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: true, write: true });
+    expect(reads(member.prisma)).toBe(1);
+
+    // The overseer: the one membership read the rule already makes, then the oversight reads.
+    const head = client([], { headOf: 'unit-a', subtree: ['unit-a'], owned: ['c-1'] });
+    expect(await committeeAccess(head.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: true, write: false });
+    expect(reads(head.prisma)).toBe(5);
+
+    const stranger = client();
+    expect(await committeeAccess(stranger.typed, 'c-1', ORG, viewer, NOW)).toEqual({ read: false, write: false });
+    expect(reads(stranger.prisma)).toBe(3);
+  });
+
+  it('access.write is the very answer assertMayWriteCommittee acts on, for every kind of viewer', async () => {
+    const cases: [string, ReturnType<typeof client>, { id: string; permissions: string[] }][] = [
+      ['holder', client(), { id: 'u-1', permissions: ['committees:view'] }],
+      ['member', client([{ committeeId: 'c-1' }]), viewer],
+      ['overseer', client([], { headOf: 'unit-a', subtree: ['unit-a'], owned: ['c-1'] }), viewer],
+      ['stranger', client(), viewer],
+    ];
+    for (const [who, c, v] of cases) {
+      const { write } = await committeeAccess(c.typed, 'c-1', ORG, v, NOW);
+      const passes = await assertMayWriteCommittee(c.typed, 'c-1', ORG, v).then(
+        () => true,
+        () => false,
+      );
+      expect([who, write]).toEqual([who, passes]);
+    }
   });
 
   it('the batch: holders all, members first, then one oversight read for the rest only', async () => {
