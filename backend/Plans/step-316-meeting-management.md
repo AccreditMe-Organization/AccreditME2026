@@ -191,8 +191,9 @@ The spec has **no recurring meetings and no calendar**.
 - **`typeValueId` gains its relation** to `LookupValue`. That is safe because 0 rows exist.
 - **Times** are stored as UTC and shown in the organisation's zone (ACC-97) through `amDateTime`.
 - **A committee may be given a meeting only where its stage allows it.** That is a new committee record action, `schedule_meeting`, seeded on the In force stages only, so a committee in Formation or Dissolved gets none.
-- **Rescheduling** writes a `MeetingReschedule` row (from, to, reason, who, when) and tells the invitees after commit. Rescheduling is allowed only in Planned and Agenda Ready.
-- **Cancel** is the seeded EXIT. It takes a reason, which the invitees read.
+- **Rescheduling** writes a `MeetingReschedule` row (`organizationId`, `meetingId`, from, to, reason, who, when) and tells the invitees after commit. Rescheduling is allowed only in Planned and Agenda Ready.
+- **Cancel** is the seeded EXIT, a person's press. Its reason is the press's own `comment`, made REQUIRED for a move into a stage flagged `MEETING_CANCELLED` (§9.2). The invitees read it.
+- **Every new table carries `organizationId`**, and every query scopes by it with the id in the same `where` (CLAUDE.md, Multi-Tenancy).
 
 ### 3.2 Agenda
 
@@ -228,7 +229,7 @@ The spec has **no recurring meetings and no calendar**.
   - `votesFor`, `votesAgainst` and `abstentions` (Int?);
   - `quorumMet` (Boolean, a snapshot);
   - `outcome`: APPROVED, REJECTED, DEFERRED or NOTED.
-- **`MeetingVote`** (`decisionId`, `attendeeId`, `choice` FOR, AGAINST or ABSTAIN; unique per decision and attendee) holds **who voted**, for OPEN votes only.
+- **`MeetingVote`** (`organizationId`, `decisionId`, `attendeeId`, `choice` FOR, AGAINST or ABSTAIN; unique per decision and attendee) holds **who voted**, for OPEN votes only.
   - The counts on the decision are written from these rows in the same transaction.
   - A SECRET vote stores counts only, and no names.
 - **The secretary records the votes** (Q4, recommended). Members do not vote in the app in these slices.
@@ -245,11 +246,10 @@ The spec has **no recurring meetings and no calendar**.
 - **Review (Minutes Review):**
   - the seeded stage changes to Q2's answer;
   - recommended: **the meeting's committee, Chair seat, Any one**, with Approve Minutes (ADVANCE) and Return for Correction (RETURN to Minutes Draft);
-  - attendees read the draft and comment on the page.
+  - attendees **read the draft only**. No comment feature exists, and none is built in these slices (§9.5).
 - **Approved (Minutes Approved, final):**
   - no record action is allowed, so everything is read-only;
-  - `minutesApprovedAt` is stamped in the move's transaction;
-  - action items become tasks (§3.6).
+  - `minutesApprovedAt` is stamped, and the action items become tasks (§3.6), **in the press's own stage-change transaction**, through a per-record-type registry of entry effects keyed by the `MINUTES_FINAL` flag (§9.1).
 - **What the seeded workflow becomes** (seed + `backfill:acc316-meeting-workflow`):
   - **remove the self-loop at `:256`.** No approval refers to it, because there are 0 instances.
   - Planned and Agenda Ready: the meeting's committee, Chair and Secretary seats, Any one.
@@ -262,9 +262,9 @@ The spec has **no recurring meetings and no calendar**.
 ### 3.6 Decisions and action items as tasks
 
 - **`MeetingActionItem`** (`organizationId`, `meetingId`, `decisionId?`, `agendaItemId?`, title, description, the assignment target with the New task cascade, priority, `taskId?`) is the **draft** of a task.
-- **At approval (Q5, recommended)**, each item becomes one task in the approve move's transaction (`triggerTransition` `inTx`, ACC-239's hook):
+- **At approval (Q5, recommended)**, each item becomes one task inside the stage-change transaction of the move that enters `MINUTES_FINAL`, through the entry-effects registry (§9.1). It is NOT ACC-239's `inTx`, which only an APP move takes:
   - `sourceType MEETING`, `sourceId` the meeting;
-  - the creator is the approver;
+  - the creator is whoever made the move happen: the approver, or on "Everyone present" or "Vote" the deciding voter;
   - its due date comes from `TaskSlaService` (ACC-174), never computed in the module.
 - **Afterwards** the item shows its task's link and status. The task, not the item, is the work.
 - **Ordinary tasks on a meeting** (New task with the meeting as the record) are allowed while the meeting is not cancelled (§4.3).
@@ -284,6 +284,7 @@ The spec has **no recurring meetings and no calendar**.
 - **A meeting list under a committee** also needs the committee to be visible (clause a).
 - **The meeting's workflow** follows the record (`InstanceAccess`, `instance-access.ts:52-93`). Nothing new is needed beyond the visibility rule.
 - **No query is added to the per-request path.** Every check is in the service, after the guard.
+- **An invited guest who is not a member** has no Meetings rail item, and needs none. They reach the meeting by the bell, Home's "My next meetings" and the invitation email, each linking to `/meetings/:id`. That route carries its own `permissionGuard` and no route permission, as the task page does (`tasks.routes.ts:27-38`), so the server's rule decides (§9.7).
 
 ### 4.2 Doing
 
@@ -327,6 +328,10 @@ The spec has **no recurring meetings and no calendar**.
 - **`STAGE_ASSIGNEE_KINDS`:** unchanged.
 - **Nav model:** a Meetings rail item after Committees, with `moduleKey: 'meetings'`. It shows to `meetings:view` holders and to committee members (`MyWorkCountsService.isCommitteeMember`, as ACC-281).
 - **Home:** "My next meetings": self-scoped (invited, next 14 days, cap 5), one read added to Home's wave, no polling.
+- **Entry effects (new, §9.1):** `TRANSITION_EFFECTS`, beside `TRANSITION_PRECONDITIONS`, per record type and keyed by the flag entered. MEETING: entering `MINUTES_FINAL` stamps `minutesApprovedAt` and creates the action items' tasks.
+- **A move that needs a reason (new, §9.2):** a per-record-type rule keyed by the flag entered. MEETING: a move into `MEETING_CANCELLED` needs a `comment`. The moves list says so per move (`needsReason`).
+- **Links:** `recordPageLink()` (`record-link.util.ts:9-15`) and the bell's `notificationLink()` (`notification-links.ts:8-13`) each gain `MEETING → ['/meetings', id]`.
+- **Notices:** every new notification is written in English and Arabic (`Notification.titleAr`/`bodyAr` are nullable, so this is a rule, not a constraint). No count in a stored notice (§9.6).
 
 ---
 
@@ -386,7 +391,8 @@ Each PR deploys before the next. Every migration is expand only.
      - `MeetingAttendee`, `MeetingDecision`, `MeetingVote`, `MeetingActionItem`, `MeetingReschedule`;
      - `AgendaItem.organizationId` and `presenterUserId`;
      - `Meeting.endsAt`, `quorumRequired` and `sequenceNo`;
-     - the `typeValueId` FK.
+     - the `typeValueId` FK;
+     - **only if Q2 is "Everyone present":** the `StageAssigneeKind` value `MEETING_ATTENDEES` (§9.3). No row may hold it before PR 4 deploys (ACC-173's enum rule).
    - The seat actions `schedule_meeting` and `record_minutes` and the "votes in meetings" attribute, with lookup defaults and `backfill:acc316-seat-defaults`.
    - `meetings:schedule` added; `approve_minutes` retired with `backfill:acc316-retire-approve-minutes`.
    - **Live after:** the seat screens show the two new actions; nothing else is visible.
@@ -396,22 +402,27 @@ Each PR deploys before the next. Every migration is expand only.
      - agenda;
      - the visibility rule;
      - `TASK_RECORD_TYPES` MEETING;
-     - invitee notices after commit.
+     - the move-needs-a-reason rule (§9.2): `REASON_REQUIRED` on a cancel with no comment, and `needsReason` on the moves list;
+     - invitee notices after commit, in English and Arabic.
    - **No migration.**
    - **Live after:** the API (no screen).
 4. **PR 4: minutes, backend.**
    - Changes:
      - attendance and quorum; decisions and votes; action items; the narrative;
      - the attendance precondition;
-     - the approve hook that creates tasks;
+     - `TRANSITION_EFFECTS` (§9.1): entering `MINUTES_FINAL` stamps `minutesApprovedAt` and creates the action items' tasks, in the press's own transaction, for Any one, All of them and a committee vote alike;
+     - only if Q2 is "Everyone present": the `MEETING_ATTENDEES` pool resolver (§9.3);
      - the earlier-meetings follow-up read.
    - **No migration.**
    - **Live after:** the API (no screen).
 5. **PR 5: meeting screens, part 1** (after the design, Q8).
    - The rail item, `/meetings`, the committee page panel, the Schedule/Edit/Reschedule/Cancel dialogs, and the meeting page with agenda, moves, Tasks panel and history.
+   - `/meetings/:id` with its own `permissionGuard` and no route permission (§9.7); the bell and `recordPageLink()` lines.
+   - The move buttons (`WorkflowTransitionActionsComponent`) ask for a reason when the server says `needsReason` (§9.2), for every module.
    - **Live after:** a committee can schedule and run a meeting up to Minutes Draft.
 6. **PR 6: meeting screens, part 2.**
    - Attendance, decisions and votes, action items, minutes, review and approve; Home's "My next meetings".
+   - Only if Q2 is "Everyone present" or "Vote": a vote progress line on the review stage (§9.3).
    - **Live after:** the whole meeting, to approved minutes and tasks.
 7. **PR 7: contract.**
    - Drop `Meeting.status` and `Task.meetingId`, after nothing reads them.
@@ -435,6 +446,8 @@ Each takes one word. **(recommended)** marks my suggestion.
 - Chair **(recommended)**
 - Everyone present
 - Vote
+
+*What each answer costs to build is in §9.3. Chair needs nothing new.*
 
 *"Everyone present" means one person who never answers holds the minutes up. "Vote" makes it a committee vote in the app.*
 
@@ -485,3 +498,255 @@ Each takes one word. **(recommended)** marks my suggestion.
 - `AgendaItem.organizationId` is NOT NULL from the start (0 rows, no writer).
 - Seat defaults: `schedule_meeting` for Chair and Secretary, `record_minutes` for Secretary (§4.2).
 - Every list pages on the server or has a stated cap; no query on the per-request path; no polling.
+- Approval's writes go through an engine registry of entry effects, not `inTx` (§9.1).
+- A move into a cancelled stage needs a reason, and the move buttons ask for it (§9.2).
+
+---
+
+## 9. Review round 1 (Prompt 121, 17 Nov)
+
+Lane B's eight points. §3, §4, §6 and Q2 are corrected to match. Ahmad's
+answers to Q1–Q8 are not in yet; nothing here waits for them.
+
+### 9.1 The approve hook
+
+**What the first draft got wrong.** It said the tasks are created through
+`triggerTransition`'s `inTx`. There is no such thing:
+
+- `inTx` belongs to `triggerSystemTransition()` (`workflow.service.ts:928-937`).
+- `applyMove()` refuses it for anything but an APP move (`:1180-1186`).
+- Approve Minutes is a PERSON move, pressed by the stage's pool.
+
+**How a person's press reaches the database today:**
+
+- **Every way a press lands goes through one method, `performTransition()`**
+  (`:1072-1092`):
+  - Any one: `:678`;
+  - a RETURN or EXIT on a stage decided together: `:699`;
+  - the deciding vote of All of them, or of a committee vote: `:709`;
+  - the vote screen's path through `maybeAdvanceAfterApproval()`: `:860`, `:866`.
+- **`performTransition()` runs three steps:**
+  - `prepareMove()` (`:1099`): every read, before the transaction;
+  - `applyMove()` (`:1152-1225`), under `STAGE_CHANGE_TX`. It takes the
+    instance row lock (`:1158`), re-checks the entry, runs the gate and the
+    preconditions (`:1177`), then exits, cancels, enters and inserts the entry's
+    tasks (`:1191-1215`);
+  - `finishMove()` (`:1228-1250`): after commit, it audits, notices, announces
+    the tasks (`:1240`) and fires the transition actions (`:1246`).
+
+**(a) Entry effects, keyed by the flag entered. Recommended.**
+
+- **The registry:** `TRANSITION_EFFECTS` (`transition-effects.ts`, beside
+  `transition-preconditions.ts`), `Partial<Record<WorkflowObjectType, …>>`.
+  - It is FAIL OPEN: a type with no entry has no effect, as for preconditions.
+  - Each entry has three parts:
+    - `prepare(prisma, ctx)`: reads only, run in `prepareMove()`;
+    - `apply(tx, prepared, ctx)`: writes only, run in `applyMove()` after the
+      preconditions and before the exit;
+    - `finish(prepared, applied, ctx)`: audits and notices, run in
+      `finishMove()`.
+  - `ctx` carries the record id, the organisation, the actor, the move's kind,
+    and **both stages' flags**, the shape `TransitionPreconditionContext`
+    already has (`transition-preconditions.ts:21-31`).
+- **MEETING's entry:**
+  - it fires when `toStageFlags` includes `MINUTES_FINAL` and `fromStageFlags`
+    does not;
+  - `prepare` reads the action items and builds one prepared task each, with
+    `TaskService.prepareRecordTask()` (`task.service.ts:436`, ACC-239's
+    record-task path). That gives the SLA window and the assignees, all before
+    the transaction;
+  - `prepareRecordTask()` takes assignee user ids only. An action item that
+    targets a unit, a position or a committee seat (the New task cascade) needs
+    it to accept that target, and to make a pool task as `create()` does
+    (ACC-167). That is a PR 4 change;
+  - `apply` locks the meeting row FOR UPDATE and checks that the action items
+    did not change since `prepare`, by count and the newest `updatedAt`
+    (`MEETING_CHANGED`, 409, nothing written). It then stamps
+    `minutesApprovedAt`, inserts the tasks (`insertPrepared()`, `:332`) and
+    writes each item's `taskId`;
+  - `finish` announces the tasks (`announceCreated()`, `:342`) and writes one
+    Meeting audit row.
+- **It is the same for Any one, All of them and a committee vote**, because all
+  three land in `performTransition()`:
+  - the effect runs once, on the move that actually fires;
+  - a vote that does not reach its threshold never gets there (`:702-706`);
+  - the actor, and so the tasks' creator, is the presser, or the deciding voter.
+- **ACC-190's rules hold:**
+  - every read is in `prepare`, before the transaction;
+  - lock order is the instance (`:1158`), then the meeting row, then no task
+    lock (the tasks are new rows). That is ACC-255's order: instance, then the
+    record row;
+  - notices go out in `finish`, after the commit.
+- **Correctness does not depend on `prepare` being current:**
+  - Minutes Review allows no `record_minutes` action, so nobody can edit an
+    action item while the meeting sits there;
+  - a RETURN and a fresh edit between `prepare` and the lock are caught twice:
+    the entry re-check (`:1159-1167`) and the action-item check in `apply`.
+- **The `inTx` rule stays as it is:** a caller still cannot hand a PERSON move
+  a write of its own. The effect is declared per record type in the engine's
+  registry, like a precondition, and every caller's press runs it. That is not
+  a module's ad-hoc write.
+- **Costs:** three calls in the engine, behind a cheap `hasTransitionEffect()`
+  check (as `hasTransitionPrecondition()` does), so other record types pay
+  nothing.
+
+**(b) Approve as the module's own endpoint firing an APP move.**
+
+- It works only for **Any one**, for these reasons:
+  - `triggerSystemTransition()` records no vote and checks no threshold;
+  - with All of them or a committee vote, the module would have to rebuild the
+    vote path (`recordVote()`, `isApprovalThresholdMet()`, the quorum snapshot);
+  - an APP move is never offered to the pool (`getMovesForViewer()` lists
+    PERSON moves only, `:351`). So the review stage's buttons would come from
+    the module, not from the server's moves list, which breaks ACC-271's "the
+    buttons show what the server says".
+- It also makes Approve a move a tenant cannot reshape on the stages page,
+  because the app runs it.
+
+**Decision: (a).** It is the only one of the two that holds for all three
+answers to Q2.
+
+### 9.2 Cancel's reason
+
+**Today:**
+
+- A press carries an OPTIONAL `comment` (`trigger-transition.dto.ts:8-11`, at
+  most 2,000 characters; on a vote, `submit-approval.dto.ts:17`).
+- It is stored on the entry being left (`applyMove()` `:1191`, column
+  `WorkflowInstanceStage.comment`, `schema.prisma:1399`). A vote's comment is
+  stored on the vote (`:798`).
+- The stage history shows it as the reason for the move into the next visit
+  (`:509-511`).
+
+**What is missing:**
+
+- **The buttons never send one.** `WorkflowTransitionActionsComponent` posts
+  `{ transitionId }` only (`workflow-transition-actions.component.ts:127`).
+- **Nothing can make a reason required for a move.** No field, registry or
+  refusal exists for it (a grep for `requiresComment`, `needsReason` and
+  `REASON_REQUIRED` finds nothing).
+- **The seeded transition actions don't pass the comment** to the notified
+  people.
+
+**Proposed:**
+
+- **A per-record-type rule, keyed by the flag entered**, read in
+  `triggerTransition()` and `submitApproval()` before anything is recorded.
+  MEETING: a move into a stage flagged `MEETING_CANCELLED` needs a non-blank
+  comment. A press without one gets 400 `REASON_REQUIRED`, naming the move in
+  both languages.
+- **The moves list** (`GET /workflows/instances/:id/moves`) gains
+  `needsReason: boolean` per move.
+- **The move buttons** open a small reason dialog for such a move. That is one
+  change, for every module: a committee's Dissolve can use it later.
+- **The meeting reads the reason** from its stage history. The invitees'
+  cancellation notice quotes it, after commit.
+- **Not a new column:** `Meeting` gets no `cancelReason`. The entry's comment
+  is the one place it lives.
+
+### 9.3 What each answer to Q2 costs
+
+**Chair (recommended): nothing new.**
+
+- **The stage's who:** `{ mode: 'ANY_ONE', entries: [{ kind: 'COMMITTEE',
+  committeeRoleValueId: <the chairman seat> }] }`.
+  - No `committeeId` means the meeting's committee, through `RECORD_ROUTES`
+    (`stage-task-record-routes.ts:60`). The kinds are in `stage-who.ts:47-54`.
+  - The seed resolves the `chairman` value per organisation (`lookup.seed.ts:69`).
+- **The screen:** the chair sees Approve Minutes and Return for Correction.
+  Everyone else who may open the meeting reads the draft, with no buttons.
+
+**Everyone present: a new assignee kind.**
+
+- **The stage's who:** `{ mode: 'ALL', entries: [{ kind: 'MEETING_ATTENDEES' }] }`.
+- **New:**
+  - the `StageAssigneeKind` value `MEETING_ATTENDEES` (an enum migration, under
+    ACC-173's rule);
+  - its `KIND_FIELDS` entry (`stage-who.ts:47`), with no fields;
+  - `STAGE_ASSIGNEE_KINDS.MEETING` only (`stage-who.ts:28`), so no other record
+    type offers it;
+  - a batched `StagePoolService` resolver: present or online attendees with a
+    user, active only;
+  - its sentence on the stage panel, in both languages.
+- **The screen:**
+  - each present attendee sees Approve Minutes, which is a vote (ACC-284), and
+    Return for Correction;
+  - **new:** a progress line on the meeting page ("3 of 7 have approved").
+    Today the moves list says only which moves a viewer may press, not how far
+    a vote has got (`getMovesForViewer()` `:319-360`).
+- **The risk:** one present attendee who never answers holds the minutes up.
+  The stage's SLA escalates, and a leaver is already handled
+  (`POOL_MEMBER_LEFT`, ACC-271 PR 4).
+
+**Vote: no new kind.**
+
+- **The stage's who:** `{ mode: 'COMMITTEE_VOTE', entries: [{ kind: 'COMMITTEE' }] }`
+  (`MODE_ONLY_WITH_SINGLE`, `stage-who.ts:66`).
+  - The quorum is the committee's, saved when the stage is entered
+    (`quorumSnapshot()`, `:1307-1320`).
+  - **Every active member** votes, present at the meeting or not. Observers
+    vote too, because a committee vote takes no seat narrowing.
+- **The screen:** each member sees Approve Minutes (a vote) and Return for
+  Correction, and needs the same progress line as Everyone present.
+
+### 9.4 `organizationId` on every new table
+
+`MeetingVote` and `MeetingReschedule` now list it (§3.4, §3.1). §3.1 states the
+rule for every new table. All five new tables carry it:
+
+- `MeetingAttendee`;
+- `MeetingDecision`;
+- `MeetingVote`;
+- `MeetingActionItem`;
+- `MeetingReschedule`.
+
+### 9.5 No comments on the minutes
+
+No comment feature exists anywhere in the app. In these slices, attendees **read
+the draft only** (§3.5 corrected). Asking for a correction is the Minutes Review
+pool's Return for Correction, with its reason (§9.2).
+
+### 9.6 Notices
+
+- **Every new notification has English and Arabic** (`titleEn`/`titleAr`,
+  `bodyEn`/`bodyAr`). The Arabic columns are nullable (`schema.prisma:1852-1860`),
+  so this is a rule the meeting notices keep, checked by their specs.
+- **The new notices:**
+  - invited;
+  - rescheduled (with the new time);
+  - cancelled (with the reason);
+  - minutes ready for review;
+  - minutes approved.
+  - The action items' tasks use the existing task notices
+    (`announceCreated()`).
+- **`counted()` does not exist.** ACC-95 is not built: a search of `backend/src`
+  and `frontend/src/app` finds no `counted` helper. SYSTEM-REFERENCE
+  10356–10360 records server-built text as ACC-95's open gap.
+- The one backend plural is English-only (`briefing-answer.ts:69`).
+- **So no meeting notice carries a count.** Each is worded without a number
+  (for example "The minutes of {meeting} are ready for your review", not "3
+  decisions to review"). A count in a stored notice waits for ACC-95's helper,
+  and uses it then.
+
+### 9.7 An invited guest who is not a committee member
+
+- **No rail item, by design.** The Meetings item shows to `meetings:view`
+  holders and committee members (§4.3).
+- **They reach the meeting by:**
+  - **the bell:** the invitation notice carries `objectType MEETING`, and
+    `notificationLink()` gains `MEETING → ['/meetings', id]`
+    (`notification-links.ts:8-13`);
+  - **Home's "My next meetings":** self-scoped, so it lists meetings they are
+    invited to whatever their keys;
+  - **the invitation email's link.**
+- **The route:** `/meetings/:id` carries its own `permissionGuard` and no route
+  permission, as the task page does (`tasks.routes.ts:27-38`). The list path
+  `/meetings` keeps the rail item's gate. The server's visibility rule admits
+  the guest by their attendee row (§4.1), and anyone else gets the page's
+  not-found state.
+- **What a guest sees:** the meeting page read-only. They see no Tasks panel
+  unless they are on a task, because task visibility is unchanged.
+
+### 9.8 Prompt 117's counts
+
+These are in the outbox report, not the plan.
