@@ -209,8 +209,20 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
           // The page holds its 760 column; the head row names the columns.
           expect(box(limits).width).toBeLessThanOrEqual(760);
           expect(frame.querySelector('.am-sla__row--head')).not.toBeNull();
-          // The warning column holds about 200px (the plan's width at 1280).
-          expect(box(triggers[0]!.closest('[data-sla-warn]')!).width).withContext('warning column').toBeGreaterThanOrEqual(190);
+          // The warning column holds 180px; its list opens at 200 (the warning list test).
+          expect(box(triggers[0]!.closest('[data-sla-warn]')!).width).withContext('warning column').toBeGreaterThanOrEqual(175);
+          // Every Limit figure on ONE line, the longest included ("80 working
+          // hours" / «80 ساعة عمل»). Non-vacuity first: the figure is there and
+          // has size, so one line box means one line, not nothing.
+          const limitFigures = rows.map((r) => r.querySelector<HTMLElement>('[data-testid="sla-matrix-limit"]')!);
+          expect(limitFigures[0]!.textContent).toContain(lang === 'en' ? '80 working hours' : '80 ساعة عمل');
+          for (const figure of limitFigures) {
+            expect(box(figure).width).withContext(`${figure.textContent} has size`).toBeGreaterThan(20);
+            // One line box per distinct top: Arabic beside digits gives one rect per
+            // direction run on the same line, so count lines, not rects.
+            const lines = new Set(Array.from(figure.getClientRects()).map((r) => Math.round(r.top)));
+            expect(lines.size).withContext(`${figure.textContent} on one line`).toBe(1);
+          }
         } else {
           // Each stacked cell shows its own label.
           const label = rows[0]!.querySelector('label.am-field__label')!;
@@ -226,7 +238,7 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
         });
         expect(over.map((e) => e.getAttribute('data-testid') ?? e.id ?? e.className ?? e.tagName)).withContext('elements past the frame').toEqual([]);
         measured.push(
-          `  ${lang} ${width}: limits ${Math.round(box(limits).height)}, notices ${Math.round(box(notices).height)}, escalation ${Math.round(box(escalation).height)}, reset ${Math.round(box(reset).height)}, page ${Math.round(frame.scrollHeight)}; matrix ${stacked ? 'stacked' : 'rows'}; warning column ${Math.round(box(triggers[0]!).width)}; sideways ${frame.scrollWidth - frame.clientWidth}`,
+          `  ${lang} ${width}: limits ${Math.round(box(limits).height)}, notices ${Math.round(box(notices).height)}, escalation ${Math.round(box(escalation).height)}, reset ${Math.round(box(reset).height)}, page ${Math.round(frame.scrollHeight)}; matrix ${stacked ? 'stacked' : 'rows'}; warning column ${Math.round(box(triggers[0]!).width)}; limit ${stacked ? '-' : Math.round(box(rows[0]!.querySelector('[data-testid="sla-matrix-limit"]')!).width)}; sideways ${frame.scrollWidth - frame.clientWidth}`,
         );
       }, 20_000);
     }
@@ -301,6 +313,8 @@ describe('TaskSlaSettings — layout (ACC-313)', () => {
       expect(options[1]!.textContent).not.toContain(lang === 'en' ? 'Not shorter' : 'ليس أقصر');
       const panel = options[0]!.closest<HTMLElement>('.cdk-overlay-pane')!;
       expect(box(panel).width).toBeGreaterThanOrEqual(box(trigger).width - 1);
+      // The list keeps its 200px though the column is 180 (panelMinWidth).
+      expect(box(panel).width).withContext('panel width').toBeGreaterThanOrEqual(199);
       for (const o of options) expect(o.scrollWidth).withContext(o.textContent ?? '').toBeLessThanOrEqual(o.clientWidth + 1);
       expect(box(panel).right).toBeLessThanOrEqual(window.innerWidth + 1);
       expect(box(panel).left).toBeGreaterThanOrEqual(-1);

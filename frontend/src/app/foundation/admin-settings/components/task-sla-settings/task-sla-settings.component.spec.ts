@@ -129,6 +129,21 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
       expect(el().querySelector('[data-testid="sla-history-open"]')).not.toBeNull();
     });
 
+    it('an Arabic date takes the page’s direction, in the header and in the history, so the day stays before its month', () => {
+      setup({ language: 'ar' });
+      const header = el().querySelector<HTMLElement>('[data-testid="sla-meta"] [data-sla-changed-at]')!;
+      // Non-vacuity: the date is there, in Arabic, day first.
+      expect(header.textContent?.trim()).toMatch(/^16 نوفمبر 2026/);
+      expect(header.closest('[dir="ltr"]')).withContext('header date').toBeNull();
+      expect(text('[data-testid="sla-meta"]')).toContain('آخر تغيير بواسطة Nora Al-Otaibi في 16 نوفمبر 2026');
+
+      press('sla-history-open');
+      const dates = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="sla-history"] [data-sla-changed-at]'));
+      expect(dates.length).toBe(1);
+      expect(dates[0]!.textContent?.trim()).toMatch(/^16 نوفمبر 2026/);
+      for (const d of dates) expect(d.closest('[dir="ltr"]')).withContext('history date').toBeNull();
+    });
+
     it('says when nothing has been changed yet', () => {
       setup({ history: [] });
       expect(text('[data-testid="sla-meta"]')).toBe('Nothing on this page has been changed yet.');
