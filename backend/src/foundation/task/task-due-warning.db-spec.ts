@@ -102,6 +102,8 @@ describe('The due-soon reminder against a real database (ACC-313)', () => {
 
       expect(await reminders(t.id)).toEqual([{ userId: o.holder }]);
       expect(await stampOf(t.id)).toEqual(NOW);
+      // The sweep reads the calendar; it never creates one (two workers would both try).
+      expect(await prisma.workingCalendar.count({ where: { organizationId: o.id } })).toBe(0);
     }
   });
 

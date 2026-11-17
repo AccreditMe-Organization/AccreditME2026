@@ -278,11 +278,20 @@ export class WorkingCalendarService {
    * ACC-313 — the calendar and its holidays, loaded once, for the pure
    * working-time helpers (working-time.ts). The SLA sweep calls this once per
    * organisation per pass and reuses it for every task.
+   *
+   * READ-ONLY, like getEffectiveTimeZone(): an organisation with no calendar
+   * row reads the default getOrCreate() would store, and nothing is created.
+   * Two workers sweeping at once would otherwise both create the row, and one
+   * would fail on its unique key.
    */
   async loadCalendar(organizationId: string): Promise<LoadedCalendar> {
-    const calendar = await this.getOrCreate(organizationId);
-    const holidays = await this.listHolidays(organizationId);
-    return { calendar, holidays };
+    const row = await this.prisma.workingCalendar.findUnique({ where: { organizationId } });
+    if (!row) return { calendar: { ...GCC_DEFAULT }, holidays: [] };
+    const holidays = await this.prisma.publicHoliday.findMany({
+      where: { workingCalendarId: row.id },
+      orderBy: { date: 'asc' },
+    });
+    return { calendar: this.toInterface(row), holidays: holidays.map((h) => this.holidayToInterface(h)) };
   }
 
   /** ACC-313 — working hours in one working day (end − start), read without creating a row. */
