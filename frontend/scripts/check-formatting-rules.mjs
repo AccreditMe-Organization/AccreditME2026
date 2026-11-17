@@ -22,6 +22,9 @@
 //     Not matched: a bare 's' or 'm' after ${…} (CSS seconds and margins look
 //     the same), and '%', a symbol written the same in both languages, with
 //     the digits already Latin through amNumber.
+//   - wraps a formatted date (amDate / amDateTime / amRelative / amDuration)
+//     in an element carrying dir="ltr" (ACC-313): an Arabic date then reads
+//     out of order. dir="ltr" around an email, a URL or a code is untouched.
 //
 // Spec files are not scanned: they may construct Intl formatters to state the
 // platform facts a test depends on.
@@ -77,6 +80,47 @@ const FILE_RULES = [
   },
 ];
 
+// ACC-313 (CC-323) — a formatted date wrapped in dir="ltr". A date from the
+// layer is words and digits in the reader's language; forced left to right,
+// an Arabic date that starts with its day shows the day LAST («نوفمبر 2026، 12:00 17»).
+// Keyed on the content, not on a list of files: an element whose opening tag
+// carries dir="ltr", in any attribute order and across lines, and whose content
+// (to its own closing tag, children included: they inherit the direction)
+// holds an amDate / amDateTime / amRelative / amDuration pipe. A date written
+// by FormatService in code is not seen here; that is a spec's to pin.
+const LTR_DATE = {
+  openTag: /<([a-zA-Z][\w-]*)((?:\s+[^\s=>/"']+(?:\s*=\s*(?:"[^"]*"|'[^']*'))?)*)\s*(\/?)>/g,
+  ltr: /(?:^|\s)dir\s*=\s*(["'])ltr\1/,
+  datePipe: /\|\s*am(?:Date|DateTime|Relative|Duration)\b/,
+  message: 'wraps a formatted date in dir="ltr"; an Arabic date then reads out of order. Let it take the page\'s direction',
+};
+
+/** The content of the element opened at `from` (after its `>`), to its own closing tag. */
+function elementContent(source, tag, from) {
+  const tags = new RegExp(`<(/?)${tag}(?=[\\s>/])`, 'g');
+  tags.lastIndex = from;
+  let depth = 1;
+  for (let m = tags.exec(source); m; m = tags.exec(source)) {
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return source.slice(from, m.index);
+  }
+  return source.slice(from);
+}
+
+function ltrDateViolations(source) {
+  const found = [];
+  LTR_DATE.openTag.lastIndex = 0;
+  for (let m = LTR_DATE.openTag.exec(source); m; m = LTR_DATE.openTag.exec(source)) {
+    const [whole, tag, attrs, selfClosing] = m;
+    if (selfClosing || !LTR_DATE.ltr.test(attrs)) continue;
+    if (LTR_DATE.datePipe.test(elementContent(source, tag, m.index + whole.length))) {
+      const line = source.slice(0, m.index + whole.indexOf('dir')).split(/\r?\n/).length;
+      found.push({ line, text: whole.replace(/\s+/g, ' ') });
+    }
+  }
+  return found;
+}
+
 function* sourceFiles(dir) {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
@@ -95,6 +139,9 @@ for (const file of sourceFiles(appDir)) {
     if (uses.test(source) && !source.includes(requires)) {
       violations.push(`${relative(root, file)}: ${message}`);
     }
+  }
+  for (const { line, text } of ltrDateViolations(source)) {
+    violations.push(`${relative(root, file)}:${line}: ${LTR_DATE.message}\n    ${text}`);
   }
   const lines = source.split(/\r?\n/);
   lines.forEach((line, index) => {
