@@ -12,7 +12,7 @@ so the design below is decided**; the answers are in the next table.
 | Q | Decision |
 |---|---|
 | 1 | Ending sessions is in this ticket, not only the list. |
-| 2 | Seeing someone else's sessions needs a new key, `users:manage_sessions` (Organization Administrator only), plus `users:view`. **Who adds the key** (the permission catalogue is lane B's area) is being agreed between the lanes; it is said in PR 1's prompt, and nobody adds it before then. |
+| 2 | Seeing someone else's sessions needs a new key, `users:manage_sessions` (Organization Administrator only), plus `users:view`. **Who adds the key** is decided before PR 1 (§2.7), and nobody adds it before then. |
 | 3 | The IP address is shown to the person and to that key's holder. |
 | 4 | An administrator only "Signs out everywhere", which takes effect at once. No ending one device of someone else's. |
 | 5 | The person is emailed when an administrator signs them out everywhere. |
@@ -147,7 +147,7 @@ and 2, and checked by the design thread afterwards (Q11).
 
 - **Gate, before any read, with no query (ACC-101 clause a):**
   - yourself: always;
-  - someone else: `users:view` AND the child's own key, `users:manage_sessions` (Q2; who adds it is agreed between the lanes).
+  - someone else: `users:view` AND the child's own key, `users:manage_sessions` (Q2; who adds it: §2.7).
   - Each refusal is a 403 naming the missing key, identical for a real colleague and an invented
     id. Another organisation's person is the 404 an invented id gets (`getById`).
 - **Rows:** the live predicate of §1.4, `{ organizationId, userId }`, newest `createdAt` first,
@@ -232,7 +232,7 @@ hash, so they are exact.
 
 Deactivation leaves rows live-looking (§1.3). The read's predicate hides them, so the panel is
 correct either way. **Decided (Q6):** a separate small fix (PR 3) where `deactivate()` uses
-`endEverySessionInTx()`, so the table says what is true. It is lane A's `user.service.ts`, one
+`endEverySessionInTx()`, so the table says what is true. It is `user.service.ts`, one
 call, with a db-spec.
 
 ### 2.6 Specs and isolation (Sessions)
@@ -255,10 +255,10 @@ call, with a db-spec.
 - **Frontend:** the panel's states, the actions per viewer, Arabic, and test 14's absence pin
   updated.
 
-### 2.7 The new key, `users:manage_sessions` (lane B's conditions, CC-302)
+### 2.7 The new key, `users:manage_sessions` (the review conditions, CC-302)
 
-Agreed between the lanes on 17 Nov: **lane A adds the key itself, in the Sessions backend PR
-(PR 1), and lane B reviews it.** Nobody adds it before that PR.
+Agreed at review on 17 Nov: **the key is added in the Sessions backend PR (PR 1) itself, and
+reviewed there.** Nobody adds it before that PR.
 
 **In that same PR:**
 - **The catalogue:** the key in `USERS_PERMISSIONS` (`permissions.ts`), beside `users:reset_mfa`.
@@ -268,7 +268,7 @@ Agreed between the lanes on 17 Nov: **lane A adds the key itself, in the Session
   none for a key not in use.
 - **The seed:** on Organization Administrator ONLY. `role.seed.spec.ts`'s pinned sets are updated
   to say so; no other role's set changes.
-- **The CLAUDE.md permission list:** the key added, 74 to 75 keys. Lane B's count is 74 today,
+- **The CLAUDE.md permission list:** the key added, 74 to 75 keys. The count is 74 today,
   after #322 retired `committees:approve`. The list's header sentence still reads "75 keys since
   ACC-164", which predates #322, so it is corrected in the same PR.
 
@@ -437,7 +437,7 @@ filters, rows, per-row actions (`taskActionsFor()`), the facets and the batching
 
 | PR | Content | Backend slot | Depends on |
 |---|---|---|---|
-| 1 | Sessions read + self end routes + `users:manage_sessions` (added by lane A, reviewed by lane B; catalogue, sentences, group, seed and pinned sets, CLAUDE.md list: §2.7); the generalised reset rule; `SESSIONS_ENDED` in the access-history classifier | yes | #323 merged (the classifier) |
+| 1 | Sessions read + self end routes + `users:manage_sessions` (added and reviewed in PR 1; catalogue, sentences, group, seed and pinned sets, CLAUDE.md list: §2.7); the generalised reset rule; `SESSIONS_ENDED` in the access-history classifier | yes | #323 merged (the classifier) |
 | 2 | Sessions panel | no | PR 1 deployed |
 | 3 | Deactivation uses `endEverySessionInTx()` (Q6): #326, in #317's transaction | yes | none |
 | 4 | Tasks person scope on `record-list` + db-spec | yes | none |

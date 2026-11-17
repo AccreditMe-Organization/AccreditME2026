@@ -1,7 +1,7 @@
 // One-off backfill for ACC-216 — GRANTS users:manage_sessions to every existing
 // organisation's Organization Administrator role (TENANT_ADMIN). It revokes
 // nothing. ACC-164's shape (backfill-acc164-reset-mfa-permission.ts), with the
-// customer refusal of the ACC-283 backfills (plan step-216 §2.7, lane B).
+// customer refusal of the ACC-283 backfills (plan step-216 §2.7).
 //
 // WHY. New organisations get the key from the seed: TENANT_ADMIN's set is
 // "every key but platform:*" (role.seed.ts). Existing organisations hold
@@ -21,7 +21,7 @@
 // customer-notified change, not a script). The dry run still reports it.
 //
 // THE PLATFORM ORGANISATION IS SKIPPED — including its PLATFORM_ADMIN role, as
-// ACC-164 did for users:reset_mfa (lane B asked, CC-307). ACC-164's backfill
+// ACC-164 did for users:reset_mfa (agreed at review, CC-307). ACC-164's backfill
 // skips the platform organisation outright (its header and its recorded dry run
 // on the shared database, 15 Nov: "the platform organisation skipped (1)"), so
 // the platform organisation's PLATFORM_ADMIN row holds neither key there, and
