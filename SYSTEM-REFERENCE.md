@@ -7492,8 +7492,10 @@ seat allows the action on that committee; a seat with no row allows nothing.
 **Defaults per organisation: one boolean attribute per action** on the
 `committee_member_role` lookup (`seatAddsMember`, `seatRemovesMember`,
 `seatChangesSeat`, `seatRequestsChange`, `seatDecidesReportingChanges`), each
-named in both languages (`labelEn`, `labelAr`, ACC-310's shape; and `label`,
-which the value form reads today).
+named in both languages (`labelEn`, `labelAr`, ACC-310's shape). The value
+form reads `labelEn` / `labelAr`, else the key; the seed carries no `label`
+(dropped after ACC-310), and the shared system row loses its old `label` on the
+next deploy's `seedSystemData()`.
 - The SYSTEM values carry them, rewritten by `seedSystemData()` on every deploy:
   Chairman all five; Secretary the four member actions; every other seat none
   (plan Q10, confirmed by Ahmad, 16 Nov).
@@ -8672,13 +8674,14 @@ values.
 `properties.<key>.labelEn` and `labelAr`. The value form shows it through
 `LanguageService.bilingual()`. `lookup.seed.spec.ts` fails a seeded attribute
 without both. `seedSystemData()` rewrites the shared schemas on every deploy, so
-no backfill is needed. `required` keeps its old `label` until the form stops
-reading it, and the backend reads only `type` (`schemaProperties()`).
+no backfill is needed. The backend reads only `type` (`schemaProperties()`).
 **The form now reads `labelEn` / `labelAr`** (ACC-310's form PR):
 `LookupValueFormComponent.attributeName()` resolves the name at display time,
-`labelEn`, else the old `label`, else the key, with an empty Arabic name falling
-back to English. Nothing in the frontend needs `label` any more, so `required`'s
-old `label` can go (and so can the one on ACC-283's seat attributes, §3.21.5).
+`labelEn`, else the key, with an empty Arabic name falling back to English.
+**The old single `label` is gone** (after ACC-310): the form no longer reads it,
+and the seed no longer carries it on `required` or ACC-283's seat attributes
+(§3.21.5). A read-only count on 17 Nov found it only on the shared system row,
+always beside `labelEn`, so nothing relied on it.
 
 ### 6.2 The Override Pattern — `getValues()`'s Exact Merge Algorithm
 
