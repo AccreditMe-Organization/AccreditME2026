@@ -12,7 +12,7 @@ import { NavAccess } from './nav-items';
  * would be a circular dependency. Each method delegates explicitly. Spreading
  * the service would lose its methods, which live on the class prototype.
  *
- * isCommitteeMember reads a signal MyWorkCountsService already holds. The shell
+ * mayBrowseCommittees reads a signal MyWorkCountsService already holds. The shell
  * loads it after sign-in. Nothing here starts a load, a timer or a request.
  * Call inside an injection context (a field initialiser).
  */
@@ -23,6 +23,6 @@ export function injectNavAccess(): NavAccess {
     hasPermission: (permission) => access.hasPermission(permission),
     isModuleEnabled: (moduleKey) => access.isModuleEnabled(moduleKey),
     isPlatformAdmin: () => access.isPlatformAdmin(),
-    isCommitteeMember: () => myWork.isCommitteeMember(),
+    mayBrowseCommittees: () => myWork.mayBrowseCommittees(),
   };
 }

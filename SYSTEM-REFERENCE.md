@@ -7024,9 +7024,12 @@ organisation on the cover read each turns a spec red.
 - **The committees list** names each row's type from the row (`typeValue`), and asks the type
   lookup only with `lookups:view`. For a member, a parent name may read "—": the list holds
   only their own committees.
-- **`MyWorkCountsService.isCommitteeMember`** (§10.24): lane A's rail and route guard read it
-  to show and admit Committees to a member. Until lane A ships that, the guard still refuses
-  `/committees` without `committees:view`, and Home's My committees links only for holders.
+- **`MyWorkCountsService.mayBrowseCommittees`** (§10.24): lane A's rail and route guard read
+  it to show and admit Committees without `committees:view`. It is the server's
+  `mayBrowseCommittees` on `GET /committees/mine` (ACC-283 PR 2a, below), never My
+  committees' `total`: a head on no committee has a total of 0 and may still browse. It was
+  `isCommitteeMember` (total above 0) until ACC-283. Home's My committees links only for
+  holders.
 
 #### The performance rule
 
@@ -11451,26 +11454,30 @@ Its one use is the read-only Organisation item (7.13), hidden from
 `admin:access` holders. It hides the link only; the route's permission still
 comes from `requiredPermission`.
 
-**`orWhen: 'committeeMember'` (ACC-281):** a second way to meet an item's
-`requiredPermission`. Its one use is Committees: an active member of a
-committee sees it and opens it without `committees:view`, and the server
-answers their own committees.
-- **The answer** is `MyWorkCountsService.isCommitteeMember` (My committees ready
-  with a total above 0). The shell already loads it after sign-in, so this adds
-  no query, timer or `init()`.
+**`orWhen: 'mayBrowseCommittees'` (ACC-281, ACC-283 PR 2a):** a second way to
+meet an item's `requiredPermission`. Its one use is Committees: whoever the
+server says may browse committees (an active member of an active committee, or
+a head or cover in force of a unit owning one, §3.21) sees it and opens it
+without `committees:view`, and the server answers what they may read.
+- **The answer** is `MyWorkCountsService.mayBrowseCommittees`: My committees
+  ready with the server's `mayBrowseCommittees` true. Never its `total`, which
+  is a count, not access. The shell already loads it after sign-in, so this
+  adds no query, timer or `init()`. (ACC-281 named it `committeeMember` and
+  read `total > 0`; ACC-283 moved it to the flag.)
 - **One `NavAccess` for all readers:** `injectNavAccess()` (`nav-access.ts`)
   composes it from explicit delegates. `NavigationAccessService` does not
   inject the counts, because the counts inject it. The rail, the breadcrumb
   and the tab title all use this composed `NavAccess`, so they agree.
-- **The rail** shows the item only once membership is KNOWN to be true: not
+- **The rail** shows the item only once the answer is KNOWN to be true: not
   while it loads, and not after a failure.
 - **`permissionGuard`**, when the route's permissions are not held, looks up
   the route's tenant nav item (`tenantNavItemForRoute`):
-  - with `orWhen` it admits a known member;
-  - it also admits while membership is loading or failed, and lets the server
+  - with `orWhen` it admits when the flag is known true;
+  - it also admits while the answer is loading or failed, and lets the server
     decide (ACC-70's rule). This covers a hard reload straight onto
     `/committees/:id`, which runs before the shell starts the counts;
-  - it sends a known non-member to the landing route;
+  - it sends a known false (which includes the module being closed) to the
+    landing route;
   - it never admits a platform admin, whose counts never load.
   - Every committees child route inherits this through the walk-up.
 - **`ROUTE_PERMISSIONS` is unchanged** (`committees` → `committees:view`). Its
@@ -12712,10 +12719,13 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     (`committeesOpen()`), because the server decides who may decide (ACC-283
     PR 2). Either half failing fails the whole read.
   - `myCommittees`: `GET /committees/mine`, only while the module is open.
-- **`isCommitteeMember`** (ACC-281): true once `myCommittees` has loaded with a total
-  above 0; false while loading, after a failure, or with none. Lane A's rail and route
-  guard read it to show and admit Committees to a member without `committees:view`
-  (§3.21). It adds no query.
+- **`mayBrowseCommittees`** (ACC-281, ACC-283 PR 2a): true once `myCommittees` has
+  loaded with the server's `mayBrowseCommittees` true; false while loading, after a
+  failure, and with the module closed (whose default answer is `{ total: 0, rows: [],
+  mayBrowseCommittees: false }`). Lane A's rail and route guard read it to show and admit
+  Committees without `committees:view` (§3.21). It adds no query. Home's tile and panel
+  still count `total`: a count, not access. (Named `isCommitteeMember`, on `total > 0`,
+  until ACC-283.)
 - **A platform admin:** `init()` asks nothing (ACC-281).
 - **When it loads:**
   - once after sign-in (the shell, after `loadAccess()`);
