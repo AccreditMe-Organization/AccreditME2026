@@ -47,7 +47,7 @@ const DETAIL = (over: Partial<CommitteeDetailDto> = {}): CommitteeDetailDto => (
   isDissolving: false,
   typeValue: TYPE,
   orgUnit: null,
-  parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, ...over,
+  parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true, ...over,
 });
 
 const LIST_ROW = (id: string, nameEn: string): CommitteeListItemDto =>
