@@ -3,6 +3,7 @@
 // invented id; every query is scoped by organisation; every audit action maps to
 // a kind, an unknown one to CHANGED; before / after / metadata never leave.
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '../../../../generated/prisma/client';
 import {
   ACCESS_HISTORY_MAX_TAKE,
   TRANSFER_MATCH_WINDOW_MS,
@@ -28,9 +29,9 @@ interface Audit {
   objectType: string;
   objectId: string | null;
   actorId: string | null;
-  before: Record<string, unknown> | null;
-  after: Record<string, unknown> | null;
-  metadata: Record<string, unknown> | null;
+  before: Prisma.JsonObject | null;
+  after: Prisma.JsonObject | null;
+  metadata: Prisma.JsonObject | null;
   createdAt: Date;
 }
 
@@ -64,7 +65,7 @@ const audit = (over: Partial<Audit>): Audit => ({
 });
 
 // A User row as the writers store it: the whole record, its invitation token included.
-const userCopy = (over: Record<string, unknown> = {}) => ({
+const userCopy = (over: Prisma.JsonObject = {}): Prisma.JsonObject => ({
   id: COLLEAGUE,
   organizationId: ORG,
   email: 'huda@example.test',
@@ -102,7 +103,7 @@ function auditMatches(row: Audit, where: Where): boolean {
     return where.OR.some((c) => {
       if (row.objectType !== c.objectType) return false;
       if (c.objectId !== undefined && row.objectId !== c.objectId) return false;
-      if (c.metadata) return row.metadata?.[c.metadata.path[0]] === c.metadata.equals;
+      if (c.metadata) return row.metadata?.[c.metadata.path[0]!] === c.metadata.equals;
       return true;
     });
   }
