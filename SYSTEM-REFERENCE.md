@@ -4800,6 +4800,8 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
       to acting users.
     - A failed notice is logged, not retried. A warning a calendar change made
       too long is treated as Off.
+    - Closed organisations (ACC-168) are not left out yet, as with the other
+      sweeps; that background work is a follow-up ticket's.
   - **`DUE_WARNING_CLEARED`** (`task-request-lifecycle.ts`) re-arms it: an edit
     that changes the due date or priority, an approved extension or hold, a
     reopen, and a reassign while the due time is ahead. Never a pick, a release
