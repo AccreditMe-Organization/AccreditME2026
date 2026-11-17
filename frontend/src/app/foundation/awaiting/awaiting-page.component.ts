@@ -5,6 +5,7 @@ import { Subscription, forkJoin, of } from 'rxjs';
 import { FormatService } from '../../core/formatting';
 import { LanguageService } from '../../core/services/language.service';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
+import { isNavModuleOpen } from '../../core/navigation/nav-items';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
 import { ChangeRequestDto, ChangeRequestService } from '../committees/change-requests/change-request.service';
 import { WorkflowAwaitingRowDto, WorkflowService } from '../workflow/services/workflow.service';
@@ -21,8 +22,9 @@ export const AWAITING_PAGE = 50;
  * - GET /workflows/awaiting-me?skip=&take=50 — records at the person's stage,
  *   paged by the server (Load more asks the next 50).
  * - GET /committee-change-requests/awaiting-decision — every change request
- *   this person may decide (the server caps it at 200), asked only of
- *   committees:approve holders, as Home does, and only on the first load.
+ *   this person may decide (the server caps it at 200; ACC-283: the chain of
+ *   authority decides who), asked while the Committees module is open, as Home
+ *   does, and only on the first load.
  *
  * They merge into one list by awaiting-rows.ts's rule, so Load more only
  * appends. Either read failing on the first load fails the page, with Retry
@@ -176,7 +178,7 @@ export class AwaitingPageComponent {
     this.moreRequest?.unsubscribe();
     this.state.set('loading');
     this.more.set('idle');
-    const changes$ = this.access.hasPermission('committees:approve') ? this.changeRequests.awaitingDecision() : of<ChangeRequestDto[]>([]);
+    const changes$ = isNavModuleOpen('committees', this.access) ? this.changeRequests.awaitingDecision() : of<ChangeRequestDto[]>([]);
     this.request = forkJoin({ stages: this.workflows.getAwaitingMe({ skip: 0, take: AWAITING_PAGE }), changes: changes$ }).subscribe({
       next: ({ stages, changes }) => {
         this.stageRows.set(stages.rows);

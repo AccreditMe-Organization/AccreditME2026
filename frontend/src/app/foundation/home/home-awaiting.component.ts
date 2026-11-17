@@ -33,7 +33,8 @@ export interface AwaitingRow {
  *   whose current stage this person works and decides at. The server applies
  *   every rule; this panel only lays the rows out.
  * - **Change requests** under review that this person may decide (ACC-240),
- *   asked only of holders of `committees:approve`.
+ *   asked while the Committees module is open; the chain of authority decides
+ *   who may decide (ACC-283).
  *
  * ACC-279 — on am-capped-panel, always shown (Ahmad, Q9): with nothing waiting
  * it says so, and a failed read says THAT, with Retry. Until ACC-279 the card

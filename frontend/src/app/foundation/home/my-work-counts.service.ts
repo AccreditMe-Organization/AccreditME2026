@@ -18,7 +18,7 @@ export function panelState(state: Loadable<unknown>['state']): 'loading' | 'erro
 
 export interface AwaitingAnswer {
   stages: WorkflowAwaitingMeDto;
-  /** Committee change requests to decide; asked only of committees:approve holders. */
+  /** Committee change requests to decide (ACC-283: the chain decides who), asked while Committees is open. */
   changes: ChangeRequestDto[];
 }
 
@@ -42,8 +42,8 @@ const COALESCE_MS = 2000;
  *
  *   myTasks       GET /tasks/record-list?view=mine&status=PENDING,IN_PROGRESS,ON_HOLD&sort=due&take=5
  *   myOverdue     the same with &overdue=true&take=1 (its `matching`)
- *   awaiting      GET /workflows/awaiting-me, and for committees:approve holders
- *                 GET /committee-change-requests/awaiting-decision
+ *   awaiting      GET /workflows/awaiting-me, and while the Committees module is open
+ *                 GET /committee-change-requests/awaiting-decision (the chain decides who)
  *   myCommittees  GET /committees/mine, while the Committees module is open
  *
  * It loads ONCE after sign-in (the shell calls init() when access has loaded),
@@ -130,7 +130,8 @@ export class MyWorkCountsService {
   }
 
   loadAwaiting(): void {
-    const changes$: Observable<ChangeRequestDto[]> = this.access.hasPermission('committees:approve')
+    // ACC-283 — the chain of authority decides who decides, on the server; no key does.
+    const changes$: Observable<ChangeRequestDto[]> = this.committeesOpen()
       ? this.changeRequests.awaitingDecision()
       : of([]);
     this.run('awaiting', this.awaiting, forkJoin({ stages: this.workflows.getAwaitingMe(), changes: changes$ }));
