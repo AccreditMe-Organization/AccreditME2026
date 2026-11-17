@@ -33,6 +33,7 @@ import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
 import { TwoStepResetDialogComponent } from './two-step-reset-dialog.component';
 import { UserCommitteesPanelComponent } from './user-committees-panel.component';
 import { UserSessionsPanelComponent } from './user-sessions-panel.component';
+import { RecordTasksPanelComponent } from '../../../tasks/components/record-tasks-panel/record-tasks-panel.component';
 import { observeTwoStepRow, twoStepBodyPx, USER_PANEL_GRID } from './user-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
@@ -124,6 +125,7 @@ interface Fact {
     TwoStepResetDialogComponent,
     UserCommitteesPanelComponent,
     UserSessionsPanelComponent,
+    RecordTasksPanelComponent,
   ],
   template: `
     @if (loadError()) {
@@ -330,6 +332,12 @@ interface Fact {
           <!-- ACC-216 — absent without committees:view; a refused read hides it too. -->
           @if (canViewCommittees()) {
             <app-user-committees-panel [userId]="userId" />
+          }
+
+          <!-- ACC-216 Tasks — the tasks this person is on that the viewer may see
+               (plan step-216 §5). Yourself, or users:view; a 403 hides it. -->
+          @if (canViewTasks()) {
+            <app-record-tasks-panel data-panel="tasks" [person]="userId" [recordName]="user()?.name ?? ''" />
           }
 
           <!-- ACC-216 Sessions — yourself, or users:view + users:manage_sessions; absent otherwise. -->
@@ -594,6 +602,8 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly canViewRoles = computed(() => this.can('roles:view'));
   /** ACC-216 — GET /users/:id/committees needs committees:view in every case. */
   readonly canViewCommittees = computed(() => this.can('committees:view'));
+  /** ACC-216 — a person's tasks: yourself, or users:view (the server's own gate, before any read). */
+  readonly canViewTasks = computed(() => this.isOwn() || this.can('users:view'));
   /**
    * ACC-216 Sessions — GET /users/:id/sessions: yourself ('own', who may end
    * their other devices), or users:view + users:manage_sessions ('admin', who

@@ -471,9 +471,10 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
 
   // ── Test 14 (D1) ────────────────────────────────────────────────────────
   // ACC-216: Committees is absent here because ADMIN holds no committees:view
-  // (test 16 covers it with the key); Tasks and Access history have no read on
-  // this branch. Sessions has its own panel since ACC-216 Sessions (test 19).
-  it('14 · without committees:view, Committees, Tasks and Access history are absent — not empty, not disabled', () => {
+  // (test 16 covers it with the key); Access history has no read on this branch.
+  // Sessions has its own panel since ACC-216 Sessions (test 19), and Tasks since
+  // ACC-216 PR 5 (test 20: yours, or users:view).
+  it('14 · without committees:view, Committees and Access history are absent — not empty, not disabled', () => {
     const ctx = render({ viewer: ME, recordId: ME, permissions: ADMIN });
     flushUser(ctx, record({ id: ME }));
     ctx.http.expectOne((r) => r.url.endsWith(`/users/${ME}/roles`)).flush([]);
@@ -482,7 +483,7 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     const panels = Array.from(ctx.el.querySelectorAll('app-record-panel')).map((p) => p.getAttribute('data-panel'));
     expect(panels).toEqual(['roles', 'twoStep']);
     const text = ctx.el.textContent!;
-    for (const absent of ['Committees', 'Access history', 'Tasks']) {
+    for (const absent of ['Committees', 'Access history']) {
       expect(text).not.toContain(absent);
     }
   });
@@ -517,6 +518,31 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
     admin.http.expectOne((r) => r.url.endsWith(`/users/${OTHER}/sessions`)).flush({ total: 0, rows: [] });
     admin.fixture.detectChanges();
     expect(admin.el.querySelector('[data-testid="sessions-panel"]')!.textContent).toContain('Signed-in devices');
+  });
+
+  // ── Test 20 (ACC-216 PR 5) ──────────────────────────────────────────────
+  // A person's Tasks: yourself, or users:view, the endpoint's own gate. Anyone
+  // else gets NO panel and NO request.
+  it('20 · ACC-216 · Tasks: yours, or with users:view; absent and never requested otherwise', () => {
+    const taskReads = (ctx: ReturnType<typeof render>) => urls(ctx.http).filter((u) => u.includes('/tasks/record-panel'));
+
+    for (const permissions of [[], ['committees:view'], ['users:manage_sessions']]) {
+      const ctx = render({ viewer: ME, recordId: OTHER, permissions });
+      flushUser(ctx, record());
+      expect({ permissions, panel: ctx.el.querySelector('app-record-tasks-panel') }).toEqual({ permissions, panel: null });
+      expect(taskReads(ctx)).toEqual([]);
+    }
+
+    const own = render({ viewer: ME, recordId: ME, permissions: [] });
+    flushUser(own, record({ id: ME }));
+    expect(own.el.querySelector('app-record-tasks-panel')).not.toBeNull();
+    expect(taskReads(own)).toEqual([jasmine.stringContaining(`/tasks/record-panel?person=${ME}`)]);
+
+    const viewer = render({ viewer: ME, recordId: OTHER, permissions: ['users:view'] });
+    flushUser(viewer, record());
+    viewer.http.expectOne((r) => r.url.endsWith('/tasks/record-panel') && r.params.get('person') === OTHER).flush({ total: 0, scope: 'all', rows: [] });
+    viewer.fixture.detectChanges();
+    expect(viewer.el.querySelector('[data-panel="tasks"] h2')!.textContent!.trim()).toBe('Tasks');
   });
 
   // ── Test 16 (ACC-216) ───────────────────────────────────────────────────
