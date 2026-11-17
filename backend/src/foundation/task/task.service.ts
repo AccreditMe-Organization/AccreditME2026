@@ -52,6 +52,7 @@ import { CancelTaskDto, ReopenTaskDto, UpdateTaskDto } from './dto/update-task.d
 import { aTaskThatIs } from './task-status-label';
 import {
   CancelledRequest,
+  DUE_WARNING_CLEARED,
   HOLD_CLEARED,
   OPEN_REQUEST_INCLUDE,
   auditCancelledRequests,
@@ -1006,6 +1007,8 @@ export class TaskService {
         data.slaStartAt = this.sla.startOf(existing);
         data.slaLimitAt = limitAt;
         if (dueAt && dueAt > now) Object.assign(data, ESCALATION_CLEARED);
+        // ACC-313 — a new due date, or a new priority's window, re-arms the reminder.
+        Object.assign(data, DUE_WARNING_CLEARED);
       }
 
       const task = await tx.task.update({ where: { id }, data });
@@ -1194,6 +1197,7 @@ export class TaskService {
           slaLimitAt: limitAt,
           slaExtendedTo: null,
           ...ESCALATION_CLEARED,
+          ...DUE_WARNING_CLEARED,
           reopenedReason: dto.reason,
           reopenedAt: now,
           reopenedById: viewer.id,
@@ -1559,6 +1563,8 @@ export class TaskService {
           rejectedAt: null,
           rejectedById: null,
           ...HOLD_CLEARED,
+          // ACC-313 (Q5) — the new holder is reminded, but only while the due time is ahead.
+          ...(existing.dueAt && existing.dueAt > now ? DUE_WARNING_CLEARED : {}),
           ...toPoolColumns(placement?.target ?? null),
           ...(pooled ? await this.poolClock(existing.priority, organizationId, now) : NO_POOL_CLOCK),
         },
