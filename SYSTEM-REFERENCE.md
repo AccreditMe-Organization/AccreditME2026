@@ -3230,17 +3230,28 @@ No screen reads a stage key, name or order to decide anything, and none keeps
 a copy of a server rule.
 
 - **The committee page** (`foundation/committees/committee-offers.ts`,
-  `committeeOffers(stageRules, permissions, mayWrite)`): with the server's
-  `mayWrite` false (a head who only oversees, ACC-283), nothing below is
-  offered, whatever the stage or the permissions. Otherwise: Edit where the stage allows
-  `edit_details` and the person holds `committees:edit_details`; the
-  "Locked while the terms are under review" line to the same people where the
-  stage allows no edit and is neither `IN_FORCE` nor `DISSOLVING` (Terms
-  Review, seeded); Add member, Change role and Remove each where the stage
-  allows it AND the person holds its key. A missing `stageRules` reads as
-  `NO_STAGE_RULES` (nothing allowed, no flags, D14). Request a change follows
-  the server's own `canRaise`, which reads `request_change`. The header's
-  transition buttons are the live workflow's.
+  `committeeOffers(stageRules, permissions, mayWrite, memberActions)`):
+  - **Edit** where the stage allows `edit_details`, the person holds
+    `committees:edit_details` and the server's `mayWrite` is true (false for a
+    head who only oversees, ACC-283).
+  - **The "Locked while the terms are under review" line** to the same people,
+    where the stage allows no edit and is neither `IN_FORCE` nor `DISSOLVING`
+    (Terms Review, seeded).
+  - **Add member, Change role and Remove** (ACC-283 PR 6) where the server's
+    `memberActions` allows it (the key, or the viewer's SEAT on this committee:
+    `member-actions.ts`, never copied) AND the stage allows it. They read no
+    permission string, so a Secretary holding no key is offered what the seat
+    grants.
+  - **Change role on the viewer's OWN row** also needs
+    `committees:change_member_role` (`changeOwnSeat`): a seat never changes its
+    holder's own seat (`SEAT_NEVER_ON_OWN_ROW`), so on the seat alone the item
+    is absent. Remove on your own row is as on any row.
+  - A missing `stageRules` reads as `NO_STAGE_RULES` (nothing allowed, no
+    flags, D14); a missing `memberActions` as `NO_MEMBER_ACTIONS` (nothing).
+  - **Request a change** follows the server's own `canRaise`
+    (`memberActions.request_change` AND the stage AND no open request); the
+    page copies none of it.
+  - The header's transition buttons are the live workflow's.
 - **Refusals** (`committee-stage-refusal.ts`): the edit dialog, Add member,
   Change role and Remove read a 409 `STAGE_ACTION_NOT_ALLOWED` by its code and
   say the matching `committee.refusal.*` sentence, the stage name picked in the
@@ -5984,10 +5995,11 @@ is in `CommitteeListsService`:
     "{seat} · Since {date}".
   - **Order:** by seat.
   - **Add member** sits in the header (`canAddMember`).
-  - **Row menu:** each row's `am-row-menu` holds Change role
-    (`committees:change_member_role`) and Remove
-    (`committees:remove_member`), only those the viewer holds. A viewer with
-    neither gets no ⋯. Change role opens the page's member dialog; Remove
+  - **Row menu:** each row's `am-row-menu` holds Change role and Remove, only
+    those the page offers (`committeeOffers()`, from the server's
+    `memberActions` and the stage, ACC-283 PR 6). On the viewer's own row,
+    Change role follows `canChangeOwnSeat`. A row with neither gets no ⋯, in
+    the five and in See all alike. Change role opens the page's member dialog; Remove
     opens the Remove member dialog, which asks for a reason (§3.21.2).
     `reload()` re-reads the panel and an open popup.
   - **Popup:** compact, with Member, Seat and Since columns, each a header
@@ -7061,8 +7073,10 @@ Plan: `backend/Plans/step-283-change-request-chain.md` §17 (lane B's answers, 1
   - Deciding is the chain's (`decide_reporting_changes` is not in `MEMBER_ACTIONS`).
   - Oversight is read only: a non-member head has no seat.
   - The Tasks panel's `canCreate` (#325).
-- **The screens (Q-D)** read `memberActions` in lane A's committee page change. Until then, a
-  seat-granted member who lacks the key is accepted by the server but not offered the button.
+- **The screens (Q-D)** read `memberActions` through `committeeOffers()` (see "The committee
+  page" in §2.18.2): Add member, Change role and Remove are offered from it and the stage, never
+  from the viewer's permission strings, and Change role on the viewer's own row also needs
+  `committees:change_member_role`. Request a change follows `canRaise`.
 - **Proved in:**
   - `member-actions.db-spec.ts`: the people, the stage refusal, another committee's seat,
     ended and inactive rows, the read's parity with the writes, and isolation;
@@ -7095,8 +7109,9 @@ unchanged** (`committees:view` or membership, the table above).
 A head who only oversees reads `false`, so the page shows no write button that
 answers 404. Each action's own permission and the stage rules still apply on
 top. It's read from the same pass as the read, with no query added. The page
-reads it through `committeeOffers()`, its third argument: false offers no Edit,
-locked line, Add member, Change role or Remove.
+reads it through `committeeOffers()`, its third argument: false offers no Edit or
+locked line. Add member, Change role and Remove read `memberActions` instead,
+which the server already answers false for anyone who may not write (ACC-283 PR 6).
 
 **Where it applies (reads):**
 - `assertMaySeeCommittee`, so the committee page, members, members page,
@@ -12321,7 +12336,7 @@ Consumers: `committee-form` (a picker list that failed to load).
 **Every create action in a page header sits behind `@if (canCreate())`, where
 `canCreate` is a `computed()` reading `NavigationAccessService`.** Thirteen
 pages carry one. Mechanism copied from §10.5's neighbour
-`committee-detail.component.ts` (`canEdit`, `canAddMember`, …) rather than
+`committee-detail.component.ts` (`canEdit`, `canCreateTasks`) rather than
 invented — there is one way to ask this question in this app.
 
 **HIDDEN, NOT DISABLED.** A disabled control still announces an action that is
