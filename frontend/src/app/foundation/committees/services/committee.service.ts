@@ -106,6 +106,13 @@ export interface CommitteeDetailDto extends CommitteeDto {
   /** ACC-281 — the current stage's name, so the page reads no committee list for it. */
   currentStageNameEn: string | null;
   currentStageNameAr: string | null;
+  /**
+   * ACC-283 — whether this viewer passes the server's write precondition
+   * (`committees:view`, or an active member). A head who only oversees the
+   * committee reads it false. Each action still needs its own permission and
+   * the stage's rules: committeeOffers() combines all three.
+   */
+  mayWrite: boolean;
 }
 
 /** ACC-281 — another committee a record names, and whether this viewer may open it. */

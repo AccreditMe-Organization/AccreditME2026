@@ -3216,7 +3216,9 @@ No screen reads a stage key, name or order to decide anything, and none keeps
 a copy of a server rule.
 
 - **The committee page** (`foundation/committees/committee-offers.ts`,
-  `committeeOffers(stageRules, permissions)`): Edit where the stage allows
+  `committeeOffers(stageRules, permissions, mayWrite)`): with the server's
+  `mayWrite` false (a head who only oversees, ACC-283), nothing below is
+  offered, whatever the stage or the permissions. Otherwise: Edit where the stage allows
   `edit_details` and the person holds `committees:edit_details`; the
   "Locked while the terms are under review" line to the same people where the
   stage allows no edit and is neither `IN_FORCE` nor `DISSOLVING` (Terms
@@ -7002,7 +7004,9 @@ unchanged** (`committees:view` or membership, the table above).
 `assertMayWriteCommittee` would pass (`committees:view` or an active member).
 A head who only oversees reads `false`, so the page shows no write button that
 answers 404. Each action's own permission and the stage rules still apply on
-top. It's read from the same pass as the read, with no query added.
+top. It's read from the same pass as the read, with no query added. The page
+reads it through `committeeOffers()`, its third argument: false offers no Edit,
+locked line, Add member, Change role or Remove.
 
 **Where it applies (reads):**
 - `assertMaySeeCommittee`, so the committee page, members, members page,
