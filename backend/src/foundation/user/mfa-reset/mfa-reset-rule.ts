@@ -1,5 +1,11 @@
 import { ConflictException } from '@nestjs/common';
-import { TENANT_ADMIN_KEY } from '../../roles/tenant-administrator.invariant';
+import {
+  AccountActionBlock,
+  AccountActionFacts,
+  accountActionBlock,
+  holdsActiveRootRole,
+  RootRoleClient,
+} from '../account-action-rule';
 
 /**
  * Who may reset whose two-step sign-in — ACC-164.
@@ -7,6 +13,10 @@ import { TENANT_ADMIN_KEY } from '../../roles/tenant-administrator.invariant';
  * ONE rule, read by BOTH the reset route (which refuses) and the user record
  * read (which hides the panel and the action), so the screen never offers a
  * reset the server would refuse (lane B, 14 Nov). Never write a second copy.
+ *
+ * ACC-216 — the checks are now the shared account-action rule
+ * (`../account-action-rule.ts`), used by "Sign out everywhere" too; this file
+ * keeps the two-step reset's own codes and words.
  *
  * Checked in this order, after the 404 and before any write:
  *   1. yourself                  → MFA_RESET_SELF (turn it off on your profile,
@@ -28,54 +38,24 @@ export type MfaResetBlock =
   | 'ACCOUNT_OWNER_PROTECTED'
   | 'MFA_RESET_HIGHER_ACCOUNT';
 
-export interface MfaResetFacts {
-  isSelf: boolean;
-  impersonating: boolean;
-  isAccountOwner: boolean;
-  /** Read only when needed: the floor matters only above a non-administrator. */
-  targetHoldsRootRole: () => Promise<boolean>;
-  actorHoldsRootRole: () => Promise<boolean>;
-}
+export type MfaResetFacts = AccountActionFacts;
+
+/** ACC-216 — the shared account-action rule (account-action-rule.ts), in this route's codes. */
+const MFA_RESET_CODES: Readonly<Record<AccountActionBlock, MfaResetBlock>> = {
+  SELF: 'MFA_RESET_SELF',
+  IMPERSONATING: 'MFA_RESET_IMPERSONATING',
+  ACCOUNT_OWNER_PROTECTED: 'ACCOUNT_OWNER_PROTECTED',
+  HIGHER_ACCOUNT: 'MFA_RESET_HIGHER_ACCOUNT',
+};
 
 export async function mfaResetBlock(facts: MfaResetFacts): Promise<MfaResetBlock | null> {
-  if (facts.isSelf) return 'MFA_RESET_SELF';
-  if (facts.impersonating) return 'MFA_RESET_IMPERSONATING';
-  if (facts.isAccountOwner) return 'ACCOUNT_OWNER_PROTECTED';
-  if ((await facts.targetHoldsRootRole()) && !(await facts.actorHoldsRootRole())) {
-    return 'MFA_RESET_HIGHER_ACCOUNT';
-  }
-  return null;
+  const block = await accountActionBlock(facts);
+  return block ? MFA_RESET_CODES[block] : null;
 }
 
-export interface RootRoleClient {
-  userRole: {
-    findFirst(args: {
-      where: {
-        userId: string;
-        user: { organizationId: string };
-        role: { organizationId: string; key: string; isActive: true };
-      };
-      select: { id: true };
-    }): Promise<{ id: string } | null>;
-  };
-}
-
-/** One indexed read: does this person hold the tenant's ACTIVE root role? */
-export async function holdsActiveRootRole(
-  client: RootRoleClient,
-  organizationId: string,
-  userId: string,
-): Promise<boolean> {
-  const row = await client.userRole.findFirst({
-    where: {
-      userId,
-      user: { organizationId },
-      role: { organizationId, key: TENANT_ADMIN_KEY, isActive: true },
-    },
-    select: { id: true },
-  });
-  return row !== null;
-}
+/** Moved to account-action-rule.ts (ACC-216); re-exported for its callers. */
+export { holdsActiveRootRole };
+export type { RootRoleClient };
 
 // --- The refusals, each with its code (said in both languages by the screen) ---
 
