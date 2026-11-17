@@ -10,6 +10,7 @@ import { UserService } from './user.service';
 import { UserHomeCountsService } from './user-home-counts.service';
 import { StagePoolModule } from '../workflow/stage-pool.module';
 import { CommitteeTransferNoticeModule } from '../committees/transfer-notice/committee-transfer-notice.module';
+import { ChangeRequestDepartureModule } from '../committees/change-requests/departure/change-request-departure.module';
 import { QueueModule } from '../../common/queue/queue.module';
 import { SecurityNoticeService } from '../notification/security-notice';
 import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
@@ -56,6 +57,10 @@ import { UserCommitteesService } from './committees/user-committees.service';
     // ACC-297 — the committee notice after a transfer. Its module imports only
     // Prisma and the queues, so this edge closes no cycle.
     CommitteeTransferNoticeModule,
+    // ACC-283 PR 2b — the leaver's unfinished change requests. That module reaches
+    // WorkflowModule and TaskModule, which reach back here through TenantModule,
+    // so forwardRef(), as the TaskModule edge above.
+    forwardRef(() => ChangeRequestDepartureModule),
     // ACC-164 — the email-delivery queue the mfa_reset security notice uses.
     QueueModule,
     // ACC-216 — the seats of GET /users/:userId/committees, named as the tenant

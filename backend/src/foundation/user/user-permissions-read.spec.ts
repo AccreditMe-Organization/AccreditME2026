@@ -26,6 +26,7 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { StagePoolService } from '../workflow/stage-pool.service';
 import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
+import { ChangeRequestDepartureService } from '../committees/change-requests/departure/change-request-departure.service';
 import { UserMfaResetService } from './mfa-reset/user-mfa-reset.service';
 
 const TENANT_ID = 'org-a';
@@ -67,6 +68,8 @@ describe("GET /users/:userId/permissions follows the user's own visibility (ACC-
         { provide: OrgPositionService, useValue: {} },
         // ACC-297 — the committee notice a transfer schedules; no transfer here.
         { provide: CommitteeTransferNoticeService, useValue: { schedule: jest.fn() } },
+        // ACC-283 PR 2b — no deactivation here, so nothing is withdrawn.
+        { provide: ChangeRequestDepartureService, useValue: { prepare: jest.fn(), withdrawInTx: jest.fn(), finish: jest.fn() } },
       ],
     })
       .overrideGuard(TenantGuard)

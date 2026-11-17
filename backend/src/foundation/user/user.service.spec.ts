@@ -15,11 +15,20 @@ import { resolveAppLinkConfig } from '../../common/config/app-url.config';
 import { renderEmailHtml } from '../notification/email-html';
 import type { StagePoolService } from '../workflow/stage-pool.service';
 import type { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
+import type { ChangeRequestDepartureService, PreparedDeparture } from '../committees/change-requests/departure/change-request-departure.service';
 import * as rootHead from '../organization/root-unit-head.invariant';
 import { RootUnitNeedsHeadRefusal } from '../organization/org-unit-refusals';
 import { countWrites, recordTransactionWrites } from '../../common/testing/transaction-writes';
 
 // ACC-271 — deactivation reads the stage pools a person leaves; none here.
+// ACC-283 PR 2b — a leaver with no unfinished change request: nothing withdrawn.
+const preparedNone = (): PreparedDeparture => ({ organizationId: 'org', leaverId: 'u', actorId: 'a', withdrawals: [], applied: [] });
+const noDepartures = () => ({
+  prepare: jest.fn().mockImplementation(async () => preparedNone()),
+  withdrawInTx: jest.fn().mockResolvedValue(undefined),
+  finish: jest.fn().mockResolvedValue(undefined),
+});
+
 const noStagePools = (): StagePoolService =>
   ({ openEntriesWithMember: jest.fn().mockResolvedValue([]), recordPoolMemberLeftInTx: jest.fn() }) as unknown as StagePoolService;
 
@@ -71,6 +80,7 @@ describe('UserService', () => {
   let mockStagePool: { openEntriesWithMember: jest.Mock; recordPoolMemberLeftInTx: jest.Mock };
   // ACC-297 — the committee notice a transfer schedules after its commit.
   let mockCommitteeTransferNotice: { schedule: jest.Mock };
+  let mockDeparture: ReturnType<typeof noDepartures>;
   let mockOrgPositionService: {
     listAvailablePositionsForUser: jest.Mock;
     hasAnyHeadConferringHolder: jest.Mock;
@@ -194,6 +204,7 @@ describe('UserService', () => {
 
     mockStagePool = { openEntriesWithMember: jest.fn().mockResolvedValue([]), recordPoolMemberLeftInTx: jest.fn() };
     mockCommitteeTransferNotice = { schedule: jest.fn().mockResolvedValue(undefined) };
+    mockDeparture = noDepartures();
     service = new UserService(
       mockPrisma as unknown as PrismaService,
       mockAuditLog as unknown as AuditLogService,
@@ -206,6 +217,7 @@ describe('UserService', () => {
       mockOrgPositionService as unknown as OrgPositionService,
       mockStagePool as unknown as StagePoolService,
       mockCommitteeTransferNotice as unknown as CommitteeTransferNoticeService,
+      mockDeparture as unknown as ChangeRequestDepartureService,
     );
   });
 
@@ -3163,6 +3175,90 @@ describe('UserService', () => {
       expect(order).toEqual(['read pools', 'flip', 'record']);
     });
 
+    // ACC-283 PR 2b — the leaver's unfinished change requests (lane A's
+    // conditions, Prompt 86): prepared before the transaction, withdrawn INSIDE it
+    // last, the follow-up after commit and never fatal; the count is what the
+    // transaction applied.
+    describe('the change request departure (ACC-283 PR 2b)', () => {
+      const withdrawal = (id: string) => ({ requestId: id, committeeId: 'c', fromStageKey: 'draft', move: {} });
+
+      beforeEach(() => {
+        mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-1', organizationId: ORG_A, status: 'ACTIVE' });
+      });
+
+      it('prepares before the transaction, withdraws inside it after the pool-left rows, and finishes after commit, before the task reassignment', async () => {
+        const order: string[] = [];
+        const prepared = preparedNone();
+        mockDeparture.prepare.mockImplementation(async () => (order.push('prepare'), prepared));
+        mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown, options?: unknown) => {
+          order.push(`tx ${JSON.stringify(options)}`);
+          const out = await cb(mockPrisma);
+          order.push('commit');
+          return out;
+        });
+        mockPrisma.user.update.mockImplementation(async () => (order.push('flip'), {}));
+        mockStagePool.recordPoolMemberLeftInTx.mockImplementation(async () => order.push('pool-left'));
+        mockDeparture.withdrawInTx.mockImplementation(async (tx: unknown, p: unknown) => {
+          order.push('withdraw');
+          expect(tx).toBe(mockPrisma);
+          expect(p).toBe(prepared);
+        });
+        mockDeparture.finish.mockImplementation(async () => order.push('finish'));
+        mockTaskService.reassignAllForUser.mockImplementation(async () => (order.push('reassign'), { reassignedCount: 0, unassignedCount: 0 }));
+
+        await service.deactivate('user-1', ORG_A, 'admin-1');
+
+        expect(mockDeparture.prepare).toHaveBeenCalledWith(ORG_A, 'user-1', 'admin-1');
+        expect(order).toEqual([
+          'prepare',
+          'tx {"maxWait":10000,"timeout":20000}',
+          'flip',
+          'pool-left',
+          'withdraw',
+          'commit',
+          'finish',
+          'reassign',
+        ]);
+      });
+
+      it('records how many requests the transaction APPLIED, not how many were prepared', async () => {
+        const prepared = { ...preparedNone(), withdrawals: [withdrawal('cr-1'), withdrawal('cr-2')] } as unknown as PreparedDeparture;
+        mockDeparture.prepare.mockResolvedValue(prepared);
+        // cr-2 moved between prepare and lock: only cr-1 was withdrawn.
+        mockDeparture.withdrawInTx.mockImplementation(async (_tx: unknown, p: PreparedDeparture) => {
+          p.applied = [{ withdrawal: p.withdrawals[0]!, move: {}, closure: null }] as unknown as PreparedDeparture['applied'];
+        });
+
+        await service.deactivate('user-1', ORG_A, 'admin-1');
+
+        expect(mockAuditLog.log).toHaveBeenCalledWith(
+          expect.objectContaining({ objectType: 'User', metadata: expect.objectContaining({ event: 'deactivated', withdrawnChangeRequests: 1 }) }),
+        );
+      });
+
+      it('a follow-up that fails after commit never fails the deactivation, and is logged with ids only', async () => {
+        const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+        mockDeparture.finish.mockRejectedValue(new Error('secret detail from the database'));
+
+        await expect(service.deactivate('user-1', ORG_A, 'admin-1')).resolves.toEqual({ reassignedCount: 0, unassignedCount: 0 });
+
+        expect(mockTaskService.reassignAllForUser).toHaveBeenCalled();
+        expect(mockAuthProvider.invalidateUserSessions).toHaveBeenCalledWith('user-1');
+        const logged = error.mock.calls.map((c) => String(c[0])).find((m) => m.includes('departure'));
+        expect(logged).toContain(`organizationId=${ORG_A}`);
+        expect(logged).toContain('userId=user-1');
+        expect(logged).not.toContain('secret detail');
+        error.mockRestore();
+      });
+
+      it('a refused deactivation withdraws nothing and finishes nothing', async () => {
+        mockPrisma.user.update.mockRejectedValue(new ConflictException('refused'));
+        await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow('refused');
+        expect(mockDeparture.withdrawInTx).not.toHaveBeenCalled();
+        expect(mockDeparture.finish).not.toHaveBeenCalled();
+      });
+    });
+
     // ACC-40 Section 2.5.1 — refreshOrgUnitHeadVacancy() wiring.
 
     it('refreshes the departing user\'s own primary org unit after the status flip', async () => {
@@ -3972,6 +4068,7 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
       realMockOrgPositionService as unknown as OrgPositionService,
       noStagePools(),
       { schedule: jest.fn().mockResolvedValue(undefined) } as unknown as CommitteeTransferNoticeService,
+      noDepartures() as unknown as ChangeRequestDepartureService,
     );
     const realOrgUnitHeadService = new OrgUnitHeadService(
       realMockPrisma as unknown as PrismaService,
