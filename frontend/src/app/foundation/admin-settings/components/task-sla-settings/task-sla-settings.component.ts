@@ -8,20 +8,32 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 import { LanguageService } from '../../../../core/services/language.service';
-import { StageDeadlineConflict, taskSlaStageConflicts } from '../../../workflow/workflow-refusal';
+import {
+  StageDeadlineConflict,
+  TaskSlaWarningRefusal,
+  taskSlaStageConflicts,
+  taskSlaWarningRefusal,
+} from '../../../workflow/workflow-refusal';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { ListDialogComponent } from '../../../../shared/components/list-dialog/list-dialog.component';
 import { TaskSlaHistoryComponent } from './task-sla-history.component';
+import { TaskSlaNoticesComponent } from './task-sla-notices.component';
+import { TaskSlaResetComponent } from './task-sla-reset.component';
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 import { LeaveGuarded } from '../../../roles/permission-matrix/leave-guard';
 import {
   ITaskSlaChange,
+  ITaskSlaNotices,
+  ITaskSlaPolicy,
   ITaskSlaSettings,
   TaskSlaPriority,
+  TaskSlaWarnBeforeDue,
   TenantService,
 } from '../../../tenant/services/tenant.service';
 import { TASK_SLA_PRIORITIES } from './task-sla-change';
+import { WARN_BEFORE_DUE_OPTIONS, warnHours, warnOptionLabel, warningFitsLimit } from './task-sla-warning';
 
 // Literal keys, so the translation-keys spec sees each one.
 const PRIORITY_KEYS: Record<TaskSlaPriority, string> = {
@@ -37,6 +49,14 @@ const LIMIT_LABEL_KEYS: Record<TaskSlaPriority, string> = {
   HIGH: 'adminSettings.taskSlaPage.limits.high',
   CRITICAL: 'adminSettings.taskSlaPage.limits.critical',
 };
+
+interface WarnOption {
+  value: TaskSlaWarnBeforeDue;
+  label: string;
+  /** At or past the priority's saved limit: shown, not choosable (Q2). */
+  unavailable: boolean;
+  reason: string;
+}
 
 const HISTORY_PAGE = 20;
 
@@ -63,15 +83,25 @@ type Load = 'loading' | 'error' | 'ready';
  * ADAPTED FROM THE DRAWING (plan §1): hours, not days; a fixed chain (manager,
  * then unit head), with no handle, add, remove or target select; the matrix
  * stacks one block per priority on a narrow screen instead of scrolling
- * sideways, because it holds no chain that could wrap mid-step. The warning
- * column, the Notifications switch and Reset are later PRs, and are ABSENT
- * here rather than disabled. There is no table of contents (Ahmad, Q9).
+ * sideways, because it holds no chain that could wrap mid-step. There is no
+ * table of contents (Ahmad, Q9).
+ *
+ * ACC-313 PR 3 / PR 4 (3-fe): the page reads GET …/policy; the Notifications
+ * section (immediate, its own component) and Reset (last, its own component)
+ * sit around the matrix, and the matrix gains "Warn before due" per priority,
+ * saved with escalation. A warning must be shorter than its priority's saved
+ * limit (Q2): options at or past it are shown greyed with their reason, and
+ * both of the server's refusals are said from their code under the row they
+ * name.
  */
 @Component({
   selector: 'app-task-sla-settings',
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    OverlaySelectComponent,
+    TaskSlaNoticesComponent,
+    TaskSlaResetComponent,
     RouterLink,
     TranslatePipe,
     AmDateTimePipe,
@@ -188,6 +218,15 @@ type Load = 'loading' | 'error' | 'ready';
                     </div>
                   }
                 }
+                <!-- ACC-313 — a limit at or under this priority's warning. -->
+                @if (limitWarningRefusal(); as refusal) {
+                  @if (refusal.priority === p) {
+                    <div class="am-sla__refusal" role="alert" [attr.data-sla-limit-warning]="p">
+                      <span>{{ warningRefusalLead(refusal) }}</span>
+                      <span>{{ 'adminSettings.taskSlaPage.warnRefusal.limitWayOut' | translate }}</span>
+                    </div>
+                  }
+                }
               }
             </div>
             <p class="am-sla__scope">{{ 'adminSettings.taskSlaPage.limits.scope' | translate }}</p>
@@ -218,7 +257,10 @@ type Load = 'loading' | 'error' | 'ready';
         }
       </section>
 
-      <!-- ── Escalation per priority: the matrix ─────────────────────────── -->
+      <!-- ── Notifications: immediate, no Save (PR 3) ────────────────────── -->
+      <am-task-sla-notices [notices]="savedNotices()" [load]="load()" (retry)="loadPolicy()" (changed)="onNoticesChanged($event)" />
+
+      <!-- ── Reminders and escalation per priority: the matrix ──────────── -->
       <section class="am-sla__section" data-sla-section="escalation" aria-labelledby="sla-escalation-title">
         <header class="am-sla__head">
           <div>
@@ -254,6 +296,7 @@ type Load = 'loading' | 'error' | 'ready';
                 <div class="am-sla__row am-sla__row--head" aria-hidden="true">
                   <span>{{ 'task.priority.title' | translate }}</span>
                   <span>{{ 'adminSettings.taskSlaPage.escalation.limit' | translate }}</span>
+                  <span>{{ 'adminSettings.taskSlaPage.escalation.warn' | translate }}</span>
                   <span>{{ 'adminSettings.taskSlaPage.escalation.manager' | translate }}</span>
                   <span>{{ 'adminSettings.taskSlaPage.escalation.head' | translate }}</span>
                 </div>
@@ -267,6 +310,25 @@ type Load = 'loading' | 'error' | 'ready';
                     }
                     <span data-testid="sla-matrix-limit">{{ limitText(p) }}</span>
                   </span>
+                  <am-field
+                    [label]="cellLabel(p, 'warn')"
+                    [labelVisuallyHidden]="!stacked()"
+                    [control]="escalationForm.controls[p].controls.warnBeforeDue"
+                    [inputId]="'sla-warn-' + p"
+                    [forceShowErrors]="escalationTried()"
+                    [errorMessages]="warnErrors"
+                    [attr.data-sla-warn]="p"
+                  >
+                    <app-overlay-select
+                      formControlName="warnBeforeDue"
+                      [options]="warnOptions()[p]"
+                      optionLabel="label"
+                      optionValue="value"
+                      optionDisabled="unavailable"
+                      optionDisabledReason="reason"
+                      [ariaLabel]="cellLabel(p, 'warn')"
+                    />
+                  </am-field>
                   <am-field
                     [label]="cellLabel(p, 'manager')"
                     [labelVisuallyHidden]="!stacked()"
@@ -288,6 +350,15 @@ type Load = 'loading' | 'error' | 'ready';
                     <p-inputNumber [inputId]="'sla-head-' + p" formControlName="headEscalationAfterHours" [min]="0" [showButtons]="true" [fluid]="true" />
                   </am-field>
                 </div>
+                <!-- ACC-313 — a warning at or past this priority's limit, said from the code. -->
+                @if (warningRefusal(); as refusal) {
+                  @if (refusal.priority === p) {
+                    <div class="am-sla__refusal" role="alert" [attr.data-sla-warn-refusal]="p">
+                      <span>{{ warningRefusalLead(refusal) }}</span>
+                      <span>{{ 'adminSettings.taskSlaPage.warnRefusal.warnWayOut' | translate }}</span>
+                    </div>
+                  }
+                }
               }
             </div>
             @if (escalationSaved()) {
@@ -316,6 +387,9 @@ type Load = 'loading' | 'error' | 'ready';
           }
         }
       </section>
+
+      <!-- ── Reset, last and danger-bordered (PR 3) ─────────────────────── -->
+      <am-task-sla-reset [ready]="load() === 'ready'" (reset)="onReset($event)" />
     </div>
 
     <!-- The change history: a list, so the list shell (ACC-229), 20 at a time. -->
@@ -350,7 +424,7 @@ type Load = 'loading' | 'error' | 'ready';
       .am-sla__refusal ul{margin:0;padding-inline-start:var(--am-space-16)}
       .am-sla__refusal a{color:var(--am-primary-700)}
       .am-sla__matrix{display:flex;flex-direction:column;gap:var(--am-space-8);min-inline-size:0}
-      .am-sla__row{display:grid;grid-template-columns:106px 120px minmax(0,1fr) minmax(0,1fr);gap:var(--am-space-12);align-items:start}
+      .am-sla__row{display:grid;grid-template-columns:106px 80px 200px minmax(0,1fr) minmax(0,1fr);gap:var(--am-space-12);align-items:start}
       .am-sla__row--head{font-size:var(--am-type-meta-size);line-height:var(--am-type-meta-line);font-weight:500;color:var(--am-ink-500);padding-block-end:var(--am-space-4);border-block-end:1px solid var(--am-border)}
       .am-sla__priority{align-self:center;justify-self:start;font-size:var(--am-type-meta-size);font-weight:600;color:var(--am-neutral-chip-ink);background:var(--am-neutral-chip-bg);border:1px solid var(--am-neutral-chip-border);border-radius:var(--am-radius-pill);padding:0 var(--am-space-8)}
       .am-sla__limit{align-self:center;font-size:var(--am-type-body-size);color:var(--am-ink-900);min-inline-size:0}
@@ -384,11 +458,18 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
     required: 'adminSettings.taskSlaPage.escalation.required',
     min: 'adminSettings.taskSlaPage.escalation.min',
   };
+  readonly warnErrors = {
+    notBeforeDue: 'adminSettings.taskSlaPage.warnRefusal.invalid',
+  };
 
   // ── The policy read ──────────────────────────────────────────────────────
   readonly load = signal<Load>('loading');
   /** The tiers the server holds: the baseline both sections compare against. */
   readonly saved = signal<ITaskSlaSettings | null>(null);
+  /** The notices the server holds: the switch, and each priority's stored warning. */
+  readonly savedNotices = signal<ITaskSlaNotices | null>(null);
+  /** The calendar's working day in hours: what "1 working day" means (Q2). */
+  readonly hoursPerDay = signal(8);
 
   // ── Time limits ──────────────────────────────────────────────────────────
   readonly limitsForm = this.fb.group({
@@ -403,20 +484,42 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
   readonly limitsSaved = signal(false);
   /** ACC-208 — the stages a refused save would have broken, until the hours change. */
   readonly conflicts = signal<StageDeadlineConflict[]>([]);
+  /** ACC-313 — a limit at or under its priority's warning, until the hours change. */
+  readonly limitWarningRefusal = signal<TaskSlaWarningRefusal | null>(null);
   private readonly limitsTick = signal(0);
 
   // ── Escalation ───────────────────────────────────────────────────────────
   readonly escalationForm = this.fb.group({
-    LOW: this.escalationGroup(),
-    MEDIUM: this.escalationGroup(),
-    HIGH: this.escalationGroup(),
-    CRITICAL: this.escalationGroup(),
+    LOW: this.escalationGroup('LOW'),
+    MEDIUM: this.escalationGroup('MEDIUM'),
+    HIGH: this.escalationGroup('HIGH'),
+    CRITICAL: this.escalationGroup('CRITICAL'),
   });
   readonly escalationTried = signal(false);
   readonly escalationSaving = signal(false);
   readonly escalationError = signal<string | null>(null);
   readonly escalationSaved = signal(false);
+  /** ACC-313 — a warning at or past its priority's limit, until the matrix changes. */
+  readonly warningRefusal = signal<TaskSlaWarningRefusal | null>(null);
   private readonly escalationTick = signal(0);
+
+  /** Each priority's warning options: the six, greyed at or past its saved limit. */
+  readonly warnOptions = computed(() => {
+    this.translate.currentLang();
+    const saved = this.saved();
+    const perDay = this.hoursPerDay();
+    const out = {} as Record<TaskSlaPriority, WarnOption[]>;
+    for (const p of this.priorities) {
+      const limit = saved?.[p].dueAfterHours ?? Number.POSITIVE_INFINITY;
+      out[p] = WARN_BEFORE_DUE_OPTIONS.map((value) => ({
+        value,
+        label: this.warnLabel(value),
+        unavailable: !warningFitsLimit(value, limit, perDay),
+        reason: saved ? this.translate.instant('adminSettings.taskSlaPage.warnNotShorter', { limit: this.format.count('workflow.workingHours', limit) }) : '',
+      }));
+    }
+    return out;
+  });
 
   /** The matrix stacks per priority when its section is narrow (phone). */
   readonly stacked = signal(false);
@@ -450,7 +553,11 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
     if (!saved) return false;
     return this.priorities.some((p) => {
       const v = this.escalationForm.controls[p].getRawValue();
-      return v.managerEscalationAfterHours !== saved[p].managerEscalationAfterHours || v.headEscalationAfterHours !== saved[p].headEscalationAfterHours;
+      return (
+        v.managerEscalationAfterHours !== saved[p].managerEscalationAfterHours ||
+        v.headEscalationAfterHours !== saved[p].headEscalationAfterHours ||
+        v.warnBeforeDue !== (this.savedNotices()?.warnBeforeDue[p] ?? 'OFF')
+      );
     });
   });
 
@@ -458,16 +565,20 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
   readonly limitsProblems = computed(() => {
     this.limitsTick();
     const invalid = this.limitsTried() ? this.priorities.filter((p) => this.limitsForm.controls[p].invalid).length : 0;
-    return invalid + new Set(this.conflicts().map((c) => c.priority)).size;
+    const refused = new Set(this.conflicts().map((c) => c.priority));
+    const warning = this.limitWarningRefusal();
+    if (warning) refused.add(warning.priority);
+    return invalid + refused.size;
   });
 
   readonly escalationProblems = computed(() => {
     this.escalationTick();
-    if (!this.escalationTried()) return 0;
+    const refused = this.warningRefusal() ? 1 : 0;
+    if (!this.escalationTried()) return refused;
     return this.priorities.reduce((n, p) => {
       const g = this.escalationForm.controls[p].controls;
-      return n + (g.managerEscalationAfterHours.invalid ? 1 : 0) + (g.headEscalationAfterHours.invalid ? 1 : 0);
-    }, 0);
+      return n + (g.managerEscalationAfterHours.invalid ? 1 : 0) + (g.headEscalationAfterHours.invalid ? 1 : 0) + (g.warnBeforeDue.invalid ? 1 : 0);
+    }, refused);
   });
 
   @ViewChild('matrix') set matrixRef(el: ElementRef<HTMLElement> | undefined) {
@@ -486,6 +597,7 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
     const limits = this.limitsForm.valueChanges.subscribe(() => {
       this.limitsTick.update((n) => n + 1);
       this.conflicts.set([]);
+      this.limitWarningRefusal.set(null);
       this.limitsSaved.set(false);
       this.limitsError.set(null);
     });
@@ -493,6 +605,7 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
       this.escalationTick.update((n) => n + 1);
       this.escalationSaved.set(false);
       this.escalationError.set(null);
+      this.warningRefusal.set(null);
     });
     inject(DestroyRef).onDestroy(() => {
       limits.unsubscribe();
@@ -509,8 +622,15 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
     return this.fb.control<number | null>(null, [Validators.required, Validators.min(1)]);
   }
 
-  private escalationGroup() {
+  private escalationGroup(priority: TaskSlaPriority) {
     return this.fb.group({
+      // ACC-313 — the warning must be shorter than this priority's SAVED limit.
+      warnBeforeDue: this.fb.nonNullable.control<TaskSlaWarnBeforeDue>('OFF', [
+        (c) => {
+          const limit = this.saved()?.[priority].dueAfterHours;
+          return limit === undefined || warningFitsLimit(c.value as TaskSlaWarnBeforeDue, limit, this.hoursPerDay()) ? null : { notBeforeDue: true };
+        },
+      ]),
       managerEscalationAfterHours: this.fb.control<number | null>(null, [Validators.required, Validators.min(0)]),
       headEscalationAfterHours: this.fb.control<number | null>(null, [Validators.required, Validators.min(0)]),
     });
@@ -519,15 +639,22 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
   // ── Reads ────────────────────────────────────────────────────────────────
   loadPolicy(): void {
     this.load.set('loading');
-    this.tenantService.getTaskSla().subscribe({
-      next: (tiers) => {
-        this.saved.set(tiers);
-        this.applyLimits(tiers);
-        this.applyEscalation(tiers);
+    this.tenantService.getTaskSlaPolicy().subscribe({
+      next: (policy) => {
+        this.applyPolicy(policy);
         this.load.set('ready');
       },
       error: () => this.load.set('error'),
     });
+  }
+
+  /** The whole stored policy: both sections' baselines and fields, and the switch. */
+  private applyPolicy(policy: ITaskSlaPolicy): void {
+    this.hoursPerDay.set(policy.workingHoursPerDay);
+    this.saved.set(policy.tiers);
+    this.savedNotices.set(policy.notices);
+    this.applyLimits(policy.tiers);
+    this.applyEscalation(policy.tiers, policy.notices);
   }
 
   loadHistory(): void {
@@ -567,12 +694,19 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
     this.limitsTick.update((n) => n + 1);
   }
 
-  private applyEscalation(tiers: ITaskSlaSettings): void {
+  private applyEscalation(tiers: ITaskSlaSettings, notices: ITaskSlaNotices | null = this.savedNotices()): void {
     const row = (p: TaskSlaPriority) => ({
+      warnBeforeDue: notices?.warnBeforeDue[p] ?? ('OFF' as TaskSlaWarnBeforeDue),
       managerEscalationAfterHours: tiers[p].managerEscalationAfterHours,
       headEscalationAfterHours: tiers[p].headEscalationAfterHours,
     });
     this.escalationForm.setValue({ LOW: row('LOW'), MEDIUM: row('MEDIUM'), HIGH: row('HIGH'), CRITICAL: row('CRITICAL') }, { emitEvent: false });
+    this.revalidateWarnings();
+  }
+
+  /** The warnings are checked against the SAVED limits, so a new baseline re-checks them. */
+  private revalidateWarnings(): void {
+    for (const p of this.priorities) this.escalationForm.controls[p].controls.warnBeforeDue.updateValueAndValidity({ emitEvent: false });
     this.escalationTick.update((n) => n + 1);
   }
 
@@ -604,7 +738,7 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
           // baseline and this section's fields take the saved tiers.
           this.saved.set(tiers);
           this.applyLimits(tiers);
-          this.escalationTick.update((n) => n + 1);
+          this.revalidateWarnings();
           this.limitsSaved.set(true);
           this.loadHistory();
         },
@@ -614,6 +748,12 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
           if (conflicts?.length) {
             this.conflicts.set(conflicts);
             this.focusFirst(this.priorities.filter((p) => this.conflictsFor(p).length > 0).map((p) => `sla-limit-${p}`));
+            return;
+          }
+          const warning = taskSlaWarningRefusal(err);
+          if (warning?.code === 'TASK_SLA_LIMIT_NOT_AFTER_WARNING') {
+            this.limitWarningRefusal.set(warning);
+            this.focusFirst([`sla-limit-${warning.priority}`]);
             return;
           }
           this.limitsError.set('adminSettings.taskSlaPage.saveFailed');
@@ -629,6 +769,7 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
       const ids: string[] = [];
       for (const p of this.priorities) {
         const g = this.escalationForm.controls[p].controls;
+        if (g.warnBeforeDue.invalid) ids.push(`warn:${p}`);
         if (g.managerEscalationAfterHours.invalid) ids.push(`sla-manager-${p}`);
         if (g.headEscalationAfterHours.invalid) ids.push(`sla-head-${p}`);
       }
@@ -639,9 +780,11 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
     const row = (p: TaskSlaPriority) => ({
       managerEscalationAfterHours: v[p].managerEscalationAfterHours as number,
       headEscalationAfterHours: v[p].headEscalationAfterHours as number,
+      warnBeforeDue: v[p].warnBeforeDue,
     });
     this.escalationSaving.set(true);
     this.escalationError.set(null);
+    this.warningRefusal.set(null);
     this.tenantService
       .updateTaskSlaEscalation({ LOW: row('LOW'), MEDIUM: row('MEDIUM'), HIGH: row('HIGH'), CRITICAL: row('CRITICAL') })
       .subscribe({
@@ -649,13 +792,27 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
           this.escalationSaving.set(false);
           this.escalationTried.set(false);
           this.saved.set(tiers);
+          // The route answers the tiers; the warnings were stored as sent.
+          const notices = this.savedNotices();
+          if (notices) {
+            this.savedNotices.set({
+              ...notices,
+              warnBeforeDue: { LOW: v.LOW.warnBeforeDue, MEDIUM: v.MEDIUM.warnBeforeDue, HIGH: v.HIGH.warnBeforeDue, CRITICAL: v.CRITICAL.warnBeforeDue },
+            });
+          }
           this.applyEscalation(tiers);
           this.limitsTick.update((n) => n + 1);
           this.escalationSaved.set(true);
           this.loadHistory();
         },
-        error: () => {
+        error: (err: unknown) => {
           this.escalationSaving.set(false);
+          const warning = taskSlaWarningRefusal(err);
+          if (warning?.code === 'TASK_SLA_WARNING_NOT_BEFORE_DUE') {
+            this.warningRefusal.set(warning);
+            this.focusFirst([`warn:${warning.priority}`]);
+            return;
+          }
           this.escalationError.set('adminSettings.taskSlaPage.saveFailed');
         },
       });
@@ -669,17 +826,43 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
       this.limitsTried.set(false);
       this.limitsError.set(null);
       this.conflicts.set([]);
+      this.limitWarningRefusal.set(null);
     } else {
       this.applyEscalation(saved);
       this.escalationTried.set(false);
       this.escalationError.set(null);
+      this.warningRefusal.set(null);
     }
+  }
+
+  /** The switch was saved: take the stored notices, and read the history again. */
+  onNoticesChanged(notices: ITaskSlaNotices): void {
+    const held = this.savedNotices();
+    // Only the switch moved; an unsaved warning edit in the matrix keeps its baseline.
+    this.savedNotices.set(held ? { ...held, notifyOnDueChange: notices.notifyOnDueChange } : notices);
+    this.loadHistory();
+  }
+
+  /** Reset wrote the defaults: every section takes them, unsaved edits included. */
+  onReset(policy: ITaskSlaPolicy): void {
+    this.applyPolicy(policy);
+    this.limitsTried.set(false);
+    this.limitsError.set(null);
+    this.conflicts.set([]);
+    this.limitWarningRefusal.set(null);
+    this.escalationTried.set(false);
+    this.escalationError.set(null);
+    this.warningRefusal.set(null);
+    this.loadHistory();
   }
 
   /** Focus the first named input that exists (the first problem, in reading order). */
   private focusFirst(ids: string[]): void {
     for (const id of ids) {
-      const el = document.getElementById(id);
+      // A warning cell's control is the select's trigger, which has no id.
+      const el = id.startsWith('warn:')
+        ? document.querySelector<HTMLElement>(`[data-sla-warn="${id.slice(5)}"] .am-overlay-select-trigger`)
+        : document.getElementById(id);
       if (el) {
         el.focus();
         return;
@@ -731,9 +914,32 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
     return saved ? this.format.count('workflow.workingHours', saved[p].dueAfterHours) : '—';
   }
 
-  cellLabel(p: TaskSlaPriority, column: 'manager' | 'head'): string {
-    const key = column === 'manager' ? 'adminSettings.taskSlaPage.escalation.managerCell' : 'adminSettings.taskSlaPage.escalation.headCell';
+  cellLabel(p: TaskSlaPriority, column: 'warn' | 'manager' | 'head'): string {
+    const key =
+      column === 'warn'
+        ? 'adminSettings.taskSlaPage.escalation.warnCell'
+        : column === 'manager'
+          ? 'adminSettings.taskSlaPage.escalation.managerCell'
+          : 'adminSettings.taskSlaPage.escalation.headCell';
     return this.translate.instant(key, { priority: this.translate.instant(PRIORITY_KEYS[p]) });
+  }
+
+  warnLabel(value: TaskSlaWarnBeforeDue): string {
+    return warnOptionLabel(value, this.translate, this.format);
+  }
+
+  /**
+   * "Critical's warning is 4 working hours; the limit must be longer than that,
+   * and it is 4 working hours." Said from the refusal's own numbers.
+   */
+  warningRefusalLead(refusal: TaskSlaWarningRefusal): string {
+    const warning = refusal.warning as TaskSlaWarnBeforeDue;
+    const known = WARN_BEFORE_DUE_OPTIONS.includes(warning);
+    return this.translate.instant('adminSettings.taskSlaPage.warnRefusal.lead', {
+      priority: this.translate.instant(PRIORITY_KEYS[refusal.priority as TaskSlaPriority]),
+      warning: known ? this.format.count('workflow.workingHours', warnHours(warning, this.hoursPerDay())) : refusal.warning,
+      limit: this.format.count('workflow.workingHours', refusal.limitHours),
+    });
   }
 
   conflictsFor(priority: TaskSlaPriority): StageDeadlineConflict[] {
@@ -761,7 +967,7 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
   conflictWayOut(priority: TaskSlaPriority, conflicts: StageDeadlineConflict[]): string {
     return this.translate.instant('adminSettings.taskSlaRefusal.wayOut', {
       priority: this.translate.instant(PRIORITY_KEYS[priority]),
-      max: Math.min(...conflicts.map((c) => c.stageHours)),
+      max: this.format.count('workflow.workingHours', Math.min(...conflicts.map((c) => c.stageHours))),
     });
   }
 

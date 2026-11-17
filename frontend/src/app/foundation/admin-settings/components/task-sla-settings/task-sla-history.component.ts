@@ -3,7 +3,8 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { ITaskSlaChange, TaskSlaPriority } from '../../../tenant/services/tenant.service';
-import { TaskSlaField, TaskSlaFieldChange, diffTaskSlaChange } from './task-sla-change';
+import { TaskSlaFieldChange, TaskSlaValue, diffTaskSlaChange } from './task-sla-change';
+import { isWarnBeforeDue, warnOptionLabel } from './task-sla-warning';
 
 // Literal keys, so the translation-keys spec sees each one.
 const PRIORITY_KEYS: Record<TaskSlaPriority, string> = {
@@ -13,16 +14,20 @@ const PRIORITY_KEYS: Record<TaskSlaPriority, string> = {
   CRITICAL: 'task.priority.critical',
 };
 
-const FIELD_KEYS: Record<TaskSlaField, string> = {
+const FIELD_KEYS: Record<TaskSlaFieldChange['field'], string> = {
   dueAfterHours: 'adminSettings.taskSlaPage.fields.dueAfterHours',
+  warnBeforeDue: 'adminSettings.taskSlaPage.fields.warnBeforeDue',
   managerEscalationAfterHours: 'adminSettings.taskSlaPage.fields.managerEscalationAfterHours',
   headEscalationAfterHours: 'adminSettings.taskSlaPage.fields.headEscalationAfterHours',
+  notifyOnDueChange: 'adminSettings.taskSlaPage.fields.notifyOnDueChange',
 };
 
 const KIND_KEYS: Record<ITaskSlaChange['kind'], string> = {
   limits: 'adminSettings.taskSlaPage.limits.title',
   escalation: 'adminSettings.taskSlaPage.escalation.title',
   all: 'adminSettings.taskSlaPage.history.kindAll',
+  notices: 'adminSettings.taskSlaPage.notices.title',
+  reset: 'adminSettings.taskSlaPage.history.kindReset',
   legacy: 'adminSettings.taskSlaPage.history.kindAll',
 };
 
@@ -55,7 +60,7 @@ const KIND_KEYS: Record<ITaskSlaChange['kind'], string> = {
               <p class="am-slah__none">{{ 'adminSettings.taskSlaPage.history.noFieldsChanged' | translate }}</p>
             } @else {
               <ul class="am-slah__fields">
-                @for (f of fieldsOf(change); track f.priority + f.field) {
+                @for (f of fieldsOf(change); track (f.priority ?? '') + f.field) {
                   <!-- The meaning is in words as well as decoration: <del>/<ins>
                        and the visually hidden was/now, as on the calendar's history. -->
                   <li>
@@ -122,17 +127,26 @@ export class TaskSlaHistoryComponent {
     return diffTaskSlaChange(change.before, change.after);
   }
 
-  /** "High · Due after" */
+  /** "High · Due after"; the switch, which belongs to no priority, by its own name. */
   changeLabel(f: TaskSlaFieldChange): string {
+    if (f.priority === null) return this.translate.instant(FIELD_KEYS[f.field]);
     return this.translate.instant('adminSettings.taskSlaPage.history.fieldLabel', {
       priority: this.translate.instant(PRIORITY_KEYS[f.priority]),
       field: this.translate.instant(FIELD_KEYS[f.field]),
     });
   }
 
-  /** A value with its unit: limits are working hours, escalation hours. */
-  valueText(field: TaskSlaField, value: number | null): string {
+  /**
+   * A value as a person reads it: limits in working hours, a warning by its
+   * option's name, the switch On or Off. Escalation hours stay "hours": an
+   * entry saved before escalation counted working hours (PR 4) was clock
+   * hours, and the row does not say which.
+   */
+  valueText(field: TaskSlaFieldChange['field'], value: TaskSlaValue | null): string {
     if (value === null) return this.notRecorded();
+    if (field === 'notifyOnDueChange') return this.translate.instant(value === true ? 'common.on' : 'common.off');
+    if (field === 'warnBeforeDue') return isWarnBeforeDue(value) ? warnOptionLabel(value, this.translate, this.format) : String(value);
+    if (typeof value !== 'number') return String(value);
     return field === 'dueAfterHours' ? this.format.count('workflow.workingHours', value) : this.format.count('taskSla.hours', value);
   }
 
