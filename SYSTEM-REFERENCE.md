@@ -6185,7 +6185,6 @@ change request (§3.18; its screens are ACC-240).
   - `committees:edit_details`: "Edit a committee's details and request changes" (ACC-255 PR 4b,
     Ahmad's Q3: since stage rules, the stage decides where editing is allowed, so
     the sentence no longer names Formation).
-  - `committees:approve`: "Approve terms, changes and dissolutions".
 - **The quorum input is `[fluid]="true"` (ACC-243).** Without it PrimeNG's
   number input kept its default width, 345px in a 251px column, and ran 94px
   under Meeting Frequency. The pair's columns were already `minmax(0, 1fr)`.
@@ -6227,7 +6226,24 @@ change request (§3.18; its screens are ACC-240).
 **ACC-283 PR 2 — THE CHAIN OF AUTHORITY DECIDES, NEVER A ROLE.** Plan:
 `backend/Plans/step-283-change-request-chain.md` (§3, §4, §16). This replaces
 every rule below that names `committees:approve`, which no change request
-reads any more; the key stays in the catalogue until PR 4 retires it.
+reads any more. **PR 4 retired the key** (below).
+
+**ACC-283 PR 4 — `committees:approve` IS RETIRED.** It is out of
+`COMMITTEES_PERMISSIONS`, the seed, the permission groups and the sentence table,
+and nothing in either package reads it: `retired-committee-approve.spec.ts`
+fails on any non-spec source that names it in quotes or as
+`COMMITTEES_PERMISSIONS.APPROVE`. Home and the Awaiting page ask for change requests
+to decide while the Committees module is open, whatever the person's keys; the
+chain answers who. `backfill:acc283-retire-committees-approve` takes it off
+existing roles, after PR 4 deploys:
+- dry run by default, `-- --execute` to write;
+- refuses customer organisations;
+- one audit row per role changed;
+- counts and slugs only;
+- then the catalogue row, once nothing references it.
+
+New organisations seed Terms Review on the committee's own unit head
+(`ORG_UNIT_HEAD`, no unit; plan §10). Existing ones keep what they set.
 
 - **Who decides** (`change-requests/change-request-chain.ts`):
   - the Reports-to committee's holders of a seat whose actions include
@@ -6890,9 +6906,9 @@ kept.
 | `PATCH /committees/:id/members/:memberId` | `committees:change_member_role` | yes |
 | `DELETE /committees/:id/members/:memberId` | `committees:remove_member` | yes |
 | Create, edit, submit a change request | `committees:edit_details` (service) | yes |
-| Withdraw a change request | the requester, or `committees:approve` where the stage allows | yes |
-| **Approve, return, reject** | **`committees:view` (route) and `committees:approve` (service)** | **NO**, exactly as before; never the requester |
-| `GET /committee-change-requests/awaiting-decision` | `committees:view` (route) | no |
+| Withdraw a change request | the requester only (ACC-283 PR 2) | yes |
+| **Approve, return, reject** | **the chain of authority (ACC-283 PR 2, §3.18); no key** | **NO**; never the requester |
+| `GET /committee-change-requests/awaiting-decision` | none: the chain decides (ACC-283 PR 2) | no |
 
 The committee services' write methods take the caller's permissions as a trailing argument
 (`updateCommittee`, `addMember`, `changeMemberRole`, `removeMember`).
@@ -12707,8 +12723,9 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
     (rows and `matching`). This is the same rule as `/tasks` My tasks.
     `GET /tasks/my-tasks`, which is unbounded, is no longer read by Home.
   - `myOverdue`: the same query with `overdue=true&take=1`.
-  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests for
-    `committees:approve` holders. Either half failing fails the whole read.
+  - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests to
+    decide while the Committees module is open (ACC-283 PR 4: the chain decides
+    who, no key). Either half failing fails the whole read.
   - `myCommittees`: `GET /committees/mine`, only while the module is open.
 - **`isCommitteeMember`** (ACC-281): true once `myCommittees` has loaded with a total
   above 0; false while loading, after a failure, or with none. Lane A's rail and route
@@ -12806,8 +12823,8 @@ work, after Tasks, with no permission, because both reads are self-scoped.
     page; with none it sends Home's request unchanged.
   - `GET /committee-change-requests/awaiting-decision` returns every change
     request the person may decide, capped at 200 by the server. It is asked
-    only of `committees:approve` holders, as Home does, and only on the first
-    load. Both reads run in parallel.
+    while the Committees module is open (ACC-283 PR 4: the chain decides who,
+    no key), as Home does, and only on the first load. Both reads run in parallel.
 - **Rows** are Home's panel rows, built by the pure functions in
   `awaiting-rows.ts` (`stageRow`, `changeRow`, `waitingText`), so Home can use
   them too.
