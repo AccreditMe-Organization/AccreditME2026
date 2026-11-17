@@ -4799,13 +4799,20 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
     workers run (ACC-92). One read finds the organisations with any warning on.
     Then, per organisation, only in working hours, it takes one calendar load
     and one candidate query: `PENDING`/`IN_PROGRESS`, `dueWarnedAt` null, due
-    inside its priority's window, held by someone or waiting in a pool.
+    inside its priority's window, with someone on it or a pool.
+    - **"Someone on it" is ACC-86's one definition**, `CURRENT_ACTIVE_ASSIGNEE`
+      (`task-pool.ts`): a current row held by an ACTIVE user. The candidate
+      query and its assignee select both read it; there is no second copy.
     - **The claim:** `UPDATE "Task" SET "dueWarnedAt" = now … AND
       "dueWarnedAt" IS NULL RETURNING id`, so two workers remind once.
-    - **The notice:** one `createInAppMany` ("Task due soon"), sent after the
-      claim. It goes to the active assignees; to a waiting pool's members,
-      resolved by `resolvePoolMembersBatch()` (the pool rule, batched); never
-      to acting users.
+    - **Who is reminded:** one `createInAppMany` ("Task due soon"), sent after
+      the claim, never to acting users.
+      - A task someone is on: those people.
+      - A task with a pool and nobody on it, including one whose only current
+        row is held by someone no longer ACTIVE: the pool's members, resolved
+        by `resolvePoolMembersBatch()` (the pool rule, batched).
+      - A task with no pool and nobody on it: not picked and not claimed, so
+        `dueWarnedAt` stays null and a later holder is still reminded.
     - A failed notice is logged, not retried. A warning a calendar change made
       too long is treated as Off.
     - Closed organisations (ACC-168) are not left out yet, as with the other
@@ -4815,7 +4822,9 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
     reopen, and a reassign while the due time is ahead. Never a pick, a release
     or a resume.
   - Proved against a real Postgres by `task-due-warning.db-spec.ts`: two
-    workers, ten rounds, one notice each.
+    workers, ten rounds, one notice each; and both ACC-86 cases above (a
+    leaver's row sends the reminder to the pool; a task with nobody on it
+    stays unclaimed until someone ACTIVE is).
 - **The switch governs one notice:** `TaskService.notifyAssigneesOfEdit()`'s
   due-date clause. With it off, a due-date edit is not announced, and a
   priority change is announced without the date. The setting is read only on
