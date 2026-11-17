@@ -169,8 +169,7 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TaskService,
-
+        TaskService,
 
         { provide: TaskClosedNoticeService, useValue: { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) } },
         TaskSlaService,
