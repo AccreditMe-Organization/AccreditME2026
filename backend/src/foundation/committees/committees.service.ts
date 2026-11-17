@@ -14,6 +14,7 @@ import {
   normaliseSeatActions,
   seatActionMap,
   seatActionsFor,
+  writeSeatActions,
 } from './seat-actions';
 import { ReplaceSeatActionsDto } from './dto/replace-seat-actions.dto';
 import { CreateCommitteeDto } from './dto/create-committee.dto';
@@ -409,25 +410,9 @@ export class CommitteesService {
         if (!used.has(roleValueId)) throw new SeatActionRefusal('SEAT_ACTION_SEAT_UNKNOWN', { roleValueId });
       }
 
-      const stored = (await tx.committeeSeatAction.findMany({
-        where: { organizationId, committeeId },
-        select: { id: true, roleValueId: true, actionKey: true },
-      })).filter((r) => used.has(r.roleValueId));
-      const pair = (roleValueId: string, actionKey: string) => `${roleValueId} ${actionKey}`;
-      const want = new Set([...wanted].flatMap(([seat, actions]) => [...actions].map((a) => pair(seat, a))));
-      const have = new Set(stored.map((r) => pair(r.roleValueId, r.actionKey)));
-      const remove = stored.filter((r) => !want.has(pair(r.roleValueId, r.actionKey)));
-      const add = [...wanted].flatMap(([roleValueId, actions]) =>
-        [...actions].filter((actionKey) => !have.has(pair(roleValueId, actionKey))).map((actionKey) => ({ roleValueId, actionKey })),
-      );
-      if (remove.length === 0 && add.length === 0) return { committee: before, seats, changed: null };
-
-      if (remove.length > 0) {
-        await tx.committeeSeatAction.deleteMany({ where: { organizationId, committeeId, id: { in: remove.map((r) => r.id) } } });
-      }
-      if (add.length > 0) {
-        await tx.committeeSeatAction.createMany({ data: add.map((r) => ({ organizationId, committeeId, ...r })) });
-      }
+      // ACC-283 PR 5 — the one writer, shared with an approved change request.
+      const changed = await writeSeatActions(tx, organizationId, committeeId, wanted, used);
+      if (!changed) return { committee: before, seats, changed: null };
       // Seat actions are part of the terms of reference: the save is stale
       // against the details and the other way round.
       const committee = await tx.committee.update({
@@ -435,15 +420,7 @@ export class CommitteesService {
         data: { updatedAt: new Date() },
         select: { id: true, updatedAt: true },
       });
-      const after = await seatActionsFor(tx, organizationId, [committeeId]);
-      return {
-        committee,
-        seats,
-        changed: {
-          before: seatActionMap(stored),
-          after: seatActionMap(after.filter((r) => used.has(r.roleValueId))),
-        },
-      };
+      return { committee, seats, changed };
     });
 
     if (outcome.changed) {
