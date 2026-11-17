@@ -5,6 +5,7 @@ import {
 } from './setup-condition.detectors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { OWNERLESS_SQL } from '../task/task-pool';
 
 const ORG_A = 'cmtr9x7zq0000ocp1am2rs14o';
 const ORG_B = 'cmtr9x80q0001ocp1bq3kd2rz';
@@ -298,90 +299,50 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   });
 
   describe('tasksWithoutOwner', () => {
-    // ACC-167 — a pool task nobody holds, in a pool nobody is in right now, is
-    // the same condition: work nobody can pick up. A staffed pool is not.
-    it('also lists an open pool task whose pool nobody is in, and not one whose pool is staffed', async () => {
-      const waiting = (id: string, positionId: string) => ({
-        id,
-        title: `Pool task ${id}`,
-        sourceType: 'COMMITTEE',
-        sourceId: 'cmte-1',
-        dueAt: null,
-        assignedOrgUnitId: 'unit-1',
-        assignedPositionId: positionId,
-        assignedCommitteeId: null,
-        assignedCommitteeRoleValueId: null,
-      });
-      prisma.task.findMany.mockImplementation(({ where }: { where: { status: unknown } }) =>
-        Promise.resolve(
-          where.status === 'UNASSIGNED' ? [] : [waiting('empty', 'p-empty'), waiting('staffed', 'p-held')],
-        ),
-      );
-      prisma.user.findMany.mockResolvedValue([{ positionId: 'p-held', primaryOrgUnitId: 'unit-1' }]);
-
-      const result = await detectors.tasksWithoutOwner(ORG_A);
-
-      expect(result.map((c) => c.objectId)).toEqual(['empty']);
-      // Counted by tenant, among ACTIVE users only.
-      expect(prisma.user.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, status: 'ACTIVE' }) }),
-      );
+    // ACC-86 — one raw query: OWNERLESS_SQL (task-pool.ts), the very definition
+    // the Unassigned view reads, scoped by organisation. Which tasks it matches
+    // (UNASSIGNED, nobody ACTIVE on it, an empty pool, ON_HOLD) is proved against
+    // a real Postgres in ownerless-tasks.db-spec.ts; this pins the wiring.
+    const row = (id: string, organizationId: string) => ({
+      organizationId,
+      id,
+      title: `Task ${id}`,
+      sourceType: 'COMMITTEE',
+      sourceId: 'cmte-1',
+      dueAt: null,
     });
+    /** Behaves like a table: filters by the organisation only when the query passes one. */
+    const rawTable = (rows: ReturnType<typeof row>[]) =>
+      jest.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const scoped = strings.join('?').includes('t."organizationId" = ?');
+        return Promise.resolve(scoped ? rows.filter((r) => r.organizationId === values[0]) : rows);
+      });
 
-    it('queries UNASSIGNED tasks of the tenant and records no opened-at', async () => {
-      // The first query is UNASSIGNED; the second, ACC-167's, finds tasks
-      // waiting in a pool — none here.
-      prisma.task.findMany.mockImplementation(({ where }: { where: { status: unknown } }) =>
-        Promise.resolve(
-          where.status === 'UNASSIGNED'
-            ? [
-                {
-                  id: 'task-1',
-                  title: 'Chase December figures',
-                  sourceType: 'COMMITTEE',
-                  sourceId: 'cmte-1',
-                  dueAt: null,
-                },
-              ]
-            : [],
-        ),
-      );
+    it('runs OWNERLESS_SQL in the tenant, and records no opened-at', async () => {
+      const queryRaw = rawTable([row('task-1', ORG_A)]);
+      (prisma as unknown as { $queryRaw: jest.Mock }).$queryRaw = queryRaw;
 
       const result = await detectors.tasksWithoutOwner(ORG_A);
 
-      expect(prisma.task.findMany.mock.calls[0][0].where).toEqual({
-        organizationId: ORG_A,
-        status: 'UNASSIGNED',
-      });
+      const [strings, ...values] = queryRaw.mock.calls[0]! as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join('?')).toContain('FROM "Task" t');
+      expect(values[0]).toBe(ORG_A);
+      expect(values).toContain(OWNERLESS_SQL);
       // §13.3 — no on-write stamp exists, so age is first detection.
       expect(result).toEqual([
         {
           objectId: 'task-1',
           severity: 'BLOCKS_WORK',
           openedAt: null,
-          subject: {
-            title: 'Chase December figures',
-            sourceType: 'COMMITTEE',
-            sourceId: 'cmte-1',
-            dueAt: null,
-          },
+          subject: { title: 'Task task-1', sourceType: 'COMMITTEE', sourceId: 'cmte-1', dueAt: null },
         },
       ]);
+      // No Prisma task read any more: one query, the shared definition.
+      expect(prisma.task.findMany).not.toHaveBeenCalled();
     });
 
     itEnforcesTenantIsolation('tasksWithoutOwner', async () => {
-      prisma.task.findMany.mockImplementation(
-        tenantTable([
-          {
-            organizationId: ORG_B,
-            id: 'task-b',
-            title: 'Other tenant task',
-            sourceType: 'COMMITTEE',
-            sourceId: 'x',
-            dueAt: null,
-          },
-        ]),
-      );
+      (prisma as unknown as { $queryRaw: jest.Mock }).$queryRaw = rawTable([row('task-b', ORG_B)]);
       expect(await detectors.tasksWithoutOwner(ORG_A)).toEqual([]);
     });
   });
