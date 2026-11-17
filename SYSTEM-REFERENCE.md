@@ -6460,7 +6460,9 @@ ACC-255 PR 2, §2.18.1).
   - **`GET /committees/:id/change-requests/open` answers
     `{ request, canRaise }`.** `canRaise` is the create call's own three
     checks, from the same functions, answered without creating:
-    `committees:edit_details`; `committeeAllowsRaise()`, i.e. the committee
+    `memberActions.request_change` (ACC-283 PR 6: `committees:edit_details` on
+    a committee the viewer may write to, OR their seat allows `request_change`,
+    `member-actions.ts`); `committeeAllowsRaise()`, i.e. the committee
     stage's stored `request_change` action (seeded on Active and Suspended,
     ACC-255 PR 2); and no
     open request, by `isOpen()` (drafts count, and a request with no instance
@@ -6867,7 +6869,8 @@ Plan, Ahmad's answers (7 Nov) and the as-built notes:
   member reads all of their committee's details, read only: the page, members,
   sub-committees, Membership history and change requests.
 - **A non-member without `committees:view` sees none,** with today's refusal.
-- **This is the interim rule until ACC-283**, which gives seats their own actions.
+- **This was the interim rule until ACC-283 PR 6.** For the four seat actions (add, remove,
+  change a seat, request a change) a member's SEAT now grants too; see "Writes" below.
 
 **Who is a member: ONE place, `common/services/committee-membership.ts`.** An active
 `CommitteeMember` row, on an active `Committee`, both in the caller's organisation. A member
@@ -6926,24 +6929,81 @@ cached.
 #### Writes
 
 A committee write is allowed when the caller holds **that action's own permission AND
-(`committees:view` OR active membership of THAT committee)**. The access check runs first,
-then everything that runs today, in today's order: the stage rules (`STAGE_ACTION_NOT_ALLOWED`),
-the reference checks, the stale-save check and the change-request codes. Every refusal code is
-kept.
+(`committees:view` OR active membership of THAT committee)**. **ACC-283 PR 6:** for the four
+seat actions, OR **the caller's own seat on THAT committee allows it** (the seat only ever adds;
+Ahmad, 10 Nov). The access check runs first, then everything that runs today, in today's
+order: the stage rules (`STAGE_ACTION_NOT_ALLOWED`), the reference checks, the stale-save check
+and the change-request codes. Every refusal code is kept.
 
-| Write | Own permission (unchanged) | Members of that committee |
-| -- | -- | -- |
-| `PATCH /committees/:id` | `committees:edit_details` | yes |
-| `POST /committees/:id/members` | `committees:add_member` | yes |
-| `PATCH /committees/:id/members/:memberId` | `committees:change_member_role` | yes |
-| `DELETE /committees/:id/members/:memberId` | `committees:remove_member` | yes |
-| Create, edit, submit a change request | `committees:edit_details` (service) | yes |
+| Write | Own permission (unchanged) | Members of that committee | Or the member's seat (PR 6) |
+| -- | -- | -- | -- |
+| `PATCH /committees/:id` | `committees:edit_details` | yes | no (not a seat action) |
+| `POST /committees/:id/members` | `committees:add_member` (no route gate since PR 6) | yes | `add_member` |
+| `PATCH /committees/:id/members/:memberId` | `committees:change_member_role` (no route gate since PR 6) | yes | `change_member_seat`, never on the actor's own row (Q-A) |
+| `DELETE /committees/:id/members/:memberId` | `committees:remove_member` (no route gate since PR 6) | yes | `remove_member` (the actor's own row included) |
+| Create, edit, submit, approve now (a change request) | `committees:edit_details` (service) | yes | `request_change` |
 | Withdraw a change request | the requester only (ACC-283 PR 2) | yes |
 | **Approve, return, reject** | **the chain of authority (ACC-283 PR 2, §3.18); no key** | **NO**; never the requester |
 | `GET /committee-change-requests/awaiting-decision` | none: #312 removed the `committees:view` route gate; the chain decides (ACC-283 PR 2) | no |
 
 The committee services' write methods take the caller's permissions as a trailing argument
 (`updateCommittee`, `addMember`, `changeMemberRole`, `removeMember`).
+
+#### Seats grant members their committee actions (ACC-283 PR 6)
+
+Plan: `backend/Plans/step-283-change-request-chain.md` §17 (lane B's answers, 17 Nov).
+
+- **ONE RULE, `foundation/committees/member-actions.ts`:** `memberActionsFor()` decides, and
+  `assertMemberAction()` refuses through it. Every path above calls one of them; never write
+  a second copy.
+  - **The rule:** (the action's permission AND (`committees:view` OR an active seat)) OR
+    (an active seat AND that seat allows the action on THIS committee, `CommitteeSeatAction`).
+  - **`MEMBER_ACTIONS`** is the one map of each action's names:
+
+    | Action | Seat key | Stage key | Permission |
+    | -- | -- | -- | -- |
+    | Add a member | `add_member` | `add_member` | `committees:add_member` |
+    | Remove a member | `remove_member` | `remove_member` | `committees:remove_member` |
+    | Change a seat | `change_member_seat` | `change_member_role` | `committees:change_member_role` |
+    | Request a change | `request_change` | `request_change` | `committees:edit_details` |
+- **Reads, only while something is undecided:**
+  - `committees:view` plus every asked key: no query.
+  - The viewer's seat: one query. `activeSeatOf()` in `committee-membership.ts` is what
+    `isActiveMember()` and `committeeAccess()` are built on, so it replaces the old
+    membership read.
+  - The committee's seat actions: one more (`seatActionsFor()`), only for a member lacking a
+    key, whatever the number of actions asked.
+  - Nothing is on the per-request path. `PermissionGuard` does less (three route gates are
+    gone).
+- **Refusals are today's (Q-B):**
+  - A member or `committees:view` holder whom neither the role nor the seat allows: the 403
+    naming the key (`CHANGE_REQUEST_NOT_ALLOWED` naming it, for a change request).
+  - A non-member without `committees:view`: without the key, the same 403; with it, the 404 a
+    missing committee gets.
+  - **A change request by id** (edit, submit, approve now) is read first, so every non-member
+    without `committees:view` gets "Change request not found", key or not (existence-neutral).
+- **Q-A:** a SEAT never changes the actor's OWN seat (a Secretary cannot make themselves
+  Chairman). Their role still may, and a seat may remove their own row.
+- **Where it runs (Q-C):** before the write's transaction, where ACC-281's precondition ran.
+- **The read:** `GET /committees/:id` returns `memberActions` (the four booleans), from the
+  seat `committeeAccess()` just read.
+  - `canRaise` is `memberActions.request_change` AND the stage AND no open request.
+  - A request's `actions.edit`, `submit` and `approveNow` use the same rule, once per
+    committee among the viewer's own requests.
+- **Unchanged:**
+  - Edit details and the seat-actions editor keep ACC-281's rule.
+  - Withdraw is still the requester's only.
+  - Deciding is the chain's (`decide_reporting_changes` is not in `MEMBER_ACTIONS`).
+  - Oversight is read only: a non-member head has no seat.
+  - The Tasks panel's `canCreate` (#325).
+- **The screens (Q-D)** read `memberActions` in lane A's committee page change. Until then, a
+  seat-granted member who lacks the key is accepted by the server but not offered the button.
+- **Proved in:**
+  - `member-actions.db-spec.ts`: the people, the stage refusal, another committee's seat,
+    ended and inactive rows, the read's parity with the writes, and isolation;
+  - `member-actions.spec.ts`: the truth table and its query counts.
+
+  Six mutations each turned it red.
 
 #### Heads see the committees of their units, read only (ACC-283 PR 2a)
 
@@ -7407,9 +7467,9 @@ needs it.
 
 Plan, lane B's review and Ahmad's decisions:
 `backend/Plans/step-283-change-request-chain.md` (§2, §15). PR 1 STORES seat
-actions; **nothing decides by them yet**. The chain of authority (PR 2) reads
-`decide_reporting_changes`; seat-granted member actions come later in the
-ticket.
+actions. The chain of authority (PR 2) reads `decide_reporting_changes`, and
+**PR 6 grants members the other four** through `member-actions.ts` (§3.21,
+"Seats grant members their committee actions").
 
 **The fixed list** (`foundation/committees/seat-actions.ts`, `SEAT_ACTIONS`):
 `add_member`, `remove_member`, `change_member_seat`, `request_change`,
