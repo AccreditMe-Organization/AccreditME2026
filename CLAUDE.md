@@ -1123,7 +1123,7 @@ lookups:view                lookups:manage
 workflows:view              workflows:manage
 setup:view
 notifications:view *        notifications:manage *
-committees:view              committees:manage *        committees:approve
+committees:view              committees:manage *
 committees:create            committees:edit_details    committees:add_member
 committees:remove_member     committees:change_member_role
 committees:view_all_tasks    committees:view_unit_tasks
@@ -5134,6 +5134,12 @@ requests.** Full mechanism: SYSTEM-REFERENCE.md §3.18 (the chain) and §3.21
   ACC-288 keeps the root unit headed, so the chain always ends with a decider.
   If it ever finds nobody (a legacy headless root), PR 2 refuses Submit with
   409 `CHANGE_REQUEST_NO_DECIDER` and logs it.
+- **`committees:approve` IS RETIRED (PR 4).** It is out of the catalogue, the seed
+  and the screens, and `retired-committee-approve.spec.ts` fails on any source
+  that names it. `backfill:acc283-retire-committees-approve` takes it off roles
+  AFTER the deploy: dry run, `-- --execute`, then a dry run reporting 0. It
+  refuses customers. New organisations seed Terms Review on the committee's
+  own unit head (`ORG_UNIT_HEAD`, no unit).
 - **THE CHAIN OF AUTHORITY DECIDES A CHANGE REQUEST, NEVER `committees:approve`**
   (`change-request-chain.ts`): a Reports-to committee's deciding seat, else the
   owning unit's head or cover in force and upwards to the root. The requester,

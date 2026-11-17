@@ -4,7 +4,7 @@ import en from '../../../../assets/i18n/en.json';
 import { QE_KEYS, grant, nouraGrants } from './user-permissions.fixtures';
 
 // ACC-272 — "A user's permissions" as data: the design's Noura Al-Mutairi
-// example (16 permissions through 3 active roles; Committees 9 of 11).
+// example (16 permissions through 3 active roles; Committees 9 of 10).
 
 const SENTENCES = (en as { roles: { matrix: { sentence: Record<string, string> } } }).roles.matrix.sentence;
 const perm = (key: string, extra: Partial<PermissionDto> = {}): PermissionDto => {
@@ -35,11 +35,12 @@ describe("A user's permissions, as data (ACC-272)", () => {
     expect(s.activeRoles.length).toBe(3);
     expect(s.granted.size).toBe(16);
     expect([...s.granted]).toContain('committees:view_unit_tasks');
-    expect([...s.granted]).toContain('committees:approve');
-    // Committees: 9 of 11 (ACC-271 PR 6b: committees:manage is not in use).
+    expect([...s.granted]).toContain('committees:manage_tasks');
+    // Committees: 9 of 10 (ACC-271 PR 6b: committees:manage is not in use;
+    // ACC-283 PR 4: committees:approve is retired).
     const committees = s.modules.find((m) => m.module === 'committees')!;
     expect(committees.keys.filter((k) => s.granted.has(k)).length).toBe(9);
-    expect(committees.keys.length).toBe(11);
+    expect(committees.keys.length).toBe(10);
   });
 
   it('an inactive role gives nothing, even keys no active role gives', () => {
@@ -55,7 +56,7 @@ describe("A user's permissions, as data (ACC-272)", () => {
     const s = summarise(nouraGrants(), CATALOGUE, { isTenant: true });
     const names = (k: string) => s.from.get(k)!.map((g) => g.role.nameEn);
     expect(names('committees:view')).toEqual(['Unit Head', 'Patient Safety Reviewer', 'Quality Editor']);
-    expect(names('committees:approve')).toEqual(['Patient Safety Reviewer']);
+    expect(names('committees:manage_tasks')).toEqual(['Patient Safety Reviewer']);
     expect(names('tenant:view')).toEqual(['Quality Editor']);
   });
 
