@@ -32,6 +32,7 @@ import { TwoStepOffDialogComponent } from './two-step-off-dialog.component';
 import { TwoStepSetupDialogComponent } from './two-step-setup-dialog.component';
 import { TwoStepResetDialogComponent } from './two-step-reset-dialog.component';
 import { UserCommitteesPanelComponent } from './user-committees-panel.component';
+import { UserSessionsPanelComponent } from './user-sessions-panel.component';
 import { USER_PANEL_GRID } from './user-panel-grid';
 import { AmConfirmService } from '../../../../shared/components/confirm/am-confirm.service';
 
@@ -83,12 +84,17 @@ interface Fact {
  *
  * ## Panels left OUT, not empty (CC-88, D1)
  *
- * Tasks, Sessions and Access history have no per-user endpoint, so they are
- * absent — not a placeholder, not a disabled panel. ACC-216 adds the reads, one
- * at a time. A spec pins their absence.
+ * Tasks and Access history have no per-user endpoint here, so they are absent —
+ * not a placeholder, not a disabled panel. ACC-216 adds the reads, one at a
+ * time. A spec pins their absence.
  *
  * Committees (ACC-216 part 1) is its own component with its own request, shown
  * only to a viewer holding committees:view: absent otherwise, never empty.
+ *
+ * Sessions ("Signed-in devices", ACC-216) is its own component too, on
+ * am-capped-panel: for yourself (`own`: end your other devices) or for a
+ * users:view + users:manage_sessions holder (`admin`: sign out everywhere);
+ * absent otherwise, never empty (`sessionsMode`).
  *
  * ## Each panel owns its request (ACC-104)
  *
@@ -117,6 +123,7 @@ interface Fact {
     TwoStepOffDialogComponent,
     TwoStepResetDialogComponent,
     UserCommitteesPanelComponent,
+    UserSessionsPanelComponent,
   ],
   template: `
     @if (loadError()) {
@@ -323,6 +330,11 @@ interface Fact {
           <!-- ACC-216 — absent without committees:view; a refused read hides it too. -->
           @if (canViewCommittees()) {
             <app-user-committees-panel [userId]="userId" />
+          }
+
+          <!-- ACC-216 Sessions — yourself, or users:view + users:manage_sessions; absent otherwise. -->
+          @if (sessionsMode(); as mode) {
+            <app-user-sessions-panel [userId]="userId" [mode]="mode" [personName]="user()?.name ?? ''" />
           }
 
           @if (isOwn() && twoStepHandle()) {
@@ -563,6 +575,15 @@ export class UserRecordComponent implements OnInit, OnDestroy {
   readonly canViewRoles = computed(() => this.can('roles:view'));
   /** ACC-216 — GET /users/:id/committees needs committees:view in every case. */
   readonly canViewCommittees = computed(() => this.can('committees:view'));
+  /**
+   * ACC-216 Sessions — GET /users/:id/sessions: yourself ('own', who may end
+   * their other devices), or users:view + users:manage_sessions ('admin', who
+   * may sign them out everywhere). Null: no panel and no request.
+   */
+  readonly sessionsMode = computed<'own' | 'admin' | null>(() => {
+    if (this.isOwn()) return 'own';
+    return this.can('users:view') && this.can('users:manage_sessions') ? 'admin' : null;
+  });
   readonly canManageRoles = computed(() => this.can('roles:manage'));
   readonly canSeePermissions = computed(() => USER_PERMISSIONS_LOOKUP.every((p) => this.can(p)));
   /** The two-step endpoints act on the CALLER, so only on your own record. */
