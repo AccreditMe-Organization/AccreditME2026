@@ -6908,7 +6908,7 @@ kept.
 | Create, edit, submit a change request | `committees:edit_details` (service) | yes |
 | Withdraw a change request | the requester only (ACC-283 PR 2) | yes |
 | **Approve, return, reject** | **the chain of authority (ACC-283 PR 2, §3.18); no key** | **NO**; never the requester |
-| `GET /committee-change-requests/awaiting-decision` | none: the chain decides (ACC-283 PR 2) | no |
+| `GET /committee-change-requests/awaiting-decision` | none: #312 removed the `committees:view` route gate; the chain decides (ACC-283 PR 2) | no |
 
 The committee services' write methods take the caller's permissions as a trailing argument
 (`updateCommittee`, `addMember`, `changeMemberRole`, `removeMember`).
