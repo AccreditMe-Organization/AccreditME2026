@@ -4,7 +4,24 @@ Plan only, written 17 Nov 2026 (CC-299) against `origin/dev` at `292ce32`. No co
 change. Parts 1 (Committees, #303) and 2 (Access history, #323) are the pattern.
 
 Every statement about today's behaviour cites the code it was read from. The questions for
-Ahmad are at the end (§9); everything marked **proposed** waits on them.
+Ahmad are at the end (§9). **He accepted every recommendation on 17 Nov ("agree to all"),
+so the design below is decided**; the answers are in the next table.
+
+## Ahmad's answers (17 Nov)
+
+| Q | Decision |
+|---|---|
+| 1 | Ending sessions is in this ticket, not only the list. |
+| 2 | Seeing someone else's sessions needs a new key, `users:manage_sessions` (Organization Administrator only), plus `users:view`. **Who adds the key** (the permission catalogue is lane B's area) is being agreed between the lanes; it is said in PR 1's prompt, and nobody adds it before then. |
+| 3 | The IP address is shown to the person and to that key's holder. |
+| 4 | An administrator only "Signs out everywhere", which takes effect at once. No ending one device of someone else's. |
+| 5 | The person is emailed when an administrator signs them out everywhere. |
+| 6 | Deactivation revokes the person's sessions through `endEverySessionInTx()`, as its own PR (PR 3). |
+| 7 | Ending one of your own devices may take up to 15 minutes to bite. No check per request. |
+| 8 | Tasks: **Option A**, the viewer's own rule filtered to the person. Nobody sees a task they couldn't already open. |
+| 9 | The Tasks panel lists tasks the person is an active assignee on, not ones they created. |
+| 10 | No New task button on a person's Tasks panel. |
+| 11 | The Sessions panel is built on `am-capped-panel` now; the design thread checks it afterwards. |
 
 ---
 
@@ -90,7 +107,7 @@ live but that `refresh()` would refuse (§1.3). Listing them as "signed in" woul
 **Two consequences for what can be shown:**
 - **"Signed in" is `sessionStartedAt`** (or the row's `createdAt` for a row with no start).
 - **"Last active" is the live row's `createdAt`**: the last rotation, so accurate to about 15
-  minutes. There is no better column. **Proposed:** say "about" on screen.
+  minutes. There is no better column. The screen says "about".
 
 ### 1.5 What ending a session can and cannot do
 
@@ -124,13 +141,13 @@ and 2, and checked by the design thread afterwards (Q11).
 
 ---
 
-## 2. Sessions: proposed design
+## 2. Sessions: the design (decided, 17 Nov)
 
 ### 2.1 The read: `GET /users/:userId/sessions`
 
 - **Gate, before any read, with no query (ACC-101 clause a):**
   - yourself: always;
-  - someone else: `users:view` AND the child's own key (proposed `users:manage_sessions`, Q2).
+  - someone else: `users:view` AND the child's own key, `users:manage_sessions` (Q2; who adds it is agreed between the lanes).
   - Each refusal is a 403 naming the missing key, identical for a real colleague and an invented
     id. Another organisation's person is the 404 an invented id gets (`getById`).
 - **Rows:** the live predicate of §1.4, `{ organizationId, userId }`, newest `createdAt` first,
@@ -140,19 +157,19 @@ and 2, and checked by the design thread afterwards (Q11).
   - `startedAt`, `lastActiveAt`, `expiresAt`;
   - `device`: `{ browser, os }`, parsed on the SERVER from `deviceInfo` by a small in-house
     function (no parser is installed in either package; `file-content.ts` is the precedent for an
-    in-house reader). An unrecognised agent reads "Unknown browser". **Proposed:** the raw
+    in-house reader). An unrecognised agent reads "Unknown browser". The raw
     user-agent is never returned.
   - `address`: `ipAddress`, **only to yourself and to the key holder** (Q3);
   - `current: true` on the caller's own session (§2.3).
 - **Cost:** the person (1) and the rows (1). `tokenVersion` and `status` come with the person,
   so the live predicate needs no third read. Nothing on the per-request path.
 - **Index:** the read uses `@@index([userId])`. Rows are never deleted, so a long-lived account
-  has many revoked rows. **Proposed:** add `@@index([userId, revokedAt])` (an additive migration)
+  has many revoked rows. An `@@index([userId, revokedAt])` (an additive migration) is added
   only if the read measures slow on the seeded data. Not in the first PR.
 
 ### 2.2 Ending sessions (Q1)
 
-**Proposed, if Q1 is yes:**
+**Decided (Q1, Q4, Q7):**
 
 | Who | Action | Route | Effect | Takes effect |
 |---|---|---|---|---|
@@ -172,7 +189,7 @@ and 2, and checked by the design thread afterwards (Q11).
   2. not while impersonating;
   3. not the account owner (ACC-221);
   4. the floor: a holder without Organization Administrator cannot sign out someone who has it.
-  **Proposed:** extract the shared part rather than copy it. That is the point of ACC-164's
+  The shared part is extracted rather than copied. That is the point of ACC-164's
   "never a second copy".
 - **Audit:** one `AuditLog` row, objectType `User`, objectId the person, action `UPDATE`,
   `metadata: { event: 'sessions_ended', scope: 'one' | 'others' | 'all', count }`. No address or
@@ -189,7 +206,7 @@ and 2, and checked by the design thread afterwards (Q11).
 
 ### 2.3 "This device"
 
-The read at `/users/:id/sessions` does not receive the refresh cookie. **Proposed:** mark the
+The read at `/users/:id/sessions` does not receive the refresh cookie. It marks the
 caller's own session by matching the access token's `sst` to `sessionStartedAt`. Collisions are
 not impossible (two sign-ins in the same millisecond) but harmless here: the mark only hides that
 row's "End" button, and ending your own session is Sign out. The self END routes use the cookie's
@@ -214,7 +231,7 @@ hash, so they are exact.
 ### 2.5 The deactivation gap (Q6)
 
 Deactivation leaves rows live-looking (§1.3). The read's predicate hides them, so the panel is
-correct either way. **Proposed:** a separate small fix where `deactivate()` uses
+correct either way. **Decided (Q6):** a separate small fix (PR 3) where `deactivate()` uses
 `endEverySessionInTx()`, so the table says what is true. It is lane A's `user.service.ts`, one
 call, with a db-spec.
 
@@ -289,7 +306,7 @@ On someone else's record, which of their tasks may an administrator see? Each op
 from the parent gate: the record page itself needs yourself or `users:view` (+ `admin:access` for
 the page, `ownProfileGuard`).
 
-### Option A: the viewer's own rule, filtered to the person (recommended)
+### Option A: the viewer's own rule, filtered to the person (chosen, Q8)
 
 `activeAssignee(X) AND taskVisibleSql(viewer)`.
 
@@ -328,7 +345,7 @@ more, it can become C with one permission.
 
 ---
 
-## 5. Tasks: proposed design (Option A)
+## 5. Tasks: the design (Option A, decided)
 
 ### 5.1 The read
 
@@ -392,7 +409,7 @@ filters, rows, per-row actions (`taskActionsFor()`), the facets and the batching
 
 | PR | Content | Backend slot | Depends on |
 |---|---|---|---|
-| 1 | Sessions read + self end routes + `users:manage_sessions` (if Q2) in the catalogue, seed, sentence and grantability; the generalised reset rule; `SESSIONS_ENDED` in the access-history classifier | yes | #323 merged (the classifier) |
+| 1 | Sessions read + self end routes + `users:manage_sessions` in the catalogue, seed, sentence and grantability (or by lane B, as agreed); the generalised reset rule; `SESSIONS_ENDED` in the access-history classifier | yes | #323 merged (the classifier) |
 | 2 | Sessions panel | no | PR 1 deployed |
 | 3 | Deactivation uses `endEverySessionInTx()` (Q6) | yes | none |
 | 4 | Tasks person scope on `record-list` + db-spec | yes | none |
@@ -415,7 +432,8 @@ filters, rows, per-row actions (`taskActionsFor()`), the facets and the batching
 
 ## 9. Questions for Ahmad
 
-Each is answerable in one word. **Recommended** answers are marked ★.
+Each is answerable in one word. **Recommended** answers are marked ★. **Answered 17 Nov:
+every ★ accepted** (see "Ahmad's answers (17 Nov)" at the top).
 
 1. Build ending sessions in this ticket, not only the list? **Yes ★** / No
 2. Someone else's sessions need a new key, `users:manage_sessions` (Organization Administrator
