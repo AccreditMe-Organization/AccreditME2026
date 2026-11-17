@@ -49,6 +49,11 @@ import { writeStartingAssignments } from '../workflow/workflow-who';
 import { SYSTEM_WORKFLOW_SEED } from '../workflow/workflow.seed';
 import { CommitteesService } from './committees.service';
 
+// ACC-283 PR 6 — the member writes no longer have a route gate checking each key
+// first; the service does (member-actions.ts). This actor holds them, as the route
+// used to require.
+const MEMBER_WRITER = ['committees:view', 'committees:add_member', 'committees:remove_member', 'committees:change_member_role'];
+
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
 const host = new URL(url).hostname;
@@ -157,9 +162,9 @@ describe("A committee's structure rules against a real database (ACC-286)", () =
   };
 
   const remove = (o: Org, c: Committee, memberId: string) =>
-    committees.removeMember(c.id, memberId, { reason: 'Leaving' } as never, o.id, o.actorId, ['committees:view']);
+    committees.removeMember(c.id, memberId, { reason: 'Leaving' } as never, o.id, o.actorId, MEMBER_WRITER);
   const reseat = (o: Org, c: Committee, memberId: string, seatKey: string) =>
-    committees.changeMemberRole(c.id, memberId, { roleValueId: seat[seatKey]! } as never, o.id, o.actorId, ['committees:view']);
+    committees.changeMemberRole(c.id, memberId, { roleValueId: seat[seatKey]! } as never, o.id, o.actorId, MEMBER_WRITER);
 
   beforeAll(async () => {
     await prisma.onModuleInit();
@@ -353,8 +358,8 @@ describe("A committee's structure rules against a real database (ACC-286)", () =
       const c = await theirs.committeeAt('active');
       const chairman = await c.seat('chairman');
 
-      const foreign = await outcome(committees.removeMember(c.id, chairman, { reason: 'x' } as never, mine.id, mine.actorId, ['committees:view']));
-      const missing = await outcome(committees.removeMember('invented', 'invented', { reason: 'x' } as never, mine.id, mine.actorId, ['committees:view']));
+      const foreign = await outcome(committees.removeMember(c.id, chairman, { reason: 'x' } as never, mine.id, mine.actorId, MEMBER_WRITER));
+      const missing = await outcome(committees.removeMember('invented', 'invented', { reason: 'x' } as never, mine.id, mine.actorId, MEMBER_WRITER));
       expect(foreign).toEqual(missing);
       expect((foreign as { statusCode?: number }).statusCode).toBe(404);
       expect((await prisma.committeeMember.findFirstOrThrow({ where: { id: chairman } })).isActive).toBe(true);

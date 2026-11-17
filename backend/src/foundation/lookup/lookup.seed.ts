@@ -48,20 +48,20 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
     // stops reading it.
     //
     // ACC-283 — the seat's DEFAULT actions (SEAT_ACTIONS, seat-actions.ts), one
-    // boolean each, named in both languages (ACC-310's labelEn/labelAr; `label`
-    // too, which the value form reads today). Copied into a committee when it is
+    // boolean each, named in both languages (ACC-310's labelEn/labelAr; the old
+    // single `label` is gone since the value form stopped reading it). Copied into a committee when it is
     // created; changing a default never reaches an existing committee. The
     // values below are plan Q10's recommendation (Chairman all five, Secretary
     // the four member actions), confirmed by Ahmad (16 Nov).
     attributeSchema: {
       type: 'object',
       properties: {
-        required: { type: 'boolean', label: 'Required seat', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
-        seatAddsMember:              { type: 'boolean', label: 'Add members',                                     labelEn: 'Add members',                                     labelAr: 'إضافة أعضاء' },
-        seatRemovesMember:           { type: 'boolean', label: 'Remove members',                                  labelEn: 'Remove members',                                  labelAr: 'إزالة أعضاء' },
-        seatChangesSeat:             { type: 'boolean', label: "Change a member's seat",                          labelEn: "Change a member's seat",                          labelAr: 'تغيير مقعد عضو' },
-        seatRequestsChange:          { type: 'boolean', label: 'Request a change',                                labelEn: 'Request a change',                                labelAr: 'طلب تغيير' },
-        seatDecidesReportingChanges: { type: 'boolean', label: 'Decide changes of committees that report to it', labelEn: 'Decide changes of committees that report to it', labelAr: 'البتّ في تغييرات اللجان التابعة لها' },
+        required: { type: 'boolean', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
+        seatAddsMember:              { type: 'boolean', labelEn: 'Add members',                                     labelAr: 'إضافة أعضاء' },
+        seatRemovesMember:           { type: 'boolean', labelEn: 'Remove members',                                  labelAr: 'إزالة أعضاء' },
+        seatChangesSeat:             { type: 'boolean', labelEn: "Change a member's seat",                          labelAr: 'تغيير مقعد عضو' },
+        seatRequestsChange:          { type: 'boolean', labelEn: 'Request a change',                                labelAr: 'طلب تغيير' },
+        seatDecidesReportingChanges: { type: 'boolean', labelEn: 'Decide changes of committees that report to it', labelAr: 'البتّ في تغييرات اللجان التابعة لها' },
       },
     },
     sortOrder: 20,

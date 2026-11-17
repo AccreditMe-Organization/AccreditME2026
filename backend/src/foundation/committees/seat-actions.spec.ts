@@ -54,8 +54,8 @@ describe('Seat actions (ACC-283)', () => {
         expect(typeof def['labelEn']).toBe('string');
         expect((def['labelEn'] as string).trim()).not.toBe('');
         expect(def['labelAr']).toMatch(ARABIC);
-        // The value form reads `label` today (ACC-310 keeps it until the form stops).
-        expect(def['label']).toBe(def['labelEn']);
+        // The old single `label` is gone: the value form reads labelEn / labelAr (ACC-310).
+        expect(def).not.toHaveProperty('label');
       },
     );
 

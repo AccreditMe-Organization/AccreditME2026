@@ -48,7 +48,7 @@ describe('SYSTEM_LOOKUP_SEED attribute names (ACC-310)', () => {
     },
   );
 
-  it('keeps the old `label` on Required seat until the form stops reading it', () => {
+  it('names Required seat by labelEn / labelAr only: the old `label` is gone (ACC-310)', () => {
     const roles = SYSTEM_LOOKUP_SEED.find(
       (c) => c.key === 'committee_member_role',
     );
@@ -60,7 +60,6 @@ describe('SYSTEM_LOOKUP_SEED attribute names (ACC-310)', () => {
     )['required'];
     expect(required).toEqual({
       type: 'boolean',
-      label: 'Required seat',
       labelEn: 'Required seat',
       labelAr: 'مقعد مطلوب',
     });
