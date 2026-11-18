@@ -7,7 +7,7 @@ import { StageRulesService } from '../../workflow/stage-rules.service';
 import { MEETING_ACTIONS, STAGE_FLAG } from '../../workflow/record-registry';
 import type { EngineTx } from '../../workflow/workflow.service';
 import { peopleDateIn } from '../../task/task-sla.service';
-import { invitationNotice } from '../meeting-notices';
+import { invitationNotice, presenterLeftNotice } from '../meeting-notices';
 import { notifyUsers } from '../meeting-send';
 import { lockMeetingRow } from '../meeting-access';
 
@@ -30,6 +30,8 @@ export interface InviteeSyncResult {
   removed: number;
   converted: number;
   reseated: number;
+  /** Leavers who present an agenda item: kept, as organisation guests. */
+  demoted: number;
 }
 
 /** Meetings read per batch by the sweep. */
@@ -81,7 +83,10 @@ export async function expectedMembers(client: Client, organizationId: string, me
  * open meeting:
  *   - it adds the missing MEMBER rows (an organisation guest who becomes a
  *     member is turned into a MEMBER row, keeping their answer);
- *   - it removes the MEMBER rows no longer expected, with their answers;
+ *   - it removes the MEMBER rows no longer expected, with their answers —
+ *     except a leaver who presents an agenda item, who stays as an
+ *     organisation guest (row, answer and presenter kept), and the organiser
+ *     is told (lane B's review, fix 1);
  *   - it refreshes a member's seat snapshot.
  * Guests are never touched. Only OPEN meetings change: the current stage
  * allows `manage_guests` (Planned and Agenda Issued, seeded) and the meeting
@@ -181,6 +186,7 @@ export class MeetingInviteeSyncService {
         const done = await this.syncOne(organizationId, meeting, now);
         add(result, done.result);
         if (done.invited.length > 0) await this.tellInvited(organizationId, meeting.id, done.invited);
+        if (done.demoted.length > 0) await this.tellOrganiser(organizationId, meeting.id, done.demoted);
       } catch (error) {
         // One meeting failing leaves the rest; the next sweep tries again.
         this.logger.warn(`Meeting invitee sync failed for meeting ${meeting.id} in org ${organizationId}: ${error instanceof Error ? error.name : 'unknown'}`);
@@ -189,16 +195,20 @@ export class MeetingInviteeSyncService {
     return result;
   }
 
-  private async syncOne(organizationId: string, meeting: OwnedMeeting, now: Date): Promise<{ result: InviteeSyncResult; invited: string[] }> {
+  private async syncOne(
+    organizationId: string,
+    meeting: OwnedMeeting,
+    now: Date,
+  ): Promise<{ result: InviteeSyncResult; invited: string[]; demoted: { userId: string; items: string[] }[] }> {
     return this.prisma.$transaction(async (tx) => {
       const result = emptyResult();
       // The instance FOR SHARE first: a move in flight (Issue Agenda, Cancel) finishes first.
       const rules = await this.stageRules.currentStageRules('MEETING', meeting.id, organizationId, tx, { lock: 'share' });
-      if (rules.actions[MEETING_ACTIONS.MANAGE_GUESTS] !== true) return { result, invited: [] };
+      if (rules.actions[MEETING_ACTIONS.MANAGE_GUESTS] !== true) return { result, invited: [], demoted: [] };
       // Then the meeting row, as every invitee write (an answer, a guest) takes it.
       await lockMeetingRow(tx, meeting.id, organizationId);
       const current = await tx.meeting.findFirst({ where: { id: meeting.id, organizationId }, select: { scheduledAt: true } });
-      if (!current || current.scheduledAt <= now) return { result, invited: [] };
+      if (!current || current.scheduledAt <= now) return { result, invited: [], demoted: [] };
 
       const [expected, rows] = await Promise.all([
         expectedMembers(tx, organizationId, [meeting]),
@@ -226,16 +236,36 @@ export class MeetingInviteeSyncService {
         });
       }
       for (const r of diff.reseat) await tx.meetingAttendee.update({ where: { id: r.id }, data: { seatValueId: r.seatValueId } });
-      if (diff.remove.length > 0) {
-        await tx.meetingAttendee.deleteMany({ where: { organizationId, meetingId: meeting.id, kind: 'MEMBER', id: { in: diff.remove } } });
+      // A leaver who presents an item is kept as an organisation guest: the row,
+      // its answer and the presenter link survive; everyone else is removed.
+      const presenting = diff.remove.length
+        ? await tx.agendaItem.findMany({
+            where: { organizationId, meetingId: meeting.id, presenterAttendeeId: { in: diff.remove.map((r) => r.id) } },
+            select: { presenterAttendeeId: true, title: true },
+            orderBy: [{ order: 'asc' }, { id: 'asc' }],
+          })
+        : [];
+      const itemsOf = new Map<string, string[]>();
+      for (const item of presenting) itemsOf.set(item.presenterAttendeeId!, [...(itemsOf.get(item.presenterAttendeeId!) ?? []), item.title]);
+      const demote = diff.remove.filter((r) => itemsOf.has(r.id));
+      const remove = diff.remove.filter((r) => !itemsOf.has(r.id));
+      if (demote.length > 0) {
+        await tx.meetingAttendee.updateMany({
+          where: { organizationId, meetingId: meeting.id, kind: 'MEMBER', id: { in: demote.map((r) => r.id) } },
+          data: { kind: 'ORG_GUEST', seatValueId: null, addedAsPresenter: true },
+        });
+      }
+      if (remove.length > 0) {
+        await tx.meetingAttendee.deleteMany({ where: { organizationId, meetingId: meeting.id, kind: 'MEMBER', id: { in: remove.map((r) => r.id) } } });
       }
       result.meetings = 1;
       result.added = diff.add.length;
       result.converted = diff.convert.length;
       result.reseated = diff.reseat.length;
-      result.removed = diff.remove.length;
+      result.removed = remove.length;
+      result.demoted = demote.length;
       const invited = issued ? [...diff.add.map((a) => a.userId), ...diff.convert.filter((c) => !c.invited).map((c) => c.userId)] : [];
-      return { result, invited };
+      return { result, invited, demoted: demote.map((r) => ({ userId: r.userId, items: itemsOf.get(r.id)! })) };
     });
   }
 
@@ -252,6 +282,27 @@ export class MeetingInviteeSyncService {
       ]);
     }
     return byMeeting;
+  }
+
+  /** After the commit: the organiser is told, in the app, of each presenter kept as a guest. */
+  private async tellOrganiser(organizationId: string, meetingId: string, demoted: readonly { userId: string; items: string[] }[]): Promise<void> {
+    const [meeting, users] = await Promise.all([
+      this.prisma.meeting.findFirst({ where: { id: meetingId, organizationId }, select: { title: true, organizerId: true } }),
+      this.prisma.user.findMany({ where: { organizationId, id: { in: demoted.map((d) => d.userId) } }, select: { id: true, name: true } }),
+    ]);
+    if (!meeting) return;
+    const names = new Map(users.map((u) => [u.id, u.name]));
+    for (const d of demoted) {
+      await notifyUsers(
+        this.notifications,
+        organizationId,
+        meetingId,
+        null,
+        [meeting.organizerId],
+        presenterLeftNotice(names.get(d.userId) ?? '', d.items, meeting.title),
+        'IN_APP',
+      );
+    }
   }
 
   /** After the commit: the members added to an issued meeting get the invitation. */
@@ -276,7 +327,7 @@ interface Diff {
   add: { userId: string; seatValueId: string | null }[];
   convert: { id: string; userId: string; seatValueId: string | null; invited: boolean }[];
   reseat: { id: string; seatValueId: string | null }[];
-  remove: string[];
+  remove: { id: string; userId: string }[];
 }
 
 /** What a meeting's MEMBER rows must become. Guests are never removed or changed, except a guest who is now a member. */
@@ -289,7 +340,7 @@ function diffOf(expected: Map<string, string | null>, rows: readonly AttendeeRow
     else if (row.kind === 'ORG_GUEST') diff.convert.push({ id: row.id, userId, seatValueId, invited: row.invited });
     else if (row.kind === 'MEMBER' && row.seatValueId !== seatValueId) diff.reseat.push({ id: row.id, seatValueId });
   }
-  for (const row of rows) if (row.kind === 'MEMBER' && !expected.has(row.userId)) diff.remove.push(row.id);
+  for (const row of rows) if (row.kind === 'MEMBER' && !expected.has(row.userId)) diff.remove.push({ id: row.id, userId: row.userId });
   diff.changed = diff.add.length + diff.convert.length + diff.reseat.length + diff.remove.length > 0;
   return diff;
 }
@@ -304,7 +355,7 @@ function openStageSql(): Prisma.Sql {
 }
 
 function emptyResult(): InviteeSyncResult {
-  return { meetings: 0, added: 0, removed: 0, converted: 0, reseated: 0 };
+  return { meetings: 0, added: 0, removed: 0, converted: 0, reseated: 0, demoted: 0 };
 }
 
 function add(total: InviteeSyncResult, part: InviteeSyncResult): void {
@@ -313,6 +364,7 @@ function add(total: InviteeSyncResult, part: InviteeSyncResult): void {
   total.removed += part.removed;
   total.converted += part.converted;
   total.reseated += part.reseated;
+  total.demoted += part.demoted;
 }
 
 /**

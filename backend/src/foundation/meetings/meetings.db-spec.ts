@@ -656,13 +656,50 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       await prisma.committeeMember.updateMany({ where: { committeeId: w.committeeId, userId: w.people['member']! }, data: { roleValueId: seat['secretary']! } });
       await prisma.committeeMember.updateMany({ where: { committeeId: w.committeeId, userId: w.people['secretary']! }, data: { isActive: false } });
 
-      expect(await sync.forCommittee(w.orgId, w.committeeId, now)).toEqual({ meetings: 1, added: 0, removed: 1, converted: 1, reseated: 1 });
+      expect(await sync.forCommittee(w.orgId, w.committeeId, now)).toEqual({ meetings: 1, added: 0, removed: 1, converted: 1, reseated: 1, demoted: 0 });
       const rows = await rowsOf(m.id);
       expect(rows.find((r) => r.userId === w.people['invitee'])).toMatchObject({ kind: 'MEMBER', seatValueId: seat['member'], answer: 'ATTENDING' });
       expect(rows.find((r) => r.userId === w.people['member'])).toMatchObject({ kind: 'MEMBER', seatValueId: seat['secretary'] });
       expect(rows.some((r) => r.userId === w.people['secretary'])).toBe(false);
       // A second run changes nothing.
-      expect(await sync.forCommittee(w.orgId, w.committeeId, now)).toEqual({ meetings: 0, added: 0, removed: 0, converted: 0, reseated: 0 });
+      expect(await sync.forCommittee(w.orgId, w.committeeId, now)).toEqual({ meetings: 0, added: 0, removed: 0, converted: 0, reseated: 0, demoted: 0 });
+    });
+
+    it("a member who leaves while presenting stays as an organisation guest, keeping their answer, and the organiser is told (review fix 1)", async () => {
+      const w = await world();
+      const now = new Date();
+      const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+      const memberRow = (await people.attendees(m.id, w.orgId, as(w, 'chair'), now)).find((a) => a.userId === w.people['member'])!;
+      await people.answer(m.id, { answer: 'ATTENDING' } as never, w.orgId, as(w, 'member'), now);
+      await agenda.create(m.id, { title: 'Budget', presenter: { attendeeId: memberRow.id } } as never, w.orgId, as(w, 'chair'), now);
+      // An organisation guest joins the committee (becomes a MEMBER), presents, and leaves again.
+      await people.addGuest(m.id, { userId: w.people['invitee'] } as never, w.orgId, as(w, 'chair'), now);
+      await prisma.committeeMember.create({ data: { organizationId: w.orgId, committeeId: w.committeeId, userId: w.people['invitee']!, roleValueId: seat['member']! } });
+      await sync.forCommittee(w.orgId, w.committeeId, now);
+      const joined = (await people.attendees(m.id, w.orgId, as(w, 'chair'), now)).find((a) => a.userId === w.people['invitee'])!;
+      expect(joined.kind).toBe('MEMBER');
+      await agenda.create(m.id, { title: 'Risks', presenter: { attendeeId: joined.id } } as never, w.orgId, as(w, 'chair'), now);
+      notices.length = 0;
+
+      await prisma.committeeMember.updateMany({ where: { committeeId: w.committeeId, userId: { in: [w.people['member']!, w.people['invitee']!] } }, data: { isActive: false } });
+      const result = await sync.forCommittee(w.orgId, w.committeeId, now);
+      expect(result).toMatchObject({ removed: 0, demoted: 2 });
+
+      const rows = await people.attendees(m.id, w.orgId, as(w, 'chair'), now);
+      expect(rows.find((a) => a.userId === w.people['member'])).toMatchObject({ id: memberRow.id, kind: 'ORG_GUEST', seat: null, answer: 'ATTENDING', addedAsPresenter: true });
+      expect(rows.find((a) => a.userId === w.people['invitee'])).toMatchObject({ id: joined.id, kind: 'ORG_GUEST', seat: null });
+      // Still the presenters of their items.
+      expect((await agenda.list(m.id, w.orgId, as(w, 'chair'), now)).map((i) => [i.title, i.presenter?.attendeeId])).toEqual([
+        ['Budget', memberRow.id],
+        ['Risks', joined.id],
+      ]);
+      // The organiser (the Chair) is told, in the app, once per person.
+      const told = notices.filter((x) => x.titleEn === 'A presenter left the committee or unit');
+      expect(told.map((x) => x.userId)).toEqual([w.people['chair'], w.people['chair']]);
+      expect(told.map((x) => x.bodyEn).sort()).toEqual([
+        'invitee presents "Risks" at Monthly review and has left the committee or unit. They stay invited as a guest.',
+        'member presents "Budget" at Monthly review and has left the committee or unit. They stay invited as a guest.',
+      ]);
     });
 
     it('follows the unit: a person who moves in becomes an invitee, one deactivated leaves', async () => {

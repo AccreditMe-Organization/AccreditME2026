@@ -107,7 +107,7 @@ const mockWorkingCalendar = {
 // ACC-313 — the due-soon reminder runs as its own step; its own spec covers it.
 const mockDueWarnings = { sweep: jest.fn() };
 // ACC-316 PR 3b — the meeting invitees' recomputer, its own step.
-const mockMeetingInvitees = { sweep: jest.fn().mockResolvedValue({ meetings: 0, added: 0, removed: 0, converted: 0, reseated: 0 }) };
+const mockMeetingInvitees = { sweep: jest.fn().mockResolvedValue({ meetings: 0, added: 0, removed: 0, converted: 0, reseated: 0, demoted: 0 }) };
 const mockNotificationService = { create: jest.fn() };
 const mockOrgPositionService = {
   // ACC-46 Section 2.7.e, Commit 4 — the real tier-based escalation firing

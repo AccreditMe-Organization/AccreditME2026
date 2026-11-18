@@ -125,3 +125,15 @@ export function outsideCancelledEmail(title: string, organisation: OrganisationN
     bodyAr: `ألغى ${organisation.ar} ${title}. السبب: ${reason}`,
   };
 }
+
+/** A member who presents an item has left the committee or unit: they stay invited as a guest (lane B's review, fix 1). */
+export function presenterLeftNotice(person: string, items: readonly string[], title: string): NoticeText {
+  const en = items.map((i) => `"${i}"`).join(', ');
+  const ar = items.map((i) => `«${i}»`).join('، ');
+  return {
+    titleEn: 'A presenter left the committee or unit',
+    titleAr: 'بند يقدَّم الآن من ضيف',
+    bodyEn: `${person} presents ${en} at ${title} and has left the committee or unit. They stay invited as a guest.`,
+    bodyAr: `${person}: انتهاء العضوية في اللجنة أو الوحدة، مع تقديم ${ar} في ${title}. الدعوة باقية بصفة ضيف.`,
+  };
+}
