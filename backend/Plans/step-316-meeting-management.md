@@ -199,6 +199,62 @@ A short index. Each line names its source.
 
 **Attachments** are plain: they open in the in-app file viewer (lane B Q12).
 
+### Ahmad's decisions, 18 Nov (Prompt 128)
+
+**Permissions and the unit tree**
+
+- **Own unit.** `meetings:schedule` (new), `meetings:record_minutes` and
+  `meetings:approve_minutes` count only for meetings of the holder's own unit
+  (`primaryOrgUnitId`). `meetings:approve_minutes` is **kept, not retired**.
+  `meetings:schedule` also counts for committees that unit owns
+  (`Committee.orgUnitId`).
+- **Seeing down the tree.** The head or acting head of a unit sees every
+  meeting of the units below it, and of the committees those units own:
+  - headship is read through `unit-headship.ts`;
+  - sub-units come from `findUnitSubtreeIds`;
+  - they appear in a separate "Sub-units' meetings" list;
+  - the root head sees all.
+  - `meetings:view` stays "see all".
+- **Two new keys, `meetings:schedule_subunits` and
+  `meetings:approve_subunits`.** Each needs the key AND being head or acting
+  head of an ancestor unit.
+  - "Schedule" covers edit, reschedule, agenda, guests, cancel and Issue Agenda.
+  - "Approve" covers Approve Minutes and Return for Correction. Its holder reads
+    the draft from Minutes Review on.
+- **No "record sub-units" key.** A committee's minutes are approved only by its
+  Chair (the seat), never by a head above; a head above may see and schedule
+  them.
+- **Committee meetings otherwise stay on seats.** `meetings:manage` stays a
+  seed-time umbrella.
+- **Minutes Review's pool for a unit meeting:** the own-unit
+  `meetings:approve_minutes` holders, plus heads above who hold
+  `meetings:approve_subunits` (§3.8).
+
+**Answering the invitation**
+
+- **The answers:** a user invitee answers "Attending" or "Can't attend", with an
+  optional note. There is no Tentative.
+  - They may change it until the meeting starts.
+  - Outside guests don't answer.
+- **"Can't attend" pre-fills attendance** as Apologies, and the Secretary still
+  confirms on the day.
+- **A change to "Can't attend" tells the scheduler in the app, at once**, with
+  the note. It is flagged when it puts quorum at risk, or when the person is the
+  Chair, the Secretary or a presenter.
+  - There is no separate reschedule or cancel request; this is the request.
+- **The scheduler sees "6 attending · 2 can't · quorum 5"**, with a warning when
+  attending is below quorum.
+
+### Lane B's decisions, 18 Nov (Prompt 128)
+
+- **A unit's people** are its own active people, with no sub-units. The
+  scheduler can add more.
+- **Outside guest emails** are in the organisation's language.
+- **A series is capped at 12 months ahead**, and all its meetings are created at
+  once (brief 1.10).
+- **Members read the minutes from Minutes Review on.**
+- **(Prompt 124) Online counts as present.**
+
 ---
 
 ## 1. What exists today
@@ -332,9 +388,11 @@ A short index. Each line names its source.
   - Decision votes are counts typed by the Secretary, not engine votes.
 - **Stage-assignee RELATIVE route: present.** "The record's committee" with a
   seat resolves through `RECORD_ROUTES` (`stage-task-record-routes.ts:58-62`).
-  - For unit meetings, MEETING's `unit()` must return the meeting's own
-    `orgUnitId`, and `committee()` null.
-  - Today it returns the committee's unit; that changes in PR 1 (§3.8).
+  - MEETING's `unit()` must return the meeting's owning unit: its own
+    `orgUnitId`, or its committee's. `committee()` returns null for a unit
+    meeting.
+  - That reads `Meeting.orgUnitId`, so it changes in PR 2, after PR 1's
+    migration (§6).
 - **The seat rule (ACC-283)** gives:
   - `SEAT_ACTIONS` with lookup defaults and `writeSeatActions()`;
   - `MEMBER_ACTIONS` and `assertMemberAction()` (`member-actions.ts:159`);
@@ -409,7 +467,9 @@ A short index. Each line names its source.
   - `standingAgenda` (JSON: title, presenter, duration);
   - `createdById` and `endedAt`.
 - **Creation:** every meeting the series makes is created at once, in one
-  transaction, each with its instance (§7, Q4 for the horizon).
+  transaction, each with its instance.
+  - **The end is at most 12 months ahead** (lane B, 18 Nov; brief 1.10). A
+    later end date, or a count that runs past it, is refused under the field.
 - **Dates:**
   - the pattern runs in Gregorian, in the organisation's zone;
   - a missing day falls on the month's last day;
@@ -469,10 +529,31 @@ A short index. Each line names its source.
 - **Unique** on `(meetingId, userId)` where `userId` is set.
 - **Invitees are filled in at scheduling:**
   - a committee's active members;
-  - a unit's people (§7, Q2).
+  - a unit's own active people (`primaryOrgUnitId`), with no sub-units (lane
+    B, 18 Nov).
 
-  Members joining or leaving later change the invitees of meetings still in
-  Planned or Agenda Issued only.
+  The scheduler can add more, as organisation guests. Members joining or
+  leaving later change the invitees of meetings still in Planned or Agenda
+  Issued only.
+- **Answering the invitation (Ahmad, 18 Nov):**
+  - **The columns** on `MeetingAttendee`: `answer` (ATTENDING or CANT_ATTEND,
+    null = no answer yet), `answerNote?` and `answeredAt?`.
+  - **Who answers:** a user invitee, any number of times, until the meeting's
+    start time (record action `answer_invitation`, Planned and Agenda Issued).
+    Outside guests don't answer. There is no Tentative.
+  - **"Can't attend"** pre-selects Apologies in the attendance row. The
+    attendance stays unrecorded until the Secretary taps it, so Distribute's
+    "attendance for everyone" still needs the Secretary on the day.
+  - **A change TO "Can't attend"** tells the scheduler (the organiser) in the
+    app, at once, after commit, with the note. It is flagged when:
+    - the members not marked "Can't attend" fall below the quorum, or
+    - the person holds the Chair or Secretary seat, or presents an item.
+
+    There is no separate reschedule or cancel request: the scheduler decides
+    from this notice.
+  - **The summary:** whoever may edit the meeting sees "6 attending · 2 can't ·
+    quorum 5", counting MEMBER answers. A warning shows when attending is below
+    the quorum; a unit meeting with no quorum shows no quorum words.
 - **Online counts as present** (lane B). There is no fourth kind.
 - **Quorum met** means MEMBER attendees PRESENT ≥ the quorum.
   - The quorum is `quorumAtAttendance` for a committee, or `unitQuorum` for a
@@ -576,10 +657,43 @@ A short index. Each line names its source.
 | `minutes_approved` | Minutes Approved | — | none | `MINUTES_FINAL` |
 | `cancelled` | Cancelled | — | none | `MEETING_CANCELLED` |
 
-- **"Secretary" and "Chair" mean:**
-  - for a committee meeting: the `COMMITTEE` entry with no fixed committee (the
-    meeting's committee) and the `secretary` or `chairman` seat;
-  - for a unit meeting: see §7, Q1.
+- **"Secretary" and "Chair" are pools that work for both kinds of meeting.**
+  One Meeting template serves committee and unit meetings, so each stage lists
+  entries for both. The entry for the other kind resolves to nobody:
+
+  | Stage | Entries (Any one) |
+  |---|---|
+  | Planned | `COMMITTEE` + `secretary` seat · `MEETING_SCHEDULERS` |
+  | Agenda Issued | `COMMITTEE` + `secretary` seat · `MEETING_SCHEDULERS` · `MEETING_RECORDERS` |
+  | Minutes Draft | `COMMITTEE` + `secretary` seat · `MEETING_RECORDERS` |
+  | Minutes Review | `COMMITTEE` + `chairman` seat · `MEETING_APPROVERS` |
+
+  `COMMITTEE` with no fixed committee is the meeting's committee, and nobody
+  for a unit meeting.
+- **The three new kinds (Ahmad's item 6).** Each is MEETING-only, has no field,
+  and is read through `meeting-authority.ts` (§4.2):
+
+  | Kind | Committee meeting | Unit meeting |
+  |---|---|---|
+  | `MEETING_SCHEDULERS` | `meetings:schedule` holders of the committee's owning unit · heads above holding `meetings:schedule_subunits` | `meetings:schedule` holders of the unit · heads above holding `schedule_subunits` |
+  | `MEETING_RECORDERS` | nobody (the Secretary seat records) | `meetings:record_minutes` holders of the unit |
+  | `MEETING_APPROVERS` | **nobody**: a committee's minutes are the Chair's alone (Ahmad, 18 Nov) | `meetings:approve_minutes` holders of the unit · heads above holding `meetings:approve_subunits` |
+
+- **Why not an existing or generic kind:**
+  - no existing kind reads a permission;
+  - a generic "key holders in the record's unit" kind can't say "for unit
+    meetings only", which Approvers needs: item 4 forbids a committee's owning
+    unit from approving.
+  - So: three enum values in PR 1's migration, with no new column. Their batched
+    resolvers ship in PR 2, and only then does any row use them.
+- **Each resolver is a batched read:**
+  - the active people of the owning units who hold the key through an active
+    role;
+  - the heads and acting heads of those units' ancestors who hold the
+    sub-units key, through `unit-headship.ts`.
+
+  One query per kind for any number of records, as `StagePoolService` does
+  today.
 - **The stage keys stay.** They are never shown, and keeping them avoids a key
   backfill.
 - **The backfill:**
@@ -601,8 +715,8 @@ A short index. Each line names its source.
 - **An APP move's endpoint checks who may act:**
   - Distribute: the Minutes Draft pool (`InstanceAccess.assertMayAct()`,
     `instance-access.ts`), so the stage still owns who;
-  - Return: the Minutes Review pool, OR `record_minutes` (seat or role) for the
-    Secretary.
+  - Return: the Minutes Review pool, OR whoever records the minutes (the
+    Secretary seat, or `MEETING_RECORDERS`).
 - **An APP move shows read-only on the stages page,** with its `appMove` line
   (ACC-271 PR 5b). Its button on the meeting page is the module's own.
 
@@ -703,12 +817,13 @@ A short index. Each line names its source.
 | Suggestion declined | its author, with the reply | — |
 | Returned for correction | present members, with the reason | — |
 | Approved | action item owners, through the task notices | — |
+| An invitee changes to "Can't attend" | the scheduler, in the app only, with the note, flagged (§3.4) | — |
 
 - **An outside guest's email** is a named `email-delivery` job sent through
   `TransactionalEmailService`.
   - It carries no link into AccreditMe. The online meeting link is not ours,
     and it is allowed.
-  - Its language is §7 Q3.
+  - It is in the organisation's language (lane B, 18 Nov).
 - **Home's "Awaiting my action"** gains a meeting review row ("Review the
   minutes by 1 Oct"). It comes from a self-scoped read: rounds open where the
   viewer is a present member with no answer. It is one more part in
@@ -742,80 +857,130 @@ A short index. Each line names its source.
 
 ## 4. Who sees and does what
 
+**The owning unit.** Every rule below reads one unit, the meeting's **owning
+unit**:
+
+- a unit meeting: its `orgUnitId`;
+- a committee meeting: its committee's `orgUnitId` (required since ACC-135).
+
 ### 4.1 Seeing
 
 - **The parent rule (ACC-101) gains MEETING, the ACC-281 shape.** A viewer may
   see a meeting with any one of:
-  - `meetings:view` (see all);
-  - for a committee meeting: an active member of the committee
+  - **`meetings:view`:** every meeting;
+  - **for a committee meeting:** an active member of the committee
     (`committee-membership.ts`);
-  - for a unit meeting: an active person of the unit (§7 Q2);
-  - an invitee with a user (an attendee row with their id).
-- **Batched** for lists. No query is run for a `meetings:view` holder. The
-  refusals are as today: the 403 naming `meetings:view` when the request names
-  the meeting, the identical 404 when only a row names it.
-- **Minutes visibility:**
-  - organisation guests see the minutes only after approval (round 1 Q9);
-  - outside guests have no access at all;
-  - members, §7 Q5.
+  - **for a unit meeting:** an active person whose `primaryOrgUnitId` is the
+    unit. That is the unit's own people, with no sub-units (lane B, 18 Nov);
+  - **an invitee with a user:** an attendee row with their id. That includes
+    anyone the scheduler added;
+  - **a head looking down (Ahmad, 18 Nov):** the head or acting head of a unit
+    whose subtree contains the owning unit.
+    - Headship comes from `unit-headship.ts` (`findUnitHeadedBy`,
+      `findUnitsCoveredBy`), and the subtree from `findUnitSubtreeIds`, which
+      includes the headed unit itself.
+    - The root head's subtree is every unit, so they see all.
+- **How it is checked:**
+  - batched for lists: the viewer's headed units and their subtree are read
+    ONCE per request, then matched in SQL with `= ANY`;
+  - no query for a `meetings:view` holder;
+  - nothing on the per-request path;
+  - the refusals are as today: the 403 naming `meetings:view` when the request
+    names the meeting, the identical 404 when only a row names it.
+- **The minutes, by stage:**
+
+  | Who | Reads the minutes from |
+  |---|---|
+  | whoever records them (Secretary seat, own-unit `meetings:record_minutes`) | Minutes Draft |
+  | members of the committee or unit (lane B, 18 Nov) | Minutes Review |
+  | Minutes Review's pool, and heads above holding `meetings:approve_subunits` | Minutes Review |
+  | everyone else who may see the meeting, organisation guests included (round 1 Q9) | Minutes Approved |
+  | outside guests | never: they have no access |
+
+- **Lists:**
+  - **"Sub-units' meetings"** (Ahmad, 18 Nov) is a separate list for a head: the
+    meetings whose owning unit is in their subtree and that no other clause
+    already gives them;
+  - **"All meetings"** stays the `meetings:view` view;
+  - the design's Mine, Past and Minutes I record are unchanged.
 - **The committee or unit panel** shows the restricted line to someone who may
   open the record but not its meetings (Design "Denied").
 - **The meeting's workflow** follows the record (`InstanceAccess`).
-- **Files** follow the meeting's rule. An organisation guest sees papers and
+- **Files** follow the meeting's rule. Organisation guests see papers and
   attachments.
-- **An organisation guest who isn't a member** reaches the meeting through:
-  - the bell (`notificationLink()` MEETING);
-  - Home;
-  - the email.
-
-  `/meetings/:id` has its own `permissionGuard` and no route permission, like
-  `tasks.routes.ts:27-38`.
-- **No query on the per-request path.**
+- **A guest who isn't a member** reaches the meeting through the bell, Home and
+  the email. `/meetings/:id` has its own `permissionGuard` and no route
+  permission, like `tasks.routes.ts:27-38`.
 
 ### 4.2 Doing
 
-| Action | Who |
-|---|---|
-| Schedule (one or a series) | committee: seat `schedule_meeting` (default Chair and Secretary, Design panel note) or `meetings:schedule`; unit: §7 Q1 |
-| Edit, reschedule, agenda, guests, cancel | the stage's record action (§3.8), AND the same who as Schedule |
-| Attendance, minutes, decisions, action items, open-action notes | `record_minutes` (seat default Secretary) or `meetings:record_minutes` |
-| Apply or decline a suggestion, change action dates | the same as minutes |
-| No corrections / Suggest a correction | a present member, in the open round |
-| Issue Agenda, Record Minutes, Approve Minutes, Cancel Meeting | the stage's pool (ACC-271) |
-| Distribute Minutes, Return for Correction | §3.8's APP moves |
-| Print | anyone who may read the approved minutes |
+**"Head above"** means: the head or acting head of a unit whose subtree contains
+the owning unit.
 
+| Action | Committee meeting | Unit meeting |
+|---|---|---|
+| **Schedule; edit, reschedule, agenda, guests, cancel; Issue Agenda** | seat `schedule_meeting` (default Chair, Secretary), OR `meetings:schedule` held by a person of the committee's owning unit, OR `meetings:schedule_subunits` + head above | `meetings:schedule` held by a person of the unit, OR `meetings:schedule_subunits` + head above |
+| **Attendance, minutes, decisions, votes, action items, open-action notes; apply or decline suggestions; change action dates** | seat `record_minutes` (default Secretary) | `meetings:record_minutes` held by a person of the unit |
+| **Approve Minutes, Return for Correction** | the Chair (seat); Return also the Secretary (design) | `meetings:approve_minutes` held by a person of the unit, OR `meetings:approve_subunits` + head above; Return also whoever records |
+| **Answer the invitation** | the invitee (a user) | the same |
+| **No corrections / Suggest a correction** | a present member, in the open round | the same |
+| **Print** | anyone who may read the approved minutes | the same |
+
+Every action also needs its stage's record action (§3.8). A move also needs its
+stage's pool (ACC-271).
+
+- **Committee meetings have no "record sub-units" key** (Ahmad, 18 Nov). A head
+  above never approves a committee's minutes.
 - **Seat actions:** `schedule_meeting` and `record_minutes`, each with a
   `committee_member_role` default attribute and a backfill (ACC-283's way).
   `MEMBER_ACTIONS` gains both.
 - **Keys:**
-  - `meetings:schedule` is added;
-  - `meetings:record_minutes` comes out of `PERMISSIONS_NOT_YET_CHECKED`;
-  - `meetings:manage` becomes a seed-time umbrella (ACC-44);
-  - `meetings:approve_minutes` is retired the ACC-244 way, because the stage
-    pool approves.
+  - **added:** `meetings:schedule`, `meetings:schedule_subunits` and
+    `meetings:approve_subunits`;
+  - **out of `PERMISSIONS_NOT_YET_CHECKED`:** `meetings:record_minutes` and
+    `meetings:approve_minutes`;
+  - **`meetings:manage`** stays a seed-time umbrella that holds every meeting
+    key (ACC-44);
+  - **nothing is retired.**
+  - The seed grants the new keys to the roles that hold `meetings:manage` today
+    (`role.seed.ts`). The backfill only grants, never revokes (ACC-101), and
+    reaches the frozen root role too.
+- **One place decides:** `meeting-authority.ts` decides "may this viewer do X to
+  this meeting", the ACC-283 `assertMemberAction()` shape. It joins the seat
+  path, the own-unit key path and the head-above key path, read in one batch.
+  The stage pools (§3.8) use the same predicates, so a pool and a button can't
+  disagree.
 
 ### 4.3 Registries
 
-- **Visibility:** MEETING with its member, unit and invitee clauses.
+- **Visibility:** MEETING with its member, unit-people, invitee and head-above
+  clauses.
 - **`TASK_RECORD_TYPES`:**
   - MEETING's four task keys;
-  - the owning unit: the unit, or the committee's unit;
+  - the owning unit SQL is the owning unit above;
   - `acceptsTasksSql`: not on a `MEETING_CANCELLED` stage.
-- **`RECORD_ROUTES`:** MEETING's `unit()` returns the meeting's `orgUnitId`
-  (null for a committee meeting), and `committee()` its committee. This changes
-  today's committee's-unit answer, which nothing reads yet: 0 meetings.
-- **`RECORD_ACTIONS`:** the nine MEETING actions in §3.8. COMMITTEE gains
+- **`RECORD_ROUTES`:**
+  - MEETING's `unit()` returns the owning unit, and `committee()` the committee,
+    or null for a unit meeting;
+  - it needs `Meeting.orgUnitId`, so it changes AFTER the migration (§6).
+- **`STAGE_ASSIGNEE_KINDS.MEETING`** gains three kinds, offered for MEETING only
+  (§3.8): `MEETING_SCHEDULERS`, `MEETING_RECORDERS` and `MEETING_APPROVERS`.
+- **`RECORD_ACTIONS`:** the nine MEETING actions in §3.8, plus `answer_invitation`
+  (Planned and Agenda Issued, until the start time). COMMITTEE gains
   `schedule_meeting`.
-- **`STAGE_FLAGS`:** `AGENDA_ISSUED` and `MEETING_CANCELLED` (any number),
-  `MINUTES_FINAL` (exactly one).
+- **`STAGE_FLAGS`:**
+  - `AGENDA_ISSUED` and `MEETING_CANCELLED` (any number);
+  - `MINUTES_FINAL` (exactly one).
 - **`TRANSITION_PRECONDITIONS`:** MEETING (§3.8.3).
 - **`TRANSITION_EFFECTS`:** new, MEETING (§3.8.1).
 - **The move reason rule:** new, MEETING (§3.8.2).
 - **Nav:** Meetings after Committees, with `moduleKey: 'meetings'`. It shows to
-  `meetings:view` holders, committee members and unit people.
-- **Home:** the review row (§3.9). "My committees · 1 meeting this week" comes
-  from the App Shell drawing.
+  `meetings:view` holders, committee members, people of any unit, and heads.
+- **Home:**
+  - the review row (§3.9);
+  - "Answer the invitation" for meetings a user invitee hasn't answered, in the
+    same self-scoped read;
+  - "My committees · 1 meeting this week" (App Shell drawing).
 - **Links:** `recordPageLink()` and `notificationLink()` gain MEETING.
 
 ---
@@ -839,6 +1004,29 @@ These shared patterns are reused, none rebuilt:
 | Print (13) | its own route, print stylesheet |
 | Phone (14, 16) | the phone layouts drawn; form dialogs as sheets (ACC-299) |
 
+**Where the 18 Nov decisions differ from the design file** (a design pass,
+not questions):
+
+- **Invitation answers aren't drawn.** These need drawing:
+  - the "Attending / Can't attend" control and its note;
+  - the scheduler's "6 attending · 2 can't · quorum 5" line and its warning;
+  - the flagged notice;
+  - the pre-selected Apologies in attendance.
+- **"Sub-units' meetings" isn't drawn.** The design's saved views are Mine,
+  Past, Minutes I record and All meetings.
+- **The restricted panel line** reads "Meetings are open to this committee's
+  members and to people allowed to see all meetings". It now leaves out heads
+  above.
+- **Who works this stage for a unit meeting isn't drawn.** The design shows only
+  the committee case: the Secretary, and "Approve Minutes is the Chair's
+  alone". For unit meetings, the approvers are the own-unit holders and the
+  heads above.
+- **The panel note's "organiser roles (secretary, chair, or the permission to
+  schedule)"** still holds for committees. The permission is now own-unit or
+  head-above.
+- **"Minutes I record"** was "for secretaries and anyone with minutes-recording".
+  The key now counts for the holder's own unit only.
+
 **Build notes from the thread, not questions:**
 
 - **The list's minutes column reasoning still reads "3 of 6 approved · 1
@@ -858,74 +1046,102 @@ These shared patterns are reused, none rebuilt:
 Each PR deploys before the next. Every migration is expand only. **Series is
 its own PR, after the single meeting** (lane B, 9 Nov).
 
-1. **PR 1: the workflow and the registries** (backend).
-   - Changes:
-     - the seed and `backfill:acc316-meeting-workflow` (§3.8): names, who,
-       movers, flags, record actions, and the self-loop deleted;
-     - `RECORD_ACTIONS`, `STAGE_FLAGS` and `RECORD_FIELDS` MEETING;
-     - COMMITTEE `schedule_meeting`;
-     - the `RECORD_ROUTES` change.
-   - **No migration.**
-   - **Live after:** the Workflow page shows the decided Meeting workflow.
-2. **PR 2: schema and keys.**
+**Re-sliced on 18 Nov: the migration is now PR 1, and the workflow PR 2.** The
+workflow PR needs things the migration creates:
+
+- `RECORD_ROUTES` reads `Meeting.orgUnitId`;
+- the seeded pools use the three new `StageAssigneeKind` values.
+
+Under ACC-173's rule, no row may hold an enum value before the code that reads
+it is deployed. So the values come first, unused, and the workflow PR writes
+them together with their resolver.
+
+1. **PR 1: schema, keys and seats.**
    - Migration `acc316_meetings`:
      - every new table in §3;
-     - the new `Meeting` and `AgendaItem` columns;
+     - the new `Meeting` and `AgendaItem` columns, including the invitation
+       answer columns on `MeetingAttendee`;
      - the `typeValueId` FK;
-     - `StoredFileOwnerType` MEETING and MEETING_AGENDA_ITEM. No row of either
-       before PR 3 deploys (ACC-173's rule).
-   - The seat actions and their defaults (`backfill:acc316-seat-defaults`).
-   - `meetings:schedule`, and `approve_minutes` retired
-     (`backfill:acc316-retire-approve-minutes`).
-   - **Live after:** the seat screens show the two actions.
+     - `StoredFileOwnerType` MEETING and MEETING_AGENDA_ITEM;
+     - `StageAssigneeKind` MEETING_SCHEDULERS, MEETING_RECORDERS and
+       MEETING_APPROVERS.
+     - No row of any new enum value before the PR that reads it.
+   - **Keys:**
+     - `meetings:schedule`, `schedule_subunits` and `approve_subunits` added;
+     - `record_minutes` and `approve_minutes` out of
+       `PERMISSIONS_NOT_YET_CHECKED`;
+     - the role seed, with `backfill:acc316-meeting-keys` (grants only).
+   - **Seats:** `schedule_meeting` and `record_minutes`, with
+     `backfill:acc316-seat-defaults`.
+   - **Live after:** the seat screens show the two actions, and the role screen
+     shows the five keys.
+2. **PR 2: the workflow, the registries and the pool kinds.**
+   - Changes:
+     - the seed and `backfill:acc316-meeting-workflow` (§3.8): names, the
+       pools, movers, flags, record actions, and the self-loop deleted;
+     - `RECORD_ACTIONS`, `STAGE_FLAGS` and `RECORD_FIELDS` MEETING;
+     - COMMITTEE `schedule_meeting`;
+     - the `RECORD_ROUTES` change;
+     - `meeting-authority.ts`, and the three kinds' batched resolvers in
+       `StagePoolService`.
+   - **No migration.**
+   - **Live after:** the Workflow page shows the decided Meeting workflow.
 3. **PR 3: one meeting, backend.**
    - Changes:
-     - schedule, read, paged list with the saved views, edit, reschedule,
-       cancel (with the reason rule and `needsReason`);
+     - schedule, read, paged list with the saved views and "Sub-units'
+       meetings";
+     - edit, reschedule, cancel (with the reason rule and `needsReason`);
      - owner committee or unit;
-     - visibility;
-     - invitees, guests (both kinds, presenter rule);
+     - visibility, with the head-above clause;
+     - invitees (unit people, scheduler additions);
+     - guests of both kinds, the presenter rule;
+     - **invitation answers:** answer and change until the start, the
+       scheduler's notice with its flags, the summary line;
      - agenda, standing items, papers and attachments;
      - the clash check;
      - the `AGENDA_ISSUED` and `MEETING_CANCELLED` effects;
-     - outside guest emails;
+     - outside guest emails in the organisation's language;
      - `TASK_RECORD_TYPES`;
      - the working calendar's next-working-day and add-working-days.
    - **No migration.**
    - **Live after:** the API.
 4. **PR 4: minutes and review, backend.**
    - Changes:
-     - attendance and quorum;
+     - attendance (pre-filled from "Can't attend") and quorum;
      - per-item minutes, decisions and votes;
      - action item drafts;
      - open actions from the last meeting;
+     - minutes read by stage (§4.1);
      - Distribute and Return (APP, `inTx`);
      - answers, suggestions, apply and decline, review changes;
      - the reminder in the sweep;
      - the preconditions and `blockedBy`;
      - `TRANSITION_EFFECTS` with `MINUTES_FINAL`;
-     - Home's review row.
+     - Home's review and answer rows.
    - **No migration.**
    - **Live after:** the API.
 5. **PR 5: series, backend.**
    - Changes:
      - patterns, holiday moves, titles;
+     - the 12-month cap;
      - this-only and this-and-later edit and reschedule, keeping own edits;
      - cancel one, end series, the standing agenda;
      - series clashes.
-   - **No migration** (the series table is in PR 2).
+   - **No migration.**
    - **Live after:** the API.
 6. **PR 6: screens, part 1.**
-   - The rail item, `/meetings`, the committee and unit panels, Schedule (one
-     meeting), the meeting page through Agenda Issued, Add a guest, Reschedule,
-     Cancel (with the reason dialog in the move buttons), the bell and record
-     links.
-   - **Live after:** a meeting can be scheduled, its agenda issued, and the
-     meeting cancelled.
+   - The rail item, `/meetings` with "Sub-units' meetings", the committee and
+     unit panels, Schedule (one meeting), the meeting page through Agenda
+     Issued.
+   - The invitation answer and the scheduler's summary (§5, not drawn).
+   - Add a guest, Reschedule, Cancel (with the reason dialog in the move
+     buttons), the bell and record links.
+   - **Live after:** a meeting can be scheduled, answered, its agenda issued,
+     and the meeting cancelled.
 7. **PR 7: screens, part 2.**
    - Attendance (tablet), minutes, votes, action item drafts, open actions, the
      review banner and suggestions, the Review card, Approve and Return, Home's
-     review row, print, phone.
+     rows, print, phone.
    - **Live after:** the whole single meeting, to approved minutes and tasks.
 8. **PR 8: screens, part 3, series.**
    - Step 2 Repeat with its preview, the series line and view, the scope
@@ -950,55 +1166,13 @@ its own PR, after the single meeting** (lane B, 9 Nov).
 
 ## 7. Open questions for Ahmad
 
-Only what the files leave open. Each says which files were checked. Each takes
-one word, and **(recommended)** marks the suggestion.
+None. The old Q1–Q5 are deleted:
 
-**Q1. In a unit meeting, who schedules it, records the minutes and approves them?**
+- **Q1 (who works a unit meeting):** answered by Ahmad, 18 Nov (§0, §4.2).
+- **Q2 to Q5:** decided by lane B, 18 Nov (§0).
 
-- Head **(recommended)**: the unit's head or acting head schedules and approves,
-  and the organiser records.
-- Organiser: whoever scheduled it does all three.
-
-*Checked:*
-- brief 1.1 and 1.12: unit meetings exist, with an optional quorum;
-- Design: "Who works this stage" and the panel note name only the Secretary and
-  Chair seats of a committee;
-- Answers: lane B Q1 keeps unit meetings, with no rule for who.
-
-**Q2. Who are "the unit's people", for invitees and for who may see a unit meeting?**
-
-- Unit **(recommended)**: active people whose own unit is this unit.
-- Subunits: the unit and every unit under it.
-
-*Checked:* brief 1.1 ("the people in that unit"); Design, panel "Denied"
-("this unit's people").
-
-**Q3. Which language is an outside guest's email in?**
-
-- Organisation **(recommended)**: the organisation's language.
-- Both: English and Arabic in one email.
-
-*Checked:* round 4 point 2 and Design section 12 draw it in both languages, but
-say nothing about which one is sent. R4-3 fixes only the format.
-
-**Q4. Can a series run more than 12 months ahead?**
-
-- Cap **(recommended)**: the end is at most 12 months ahead, and every meeting
-  is created at once.
-- Roll: any end; meetings are created 12 months ahead, and a job adds more as
-  time passes.
-
-*Checked:* brief 1.10 ("created up to 12 months ahead"); Design step 2 ("Ends:
-On a date / After"). Neither says what happens beyond 12 months.
-
-**Q5. Can members read the minutes while the Secretary is still drafting them?**
-
-- Review **(recommended)**: members read them from Minutes Review on; until
-  then only whoever records minutes sees the draft.
-- Draft: members read the draft as it is written.
-
-*Checked:* round 1 Q9 settles guests only (after approval); brief 1.6 and 3.7;
-Design's stage table lists who EDITS, not who reads.
+Where the decisions differ from the design file is listed in §5 for a design
+pass. That list is not questions.
 
 ---
 
@@ -1010,19 +1184,22 @@ Design's stage table lists who EDITS, not who reads.
   - the reason rule (§3.8.2);
   - `blockedBy` on the moves list (§3.8.3);
   - Distribute and Return as APP moves (§3.8).
+- **Three meeting-only assignee kinds, not a generic "key holders" kind** (§3.8).
+- **One authority file, `meeting-authority.ts`,** read by the screens' flags, the
+  writes and the pools.
 - **The stage keys stay;** names, who and movers are backfilled only where
   still the seed's.
 - **The owner check is in the service, not a CHECK constraint.**
 - **`ownEdits`** keeps a meeting's own edits through "this and all later".
 - **"From item n"** comes through `MeetingActionItem.taskId`; no `Task` column.
-- **An action item's due date is checked against the task SLA limit** (ACC-174)
-  of the default priority, MEDIUM, counted from approval. It is checked when
-  the draft is saved, and again before approval. A date past the limit blocks
-  approval with the limit named.
+- **An action item's due date** is checked against the MEDIUM task SLA limit
+  from approval (ACC-174), when saved and again before approval.
+- **"Quorum at risk" on a "Can't attend" notice:** the members who haven't said
+  "Can't attend" fall below the quorum. The summary's warning is the stricter
+  "attending < quorum" (Ahmad, 18 Nov).
+- **People the scheduler adds** to a unit meeting are organisation guests.
 - **"Page n of N" on print** degrades where CSS margin boxes are unsupported.
-- **A series is created in one transaction** under the Q4 cap. With 12 months
-  weekly, that is 53 meetings at most, each with its instance and invitees,
-  batched.
+- **A series is created in one transaction:** 53 meetings at most, batched.
 - **Every list pages on the server or states its cap.** No polling; nothing on
   the per-request path.
 
@@ -1047,3 +1224,18 @@ Design's stage table lists who EDITS, not who reads.
 The plan is rewritten against the design thread. The old Q1–Q8 are deleted:
 every one was answered between 6 Oct and 10 Nov (§0). The design file is in the
 repo (`86cc3f3`).
+
+### Round 3 (Prompt 128, 18 Nov)
+
+- **Recorded in §0:**
+  - Ahmad's decisions on the unit tree, the keys and invitation answers;
+  - lane B's decisions on Q2–Q5.
+- **Carried through:**
+  - §3.4: answers;
+  - §3.8: the pools and the three kinds;
+  - §3.9: the notice;
+  - §4: seeing down the tree, the action table, the keys;
+  - §5: design differences;
+  - §6: re-sliced, with the migration first;
+  - §7: no questions.
+- **`meetings:approve_minutes` is kept.** The round 2 plan had retired it.
