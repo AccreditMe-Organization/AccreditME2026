@@ -78,7 +78,8 @@ export interface UserPermissionGrantDto extends UserRoleGrantDto {
 /**
  * ACC-154 — what still holds or names a role, hand-maintained against the
  * backend's RoleReferenceBlocker (role-references.ts). One entry per category
- * that has any: the total, and up to ten names.
+ * that has any: the total, and up to ten names — none where the reader lacks
+ * that category's view permission (users:view, positions:view, workflows:view).
  */
 export type RoleReferenceCategory = 'USER_GRANTS' | 'POSITION_GRANTS' | 'POSITIONS' | 'STAGE_ESCALATIONS';
 

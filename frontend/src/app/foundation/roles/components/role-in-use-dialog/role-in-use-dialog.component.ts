@@ -22,7 +22,9 @@ const CATEGORY_KEY: Record<RoleReferenceCategory, PluralKey> = {
  *
  * One block per category, in the server's order: its count as a counted
  * heading, then the names the server sent (up to ten) and, when there are more,
- * "Showing 10 of 12" — so the count is never read off the names.
+ * "Showing 10 of 12" — so the count is never read off the names. The server
+ * names a category only for a reader with its view permission (ACC-101's
+ * rule); without it the block is the count line alone.
  *
  * ## The 420 cap
  *
@@ -48,11 +50,13 @@ const CATEGORY_KEY: Record<RoleReferenceCategory, PluralKey> = {
         @for (blocker of blockers(); track blocker.category) {
           <li class="am-role-in-use__category" [attr.data-role-in-use-category]="blocker.category">
             <span class="am-role-in-use__heading">{{ headingOf(blocker) }}</span>
-            <span class="am-role-in-use__names" data-role-in-use-names>{{ namesOf(blocker) }}</span>
-            @if (blocker.count > blocker.names.length) {
-              <span class="am-role-in-use__shown" data-role-in-use-shown>{{
-                'record.showing' | translate: { shown: format.number(blocker.names.length), total: format.number(blocker.count) }
-              }}</span>
+            @if (blocker.names.length > 0) {
+              <span class="am-role-in-use__names" data-role-in-use-names>{{ namesOf(blocker) }}</span>
+              @if (blocker.count > blocker.names.length) {
+                <span class="am-role-in-use__shown" data-role-in-use-shown>{{
+                  'record.showing' | translate: { shown: format.number(blocker.names.length), total: format.number(blocker.count) }
+                }}</span>
+              }
             }
           </li>
         }
