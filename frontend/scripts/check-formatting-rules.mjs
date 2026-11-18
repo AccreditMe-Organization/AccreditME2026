@@ -86,12 +86,18 @@ const FILE_RULES = [
 // Keyed on the content, not on a list of files: an element whose opening tag
 // carries dir="ltr", in any attribute order and across lines, and whose content
 // (to its own closing tag, children included: they inherit the direction)
-// holds an amDate / amDateTime / amRelative / amDuration pipe. A date written
-// by FormatService in code is not seen here; that is a spec's to pin.
+// holds an amDate / amDateTime / amRelative / amDuration pipe, or (CC-326) an
+// interpolation calling FormatService directly: format.date( / .dateTime( /
+// .relative( / .duration( on a receiver named for it (format, this.format,
+// fmt, dateFormat…). format.number( and counted strings are not dates.
+// A METHOD THAT RETURNS A DATE STRING (stageMeta(), say) cannot be seen by a
+// scan: the call names no format. Its spec is the guard (the place's Arabic
+// spec through frontend/src/testing/arabic-date.ts).
 const LTR_DATE = {
   openTag: /<([a-zA-Z][\w-]*)((?:\s+[^\s=>/"']+(?:\s*=\s*(?:"[^"]*"|'[^']*'))?)*)\s*(\/?)>/g,
   ltr: /(?:^|\s)dir\s*=\s*(["'])ltr\1/,
   datePipe: /\|\s*am(?:Date|DateTime|Relative|Duration)\b/,
+  formatCall: /\b(?:fmt|[\w$]*[Ff]ormat)\s*\.\s*(?:date|dateTime|relative|duration)\s*\(/,
   message: 'wraps a formatted date in dir="ltr"; an Arabic date then reads out of order. Let it take the page\'s direction',
 };
 
@@ -113,7 +119,8 @@ function ltrDateViolations(source) {
   for (let m = LTR_DATE.openTag.exec(source); m; m = LTR_DATE.openTag.exec(source)) {
     const [whole, tag, attrs, selfClosing] = m;
     if (selfClosing || !LTR_DATE.ltr.test(attrs)) continue;
-    if (LTR_DATE.datePipe.test(elementContent(source, tag, m.index + whole.length))) {
+    const content = elementContent(source, tag, m.index + whole.length);
+    if (LTR_DATE.datePipe.test(content) || LTR_DATE.formatCall.test(content)) {
       const line = source.slice(0, m.index + whole.indexOf('dir')).split(/\r?\n/).length;
       found.push({ line, text: whole.replace(/\s+/g, ' ') });
     }

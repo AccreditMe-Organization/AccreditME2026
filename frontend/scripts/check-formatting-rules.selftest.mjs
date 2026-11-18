@@ -76,11 +76,16 @@ const BAD = [
         | amRelative }}
     </span>`),
   ],
+  // CC-326 — a date written by FormatService in code, as the committee history had it.
+  ['the old committee history date', component('<span class="am-cmh__date" dir="ltr">{{ format.date(e.effectiveDate) }}</span>')],
+  ['this.format.dateTime( in dir="ltr"', component('<span dir="ltr">{{ this.format.dateTime(when) }}</span>')],
 ];
 const GOOD = [
   ['a counted string through amCount', component(`<span>{{ hours | amCount: 'workflow.workingHours' }}</span>`)],
   ['a CSS length in a template string', component('<span [style.width]="width"></span>', '  width = `${this.hours}px`;')],
   ['dir="ltr" around an email', component('<span dir="ltr" class="truncate">{{ email }}</span>')],
+  // CC-326 — a number from FormatService is not a date.
+  ['dir="ltr" around format.number(', component('<span dir="ltr">{{ format.number(count) }}</span>')],
   ['a date with no dir', component('<span class="text-xs">{{ when | amDate }}</span>')],
 ];
 
@@ -114,6 +119,6 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  'check-formatting-rules self-test: three hand-written units and three dir="ltr" dates fail; ' +
-    'amCount, a CSS length, dir="ltr" around an email and an undirected date pass; clean before and after.',
+  'check-formatting-rules self-test: three hand-written units and five dir="ltr" dates fail; ' +
+    'amCount, a CSS length, dir="ltr" around an email or a format.number(, and an undirected date pass; clean before and after.',
 );
