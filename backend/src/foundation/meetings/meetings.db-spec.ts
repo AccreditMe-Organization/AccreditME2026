@@ -868,6 +868,26 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
     });
   });
 
+  it("a presenter added as a guest needs the stage to allow guests, as Add a guest does (review fix 2)", async () => {
+    const w = await world();
+    const now = new Date();
+    const m = await meetings.schedule(scheduleDto(now, { committeeId: w.committeeId }), w.orgId, as(w, 'chair'), now);
+    // This organisation's Planned stage allows agenda changes but not guests.
+    const planned = await prisma.workflowStage.findFirstOrThrow({ where: { key: 'planned', workflowTemplate: { organizationId: w.orgId, objectType: 'MEETING' } } });
+    await prisma.workflowStageRecordAction.deleteMany({ where: { organizationId: w.orgId, stageId: planned.id, actionKey: 'manage_guests' } });
+
+    const before = await prisma.meetingAttendee.count({ where: { meetingId: m.id } });
+    const refused = await outcome(agenda.create(m.id, { title: 'Budget', presenter: { userId: w.people['wardPerson'] } } as never, w.orgId, as(w, 'chair'), now));
+    const viaGuests = await outcome(people.addGuest(m.id, { userId: w.people['wardPerson'] } as never, w.orgId, as(w, 'chair'), now));
+    expect(refused).toMatchObject({ code: 'STAGE_ACTION_NOT_ALLOWED', action: 'manage_guests' });
+    expect(refused).toEqual(viaGuests);
+    expect(await prisma.meetingAttendee.count({ where: { meetingId: m.id } })).toBe(before);
+    expect(await prisma.agendaItem.count({ where: { meetingId: m.id } })).toBe(0);
+    // A presenter who is already an invitee needs no guest rule.
+    const member = (await people.attendees(m.id, w.orgId, as(w, 'chair'), now)).find((a) => a.userId === w.people['member'])!;
+    expect(await code(agenda.create(m.id, { title: 'Budget', presenter: { attendeeId: member.id } } as never, w.orgId, as(w, 'chair'), now))).toBe('OK');
+  });
+
   describe('files (PR 3b)', () => {
     const fileRow = (w: World, ownerType: 'MEETING' | 'MEETING_AGENDA_ITEM', ownerId: string, name: string) =>
       prisma.storedFile.create({

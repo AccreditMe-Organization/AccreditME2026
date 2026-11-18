@@ -229,6 +229,9 @@ export class MeetingAgendaService {
     if (existing) return { attendeeId: existing.id, invitedUserId: null };
     const user = await tx.user.findFirst({ where: { id: presenter.userId, organizationId, status: 'ACTIVE' }, select: { id: true } });
     if (!user) throw new MeetingRefusal('MEETING_PRESENTER_NOT_FOUND');
+    // Adding the presenter IS adding a guest: the stage must allow guests too,
+    // with the very refusal Add a guest gives (lane B's review, fix 2).
+    await this.stageRules.assertStageAllows('MEETING', meetingId, MEETING_ACTIONS.MANAGE_GUESTS, organizationId, tx, { lock: 'share' });
     const row = await tx.meetingAttendee.create({
       data: { organizationId, meetingId, kind: 'ORG_GUEST', userId: user.id, addedAsPresenter: true, invitedAt: issued ? now : null, createdById: actorId },
       select: { id: true },
