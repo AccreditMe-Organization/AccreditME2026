@@ -10,6 +10,7 @@ import {
   KPI_PERMISSIONS,
   LOOKUPS_PERMISSIONS,
   MEETINGS_PERMISSIONS,
+  MEETING_TASKS_PERMISSIONS,
   NOTIFICATIONS_PERMISSIONS,
   ORG_PERMISSIONS,
   POSITIONS_PERMISSIONS,
@@ -198,6 +199,9 @@ describe('SYSTEM_ROLE_SEED — READ_ONLY_ADMIN (ACC-123)', () => {
     KPI_PERMISSIONS.VIEW_OWN,
     LOOKUPS_PERMISSIONS.VIEW,
     MEETINGS_PERMISSIONS.VIEW,
+    // ACC-316 PR 3a — the meeting task keys' view_* pair, as for committees.
+    MEETING_TASKS_PERMISSIONS.VIEW_ALL,
+    MEETING_TASKS_PERMISSIONS.VIEW_UNIT,
     NOTIFICATIONS_PERMISSIONS.VIEW,
     ORG_PERMISSIONS.VIEW,
     POSITIONS_PERMISSIONS.VIEW,
@@ -214,8 +218,8 @@ describe('SYSTEM_ROLE_SEED — READ_ONLY_ADMIN (ACC-123)', () => {
     expect(SYSTEM_ROLE_SEED.some((r) => r.key === 'READ_ONLY_ADMIN')).toBe(true);
   });
 
-  it('holds exactly admin:access plus the 22 view permissions, and nothing else', () => {
-    expect(EXPECTED).toHaveLength(23);
+  it('holds exactly admin:access plus the 24 view permissions, and nothing else', () => {
+    expect(EXPECTED).toHaveLength(25);
     expect([...permissionsOf('READ_ONLY_ADMIN')].sort()).toEqual([...EXPECTED].sort());
   });
 
@@ -252,7 +256,7 @@ describe('SYSTEM_ROLE_SEED — READ_ONLY_ADMIN (ACC-123)', () => {
   it('is not reachable by adding admin:access to VIEWER', () => {
     const viewer = permissionsOf('VIEWER');
     const missing = EXPECTED.filter((p) => !viewer.includes(p));
-    expect(missing).toHaveLength(11);
+    expect(missing).toHaveLength(13); // ACC-316 PR 3a: + the meeting view_* task keys
     expect(missing).toContain(ADMIN_PERMISSIONS.ACCESS);
     expect(missing).toContain(SETUP_PERMISSIONS.VIEW);
   });
@@ -277,7 +281,8 @@ describe('SYSTEM_ROLE_SEED — committee task keys (ACC-244)', () => {
   it.each([
     ['TENANT_ADMIN', [VIEW_ALL, CREATE, MANAGE, VIEW_UNIT]],
     ['PLATFORM_ADMIN', [VIEW_ALL, CREATE, MANAGE, VIEW_UNIT]],
-    ['QUALITY_MANAGER', [VIEW_ALL, CREATE, MANAGE]],
+    // ACC-77 — Manage tasks is the type's umbrella, so View unit tasks too.
+    ['QUALITY_MANAGER', [VIEW_ALL, CREATE, MANAGE, VIEW_UNIT]],
     ['READ_ONLY_ADMIN', [VIEW_ALL, VIEW_UNIT]],
     ['QUALITY_OFFICER', []],
     ['AUDITOR', []],

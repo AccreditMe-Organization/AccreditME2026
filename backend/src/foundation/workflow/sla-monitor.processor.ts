@@ -15,6 +15,7 @@ import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
 import { TaskDueWarningService } from '../task/task-due-warning.service';
 import { isWorkingMomentWith, type LoadedCalendar } from '../working-calendar/working-time';
+import { readEscalationRules, type EscalationRule } from './stage-escalation';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
 
 /**
@@ -32,18 +33,12 @@ import {
   WorkflowInstance as PrismaWorkflowInstance,
 } from '../../../generated/prisma/client';
 
-interface EscalationRule {
-  afterHours: number;
-  notifyRoleId?: string;
-  notifyUserId?: string;
-}
-
 // Repeatable BullMQ job — every 15 minutes, sweeps every tenant for
-// WorkflowInstanceStage rows past their slaDueAt and flags them, then fires
-// any escalationConfig rules whose threshold has elapsed. Per CLAUDE.md,
-// "Escalation triggers only fire during working hours" — the sweep itself
-// always runs on schedule, but individual escalations are deferred to a
-// later run if the tenant is currently outside working hours.
+// WorkflowInstanceStage rows past their slaDueAt, records the breach once,
+// and fires each escalationConfig rule once its threshold (WORKING hours
+// after the deadline) has passed. Per CLAUDE.md, "Escalation triggers only
+// fire during working hours": outside them nothing is marked, and the rule
+// fires on the first sweep inside them (ACC-105).
 @Injectable()
 @Processor('sla-monitor')
 export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
@@ -185,50 +180,110 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     }
   }
 
-  // Extracted verbatim from the old inline body of process() (ACC-49) so it
-  // can be isolated like every other step — it was the most exposed of all,
-  // running first and unguarded, so anything it threw pre-empted all six
-  // sweeps behind it.
+  // ACC-105 — each rule fires once, as its threshold passes, across sweeps.
+  //   - An entry is read while it is still in the stage, past its deadline, and
+  //     either its breach is not yet recorded or a rule index is unclaimed. It
+  //     stops being read once it is left, or once every rule is claimed.
+  //   - slaBreached means "the deadline passed and the breach is recorded",
+  //     stamped once, whatever the hour.
+  //   - A rule's threshold is WORKING hours after slaDueAt (hoursBetweenWith on
+  //     the organisation's calendar). Outside working hours nothing is marked.
+  //   - A rule is CLAIMED by a conditional UPDATE before anyone is told, so two
+  //     sweeps never fire it twice. A stored rule that is not a valid rule
+  //     (written before ACC-105 validated them) is claimed unfired and logged.
+  //   - Reads are batched: one for the entries, one for the people, one for the
+  //     role holders, and each organisation's calendar once.
   private async sweepBreachedStageEscalations(now: Date): Promise<void> {
-    const breachedStages = await this.prisma.workflowInstanceStage.findMany({
-      where: { exitedAt: null, slaDueAt: { lt: now }, slaBreached: false },
-      include: { workflowInstance: true, stage: true },
+    const open = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT e.id FROM "WorkflowInstanceStage" e
+        JOIN "WorkflowStage" s ON s.id = e."stageId"
+       WHERE e."exitedAt" IS NULL AND e."slaDueAt" < ${now}
+         AND (NOT e."slaBreached"
+              OR (jsonb_typeof(s."escalationConfig") = 'array'
+                  AND jsonb_array_length(s."escalationConfig") > cardinality(e."escalatedRuleIndexes")))`;
+    if (open.length === 0) return;
+    const entries = await this.prisma.workflowInstanceStage.findMany({
+      where: { id: { in: open.map((o) => o.id) } },
+      select: {
+        id: true,
+        slaBreached: true,
+        slaDueAt: true,
+        escalatedRuleIndexes: true,
+        workflowInstance: { select: { organizationId: true } },
+        stage: { select: { nameEn: true, nameAr: true, escalationConfig: true } },
+      },
     });
 
-    for (const instanceStage of breachedStages) {
-      const organizationId = instanceStage.workflowInstance.organizationId;
-      const rules = (instanceStage.stage.escalationConfig as EscalationRule[] | null) ?? [];
-      const newlyEscalatedIndexes: number[] = [];
+    const unrecorded = entries.filter((e) => !e.slaBreached).map((e) => e.id);
+    if (unrecorded.length > 0) {
+      await this.prisma.workflowInstanceStage.updateMany({ where: { id: { in: unrecorded }, slaBreached: false }, data: { slaBreached: true } });
+    }
 
-      if (rules.length > 0 && instanceStage.slaDueAt) {
-        const hoursSinceDue = DateTime.fromJSDate(now).diff(
-          DateTime.fromJSDate(instanceStage.slaDueAt),
-          'hours',
-        ).hours;
-
-        for (let i = 0; i < rules.length; i++) {
-          if (instanceStage.escalatedRuleIndexes.includes(i)) continue;
-
-          const rule = rules[i];
-          if (!rule || hoursSinceDue < rule.afterHours) continue;
-
-          if (!(await this.isWithinWorkingHours(organizationId))) continue;
-
-          await this.fireEscalation(organizationId, instanceStage.id, instanceStage.stage, i, rule);
-          newlyEscalatedIndexes.push(i);
+    const calendars = new Map<string, LoadedCalendar>();
+    const at = DateTime.fromJSDate(now);
+    const due: { entry: (typeof entries)[number]; index: number; rule: EscalationRule }[] = [];
+    for (const entry of entries) {
+      const organizationId = entry.workflowInstance.organizationId;
+      const rules = readEscalationRules(entry.stage.escalationConfig);
+      for (const [index, rule] of rules.entries()) {
+        if (rule === null && !entry.escalatedRuleIndexes.includes(index) && (await this.claimEscalationRule(entry.id, index))) {
+          this.logger.warn(`Stage escalation rule ${index} on stage entry ${entry.id} is not a valid rule; it is skipped.`);
         }
       }
-
-      await this.prisma.workflowInstanceStage.update({
-        where: { id: instanceStage.id },
-        data: {
-          slaBreached: true,
-          ...(newlyEscalatedIndexes.length > 0 && {
-            escalatedRuleIndexes: [...instanceStage.escalatedRuleIndexes, ...newlyEscalatedIndexes],
-          }),
-        },
+      let calendar = calendars.get(organizationId);
+      if (!calendar) {
+        calendar = await this.workingCalendar.loadCalendar(organizationId);
+        calendars.set(organizationId, calendar);
+      }
+      if (!entry.slaDueAt || !isWorkingMomentWith(calendar, at)) continue;
+      const workingHoursPastDue = this.workingCalendar.hoursBetweenWith(calendar, DateTime.fromJSDate(entry.slaDueAt), at);
+      rules.forEach((rule, index) => {
+        if (rule && !entry.escalatedRuleIndexes.includes(index) && workingHoursPastDue >= rule.afterHours) due.push({ entry, index, rule });
       });
     }
+    if (due.length === 0) return;
+
+    // Who may be told: ACTIVE people of the entry's organisation, and the
+    // ACTIVE holders of an active role of that organisation.
+    const userIds = [...new Set(due.flatMap((d) => (d.rule.notifyUserId ? [d.rule.notifyUserId] : [])))];
+    const roleIds = [...new Set(due.flatMap((d) => (d.rule.notifyRoleId ? [d.rule.notifyRoleId] : [])))];
+    const [people, holders] = await Promise.all([
+      userIds.length
+        ? this.prisma.user.findMany({ where: { id: { in: userIds }, status: 'ACTIVE' }, select: { id: true, organizationId: true } })
+        : Promise.resolve([]),
+      roleIds.length
+        ? this.prisma.userRole.findMany({
+            where: { roleId: { in: roleIds }, role: { isActive: true }, user: { status: 'ACTIVE' } },
+            select: { roleId: true, userId: true, role: { select: { organizationId: true } }, user: { select: { organizationId: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+    const personOrg = new Map(people.map((p) => [p.id, p.organizationId]));
+
+    for (const { entry, index, rule } of due) {
+      if (!(await this.claimEscalationRule(entry.id, index))) continue;
+      const organizationId = entry.workflowInstance.organizationId;
+      const recipients = new Set<string>();
+      if (rule.notifyUserId && personOrg.get(rule.notifyUserId) === organizationId) recipients.add(rule.notifyUserId);
+      if (rule.notifyRoleId) {
+        const inRole = holders.filter(
+          (h) => h.roleId === rule.notifyRoleId && h.role.organizationId === organizationId && h.user.organizationId === organizationId,
+        );
+        if (inRole.length === 0) {
+          this.logger.warn(`Stage escalation rule ${index} on stage entry ${entry.id}: its role has no active holder; skipped.`);
+        }
+        for (const h of inRole) recipients.add(h.userId);
+      }
+      await this.fireEscalation(organizationId, entry.id, entry.stage, index, [...recipients]);
+    }
+  }
+
+  /** ACC-105 — claims one rule of one entry, once: false when it was already claimed, or the entry left. */
+  private async claimEscalationRule(instanceStageId: string, index: number): Promise<boolean> {
+    const claimed = await this.prisma.$executeRaw`
+      UPDATE "WorkflowInstanceStage" SET "escalatedRuleIndexes" = array_append("escalatedRuleIndexes", ${index}::int)
+       WHERE id = ${instanceStageId} AND "exitedAt" IS NULL AND NOT (${index}::int = ANY("escalatedRuleIndexes"))`;
+    return claimed === 1;
   }
 
   // ACC-40 Section 2.3 — the automatic half of "what closes the window:
@@ -891,21 +946,12 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // ACC-95 — the notice names the stage; the sweep already loaded it.
     stage: { nameEn: string; nameAr: string | null },
     ruleIndex: number,
-    rule: EscalationRule,
+    // ACC-105 — ACTIVE people of this organisation, each once (the sweep decides).
+    recipients: string[],
   ): Promise<void> {
-    const userIds: string[] = [];
-
-    if (rule.notifyUserId) userIds.push(rule.notifyUserId);
-    if (rule.notifyRoleId) {
-      const userRoles = await this.prisma.userRole.findMany({
-        where: { roleId: rule.notifyRoleId, user: { organizationId, status: 'ACTIVE' } },
-      });
-      userIds.push(...userRoles.map((ur) => ur.userId));
-    }
-
     // TODO(event-bus): migrate to event emitter if/when NotificationService
     // moves to a pub/sub model (see Step 7 plan Section 8/12).
-    for (const userId of new Set(userIds)) {
+    for (const userId of recipients) {
       await this.notificationService.create(
         {
           userId,
@@ -923,7 +969,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       action: 'UPDATE',
       objectType: 'WorkflowInstanceStage',
       objectId: instanceStageId,
-      metadata: { escalationRuleIndex: ruleIndex, notifiedUserCount: userIds.length },
+      metadata: { escalationRuleIndex: ruleIndex, notifiedUserCount: recipients.length },
     });
   }
 

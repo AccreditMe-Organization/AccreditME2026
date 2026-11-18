@@ -75,6 +75,7 @@ audit's starting point, not be mistaken for having already done it.
 15. Deployment — Railway IaC and migrations (ACC-127) — ✅ built (15.3 = what survives an apply; 15.5 = the migration step)
 16. File storage — per organisation, and file evidence (ACC-177; SharePoint ACC-185; the screens ACC-260) — ✅ built (16.11 = the recycle bin; 16.14 = SharePoint)
 17. AI foundation — metering, credit periods, switches, platform key only (ACC-194) — ✅ built
+18. Meetings — one meeting's record (ACC-316 PR 3a) — 🟡 backend only; invitees, the agenda, minutes and screens are later PRs
 
 ---
 
@@ -302,6 +303,30 @@ and every service that reads `request.userPermissions` directly, e.g.
 inherits this same flatness. **This is the exact fact ACC-28's revised
 plan treats as a hard constraint — not reworked, extended additively
 elsewhere.**
+
+**No key implies another, so an umbrella holds its specifics at seed time
+(ACC-44's rule, enforced since ACC-77).**
+- **The rule as data:** `MANAGE_UMBRELLAS` (`foundation/roles/manage-umbrellas.ts`).
+  - **An umbrella** is `{module}:manage`, or a record type's `{type}:manage_tasks`
+    (ACC-244's per-type task keys).
+  - **Its specifics** are the rest of its own `*_PERMISSIONS` group, less any key
+    no code checks yet (`PERMISSIONS_NOT_YET_CHECKED`), so a key that cannot be
+    granted is never seeded by the rule.
+- **The test:** `manage-umbrellas.spec.ts` fails if a seeded role holds an
+  umbrella without one of its specifics.
+- **The one gap the audit found:** `QUALITY_MANAGER` held both
+  `committees:manage_tasks` and `meetings:manage_tasks` without the
+  `view_unit_tasks` keys. The seed now gives it every task key of both types.
+  `backfill:acc77-manage-umbrellas` grants the missing specifics to existing
+  SYSTEM roles that still hold the umbrella; custom roles are the tenant's own.
+- **`QUALITY_OFFICER` creates no tasks, by design, and holds no umbrella.**
+  - Since ACC-244, creating a task needs a record type's Create tasks key, and
+    a type the role can see.
+  - It cannot see committees.
+  - Meeting task keys go to the meeting managers (ACC-316). Whether a minute
+    taker raises a meeting's action items is a Meetings decision, not an
+    umbrella one.
+  - Anyone may still act on a task they are on, by relationship.
 
 ### 1.4 Other `RoleService` Methods — Behavior and Limitations
 
@@ -2007,6 +2032,28 @@ model WorkflowActionLog {
 }
 ```
 
+**Stage SLA escalation (ACC-105).** A stage's `escalationConfig` is a list of
+`{ afterHours, notifyUserId?, notifyRoleId? }` rules (`stage-escalation.ts`).
+- **`afterHours` is WORKING hours** after the entry's `slaDueAt`, counted by
+  `hoursBetweenWith()` on the organisation's calendar, like the task sweep's
+  hours overdue (ACC-313). It used to be clock hours.
+- **Each rule fires once, across sweeps.** The SLA sweep reads an entry while it
+  is still in the stage and past its deadline, until its breach is recorded and
+  every rule index is claimed in `escalatedRuleIndexes`. `slaBreached` means the
+  breach is recorded, stamped once. Before, the first sweep marked every entry
+  breached, so no rule above about 0.25 h ever fired.
+- **Outside working hours nothing is marked;** the rule fires on the first sweep
+  inside them. Before, a deadline lapsing after hours never escalated.
+- **A rule is claimed by a conditional UPDATE before anyone is told,** so two
+  sweeps never fire it twice. A stored rule that is not valid is claimed unfired
+  and logged.
+- **Recipients are ACTIVE people of the organisation, each once per rule.** A
+  role with no active holder is logged and skipped. The reads are batched (the
+  entries, the people, the role holders, and one calendar per organisation).
+- **Every stage write checks the rules:** their shape, an ACTIVE user and an
+  active role of the organisation, refused with 400 `STAGE_ESCALATION_INVALID`
+  `{ reason: SHAPE | USER | ROLE, rule }`. No screen writes them yet.
+
 ### 2.2 Enums (Verbatim, `schema.prisma`, the workflow enums)
 
 ```
@@ -3079,8 +3126,8 @@ and §16.6 for PR 3 as built).
     For MEETING (ACC-316 PR 2): `edit_details`, `manage_agenda`,
     `manage_guests`, `reschedule`, `answer_invitation`, `record_attendance`,
     `record_minutes`, `apply_suggestions`, `change_action_dates`,
-    `suggest_correction`; nothing calls the engine about them until the
-    meeting endpoints (PR 3).
+    `suggest_correction`. Since PR 3a the meeting endpoints ask the stage for
+    `edit_details` and `reschedule` (§18); the rest wait for PR 3b and PR 4.
   - `STAGE_FLAGS`: COMMITTEE has `DISSOLVING` and `IN_FORCE` (any number of
     stages); COMMITTEE_CHANGE_REQUEST has `APPLIES_APPROVED_CHANGE`, which must
     sit on exactly one stage. MEETING (ACC-316) has `AGENDA_ISSUED` and
@@ -3248,17 +3295,28 @@ No screen reads a stage key, name or order to decide anything, and none keeps
 a copy of a server rule.
 
 - **The committee page** (`foundation/committees/committee-offers.ts`,
-  `committeeOffers(stageRules, permissions, mayWrite)`): with the server's
-  `mayWrite` false (a head who only oversees, ACC-283), nothing below is
-  offered, whatever the stage or the permissions. Otherwise: Edit where the stage allows
-  `edit_details` and the person holds `committees:edit_details`; the
-  "Locked while the terms are under review" line to the same people where the
-  stage allows no edit and is neither `IN_FORCE` nor `DISSOLVING` (Terms
-  Review, seeded); Add member, Change role and Remove each where the stage
-  allows it AND the person holds its key. A missing `stageRules` reads as
-  `NO_STAGE_RULES` (nothing allowed, no flags, D14). Request a change follows
-  the server's own `canRaise`, which reads `request_change`. The header's
-  transition buttons are the live workflow's.
+  `committeeOffers(stageRules, permissions, mayWrite, memberActions)`):
+  - **Edit** where the stage allows `edit_details`, the person holds
+    `committees:edit_details` and the server's `mayWrite` is true (false for a
+    head who only oversees, ACC-283).
+  - **The "Locked while the terms are under review" line** to the same people,
+    where the stage allows no edit and is neither `IN_FORCE` nor `DISSOLVING`
+    (Terms Review, seeded).
+  - **Add member, Change role and Remove** (ACC-283 PR 6) where the server's
+    `memberActions` allows it (the key, or the viewer's SEAT on this committee:
+    `member-actions.ts`, never copied) AND the stage allows it. They read no
+    permission string, so a Secretary holding no key is offered what the seat
+    grants.
+  - **Change role on the viewer's OWN row** also needs
+    `committees:change_member_role` (`changeOwnSeat`): a seat never changes its
+    holder's own seat (`SEAT_NEVER_ON_OWN_ROW`), so on the seat alone the item
+    is absent. Remove on your own row is as on any row.
+  - A missing `stageRules` reads as `NO_STAGE_RULES` (nothing allowed, no
+    flags, D14); a missing `memberActions` as `NO_MEMBER_ACTIONS` (nothing).
+  - **Request a change** follows the server's own `canRaise`
+    (`memberActions.request_change` AND the stage AND no open request); the
+    page copies none of it.
+  - The header's transition buttons are the live workflow's.
 - **Refusals** (`committee-stage-refusal.ts`): the edit dialog, Add member,
   Change role and Remove read a 409 `STAGE_ACTION_NOT_ALLOWED` by its code and
   say the matching `committee.refusal.*` sentence, the stage name picked in the
@@ -6096,7 +6154,8 @@ is in `CommitteeListsService`:
   off the older `app-record-panel`, which did not fill its grid cell and headed
   in small capitals: Meetings ended short in its row and Change requests ran
   taller than its row. `app-record-panel` is unchanged for its other users (the
-  committee page's Stage history among them).
+  committee page's Stage history among them). **Since ACC-120 (#341) it heads
+  in the capped frame's style too** (§10.8), so no panel heads in small capitals.
 - **`CommitteeMembershipHistoryPanelComponent`**
   (`app-committee-membership-history-panel`): newest first, capped at five,
   with See all. A row is the person and the date, then "{what happened} —
@@ -6137,10 +6196,11 @@ is in `CommitteeListsService`:
     "{seat} · Since {date}".
   - **Order:** by seat.
   - **Add member** sits in the header (`canAddMember`).
-  - **Row menu:** each row's `am-row-menu` holds Change role
-    (`committees:change_member_role`) and Remove
-    (`committees:remove_member`), only those the viewer holds. A viewer with
-    neither gets no ⋯. Change role opens the page's member dialog; Remove
+  - **Row menu:** each row's `am-row-menu` holds Change role and Remove, only
+    those the page offers (`committeeOffers()`, from the server's
+    `memberActions` and the stage, ACC-283 PR 6). On the viewer's own row,
+    Change role follows `canChangeOwnSeat`. A row with neither gets no ⋯, in
+    the five and in See all alike. Change role opens the page's member dialog; Remove
     opens the Remove member dialog, which asks for a reason (§3.21.2).
     `reload()` re-reads the panel and an open popup.
   - **Popup:** compact, with Member, Seat and Since columns, each a header
@@ -7218,8 +7278,10 @@ Plan: `backend/Plans/step-283-change-request-chain.md` §17 (lane B's answers, 1
   - Deciding is the chain's (`decide_reporting_changes` is not in `MEMBER_ACTIONS`).
   - Oversight is read only: a non-member head has no seat.
   - The Tasks panel's `canCreate` (#325).
-- **The screens (Q-D)** read `memberActions` in lane A's committee page change. Until then, a
-  seat-granted member who lacks the key is accepted by the server but not offered the button.
+- **The screens (Q-D)** read `memberActions` through `committeeOffers()` (see "The committee
+  page" in §2.18.2): Add member, Change role and Remove are offered from it and the stage, never
+  from the viewer's permission strings, and Change role on the viewer's own row also needs
+  `committees:change_member_role`. Request a change follows `canRaise`.
 - **Proved in:**
   - `member-actions.db-spec.ts`: the people, the stage refusal, another committee's seat,
     ended and inactive rows, the read's parity with the writes, and isolation;
@@ -7252,8 +7314,9 @@ unchanged** (`committees:view` or membership, the table above).
 A head who only oversees reads `false`, so the page shows no write button that
 answers 404. Each action's own permission and the stage rules still apply on
 top. It's read from the same pass as the read, with no query added. The page
-reads it through `committeeOffers()`, its third argument: false offers no Edit,
-locked line, Add member, Change role or Remove.
+reads it through `committeeOffers()`, its third argument: false offers no Edit or
+locked line. Add member, Change role and Remove read `memberActions` instead,
+which the server already answers false for anyone who may not write (ACC-283 PR 6).
 
 **Where it applies (reads):**
 - `assertMaySeeCommittee`, so the committee page, members, members page,
@@ -11269,8 +11332,8 @@ page is its first consumer; **Meeting Management is expected to reuse it
 rather than rebuild it**, which is the reason it lives in `shared/`
 rather than inside Committee.
 
-Owns the panel chrome — small-caps heading, count chip, optional second
-badge, an action slot, a fixed-height scrolling body — plus the three
+Owns the panel chrome — the shared panel heading (ACC-120, below), count
+pill, optional second badge, an action slot, a fixed-height scrolling body — plus the three
 states every panel has: `loading`, `error`, `isEmpty`. The consumer
 projects its own rows, because a task list and a sub-committee list have
 nothing structural in common.
@@ -11301,6 +11364,18 @@ nothing structural in common.
   cell is `contain: size` and the panel fills, so the card alone sets the row's
   height. Stacked (two tracks at 1280, one on a phone), neither applies and
   history shows in full. `committee-detail.history.layout.spec.ts` measures it.
+- **One heading for every record-page panel (ACC-120, #341).** `am-panel-title`
+  and `am-panel-count` in `styles/typography.scss`, from tokens only: the body
+  step, semibold, sentence case, `--am-ink-900`; the count a bordered pill on
+  the meta step. This panel and `am-capped-panel` (§3.14) both use them, so
+  Stage history, Roles and Committees head exactly like Tasks, Members and
+  Sub-committees. The badge takes the same pill shape.
+  `panel-heading.layout.spec.ts` measures the two side by side, EN and AR.
+- **`emptyLine` (CC-342), opt-in, default off:** the empty state as the capped
+  frame says it, one plain line at the top (`emptyTitle`), with no icon box
+  and no `emptyMessage`. The user page's Roles and Committees panels use it;
+  every other caller (the task page's History, the list pages) keeps the
+  centred state with its icon box.
 
 **A record page should NOT embed a routed list component to fill a
 panel.** ACC-76 tried exactly that with `TaskListComponent` and reverted
@@ -12496,7 +12571,7 @@ Consumers: `committee-form` (a picker list that failed to load).
 **Every create action in a page header sits behind `@if (canCreate())`, where
 `canCreate` is a `computed()` reading `NavigationAccessService`.** Thirteen
 pages carry one. Mechanism copied from §10.5's neighbour
-`committee-detail.component.ts` (`canEdit`, `canAddMember`, …) rather than
+`committee-detail.component.ts` (`canEdit`, `canCreateTasks`) rather than
 invented — there is one way to ask this question in this app.
 
 **HIDDEN, NOT DISABLED.** A disabled control still announces an action that is
@@ -16673,3 +16748,160 @@ Code: `foundation/task/workload/` (backend), `task-assignee-picker/`
     invalid.
   - Person rows are equally tall with and without counts (55 / 60 in the
     test), on a panel at least 360px wide (`panelMinWidth`).
+
+---
+
+## 18. Meetings — One Meeting's Record (ACC-316 PR 3a)
+
+Plan: `backend/Plans/step-316-meeting-management.md` (§3, §4, and §6.1 for 3a as
+built). The schema is PR 1's, and the keys, seats, workflow and pools are PR
+2's (§1, §2.18, §2.19, §3.16). PR 3b adds invitees, guests, answers, the agenda
+and the clash check; PR 4 the minutes.
+
+### 18.1 The routes
+
+`MeetingsController` (`foundation/meetings/`), all behind `TenantGuard` and
+`PermissionGuard`, with **no `@Permissions`**:
+
+| Route | Does |
+|---|---|
+| `GET /meetings?view=&committeeId=&orgUnitId=&skip=&take=` | the list (§18.4), `take` 1–50 |
+| `GET /meetings/:id` | one meeting: owner, stage, type, organiser, latest reschedule, and `may: { edit, reschedule }` |
+| `POST /meetings` | schedule: `committeeId` or `orgUnitId` (exactly one), title, `typeValueId` (a `meeting_type` value), `scheduledAt`, `durationMinutes` 5–1440, `location` and/or `meetingUrl`, `unitQuorum` (unit meetings only) |
+| `PATCH /meetings/:id` | edit those fields except the owner and the time; `expectedUpdatedAt` |
+| `POST /meetings/:id/reschedule` | a new time and a reason, both required |
+
+Cancel is the workflow's own move (`POST /workflows/instances/:id/transition`,
+with a comment), not a meetings route.
+
+### 18.2 Who sees a meeting
+
+The MEETING rule of `ObjectVisibilityService`, read through
+`common/services/meeting-membership.ts`. That file is the one place; never
+write a second copy.
+
+- `meetings:view`: every meeting.
+- A **member**: an active member of the meeting's active committee, an ACTIVE
+  person whose primary unit is the meeting's unit, or an attendee with a user
+  who has been INVITED (`invitedAt` set). A guest added while the meeting is
+  planned sees it only once the agenda is issued.
+- An **overseer** (reads, `{ oversight: true }`): a head, or an acting head in
+  force, of the owning unit (the meeting's own, or its committee's) or a unit
+  above it.
+
+Anyone else gets the identical 404 "Meeting not found". It is the same for a
+real meeting, a missing one and another organisation's.
+
+### 18.3 Who writes, and what the stage allows
+
+- **Who:** `meeting-authority.ts`'s SCHEDULERS for the meeting's owner:
+  - a committee seat with `schedule_meeting`;
+  - `meetings:schedule` held by a person of the owning unit;
+  - a head above holding `meetings:schedule_subunits`.
+
+  The Planned and Agenda Issued pools read the same predicate, so a button and
+  a pool cannot disagree. A viewer who sees the meeting but is not a scheduler
+  gets 403 `MEETING_NOT_ALLOWED`. Oversight alone never writes.
+- **What:** the meeting's stage must allow `edit_details` or `reschedule`
+  (`StageRulesService.assertStageAllows`, else 409 `STAGE_ACTION_NOT_ALLOWED`).
+  As seeded, Planned and Agenda Issued allow both, and nothing after them does.
+- **A committee's meeting** is scheduled only while the committee's stage
+  allows `schedule_meeting`. As seeded, that is Active and Suspended.
+- **Lock order:** the instance FOR SHARE, then the meeting row FOR UPDATE — the
+  engine's order (ACC-255). A stale `expectedUpdatedAt` is 409
+  `MEETING_CHANGED`, with nothing written.
+- **Schedule** writes three things in ONE transaction: the meeting, its
+  workflow instance at the initial stage, and one CREATE audit row
+  (`prepareInstanceStart`, `insertInstanceStartInTx`, `finishInstanceStart`).
+  The scheduler is not sent the generic assignment notice.
+- **Edit** writes only the changed fields, with one audit row naming each one
+  before and after. If nothing changed, nothing is written.
+- **Reschedule** writes a `MeetingReschedule` (`fromAt`, `toAt`, the reason,
+  `THIS_ONLY`), the new time and one audit row. After the commit, every
+  attendee already invited is told the new time — never the actor.
+- **A notice that names a time** says it absolute, in the organisation's zone
+  (the working calendar's), with Latin digits, in both languages, through
+  `peopleDateIn()` (the task reminders' helper; there is no second formatter).
+- **Refusals** (`meeting-refusal.ts`), each carrying a `code`:
+
+  | Code | Status | When |
+  |---|---|---|
+  | `MEETING_OWNER_REQUIRED` | 400 | neither or both of the committee and the unit |
+  | `MEETING_OWNER_NOT_FOUND` | 404 | the committee or unit is missing, inactive or another organisation's |
+  | `MEETING_NOT_ALLOWED` | 403 | not a scheduler for the owner |
+  | `MEETING_TYPE_UNKNOWN` | 400 | not an offered `meeting_type` value |
+  | `MEETING_TIME_IN_PAST` | 400 | the time is not in the future |
+  | `MEETING_PLACE_REQUIRED` | 400 | neither a location nor a link |
+  | `MEETING_QUORUM_UNIT_ONLY` | 400 | a quorum on a committee meeting |
+  | `MEETING_CHANGED` | 409 | a stale save |
+  | `MEETING_RESCHEDULE_SAME_TIME` | 400 | the new time equals the current one |
+  | `MEETING_TITLE_REQUIRED` | 400 | a title that trims to empty, on schedule or edit; `''` is never stored |
+
+### 18.4 The list
+
+Visibility is in the `WHERE`, before `LIMIT`, and every order ends in the id, so
+a page never repeats or skips. It runs two queries (the page and the count),
+then reads the page's meetings and their stages in one batch each.
+
+| `view` | Rows |
+|---|---|
+| `mine` (default) | meetings the viewer is a member of or organised; upcoming, soonest first |
+| `past` | every meeting the viewer sees that has started; latest first |
+| `minutes` | meetings whose minutes the viewer records: a seat with `record_minutes`, or `meetings:record_minutes` in the unit |
+| `all` | every meeting; `meetings:view` only, else 403 |
+| `subunits` | meetings the viewer oversees and is not otherwise part of |
+
+### 18.5 The engine's two new registries
+
+Both are keyed by record type, and both fail closed: a type with no entry has
+none.
+
+- **`TRANSITION_EFFECTS`** (`foundation/workflow/transition-effects.ts`). An
+  effect runs when a move ENTERS its flag from a stage without it, in three
+  parts:
+  - `prepare`, before the transaction;
+  - `apply`, inside the move's transaction, after the `inTx` write. What it
+    returns replaces the prepared value for `finish`;
+  - `finish`, after the commit. A failure there is logged and never undoes the
+    move.
+
+  MEETING has two:
+  - `AGENDA_ISSUED`: every user attendee with no `invitedAt` AS THE ROWS STAND
+    INSIDE THE MOVE'S TRANSACTION is stamped and told ("Meeting invitation",
+    naming the meeting's date and time). `apply` reads and stamps them under the
+    lock and hands them to `finish`; rows `prepare` could read before the lock
+    would miss someone added in between.
+  - `MEETING_CANCELLED`: every invited user is told, with the move's comment as
+    the reason ("Meeting cancelled").
+
+  The actor is never told.
+- **`MOVE_REASON_FLAGS`** (`foundation/workflow/move-reasons.ts`). A move into
+  a stage carrying a listed flag refuses an empty or blank comment: 400
+  `REASON_REQUIRED`, with the move's labels. This holds on a person's press
+  and on the deciding vote. `GET /workflows/instances/:id/moves` says
+  `needsReason` for each move. MEETING lists `MEETING_CANCELLED`.
+
+### 18.6 Tasks on a meeting
+
+`TASK_RECORD_TYPES` has a MEETING entry (§3.19):
+
+- **Keys:** `meetings:view_all_tasks`, `meetings:view_unit_tasks`,
+  `meetings:create_tasks` and `meetings:manage_tasks`.
+- **Owning unit:** the meeting's own, or its committee's.
+- **The picker** lists meetings by title. Without `meetings:view`, it lists only
+  the caller's own meetings.
+- **A cancelled meeting takes no new tasks.** A meeting whose current stage
+  carries `MEETING_CANCELLED` is refused with 409 `TASK_RECORD_CLOSED`, worded
+  for a meeting.
+
+### 18.7 The working calendar's day helpers
+
+`WorkingCalendarService` has two:
+
+- `nextWorkingDay(day, org)`: the day itself if it is a working day, else the
+  next one;
+- `addWorkingDays(day, n, org)`: `n` working days after the day.
+
+Both take `yyyy-MM-dd` days and read the organisation's calendar (working days
+and holidays). A calendar with no working day in a year is a 400. PR 4's review
+date reads them.

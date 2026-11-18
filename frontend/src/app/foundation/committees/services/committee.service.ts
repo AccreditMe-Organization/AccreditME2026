@@ -113,6 +113,28 @@ export interface CommitteeDetailDto extends CommitteeDto {
    * the stage's rules: committeeOffers() combines all three.
    */
   mayWrite: boolean;
+  /**
+   * ACC-283 PR 6 — what this viewer may do on this committee, from the server's
+   * one rule (member-actions.ts): the action's permission (with committees:view
+   * or a seat), OR their seat's actions here. The stage still narrows each one
+   * (committeeOffers()). False for anyone who may not write, an overseeing head
+   * included.
+   */
+  memberActions: CommitteeMemberActionsDto;
+}
+
+/** ACC-283 PR 6 — the four actions a seat can grant, as GET /committees/:id names them. */
+export interface CommitteeMemberActionsDto {
+  add_member: boolean;
+  remove_member: boolean;
+  change_member_seat: boolean;
+  request_change: boolean;
+  /**
+   * ACC-320 — Change seat on the viewer's OWN membership row. A seat never changes
+   * its holder's own seat (the server's SEAT_NEVER_ON_OWN_ROW), so this is true
+   * only on the role's path. Always sent (committeeMemberActionsFor()).
+   */
+  change_own_seat: boolean;
 }
 
 /** ACC-281 — another committee a record names, and whether this viewer may open it. */

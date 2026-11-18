@@ -51,6 +51,7 @@
     "backfill:acc283-retire-committees-approve": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc283-retire-committees-approve.ts",
     "backfill:acc244-grant-task-keys": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc244-grant-task-keys.ts",
     "backfill:acc316-meeting-keys": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc316-meeting-keys.ts",
+    "backfill:acc77-manage-umbrellas": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc77-manage-umbrellas.ts",
     "backfill:acc316-seat-defaults": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc316-seat-defaults.ts",
     "backfill:acc316-meeting-workflow": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc316-meeting-workflow.ts",
     "fix:acc236-ai-credits-used": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/fix-acc236-ai-credits-used.ts",

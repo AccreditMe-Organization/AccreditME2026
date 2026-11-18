@@ -58,6 +58,8 @@ export interface IWorkflowMove {
   toStageId: string;
   toStageNameEn: string;
   toStageNameAr: string | null;
+  /** ACC-316 PR 3a — the press must carry a reason (a comment), else 400 REASON_REQUIRED. */
+  needsReason: boolean;
 }
 
 export interface IWorkflowMoves {

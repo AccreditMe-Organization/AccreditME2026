@@ -90,10 +90,28 @@ describe('ACC-316 backfills against a real database', () => {
       const plan = dry.plans[0]!;
       expect(plan.grants.map((g) => `${g.roleKey} ${g.permission}`).sort()).toEqual([
         'TENANT_ADMIN meetings:approve_subunits',
+        // PR 3a — the four meeting task keys.
+        'TENANT_ADMIN meetings:create_tasks',
+        'TENANT_ADMIN meetings:manage_tasks',
         'TENANT_ADMIN meetings:schedule',
         'TENANT_ADMIN meetings:schedule_subunits',
-      ]);
-      expect(plan.withheld.map((w) => w.roleKey)).toEqual(['QUALITY_MANAGER', 'QUALITY_MANAGER', 'QUALITY_MANAGER']);
+        'TENANT_ADMIN meetings:view_all_tasks',
+        'TENANT_ADMIN meetings:view_unit_tasks',
+        // Quality Manager still holds meetings:view, so the view task keys follow it
+        // (both since ACC-77, which seeds it View unit tasks too).
+        'QUALITY_MANAGER meetings:view_all_tasks',
+        'QUALITY_MANAGER meetings:view_unit_tasks',
+      ].sort());
+      // The rest of Quality Manager's share needs meetings:manage: the three keys, create and manage tasks.
+      expect(plan.withheld.map((w) => `${w.roleKey} ${w.permission}`).sort()).toEqual(
+        [
+          'QUALITY_MANAGER meetings:approve_subunits',
+          'QUALITY_MANAGER meetings:create_tasks',
+          'QUALITY_MANAGER meetings:manage_tasks',
+          'QUALITY_MANAGER meetings:schedule',
+          'QUALITY_MANAGER meetings:schedule_subunits',
+        ],
+      );
       expect(await audits(o.id, 'backfill-acc316-meeting-keys')).toBe(0);
 
       // The real guard: a customer organisation is refused, and nothing is written.
@@ -102,10 +120,20 @@ describe('ACC-316 backfills against a real database', () => {
       expect(await audits(o.id, 'backfill-acc316-meeting-keys')).toBe(0);
 
       const done = await runKeys(prisma, { execute: true, organizationIds: [o.id], isFixture });
-      expect(done.changed).toEqual([{ slug: o.slug, grants: 3 }]);
+      expect(done.changed).toEqual([{ slug: o.slug, grants: 9 }]); // 8 before ACC-77, + Quality Manager's View unit tasks
       const held = await prisma.rolePermission.findMany({ where: { roleId: admin.id }, select: { permission: { select: { module: true, action: true } } } });
       expect(held.map((h) => `${h.permission.module}:${h.permission.action}`).sort()).toEqual(
-        ['meetings:approve_subunits', 'meetings:manage', 'meetings:schedule', 'meetings:schedule_subunits', 'meetings:view'].sort(),
+        [
+          'meetings:approve_subunits',
+          'meetings:create_tasks',
+          'meetings:manage',
+          'meetings:manage_tasks',
+          'meetings:schedule',
+          'meetings:schedule_subunits',
+          'meetings:view',
+          'meetings:view_all_tasks',
+          'meetings:view_unit_tasks',
+        ].sort(),
       );
       expect(await audits(o.id, 'backfill-acc316-meeting-keys')).toBe(1);
 

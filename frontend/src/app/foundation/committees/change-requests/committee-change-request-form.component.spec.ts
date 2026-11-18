@@ -41,7 +41,7 @@ const COMMITTEE: CommitteeDetailDto = {
   stageRules: ACTIVE_RULES,
   isDissolving: false,
   typeValue: { id: 'type-1', key: 'quality', labelEn: 'Quality', labelAr: 'الجودة', offered: true },
-  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true,
+  orgUnit: null, parent: null, reportsTo: null, currentStageNameEn: null, currentStageNameAr: null, mayWrite: true, memberActions: { add_member: true, remove_member: true, change_member_seat: true, request_change: true, change_own_seat: true },
 };
 
 const LIST_ITEM = (id: string, nameEn: string, over: Partial<CommitteeListItemDto> = {}): CommitteeListItemDto => ({

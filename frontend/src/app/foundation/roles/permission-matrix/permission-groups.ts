@@ -43,4 +43,14 @@ export const PERMISSION_GROUPS: Readonly<Record<string, readonly PermissionGroup
       keys: ['committees:view_all_tasks', 'committees:view_unit_tasks', 'committees:create_tasks', 'committees:manage_tasks'],
     },
   ],
+  // ACC-316 — Meetings took ten shown keys: the meeting, its minutes, and the
+  // same four task rows as committees.
+  meetings: [
+    { id: 'meetings', keys: ['meetings:view', 'meetings:schedule', 'meetings:schedule_subunits'] },
+    { id: 'minutes', keys: ['meetings:record_minutes', 'meetings:approve_minutes', 'meetings:approve_subunits'] },
+    {
+      id: 'tasks',
+      keys: ['meetings:view_all_tasks', 'meetings:view_unit_tasks', 'meetings:create_tasks', 'meetings:manage_tasks'],
+    },
+  ],
 };

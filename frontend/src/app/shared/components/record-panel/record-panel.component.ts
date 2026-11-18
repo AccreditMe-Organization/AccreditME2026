@@ -9,7 +9,8 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
 // ACC-76 — the object-detail pattern's building block. Committee is its first
 // consumer; Meeting Management is expected to reuse it rather than rebuild it.
 //
-// WHAT IT OWNS: the panel chrome — a small-caps heading, a count chip, an
+// WHAT IT OWNS: the panel chrome — the shared panel heading (am-panel-title,
+// the capped frame's, CC-340), a count pill, an
 // action slot, a fixed-height scrolling body — and the three states every
 // panel has: loading, error, empty.
 //
@@ -50,6 +51,14 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
 // OPT-IN, so nothing changes for a caller that does not bind it: `loading`,
 // `isEmpty` and `error` still drive the Committee page exactly as before.
 //
+// ## EMPTY LINE (CC-342)
+//
+// `[emptyLine]="true"` says the empty state as the capped frame does: one plain
+// line at the top of the body (`emptyTitle`), like Sub-committees' "No
+// sub-committees report to this committee.", with no icon box. Opt-in: the
+// user page's panels use it; every other caller (the task page's History, the
+// list pages) keeps the centred empty state below.
+//
 // ## FILL (ACC-265)
 //
 // `[fill]="true"` makes the panel take its cell's height instead of setting
@@ -73,25 +82,17 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
         class="flex items-center justify-between gap-2.5 px-4 py-2.5 border-b border-[var(--am-border)]"
       >
         <div class="flex items-center gap-2 min-w-0">
-          <h3
-            class="text-[11px] font-semibold uppercase tracking-wider text-[var(--am-ink-500)] truncate"
-          >
-            {{ heading() }}
-          </h3>
+          <!-- CC-340 — the capped frame's heading (styles/typography.scss), so
+               the two panel kinds read alike side by side. -->
+          <h3 class="am-panel-title" data-panel-title>{{ heading() }}</h3>
           @if (shownCount() !== null) {
-            <!-- Tabular numerals so counts across a row of panels line up, and
-                 dir=ltr so the numeral does not reorder inside Arabic. -->
-            <span
-              dir="ltr"
-              style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
-              class="text-[11.5px] font-semibold px-1.5 py-px rounded text-[var(--am-ink-500)] bg-[var(--am-surface)]"
-            >
-              {{ shownCount() }}
-            </span>
+            <!-- The shared count pill: tabular numerals, isolated; dir=ltr so the
+                 numeral does not reorder inside Arabic. -->
+            <span dir="ltr" class="am-panel-count" data-panel-count>{{ shownCount() }}</span>
           }
           @if (badge()) {
             <span
-              class="text-[11.5px] font-semibold px-1.5 py-px rounded"
+              class="am-panel-count"
               [style.color]="badgeInk()"
               [style.background]="badgeBackground()"
             >
@@ -162,6 +163,10 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
     </section>
 
     <ng-template #emptyTpl>
+      @if (emptyLine()) {
+        <!-- CC-342 — the capped frame's empty line (am-cp__state's values). -->
+        <p class="m-0 p-4 text-[13px] text-[var(--am-ink-700)]" data-panel-empty-line>{{ emptyTitle() }}</p>
+      } @else {
       <!-- The reference's empty state: a muted placeholder mark, the fact,
            and a sentence saying what will live here. The sentence is what
            separates "this module has not shipped" from "this committee has
@@ -180,6 +185,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
           </span>
         }
       </div>
+      }
     </ng-template>
     <!-- ONE default slot, reached from either path. Two <ng-content /> without a
          selector would project the rows into only one of them. -->
@@ -194,6 +200,8 @@ export class RecordPanelComponent {
   readonly heading = input.required<string>();
   readonly emptyTitle = input<string>('');
   readonly emptyMessage = input<string>('');
+  /** CC-342 — the empty state as one plain line at the top (see EMPTY LINE). */
+  readonly emptyLine = input(false);
 
   // Null hides the chip entirely — distinct from 0, which is a real and
   // displayable answer ("Documents 0" is the point of the empty panel).
