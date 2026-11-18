@@ -11,6 +11,10 @@ import { OrganizationService } from '../organization/organization.service';
 import { TenantService } from '../tenant/tenant.service';
 import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
+import { DateTime } from 'luxon';
+import { useFixedClock } from '../../common/testing/fixed-clock';
+import { TaskDueWarningService } from '../task/task-due-warning.service';
+import { LoadedCalendar, hoursBetweenWith } from '../working-calendar/working-time';
 import { WorkflowService } from './workflow.service';
 import { ITaskSlaSettings } from '../tenant/interfaces/tenant.interface';
 
@@ -85,7 +89,18 @@ const makeBreachedInstanceStage = (overrides: Record<string, unknown> = {}) => (
 });
 
 const mockAuditLog = { log: jest.fn() };
-const mockWorkingCalendar = { getOrCreate: jest.fn(), listHolidays: jest.fn() };
+const mockWorkingCalendar = {
+  getOrCreate: jest.fn(),
+  listHolidays: jest.fn(),
+  // ACC-313 — the real loader and working-hours arithmetic, over the mocked calendar.
+  loadCalendar: jest.fn(async (organizationId: string): Promise<LoadedCalendar> => ({
+    calendar: await mockWorkingCalendar.getOrCreate(organizationId),
+    holidays: await mockWorkingCalendar.listHolidays(organizationId),
+  })),
+  hoursBetweenWith: jest.fn((loaded: LoadedCalendar, from: DateTime, to: DateTime) => hoursBetweenWith(loaded, from, to)),
+};
+// ACC-313 — the due-soon reminder runs as its own step; its own spec covers it.
+const mockDueWarnings = { sweep: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
 const mockOrgPositionService = {
   // ACC-46 Section 2.7.e, Commit 4 — the real tier-based escalation firing
@@ -197,6 +212,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         { provide: TenantService, useValue: mockTenantService },
         { provide: TaskService, useValue: mockTaskService },
         { provide: TaskRequestService, useValue: mockTaskRequestService },
+        { provide: TaskDueWarningService, useValue: mockDueWarnings },
         { provide: getQueueToken('sla-monitor'), useValue: mockQueue },
       ],
     }).compile();
@@ -918,6 +934,55 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       });
     });
 
+    // ACC-313 (Q1) — hours overdue are WORKING hours, like the limits. High's
+    // manager threshold is 8. Due Thursday 14:00 Riyadh; on Sunday at 09:00 it
+    // is 3 working hours overdue (Thursday 14–16, Sunday 08–09) though 67 clock
+    // hours have passed; at 15:00 it is 9.
+    describe('in working hours (ACC-313)', () => {
+      const GCC = { timezone: 'Asia/Riyadh', workingDays: [0, 1, 2, 3, 4], workingHoursStart: '08:00', workingHoursEnd: '16:00' };
+      const dueThursday = new Date('2026-11-19T11:00:00.000Z');
+      beforeEach(() => {
+        mockWorkingCalendar.getOrCreate.mockResolvedValue(GCC);
+        mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
+      });
+      afterEach(() => jest.useRealTimers());
+
+      it('a task overdue across a weekend is not escalated by clock hours', async () => {
+        useFixedClock(new Date('2026-11-22T06:00:00.000Z')); // Sunday 09:00
+
+        await runWithOverdueTask(makeOverdueTask({ priority: 'HIGH', dueAt: dueThursday }));
+
+        expect(mockOrgPositionService.resolveManagerEscalationTargets).not.toHaveBeenCalled();
+        expect(mockPrisma.task.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ managerEscalatedAt: expect.any(Date) }) }),
+        );
+      });
+
+      it('escalates once its working hours overdue pass the threshold', async () => {
+        useFixedClock(new Date('2026-11-22T12:00:00.000Z')); // Sunday 15:00
+
+        await runWithOverdueTask(makeOverdueTask({ priority: 'HIGH', dueAt: dueThursday }));
+
+        expect(mockOrgPositionService.resolveManagerEscalationTargets).toHaveBeenCalledWith(['assignee-1'], ORG_A);
+        expect(mockPrisma.task.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { managerEscalatedAt: expect.any(Date) } }),
+        );
+      });
+
+      it('loads each organisation’s calendar once per pass, however many of its tasks are overdue', async () => {
+        useFixedClock(new Date('2026-11-22T12:00:00.000Z'));
+        mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]);
+        mockPrisma.task.findMany.mockResolvedValueOnce([
+          makeOverdueTask({ id: 't-1', priority: 'HIGH', dueAt: dueThursday }),
+          makeOverdueTask({ id: 't-2', priority: 'HIGH', dueAt: dueThursday }),
+        ]);
+
+        await runProcess();
+
+        expect(mockWorkingCalendar.loadCalendar.mock.calls.filter(([org]) => org === ORG_A)).toHaveLength(1);
+      });
+    });
+
     it('audit-logs a skip, does not throw, when no Manager is resolvable for any assignee', async () => {
       mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue([]);
       const task = makeOverdueTask();
@@ -1417,7 +1482,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
             poolEscalatedAt: null,
             status: { in: ['PENDING', 'OVERDUE', 'UNASSIGNED'] },
             OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
-            assignees: { none: { removedAt: null } },
+            assignees: { none: { removedAt: null, user: { status: 'ACTIVE' } } }, // ACC-86: nobody ACTIVE on it
           },
         }),
       );
@@ -1617,6 +1682,25 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ dueAt: expect.anything() }) }),
       );
+    });
+  });
+
+  // ACC-313 — the due-soon reminder is its own step, run with the pass's own
+  // instant, after the holds (so a task resumed this pass can be reminded).
+  describe('sweepDueWarnings (ACC-313)', () => {
+    it('runs once per pass, with the pass’s instant, after the hold sweep', async () => {
+      await runProcess();
+
+      expect(mockDueWarnings.sweep).toHaveBeenCalledTimes(1);
+      expect(mockDueWarnings.sweep.mock.calls[0][0]).toBeInstanceOf(Date);
+    });
+
+    it('is its own isolated step: a failing reminder pass does not stop the other sweeps', async () => {
+      mockDueWarnings.sweep.mockRejectedValueOnce(new Error('boom'));
+
+      await expect(runProcess()).rejects.toThrow(/1 failed step\(s\): sweepDueWarnings/);
+      // The vacancy sweep, the last step, still ran.
+      expect(mockPrisma.organization.findMany).toHaveBeenCalled();
     });
   });
 

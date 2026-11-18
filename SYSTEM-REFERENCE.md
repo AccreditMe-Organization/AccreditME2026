@@ -174,6 +174,15 @@ flow. Confirmed by direct grep:
   terminated — after their role is changed or their permissions are
   reassigned.** Only deactivation forces a sign-out today.
 
+**UPDATED (ACC-216, CC-301): the paragraph above describes the state before
+password reset (ACC-188), the two-step reset (ACC-164) and this change.**
+`tokenVersion` is now bumped only through `endEverySessionInTx()`
+(`foundation/auth/session-revocation.ts`), which also revokes every live
+`RefreshToken` row and deletes the person's Better Auth sessions. Its callers:
+password reset, the administrator's two-step reset, and **`deactivate()`, inside
+its own transaction**. `AuthProvider.invalidateUserSessions()` has no caller
+any more. A role change still ends nothing.
+
 **CORRECTED (ACC-101). This section previously said a stripped user
 "keeps full old access on their existing JWT for up to 15 minutes". That
 was wrong, and the error was to treat session validity and authorization
@@ -1120,9 +1129,11 @@ session was issued at, and `refresh()` refuses to renew when it no longer
 matches the user's. Without it, renewal would DEFEAT the forced logout: the 401
 from `TenantGuard`'s stale-version check would be retried after a refresh that
 minted a token carrying the NEW version. It did not bite before only because
-`invalidateUserSessions()` has exactly one caller, `UserService.deactivate()`,
+`invalidateUserSessions()` had exactly one caller, `UserService.deactivate()`,
 which also flips status to `INACTIVE` — and `tenant.guard.ts` says the
-mechanism is also meant to cover a password change. **NULL means "issued before
+mechanism is also meant to cover a password change. (Since ACC-216 CC-301 the
+bump comes only from `endEverySessionInTx()`, which deactivation now calls in
+its transaction and which revokes the refresh rows too.) **NULL means "issued before
 the column existed"** and falls back to the status check; refusing nulls would
 have signed out every logged-in user the moment the migration ran. Read via
 `?? null` so a narrower `select` cannot fail closed and reject every refresh.
@@ -4591,6 +4602,14 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   - **others are still on it** → it stays with them:
     `{ event: 'departure_left_with_others' }`, not counted, nobody told.
 
+  **ACC-86 — "else on it" counts only ACTIVE users** (`CURRENT_ACTIVE_ASSIGNEE`,
+  one indexed count under the task's lock), here and in reject, release and pick.
+  A row left current by someone already INACTIVE (a co-assignee who left first,
+  or a departure that stopped partway) puts nobody on the task. When a departure
+  sends a task back to its pool or makes it `UNASSIGNED`, it also ENDS those
+  stale rows in the same transaction (Q-1, `STALE_CURRENT_ASSIGNEE`), and its
+  audit row carries `endedInactiveRows` when there were any.
+
   A CLOSED pool task is never returned to its pool (that would reopen it).
   Since ACC-165 it is not touched at all: departure handles open tasks only.
 - **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
@@ -4751,8 +4770,88 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
   carry no values (`kind: 'legacy'`, `before`/`after` null). Both are scoped
   by `organizationId` and name the organisation as the object, in one
   `where`.
+  - **The unit stamp (CC-332):** every task SLA audit row written since
+    PR 4 carries `metadata.escalationHoursUnit = 'WORKING'`
+    (`WORKING_HOURS_STAMP`): limits, escalation, the old whole-policy save,
+    the switch and Reset alike. Each history row returns it as
+    `escalationHoursUnit: 'WORKING' | null`.
+    - The screen reads it first.
+    - A row without it was saved before PR 4, when escalation counted clock
+      hours, and falls back to the row's shape.
+- **Notices (ACC-313 PR 3), a sibling key `settings.taskSlaNotices`**:
+  `{ warnBeforeDue: { LOW..CRITICAL: 'OFF'|'H1'|'H2'|'H4'|'H8'|'WORKING_DAY' },
+  notifyOnDueChange }`, read only through `taskSlaNoticesFromSettings()`
+  (`task-sla-settings.ts`). A missing key, or a value the API never writes,
+  reads as the default (every reminder Off, the switch on), so no backfill;
+  `bootstrap()` writes both keys. `warnBeforeDue` is stored and read by
+  nothing yet (the reminder sweep, PR 4).
+- **`GET /tenant/task-sla/policy`** answers `{ tiers, notices }`.
+  **`PATCH /tenant/task-sla/notices`** `{ notifyOnDueChange }` writes only
+  `settings.taskSlaNotices`, under the same lock, keeping the stored
+  reminders; audit event `task_sla_notices_updated`, before/after the switch
+  alone. **`POST /tenant/task-sla/reset`** (no body, 200) writes the default
+  tiers AND notices in one locked `jsonb_set`, for tasks created afterwards
+  only (no open task is read or written, ACC-174); audit event
+  `task_sla_reset`, before the whole policy, after the defaults. It is refused
+  with `TASK_SLA_EXCEEDS_STAGE_DEADLINES`, nothing written, when the default
+  limits break a stage deadline. Both write nothing when nothing changes. The
+  history names them `kind: 'notices'` and `'reset'`.
+- **Warn before due (ACC-313 PR 4).**
+  - **Saved with escalation:** each priority's `warnBeforeDue` rides, optional,
+    on `PATCH /tenant/task-sla/escalation`. A body without it keeps the stored
+    warning. It is written to `settings.taskSlaNotices` only, under the same
+    lock, and the audit row gains `warnBeforeDue` beside that priority's hours.
+  - **The rule (Q2):** a warning that is not Off must be shorter than its
+    priority's limit (`warningFitsLimit()`, `task-sla-settings.ts`). "1 working
+    day" is the calendar's working day (`readWorkingHoursPerDay()`,
+    `working-calendar/working-time.ts`, read without creating a row). It is
+    refused from both sides, nothing written:
+    - a warning at or past its saved limit: 400 `TASK_SLA_WARNING_NOT_BEFORE_DUE`;
+    - a limit at or under its saved warning: 400
+      `TASK_SLA_LIMIT_NOT_AFTER_WARNING`. The old whole-policy PATCH is held to
+      it too.
+
+    Both carry `{ priority, warning, limitHours }`.
+  - **`GET …/policy`** also answers `workingHoursPerDay`.
+  - **The sweep:** `TaskDueWarningService.sweep()`, the SLA monitor's own
+    isolated step `sweepDueWarnings`, after the hold sweep, so only where the
+    workers run (ACC-92). One read finds the organisations with any warning on.
+    Then, per organisation, only in working hours, it takes one calendar load
+    and one candidate query: `PENDING`/`IN_PROGRESS`, `dueWarnedAt` null, due
+    inside its priority's window, with someone on it or a pool.
+    - **"Someone on it" is ACC-86's one definition**, `CURRENT_ACTIVE_ASSIGNEE`
+      (`task-pool.ts`): a current row held by an ACTIVE user. The candidate
+      query and its assignee select both read it; there is no second copy.
+    - **The claim:** `UPDATE "Task" SET "dueWarnedAt" = now … AND
+      "dueWarnedAt" IS NULL RETURNING id`, so two workers remind once.
+    - **Who is reminded:** one `createInAppMany` ("Task due soon"), sent after
+      the claim, never to acting users.
+      - A task someone is on: those people.
+      - A task with a pool and nobody on it, including one whose only current
+        row is held by someone no longer ACTIVE: the pool's members, resolved
+        by `resolvePoolMembersBatch()` (the pool rule, batched).
+      - A task with no pool and nobody on it: not picked and not claimed, so
+        `dueWarnedAt` stays null and a later holder is still reminded.
+    - A failed notice is logged, not retried. A warning a calendar change made
+      too long is treated as Off.
+    - Closed organisations (ACC-168) are not left out yet, as with the other
+      sweeps; that background work is a follow-up ticket's.
+  - **`DUE_WARNING_CLEARED`** (`task-request-lifecycle.ts`) re-arms it: an edit
+    that changes the due date or priority, an approved extension or hold, a
+    reopen, and a reassign while the due time is ahead. Never a pick, a release
+    or a resume.
+  - Proved against a real Postgres by `task-due-warning.db-spec.ts`: two
+    workers, ten rounds, one notice each; and both ACC-86 cases above (a
+    leaver's row sends the reminder to the pool; a task with nobody on it
+    stays unclaimed until someone ACTIVE is).
+- **The switch governs one notice:** `TaskService.notifyAssigneesOfEdit()`'s
+  due-date clause. With it off, a due-date edit is not announced, and a
+  priority change is announced without the date. The setting is read only on
+  an edit that moved the date. Reopen, the extension and hold decisions and
+  resume still name the date.
 - Proved against a real Postgres by `task-sla-policy.db-spec.ts` (ten rounds
-  of concurrent section saves, the other keys surviving). Plan:
+  of concurrent section saves, the other keys surviving; the switch beside a
+  limits save; Reset leaving an open task unchanged). Plan:
   `backend/Plans/step-313-task-sla-settings.md`.
 
 Shape — `ITaskSlaSettings` (`tenant/interfaces/tenant.interface.ts`):
@@ -4854,7 +4953,11 @@ while held. Holds are ended by their own step, `sweepDueHolds()` (3.10).
 
 For each overdue task: stamps `slaBreachedAt` if it is still null, then reads
 the tenant's real `ITaskSlaTier` for the task's own `priority`
-(Section 3.3) and computes `hoursSinceDue`. Two-tier, strictly
+(Section 3.3) and computes `hoursSinceDue`. **ACC-313 (Q1): `hoursSinceDue`
+is WORKING hours** — `hoursBetweenWith(calendar, dueAt, now)` on the
+organisation's calendar, loaded once per organisation per pass — like the
+limits, so a task overdue across a weekend is escalated later than the clock
+would say. Nothing already fired is undone. Two-tier, strictly
 sequential, if/else-if — **no fall-through**:
 
 - `!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours`
@@ -5249,6 +5352,13 @@ non-member never learns whether a task exists or was picked. Only then the
 409s: closed, rejected, already picked (*"This task has already been picked
 up"*). A previous row for the same person is reused (A → B → A). Status
 becomes `PENDING`; audited `{ event: 'picked' }`.
+
+**ACC-86 — picked up means someone ACTIVE is on it.** A task whose only current
+rows belong to users no longer ACTIVE is waiting in its pool
+(`waitingInPoolWhere()` and `WAITING_IN_POOL_SQL` ask `CURRENT_ACTIVE_ASSIGNEE`):
+Available lists it, the unpicked-pool escalation sweeps it, and Pick takes it,
+ENDING those stale rows in the same transaction (`endedInactiveRows` on the
+audit row). The one definition lives in `task-pool.ts`; never a third copy.
 
 **Release** (`POST /tasks/:id/release { reason }`, required, max 1000): only
 an active assignee whose row has `pickedAt`; someone chosen directly gets a
@@ -7052,6 +7162,10 @@ Plan: `backend/Plans/step-283-change-request-chain.md` §17 (lane B's answers, 1
 - **Where it runs (Q-C):** before the write's transaction, where ACC-281's precondition ran.
 - **The read:** `GET /committees/:id` returns `memberActions` (the four booleans), from the
   seat `committeeAccess()` just read.
+  - **ACC-320:** plus `change_own_seat`, may the viewer change their OWN seat: Q-A's rule,
+    `allowedOnOwnRow()`, which `assertMemberAction()` also asks, from the same pass
+    (`committeeMemberActionsFor()`; no extra query). True through a role, false when only
+    the seat allows changing seats. The page reads it instead of copying Q-A.
   - `canRaise` is `memberActions.request_change` AND the stage AND no open request.
   - A request's `actions.edit`, `submit` and `approveNow` use the same rule, once per
     committee among the viewer's own requests.
@@ -13538,9 +13652,18 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
   assignee resolution.
 - **`deactivate()`** — the full departure flow, and the ordering is
   explicitly non-negotiable per its own code comment: `tokenVersion`
-  increments (via `authProvider.invalidateUserSessions()`) **before**
-  `TaskService.reassignAllForUser()` runs, so the departing user's
-  sessions are dead the instant the flow starts, not after it finishes.
+  increments **before** `TaskService.reassignAllForUser()` runs, so the
+  departing user's sessions are dead the instant the flow starts, not after it
+  finishes. **Since ACC-216 (CC-301)** the sign-ins end INSIDE the status
+  flip's transaction, through `endEverySessionInTx()`: `tokenVersion + 1`,
+  every live `RefreshToken` row revoked (before, they stayed `revokedAt: null`
+  and read as live), and the person's Better Auth sessions deleted. A refusal
+  later in that transaction (the last administrator, the root unit's head)
+  rolls the ending back with the flip. `reactivate()` brings no session back.
+  It is the only path that sets a person inactive: nothing writes `SUSPENDED`,
+  `revokeInvitation()` deletes an invited person who never signed in, and
+  suspending an ORGANISATION ends nothing (its sessions are refused at refresh
+  and by TenantGuard while it is closed).
   **Last-admin lockout**: queries the tenant's active `TENANT_ADMIN`
   holders **before** flipping status (ACC-16's fix — querying after
   would silently exclude the departing user from their own admin count
@@ -14107,15 +14230,22 @@ reload does not reopen the dialog.
   of its assignee or a transition's trigger, so the row tells the admin to
   check both, and the transitions table names each ROLE_BASED transition's
   trigger role.
-- **Task without owner** is `Task.status = 'UNASSIGNED'`. Known gap: an
-  open task whose only remaining assignee is inactive is not UNASSIGNED
-  and is not detected (ACC-86; zero such tasks on dev at build time).
-  **ACC-167 extends it, under the same type, title and wording:** an open
-  pool task (`PENDING`/`OVERDUE`, a pool target) with no active assignee AND
-  nobody currently in its pool (`findEmptyPoolTasks()` — distinct holder and
-  member lookups, not one query per task). A pool with members is healthy
-  even while nobody has picked the task up yet; that is the escalation's
-  business (3.9), not a condition.
+- **Task without owner** (ACC-86) is `OWNERLESS_SQL` (`task-pool.ts`), the very
+  definition the Unassigned view and Manage tasks' reach read, run once per
+  tenant, scoped by organisation, resolved live on every pass (ACC-82: no
+  status is trusted). "Nobody is on it" means no current row held by an ACTIVE
+  user (`CURRENT_ACTIVE_ASSIGNEE`). A task is ownerless when it is:
+  - `UNASSIGNED`, as always;
+  - `PENDING` or `OVERDUE` with nobody on it, unless it waits in a pool that
+    has an ACTIVE member (ACC-167: a staffed pool is healthy while nobody has
+    picked the task up yet; that is the escalation's business, 3.9);
+  - `IN_PROGRESS` or `ON_HOLD` with nobody on it, pool or not (Q-2: nobody can
+    resume a held task, and a pick cannot take these statuses).
+
+  `REJECTED` is not: it is its creator's to reassign. Before ACC-86 it matched
+  `UNASSIGNED` plus `findEmptyPoolTasks()` (now deleted), so a task whose only
+  remaining assignee was INACTIVE was never seen. There were zero such tasks
+  on the shared database when it shipped (17 Nov).
 
 **Deferred — `POSITION_WITHOUT_ROLE`.** Built, then deferred before
 shipping. It flagged ACTIVE positions with no `roleId` that someone ACTIVE

@@ -16,6 +16,7 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
+import { taskSlaNoticesFromSettings } from '../tenant/task-sla-settings';
 import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
 import { assertHoldsCreateKey, holdsTaskKey } from './task-record-types';
 import { assertMayCreateTasks, assertRecordAcceptsTasks } from './task-record-choices';
@@ -31,13 +32,15 @@ import { ReleaseTaskDto } from './dto/release-task.dto';
 import { ResolvedPlacement, TaskAssignmentService } from './task-assignment.service';
 import { OutOfOfficeCoverEntry, coverEntries } from '../../common/services/out-of-office-cover';
 import {
-  POOL_LABEL_INCLUDE,
-  PoolLabelRelations,
+  CURRENT_ACTIVE_ASSIGNEE,
   isPoolMember,
+  POOL_LABEL_INCLUDE,
   poolLabel,
-  poolTargetOf,
+  PoolLabelRelations,
   poolsOfUser,
+  poolTargetOf,
   resolvePoolMemberIds,
+  STALE_CURRENT_ASSIGNEE,
   toPoolColumns,
   toPoolView,
   waitingInPoolWhere,
@@ -51,6 +54,7 @@ import { CancelTaskDto, ReopenTaskDto, UpdateTaskDto } from './dto/update-task.d
 import { aTaskThatIs } from './task-status-label';
 import {
   CancelledRequest,
+  DUE_WARNING_CLEARED,
   HOLD_CLEARED,
   OPEN_REQUEST_INCLUDE,
   auditCancelledRequests,
@@ -885,10 +889,10 @@ export class TaskService {
         data: { removedAt: now },
       });
 
-      // Read from the LOCKED snapshot: no other assignee can have left or
-      // joined since, so "nobody else remains" cannot be two people each
-      // seeing the other still there.
-      const othersRemain = existing.assignees.some((a) => a.userId !== userId && a.removedAt === null);
+      // Read under the LOCK: no other assignee can have left or joined since,
+      // so "nobody else remains" cannot be two people each seeing the other
+      // still there. ACC-86 — only ACTIVE others count (CURRENT_ACTIVE_ASSIGNEE).
+      const othersRemain = await anyoneElseOn(tx, id, organizationId, userId);
       if (othersRemain) {
         // The task itself is untouched; only the caller's assignment ended —
         // and with it any request THEY made (ACC-173).
@@ -1005,6 +1009,8 @@ export class TaskService {
         data.slaStartAt = this.sla.startOf(existing);
         data.slaLimitAt = limitAt;
         if (dueAt && dueAt > now) Object.assign(data, ESCALATION_CLEARED);
+        // ACC-313 — a new due date, or a new priority's window, re-arms the reminder.
+        Object.assign(data, DUE_WARNING_CLEARED);
       }
 
       const task = await tx.task.update({ where: { id }, data });
@@ -1193,6 +1199,7 @@ export class TaskService {
           slaLimitAt: limitAt,
           slaExtendedTo: null,
           ...ESCALATION_CLEARED,
+          ...DUE_WARNING_CLEARED,
           reopenedReason: dto.reason,
           reopenedAt: now,
           reopenedById: viewer.id,
@@ -1558,6 +1565,8 @@ export class TaskService {
           rejectedAt: null,
           rejectedById: null,
           ...HOLD_CLEARED,
+          // ACC-313 (Q5) — the new holder is reminded, but only while the due time is ahead.
+          ...(existing.dueAt && existing.dueAt > now ? DUE_WARNING_CLEARED : {}),
           ...toPoolColumns(placement?.target ?? null),
           ...(pooled ? await this.poolClock(existing.priority, organizationId, now) : NO_POOL_CLOCK),
         },
@@ -1624,7 +1633,7 @@ export class TaskService {
   // exists, is closed, or has already been picked. Only a member is then told
   // why they cannot have it (409): closed, rejected, or already picked up.
   async pick(id: string, userId: string, organizationId: string): Promise<ITask> {
-    const { existing, task } = await this.prisma.$transaction(async (tx) => {
+    const { existing, task, endedInactiveRows } = await this.prisma.$transaction(async (tx) => {
       await this.lockTaskRow(tx, id, organizationId);
       const existing = await tx.task.findFirst({
         where: { id, organizationId },
@@ -1640,11 +1649,15 @@ export class TaskService {
       if (existing.status === 'REJECTED') {
         throw new ConflictException('A rejected task cannot be picked up');
       }
-      if (existing.assignees.some((a) => a.removedAt === null)) {
+      // ACC-86 — picked up means someone ACTIVE is on it (CURRENT_ACTIVE_ASSIGNEE).
+      // A row left current by someone no longer ACTIVE does not hold the task:
+      // it is ended here, so the picker is the only one on it.
+      if (await anyoneElseOn(tx, id, organizationId, null)) {
         throw new ConflictException('This task has already been picked up');
       }
 
       const now = new Date();
+      const endedInactiveRows = await endStaleRows(tx, id, organizationId, now);
       // Picking up a task you released earlier reuses your row (A → B → A).
       const previous = existing.assignees.find((a) => a.userId === userId);
       if (previous) {
@@ -1666,7 +1679,7 @@ export class TaskService {
       // UNASSIGNED here is a single-holder position's task picked up by a
       // holder who appeared later — the pool resolving at read time.
       const task = await tx.task.update({ where: { id }, data: { status: 'PENDING' } });
-      return { existing, task };
+      return { existing, task, endedInactiveRows };
     });
 
     await this.auditLog.log({
@@ -1677,7 +1690,7 @@ export class TaskService {
       tenantId: organizationId,
       before: existing as unknown as Record<string, unknown>,
       after: task as unknown as Record<string, unknown>,
-      metadata: { event: 'picked', pickedBy: userId },
+      metadata: { event: 'picked', pickedBy: userId, ...(endedInactiveRows > 0 ? { endedInactiveRows } : {}) },
     });
     return task;
   }
@@ -1695,7 +1708,7 @@ export class TaskService {
     userId: string,
     organizationId: string,
   ): Promise<ITask> {
-    const { existing, task, returnedToPool, cancelled } = await this.prisma.$transaction(async (tx) => {
+    const { existing, task, returnedToPool, cancelled, endedInactiveRows } = await this.prisma.$transaction(async (tx) => {
       const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be released');
       const mine = existing.assignees.find((a) => a.userId === userId && a.removedAt === null);
       if (!mine?.pickedAt || !poolTargetOf(existing)) {
@@ -1705,12 +1718,13 @@ export class TaskService {
       const now = new Date();
       await tx.taskAssignee.update({ where: { id: mine.id }, data: { removedAt: now } });
 
-      const othersRemain = existing.assignees.some((a) => a.userId !== userId && a.removedAt === null);
+      // ACC-86 — only ACTIVE others count (CURRENT_ACTIVE_ASSIGNEE).
+      const othersRemain = await anyoneElseOn(tx, id, organizationId, userId);
       if (othersRemain) {
         const unchanged = await tx.task.findFirstOrThrow({ where: { id, organizationId } });
         // ACC-173 — the caller's own request leaves with them.
         const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'requester_left_task', userId);
-        return { existing, task: unchanged, returnedToPool: false, cancelled };
+        return { existing, task: unchanged, returnedToPool: false, cancelled, endedInactiveRows: 0 };
       }
       const task = await tx.task.update({
         where: { id },
@@ -1720,8 +1734,11 @@ export class TaskService {
           ...(await this.poolClock(existing.priority as TaskPriority, organizationId, now)),
         },
       });
+      // ACC-86 — back to its pool with nobody ACTIVE on it: the stale rows go too,
+      // as the departure ends them (Q-1).
+      const endedInactiveRows = await endStaleRows(tx, id, organizationId, now);
       const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'task_released');
-      return { existing, task, returnedToPool: true, cancelled };
+      return { existing, task, returnedToPool: true, cancelled, endedInactiveRows };
     });
 
     await this.auditLog.log({
@@ -1732,7 +1749,13 @@ export class TaskService {
       tenantId: organizationId,
       before: existing as unknown as Record<string, unknown>,
       after: task as unknown as Record<string, unknown>,
-      metadata: { event: 'released', releasedBy: userId, reason: dto.reason, returnedToPool },
+      metadata: {
+        event: 'released',
+        releasedBy: userId,
+        reason: dto.reason,
+        returnedToPool,
+        ...(endedInactiveRows > 0 ? { endedInactiveRows } : {}),
+      },
     });
     await auditCancelledRequests(this.auditLog, cancelled, organizationId, userId);
     // After commit, and never to the person who released it.
@@ -1804,7 +1827,9 @@ export class TaskService {
       // Gone, closed by now, or no longer theirs: nothing was written.
       if (!outcome) continue;
 
-      const { kind, wasOnHold, cancelled } = outcome;
+      const { kind, wasOnHold, cancelled, endedInactiveRows } = outcome;
+      // ACC-86 (Q-1) — recorded only when there were any.
+      const ended = endedInactiveRows > 0 ? { endedInactiveRows } : {};
       if (kind === 'returned_to_pool' || kind === 'left_with_others') {
         const returned = kind === 'returned_to_pool';
         if (returned) returnedToPoolCount += 1;
@@ -1818,6 +1843,7 @@ export class TaskService {
             event: returned ? 'departure_returned_to_pool' : 'departure_left_with_others',
             fromUserId,
             ...(returned && wasOnHold ? { holdEnded: true } : {}),
+            ...ended,
           },
         });
         await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
@@ -1844,6 +1870,7 @@ export class TaskService {
           fromUserId,
           toUserId: validToUserId,
           ...(holdEnded ? { holdEnded: true } : {}),
+          ...ended,
         },
       });
       await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
@@ -1878,6 +1905,8 @@ export class TaskService {
     kind: 'returned_to_pool' | 'left_with_others' | 'reassigned' | 'unassigned' | 'left';
     wasOnHold: boolean;
     cancelled: CancelledRequest[];
+    /** ACC-86 (Q-1) — other users' stale rows (current, user no longer ACTIVE) ended with it. */
+    endedInactiveRows: number;
   } | null> {
     await this.lockTaskRow(tx, taskId, organizationId);
     const task = await tx.task.findFirst({
@@ -1895,9 +1924,11 @@ export class TaskService {
       data: { removedAt: now },
     });
 
-    const remainingActiveOthers = task.assignees.filter(
-      (a) => a.id !== leaving.id && a.removedAt === null,
-    );
+    // ACC-86 — only ACTIVE others count (CURRENT_ACTIVE_ASSIGNEE): a row left
+    // current by someone no longer ACTIVE puts nobody on the task. Read under
+    // the task's lock, so nobody joins or leaves meanwhile. The leaver's row is
+    // the only one of theirs (unique per task and user) and is already ended.
+    const othersRemain = await anyoneElseOn(tx, task.id, organizationId, fromUserId);
 
     // ACC-173 — a departure and a hold. Going to the acting user, or staying
     // with others still on it, KEEPS the hold: the reason the work is paused
@@ -1918,7 +1949,7 @@ export class TaskService {
     // it stays with them, is not counted as returned, and is audited as
     // departure_left_with_others.
     if (poolTargetOf(task)) {
-      if (remainingActiveOthers.length === 0) {
+      if (!othersRemain) {
         await tx.task.update({
           where: { id: task.id },
           data: {
@@ -1927,11 +1958,12 @@ export class TaskService {
             ...(await this.poolClock(task.priority, organizationId, now)),
           },
         });
+        const endedInactiveRows = await endStaleRows(tx, task.id, organizationId, now);
         const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure');
-        return { kind: 'returned_to_pool', wasOnHold, cancelled };
+        return { kind: 'returned_to_pool', wasOnHold, cancelled, endedInactiveRows };
       }
       const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure', fromUserId);
-      return { kind: 'left_with_others', wasOnHold, cancelled };
+      return { kind: 'left_with_others', wasOnHold, cancelled, endedInactiveRows: 0 };
     }
 
     if (validToUserId) {
@@ -1961,20 +1993,21 @@ export class TaskService {
         await tx.task.update({ where: { id: task.id }, data: { status: 'PENDING' } });
       }
       const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure', fromUserId);
-      return { kind: 'reassigned', wasOnHold, cancelled };
+      return { kind: 'reassigned', wasOnHold, cancelled, endedInactiveRows: 0 };
     }
 
-    if (remainingActiveOthers.length === 0) {
+    if (!othersRemain) {
       await tx.task.update({
         where: { id: task.id },
         data: { status: 'UNASSIGNED', ...(wasOnHold ? HOLD_CLEARED : {}) },
       });
+      const endedInactiveRows = await endStaleRows(tx, task.id, organizationId, now);
       const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure');
-      return { kind: 'unassigned', wasOnHold, cancelled };
+      return { kind: 'unassigned', wasOnHold, cancelled, endedInactiveRows };
     }
 
     const cancelled = await cancelOpenRequests(tx, organizationId, [task.id], 'departure', fromUserId);
-    return { kind: 'left', wasOnHold, cancelled };
+    return { kind: 'left', wasOnHold, cancelled, endedInactiveRows: 0 };
   }
 
   // ACC-51 — the recovery half of the unassigned-task lifecycle. Called only
@@ -2360,7 +2393,10 @@ export class TaskService {
   ): Promise<void> {
     const en: string[] = [];
     const ar: string[] = [];
-    if (changed.dueChanged && after.dueAt) {
+    // ACC-313 — the organisation's switch governs the due-date clause only:
+    // a priority change is still announced, without the date (Q7). It is read
+    // only when the date moved, so other edits cost no read.
+    if (changed.dueChanged && after.dueAt && (await this.announcesDueChanges(organizationId))) {
       const due = await this.sla.forPeople(after.dueAt, organizationId);
       en.push(`it is now due ${due.en}`);
       ar.push(`أصبح موعد استحقاقها ${due.ar}`);
@@ -2370,6 +2406,7 @@ export class TaskService {
       en.push(`its priority is now ${words.en}`);
       ar.push(`أصبحت أولويتها ${words.ar}`);
     }
+    if (en.length === 0) return;
     for (const userId of activeAssigneeIds(before, actorId)) {
       await this.notificationService.create(
         {
@@ -2384,6 +2421,11 @@ export class TaskService {
         organizationId,
       );
     }
+  }
+
+  private async announcesDueChanges(organizationId: string): Promise<boolean> {
+    const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } });
+    return taskSlaNoticesFromSettings(org?.settings).notifyOnDueChange;
   }
 
   private async userName(userId: string, organizationId: string): Promise<string> {
@@ -2543,6 +2585,29 @@ export class TaskService {
     });
     return users.map((u) => u.id);
   }
+}
+
+// ACC-86 — is anyone other than `userId` (anyone at all, for null) on the task
+// (CURRENT_ACTIVE_ASSIGNEE)? One indexed count, under the caller's task lock.
+// TaskAssignee has no organizationId of its own: it is scoped through its task.
+async function anyoneElseOn(tx: TaskTx, taskId: string, organizationId: string, userId: string | null): Promise<boolean> {
+  return (
+    (await tx.taskAssignee.count({
+      where: { taskId, task: { organizationId }, ...(userId ? { userId: { not: userId } } : {}), ...CURRENT_ACTIVE_ASSIGNEE },
+    })) > 0
+  );
+}
+
+// ACC-86 (Q-1) — end the rows still current on a task but held by users no longer
+// ACTIVE (STALE_CURRENT_ASSIGNEE), under the caller's task lock, scoped through
+// the task's organisation. Returns how many.
+async function endStaleRows(tx: TaskTx, taskId: string, organizationId: string, now: Date): Promise<number> {
+  return (
+    await tx.taskAssignee.updateMany({
+      where: { taskId, task: { organizationId }, ...STALE_CURRENT_ASSIGNEE },
+      data: { removedAt: now },
+    })
+  ).count;
 }
 
 // ACC-174 — the people currently on a task, less the person acting.

@@ -229,7 +229,9 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
     ['an acting head before their period starts', () => as('actingFuture', [SEE]), []],
     ['a View unit tasks holder: their primary unit and below', () => as('unitViewer', [SEE, VIEW_UNIT]), ['ward', 'pool']],
     ['the same unit without View unit tasks', () => as('unitViewer', [SEE]), []],
-    ['a Manage tasks holder: unowned, open request, departed creator', () => as('manager', [SEE, MANAGE]), ['departed', 'emptyPool', 'request', 'unassigned']],
+    // ACC-86 — workflowMade, awayManual and awayWorkflow are PENDING with nobody on them at all,
+    // so they are ownerless (OWNERLESS_SQL), and Manage tasks reaches them.
+    ['a Manage tasks holder: unowned, open request, departed creator', () => as('manager', [SEE, MANAGE]), ['awayManual', 'awayWorkflow', 'departed', 'emptyPool', 'request', 'unassigned', 'workflowMade']],
     ['Manage tasks WITHOUT committees:view (rule 1)', () => as('manager', [MANAGE]), []],
     ['nobody', () => as('nobody', [SEE]), []],
   ];
@@ -271,7 +273,8 @@ describe('The task visibility rule, on a real database (ACC-244)', () => {
         expect(unitView === 'FORBIDDEN').toBe(views.unit === null);
         expect(unassigned === 'FORBIDDEN').toBe(views.unassigned === null);
         if (all !== 'FORBIDDEN') expect(all.keys).toEqual([...ALL].sort());
-        if (unassigned !== 'FORBIDDEN') expect(unassigned.keys).toEqual(['emptyPool', 'unassigned']);
+        // ACC-86 — and the three PENDING tasks nobody is on.
+        if (unassigned !== 'FORBIDDEN') expect(unassigned.keys).toEqual(['awayManual', 'awayWorkflow', 'emptyPool', 'unassigned', 'workflowMade']);
       });
 
       // ACC-120 slice 3 — the viewer's own views need no key: never a 403, even

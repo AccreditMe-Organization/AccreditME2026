@@ -44,6 +44,7 @@ import { StagePoolService } from '../workflow/stage-pool.service';
 import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { errorKind } from '../committees/transfer-notice/error-kind';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
+import { endEverySessionInTx } from '../auth/session-revocation';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
 import { ValidateTransferPositionDto } from './dto/validate-transfer-position.dto';
@@ -1499,6 +1500,14 @@ export class UserService {
   // BEFORE bulk reassignment starts, so the departing user's existing
   // sessions are already dead the instant this begins, not after it
   // finishes (see step-09 plan Section 8).
+  //
+  // ACC-216 (CC-301) — the sessions end INSIDE the flip's transaction, through
+  // endEverySessionInTx(): tokenVersion + 1, every live RefreshToken row
+  // revoked, and the person's Better Auth sessions deleted. Before this only
+  // tokenVersion was bumped (AuthProvider.invalidateUserSessions(), after the
+  // commit), so the refresh rows stayed `revokedAt: null` and read as live
+  // sign-ins. A refused deactivation rolls the ending back with the flip.
+  // Reactivation brings none of it back: reactivate() writes no refresh row.
   async deactivate(
     id: string,
     organizationId: string,
@@ -1544,6 +1553,9 @@ export class UserService {
       await assertNotAccountOwner(tx, organizationId, id);
       const baseline = await captureAdministratorBaseline(organizationId, tx);
       await tx.user.update({ where: { id }, data: { status: 'INACTIVE' } });
+      // ACC-216 — every sign-in ends with the flip (see the header above).
+      const auth = await tx.user.findFirst({ where: { id, organizationId }, select: { authUserId: true } });
+      await endEverySessionInTx(tx, { id, organizationId, authUserId: auth?.authUserId ?? null });
       await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
       // ACC-288 — the root's last head can't be deactivated without a successor or a cover.
       await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
@@ -1564,8 +1576,6 @@ export class UserService {
         `Change request departure follow-up failed: organizationId=${organizationId} userId=${id} (${(err as Error).name})`,
       );
     }
-
-    await this.authProvider.invalidateUserSessions(id);
 
     // ACC-40 Section 2.5.1 — a departing user may have been a unit's direct
     // Head-position holder; the status flip above already excludes them

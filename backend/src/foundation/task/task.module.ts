@@ -8,6 +8,7 @@ import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskRequestService } from './task-request.service';
+import { TaskDueWarningService } from './task-due-warning.service';
 import { TaskSlaService } from './task-sla.service';
 import { TaskClosedNoticeService } from './task-closed-notice.service';
 import { TaskEvidenceService } from './task-evidence.service';
@@ -82,7 +83,9 @@ import { TaskVisibilityService } from './task-visibility.service';
     TaskRecordListService,
     // ACC-244 — the one task visibility rule, for every reader.
     TaskVisibilityService,
+    // ACC-313 — the due-soon reminder, run by the SLA monitor.
+    TaskDueWarningService,
   ],
-  exports: [TaskService, TaskRequestService],
+  exports: [TaskService, TaskRequestService, TaskDueWarningService],
 })
 export class TaskModule {}

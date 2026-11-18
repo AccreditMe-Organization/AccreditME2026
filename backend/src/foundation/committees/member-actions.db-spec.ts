@@ -254,7 +254,8 @@ describe('Seats grant members their committee actions, on a real database (ACC-2
       const seats = jest.spyOn(prisma.committeeSeatAction, 'findMany');
       try {
         const detail = await committees.getCommitteeDetail(c, org, v.holder);
-        expect(Object.values(detail.memberActions)).toEqual([true, true, true, true]);
+        // ACC-320: and change_own_seat, which a role-path holder has.
+        expect(Object.values(detail.memberActions)).toEqual([true, true, true, true, true]);
         expect([members.mock.calls.length, seats.mock.calls.length]).toEqual([0, 0]);
       } finally {
         members.mockRestore();
