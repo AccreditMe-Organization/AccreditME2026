@@ -65,3 +65,33 @@ export function taskSlaNoticesFromSettings(settings: unknown): ITaskSlaNotices {
         : DEFAULT_TASK_SLA_NOTICES.notifyOnDueChange,
   };
 }
+
+/**
+ * ACC-313 — a warning option as working hours: 0 for Off, the hours of an hour
+ * option, and the organisation's working day for WORKING_DAY.
+ */
+export function warnHours(option: TaskSlaWarnBeforeDue, hoursPerDay: number): number {
+  switch (option) {
+    case 'OFF':
+      return 0;
+    case 'H1':
+      return 1;
+    case 'H2':
+      return 2;
+    case 'H4':
+      return 4;
+    case 'H8':
+      return 8;
+    case 'WORKING_DAY':
+      return hoursPerDay;
+  }
+}
+
+/**
+ * The rule (Q2): a warning that is not Off must be shorter than its priority's
+ * limit. False for one at or past it, which cannot be saved and which the
+ * sweep treats as Off (a calendar change can make WORKING_DAY one).
+ */
+export function warningFitsLimit(option: TaskSlaWarnBeforeDue, limitHours: number, hoursPerDay: number): boolean {
+  return option === 'OFF' || warnHours(option, hoursPerDay) < limitHours;
+}

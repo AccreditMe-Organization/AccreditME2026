@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDefined, IsInt, IsOptional, Max, Min, ValidateNested } from 'class-validator';
+import { IsBoolean, IsDefined, IsIn, IsInt, IsOptional, Max, Min, ValidateNested } from 'class-validator';
+import { WARN_BEFORE_DUE_VALUES } from '../task-sla-settings';
+import type { TaskSlaWarnBeforeDue } from '../interfaces/tenant.interface';
 
 // ACC-313 — the Task SLA page saves by SECTION (its drawn design has two
 // Saves), so each route takes only its own fields, for all four priorities,
@@ -43,6 +45,15 @@ export class TaskSlaEscalationDto {
   @IsInt()
   @Min(0)
   headEscalationAfterHours!: number;
+
+  /**
+   * ACC-313 PR 4 — how long before the due time this priority's assignees are
+   * reminded. Optional: a body without it keeps the stored warning, so a
+   * screen that saves escalation alone does not change it.
+   */
+  @IsOptional()
+  @IsIn([...WARN_BEFORE_DUE_VALUES])
+  warnBeforeDue?: TaskSlaWarnBeforeDue;
 }
 
 /** PATCH /tenant/task-sla/escalation — who is told, and when, per priority. */
