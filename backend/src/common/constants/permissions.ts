@@ -116,6 +116,16 @@ export const COMMITTEE_TASKS_PERMISSIONS = {
   VIEW_UNIT: 'committees:view_unit_tasks',
 } as const;
 
+// ACC-316 PR 3a — the same four task keys for meetings (task-record-types.ts):
+// a meeting's action items and any task raised on it. VIEW_UNIT reads the
+// meeting's OWNING unit (its own, or its committee's).
+export const MEETING_TASKS_PERMISSIONS = {
+  VIEW_ALL:  'meetings:view_all_tasks',
+  CREATE:    'meetings:create_tasks',
+  MANAGE:    'meetings:manage_tasks',
+  VIEW_UNIT: 'meetings:view_unit_tasks',
+} as const;
+
 export const NOTIFICATIONS_PERMISSIONS = {
   VIEW:   'notifications:view',
   MANAGE: 'notifications:manage',

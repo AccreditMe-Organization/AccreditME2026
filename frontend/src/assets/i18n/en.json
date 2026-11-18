@@ -678,7 +678,11 @@
         "meetings:schedule_subunits": "Schedule meetings for units below the one you head",
         "meetings:record_minutes": "Record the minutes of your unit's meetings",
         "meetings:approve_minutes": "Approve the minutes of your unit's meetings",
-        "meetings:approve_subunits": "Approve the minutes of meetings of units below the one you head"
+        "meetings:approve_subunits": "Approve the minutes of meetings of units below the one you head",
+        "meetings:view_all_tasks": "See every task on meetings",
+        "meetings:create_tasks": "Create tasks on meetings",
+        "meetings:manage_tasks": "Reassign meeting tasks and decide their requests",
+        "meetings:view_unit_tasks": "See tasks on meetings of your unit or its sub-units"
       },
       "find": "Find a permission",
       "clearSearch": "Clear the search",
@@ -711,6 +715,11 @@
         "users": {
           "people": "People and profiles",
           "access": "Account access"
+        },
+        "meetings": {
+          "meetings": "Meetings",
+          "minutes": "Minutes",
+          "tasks": "Tasks on meetings"
         }
       }
     },
@@ -1802,7 +1811,8 @@
       },
       "noMatch": "Nothing matches “{{q}}”.",
       "closeList": "Close",
-      "closed": "This committee is dissolved or inactive, so it takes no new tasks."
+      "closed": "This committee is dissolved or inactive, so it takes no new tasks.",
+      "closedMeeting": "This meeting is cancelled, so it takes no new tasks."
     },
     "title": "Title",
     "newTask": "New Task",

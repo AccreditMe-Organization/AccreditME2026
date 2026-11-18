@@ -10,9 +10,13 @@
  *
  * WHAT IS GRANTED, to a role found by its system key: the role's seeded share
  * of meetings:schedule, meetings:schedule_subunits and meetings:approve_subunits
+ * (and, since PR 3a, the four meeting task keys)
  * (SYSTEM_ROLE_SEED itself, so the table has one copy), and ONLY where the role
  * still holds meetings:manage — the umbrella the seed gives with them. A role
  * an organisation took meetings:manage away from is not handed the new keys.
+ * The two VIEW task keys follow meetings:view instead (requiredFor()): a task
+ * key counts only where meetings are visible anyway, and the read-only admin,
+ * seeded with them, never holds meetings:manage.
  * New organisations get them from the seed. seedSystemRoles() is never re-run:
  * it deletes and recreates every RolePermission row of every system role
  * (CLAUDE.md, ACC-101).
@@ -27,7 +31,7 @@
  */
 import 'dotenv/config';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { MEETINGS_PERMISSIONS } from '../src/common/constants/permissions';
+import { MEETINGS_PERMISSIONS, MEETING_TASKS_PERMISSIONS } from '../src/common/constants/permissions';
 import { SYSTEM_ROLE_SEED } from '../src/foundation/roles/role.seed';
 import { HOSPITAL_FIXTURE } from './seed/fixtures/hospital.fixture';
 import { UNIVERSITY_FIXTURE } from './seed/fixtures/university.fixture';
@@ -40,9 +44,16 @@ export const NEW_KEYS: readonly string[] = [
   MEETINGS_PERMISSIONS.SCHEDULE,
   MEETINGS_PERMISSIONS.SCHEDULE_SUBUNITS,
   MEETINGS_PERMISSIONS.APPROVE_SUBUNITS,
+  // PR 3a added the four meeting task keys. Idempotent, so running it again
+  // after 3a deploys grants only these.
+  ...Object.values(MEETING_TASKS_PERMISSIONS),
 ];
 /** What a role must still hold to be given its share. */
 export const REQUIRES = MEETINGS_PERMISSIONS.MANAGE;
+
+/** PR 3a — the view task keys follow meetings:view; every other key meetings:manage. */
+const VIEW_TASK_KEYS: readonly string[] = [MEETING_TASKS_PERMISSIONS.VIEW_ALL, MEETING_TASKS_PERMISSIONS.VIEW_UNIT];
+export const requiredFor = (permission: string): string => (VIEW_TASK_KEYS.includes(permission) ? MEETINGS_PERMISSIONS.VIEW : REQUIRES);
 
 /** The seeded share of the new keys, per system role key. */
 export const SEEDED_KEYS: ReadonlyMap<string, readonly string[]> = new Map(
@@ -89,7 +100,7 @@ async function planOrg(db: Db, organizationId: string): Promise<Pick<OrgPlan, 'g
     const held = new Set(role.rolePermissions.map((rp) => keyOf(rp.permission)));
     for (const permission of SEEDED_KEYS.get(role.key!) ?? []) {
       if (held.has(permission)) continue;
-      if (!held.has(REQUIRES)) {
+      if (!held.has(requiredFor(permission))) {
         withheld.push({ roleKey: role.key!, permission });
         continue;
       }
