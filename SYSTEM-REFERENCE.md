@@ -174,6 +174,15 @@ flow. Confirmed by direct grep:
   terminated — after their role is changed or their permissions are
   reassigned.** Only deactivation forces a sign-out today.
 
+**UPDATED (ACC-216, CC-301): the paragraph above describes the state before
+password reset (ACC-188), the two-step reset (ACC-164) and this change.**
+`tokenVersion` is now bumped only through `endEverySessionInTx()`
+(`foundation/auth/session-revocation.ts`), which also revokes every live
+`RefreshToken` row and deletes the person's Better Auth sessions. Its callers:
+password reset, the administrator's two-step reset, and **`deactivate()`, inside
+its own transaction**. `AuthProvider.invalidateUserSessions()` has no caller
+any more. A role change still ends nothing.
+
 **CORRECTED (ACC-101). This section previously said a stripped user
 "keeps full old access on their existing JWT for up to 15 minutes". That
 was wrong, and the error was to treat session validity and authorization
@@ -1120,9 +1129,11 @@ session was issued at, and `refresh()` refuses to renew when it no longer
 matches the user's. Without it, renewal would DEFEAT the forced logout: the 401
 from `TenantGuard`'s stale-version check would be retried after a refresh that
 minted a token carrying the NEW version. It did not bite before only because
-`invalidateUserSessions()` has exactly one caller, `UserService.deactivate()`,
+`invalidateUserSessions()` had exactly one caller, `UserService.deactivate()`,
 which also flips status to `INACTIVE` — and `tenant.guard.ts` says the
-mechanism is also meant to cover a password change. **NULL means "issued before
+mechanism is also meant to cover a password change. (Since ACC-216 CC-301 the
+bump comes only from `endEverySessionInTx()`, which deactivation now calls in
+its transaction and which revokes the refresh rows too.) **NULL means "issued before
 the column existed"** and falls back to the status check; refusing nulls would
 have signed out every logged-in user the moment the migration ran. Read via
 `?? null` so a narrower `select` cannot fail closed and reject every refresh.
@@ -13553,9 +13564,18 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
   assignee resolution.
 - **`deactivate()`** — the full departure flow, and the ordering is
   explicitly non-negotiable per its own code comment: `tokenVersion`
-  increments (via `authProvider.invalidateUserSessions()`) **before**
-  `TaskService.reassignAllForUser()` runs, so the departing user's
-  sessions are dead the instant the flow starts, not after it finishes.
+  increments **before** `TaskService.reassignAllForUser()` runs, so the
+  departing user's sessions are dead the instant the flow starts, not after it
+  finishes. **Since ACC-216 (CC-301)** the sign-ins end INSIDE the status
+  flip's transaction, through `endEverySessionInTx()`: `tokenVersion + 1`,
+  every live `RefreshToken` row revoked (before, they stayed `revokedAt: null`
+  and read as live), and the person's Better Auth sessions deleted. A refusal
+  later in that transaction (the last administrator, the root unit's head)
+  rolls the ending back with the flip. `reactivate()` brings no session back.
+  It is the only path that sets a person inactive: nothing writes `SUSPENDED`,
+  `revokeInvitation()` deletes an invited person who never signed in, and
+  suspending an ORGANISATION ends nothing (its sessions are refused at refresh
+  and by TenantGuard while it is closed).
   **Last-admin lockout**: queries the tenant's active `TENANT_ADMIN`
   holders **before** flipping status (ACC-16's fix — querying after
   would silently exclude the departing user from their own admin count
