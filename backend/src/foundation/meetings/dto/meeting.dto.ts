@@ -25,7 +25,8 @@ import { trimToNull } from '../../../common/utils/trim-to-null.transform';
  * service's, refused with codes (meeting-refusal.ts).
  */
 
-const URL_OPTIONS = { protocols: ['https', 'http'], require_protocol: true };
+// ACC-316 PR 3b — https only: the link goes into an outside guest's email (lane B's review, fix 5).
+const URL_OPTIONS = { protocols: ['https'], require_protocol: true };
 
 export class ScheduleMeetingDto {
   /** Exactly one of committeeId and orgUnitId (MEETING_OWNER_REQUIRED). */
