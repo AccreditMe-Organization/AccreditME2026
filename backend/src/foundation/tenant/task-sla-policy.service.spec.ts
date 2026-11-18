@@ -237,9 +237,10 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
     // ACC-208 (B6) — the settings screen names the stage in either language,
     // links to its row, and puts the message under the priority that breaks it.
     it('gives each conflict its template id, its Arabic names and the priority behind it', async () => {
-      prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', CUSTOM_SLA.HIGH.dueAfterHours - 1)]);
+      stored({});
+      prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', LIMITS.HIGH.dueAfterHours - 1)]);
 
-      const error = await service.replaceAll('org-a', CUSTOM_SLA, 'user-1').catch((e: unknown) => e);
+      const error = await service.saveLimits('org-a', LIMITS, 'user-1').catch((e: unknown) => e);
 
       const body = (error as WorkflowRefusalException).getResponse() as { stages: unknown[] };
       expect(body.stages).toEqual([
@@ -250,8 +251,8 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
           templateName: 'Committee lifecycle',
           templateNameAr: null,
           workflowTemplateId: 'template-committee',
-          stageHours: CUSTOM_SLA.HIGH.dueAfterHours - 1,
-          longestTaskHours: CUSTOM_SLA.HIGH.dueAfterHours,
+          stageHours: LIMITS.HIGH.dueAfterHours - 1,
+          longestTaskHours: LIMITS.HIGH.dueAfterHours,
           priority: 'HIGH',
         },
       ]);
