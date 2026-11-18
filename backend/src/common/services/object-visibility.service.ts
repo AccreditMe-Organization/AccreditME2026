@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nest
 import { PrismaService } from '../../prisma/prisma.service';
 import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../constants/permissions';
 import { isActiveMember, isActiveMemberOfRequestCommittee, overseesCommittee, overseesRequestCommittee } from './committee-membership';
+import { isMeetingMember, overseesMeeting } from './meeting-membership';
 
 /**
  * ACC-244 — the permission that lets a caller see records of each type: the
@@ -97,6 +98,12 @@ export class ObjectVisibilityService {
           where: { id, organizationId },
           select: { id: true },
         }),
+      // ACC-316 PR 3a — a member of its committee, a person of its unit, or an
+      // invitee may see it without meetings:view (meeting-membership.ts).
+      member: (id, organizationId, viewerId) => isMeetingMember(this.prisma, id, organizationId, viewerId),
+      // ACC-316 PR 3a (Ahmad, 18 Nov) — a head or acting head of its owning unit
+      // or a unit above it may READ it.
+      overseer: (id, organizationId, viewerId, now) => overseesMeeting(this.prisma, id, organizationId, viewerId, now),
     },
   };
 
