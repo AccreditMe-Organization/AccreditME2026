@@ -91,16 +91,14 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
       ...Object.values(INCIDENTS_PERMISSIONS),
       ...Object.values(MEETINGS_PERMISSIONS),
       ...Object.values(COMMITTEES_PERMISSIONS),
-      // ACC-244 — View all, Create and Manage on committees. Not View unit
-      // tasks: beside View all it adds nothing. (The flat tasks:* keys are
-      // retired.)
-      COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL,
-      COMMITTEE_TASKS_PERMISSIONS.CREATE,
-      COMMITTEE_TASKS_PERMISSIONS.MANAGE,
-      // ACC-316 PR 3a — the same three on meetings.
-      MEETING_TASKS_PERMISSIONS.VIEW_ALL,
-      MEETING_TASKS_PERMISSIONS.CREATE,
-      MEETING_TASKS_PERMISSIONS.MANAGE,
+      // ACC-244 — the task keys on committees. ACC-77: all four, because a
+      // role holding Manage tasks (the type's umbrella) holds every one of the
+      // type's task keys directly (manage-umbrellas.ts). View unit tasks adds
+      // nothing beside View all, but the umbrella rule has no exceptions. (The
+      // flat tasks:* keys are retired.)
+      ...Object.values(COMMITTEE_TASKS_PERMISSIONS),
+      // ACC-316 PR 3a — the same on meetings.
+      ...Object.values(MEETING_TASKS_PERMISSIONS),
       ...Object.values(KPI_PERMISSIONS),
       ...Object.values(REPORTS_PERMISSIONS),
       ORG_PERMISSIONS.VIEW,
