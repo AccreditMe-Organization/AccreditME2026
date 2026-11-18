@@ -733,11 +733,17 @@
     "refusal": {
       "rootRoleCannotBeDeactivated": "Organization Administrator can't be deactivated.",
       "lastAdministrator": "Deactivating this role would leave the organization with no active administrator. Give the Organization Administrator role to an active user first.",
-      "roleInUse": "This role can't be deactivated while it is still in use. Remove whatever holds or names it first."
+      "roleInUse": "This role can't be deactivated while it is still in use. Remove whatever holds or names it first.",
+      "roleInactive": "This role has been deactivated, so it can't be given out. Reactivate it on Roles, or choose another role."
     },
     "inUse": {
       "title": "“{{name}}” can't be deactivated yet",
-      "lead": "It's still in use. Remove each of these first, then deactivate it."
+      "lead": "It's still in use. Remove each of these first, then deactivate it.",
+      "stageName": "{{workflow}} — {{stage}}",
+      "hint": {
+        "POSITION_GRANTS": "Removed by ending that headship.",
+        "POSITIONS": "Removed by changing the position's role."
+      }
     },
     "form": {
       "nameRequired": "Enter the role's name in English.",
