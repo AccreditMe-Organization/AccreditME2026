@@ -14,7 +14,7 @@ describe('APP_MOVES (ACC-271 PR 3)', () => {
   );
 
   it('the seed has app-run moves to check (non-vacuity)', () => {
-    expect(appTransitions.length).toBe(8);
+    expect(appTransitions.length).toBe(10); // the change request's eight; ACC-316: Distribute and Return for Correction
   });
 
   it.each(appTransitions.map((t) => [`${t.objectType} ${t.from} → ${t.to} (${t.label})`, t] as const))('%s has an entry', (_name, t) => {

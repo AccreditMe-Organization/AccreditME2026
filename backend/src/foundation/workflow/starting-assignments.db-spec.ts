@@ -80,16 +80,17 @@ describe("A new organisation's workflows start on its first admin, against a rea
 
     expect(await prisma.workflowStage.count({ where: scope })).toBe(60);
     // ACC-278 PR B: whoMode is NOT NULL, so the two modes the seed uses account for all 60.
-    expect(await prisma.workflowStage.count({ where: { ...scope, whoMode: 'ANY_ONE' } })).toBe(56);
-    expect(await prisma.workflowStage.count({ where: { ...scope, whoMode: 'ALL' } })).toBe(4);
-    expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, kind: 'CREATOR' } })).toBe(12);
+    expect(await prisma.workflowStage.count({ where: { ...scope, whoMode: 'ANY_ONE' } })).toBe(57); // ACC-316: Minutes Review is Any one
+    expect(await prisma.workflowStage.count({ where: { ...scope, whoMode: 'ALL' } })).toBe(3);
+    expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, kind: 'CREATOR' } })).toBe(9); // ACC-316: the meeting's first three stages are its own kinds now
     // ACC-283 PR 4 (plan §10): Terms Review seeds one ORG_UNIT_HEAD entry, with no unit named.
-    expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, kind: { not: 'CREATOR' } } })).toBe(1);
+    // ACC-316: and the meeting's seven (Planned 1, Agenda Issued 2, Minutes Draft 1, Minutes Review 2 + the Chair's seat).
+    expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, kind: { not: 'CREATOR' } } })).toBe(7);
     expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, kind: 'ORG_UNIT_HEAD', orgUnitId: null } })).toBe(1);
-    expect(await prisma.workflowTransition.count({ where: { fromStage: scope, mover: 'APP' } })).toBe(8);
-    expect(await prisma.workflowTransition.count({ where: { fromStage: scope, mover: 'PERSON' } })).toBe(67);
-    // ACC-278 PR B: mover is NOT NULL; APP and PERSON account for all 75.
-    expect(await prisma.workflowTransition.count({ where: { fromStage: scope } })).toBe(75);
+    expect(await prisma.workflowTransition.count({ where: { fromStage: scope, mover: 'APP' } })).toBe(10); // ACC-316: Distribute and Return for Correction
+    expect(await prisma.workflowTransition.count({ where: { fromStage: scope, mover: 'PERSON' } })).toBe(64);
+    // ACC-278 PR B: mover is NOT NULL; APP and PERSON account for all 74 (ACC-316 removed the meeting's draft-to-draft Return).
+    expect(await prisma.workflowTransition.count({ where: { fromStage: scope } })).toBe(74);
   });
 
   it('starts every other stage on the invited admin, once; and the admin is in no pool until they accept', async () => {
@@ -100,11 +101,11 @@ describe("A new organisation's workflows start on its first admin, against a rea
 
     const first = await templates.assignStartingAssignments(o.id, admin.id, admin.id);
 
-    // 47: every stage with no entry of its own. Terms Review has one since ACC-283 PR 4 (plan §10),
+    // 46: every stage with no entry of its own. Terms Review has one since ACC-283 PR 4 (plan §10), Minutes Review since ACC-316,
     // so the admin's starting assignment is not written there.
-    expect(first.stageIds).toHaveLength(47);
+    expect(first.stageIds).toHaveLength(46); // ACC-316: Minutes Review has entries of its own
     const starting = await prisma.workflowStageAssignee.findMany({ where: { organizationId: o.id, isStartingAssignment: true } });
-    expect(starting).toHaveLength(47);
+    expect(starting).toHaveLength(46);
     expect(new Set(starting.map((e) => `${e.kind}:${e.userId}:${e.order}`))).toEqual(new Set([`SPECIFIC_USER:${admin.id}:1`]));
     // Not on a stage the creator drives.
     expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, kind: 'CREATOR', isStartingAssignment: true } })).toBe(0);
@@ -113,7 +114,7 @@ describe("A new organisation's workflows start on its first admin, against a rea
     // Again: nothing more.
     const second = await templates.assignStartingAssignments(o.id, admin.id, admin.id);
     expect(second.stageIds).toEqual([]);
-    expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, isStartingAssignment: true } })).toBe(47);
+    expect(await prisma.workflowStageAssignee.count({ where: { organizationId: o.id, isStartingAssignment: true } })).toBe(46);
     expect(await prisma.auditLog.count({ where: { organizationId: o.id, objectType: 'WorkflowStageAssignee' } })).toBe(1);
 
     // INVITED: holding the assignment is not being able to act (Q5, ACC-43).
