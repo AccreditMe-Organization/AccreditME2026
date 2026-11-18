@@ -4424,14 +4424,14 @@
     "editProfile": "تعديل الملف الشخصي",
     "roles": {
       "heading": "الأدوار",
-      "empty": "لا توجد أدوار",
+      "empty": "لا توجد أدوار.",
       "emptyBody": "الأدوار تحدد ما يمكن لهذا الشخص رؤيته وفعله.",
       "fromPosition": "مرتبط بمنصب الرئاسة {{position}}",
       "fromPositionUnnamed": "مرتبط بمنصب رئاسة"
     },
     "committees": {
       "heading": "اللجان",
-      "empty": "لا عضوية في أي لجنة",
+      "empty": "لا عضوية في أي لجنة.",
       "loadError": "تعذّر تحميل اللجان.",
       "since": "منذ {{date}}",
       "range": "{{from}} – {{to}}",
