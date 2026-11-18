@@ -1,6 +1,10 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
-import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
-import { of } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { TranslateService, provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
+import { Observable, of, throwError } from 'rxjs';
+import en from '../../../../../assets/i18n/en.json';
+import ar from '../../../../../assets/i18n/ar.json';
+import { loadTranslationsForTest } from '../../../../core/formatting/testing';
 import { PositionFormComponent } from './position-form.component';
 import { OrgPositionService } from '../../services/org-position.service';
 import { RoleService } from '../../../roles/services/role.service';
@@ -96,4 +100,69 @@ describe('PositionFormComponent — invalid step 1 (ACC-120)', () => {
     expect(component.step()).toBe(1);
     expect(component.showErrors()).toBe(true);
   });
+});
+
+// ACC-154 — a POSITIONS blocker must be clearable in the app: emptying the role
+// sends `roleId: null` (undefined kept the old role), and a deactivated role is
+// said from its code, never the server's English.
+describe('PositionFormComponent — the position’s role (ACC-154)', () => {
+  let fixture: ComponentFixture<PositionFormComponent>;
+  let update: jasmine.Spy;
+
+  const POSITION = {
+    id: 'pos-1',
+    organizationId: 'org-1',
+    nameEn: 'Quality Lead',
+    nameAr: null,
+    grade: 5,
+    isSingleAssignee: false,
+    isUnitHeadPosition: false,
+    roleId: 'role-1',
+    isActive: true,
+  };
+
+  function render(lang: 'en' | 'ar', respond: () => Observable<unknown> = () => of(POSITION)): PositionFormComponent {
+    TestBed.resetTestingModule();
+    update = jasmine.createSpy('update').and.callFake(respond);
+    TestBed.configureTestingModule({
+      imports: [PositionFormComponent],
+      providers: [
+        provideTranslateService({ lang: 'en' }),
+        { provide: OrgPositionService, useValue: { create: () => of(POSITION), update } },
+        { provide: RoleService, useValue: { listAllRoles: () => of([]) } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(lang);
+    fixture = TestBed.createComponent(PositionFormComponent);
+    fixture.componentRef.setInput('position', POSITION);
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  it('sends roleId null when the role field is emptied, so the server clears it', () => {
+    const c = render('en');
+    c.form.patchValue({ roleId: null });
+    c.onSubmit();
+    expect(update).toHaveBeenCalledWith('pos-1', jasmine.objectContaining({ roleId: null }));
+  });
+
+  it('keeps sending the role while it is set', () => {
+    const c = render('en');
+    c.onSubmit();
+    expect(update).toHaveBeenCalledWith('pos-1', jasmine.objectContaining({ roleId: 'role-1' }));
+  });
+
+  for (const lang of ['en', 'ar'] as const) {
+    it(`says ROLE_INACTIVE from its code (${lang})`, () => {
+      const refusal = new HttpErrorResponse({ status: 409, error: { code: 'ROLE_INACTIVE', message: 'server text' } });
+      const c = render(lang, () => throwError(() => refusal));
+      c.onSubmit();
+      expect(c.saveError()).toBe(
+        lang === 'en'
+          ? "This role has been deactivated, so it can't be given out. Reactivate it on Roles, or choose another role."
+          : 'تم إلغاء تفعيل هذا الدور، فلا يمكن منحه. يلزم إعادة تفعيله في صفحة الأدوار أو اختيار دور آخر.',
+      );
+    });
+  }
 });

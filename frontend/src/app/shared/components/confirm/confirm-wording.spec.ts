@@ -257,7 +257,8 @@ describe('the confirms\' words (ACC-120 slice 10, PR 2)', () => {
             accept: 'Deactivate Role',
           }
         : {
-            header: 'تعطيل الدور «مدقق»؟',
+            // ACC-154 — one verb for deactivate across the flow: «إلغاء تفعيل».
+            header: 'إلغاء تفعيل الدور «مدقق»؟',
             message: 'لا أحد يحمله الآن، فلن يفقد أحد شيئًا. ويمكنك إعادة تفعيله لاحقًا.',
             accept: 'إلغاء تفعيل الدور',
           },

@@ -11,7 +11,7 @@ import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/
 import { LanguageService } from '../../../../core/services/language.service';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { useLayoutFonts } from '../../../../../testing/layout-fonts';
-import { RoleReferenceBlockerDto } from '../../services/role.service';
+import { RoleReferenceBlockerDto, RoleReferenceNameDto } from '../../services/role.service';
 import { RoleInUseDialogComponent } from './role-in-use-dialog.component';
 
 // ACC-154 — the "can't be deactivated yet" dialog against the 420px body cap
@@ -110,18 +110,26 @@ const TEN = {
   },
 };
 
+/** A name as the server sends it: both languages (the same text here), and a stage's workflow apart. */
+function named(text: string): RoleReferenceNameDto {
+  const [workflow, stage] = text.split(' — ');
+  return stage === undefined
+    ? { nameEn: text, nameAr: text }
+    : { nameEn: stage, nameAr: stage, workflow: { nameEn: workflow!, nameAr: workflow! } };
+}
+
 function worst(language: 'en' | 'ar'): RoleReferenceBlockerDto[] {
   const t = TEN[language];
   return [
-    { category: 'USER_GRANTS', count: 37, names: t.users },
-    { category: 'POSITION_GRANTS', count: 14, names: t.users.slice().reverse() },
-    { category: 'POSITIONS', count: 12, names: t.positions },
-    { category: 'STAGE_ESCALATIONS', count: 23, names: t.stages },
+    { category: 'USER_GRANTS', count: 37, names: t.users.map(named) },
+    { category: 'POSITION_GRANTS', count: 14, names: t.users.slice().reverse().map(named) },
+    { category: 'POSITIONS', count: 12, names: t.positions.map(named) },
+    { category: 'STAGE_ESCALATIONS', count: 23, names: t.stages.map(named) },
   ];
 }
 
 function small(language: 'en' | 'ar'): RoleReferenceBlockerDto[] {
-  return [{ category: 'POSITIONS', count: 1, names: [TEN[language].positions[0]!] }];
+  return [{ category: 'POSITIONS', count: 1, names: [named(TEN[language].positions[0]!)] }];
 }
 
 @Component({
@@ -230,7 +238,7 @@ describe('Role in use dialog — layout, measured (ACC-154)', () => {
           expect(list().textContent).toContain(TEN[language].stages[9]!);
           expect(document.querySelectorAll('[data-role-in-use-shown]').length).toBe(4);
           // … a keyboard can reach it, and nothing else scrolls.
-          expect(list().tabIndex).withContext('the list is focusable, to scroll it by keyboard').toBe(0);
+          expect(list().getAttribute('tabindex')).withContext('the list is focusable while it scrolls').toBe('0');
           expect(scrollersBesides(list())).withContext('something besides the list scrolls').toEqual([]);
         });
 
@@ -239,6 +247,8 @@ describe('Role in use dialog — layout, measured (ACC-154)', () => {
           check('small case', language, width, 1);
           expect(scrollersBesides(null)).withContext('something scrolls').toEqual([]);
           expect(document.querySelectorAll('[data-role-in-use-shown]').length).toBe(0);
+          // A list that fits is no extra tab stop.
+          expect(list().hasAttribute('tabindex')).withContext('no tab stop on a list that fits').toBeFalse();
         });
       });
     }

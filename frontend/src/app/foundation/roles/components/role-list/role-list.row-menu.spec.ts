@@ -4,7 +4,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Router, provideRouter } from '@angular/router';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { Confirmation, ConfirmationService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
@@ -163,9 +163,16 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
 
   // ── ACC-154 — a role still held or named is listed, never confirmed ──────────
   const BLOCKERS = [
-    { category: 'USER_GRANTS', count: 12, names: ['Nora Al-Otaibi', 'Omar Saleh'] },
-    { category: 'POSITIONS', count: 1, names: ['Head of Quality'] },
-    { category: 'STAGE_ESCALATIONS', count: 2, names: ['Committee lifecycle — Formation', 'Committee lifecycle — Terms Review'] },
+    { category: 'USER_GRANTS', count: 12, names: [{ nameEn: 'Nora Al-Otaibi', nameAr: null }, { nameEn: 'Omar Saleh', nameAr: null }] },
+    { category: 'POSITIONS', count: 1, names: [{ nameEn: 'Head of Quality', nameAr: null }] },
+    {
+      category: 'STAGE_ESCALATIONS',
+      count: 2,
+      names: [
+        { nameEn: 'Formation', nameAr: null, workflow: { nameEn: 'Committee lifecycle', nameAr: null } },
+        { nameEn: 'Terms Review', nameAr: null, workflow: { nameEn: 'Committee lifecycle', nameAr: null } },
+      ],
+    },
   ] as const;
   const categories = () =>
     Array.from(document.querySelectorAll<HTMLElement>('[data-role-in-use-category]')).map((c) => c.getAttribute('data-role-in-use-category'));
@@ -201,6 +208,52 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
     await settle();
     expect(fixture.componentInstance.inUse()).withContext('Close closes it').toBeNull();
     expect(service.deactivateRole).not.toHaveBeenCalled();
+  });
+
+  it('one check at a time: a second press, on this row or another, runs nothing while a check is out', async () => {
+    await setup();
+    const answer = new Subject<{ canDeactivate: boolean; rootRole: boolean; blockers: never[] }>();
+    service.deactivationCheck.and.returnValue(answer);
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    fixture.componentInstance.pick(ROLES[1]!, 'deactivate');
+    expect(service.deactivationCheck).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.checking()).toBe('a');
+    answer.next({ canDeactivate: true, rootRole: false, blockers: [] });
+    answer.complete();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.checking()).withContext('free again once answered').toBeNull();
+    service.deactivationCheck.and.returnValue(of({ canDeactivate: true, rootRole: false, blockers: [] }));
+    fixture.componentInstance.pick(ROLES[1]!, 'deactivate');
+    expect(service.deactivationCheck).toHaveBeenCalledWith('b');
+  });
+
+  it('a check blocked only by categories this screen does not know is refused plainly, never confirmed', async () => {
+    await setup();
+    service.deactivationCheck.and.returnValue(
+      of({ canDeactivate: false, rootRole: false, blockers: [{ category: 'SOMETHING_NEW', count: 2, names: [] }] as never }),
+    );
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    fixture.detectChanges();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.inUse()).toBeNull();
+    expect(el.querySelector('[data-testid="role-action-error"]')!.textContent).toContain("This role can't be deactivated while it is still in use.");
+  });
+
+  it('a ROLE_IN_USE refusal’s unknown categories are left out of the list', async () => {
+    await setup();
+    service.deactivateRole.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { code: 'ROLE_IN_USE', blockers: [{ category: 'SOMETHING_NEW', count: 1, names: [] }, BLOCKERS[1]] },
+          }),
+      ),
+    );
+    fixture.componentInstance.pick(ROLES[0]!, 'deactivate');
+    confirm.calls.mostRecent().args[0].accept!();
+    expect(fixture.componentInstance.inUse()?.blockers.map((b) => b.category)).toEqual(['POSITIONS']);
   });
 
   it('ROLE_IN_USE after the confirm opens the same list, from the refusal’s own blockers', async () => {
