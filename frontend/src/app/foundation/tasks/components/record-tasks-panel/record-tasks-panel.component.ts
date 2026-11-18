@@ -9,7 +9,12 @@ import { ITaskRecordRowDto, TaskService } from '../../services/task.service';
 import { TaskRowActionId, asRowAction, taskRowActions } from '../../task-row-actions';
 import { TaskRowText } from '../../task-row-text';
 import { TaskLinkComponent } from '../task-link/task-link.component';
-import { TaskActionFailure, TaskActionHostComponent } from '../task-action-host/task-action-host.component';
+import {
+  TASK_ACTION_FAILURE_KEYS,
+  TaskActionFailure,
+  TaskActionFailureKind,
+  TaskActionHostComponent,
+} from '../task-action-host/task-action-host.component';
 import { TaskListViewComponent } from '../task-list-view/task-list-view.component';
 
 type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
@@ -97,9 +102,11 @@ type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready' };
             <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, asRowAction($event))" />
           </span>
           <span class="am-cp-l2">
-            @if (rowErrors()[r.row.id]; as message) {
-              <span class="am-cp-cut am-rtp__err" role="alert" [attr.title]="message">{{ message }}</span>
-              <button type="button" class="am-rtp__retry" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
+            @if (rowErrors()[r.row.id]; as kind) {
+              <span class="am-cp-cut am-rtp__err" role="alert" [attr.title]="failureKeys[kind] | translate">{{ failureKeys[kind] | translate }}</span>
+              @if (kind === 'failed') {
+                <button type="button" class="am-rtp__retry" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
+              }
             } @else {
               <span class="am-rtp__due" [attr.data-tone]="r.due.tone" [attr.title]="r.due.text">{{ r.due.text }}</span>
               <span class="am-cp-cut" [attr.title]="r.tail">&nbsp;· {{ r.tail }}</span>
@@ -184,7 +191,9 @@ export class RecordTasksPanelComponent {
   readonly total = signal(0);
   readonly scope = signal<'all' | 'own'>('all');
   readonly busyId = signal<string | null>(null);
-  readonly rowErrors = signal<Record<string, string>>({});
+  /** CC-331 — a row's failure, by kind; said in the reader's language (TASK_ACTION_FAILURE_KEYS). */
+  readonly rowErrors = signal<Record<string, TaskActionFailureKind>>({});
+  protected readonly failureKeys = TASK_ACTION_FAILURE_KEYS;
   readonly highlightId = signal<string | null>(null);
 
   readonly popupOpen = signal(false);
@@ -309,7 +318,7 @@ export class RecordTasksPanelComponent {
   }
 
   onFailed(failure: TaskActionFailure): void {
-    this.rowErrors.update((e) => ({ ...e, [failure.taskId]: failure.message }));
+    this.rowErrors.update((e) => ({ ...e, [failure.taskId]: failure.kind }));
     this.load(false);
   }
 

@@ -2611,6 +2611,10 @@
     "closePopup": "Close all tasks"
   },
   "taskActions": {
+    "failure": {
+      "changed": "This task has changed.",
+      "failed": "Couldn't do that."
+    },
     "viewEvidence": "View evidence ({{count}})",
     "open": "Open task",
     "rejectSub": "Hand back with a reason",
@@ -2659,6 +2663,7 @@
     },
     "searchLabel": "Search tasks",
     "searchPlaceholder": "Search task or assignee…",
+    "searchPlaceholderTask": "Search task…",
     "filter": {
       "recordType": "Record type",
       "unit": "Unit",

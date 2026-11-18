@@ -113,11 +113,14 @@ export class TaskRowText {
   }
 
   /**
-   * ACC-216 — line 2 on a PERSON's Tasks panel: "{record} · {status} · {fact}".
-   * The person is the one on every row, so the record takes the "who" place.
+   * ACC-216 — line 2 on a PERSON's Tasks panel, after the due label:
+   * "{status} · {fact} · {record}". The person is on every row, so the record takes
+   * the "who" place, LAST (CC-331): the line can't wrap in the fixed body, so on a
+   * phone the ellipsis falls on the record's name, never on the status. The panel
+   * puts the whole line in the title attribute.
    */
   personTail(row: ITaskRecordRowDto): string {
-    return [this.recordLabel(row), this.translate.instant(this.statusKey(row)), this.fact(row)].filter((p) => !!p).join(' · ');
+    return [this.translate.instant(this.statusKey(row)), this.fact(row), this.recordLabel(row)].filter((p) => !!p).join(' · ');
   }
 
   /**

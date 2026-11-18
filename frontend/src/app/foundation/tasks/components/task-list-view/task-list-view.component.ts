@@ -25,7 +25,12 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { RowMenuComponent, RowMenuItem } from '../../../../shared/components/row-menu/row-menu.component';
 import { SortHeaderComponent, SortState, nextSort } from '../../../../shared/components/sort-header/sort-header.component';
 import { TaskLinkComponent } from '../task-link/task-link.component';
-import { TaskActionFailure, TaskActionHostComponent } from '../task-action-host/task-action-host.component';
+import {
+  TASK_ACTION_FAILURE_KEYS,
+  TaskActionFailure,
+  TaskActionFailureKind,
+  TaskActionHostComponent,
+} from '../task-action-host/task-action-host.component';
 import {
   ITaskRecordListDto,
   ITaskRecordRowDto,
@@ -55,6 +60,14 @@ const SEARCH_DELAY_MS = 250;
  */
 const MINE_ROOT =
   'border border-[var(--am-border)] rounded-[var(--am-radius-card)] bg-[var(--am-surface-raised)] [--am-tl-cols:minmax(180px,3fr)_96px_minmax(130px,1.3fr)_minmax(110px,1fr)_150px] [--am-tl-min:720px]';
+
+/**
+ * ACC-216 (CC-329) — a PERSON's list has no assignee column (every row is the
+ * person's own task, and the dialog's title names them): its own six tracks, set
+ * through the same two variables, so the header and the rows still read ONE track
+ * list, every track fixed or fr (ACC-234). The Task column takes the freed width.
+ */
+const PERSON_COLS = '[--am-tl-cols:minmax(200px,2.8fr)_96px_minmax(150px,1.2fr)_minmax(90px,1fr)_92px_150px] [--am-tl-min:820px]';
 
 const STATUSES: TaskRecordListStatus[] = ['UNASSIGNED', 'PENDING', 'IN_PROGRESS', 'ON_HOLD', 'REJECTED', 'COMPLETED', 'CANCELLED'];
 /**
@@ -150,7 +163,7 @@ interface ViewRow {
               [value]="qInput()"
               (input)="onSearch(search.value)"
               [attr.aria-label]="'taskList.searchLabel' | translate"
-              [placeholder]="'taskList.searchPlaceholder' | translate"
+              [placeholder]="(isPerson() ? 'taskList.searchPlaceholderTask' : 'taskList.searchPlaceholder') | translate"
               data-testid="task-list-search"
             />
           </span>
@@ -187,7 +200,8 @@ interface ViewRow {
           <button type="button" class="am-tl__toggle" [attr.aria-pressed]="overdue()" (click)="overdue.set(!overdue())" data-testid="filter-overdue">
             {{ 'taskList.filter.overdueOnly' | translate }}
           </button>
-          @if (!isMine()) {
+          <!-- No assignee filter on My tasks, or on a person's list (CC-329): every row is theirs. -->
+          @if (!isMine() && !isPerson()) {
           <app-overlay-select
             class="am-tl__filter am-tl__filter--wide"
             [options]="whoOptions()"
@@ -248,7 +262,8 @@ interface ViewRow {
               data-testid="filter-unit"
             />
           }
-          @if (!isMine()) {
+          <!-- "Assigned to me" is the VIEWER's: never on someone else's list (CC-329). -->
+          @if (!isMine() && !isPerson()) {
             <button type="button" class="am-tl__toggle" [attr.aria-pressed]="mine()" (click)="mine.set(!mine())" data-testid="filter-mine">
               {{ 'taskList.filter.mine' | translate }}
             </button>
@@ -295,6 +310,16 @@ interface ViewRow {
             <span role="columnheader" class="am-tl__tail" data-testid="task-list-col-priority">{{ 'task.priority.title' | translate }}</span>
             <am-sort-header key="due" [label]="'taskList.col.due' | translate" [current]="sort()" (sort)="sortBy($event)" />
             <am-sort-header key="status" [label]="'taskList.col.status' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <span role="columnheader"><span class="sr-only">{{ 'taskList.col.actions' | translate }}</span></span>
+          </div>
+        } @else if (!phone() && phase() !== 'denied' && isPerson()) {
+          <!-- CC-329 — a person's list: the same columns without Assignee (PERSON_COLS). -->
+          <div class="am-tl__row am-tl__head" role="row" data-testid="task-list-head">
+            <am-sort-header key="title" [label]="'taskList.col.task' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <am-sort-header key="status" [label]="'taskList.col.status' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <am-sort-header key="due" [label]="'taskList.col.due' | translate" [current]="sort()" (sort)="sortBy($event)" />
+            <span role="columnheader" class="am-tl__tail">{{ 'taskList.col.createdBy' | translate }}</span>
+            <am-sort-header key="updated" [label]="'taskList.col.updated' | translate" [current]="sort()" (sort)="sortBy($event)" />
             <span role="columnheader"><span class="sr-only">{{ 'taskList.col.actions' | translate }}</span></span>
           </div>
         } @else if (!phone() && phase() !== 'denied') {
@@ -376,6 +401,10 @@ interface ViewRow {
                         <span class="am-tl__due whitespace-nowrap" [attr.data-tone]="r.due.tone">{{ r.due.text }}</span>
                         @if (isMine()) {
                           <span class="am-tl__tail"> · {{ r.priority.label }} · {{ r.statusKey | translate }}</span>
+                        } @else if (isPerson()) {
+                          <!-- CC-329/331 — no name (it is the person's own list); a no-break
+                               space keeps the space before "·" in this flex line. -->
+                          <span class="am-tl__tail" data-testid="task-list-card-tail">&nbsp;· {{ r.statusKey | translate }}</span>
                         } @else {
                           <span class="am-tl__tail"> · {{ r.who }} · {{ r.statusKey | translate }}</span>
                         }
@@ -416,12 +445,14 @@ interface ViewRow {
                         <span class="flex-none text-[11px] font-semibold leading-[18px] px-1.5 whitespace-nowrap border border-[var(--am-danger-border)] rounded-[var(--am-radius-pill)] bg-[var(--am-danger-bg)] text-[var(--am-danger-ink)]" data-testid="task-list-overdue">{{ 'taskList.overdue' | translate }}</span>
                       }
                     </span>
-                    <span class="am-tl__task">
-                      <span class="am-tl__tail" [attr.title]="r.who">{{ r.who }}</span>
-                      @if (r.position) {
-                        <span class="am-tl__sub am-tl__tail" [attr.title]="r.position">{{ r.position }}</span>
-                      }
-                    </span>
+                    @if (!isPerson()) {
+                      <span class="am-tl__task">
+                        <span class="am-tl__tail" [attr.title]="r.who">{{ r.who }}</span>
+                        @if (r.position) {
+                          <span class="am-tl__sub am-tl__tail" [attr.title]="r.position">{{ r.position }}</span>
+                        }
+                      </span>
+                    }
                     <!-- ACC-234 — the relative half, then the date; the date
                          takes line 2 when one line does not fit, and the "·"
                          between them is only drawn when they share a line. -->
@@ -451,10 +482,12 @@ interface ViewRow {
                     }
                     <am-row-menu [groups]="r.menu" [label]="'taskActions.moreActionsFor' | translate: { title: r.title }" (picked)="act(r.row, asRowAction($event))" />
                   </span>
-                  @if (rowErrors()[r.row.id]; as message) {
+                  @if (rowErrors()[r.row.id]; as kind) {
                     <span class="basis-full [grid-column:1/-1] text-xs text-[var(--am-danger-ink)]" role="alert">
-                      {{ message }}
-                      <button type="button" class="[font:inherit] border-0 bg-transparent p-0 underline cursor-pointer text-[var(--am-primary-700)]" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
+                      {{ failureKeys[kind] | translate }}
+                      @if (kind === 'failed') {
+                        <button type="button" class="[font:inherit] border-0 bg-transparent p-0 underline cursor-pointer text-[var(--am-primary-700)]" (click)="retryRow(r.row)">{{ 'list.retry' | translate }}</button>
+                      }
                     </span>
                   }
                 </li>
@@ -607,7 +640,9 @@ export class TaskListViewComponent {
   readonly highlightId = signal<string | null>(null);
   readonly linkTitle = signal<string | null>(null);
   readonly busyId = signal<string | null>(null);
-  readonly rowErrors = signal<Record<string, string>>({});
+  /** CC-331 — a row's failure, by kind; said in the reader's language (TASK_ACTION_FAILURE_KEYS). */
+  readonly rowErrors = signal<Record<string, TaskActionFailureKind>>({});
+  protected readonly failureKeys = TASK_ACTION_FAILURE_KEYS;
   readonly phone = signal(false);
   protected readonly skeleton = Array.from({ length: 10 }, (_, i) => i);
 
@@ -653,7 +688,13 @@ export class TaskListViewComponent {
   /** ACC-120 slice 3 — My tasks: its own columns, no assignee filters, and it flows with the page. */
   readonly isMine = computed(() => this.ownView() === 'mine');
   /** The frame: My tasks', or the fixed-height page frame, or none (the popup). */
-  readonly rootClass = computed(() => (this.isMine() ? MINE_ROOT : this.variant() === 'page' ? 'am-tl--page' : ''));
+  /** ACC-216 — a person's tasks (CC-329): no assignee column, filter or "Assigned to me". */
+  readonly isPerson = computed(() => !!this.person());
+  readonly rootClass = computed(() => {
+    if (this.isMine()) return MINE_ROOT;
+    const frame = this.variant() === 'page' ? 'am-tl--page' : '';
+    return this.isPerson() ? `${frame} ${PERSON_COLS}`.trim() : frame;
+  });
 
   /** The statuses the query sends: the pressed chip's on an own view, else the select's. */
   private statusesSent(): TaskRecordListStatus[] | undefined {
@@ -1006,7 +1047,7 @@ export class TaskListViewComponent {
   }
 
   onFailed(failure: TaskActionFailure): void {
-    this.rowErrors.update((e) => ({ ...e, [failure.taskId]: failure.message }));
+    this.rowErrors.update((e) => ({ ...e, [failure.taskId]: failure.kind }));
     this.refreshRow(failure.taskId);
   }
 

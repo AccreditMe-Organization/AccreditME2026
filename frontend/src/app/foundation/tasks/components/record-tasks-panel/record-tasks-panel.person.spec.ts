@@ -120,7 +120,10 @@ describe('RecordTasksPanelComponent — a person\'s tasks (ACC-216)', () => {
     expect(q('record-tasks-empty')!.textContent!.trim()).toBe('No tasks.');
   });
 
-  it('a row: the title links to the task page; line 2 names the record only when the server named it, then the status in words', () => {
+  // CC-331 — line 2 after the due label is {status} · {record}: the record LAST, so on a
+  // phone the ellipsis falls on its name and the status always shows; the whole line is
+  // in the title attribute.
+  it('a row: the title links to the task page; line 2 is the status, then the record, named only when the server named it', () => {
     setup();
     flush({
       total: 2,
@@ -131,10 +134,12 @@ describe('RecordTasksPanelComponent — a person\'s tasks (ACC-216)', () => {
       ],
     });
     expect(rowEls()[0]!.querySelector('a')!.getAttribute('href')).toBe('/tasks/t1');
-    expect(rowEls()[0]!.querySelector('.am-cp-l2')!.textContent).toContain('Infection Control Committee · Assigned');
+    expect(rowEls()[0]!.querySelector('.am-cp-l2')!.textContent).toContain('Assigned · Infection Control Committee');
+    const tail = rowEls()[0]!.querySelector<HTMLElement>('.am-cp-l2 .am-cp-cut')!;
+    expect(tail.getAttribute('title')).toBe('Assigned · Infection Control Committee');
     // Not named by the server (the viewer may not open it): the type word only.
     const second = rowEls()[1]!.querySelector('.am-cp-l2')!.textContent!;
-    expect(second).toContain('Committee · In progress');
+    expect(second).toContain('In progress · Committee');
     // The person is on every row, so no assignee name is repeated.
     expect(second).not.toContain('Dr. Sara Al-Qahtani');
   });
@@ -155,7 +160,11 @@ describe('RecordTasksPanelComponent — a person\'s tasks (ACC-216)', () => {
     expect(rowEls()[0]!.querySelector('[data-testid="row-menu-trigger"]')).not.toBeNull();
   });
 
-  it('an action\'s failure is said in ITS ROW, apart from the panel\'s load error', () => {
+  // CC-331 — a row's failure is said from what the screen knows, never the server's
+  // English sentence: a 409 or 404 is "This task has changed." with no Try again (the
+  // panel read itself again; the same press would fail again); anything else is
+  // "Couldn't do that." with Try again, which sends the same action again.
+  it('an action refused because the task changed (409): "This task has changed.", in its row, no Try again, never the server\'s sentence', () => {
     setup();
     flush({ total: 2, scope: 'all', rows: [recordRow('t1', { actions: { ...NO_ACTIONS, start: true, primary: 'START' } }), recordRow('t2')] });
     rowEls()[0]!.querySelector<HTMLButtonElement>('[data-action="start"]')!.click();
@@ -163,8 +172,45 @@ describe('RecordTasksPanelComponent — a person\'s tasks (ACC-216)', () => {
     fixture.detectChanges();
     flush({ total: 2, scope: 'all', rows: [recordRow('t1'), recordRow('t2')] });
     expect(q('record-tasks-error')).toBeNull();
-    expect(rowEls()[0]!.querySelector('[role="alert"]')!.textContent).toContain('This task has moved on.');
+    const alert = rowEls()[0]!.querySelector('[role="alert"]')!;
+    expect(alert.textContent!.trim()).toBe('This task has changed.');
+    expect(rowEls()[0]!.textContent).not.toContain('This task has moved on.');
+    expect(rowEls()[0]!.querySelector('.am-rtp__retry')).toBeNull();
     expect(rowEls()[1]!.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('an action that failed for another reason (500): "Couldn\'t do that." with Try again, which sends the same action again', () => {
+    setup();
+    flush({ total: 1, scope: 'all', rows: [recordRow('t1', { actions: { ...NO_ACTIONS, start: true, primary: 'START' } })] });
+    rowEls()[0]!.querySelector<HTMLButtonElement>('[data-action="start"]')!.click();
+    http.expectOne(`${API}/t1/start`).flush({ message: 'Internal server error' }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+    flush({ total: 1, scope: 'all', rows: [recordRow('t1', { actions: { ...NO_ACTIONS, start: true, primary: 'START' } })] });
+    expect(rowEls()[0]!.querySelector('[role="alert"]')!.textContent!.trim()).toBe("Couldn't do that.");
+    expect(rowEls()[0]!.textContent).not.toContain('Internal server error');
+    rowEls()[0]!.querySelector<HTMLButtonElement>('.am-rtp__retry')!.click();
+    http.expectOne(`${API}/t1/start`).flush({});
+    fixture.detectChanges();
+  });
+
+  it('in Arabic: a 409 with an English message reads «تغيّرت هذه المهمة.», no English, no Try again; a 500 reads «تعذّر تنفيذ الإجراء.» with «أعد المحاولة»', () => {
+    setup('ar');
+    flush({ total: 2, scope: 'all', rows: [recordRow('t1', { actions: { ...NO_ACTIONS, start: true, primary: 'START' } }), recordRow('t2', { actions: { ...NO_ACTIONS, start: true, primary: 'START' } })] });
+    rowEls()[0]!.querySelector<HTMLButtonElement>('[data-action="start"]')!.click();
+    http.expectOne(`${API}/t1/start`).flush({ message: 'This task has moved on.' }, { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+    flush({ total: 2, scope: 'all', rows: [recordRow('t1'), recordRow('t2', { actions: { ...NO_ACTIONS, start: true, primary: 'START' } })] });
+    const changed = rowEls()[0]!;
+    expect(changed.querySelector('[role="alert"]')!.textContent!.trim()).toBe('تغيّرت هذه المهمة.');
+    expect(changed.textContent).not.toMatch(/[A-Za-z]{4,} task/);
+    expect(changed.querySelector('.am-rtp__retry')).toBeNull();
+    rowEls()[1]!.querySelector<HTMLButtonElement>('[data-action="start"]')!.click();
+    http.expectOne(`${API}/t2/start`).flush({}, { status: 503, statusText: 'Unavailable' });
+    fixture.detectChanges();
+    flush({ total: 2, scope: 'all', rows: [recordRow('t1'), recordRow('t2')] });
+    const failed = rowEls()[1]!;
+    expect(failed.querySelector('[role="alert"]')!.textContent!.trim()).toBe('تعذّر تنفيذ الإجراء.');
+    expect(failed.querySelector('.am-rtp__retry')!.textContent!.trim()).toBe('أعد المحاولة');
   });
 
   it('a successful action tells MyWorkEvents and reads the panel ONCE (no polling)', () => {

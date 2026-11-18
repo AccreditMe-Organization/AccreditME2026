@@ -2611,6 +2611,10 @@
     "closePopup": "إغلاق كل المهام"
   },
   "taskActions": {
+    "failure": {
+      "changed": "تغيّرت هذه المهمة.",
+      "failed": "تعذّر تنفيذ الإجراء."
+    },
     "viewEvidence": "عرض الأدلة ({{count}})",
     "open": "فتح المهمة",
     "rejectSub": "إعادتها مع ذكر السبب",
@@ -2659,6 +2663,7 @@
     },
     "searchLabel": "البحث في المهام",
     "searchPlaceholder": "ابحث عن مهمة أو مُسند إليه…",
+    "searchPlaceholderTask": "ابحث عن مهمة…",
     "filter": {
       "recordType": "نوع السجل",
       "unit": "الوحدة",
