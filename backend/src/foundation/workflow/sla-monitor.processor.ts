@@ -14,7 +14,7 @@ import { WorkflowService } from './workflow.service';
 import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
 import { TaskDueWarningService } from '../task/task-due-warning.service';
-import type { LoadedCalendar } from '../working-calendar/working-time';
+import { isWorkingMomentWith, type LoadedCalendar } from '../working-calendar/working-time';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
 
 /**
@@ -664,8 +664,10 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         DateTime.fromJSDate(now),
       );
 
+      // ACC-318 — whether it is working time now, on the calendar already loaded.
+      const workingNow = isWorkingMomentWith(calendar, DateTime.fromJSDate(now));
       if (!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours) {
-        if (await this.isWithinWorkingHours(task.organizationId)) {
+        if (workingNow) {
           await this.fireTaskEscalation(task, 'MANAGER');
         }
       } else if (
@@ -673,7 +675,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         !task.headEscalatedAt &&
         hoursSinceDue >= tier.managerEscalationAfterHours + tier.headEscalationAfterHours
       ) {
-        if (await this.isWithinWorkingHours(task.organizationId)) {
+        if (workingNow) {
           await this.fireTaskEscalation(task, 'HEAD');
         }
       }
@@ -917,28 +919,12 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     });
   }
 
-  // No dedicated "is now within working hours" method exists on
-  // WorkingCalendarService (only getOrCreate/listHolidays are public) — this
-  // reimplements the same day/hour/holiday check calculateDeadline() uses
-  // internally, against the tenant's own calendar config.
+  // Whether now is inside the organisation's working hours, on a working day
+  // that is not a holiday — escalations fire only then.
   private async isWithinWorkingHours(organizationId: string): Promise<boolean> {
-    const calendar = await this.workingCalendar.getOrCreate(organizationId);
-    const holidays = await this.workingCalendar.listHolidays(organizationId);
-    const now = DateTime.now().setZone(calendar.timezone);
-
-    if (!calendar.workingDays.includes(now.weekday % 7)) return false;
-
-    const isHoliday = holidays.some((h) => {
-      const hDate = DateTime.fromJSDate(h.date).setZone(calendar.timezone);
-      if (h.isRecurring) return hDate.month === now.month && hDate.day === now.day;
-      return hDate.month === now.month && hDate.day === now.day && hDate.year === now.year;
-    });
-    if (isHoliday) return false;
-
-    const [startHour = 0, startMin = 0] = calendar.workingHoursStart.split(':').map(Number);
-    const [endHour = 0, endMin = 0] = calendar.workingHoursEnd.split(':').map(Number);
-    const nowMinutes = now.hour * 60 + now.minute;
-
-    return nowMinutes >= startHour * 60 + startMin && nowMinutes < endHour * 60 + endMin;
+    // ACC-318 — the one rule, isWorkingMomentWith() (working-time.ts), on the
+    // calendar read without creating a row; this used to be a hand copy whose
+    // holiday check read the date in the organisation's zone.
+    return isWorkingMomentWith(await this.workingCalendar.loadCalendar(organizationId), DateTime.now());
   }
 }

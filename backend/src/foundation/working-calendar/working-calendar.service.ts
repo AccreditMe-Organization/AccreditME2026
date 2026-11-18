@@ -8,6 +8,7 @@ import { IPublicHoliday } from './interfaces/public-holiday.interface';
 import { UpdateWorkingCalendarDto } from './dto/update-working-calendar.dto';
 import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
 import { UpdatePublicHolidayDto } from './dto/update-public-holiday.dto';
+import { holidayDateAt } from './dto/holiday-date';
 import {
   GCC_DEFAULT_CALENDAR,
   LoadedCalendar,
@@ -79,16 +80,22 @@ export class WorkingCalendarService {
     }));
   }
 
+  // ACC-317 — the row is created in ONE atomic step that cannot fail on the
+  // unique key: INSERT … ON CONFLICT DO NOTHING (`createMany` with
+  // `skipDuplicates`), then the row is read. First reads at the same moment
+  // therefore all get the one row. Not `upsert` with an empty `update`: measured
+  // on Postgres, Prisma sends that as a read, an insert and a read (an emulated
+  // upsert, the same race), and a non-empty `update` would rewrite updatedAt on
+  // every read. An existing calendar costs one read, as before.
   async getOrCreate(organizationId: string): Promise<IWorkingCalendar> {
-    const existing = await this.prisma.workingCalendar.findUnique({
-      where: { organizationId },
-    });
+    const existing = await this.prisma.workingCalendar.findUnique({ where: { organizationId } });
     if (existing) return this.toInterface(existing);
 
-    const created = await this.prisma.workingCalendar.create({
-      data: { organizationId, ...GCC_DEFAULT },
+    await this.prisma.workingCalendar.createMany({
+      data: [{ organizationId, ...GCC_DEFAULT }],
+      skipDuplicates: true,
     });
-    return this.toInterface(created);
+    return this.toInterface(await this.prisma.workingCalendar.findUniqueOrThrow({ where: { organizationId } }));
   }
 
   // ACC-94 (D3) — the tenant's time zone for display. It must be the zone the
@@ -116,10 +123,15 @@ export class WorkingCalendarService {
     });
     if (!calendar) throw new NotFoundException('Working calendar not found');
 
-    if (dto.timezone !== undefined) {
-      if (!IANAZone.isValidZone(dto.timezone)) {
-        throw new BadRequestException(`Invalid timezone: ${dto.timezone}`);
-      }
+    // ACC-318 — only a real IANA zone, checked with the library the deadline
+    // maths uses, so a zone saved here is one every due date can be computed in.
+    if (dto.timezone !== undefined && !IANAZone.isValidZone(dto.timezone)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'timezone must be a real IANA time zone, such as Asia/Riyadh',
+        error: 'Bad Request',
+        code: 'WORKING_CALENDAR_TIMEZONE_INVALID',
+      });
     }
 
     if (dto.workingHoursStart !== undefined && dto.workingHoursEnd !== undefined) {
@@ -170,7 +182,7 @@ export class WorkingCalendarService {
         workingCalendarId: calendar.id,
         nameEn: dto.nameEn,
         nameAr: dto.nameAr ?? null,
-        date: new Date(dto.date),
+        date: holidayDateAt(dto.date),
         isRecurring: dto.isRecurring ?? false,
       },
     });
@@ -208,7 +220,7 @@ export class WorkingCalendarService {
       data: {
         ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
         ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
-        ...(dto.date !== undefined && { date: new Date(dto.date) }),
+        ...(dto.date !== undefined && { date: holidayDateAt(dto.date) }),
         ...(dto.isRecurring !== undefined && { isRecurring: dto.isRecurring }),
       },
     });
