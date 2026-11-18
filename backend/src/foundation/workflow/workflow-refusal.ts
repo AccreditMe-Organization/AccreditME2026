@@ -65,7 +65,9 @@ export type WorkflowRefusalCode =
   | 'DEFAULT_NEEDS_STAGES'
   | 'DEFAULT_TEMPLATE_TYPE_CHANGE'
   | 'DEFAULT_TEMPLATE_REQUIRED'
-  | 'DEFAULT_TEMPLATE_INACTIVE';
+  | 'DEFAULT_TEMPLATE_INACTIVE'
+  // ACC-316 PR 3a — a move into a stage that needs a reason, pressed with none (move-reasons.ts).
+  | 'REASON_REQUIRED';
 
 const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   STAGE_TASK_ROUTE_INCOMPLETE: HttpStatus.BAD_REQUEST,
@@ -118,6 +120,7 @@ const STATUS: Record<WorkflowRefusalCode, HttpStatus> = {
   DEFAULT_TEMPLATE_TYPE_CHANGE: HttpStatus.CONFLICT,
   DEFAULT_TEMPLATE_REQUIRED: HttpStatus.CONFLICT,
   DEFAULT_TEMPLATE_INACTIVE: HttpStatus.CONFLICT,
+  REASON_REQUIRED: HttpStatus.BAD_REQUEST,
 };
 
 export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
@@ -171,6 +174,7 @@ export const WORKFLOW_REFUSAL_MESSAGES: Record<WorkflowRefusalCode, string> = {
   DEFAULT_TEMPLATE_TYPE_CHANGE: "The default workflow's record type can't be changed. Make another template the default first.",
   DEFAULT_TEMPLATE_REQUIRED: 'This is the default workflow for its record type. Make another template the default first.',
   DEFAULT_TEMPLATE_INACTIVE: "A deactivated workflow can't be the default.",
+  REASON_REQUIRED: 'Give a reason for this move: the people told about it read it.',
 };
 
 export class WorkflowRefusalException extends HttpException {
