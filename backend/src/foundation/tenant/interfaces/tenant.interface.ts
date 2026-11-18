@@ -134,6 +134,8 @@ export interface ITaskSlaChange {
   kind: TaskSlaChangeKind;
   before: unknown;
   after: unknown;
+  /** CC-332 — 'WORKING' when the row was written under PR 4's rule; null on an older row. */
+  escalationHoursUnit: 'WORKING' | null;
 }
 
 export interface ITaskSlaHistoryPage {

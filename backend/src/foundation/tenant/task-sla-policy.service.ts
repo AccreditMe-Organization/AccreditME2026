@@ -43,6 +43,14 @@ const ALL_FIELDS: TierField[] = [...LIMIT_FIELDS, ...ESCALATION_FIELDS];
 /** The audit row every task SLA write since ACC-313 is recorded under. */
 export const TASK_SLA_AUDIT_OBJECT_TYPE = 'TaskSlaPolicy';
 
+/**
+ * CC-332 — every task SLA audit row written since escalation counts working
+ * hours (ACC-313 PR 4) says so: `metadata.escalationHoursUnit = 'WORKING'`.
+ * The history returns it, and the screen reads it before falling back to the
+ * row's shape; a row without it was saved before PR 4, in clock hours.
+ */
+export const WORKING_HOURS_STAMP = { escalationHoursUnit: 'WORKING' } as const;
+
 /** Each write's `metadata.event`, and the section the history calls it. */
 const EVENT_KIND: Record<string, TaskSlaChangeKind> = {
   task_sla_limits_updated: 'limits',
@@ -178,7 +186,7 @@ export class TaskSlaPolicyService {
         tenantId: organizationId,
         before: { notifyOnDueChange: outcome.before.notifyOnDueChange },
         after: { notifyOnDueChange: outcome.notices.notifyOnDueChange },
-        metadata: { event: 'task_sla_notices_updated' },
+        metadata: { event: 'task_sla_notices_updated', ...WORKING_HOURS_STAMP },
       });
     }
     return outcome.notices;
@@ -237,7 +245,7 @@ export class TaskSlaPolicyService {
         tenantId: organizationId,
         before: outcome.before as unknown as Record<string, unknown>,
         after: defaults as unknown as Record<string, unknown>,
-        metadata: { event: 'task_sla_reset' },
+        metadata: { event: 'task_sla_reset', ...WORKING_HOURS_STAMP },
       });
     }
     return { ...defaults, workingHoursPerDay: await readWorkingHoursPerDay(this.prisma, organizationId) };
@@ -287,7 +295,8 @@ export class TaskSlaPolicyService {
     metadata: Prisma.JsonValue;
     actor: { name: string } | null;
   }): ITaskSlaChange {
-    const event = (row.metadata as { event?: unknown } | null)?.event;
+    const meta = row.metadata as { event?: unknown; escalationHoursUnit?: unknown } | null;
+    const event = meta?.event;
     const legacy = row.objectType !== TASK_SLA_AUDIT_OBJECT_TYPE;
     return {
       id: row.id,
@@ -296,6 +305,7 @@ export class TaskSlaPolicyService {
       kind: legacy ? 'legacy' : (typeof event === 'string' && EVENT_KIND[event]) || 'all',
       before: legacy ? null : row.before,
       after: legacy ? null : row.after,
+      escalationHoursUnit: meta?.escalationHoursUnit === 'WORKING' ? 'WORKING' : null,
     };
   }
 
@@ -403,7 +413,7 @@ export class TaskSlaPolicyService {
         tenantId: organizationId,
         before: outcome.before,
         after: outcome.after,
-        metadata: { event },
+        metadata: { event, ...WORKING_HOURS_STAMP },
       });
     }
     return outcome.tiers;
