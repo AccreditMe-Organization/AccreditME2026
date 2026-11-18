@@ -281,7 +281,8 @@ describe('SYSTEM_ROLE_SEED — committee task keys (ACC-244)', () => {
   it.each([
     ['TENANT_ADMIN', [VIEW_ALL, CREATE, MANAGE, VIEW_UNIT]],
     ['PLATFORM_ADMIN', [VIEW_ALL, CREATE, MANAGE, VIEW_UNIT]],
-    ['QUALITY_MANAGER', [VIEW_ALL, CREATE, MANAGE]],
+    // ACC-77 — Manage tasks is the type's umbrella, so View unit tasks too.
+    ['QUALITY_MANAGER', [VIEW_ALL, CREATE, MANAGE, VIEW_UNIT]],
     ['READ_ONLY_ADMIN', [VIEW_ALL, VIEW_UNIT]],
     ['QUALITY_OFFICER', []],
     ['AUDITOR', []],
