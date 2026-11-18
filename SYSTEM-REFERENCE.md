@@ -5380,6 +5380,20 @@ Available lists it, the unpicked-pool escalation sweeps it, and Pick takes it,
 ENDING those stale rows in the same transaction (`endedInactiveRows` on the
 audit row). The one definition lives in `task-pool.ts`; never a third copy.
 
+**ACC-315 — every reader of "on it" asks the same rule.**
+- **The task page and its list row** count it in their own read (`_count` of
+  `CURRENT_ACTIVE_ASSIGNEE`), so such a task offers Pick on its page and its row
+  too, as `POST /pick` accepts.
+- **The list's filters:** its "mine" view, the "mine" and Assignee filters
+  (`currentActiveAssigneeOfSql()`), its name search and its Assignee options
+  (`currentActiveAssigneeWhereSql()`) leave out someone no longer ACTIVE.
+- **The notices:** cancel and edit tell only active people
+  (`currentActiveAssigneeIds()`), as does "resumed", which also skips a creator
+  no longer ACTIVE.
+- **The overdue sweep:** it reads the rule too. A pool task held only by an
+  inactive person escalates in the pool sweep only, and a task nobody is on has
+  its breach recorded but escalates to no one.
+
 **Release** (`POST /tasks/:id/release { reason }`, required, max 1000): only
 an active assignee whose row has `pickedAt`; someone chosen directly gets a
 409 and rejects instead. The row is stamped `removedAt`, never deleted. If
