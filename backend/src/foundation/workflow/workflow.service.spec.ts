@@ -2469,6 +2469,75 @@ describe('WorkflowService', () => {
       });
     });
 
+    // ACC-95 — both notices in both languages: the record type in words, never
+    // the stored code, and each stored name's Arabic, else its English, never blank.
+    describe('the workflow notices, in both languages (ACC-95)', () => {
+      const sentTo = (userId: string): Record<string, unknown>[] =>
+        (mockNotificationService.create.mock.calls as [Record<string, unknown>, string][]).filter(([n]) => n['userId'] === userId).map(([n]) => n);
+
+      it('"New workflow assignment" names the first stage by its Arabic name in the Arabic text', async () => {
+        mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+        mockPrisma.workflowStage.findFirst.mockResolvedValue({ ...POOL_STAGE, isInitial: true });
+        mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE);
+        mockStagePool.resolve.mockResolvedValue(poolOf(['member-1']));
+
+        await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
+
+        expect(sentTo('member-1')).toEqual([
+          {
+            userId: 'member-1',
+            titleEn: 'New workflow assignment',
+            titleAr: 'تكليف جديد في سير العمل',
+            bodyEn: 'You have been assigned to Quality review',
+            bodyAr: 'تم تكليفك بمرحلة «مراجعة الجودة»',
+            objectType: 'DOCUMENT',
+            objectId: 'object-1',
+          },
+        ]);
+      });
+
+      it("a move's Send notification says the record type in words, never its code", async () => {
+        arrange(POOL_STAGE, {}, { ...TARGET_STAGE, nameEn: 'Terms Review', whoMode: 'ALL' });
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'SEND_NOTIFICATION', order: 10, isEnabled: true },
+        ]);
+        mockStagePool.resolve.mockImplementation((_org: string, stageId: string) =>
+          Promise.resolve(stageId === 'stage-pool' ? poolOf([ACTOR]) : poolOf(['member-1'])),
+        );
+
+        await trigger();
+
+        // The target stage has no Arabic name: the English one, in «…».
+        expect(sentTo('member-1')).toEqual([
+          {
+            userId: 'member-1',
+            titleEn: 'Submit',
+            titleAr: 'إرسال',
+            bodyEn: 'Document: moved to Terms Review',
+            bodyAr: 'وثيقة: الانتقال إلى مرحلة «Terms Review»',
+            objectType: 'DOCUMENT',
+            objectId: 'object-1',
+          },
+        ]);
+      });
+
+      it('a move with no Arabic label is titled by its English one, never blank', async () => {
+        arrange(POOL_STAGE, { labelAr: null }, { ...TARGET_STAGE, nameEn: 'Terms Review', nameAr: 'مراجعة الشروط', whoMode: 'ALL' });
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'SEND_NOTIFICATION', order: 10, isEnabled: true },
+        ]);
+        mockStagePool.resolve.mockImplementation((_org: string, stageId: string) =>
+          Promise.resolve(stageId === 'stage-pool' ? poolOf([ACTOR]) : poolOf(['member-1'])),
+        );
+
+        await trigger();
+
+        expect(sentTo('member-1')).toEqual([
+          expect.objectContaining({ titleAr: 'Submit', bodyAr: 'وثيقة: الانتقال إلى مرحلة «مراجعة الشروط»' }),
+        ]);
+      });
+    });
+
     // ACC-271 PR 2 — what the record page's buttons show comes from here.
     // ACC-271 PR 4 — the closed-task notices go out after the stage change
     // commits, never inside it: a change that fails tells nobody.
@@ -2540,6 +2609,8 @@ describe('WorkflowService', () => {
         toStageId: `to-${id}`,
         toStageNameEn: `Stage ${id}`,
         toStageNameAr: null,
+        // ACC-316 PR 3a — a committee move needs no reason.
+        needsReason: false,
       });
       function arrangeMoves(stage: Record<string, unknown>) {
         mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-pool' }));
@@ -2585,7 +2656,7 @@ describe('WorkflowService', () => {
           expect.objectContaining({
             where: { fromStageId: 'stage-pool', fromStage: { workflowTemplate: { organizationId: ORG_A } } },
             // ACC-282 — the label and the next stage come with the move, in the same read.
-            select: expect.objectContaining({ labelEn: true, labelAr: true, kind: true, toStageId: true, toStage: { select: { nameEn: true, nameAr: true } } }),
+            select: expect.objectContaining({ labelEn: true, labelAr: true, kind: true, toStageId: true, toStage: { select: { nameEn: true, nameAr: true, flags: true } } }),
           }),
         );
       });

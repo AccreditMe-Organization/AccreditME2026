@@ -12,11 +12,13 @@ import {
   newStageActionKeys,
   orderedActionKeys,
   recordActionsFor,
+  MEETING_ACTIONS,
 } from './record-registry';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import * as PermissionConstants from '../../common/constants/permissions';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 import { CommitteesController } from '../committees/committees.controller';
+import { MEMBER_ACTIONS, MEMBER_ACTION_KEYS } from '../committees/member-actions';
 
 // ACC-255 — the registries. Every label the server sends as a key must exist in
 // BOTH translation files (the frontend renders them; the server sends keys
@@ -55,13 +57,14 @@ describe('record registries (ACC-255)', () => {
     }
   });
 
-  it('committees have exactly the five actions the design names, in screen order', () => {
+  it('committees have exactly the six actions the design names, in screen order (ACC-316 added scheduling a meeting)', () => {
     expect(recordActionsFor('COMMITTEE').map((a) => a.key)).toEqual([
       'edit_details',
       'add_member',
       'remove_member',
       'change_member_role',
       'request_change',
+      'schedule_meeting',
     ]);
   });
 
@@ -104,29 +107,38 @@ describe('record registries (ACC-255)', () => {
       }
     });
 
-    it("the committee's direct changes pair with their endpoint's own @Permissions", () => {
+    it("Edit details pairs with its endpoint's own @Permissions", () => {
       const byKey = Object.fromEntries(recordActionsFor('COMMITTEE').map((a) => [a.key, a.permissionKey]));
-      expect([
-        [COMMITTEE_ACTIONS.EDIT_DETAILS, routeKeys('updateCommittee')],
-        [COMMITTEE_ACTIONS.ADD_MEMBER, routeKeys('addMember')],
-        [COMMITTEE_ACTIONS.REMOVE_MEMBER, routeKeys('removeMember')],
-        [COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, routeKeys('changeMemberRole')],
-      ]).toEqual([
-        [COMMITTEE_ACTIONS.EDIT_DETAILS, [byKey[COMMITTEE_ACTIONS.EDIT_DETAILS]]],
-        [COMMITTEE_ACTIONS.ADD_MEMBER, [byKey[COMMITTEE_ACTIONS.ADD_MEMBER]]],
-        [COMMITTEE_ACTIONS.REMOVE_MEMBER, [byKey[COMMITTEE_ACTIONS.REMOVE_MEMBER]]],
-        [COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, [byKey[COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE]]],
-      ]);
+      expect(routeKeys('updateCommittee')).toEqual([byKey[COMMITTEE_ACTIONS.EDIT_DETAILS]]);
     });
 
-    it('requesting a change pairs with the permission the change request service checks on create', () => {
-      // The create route is gated on committees:view and the service checks the
-      // real permission itself, so read the service's own first check.
-      const source = readFileSync(join(__dirname, '..', 'committees', 'change-requests', 'committee-change-request.service.ts'), 'utf8');
-      const create = /async create\([^)]*\)[^{]*\{\s*requirePermission\(viewer, COMMITTEES_PERMISSIONS\.(\w+)\)/.exec(source);
-      expect(create).not.toBeNull();
-      const checked = (PermissionConstants.COMMITTEES_PERMISSIONS as Record<string, string>)[create![1]!];
-      expect(recordActionsFor('COMMITTEE').find((a) => a.key === COMMITTEE_ACTIONS.REQUEST_CHANGE)!.permissionKey).toBe(checked);
+    // ACC-283 PR 6 — the four member actions carry no route gate: a seat may allow
+    // them without the key, and the service decides by member-actions.ts. So each
+    // registry action pairs with the permission that rule's map names for it.
+    it("each member action pairs with the permission the one rule (MEMBER_ACTIONS) checks", () => {
+      const byKey = Object.fromEntries(recordActionsFor('COMMITTEE').map((a) => [a.key, a.permissionKey]));
+      for (const action of MEMBER_ACTION_KEYS) {
+        const { stage, permission } = MEMBER_ACTIONS[action];
+        expect({ action, stage, registry: byKey[stage] }).toEqual({ action, stage, registry: permission });
+      }
+      expect(MEMBER_ACTION_KEYS.map((a) => MEMBER_ACTIONS[a].stage).sort()).toEqual(
+        [COMMITTEE_ACTIONS.ADD_MEMBER, COMMITTEE_ACTIONS.CHANGE_MEMBER_ROLE, COMMITTEE_ACTIONS.REMOVE_MEMBER, COMMITTEE_ACTIONS.REQUEST_CHANGE].sort(),
+      );
+    });
+
+    it('the member writes and create ask that rule, for their own action', () => {
+      const read = (...path: string[]) => readFileSync(join(__dirname, '..', 'committees', ...path), 'utf8');
+      const committees = read('committees.service.ts');
+      for (const [method, action] of [
+        ['addMember', 'add_member'],
+        ['changeMemberRole', 'change_member_seat'],
+        ['removeMember', 'remove_member'],
+      ] as const) {
+        const body = new RegExp(`async ${method}\\([\\s\\S]*?assertMemberAction\\([^;]*'${action}'`).exec(committees);
+        expect({ method, asks: body !== null }).toEqual({ method, asks: true });
+      }
+      const requests = read('change-requests', 'committee-change-request.service.ts');
+      expect(/async create\([^)]*\)[^{]*\{[\s\S]*?assertMemberAction\([^;]*'request_change'/.test(requests)).toBe(true);
     });
   });
 
@@ -157,11 +169,57 @@ describe('record registries (ACC-255)', () => {
       expect(rules).toEqual({
         formation: { actions: [COMMITTEE_ACTIONS.EDIT_DETAILS, ...members].sort(), flags: [] },
         terms_review: { actions: members, flags: [] },
-        active: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE].sort(), flags: [STAGE_FLAG.IN_FORCE] },
-        suspended: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE].sort(), flags: [STAGE_FLAG.IN_FORCE] },
+        // ACC-316 — a meeting may be scheduled on the in-force stages.
+        active: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE, COMMITTEE_ACTIONS.SCHEDULE_MEETING].sort(), flags: [STAGE_FLAG.IN_FORCE] },
+        suspended: { actions: [...members, COMMITTEE_ACTIONS.REQUEST_CHANGE, COMMITTEE_ACTIONS.SCHEDULE_MEETING].sort(), flags: [STAGE_FLAG.IN_FORCE] },
         dissolution_pending: { actions: members, flags: [STAGE_FLAG.DISSOLVING] },
         dissolved: { actions: [], flags: [STAGE_FLAG.DISSOLVING] },
       });
+    });
+
+    it("gives the meeting stages plan step-316 §3.8's rules: actions, flags and who works each", () => {
+      const meeting = SYSTEM_WORKFLOW_SEED.find((w) => w.objectType === 'MEETING')!;
+      const rules = Object.fromEntries(
+        meeting.stages.map((s) => [
+          s.key,
+          {
+            name: s.nameEn,
+            actions: [...(s.actions ?? [])].sort(),
+            flags: [...(s.flags ?? [])],
+            who: 'entries' in s.who ? s.who.entries.map((e) => e.kind) : 'START',
+          },
+        ]),
+      );
+      const M = MEETING_ACTIONS;
+      const before = [M.EDIT_DETAILS, M.MANAGE_AGENDA, M.MANAGE_GUESTS, M.RESCHEDULE, M.ANSWER_INVITATION];
+      expect(rules).toEqual({
+        planned: { name: 'Planned', actions: [...before].sort(), flags: [], who: ['MEETING_SCHEDULERS'] },
+        agenda_ready: {
+          name: 'Agenda Issued',
+          actions: [...before, M.RECORD_ATTENDANCE].sort(),
+          flags: [STAGE_FLAG.AGENDA_ISSUED],
+          who: ['MEETING_SCHEDULERS', 'MEETING_RECORDERS'],
+        },
+        minutes_draft: { name: 'Minutes Draft', actions: [M.RECORD_ATTENDANCE, M.RECORD_MINUTES].sort(), flags: [], who: ['MEETING_RECORDERS'] },
+        minutes_review: {
+          name: 'Minutes Review',
+          actions: [M.APPLY_SUGGESTIONS, M.CHANGE_ACTION_DATES, M.SUGGEST_CORRECTION].sort(),
+          flags: [],
+          who: ['COMMITTEE', 'MEETING_APPROVERS'],
+        },
+        minutes_approved: { name: 'Minutes Approved', actions: [], flags: [STAGE_FLAG.MINUTES_FINAL], who: 'START' },
+        cancelled: { name: 'Cancelled', actions: [], flags: [STAGE_FLAG.MEETING_CANCELLED], who: 'START' },
+      });
+      // The Chair's seat on Minutes Review, by its lookup key.
+      const review = meeting.stages.find((s) => s.key === 'minutes_review')!;
+      expect('entries' in review.who && review.who.entries[0]).toEqual({ kind: 'COMMITTEE', seatKey: 'chairman' });
+      // The draft-to-draft Return is gone; Distribute and Return are the app's.
+      expect(meeting.transitions.filter((t) => t.fromStageKey === t.toStageKey)).toEqual([]);
+      expect(meeting.transitions.filter((t) => t.mover === 'APP').map((t) => `${t.fromStageKey}>${t.toStageKey}`).sort()).toEqual([
+        'minutes_draft>minutes_review',
+        'minutes_review>minutes_draft',
+      ]);
+      expect(meeting.transitions.find((t) => t.fromStageKey === 'planned' && t.toStageKey === 'agenda_ready')!.labelEn).toBe('Issue Agenda');
     });
 
     it('flags the change request template\'s Approved stage, and nothing else there', () => {

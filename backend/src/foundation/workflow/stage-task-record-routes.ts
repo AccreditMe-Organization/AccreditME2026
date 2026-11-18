@@ -56,14 +56,16 @@ export const RECORD_ROUTES: Partial<Record<WorkflowObjectType, RecordRoute>> = {
       return toMap(rows, (r) => r.id, (r) => r.id);
     },
   },
-  // A meeting belongs to its committee, and through it to the committee's unit.
+  // ACC-316 — a meeting belongs to a committee OR a unit. "The record's unit"
+  // is its OWNING unit: its own (a unit meeting) or its committee's (a
+  // committee meeting); "the record's committee" is null for a unit meeting.
   MEETING: {
     async unit(client, objectId, organizationId) {
       const meeting = await client.meeting.findFirst({
         where: { id: objectId, organizationId },
-        select: { committee: { select: { orgUnitId: true } } },
+        select: { orgUnitId: true, committee: { select: { orgUnitId: true } } },
       });
-      return meeting?.committee?.orgUnitId ?? null;
+      return meeting?.orgUnitId ?? meeting?.committee?.orgUnitId ?? null;
     },
     async committee(client, objectId, organizationId) {
       const meeting = await client.meeting.findFirst({ where: { id: objectId, organizationId }, select: { committeeId: true } });
@@ -72,9 +74,9 @@ export const RECORD_ROUTES: Partial<Record<WorkflowObjectType, RecordRoute>> = {
     async unitsOf(client, objectIds, organizationId) {
       const rows = await client.meeting.findMany({
         where: { id: { in: objectIds }, organizationId },
-        select: { id: true, committee: { select: { orgUnitId: true } } },
+        select: { id: true, orgUnitId: true, committee: { select: { orgUnitId: true } } },
       });
-      return toMap(rows, (r) => r.id, (r) => r.committee?.orgUnitId);
+      return toMap(rows, (r) => r.id, (r) => r.orgUnitId ?? r.committee?.orgUnitId);
     },
     async committeesOf(client, objectIds, organizationId) {
       const rows = await client.meeting.findMany({ where: { id: { in: objectIds }, organizationId }, select: { id: true, committeeId: true } });

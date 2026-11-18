@@ -82,6 +82,16 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get committeeSeatAction() { return this._client.committeeSeatAction; } // ACC-283
   get meeting() { return this._client.meeting; }
   get agendaItem() { return this._client.agendaItem; }
+  // ACC-316 — the meeting tables (PR 1's migration).
+  get meetingSeries() { return this._client.meetingSeries; }
+  get meetingAttendee() { return this._client.meetingAttendee; }
+  get meetingDecision() { return this._client.meetingDecision; }
+  get meetingActionItem() { return this._client.meetingActionItem; }
+  get meetingOpenActionNote() { return this._client.meetingOpenActionNote; }
+  get meetingReviewAnswer() { return this._client.meetingReviewAnswer; }
+  get meetingSuggestion() { return this._client.meetingSuggestion; }
+  get meetingReviewChange() { return this._client.meetingReviewChange; }
+  get meetingReschedule() { return this._client.meetingReschedule; }
   get auditLog() { return this._client.auditLog; }
   get aiInteractionLog() { return this._client.aiInteractionLog; }
   get authUser() { return this._client.authUser; }

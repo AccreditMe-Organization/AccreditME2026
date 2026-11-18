@@ -153,7 +153,7 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
         // Non-vacuity: the list rendered, every module and row with a size.
         expect(mods.length).toBe(11);
         const rows = main.querySelectorAll<HTMLElement>('[data-pm-row]');
-        expect(rows.length).toBe(34); // ACC-271 PR 6b: committees:manage is not in use; ACC-164: +users:reset_mfa; ACC-283 PR 4: -committees:approve; ACC-216: +users:manage_sessions
+        expect(rows.length).toBe(43); // ACC-271 PR 6b: committees:manage is not in use; ACC-164: +users:reset_mfa; ACC-283 PR 4: -committees:approve; ACC-316 PR 2: +5 meeting keys; PR 3a: +4 meeting task keys; ACC-216: +users:manage_sessions
         expect(box(mods[0]!).width).toBeGreaterThan(200);
 
         // One column: every module starts at the same inline edge.

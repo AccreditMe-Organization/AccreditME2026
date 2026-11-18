@@ -5,6 +5,7 @@ import {
   assertWhoShape,
   assigneeKindsFor,
   entryKey,
+  entryPhrase,
   STAGE_ASSIGNEE_KINDS,
   whoAuditEntries,
   whoSentence,
@@ -123,6 +124,39 @@ describe('stage-who (ACC-271 PR 3)', () => {
   it('offers every kind on every record type, served as assigneeKinds', () => {
     expect(assigneeKindsFor('COMMITTEE')).toEqual(['SPECIFIC_USER', 'POSITION_IN_UNIT', 'ORG_UNIT_HEAD', 'CREATOR', 'COMMITTEE']);
     for (const kinds of Object.values(STAGE_ASSIGNEE_KINDS)) expect(kinds.length).toBeGreaterThan(0);
+  });
+
+  describe("ACC-316 — a meeting's own kinds", () => {
+    const MEETING_KINDS = ['MEETING_SCHEDULERS', 'MEETING_RECORDERS', 'MEETING_APPROVERS'] as const;
+
+    it('are offered for MEETING, after every other kind, and for no other record type', () => {
+      expect(assigneeKindsFor('MEETING')).toEqual(['SPECIFIC_USER', 'POSITION_IN_UNIT', 'ORG_UNIT_HEAD', 'CREATOR', 'COMMITTEE', ...MEETING_KINDS]);
+      for (const [type, kinds] of Object.entries(STAGE_ASSIGNEE_KINDS)) {
+        if (type === 'MEETING') continue;
+        for (const kind of MEETING_KINDS) expect({ type, offers: kinds.includes(kind) }).toEqual({ type, offers: false });
+      }
+    });
+
+    it('take no fields, and a MEETING stage may name them', () => {
+      for (const kind of MEETING_KINDS) {
+        expect(assertWhoShape('MEETING', { mode: 'ANY_ONE', entries: [{ kind }] }, ROUTES)).toEqual([
+          { kind, userId: null, positionId: null, orgUnitId: null, committeeId: null, committeeRoleValueId: null },
+        ]);
+        expect(() => assertWhoShape('MEETING', { mode: 'ANY_ONE', entries: [{ kind, userId: 'u1' }] }, ROUTES)).toThrow();
+      }
+    });
+
+    it('are refused on any other record type (fail closed)', () => {
+      for (const kind of MEETING_KINDS) expect(shape('ANY_ONE', [{ kind }])).toBe('WHO_KIND_NOT_ALLOWED');
+    });
+
+    it('read in both languages', () => {
+      for (const kind of MEETING_KINDS) {
+        const phrase = entryPhrase({ kind, userId: null, positionId: null, orgUnitId: null, committeeId: null, committeeRoleValueId: null });
+        expect(phrase.en.trim()).not.toBe('');
+        expect(phrase.ar).toMatch(/[؀-ۿ]/);
+      }
+    });
   });
 
   it('identifies an entry by its kind and the fields it uses', () => {

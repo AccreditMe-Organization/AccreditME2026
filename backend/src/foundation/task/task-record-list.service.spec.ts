@@ -1,4 +1,7 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { RecordListQueryDto } from './dto/record-list-query.dto';
 import { Prisma } from '../../../generated/prisma/client';
 import { TaskRecordListService } from './task-record-list.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -68,7 +71,15 @@ function statement(call: unknown[]): Prisma.Sql {
 }
 
 function setup(
-  opts: { ids?: string[]; rows?: ReturnType<typeof task>[]; refuse?: Error; headOf?: string | null; statusRows?: { status: string; n: bigint }[] } = {},
+  opts: {
+    ids?: string[];
+    rows?: ReturnType<typeof task>[];
+    refuse?: Error;
+    headOf?: string | null;
+    statusRows?: { status: string; n: bigint }[];
+    /** ACC-283 — what POST /tasks' record check answers (canViewForWrite); true by default. */
+    writeAdmits?: boolean;
+  } = {},
 ) {
   const ids = opts.ids ?? ['t2', 't1'];
   const prisma = {
@@ -100,6 +111,7 @@ function setup(
   };
   const objectVisibility = {
     assertCanView: opts.refuse ? jest.fn().mockRejectedValue(opts.refuse) : jest.fn().mockResolvedValue(undefined),
+    canViewForWrite: jest.fn().mockResolvedValue(opts.writeAdmits ?? true),
   };
   const tasks = { mayManage: jest.fn().mockResolvedValue(false) };
   const authority = { creatorsCoveredBy: jest.fn().mockResolvedValue([]) };
@@ -181,6 +193,20 @@ describe('TaskRecordListService', () => {
       const creator = await service.panel({ ...RECORD }, 'org-a', { id: 'u1', permissions: ['committees:view', 'committees:create_tasks'] });
       expect(creator.canCreate).toBe(true);
     });
+
+    // ACC-283 — New task also needs POST /tasks' record check (no oversight), asked
+    // only with the key: an overseeing head who holds the key reads the panel but
+    // is not offered a create the server refuses.
+    it("canCreate also needs POST /tasks' record check, asked only with the key", async () => {
+      const keyless = setup();
+      await keyless.service.panel({ ...RECORD }, 'org-a', { id: 'u1', permissions: VIEW_ALL });
+      expect(keyless.objectVisibility.canViewForWrite).not.toHaveBeenCalled();
+
+      const overseer = setup({ writeAdmits: false });
+      const refused = await overseer.service.panel({ ...RECORD }, 'org-a', { id: 'u1', permissions: ['committees:create_tasks'] });
+      expect(refused.canCreate).toBe(false);
+      expect(overseer.objectVisibility.canViewForWrite).toHaveBeenCalledWith('COMMITTEE', 'cmt-1', 'org-a', ['committees:create_tasks'], 'u1');
+    });
   });
 
   describe('organisation-wide views', () => {
@@ -233,8 +259,9 @@ describe('TaskRecordListService', () => {
       const statements = sqlOf(prisma);
       expect(statements.length).toBeGreaterThan(0);
       for (const s of statements) {
-        expect(s.text).toContain('fa."userId" = $');
-        expect(s.text).toContain('fa."removedAt" IS NULL');
+        // ACC-315 — the viewer on it by ACC-86's one rule (currentActiveAssigneeOfSql).
+        expect(s.text).toContain('xa."userId" = $');
+        expect(s.text).toContain(`xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE'`);
         expect(s.text).toContain('t."createdById" = ANY('); // the rule
         expect(s.text).toContain('t."organizationId" = $');
       }
@@ -433,6 +460,103 @@ describe('TaskRecordListService', () => {
         BadRequestException,
       );
       expect(sqlOf(prisma)).toEqual([]);
+    });
+  });
+
+  // ACC-216 (plan step-216 §5, Option A) — a PERSON's tasks: the viewer's own
+  // rule, AND the person is an active assignee. The gate runs before any read.
+  describe("a person's tasks", () => {
+    const PERSON = 'person-1';
+    const personStatements = (prisma: ReturnType<typeof setup>['prisma']) => sqlOf(prisma);
+
+    it('anyone else needs users:view: a 403 naming it, before ANY read, identical for an invented id', async () => {
+      for (const person of [PERSON, 'invented-id']) {
+        const { service, prisma } = setup();
+        await expect(service.list({ person }, 'org-a', { id: 'u1', permissions: VIEW_ALL })).rejects.toThrow(
+          new ForbiddenException('Required permission: users:view'),
+        );
+        expect(prisma.user.findFirst).not.toHaveBeenCalled();
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+        expect(prisma.task.findMany).not.toHaveBeenCalled();
+      }
+    });
+
+    it('yourself needs no permission at all', async () => {
+      const { service } = setup();
+      const result = await service.list({ person: 'u1' }, 'org-a', { id: 'u1', permissions: [] });
+      expect(result.view).toBe('person');
+    });
+
+    it('the person is read with { id, organizationId }; a missing one is the 404 and reads no task', async () => {
+      const { service, prisma } = setup();
+      prisma.user.findFirst.mockImplementationOnce(() => Promise.resolve(null) as never);
+      await expect(service.list({ person: PERSON }, 'org-a', { id: 'u1', permissions: ['users:view'] })).rejects.toThrow(
+        new NotFoundException('User not found'),
+      );
+      expect(prisma.user.findFirst.mock.calls[0]![0]).toEqual({ where: { id: PERSON, organizationId: 'org-a' }, select: { id: true } });
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    // ACC-86's one definition of "on a task" (task-pool.ts currentActiveAssigneeOfSql):
+    // a current row AND the person is ACTIVE.
+    it('every statement is the rule AND the person ON the task (a current row, and ACTIVE), before LIMIT', async () => {
+      const { service, prisma } = setup();
+      const result = await service.list({ person: PERSON, take: 50 }, 'org-a', { id: 'u1', permissions: ['users:view', ...COMMITTEE_ONLY] });
+      expect(result.view).toBe('person');
+      const statements = personStatements(prisma);
+      expect(statements.length).toBeGreaterThan(0);
+      for (const s of statements) {
+        expect(s.text).toContain('xa."userId" = $');
+        expect(s.text).toContain('xa."removedAt" IS NULL');
+        expect(s.text).toContain(`xu.status::text = 'ACTIVE'`);
+        expect(s.values).toContain(PERSON);
+        // The viewer's own rule (its relationship clause on the VIEWER).
+        expect(s.text).toContain('t."createdById" = ANY(');
+        expect(s.values).toContain('u1');
+        // The person condition is in the WHERE, never after the page.
+        const limit = s.text.indexOf('LIMIT');
+        if (limit >= 0) expect(s.text.indexOf(`xu.status::text = 'ACTIVE'`)).toBeLessThan(limit);
+      }
+    });
+
+    it('a person is never combined with a record or a view (400, nothing read)', async () => {
+      const { service, prisma } = setup();
+      const viewer = { id: 'u1', permissions: ['users:view', ...VIEW_ALL] };
+      await expect(service.list({ person: PERSON, ...RECORD }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.list({ person: PERSON, view: 'all' }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.panel({ person: PERSON, ...RECORD }, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.panel({}, 'org-a', viewer)).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.user.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('the panel: the first five through the same scope, and never offers New task', async () => {
+      const { service, prisma } = setup();
+      const panel = await service.panel({ person: PERSON }, 'org-a', { id: 'u1', permissions: ['users:view', 'committees:view', 'committees:create_tasks'] });
+      expect(panel.total).toBe(2);
+      expect(panel.canCreate).toBe(false);
+      const first = personStatements(prisma)[0]!;
+      expect(first.values).toContain(5);
+      expect(first.text).toContain('xa."removedAt" IS NULL');
+      expect(first.text).toContain(`xu.status::text = 'ACTIVE'`);
+    });
+
+    it('take is capped at 50 by the DTO (plan §6)', async () => {
+      const dto = plainToInstance(RecordListQueryDto, { person: PERSON, take: '51' });
+      expect((await validate(dto)).map((e) => e.property)).toContain('take');
+    });
+
+    it('should NOT return records belonging to a different tenant: the person is read in the caller\'s organisation and every statement is bound to it', async () => {
+      const { service, prisma } = setup();
+      await service.list({ person: PERSON }, 'org-b', { id: 'u1', permissions: ['users:view', ...VIEW_ALL] });
+      expect(prisma.user.findFirst.mock.calls[0]![0].where).toEqual({ id: PERSON, organizationId: 'org-b' });
+      const statements = personStatements(prisma);
+      expect(statements.length).toBeGreaterThan(0);
+      for (const s of statements) {
+        expect(s.text).toContain('t."organizationId" = $1');
+        expect(s.values[0]).toBe('org-b');
+      }
+      expect(prisma.task.findMany.mock.calls[0]![0].where.organizationId).toBe('org-b');
     });
   });
 

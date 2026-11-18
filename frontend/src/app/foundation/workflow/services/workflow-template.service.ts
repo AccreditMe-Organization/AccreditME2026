@@ -40,7 +40,16 @@ export interface WorkflowTemplateDto {
 
 // ── ACC-271 — who works a stage ─────────────────────────────────────────────
 
-export type StageAssigneeKind = 'SPECIFIC_USER' | 'POSITION_IN_UNIT' | 'ORG_UNIT_HEAD' | 'CREATOR' | 'COMMITTEE';
+export type StageAssigneeKind =
+  | 'SPECIFIC_USER'
+  | 'POSITION_IN_UNIT'
+  | 'ORG_UNIT_HEAD'
+  | 'CREATOR'
+  | 'COMMITTEE'
+  // ACC-316 — a meeting's own kinds, offered by the server for MEETING only.
+  | 'MEETING_SCHEDULERS'
+  | 'MEETING_RECORDERS'
+  | 'MEETING_APPROVERS';
 export type StageWhoMode = 'ANY_ONE' | 'ALL' | 'COMMITTEE_VOTE';
 export type WhoEntryField = 'userId' | 'positionId' | 'orgUnitId' | 'committeeId' | 'committeeRoleValueId';
 

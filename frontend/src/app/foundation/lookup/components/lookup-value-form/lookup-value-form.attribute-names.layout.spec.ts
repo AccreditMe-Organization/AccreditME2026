@@ -45,17 +45,15 @@ const SCHEMAS = {
     requiresCommitteeApproval: { type: 'boolean', labelEn: 'Requires committee approval', labelAr: 'يتطلب اعتماد لجنة' },
     defaultRetentionYears: { type: 'number', labelEn: 'Default retention (years)', labelAr: 'مدة الحفظ الافتراضية (بالسنوات)' },
   },
-  // The seed's six booleans since #307 (lookup.seed.ts), each still carrying
-  // its old `label` beside labelEn / labelAr.
+  // The seed's six booleans since #307 (lookup.seed.ts), named by labelEn / labelAr.
   committee_member_role: {
-    required: { type: 'boolean', label: 'Required seat', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
-    seatAddsMember: { type: 'boolean', label: 'Add members', labelEn: 'Add members', labelAr: 'إضافة أعضاء' },
-    seatRemovesMember: { type: 'boolean', label: 'Remove members', labelEn: 'Remove members', labelAr: 'إزالة أعضاء' },
-    seatChangesSeat: { type: 'boolean', label: "Change a member's seat", labelEn: "Change a member's seat", labelAr: 'تغيير مقعد عضو' },
-    seatRequestsChange: { type: 'boolean', label: 'Request a change', labelEn: 'Request a change', labelAr: 'طلب تغيير' },
+    required: { type: 'boolean', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' },
+    seatAddsMember: { type: 'boolean', labelEn: 'Add members', labelAr: 'إضافة أعضاء' },
+    seatRemovesMember: { type: 'boolean', labelEn: 'Remove members', labelAr: 'إزالة أعضاء' },
+    seatChangesSeat: { type: 'boolean', labelEn: "Change a member's seat", labelAr: 'تغيير مقعد عضو' },
+    seatRequestsChange: { type: 'boolean', labelEn: 'Request a change', labelAr: 'طلب تغيير' },
     seatDecidesReportingChanges: {
       type: 'boolean',
-      label: 'Decide changes of committees that report to it',
       labelEn: 'Decide changes of committees that report to it',
       labelAr: 'البتّ في تغييرات اللجان التابعة لها',
     },

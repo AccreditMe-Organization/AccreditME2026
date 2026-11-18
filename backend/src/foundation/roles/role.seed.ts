@@ -7,6 +7,7 @@ import {
   WORKFLOWS_PERMISSIONS,
   COMMITTEES_PERMISSIONS,
   COMMITTEE_TASKS_PERMISSIONS,
+  MEETING_TASKS_PERMISSIONS,
   NOTIFICATIONS_PERMISSIONS,
   MEETINGS_PERMISSIONS,
   DOCUMENTS_PERMISSIONS,
@@ -45,6 +46,8 @@ const ALL = [
   // group's VIEW entry, and this group has none, so VIEWER gets no task-wide
   // reach (Ahmad, 20 Oct, Q2).
   COMMITTEE_TASKS_PERMISSIONS,
+  // ACC-316 PR 3a — the meeting task keys, by the same spread and the same reach.
+  MEETING_TASKS_PERMISSIONS,
 ].flatMap((g) => Object.values(g));
 
 const readOnly = (...groups: Record<string, string>[]) =>
@@ -94,6 +97,10 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
       COMMITTEE_TASKS_PERMISSIONS.VIEW_ALL,
       COMMITTEE_TASKS_PERMISSIONS.CREATE,
       COMMITTEE_TASKS_PERMISSIONS.MANAGE,
+      // ACC-316 PR 3a — the same three on meetings.
+      MEETING_TASKS_PERMISSIONS.VIEW_ALL,
+      MEETING_TASKS_PERMISSIONS.CREATE,
+      MEETING_TASKS_PERMISSIONS.MANAGE,
       ...Object.values(KPI_PERMISSIONS),
       ...Object.values(REPORTS_PERMISSIONS),
       ORG_PERMISSIONS.VIEW,

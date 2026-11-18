@@ -18,9 +18,10 @@ import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } fr
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskSlaService, latest } from './task-sla.service';
 import { aTaskThatIs } from './task-status-label';
-import { HOLD_CLEARED, REQUESTABLE_STATUSES } from './task-request-lifecycle';
+import { DUE_WARNING_CLEARED, HOLD_CLEARED, REQUESTABLE_STATUSES } from './task-request-lifecycle';
 import { lockWorkflowInstance, moveStageDeadlineForTaskInTx } from './stage-deadline';
 import { recordNamesOf, recordOf } from './task-record-names';
+import { currentActiveAssigneeIds } from './task-pool';
 
 type TaskTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 type TaskWithAssigneeRows = ITask & { assignees: TaskAssignee[] };
@@ -251,6 +252,8 @@ export class TaskRequestService {
             slaBreachedAt: null,
             managerEscalatedAt: null,
             headEscalatedAt: null,
+            // ACC-313 — the new due date re-arms the reminder.
+            ...DUE_WARNING_CLEARED,
           },
         });
       } else {
@@ -291,6 +294,8 @@ export class TaskRequestService {
             slaStartAt,
             slaLimitAt,
             slaExtendedTo,
+            // ACC-313 — the window moves at approval, so the reminder re-arms.
+            ...DUE_WARNING_CLEARED,
             // A due date moved past now re-arms escalation; one still past keeps
             // its stamps, so a breach is not escalated twice.
             ...(heldHours > 0 && dueAt && dueAt > now
@@ -575,10 +580,13 @@ export class TaskRequestService {
     });
 
     // The assignee and the creator — never the person who pressed Resume now.
-    const recipients = new Set([
-      ...before.assignees.filter((a) => a.removedAt === null).map((a) => a.userId),
-      task.createdById,
+    // ACC-315 — only people who are ACTIVE: the assignees by ACC-86's rule
+    // (currentActiveAssigneeIds), and the creator only while ACTIVE.
+    const [onIt, creator] = await Promise.all([
+      currentActiveAssigneeIds(this.prisma, task.id, organizationId),
+      this.prisma.user.findFirst({ where: { id: task.createdById, organizationId, status: 'ACTIVE' }, select: { id: true } }),
     ]);
+    const recipients = new Set([...onIt, ...(creator ? [creator.id] : [])]);
     if (actorId) recipients.delete(actorId);
     for (const userId of recipients) {
       await this.notificationService.create(

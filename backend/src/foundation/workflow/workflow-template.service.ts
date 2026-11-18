@@ -66,6 +66,7 @@ import {
   readStartEnd,
   type NamedStage,
 } from './workflow-start-end';
+import { assertEscalationRules } from './stage-escalation';
 
 /** Stage fields a protected template's stage may still change (names, description, deadline and its escalation). */
 const PROTECTED_STAGE_EDITABLE: ReadonlySet<string> = new Set(['nameEn', 'nameAr', 'description', 'slaWorkingHours', 'escalationConfig']);
@@ -737,6 +738,8 @@ export class WorkflowTemplateService {
       committee: typeof recordRoute?.committee === 'function',
     });
     const whoRefs = await this.assertWhoReferences(wantedWho, organizationId);
+    // ACC-105 — the escalation rules are checked like the stage's other ids.
+    await assertEscalationRules(this.prisma, organizationId, dto.escalationConfig);
 
     const counted = exactlyOneFlags(template.objectType).filter((f) => flags.includes(f));
     const { stage, movedFrom } = await this.prisma.$transaction(async (tx) => {
@@ -858,6 +861,8 @@ export class WorkflowTemplateService {
     }
     // Every id the new `who` names is this organisation's, and no chosen person is deactivated.
     if (whoChanged && wantedWho) await this.assertWhoReferences(wantedWho, organizationId);
+    // ACC-105 — the escalation rules are checked like the stage's other ids.
+    if (dto.escalationConfig !== undefined) await assertEscalationRules(this.prisma, organizationId, dto.escalationConfig);
     const rules = this.stageRuleKeys(objectType, dto.actions, dto.flags);
 
     // ACC-190 — the stage-deadline rule from the stage's side: a deadline

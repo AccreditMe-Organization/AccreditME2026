@@ -3,7 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { TaskViewer } from './task.service';
 import { TaskAdmissionService } from './task-admission.service';
-import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, poolTargetOf, resolvePoolMemberIds, toPoolView } from './task-pool';
+import {
+  CURRENT_ACTIVE_ASSIGNEE,
+  POOL_LABEL_INCLUDE,
+  PICKABLE_STATUSES,
+  poolTargetOf,
+  resolvePoolMemberIds,
+  toPoolView,
+} from './task-pool';
 import { OPEN_REQUEST_INCLUDE, toOpenRequest } from './task-request-lifecycle';
 import { taskActionsFor } from './task-actions';
 import { isWorkflowMade } from './task-visibility';
@@ -73,7 +80,8 @@ export class TaskPageService {
       where: { id, organizationId },
       include: {
         assignees: { include: { user: { select: PERSON_SELECT } } },
-        _count: { select: { evidence: { where: { deletedAt: null } } } },
+        // ACC-315 — someone is on it: ACC-86's one rule, counted in the same read.
+        _count: { select: { evidence: { where: { deletedAt: null } }, assignees: { where: CURRENT_ACTIVE_ASSIGNEE } } },
         ...POOL_LABEL_INCLUDE,
         ...OPEN_REQUEST_INCLUDE,
         createdBy: { select: { status: true, ...PERSON_SELECT } },
@@ -106,7 +114,10 @@ export class TaskPageService {
     const active = assignees.filter((a) => a.removedAt === null);
     const mine = active.find((a) => a.userId === viewer.id) ?? null;
     const target = poolTargetOf(task);
-    const waitingInPool = !!target && active.length === 0 && (PICKABLE_STATUSES as readonly string[]).includes(task.status);
+    // ACC-315 — a row held by someone no longer ACTIVE puts nobody on the task, so
+    // the task still waits for its pool and offers Pick, as POST /pick accepts.
+    const anyoneOnIt = _count.assignees > 0;
+    const waitingInPool = !!target && !anyoneOnIt && (PICKABLE_STATUSES as readonly string[]).includes(task.status);
 
     const [delegations, poolMemberIds, record, completedBy, stillInStep] = await Promise.all([
       this.delegationLabels.resolveMany(active, organizationId, viewer),
@@ -148,7 +159,7 @@ export class TaskPageService {
         viewerId: viewer.id,
         viewerIsActiveAssignee: !!mine,
         viewerPickedIt: !!mine?.pickedAt,
-        anyActiveAssignee: active.length > 0,
+        anyActiveAssignee: anyoneOnIt,
         hasPoolTarget: !!target,
         viewerInPool: access.inPool,
         openRequest,

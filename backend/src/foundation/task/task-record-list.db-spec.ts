@@ -54,8 +54,10 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
   async function newOrg(): Promise<{ org: string; creator: string; viewer: string }> {
     const slug = `acc229-${randomUUID().slice(0, 8)}`;
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
-    const c = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}-c@example.test`, name: 'Creator' } });
-    const v = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}-v@example.test`, name: 'Viewer Person' } });
+    // ACC-315 — ACTIVE, as anyone signed in is: an INVITED user (the column's
+    // default) is on no task under ACC-86's rule, which the list now reads.
+    const c = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}-c@example.test`, name: 'Creator', status: 'ACTIVE' } });
+    const v = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}-v@example.test`, name: 'Viewer Person', status: 'ACTIVE' } });
     return { org: o.id, creator: c.id, viewer: v.id };
   }
 
@@ -294,7 +296,7 @@ describe('A record\'s tasks against a real database (ACC-229)', () => {
       orgC = c.org;
       creatorC = c.creator;
       viewerC = c.viewer;
-      assigneeC = (await prisma.user.create({ data: { organizationId: orgC, email: `${committeeC}-a@example.test`, name: 'Assignee Person' } })).id;
+      assigneeC = (await prisma.user.create({ data: { organizationId: orgC, email: `${committeeC}-a@example.test`, name: 'Assignee Person', status: 'ACTIVE' } })).id;
       const unitC = await prisma.orgUnit.create({ data: { organizationId: orgC, nameEn: 'Quality', code: `C${committeeC.slice(-4)}`.toUpperCase() } });
       await prisma.committee.create({
         data: { id: committeeC, organizationId: orgC, nameEn: 'Quality Committee', nameAr: 'لجنة الجودة', typeValueId: 'type', orgUnitId: unitC.id },

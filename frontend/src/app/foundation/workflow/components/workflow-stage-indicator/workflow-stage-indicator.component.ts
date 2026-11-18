@@ -50,11 +50,10 @@ import { workflowLabelKey } from '../../workflow-labels';
               {{ 'workflow.stageIndicator.lifecycle' | translate }}
             </span>
             @if (timeInStage(); as elapsed) {
-              <!-- dir=ltr + isolate so the numeral does not reorder inside an
-                   Arabic sentence. The one technique the design reference does
-                   better than anything else in this codebase. -->
+              <!-- isolate, and the page's own direction: the line is words and
+                   digits in the reader's language, which read in order without
+                   forcing left to right (ACC-313, CC-326). -->
               <span
-                dir="ltr"
                 style="unicode-bidi: isolate"
                 class="text-xs text-[var(--am-text-secondary)]"
               >
@@ -96,9 +95,9 @@ import { workflowLabelKey } from '../../workflow-labels';
                   </span>
 
                   <span
-                    dir="ltr"
                     style="unicode-bidi: isolate"
                     class="text-[11px] text-center text-[var(--am-text-secondary)]"
+                    data-stage-meta
                   >
                     {{ stageMeta(stage.id, stage.isCurrent, stage.visitCount) }}
                   </span>
@@ -124,7 +123,6 @@ import { workflowLabelKey } from '../../workflow-labels';
           @for (visit of orderedHistory(); track visit.id) {
             <div class="grid grid-cols-[76px_1fr_auto] gap-2.5 items-baseline py-1.5">
               <span
-                dir="ltr"
                 style="unicode-bidi: isolate"
                 class="text-[11.5px] text-start text-[var(--am-text-secondary)]"
               >

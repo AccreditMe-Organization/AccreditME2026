@@ -25,6 +25,9 @@ export type WorkflowRefusalCode =
   | 'STAGE_TASK_DUE_AFTER_STAGE_DEADLINE'
   | 'STAGE_DEADLINE_BEFORE_TASKS'
   | 'TASK_SLA_EXCEEDS_STAGE_DEADLINES'
+  // ACC-313 — a priority's warning must be shorter than its limit, from both sides.
+  | 'TASK_SLA_WARNING_NOT_BEFORE_DUE'
+  | 'TASK_SLA_LIMIT_NOT_AFTER_WARNING'
   | 'STAGE_TASKS_OPEN'
   | 'ACTION_TYPE_RETIRED'
   | 'VALIDATOR_RETIRED'
@@ -253,6 +256,28 @@ export interface StageDeadlineConflict {
 export function taskSlaStageConflicts(err: unknown): StageDeadlineConflict[] | null {
   const stages = bodyIf(err, 'TASK_SLA_EXCEEDS_STAGE_DEADLINES')?.['stages'];
   return Array.isArray(stages) ? (stages as StageDeadlineConflict[]) : null;
+}
+
+/**
+ * ACC-313 — the warning rule (Q2), from either side: a warning at or past its
+ * priority's limit, or a limit at or under its warning. Both name the priority,
+ * so the screen can say it under that row.
+ */
+export interface TaskSlaWarningRefusal {
+  code: 'TASK_SLA_WARNING_NOT_BEFORE_DUE' | 'TASK_SLA_LIMIT_NOT_AFTER_WARNING';
+  priority: TaskPriority;
+  warning: string;
+  limitHours: number;
+}
+
+export function taskSlaWarningRefusal(err: unknown): TaskSlaWarningRefusal | null {
+  for (const code of ['TASK_SLA_WARNING_NOT_BEFORE_DUE', 'TASK_SLA_LIMIT_NOT_AFTER_WARNING'] as const) {
+    const body = bodyIf(err, code);
+    if (body && typeof body['priority'] === 'string' && typeof body['warning'] === 'string' && isNumber(body['limitHours'])) {
+      return { code, priority: body['priority'] as TaskPriority, warning: body['warning'], limitHours: body['limitHours'] };
+    }
+  }
+  return null;
 }
 
 /** Marking a stage final while it still has task definitions. */

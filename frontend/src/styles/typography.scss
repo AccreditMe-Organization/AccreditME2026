@@ -75,6 +75,45 @@ strong {
   font-variant-numeric: tabular-nums;
 }
 
+// ─── Panel heading (ACC-120, CC-340) ─────────────────────────────────────
+// ONE heading for every panel on a record page: `am-capped-panel` (Tasks,
+// Members, Sub-committees, Signed-in devices) and `app-record-panel` (Roles,
+// Committees, Two-step sign-in, Stage history). They sat side by side in two
+// styles, an 11px uppercase label with a square count beside a sentence-case
+// title with a pill. The capped frame's won: the body step, sentence case,
+// semibold, and the count as a bordered pill on the meta step.
+// Tokens only, so the Arabic steps (15 / 13) follow without a rule of their own.
+// Global, like the row above, because both components' headers use it.
+.am-panel-title {
+  margin: 0;
+  min-inline-size: 0;
+  font-size: var(--am-type-body-size);
+  line-height: var(--am-type-body-line);
+  font-weight: var(--am-type-heading-weight);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--am-ink-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// The count beside it. Tabular figures, so counts in a row of panels line up;
+// isolated, so a numeral keeps its place inside Arabic.
+.am-panel-count {
+  flex: none;
+  font-size: var(--am-type-meta-size);
+  line-height: var(--am-type-meta-line);
+  font-weight: var(--am-type-heading-weight);
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+  color: var(--am-ink-700);
+  background: var(--am-surface);
+  border: 1px solid var(--am-border);
+  border-radius: var(--am-radius-pill);
+  padding: 0 var(--am-space-8);
+}
+
 // ─── Table row (ACC-111, artboard 9 / template 1) ────────────────────────
 // Global rather than component-scoped: the row element is the CALLER's, so a
 // directive's own styles would not reach it.
