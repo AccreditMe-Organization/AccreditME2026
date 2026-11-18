@@ -16,6 +16,8 @@ import type { IMeetingClash } from './interfaces/meeting.interface';
 export const CLASH_TIMES_CAP = 52;
 /** A meeting saved before durations were required is taken as an hour. */
 const DEFAULT_MINUTES = 60;
+/** The longest a meeting may last (ScheduleMeetingDto): how far before a time another meeting may start and still overlap it. */
+const MAX_MINUTES = 1440;
 
 interface ClashRow {
   idx: bigint;
@@ -60,6 +62,10 @@ export class MeetingClashService {
 
     const starts = dto.times.map((t) => new Date(t.startsAt).toISOString());
     const ends = dto.times.map((t) => new Date(new Date(t.startsAt).getTime() + t.durationMinutes * 60_000).toISOString());
+    // The window every time sits in, padded by the longest meeting: the scheduledAt
+    // index narrows the meetings before any overlap is computed.
+    const windowFrom = new Date(Math.min(...starts.map((s) => Date.parse(s))) - MAX_MINUTES * 60_000).toISOString();
+    const windowTo = new Date(Math.max(...ends.map((e) => Date.parse(e)))).toISOString();
     const seesAll = viewer.permissions.includes(MEETINGS_PERMISSIONS.VIEW);
     const oversight = seesAll ? [] : [...(await meetingOversightUnitIds(this.prisma, organizationId, viewer.id, now))];
     const mayOpen = seesAll ? Prisma.sql`TRUE` : Prisma.sql`(${meetingMemberSql('m', viewer.id)} OR ${meetingOverseenSql('m', oversight)})`;
@@ -72,6 +78,7 @@ export class MeetingClashService {
         JOIN "MeetingAttendee" a ON a."organizationId" = ${organizationId} AND a."userId" = ANY(${userIds}::text[])
         JOIN "Meeting" m ON m.id = a."meetingId" AND m."organizationId" = a."organizationId"
         WHERE m.id <> ${excludedId ?? ''}
+          AND m."scheduledAt" >= ${windowFrom}::timestamp AND m."scheduledAt" < ${windowTo}::timestamp
           AND m."scheduledAt" < t.e
           AND m."scheduledAt" + make_interval(mins => COALESCE(m."durationMinutes", ${DEFAULT_MINUTES})) > t.s
           AND NOT EXISTS (
@@ -89,7 +96,8 @@ export class MeetingClashService {
         if (Number(r.idx) !== i + 1) continue;
         const person = byUser.get(r.userId) ?? { userId: r.userId, name: names.get(r.userId) ?? '', meetings: [] };
         person.meetings.push({
-          id: r.meetingId,
+          // A meeting the asker may not open is "another meeting": neither its id nor its title.
+          id: r.mayOpen ? r.meetingId : null,
           title: r.mayOpen ? r.title : null,
           startsAt: r.scheduledAt,
           durationMinutes: r.durationMinutes ?? DEFAULT_MINUTES,
@@ -123,19 +131,22 @@ export class MeetingClashService {
     return { owner, excludedId: null };
   }
 
-  /** The people to check: those sent (only this organisation's), else the meeting's invitees with a user, else the owner's members. */
+  /**
+   * The people to check. Only the owner's members and this meeting's invitees
+   * with a user may be checked (lane B's review): the answer says who is busy
+   * when, so a sent `userIds` is refused for anyone else
+   * (MEETING_CLASH_PERSON_NOT_INVITEE). With none sent, all of them.
+   */
   private async people(dto: CheckMeetingClashesDto, owner: MeetingOwner, excludedId: string | null, organizationId: string): Promise<string[]> {
-    if (dto.userIds) {
-      const users = await this.prisma.user.findMany({ where: { organizationId, id: { in: dto.userIds } }, select: { id: true } });
-      return users.map((u) => u.id);
-    }
-    if (excludedId) {
-      const rows = await this.prisma.meetingAttendee.findMany({ where: { organizationId, meetingId: excludedId, userId: { not: null } }, select: { userId: true } });
-      return rows.map((r) => r.userId!);
-    }
-    const expected = await expectedMembers(this.prisma, organizationId, [
-      { id: 'new', committeeId: owner.committeeId, orgUnitId: owner.committeeId ? null : owner.unitId },
+    const [expected, invitees] = await Promise.all([
+      expectedMembers(this.prisma, organizationId, [{ id: 'owner', committeeId: owner.committeeId, orgUnitId: owner.committeeId ? null : owner.unitId }]),
+      excludedId
+        ? this.prisma.meetingAttendee.findMany({ where: { organizationId, meetingId: excludedId, userId: { not: null } }, select: { userId: true } })
+        : Promise.resolve([] as { userId: string | null }[]),
     ]);
-    return [...expected.get('new')!.keys()];
+    const allowed = new Set([...expected.get('owner')!.keys(), ...invitees.map((r) => r.userId!)]);
+    if (!dto.userIds) return [...allowed];
+    if (dto.userIds.some((id) => !allowed.has(id))) throw new MeetingRefusal('MEETING_CLASH_PERSON_NOT_INVITEE');
+    return [...new Set(dto.userIds)];
   }
 }

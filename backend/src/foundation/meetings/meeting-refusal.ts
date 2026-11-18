@@ -38,7 +38,8 @@ export type MeetingRefusalCode =
   | 'MEETING_PRESENTER_NOT_FOUND'
   | 'MEETING_CLASH_OWNER_REQUIRED'
   | 'MEETING_CLASH_TOO_MANY_TIMES'
-  | 'MEETING_AGENDA_TITLE_REQUIRED';
+  | 'MEETING_AGENDA_TITLE_REQUIRED'
+  | 'MEETING_CLASH_PERSON_NOT_INVITEE';
 
 const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
@@ -65,6 +66,7 @@ const STATUS: Record<MeetingRefusalCode, HttpStatus> = {
   MEETING_CLASH_OWNER_REQUIRED: HttpStatus.BAD_REQUEST,
   MEETING_CLASH_TOO_MANY_TIMES: HttpStatus.BAD_REQUEST,
   MEETING_AGENDA_TITLE_REQUIRED: HttpStatus.BAD_REQUEST,
+  MEETING_CLASH_PERSON_NOT_INVITEE: HttpStatus.BAD_REQUEST,
 };
 
 const MESSAGES: Record<MeetingRefusalCode, string> = {
@@ -92,6 +94,7 @@ const MESSAGES: Record<MeetingRefusalCode, string> = {
   MEETING_CLASH_OWNER_REQUIRED: 'Name the committee, the unit or the meeting to check.',
   MEETING_CLASH_TOO_MANY_TIMES: 'Check at most 52 times at once.',
   MEETING_AGENDA_TITLE_REQUIRED: 'Give the agenda item a title.',
+  MEETING_CLASH_PERSON_NOT_INVITEE: "Check only the meeting's invitees, or the committee's or unit's members.",
 };
 
 export class MeetingRefusal extends HttpException {

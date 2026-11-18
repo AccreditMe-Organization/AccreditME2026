@@ -108,6 +108,7 @@ export interface IMeetingClash {
   people: {
     userId: string;
     name: string;
-    meetings: { id: string; title: string | null; startsAt: Date; durationMinutes: number }[];
+    /** id and title only when the asker may open that meeting; otherwise both null ("another meeting"). */
+    meetings: { id: string | null; title: string | null; startsAt: Date; durationMinutes: number }[];
   }[];
 }

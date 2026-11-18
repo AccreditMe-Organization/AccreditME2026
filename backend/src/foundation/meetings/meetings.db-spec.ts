@@ -979,6 +979,14 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect((await clashes.check({ meetingId: busy.id, times: [times[0]!] } as never, w.orgId, as(w, 'chair'), now))[0]!.people).toEqual([]);
 
       expect(await code(clashes.check({ committeeId: w.committeeId, times } as never, w.orgId, as(w, 'member'), now))).toBe('MEETING_NOT_ALLOWED');
+      // Only the owner's members and this meeting's invitees may be checked: never anyone else's diary.
+      expect(await code(clashes.check({ committeeId: w.committeeId, times, userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'chair'), now))).toBe(
+        'MEETING_CLASH_PERSON_NOT_INVITEE',
+      );
+      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['wardPerson']!] } as never, w.orgId, as(w, 'chair'), now))).toBe('OK');
+      expect(await code(clashes.check({ meetingId: busy.id, times, userIds: [w.people['outsider']!] } as never, w.orgId, as(w, 'chair'), now))).toBe(
+        'MEETING_CLASH_PERSON_NOT_INVITEE',
+      );
       expect(await code(clashes.check({ times } as never, w.orgId, as(w, 'chair'), now))).toBe('MEETING_CLASH_OWNER_REQUIRED');
       expect(await code(clashes.check({ committeeId: w.committeeId, times: Array(53).fill(times[0]) } as never, w.orgId, as(w, 'chair'), now))).toBe(
         'MEETING_CLASH_TOO_MANY_TIMES',
@@ -999,7 +1007,10 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
         now,
       );
       const head = asked[0]!.people.find((p) => p.userId === w.people['clinicalHead'])!;
-      expect(head.meetings.map((x) => [x.id, x.title])).toEqual([[ward.id, null]]);
+      // Neither its title nor its id: the asker learns only that the person is busy then.
+      expect(head.meetings.map((x) => [x.id, x.title])).toEqual([[null, null]]);
+      expect(head.meetings[0]!.startsAt).toEqual(start);
+      expect(ward.id).toBeTruthy();
     });
   });
 
