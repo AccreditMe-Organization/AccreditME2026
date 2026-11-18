@@ -728,16 +728,28 @@ describe('RoleService', () => {
         .mockResolvedValueOnce([]) // the role row lock
         .mockResolvedValueOnce([{ name: 'Huda', total: 1 }]); // USER_GRANTS
 
-      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toMatchObject({
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR, ['users:view'])).rejects.toMatchObject({
         response: { statusCode: 409, code: 'ROLE_IN_USE', blockers: [{ category: 'USER_GRANTS', count: 1, names: ['Huda'] }] },
       });
       expect(mockPrisma.role.update).not.toHaveBeenCalled();
     });
 
+    // ACC-154 — names follow the reader's own permissions; the count never does.
+    it('carries the count but no names for a caller without users:view', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.$queryRaw
+        .mockResolvedValueOnce([]) // the role row lock
+        .mockResolvedValueOnce([{ name: 'Huda', total: 1 }]); // USER_GRANTS
+
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR, ['roles:manage'])).rejects.toMatchObject({
+        response: { code: 'ROLE_IN_USE', blockers: [{ category: 'USER_GRANTS', count: 1, names: [] }] },
+      });
+    });
+
     itEnforcesTenantIsolation('ACC-154 — the deactivation check reads every category by the role id AND its organisation', async () => {
       mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
 
-      await expect(service.deactivationCheck('role-1', ORG_A)).resolves.toEqual({ canDeactivate: true, rootRole: false, blockers: [] });
+      await expect(service.deactivationCheck('role-1', ORG_A, [])).resolves.toEqual({ canDeactivate: true, rootRole: false, blockers: [] });
 
       expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'role-1', organizationId: ORG_A } }));
       const queries = mockPrisma.$queryRaw.mock.calls.map(([sql]) => sql as { values: unknown[] });
@@ -752,7 +764,7 @@ describe('RoleService', () => {
       mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
       mockPrisma.role.update.mockResolvedValue({ ...BASE_ROLE, isActive: false });
 
-      await service.deactivateRole('role-1', ORG_A, ACTOR);
+      await service.deactivateRole('role-1', ORG_A, ACTOR, []);
 
       expect(mockPrisma.role.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { isActive: false } }),
@@ -767,7 +779,7 @@ describe('RoleService', () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
       stageAdministrators({ actedOnRole: adminRole, activeHolders: 1 });
 
-      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toThrow(
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR, [])).rejects.toThrow(
         ConflictException,
       );
     });
@@ -781,7 +793,7 @@ describe('RoleService', () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
       stageAdministrators({ actedOnRole: adminRole, activeHolders: 5 });
 
-      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toMatchObject({
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR, [])).rejects.toMatchObject({
         response: { code: 'ROOT_ROLE_CANNOT_BE_DEACTIVATED', statusCode: 409 },
       });
       expect(mockPrisma.$transaction).not.toHaveBeenCalled();
@@ -795,7 +807,7 @@ describe('RoleService', () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
       stageAdministrators({ actedOnRole: adminRole, activeHolders: 0 });
 
-      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toMatchObject({
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR, [])).rejects.toMatchObject({
         response: { code: 'ROOT_ROLE_CANNOT_BE_DEACTIVATED' },
       });
       expect(mockPrisma.role.update).not.toHaveBeenCalled();
@@ -807,7 +819,7 @@ describe('RoleService', () => {
       const other = makeRole({ key: 'QUALITY_DIRECTOR', isSystem: false });
       stageAdministrators({ actedOnRole: other, rootRoleActive: false, activeHolders: 0 });
 
-      await service.deactivateRole('role-1', ORG_A, ACTOR);
+      await service.deactivateRole('role-1', ORG_A, ACTOR, []);
 
       expect(mockPrisma.role.update).toHaveBeenCalled();
     });
@@ -834,7 +846,7 @@ describe('RoleService', () => {
 
     it('throws NotFoundException when role does not exist for this tenant', async () => {
       mockPrisma.role.findFirst.mockResolvedValue(null);
-      await expect(service.deactivateRole('missing', ORG_A, ACTOR)).rejects.toThrow(
+      await expect(service.deactivateRole('missing', ORG_A, ACTOR, [])).rejects.toThrow(
         NotFoundException,
       );
     });
