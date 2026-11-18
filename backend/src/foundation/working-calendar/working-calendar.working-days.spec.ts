@@ -72,6 +72,16 @@ describe('WorkingCalendarService working days (ACC-316)', () => {
     await expect(service().nextWorkingDay('19/11/2026', ORG)).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it("reads a holiday as its calendar day in a zone behind UTC (ACC-318's rule, working-time.ts's isWorkingDay)", async () => {
+    // New York, Monday to Friday. 25 December 2026 is a Friday; stored as midnight
+    // UTC, it is the evening of the 24th in New York, and must still be the 25th.
+    const newYork = { ...CALENDAR, timezone: 'America/New_York', workingDays: [1, 2, 3, 4, 5] } as unknown as IWorkingCalendar;
+    const christmas = [holiday('2026-12-25')];
+    await expect(service(christmas, newYork).nextWorkingDay('2026-12-24', ORG)).resolves.toBe('2026-12-24');
+    await expect(service(christmas, newYork).nextWorkingDay('2026-12-25', ORG)).resolves.toBe('2026-12-28');
+    await expect(service(christmas, newYork).addWorkingDays('2026-12-23', 2, ORG)).resolves.toBe('2026-12-28');
+  });
+
   it('refuses, rather than loops, on a calendar with no working day', async () => {
     const none = { ...CALENDAR, workingDays: [] } as unknown as IWorkingCalendar;
     await expect(service([], none).nextWorkingDay('2026-11-19', ORG)).rejects.toBeInstanceOf(BadRequestException);
