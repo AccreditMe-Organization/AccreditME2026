@@ -75,6 +75,26 @@ export interface UserPermissionGrantDto extends UserRoleGrantDto {
   headUnit: { nameEn: string; nameAr: string | null } | null;
 }
 
+/**
+ * ACC-154 — what still holds or names a role, hand-maintained against the
+ * backend's RoleReferenceBlocker (role-references.ts). One entry per category
+ * that has any: the total, and up to ten names.
+ */
+export type RoleReferenceCategory = 'USER_GRANTS' | 'POSITION_GRANTS' | 'POSITIONS' | 'STAGE_ESCALATIONS';
+
+export interface RoleReferenceBlockerDto {
+  category: RoleReferenceCategory;
+  count: number;
+  names: string[];
+}
+
+/** GET /roles/:id/deactivation-check — the same check the deactivate refusal (409 ROLE_IN_USE) runs. */
+export interface RoleDeactivationCheckDto {
+  canDeactivate: boolean;
+  rootRole: boolean;
+  blockers: RoleReferenceBlockerDto[];
+}
+
 export interface CreateRoleDto {
   nameEn: string;
   nameAr: string;
@@ -138,6 +158,15 @@ export class RoleService {
    */
   assignPermissions(id: string, permissionKeys: string[], expectedPermissionKeys: string[]): Observable<RoleDto> {
     return this.http.patch<RoleDto>(`${this.base}/${id}/permissions`, { permissionKeys, expectedPermissionKeys });
+  }
+
+  /**
+   * ACC-154 — the pre-flight the Deactivate dialog reads before it offers the
+   * action; the server refuses deactivation with 409 ROLE_IN_USE on the same
+   * blockers. Gated by roles:manage, as deactivate is.
+   */
+  deactivationCheck(id: string): Observable<RoleDeactivationCheckDto> {
+    return this.http.get<RoleDeactivationCheckDto>(`${this.base}/${id}/deactivation-check`);
   }
 
   deactivateRole(id: string): Observable<void> {
