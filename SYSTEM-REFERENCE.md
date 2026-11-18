@@ -4831,13 +4831,15 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
   stage-deadline rule runs first, outside the lock) and
   `PATCH /tenant/task-sla/escalation` (manager and head hours; no stage check,
   they move no due date). Each answers the saved tiers and refuses a missing
-  priority or the other section's fields (400). The old whole-policy
-  `PATCH /tenant/task-sla` stays, through the same service
-  (`replaceAll()`), until the new screen ships.
+  priority or the other section's fields (400). **The old whole-policy
+  `PATCH /tenant/task-sla` was removed** (ACC-313 follow-up), with
+  `replaceAll()` and `UpdateTaskSlaDto`, once the screen saved only through
+  the section routes, `/notices` and `/reset`. `GET /tenant/task-sla` stays.
 - **Audit, after the commit:** `objectType 'TaskSlaPolicy'`, `objectId` the
   organisation, `before`/`after` the section's fields for all four
   priorities, `metadata.event` `task_sla_limits_updated` /
-  `task_sla_escalation_updated` / `task_sla_updated`. A save that changes
+  `task_sla_escalation_updated` / `task_sla_updated` (the removed whole-policy
+  save's event; History still names the rows it left). A save that changes
   nothing writes nothing and logs nothing.
 - **History:** `GET /tenant/task-sla/history?skip=&take=`
   (`tenant:manage_config`, `take` 1–50, default 20) answers
@@ -4848,8 +4850,8 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
   `where`.
   - **The unit stamp (CC-332):** every task SLA audit row written since
     PR 4 carries `metadata.escalationHoursUnit = 'WORKING'`
-    (`WORKING_HOURS_STAMP`): limits, escalation, the old whole-policy save,
-    the switch and Reset alike. Each history row returns it as
+    (`WORKING_HOURS_STAMP`): limits, escalation, the switch and Reset alike
+    (and the whole-policy save while it existed). Each history row returns it as
     `escalationHoursUnit: 'WORKING' | null`.
     - The screen reads it first.
     - A row without it was saved before PR 4, when escalation counted clock
@@ -4884,8 +4886,8 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
     refused from both sides, nothing written:
     - a warning at or past its saved limit: 400 `TASK_SLA_WARNING_NOT_BEFORE_DUE`;
     - a limit at or under its saved warning: 400
-      `TASK_SLA_LIMIT_NOT_AFTER_WARNING`. The old whole-policy PATCH is held to
-      it too.
+      `TASK_SLA_LIMIT_NOT_AFTER_WARNING`. (The old whole-policy PATCH was held
+      to it too, until it was removed.)
 
     Both carry `{ priority, warning, limitHours }`.
   - **`GET …/policy`** also answers `workingHoursPerDay`.
@@ -4937,8 +4939,9 @@ headEscalationAfterHours }`) per `TaskPriority`
 section's own computation above; the other two fields feed Section
 3.4.1's escalation-tier thresholds.
 
-Exposed via `GET`/`PATCH /tenant/task-sla` (and, since ACC-313, the
-section routes and the history above)
+Exposed via `GET /tenant/task-sla` and, since ACC-313, the section routes
+and the history above. The whole-policy `PATCH /tenant/task-sla` it was first
+exposed through was removed in ACC-313's follow-up
 (`tenant.controller.ts`, `TENANT_PERMISSIONS.MANAGE_CONFIG`),
 mirroring `email-provider`/`ai-settings`'s own established shape
 exactly — confirmed the same pattern, not a new one. Frontend:
