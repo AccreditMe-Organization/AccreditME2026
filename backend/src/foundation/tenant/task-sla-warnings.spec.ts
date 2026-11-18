@@ -73,7 +73,7 @@ describe('TaskSlaPolicyService — warnings before due (ACC-313 PR 4)', () => {
 
       const row = auditLog.log.mock.calls[0][0] as { before: Record<string, object>; after: Record<string, object>; metadata: unknown; objectType: string };
       expect(row.objectType).toBe(TASK_SLA_AUDIT_OBJECT_TYPE);
-      expect(row.metadata).toEqual({ event: 'task_sla_escalation_updated' });
+      expect(row.metadata).toEqual({ event: 'task_sla_escalation_updated', escalationHoursUnit: 'WORKING' });
       expect(row.before['HIGH']).toEqual({ managerEscalationAfterHours: 8, headEscalationAfterHours: 16, warnBeforeDue: 'OFF' });
       expect(row.after['HIGH']).toEqual({ managerEscalationAfterHours: 8, headEscalationAfterHours: 16, warnBeforeDue: 'H2' });
       expect(row.after['LOW']).toEqual({ managerEscalationAfterHours: 8, headEscalationAfterHours: 16 });

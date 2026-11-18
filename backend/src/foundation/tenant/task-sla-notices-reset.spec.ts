@@ -122,7 +122,7 @@ describe('TaskSlaPolicyService — the notices switch and Reset (ACC-313)', () =
         tenantId: 'org-a',
         before: { notifyOnDueChange: true },
         after: { notifyOnDueChange: false },
-        metadata: { event: 'task_sla_notices_updated' },
+        metadata: { event: 'task_sla_notices_updated', escalationHoursUnit: 'WORKING' },
       });
       const committed = prisma.$transaction.mock.invocationCallOrder[0]!;
       expect(auditLog.log.mock.invocationCallOrder[0]).toBeGreaterThan(committed);
@@ -192,7 +192,7 @@ describe('TaskSlaPolicyService — the notices switch and Reset (ACC-313)', () =
         tenantId: 'org-a',
         before: { tiers: CUSTOM_SLA, notices: NOTICES_OFF },
         after: { tiers: DEFAULT_TASK_SLA_SETTINGS, notices: DEFAULT_TASK_SLA_NOTICES },
-        metadata: { event: 'task_sla_reset' },
+        metadata: { event: 'task_sla_reset', escalationHoursUnit: 'WORKING' },
       });
     });
 
