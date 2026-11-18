@@ -7,7 +7,7 @@ import { provideRouter } from '@angular/router';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { AccreditMePreset } from '../../../../core/theme/accreditme-preset';
@@ -70,7 +70,7 @@ describe('A person\'s Tasks panel beside the record page\'s other capped panels 
   let fixture: ComponentFixture<HostComponent>;
   const measured: string[] = [];
 
-  async function render(language: 'en' | 'ar', width: number): Promise<HTMLElement> {
+  async function render(language: 'en' | 'ar', width: number, fail = false): Promise<HTMLElement> {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [HostComponent],
@@ -87,7 +87,10 @@ describe('A person\'s Tasks panel beside the record page\'s other capped panels 
         { provide: AmConfirmService, useValue: { ask: () => undefined } },
         {
           provide: TaskService,
-          useValue: { getPersonPanel: () => of({ total: 12, scope: 'all', rows: rows(5), canCreate: false }) },
+          useValue: {
+            getPersonPanel: () =>
+              fail ? throwError(() => ({ status: 500 })) : of({ total: 12, scope: 'all', rows: rows(5), canCreate: false }),
+          },
         },
         {
           provide: UserService,
@@ -140,5 +143,18 @@ describe('A person\'s Tasks panel beside the record page\'s other capped panels 
         measured.push(`${language} ${width}: tasks ${t}, ${others.map((o) => `${o.p} ${Math.round(o.b!.getBoundingClientRect().height)}`).join(', ')}`);
       });
     }
+  }
+  // CC-331 — the load error is the shared block (am-load-error) in every capped panel,
+  // and the body keeps its fixed height while it shows.
+  for (const language of ['en', 'ar'] as const) {
+    it(`${language} · 988px: in the error state the Tasks body stays the capped height, with the shared block`, async () => {
+      const el = await render(language, 988, true);
+      const body = el.querySelector<HTMLElement>('[data-testid="record-tasks-body"]')!;
+      const block = body.querySelector('am-load-error [data-panel-error]');
+      expect(block).withContext('non-vacuity: the shared error block is shown').not.toBeNull();
+      expect(block!.querySelector('p-button button')).withContext('its Retry').not.toBeNull();
+      const capped = language === 'ar' ? CAPPED_PANEL_BODY_PX.rtl : CAPPED_PANEL_BODY_PX.ltr;
+      expect(Math.round(body.getBoundingClientRect().height)).toBe(capped);
+    });
   }
 });
