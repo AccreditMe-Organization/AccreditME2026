@@ -239,7 +239,6 @@ export type RowAction =
               }
               @if (v('lastLogin')) {
                 <span
-                  dir="ltr"
                   style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
                   class="text-xs text-[var(--am-text-secondary)] text-start"
                 >

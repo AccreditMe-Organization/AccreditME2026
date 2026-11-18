@@ -38,7 +38,9 @@
     "yes": "Yes",
     "notActiveYet": "Not active yet",
     "actions": "Actions",
-    "stepOf": "Step {{step}} of {{steps}}"
+    "stepOf": "Step {{step}} of {{steps}}",
+    "on": "On",
+    "off": "Off"
   },
   "tasks": {
     "title": "Tasks",
@@ -2416,17 +2418,19 @@
         "min": "At least 1 working hour."
       },
       "escalation": {
-        "title": "Escalation per priority",
-        "help": "Who hears about an overdue task, and when. Time limits already differ by priority; escalation must too.",
+        "title": "Reminders and escalation per priority",
+        "help": "Who is reminded before a task is due, and who hears about it once it is overdue. Each priority has its own.",
         "chain": "An overdue task goes first to the assignee's manager, then to the unit head.",
         "limit": "Limit",
-        "manager": "Manager told after (hours overdue)",
-        "head": "Head told after (hours after the manager)",
-        "managerCell": "{{priority}} · Manager told after (hours overdue)",
-        "headCell": "{{priority}} · Head told after (hours after the manager)",
-        "save": "Save escalation",
-        "required": "Enter the hours.",
-        "min": "0 or more hours."
+        "manager": "Manager told after (working hours overdue)",
+        "head": "Head told after (working hours after the manager)",
+        "managerCell": "{{priority}} · Manager told after (working hours overdue)",
+        "headCell": "{{priority}} · Head told after (working hours after the manager)",
+        "save": "Save reminders and escalation",
+        "required": "Enter the working hours.",
+        "min": "0 or more working hours.",
+        "warn": "Warn before due",
+        "warnCell": "{{priority}} · Warn before due"
       },
       "history": {
         "kindAll": "Whole policy",
@@ -2434,18 +2438,59 @@
         "noFieldsChanged": "No value changed in this entry.",
         "fieldLabel": "{{priority}} · {{field}}",
         "was": "was",
-        "now": "now"
+        "now": "now",
+        "kindReset": "Reset to defaults",
+        "nameNotRecorded": "Name not recorded"
       },
       "fields": {
         "dueAfterHours": "Due after",
         "managerEscalationAfterHours": "Manager told after",
-        "headEscalationAfterHours": "Head told after"
+        "headEscalationAfterHours": "Head told after",
+        "warnBeforeDue": "Warn before due",
+        "notifyOnDueChange": "Due-date change notices"
       },
       "leave": {
         "header": "Leave without saving?",
         "message": "Unsaved changes in {{sections}} will be lost.",
         "accept": "Leave",
         "reject": "Stay"
+      },
+      "warn": {
+        "off": "Off",
+        "workingDay": "1 working day"
+      },
+      "warnNotShorter": "Not shorter than the limit of {{limit}}",
+      "warnRefusal": {
+        "lead": "{{priority}}: the warning, {{warning}}, must be shorter than the limit, {{limit}}.",
+        "limitWayOut": "Keep the limit longer than the warning, or first choose a shorter warning under Reminders and escalation.",
+        "warnWayOut": "Choose a shorter warning, or first raise the limit under Time limits.",
+        "invalid": "Choose a warning shorter than this priority's limit."
+      },
+      "notices": {
+        "title": "Notifications",
+        "help": "These take effect as soon as they are switched, with no Save.",
+        "dueChange": "Notify assignees when a due date changes",
+        "dueChangeHelp": "In the app, for every task. A change of priority is still announced.",
+        "failed": "This couldn't be changed. The setting is as it was."
+      },
+      "reset": {
+        "title": "Reset to defaults",
+        "help": "Returns every value on this page to the defaults a new organisation gets. Tasks created afterwards use them; open tasks keep the limits they were created with.",
+        "recorded": "Recorded in the change history with your name and the previous values.",
+        "open": "Reset to defaults…",
+        "confirmHeader": "Reset to defaults?",
+        "confirmBody": "New tasks use these values; open tasks keep the limits they were created with.",
+        "confirmAccept": "Reset to defaults",
+        "confirmDetails": {
+          "limits": "Time limits: back to the defaults",
+          "escalation": "Escalation hours: back to the defaults",
+          "reminders": "Reminders before due: all off",
+          "notices": "Due-date change notices: on"
+        },
+        "conflictLead": "Nothing was reset. The default limits would pass the deadline of:",
+        "conflictWayOut": "Raise those stage deadlines first, then reset again.",
+        "failed": "The policy couldn't be reset. Nothing changed.",
+        "done": "The policy is back to the defaults."
       }
     }
   },
@@ -3534,9 +3579,9 @@
       }
     },
     "taskSla": {
-      "hours": {
-        "one": "{{count}} hour",
-        "other": "{{count}} hours"
+      "clockHours": {
+        "one": "{{count}} clock hour",
+        "other": "{{count}} clock hours"
       },
       "problems": {
         "one": "{{count}} problem",

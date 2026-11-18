@@ -26,4 +26,39 @@ describe('diffTaskSlaChange (ACC-313)', () => {
     expect(diffTaskSlaChange(null, null)).toEqual([]);
     expect(diffTaskSlaChange({ LOW: { dueAfterHours: 'x' } }, {})).toEqual([]);
   });
+
+  // ACC-313 PR 4 — the escalation save carries each priority's warning.
+  it('reads a warning beside the escalation hours, and only one of its options', () => {
+    const before = { HIGH: { managerEscalationAfterHours: 8, warnBeforeDue: 'OFF' }, LOW: { warnBeforeDue: 'H3' } };
+    const after = { HIGH: { managerEscalationAfterHours: 8, warnBeforeDue: 'H2' }, LOW: { warnBeforeDue: 'H4' } };
+    expect(diffTaskSlaChange(before, after)).toEqual([
+      { priority: 'LOW', field: 'warnBeforeDue', from: null, to: 'H4' },
+      { priority: 'HIGH', field: 'warnBeforeDue', from: 'OFF', to: 'H2' },
+    ]);
+  });
+
+  // ACC-313 PR 3 — the due-date switch belongs to no priority.
+  it('reads the due-date switch', () => {
+    expect(diffTaskSlaChange({ notifyOnDueChange: true }, { notifyOnDueChange: false })).toEqual([
+      { priority: null, field: 'notifyOnDueChange', from: true, to: false },
+    ]);
+    expect(diffTaskSlaChange({ notifyOnDueChange: true }, { notifyOnDueChange: true })).toEqual([]);
+  });
+
+  // ACC-313 PR 3 — a reset holds the whole policy before, and the defaults after.
+  it('reads a reset’s tiers and notices: the hours, each warning and the switch', () => {
+    const before = {
+      tiers: { HIGH: { dueAfterHours: 24, managerEscalationAfterHours: 8, headEscalationAfterHours: 16 } },
+      notices: { warnBeforeDue: { HIGH: 'H2' }, notifyOnDueChange: false },
+    };
+    const after = {
+      tiers: { HIGH: { dueAfterHours: 16, managerEscalationAfterHours: 8, headEscalationAfterHours: 16 } },
+      notices: { warnBeforeDue: { HIGH: 'OFF' }, notifyOnDueChange: true },
+    };
+    expect(diffTaskSlaChange(before, after)).toEqual([
+      { priority: null, field: 'notifyOnDueChange', from: false, to: true },
+      { priority: 'HIGH', field: 'dueAfterHours', from: 24, to: 16 },
+      { priority: 'HIGH', field: 'warnBeforeDue', from: 'H2', to: 'OFF' },
+    ]);
+  });
 });
