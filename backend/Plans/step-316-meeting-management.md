@@ -679,7 +679,7 @@ A short index. Each line names its source.
 
 **The seed and the PR 2 backfill:**
 
-| Stage (key unchanged) | Name | Who works it | Record actions allowed | Flags |
+| Stage (seed key) | Name | Who works it | Record actions allowed | Flags |
 |---|---|---|---|---|
 | `planned` | Planned | Secretary | `edit_details`, `manage_agenda`, `manage_guests`, `reschedule` | — |
 | `agenda_ready` | **Agenda Issued** | Secretary | the four above, plus `record_attendance` (from the start time) | `AGENDA_ISSUED` |
@@ -733,8 +733,11 @@ A short index. Each line names its source.
 
   One query per kind for any number of records, as `StagePoolService` does
   today.
-- **The stage keys stay.** They are never shown, and keeping them avoids a key
-  backfill.
+- **MEETING becomes a keyed template (corrected in PR 2).** Its stages had no
+  keys (it was not in `KEYED_SEED_TEMPLATES`), and `APP_MOVES` finds an app
+  move by stage key. New organisations get the keys from the seed; the backfill
+  gives existing stages the seed's key, matched by the old name while they
+  have none. Keys are never shown.
 - **The backfill:**
   - renames names and moves only where they are still the seed's;
   - sets `who` only where it is still the seed's;
@@ -1406,8 +1409,8 @@ pass. That list is not questions.
 - **Three meeting-only assignee kinds, not a generic "key holders" kind** (§3.8).
 - **One authority file, `meeting-authority.ts`,** read by the screens' flags, the
   writes and the pools.
-- **The stage keys stay;** names, who and movers are backfilled only where
-  still the seed's.
+- **MEETING is keyed from PR 2;** keys, names, who and movers are backfilled
+  only where still the seed's.
 - **The owner check is in the service, not a CHECK constraint.**
 - **`ownEdits`** keeps a meeting's own edits through "this and all later".
 - **"From item n"** comes through `MeetingActionItem.taskId`; no `Task` column.
