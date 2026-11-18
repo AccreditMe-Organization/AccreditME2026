@@ -4,17 +4,25 @@ import { Prisma } from '../../../generated/prisma/client';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { stageDeadlineConflicts } from '../workflow/stage-deadline-rule';
 import { WorkflowRefusalException } from '../workflow/workflow-refusal';
-import { DEFAULT_TASK_SLA_SETTINGS, taskSlaFromSettings } from './task-sla-settings';
+import {
+  DEFAULT_TASK_SLA_NOTICES,
+  DEFAULT_TASK_SLA_SETTINGS,
+  taskSlaFromSettings,
+  taskSlaNoticesFromSettings,
+} from './task-sla-settings';
 import {
   TASK_SLA_HISTORY_DEFAULT_TAKE,
   TASK_SLA_HISTORY_MAX_TAKE,
   UpdateTaskSlaEscalationDto,
   UpdateTaskSlaLimitsDto,
+  UpdateTaskSlaNoticesDto,
 } from './dto/update-task-sla-sections.dto';
 import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
 import {
   ITaskSlaChange,
   ITaskSlaHistoryPage,
+  ITaskSlaNotices,
+  ITaskSlaPolicy,
   ITaskSlaSettings,
   ITaskSlaTier,
   TaskSlaChangeKind,
@@ -23,6 +31,7 @@ import {
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 type Priority = (typeof PRIORITIES)[number];
 type TierField = keyof ITaskSlaTier;
+type Tx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 
 const LIMIT_FIELDS: TierField[] = ['dueAfterHours'];
 const ESCALATION_FIELDS: TierField[] = ['managerEscalationAfterHours', 'headEscalationAfterHours'];
@@ -36,6 +45,8 @@ const EVENT_KIND: Record<string, TaskSlaChangeKind> = {
   task_sla_limits_updated: 'limits',
   task_sla_escalation_updated: 'escalation',
   task_sla_updated: 'all',
+  task_sla_notices_updated: 'notices',
+  task_sla_reset: 'reset',
 };
 
 /** A section's values for one priority: only the fields that section saves. */
@@ -49,6 +60,18 @@ function pick(tiers: ITaskSlaSettings, fields: TierField[]): SectionValues {
     for (const f of fields) out[p][f] = tiers[p][f];
   }
   return out;
+}
+
+/** The stored tiers, each priority completed from the defaults. */
+function storedTiers(settings: Prisma.JsonValue): ITaskSlaSettings {
+  const stored = taskSlaFromSettings(settings);
+  const out = {} as ITaskSlaSettings;
+  for (const p of PRIORITIES) out[p] = { ...DEFAULT_TASK_SLA_SETTINGS[p], ...stored[p] };
+  return out;
+}
+
+function sameNotices(a: ITaskSlaNotices, b: ITaskSlaNotices): boolean {
+  return a.notifyOnDueChange === b.notifyOnDueChange && PRIORITIES.every((p) => a.warnBeforeDue[p] === b.warnBeforeDue[p]);
 }
 
 function sameSection(a: SectionValues, b: SectionValues, fields: TierField[]): boolean {
@@ -94,6 +117,109 @@ export class TaskSlaPolicyService {
   /** The old whole-policy PATCH, kept until the new screen ships, under the same lock. */
   replaceAll(organizationId: string, dto: UpdateTaskSlaDto, actorId: string): Promise<ITaskSlaSettings> {
     return this.save(organizationId, actorId, 'task_sla_updated', ALL_FIELDS, dto, (p) => dto[p].dueAfterHours);
+  }
+
+  /** The whole policy the page reads: the tiers and the notices. */
+  async policy(organizationId: string): Promise<ITaskSlaPolicy> {
+    const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } });
+    if (!org) throw new NotFoundException('Tenant not found');
+    return { tiers: storedTiers(org.settings), notices: taskSlaNoticesFromSettings(org.settings) };
+  }
+
+  /**
+   * The due-date switch. Only `settings.taskSlaNotices` is written, under the
+   * same row lock, and the audit row holds the switch alone, before and after.
+   * The stored reminders are kept as they are.
+   */
+  async saveNotices(organizationId: string, dto: UpdateTaskSlaNoticesDto, actorId: string): Promise<ITaskSlaNotices> {
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const current = taskSlaNoticesFromSettings(await this.lockSettings(tx, organizationId));
+      if (current.notifyOnDueChange === dto.notifyOnDueChange) return { before: current, notices: current, changed: false };
+      const next: ITaskSlaNotices = { ...current, notifyOnDueChange: dto.notifyOnDueChange };
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET settings = jsonb_set(
+              CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END,
+              '{taskSlaNotices}',
+              ${JSON.stringify(next)}::jsonb
+            ),
+            "updatedAt" = NOW()
+        WHERE id = ${organizationId}`;
+      return { before: current, notices: next, changed: true };
+    });
+
+    if (outcome.changed) {
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: TASK_SLA_AUDIT_OBJECT_TYPE,
+        objectId: organizationId,
+        actorId,
+        tenantId: organizationId,
+        before: { notifyOnDueChange: outcome.before.notifyOnDueChange },
+        after: { notifyOnDueChange: outcome.notices.notifyOnDueChange },
+        metadata: { event: 'task_sla_notices_updated' },
+      });
+    }
+    return outcome.notices;
+  }
+
+  /**
+   * Reset: every value goes back to what a new organisation gets, the tiers
+   * and the notices together, in one locked transaction. It applies to tasks
+   * created afterwards only: no open task is read or written, because each
+   * keeps the limit it was created with (ACC-174).
+   *
+   * Refused, with nothing written, when the default limits would make a stage
+   * end before a task defined on it is due: the same check, and the same
+   * refusal, as saving the limits (Q8).
+   */
+  async reset(organizationId: string, actorId: string): Promise<ITaskSlaPolicy> {
+    const conflicts = await stageDeadlineConflicts(
+      this.prisma,
+      organizationId,
+      (p) => DEFAULT_TASK_SLA_SETTINGS[p].dueAfterHours,
+    );
+    if (conflicts.length > 0) {
+      throw new WorkflowRefusalException('TASK_SLA_EXCEEDS_STAGE_DEADLINES', { stages: conflicts });
+    }
+
+    const defaults: ITaskSlaPolicy = { tiers: DEFAULT_TASK_SLA_SETTINGS, notices: DEFAULT_TASK_SLA_NOTICES };
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const settings = await this.lockSettings(tx, organizationId);
+      const before: ITaskSlaPolicy = { tiers: storedTiers(settings), notices: taskSlaNoticesFromSettings(settings) };
+      const unchanged =
+        sameSection(pick(before.tiers, ALL_FIELDS), pick(defaults.tiers, ALL_FIELDS), ALL_FIELDS) &&
+        sameNotices(before.notices, defaults.notices);
+      if (unchanged) return { before, changed: false };
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET settings = jsonb_set(
+              jsonb_set(
+                CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END,
+                '{taskSla}',
+                ${JSON.stringify(defaults.tiers)}::jsonb
+              ),
+              '{taskSlaNotices}',
+              ${JSON.stringify(defaults.notices)}::jsonb
+            ),
+            "updatedAt" = NOW()
+        WHERE id = ${organizationId}`;
+      return { before, changed: true };
+    });
+
+    if (outcome.changed) {
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: TASK_SLA_AUDIT_OBJECT_TYPE,
+        objectId: organizationId,
+        actorId,
+        tenantId: organizationId,
+        before: outcome.before as unknown as Record<string, unknown>,
+        after: defaults as unknown as Record<string, unknown>,
+        metadata: { event: 'task_sla_reset' },
+      });
+    }
+    return defaults;
   }
 
   /**
@@ -171,16 +297,9 @@ export class TaskSlaPolicyService {
     }
 
     const outcome = await this.prisma.$transaction(async (tx) => {
-      const found = await tx.$queryRaw<{ settings: Prisma.JsonValue }[]>`
-        SELECT settings FROM "Organization" WHERE id = ${organizationId} FOR UPDATE`;
-      const row = found[0];
-      if (!row) throw new NotFoundException('Tenant not found');
-
-      const stored = taskSlaFromSettings(row.settings);
-      const current = {} as ITaskSlaSettings;
+      const current = storedTiers(await this.lockSettings(tx, organizationId));
       const next = {} as ITaskSlaSettings;
       for (const p of PRIORITIES) {
-        current[p] = { ...DEFAULT_TASK_SLA_SETTINGS[p], ...stored[p] };
         next[p] = { ...current[p] };
         for (const f of fields) next[p][f] = values[p][f] as number;
       }
@@ -216,5 +335,14 @@ export class TaskSlaPolicyService {
       });
     }
     return outcome.tiers;
+  }
+
+  /** The Organization row's settings, read FOR UPDATE: every write here starts with it. */
+  private async lockSettings(tx: Tx, organizationId: string): Promise<Prisma.JsonValue> {
+    const found = await tx.$queryRaw<{ settings: Prisma.JsonValue }[]>`
+      SELECT settings FROM "Organization" WHERE id = ${organizationId} FOR UPDATE`;
+    const row = found[0];
+    if (!row) throw new NotFoundException('Tenant not found');
+    return row.settings;
   }
 }

@@ -25,6 +25,7 @@ import {
   TaskSlaHistoryQueryDto,
   UpdateTaskSlaEscalationDto,
   UpdateTaskSlaLimitsDto,
+  UpdateTaskSlaNoticesDto,
 } from './dto/update-task-sla-sections.dto';
 import { TaskSlaPolicyService } from './task-sla-policy.service';
 import {
@@ -34,6 +35,8 @@ import {
   IEmailConfig,
   ITaskSlaSettings,
   ITaskSlaHistoryPage,
+  ITaskSlaNotices,
+  ITaskSlaPolicy,
 } from './interfaces/tenant.interface';
 
 @Controller('tenant')
@@ -176,6 +179,32 @@ export class TenantController {
     @CurrentTenant() tenantId: string,
   ): Promise<ITaskSlaHistoryPage> {
     return this.taskSlaPolicy.history(tenantId, query.skip, query.take);
+  }
+
+  // ACC-313 — the whole policy the page reads: the tiers and the notices.
+  @Get('task-sla/policy')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  getTaskSlaPolicy(@CurrentTenant() tenantId: string): Promise<ITaskSlaPolicy> {
+    return this.taskSlaPolicy.policy(tenantId);
+  }
+
+  // ACC-313 — whether an edit that moves a due date tells the assignees.
+  @Patch('task-sla/notices')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  updateTaskSlaNotices(
+    @Body() dto: UpdateTaskSlaNoticesDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskSlaNotices> {
+    return this.taskSlaPolicy.saveNotices(tenantId, dto, userId);
+  }
+
+  // ACC-313 — every value back to the defaults, for tasks created afterwards.
+  @Post('task-sla/reset')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  resetTaskSla(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<ITaskSlaPolicy> {
+    return this.taskSlaPolicy.reset(tenantId, userId);
   }
 
   @Post('bootstrap')

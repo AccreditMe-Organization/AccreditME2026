@@ -4770,8 +4770,32 @@ back with no lock, so a stale copy could overwrite a concurrent writer's key
   carry no values (`kind: 'legacy'`, `before`/`after` null). Both are scoped
   by `organizationId` and name the organisation as the object, in one
   `where`.
+- **Notices (ACC-313 PR 3), a sibling key `settings.taskSlaNotices`**:
+  `{ warnBeforeDue: { LOW..CRITICAL: 'OFF'|'H1'|'H2'|'H4'|'H8'|'WORKING_DAY' },
+  notifyOnDueChange }`, read only through `taskSlaNoticesFromSettings()`
+  (`task-sla-settings.ts`). A missing key, or a value the API never writes,
+  reads as the default (every reminder Off, the switch on), so no backfill;
+  `bootstrap()` writes both keys. `warnBeforeDue` is stored and read by
+  nothing yet (the reminder sweep, PR 4).
+- **`GET /tenant/task-sla/policy`** answers `{ tiers, notices }`.
+  **`PATCH /tenant/task-sla/notices`** `{ notifyOnDueChange }` writes only
+  `settings.taskSlaNotices`, under the same lock, keeping the stored
+  reminders; audit event `task_sla_notices_updated`, before/after the switch
+  alone. **`POST /tenant/task-sla/reset`** (no body, 200) writes the default
+  tiers AND notices in one locked `jsonb_set`, for tasks created afterwards
+  only (no open task is read or written, ACC-174); audit event
+  `task_sla_reset`, before the whole policy, after the defaults. It is refused
+  with `TASK_SLA_EXCEEDS_STAGE_DEADLINES`, nothing written, when the default
+  limits break a stage deadline. Both write nothing when nothing changes. The
+  history names them `kind: 'notices'` and `'reset'`.
+- **The switch governs one notice:** `TaskService.notifyAssigneesOfEdit()`'s
+  due-date clause. With it off, a due-date edit is not announced, and a
+  priority change is announced without the date. The setting is read only on
+  an edit that moved the date. Reopen, the extension and hold decisions and
+  resume still name the date.
 - Proved against a real Postgres by `task-sla-policy.db-spec.ts` (ten rounds
-  of concurrent section saves, the other keys surviving). Plan:
+  of concurrent section saves, the other keys surviving; the switch beside a
+  limits save; Reset leaving an open task unchanged). Plan:
   `backend/Plans/step-313-task-sla-settings.md`.
 
 Shape — `ITaskSlaSettings` (`tenant/interfaces/tenant.interface.ts`):

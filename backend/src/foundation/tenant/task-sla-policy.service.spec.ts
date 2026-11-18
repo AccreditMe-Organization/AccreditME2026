@@ -335,6 +335,31 @@ describe('TaskSlaPolicyService (ACC-313)', () => {
       expect(page.rows[3]).toEqual(expect.objectContaining({ kind: 'legacy', before: null, after: null }));
     });
 
+    it('names the due-date switch and Reset, with their values', async () => {
+      const policyBefore = { tiers: CUSTOM_SLA, notices: { notifyOnDueChange: false } };
+      prisma.auditLog.findMany.mockResolvedValue([
+        row({ id: 'a-5', metadata: { event: 'task_sla_reset' }, before: policyBefore, after: { tiers: DEFAULT_TASK_SLA_SETTINGS } }),
+        row({
+          id: 'a-4',
+          metadata: { event: 'task_sla_notices_updated' },
+          before: { notifyOnDueChange: true },
+          after: { notifyOnDueChange: false },
+        }),
+      ]);
+      prisma.auditLog.count.mockResolvedValue(2);
+
+      const page = await service.history('org-a');
+
+      expect(page.rows.map((r) => [r.id, r.kind])).toEqual([
+        ['a-5', 'reset'],
+        ['a-4', 'notices'],
+      ]);
+      expect(page.rows[0]?.before).toEqual(policyBefore);
+      expect(page.rows[1]).toEqual(
+        expect.objectContaining({ before: { notifyOnDueChange: true }, after: { notifyOnDueChange: false } }),
+      );
+    });
+
     it('is newest first, 20 a page by default, never more than 50, and counts the same rows', async () => {
       await service.history('org-a');
       await service.history('org-a', 40, 500);
