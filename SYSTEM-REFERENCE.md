@@ -16731,7 +16731,10 @@ real meeting, a missing one and another organisation's.
   before and after. If nothing changed, nothing is written.
 - **Reschedule** writes a `MeetingReschedule` (`fromAt`, `toAt`, the reason,
   `THIS_ONLY`), the new time and one audit row. After the commit, every
-  attendee already invited is told — never the actor.
+  attendee already invited is told the new time — never the actor.
+- **A notice that names a time** says it absolute, in the organisation's zone
+  (the working calendar's), with Latin digits, in both languages, through
+  `peopleDateIn()` (the task reminders' helper; there is no second formatter).
 - **Refusals** (`meeting-refusal.ts`), each carrying a `code`:
 
   | Code | Status | When |
@@ -16769,13 +16772,17 @@ none.
   effect runs when a move ENTERS its flag from a stage without it, in three
   parts:
   - `prepare`, before the transaction;
-  - `apply`, inside the move's transaction, after the `inTx` write;
+  - `apply`, inside the move's transaction, after the `inTx` write. What it
+    returns replaces the prepared value for `finish`;
   - `finish`, after the commit. A failure there is logged and never undoes the
     move.
 
   MEETING has two:
-  - `AGENDA_ISSUED`: every user attendee not yet invited is stamped
-    `invitedAt` and told ("Meeting invitation").
+  - `AGENDA_ISSUED`: every user attendee with no `invitedAt` AS THE ROWS STAND
+    INSIDE THE MOVE'S TRANSACTION is stamped and told ("Meeting invitation",
+    naming the meeting's date and time). `apply` reads and stamps them under the
+    lock and hands them to `finish`; rows `prepare` could read before the lock
+    would miss someone added in between.
   - `MEETING_CANCELLED`: every invited user is told, with the move's comment as
     the reason ("Meeting cancelled").
 

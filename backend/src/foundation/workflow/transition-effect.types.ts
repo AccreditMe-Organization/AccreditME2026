@@ -1,6 +1,7 @@
 import type { WorkflowObjectType, WorkflowTransitionKind } from '../../../generated/prisma/client';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { NotificationService } from '../notification/notification.service';
+import type { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import type { EngineTx } from './workflow.service';
 
 /**
@@ -24,6 +25,8 @@ export interface TransitionEffectContext {
 export interface TransitionEffectDeps {
   prisma: PrismaService;
   notifications: NotificationService;
+  /** The organisation's time zone, for a notice that names a date and time. */
+  calendar: Pick<WorkingCalendarService, 'getEffectiveTimeZone'>;
 }
 
 export interface TransitionEffect<P> {

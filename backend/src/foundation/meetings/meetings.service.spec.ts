@@ -6,6 +6,7 @@ import type { ObjectVisibilityService } from '../../common/services/object-visib
 import type { WorkflowService } from '../workflow/workflow.service';
 import type { StageRulesService } from '../workflow/stage-rules.service';
 import type { NotificationService } from '../notification/notification.service';
+import type { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 
 // The oversight read is meeting-membership's own (proved in meetings.db-spec.ts):
 // here, nobody heads anything.
@@ -46,6 +47,7 @@ describe('MeetingsService — tenant scoping (ACC-316 PR 3a)', () => {
       {} as WorkflowService,
       {} as StageRulesService,
       {} as NotificationService,
+      {} as WorkingCalendarService,
     );
     return { service, meeting, visibility, queryRaw };
   }

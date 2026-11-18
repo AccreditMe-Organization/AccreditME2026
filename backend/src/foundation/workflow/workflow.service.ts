@@ -1281,7 +1281,7 @@ export class WorkflowService {
     // ACC-316 PR 3a — the entry effects' notices, after the commit. The move has
     // committed: a notice that fails is logged, and never undoes or refuses it.
     try {
-      await finishTransitionEffects({ prisma: this.prisma, notifications: this.notificationService }, p.effects);
+      await finishTransitionEffects({ prisma: this.prisma, notifications: this.notificationService, calendar: this.workingCalendar }, p.effects);
     } catch (error) {
       this.logger.error(
         `Transition effects' notices failed for ${instance.objectType} ${instance.objectId} in org ${organizationId}: ${

@@ -1,12 +1,15 @@
 import type { EngineTx } from '../workflow/workflow.service';
+import { peopleDateIn } from '../task/task-sla.service';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import type { AnyTransitionEffect, TransitionEffectContext, TransitionEffectDeps } from '../workflow/transition-effect.types';
 import { transitionEffect } from '../workflow/transition-effect.types';
 
 /**
  * ACC-316 PR 3a — what entering a meeting's stages does (TRANSITION_EFFECTS,
- * plan step-316 §3.8.1 and §3.9). Notices are written in English and Arabic,
- * carry no count (ACC-95's helper does not exist), and link the meeting.
+ * plan step-316 §3.8.1 and §3.9). Notices are written in English and Arabic
+ * and link the meeting. The invitation names the meeting's date and time,
+ * absolute, in the organisation's zone (the working calendar's), with Latin
+ * digits: peopleDateIn(), the helper the task reminders use.
  *
  * Invitees arrive in PR 3b; until then a meeting has none, so these send
  * nothing on a real record. The outside guests' emails are PR 3b's too.
@@ -19,13 +22,17 @@ import { transitionEffect } from '../workflow/transition-effect.types';
  */
 interface Invited {
   title: string;
+  startsAt: Date | null;
   /** The users to tell. */
   userIds: string[];
 }
 
-async function meetingTitle(tx: EngineTx, ctx: TransitionEffectContext): Promise<string> {
-  const meeting = await tx.meeting.findFirst({ where: { id: ctx.objectId, organizationId: ctx.organizationId }, select: { title: true } });
-  return meeting?.title ?? '';
+async function meetingOf(tx: EngineTx, ctx: TransitionEffectContext): Promise<{ title: string; startsAt: Date | null }> {
+  const meeting = await tx.meeting.findFirst({
+    where: { id: ctx.objectId, organizationId: ctx.organizationId },
+    select: { title: true, scheduledAt: true },
+  });
+  return { title: meeting?.title ?? '', startsAt: meeting?.scheduledAt ?? null };
 }
 
 async function notifyAll(
@@ -57,23 +64,24 @@ const agendaIssued = transitionEffect<Invited | null>({
     return null;
   },
   async apply(tx, ctx) {
-    const [title, stamped] = await Promise.all([
-      meetingTitle(tx, ctx),
+    const [meeting, stamped] = await Promise.all([
+      meetingOf(tx, ctx),
       tx.meetingAttendee.updateManyAndReturn({
         where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, userId: { not: null }, invitedAt: null },
         data: { invitedAt: new Date() },
         select: { userId: true },
       }),
     ]);
-    return { title, userIds: stamped.map((r) => r.userId!) };
+    return { ...meeting, userIds: stamped.map((r) => r.userId!) };
   },
   async finish(deps, ctx, prepared) {
-    if (!prepared) return;
+    if (!prepared || prepared.userIds.length === 0) return;
+    const when = prepared.startsAt ? peopleDateIn(prepared.startsAt, await deps.calendar.getEffectiveTimeZone(ctx.organizationId)) : null;
     await notifyAll(deps, ctx, prepared.userIds, {
       titleEn: 'Meeting invitation',
       titleAr: 'دعوة إلى اجتماع',
-      bodyEn: `You're invited to ${prepared.title}. The agenda is issued.`,
-      bodyAr: `دعوة إلى ${prepared.title}. صدرت الأجندة.`,
+      bodyEn: `You're invited to ${prepared.title}${when ? ` on ${when.en}` : ''}. The agenda is issued.`,
+      bodyAr: `دعوة إلى ${prepared.title}${when ? ` في ${when.ar}` : ''}. صدرت الأجندة.`,
     });
   },
 });
@@ -86,14 +94,14 @@ const cancelled = transitionEffect<Invited | null>({
     return null;
   },
   async apply(tx, ctx) {
-    const [title, rows] = await Promise.all([
-      meetingTitle(tx, ctx),
+    const [meeting, rows] = await Promise.all([
+      meetingOf(tx, ctx),
       tx.meetingAttendee.findMany({
         where: { organizationId: ctx.organizationId, meetingId: ctx.objectId, userId: { not: null }, invitedAt: { not: null } },
         select: { userId: true },
       }),
     ]);
-    return { title, userIds: rows.map((r) => r.userId!) };
+    return { ...meeting, userIds: rows.map((r) => r.userId!) };
   },
   async finish(deps, ctx, prepared) {
     if (!prepared) return;

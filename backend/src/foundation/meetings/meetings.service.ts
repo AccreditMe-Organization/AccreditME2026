@@ -10,6 +10,8 @@ import {
   meetingOverseenSql,
 } from '../../common/services/meeting-membership';
 import { NotificationService } from '../notification/notification.service';
+import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
+import { peopleDateIn } from '../task/task-sla.service';
 import { WorkflowService, type EngineTx } from '../workflow/workflow.service';
 import { StageRulesService } from '../workflow/stage-rules.service';
 import { COMMITTEE_ACTIONS, MEETING_ACTIONS } from '../workflow/record-registry';
@@ -57,6 +59,7 @@ export class MeetingsService {
     private readonly workflow: WorkflowService,
     private readonly stageRules: StageRulesService,
     private readonly notifications: NotificationService,
+    private readonly calendar: WorkingCalendarService,
   ) {}
 
   // ── Schedule ────────────────────────────────────────────────────────────────
@@ -420,11 +423,13 @@ export class MeetingsService {
       return current.title;
     });
 
+    // The new time, absolute, in the organisation's zone, with Latin digits.
+    const when = peopleDateIn(toAt, await this.calendar.getEffectiveTimeZone(organizationId));
     await this.tellInvited(id, organizationId, viewer.id, {
       titleEn: 'Meeting rescheduled',
       titleAr: 'إعادة جدولة اجتماع',
-      bodyEn: `${title} has a new date and time. Reason: ${reason}`,
-      bodyAr: `تغيّر موعد ${title}. السبب: ${reason}`,
+      bodyEn: `${title} moves to ${when.en}. Reason: ${reason}`,
+      bodyAr: `تغيّر موعد ${title} إلى ${when.ar}. السبب: ${reason}`,
     });
     return this.getForViewer(id, organizationId, viewer, now);
   }

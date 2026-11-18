@@ -52,6 +52,7 @@ import { SYSTEM_WORKFLOW_SEED } from '../workflow/workflow.seed';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import { applyTransitionEffects, finishTransitionEffects, prepareTransitionEffects } from '../workflow/transition-effects';
 import { copyDefaultSeatActions } from '../committees/seat-actions';
+import { peopleDateIn } from '../task/task-sla.service';
 import { MeetingsService, type MeetingViewer } from './meetings.service';
 
 const url = process.env['DATABASE_URL'];
@@ -74,10 +75,10 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   const visibility = new ObjectVisibilityService(prisma);
   const calendar = new WorkingCalendarService(prisma, audit);
   const lookupService = new LookupService(prisma, audit);
-  const notices: { userId: string; titleEn: string; bodyEn: string; organizationId: string }[] = [];
+  const notices: { userId: string; titleEn: string; bodyEn: string; bodyAr: string; organizationId: string }[] = [];
   const notifications = {
-    create: async (dto: { userId: string; titleEn: string; bodyEn: string }, organizationId: string) => {
-      notices.push({ userId: dto.userId, titleEn: dto.titleEn, bodyEn: dto.bodyEn, organizationId });
+    create: async (dto: { userId: string; titleEn: string; bodyEn: string; bodyAr: string }, organizationId: string) => {
+      notices.push({ userId: dto.userId, titleEn: dto.titleEn, bodyEn: dto.bodyEn, bodyAr: dto.bodyAr, organizationId });
       return { id: randomUUID() };
     },
     createInAppMany: async () => 0,
@@ -92,7 +93,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
   const queue = { add: async () => undefined } as never;
   const stageRules = new StageRulesService(prisma);
   const workflow = new WorkflowService(prisma, audit, labels, visibility, calendar, notifications, tasks, queue, stageTasks, new StagePoolService(prisma));
-  const meetings = new MeetingsService(prisma, visibility, workflow, stageRules, notifications);
+  const meetings = new MeetingsService(prisma, visibility, workflow, stageRules, notifications, calendar);
 
   let seat: Record<string, string> = {};
   let meetingType = '';
@@ -231,6 +232,9 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
     meetingType = (await prisma.lookupValue.findFirstOrThrow({ where: { organizationId: null, category: { key: 'meeting_type', organizationId: null } } })).id;
     a = await world();
     b = await world();
+    // Organisation A works in London, so a notice's time must be London's, not the default Riyadh.
+    await calendar.getOrCreate(a.orgId);
+    await prisma.workingCalendar.update({ where: { organizationId: a.orgId }, data: { timezone: 'Europe/London' } });
   });
 
   afterAll(async () => {
@@ -432,6 +436,11 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       // The invited member only: not the actor, not the secretary who was never invited.
       expect(notices.map((n) => [n.userId, n.titleEn])).toEqual([[a.people['member'], 'Meeting rescheduled']]);
       expect(notices[0]!.bodyEn).toContain('Reason: Chair travelling');
+      // The new time, in the organisation's zone, in both languages, with Latin digits.
+      const when = peopleDateIn(toAt, 'Europe/London');
+      expect(notices[0]!.bodyEn).toContain(when.en);
+      expect(notices[0]!.bodyAr).toContain(when.ar);
+      expect(notices[0]!.bodyAr).not.toMatch(/[٠-٩]/);
 
       expect(await code(meetings.reschedule(m.id, { scheduledAt: toAt.toISOString(), reason: 'Again' } as never, a.orgId, as(a, 'chair'), now))).toBe(
         'MEETING_RESCHEDULE_SAME_TIME',
@@ -470,6 +479,10 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       expect(at[a.people['chair']!]).not.toBeNull();
       expect(at[a.people['secretary']!]).toEqual(earlier);
       expect(notices.filter((n) => n.titleEn === 'Meeting invitation').map((n) => n.userId)).toEqual([a.people['member']]);
+      const invitation = notices.find((n) => n.titleEn === 'Meeting invitation')!;
+      const starts = peopleDateIn(m.scheduledAt, 'Europe/London');
+      expect(invitation.bodyEn).toContain(starts.en);
+      expect(invitation.bodyAr).toContain(starts.ar);
 
       notices.length = 0;
       const cancel = (await move(m.id, 'cancelled')).id;
@@ -542,7 +555,7 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       // Added after the reads, before the move's transaction.
       await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: m.id, kind: 'MEMBER', userId: a.people['secretary']! } });
       await prisma.$transaction((tx) => applyTransitionEffects(tx as never, prepared));
-      await finishTransitionEffects({ prisma, notifications }, prepared);
+      await finishTransitionEffects({ prisma, notifications, calendar }, prepared);
 
       const rows = await prisma.meetingAttendee.findMany({ where: { meetingId: m.id }, select: { userId: true, invitedAt: true } });
       expect(rows.every((r) => r.invitedAt !== null)).toBe(true);
