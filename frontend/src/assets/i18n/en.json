@@ -543,7 +543,6 @@
     "addRole": "New Role",
     "assignRole": "Assign Role",
     "assignedUsers": "Assigned Users",
-    "confirmDeactivateRole": "{{holders}} The role stays assigned, so reactivating it gives those permissions back.",
     "confirmRemoveAssignment": "Remove this role assignment?",
     "customBadge": "Custom",
     "deactivateRole": "Deactivate Role",
@@ -747,7 +746,6 @@
     },
     "deactivateHeader": "Deactivate the role “{{name}}”?",
     "confirmDeactivateRoleNoHolders": "Nobody holds it now, so nobody loses anything. You can reactivate it later.",
-    "confirmDeactivateRoleUnknown": "Everyone who holds it loses its permissions now. The role stays assigned, so reactivating it gives them back.",
     "userPermissions": {
       "title": "A user's permissions",
       "lookUp": "Look up a user's permissions",
@@ -2989,10 +2987,6 @@
           "one": "Named in the escalation of {{count}} workflow stage",
           "other": "Named in the escalation of {{count}} workflow stages"
         }
-      },
-      "deactivateHolders": {
-        "one": "{{count}} person holds it and loses its permissions now.",
-        "other": "{{count}} people hold it and lose its permissions now."
       },
       "filterActs": {
         "one": "Acts only on the {{count}} row shown by the current filter.",

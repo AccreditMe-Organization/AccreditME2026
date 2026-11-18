@@ -50,6 +50,7 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
   async function setup(): Promise<void> {
     service = jasmine.createSpyObj<RoleService>('RoleService', [
       'listRoles',
+      'deactivationCheck',
       'deactivateRole',
       'activateRole',
       'createRole',
@@ -57,6 +58,8 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
     ]);
     service.listRoles.and.returnValue(of({ data: ROLES, total: ROLES.length, page: 1, pageSize: 25 }));
     service.activateRole.and.returnValue(of(void 0));
+    // ACC-154 — nothing holds or names the role unless a test says so.
+    service.deactivationCheck.and.returnValue(of({ canDeactivate: true, rootRole: false, blockers: [] }));
     TestBed.configureTestingModule({
       imports: [RoleListComponent],
       providers: [
@@ -151,6 +154,7 @@ describe('RoleListComponent — the row ⋯ menu and the Roles dialog (ACC-235)'
     service.deactivateRole.and.returnValue(of(void 0));
     await open(0);
     item('deactivate')!.click();
+    expect(service.deactivationCheck).toHaveBeenCalledWith('a');
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(service.deactivateRole).not.toHaveBeenCalled();
     confirm.calls.mostRecent().args[0].accept!();
