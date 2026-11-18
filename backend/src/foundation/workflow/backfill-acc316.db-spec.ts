@@ -97,8 +97,10 @@ describe('ACC-316 backfills against a real database', () => {
         'TENANT_ADMIN meetings:schedule_subunits',
         'TENANT_ADMIN meetings:view_all_tasks',
         'TENANT_ADMIN meetings:view_unit_tasks',
-        // Quality Manager still holds meetings:view, so the view task key follows it.
+        // Quality Manager still holds meetings:view, so the view task keys follow it
+        // (both since ACC-77, which seeds it View unit tasks too).
         'QUALITY_MANAGER meetings:view_all_tasks',
+        'QUALITY_MANAGER meetings:view_unit_tasks',
       ].sort());
       // The rest of Quality Manager's share needs meetings:manage: the three keys, create and manage tasks.
       expect(plan.withheld.map((w) => `${w.roleKey} ${w.permission}`).sort()).toEqual(
@@ -118,7 +120,7 @@ describe('ACC-316 backfills against a real database', () => {
       expect(await audits(o.id, 'backfill-acc316-meeting-keys')).toBe(0);
 
       const done = await runKeys(prisma, { execute: true, organizationIds: [o.id], isFixture });
-      expect(done.changed).toEqual([{ slug: o.slug, grants: 8 }]);
+      expect(done.changed).toEqual([{ slug: o.slug, grants: 9 }]); // 8 before ACC-77, + Quality Manager's View unit tasks
       const held = await prisma.rolePermission.findMany({ where: { roleId: admin.id }, select: { permission: { select: { module: true, action: true } } } });
       expect(held.map((h) => `${h.permission.module}:${h.permission.action}`).sort()).toEqual(
         [
