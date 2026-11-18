@@ -1,6 +1,6 @@
 import type { ILookupValue } from '../../lookup/interfaces/lookup-value.interface';
 import type { IOrgUnit } from '../../organization/interfaces/org-unit.interface';
-import type { MemberActions } from '../member-actions';
+import type { CommitteeMemberActions } from '../member-actions';
 
 /**
  * ACC-283 — what each seat allows on this committee: every seat the
@@ -147,7 +147,9 @@ export interface ICommitteeDetail extends ICommittee {
   // OR their seat here allows it. The stage rules still apply on top (stageRules).
   // A seat never changes the viewer's OWN seat (Q-A): change_member_seat granted by
   // a seat alone is refused on their own row.
-  memberActions: MemberActions;
+  // ACC-320 — plus `change_own_seat`: may the viewer change their OWN seat
+  // (Q-A, from the same rule as the write). The page reads it, not a permission.
+  memberActions: CommitteeMemberActions;
 }
 
 /** ACC-265 — the committee's owning unit, as the record page names it. */
