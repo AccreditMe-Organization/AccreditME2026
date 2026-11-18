@@ -26,6 +26,73 @@ export interface IUserCommitteesDto {
   rows: IUserCommitteeDto[];
 }
 
+/**
+ * ACC-216 part 2 — one row of GET /users/:id/access-history (backend
+ * IAccessHistoryRow). The kind is the server's reading of one stored audit row;
+ * no before/after value is ever sent.
+ */
+export type AccessHistoryKind =
+  | 'INVITED'
+  | 'INVITATION_ACCEPTED'
+  | 'INVITATION_REVOKED'
+  | 'PROFILE_EDITED'
+  | 'OUT_OF_OFFICE_CHANGED'
+  | 'TRANSFERRED'
+  | 'HEAD_APPOINTMENT_FAILED'
+  | 'DEACTIVATED'
+  | 'REACTIVATED'
+  | 'ROLE_GRANTED'
+  | 'ROLE_REMOVED'
+  | 'TWO_STEP_TURNED_ON'
+  | 'TWO_STEP_TURNED_OFF'
+  | 'TWO_STEP_RESET'
+  | 'PASSWORD_RESET_REQUESTED'
+  | 'PASSWORD_RESET'
+  | 'SIGNED_IN_AS'
+  | 'CHANGED';
+
+export type AccessHistoryField =
+  | 'name'
+  | 'language'
+  | 'calendar'
+  | 'position'
+  | 'unit'
+  | 'manager'
+  | 'actingUnit'
+  | 'outOfOffice'
+  | 'cover';
+
+export interface IAccessHistoryNameDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+}
+
+export interface IAccessHistoryRowDto {
+  id: string;
+  at: string;
+  kind: AccessHistoryKind;
+  /** Null: the system, a platform administrator, or an account since deleted. */
+  actor: { id: string; name: string } | null;
+  fields?: AccessHistoryField[];
+  /** Named only for a viewer with roles:view. */
+  role?: IAccessHistoryNameDto | null;
+  viaHeadship?: boolean;
+  transfer?: {
+    from: IAccessHistoryNameDto | null;
+    to: IAccessHistoryNameDto | null;
+    position: IAccessHistoryNameDto | null;
+    headAppointment: 'NONE' | 'DONE' | 'FAILED';
+  };
+}
+
+export interface IUserAccessHistoryPageDto {
+  rows: IAccessHistoryRowDto[];
+  total: number;
+  skip: number;
+  take: number;
+}
+
 // ACC-79 — names for the ids on a user record. Returned by GET /users/:id
 // only, so a read-only profile can label its fields without the
 // permission-gated position, org-unit and user lists.
@@ -208,6 +275,15 @@ export class UserService {
    */
   getCommittees(id: string): Observable<IUserCommitteesDto> {
     return this.http.get<IUserCommitteesDto>(`${this.base}/${id}/committees`);
+  }
+
+  /**
+   * ACC-216 part 2 — what was changed about a person, newest first: yourself, or
+   * users:view. take 1–50.
+   */
+  getAccessHistory(id: string, page: { skip: number; take: number }): Observable<IUserAccessHistoryPageDto> {
+    const params = new HttpParams().set('skip', page.skip).set('take', page.take);
+    return this.http.get<IUserAccessHistoryPageDto>(`${this.base}/${id}/access-history`, { params });
   }
 
   invite(dto: InviteUserDto): Observable<IUserDto> {
