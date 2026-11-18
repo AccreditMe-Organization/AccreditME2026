@@ -55,6 +55,7 @@ export interface CommitteeRow {
       (retry)="handle()?.retry()"
       [error]="'userRecord.committees.loadError'"
       [emptyTitle]="'userRecord.committees.empty' | translate"
+      [emptyLine]="true"
     >
       <ul class="m-0 p-0 list-none">
         @for (row of rows(); track row.id) {

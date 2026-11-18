@@ -273,7 +273,7 @@ interface Fact {
               [outcome]="rolesOutcome()"
               (retry)="rolesHandle()?.retry()"
               [emptyTitle]="'userRecord.roles.empty' | translate"
-              [emptyMessage]="'userRecord.roles.emptyBody' | translate"
+              [emptyLine]="true"
             >
               <!-- ACC-272 — "See permissions": this person, on "A user's permissions". -->
               @if (canSeePermissions()) {

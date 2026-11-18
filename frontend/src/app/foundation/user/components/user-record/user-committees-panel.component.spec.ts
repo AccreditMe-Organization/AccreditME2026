@@ -122,13 +122,16 @@ describe('UserCommitteesPanelComponent (ACC-216)', () => {
     expect(el.querySelector('[data-committees-over-cap]')).toBeNull();
   });
 
-  it('empty: "Not on any committee", never a blank panel', () => {
+  it('empty: "Not on any committee.", never a blank panel', () => {
     const { el, answer } = render();
     answer({ total: 0, rows: [] });
     const panel = el.querySelector<HTMLElement>('[data-panel="committees"]')!;
     expect(panel.getAttribute('data-outcome')).toBe('empty');
-    expect(panel.textContent).toContain('Not on any committee');
+    expect(panel.textContent).toContain('Not on any committee.');
     expect(el.querySelectorAll('[data-committee-row]').length).toBe(0);
+    // CC-342 — a plain line, as Sub-committees says it; no icon box.
+    expect(panel.querySelector('[data-panel-empty-line]')!.textContent!.trim()).toBe('Not on any committee.');
+    expect(panel.querySelector('.border-dashed')).toBeNull();
   });
 
   it('error: its own message and Retry, which asks again', () => {
@@ -170,10 +173,10 @@ describe('UserCommitteesPanelComponent (ACC-216)', () => {
     });
   });
 
-  it('Arabic empty: «لا عضوية في أي لجنة»', () => {
+  it('Arabic empty: «لا عضوية في أي لجنة.»', () => {
     const { el, answer } = render(true);
     answer({ total: 0, rows: [] });
-    expect(el.querySelector('[data-panel="committees"]')!.textContent).toContain('لا عضوية في أي لجنة');
+    expect(el.querySelector('[data-panel="committees"]')!.textContent).toContain('لا عضوية في أي لجنة.');
   });
 
   // CC-276 — the retired #718096 (4.02:1 on white) stays out of THIS template:

@@ -6096,7 +6096,8 @@ is in `CommitteeListsService`:
   off the older `app-record-panel`, which did not fill its grid cell and headed
   in small capitals: Meetings ended short in its row and Change requests ran
   taller than its row. `app-record-panel` is unchanged for its other users (the
-  committee page's Stage history among them).
+  committee page's Stage history among them). **Since ACC-120 (#341) it heads
+  in the capped frame's style too** (§10.8), so no panel heads in small capitals.
 - **`CommitteeMembershipHistoryPanelComponent`**
   (`app-committee-membership-history-panel`): newest first, capped at five,
   with See all. A row is the person and the date, then "{what happened} —
@@ -11269,8 +11270,8 @@ page is its first consumer; **Meeting Management is expected to reuse it
 rather than rebuild it**, which is the reason it lives in `shared/`
 rather than inside Committee.
 
-Owns the panel chrome — small-caps heading, count chip, optional second
-badge, an action slot, a fixed-height scrolling body — plus the three
+Owns the panel chrome — the shared panel heading (ACC-120, below), count
+pill, optional second badge, an action slot, a fixed-height scrolling body — plus the three
 states every panel has: `loading`, `error`, `isEmpty`. The consumer
 projects its own rows, because a task list and a sub-committee list have
 nothing structural in common.
@@ -11301,6 +11302,18 @@ nothing structural in common.
   cell is `contain: size` and the panel fills, so the card alone sets the row's
   height. Stacked (two tracks at 1280, one on a phone), neither applies and
   history shows in full. `committee-detail.history.layout.spec.ts` measures it.
+- **One heading for every record-page panel (ACC-120, #341).** `am-panel-title`
+  and `am-panel-count` in `styles/typography.scss`, from tokens only: the body
+  step, semibold, sentence case, `--am-ink-900`; the count a bordered pill on
+  the meta step. This panel and `am-capped-panel` (§3.14) both use them, so
+  Stage history, Roles and Committees head exactly like Tasks, Members and
+  Sub-committees. The badge takes the same pill shape.
+  `panel-heading.layout.spec.ts` measures the two side by side, EN and AR.
+- **`emptyLine` (CC-342), opt-in, default off:** the empty state as the capped
+  frame says it, one plain line at the top (`emptyTitle`), with no icon box
+  and no `emptyMessage`. The user page's Roles and Committees panels use it;
+  every other caller (the task page's History, the list pages) keeps the
+  centred state with its icon box.
 
 **A record page should NOT embed a routed list component to fill a
 panel.** ACC-76 tried exactly that with `TaskListComponent` and reverted

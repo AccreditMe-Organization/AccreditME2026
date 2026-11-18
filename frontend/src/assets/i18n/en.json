@@ -3897,14 +3897,13 @@
     "editProfile": "Edit profile",
     "roles": {
       "heading": "Roles",
-      "empty": "No roles",
-      "emptyBody": "Roles decide what this person can see and do.",
+      "empty": "No roles.",
       "fromPosition": "Comes with the head position {{position}}",
       "fromPositionUnnamed": "Comes with a head position"
     },
     "committees": {
       "heading": "Committees",
-      "empty": "Not on any committee",
+      "empty": "Not on any committee.",
       "loadError": "Committees couldn't be loaded.",
       "since": "Since {{date}}",
       "range": "{{from}} – {{to}}",
