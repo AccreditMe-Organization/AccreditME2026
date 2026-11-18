@@ -2,12 +2,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { provideTranslateService } from '@ngx-translate/core';
+import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
 import { PublicHolidayListComponent } from './public-holiday-list.component';
+import { expectArabicDateInPageDirection } from '../../../../../testing/arabic-date';
 
 /**
  * ACC-120 slice 1 — the inline add row, and the row-grid contract that a
@@ -96,6 +97,21 @@ describe('PublicHolidayListComponent (ACC-120 slice 1)', () => {
   //
   // Asserted on the STYLE, not on pixels: the harness cannot lay PrimeNG out, and
   // the grid declaration is the thing that was missing.
+  // ACC-313 (CC-323) — the holiday's date takes the page's direction. Forced
+  // left to right, an Arabic date showed its day last.
+  describe('the date in Arabic', () => {
+    it('reads day first, in the page direction', async () => {
+      const { fixture, http } = setup(['org:view', 'org:manage']);
+      TestBed.inject(TranslateService).use('ar');
+      await settle(fixture, http);
+
+      const row = (fixture.nativeElement as HTMLElement).querySelector('.am-holiday-list__row');
+      expect(row).withContext('the holiday row').not.toBeNull();
+      const span = Array.from(row!.querySelectorAll('span')).find((s) => /^\s*23 /.test(s.textContent ?? ''));
+      expectArabicDateInPageDirection(span, { day: '23', month: 'سبتمبر' });
+    });
+  });
+
   describe('the row follows its column headers', () => {
     it('declares the shared column grid on its own row element', async () => {
       const { fixture, http } = setup(['org:view', 'org:manage']);
