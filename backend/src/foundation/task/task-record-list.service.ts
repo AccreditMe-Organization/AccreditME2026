@@ -6,7 +6,15 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { Prisma } from '../../../generated/prisma/client';
 import { TaskService, TaskViewer } from './task.service';
-import { POOL_LABEL_INCLUDE, PICKABLE_STATUSES, currentActiveAssigneeOfSql, poolTargetOf, toPoolView } from './task-pool';
+import {
+  CURRENT_ACTIVE_ASSIGNEE,
+  POOL_LABEL_INCLUDE,
+  PICKABLE_STATUSES,
+  currentActiveAssigneeOfSql,
+  currentActiveAssigneeWhereSql,
+  poolTargetOf,
+  toPoolView,
+} from './task-pool';
 import { holdsCreateKey, holdsTaskKey, taskKeysOf, TASK_RECORD_TYPES } from './task-record-types';
 import { TaskVisibilityService } from './task-visibility.service';
 import {
@@ -216,7 +224,7 @@ export class TaskRecordListService {
     // ACC-120 slice 3 — the viewer's own views: no permission, so never a 403.
     // An unpicked pool task is not "mine" (it waits in Available).
     if (view === 'mine' || view === 'created') {
-      const own = view === 'mine' ? activeAssignee(ctx.viewerId) : Prisma.sql`${createdBySql(ctx)} AND NOT ${workflowMadeSql()}`;
+      const own = view === 'mine' ? currentActiveAssigneeOfSql(ctx.viewerId) : Prisma.sql`${createdBySql(ctx)} AND NOT ${workflowMadeSql()}`;
       return {
         // The view's own condition AND the rule, as for every other view.
         sql: Prisma.sql`AND ${own} AND ${taskVisibleSql(ctx)}`,
@@ -308,8 +316,9 @@ export class TaskRecordListService {
         .map(([type, e]) => Prisma.sql`(t."sourceType"::text = ${type} AND ${e.ownerUnitSql!} = ${dto.unit})`);
       parts.push(owned.length ? Prisma.sql`(${Prisma.join(owned, ' OR ')})` : Prisma.sql`FALSE`);
     }
-    if (dto.assignee) parts.push(activeAssignee(dto.assignee));
-    if (dto.mine) parts.push(activeAssignee(viewer.id));
+    // ACC-315 — the person filters read ACC-86's one rule: someone no longer ACTIVE is on nothing.
+    if (dto.assignee) parts.push(currentActiveAssigneeOfSql(dto.assignee));
+    if (dto.mine) parts.push(currentActiveAssigneeOfSql(viewer.id));
     if (dto.pool) parts.push(poolClause(dto.pool));
     if (dto.required) {
       parts.push(Prisma.sql`t."workflowInstanceStageId" IS NOT NULL AND t."isMandatory" = ${dto.required === 'REQUIRED'}`);
@@ -334,8 +343,7 @@ export class TaskRecordListService {
       // see is not searched, so a search cannot reveal a hidden name.
       const byRecord = dto.sourceType ? null : recordNameMatchSql(pattern, organizationId, viewer.permissions);
       parts.push(Prisma.sql`(t.title ILIKE ${pattern} ESCAPE '\\' OR COALESCE(t."titleAr", '') ILIKE ${pattern} ESCAPE '\\'
-        OR EXISTS (SELECT 1 FROM "TaskAssignee" sa JOIN "User" su ON su.id = sa."userId"
-                   WHERE sa."taskId" = t.id AND sa."removedAt" IS NULL AND su.name ILIKE ${pattern} ESCAPE '\\')${byRecord ? Prisma.sql` OR ${byRecord}` : Prisma.empty})`);
+        OR ${currentActiveAssigneeWhereSql(Prisma.sql`xu.name ILIKE ${pattern} ESCAPE '\\'`)}${byRecord ? Prisma.sql` OR ${byRecord}` : Prisma.empty})`);
     }
     return parts.length ? Prisma.sql`AND ${Prisma.join(parts, ' AND ')}` : Prisma.empty;
   }
@@ -351,7 +359,8 @@ export class TaskRecordListService {
         assignees: {
           include: { user: { select: { id: true, name: true, position: { select: { nameEn: true, nameAr: true } } } } },
         },
-        _count: { select: { evidence: { where: { deletedAt: null } } } },
+        // ACC-315 — someone is on it: ACC-86's one rule, counted in the same read.
+        _count: { select: { evidence: { where: { deletedAt: null } }, assignees: { where: CURRENT_ACTIVE_ASSIGNEE } } },
         ...POOL_LABEL_INCLUDE,
         ...OPEN_REQUEST_INCLUDE,
         createdBy: { select: { id: true, name: true, status: true } },
@@ -373,6 +382,8 @@ export class TaskRecordListService {
     for (const task of ordered) {
       const active = task.assignees.filter((a) => a.removedAt === null);
       const mine = active.find((a) => a.userId === viewer.id) ?? null;
+      // ACC-315 — a row held by someone no longer ACTIVE puts nobody on the task.
+      const anyoneOnIt = task._count.assignees > 0;
       const target = poolTargetOf(task);
       const pool = toPoolView(task);
       const openRequest = toOpenRequest(task.requests);
@@ -414,7 +425,7 @@ export class TaskRecordListService {
           positionNameAr: a.user.position?.nameAr ?? null,
         })),
         pool,
-        waitingInPool: !!target && active.length === 0 && (PICKABLE_STATUSES as readonly string[]).includes(task.status),
+        waitingInPool: !!target && !anyoneOnIt && (PICKABLE_STATUSES as readonly string[]).includes(task.status),
         pickedByViewer: !!mine?.pickedAt,
         openRequest,
         evidenceCount: task._count.evidence,
@@ -427,7 +438,7 @@ export class TaskRecordListService {
           viewerId: viewer.id,
           viewerIsActiveAssignee: !!mine,
           viewerPickedIt: !!mine?.pickedAt,
-          anyActiveAssignee: active.length > 0,
+          anyActiveAssignee: anyoneOnIt,
           hasPoolTarget: !!target,
           viewerInPool: inPool,
           openRequest,
@@ -493,9 +504,9 @@ export class TaskRecordListService {
     const [people, poolReps, types, units, statusRows] = await Promise.all([
       this.prisma.$queryRaw<{ id: string; name: string }[]>`
         SELECT DISTINCT u.id, u.name FROM "Task" t
-          JOIN "TaskAssignee" a ON a."taskId" = t.id AND a."removedAt" IS NULL
+          JOIN "TaskAssignee" a ON a."taskId" = t.id
           JOIN "User" u ON u.id = a."userId" AND u."organizationId" = t."organizationId"
-         WHERE ${scoped} LIMIT 200`,
+         WHERE ${scoped} AND ${currentActiveAssigneeWhereSql(Prisma.sql`xa.id = a.id`)} LIMIT 200`,
       this.prisma.$queryRaw<{ id: string }[]>`
         SELECT DISTINCT ON (t."assignedOrgUnitId", t."assignedPositionId", t."assignedCommitteeId", t."assignedCommitteeRoleValueId") t.id
           FROM "Task" t
@@ -549,10 +560,6 @@ export function statusCountsOf(rows: readonly { status: string; n: bigint }[]): 
     if ((RECORD_LIST_STATUSES as readonly string[]).includes(r.status)) counts[r.status as RecordListStatus] += Number(r.n);
   }
   return counts;
-}
-
-function activeAssignee(userId: string): Prisma.Sql {
-  return Prisma.sql`EXISTS (SELECT 1 FROM "TaskAssignee" fa WHERE fa."taskId" = t.id AND fa."userId" = ${userId} AND fa."removedAt" IS NULL)`;
 }
 
 export function poolKey(target: NonNullable<ReturnType<typeof poolTargetOf>>): string {

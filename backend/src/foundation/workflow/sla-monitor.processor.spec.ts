@@ -14,6 +14,7 @@ import { TaskRequestService } from '../task/task-request.service';
 import { DateTime } from 'luxon';
 import { useFixedClock } from '../../common/testing/fixed-clock';
 import { TaskDueWarningService } from '../task/task-due-warning.service';
+import { CURRENT_ACTIVE_ASSIGNEE } from '../task/task-pool';
 import { LoadedCalendar, hoursBetweenWith } from '../working-calendar/working-time';
 import { WorkflowService } from './workflow.service';
 import { ITaskSlaSettings } from '../tenant/interfaces/tenant.interface';
@@ -53,7 +54,10 @@ const makeOpenInstanceStage = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const mockPrisma = {
-  workflowInstanceStage: { findMany: jest.fn(), update: jest.fn() },
+  workflowInstanceStage: { findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+  // ACC-105 — the escalation sweep's candidates (raw) and its per-rule claim.
+  $queryRaw: jest.fn(),
+  $executeRaw: jest.fn(),
   task: { findMany: jest.fn(), update: jest.fn() },
   userRole: { findMany: jest.fn() },
   user: { findMany: jest.fn(), update: jest.fn(), groupBy: jest.fn() },
@@ -188,6 +192,10 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // concerns override with their own mockResolvedValueOnce() sequence.
     mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]);
     mockPrisma.workflowInstanceStage.update.mockResolvedValue({});
+    // ACC-105 — default: no stage entry is past its deadline, and a claim succeeds.
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+    mockPrisma.$executeRaw.mockResolvedValue(1);
+    mockPrisma.workflowInstanceStage.updateMany.mockResolvedValue({ count: 1 });
     mockWorkingCalendar.getOrCreate.mockResolvedValue(ALWAYS_OPEN_CALENDAR);
     mockWorkingCalendar.listHolidays.mockResolvedValue([]);
     // ACC-271 PR 6a — default: every entry's pool has someone, so the stage is
@@ -226,12 +234,13 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
   // its pool is never resolved (no queries), and nothing is recovered on it.
   it('reads only open entries at a non-final stage (ACC-312)', async () => {
     mockPrisma.workflowInstanceStage.findMany
-      .mockResolvedValueOnce([]) // breachedStages (top of process())
       .mockResolvedValueOnce([]); // openStages (sweepUnassignedStages)
 
     await runProcess();
 
-    const openStagesQuery = mockPrisma.workflowInstanceStage.findMany.mock.calls[1]![0] as { where: unknown };
+    // ACC-105 — with no stage entry past its deadline, the escalation sweep reads no entries,
+    // so the open-stages read is the first.
+    const openStagesQuery = mockPrisma.workflowInstanceStage.findMany.mock.calls[0]![0] as { where: unknown };
     expect(openStagesQuery.where).toEqual({ exitedAt: null, stage: { isFinal: false } });
   });
 
@@ -242,7 +251,6 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
   it('flags a previously-fine open stage on a false→true transition, notifying no one', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: false });
     mockPrisma.workflowInstanceStage.findMany
-      .mockResolvedValueOnce([]) // breachedStages (top of process())
       .mockResolvedValueOnce([stage]); // openStages (sweepUnassignedStages)
     blocked();
 
@@ -260,7 +268,6 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
     it('flags a converted stage whose pool is empty', async () => {
       mockPrisma.workflowInstanceStage.findMany
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([makeOpenInstanceStage({ stage: CONVERTED })]);
       mockWorkflowService.resolveStagePools.mockResolvedValue(new Map([['instance-stage-1', poolOf([])]]));
 
@@ -279,7 +286,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       const ORG_B = 'org-b-id';
       const inB = { ...BASE_INSTANCE, id: 'instance-b', organizationId: ORG_B };
       const NO_WHO = { ...BASE_STAGE, id: 'stage-no-who', whoMode: null };
-      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([
         makeOpenInstanceStage({ id: 'a1', stage: CONVERTED }),
         makeOpenInstanceStage({ id: 'a2', stage: { ...CONVERTED, id: 'stage-2' } }),
         makeOpenInstanceStage({ id: 'a3', stage: CONVERTED }),
@@ -310,7 +317,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     it('records pool changes for the All of them entries only, one call per organisation', async () => {
       const inB = { ...BASE_INSTANCE, id: 'instance-b', organizationId: 'org-b-id' };
       const ALL = { ...CONVERTED, whoMode: 'ALL' };
-      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([
         makeOpenInstanceStage({ id: 'a-all', stage: ALL }),
         makeOpenInstanceStage({ id: 'a-any', stage: { ...CONVERTED, whoMode: 'ANY_ONE' } }),
         makeOpenInstanceStage({ id: 'b-all', stage: ALL, workflowInstance: inB }),
@@ -328,7 +335,6 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
     it("on recovery, hands the batch's pool to the orphaned task without resolving it again", async () => {
       mockPrisma.workflowInstanceStage.findMany
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([makeOpenInstanceStage({ stage: CONVERTED, isUnassigned: true, unassignedAt: new Date('2026-01-01') })]);
       mockWorkflowService.resolveStagePools.mockResolvedValue(new Map([['instance-stage-1', poolOf(['user-in-pool'])]]));
       mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true);
@@ -346,7 +352,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   it('clears isUnassigned on a previously-flagged stage once the pool is qualifying again, without notifying', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: true, unassignedAt: new Date('2026-01-01') });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     reachable(); // now resolvable
 
     await runProcess();
@@ -362,7 +368,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
   // admin half stays silent; these assert the assignee half no longer is.
   it('on recovery, attaches the newly-resolved pool to the stage\'s still-UNASSIGNED task', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: true, unassignedAt: new Date('2026-01-01') });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     reachable(); // now resolvable
     mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true); // an orphan really exists
 
@@ -381,7 +387,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   it('on recovery, still does NOT notify Tenant Admins — the assignee-facing fix must not reintroduce admin spam', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: true, unassignedAt: new Date('2026-01-01') });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     reachable();
     mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true); // an orphan really exists
 
@@ -401,7 +407,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
   // for a transition-gated recovery to key off.
   it('recovers a task whose recovery transition was already consumed — no flag transition left to key off', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: false }); // flag already cleared by someone else
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     reachable(); // not blocked
     mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true); // but the task is still orphaned
 
@@ -422,13 +428,13 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     reachable();
 
     // Sweep 1 — still orphaned, so recovery runs.
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true);
     await runProcess();
     expect(mockTaskService.attachAssigneesToUnassignedStageTasks).toHaveBeenCalledTimes(1);
 
     // Sweep 2 — now recovered, so it must go quiet rather than re-notify.
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     mockTaskService.hasUnassignedStageTasks.mockResolvedValue(false);
     await runProcess();
     expect(mockTaskService.attachAssigneesToUnassignedStageTasks).toHaveBeenCalledTimes(1); // still 1
@@ -436,7 +442,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   it('short-circuits before any task write when nothing is orphaned — the per-sweep cost guard', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: false });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     reachable();
     mockTaskService.hasUnassignedStageTasks.mockResolvedValue(false);
 
@@ -453,7 +459,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
     // Three consecutive sweeps, still blocked the whole time.
     for (let i = 0; i < 3; i++) {
-      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
       await runProcess();
     }
 
@@ -466,7 +472,6 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
     // Sweep 1 — the genuine false→true transition: one write.
     mockPrisma.workflowInstanceStage.findMany
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([makeOpenInstanceStage({ isUnassigned: false })]);
     await runProcess();
     expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledTimes(1);
@@ -474,7 +479,6 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // Sweeps 2 and 3 — flag now reads true, still blocked: no further write.
     for (let i = 0; i < 2; i++) {
       mockPrisma.workflowInstanceStage.findMany
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([makeOpenInstanceStage({ isUnassigned: true })]);
       await runProcess();
     }
@@ -488,7 +492,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true); // orphan exists, but stage is blocked
 
     for (let i = 0; i < 2; i++) {
-      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
       await runProcess();
     }
 
@@ -498,7 +502,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   it('a flagged stage whose pool is still empty recovers nothing, rather than flipping a task to PENDING with no assignee', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: true, unassignedAt: new Date('2026-01-01') });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     blocked();
     mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true);
 
@@ -510,7 +514,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   it('never attempts recovery on a false→true transition — that path only flags the stage', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: false });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     blocked();
 
     await runProcess();
@@ -524,7 +528,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   it('does not attempt recovery when nothing changed — a still-blocked stage is not a recovery', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: true, unassignedAt: new Date('2026-01-01') });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     blocked();
 
     await runProcess();
@@ -534,7 +538,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   it('does not write or notify when a stage is still blocked on re-check (prevents a duplicate notification)', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: true, unassignedAt: new Date('2026-01-01') });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     blocked(); // still blocked
 
     await runProcess();
@@ -545,7 +549,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   it('does not write or notify when a stage remains reachable', async () => {
     const stage = makeOpenInstanceStage({ isUnassigned: false });
-    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([stage]);
     reachable();
 
     await runProcess();
@@ -559,21 +563,31 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
   describe('SLA breach escalation', () => {
     const runWithBreachedStage = (instanceStage: ReturnType<typeof makeBreachedInstanceStage>) => {
+      // ACC-105 — the candidate ids (raw), then the entries themselves.
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ id: instanceStage.id }]);
       mockPrisma.workflowInstanceStage.findMany
-        .mockResolvedValueOnce([instanceStage]) // breachedStages (top of process())
+        .mockResolvedValueOnce([instanceStage]) // the escalation sweep's entries
         .mockResolvedValueOnce([]); // openStages (sweepUnassignedStages) — no-op here
+      // The people a rule names: ACTIVE users of ORG_A (the batched read).
+      mockPrisma.user.findMany.mockImplementation(({ where }: { where?: { id?: { in?: string[] }; status?: string } }) =>
+        Promise.resolve(where?.id?.in && where.status === 'ACTIVE' ? where.id.in.map((id) => ({ id, organizationId: ORG_A })) : []),
+      );
       return runProcess();
     };
+    const claims = () => mockPrisma.$executeRaw.mock.calls.length;
+    const breachRecorded = () =>
+      expect(mockPrisma.workflowInstanceStage.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['instance-stage-1'] }, slaBreached: false },
+        data: { slaBreached: true },
+      });
 
     it('marks the stage slaBreached with no escalation when the stage has no escalationConfig', async () => {
       const instanceStage = makeBreachedInstanceStage(); // escalationConfig: null
 
       await runWithBreachedStage(instanceStage);
 
-      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
-        where: { id: 'instance-stage-1' },
-        data: { slaBreached: true },
-      });
+      breachRecorded();
+      expect(claims()).toBe(0);
       expect(mockNotificationService.create).not.toHaveBeenCalled();
     });
 
@@ -582,9 +596,10 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     describe('a holiday west of UTC (ACC-318)', () => {
       const NEW_YORK = { timezone: 'America/New_York', workingDays: [0, 1, 2, 3, 4, 5, 6], workingHoursStart: '08:00', workingHoursEnd: '16:00' };
       const CHRISTMAS = { id: 'h-1', date: new Date('2026-12-25T00:00:00.000Z'), isRecurring: false };
+      // ACC-105 — due a day earlier: by 10:00 that is 8 WORKING hours late on this calendar.
       const breached = () =>
         makeBreachedInstanceStage({
-          slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+          slaDueAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
           stage: { ...BASE_STAGE, escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }] },
         });
       beforeEach(() => {
@@ -655,10 +670,9 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
           metadata: { escalationRuleIndex: 0, notifiedUserCount: 1 },
         }),
       );
-      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
-        where: { id: 'instance-stage-1' },
-        data: { slaBreached: true, escalatedRuleIndexes: [0] },
-      });
+      // ACC-105 — the breach recorded once, the rule claimed before anyone is told.
+      breachRecorded();
+      expect(claims()).toBe(1);
     });
 
     it('notifies every active holder of notifyRoleId, deduplicated with notifyUserId via the Set', async () => {
@@ -669,13 +683,16 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
           escalationConfig: [{ afterHours: 4, notifyUserId: 'user-a', notifyRoleId: 'role-qm' }],
         },
       });
-      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-a' }, { userId: 'user-b' }]);
+      const holder = (userId: string) => ({ roleId: 'role-qm', userId, role: { organizationId: ORG_A }, user: { organizationId: ORG_A } });
+      mockPrisma.userRole.findMany.mockResolvedValue([holder('user-a'), holder('user-b')]);
 
       await runWithBreachedStage(instanceStage);
 
+      // ACC-105 — ONE read of the holders of every role named, active roles and ACTIVE people only.
+      expect(mockPrisma.userRole.findMany).toHaveBeenCalledTimes(1);
       expect(mockPrisma.userRole.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { roleId: 'role-qm', user: { organizationId: ORG_A, status: 'ACTIVE' } },
+          where: { roleId: { in: ['role-qm'] }, role: { isActive: true }, user: { status: 'ACTIVE' } },
         }),
       );
       // user-a appears in both notifyUserId and the role holders — the Set
@@ -699,10 +716,8 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       await runWithBreachedStage(instanceStage);
 
       expect(mockNotificationService.create).not.toHaveBeenCalled();
-      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
-        where: { id: 'instance-stage-1' },
-        data: { slaBreached: true },
-      });
+      breachRecorded();
+      expect(claims()).toBe(0);
     });
 
     it('does not re-escalate a rule index already present in escalatedRuleIndexes (no duplicate notification)', async () => {
@@ -717,6 +732,20 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       await runWithBreachedStage(instanceStage);
 
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      expect(claims()).toBe(0);
+    });
+
+    it('a rule another sweep already claimed is not fired again', async () => {
+      mockPrisma.$executeRaw.mockResolvedValue(0);
+      const instanceStage = makeBreachedInstanceStage({
+        slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        stage: { ...BASE_STAGE, escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }] },
+      });
+
+      await runWithBreachedStage(instanceStage);
+
+      expect(claims()).toBe(1);
       expect(mockNotificationService.create).not.toHaveBeenCalled();
     });
 
@@ -733,10 +762,9 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       await runWithBreachedStage(instanceStage);
 
       expect(mockNotificationService.create).not.toHaveBeenCalled();
-      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
-        where: { id: 'instance-stage-1' },
-        data: { slaBreached: true },
-      });
+      breachRecorded();
+      // ACC-105 — and nothing is marked: the rule fires on the first sweep inside working hours.
+      expect(claims()).toBe(0);
     });
   });
 
@@ -787,13 +815,27 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
           status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED', 'ON_HOLD'] },
           // ACC-167 — not a task waiting in a pool: nobody holds it, so there
           // is no assignee to escalate for. sweepUnpickedPoolTasks() owns it.
+          // ACC-315 — "someone holds it" is ACC-86's one rule.
           OR: [
             { assignedPositionId: null, assignedCommitteeId: null },
-            { assignees: { some: { removedAt: null } } },
+            { assignees: { some: CURRENT_ACTIVE_ASSIGNEE } },
           ],
         },
-        include: { assignees: { where: { removedAt: null } } },
+        include: { assignees: { where: CURRENT_ACTIVE_ASSIGNEE } },
       });
+    });
+
+    // ACC-315 — every current row held by someone no longer ACTIVE: the breach is
+    // recorded, but nobody's manager is resolved or told, and no skip row is written.
+    it('a task nobody is on is stamped breached, and escalates to no one', async () => {
+      mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
+
+      await runWithOverdueTask(makeOverdueTask({ assignees: [] }));
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { slaBreachedAt: expect.any(Date) } });
+      expect(mockOrgPositionService.resolveManagerEscalationTargets).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ escalationSkipped: true }) }));
     });
 
     // The direct behavioral regression test the structural test above
@@ -1668,7 +1710,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
             dueAt: expect.anything(),
             OR: [
               { assignedPositionId: null, assignedCommitteeId: null },
-              { assignees: { some: { removedAt: null } } },
+              { assignees: { some: CURRENT_ACTIVE_ASSIGNEE } },
             ],
           }),
         }),
@@ -1809,9 +1851,8 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     it('a failure in the FIRST step still lets every later sweep run', async () => {
       // breachedStageEscalations runs first and was previously unguarded, so
       // anything it threw pre-empted the entire chain behind it.
-      mockPrisma.workflowInstanceStage.findMany.mockRejectedValueOnce(
-        new Error('breached-stage query blew up'),
-      );
+      // ACC-105 — its first query is now the raw candidate read.
+      mockPrisma.$queryRaw.mockRejectedValueOnce(new Error('breached-stage query blew up'));
 
       await expect(runProcess()).rejects.toThrow(/breachedStageEscalations/);
 

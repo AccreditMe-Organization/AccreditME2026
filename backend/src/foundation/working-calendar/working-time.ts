@@ -59,7 +59,8 @@ export async function readWorkingHoursPerDay(
   return hoursPerDayOf(row ?? GCC_DEFAULT_CALENDAR);
 }
 
-function isWorkingDay(dt: DateTime, { calendar, holidays }: LoadedCalendar): boolean {
+/** A working day of the calendar: a working weekday that is no holiday. Exported for ACC-316's day helpers. */
+export function isWorkingDay(dt: DateTime, { calendar, holidays }: LoadedCalendar): boolean {
   // Luxon weekday: 1=Mon…7=Sun. Modulo 7 maps Sunday (7) → 0, matching our 0=Sun convention.
   if (!calendar.workingDays.includes(dt.weekday % 7)) return false;
   return !holidays.some((h) => {

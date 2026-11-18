@@ -1296,6 +1296,11 @@ model WorkflowStage {
   // organisations. Unique within one workflow; Postgres lets the nulls repeat.
   key String?
 
+  // ACC-105 — the stage's SLA escalation rules: a list of
+  // { afterHours, notifyUserId?, notifyRoleId? }. afterHours is WORKING hours
+  // after the stage entry's slaDueAt (the organisation's working calendar,
+  // working-time.ts), not clock hours. Each rule fires once, in working hours,
+  // telling ACTIVE people only. Checked on every write (stage-escalation.ts).
   escalationConfig Json?
 
   // ACC-255 — what this stage MEANS, from STAGE_FLAGS (record-registry.ts):

@@ -34,6 +34,7 @@ import { ResolvedPlacement, TaskAssignmentService } from './task-assignment.serv
 import { OutOfOfficeCoverEntry, coverEntries } from '../../common/services/out-of-office-cover';
 import {
   CURRENT_ACTIVE_ASSIGNEE,
+  currentActiveAssigneeIds,
   isPoolMember,
   POOL_LABEL_INCLUDE,
   poolLabel,
@@ -1095,7 +1096,7 @@ export class TaskService {
     await auditCancelledRequests(this.auditLog, cancelled, organizationId, viewer.id);
 
     const name = await this.userName(viewer.id, organizationId);
-    for (const userId of activeAssigneeIds(existing, viewer.id)) {
+    for (const userId of await this.activeAssigneeIds(existing.id, organizationId, viewer.id)) {
       await this.notificationService.create(
         {
           userId,
@@ -2419,7 +2420,7 @@ export class TaskService {
       ar.push(`أصبحت أولويتها ${words.ar}`);
     }
     if (en.length === 0) return;
-    for (const userId of activeAssigneeIds(before, actorId)) {
+    for (const userId of await this.activeAssigneeIds(before.id, organizationId, actorId)) {
       await this.notificationService.create(
         {
           userId,
@@ -2438,6 +2439,12 @@ export class TaskService {
   private async announcesDueChanges(organizationId: string): Promise<boolean> {
     const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } });
     return taskSlaNoticesFromSettings(org?.settings).notifyOnDueChange;
+  }
+
+  // ACC-174 — the people on a task, less the person acting. ACC-315: on it means
+  // ACC-86's rule (currentActiveAssigneeIds): someone no longer ACTIVE is not told.
+  private async activeAssigneeIds(taskId: string, organizationId: string, exceptUserId: string): Promise<string[]> {
+    return (await currentActiveAssigneeIds(this.prisma, taskId, organizationId)).filter((id) => id !== exceptUserId);
   }
 
   private async userName(userId: string, organizationId: string): Promise<string> {
@@ -2620,11 +2627,6 @@ async function endStaleRows(tx: TaskTx, taskId: string, organizationId: string, 
       data: { removedAt: now },
     })
   ).count;
-}
-
-// ACC-174 — the people currently on a task, less the person acting.
-function activeAssigneeIds(task: TaskWithAssigneeRows, exceptUserId: string): string[] {
-  return task.assignees.filter((a) => a.removedAt === null && a.userId !== exceptUserId).map((a) => a.userId);
 }
 
 /** ACC-302 — the cover's notice names whom they cover; nothing for anyone else. ACC-95: both languages. */

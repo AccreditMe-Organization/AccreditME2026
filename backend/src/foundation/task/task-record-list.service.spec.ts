@@ -259,8 +259,9 @@ describe('TaskRecordListService', () => {
       const statements = sqlOf(prisma);
       expect(statements.length).toBeGreaterThan(0);
       for (const s of statements) {
-        expect(s.text).toContain('fa."userId" = $');
-        expect(s.text).toContain('fa."removedAt" IS NULL');
+        // ACC-315 — the viewer on it by ACC-86's one rule (currentActiveAssigneeOfSql).
+        expect(s.text).toContain('xa."userId" = $');
+        expect(s.text).toContain(`xa."removedAt" IS NULL AND xu.status::text = 'ACTIVE'`);
         expect(s.text).toContain('t."createdById" = ANY('); // the rule
         expect(s.text).toContain('t."organizationId" = $');
       }

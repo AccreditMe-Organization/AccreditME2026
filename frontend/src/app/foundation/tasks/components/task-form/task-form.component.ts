@@ -1301,7 +1301,13 @@ export class TaskFormComponent implements OnInit {
           this.saving.set(false);
           // ACC-280 — said from the code, never the server's English.
           const code = (err as { error?: { code?: string } } | null)?.error?.code;
-          this.saveError.set(code === TASK_RECORD_CLOSED ? 'task.record.closed' : extractErrorMessage(err, 'task.errorAction'));
+          this.saveError.set(
+            code === TASK_RECORD_CLOSED
+              ? value.sourceType === 'MEETING'
+                ? 'task.record.closedMeeting'
+                : 'task.record.closed'
+              : extractErrorMessage(err, 'task.errorAction'),
+          );
         },
       });
   }

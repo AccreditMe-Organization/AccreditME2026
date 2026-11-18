@@ -94,7 +94,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
       const error = await captureError(service.listUnits(creator, ORG_A));
 
       expect(error).toBeInstanceOf(ForbiddenException);
-      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
+      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks or meetings:create_tasks');
       expect(mockPrisma.task.findFirst).not.toHaveBeenCalled();
       expect(mockPrisma.orgUnit.findMany).not.toHaveBeenCalled();
     });
@@ -132,7 +132,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
       const keyOnly: AssignmentViewer = { id: 'stranger', permissions: ['committees:create_tasks'] };
       const error = await captureError(service.listUnits(keyOnly, ORG_A));
       expect(error).toBeInstanceOf(ForbiddenException);
-      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
+      expect((error as ForbiddenException).message).toBe('Required permission: committees:create_tasks or meetings:create_tasks');
     });
 
     it('still refuses someone with no Create tasks key at all', async () => {
@@ -317,7 +317,7 @@ describe('TaskAssignmentService (ACC-167)', () => {
         service.listCommitteeRoleCatalogue({ id: 'x', permissions: ['workflows:manage'] }, ORG_A, undefined),
       );
 
-      expect((noPicker as ForbiddenException).message).toBe('Required permission: committees:create_tasks');
+      expect((noPicker as ForbiddenException).message).toBe('Required permission: committees:create_tasks or meetings:create_tasks');
       expect((noCommittees as ForbiddenException).message).toBe('Required permission: committees:view');
       expect(mockLookups.getValues).not.toHaveBeenCalled();
     });
