@@ -548,7 +548,7 @@ describe('LookupService', () => {
   describe('attribute overrides (ACC-286)', () => {
     const SCHEMA = {
       type: 'object',
-      properties: { required: { type: 'boolean', label: 'Required seat' }, prefix: { type: 'string' }, years: { type: 'number' } },
+      properties: { required: { type: 'boolean', labelEn: 'Required seat', labelAr: 'مقعد مطلوب' }, prefix: { type: 'string' }, years: { type: 'number' } },
     };
     const SYSTEM_SEAT = makeValue({ id: 'seat-chair', key: 'chairman', attributes: { required: true, prefix: 'CH' } as never });
 

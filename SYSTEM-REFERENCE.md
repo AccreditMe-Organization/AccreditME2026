@@ -174,6 +174,15 @@ flow. Confirmed by direct grep:
   terminated — after their role is changed or their permissions are
   reassigned.** Only deactivation forces a sign-out today.
 
+**UPDATED (ACC-216, CC-301): the paragraph above describes the state before
+password reset (ACC-188), the two-step reset (ACC-164) and this change.**
+`tokenVersion` is now bumped only through `endEverySessionInTx()`
+(`foundation/auth/session-revocation.ts`), which also revokes every live
+`RefreshToken` row and deletes the person's Better Auth sessions. Its callers:
+password reset, the administrator's two-step reset, and **`deactivate()`, inside
+its own transaction**. `AuthProvider.invalidateUserSessions()` has no caller
+any more. A role change still ends nothing.
+
 **CORRECTED (ACC-101). This section previously said a stripped user
 "keeps full old access on their existing JWT for up to 15 minutes". That
 was wrong, and the error was to treat session validity and authorization
@@ -1120,9 +1129,11 @@ session was issued at, and `refresh()` refuses to renew when it no longer
 matches the user's. Without it, renewal would DEFEAT the forced logout: the 401
 from `TenantGuard`'s stale-version check would be retried after a refresh that
 minted a token carrying the NEW version. It did not bite before only because
-`invalidateUserSessions()` has exactly one caller, `UserService.deactivate()`,
+`invalidateUserSessions()` had exactly one caller, `UserService.deactivate()`,
 which also flips status to `INACTIVE` — and `tenant.guard.ts` says the
-mechanism is also meant to cover a password change. **NULL means "issued before
+mechanism is also meant to cover a password change. (Since ACC-216 CC-301 the
+bump comes only from `endEverySessionInTx()`, which deactivation now calls in
+its transaction and which revokes the refresh rows too.) **NULL means "issued before
 the column existed"** and falls back to the status check; refusing nulls would
 have signed out every logged-in user the moment the migration ran. Read via
 `?? null` so a narrower `select` cannot fail closed and reject every refresh.
@@ -2632,6 +2643,20 @@ addition makes this materially more likely: a single vacant Chairman
 seat is a normal, plausible real-world event, not a rare
 misconfiguration).
 
+**ACC-312 — A FINAL STAGE IS NEVER FLAGGED.** A record at its final stage
+waits on nobody, but its entry keeps `exitedAt` null for good, so once its pool
+emptied it was flagged and listed (a withdrawn, approved or rejected change
+request whose requester left was the first case). Now:
+- `checkAndFlagUnassignedStage()` returns at once for a final stage;
+- the 15-minute sweep reads `SWEEP_OPEN_ENTRIES_WHERE` (`sla-monitor.processor.ts`):
+  open entries at a non-final stage only, so no pool is resolved for a final
+  one (no queries) and no task is recovered on it;
+- Setup health's `STAGE_WITHOUT_ASSIGNEE` detector leaves final stages out, so
+  an entry flagged before the fix is not listed. The shared database had none
+  on 17 Nov (read-only count), so nothing needed clearing.
+- Specs: `final-stage-unassigned.db-spec.ts` (each place, against a
+  non-final counterpart) and the processor's and detector's unit specs.
+
 - **`resolveUnassignedBlockingTransitions(stage, instance,
   organizationId)`** (public on `WorkflowService`) — for every outgoing
   `WorkflowTransition` from `stage` where `triggerCondition ===
@@ -3047,14 +3072,21 @@ and §16.6 for PR 3 as built).
 - **The registries** (`foundation/workflow/record-registry.ts`), per record type
   and in code, never copied in the frontend:
   - `RECORD_ACTIONS`: for COMMITTEE, `edit_details`, `add_member`,
-    `remove_member`, `change_member_role` and `request_change`. The three
+    `remove_member`, `change_member_role`, `request_change` and (ACC-316)
+    `schedule_meeting`, seeded on the in-force stages. The three
     member actions are `onNewStage`: a stage a tenant adds with no actions
     gets them, which is what such a stage allowed before stage rules.
+    For MEETING (ACC-316 PR 2): `edit_details`, `manage_agenda`,
+    `manage_guests`, `reschedule`, `answer_invitation`, `record_attendance`,
+    `record_minutes`, `apply_suggestions`, `change_action_dates`,
+    `suggest_correction`; nothing calls the engine about them until the
+    meeting endpoints (PR 3).
   - `STAGE_FLAGS`: COMMITTEE has `DISSOLVING` and `IN_FORCE` (any number of
     stages); COMMITTEE_CHANGE_REQUEST has `APPLIES_APPROVED_CHANGE`, which must
-    sit on exactly one stage.
-  - `RECORD_FIELDS`: COMMITTEE `typeValueId` and `orgUnitId`, for step 2's
-    conditions. Nothing reads them yet.
+    sit on exactly one stage. MEETING (ACC-316) has `AGENDA_ISSUED` and
+    `MEETING_CANCELLED` (any number) and `MINUTES_FINAL` (exactly one).
+  - `RECORD_FIELDS`: COMMITTEE `typeValueId` and `orgUnitId`, MEETING
+    `typeValueId`, for step 2's conditions. Nothing reads them yet.
   - **Fail closed:** a type with no entry has no actions to configure; a key not
     in the registry is refused on save and never allowed; a stage with no row
     for an action does not allow it. Labels are the frontend's (`labelKey`), and
@@ -3216,7 +3248,9 @@ No screen reads a stage key, name or order to decide anything, and none keeps
 a copy of a server rule.
 
 - **The committee page** (`foundation/committees/committee-offers.ts`,
-  `committeeOffers(stageRules, permissions)`): Edit where the stage allows
+  `committeeOffers(stageRules, permissions, mayWrite)`): with the server's
+  `mayWrite` false (a head who only oversees, ACC-283), nothing below is
+  offered, whatever the stage or the permissions. Otherwise: Edit where the stage allows
   `edit_details` and the person holds `committees:edit_details`; the
   "Locked while the terms are under review" line to the same people where the
   stage allows no edit and is neither `IN_FORCE` nor `DISSOLVING` (Terms
@@ -3483,6 +3517,7 @@ Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enu
     | ORG_UNIT_HEAD | `orgUnitId`, or null for the record's unit |
     | CREATOR | nothing |
     | COMMITTEE | `committeeId`, or null for the record's committee; optional `committeeRoleValueId` |
+    | MEETING_SCHEDULERS, MEETING_RECORDERS, MEETING_APPROVERS | nothing. **MEETING only (ACC-316 PR 2):** any other record type's save is `WHO_KIND_NOT_ALLOWED`. Resolved by `meeting-authority.ts` (who may schedule, record and approve a meeting: committee seats, own-unit keys, heads above with the sub-units keys), batched; on a record that is not a meeting, nobody. Plan `backend/Plans/step-316-meeting-management.md` §3.8 |
   - **The shape rules** (`stage-who.ts`, `assertWhoShape()`, all 400):
     - `WHO_MODE_UNKNOWN`;
     - `WHO_ENTRIES_REQUIRED` (at least one entry, at most 20);
@@ -4575,6 +4610,14 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   - **others are still on it** → it stays with them:
     `{ event: 'departure_left_with_others' }`, not counted, nobody told.
 
+  **ACC-86 — "else on it" counts only ACTIVE users** (`CURRENT_ACTIVE_ASSIGNEE`,
+  one indexed count under the task's lock), here and in reject, release and pick.
+  A row left current by someone already INACTIVE (a co-assignee who left first,
+  or a departure that stopped partway) puts nobody on the task. When a departure
+  sends a task back to its pool or makes it `UNASSIGNED`, it also ENDS those
+  stale rows in the same transaction (Q-1, `STALE_CURRENT_ASSIGNEE`), and its
+  audit row carries `endedInactiveRows` when there were any.
+
   A CLOSED pool task is never returned to its pool (that would reopen it).
   Since ACC-165 it is not touched at all: departure handles open tasks only.
 - **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
@@ -4675,9 +4718,19 @@ due Monday 10:00, and `calculateDeadline()` stays the exact inverse of
   treats a before-opening time the same way.
 - **Specs:** `working-calendar.before-opening.spec.ts`, with four mutations.
   Plan: `backend/Plans/step-175-deadline-before-opening.md`.
-- **Known, not built:** a holiday in a zone west of UTC lands a day early
-  (`fromJSDate(h.date).setZone(zone)`), and `plus({ hours })` ignores daylight
-  saving. Every tenant is UTC+3 today.
+- **A holiday is its calendar day in every zone (ACC-318).** The API accepts
+  its date as `YYYY-MM-DD` only (a real date, no time, no offset: the pipe's
+  400 otherwise), the shape the screen sends, and stores that date at midnight
+  UTC (`holidayDateAt()`). `isWorkingDay()` (`working-time.ts`) reads its day
+  in UTC, never in the
+  organisation's zone. Before, a zone west of UTC read 25 December as the 24th.
+- **Each day counts its REAL working hours (ACC-319).** `deadlineWith()` spends
+  what is really left of each day's window, and `hoursBetweenWith()` sums the
+  same window (`windowOf()`), so the two agree on a day the clocks change inside
+  the window: London 00:00–08:00 has 7 hours on 29 March 2026 and 9 on
+  25 October, and a deadline never lands after the close. Before, every full day
+  counted a fixed end − start. Zones without clock changes (every Gulf zone) are
+  unchanged.
 
 Before ACC-174: `TaskService.computeSlaDueAt(priority, organizationId)`
 called `TenantService.getTaskSla(organizationId)`
@@ -4700,10 +4753,124 @@ constant (`:37`) when the key is absent — covers an absent key
 functionally forever, but `TenantService.bootstrap()` also writes
 `DEFAULT_TASK_SLA_SETTINGS` for real at tenant-creation time (`:333`),
 so the settings page always has a genuine saved row to display, not
-just a runtime fallback. `updateTaskSla(id, dto, actorId)`
-(`:272`) does a non-clobbering merge write
-(`{ ...existingSettings, taskSla: dto }`) and audit-logs
-`{ event: 'task_sla_updated' }`.
+just a runtime fallback.
+
+**Every write is `TaskSlaPolicyService`'s since ACC-313**
+(`tenant/task-sla-policy.service.ts`). Corrected 2026-11-17: this paragraph
+used to call `TenantService.updateTaskSla()`'s write a "non-clobbering
+merge". It was not: it read the whole settings JSON, spread it and wrote it
+back with no lock, so a stale copy could overwrite a concurrent writer's key
+(ACC-215), and its audit row held only `{ event: 'task_sla_updated' }`.
+- **Locked and key-atomic.** One transaction: `SELECT settings FROM
+  "Organization" WHERE id = … FOR UPDATE`, the section's fields merged into
+  the stored tiers (each priority on top of the defaults), then
+  `jsonb_set(…, '{taskSla}', …)` — only that key is written. Two section saves
+  at once cannot lose each other's fields, and this code never writes back a
+  stale copy of the rest of the settings. The other settings writers still
+  spread the whole JSON and can overwrite `taskSla`: that remains ACC-215's.
+- **Section routes**, all `tenant:manage_config`:
+  `PATCH /tenant/task-sla/limits` (each `dueAfterHours`; the ACC-190
+  stage-deadline rule runs first, outside the lock) and
+  `PATCH /tenant/task-sla/escalation` (manager and head hours; no stage check,
+  they move no due date). Each answers the saved tiers and refuses a missing
+  priority or the other section's fields (400). The old whole-policy
+  `PATCH /tenant/task-sla` stays, through the same service
+  (`replaceAll()`), until the new screen ships.
+- **Audit, after the commit:** `objectType 'TaskSlaPolicy'`, `objectId` the
+  organisation, `before`/`after` the section's fields for all four
+  priorities, `metadata.event` `task_sla_limits_updated` /
+  `task_sla_escalation_updated` / `task_sla_updated`. A save that changes
+  nothing writes nothing and logs nothing.
+- **History:** `GET /tenant/task-sla/history?skip=&take=`
+  (`tenant:manage_config`, `take` 1–50, default 20) answers
+  `{ rows, total }`, newest first: the `TaskSlaPolicy` rows, plus the
+  Organization rows tagged `task_sla_updated` from before ACC-313, which
+  carry no values (`kind: 'legacy'`, `before`/`after` null). Both are scoped
+  by `organizationId` and name the organisation as the object, in one
+  `where`.
+  - **The unit stamp (CC-332):** every task SLA audit row written since
+    PR 4 carries `metadata.escalationHoursUnit = 'WORKING'`
+    (`WORKING_HOURS_STAMP`): limits, escalation, the old whole-policy save,
+    the switch and Reset alike. Each history row returns it as
+    `escalationHoursUnit: 'WORKING' | null`.
+    - The screen reads it first.
+    - A row without it was saved before PR 4, when escalation counted clock
+      hours, and falls back to the row's shape.
+- **Notices (ACC-313 PR 3), a sibling key `settings.taskSlaNotices`**:
+  `{ warnBeforeDue: { LOW..CRITICAL: 'OFF'|'H1'|'H2'|'H4'|'H8'|'WORKING_DAY' },
+  notifyOnDueChange }`, read only through `taskSlaNoticesFromSettings()`
+  (`task-sla-settings.ts`). A missing key, or a value the API never writes,
+  reads as the default (every reminder Off, the switch on), so no backfill;
+  `bootstrap()` writes both keys. `warnBeforeDue` is stored and read by
+  nothing yet (the reminder sweep, PR 4).
+- **`GET /tenant/task-sla/policy`** answers `{ tiers, notices }`.
+  **`PATCH /tenant/task-sla/notices`** `{ notifyOnDueChange }` writes only
+  `settings.taskSlaNotices`, under the same lock, keeping the stored
+  reminders; audit event `task_sla_notices_updated`, before/after the switch
+  alone. **`POST /tenant/task-sla/reset`** (no body, 200) writes the default
+  tiers AND notices in one locked `jsonb_set`, for tasks created afterwards
+  only (no open task is read or written, ACC-174); audit event
+  `task_sla_reset`, before the whole policy, after the defaults. It is refused
+  with `TASK_SLA_EXCEEDS_STAGE_DEADLINES`, nothing written, when the default
+  limits break a stage deadline. Both write nothing when nothing changes. The
+  history names them `kind: 'notices'` and `'reset'`.
+- **Warn before due (ACC-313 PR 4).**
+  - **Saved with escalation:** each priority's `warnBeforeDue` rides, optional,
+    on `PATCH /tenant/task-sla/escalation`. A body without it keeps the stored
+    warning. It is written to `settings.taskSlaNotices` only, under the same
+    lock, and the audit row gains `warnBeforeDue` beside that priority's hours.
+  - **The rule (Q2):** a warning that is not Off must be shorter than its
+    priority's limit (`warningFitsLimit()`, `task-sla-settings.ts`). "1 working
+    day" is the calendar's working day (`readWorkingHoursPerDay()`,
+    `working-calendar/working-time.ts`, read without creating a row). It is
+    refused from both sides, nothing written:
+    - a warning at or past its saved limit: 400 `TASK_SLA_WARNING_NOT_BEFORE_DUE`;
+    - a limit at or under its saved warning: 400
+      `TASK_SLA_LIMIT_NOT_AFTER_WARNING`. The old whole-policy PATCH is held to
+      it too.
+
+    Both carry `{ priority, warning, limitHours }`.
+  - **`GET …/policy`** also answers `workingHoursPerDay`.
+  - **The sweep:** `TaskDueWarningService.sweep()`, the SLA monitor's own
+    isolated step `sweepDueWarnings`, after the hold sweep, so only where the
+    workers run (ACC-92). One read finds the organisations with any warning on.
+    Then, per organisation, only in working hours, it takes one calendar load
+    and one candidate query: `PENDING`/`IN_PROGRESS`, `dueWarnedAt` null, due
+    inside its priority's window, with someone on it or a pool.
+    - **"Someone on it" is ACC-86's one definition**, `CURRENT_ACTIVE_ASSIGNEE`
+      (`task-pool.ts`): a current row held by an ACTIVE user. The candidate
+      query and its assignee select both read it; there is no second copy.
+    - **The claim:** `UPDATE "Task" SET "dueWarnedAt" = now … AND
+      "dueWarnedAt" IS NULL RETURNING id`, so two workers remind once.
+    - **Who is reminded:** one `createInAppMany` ("Task due soon"), sent after
+      the claim, never to acting users.
+      - A task someone is on: those people.
+      - A task with a pool and nobody on it, including one whose only current
+        row is held by someone no longer ACTIVE: the pool's members, resolved
+        by `resolvePoolMembersBatch()` (the pool rule, batched).
+      - A task with no pool and nobody on it: not picked and not claimed, so
+        `dueWarnedAt` stays null and a later holder is still reminded.
+    - A failed notice is logged, not retried. A warning a calendar change made
+      too long is treated as Off.
+    - Closed organisations (ACC-168) are not left out yet, as with the other
+      sweeps; that background work is a follow-up ticket's.
+  - **`DUE_WARNING_CLEARED`** (`task-request-lifecycle.ts`) re-arms it: an edit
+    that changes the due date or priority, an approved extension or hold, a
+    reopen, and a reassign while the due time is ahead. Never a pick, a release
+    or a resume.
+  - Proved against a real Postgres by `task-due-warning.db-spec.ts`: two
+    workers, ten rounds, one notice each; and both ACC-86 cases above (a
+    leaver's row sends the reminder to the pool; a task with nobody on it
+    stays unclaimed until someone ACTIVE is).
+- **The switch governs one notice:** `TaskService.notifyAssigneesOfEdit()`'s
+  due-date clause. With it off, a due-date edit is not announced, and a
+  priority change is announced without the date. The setting is read only on
+  an edit that moved the date. Reopen, the extension and hold decisions and
+  resume still name the date.
+- Proved against a real Postgres by `task-sla-policy.db-spec.ts` (ten rounds
+  of concurrent section saves, the other keys surviving; the switch beside a
+  limits save; Reset leaving an open task unchanged). Plan:
+  `backend/Plans/step-313-task-sla-settings.md`.
 
 Shape — `ITaskSlaSettings` (`tenant/interfaces/tenant.interface.ts`):
 one `ITaskSlaTier` (`{ dueAfterHours, managerEscalationAfterHours,
@@ -4712,7 +4879,8 @@ headEscalationAfterHours }`) per `TaskPriority`
 section's own computation above; the other two fields feed Section
 3.4.1's escalation-tier thresholds.
 
-Exposed via `GET`/`PATCH /tenant/task-sla`
+Exposed via `GET`/`PATCH /tenant/task-sla` (and, since ACC-313, the
+section routes and the history above)
 (`tenant.controller.ts`, `TENANT_PERMISSIONS.MANAGE_CONFIG`),
 mirroring `email-provider`/`ai-settings`'s own established shape
 exactly — confirmed the same pattern, not a new one. Frontend:
@@ -4803,7 +4971,11 @@ while held. Holds are ended by their own step, `sweepDueHolds()` (3.10).
 
 For each overdue task: stamps `slaBreachedAt` if it is still null, then reads
 the tenant's real `ITaskSlaTier` for the task's own `priority`
-(Section 3.3) and computes `hoursSinceDue`. Two-tier, strictly
+(Section 3.3) and computes `hoursSinceDue`. **ACC-313 (Q1): `hoursSinceDue`
+is WORKING hours** — `hoursBetweenWith(calendar, dueAt, now)` on the
+organisation's calendar, loaded once per organisation per pass — like the
+limits, so a task overdue across a weekend is escalated later than the clock
+would say. Nothing already fired is undone. Two-tier, strictly
 sequential, if/else-if — **no fall-through**:
 
 - `!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours`
@@ -4830,12 +5002,13 @@ audit-logs (`{ escalatedTo, tier }` on a real fire, or
 an empty array — a skip, not a thrown error, matching Section 3.4's
 own framing of an unresolvable target as a real, unremarkable state).
 
-Working-hours gating is unchanged from the pre-ACC-46 mechanism:
-`isWithinWorkingHours()` (`:508`, re-implements the day/hour/holiday
-check inline since no dedicated method exists on
-`WorkingCalendarService`) wraps both tiers' firing — CLAUDE.md's
-"Escalation triggers only fire during working hours," still genuinely
-enforced. Recording the breach (`slaBreachedAt`) is unconditional
+Working-hours gating wraps both tiers' firing — CLAUDE.md's "Escalation
+triggers only fire during working hours," still genuinely enforced. Since
+ACC-318 there is ONE rule, `isWorkingMomentWith()` (`working-time.ts`): the
+overdue pass asks it on the calendar it already loaded for the organisation,
+and `isWithinWorkingHours()` (the stage and pool escalations) asks it on
+`loadCalendar()`, read without creating a row. The hand copy is gone; its
+holiday check read the date in the organisation's zone. Recording the breach (`slaBreachedAt`) is unconditional
 regardless of working hours; only the escalation notify/stamp/audit-log
 steps are gated.
 
@@ -5198,6 +5371,27 @@ non-member never learns whether a task exists or was picked. Only then the
 409s: closed, rejected, already picked (*"This task has already been picked
 up"*). A previous row for the same person is reused (A → B → A). Status
 becomes `PENDING`; audited `{ event: 'picked' }`.
+
+**ACC-86 — picked up means someone ACTIVE is on it.** A task whose only current
+rows belong to users no longer ACTIVE is waiting in its pool
+(`waitingInPoolWhere()` and `WAITING_IN_POOL_SQL` ask `CURRENT_ACTIVE_ASSIGNEE`):
+Available lists it, the unpicked-pool escalation sweeps it, and Pick takes it,
+ENDING those stale rows in the same transaction (`endedInactiveRows` on the
+audit row). The one definition lives in `task-pool.ts`; never a third copy.
+
+**ACC-315 — every reader of "on it" asks the same rule.**
+- **The task page and its list row** count it in their own read (`_count` of
+  `CURRENT_ACTIVE_ASSIGNEE`), so such a task offers Pick on its page and its row
+  too, as `POST /pick` accepts.
+- **The list's filters:** its "mine" view, the "mine" and Assignee filters
+  (`currentActiveAssigneeOfSql()`), its name search and its Assignee options
+  (`currentActiveAssigneeWhereSql()`) leave out someone no longer ACTIVE.
+- **The notices:** cancel and edit tell only active people
+  (`currentActiveAssigneeIds()`), as does "resumed", which also skips a creator
+  no longer ACTIVE.
+- **The overdue sweep:** it reads the rule too. A pool task held only by an
+  inactive person escalates in the pool sweep only, and a task nobody is on has
+  its breach recorded but escalates to no one.
 
 **Release** (`POST /tasks/:id/release { reason }`, required, max 1000): only
 an active assignee whose row has `pickedAt`; someone chosen directly gets a
@@ -5612,12 +5806,22 @@ list.**
 |---|---|---|
 | On a record (`sourceType` + `sourceId`) | `ObjectVisibilityService.assertCanView` FIRST — a 403 naming the permission, or 404, before any task is read (ACC-101 clause a) | **ACC-244:** the tasks on it that `taskVisibleSql()` admits; `scope: 'all'` when the viewer sees the whole record (View all, or unit scope over it), else `'own'` |
 | Organisation-wide (neither) | **ACC-244:** the `view` (§3.19) — All tasks needs View all on some type, else 403 naming the keys. **ACC-120 slice 3:** My tasks (`mine`) and Created by me (`created`) need no key and are never a 403 | the view's tasks AND `taskVisibleSql()` |
+| **A person (`person`, ACC-216)** | yourself, or `users:view` — else a 403 naming it, BEFORE any read (the same for a real colleague and an invented id); then the person is read with `{ id, organizationId }`, so an invented id and another organisation's person are the identical 404 | the tasks the person is ON (`currentActiveAssigneeOfSql()`) AND `taskVisibleSql()`, in the `WHERE` before `LIMIT`; `view: 'person'`, `scope: 'all'` |
 
 Naming one of `sourceType`/`sourceId` without the other is a 400.
 
+**A person's tasks (ACC-216, plan `step-216-sessions-and-tasks.md` §5, Option A).**
+- **"On a task" is ACC-86's one definition**, `CURRENT_ACTIVE_ASSIGNEE` (`task-pool.ts`): a current assignee row (picked pool rows included) AND the person is ACTIVE. So a deactivated person has no tasks, even for a View all holder, whatever rows they left.
+  - `currentActiveAssigneeOf(userId)` is the Prisma form, built on `CURRENT_ACTIVE_ASSIGNEE`.
+  - `currentActiveAssigneeOfSql(userId)` is its SQL twin. `HAS_CURRENT_ACTIVE_ASSIGNEE_SQL` and it are built from the same two fragments, so they cannot drift.
+  - `task-pool.current-active.db-spec.ts` pins each SQL form to its Prisma form on a real Postgres.
+- **Nobody gains access:** the person is one condition beside the viewer's own rule, so every row is a task the viewer's task page already admits (`task-record-list.person.db-spec.ts` checks exactly that, per viewer).
+- **Never combined** with a record or a `view`: a 400, nothing read.
+- **The panel** (`record-panel?person=`) is the first five of the same scope, and never offers New task (`canCreate: false`): a person is not a record.
+
 | Endpoint | Returns |
 |---|---|
-| `GET /tasks/record-panel?sourceType&sourceId` | `{ total, scope, rows }` — the first five of the order below; `total` is every task the viewer can see on the record |
+| `GET /tasks/record-panel?sourceType&sourceId`, or `?person` (ACC-216) | `{ total, scope, rows, canCreate }` — the first five of the order below; `total` is every task the viewer can see on the record, or that the person is on |
 | `GET /tasks/record-list?…` | `{ items, total, matching, scope, facets, aroundIndex }` — 1 to 50 rows (`take`, `skip`); `facets` (the assignee and pool filter options, the record types, the unit view's units and — ACC-120 slice 3 — `statusCounts`, all over the whole scope) on the first page only; `aroundIndex` is where `around=<taskId>` sits under the current sort and filters. Each row carries `rejectedBy` (`{ id, name }` or null, ACC-120 slice 3) beside `rejectedReason` |
 
 Both are declared before `':id'`, with no `@Permissions` — the service
@@ -6185,7 +6389,6 @@ change request (§3.18; its screens are ACC-240).
   - `committees:edit_details`: "Edit a committee's details and request changes" (ACC-255 PR 4b,
     Ahmad's Q3: since stage rules, the stage decides where editing is allowed, so
     the sentence no longer names Formation).
-  - `committees:approve`: "Approve terms, changes and dissolutions".
 - **The quorum input is `[fluid]="true"` (ACC-243).** Without it PrimeNG's
   number input kept its default width, 345px in a 251px column, and ran 94px
   under Meeting Frequency. The pair's columns were already `minmax(0, 1fr)`.
@@ -6227,7 +6430,24 @@ change request (§3.18; its screens are ACC-240).
 **ACC-283 PR 2 — THE CHAIN OF AUTHORITY DECIDES, NEVER A ROLE.** Plan:
 `backend/Plans/step-283-change-request-chain.md` (§3, §4, §16). This replaces
 every rule below that names `committees:approve`, which no change request
-reads any more; the key stays in the catalogue until PR 4 retires it.
+reads any more. **PR 4 retired the key** (below).
+
+**ACC-283 PR 4 — `committees:approve` IS RETIRED.** It is out of
+`COMMITTEES_PERMISSIONS`, the seed, the permission groups and the sentence table,
+and nothing in either package reads it: `retired-committee-approve.spec.ts`
+fails on any non-spec source that names it in quotes or as
+`COMMITTEES_PERMISSIONS.APPROVE`. (Home and the Awaiting page already stopped
+reading it in #315: they ask for change requests to decide while the Committees
+module is open, and the chain answers who.) `backfill:acc283-retire-committees-approve` takes it off
+existing roles, after PR 4 deploys:
+- dry run by default, `-- --execute` to write;
+- refuses customer organisations;
+- one audit row per role changed;
+- counts and slugs only;
+- then the catalogue row, once nothing references it.
+
+New organisations seed Terms Review on the committee's own unit head
+(`ORG_UNIT_HEAD`, no unit; plan §10). Existing ones keep what they set.
 
 - **Who decides** (`change-requests/change-request-chain.ts`):
   - the Reports-to committee's holders of a seat whose actions include
@@ -6442,7 +6662,9 @@ ACC-255 PR 2, §2.18.1).
   - **`GET /committees/:id/change-requests/open` answers
     `{ request, canRaise }`.** `canRaise` is the create call's own three
     checks, from the same functions, answered without creating:
-    `committees:edit_details`; `committeeAllowsRaise()`, i.e. the committee
+    `memberActions.request_change` (ACC-283 PR 6: `committees:edit_details` on
+    a committee the viewer may write to, OR their seat allows `request_change`,
+    `member-actions.ts`); `committeeAllowsRaise()`, i.e. the committee
     stage's stored `request_change` action (seeded on Active and Suspended,
     ACC-255 PR 2); and no
     open request, by `isOpen()` (drafts count, and a request with no instance
@@ -6450,7 +6672,10 @@ ACC-255 PR 2, §2.18.1).
     `assertCommitteeAllowsRaise()` (which asks `committeeAllowsRaise()`)
     again under the committee's row lock, so the two cannot disagree. The
     "Request a change" button follows `canRaise`; no screen keeps its own copy
-    of the stage rule.
+    of the stage rule. **An overseeing head** (PR 2a: reads, never writes, Q6)
+    gets `canRaise: false`, and `create()` still answers them the 404 a missing
+    committee gets. Before ACC-283's fix they were offered the button and then
+    refused (`overseer-writes.db-spec.ts`).
   - **`decidedBy` and `withdrawnBy`**: `{ id, name } | null` beside
     `decidedById` and `withdrawnById` on every `IChangeRequest`. `decidedBy`
     is whoever last returned, approved or rejected it. Both are read by id AND
@@ -6632,7 +6857,9 @@ a record, `scope` is `'all'` when the viewer sees the whole record (View all,
 or unit scope over it), else `'own'`.
 
 `GET /tasks/record-panel` gains **`canCreate`**: Create tasks on the record's
-type (the record is visible — it is being shown).
+type, AND (ACC-283) `POST /tasks`' own record check. The panel admits an
+overseeing head (a read, with `{ oversight: true }`); `POST /tasks` does not
+(oversight is read-only, Q6), so the panel must not offer what create refuses.
 
 **ACC-280 — `POST /tasks` ALWAYS needs the type's Create tasks key, then the
 record check.** One rule in `task-record-types.ts`: `holdsCreateKey()`, and
@@ -6646,12 +6873,23 @@ say the same thing:
 | member with the key, no `committees:view` | allowed (create: created; draft: on to the AI's own checks) | `true` |
 | non-member with the key, no `committees:view` | 403 "Required permission: committees:view" | the panel is refused the same way |
 | `committees:view`, no key | 403 naming the key | `false` |
+| `committees:view` with the key | allowed | `true` (no membership query) |
+| overseeing head with the key (not a member, no `committees:view`) | 403 "Required permission: committees:view" | `false` (the panel itself opens: a read) |
 
 Before this, both checked the key only for a `committees:view` holder. That was safe
 while the record check refused everyone else, but since ACC-281 it admits members, so
 a member without the key could create a task, or draft one and spend credits. **Both
 are closed**, pinned in `create-task-key.db-spec.ts` (the draft cases make no AI
 call and touch no credits).
+
+**ACC-283 — the record half is `ObjectVisibilityService.canViewForWrite()`.** It
+answers what `assertCanView()` with no oversight decides (the check `POST /tasks`
+runs), as a yes or no, from the same private `admitsWithoutPermission()`: never a
+copy. It reads no existence (the panel has already read the record), so a
+`committees:view` holder pays no query and anyone else the member clause's one; a
+type with no rule is `false`. The panel asks it only with the key. Pinned in
+`overseer-writes.db-spec.ts` (an overseeing head: `canCreate` false and create
+refused; a member and a holder: true) and the service's unit spec.
 
 **ACC-280 — New task picks its record (`task-record-choices.ts`).** Three readers
 of one registry entry, `TASK_RECORD_TYPES[type].choices` (`task-record-types.ts`):
@@ -6849,7 +7087,8 @@ Plan, Ahmad's answers (7 Nov) and the as-built notes:
   member reads all of their committee's details, read only: the page, members,
   sub-committees, Membership history and change requests.
 - **A non-member without `committees:view` sees none,** with today's refusal.
-- **This is the interim rule until ACC-283**, which gives seats their own actions.
+- **This was the interim rule until ACC-283 PR 6.** For the four seat actions (add, remove,
+  change a seat, request a change) a member's SEAT now grants too; see "Writes" below.
 
 **Who is a member: ONE place, `common/services/committee-membership.ts`.** An active
 `CommitteeMember` row, on an active `Committee`, both in the caller's organisation. A member
@@ -6908,24 +7147,85 @@ cached.
 #### Writes
 
 A committee write is allowed when the caller holds **that action's own permission AND
-(`committees:view` OR active membership of THAT committee)**. The access check runs first,
-then everything that runs today, in today's order: the stage rules (`STAGE_ACTION_NOT_ALLOWED`),
-the reference checks, the stale-save check and the change-request codes. Every refusal code is
-kept.
+(`committees:view` OR active membership of THAT committee)**. **ACC-283 PR 6:** for the four
+seat actions, OR **the caller's own seat on THAT committee allows it** (the seat only ever adds;
+Ahmad, 10 Nov). The access check runs first, then everything that runs today, in today's
+order: the stage rules (`STAGE_ACTION_NOT_ALLOWED`), the reference checks, the stale-save check
+and the change-request codes. Every refusal code is kept.
 
-| Write | Own permission (unchanged) | Members of that committee |
-| -- | -- | -- |
-| `PATCH /committees/:id` | `committees:edit_details` | yes |
-| `POST /committees/:id/members` | `committees:add_member` | yes |
-| `PATCH /committees/:id/members/:memberId` | `committees:change_member_role` | yes |
-| `DELETE /committees/:id/members/:memberId` | `committees:remove_member` | yes |
-| Create, edit, submit a change request | `committees:edit_details` (service) | yes |
-| Withdraw a change request | the requester, or `committees:approve` where the stage allows | yes |
-| **Approve, return, reject** | **`committees:view` (route) and `committees:approve` (service)** | **NO**, exactly as before; never the requester |
-| `GET /committee-change-requests/awaiting-decision` | `committees:view` (route) | no |
+| Write | Own permission (unchanged) | Members of that committee | Or the member's seat (PR 6) |
+| -- | -- | -- | -- |
+| `PATCH /committees/:id` | `committees:edit_details` | yes | no (not a seat action) |
+| `POST /committees/:id/members` | `committees:add_member` (no route gate since PR 6) | yes | `add_member` |
+| `PATCH /committees/:id/members/:memberId` | `committees:change_member_role` (no route gate since PR 6) | yes | `change_member_seat`, never on the actor's own row (Q-A) |
+| `DELETE /committees/:id/members/:memberId` | `committees:remove_member` (no route gate since PR 6) | yes | `remove_member` (the actor's own row included) |
+| Create, edit, submit, approve now (a change request) | `committees:edit_details` (service) | yes | `request_change` |
+| Withdraw a change request | the requester only (ACC-283 PR 2) | yes |
+| **Approve, return, reject** | **the chain of authority (ACC-283 PR 2, §3.18); no key** | **NO**; never the requester |
+| `GET /committee-change-requests/awaiting-decision` | none: #312 removed the `committees:view` route gate; the chain decides (ACC-283 PR 2) | no |
 
 The committee services' write methods take the caller's permissions as a trailing argument
 (`updateCommittee`, `addMember`, `changeMemberRole`, `removeMember`).
+
+#### Seats grant members their committee actions (ACC-283 PR 6)
+
+Plan: `backend/Plans/step-283-change-request-chain.md` §17 (lane B's answers, 17 Nov).
+
+- **ONE RULE, `foundation/committees/member-actions.ts`:** `memberActionsFor()` decides, and
+  `assertMemberAction()` refuses through it. Every path above calls one of them; never write
+  a second copy.
+  - **The rule:** (the action's permission AND (`committees:view` OR an active seat)) OR
+    (an active seat AND that seat allows the action on THIS committee, `CommitteeSeatAction`).
+  - **`MEMBER_ACTIONS`** is the one map of each action's names:
+
+    | Action | Seat key | Stage key | Permission |
+    | -- | -- | -- | -- |
+    | Add a member | `add_member` | `add_member` | `committees:add_member` |
+    | Remove a member | `remove_member` | `remove_member` | `committees:remove_member` |
+    | Change a seat | `change_member_seat` | `change_member_role` | `committees:change_member_role` |
+    | Request a change | `request_change` | `request_change` | `committees:edit_details` |
+- **Reads, only while something is undecided:**
+  - `committees:view` plus every asked key: no query.
+  - The viewer's seat: one query. `activeSeatOf()` in `committee-membership.ts` is what
+    `isActiveMember()` and `committeeAccess()` are built on, so it replaces the old
+    membership read.
+  - The committee's seat actions: one more (`seatActionsFor()`), only for a member lacking a
+    key, whatever the number of actions asked.
+  - Nothing is on the per-request path. `PermissionGuard` does less (three route gates are
+    gone).
+- **Refusals are today's (Q-B):**
+  - A member or `committees:view` holder whom neither the role nor the seat allows: the 403
+    naming the key (`CHANGE_REQUEST_NOT_ALLOWED` naming it, for a change request).
+  - A non-member without `committees:view`: without the key, the same 403; with it, the 404 a
+    missing committee gets.
+  - **A change request by id** (edit, submit, approve now) is read first, so every non-member
+    without `committees:view` gets "Change request not found", key or not (existence-neutral).
+- **Q-A:** a SEAT never changes the actor's OWN seat (a Secretary cannot make themselves
+  Chairman). Their role still may, and a seat may remove their own row.
+- **Where it runs (Q-C):** before the write's transaction, where ACC-281's precondition ran.
+- **The read:** `GET /committees/:id` returns `memberActions` (the four booleans), from the
+  seat `committeeAccess()` just read.
+  - **ACC-320:** plus `change_own_seat`, may the viewer change their OWN seat: Q-A's rule,
+    `allowedOnOwnRow()`, which `assertMemberAction()` also asks, from the same pass
+    (`committeeMemberActionsFor()`; no extra query). True through a role, false when only
+    the seat allows changing seats. The page reads it instead of copying Q-A.
+  - `canRaise` is `memberActions.request_change` AND the stage AND no open request.
+  - A request's `actions.edit`, `submit` and `approveNow` use the same rule, once per
+    committee among the viewer's own requests.
+- **Unchanged:**
+  - Edit details and the seat-actions editor keep ACC-281's rule.
+  - Withdraw is still the requester's only.
+  - Deciding is the chain's (`decide_reporting_changes` is not in `MEMBER_ACTIONS`).
+  - Oversight is read only: a non-member head has no seat.
+  - The Tasks panel's `canCreate` (#325).
+- **The screens (Q-D)** read `memberActions` in lane A's committee page change. Until then, a
+  seat-granted member who lacks the key is accepted by the server but not offered the button.
+- **Proved in:**
+  - `member-actions.db-spec.ts`: the people, the stage refusal, another committee's seat,
+    ended and inactive rows, the read's parity with the writes, and isolation;
+  - `member-actions.spec.ts`: the truth table and its query counts.
+
+  Six mutations each turned it red.
 
 #### Heads see the committees of their units, read only (ACC-283 PR 2a)
 
@@ -6951,7 +7251,9 @@ unchanged** (`committees:view` or membership, the table above).
 `assertMayWriteCommittee` would pass (`committees:view` or an active member).
 A head who only oversees reads `false`, so the page shows no write button that
 answers 404. Each action's own permission and the stage rules still apply on
-top. It's read from the same pass as the read, with no query added.
+top. It's read from the same pass as the read, with no query added. The page
+reads it through `committeeOffers()`, its third argument: false offers no Edit,
+locked line, Add member, Change role or Remove.
 
 **Where it applies (reads):**
 - `assertMaySeeCommittee`, so the committee page, members, members page,
@@ -7387,15 +7689,17 @@ needs it.
 
 Plan, lane B's review and Ahmad's decisions:
 `backend/Plans/step-283-change-request-chain.md` (§2, §15). PR 1 STORES seat
-actions; **nothing decides by them yet**. The chain of authority (PR 2) reads
-`decide_reporting_changes`; seat-granted member actions come later in the
-ticket.
+actions. The chain of authority (PR 2) reads `decide_reporting_changes`, and
+**PR 6 grants members the other four** through `member-actions.ts` (§3.21,
+"Seats grant members their committee actions").
 
 **The fixed list** (`foundation/committees/seat-actions.ts`, `SEAT_ACTIONS`):
 `add_member`, `remove_member`, `change_member_seat`, `request_change`,
-`decide_reporting_changes`. Stored as text (`CommitteeSeatAction.actionKey`),
-like a stage's record actions, so the Meetings ticket's two actions need no
-enum migration.
+`decide_reporting_changes`, and (ACC-316 PR 2) `schedule_meeting` and
+`record_minutes`, read by `meeting-authority.ts` for the meeting stage pools.
+Stored as text (`CommitteeSeatAction.actionKey`), like a stage's record
+actions, so the two meeting actions needed no enum migration. Existing
+committees get their defaults from `backfill:acc316-seat-defaults`.
 
 **Per committee: `CommitteeSeatAction`** (`organizationId`, `committeeId`,
 `roleValueId`, `actionKey`; unique on the three ids and key). A row means the
@@ -7403,12 +7707,17 @@ seat allows the action on that committee; a seat with no row allows nothing.
 
 **Defaults per organisation: one boolean attribute per action** on the
 `committee_member_role` lookup (`seatAddsMember`, `seatRemovesMember`,
-`seatChangesSeat`, `seatRequestsChange`, `seatDecidesReportingChanges`), each
-named in both languages (`labelEn`, `labelAr`, ACC-310's shape; and `label`,
-which the value form reads today).
+`seatChangesSeat`, `seatRequestsChange`, `seatDecidesReportingChanges`, and
+ACC-316's `seatSchedulesMeetings` (Chairman, Secretary) and
+`seatRecordsMinutes` (Secretary)), each
+named in both languages (`labelEn`, `labelAr`, ACC-310's shape). The value
+form reads `labelEn` / `labelAr`, else the key; the seed carries no `label`
+(dropped after ACC-310), and the shared system row loses its old `label` on the
+next deploy's `seedSystemData()`.
 - The SYSTEM values carry them, rewritten by `seedSystemData()` on every deploy:
   Chairman all five; Secretary the four member actions; every other seat none
-  (plan Q10, confirmed by Ahmad, 16 Nov).
+  (plan Q10, confirmed by Ahmad, 16 Nov). ACC-316 adds `schedule_meeting` for
+  Chairman and Secretary, and `record_minutes` for Secretary.
 - An organisation changes a default through its override row
   (`PATCH /lookups/values/:id/attributes`, `lookups:manage`), merged key by key.
 
@@ -8584,13 +8893,14 @@ values.
 `properties.<key>.labelEn` and `labelAr`. The value form shows it through
 `LanguageService.bilingual()`. `lookup.seed.spec.ts` fails a seeded attribute
 without both. `seedSystemData()` rewrites the shared schemas on every deploy, so
-no backfill is needed. `required` keeps its old `label` until the form stops
-reading it, and the backend reads only `type` (`schemaProperties()`).
+no backfill is needed. The backend reads only `type` (`schemaProperties()`).
 **The form now reads `labelEn` / `labelAr`** (ACC-310's form PR):
 `LookupValueFormComponent.attributeName()` resolves the name at display time,
-`labelEn`, else the old `label`, else the key, with an empty Arabic name falling
-back to English. Nothing in the frontend needs `label` any more, so `required`'s
-old `label` can go (and so can the one on ACC-283's seat attributes, §3.21.5).
+`labelEn`, else the key, with an empty Arabic name falling back to English.
+**The old single `label` is gone** (after ACC-310): the form no longer reads it,
+and the seed no longer carries it on `required` or ACC-283's seat attributes
+(§3.21.5). A read-only count on 17 Nov found it only on the shared system row,
+always beside `labelEn`, so nothing relied on it.
 
 ### 6.2 The Override Pattern — `getValues()`'s Exact Merge Algorithm
 
@@ -10201,7 +10511,10 @@ days.
 ### 9.7 The Tenant's Time Zone — One Field (ACC-94 D3, ACC-97)
 
 **`WorkingCalendar.timezone` is the organisation's ONLY time zone.** It is
-edited on the Working Calendar screen (`PATCH /working-calendar`) and read by
+edited on the Working Calendar screen (`PATCH /working-calendar`), which saves
+only a real IANA zone (Luxon's `IANAZone.isValidZone`, the library the deadline
+maths uses) and refuses anything else with 400
+`WORKING_CALENDAR_TIMEZONE_INVALID`, nothing written (ACC-318). It is read by
 **`WorkingCalendarService.calculateDeadline()`** (every SLA due date),
 **`SlaMonitorProcessor.isWithinWorkingHours()`**, and **all frontend date
 display** (via `GET /auth/me`). Display uses the zone the SLA engine computes
@@ -10230,6 +10543,16 @@ creation never set it; every row holds the column default) and returned by
 A new organisation's calendar starts at the GCC default (`getOrCreate()` seeds
 `GCC_DEFAULT`); a tenant outside that zone sets it on the Working Calendar
 screen.
+
+**The row is created by its first read, once (ACC-317).** `getOrCreate()` reads
+the row; when there is none it inserts the default with `createMany({
+skipDuplicates: true })`, which Prisma sends as `INSERT … ON CONFLICT DO
+NOTHING`, then reads it back. First reads at the same moment all get the one
+row, and none fails on the unique key. An `upsert` with an empty `update` is
+NOT used: measured on Postgres, Prisma sends it as a read, an insert and a read
+(an emulated upsert, the same race). `working-calendar.db-spec.ts` proves the
+statement and eight simultaneous first reads. Nothing is created at tenant
+bootstrap.
 
 ---
 
@@ -12746,8 +13069,8 @@ Built to the App Shell design's two Home artboards. Plan and Ahmad's answers
   - `myOverdue`: the same query with `overdue=true&take=1`.
   - `awaiting`: `GET /workflows/awaiting-me`, plus the change requests awaiting
     a decision, asked of everyone while the committees module is open
-    (`committeesOpen()`), because the server decides who may decide (ACC-283
-    PR 2). Either half failing fails the whole read.
+    (`committeesOpen()`, #315), because the server decides who may decide
+    (ACC-283 PR 2). Either half failing fails the whole read.
   - `myCommittees`: `GET /committees/mine`, only while the module is open.
 - **`mayBrowseCommittees`** (ACC-281, ACC-283 PR 2a): true once `myCommittees` has
   loaded with the server's `mayBrowseCommittees` true; false while loading, after a
@@ -12849,8 +13172,8 @@ work, after Tasks, with no permission, because both reads are self-scoped.
   - `GET /committee-change-requests/awaiting-decision` returns every change
     request the person may decide, capped at 200 by the server. It is asked
     of everyone while the committees module is open, by Home's own rule
-    (`MyWorkCountsService.committeesOpen()`), because the server decides who
-    may decide (ACC-283 PR 2), and only on the first load. Both reads run in
+    (`MyWorkCountsService.committeesOpen()`, #315), because the server decides
+    who may decide (ACC-283 PR 2), and only on the first load. Both reads run in
     parallel.
 - **Rows** are Home's panel rows, built by the pure functions in
   `awaiting-rows.ts` (`stageRow`, `changeRow`, `waitingText`), so Home can use
@@ -13390,9 +13713,18 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
   assignee resolution.
 - **`deactivate()`** — the full departure flow, and the ordering is
   explicitly non-negotiable per its own code comment: `tokenVersion`
-  increments (via `authProvider.invalidateUserSessions()`) **before**
-  `TaskService.reassignAllForUser()` runs, so the departing user's
-  sessions are dead the instant the flow starts, not after it finishes.
+  increments **before** `TaskService.reassignAllForUser()` runs, so the
+  departing user's sessions are dead the instant the flow starts, not after it
+  finishes. **Since ACC-216 (CC-301)** the sign-ins end INSIDE the status
+  flip's transaction, through `endEverySessionInTx()`: `tokenVersion + 1`,
+  every live `RefreshToken` row revoked (before, they stayed `revokedAt: null`
+  and read as live), and the person's Better Auth sessions deleted. A refusal
+  later in that transaction (the last administrator, the root unit's head)
+  rolls the ending back with the flip. `reactivate()` brings no session back.
+  It is the only path that sets a person inactive: nothing writes `SUSPENDED`,
+  `revokeInvitation()` deletes an invited person who never signed in, and
+  suspending an ORGANISATION ends nothing (its sessions are refused at refresh
+  and by TenantGuard while it is closed).
   **Last-admin lockout**: queries the tenant's active `TENANT_ADMIN`
   holders **before** flipping status (ACC-16's fix — querying after
   would silently exclude the departing user from their own admin count
@@ -13940,6 +14272,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages?stage=<id>` — that stage open in the stage editor panel (ACC-271 PR 5a; it used to expand the row) |
 | `STAGE_ON_STARTING_ASSIGNMENT` (ACC-271) | `WorkflowStage.id` | `AT_RISK` | the starting entry's `createdAt` | Review stage: the same page and panel. Beside it, **Keep this assignment** (a confirm, then keep-starting-assignment; the next hourly run closes the row). Both need `workflows:manage`. Reported since PR 5a; §2.19 |
 | `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks?view=unassigned&reassign=<id>` — the Unassigned view, opened around that task, with Reassign open on its row when the server offers it (ACC-120 slice 3; was `/tasks/unassigned?reassign=<id>`) |
+| `STORAGE_NOT_CONFIRMED` (ACC-261) | the organisation | `BLOCKS_WORK` | first detection | `/admin-settings/storage` (`tenant:manage_config`): "Set up file storage". Open while `Organization.storageConfirmedAt` is null, so every upload is refused; cleared on the first pass after Confirm. Listed first of the storage conditions. Section 16.12a |
 | `STORAGE_ALMOST_FULL` (ACC-177) | the organisation | `AT_RISK` | first detection | **no Fix yet** — the recycle bin screen is lane A's; the row's hint says to purge deleted files or ask AccreditMe for more storage. Section 16.12 |
 | `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
 | `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
@@ -13963,22 +14296,30 @@ reload does not reopen the dialog.
   nothing was blocked. Severity moves with coverage on the same row; the
   row's `openedAt` does not change.
 - **Stage without assignee** is detected per workflow *instance*
-  (`WorkflowInstanceStage.isUnassigned`, `exitedAt: null`, §2.13) but
+  (`WorkflowInstanceStage.isUnassigned`, `exitedAt: null`, at a stage that
+  is not final since ACC-312, §2.13) but
   shown per *template stage*, because the fix is made once on the stage:
   one row per `WorkflowStage`, carrying the affected-instance count. The
   condition does **not** record whether the stage is unreachable because
   of its assignee or a transition's trigger, so the row tells the admin to
   check both, and the transitions table names each ROLE_BASED transition's
   trigger role.
-- **Task without owner** is `Task.status = 'UNASSIGNED'`. Known gap: an
-  open task whose only remaining assignee is inactive is not UNASSIGNED
-  and is not detected (ACC-86; zero such tasks on dev at build time).
-  **ACC-167 extends it, under the same type, title and wording:** an open
-  pool task (`PENDING`/`OVERDUE`, a pool target) with no active assignee AND
-  nobody currently in its pool (`findEmptyPoolTasks()` — distinct holder and
-  member lookups, not one query per task). A pool with members is healthy
-  even while nobody has picked the task up yet; that is the escalation's
-  business (3.9), not a condition.
+- **Task without owner** (ACC-86) is `OWNERLESS_SQL` (`task-pool.ts`), the very
+  definition the Unassigned view and Manage tasks' reach read, run once per
+  tenant, scoped by organisation, resolved live on every pass (ACC-82: no
+  status is trusted). "Nobody is on it" means no current row held by an ACTIVE
+  user (`CURRENT_ACTIVE_ASSIGNEE`). A task is ownerless when it is:
+  - `UNASSIGNED`, as always;
+  - `PENDING` or `OVERDUE` with nobody on it, unless it waits in a pool that
+    has an ACTIVE member (ACC-167: a staffed pool is healthy while nobody has
+    picked the task up yet; that is the escalation's business, 3.9);
+  - `IN_PROGRESS` or `ON_HOLD` with nobody on it, pool or not (Q-2: nobody can
+    resume a held task, and a pick cannot take these statuses).
+
+  `REJECTED` is not: it is its creator's to reassign. Before ACC-86 it matched
+  `UNASSIGNED` plus `findEmptyPoolTasks()` (now deleted), so a task whose only
+  remaining assignee was INACTIVE was never seen. There were zero such tasks
+  on the shared database when it shipped (17 Nov).
 
 **Deferred — `POSITION_WITHOUT_ROLE`.** Built, then deferred before
 shipping. It flagged ACTIVE positions with no `roleId` that someone ACTIVE
@@ -15258,7 +15599,7 @@ model StoredFile {
   mimeType       String                 // decided by the server from content
   sizeBytes      Int
   sha256         String @db.Char(64)
-  ownerType      StoredFileOwnerType    // TASK (meetings, documents add values)
+  ownerType      StoredFileOwnerType    // TASK; MEETING and MEETING_AGENDA_ITEM exist (ACC-316 PR 1) but nothing writes them yet
   ownerId        String
   uploadedById, uploadedAt
   deletedAt, deletedById                // the 30-day soft delete; bytes KEPT
@@ -15617,6 +15958,26 @@ per organisation, `FIRST_DETECTED`), counted the same way; it clears itself on
 the next pass after usage drops. The bell holds the event, Setup health the
 condition (ACC-82). **No row of it may exist on a shared database before the
 deploy** (ACC-173's enum rule).
+
+### 16.12a "File storage not confirmed" (ACC-261)
+
+Setup health's `STORAGE_NOT_CONFIRMED` (`BLOCKS_WORK`, one row per organisation,
+`FIRST_DETECTED`): open while `Organization.storageConfirmedAt` is null, the
+state in which every upload is refused with `STORAGE_NOT_CONFIRMED` (16.4). It
+clears on the first pass after Confirm (`POST /tenant/storage/confirm` stamps
+the field). Its Fix, "Set up file storage", opens `/admin-settings/storage` for
+a holder of `tenant:manage_config`; without it, the row says what fixing needs.
+Home's Needs fixing words it through the same `SetupConditionRows`.
+- The platform organisation is exempt structurally: the reconciler iterates
+  tenants only.
+- One additive migration (`acc261_storage_not_confirmed`, the enum value). **No
+  row of it may exist on a shared database before the deploy** (ACC-173's enum
+  rule): the detector that writes it deploys with it.
+- On 17 Nov both tenants on the shared database were confirmed (read-only
+  count), so the first reconcile after the deploy opened nothing.
+- Specs: the detector's unit spec, `storage-not-confirmed.db-spec.ts` (opens
+  while unconfirmed, clears on confirm, isolation), and the page's spec (Fix,
+  wording in both languages, its place in the order).
 
 ### 16.13 Not built
 

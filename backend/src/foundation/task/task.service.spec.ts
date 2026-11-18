@@ -2,7 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TaskSlaService } from './task-sla.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
-import { TaskService } from './task.service';
+import { DEPARTURE_REASSIGNED_BODY, DEPARTURE_REASSIGNED_TITLE, TaskService } from './task.service';
+import { counted } from '../../common/i18n/plural';
 import { TaskClosedNoticeService } from './task-closed-notice.service';
 // ACC-271 PR 4 — the closed-task notices, told after a completion.
 const mockClosedNotices = { afterCompletion: jest.fn().mockResolvedValue(0), afterStageExit: jest.fn().mockResolvedValue(0) };
@@ -84,6 +85,7 @@ const mockPrisma = {
     count: jest.fn(),
   },
   taskAssignee: {
+    count: jest.fn(),
     updateMany: jest.fn(),
     findMany: jest.fn(),
     update: jest.fn(),
@@ -128,6 +130,23 @@ const mockPrisma = {
     findFirst: jest.fn(),
   },
 };
+
+// ACC-86 — the writers ask "is anyone else on it?" (CURRENT_ACTIVE_ASSIGNEE) as a count
+// under the task lock. Answered from the task this test last read: a row is current
+// when removedAt is null, and its user is ACTIVE unless the row says otherwise.
+mockPrisma.taskAssignee.count.mockImplementation((args: { where: { userId?: { not?: string } } }) => {
+  const reads = mockPrisma.task.findFirst.mock.results;
+  type Read = { assignees?: { userId: string; removedAt: Date | null; user?: { status: string } }[] } | null;
+  return Promise.resolve((reads.length ? reads[reads.length - 1]!.value : null) as Read | Promise<Read>).then((
+    last,
+  ) =>
+    (last?.assignees ?? []).filter(
+      (r) => r.removedAt === null && (r.user?.status ?? 'ACTIVE') === 'ACTIVE' && r.userId !== args.where.userId?.not,
+    ).length,
+  );
+});
+// ACC-86 (Q-1) — ending stale rows answers how many it ended; none unless a test says so.
+mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
 
 // ACC-51 — attachAssigneesToUnassignedStageTasks() wraps its per-task writes
 // in a transaction; the callback runs against this same mock. Assigned after
@@ -257,6 +276,26 @@ describe('TaskService', () => {
         expect.objectContaining({ where: { id: ORG_A } }),
       );
       expect(mockWorkingCalendar.calculateDeadline).toHaveBeenCalledWith(expect.any(DateTime), 8, ORG_A);
+    });
+
+    it('ACC-95: tells each assignee in both languages, the Arabic text using the task\'s Arabic title', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }]);
+      mockPrisma.task.create.mockResolvedValue({ ...BASE_TASK, titleAr: 'مراجعة الوثيقة' });
+
+      await service.create({ title: 'Review document', sourceType: 'DOCUMENT', sourceId: 'doc-1', assigneeUserIds: [USER_A] }, ORG_A, ACTOR);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: USER_A,
+          titleEn: 'New task assigned',
+          titleAr: 'مهمة جديدة مُسندة إليك',
+          bodyEn: 'You have been assigned: "Review document"',
+          bodyAr: 'أُسندت إليك المهمة «مراجعة الوثيقة»',
+          objectType: 'Task',
+          objectId: 'task-1',
+        },
+        ORG_A,
+      );
     });
 
     it("indexes the resolved settings by the task's own priority, not a fixed tier", async () => {
@@ -1227,6 +1266,25 @@ describe('TaskService', () => {
 
     // ACC-163 (Q4) — a rejected task comes back to its creator, who reassigns
     // it without holding Manage tasks.
+    it('ACC-95: tells the new assignee in both languages; with no Arabic title, the English one', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: USER_B,
+          titleEn: 'Task reassigned to you',
+          titleAr: 'أُعيد إسناد مهمة إليك',
+          bodyEn: '"Review document" has been reassigned to you. Reason: Ahmad is on leave',
+          bodyAr: 'أُعيد إسناد المهمة «Review document» إليك. السبب: Ahmad is on leave',
+          objectType: 'Task',
+          objectId: 'task-1',
+        },
+        ORG_A,
+      );
+    });
+
     it("lets the task's creator reassign without Manage tasks", async () => {
       mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK); // createdById: ACTOR
 
@@ -1292,6 +1350,30 @@ describe('TaskService', () => {
           }),
         }),
       );
+    });
+
+    // ACC-313 (Q5) — a new holder is reminded, but only while the due time is ahead.
+    describe('the due-soon reminder', () => {
+      const NOW = new Date('2026-11-17T07:00:00.000Z');
+      beforeEach(() => useFixedClock(NOW));
+      afterEach(() => jest.useRealTimers());
+      const written = () => (mockPrisma.task.update.mock.calls.at(-1)![0] as { data: Record<string, unknown> }).data;
+
+      it('is re-armed when the due time is still ahead', async () => {
+        mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, dueAt: new Date('2026-11-18T07:00:00.000Z'), dueWarnedAt: NOW });
+
+        await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
+
+        expect(written()).toEqual(expect.objectContaining({ dueWarnedAt: null }));
+      });
+
+      it('is left alone once the due time has passed', async () => {
+        mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, dueAt: new Date('2026-11-16T07:00:00.000Z'), dueWarnedAt: NOW });
+
+        await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
+
+        expect(written()).not.toHaveProperty('dueWarnedAt');
+      });
     });
 
     it('removes the previous assignees', async () => {
@@ -1389,6 +1471,8 @@ describe('TaskService', () => {
         ]) {
           mock.mockReset();
         }
+        // ACC-86 — the default every later test relies on (ending no stale rows).
+        mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
       }
     });
 
@@ -1426,6 +1510,57 @@ describe('TaskService', () => {
         expect.objectContaining({ where: { id: 'task-1', organizationId: ORG_B } }),
       );
       expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ACC-86 — a row still current but held by a user who is no longer ACTIVE puts
+  // nobody on the task (CURRENT_ACTIVE_ASSIGNEE).
+  describe('ACC-86 — an INACTIVE co-assignee is nobody', () => {
+    const INACTIVE_ROW = { id: 'ta-gone', taskId: 'task-1', userId: 'gone', removedAt: null, user: { status: 'INACTIVE' } };
+    const STALE_WHERE = { taskId: 'task-1', task: { organizationId: ORG_A }, removedAt: null, user: { status: { not: 'ACTIVE' } } };
+    afterEach(() => {
+      mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
+      mockPrisma.task.findFirst.mockReset();
+      mockPrisma.taskAssignee.findMany.mockReset();
+    });
+
+    it('the last ACTIVE assignee rejecting makes the task REJECTED, asking ACTIVE others only', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ name: 'Sarah Al-Harbi' });
+      mockPrisma.task.findFirst.mockResolvedValue({
+        ...BASE_TASK,
+        assignees: [{ id: 'ta-1', taskId: 'task-1', userId: USER_A, removedAt: null }, INACTIVE_ROW],
+      });
+      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'REJECTED' });
+
+      await service.reject('task-1', { reason: 'Not ours' }, USER_A, ORG_A);
+
+      expect(mockPrisma.taskAssignee.count).toHaveBeenCalledWith({
+        where: { taskId: 'task-1', task: { organizationId: ORG_A }, userId: { not: USER_A }, removedAt: null, user: { status: 'ACTIVE' } },
+      });
+      expect(mockPrisma.task.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }));
+    });
+
+    it('a departure leaving only an INACTIVE co-assignee makes the task UNASSIGNED, ends that row and counts it', async () => {
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([{ taskId: 'task-1' }]);
+      mockPrisma.task.findFirst.mockResolvedValue({
+        id: 'task-1',
+        organizationId: ORG_A,
+        status: 'PENDING',
+        priority: 'MEDIUM',
+        assignees: [{ id: 'ta-1', taskId: 'task-1', userId: USER_A, removedAt: null }, INACTIVE_ROW],
+      });
+      mockPrisma.taskAssignee.updateMany.mockImplementation((args: { where: { user?: unknown } }) =>
+        Promise.resolve({ count: args.where.user ? 1 : 0 }),
+      );
+
+      const result = await service.reassignAllForUser(USER_A, null, ORG_A, ACTOR);
+
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 1, returnedToPoolCount: 0 });
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'UNASSIGNED' } });
+      expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith({ where: STALE_WHERE, data: { removedAt: expect.any(Date) } });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ event: 'departure_reassignment', endedInactiveRows: 1 }) }),
+      );
     });
   });
 
@@ -1492,6 +1627,28 @@ describe('TaskService', () => {
         data: { taskId: 'task-1', userId: USER_B, assignedById: ACTOR },
       });
       expect(result).toEqual({ reassignedCount: 1, unassignedCount: 0, returnedToPoolCount: 0 });
+      // ACC-95 — counted, in both languages; never "task(s)".
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: USER_B,
+          titleEn: 'Task reassigned to you',
+          titleAr: 'أُعيد إسناد مهمة إليك',
+          bodyEn: '1 task has been reassigned to you because a colleague left.',
+          bodyAr: 'أُعيد إسناد مهمة إليك بعد مغادرة أحد أعضاء المنشأة.',
+          channel: 'IN_APP',
+        },
+        ORG_A,
+      );
+    });
+
+    it.each([
+      [1, 'Task reassigned to you', '1 task has been reassigned to you because a colleague left.', 'أُعيد إسناد مهمة إليك'],
+      [2, 'Tasks reassigned to you', '2 tasks have been reassigned to you because a colleague left.', 'أُعيد إسناد مهمتين إليك'],
+      [3, 'Tasks reassigned to you', '3 tasks have been reassigned to you because a colleague left.', 'أُعيد إسناد 3 مهام إليك'],
+      [11, 'Tasks reassigned to you', '11 tasks have been reassigned to you because a colleague left.', 'أُعيد إسناد 11 مهمة إليك'],
+    ])('ACC-95: the acting user\'s notice for %i task(s) is counted in both languages', (n, titleEn, bodyEn, titleAr) => {
+      expect(counted(n, DEPARTURE_REASSIGNED_TITLE)).toEqual({ en: titleEn, ar: titleAr });
+      expect(counted(n, DEPARTURE_REASSIGNED_BODY)).toEqual({ en: bodyEn, ar: `${titleAr} بعد مغادرة أحد أعضاء المنشأة.` });
     });
 
     // ACC-165 — asks only for OPEN tasks; a closed one is never even read.
@@ -1819,12 +1976,15 @@ describe('TaskService', () => {
 
       expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
       expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({
+        {
           userId: USER_A,
           titleEn: 'New task assigned',
+          titleAr: 'مهمة جديدة مُسندة إليك',
+          bodyEn: 'You have been assigned: "Review document"',
+          bodyAr: 'أُسندت إليك المهمة «Review document»',
           objectType: 'Task',
           objectId: 'task-unassigned',
-        }),
+        },
         ORG_A,
       );
     });

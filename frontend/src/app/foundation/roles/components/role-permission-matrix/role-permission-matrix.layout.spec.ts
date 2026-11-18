@@ -153,7 +153,7 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
         // Non-vacuity: the list rendered, every module and row with a size.
         expect(mods.length).toBe(11);
         const rows = main.querySelectorAll<HTMLElement>('[data-pm-row]');
-        expect(rows.length).toBe(34); // ACC-271 PR 6b: committees:manage is not in use; ACC-164: +users:reset_mfa
+        expect(rows.length).toBe(38); // ACC-271 PR 6b: committees:manage is not in use; ACC-164: +users:reset_mfa; ACC-283 PR 4: -committees:approve; ACC-316 PR 2: +5 meeting keys
         expect(box(mods[0]!).width).toBeGreaterThan(200);
 
         // One column: every module starts at the same inline edge.
@@ -205,7 +205,7 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
       it(`${lang} at ${width}: with changes, the save controls are ${phone ? 'a bar at the bottom of the screen' : 'in the header'}`, async () => {
         const main = await render(lang, width, viewport);
         const c = page();
-        c.toggle(['committees:approve']);
+        c.toggle(['committees:edit_details']);
         c.toggle(['committees:view']);
         c.toggle(['lookups:view']);
         await settle();
@@ -242,7 +242,7 @@ describe('RolePermissionMatrixComponent layout (ACC-272)', () => {
         (fixture.nativeElement as HTMLElement).style.cssText = 'position:fixed;inset-block-start:0;inset-inline-start:0';
         fixture.componentRef.setInput('height', document.documentElement.clientHeight);
         const c = page();
-        c.toggle(['committees:approve']);
+        c.toggle(['committees:edit_details']);
         c.toggle(['committees:view']);
         c.toggle(['lookups:view']);
         await settle();

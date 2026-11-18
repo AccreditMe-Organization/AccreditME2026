@@ -45,6 +45,10 @@ jest.setTimeout(180_000);
 
 const ALL_FIVE = ['add_member', 'remove_member', 'change_member_seat', 'request_change', 'decide_reporting_changes'];
 const MEMBER_FOUR = ['add_member', 'remove_member', 'change_member_seat', 'request_change'];
+// ACC-316 — the seat list's order, and the shared defaults with the meeting actions.
+const ALL_SEVEN = [...ALL_FIVE, 'schedule_meeting', 'record_minutes'];
+const CHAIR = [...ALL_FIVE, 'schedule_meeting'];
+const SECRETARY = [...MEMBER_FOUR, 'schedule_meeting', 'record_minutes'];
 
 describe('Committee seat actions against a real database (ACC-283)', () => {
   const prisma = new PrismaService();
@@ -104,7 +108,7 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
     for (const r of await seatActionsFor(prisma, organizationId, [committeeId])) {
       (out[keyOf.get(r.roleValueId) ?? r.roleValueId] ??= []).push(r.actionKey);
     }
-    for (const k of Object.keys(out)) out[k]!.sort((a, b) => ALL_FIVE.indexOf(a) - ALL_FIVE.indexOf(b));
+    for (const k of Object.keys(out)) out[k]!.sort((a, b) => ALL_SEVEN.indexOf(a) - ALL_SEVEN.indexOf(b));
     return out;
   };
 
@@ -175,10 +179,10 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
 
   // ── The copy on create ─────────────────────────────────────────────────────
 
-  it('a new committee gets the shared defaults: Chairman all five, Secretary the four member actions, nobody else anything', async () => {
+  it('a new committee gets the shared defaults: Chairman all five and scheduling, Secretary the four member actions and both meeting actions, nobody else anything', async () => {
     const o = await org();
     const id = await committee(o);
-    expect(await byKey(o.id, id)).toEqual({ chairman: ALL_FIVE, secretary: MEMBER_FOUR });
+    expect(await byKey(o.id, id)).toEqual({ chairman: CHAIR, secretary: SECRETARY });
   });
 
   it("a new committee gets its organisation's defaults with the override MERGED: an untick removes, a tick adds", async () => {
@@ -189,9 +193,9 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
     const id = await committee(o);
 
     expect(await byKey(o.id, id)).toEqual({
-      chairman: MEMBER_FOUR,
+      chairman: [...MEMBER_FOUR, 'schedule_meeting'],
       vice_chairman: ['decide_reporting_changes'],
-      secretary: MEMBER_FOUR,
+      secretary: SECRETARY,
     });
   });
 
@@ -200,16 +204,16 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
     const id = await committee(o);
     await lookups.overrideAttributes(seat['secretary']!, o.id, { attributes: { seatAddsMember: false } }, o.actorId);
 
-    expect((await byKey(o.id, id))['secretary']).toEqual(MEMBER_FOUR);
+    expect((await byKey(o.id, id))['secretary']).toEqual(SECRETARY);
     const later = await committee(o, 'Later committee');
-    expect((await byKey(o.id, later))['secretary']).toEqual(['remove_member', 'change_member_seat', 'request_change']);
+    expect((await byKey(o.id, later))['secretary']).toEqual(['remove_member', 'change_member_seat', 'request_change', 'schedule_meeting', 'record_minutes']);
   });
 
   it("the create's audit row names the seat actions it copied", async () => {
     const o = await org();
     const id = await committee(o);
     const row = await prisma.auditLog.findFirstOrThrow({ where: { objectId: id, action: 'CREATE' } });
-    expect(row.metadata).toEqual({ seatActions: { [seat['chairman']!]: ALL_FIVE, [seat['secretary']!]: MEMBER_FOUR } });
+    expect(row.metadata).toEqual({ seatActions: { [seat['chairman']!]: CHAIR, [seat['secretary']!]: SECRETARY } });
   });
 
   // ── The read ───────────────────────────────────────────────────────────────
@@ -218,11 +222,11 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
     const o = await org();
     const id = await committee(o);
     const read = await committees.getSeatActions(id, o.id, { id: o.actorId, permissions: ['committees:view'] });
-    expect(read.actionKeys).toEqual(ALL_FIVE);
+    expect(read.actionKeys).toEqual(ALL_SEVEN);
     expect(read.seats.map((s) => [s.key, s.actions])).toEqual([
-      ['chairman', ALL_FIVE],
+      ['chairman', CHAIR],
       ['vice_chairman', []],
-      ['secretary', MEMBER_FOUR],
+      ['secretary', SECRETARY],
       ['member', []],
       ['observer', []],
       ['advisor', []],
@@ -259,7 +263,7 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
     expect((await prisma.committee.findFirstOrThrow({ where: { id } })).updatedAt.getTime()).toBeGreaterThan(before.getTime());
     const rows = await prisma.auditLog.findMany({ where: { objectId: id, action: 'UPDATE' } });
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.before).toEqual({ seatActions: { [seat['chairman']!]: ALL_FIVE, [seat['secretary']!]: MEMBER_FOUR } });
+    expect(rows[0]!.before).toEqual({ seatActions: { [seat['chairman']!]: CHAIR, [seat['secretary']!]: SECRETARY } });
     expect(rows[0]!.after).toEqual({
       seatActions: { [seat['chairman']!]: ['decide_reporting_changes'], [seat['member']!]: ['add_member', 'request_change'] },
     });
@@ -273,8 +277,8 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
 
     expect(
       await save(o, id, [
-        { roleValueId: seat['secretary']!, actions: MEMBER_FOUR },
-        { roleValueId: seat['chairman']!, actions: [...ALL_FIVE].reverse() },
+        { roleValueId: seat['secretary']!, actions: SECRETARY },
+        { roleValueId: seat['chairman']!, actions: [...CHAIR].reverse() },
       ], loaded),
     ).toBe('OK');
 
@@ -289,7 +293,7 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
     await moveToLockedStage(o, id);
 
     expect(await save(o, id, [], loaded)).toBe('STAGE_ACTION_NOT_ALLOWED');
-    expect(await byKey(o.id, id)).toEqual({ chairman: ALL_FIVE, secretary: MEMBER_FOUR });
+    expect(await byKey(o.id, id)).toEqual({ chairman: CHAIR, secretary: SECRETARY });
     expect(await seatAuditRows(id)).toBe(0);
   });
 
@@ -323,7 +327,7 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
     const loaded = await loadedAt(o, id);
     await lookups.hideSystemValue(seat['observer']!, o.id, o.actorId);
 
-    expect(await save(o, id, [{ roleValueId: seat['chairman']!, actions: ['schedule_meeting'] }], loaded)).toBe('SEAT_ACTION_UNKNOWN');
+    expect(await save(o, id, [{ roleValueId: seat['chairman']!, actions: ['approve_minutes'] }], loaded)).toBe('SEAT_ACTION_UNKNOWN');
     expect(await save(o, id, [{ roleValueId: 'no-such-seat', actions: [] }], loaded)).toBe('SEAT_ACTION_SEAT_UNKNOWN');
     expect(await save(o, id, [{ roleValueId: seat['observer']!, actions: ['add_member'] }], loaded)).toBe('SEAT_ACTION_SEAT_UNKNOWN');
     expect(await seatAuditRows(id)).toBe(0);
@@ -363,7 +367,7 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
 
     expect(await save(b, id, [], loaded)).toMatch(/Committee not found/);
     expect(await outcome(committees.getSeatActions(id, b.id, { id: b.actorId, permissions: ['committees:view'] }))).toMatch(/Committee not found/);
-    expect(await byKey(a.id, id)).toEqual({ chairman: ALL_FIVE, secretary: MEMBER_FOUR });
+    expect(await byKey(a.id, id)).toEqual({ chairman: CHAIR, secretary: SECRETARY });
   });
 
   itEnforcesTenantIsolation("committee seat actions — seatActionsFor() never returns another organisation's rows, and its seat is refused", async () => {
@@ -394,14 +398,14 @@ describe('Committee seat actions against a real database (ACC-283)', () => {
 
     const dry = await runBackfill(prisma, { execute: false, organizationIds: [o.id], isFixture: fixture });
     expect(dry.plans[0]!.committeeIds).toEqual([edited, old1, old2].sort());
-    expect(dry.plans[0]!.rowsPerCommittee).toBe(9);
+    expect(dry.plans[0]!.rowsPerCommittee).toBe(12); // ACC-316: + schedule_meeting (Chairman, Secretary) and record_minutes (Secretary)
     expect(await byKey(o.id, old1)).toEqual({});
 
     const run = await runBackfill(prisma, { execute: true, organizationIds: [o.id], isFixture: fixture });
     expect(run.refusedCustomers).toEqual([]);
-    expect(run.changed).toEqual([{ slug: o.slug, committees: 3, rows: 27 }]);
-    for (const c of [old1, old2, edited]) expect(await byKey(o.id, c)).toEqual({ chairman: ALL_FIVE, secretary: MEMBER_FOUR });
-    expect(await byKey(o.id, kept)).toEqual({ chairman: ALL_FIVE, secretary: MEMBER_FOUR });
+    expect(run.changed).toEqual([{ slug: o.slug, committees: 3, rows: 36 }]); // 12 rows each since ACC-316
+    for (const c of [old1, old2, edited]) expect(await byKey(o.id, c)).toEqual({ chairman: CHAIR, secretary: SECRETARY });
+    expect(await byKey(o.id, kept)).toEqual({ chairman: CHAIR, secretary: SECRETARY });
     expect(await prisma.auditLog.count({ where: { objectId: { in: [old1, old2, edited] }, metadata: { path: ['source'], equals: 'backfill-acc283-seat-actions' } } })).toBe(3);
 
     const again = await runBackfill(prisma, { execute: true, organizationIds: [o.id], isFixture: fixture });

@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Query,
   UseGuards,
   Delete,
 } from '@nestjs/common';
@@ -21,17 +22,30 @@ import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
 import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
 import {
+  TaskSlaHistoryQueryDto,
+  UpdateTaskSlaEscalationDto,
+  UpdateTaskSlaLimitsDto,
+  UpdateTaskSlaNoticesDto,
+} from './dto/update-task-sla-sections.dto';
+import { TaskSlaPolicyService } from './task-sla-policy.service';
+import {
   ITenant,
   ITenantConfig,
   ITenantEntitlements,
   IEmailConfig,
   ITaskSlaSettings,
+  ITaskSlaHistoryPage,
+  ITaskSlaNotices,
+  ITaskSlaPolicy,
 } from './interfaces/tenant.interface';
 
 @Controller('tenant')
 @UseGuards(TenantGuard, PermissionGuard)
 export class TenantController {
-  constructor(private readonly tenantService: TenantService) {}
+  constructor(
+    private readonly tenantService: TenantService,
+    private readonly taskSlaPolicy: TaskSlaPolicyService,
+  ) {}
 
   @Get()
   @Permissions(TENANT_PERMISSIONS.VIEW)
@@ -122,14 +136,75 @@ export class TenantController {
     return this.tenantService.getTaskSla(tenantId);
   }
 
+  // The whole-policy save the current screen uses. ACC-313 keeps it, under
+  // the same lock and audit as the section routes, until the new screen ships.
   @Patch('task-sla')
   @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
-  updateTaskSla(
+  async updateTaskSla(
     @Body() dto: UpdateTaskSlaDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
   ): Promise<void> {
-    return this.tenantService.updateTaskSla(tenantId, dto, userId);
+    await this.taskSlaPolicy.replaceAll(tenantId, dto, userId);
+  }
+
+  // ACC-313 — the page saves by section; each route merges only its fields.
+  @Patch('task-sla/limits')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  updateTaskSlaLimits(
+    @Body() dto: UpdateTaskSlaLimitsDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskSlaSettings> {
+    return this.taskSlaPolicy.saveLimits(tenantId, dto, userId);
+  }
+
+  @Patch('task-sla/escalation')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  updateTaskSlaEscalation(
+    @Body() dto: UpdateTaskSlaEscalationDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskSlaSettings> {
+    return this.taskSlaPolicy.saveEscalation(tenantId, dto, userId);
+  }
+
+  // ACC-313 — who changed the policy, when, and from what to what. It names
+  // colleagues and the values they replaced, so it takes the key that may
+  // change the policy, as the working calendar's history does.
+  @Get('task-sla/history')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  getTaskSlaHistory(
+    @Query() query: TaskSlaHistoryQueryDto,
+    @CurrentTenant() tenantId: string,
+  ): Promise<ITaskSlaHistoryPage> {
+    return this.taskSlaPolicy.history(tenantId, query.skip, query.take);
+  }
+
+  // ACC-313 — the whole policy the page reads: the tiers and the notices.
+  @Get('task-sla/policy')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  getTaskSlaPolicy(@CurrentTenant() tenantId: string): Promise<ITaskSlaPolicy> {
+    return this.taskSlaPolicy.policy(tenantId);
+  }
+
+  // ACC-313 — whether an edit that moves a due date tells the assignees.
+  @Patch('task-sla/notices')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  updateTaskSlaNotices(
+    @Body() dto: UpdateTaskSlaNoticesDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskSlaNotices> {
+    return this.taskSlaPolicy.saveNotices(tenantId, dto, userId);
+  }
+
+  // ACC-313 — every value back to the defaults, for tasks created afterwards.
+  @Post('task-sla/reset')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  resetTaskSla(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<ITaskSlaPolicy> {
+    return this.taskSlaPolicy.reset(tenantId, userId);
   }
 
   @Post('bootstrap')

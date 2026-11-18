@@ -13,14 +13,18 @@ import { TenantService } from '../tenant/tenant.service';
 import { WorkflowService } from './workflow.service';
 import { TaskService } from '../task/task.service';
 import { TaskRequestService } from '../task/task-request.service';
+import { TaskDueWarningService } from '../task/task-due-warning.service';
+import { isWorkingMomentWith, type LoadedCalendar } from '../working-calendar/working-time';
 import type { StagePool, StagePoolRequest } from './stage-pool.service';
-import {
-  POOL_LABEL_INCLUDE,
-  PICKABLE_STATUSES,
-  poolLabel,
-  poolTargetOf,
-  toPoolView,
-} from '../task/task-pool';
+
+/**
+ * ACC-312 — the entries the unassigned-stage sweep looks at: open, at a stage
+ * that is NOT final. A record at its final stage waits on nobody, so it is never
+ * flagged, its pool is never resolved (no queries), and no task is recovered on
+ * it. One constant, so the sweep and its spec cannot disagree about the filter.
+ */
+export const SWEEP_OPEN_ENTRIES_WHERE = { exitedAt: null, stage: { isFinal: false } } as const;
+import { CURRENT_ACTIVE_ASSIGNEE, PICKABLE_STATUSES, POOL_LABEL_INCLUDE, poolLabel, poolTargetOf, toPoolView } from '../task/task-pool';
 import {
   Task as PrismaTask,
   TaskAssignee as PrismaTaskAssignee,
@@ -89,6 +93,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // owns the working-time shift. Same forwardRef edge as taskService.
     @Inject(forwardRef(() => TaskRequestService))
     private readonly taskRequests: TaskRequestService,
+    // ACC-313 — the due-soon reminder lives with the tasks; this sweep runs it.
+    @Inject(forwardRef(() => TaskDueWarningService))
+    private readonly dueWarnings: TaskDueWarningService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -138,6 +145,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     await this.runIsolatedStep('sweepOverdueTasks', failedSteps, () => this.sweepOverdueTasks(now));
     await this.runIsolatedStep('sweepUnpickedPoolTasks', failedSteps, () => this.sweepUnpickedPoolTasks(now));
     await this.runIsolatedStep('sweepDueHolds', failedSteps, () => this.sweepDueHolds(now));
+    // ACC-313 — after the holds, so a task resumed this pass can be reminded in it.
+    await this.runIsolatedStep('sweepDueWarnings', failedSteps, () => this.dueWarnings.sweep(now));
     await this.runIsolatedStep('sweepUnassignedStages', failedSteps, () => this.sweepUnassignedStages());
     await this.runIsolatedStep('sweepExpiredActingOrgUnitAssignments', failedSteps, () =>
       this.sweepExpiredActingOrgUnitAssignments(now),
@@ -205,7 +214,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
 
           if (!(await this.isWithinWorkingHours(organizationId))) continue;
 
-          await this.fireEscalation(organizationId, instanceStage.id, i, rule);
+          await this.fireEscalation(organizationId, instanceStage.id, instanceStage.stage, i, rule);
           newlyEscalatedIndexes.push(i);
         }
       }
@@ -392,7 +401,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         {
           userId: user.id,
           titleEn: 'Acting-unit assignment ended',
+          titleAr: 'انتهى التكليف المؤقت بوحدة أخرى',
           bodyEn: 'Your acting assignment to another org unit has ended.',
+          bodyAr: 'انتهى تكليفك المؤقت في وحدة تنظيمية أخرى.',
         },
         user.organizationId,
       );
@@ -407,7 +418,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // queue — same precedent as sweepOverdueTasks() above.
   private async sweepUnassignedStages(): Promise<void> {
     const openStages = await this.prisma.workflowInstanceStage.findMany({
-      where: { exitedAt: null },
+      where: SWEEP_OPEN_ENTRIES_WHERE,
       include: { workflowInstance: true, stage: true },
     });
 
@@ -621,14 +632,20 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         // escalation audit row would repeat every pass (REJECTED's reason).
         // An unpicked pool task escalates through sweepUnpickedPoolTasks()
         // instead; once picked, it is an ordinary task again.
+        // ACC-315 — "someone holds it" is ACC-86's rule, the one the pool sweep
+        // reads: a pool task held only by someone no longer ACTIVE is waiting, so
+        // it escalates there, never here too.
         OR: [
           { assignedPositionId: null, assignedCommitteeId: null },
-          { assignees: { some: { removedAt: null } } },
+          { assignees: { some: CURRENT_ACTIVE_ASSIGNEE } },
         ],
       },
-      include: { assignees: { where: { removedAt: null } } },
+      include: { assignees: { where: CURRENT_ACTIVE_ASSIGNEE } },
     });
 
+    // ACC-313 (Q1) — hours overdue are WORKING hours, like the limits, on each
+    // organisation's calendar, loaded once per organisation per pass.
+    const calendars = new Map<string, LoadedCalendar>();
     for (const task of overdueTasks) {
       if (!task.slaBreachedAt) {
         await this.prisma.task.update({
@@ -639,13 +656,26 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
 
       const slaConfig = await this.tenantService.getTaskSla(task.organizationId);
       const tier = slaConfig[task.priority];
-      const hoursSinceDue = DateTime.fromJSDate(now).diff(
+      let calendar = calendars.get(task.organizationId);
+      if (!calendar) {
+        calendar = await this.workingCalendar.loadCalendar(task.organizationId);
+        calendars.set(task.organizationId, calendar);
+      }
+      const hoursSinceDue = this.workingCalendar.hoursBetweenWith(
+        calendar,
         DateTime.fromJSDate(task.dueAt!),
-        'hours',
-      ).hours;
+        DateTime.fromJSDate(now),
+      );
 
+      // ACC-315 — nobody on it (every current row is held by someone no longer
+      // ACTIVE): the breach is recorded above, but there is no one whose manager
+      // to tell. It is ownerless, and Setup health lists it (ACC-86).
+      if (task.assignees.length === 0) continue;
+
+      // ACC-318 — whether it is working time now, on the calendar already loaded.
+      const workingNow = isWorkingMomentWith(calendar, DateTime.fromJSDate(now));
       if (!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours) {
-        if (await this.isWithinWorkingHours(task.organizationId)) {
+        if (workingNow) {
           await this.fireTaskEscalation(task, 'MANAGER');
         }
       } else if (
@@ -653,7 +683,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         !task.headEscalatedAt &&
         hoursSinceDue >= tier.managerEscalationAfterHours + tier.headEscalationAfterHours
       ) {
-        if (await this.isWithinWorkingHours(task.organizationId)) {
+        if (workingNow) {
           await this.fireTaskEscalation(task, 'HEAD');
         }
       }
@@ -709,7 +739,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         poolEscalatedAt: null,
         status: { in: [...PICKABLE_STATUSES] },
         OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
-        assignees: { none: { removedAt: null } },
+        // ACC-86 — nobody on it: no current row held by an ACTIVE user.
+        assignees: { none: CURRENT_ACTIVE_ASSIGNEE },
       },
       include: POOL_LABEL_INCLUDE,
     });
@@ -827,7 +858,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         {
           userId: targetUserId,
           titleEn: 'Task SLA breach escalation',
-          bodyEn: 'A task has breached its SLA and has been escalated to you.',
+          titleAr: 'تصعيد مهمة تجاوزت مهلتها',
+          bodyEn: `"${task.title}" is past its SLA and has been escalated to you.`,
+          bodyAr: `تجاوزت المهمة «${task.titleAr ?? task.title}» مهلتها، وصُعِّدت إليك.`,
           objectType: 'Task',
           objectId: task.id,
         },
@@ -855,6 +888,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   private async fireEscalation(
     organizationId: string,
     instanceStageId: string,
+    // ACC-95 — the notice names the stage; the sweep already loaded it.
+    stage: { nameEn: string; nameAr: string | null },
     ruleIndex: number,
     rule: EscalationRule,
   ): Promise<void> {
@@ -875,7 +910,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         {
           userId,
           titleEn: 'SLA breach escalation',
-          bodyEn: `A workflow stage has breached its SLA and requires attention (escalation rule ${ruleIndex}).`,
+          titleAr: 'تصعيد لتجاوز المهلة',
+          bodyEn: `The "${stage.nameEn}" stage is past its SLA and needs attention.`,
+          bodyAr: `تجاوزت مرحلة «${stage.nameAr ?? stage.nameEn}» مهلتها وتحتاج إلى متابعة.`,
         },
         organizationId,
       );
@@ -890,28 +927,12 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     });
   }
 
-  // No dedicated "is now within working hours" method exists on
-  // WorkingCalendarService (only getOrCreate/listHolidays are public) — this
-  // reimplements the same day/hour/holiday check calculateDeadline() uses
-  // internally, against the tenant's own calendar config.
+  // Whether now is inside the organisation's working hours, on a working day
+  // that is not a holiday — escalations fire only then.
   private async isWithinWorkingHours(organizationId: string): Promise<boolean> {
-    const calendar = await this.workingCalendar.getOrCreate(organizationId);
-    const holidays = await this.workingCalendar.listHolidays(organizationId);
-    const now = DateTime.now().setZone(calendar.timezone);
-
-    if (!calendar.workingDays.includes(now.weekday % 7)) return false;
-
-    const isHoliday = holidays.some((h) => {
-      const hDate = DateTime.fromJSDate(h.date).setZone(calendar.timezone);
-      if (h.isRecurring) return hDate.month === now.month && hDate.day === now.day;
-      return hDate.month === now.month && hDate.day === now.day && hDate.year === now.year;
-    });
-    if (isHoliday) return false;
-
-    const [startHour = 0, startMin = 0] = calendar.workingHoursStart.split(':').map(Number);
-    const [endHour = 0, endMin = 0] = calendar.workingHoursEnd.split(':').map(Number);
-    const nowMinutes = now.hour * 60 + now.minute;
-
-    return nowMinutes >= startHour * 60 + startMin && nowMinutes < endHour * 60 + endMin;
+    // ACC-318 — the one rule, isWorkingMomentWith() (working-time.ts), on the
+    // calendar read without creating a row; this used to be a hand copy whose
+    // holiday check read the date in the organisation's zone.
+    return isWorkingMomentWith(await this.workingCalendar.loadCalendar(organizationId), DateTime.now());
   }
 }

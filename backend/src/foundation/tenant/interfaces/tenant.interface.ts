@@ -82,7 +82,8 @@ export type IEmailConfig = IMaskedEmailConfig;
 // tenant-configurable grace periods per priority, both allowed to be 0
 // (immediate): managerEscalationAfterHours counts from Task.dueAt,
 // headEscalationAfterHours is an ADDITIONAL grace period counted from when
-// the Manager tier fires, not from dueAt again.
+// the Manager tier fires, not from dueAt again. ACC-313 (Q1): both are
+// WORKING hours, on the organisation's calendar, like dueAfterHours.
 export interface ITaskSlaTier {
   dueAfterHours: number;
   managerEscalationAfterHours: number;
@@ -94,4 +95,50 @@ export interface ITaskSlaSettings {
   MEDIUM: ITaskSlaTier;
   HIGH: ITaskSlaTier;
   CRITICAL: ITaskSlaTier;
+}
+
+/**
+ * ACC-313 — stored at Organization.settings.taskSlaNotices, a sibling of
+ * taskSla so the six readers of the SLA numbers never learn about notices.
+ * `warnBeforeDue` is how long before the due time a reminder goes, per
+ * priority (nothing reads it yet); `notifyOnDueChange` says whether an edit
+ * that moves a due date tells the assignees.
+ */
+export type TaskSlaWarnBeforeDue = 'OFF' | 'H1' | 'H2' | 'H4' | 'H8' | 'WORKING_DAY';
+
+export interface ITaskSlaNotices {
+  warnBeforeDue: Record<keyof ITaskSlaSettings, TaskSlaWarnBeforeDue>;
+  notifyOnDueChange: boolean;
+}
+
+/** GET /tenant/task-sla/policy, and what Reset answers. */
+export interface ITaskSlaPolicy {
+  tiers: ITaskSlaSettings;
+  notices: ITaskSlaNotices;
+  /** ACC-313 PR 4 — the calendar's working day in hours: what "1 working day" means. */
+  workingHoursPerDay: number;
+}
+
+/**
+ * ACC-313 — one saved change to the task SLA policy, from the audit trail.
+ * `kind` names what was saved: a section, the notices switch, or a reset to
+ * the defaults; `legacy` is a save made before ACC-313, whose audit row
+ * recorded no values, so `before` and `after` are null.
+ */
+export type TaskSlaChangeKind = 'limits' | 'escalation' | 'all' | 'notices' | 'reset' | 'legacy';
+
+export interface ITaskSlaChange {
+  id: string;
+  changedAt: Date;
+  actorName: string | null;
+  kind: TaskSlaChangeKind;
+  before: unknown;
+  after: unknown;
+  /** CC-332 — 'WORKING' when the row was written under PR 4's rule; null on an older row. */
+  escalationHoursUnit: 'WORKING' | null;
+}
+
+export interface ITaskSlaHistoryPage {
+  rows: ITaskSlaChange[];
+  total: number;
 }

@@ -2,13 +2,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { provideTranslateService } from '@ngx-translate/core';
+import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
 import { CalendarConfigComponent } from './calendar-config.component';
 import { preserveDocumentLanguage } from '../../../../../testing/document-language';
+import { expectArabicDateInPageDirection } from '../../../../../testing/arabic-date';
 
 /**
  * ACC-120 slice 1 — the Template 5 behaviours that are structural rather than
@@ -274,6 +275,44 @@ describe('CalendarConfigComponent (ACC-120 slice 1)', () => {
       expect(hidden).toEqual(['workingCalendar.wasValue', 'workingCalendar.nowValue']);
     });
 
+    // CC-324 5 — as on the Task SLA history: the old value muted with no
+    // strikethrough, the new one in the medium weight.
+    it('draws the old value muted with no strikethrough, the new one in the medium weight', async () => {
+      const { fixture, http } = setup(['org:view', 'org:manage']);
+      await settle(fixture, http, {
+        history: [
+          {
+            id: 'a1',
+            changedAt: '2026-09-20T10:00:00.000Z',
+            actorName: 'Nora Al-Otaibi',
+            before: { ...CALENDAR, workingHoursEnd: '16:00' },
+            after: { ...CALENDAR, workingHoursEnd: '17:00' },
+          },
+        ],
+      });
+      fixture.componentInstance.historyOpen.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const from = document.querySelector<HTMLElement>('.am-history__from');
+      const to = document.querySelector<HTMLElement>('.am-history__to');
+      expect(from).withContext('an old value').not.toBeNull();
+      expect(to).withContext('a new value').not.toBeNull();
+      const probe = (token: string) => {
+        const p = document.createElement('span');
+        p.style.color = `var(${token})`;
+        document.body.appendChild(p);
+        const color = getComputedStyle(p).color;
+        p.remove();
+        return color;
+      };
+      expect(probe('--am-ink-500')).not.toBe(probe('--am-ink-900'));
+      expect(getComputedStyle(from!).textDecorationLine).toBe('none');
+      expect(getComputedStyle(from!).color).toBe(probe('--am-ink-500'));
+      expect(getComputedStyle(to!).fontWeight).toBe('500');
+    });
+
     // THE ARROW MUST FOLLOW THE READING DIRECTION. U+2192 is not bidi-mirrored
     // by the renderer, so in Arabic the values ordered correctly — old on the
     // right, new on the left — while the glyph kept pointing left-to-right and
@@ -317,6 +356,40 @@ describe('CalendarConfigComponent (ACC-120 slice 1)', () => {
         expect(getComputedStyle(arrow!).transform).toBe(expected);
       });
     }
+
+    // ACC-313 (CC-323) — the change date takes the page's direction. Forced
+    // left to right, an Arabic date showed its day last.
+    const ARABIC_CHANGE = [
+      {
+        id: 'a1',
+        changedAt: '2026-09-20T10:00:00.000Z',
+        actorName: 'Nora Al-Otaibi',
+        before: { ...CALENDAR, workingHoursEnd: '16:00' },
+        after: { ...CALENDAR, workingHoursEnd: '17:00' },
+      },
+    ];
+
+    it('in Arabic, the last-changed date reads day first, in the page direction', async () => {
+      const { fixture, http } = setup(['org:view', 'org:manage']);
+      TestBed.inject(TranslateService).use('ar');
+      await settle(fixture, http, { history: ARABIC_CHANGE });
+
+      const span = (fixture.nativeElement as HTMLElement).querySelector('.am-settings__meta > span > span');
+      expectArabicDateInPageDirection(span, { day: '20', month: 'سبتمبر', time: '13:00' });
+    });
+
+    it('in Arabic, the history dialog’s date reads day first, in the page direction', async () => {
+      const { fixture, http } = setup(['org:view', 'org:manage']);
+      TestBed.inject(TranslateService).use('ar');
+      await settle(fixture, http, { history: ARABIC_CHANGE });
+      fixture.componentInstance.historyOpen.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const span = document.querySelector('.am-history__meta > span:first-child');
+      expectArabicDateInPageDirection(span, { day: '20', month: 'سبتمبر', time: '13:00' });
+    });
 
     it('shows nothing rather than an empty byline when no change is recorded', async () => {
       const { fixture, http, page } = setup(['org:view', 'org:manage']);

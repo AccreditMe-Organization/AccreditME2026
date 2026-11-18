@@ -6,6 +6,7 @@ import { WorkflowModule } from '../workflow/workflow.module';
 import { OrgPositionModule } from '../org-position/org-position.module';
 import { TenantController } from './tenant.controller';
 import { TenantService } from './tenant.service';
+import { TaskSlaPolicyService } from './task-sla-policy.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
@@ -23,6 +24,7 @@ import { BetterAuthProvider } from '../../providers/auth/better-auth.provider';
   controllers: [TenantController],
   providers: [
     TenantService,
+    TaskSlaPolicyService,
     AuditLogService,
     DelegationLabelService,
     ObjectVisibilityService,

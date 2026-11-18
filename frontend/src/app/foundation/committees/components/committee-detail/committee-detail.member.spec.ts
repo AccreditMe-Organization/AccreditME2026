@@ -52,7 +52,7 @@ const COMMITTEE = (over: Partial<CommitteeDetailDto> = {}): CommitteeDetailDto =
   parent: { id: 'c-parent', nameEn: 'Quality Council', nameAr: 'مجلس الجودة', mayOpen: true },
   reportsTo: { id: 'c-board', nameEn: 'Board of Directors', nameAr: null, mayOpen: false },
   currentStageNameEn: 'Active',
-  currentStageNameAr: 'نشطة',
+  currentStageNameAr: 'نشطة', mayWrite: true,
   ...over,
 });
 

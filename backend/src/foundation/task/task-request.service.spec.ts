@@ -78,6 +78,7 @@ const mockPrisma = {
   task: { findFirst: jest.fn(), update: jest.fn() },
   taskRequest: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   user: { findFirst: jest.fn() },
+  taskAssignee: { findMany: jest.fn() },
   // ACC-190 — approving may move a stage task's stage deadline.
   workflowInstanceStage: { findFirst: jest.fn(), update: jest.fn() },
   // ACC-120 slice 3 — the inbox names each row's record (task-record-names.ts).
@@ -91,6 +92,7 @@ const mockPrisma = {
   $transaction: jest.fn(),
 };
 const mockAudit = { log: jest.fn() };
+const inactive = new Set<string>();
 const mockNotifications = { create: jest.fn() };
 const mockCalendar = {
   workingHoursBetween: jest.fn(),
@@ -127,6 +129,14 @@ describe('TaskRequestService (ACC-173)', () => {
     mockPrisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(mockPrisma));
     mockPrisma.$queryRaw.mockResolvedValue([]);
     mockPrisma.task.findFirst.mockResolvedValue(task());
+    // ACC-315 — who is on the task is read with CURRENT_ACTIVE_ASSIGNEE. Answered
+    // from the task this test loaded: its current rows, less anyone in `inactive`.
+    inactive.clear();
+    mockPrisma.taskAssignee.findMany.mockImplementation(async () => {
+      const loaded = mockPrisma.task.findFirst.mock.results;
+      const t = (await loaded[loaded.length - 1]?.value) as { assignees?: { userId: string; removedAt: Date | null }[] } | null;
+      return (t?.assignees ?? []).filter((a) => a.removedAt === null && !inactive.has(a.userId)).map((a) => ({ userId: a.userId }));
+    });
     mockPrisma.task.update.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
       Promise.resolve({ ...task(), ...data }),
     );
@@ -137,7 +147,11 @@ describe('TaskRequestService (ACC-173)', () => {
     mockPrisma.taskRequest.update.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
       Promise.resolve({ ...request(), ...data }),
     );
-    mockPrisma.user.findFirst.mockResolvedValue({ name: 'Sara' });
+    // ACC-315 — a user read naming status ACTIVE answers only for someone not in
+    // `inactive` (the resumed notice's creator check); any other read is a name.
+    mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; status?: string } }) =>
+      Promise.resolve(where.status === 'ACTIVE' ? (inactive.has(where.id) ? null : { id: where.id }) : { name: 'Sara' }),
+    );
     // The creator decides; nobody else covers anybody.
     mockAuthority.canActForCreator.mockImplementation(async (createdBy: string, viewer: string) => createdBy === viewer);
     mockAuthority.decisionRecipients.mockResolvedValue([CREATOR]);
@@ -379,6 +393,8 @@ describe('TaskRequestService (ACC-173)', () => {
           slaBreachedAt: null,
           managerEscalatedAt: null,
           headEscalatedAt: null,
+          // ACC-313 — the new due date re-arms the due-soon reminder.
+          dueWarnedAt: null,
         },
       });
       expect(mockPrisma.taskRequest.update).toHaveBeenCalledWith({
@@ -420,6 +436,8 @@ describe('TaskRequestService (ACC-173)', () => {
           heldFromStatus: returnTo,
           heldAt: expect.any(Date),
           onHoldUntil: until,
+          // ACC-313 — the window moves at approval, so the due-soon reminder re-arms.
+          dueWarnedAt: null,
         }),
       });
       expect(mockPrisma.taskRequest.update).toHaveBeenCalledWith(
@@ -762,6 +780,22 @@ describe('TaskRequestService (ACC-173)', () => {
       );
       expect(told.map((n) => n.userId)).toEqual([CREATOR]);
       expect(told[0]).toEqual(expect.objectContaining({ titleEn: 'Task resumed', titleAr: 'استُؤنفت المهمة' }));
+    });
+
+    it('ACC-315: an assignee no longer ACTIVE is not told; the creator is', async () => {
+      await service.resume('task-1', admin, ORG_A);
+      expect((mockNotifications.create.mock.calls as [{ userId: string }][]).map(([n]) => n.userId).sort()).toEqual([ASSIGNEE, CREATOR].sort());
+      mockNotifications.create.mockClear();
+      mockPrisma.task.findFirst.mockResolvedValue(onHold());
+      inactive.add(ASSIGNEE);
+      await service.resume('task-1', admin, ORG_A);
+      expect((mockNotifications.create.mock.calls as [{ userId: string }][]).map(([n]) => n.userId)).toEqual([CREATOR]);
+    });
+
+    it('ACC-315: a creator no longer ACTIVE is not told', async () => {
+      inactive.add(CREATOR);
+      await service.resume('task-1', admin, ORG_A);
+      expect((mockNotifications.create.mock.calls as [{ userId: string }][]).map(([n]) => n.userId)).toEqual([ASSIGNEE]);
     });
 
     it('lets a decider resume early: the creator, their cover, or a Manage tasks holder on the type', async () => {

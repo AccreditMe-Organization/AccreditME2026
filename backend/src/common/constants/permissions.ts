@@ -73,7 +73,10 @@ export const WORKFLOWS_PERMISSIONS = {
 export const COMMITTEES_PERMISSIONS = {
   VIEW:               'committees:view',
   MANAGE:             'committees:manage',
-  APPROVE:            'committees:approve',
+  // ACC-283 PR 4 — committees:approve is RETIRED: since PR 2 the chain of
+  // authority decides change requests (change-request-chain.ts), and nothing
+  // reads the key. retired-committee-approve.spec.ts fails on any source that
+  // names it; backfill:acc283-retire-committees-approve takes it off roles.
   // ACC-28 correction — replaces the Chairman-specific authority check
   // (assertCommitteeAuthority(), removed) with per-action permissions, same
   // model as every other module. A Chairman is often a figurehead who
@@ -123,6 +126,13 @@ export const MEETINGS_PERMISSIONS = {
   MANAGE:          'meetings:manage',
   RECORD_MINUTES:  'meetings:record_minutes',
   APPROVE_MINUTES: 'meetings:approve_minutes',
+  // ACC-316 (Ahmad, 18 Nov) — schedule, record and approve count only for the
+  // holder's OWN unit's meetings (schedule also for committees that unit owns);
+  // the two sub-units keys need the key AND headship of a unit above.
+  // meeting-authority.ts is where they are read.
+  SCHEDULE:          'meetings:schedule',
+  SCHEDULE_SUBUNITS: 'meetings:schedule_subunits',
+  APPROVE_SUBUNITS:  'meetings:approve_subunits',
 } as const;
 
 export const DOCUMENTS_PERMISSIONS = {
@@ -241,9 +251,9 @@ export const PERMISSIONS_NOT_YET_CHECKED: readonly string[] = [
   COMMITTEES_PERMISSIONS.MANAGE,
   NOTIFICATIONS_PERMISSIONS.VIEW,
   NOTIFICATIONS_PERMISSIONS.MANAGE,
+  // ACC-316 PR 2 — a seed-time umbrella only (ACC-44). record_minutes and
+  // approve_minutes left this list: the meeting stage pools read them.
   MEETINGS_PERMISSIONS.MANAGE,
-  MEETINGS_PERMISSIONS.RECORD_MINUTES,
-  MEETINGS_PERMISSIONS.APPROVE_MINUTES,
   DOCUMENTS_PERMISSIONS.VIEW,
   DOCUMENTS_PERMISSIONS.CREATE,
   DOCUMENTS_PERMISSIONS.SUBMIT,

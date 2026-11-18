@@ -1104,7 +1104,7 @@ Permission strings follow {module}:{action} pattern.
 
 **Regenerated (ACC-274) from `backend/src/common/constants/permissions.ts`** on
 dev `487a0a8`: every `*_PERMISSIONS` group, which is exactly what
-`permission.seed.ts` seeds (75 keys since ACC-164 added `users:reset_mfa`). A
+`permission.seed.ts` seeds (77 keys: ACC-164 added `users:reset_mfa`, ACC-283 retired `committees:approve`, ACC-316 added three meeting keys). A
 key marked `*` is in `PERMISSIONS_NOT_YET_CHECKED`: no code decides anything with
 it yet, so a role cannot gain it (ACC-120 slice 5). That file is the source; this
 list is a copy.
@@ -1123,13 +1123,14 @@ lookups:view                lookups:manage
 workflows:view              workflows:manage
 setup:view
 notifications:view *        notifications:manage *
-committees:view              committees:manage *        committees:approve
+committees:view              committees:manage *
 committees:create            committees:edit_details    committees:add_member
 committees:remove_member     committees:change_member_role
 committees:view_all_tasks    committees:view_unit_tasks
 committees:create_tasks      committees:manage_tasks
-meetings:view               meetings:manage *         meetings:record_minutes *
-meetings:approve_minutes *
+meetings:view               meetings:manage *         meetings:record_minutes
+meetings:approve_minutes    meetings:schedule         meetings:schedule_subunits
+meetings:approve_subunits
 documents:view *            documents:create *        documents:submit *
 documents:review *          documents:approve *       documents:publish *
 documents:manage_templates * documents:manage_numbering *
@@ -4786,6 +4787,7 @@ SYSTEM-REFERENCE.md §3.21. Plan, Ahmad's answers (7 Nov) and the as-built notes
   non-member without `committees:view` gets the 404 a missing committee gets. **Deciding
   (approve, return, reject) is NOT opened to members**: `committees:view` and
   `committees:approve`, never the requester. This is the interim rule until ACC-283.
+  Superseded (ACC-283 PR 6): for add, remove, change a seat and request a change, a member's SEAT also grants (`member-actions.ts`, the one rule; the three member routes lost their gates); deciding is the chain's (PR 2). SYSTEM-REFERENCE.md §3.21.
 - **Membership does not widen task visibility** (`taskVisibleSql` is unchanged); it names a
   member's own committee on their task rows.
 - **The committee read names what the page used to read every committee for**: `parent`
@@ -5134,6 +5136,12 @@ requests.** Full mechanism: SYSTEM-REFERENCE.md §3.18 (the chain) and §3.21
   ACC-288 keeps the root unit headed, so the chain always ends with a decider.
   If it ever finds nobody (a legacy headless root), PR 2 refuses Submit with
   409 `CHANGE_REQUEST_NO_DECIDER` and logs it.
+- **`committees:approve` IS RETIRED (PR 4).** It is out of the catalogue, the seed
+  and the screens, and `retired-committee-approve.spec.ts` fails on any source
+  that names it. `backfill:acc283-retire-committees-approve` takes it off roles
+  AFTER the deploy: dry run, `-- --execute`, then a dry run reporting 0. It
+  refuses customers. New organisations seed Terms Review on the committee's
+  own unit head (`ORG_UNIT_HEAD`, no unit).
 - **THE CHAIN OF AUTHORITY DECIDES A CHANGE REQUEST, NEVER `committees:approve`**
   (`change-request-chain.ts`): a Reports-to committee's deciding seat, else the
   owning unit's head or cover in force and upwards to the root. The requester,

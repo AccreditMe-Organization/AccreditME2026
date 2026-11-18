@@ -545,6 +545,11 @@ export class StageWhoEntryComponent implements OnInit {
         return this.translate.instant('workflow.who.creatorValue') as string;
       case 'COMMITTEE':
         return e.committeeId ? name(e.committee) : (this.translate.instant('workflow.who.recordCommittee') as string);
+      // ACC-316 — no fields: the kind says who, worked out per meeting by the server.
+      case 'MEETING_SCHEDULERS':
+      case 'MEETING_RECORDERS':
+      case 'MEETING_APPROVERS':
+        return this.translate.instant(`workflow.who.kind.${e.kind}`) as string;
     }
   });
 

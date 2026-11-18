@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { counted } from '../../common/i18n/plural';
 import {
   IPaginatedResponse,
   paginated,
@@ -44,6 +45,7 @@ import { StagePoolService } from '../workflow/stage-pool.service';
 import { CommitteeTransferNoticeService } from '../committees/transfer-notice/committee-transfer-notice.service';
 import { errorKind } from '../committees/transfer-notice/error-kind';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
+import { endEverySessionInTx } from '../auth/session-revocation';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
 import { ValidateTransferPositionDto } from './dto/validate-transfer-position.dto';
@@ -1095,14 +1097,17 @@ export class UserService {
       where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
     });
 
+    // ACC-95 — counted in each language's own plural forms, never "user(s)".
+    const title = counted(incompleteUsers.length, MISSING_PLACEMENT_TITLE);
+    const body = counted(incompleteUsers.length, MISSING_PLACEMENT_BODY);
     for (const userRole of adminUserRoles) {
       await this.notificationService.create(
         {
           userId: userRole.userId,
-          titleEn: `${incompleteUsers.length} active user(s) missing position or org unit`,
-          titleAr: `${incompleteUsers.length} مستخدم نشط ينقصه المسمى الوظيفي أو الوحدة التنظيمية`,
-          bodyEn: `${incompleteUsers.length} active user(s) in your organization have no assigned position and/or org unit. Update each user's profile to complete their record.`,
-          bodyAr: `يوجد ${incompleteUsers.length} مستخدم نشط في منشأتك بلا مسمى وظيفي و/أو وحدة تنظيمية. حدّث ملف كل مستخدم لإكمال بياناته.`,
+          titleEn: title.en,
+          titleAr: title.ar,
+          bodyEn: body.en,
+          bodyAr: body.ar,
         },
         organizationId,
       );
@@ -1499,6 +1504,14 @@ export class UserService {
   // BEFORE bulk reassignment starts, so the departing user's existing
   // sessions are already dead the instant this begins, not after it
   // finishes (see step-09 plan Section 8).
+  //
+  // ACC-216 (CC-301) — the sessions end INSIDE the flip's transaction, through
+  // endEverySessionInTx(): tokenVersion + 1, every live RefreshToken row
+  // revoked, and the person's Better Auth sessions deleted. Before this only
+  // tokenVersion was bumped (AuthProvider.invalidateUserSessions(), after the
+  // commit), so the refresh rows stayed `revokedAt: null` and read as live
+  // sign-ins. A refused deactivation rolls the ending back with the flip.
+  // Reactivation brings none of it back: reactivate() writes no refresh row.
   async deactivate(
     id: string,
     organizationId: string,
@@ -1544,6 +1557,9 @@ export class UserService {
       await assertNotAccountOwner(tx, organizationId, id);
       const baseline = await captureAdministratorBaseline(organizationId, tx);
       await tx.user.update({ where: { id }, data: { status: 'INACTIVE' } });
+      // ACC-216 — every sign-in ends with the flip (see the header above).
+      const auth = await tx.user.findFirst({ where: { id, organizationId }, select: { authUserId: true } });
+      await endEverySessionInTx(tx, { id, organizationId, authUserId: auth?.authUserId ?? null });
       await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
       // ACC-288 — the root's last head can't be deactivated without a successor or a cover.
       await assertRootUnitRetainsAHead(organizationId, tx, rootHeaded);
@@ -1564,8 +1580,6 @@ export class UserService {
         `Change request departure follow-up failed: organizationId=${organizationId} userId=${id} (${(err as Error).name})`,
       );
     }
-
-    await this.authProvider.invalidateUserSessions(id);
 
     // ACC-40 Section 2.5.1 — a departing user may have been a unit's direct
     // Head-position holder; the status flip above already excludes them
@@ -1889,17 +1903,23 @@ export class UserService {
     reassignedCount: number,
     unassignedCount: number,
   ): Promise<void> {
-    const summary =
-      unassignedCount > 0
-        ? `${reassignedCount} task(s) reassigned, ${unassignedCount} task(s) flagged as UNASSIGNED and need manual reassignment.`
-        : `${reassignedCount} task(s) reassigned.`;
+    // ACC-95 — each clause counted in its language's plural forms, and left out
+    // at zero; "UNASSIGNED" is said in words.
+    const clauses = [
+      reassignedCount > 0 ? counted(reassignedCount, DEPARTURE_SUMMARY_REASSIGNED) : null,
+      unassignedCount > 0 ? counted(unassignedCount, DEPARTURE_SUMMARY_UNASSIGNED) : null,
+    ].filter((c): c is { en: string; ar: string } => c !== null);
+    const summaryEn = clauses.map((c) => ` ${c.en}`).join('');
+    const summaryAr = clauses.map((c) => ` ${c.ar}`).join('');
 
     for (const admin of admins) {
       await this.notificationService.create(
         {
           userId: admin.userId,
           titleEn: `${departedUser.name} has been deactivated`,
-          bodyEn: `${departedUser.name}'s account was deactivated. ${summary}`,
+          titleAr: `أُلغي تفعيل حساب «${departedUser.name}»`,
+          bodyEn: `${departedUser.name}'s account was deactivated.${summaryEn}`,
+          bodyAr: `أُلغي تفعيل حساب «${departedUser.name}».${summaryAr}`,
           channel: 'IN_APP',
         },
         organizationId,
@@ -1982,3 +2002,65 @@ export class UserService {
     return this.roleService.removeRoleFromUser(userId, roleId, organizationId, actorId);
   }
 }
+
+// ACC-95 — the counted admin notices. Arabic forms have no verb about a person
+// (missing placement) or are passive (the departure summary); every category
+// the language has is here.
+export const MISSING_PLACEMENT_TITLE = {
+  en: {
+    one: '{count} active user is missing a position or org unit',
+    other: '{count} active users are missing a position or org unit',
+  },
+  ar: {
+    zero: 'لا يوجد مستخدم نشط بلا مسمى وظيفي أو وحدة تنظيمية',
+    one: 'مستخدم نشط واحد بلا مسمى وظيفي أو وحدة تنظيمية',
+    two: 'مستخدمان نشطان بلا مسمى وظيفي أو وحدة تنظيمية',
+    few: '{count} مستخدمين نشطين بلا مسمى وظيفي أو وحدة تنظيمية',
+    many: '{count} مستخدمًا نشطًا بلا مسمى وظيفي أو وحدة تنظيمية',
+    other: '{count} مستخدم نشط بلا مسمى وظيفي أو وحدة تنظيمية',
+  },
+} as const;
+
+const PLACEMENT_FIX_AR = ' يلزم تحديث ملف كل منهم لإكمال بياناته.';
+
+export const MISSING_PLACEMENT_BODY = {
+  en: {
+    one: '{count} active user in your organization has no position or org unit. Update each profile to complete the record.',
+    other: '{count} active users in your organization have no position or org unit. Update each profile to complete the record.',
+  },
+  ar: {
+    zero: `${MISSING_PLACEMENT_TITLE.ar.zero}.${PLACEMENT_FIX_AR}`,
+    one: `${MISSING_PLACEMENT_TITLE.ar.one}.${PLACEMENT_FIX_AR}`,
+    two: `${MISSING_PLACEMENT_TITLE.ar.two}.${PLACEMENT_FIX_AR}`,
+    few: `${MISSING_PLACEMENT_TITLE.ar.few}.${PLACEMENT_FIX_AR}`,
+    many: `${MISSING_PLACEMENT_TITLE.ar.many}.${PLACEMENT_FIX_AR}`,
+    other: `${MISSING_PLACEMENT_TITLE.ar.other}.${PLACEMENT_FIX_AR}`,
+  },
+} as const;
+
+export const DEPARTURE_SUMMARY_REASSIGNED = {
+  en: { one: '{count} task reassigned.', other: '{count} tasks reassigned.' },
+  ar: {
+    zero: 'لم يُعَد إسناد أي مهمة.',
+    one: 'أُعيد إسناد مهمة واحدة.',
+    two: 'أُعيد إسناد مهمتين.',
+    few: 'أُعيد إسناد {count} مهام.',
+    many: 'أُعيد إسناد {count} مهمة.',
+    other: 'أُعيد إسناد {count} مهمة.',
+  },
+} as const;
+
+export const DEPARTURE_SUMMARY_UNASSIGNED = {
+  en: {
+    one: '{count} task is unassigned and needs someone assigned by hand.',
+    other: '{count} tasks are unassigned and need someone assigned by hand.',
+  },
+  ar: {
+    zero: 'لا توجد مهمة بلا مسؤول.',
+    one: 'مهمة واحدة بلا مسؤول وتحتاج إلى إسناد يدوي.',
+    two: 'مهمتان بلا مسؤول وتحتاجان إلى إسناد يدوي.',
+    few: '{count} مهام بلا مسؤول وتحتاج إلى إسناد يدوي.',
+    many: '{count} مهمة بلا مسؤول وتحتاج إلى إسناد يدوي.',
+    other: '{count} مهمة بلا مسؤول وتحتاج إلى إسناد يدوي.',
+  },
+} as const;

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
+import { CURRENT_ACTIVE_ASSIGNEE } from './task-pool';
 import { TaskClosedNoticeService } from './task-closed-notice.service';
 import { TaskSlaService } from './task-sla.service';
 import { TaskAssignmentService } from './task-assignment.service';
@@ -98,7 +99,7 @@ const task = (overrides: Record<string, unknown> = {}) => ({
 const mockPrisma = {
   organization: { findFirst: jest.fn() },
   task: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
-  taskAssignee: { updateMany: jest.fn() },
+  taskAssignee: { updateMany: jest.fn(), findMany: jest.fn() },
   taskRequest: { findMany: jest.fn(), updateMany: jest.fn() },
   workflowInstance: { findFirst: jest.fn() },
   // ACC-190 — reopen checks a stage-definition task's ENTRY is still open.
@@ -109,6 +110,7 @@ const mockPrisma = {
   $transaction: jest.fn(),
 };
 const mockAudit = { log: jest.fn() };
+const inactive = new Set<string>();
 const mockNotifications = { create: jest.fn() };
 const mockCalendar = {
   calculateDeadline: jest.fn(async (start: DateTime, hours: number) => start.plus({ hours })),
@@ -152,6 +154,14 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
     mockPrisma.$queryRaw.mockResolvedValue([]);
     mockPrisma.organization.findFirst.mockResolvedValue({ settings: {} });
     mockPrisma.task.findFirst.mockResolvedValue(task());
+    // ACC-315 — who is on the task is read with CURRENT_ACTIVE_ASSIGNEE. Answered
+    // from the task this test loaded: its current rows, less anyone in `inactive`.
+    inactive.clear();
+    mockPrisma.taskAssignee.findMany.mockImplementation(async () => {
+      const loaded = mockPrisma.task.findFirst.mock.results;
+      const t = (await loaded[loaded.length - 1]?.value) as { assignees?: { userId: string; removedAt: Date | null }[] } | null;
+      return (t?.assignees ?? []).filter((a) => a.removedAt === null && !inactive.has(a.userId)).map((a) => ({ userId: a.userId }));
+    });
     mockPrisma.task.update.mockImplementation(({ data }: { data: Record<string, unknown> }) => {
       const { createdBy: _c, assignees: _a, ...base } = task();
       return Promise.resolve({ ...base, ...data });
@@ -382,6 +392,7 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
 
     it('title and description edits are silent, and touch no date', async () => {
       await service.update('task-1', { title: 'Renamed', description: null }, creator, ORG_A);
+      // Nor the due-soon stamp (ACC-313): the due time did not change.
       expect(updateData()).toEqual({ title: 'Renamed', description: null });
       expect(mockNotifications.create).not.toHaveBeenCalled();
       expect(mockAudit.log).toHaveBeenCalledWith(
@@ -404,6 +415,8 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
         slaBreachedAt: null,
         managerEscalatedAt: null,
         headEscalatedAt: null,
+        // ACC-313 — a new due date re-arms the due-soon reminder.
+        dueWarnedAt: null,
       });
       expect(told()).toEqual([
         expect.objectContaining({
@@ -433,10 +446,44 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
       expect(data['dueAt']).toEqual(plusHours(START, 80));
       expect(data['slaLimitAt']).toEqual(plusHours(START, 80));
       expect(data['dueDateOverridden']).toBe(false);
+      // ACC-313 — a new priority's window re-arms the reminder, even for a kept date.
+      expect(data['dueWarnedAt']).toBeNull();
       expect(told()[0]!.bodyEn).toMatch(
         /^"Collect the audit sample" was updated: it is now due .+, and its priority is now Low\.$/,
       );
       expect(told()[0]!.bodyAr).toContain('أصبحت أولويتها منخفضة');
+    });
+
+    // ACC-313 — the organisation's due-date switch (Q7).
+    describe('with due-date notices switched off', () => {
+      beforeEach(() => {
+        mockPrisma.organization.findFirst.mockResolvedValue({ settings: { taskSlaNotices: { notifyOnDueChange: false } } });
+      });
+
+      it('a due-date edit is not announced', async () => {
+        await service.update('task-1', { dueDate: plusHours(START, 30).toISOString() }, creator, ORG_A);
+
+        expect(updateData()['dueAt']).toEqual(plusHours(START, 30));
+        expect(mockNotifications.create).not.toHaveBeenCalled();
+        expect(mockPrisma.organization.findFirst).toHaveBeenCalledWith({ where: { id: ORG_A }, select: { settings: true } });
+      });
+
+      it('a priority change is still announced, without the date', async () => {
+        await service.update('task-1', { priority: 'LOW' }, creator, ORG_A);
+
+        expect(updateData()['dueAt']).toEqual(plusHours(START, 80));
+        expect(told()).toHaveLength(1);
+        expect(told()[0]!.bodyEn).toBe('"Collect the audit sample" was updated: its priority is now Low.');
+        expect(told()[0]!.bodyAr).toBe('تم تحديث المهمة "Collect the audit sample": أصبحت أولويتها منخفضة.');
+      });
+    });
+
+    it('with the switch on (stored, not only by default) the date is announced as before', async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue({ settings: { taskSlaNotices: { notifyOnDueChange: true } } });
+
+      await service.update('task-1', { priority: 'LOW' }, creator, ORG_A);
+
+      expect(told()[0]!.bodyEn).toMatch(/^"Collect the audit sample" was updated: it is now due .+, and its priority is now Low\.$/);
     });
 
     it('a priority change never drops the limit below an approved extension', async () => {
@@ -484,6 +531,28 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
   });
 
   // ── cancel ───────────────────────────────────────────────────────────────
+  // ACC-315 — the cancel and edit notices tell only the people on the task by
+  // ACC-86's rule: a row held by someone no longer ACTIVE is not told.
+  describe('who is told (ACC-315)', () => {
+    it('cancel tells the active assignee only, reading CURRENT_ACTIVE_ASSIGNEE in the organisation', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(task({ assignees: [row(ASSIGNEE), row(OTHER)] }));
+      inactive.add(OTHER);
+      await service.cancel('task-1', { reason: 'The audit was postponed' }, creator, ORG_A);
+      expect(told().map((n) => n.userId)).toEqual([ASSIGNEE]);
+      expect(mockPrisma.taskAssignee.findMany).toHaveBeenCalledWith({
+        where: { taskId: 'task-1', task: { organizationId: ORG_A }, ...CURRENT_ACTIVE_ASSIGNEE },
+        select: { userId: true },
+      });
+    });
+
+    it('an edit tells nobody when its only assignee is no longer ACTIVE', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(task({ assignees: [row(ASSIGNEE)] }));
+      inactive.add(ASSIGNEE);
+      await service.update('task-1', { title: 'Collect the full audit sample' }, creator, ORG_A);
+      expect(mockNotifications.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('cancel', () => {
     it('cancels with the reason, keeps the assignee rows, clears the pool clock, tells the assignees', async () => {
       mockPrisma.task.findFirst.mockResolvedValue(
@@ -619,6 +688,8 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
           slaBreachedAt: null,
           managerEscalatedAt: null,
           headEscalatedAt: null,
+          // ACC-313 — a reopened task's new due time is reminded about afresh.
+          dueWarnedAt: null,
           reopenedReason: 'The photo is not the right ward',
           reopenedById: CREATOR,
         }),

@@ -72,6 +72,8 @@ describe('Closed-task notices, against a real database (ACC-271 PR 4)', () => {
     slug: string;
     adminId: string;
     templateId: string;
+    /** Every committee's owning unit; the admin heads it. */
+    unitId: string;
     person: (name: string, viewsCommittees?: boolean) => Promise<string>;
   }
 
@@ -96,15 +98,19 @@ describe('Closed-task notices, against a real database (ACC-271 PR 4)', () => {
     };
     const adminId = await person('The Admin', true);
     await writeStartingAssignments(prisma, o.id, adminId, adminId);
-    return { id: o.id, slug, adminId, templateId: template.id, person };
+    // ACC-283 PR 4 — Terms Review is seeded on the committee's own unit head
+    // (plan section 10), so the admin, who presses out of it, heads that unit.
+    const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R-${randomUUID().slice(0, 6)}` } });
+    const head = await prisma.orgPosition.create({ data: { organizationId: o.id, nameEn: 'Head', grade: 10, isUnitHeadPosition: true } });
+    await prisma.user.update({ where: { id: adminId }, data: { primaryOrgUnitId: unit.id, positionId: head.id } });
+    return { id: o.id, slug, adminId, templateId: template.id, unitId: unit.id, person };
   }
 
   /** A committee in terms_review with an open stage task on the entry, assigned to `assignees`. */
   async function committeeWithTask(o: Org, assignees: string[], removed: string[] = []) {
     const stage = await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: o.templateId, key: 'terms_review' } });
-    const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R-${randomUUID().slice(0, 6)}` } });
     const c = await prisma.committee.create({
-      data: { organizationId: o.id, nameEn: 'Quality Committee', nameAr: 'لجنة الجودة', typeValueId: 'type', orgUnitId: unit.id, quorumCount: 1, meetingFrequency: 'MONTHLY' },
+      data: { organizationId: o.id, nameEn: 'Quality Committee', nameAr: 'لجنة الجودة', typeValueId: 'type', orgUnitId: o.unitId, quorumCount: 1, meetingFrequency: 'MONTHLY' },
     });
     const instance = await prisma.workflowInstance.create({
       data: { organizationId: o.id, workflowTemplateId: o.templateId, objectType: 'COMMITTEE', objectId: c.id, status: 'IN_PROGRESS', currentStageId: stage.id },

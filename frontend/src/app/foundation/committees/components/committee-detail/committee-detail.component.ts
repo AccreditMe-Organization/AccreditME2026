@@ -581,13 +581,19 @@ export class CommitteeDetailComponent implements OnInit {
   // ACC-255 — Edit, the locked line and the member actions: the server's
   // stageRules for the committee's current stage, with each action's own
   // permission (committee-offers.ts). No stage key is read.
+  // ACC-283 — and the server's mayWrite: a head who only oversees the committee
+  // is offered no write, whatever they hold.
   readonly offers = computed(() =>
-    committeeOffers(this.committee()?.stageRules, {
-      editDetails: this.canEdit(),
-      addMember: this.canAddMember(),
-      removeMember: this.canRemoveMember(),
-      changeMemberRole: this.canChangeMemberRole(),
-    }),
+    committeeOffers(
+      this.committee()?.stageRules,
+      {
+        editDetails: this.canEdit(),
+        addMember: this.canAddMember(),
+        removeMember: this.canRemoveMember(),
+        changeMemberRole: this.canChangeMemberRole(),
+      },
+      this.committee()?.mayWrite ?? false,
+    ),
   );
 
   // ACC-240 — the committee's open change request and canRaise, one read.

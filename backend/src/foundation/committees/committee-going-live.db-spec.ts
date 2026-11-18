@@ -49,6 +49,11 @@ import { writeStartingAssignments } from '../workflow/workflow-who';
 import { SYSTEM_WORKFLOW_SEED } from '../workflow/workflow.seed';
 import { CommitteesService } from './committees.service';
 
+// ACC-283 PR 6 — the member writes no longer have a route gate checking each key
+// first; the service does (member-actions.ts). This actor holds them, as the route
+// used to require.
+const MEMBER_WRITER = ['committees:view', 'committees:add_member', 'committees:remove_member', 'committees:change_member_role'];
+
 const url = process.env['DATABASE_URL'];
 if (!url) throw new Error('test:db needs DATABASE_URL — it fails rather than skips without a database (ACC-120).');
 const host = new URL(url).hostname;
@@ -102,8 +107,13 @@ describe("A committee's structure rules against a real database (ACC-286)", () =
     const o = await prisma.organization.create({ data: { name: slug, slug, country: 'SA' } });
     await applyWorkflowSeed(prisma, o.id, [COMMITTEE_SEED]);
     const template = await prisma.workflowTemplate.findFirstOrThrow({ where: { organizationId: o.id, objectType: 'COMMITTEE', isDefault: true } });
-    const actor = await prisma.user.create({ data: { organizationId: o.id, email: `${slug}-a@example.test`, name: 'Committee editor', status: 'ACTIVE' } });
     const unit = await prisma.orgUnit.create({ data: { organizationId: o.id, nameEn: 'Root', code: `R-${slug}` } });
+    // ACC-283 PR 4 — Terms Review is seeded on the committee's own unit head
+    // (plan section 10), so the actor who presses out of it heads that unit.
+    const head = await prisma.orgPosition.create({ data: { organizationId: o.id, nameEn: 'Head', grade: 10, isUnitHeadPosition: true } });
+    const actor = await prisma.user.create({
+      data: { organizationId: o.id, email: `${slug}-a@example.test`, name: 'Committee editor', status: 'ACTIVE', primaryOrgUnitId: unit.id, positionId: head.id },
+    });
     // ACC-271 — as a new organisation's first admin: the seeded stages start on them.
     await writeStartingAssignments(prisma, o.id, actor.id, actor.id);
     const stageId = async (key: string) => (await prisma.workflowStage.findFirstOrThrow({ where: { workflowTemplateId: template.id, key } })).id;
@@ -152,9 +162,9 @@ describe("A committee's structure rules against a real database (ACC-286)", () =
   };
 
   const remove = (o: Org, c: Committee, memberId: string) =>
-    committees.removeMember(c.id, memberId, { reason: 'Leaving' } as never, o.id, o.actorId, ['committees:view']);
+    committees.removeMember(c.id, memberId, { reason: 'Leaving' } as never, o.id, o.actorId, MEMBER_WRITER);
   const reseat = (o: Org, c: Committee, memberId: string, seatKey: string) =>
-    committees.changeMemberRole(c.id, memberId, { roleValueId: seat[seatKey]! } as never, o.id, o.actorId, ['committees:view']);
+    committees.changeMemberRole(c.id, memberId, { roleValueId: seat[seatKey]! } as never, o.id, o.actorId, MEMBER_WRITER);
 
   beforeAll(async () => {
     await prisma.onModuleInit();
@@ -348,8 +358,8 @@ describe("A committee's structure rules against a real database (ACC-286)", () =
       const c = await theirs.committeeAt('active');
       const chairman = await c.seat('chairman');
 
-      const foreign = await outcome(committees.removeMember(c.id, chairman, { reason: 'x' } as never, mine.id, mine.actorId, ['committees:view']));
-      const missing = await outcome(committees.removeMember('invented', 'invented', { reason: 'x' } as never, mine.id, mine.actorId, ['committees:view']));
+      const foreign = await outcome(committees.removeMember(c.id, chairman, { reason: 'x' } as never, mine.id, mine.actorId, MEMBER_WRITER));
+      const missing = await outcome(committees.removeMember('invented', 'invented', { reason: 'x' } as never, mine.id, mine.actorId, MEMBER_WRITER));
       expect(foreign).toEqual(missing);
       expect((foreign as { statusCode?: number }).statusCode).toBe(404);
       expect((await prisma.committeeMember.findFirstOrThrow({ where: { id: chairman } })).isActive).toBe(true);
