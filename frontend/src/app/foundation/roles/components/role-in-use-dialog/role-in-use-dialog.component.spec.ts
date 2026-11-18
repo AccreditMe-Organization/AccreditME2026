@@ -88,6 +88,20 @@ describe('RoleInUseDialogComponent (ACC-154)', () => {
     expect(text).toContain('يظهر 2 من 12');
   });
 
+  it('a category the reader may not see names of draws its count line alone', () => {
+    setup('en', [
+      { category: 'USER_GRANTS', count: 12, names: [] },
+      { category: 'POSITIONS', count: 2, names: ['Head of Quality', 'Quality Lead'] },
+    ]);
+    const blocks = Array.from(document.querySelectorAll<HTMLElement>('[data-role-in-use-category]'));
+    expect(blocks.map((b) => b.getAttribute('data-role-in-use-category'))).toEqual(['USER_GRANTS', 'POSITIONS']);
+    const [users, positions] = blocks;
+    expect(users!.textContent!.trim()).toBe('Given directly to 12 users');
+    expect(users!.querySelector('[data-role-in-use-names]')).withContext('no empty names line').toBeNull();
+    expect(users!.querySelector('[data-role-in-use-shown]')).withContext('no "Showing 0 of 12"').toBeNull();
+    expect(positions!.querySelector('[data-role-in-use-names]')!.textContent).toBe('Head of Quality, Quality Lead');
+  });
+
   it('Close emits closed', () => {
     const c = setup('en', [{ category: 'POSITIONS', count: 1, names: ['Head of Quality'] }]);
     let closed = 0;
