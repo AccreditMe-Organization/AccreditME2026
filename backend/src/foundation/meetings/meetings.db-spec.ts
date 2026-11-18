@@ -298,9 +298,13 @@ describe("A meeting's record against a real database (ACC-316 PR 3a)", () => {
       const now = new Date();
       const unitMeeting = await meetings.schedule(scheduleDto(now, { orgUnitId: a.units.clinical }), a.orgId, as(a, 'clinicalScheduler'), now);
       const committeeMeeting = await meetings.schedule(scheduleDto(now, { committeeId: a.committeeId }), a.orgId, as(a, 'chair'), now);
-      await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: unitMeeting.id, kind: 'ORG_GUEST', userId: a.people['invitee']! } });
+      const guest = await prisma.meetingAttendee.create({ data: { organizationId: a.orgId, meetingId: unitMeeting.id, kind: 'ORG_GUEST', userId: a.people['invitee']! } });
 
       const sees = async (id: string, viewer: MeetingViewer) => outcome(meetings.getForViewer(id, a.orgId, viewer, now));
+      // A guest sees the meeting only once invited (the agenda issued), never while it is being planned.
+      expect(await sees(unitMeeting.id, as(a, 'invitee'))).toEqual({ statusCode: 404, message: 'Meeting not found', error: 'Not Found' });
+      expect((await meetings.list({ view: 'mine' } as never, a.orgId, as(a, 'invitee'), now)).items.map((i) => i.id)).not.toContain(unitMeeting.id);
+      await prisma.meetingAttendee.update({ where: { id: guest.id }, data: { invitedAt: now } });
       expect(await sees(unitMeeting.id, as(a, 'outsider', [MEETINGS_PERMISSIONS.VIEW]))).toBe('OK');
       expect(await sees(unitMeeting.id, as(a, 'clinicalScheduler'))).toBe('OK');
       expect(await sees(unitMeeting.id, as(a, 'invitee'))).toBe('OK');

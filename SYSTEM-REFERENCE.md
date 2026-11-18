@@ -16695,8 +16695,9 @@ write a second copy.
 
 - `meetings:view`: every meeting.
 - A **member**: an active member of the meeting's active committee, an ACTIVE
-  person whose primary unit is the meeting's unit, or anyone on its attendee
-  list.
+  person whose primary unit is the meeting's unit, or an attendee with a user
+  who has been INVITED (`invitedAt` set). A guest added while the meeting is
+  planned sees it only once the agenda is issued.
 - An **overseer** (reads, `{ oversight: true }`): a head, or an acting head in
   force, of the owning unit (the meeting's own, or its committee's) or a unit
   above it.

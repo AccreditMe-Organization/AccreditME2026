@@ -11,7 +11,9 @@ import { committeeOversightUnitIds } from './committee-membership';
  *   MEMBER    for a committee meeting, an active member of its active
  *             committee; for a unit meeting, an ACTIVE person whose own unit
  *             (primaryOrgUnitId) is the meeting's unit, with no sub-units (lane
- *             B, 18 Nov); and anyone invited with a user (an attendee row);
+ *             B, 18 Nov); and anyone INVITED with a user: an attendee row
+ *             whose invitedAt is set, so a guest added while the meeting is
+ *             planned sees it only once the agenda is issued (lane B, 18 Nov);
  *   OVERSEER  the head or acting head of the meeting's OWNING unit or a unit
  *             above it (Ahmad, 18 Nov): the owning unit is the meeting's own,
  *             or its committee's. Through committee-membership.ts's
@@ -45,7 +47,8 @@ export function meetingMemberSql(alias: string, viewerId: string): Prisma.Sql {
         AND u."primaryOrgUnitId" = ${m}."orgUnitId" AND u.status = 'ACTIVE'))
     OR EXISTS (
       SELECT 1 FROM "MeetingAttendee" a
-      WHERE a."meetingId" = ${m}.id AND a."organizationId" = ${m}."organizationId" AND a."userId" = ${viewerId})
+      WHERE a."meetingId" = ${m}.id AND a."organizationId" = ${m}."organizationId" AND a."userId" = ${viewerId}
+        AND a."invitedAt" IS NOT NULL)
   )`;
 }
 

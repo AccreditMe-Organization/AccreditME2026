@@ -1343,7 +1343,7 @@ them together with their resolver.
      - **Who sees a meeting** (`ObjectVisibilityService` MEETING,
        `common/services/meeting-membership.ts`): `meetings:view`, an active
        member of its active committee, an ACTIVE person of its unit, an
-       attendee, or (oversight, reads) a head or acting head of the owning
+       invited attendee (`invitedAt` set), or (oversight, reads) a head or acting head of the owning
        unit or a unit above. Anyone else gets the identical 404.
      - **Who writes:** SCHEDULERS, on a meeting the viewer sees. Oversight
        counts for seeing it: a head above holding
