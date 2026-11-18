@@ -28,8 +28,8 @@ const holiday = (date: string, isRecurring = false) =>
 
 function service(holidays: IPublicHoliday[] = [], calendar: IWorkingCalendar = CALENDAR): WorkingCalendarService {
   const s = new WorkingCalendarService({} as PrismaService, {} as AuditLogService);
-  jest.spyOn(s, 'getOrCreate').mockResolvedValue(calendar);
-  jest.spyOn(s, 'listHolidays').mockResolvedValue(holidays);
+  // The calendar is read once, read-only (loadCalendar(), ACC-313).
+  jest.spyOn(s, 'loadCalendar').mockResolvedValue({ calendar, holidays });
   return s;
 }
 

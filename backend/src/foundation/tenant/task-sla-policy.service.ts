@@ -9,7 +9,9 @@ import {
   DEFAULT_TASK_SLA_SETTINGS,
   taskSlaFromSettings,
   taskSlaNoticesFromSettings,
+  warningFitsLimit,
 } from './task-sla-settings';
+import { readWorkingHoursPerDay } from '../working-calendar/working-time';
 import {
   TASK_SLA_HISTORY_DEFAULT_TAKE,
   TASK_SLA_HISTORY_MAX_TAKE,
@@ -26,6 +28,7 @@ import {
   ITaskSlaSettings,
   ITaskSlaTier,
   TaskSlaChangeKind,
+  TaskSlaWarnBeforeDue,
 } from './interfaces/tenant.interface';
 
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
@@ -40,6 +43,14 @@ const ALL_FIELDS: TierField[] = [...LIMIT_FIELDS, ...ESCALATION_FIELDS];
 /** The audit row every task SLA write since ACC-313 is recorded under. */
 export const TASK_SLA_AUDIT_OBJECT_TYPE = 'TaskSlaPolicy';
 
+/**
+ * CC-332 — every task SLA audit row written since escalation counts working
+ * hours (ACC-313 PR 4) says so: `metadata.escalationHoursUnit = 'WORKING'`.
+ * The history returns it, and the screen reads it before falling back to the
+ * row's shape; a row without it was saved before PR 4, in clock hours.
+ */
+export const WORKING_HOURS_STAMP = { escalationHoursUnit: 'WORKING' } as const;
+
 /** Each write's `metadata.event`, and the section the history calls it. */
 const EVENT_KIND: Record<string, TaskSlaChangeKind> = {
   task_sla_limits_updated: 'limits',
@@ -48,6 +59,12 @@ const EVENT_KIND: Record<string, TaskSlaChangeKind> = {
   task_sla_notices_updated: 'notices',
   task_sla_reset: 'reset',
 };
+
+/** The warnings a save sends, per priority; a priority left out keeps its stored warning. */
+type SentWarnings = Partial<Record<Priority, TaskSlaWarnBeforeDue>>;
+
+/** What an audit row records per priority: the section's hours, and a warning when one was sent. */
+type AuditSection = Record<Priority, Record<string, number | string>>;
 
 /** A section's values for one priority: only the fields that section saves. */
 type SectionTier = Partial<Record<TierField, number>>;
@@ -61,6 +78,9 @@ function pick(tiers: ITaskSlaSettings, fields: TierField[]): SectionValues {
   }
   return out;
 }
+
+/** What the policy stores: the tiers and the notices (the policy read adds the working day). */
+type StoredPolicy = Omit<ITaskSlaPolicy, 'workingHoursPerDay'>;
 
 /** The stored tiers, each priority completed from the defaults. */
 function storedTiers(settings: Prisma.JsonValue): ITaskSlaSettings {
@@ -111,7 +131,13 @@ export class TaskSlaPolicyService {
 
   /** Escalation: when the manager and the head are told. These hours move no due date. */
   saveEscalation(organizationId: string, dto: UpdateTaskSlaEscalationDto, actorId: string): Promise<ITaskSlaSettings> {
-    return this.save(organizationId, actorId, 'task_sla_escalation_updated', ESCALATION_FIELDS, dto, null);
+    // ACC-313 PR 4 — each priority's warning before due rides on this save.
+    const warnings: SentWarnings = {};
+    for (const p of PRIORITIES) {
+      const warning = dto[p].warnBeforeDue;
+      if (warning !== undefined) warnings[p] = warning;
+    }
+    return this.save(organizationId, actorId, 'task_sla_escalation_updated', ESCALATION_FIELDS, dto, null, warnings);
   }
 
   /** The old whole-policy PATCH, kept until the new screen ships, under the same lock. */
@@ -121,9 +147,12 @@ export class TaskSlaPolicyService {
 
   /** The whole policy the page reads: the tiers and the notices. */
   async policy(organizationId: string): Promise<ITaskSlaPolicy> {
-    const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } });
+    const [org, workingHoursPerDay] = await Promise.all([
+      this.prisma.organization.findFirst({ where: { id: organizationId }, select: { settings: true } }),
+      readWorkingHoursPerDay(this.prisma, organizationId),
+    ]);
     if (!org) throw new NotFoundException('Tenant not found');
-    return { tiers: storedTiers(org.settings), notices: taskSlaNoticesFromSettings(org.settings) };
+    return { tiers: storedTiers(org.settings), notices: taskSlaNoticesFromSettings(org.settings), workingHoursPerDay };
   }
 
   /**
@@ -157,7 +186,7 @@ export class TaskSlaPolicyService {
         tenantId: organizationId,
         before: { notifyOnDueChange: outcome.before.notifyOnDueChange },
         after: { notifyOnDueChange: outcome.notices.notifyOnDueChange },
-        metadata: { event: 'task_sla_notices_updated' },
+        metadata: { event: 'task_sla_notices_updated', ...WORKING_HOURS_STAMP },
       });
     }
     return outcome.notices;
@@ -183,10 +212,10 @@ export class TaskSlaPolicyService {
       throw new WorkflowRefusalException('TASK_SLA_EXCEEDS_STAGE_DEADLINES', { stages: conflicts });
     }
 
-    const defaults: ITaskSlaPolicy = { tiers: DEFAULT_TASK_SLA_SETTINGS, notices: DEFAULT_TASK_SLA_NOTICES };
+    const defaults: StoredPolicy = { tiers: DEFAULT_TASK_SLA_SETTINGS, notices: DEFAULT_TASK_SLA_NOTICES };
     const outcome = await this.prisma.$transaction(async (tx) => {
       const settings = await this.lockSettings(tx, organizationId);
-      const before: ITaskSlaPolicy = { tiers: storedTiers(settings), notices: taskSlaNoticesFromSettings(settings) };
+      const before: StoredPolicy = { tiers: storedTiers(settings), notices: taskSlaNoticesFromSettings(settings) };
       const unchanged =
         sameSection(pick(before.tiers, ALL_FIELDS), pick(defaults.tiers, ALL_FIELDS), ALL_FIELDS) &&
         sameNotices(before.notices, defaults.notices);
@@ -216,10 +245,10 @@ export class TaskSlaPolicyService {
         tenantId: organizationId,
         before: outcome.before as unknown as Record<string, unknown>,
         after: defaults as unknown as Record<string, unknown>,
-        metadata: { event: 'task_sla_reset' },
+        metadata: { event: 'task_sla_reset', ...WORKING_HOURS_STAMP },
       });
     }
-    return defaults;
+    return { ...defaults, workingHoursPerDay: await readWorkingHoursPerDay(this.prisma, organizationId) };
   }
 
   /**
@@ -266,7 +295,8 @@ export class TaskSlaPolicyService {
     metadata: Prisma.JsonValue;
     actor: { name: string } | null;
   }): ITaskSlaChange {
-    const event = (row.metadata as { event?: unknown } | null)?.event;
+    const meta = row.metadata as { event?: unknown; escalationHoursUnit?: unknown } | null;
+    const event = meta?.event;
     const legacy = row.objectType !== TASK_SLA_AUDIT_OBJECT_TYPE;
     return {
       id: row.id,
@@ -275,6 +305,7 @@ export class TaskSlaPolicyService {
       kind: legacy ? 'legacy' : (typeof event === 'string' && EVENT_KIND[event]) || 'all',
       before: legacy ? null : row.before,
       after: legacy ? null : row.after,
+      escalationHoursUnit: meta?.escalationHoursUnit === 'WORKING' ? 'WORKING' : null,
     };
   }
 
@@ -285,6 +316,7 @@ export class TaskSlaPolicyService {
     fields: TierField[],
     values: Record<Priority, SectionTier>,
     dueHours: ((priority: Priority) => number) | null,
+    warnings: SentWarnings = {},
   ): Promise<ITaskSlaSettings> {
     // ACC-190 — the limits must not make a stage end before a task defined on
     // it is due. The check needs only the requested due hours, so it runs
@@ -295,30 +327,80 @@ export class TaskSlaPolicyService {
         throw new WorkflowRefusalException('TASK_SLA_EXCEEDS_STAGE_DEADLINES', { stages: conflicts });
       }
     }
+    // ACC-313 PR 4 — "1 working day" is the calendar's working day. Read
+    // before the lock, like the stage check: it is not the policy's row.
+    const hoursPerDay = await readWorkingHoursPerDay(this.prisma, organizationId);
+    const savesLimits = fields.includes('dueAfterHours');
 
     const outcome = await this.prisma.$transaction(async (tx) => {
-      const current = storedTiers(await this.lockSettings(tx, organizationId));
+      const settings = await this.lockSettings(tx, organizationId);
+      const current = storedTiers(settings);
+      const notices = taskSlaNoticesFromSettings(settings);
       const next = {} as ITaskSlaSettings;
       for (const p of PRIORITIES) {
         next[p] = { ...current[p] };
         for (const f of fields) next[p][f] = values[p][f] as number;
       }
 
-      const before = pick(current, fields);
-      const after = pick(next, fields);
-      if (sameSection(before, after, fields)) return { tiers: current, before, after, changed: false };
+      // ACC-313 (Q2) — a warning must be shorter than its priority's limit,
+      // checked from the side being saved, under the lock, before any write.
+      for (const p of PRIORITIES) {
+        const sent = warnings[p];
+        if (sent !== undefined && !warningFitsLimit(sent, next[p].dueAfterHours, hoursPerDay)) {
+          throw new WorkflowRefusalException('TASK_SLA_WARNING_NOT_BEFORE_DUE', {
+            priority: p,
+            warning: sent,
+            limitHours: next[p].dueAfterHours,
+          });
+        }
+        if (savesLimits && !warningFitsLimit(notices.warnBeforeDue[p], next[p].dueAfterHours, hoursPerDay)) {
+          throw new WorkflowRefusalException('TASK_SLA_LIMIT_NOT_AFTER_WARNING', {
+            priority: p,
+            warning: notices.warnBeforeDue[p],
+            limitHours: next[p].dueAfterHours,
+          });
+        }
+      }
 
-      // Only settings.taskSla is written: a settings value that is not an
-      // object (SQL NULL or JSON null) is treated as an empty one.
-      await tx.$executeRaw`
-        UPDATE "Organization"
-        SET settings = jsonb_set(
-              CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END,
-              '{taskSla}',
-              ${JSON.stringify(next)}::jsonb
-            ),
-            "updatedAt" = NOW()
-        WHERE id = ${organizationId}`;
+      const before: AuditSection = pick(current, fields);
+      const after: AuditSection = pick(next, fields);
+      const nextWarnings = { ...notices.warnBeforeDue };
+      for (const p of PRIORITIES) {
+        const sent = warnings[p];
+        if (sent === undefined) continue;
+        before[p] = { ...before[p], warnBeforeDue: notices.warnBeforeDue[p] };
+        after[p] = { ...after[p], warnBeforeDue: sent };
+        nextWarnings[p] = sent;
+      }
+      const tiersChanged = !sameSection(pick(current, fields), pick(next, fields), fields);
+      const warningsChanged = PRIORITIES.some((p) => nextWarnings[p] !== notices.warnBeforeDue[p]);
+      if (!tiersChanged && !warningsChanged) return { tiers: current, before, after, changed: false };
+
+      // Only the keys that changed are written, each with jsonb_set: a
+      // settings value that is not an object (SQL NULL or JSON null) is
+      // treated as an empty one.
+      if (tiersChanged) {
+        await tx.$executeRaw`
+          UPDATE "Organization"
+          SET settings = jsonb_set(
+                CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END,
+                '{taskSla}',
+                ${JSON.stringify(next)}::jsonb
+              ),
+              "updatedAt" = NOW()
+          WHERE id = ${organizationId}`;
+      }
+      if (warningsChanged) {
+        await tx.$executeRaw`
+          UPDATE "Organization"
+          SET settings = jsonb_set(
+                CASE WHEN jsonb_typeof(settings) = 'object' THEN settings ELSE '{}'::jsonb END,
+                '{taskSlaNotices}',
+                ${JSON.stringify({ ...notices, warnBeforeDue: nextWarnings })}::jsonb
+              ),
+              "updatedAt" = NOW()
+          WHERE id = ${organizationId}`;
+      }
       return { tiers: next, before, after, changed: true };
     });
 
@@ -331,7 +413,7 @@ export class TaskSlaPolicyService {
         tenantId: organizationId,
         before: outcome.before,
         after: outcome.after,
-        metadata: { event },
+        metadata: { event, ...WORKING_HOURS_STAMP },
       });
     }
     return outcome.tiers;

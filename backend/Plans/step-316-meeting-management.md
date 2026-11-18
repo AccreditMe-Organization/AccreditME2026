@@ -1299,8 +1299,11 @@ them together with their resolver.
      - the `RECORD_ROUTES` change;
      - `meeting-authority.ts`, and the three kinds' batched resolvers in
        `StagePoolService`, which first read the keys and seat actions.
-   - **Backfills, AFTER the deploy** (dry run, `-- --execute`, dry run 0). Each
-     writes ONE audit row per organisation it changes (ACC-101):
+   - **Backfills: all three run ONCE, after PR 3a deploys, not after PR 2**
+     (lane B, Prompt 139, 18 Nov). PR 3a adds the four meeting task keys to
+     `backfill:acc316-meeting-keys`, and the shared database has no meetings,
+     so nothing depends on them sooner. Dry run, `-- --execute`, dry run 0.
+     Each writes ONE audit row per organisation it changes (ACC-101):
      - `backfill:acc316-meeting-keys` (grants only);
      - `backfill:acc316-seat-defaults`;
      - `backfill:acc316-meeting-workflow`.

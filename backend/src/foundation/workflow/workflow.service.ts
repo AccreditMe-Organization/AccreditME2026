@@ -28,6 +28,7 @@ import {
   WorkflowObjectType,
   TaskSourceType,
 } from '../../../generated/prisma/client';
+import { WORKFLOW_OBJECT_TYPE_WORDS } from './workflow-object-type-words';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
 import { ValidatorConfig } from './interfaces/workflow-transition.interface';
 import { IWorkflowStageHistory } from './interfaces/workflow-stage-history.interface';
@@ -1598,12 +1599,17 @@ export class WorkflowService {
     const assigneeIds = await this.whoWorks(toStage, instance, organizationId);
     // TODO(event-bus): migrate to event emitter if/when NotificationService
     // moves to a pub/sub model (see Step 7 plan Section 8/12).
+    // ACC-95 — the record type in words (never the stored code), and each
+    // stored name's Arabic when it has one, else its English one.
+    const type = WORKFLOW_OBJECT_TYPE_WORDS[instance.objectType];
     for (const userId of assigneeIds) {
       await this.notificationService.create(
         {
           userId,
           titleEn: transition.labelEn,
-          bodyEn: `${instance.objectType} moved to ${toStage.nameEn}`,
+          titleAr: transition.labelAr ?? transition.labelEn,
+          bodyEn: `${type.en}: moved to ${toStage.nameEn}`,
+          bodyAr: `${type.ar}: الانتقال إلى مرحلة «${toStage.nameAr ?? toStage.nameEn}»`,
           objectType: instance.objectType,
           objectId: instance.objectId,
         },
@@ -1626,7 +1632,9 @@ export class WorkflowService {
         {
           userId,
           titleEn: 'New workflow assignment',
+          titleAr: 'تكليف جديد في سير العمل',
           bodyEn: `You have been assigned to ${initialStage.nameEn}`,
+          bodyAr: `تم تكليفك بمرحلة «${initialStage.nameAr ?? initialStage.nameEn}»`,
           objectType: instance.objectType,
           objectId: instance.objectId,
         },
