@@ -78,6 +78,36 @@ describe('AmConfirmService.ask() — details (ACC-240)', () => {
     expect(list!.compareDocumentPosition(message) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  // CC-333 — one 8px step between the last detail line and the message.
+  it('puts one spacing step (--am-space-8) between the last detail line and the message', async () => {
+    await ask({ details: ['Quorum: 5 → 6', 'Reports to: Medical Executive Committee'] });
+    // PrimeNG's open motion scales the dialog on CSS time: measure once it is still.
+    let last = '';
+    for (let same = 0, turn = 0; same < 3; turn++) {
+      if (turn > 100) throw new Error('the confirm never stopped moving');
+      await new Promise((r) => setTimeout(r, 50));
+      const r = confirmEl()!.getBoundingClientRect();
+      const now = `${r.width}x${r.height}@${r.left},${r.top}`;
+      same = now === last ? same + 1 : 0;
+      last = now;
+    }
+    const list = confirmEl()!.querySelector('[data-testid="confirm-details"]');
+    const message = confirmEl()!.querySelector('.p-confirmdialog-message');
+    // Non-vacuity first: both are there, with height.
+    expect(list).withContext('the details list').not.toBeNull();
+    expect(message).withContext('the message').not.toBeNull();
+    expect(list!.getBoundingClientRect().height).toBeGreaterThan(10);
+    expect(message!.getBoundingClientRect().height).toBeGreaterThan(10);
+    const step = document.createElement('div');
+    step.style.blockSize = 'var(--am-space-8)';
+    document.body.appendChild(step);
+    const eight = step.getBoundingClientRect().height;
+    step.remove();
+    expect(eight).withContext('the token resolves').toBe(8);
+    const gap = message!.getBoundingClientRect().top - list!.getBoundingClientRect().bottom;
+    expect(Math.round(gap)).toBe(eight);
+  });
+
   it('without details: no list, and the message as PrimeNG drew it before', async () => {
     await ask();
     expect(confirmEl()!.querySelector('[data-testid="confirm-details"]')).toBeNull();

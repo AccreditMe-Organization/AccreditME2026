@@ -567,6 +567,38 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
       expect(c.escalationError()).toBeNull();
     });
 
+    // CC-332 1 — the refused LIMIT input is marked too, through am-field's own
+    // invalid state: the error border (while focused), aria-invalid, and
+    // aria-describedby naming the message. Only the refused priority.
+    it('a refused limit marks its input: the error border while focused, aria-invalid, aria-describedby naming the message', () => {
+      const c = setup();
+      setLimit(c, 'HIGH', 2);
+      press('sla-limits-save');
+      refuseWarning(http.expectOne(`${base}/limits`), 'TASK_SLA_LIMIT_NOT_AFTER_WARNING', { priority: 'HIGH', warning: 'H2', limitHours: 2 });
+      // am-field finds its control in afterNextRender, which a real tick runs.
+      TestBed.tick();
+      fixture.detectChanges();
+      const input = el().querySelector<HTMLInputElement>('#sla-limit-HIGH');
+      expect(input).withContext('the HIGH limit input').not.toBeNull();
+      expect(input!.getAttribute('aria-invalid')).toBe('true');
+      expect((input!.getAttribute('aria-describedby') ?? '').split(' ')).toContain('sla-limit-warning-HIGH');
+      expect(el().querySelector('#sla-limit-warning-HIGH')?.textContent).toContain('High: the warning, 2 working hours');
+      input!.style.transition = 'none';
+      input!.focus();
+      expect(document.activeElement).toBe(input);
+      const danger = document.createElement('span');
+      danger.style.color = 'var(--am-danger-ink)';
+      document.body.appendChild(danger);
+      const dangerColour = getComputedStyle(danger).color;
+      danger.remove();
+      expect(getComputedStyle(input!).borderTopColor).toBe(dangerColour);
+      for (const p of ['LOW', 'MEDIUM', 'CRITICAL']) {
+        const other = el().querySelector(`#sla-limit-${p}`)!;
+        expect(other.getAttribute('aria-invalid')).withContext(p).toBe('false');
+        expect(other.getAttribute('aria-describedby') ?? '').withContext(p).not.toContain('sla-limit-warning');
+      }
+    });
+
     // CC-324 2a — the refused select is marked, and tied to its message.
     it('a refused warning marks its select: the error border, aria-invalid, and aria-describedby naming the message', () => {
       const c = setup();
@@ -736,8 +768,11 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
         name,
         name,
       ]);
-      // A two-sentence message.
-      for (const file of [en, ar]) expect(t(file, `${R}.confirmBody`).split(/[.؟]\s/).length).toBe(2);
+      // CC-333 — the confirm's message is the consequence only; the Reset card
+      // on the page keeps its own "…the defaults a new organisation gets".
+      expect(t(en, `${R}.confirmBody`)).toBe('New tasks use these values; open tasks keep the limits they were created with.');
+      expect(t(ar, `${R}.confirmBody`)).toBe('تُطبَّق هذه القيم على المهام الجديدة، وتحتفظ المهام المفتوحة بالحدود التي أُنشئت بها.');
+      expect(t(en, `${R}.help`)).toContain('the defaults a new organisation gets');
     });
 
     it('the switch hint says where and for whom; the section line already says when', () => {
@@ -840,6 +875,19 @@ describe('TaskSlaSettingsComponent (ACC-313)', () => {
         expect(entries[1]).not.toContain(language === 'en' ? 'working' : 'عمل');
       });
     }
+
+    // CC-332 — the stamp wins over the shape: a row the server stamped as
+    // written under the working-hours rule reads working hours, even shaped
+    // like an old save (no warnings in it).
+    it('a row stamped WORKING reads working hours, though shaped like an old save', () => {
+      setup({ history: [{ ...OLD_ROW, id: 'stamped', escalationHoursUnit: 'WORKING' }, OLD_ROW] });
+      open();
+      const entries = Array.from(document.querySelectorAll('[data-change-kind="escalation"]')).map((e) => (e.textContent ?? '').replace(/\s+/g, ' '));
+      expect(entries.length).toBe(2);
+      expect(entries[0]).toContain('was8 working hours');
+      expect(entries[0]).toContain('now6 working hours');
+      expect(entries[1]).toContain('was8 clock hours');
+    });
 
     // CC-324 10b / 10c — date · name · section, and a missing name said as one.
     it('names each save as date · name · section, and a missing name as "Name not recorded"', () => {
