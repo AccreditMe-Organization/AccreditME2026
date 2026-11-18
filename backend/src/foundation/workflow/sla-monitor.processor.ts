@@ -687,12 +687,15 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         // escalation audit row would repeat every pass (REJECTED's reason).
         // An unpicked pool task escalates through sweepUnpickedPoolTasks()
         // instead; once picked, it is an ordinary task again.
+        // ACC-315 — "someone holds it" is ACC-86's rule, the one the pool sweep
+        // reads: a pool task held only by someone no longer ACTIVE is waiting, so
+        // it escalates there, never here too.
         OR: [
           { assignedPositionId: null, assignedCommitteeId: null },
-          { assignees: { some: { removedAt: null } } },
+          { assignees: { some: CURRENT_ACTIVE_ASSIGNEE } },
         ],
       },
-      include: { assignees: { where: { removedAt: null } } },
+      include: { assignees: { where: CURRENT_ACTIVE_ASSIGNEE } },
     });
 
     // ACC-313 (Q1) — hours overdue are WORKING hours, like the limits, on each
@@ -718,6 +721,11 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         DateTime.fromJSDate(task.dueAt!),
         DateTime.fromJSDate(now),
       );
+
+      // ACC-315 — nobody on it (every current row is held by someone no longer
+      // ACTIVE): the breach is recorded above, but there is no one whose manager
+      // to tell. It is ownerless, and Setup health lists it (ACC-86).
+      if (task.assignees.length === 0) continue;
 
       // ACC-318 — whether it is working time now, on the calendar already loaded.
       const workingNow = isWorkingMomentWith(calendar, DateTime.fromJSDate(now));

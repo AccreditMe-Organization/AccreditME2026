@@ -139,6 +139,33 @@ const CURRENT_ACTIVE_ROW_SQL = Prisma.sql`xa."removedAt" IS NULL AND xu.status::
 export const HAS_CURRENT_ACTIVE_ASSIGNEE_SQL = Prisma.sql`EXISTS (${ASSIGNEE_ROW_SQL}
   WHERE xa."taskId" = t.id AND ${CURRENT_ACTIVE_ROW_SQL})`;
 
+/**
+ * ACC-315 — SQL: someone on the task aliased `t` who also meets `condition`, which
+ * may name the row (`xa`) or its user (`xu`): a name search (`xu.name ILIKE …`),
+ * or one row already joined (`xa.id = a.id`). Built from the same fragments, so
+ * "on it" cannot drift from HAS_CURRENT_ACTIVE_ASSIGNEE_SQL.
+ */
+export function currentActiveAssigneeWhereSql(condition: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`EXISTS (${ASSIGNEE_ROW_SQL}
+  WHERE xa."taskId" = t.id AND ${CURRENT_ACTIVE_ROW_SQL} AND (${condition}))`;
+}
+
+/**
+ * ACC-315 — the people on ONE task (CURRENT_ACTIVE_ASSIGNEE), for the notices that
+ * tell them something: someone no longer ACTIVE is on nothing and is not told.
+ */
+export async function currentActiveAssigneeIds(
+  client: Pick<PrismaService, 'taskAssignee'>,
+  taskId: string,
+  organizationId: string,
+): Promise<string[]> {
+  const rows = await client.taskAssignee.findMany({
+    where: { taskId, task: { organizationId }, ...CURRENT_ACTIVE_ASSIGNEE },
+    select: { userId: true },
+  });
+  return rows.map((r) => r.userId);
+}
+
 /** SQL: ONE given user is on the task aliased `t` (currentActiveAssigneeOf()'s twin). ACC-216's person scope reads it. */
 export function currentActiveAssigneeOfSql(userId: string): Prisma.Sql {
   return Prisma.sql`EXISTS (${ASSIGNEE_ROW_SQL}
