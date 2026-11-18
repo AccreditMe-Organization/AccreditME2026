@@ -132,6 +132,17 @@ describe('Stage SLA escalation fires each rule once, in working hours, on a real
     expect(toldIn(people.org)).toEqual([people.a]);
   });
 
+  it('defect 2: a rule whose threshold passed during the day waits for working hours, marking nothing meanwhile', async () => {
+    // Due Friday 10:00 with a 2-hour rule: its threshold passes at 12:00, but no
+    // sweep runs until 18:00, after the office closes.
+    const { entryId, people } = await entry(OFFICE, '2026-11-20T10:00:00Z', (p) => [{ afterHours: 2, notifyUserId: p.a }]);
+    await sweepAt('2026-11-20T18:00:00Z');
+    expect(toldIn(people.org)).toEqual([]);
+    expect((await prisma.workflowInstanceStage.findUniqueOrThrow({ where: { id: entryId } })).escalatedRuleIndexes).toEqual([]);
+    await sweepAt('2026-11-23T08:15:00Z'); // Monday, inside working hours
+    expect(toldIn(people.org)).toEqual([people.a]);
+  });
+
   it('defect 3: afterHours counts WORKING hours after the deadline, not clock hours', async () => {
     // Due Friday 15:00; 4 working hours later is Monday 11:00 (1 on Friday, 3 on Monday).
     const { people } = await entry(OFFICE, '2026-11-20T15:00:00Z', (p) => [{ afterHours: 4, notifyUserId: p.a }]);
