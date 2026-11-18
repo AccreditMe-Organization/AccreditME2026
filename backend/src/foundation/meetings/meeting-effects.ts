@@ -1,5 +1,6 @@
 import type { EngineTx } from '../workflow/workflow.service';
 import { peopleDateIn } from '../task/task-sla.service';
+import { Logger } from '@nestjs/common';
 import { STAGE_FLAG } from '../workflow/record-registry';
 import type { AnyTransitionEffect, TransitionEffectContext, TransitionEffectDeps } from '../workflow/transition-effect.types';
 import { transitionEffect } from '../workflow/transition-effect.types';
@@ -14,6 +15,8 @@ import { transitionEffect } from '../workflow/transition-effect.types';
  * Invitees arrive in PR 3b; until then a meeting has none, so these send
  * nothing on a real record. The outside guests' emails are PR 3b's too.
  */
+
+const logger = new Logger('MeetingEffects');
 
 /**
  * What a meeting effect hands to finish(): read inside the move's transaction,
@@ -41,12 +44,20 @@ async function notifyAll(
   userIds: readonly string[],
   text: { titleEn: string; titleAr: string; bodyEn: string; bodyAr: string },
 ): Promise<void> {
+  // One by one, each on its own: a notice that fails is logged and the rest
+  // still go (MeetingsService.tellInvited does the same).
   for (const userId of userIds) {
     if (userId === ctx.actorId) continue;
-    await deps.notifications.create(
-      { userId, ...text, channel: 'BOTH', objectType: 'MEETING', objectId: ctx.objectId },
-      ctx.organizationId,
-    );
+    try {
+      await deps.notifications.create(
+        { userId, ...text, channel: 'BOTH', objectType: 'MEETING', objectId: ctx.objectId },
+        ctx.organizationId,
+      );
+    } catch (error) {
+      logger.warn(
+        `A meeting notice failed for meeting ${ctx.objectId} in org ${ctx.organizationId}: ${error instanceof Error ? error.name : 'unknown'}`,
+      );
+    }
   }
 }
 
