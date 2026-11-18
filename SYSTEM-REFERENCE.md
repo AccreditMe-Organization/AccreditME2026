@@ -4710,9 +4710,11 @@ due Monday 10:00, and `calculateDeadline()` stays the exact inverse of
   treats a before-opening time the same way.
 - **Specs:** `working-calendar.before-opening.spec.ts`, with four mutations.
   Plan: `backend/Plans/step-175-deadline-before-opening.md`.
-- **A holiday is its calendar day in every zone (ACC-318).** It is stored as
-  that date at midnight UTC (the screen sends `YYYY-MM-DD`), and
-  `isWorkingDay()` (`working-time.ts`) reads its day in UTC, never in the
+- **A holiday is its calendar day in every zone (ACC-318).** The API accepts
+  its date as `YYYY-MM-DD` only (a real date, no time, no offset: the pipe's
+  400 otherwise), the shape the screen sends, and stores that date at midnight
+  UTC (`holidayDateAt()`). `isWorkingDay()` (`working-time.ts`) reads its day
+  in UTC, never in the
   organisation's zone. Before, a zone west of UTC read 25 December as the 24th.
 - **Each day counts its REAL working hours (ACC-319).** `deadlineWith()` spends
   what is really left of each day's window, and `hoursBetweenWith()` sums the
