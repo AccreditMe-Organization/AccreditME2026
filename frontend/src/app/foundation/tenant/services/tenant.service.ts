@@ -145,6 +145,8 @@ export interface ITaskSlaChange {
   kind: 'limits' | 'escalation' | 'all' | 'notices' | 'reset' | 'legacy';
   before: unknown;
   after: unknown;
+  /** CC-332 — 'WORKING' on a row written since escalation counts working hours; null (or absent) on an older one. */
+  escalationHoursUnit?: 'WORKING' | null;
 }
 
 export interface ITaskSlaHistoryPage {

@@ -91,11 +91,15 @@ export function diffTaskSlaChange(before: unknown, after: unknown): TaskSlaField
 }
 
 /**
- * CC-324 / CC-325 — the unit a saved change's ESCALATION hours were counted in.
+ * CC-324 / CC-325 / CC-332 — the unit a saved change's ESCALATION hours were
+ * counted in.
  *
  * Escalation counts working hours since ACC-313 PR 4; before that it counted
- * clock hours, and an old row keeps its own unit ("8 clock hours"). The audit
- * row records no unit, so the row's own shape says which:
+ * clock hours, and an old row keeps its own unit ("8 clock hours").
+ *
+ * THE STAMP FIRST: every row written since PR 4 carries
+ * `escalationHoursUnit: 'WORKING'` (the audit row's metadata, returned by the
+ * history). Only a row without it falls back to its shape:
  *   - an escalation save that carries `warnBeforeDue` was written by PR 4's
  *     code (the only writer of it, and this screen always sends it): working;
  *   - a reset is only offered by this screen, which ships after PR 4: working;
@@ -103,7 +107,13 @@ export function diffTaskSlaChange(before: unknown, after: unknown): TaskSlaField
  *     save): clock.
  * Limits were always working hours and are not asked about here.
  */
-export function escalationHoursUnit(change: { kind: string; before: unknown; after: unknown }): 'working' | 'clock' {
+export function escalationHoursUnit(change: {
+  kind: string;
+  before: unknown;
+  after: unknown;
+  escalationHoursUnit?: string | null;
+}): 'working' | 'clock' {
+  if (change.escalationHoursUnit === 'WORKING') return 'working';
   if (change.kind === 'reset') return 'working';
   if (change.kind !== 'escalation') return 'clock';
   const carriesWarning = (side: unknown) =>

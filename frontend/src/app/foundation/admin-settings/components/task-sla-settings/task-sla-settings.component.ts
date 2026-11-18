@@ -189,6 +189,8 @@ type Load = 'loading' | 'error' | 'ready';
                   [inputId]="'sla-limit-' + p"
                   [forceShowErrors]="limitsTried()"
                   [errorMessages]="limitErrors"
+                  [invalid]="limitRefusedHere(p)"
+                  [describedBy]="limitRefusedHere(p) ? 'sla-limit-warning-' + p : null"
                   [attr.data-sla-limit]="p"
                 >
                   <p-inputNumber
@@ -227,7 +229,7 @@ type Load = 'loading' | 'error' | 'ready';
               <!-- ACC-313 — a limit at or under this priority's warning. -->
               @if (limitWarningRefusal(); as refusal) {
                 @if (refusal.priority === p) {
-                  <div class="am-sla__refusal" role="alert" [attr.data-sla-limit-warning]="p">
+                  <div class="am-sla__refusal" role="alert" [id]="'sla-limit-warning-' + p" [attr.data-sla-limit-warning]="p">
                     <span>{{ warningRefusalLead(refusal) }}</span>
                     <span>{{ 'adminSettings.taskSlaPage.warnRefusal.limitWayOut' | translate }}</span>
                   </div>
@@ -950,6 +952,11 @@ export class TaskSlaSettingsComponent implements LeaveGuarded {
           ? 'adminSettings.taskSlaPage.escalation.managerCell'
           : 'adminSettings.taskSlaPage.escalation.headCell';
     return this.translate.instant(key, { priority: this.translate.instant(PRIORITY_KEYS[p]) });
+  }
+
+  /** The server refused this priority's LIMIT against its warning; the message is under the row (CC-332). */
+  limitRefusedHere(p: TaskSlaPriority): boolean {
+    return this.limitWarningRefusal()?.priority === p;
   }
 
   /** The server refused this priority's warning; its message says so under the row. */
