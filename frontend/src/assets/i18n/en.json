@@ -673,7 +673,12 @@
         "positions:view": "See the organization’s positions",
         "positions:manage": "Add and change positions",
         "setup:view": "See Setup health",
-        "admin:access": "Open the Administration area"
+        "admin:access": "Open the Administration area",
+        "meetings:schedule": "Schedule meetings for your unit and the committees it owns",
+        "meetings:schedule_subunits": "Schedule meetings for units below the one you head",
+        "meetings:record_minutes": "Record the minutes of your unit's meetings",
+        "meetings:approve_minutes": "Approve the minutes of your unit's meetings",
+        "meetings:approve_subunits": "Approve the minutes of meetings of units below the one you head"
       },
       "find": "Find a permission",
       "clearSearch": "Clear the search",
@@ -870,16 +875,33 @@
         "add_member": "Add a person to a seat.",
         "remove_member": "End a person's membership; it stays in Membership history.",
         "change_member_role": "Move a member to another seat (Chair, Secretary, Member…).",
-        "request_change": "Open a committee change request with its own approval."
+        "request_change": "Open a committee change request with its own approval.",
+        "schedule_meeting": "Schedule a meeting for this committee."
+      },
+      "MEETING": {
+        "edit_details": "Change the meeting's title, type, time, place and link.",
+        "manage_agenda": "Add, reorder and remove agenda items and their papers.",
+        "manage_guests": "Invite people from the organization and outside guests.",
+        "reschedule": "Move the meeting to another date and time, with a reason.",
+        "answer_invitation": "Invitees say whether they're attending.",
+        "record_attendance": "Mark each invitee present, sent apologies or absent.",
+        "record_minutes": "Write the discussion, decisions, votes and action items for each item.",
+        "apply_suggestions": "Apply or decline reviewers' suggested corrections.",
+        "change_action_dates": "Change an action item's due date during review.",
+        "suggest_correction": "Present members answer the review: no corrections, or a suggestion."
       }
     },
     "stageFlagHint": {
       "DISSOLVING": "Committees here can't be a parent or be reported to.",
       "IN_FORCE": "Counted as active in lists. Change requests can be submitted and decided here.",
-      "APPLIES_APPROVED_CHANGE": "A change request's values are applied to the committee when it reaches this stage. Exactly one stage."
+      "APPLIES_APPROVED_CHANGE": "A change request's values are applied to the committee when it reaches this stage. Exactly one stage.",
+      "AGENDA_ISSUED": "Invitees are told when the meeting reaches this stage.",
+      "MEETING_CANCELLED": "Meetings here are cancelled and take no new tasks.",
+      "MINUTES_FINAL": "Reaching this stage approves the minutes and turns their action items into tasks. Exactly one stage."
     },
     "stageFlagNeed": {
-      "APPLIES_APPROVED_CHANGE": "applies the approved change"
+      "APPLIES_APPROVED_CHANGE": "applies the approved change",
+      "MINUTES_FINAL": "approves the minutes"
     },
     "strip": {
       "label": "Stages in order",
@@ -932,18 +954,37 @@
         "add_member": "Add member",
         "remove_member": "Remove member",
         "change_member_role": "Change member role",
-        "request_change": "Request a change"
+        "request_change": "Request a change",
+        "schedule_meeting": "Schedule a meeting"
+      },
+      "MEETING": {
+        "edit_details": "Edit details",
+        "manage_agenda": "Edit the agenda",
+        "manage_guests": "Add and remove guests",
+        "reschedule": "Reschedule",
+        "answer_invitation": "Answer the invitation",
+        "record_attendance": "Record attendance",
+        "record_minutes": "Write the minutes",
+        "apply_suggestions": "Apply or decline suggestions",
+        "change_action_dates": "Change action item dates",
+        "suggest_correction": "Suggest a correction"
       }
     },
     "stageFlag": {
       "DISSOLVING": "Dissolving",
       "IN_FORCE": "Record is in force",
-      "APPLIES_APPROVED_CHANGE": "Applies the approved change"
+      "APPLIES_APPROVED_CHANGE": "Applies the approved change",
+      "AGENDA_ISSUED": "Agenda issued",
+      "MEETING_CANCELLED": "Meeting cancelled",
+      "MINUTES_FINAL": "Minutes approved"
     },
     "recordField": {
       "COMMITTEE": {
         "typeValueId": "Committee type",
         "orgUnitId": "Owning unit"
+      },
+      "MEETING": {
+        "typeValueId": "Meeting type"
       }
     },
     "actionCreateTask": "Create Task",
@@ -1209,7 +1250,10 @@
         "POSITION_IN_UNIT": "Fixed position",
         "ORG_UNIT_HEAD": "Org unit head",
         "CREATOR": "Creator",
-        "COMMITTEE": "Committee"
+        "COMMITTEE": "Committee",
+        "MEETING_SCHEDULERS": "Who may schedule the meeting",
+        "MEETING_RECORDERS": "Who records the minutes",
+        "MEETING_APPROVERS": "Who approves the minutes"
       },
       "mode": {
         "ANY_ONE": "Any one of them",

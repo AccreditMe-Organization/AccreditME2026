@@ -3072,14 +3072,21 @@ and §16.6 for PR 3 as built).
 - **The registries** (`foundation/workflow/record-registry.ts`), per record type
   and in code, never copied in the frontend:
   - `RECORD_ACTIONS`: for COMMITTEE, `edit_details`, `add_member`,
-    `remove_member`, `change_member_role` and `request_change`. The three
+    `remove_member`, `change_member_role`, `request_change` and (ACC-316)
+    `schedule_meeting`, seeded on the in-force stages. The three
     member actions are `onNewStage`: a stage a tenant adds with no actions
     gets them, which is what such a stage allowed before stage rules.
+    For MEETING (ACC-316 PR 2): `edit_details`, `manage_agenda`,
+    `manage_guests`, `reschedule`, `answer_invitation`, `record_attendance`,
+    `record_minutes`, `apply_suggestions`, `change_action_dates`,
+    `suggest_correction`; nothing calls the engine about them until the
+    meeting endpoints (PR 3).
   - `STAGE_FLAGS`: COMMITTEE has `DISSOLVING` and `IN_FORCE` (any number of
     stages); COMMITTEE_CHANGE_REQUEST has `APPLIES_APPROVED_CHANGE`, which must
-    sit on exactly one stage.
-  - `RECORD_FIELDS`: COMMITTEE `typeValueId` and `orgUnitId`, for step 2's
-    conditions. Nothing reads them yet.
+    sit on exactly one stage. MEETING (ACC-316) has `AGENDA_ISSUED` and
+    `MEETING_CANCELLED` (any number) and `MINUTES_FINAL` (exactly one).
+  - `RECORD_FIELDS`: COMMITTEE `typeValueId` and `orgUnitId`, MEETING
+    `typeValueId`, for step 2's conditions. Nothing reads them yet.
   - **Fail closed:** a type with no entry has no actions to configure; a key not
     in the registry is refused on save and never allowed; a stage with no row
     for an action does not allow it. Labels are the frontend's (`labelKey`), and
@@ -3510,7 +3517,7 @@ Updated (ACC-278 PR B): **the old columns, their foreign keys and their four enu
     | ORG_UNIT_HEAD | `orgUnitId`, or null for the record's unit |
     | CREATOR | nothing |
     | COMMITTEE | `committeeId`, or null for the record's committee; optional `committeeRoleValueId` |
-    | MEETING_SCHEDULERS, MEETING_RECORDERS, MEETING_APPROVERS | nothing. **Not usable yet (ACC-316 PR 1):** no record type offers them, so a save is `WHO_KIND_NOT_ALLOWED`, and `StagePoolService` resolves them to nobody. The Meetings PR that adds their resolvers offers them for MEETING only (plan `backend/Plans/step-316-meeting-management.md` §3.8) |
+    | MEETING_SCHEDULERS, MEETING_RECORDERS, MEETING_APPROVERS | nothing. **MEETING only (ACC-316 PR 2):** any other record type's save is `WHO_KIND_NOT_ALLOWED`. Resolved by `meeting-authority.ts` (who may schedule, record and approve a meeting: committee seats, own-unit keys, heads above with the sub-units keys), batched; on a record that is not a meeting, nobody. Plan `backend/Plans/step-316-meeting-management.md` §3.8 |
   - **The shape rules** (`stage-who.ts`, `assertWhoShape()`, all 400):
     - `WHO_MODE_UNKNOWN`;
     - `WHO_ENTRIES_REQUIRED` (at least one entry, at most 20);
@@ -7674,9 +7681,11 @@ actions. The chain of authority (PR 2) reads `decide_reporting_changes`, and
 
 **The fixed list** (`foundation/committees/seat-actions.ts`, `SEAT_ACTIONS`):
 `add_member`, `remove_member`, `change_member_seat`, `request_change`,
-`decide_reporting_changes`. Stored as text (`CommitteeSeatAction.actionKey`),
-like a stage's record actions, so the Meetings ticket's two actions need no
-enum migration.
+`decide_reporting_changes`, and (ACC-316 PR 2) `schedule_meeting` and
+`record_minutes`, read by `meeting-authority.ts` for the meeting stage pools.
+Stored as text (`CommitteeSeatAction.actionKey`), like a stage's record
+actions, so the two meeting actions needed no enum migration. Existing
+committees get their defaults from `backfill:acc316-seat-defaults`.
 
 **Per committee: `CommitteeSeatAction`** (`organizationId`, `committeeId`,
 `roleValueId`, `actionKey`; unique on the three ids and key). A row means the
@@ -7684,14 +7693,17 @@ seat allows the action on that committee; a seat with no row allows nothing.
 
 **Defaults per organisation: one boolean attribute per action** on the
 `committee_member_role` lookup (`seatAddsMember`, `seatRemovesMember`,
-`seatChangesSeat`, `seatRequestsChange`, `seatDecidesReportingChanges`), each
+`seatChangesSeat`, `seatRequestsChange`, `seatDecidesReportingChanges`, and
+ACC-316's `seatSchedulesMeetings` (Chairman, Secretary) and
+`seatRecordsMinutes` (Secretary)), each
 named in both languages (`labelEn`, `labelAr`, ACC-310's shape). The value
 form reads `labelEn` / `labelAr`, else the key; the seed carries no `label`
 (dropped after ACC-310), and the shared system row loses its old `label` on the
 next deploy's `seedSystemData()`.
 - The SYSTEM values carry them, rewritten by `seedSystemData()` on every deploy:
   Chairman all five; Secretary the four member actions; every other seat none
-  (plan Q10, confirmed by Ahmad, 16 Nov).
+  (plan Q10, confirmed by Ahmad, 16 Nov). ACC-316 adds `schedule_meeting` for
+  Chairman and Secretary, and `record_minutes` for Secretary.
 - An organisation changes a default through its override row
   (`PATCH /lookups/values/:id/attributes`, `lookups:manage`), merged key by key.
 
