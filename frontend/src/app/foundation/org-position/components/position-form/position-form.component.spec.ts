@@ -5,6 +5,7 @@ import { Observable, of, throwError } from 'rxjs';
 import en from '../../../../../assets/i18n/en.json';
 import ar from '../../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest } from '../../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { PositionFormComponent } from './position-form.component';
 import { OrgPositionService } from '../../services/org-position.service';
 import { RoleService } from '../../../roles/services/role.service';
@@ -106,6 +107,7 @@ describe('PositionFormComponent — invalid step 1 (ACC-120)', () => {
 // sends `roleId: null` (undefined kept the old role), and a deactivated role is
 // said from its code, never the server's English.
 describe('PositionFormComponent — the position’s role (ACC-154)', () => {
+  preserveDocumentLanguage();
   let fixture: ComponentFixture<PositionFormComponent>;
   let update: jasmine.Spy;
 
